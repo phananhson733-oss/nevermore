@@ -1,11 +1,4 @@
-const FIELD_KEYS = [
-  "clientName",
-  "projectName",
-  "siteUrl",
-  "marketCodes",
-  "siteLanguageCodes",
-  "defaultDeliveryLocale",
-] as const;
+const FIELD_KEYS = ["productUrl", "businessHint"] as const;
 
 type FieldKey = (typeof FIELD_KEYS)[number];
 
@@ -25,7 +18,7 @@ function pointerToField(pointer: string): FieldKey | null {
 export function mapProjectFieldErrors(
   errors: readonly ProjectFieldError[],
   messages: {
-    readonly siteUrlInvalid: string;
+    readonly productUrlInvalid: string;
     readonly createError: string;
   },
 ): {
@@ -43,7 +36,7 @@ export function mapProjectFieldErrors(
     }
     if (fieldErrors[key] !== undefined) continue;
     fieldErrors[key] =
-      key === "siteUrl" ? messages.siteUrlInvalid : messages.createError;
+      key === "productUrl" ? messages.productUrlInvalid : messages.createError;
   }
 
   return {

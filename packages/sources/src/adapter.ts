@@ -12,14 +12,16 @@ export type CollectionOperation =
   | "site_graph"
   | "search_analytics"
   | "organic_landing"
-  | "keyword_gap_import";
+  | "keyword_gap_import"
+  | "search_landscape";
 
 export type DatasetKey =
   | "crawl.site_graph.v1"
   | "gsc.page_query_daily.v1"
   | "ga4.organic_landing_daily.v1"
   | "csv.keyword_gap.v1"
-  | "dataforseo.ranked_keywords.v1";
+  | "dataforseo.ranked_keywords.v1"
+  | "dataforseo.search_landscape.v1";
 
 export type Availability = "available" | "partial" | "unavailable";
 

@@ -1423,32 +1423,38 @@ const PROVIDER_FIXTURE_CONFIG: Record<
   {
     readonly operation: string;
     readonly datasetKey: string;
+    readonly schemaVersion: string;
     readonly methodVersion: string;
   }
 > = {
   crawl: {
     operation: "site_graph",
     datasetKey: CRAWL_DATASET_KEY,
+    schemaVersion: "0.2.0",
     methodVersion: CRAWL_METHOD_VERSION,
   },
   gsc: {
     operation: "search_analytics",
     datasetKey: "gsc.page_query_daily.v1",
+    schemaVersion: "0.2.0",
     methodVersion: "gsc.page_query_daily.v1",
   },
   ga4: {
     operation: "organic_landing",
     datasetKey: "ga4.organic_landing_daily.v1",
+    schemaVersion: "0.2.0",
     methodVersion: "ga4.organic_landing_daily.v1",
   },
   csv: {
     operation: "keyword_gap_import",
     datasetKey: "csv.keyword_gap.v1",
+    schemaVersion: "0.2.0",
     methodVersion: "csv.keyword_gap.v1",
   },
   dataforseo: {
     operation: "keyword_gap_import",
     datasetKey: DATAFORSEO_DATASET_KEY,
+    schemaVersion: DATAFORSEO_METHOD_VERSION,
     methodVersion: DATAFORSEO_METHOD_VERSION,
   },
 };
@@ -1550,7 +1556,7 @@ async function seedSnapshot(
     sourceConnectionId,
     provider,
     datasetKey: config.datasetKey,
-    schemaVersion: "0.2.0",
+    schemaVersion: config.schemaVersion,
     methodVersion: config.methodVersion,
     capturedAt: OBSERVED_AT,
     sourceWindow: { start: null, end: null },

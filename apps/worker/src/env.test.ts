@@ -70,6 +70,7 @@ describe("worker production URL environment policy", () => {
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("false");
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
+    expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(100);
     expect(parsed.DATAFORSEO_LOGIN).toBeUndefined();
     expect(parsed.DATAFORSEO_PASSWORD).toBeUndefined();
   });
@@ -81,11 +82,13 @@ describe("worker production URL environment policy", () => {
       DATAFORSEO_LOGIN: "dfs-login",
       DATAFORSEO_PASSWORD: "dfs-password",
       DATAFORSEO_MAX_KEYWORDS: "350",
+      DATAFORSEO_MAX_COMPETITORS: "125",
     };
     const parsed = production.parse(enabled);
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("true");
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(350);
+    expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(125);
     expect(production.safeParse({ ...enabled, DATAFORSEO_LOGIN: undefined }).success).toBe(
       false,
     );
@@ -100,6 +103,25 @@ describe("worker production URL environment policy", () => {
       expect(
         production.safeParse({ ...BASE, DATAFORSEO_MAX_KEYWORDS }).success,
       ).toBe(false);
+    },
+  );
+
+  it.each(["0", "1001", "1.5", "not-a-number"])(
+    "rejects an unsafe DataForSEO competitor limit: %s",
+    (DATAFORSEO_MAX_COMPETITORS) => {
+      expect(
+        production.safeParse({ ...BASE, DATAFORSEO_MAX_COMPETITORS }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["1", "1000"])(
+    "accepts an inclusive DataForSEO competitor limit boundary: %s",
+    (DATAFORSEO_MAX_COMPETITORS) => {
+      expect(
+        production.parse({ ...BASE, DATAFORSEO_MAX_COMPETITORS })
+          .DATAFORSEO_MAX_COMPETITORS,
+      ).toBe(Number(DATAFORSEO_MAX_COMPETITORS));
     },
   );
 

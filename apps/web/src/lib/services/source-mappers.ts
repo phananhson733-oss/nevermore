@@ -150,7 +150,7 @@ function defaultLimitation(provider: string, featureEnabled: boolean): string {
       return "No keyword-gap CSV imported yet.";
     case "dataforseo":
       return featureEnabled
-        ? "DataForSEO ranked-keyword collection is enabled for the primary site. No snapshot has been collected yet."
+        ? "Built-in DataForSEO evidence is enabled for Analysis Refresh. No snapshot has been collected yet."
         : "DataForSEO is disabled for this deployment.";
     default:
       return "No snapshot has been collected yet.";

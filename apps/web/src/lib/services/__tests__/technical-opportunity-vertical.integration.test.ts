@@ -21,6 +21,7 @@ import {
   type DbHandle,
   type WorkerContext,
 } from "./full-chain-harness.ts";
+import { publishDiagnosticGeneration } from "./published-growth-map-fixture.ts";
 
 /**
  * Vertical proof of the Slice 1 technical delivery chain (Task 7): one measured
@@ -68,6 +69,12 @@ describeDb("technical opportunity vertical single chain", () => {
     );
     scope = run.scope;
     actor = run.actor;
+    await publishDiagnosticGeneration(handle.db, {
+      scope,
+      diagnosticRunId: run.diagRunId,
+      actorId: actor,
+      completedAt: new Date().toISOString(),
+    });
 
     const findings = await listProjectFindings(
       { workspaceId: scope.workspaceId },

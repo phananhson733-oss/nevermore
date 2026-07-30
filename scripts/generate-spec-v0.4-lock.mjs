@@ -64,6 +64,7 @@ const asyncOperations = [
   "createProductProfileSynthesisRun",
   "importProjectSourceFile",
   "createCollectionRun",
+  "createAnalysisRefreshRun",
   "createDiagnosticRun",
   "createGrowthAuditRun",
   "createContentShadowRun",
@@ -166,7 +167,7 @@ assert.equal(promptSetVersion, "mvp.prompts.0.2.0");
 
 const openapi = read("openapi/mvp.yaml");
 const apiOperations = extractOpenApiOperations(openapi);
-assert.equal(apiOperations.length, 77, "reviewed v0.4 operation count drift");
+assert.equal(apiOperations.length, 78, "reviewed v0.4 operation count drift");
 for (const operationId of asyncOperations) {
   assert.ok(
     apiOperations.includes(operationId),
@@ -176,7 +177,7 @@ for (const operationId of asyncOperations) {
 
 const migrations = listOrderedMigrationSources({ root: repositoryRoot });
 const tables = migrationTableInventory(migrations);
-assert.equal(tables.length, 76, "reviewed v0.4 table count drift");
+assert.equal(tables.length, 78, "reviewed v0.4 table count drift");
 
 const ruleContracts = diagnosticRules();
 assert.equal(ruleContracts.length, 11, "reviewed v0.4 rule count drift");

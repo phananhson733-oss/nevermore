@@ -30,8 +30,10 @@ import {
   ExecutionArtifactsRepository,
   FindingTargetsRepository,
   FindingsRepository,
+  IcpProfilesRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
+  ProjectsRepository,
   SitePagesRepository,
   SourceConnectionsRepository,
   type CanonicalValue,
@@ -60,6 +62,7 @@ import {
   listProjectAuditUrls,
 } from "@/lib/services/growth-map";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
+import { publishDiagnosticGeneration } from "./published-growth-map-fixture.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -146,6 +149,8 @@ async function seedSnapshot(
     project_id: scope.projectId,
     kind: "collection",
     status: "completed",
+    result_type: "collection_run",
+    result_id: collectionRunId,
     active_key: null,
     initiated_by: actor,
     started_at: CAPTURED_AT,
@@ -263,6 +268,21 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
         created_by: actor,
       })
       .returning();
+    const projects = new ProjectsRepository(handle.db);
+    if (
+      !(await projects.setCurrentIcpProfile(
+        { workspaceId: scope.workspaceId },
+        scope.projectId,
+        icp!.id,
+      )) ||
+      !(await projects.setConfirmedIcpProfile(
+        { workspaceId: scope.workspaceId },
+        scope.projectId,
+        icp!.id,
+      ))
+    ) {
+      throw new Error("Growth Map fixture could not confirm its Product Profile");
+    }
 
     const sources = new SourceConnectionsRepository(handle.db);
     const crawlSource = await sources.findConnectedByProvider(scope, "crawl");
@@ -557,6 +577,8 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       project_id: scope.projectId,
       kind: "diagnostic",
       status: "completed",
+      result_type: "diagnostic_run",
+      result_id: runId,
       active_key: null,
       initiated_by: actor,
       started_at: CAPTURED_AT,
@@ -574,6 +596,12 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       outputLocale: "en-US",
       inputManifest: frozen.manifest,
       inputHash: frozen.inputHash,
+    });
+    await publishDiagnosticGeneration(handle.db, {
+      scope,
+      diagnosticRunId: runId,
+      actorId: actor,
+      completedAt: CAPTURED_AT,
     });
 
     const findingRepo = new FindingsRepository(handle.db);
@@ -603,7 +631,7 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
         titleKey: meta.titleKey,
         titleArgs: {},
         summary: input.summary,
-        summaryLocale: "en-US",
+        summaryLocale: "en",
         subjectRefs: [...input.subjectRefs],
         severity: input.severity,
         confidence: "high",
@@ -1312,6 +1340,80 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       fixture.runId,
     );
     if (!source) throw new Error("Current diagnostic fixture is missing");
+    const profile = await new IcpProfilesRepository(handle.db).findById(
+      fixture.scope,
+      source.icp_profile_id,
+    );
+    if (!profile) throw new Error("Current Product Profile fixture is missing");
+    const sources = new SourceConnectionsRepository(handle.db);
+    const [crawlSource, gscSource, ga4Source] = await Promise.all([
+      sources.findConnectedByProvider(fixture.scope, "crawl"),
+      sources.findConnectedByProvider(fixture.scope, "gsc"),
+      sources.findConnectedByProvider(fixture.scope, "ga4"),
+    ]);
+    if (!crawlSource || !gscSource || !ga4Source) {
+      throw new Error("Current collection sources are missing");
+    }
+    const corruptSnapshots = [
+      await seedSnapshot(
+        handle,
+        fixture.scope,
+        fixture.siteId,
+        actor,
+        crawlSource,
+        {
+          provider: "crawl",
+          datasetKey: "crawl.site_graph.v1",
+          methodVersion: CRAWL_METHOD_VERSION,
+          operation: "site_graph",
+          rowCount: 0,
+        },
+      ),
+      await seedSnapshot(
+        handle,
+        fixture.scope,
+        fixture.siteId,
+        actor,
+        gscSource,
+        {
+          provider: "gsc",
+          datasetKey: "gsc.page_query_daily.v1",
+          methodVersion: "gsc.page_query_daily.v1",
+          operation: "search_analytics",
+          rowCount: 0,
+        },
+      ),
+      await seedSnapshot(
+        handle,
+        fixture.scope,
+        fixture.siteId,
+        actor,
+        ga4Source,
+        {
+          provider: "ga4",
+          datasetKey: "ga4.organic_landing_daily.v1",
+          methodVersion: "ga4.organic_landing_daily.v1",
+          operation: "organic_landing",
+          rowCount: 0,
+        },
+      ),
+    ];
+    const corruptFrozen = buildDiagnosticFrozenInput({
+      projectId: fixture.scope.projectId,
+      siteId: fixture.siteId,
+      icp: {
+        id: profile.id,
+        version: profile.version,
+        contentHash: profile.content_hash,
+      },
+      snapshots: corruptSnapshots,
+      deliveryLocale: source.output_locale,
+      governance: {
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      },
+    });
     const corruptRunId = randomUUID();
     await handle.db.insert(asyncRuns).values({
       id: corruptRunId,
@@ -1319,6 +1421,8 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       project_id: fixture.scope.projectId,
       kind: "diagnostic",
       status: "completed",
+      result_type: "diagnostic_run",
+      result_id: corruptRunId,
       active_key: null,
       initiated_by: actor,
       started_at: "2026-07-22T03:00:00.000Z",
@@ -1336,8 +1440,14 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       rule_set_version: source.rule_set_version,
       prompt_set_version: source.prompt_set_version,
       output_locale: source.output_locale,
-      input_manifest: source.input_manifest,
+      input_manifest: corruptFrozen.manifest,
       input_hash: "0".repeat(64),
+    });
+    await publishDiagnosticGeneration(handle.db, {
+      scope: fixture.scope,
+      diagnosticRunId: corruptRunId,
+      actorId: actor,
+      completedAt: "2026-07-22T03:00:00.000Z",
     });
 
     await expect(

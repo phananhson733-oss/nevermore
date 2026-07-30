@@ -31,9 +31,9 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
     assert.match(verifier, new RegExp(binding.replaceAll(".", "\\.")));
   }
   assert.equal(lock.authorityVersion, "0.4.0");
-  assert.equal(lock.apiOperations.length, 77);
-  assert.equal(lock.asyncOperations.length, 9);
-  assert.equal(lock.tables.length, 76);
+  assert.equal(lock.apiOperations.length, 78);
+  assert.equal(lock.asyncOperations.length, 10);
+  assert.equal(lock.tables.length, 78);
   assert.equal(lock.rules.length, 11);
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.2");
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
@@ -65,7 +65,7 @@ test("builds the complete database inventory through the static schema catalog",
   );
 });
 
-test("freezes nine shared async operations and the dedicated measurement 202", () => {
+test("freezes ten shared async operations and the dedicated measurement 202", () => {
   for (const operationId of lock.asyncOperations) {
     assert.ok(lock.apiOperations.includes(operationId));
   }
@@ -108,13 +108,21 @@ test("gates the current Supabase production authentication boundary", () => {
 
 test("keeps strict Growth Map Keyword and Competitor contracts", () => {
   for (const invariant of [
+    "public collection provider allowlist",
+    "Analysis Refresh must own the fixed DFS Search Landscape step",
+    "Growth Map diagnosticRunId pin must remain one optional canonical lowercase UUID",
+    "Growth Map review view must remain the exact optional view=review literal",
     "Growth Map Keyword list path/operationId drift",
     "Growth Map Keyword detail path/operationId drift",
+    "Growth Map Keyword detail must keep review view mutually exclusive with the generation pin",
+    "Growth Map Keyword PATCH must reject every query parameter",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",
     "Growth Map Competitor list path/operationId drift",
     "Growth Map Competitor detail path/operationId drift",
+    "Growth Map Competitor detail must keep review view mutually exclusive with the generation pin",
+    "Growth Map Competitor PATCH must reject every query parameter",
     "Growth Map Competitor origin occurrence discriminator drift",
     "Growth Map Competitor product_profile origin must keep its strict typed Product Profile evidence contract",
     "Growth Map Competitor insight availability discriminator drift",
@@ -122,6 +130,13 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
   ]) {
     assert.match(verifier, new RegExp(invariant));
   }
+});
+
+test("keeps the Sources read behind confirmed Product/ICP without hiding archived history", () => {
+  assert.match(
+    verifier,
+    /Sources read must gate active projects on confirmed Product\/ICP, expose CONTEXT_INCOMPLETE, and preserve archived history/,
+  );
 });
 
 test("requires Growth Map findings to retain optimistic review revision", () => {

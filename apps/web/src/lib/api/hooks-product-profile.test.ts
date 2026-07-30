@@ -146,7 +146,7 @@ describe("Product Profile API boundary", () => {
     ]);
   });
 
-  it("invalidates Product Profile, project shell, overview, and source truth after writes", async () => {
+  it("invalidates Product Profile, project shell, source truth, and Growth Map after writes", async () => {
     const client = new QueryClient();
     const spy = vi.spyOn(client, "invalidateQueries");
 
@@ -157,6 +157,7 @@ describe("Product Profile API boundary", () => {
       ["project", PROJECT_ID],
       ["workspace", PROJECT_ID],
       ["sources", PROJECT_ID],
+      ["growth-map", PROJECT_ID],
     ]);
   });
 });

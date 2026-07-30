@@ -332,6 +332,11 @@ paths:
       tags: [Sources]
       summary: List source cards, capabilities, and latest snapshots
       operationId: listProjectSources
+      description: |
+        Active projects require a confirmed Product Profile and ICP before this
+        read returns any source connection or snapshot metadata; otherwise the
+        response is 422 `CONTEXT_INCOMPLETE`. Archived projects preserve their
+        retained source and snapshot history as a read-only view.
       parameters:
         - $ref: '#/components/parameters/ProjectId'
       responses:
@@ -344,6 +349,7 @@ paths:
               schema: { $ref: '#/components/schemas/SourceListResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
 
   /projects/{projectId}/sources/{provider}/connect:
     post:
@@ -472,7 +478,14 @@ paths:
   /projects/{projectId}/collection-runs:
     post:
       tags: [Runs, Sources]
-      summary: Queue one provider collection
+      summary: Queue one customer-triggerable provider collection
+      description: |
+        This public command accepts exactly Crawl, connected GSC, or connected
+        GA4. CSV uses the dedicated import endpoint. DataForSEO Search
+        Landscape (DFS) is a built-in, server-owned Analysis Refresh step:
+        clients cannot trigger or configure it here, and this request never
+        accepts provider credentials, API keys, Search Landscape scope, or
+        provider limits.
       operationId: createCollectionRun
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -482,6 +495,37 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateCollectionRunRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/AsyncAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
+  /projects/{projectId}/analysis-refresh-runs:
+    post:
+      tags: [Runs, Sources, Diagnosis]
+      summary: Queue the server-owned durable Analysis Refresh plan
+      description: |
+        Freezes the primary Site, current confirmed ICP, and the fixed ordered
+        Crawl → connected GSC → connected GA4 → built-in DataForSEO Search
+        Landscape (DFS) → Growth Audit plan. The server derives the DFS target,
+        market, language and cost caps from frozen project context and server
+        configuration. Optional unavailable inputs are recorded as skipped
+        steps; the client cannot add, remove, reorder, configure, or directly
+        invoke any step.
+      operationId: createAnalysisRefreshRun
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAnalysisRefreshRunRequest' }
       responses:
         '202': { $ref: '#/components/responses/AsyncAccepted' }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -519,7 +563,7 @@ paths:
   /projects/{projectId}/runs/{runId}:
     get:
       tags: [Runs]
-      summary: Poll any collection, Product Profile synthesis, diagnostic, artifact, or export run
+      summary: Poll any collection, Analysis Refresh, Product Profile synthesis, diagnostic, artifact, or export run
       operationId: getProjectRun
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -747,10 +791,13 @@ paths:
       tags: [Diagnosis]
       summary: List the latest readable Growth Map URL portfolio
       description: |
-        Returns one bounded page of canonical Site Pages proven by the latest completed or
-        partial DiagnosticRun's frozen Crawl/GSC/GA4 inputs. The response deliberately has no
-        project-wide total. Missing observations remain unavailable with explicit limitations;
-        unresolved or definition-only Finding targets are never assigned to URL rows.
+        Returns one bounded page of canonical Site Pages proven by one published
+        DiagnosticRun's frozen Crawl/GSC/GA4 inputs. Without diagnosticRunId the
+        server selects the latest readable generation; with diagnosticRunId it
+        reads that exact same-project published generation. The response deliberately
+        has no project-wide total. Missing observations remain unavailable with
+        explicit limitations; unresolved or definition-only Finding targets are
+        never assigned to URL rows.
       operationId: listProjectAuditUrls
       parameters:
         - $ref: '#/components/parameters/ProjectId'
@@ -764,6 +811,7 @@ paths:
             minLength: 1
             maxLength: 256
             pattern: '\S'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
       responses:
         '200':
           description: Current traceable URL portfolio page without a synthetic total.
@@ -782,13 +830,16 @@ paths:
       tags: [Diagnosis]
       summary: Read one URL from the latest readable Growth Map portfolio
       description: |
-        Resolves the selected canonical Site Page only inside the latest completed or partial
-        DiagnosticRun. Finding membership comes exclusively from resolved FindingTarget rows
-        for that exact run; mutable subject_refs are never used as URL membership.
+        Resolves the selected canonical Site Page inside the latest readable
+        published DiagnosticRun, or inside the exact same-project published
+        generation named by diagnosticRunId. Finding membership comes exclusively
+        from resolved FindingTarget rows for that exact run; mutable subject_refs
+        are never used as URL membership.
       operationId: getProjectAuditUrl
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/SitePageId'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
       responses:
         '200':
           description: Selected URL projection with exact source, Finding, Action, and Artifact identifiers.
@@ -799,6 +850,7 @@ paths:
               schema: { $ref: '#/components/schemas/GrowthMapUrlDetailHttpResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
   /projects/{projectId}/audit/internal-link-map:
@@ -1007,16 +1059,20 @@ paths:
       tags: [Diagnosis]
       summary: List the project Keyword Library
       description: |
-        Returns one bounded cursor page of stable Keyword identities with exact source
-        occurrences, canonical Observation metric pointers, governed mapped targets, and
-        explicit coverage and limitations. This collection read exposes no filters,
-        synthetic totals, Finding confirmation, Action state, or collection mutation;
-        one selected Keyword can be reviewed through its exact detail resource.
+        Returns one bounded cursor page of stable Keyword identities from the
+        latest readable published generation, or from the exact same-project
+        published generation named by diagnosticRunId. Every row retains exact
+        source occurrences, canonical Observation metric pointers, governed
+        mapped targets, and explicit coverage and limitations. This collection
+        read exposes no review view, synthetic totals, Finding confirmation,
+        Action state, or collection mutation; one selected Keyword can be
+        reviewed through its exact detail resource.
       operationId: listProjectAuditKeywords
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
       responses:
         '200':
           description: Current traceable Keyword Library cursor page.
@@ -1035,12 +1091,18 @@ paths:
       tags: [Diagnosis]
       summary: Read one project Keyword Library entry
       description: |
-        Resolves one stable Keyword identity inside the selected project and returns the same
-        strict source, metric, mapping, coverage, and limitation contract as the cursor page.
+        By default resolves one stable Keyword identity in the latest readable
+        published generation. diagnosticRunId pins one exact same-project
+        published generation. view=review instead reads the current mutable
+        governance projection for human review; view=review and diagnosticRunId
+        are mutually exclusive, and repeated scalar query parameters are rejected.
       operationId: getProjectAuditKeyword
+      x-signalframe-query-refinement: reviewViewAndDiagnosticRunIdAreMutuallyExclusive
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/KeywordId'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
+        - $ref: '#/components/parameters/ReviewView'
       responses:
         '200':
           description: Selected traceable Keyword Library entry.
@@ -1051,6 +1113,7 @@ paths:
               schema: { $ref: '#/components/schemas/GrowthMapKeywordDetailHttpResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
     patch:
       tags: [Diagnosis]
@@ -1059,8 +1122,11 @@ paths:
         Appends one human Keyword governance decision against an exact optimistic revision,
         confirmed Topic Model revision, and optional same-project Site Page. Topic labels,
         actor identity, timestamps, provenance, and source occurrence history remain
-        server-owned. An exact immediate retry is idempotent.
+        server-owned. An exact immediate retry is idempotent. PATCH rejects every
+        query parameter, including diagnosticRunId and view; review semantics come
+        only from the governed request body.
       operationId: reviewProjectAuditKeyword
+      x-signalframe-query-contract: rejectAllQueryParameters
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/KeywordId'
@@ -1239,16 +1305,19 @@ paths:
       tags: [Diagnosis]
       summary: List the project Competitor Library
       description: |
-        Returns one bounded cursor page of stable project Competitor identities with strict
-        typed origin occurrences, reviewed analysis scope, canonical Observation-backed
-        insights, and explicit coverage. This collection read exposes no filters,
-        synthetic totals, or manual-entry controls; one selected Competitor can be reviewed
-        through its exact detail resource.
+        Returns one bounded cursor page of stable project Competitor identities
+        from the latest readable published generation, or from the exact
+        same-project published generation named by diagnosticRunId. Rows retain
+        strict typed origin occurrences, frozen analysis scope, canonical
+        Observation-backed insights, and explicit coverage. This collection read
+        exposes no review view, synthetic totals, or manual-entry controls; one
+        selected Competitor can be reviewed through its exact detail resource.
       operationId: listProjectAuditCompetitors
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
       responses:
         '200':
           description: Current traceable Competitor Library cursor page.
@@ -1267,12 +1336,18 @@ paths:
       tags: [Diagnosis]
       summary: Read one project Competitor Library entry
       description: |
-        Resolves one stable Competitor identity inside the selected project and returns the
-        same strict origin, insight, review, coverage, and limitation contract as the page.
+        By default resolves one stable Competitor identity in the latest readable
+        published generation. diagnosticRunId pins one exact same-project
+        published generation. view=review instead reads the current mutable
+        governance projection for human review; view=review and diagnosticRunId
+        are mutually exclusive, and repeated scalar query parameters are rejected.
       operationId: getProjectAuditCompetitor
+      x-signalframe-query-refinement: reviewViewAndDiagnosticRunIdAreMutuallyExclusive
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/CompetitorId'
+        - $ref: '#/components/parameters/DiagnosticRunIdPin'
+        - $ref: '#/components/parameters/ReviewView'
       responses:
         '200':
           description: Selected traceable Competitor Library entry.
@@ -1283,6 +1358,7 @@ paths:
               schema: { $ref: '#/components/schemas/GrowthMapCompetitorDetailHttpResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
     patch:
       tags: [Diagnosis]
@@ -1291,7 +1367,10 @@ paths:
         Applies one optimistic Competitor review without editing immutable origin
         occurrences. Actor facts, timestamps, and provenance remain server-owned. An exact
         immediate retry is idempotent and a stale divergent revision returns a conflict.
+        PATCH rejects every query parameter, including diagnosticRunId and view;
+        review semantics come only from the governed request body.
       operationId: reviewProjectAuditCompetitor
+      x-signalframe-query-contract: rejectAllQueryParameters
       parameters:
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/CompetitorId'
@@ -2334,6 +2413,29 @@ components:
         minimum: 1
         maximum: 100
         default: 50
+    DiagnosticRunIdPin:
+      name: diagnosticRunId
+      in: query
+      required: false
+      description: |
+        Optional canonical lowercase UUID for one exact readable, same-project
+        published DiagnosticRun generation. When omitted, the server selects the
+        latest readable published generation. Repeated values are rejected.
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    ReviewView:
+      name: view
+      in: query
+      required: false
+      description: |
+        Exact view=review selects the current mutable governance projection.
+        It is available only on Keyword and Competitor detail GET operations,
+        is mutually exclusive with diagnosticRunId, and rejects repeated values.
+      schema:
+        type: string
+        const: review
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2461,7 +2563,7 @@ components:
       enum: [connecting, connected, syncing, available, partial, stale, permission_denied, unavailable, disconnected]
     RunKind:
       type: string
-      enum: [collection, product_profile_synthesis, diagnostic, artifact_generation, export, content_shadow, publication, measurement]
+      enum: [collection, product_profile_synthesis, diagnostic, artifact_generation, export, content_shadow, publication, measurement, analysis_refresh]
     RunStatus:
       type: string
       enum: [queued, running, completed, partial, failed, cancelled]
@@ -3668,12 +3770,22 @@ components:
       type: object
       additionalProperties: false
       required: [provider]
+      description: |
+        Customer-triggerable collection only. DataForSEO is intentionally
+        absent because it runs exclusively inside the server-owned Analysis
+        Refresh plan; no provider credential or API-key field is accepted.
       properties:
-        provider: { type: string, enum: [crawl, gsc, ga4, dataforseo] }
+        provider: { type: string, enum: [crawl, gsc, ga4] }
         sourceConnectionId: { type: [string, 'null'], format: uuid }
         operation:
           type: string
-          enum: [site_graph, search_analytics, organic_landing, keyword_gap_import]
+          enum: [site_graph, search_analytics, organic_landing]
+
+    CreateAnalysisRefreshRunRequest:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+      description: Empty strict object. The server owns and freezes the complete Analysis Refresh plan.
 
     AsyncRun:
       type: object
@@ -3707,7 +3819,7 @@ components:
           properties:
             type:
               type: string
-              enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, flow_shadow_run, publication_attempt, measurement_window]
+              enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, flow_shadow_run, publication_attempt, measurement_window, analysis_refresh_run]
             id: { $ref: '#/components/schemas/Uuid' }
         queuedAt: { $ref: '#/components/schemas/Timestamp' }
         startedAt:
@@ -3737,7 +3849,7 @@ components:
               properties:
                 type:
                   type: string
-                  enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, audit_run, flow_shadow_run]
+                  enum: [collection_run, product_profile_run, icp_profile, diagnostic_run, artifact, export, audit_run, flow_shadow_run, analysis_refresh_run]
                 id: { $ref: '#/components/schemas/Uuid' }
     AsyncRunResponse:
       type: object

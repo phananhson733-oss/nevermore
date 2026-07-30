@@ -46,6 +46,7 @@ const scope = {
   projectId: "00000000-0000-4000-8000-000000000002",
 };
 const runId = "00000000-0000-4000-8000-000000000003";
+const uuidV7RunId = "7a000000-0000-7000-8000-00000000000a";
 const pageId = "00000000-0000-4000-8000-000000000004";
 const secondPageId = "00000000-0000-4000-8000-000000000005";
 
@@ -58,7 +59,7 @@ function repository() {
 }
 
 describe("GrowthMapReadRepository", () => {
-  it("selects only the latest readable diagnostic joined through both project scopes", async () => {
+  it("selects only a published Growth Audit through its exact Analysis Refresh lineage", async () => {
     const { db, repo } = repository();
     const row = {
       id: runId,
@@ -70,32 +71,263 @@ describe("GrowthMapReadRepository", () => {
     await expect(repo.findLatestReadableRun(scope)).resolves.toBe(row);
 
     const query = db.lastSql();
+    expect(query.sql).toContain(
+      "with canonical_completed_collection_steps as",
+    );
+    expect(query.sql).toContain("publishable_analysis_refreshes as");
+    expect(query.sql).toContain(
+      "collection_child.status in ('completed', 'partial')",
+    );
+    expect(query.sql).toContain(
+      "collection_child.result_type = 'collection_run'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.availability in ('available', 'partial')",
+    );
+    for (const [ordinal, stepKey] of [
+      [1, "crawl"],
+      [2, "gsc"],
+      [3, "ga4"],
+      [4, "dataforseo"],
+      [5, "growth_audit"],
+    ] as const) {
+      expect(query.sql).toContain(
+        `"app"."analysis_refresh_steps"."ordinal" = ${ordinal}`,
+      );
+      expect(query.sql).toContain(
+        `"app"."analysis_refresh_steps"."step_key" = '${stepKey}'`,
+      );
+    }
+    expect(query.sql).toContain(
+      "\"app\".\"analysis_refresh_steps\".\"state\" in ('completed', 'skipped', 'failed')",
+    );
+    expect(query.sql).toContain('from "app"."async_runs"');
     expect(query.sql).toContain('from "app"."diagnostic_runs"');
     expect(query.sql).toContain('inner join "app"."async_runs"');
-    expect(query.sql.match(/"workspace_id" = \$/gu)).toHaveLength(2);
-    expect(query.sql.match(/"project_id" = \$/gu)).toHaveLength(2);
-    expect(query.sql).toContain("\"status\" in ('completed', 'partial')");
-    expect(query.sql).toContain("\"kind\" = 'diagnostic'");
-    // A targeted recheck run must never masquerade as the latest readable audit.
-    expect(query.sql).toContain("not exists");
+    expect(query.sql).toContain(
+      'inner join "app"."analysis_refresh_steps"',
+    );
+    expect(query.sql).toContain(
+      'inner join "app"."analysis_refresh_runs"',
+    );
+    expect(query.sql).toContain(
+      "inner join publishable_analysis_refreshes",
+    );
+    expect(query.sql).toContain('inner join "app"."audit_runs"');
+    expect(query.sql).toContain(
+      'publishable_analysis_refreshes.id = "app"."analysis_refresh_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_steps"."child_async_run_id" = "app"."diagnostic_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"analysis_refresh_steps\".\"step_key\" = 'growth_audit'",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"analysis_refresh_steps\".\"state\" = 'completed'",
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_runs"."id" = "app"."analysis_refresh_steps"."analysis_refresh_run_id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_runs"."site_id" = "app"."diagnostic_runs"."site_id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_runs"."icp_profile_id" = "app"."diagnostic_runs"."icp_profile_id"',
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"kind\" = 'diagnostic'",
+    );
+    expect(
+      query.sql.match(
+        /"app"\."async_runs"\."status" in \('completed', 'partial'\)/gu,
+      ),
+    ).toHaveLength(2);
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"result_type\" = 'diagnostic_run'",
+    );
+    expect(query.sql).toContain(
+      '"app"."async_runs"."result_id" = "app"."diagnostic_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"kind\" = 'analysis_refresh'",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"result_type\" = 'analysis_refresh_run'",
+    );
+    expect(query.sql).toContain(
+      '"app"."async_runs"."result_id" = "app"."async_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."async_runs"."completed_at" as completed_at',
+    );
+    expect(query.sql).toContain(
+      '"app"."async_runs"."completed_at" is not null',
+    );
     expect(query.sql).toContain('"app"."audit_runs"."projection_version"');
     expect(query.sql).toContain(
+      "\"app\".\"audit_runs\".\"scope_kind\" = 'site'",
+    );
+    expect(query.sql).toContain(
+      '"app"."audit_runs"."scope_key" = "app"."diagnostic_runs"."site_id"::text',
+    );
+    for (const table of [
+      "diagnostic_runs",
+      "analysis_refresh_steps",
+      "analysis_refresh_runs",
+      "audit_runs",
+    ]) {
+      expect(query.sql).toContain(`"app"."${table}"."workspace_id" = $`);
+      expect(query.sql).toContain(`"app"."${table}"."project_id" = $`);
+    }
+    expect(
+      query.sql.match(/"app"\."async_runs"\."workspace_id" = \$/gu),
+    ).toHaveLength(2);
+    expect(
+      query.sql.match(/"app"\."async_runs"\."project_id" = \$/gu),
+    ).toHaveLength(2);
+    expect(query.sql).toContain(
+      "order by\n        publishable_analysis_refreshes.completed_at desc",
+    );
+    expect(query.sql).toContain("publishable_analysis_refreshes.id desc");
+    expect(query.sql).toContain('"app"."diagnostic_runs"."id" desc');
+    expect(query.sql).not.toContain(
       'order by "app"."diagnostic_runs"."created_at" desc',
     );
-    expect(query.sql).toContain('"app"."diagnostic_runs"."id" desc');
-    expect(query.params).toEqual([
-      scope.workspaceId,
-      scope.projectId,
-      scope.workspaceId,
-      scope.projectId,
-      "growth-audit-recheck.0.3.0",
-    ]);
+    expect(query.params).toContain("growth-audit.0.3.0");
+    expect(query.params).not.toContain("growth-audit-recheck.0.3.0");
   });
 
   it("returns null when no completed or partial diagnostic is readable", async () => {
     const { db, repo } = repository();
     db.enqueue([]);
     await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
+  });
+
+  it("selects an exact published diagnostic through the same lineage without latest ordering", async () => {
+    const { db, repo } = repository();
+    const row = {
+      id: runId,
+      run_status: "completed",
+      run_completed_at: "2026-07-22T01:00:00.000Z",
+    };
+    db.enqueue([row], []);
+
+    await expect(repo.findReadableRunById(scope, runId)).resolves.toBe(row);
+
+    let query = db.lastSql();
+    expect(query.sql).toContain(
+      "with canonical_completed_collection_steps as",
+    );
+    expect(query.sql).toContain("publishable_analysis_refreshes as");
+    expect(query.sql).toContain('inner join "app"."analysis_refresh_steps"');
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_steps"."child_async_run_id" = "app"."diagnostic_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"analysis_refresh_steps\".\"step_key\" = 'growth_audit'",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"analysis_refresh_steps\".\"state\" = 'completed'",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"kind\" = 'analysis_refresh'",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"status\" in ('completed', 'partial')",
+    );
+    expect(query.sql).toContain(
+      "\"app\".\"async_runs\".\"result_type\" = 'analysis_refresh_run'",
+    );
+    expect(query.sql).toContain(
+      '"app"."async_runs"."result_id" = "app"."async_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_runs"."site_id" = "app"."diagnostic_runs"."site_id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."audit_runs"."diagnostic_run_id" = "app"."diagnostic_runs"."id"',
+    );
+    expect(query.sql).toContain('"app"."audit_runs"."projection_version"');
+    expect(query.sql).toContain('"app"."diagnostic_runs"."id" = $');
+    expect(query.sql).not.toContain("order by");
+    expect(query.sql).toContain("limit 1");
+    expect(query.params).toContain("growth-audit.0.3.0");
+    expect(query.params.at(-1)).toBe(runId);
+
+    await expect(
+      repo.findReadableRunById(scope, secondPageId),
+    ).resolves.toBeNull();
+    query = db.lastSql();
+    expect(query.params.at(-1)).toBe(secondPageId);
+  });
+
+  it("rejects a malformed exact diagnostic identity before issuing SQL", async () => {
+    const { db, repo } = repository();
+
+    await expect(
+      repo.findReadableRunById(scope, "not-a-diagnostic-run"),
+    ).rejects.toThrow(/diagnosticRunId/i);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("accepts a canonical lowercase UUIDv7 and rejects uppercase identity before SQL", async () => {
+    const accepted = repository();
+    accepted.db.enqueue([]);
+
+    await expect(
+      accepted.repo.findReadableRunById(scope, uuidV7RunId),
+    ).resolves.toBeNull();
+    expect(accepted.db.lastSql().params.at(-1)).toBe(uuidV7RunId);
+
+    const rejected = repository();
+    await expect(
+      rejected.repo.findReadableRunById(scope, uuidV7RunId.toUpperCase()),
+    ).rejects.toThrow(/diagnosticRunId/i);
+    expect(rejected.db.calls).toEqual([]);
+  });
+
+  it("filters parent publishability before ordering and limiting eligible generations", async () => {
+    const { db, repo } = repository();
+    const eligibleGeneration = {
+      id: runId,
+      run_status: "completed",
+      run_completed_at: "2026-07-22T01:00:00.000Z",
+    };
+    db.enqueue([eligibleGeneration]);
+
+    await expect(repo.findLatestReadableRun(scope)).resolves.toBe(
+      eligibleGeneration,
+    );
+
+    const query = db.lastSql();
+    const parentKindFilter = query.sql.indexOf(
+      "\"app\".\"async_runs\".\"kind\" = 'analysis_refresh'",
+    );
+    const parentTerminalFilter = query.sql.indexOf(
+      "\"app\".\"async_runs\".\"status\" in ('completed', 'partial')",
+      parentKindFilter,
+    );
+    const eligibleGenerationOrder = query.sql.indexOf(
+      "order by\n        publishable_analysis_refreshes.completed_at desc",
+    );
+    const parentIdTieBreak = query.sql.indexOf(
+      "publishable_analysis_refreshes.id desc",
+      eligibleGenerationOrder,
+    );
+    const childIdTieBreak = query.sql.indexOf(
+      '"app"."diagnostic_runs"."id" desc',
+      parentIdTieBreak,
+    );
+    const limit = query.sql.lastIndexOf("limit 1");
+    expect(parentTerminalFilter).toBeGreaterThan(-1);
+    expect(eligibleGenerationOrder).toBeGreaterThan(parentTerminalFilter);
+    expect(parentIdTieBreak).toBeGreaterThan(eligibleGenerationOrder);
+    expect(childIdTieBreak).toBeGreaterThan(parentIdTieBreak);
+    expect(limit).toBeGreaterThan(childIdTieBreak);
+    expect(query.sql).not.toContain(
+      "\"app\".\"async_runs\".\"status\" in ('failed', 'cancelled')",
+    );
   });
 
   it("builds current-run URL membership only from frozen Crawl pages union resolved analytics URL observations", async () => {

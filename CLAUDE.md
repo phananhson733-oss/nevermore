@@ -26,11 +26,11 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0032_keyword_initial_governance.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0034_dataforseo_search_landscape.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
-Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
+Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 任何冲突都是合同缺陷：先保护规格的安全边界与证据诚实性，再回改机器合同并让 `pnpm verify:spec` 通过，**不得在业务代码里暗藏兼容猜测**。旧 PRD / draft specs / mock Artifact 只作背景与视觉参考。
 
@@ -69,9 +69,9 @@ docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm verify:docs           # 文档版本、authority、77/9/76/11、四路由与发布边界一致性
+pnpm verify:docs           # 文档版本、authority、78/10/78/11、四路由与发布边界一致性
 pnpm verify:authority      # repository-owned active v0.4 authority 自校验
-pnpm verify:spec           # v0.4 lock：77 operationId / 9 shared async / 76 表 / 11 规则 + 哈希一致性
+pnpm verify:spec           # v0.4 lock：78 operationId / 10 shared async / 78 表 / 11 规则 + 哈希一致性
 pnpm implementation:check # 实现 surface 与 v0.4 machine authority 一致
 pnpm openapi:lint          # AC-002：Redocly lint openapi/mvp.yaml
 pnpm contracts:generate    # 从 openapi/mvp.yaml 重新生成 packages/contracts/src/generated/openapi.ts
@@ -87,8 +87,8 @@ pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证�
                            # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
-pnpm db:migrate            # 按序应用 0001–0031（幂等，第二次为 no-op）
-pnpm db:migrate:check      # 断言 76 张 app 表 + 必需索引与 append-only trigger
+pnpm db:migrate            # 按序应用 0001–0034（幂等，第二次为 no-op）
+pnpm db:migrate:check      # 断言 78 张 app 表 + 必需索引与 append-only trigger
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
 
@@ -104,7 +104,9 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 
 - JSON camelCase ↔ DB snake_case，repository 显式 mapping。成功 `{data, meta?}`；错误 `application/problem+json`（`type,title,status,code,detail,requestId,errors?`）。每响应带 `X-Request-Id`。
 - **原子 enqueue（AC-006）**：每个异步 POST 在同一 PostgreSQL 事务内校验 idempotency/硬门 → 插 AsyncRun + domain resource → 用 pg-boss 的 Drizzle adapter（`enqueueRunInTx`，`fromDrizzle(tx, sql)`）在**同一连接**入队 → 存 idempotency response → commit 后返 202。绝不先 commit 再入队或反之。
-- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。76 张 app 表不含任何 pg-boss 表。
+- **Analysis Refresh / DFS**：`createAnalysisRefreshRun` 冻结五步服务端计划；DataForSEO Search Landscape（DFS）从冻结 Site/market/language 与服务端 row cap 生成 ranked-keywords + competitors-domain 两个请求并原子写一个 Snapshot。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS scope、limit 或凭据。
+- **Growth Map generation read**：URL/Keyword/Competitor list/detail GET 可用 canonical `diagnosticRunId` 固定一个已发布 generation；只有 Keyword/Competitor detail GET 允许互斥的 `view=review` 读取当前 governance。Keyword/Competitor PATCH 拒绝全部 query。
+- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。78 张 app 表不含任何 pg-boss 表。
 - **active-run 唯一**：`async_runs_one_active_key_idx` partial unique index 保证每项目/activeKey 只有一个 queued/running；冲突 409 `RUN_ALREADY_ACTIVE`。
 
 ### 隔离与安全边界（AC-005）
@@ -135,7 +137,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 ## 核心原则（本仓库特有，优先于通用规则）
 
 - **规格是唯一权威，零开放实现决策**：状态/枚举/API/规则/表/路由/输出格式已冻结。不得扩大范围；某项客观无法实现时以 failing test + 具体阻塞事实回报，不替换架构。
-- **边界必须带版本**：v0.4 已允许 Content Shadow、execution state、approval、publication preview/rollback preview、receipt lineage 和 Measurement Window 的内部 canonical 写入，但当前 77 个 operation 仍没有 GitHub、WordPress、CMS、Vercel、Cloudflare 或客户生产站点 external-write command。GitHub PR / WordPress Draft 只产生 `delivery receipt`，绝不等于已发布；只有验证 merge/publish 完成且包含 live canonical URL 的独立 `change receipt` 才能锚定 attribution。preview、approval 或 Artifact status 不得渲染为已发布。
+- **边界必须带版本**：v0.4 已允许 Content Shadow、execution state、approval、publication preview/rollback preview、receipt lineage 和 Measurement Window 的内部 canonical 写入，但当前 78 个 operation 仍没有 GitHub、WordPress、CMS、Vercel、Cloudflare 或客户生产站点 external-write command。GitHub PR / WordPress Draft 只产生 `delivery receipt`，绝不等于已发布；只有验证 merge/publish 完成且包含 live canonical URL 的独立 `change receipt` 才能锚定 attribution。preview、approval 或 Artifact status 不得渲染为已发布。
 - **仍在 v0.4 范围外**：RBAC/成员/席位/客户 Portal、Billing/pricing/subscription、Ahrefs/Semrush API 深接、PDF/PPT/Word、公共 API/Webhook、单一“SEO 总分”或排名/收入保证、多 Workspace/硬删除、浏览器渲染 crawler、无证据的模型答案可见性监控，以及真正的 GitHub/WordPress publication-attempt external write。DataForSEO 继续受 feature flag、row cap、成本与证据诚实性约束。
 - **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check`，AC-048）。**注意它不是 CI 门**：脚本按 `docs/vendor/old-repo-baseline.json` 里的绝对路径读旧仓，GitHub runner 上没有该路径，加进 CI 会让 CI 永久红（已实测：路径缺失时 exit 1，fail-closed）。**因此这条红线只在本工作站上被执行**，换台机器改了旧仓没有任何自动检查会发现。
 - **诚实性硬约束**：unavailable 不是 0；不承诺结果/排名/收入；客户投影必须带 `limitation`；secret 不落库明文（Google token AES-256-GCM，OAuth state 存 hash + 加密 verifier）。
@@ -146,6 +148,6 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 证据与未关闭的外部门禁见 **`docs/PROGRESS.md`**（崩溃后从那里恢复上下文，勿凭记忆）。
 
 - **v0.3（historical）**：Product Profile、versioned Growth Audit、四入口基线、Keyword/Competitor Library 与 Content Shadow 初始链路的历史 authority。
-- **v0.4（active）**：完整四模块、Keyword/Competitor governance、Topic/Internal Link/Backlink/GEO 增长路径、Action execution timeline、durable approval、publication preview authority 与 immutable GSC/GA4/UTM/GEO Measurement Window。真正的 provider external write 仍需后续原子扩展。
+- **v0.4（active）**：完整四模块、server-owned Analysis Refresh 与 DataForSEO Search Landscape、published-generation Growth Map reads、Keyword/Competitor governance、Topic/Internal Link/Backlink/GEO 增长路径、Action execution timeline、durable approval、publication preview authority 与 immutable GSC/GA4/UTM/GEO Measurement Window。真正的 provider external write 仍需后续原子扩展。
 
 多 Agent 可并行 UI/fixture/adapter/rules/docs，但**数据库、OpenAPI、authority lock 和状态机只能由一个合同 owner 合并**。

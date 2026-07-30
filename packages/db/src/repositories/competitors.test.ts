@@ -240,6 +240,47 @@ describe("CompetitorsRepository", () => {
     );
   });
 
+  it("persists a SERP overlap only through the exact composite Observation pointer", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          occurrence_id: "00000000-0000-4000-8000-000000000032",
+          competitor_id: entity.id,
+        },
+      ],
+    });
+    const repo = new CompetitorsRepository(db as never);
+    const serp: CompetitorOriginInput = {
+      originKind: "serp_overlap",
+      domain: "example-competitor.com",
+      name: null,
+      snapshotId: "00000000-0000-4000-8000-000000000060",
+      observationId: "00000000-0000-4000-8000-000000000061",
+      sourcePointer: "/valueJson/competitorDomain",
+    };
+
+    await expect(repo.upsertOrigin(scope, serp)).resolves.toEqual({
+      occurrenceId: "00000000-0000-4000-8000-000000000032",
+      competitorId: entity.id,
+    });
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toContain(
+      "app.upsert_serp_overlap_competitor_origin",
+    );
+    expect(compiled.params).toEqual([
+      scope.workspaceId,
+      scope.projectId,
+      serp.domain,
+      serp.snapshotId,
+      serp.observationId,
+      "/valueJson/competitorDomain",
+    ]);
+    expect(compiled.params).not.toContain("keyword_gap_import");
+  });
+
   it("rejects noncanonical domains and incomplete or invented source lineage before SQL", async () => {
     const db = new FakeExecutor();
     const repo = new CompetitorsRepository(db as never);
@@ -262,6 +303,9 @@ describe("CompetitorsRepository", () => {
         originKind: "serp_overlap",
         domain: "example-competitor.com",
         name: null,
+        snapshotId: "00000000-0000-4000-8000-000000000060",
+        observationId: "00000000-0000-4000-8000-000000000061",
+        sourcePointer: "/valueJson/intersections",
       } as unknown as CompetitorOriginInput,
     ]) {
       await expect(repo.upsertOrigin(scope, input)).rejects.toThrow();
@@ -289,6 +333,38 @@ describe("CompetitorsRepository", () => {
     expect(predicate.sql).toContain('"project_id" = $2');
     expect(predicate.sql).toContain('"archived_at" is null');
     expect(predicate.params).toContain("candidate");
+  });
+
+  it("pages one bounded frozen competitor id set with the canonical timestamp cursor", async () => {
+    const db = new FakeExecutor();
+    const newer = {
+      ...entity,
+      id: "00000000-0000-4000-8000-000000000099",
+      created_at: "2026-07-23T08:00:00.000Z",
+    };
+    const older = {
+      ...entity,
+      id: "00000000-0000-4000-8000-000000000098",
+      created_at: "2026-07-22T08:00:00.000Z",
+    };
+    db.enqueue([newer, older]);
+    const repo = new CompetitorsRepository(db as never);
+
+    const page = await repo.listByIdsPage(scope, [older.id, newer.id], {
+      limit: 1,
+      cursor: null,
+    });
+
+    expect(page.rows).toEqual([newer]);
+    expect(page.nextCursor).toEqual(expect.any(String));
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"id" in');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toEqual(
+      expect.arrayContaining([scope.workspaceId, scope.projectId, older.id, newer.id]),
+    );
   });
 
   it("reads only approved diagnostic competitor facts with one sentinel", async () => {
@@ -361,6 +437,39 @@ describe("CompetitorsRepository", () => {
       ]),
     );
     expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
+  });
+
+  it("reads only exact frozen origin occurrence ids without widening current history", async () => {
+    const db = new FakeExecutor();
+    const firstOrigin = {
+      id: "00000000-0000-4000-8000-000000000060",
+      competitor_id: entity.id,
+    };
+    const secondOrigin = {
+      id: "00000000-0000-4000-8000-000000000061",
+      competitor_id: entity.id,
+    };
+    db.enqueue([firstOrigin, secondOrigin]);
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.listOriginsByIds(scope, [secondOrigin.id, firstOrigin.id]),
+    ).resolves.toEqual([firstOrigin, secondOrigin]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $');
+    expect(predicate.sql).toContain('"project_id" = $');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        secondOrigin.id,
+        firstOrigin.id,
+      ]),
+    );
   });
 
   it("reviews governance at the expected revision without writing any source column", async () => {
@@ -488,6 +597,15 @@ describe("CompetitorsRepository", () => {
         totalLimit: 2,
       }),
     ).rejects.toThrow(/limitPerEntity/i);
+    await expect(
+      repo.listByIdsPage(scope, [entity.id, entity.id], {
+        limit: 1,
+        cursor: null,
+      }),
+    ).rejects.toThrow(/unique|duplicate/i);
+    await expect(
+      repo.listOriginsByIds(scope, [entity.id, entity.id]),
+    ).rejects.toThrow(/unique|duplicate/i);
     await expect(
       repo.listDiagnosticEligible(scope, {
         limit: MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ + 1,

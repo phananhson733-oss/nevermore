@@ -145,6 +145,7 @@ describe("Growth Map Keyword rank-history read service", () => {
       scope,
       ids.project,
       ids.keyword,
+      null,
       exec,
     );
     expect(listRankObservations).toHaveBeenCalledWith(

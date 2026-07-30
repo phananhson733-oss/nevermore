@@ -60,6 +60,11 @@ export interface KeywordEntityListOptions {
   readonly market?: string | null;
 }
 
+export interface FrozenKeywordEntityListOptions {
+  readonly limit: number;
+  readonly cursor: string | null;
+}
+
 export interface DiagnosticKeywordEntityReadOptions {
   readonly limit: number;
 }
@@ -80,7 +85,12 @@ export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
 export const MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ = 5_001;
 /** Safety ceiling for one frozen keyword identity set (search + generative). */
 export const MAX_KEYWORD_ENTITY_BATCH = 500;
+/** Published Growth Map governance currently freezes at most 5,000 Keyword IDs. */
+export const MAX_FROZEN_KEYWORD_ENTITY_BATCH =
+  MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ - 1;
 const MARKET = /^[A-Z]{2}$/u;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 const entitySelection = {
   id: keywordEntities.id,
@@ -254,6 +264,87 @@ export class KeywordsRepository extends Repository {
       )
       .limit(1)) as KeywordEntityRow[];
     return rows[0] ?? null;
+  }
+
+  /**
+   * Preserve the existing timestamp+UUID customer cursor while constraining the
+   * candidate set to the exact frozen Keyword IDs from one published Growth Map
+   * generation. This avoids widening membership back to the mutable global
+   * library while keeping list pagination behavior stable.
+   */
+  async listByIdsPage(
+    scope: ProjectScope,
+    entityIds: readonly string[],
+    options: FrozenKeywordEntityListOptions,
+  ): Promise<KeywordEntityListPage> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_KEYWORD_ENTITY_PAGE_SIZE
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_KEYWORD_ENTITY_PAGE_SIZE}`,
+      );
+    }
+    const uniqueIds = [...new Set(entityIds)];
+    if (uniqueIds.length > MAX_FROZEN_KEYWORD_ENTITY_BATCH) {
+      throw new RangeError(
+        `entityIds must contain at most ${MAX_FROZEN_KEYWORD_ENTITY_BATCH} ids`,
+      );
+    }
+    for (const entityId of uniqueIds) {
+      if (!UUID.test(entityId)) {
+        throw new RangeError("entityIds must contain only UUIDs");
+      }
+    }
+    if (uniqueIds.length === 0) {
+      return { rows: [], nextCursor: null };
+    }
+
+    const decoded = options.cursor
+      ? decodeTimestampUuidCursor(options.cursor)
+      : null;
+    if (options.cursor && !decoded) return { rows: [], nextCursor: null };
+    const after = decoded
+      ? or(
+          lt(keywordEntities.created_at, decoded.timestamp),
+          and(
+            eq(keywordEntities.created_at, decoded.timestamp),
+            lt(keywordEntities.id, decoded.id),
+          ),
+        )
+      : undefined;
+
+    const rows = (await this.exec
+      .select(entitySelection)
+      .from(keywordEntities)
+      .innerJoin(
+        clientProjects,
+        and(
+          eq(clientProjects.id, keywordEntities.project_id),
+          eq(clientProjects.workspace_id, keywordEntities.workspace_id),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          activeProjectPredicate(scope),
+          inArray(keywordEntities.id, uniqueIds),
+          after,
+        ),
+      )
+      .orderBy(desc(keywordEntities.created_at), desc(keywordEntities.id))
+      .limit(options.limit + 1)) as KeywordEntityRow[];
+    const hasNext = rows.length > options.limit;
+    const page = hasNext ? rows.slice(0, options.limit) : rows;
+    const last = page.at(-1);
+    return {
+      rows: page,
+      nextCursor:
+        hasNext && last
+          ? encodeTimestampUuidCursor(last.created_at, last.id)
+          : null,
+    };
   }
 
   /**

@@ -102,7 +102,7 @@ test("customer surfaces render GenGrowth and the default first paint remains zh-
 
   await page.goto("/new-project");
   await expect(page.getByText("GenGrowth", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "新建项目" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "添加产品" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("SignalFrame");
 
   await page.goto(`/p/${E2E_PROJECT_ID}/overview`);

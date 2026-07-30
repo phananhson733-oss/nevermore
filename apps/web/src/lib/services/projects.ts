@@ -52,8 +52,11 @@ export interface CreateProjectResult {
   readonly replayed: boolean;
 }
 
-function locationFor(projectId: string): string {
-  return `/p/${projectId}/overview`;
+function locationFor(
+  projectId: string,
+  productProfileMode: boolean,
+): string {
+  return `/p/${projectId}/${productProfileMode ? "context" : "overview"}`;
 }
 
 function isProductProfileCreate(
@@ -104,7 +107,13 @@ export async function createProject(
   const idem = new IdempotencyRepository(db);
   const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
   if (existing) {
-    const replay = await replayOrConflict(db, scope, existing, requestHash);
+    const replay = await replayOrConflict(
+      db,
+      scope,
+      existing,
+      requestHash,
+      productProfileMode,
+    );
     if (replay) return replay;
   }
 
@@ -264,7 +273,13 @@ export async function createProject(
       // Another transaction won the key between the fast-path read and here.
       const now = await txIdem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
       const replay = now
-        ? await replayOrConflict(tx, scope, now, requestHash)
+        ? await replayOrConflict(
+            tx,
+            scope,
+            now,
+            requestHash,
+            productProfileMode,
+          )
         : null;
       if (replay) return replay;
       throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency key is being processed.");
@@ -374,7 +389,12 @@ export async function createProject(
       resourceId: project.id,
     });
 
-    return { status: 201, project: dto, location: locationFor(project.id), replayed: false };
+    return {
+      status: 201,
+      project: dto,
+      location: locationFor(project.id, productProfileMode),
+      replayed: false,
+    };
   });
 }
 
@@ -384,6 +404,7 @@ async function replayOrConflict(
   scope: WorkspaceScope,
   row: { request_hash: string; status: string; resource_id: string | null; response_body: unknown },
   requestHash: string,
+  productProfileMode: boolean,
 ): Promise<CreateProjectResult | null> {
   if (row.request_hash !== requestHash) {
     throw new ProblemError(
@@ -415,7 +436,7 @@ async function replayOrConflict(
     return {
       status: 201,
       project: await loadAggregate(exec, scope, project),
-      location: locationFor(project.id),
+      location: locationFor(project.id, productProfileMode),
       replayed: true,
     };
   }

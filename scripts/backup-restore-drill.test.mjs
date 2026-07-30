@@ -398,6 +398,8 @@ test("inventory covers the authoritative app tables and explicit object metadata
     "backlink_authority_snapshots",
     "backlink_facts",
     "backlink_page_metrics",
+    "analysis_refresh_runs",
+    "analysis_refresh_steps",
   ]) {
     assert.ok(APP_TABLES.includes(table), `missing restore inventory table ${table}`);
   }

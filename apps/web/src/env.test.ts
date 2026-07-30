@@ -48,23 +48,26 @@ describe("web production URL environment policy", () => {
     expect(production.parse({ ...BASE, DB_POOL_MAX: "2" }).DB_POOL_MAX).toBe(2);
   });
 
-  it("defaults DataForSEO off with a bounded collection size", () => {
+  it("defaults DataForSEO off with bounded ranked and competitor collection sizes", () => {
     const { DATAFORSEO_ENABLED: _enabled, ...withoutFlag } = BASE;
     const parsed = production.parse(withoutFlag);
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("false");
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
+    expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(100);
   });
 
-  it("accepts an explicit DataForSEO rollout and coerces its collection size", () => {
+  it("accepts an explicit DataForSEO rollout and coerces its collection sizes", () => {
     const parsed = production.parse({
       ...BASE,
       DATAFORSEO_ENABLED: "true",
       DATAFORSEO_MAX_KEYWORDS: "350",
+      DATAFORSEO_MAX_COMPETITORS: "125",
     });
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("true");
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(350);
+    expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(125);
   });
 
   it.each(["0", "1001", "1.5", "not-a-number"])(
@@ -73,6 +76,25 @@ describe("web production URL environment policy", () => {
       expect(
         production.safeParse({ ...BASE, DATAFORSEO_MAX_KEYWORDS }).success,
       ).toBe(false);
+    },
+  );
+
+  it.each(["0", "1001", "1.5", "not-a-number"])(
+    "rejects an unsafe DataForSEO competitor limit: %s",
+    (DATAFORSEO_MAX_COMPETITORS) => {
+      expect(
+        production.safeParse({ ...BASE, DATAFORSEO_MAX_COMPETITORS }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["1", "1000"])(
+    "accepts an inclusive DataForSEO competitor limit boundary: %s",
+    (DATAFORSEO_MAX_COMPETITORS) => {
+      expect(
+        production.parse({ ...BASE, DATAFORSEO_MAX_COMPETITORS })
+          .DATAFORSEO_MAX_COMPETITORS,
+      ).toBe(Number(DATAFORSEO_MAX_COMPETITORS));
     },
   );
 

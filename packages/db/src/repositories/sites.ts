@@ -126,4 +126,41 @@ export class SitesRepository extends Repository {
       .set({ market_codes: marketCodes })
       .where(and(projectPredicate(sites, scope), sql`${sites.is_primary}`));
   }
+
+  /**
+   * Atomically project one directly observed site language without overwriting
+   * any operator-provided or previously established language authority.
+   *
+   * The exact Site child, primary flag, and empty-array precondition are all in
+   * the same SQL predicate so a concurrent manual save always wins.
+   */
+  async projectPrimaryLanguageIfEmpty(
+    scope: ProjectScope,
+    siteId: string,
+    languageCode: string,
+  ): Promise<boolean> {
+    let canonical: string | undefined;
+    try {
+      canonical = Intl.getCanonicalLocales(languageCode)[0];
+    } catch {
+      canonical = undefined;
+    }
+    if (!canonical || canonical !== languageCode) {
+      throw new RangeError(
+        "Observed Site language must be a canonical BCP-47 tag",
+      );
+    }
+    const rows = await this.exec
+      .update(sites)
+      .set({ language_codes: [languageCode] })
+      .where(
+        and(
+          projectChildPredicate(sites, scope, eq(sites.id, siteId)),
+          sql`${sites.is_primary}`,
+          sql`cardinality(${sites.language_codes}) = 0`,
+        ),
+      )
+      .returning({ id: sites.id });
+    return rows.length === 1;
+  }
 }

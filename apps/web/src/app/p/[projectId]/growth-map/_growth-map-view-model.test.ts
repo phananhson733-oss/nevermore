@@ -866,6 +866,69 @@ describe("Growth Map view model", () => {
     });
   });
 
+  it("applies a relevant fold that arrives after the first 100 relation rows", () => {
+    const irrelevantFirstPage = Array.from(
+      { length: 100 },
+      (_, index): GrowthMapKeywordRelation => {
+        const current = keywordRelation();
+        const suffix = (index + 1).toString(16).padStart(12, "0");
+        const relationId = `88888888-8888-4888-8888-${suffix}`;
+        const candidateId = `99999999-9999-4999-8999-${suffix}`;
+        return {
+          ...current,
+          relationId,
+          candidate: {
+            ...current.candidate,
+            relationId,
+            candidateId,
+          },
+          decision: {
+            ...current.decision!,
+            decisionId: `aaaaaaaa-aaaa-4aaa-8aaa-${suffix}`,
+            relationId,
+            candidateId,
+            decisionKind: "keep_separate",
+            primaryKeywordId: null,
+            supportingKeywordId: null,
+          },
+          displayState: "kept_separate",
+          isEffectivelyFolded: false,
+          primaryKeywordId: null,
+          supportingKeywordId: null,
+        };
+      },
+    );
+    const projection = buildKeywordRelationPageProjection(
+      [
+        keywordItem(IDS.keywordA, "Customer onboarding"),
+        keywordItem(
+          IDS.keywordB,
+          "Customer onboarding automation",
+        ),
+      ],
+      [...irrelevantFirstPage, keywordRelation()],
+    );
+
+    expect(
+      projection.visibleItems.map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA]);
+    expect(projection.collapsedSupportingKeywordIds).toEqual([
+      IDS.keywordB,
+    ]);
+    expect(
+      projection.relationsByKeywordId.get(IDS.keywordA),
+    ).toHaveLength(101);
+    expect(
+      projection.visibleItems[0]?.supportingKeywords,
+    ).toEqual([
+      {
+        relationId: IDS.relation,
+        keywordId: IDS.keywordB,
+        displayKeyword: "Customer onboarding automation",
+      },
+    ]);
+  });
+
   it("restores a stale supporting Keyword instead of applying an obsolete fold", () => {
     const folded = keywordRelation();
     const stale: GrowthMapKeywordRelation = {
@@ -1267,7 +1330,18 @@ describe("Growth Map view model", () => {
       "utf8",
     );
 
-    expect(source).toContain("useGrowthMapKeywordRelations(projectId");
+    expect(source).toMatch(
+      /useCompleteGrowthMapKeywordRelations\(\s*projectId,/,
+    );
+    expect(source).toMatch(
+      /collectAllCursorItems(?:<[^>]+>)?\(/,
+    );
+    expect(source).toMatch(
+      /getGrowthMapKeywordRelations\(projectId,\s*\{\s*keywordIds:\s*normalizedKeywordIds,\s*cursor:\s*pageCursor,\s*limit:\s*100,/,
+    );
+    expect(source).not.toContain(
+      "useGrowthMapKeywordRelations(projectId",
+    );
     expect(source).toContain("buildKeywordRelationPageProjection(");
     expect(source).toContain(
       "useRefreshGrowthMapKeywordRelations(projectId)",
@@ -1728,6 +1802,123 @@ describe("Growth Map view model", () => {
     );
     expect(source).not.toMatch(
       /keywordDetailReadState\(\{[\s\S]{0,180}rankHistoryQuery/,
+    );
+  });
+
+  it("keeps published Keyword detail separate from the live review authority wiring", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "const detailQuery = useGrowthMapKeywordDetail(\n    projectId,\n    selectedKeywordId,\n    diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "function KeywordLibraryPane({\n  projectId,\n  locationSearch,\n  navigation,\n  diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "const listQuery = useGrowthMapKeywords(projectId, {\n    cursor,\n    limit: 50,\n    diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "const reviewDetailQuery = useGrowthMapKeywordReviewDetail(",
+    );
+    expect(source).toContain("projectId,");
+    expect(source).toContain("detail.keywordId,");
+    expect(source).toContain("open,");
+    expect(source).toContain("const reviewDetail = reviewDetailQuery.data?.data ?? null;");
+    expect(source).not.toContain("useGrowthMapKeywordReviewDetail(projectId, detail.keywordId, diagnosticRunId");
+    expect(source).toContain(
+      "buildKeywordGovernanceReviewCommand(\n      reviewDetail,",
+    );
+    expect(source).not.toContain(
+      "buildKeywordGovernanceReviewCommand(\n      detail,",
+    );
+  });
+
+  it("wires an accessible Competitor review dialog to live governance without mutating the published generation", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("function CompetitorReviewDialog({");
+    expect(source).toContain(
+      "const reviewDetailQuery = useGrowthMapCompetitorReviewDetail(",
+    );
+    expect(source).toMatch(
+      /useGrowthMapCompetitorReviewDetail\(\s*projectId,\s*detail\.competitorId,\s*open,/,
+    );
+    expect(source).not.toMatch(
+      /useGrowthMapCompetitorReviewDetail\([\s\S]{0,120}diagnosticRunId/,
+    );
+    expect(source).toContain(
+      "const mutation = useReviewGrowthMapCompetitor(",
+    );
+    expect(source).toContain('data-testid="competitor-review-open"');
+    expect(source).toContain('data-testid="competitor-review-form"');
+    expect(source).toContain(
+      'data-testid="competitor-review-analysis-scope"',
+    );
+    expect(source).toContain("<CompetitorReviewDialog");
+    expect(source).toMatch(
+      /const command: ReviewCompetitorRequest = \{\s*expectedRevision: reviewDetail\.revision,\s*name: name\.trim\(\) \|\| null,\s*reviewStatus,\s*relationship: reviewedRelationship,\s*analysisScope: \[\.\.\.reviewedAnalysisScope\],/,
+    );
+  });
+
+  it("clears inapplicable Competitor governance and blocks incomplete approval", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /if \(nextStatus !== "approved"\) \{\s*setRelationship\(""\);\s*setAnalysisScope\(\[\]\);/,
+    );
+    expect(source).toMatch(
+      /if \(reviewStatus === "approved"\) \{\s*if \(relationship === ""\) \{\s*setLocalError\(t\("validation\.relationshipRequired"\)\);\s*return;/,
+    );
+    expect(source).toMatch(
+      /if \(analysisScope\.length === 0\) \{\s*setLocalError\(t\("validation\.analysisScopeRequired"\)\);\s*return;/,
+    );
+    expect(source).toContain(
+      "COMPETITOR_REVIEW_ANALYSIS_SCOPES.filter((value) =>",
+    );
+    expect(source).toContain("selected.has(value)");
+  });
+
+  it("bootstraps one published generation and pins all customer-visible library reads", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "const generationQuery = useGrowthMapUrls(projectId, { limit: 1 });",
+    );
+    expect(source).toContain(
+      "const diagnosticRunId = generationQuery.data?.diagnosticRunId ?? null;",
+    );
+    expect(source).toContain(
+      "mode !== \"backlinks\" && generationQuery.isPending",
+    );
+    expect(source).toContain(
+      "diagnosticRunId={diagnosticRunId!}",
+    );
+    expect(source).toContain(
+      "const detailQuery = useGrowthMapUrlDetail(\n    projectId,\n    selectedSitePageId,\n    diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "const listQuery = useGrowthMapCompetitors(projectId, {\n    cursor,\n    limit: 50,\n    diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "const detailQuery = useGrowthMapCompetitorDetail(\n    projectId,\n    selectedCompetitorId,\n    diagnosticRunId,",
+    );
+    expect(source).toContain(
+      "const pinnedSitePagesQuery = useGrowthMapUrls(projectId, {\n    limit: 100,\n    diagnosticRunId,",
+    );
+    expect(source).not.toContain(
+      'locationParams.get("diagnosticRunId")',
     );
   });
 

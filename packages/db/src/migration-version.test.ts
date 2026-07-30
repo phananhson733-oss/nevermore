@@ -8,6 +8,59 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("tracks the exact DataForSEO Search Landscape and SERP overlap migration", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0034_dataforseo_search_landscape.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe(
+      "0034_dataforseo_search_landscape",
+    );
+    expect(migration).toMatch(
+      /NEW\.operation\s*=\s*'keyword_gap_import'[\s\S]*?NEW\.method_version\s*=\s*'dataforseo\.ranked_keywords\.v1'[\s\S]*?NEW\.operation\s*=\s*'search_landscape'[\s\S]*?NEW\.method_version\s*=\s*'dataforseo\.search_landscape\.v1'/iu,
+    );
+    expect(migration).toMatch(
+      /snapshot\.dataset_key\s+IN\s*\(\s*'csv\.keyword_gap\.v1'\s*,\s*'dataforseo\.ranked_keywords\.v1'\s*\)[\s\S]*?snapshot\.dataset_key\s*=\s*'dataforseo\.search_landscape\.v1'/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.metric_key\s+IN\s*\(\s*'csv\.keyword_gap\.v1'\s*,\s*'dataforseo\.competitor_domain\.v1'\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /competitor_origins_serp_identity_idx[\s\S]*?WHERE\s+origin_kind\s*=\s*'serp_overlap'/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0034_dataforseo_search_landscape'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps the durable Analysis Refresh orchestration immediately before Search Landscape", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0033_analysis_refresh_orchestration.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.analysis_refresh_runs/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.analysis_refresh_steps/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0033_analysis_refresh_orchestration'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
   it("adds a truthful competitor library with only canonical current origins", () => {
     const migration = readFileSync(
       fileURLToPath(

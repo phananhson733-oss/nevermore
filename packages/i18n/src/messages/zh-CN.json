@@ -141,57 +141,41 @@
     "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。"
   },
   "newProject": {
-    "title": "新建项目",
-    "subtitle": "创建一个客户项目，开始采集信号。",
+    "title": "添加产品",
+    "subtitle": "先填写产品 URL 和你已经确认的基础信息。创建后可手动完善产品画像与 ICP，再连接真实数据源。",
     "fields": {
-      "clientName": {
-        "label": "客户名称",
-        "placeholder": "Acme Inc.",
-        "help": "本项目服务的公司或品牌。"
+      "productUrl": {
+        "label": "产品 URL",
+        "placeholder": "https://www.example.com/product",
+        "help": "可以填写官网首页或最能代表产品的页面。系统会保留这个精确 URL 作为产品画像和后续 Crawl 的起点。"
       },
-      "projectName": {
-        "label": "项目名称",
-        "placeholder": "Acme 2026 SEO 项目",
-        "help": "用于识别本项目的内部名称。"
-      },
-      "siteUrl": {
-        "label": "站点网址",
-        "placeholder": "https://www.example.com",
-        "help": "我们将抓取并分析的主域名。"
-      },
-      "marketCodes": {
-        "label": "目标市场",
-        "placeholder": "US, GB, DE",
-        "help": "本项目所面向市场的 ISO 国家代码。"
-      },
-      "siteLanguageCodes": {
-        "label": "站点语言",
-        "placeholder": "en, de",
-        "help": "站点发布内容所用的语言代码。"
-      },
-      "defaultDeliveryLocale": {
-        "label": "交付语言",
-        "placeholder": "en",
-        "help": "面向客户的报告与交付物所用的语言。"
+      "businessHint": {
+        "label": "产品与客户背景（选填）",
+        "placeholder": "例如：面向北美中型 B2B SaaS 客户运营团队的 onboarding automation 产品。",
+        "help": "只填写你已经确定的事实即可；产品名称、商业模式、目标市场和 ICP 可在下一步手动补充或修改。"
       }
     },
-    "createButton": "创建项目",
-    "creating": "创建中…",
-    "createError": "项目创建失败，请重试。",
-    "siteUrlInvalid": "请输入有效的网址，需包含 https://。"
+    "nextStep": {
+      "title": "下一步：手动完善产品画像与 ICP",
+      "detail": "创建后会直接进入可编辑画像。无需先运行 AI 探索或审计；你可以保存客户声明的信息，然后前往数据连接配置 GSC、GA4，并由系统使用 Crawl 与 DataForSEO。"
+    },
+    "createButton": "创建产品并填写画像",
+    "creating": "正在创建产品画像…",
+    "createError": "产品创建失败，请检查输入后重试。",
+    "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。"
   },
   "productProfile": {
     "heroEyebrow": "产品画像 · ICP",
     "loading": {
-      "title": "正在加载 Product Profile",
-      "detail": "正在读取客户当前审核版本及其事实依据。"
+      "title": "正在加载产品画像",
+      "detail": "正在读取客户当前审核版本及其事实来源。"
     },
     "errors": {
-      "loadTitle": "无法加载 Product Profile"
+      "loadTitle": "无法加载产品画像"
     },
     "empty": {
-      "title": "还没有正式的 Product Profile",
-      "detail": "这个项目尚无可展示的 URL-first Product Profile 版本。系统不会用旧 ICP 或推测值代替。"
+      "title": "还没有可编辑的产品画像",
+      "detail": "这个旧项目没有 URL-first 产品画像草稿。请通过“添加产品”创建完整的产品与 ICP 填写流程；系统不会用旧数据或推测值代替。"
     },
     "actions": {
       "close": "关闭",
@@ -202,13 +186,16 @@
       "discard": "放弃更改",
       "apply": "应用审核",
       "retry": "重试",
-      "edit": "编辑 Product Profile",
+      "addProduct": "添加产品并填写画像",
+      "edit": "编辑产品画像与 ICP",
+      "connectData": "连接真实数据",
       "synthesize": "基于网站证据生成",
       "synthesizing": "生成中…",
       "runCrawl": "采集网站证据",
       "addCompetitor": "添加竞品",
       "reviewCompetitor": "审核 / 纠正",
-      "confirm": "确认 Product Profile",
+      "confirm": "确认产品画像",
+      "confirmAndConnect": "确认并进入数据连接",
       "confirmBlocked": "暂不能确认"
     },
     "states": {
@@ -243,10 +230,10 @@
       "coreFeatures": "核心功能",
       "primaryMarket": "主要海外市场",
       "secondaryMarkets": "次要市场",
-      "primaryIcp": "Primary ICP 候选",
+      "primaryIcp": "核心 ICP 候选",
       "targetCompanyOrAudience": "目标企业 / 目标用户",
-      "buyerRoles": "Buyer Roles",
-      "userRoles": "User Roles",
+      "buyerRoles": "采购决策角色",
+      "userRoles": "实际使用角色",
       "useCases": "使用场景",
       "triggers": "购买触发因素",
       "pains": "核心痛点",
@@ -258,29 +245,46 @@
     },
     "editor": {
       "eyebrow": "客户审核",
-      "title": "编辑 Product Profile 与 Primary ICP",
+      "title": "编辑产品画像与核心 ICP",
       "description": "这里只保存用户实际修改的字段，并以客户声明事实写入新的版本。",
       "sections": {
         "product": "产品身份与价值",
         "market": "目标市场",
-        "icp": "Primary ICP"
+        "icp": "核心 ICP"
       },
       "choose": "请选择…",
       "custom": "其他 / 自定义",
       "customProductType": "自定义产品类型",
       "otherBusinessModels": "其他商业模式",
+      "productTypes": {
+        "b2bSaas": "B2B SaaS",
+        "b2cSaas": "B2C SaaS",
+        "ecommerce": "电商",
+        "marketplace": "平台 / Marketplace",
+        "professionalServices": "专业服务",
+        "developerTool": "开发者工具",
+        "contentMedia": "内容 / 媒体"
+      },
+      "businessModels": {
+        "subscription": "订阅",
+        "transaction": "交易",
+        "freemium": "免费增值 / Freemium",
+        "marketplace": "平台抽佣 / Marketplace",
+        "services": "服务收费",
+        "advertising": "广告"
+      },
       "onePerLine": "每行一项。",
       "chooseIcp": "选择已有候选，或新建一个…",
-      "newIcp": "新建 Primary ICP",
-      "preserveOtherIcp": "其他 ICP 候选保持不变，只有当前选择会成为 Primary ICP。",
+      "newIcp": "新建核心 ICP",
+      "preserveOtherIcp": "其他 ICP 候选保持不变，只有当前选择会成为核心 ICP。",
       "unsaved": "有未保存的更改",
       "noChanges": "没有更改",
       "discardTitle": "放弃本次编辑？",
-      "discardDescription": "这些 Product Profile 更改尚未保存为新版本。",
-      "unsavedLeaveWarning": "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？"
+      "discardDescription": "这些产品画像更改尚未保存为新版本。",
+      "unsavedLeaveWarning": "产品画像与 ICP 的编辑尚未保存。要离开本页并丢弃这些更改吗？"
     },
     "feedback": {
-      "saved": "Product Profile 已保存",
+      "saved": "产品画像已保存",
       "savedDetail": "新的客户编辑草稿版本已成为当前版本。",
       "saveFailed": "Product Profile 保存失败",
       "synthesisQueued": "已进入证据分析队列",
@@ -297,9 +301,9 @@
       "competitorSaved": "竞品池已更新",
       "competitorSavedDetail": "客户审核结果已写入新的 Product Profile 版本。",
       "competitorFailed": "竞品审核未保存",
-      "confirmed": "Product Profile 已确认",
-      "confirmedDetail": "该审核版本现在是项目正式的 Product Profile 与 ICP 背景。",
-      "confirmFailed": "Product Profile 无法确认"
+      "confirmed": "产品画像已确认",
+      "confirmedDetail": "该审核版本现在是项目正式的产品画像与 ICP 背景。",
+      "confirmFailed": "产品画像无法确认"
     },
     "run": {
       "synthesisTitle": "正在基于冻结证据生成 Product Profile",
@@ -388,20 +392,20 @@
     },
     "confirmation": {
       "eyebrow": "客户决策",
-      "railLabel": "Product Profile 确认",
+      "railLabel": "产品画像确认",
       "title": "确认准备度",
       "detail": "确认与生成、Audit 相互独立；每项必需事实都要完整且可追溯。",
       "confirmedDetail": "此版本已由客户明确确认，可以作为后续工作的正式背景。",
-      "blocked": "请先在“编辑 Product Profile”中补齐未勾选项目。",
+      "blocked": "请先在“编辑产品画像与 ICP”中补齐未勾选项目。",
       "activeRunBlocked": "请等待当前证据分析完成，再编辑或确认这个版本。",
-      "dialogTitle": "确认这份 Product Profile？",
-      "dialogDetail": "当前草稿将成为后续 SEO / GEO 与技术分析使用的正式 Product Profile 和 Primary ICP。本操作不会启动 Audit。",
+      "dialogTitle": "确认这份产品画像？",
+      "dialogDetail": "当前草稿将成为后续 SEO / GEO 与技术分析使用的正式产品画像和核心 ICP。本操作不会启动审计；确认后会进入真实数据连接。",
       "items": {
         "identity": "产品身份",
         "business": "商业模式",
         "value": "价值与核心功能",
         "markets": "一个主要市场",
-        "primaryIcp": "完整的 Primary ICP",
+        "primaryIcp": "完整的核心 ICP",
         "competitors": "有效的竞品审核"
       }
     }
@@ -727,6 +731,25 @@
     "loadMoreHistory": "加载更多快照历史",
     "inProgress": "进行中",
     "progress": "进度：{current}/{total}",
+    "analysisRefresh": {
+      "start": "更新分析数据",
+      "submitting": "正在启动更新…",
+      "running": "正在更新分析数据…",
+      "statusTitle": "分析数据更新",
+      "inProgress": "系统正在按固定计划执行 Crawl、已连接数据源与 Growth Audit。",
+      "progress": "计划进度：{current}/{total}。只有真实写入后的供应商结果才会显示在页面中。",
+      "adopted": "已有另一项更新正在运行；本页面已接管该任务并跟踪其真实状态。",
+      "statusError": "更新可能仍在运行，但当前无法读取任务状态。",
+      "retryStatus": "重试状态查询",
+      "staleRunCleared": "链接中的分析任务不存在或不属于当前产品，已清除该任务指针。你现在可以重新启动更新；若已有任务正在运行，系统会自动接管它。",
+      "submitError": "无法启动分析数据更新；页面不会据此假定任何供应商已成功。",
+      "terminal": {
+        "completed": "更新计划已结束。下方数据源卡片正在根据真实写入的供应商结果与被跳过的可选步骤刷新。",
+        "partial": "更新仅部分完成。可用结果已经保留，但仍有步骤未完成；请查看数据源卡片与错误详情。",
+        "failed": "本次更新未完成。此前已写入的证据仍会保留；页面不会把失败的数据源显示为成功。",
+        "cancelled": "本次更新已取消。此前已写入的证据仍会保留。"
+      }
+    },
     "runStatusUnavailable": "无法刷新本次任务的状态。数据源已重新刷新；开始其他任务前，请重试状态检查。",
     "collectNow": "立即采集",
     "retryCollection": "重新采集",
@@ -1687,6 +1710,59 @@
       "viewRecordDetails": "查看记录详情",
       "competitorId": "竞品 ID（Competitor）",
       "revision": "记录版本",
+      "review": {
+        "open": "审核竞品",
+        "saved": "审核已保存，待下次分析刷新",
+        "eyebrow": "Competitor Library 审核",
+        "title": "审核 {competitor}",
+        "description": "确认候选竞品的名称、关系与分析用途。这里保存的是当前审核状态；客户交付视图会在下次分析刷新后按同一诊断版本更新。",
+        "close": "关闭竞品审核",
+        "loading": "正在读取最新审核状态…",
+        "loadError": "无法读取这个竞品的最新审核状态。",
+        "retry": "重新读取",
+        "identityTitle": "确认竞品身份",
+        "identityDescription": "规范域名固定为 {domain}；名称可补充，也可留空。",
+        "governanceTitle": "决定是否纳入分析",
+        "governanceDescription": "只有“已确认”竞品需要选择竞争关系和至少一个分析范围；候选与已排除状态不会保留这些范围。",
+        "field": {
+          "name": "竞品名称",
+          "nameHelp": "选填；留空时界面使用规范域名。",
+          "status": "审核状态",
+          "relationship": "竞品关系",
+          "analysisScope": "分析范围（至少选择一项）"
+        },
+        "status": {
+          "candidate": "保留为候选",
+          "approved": "确认纳入分析",
+          "excluded": "排除"
+        },
+        "relationship": {
+          "direct": "直接竞品",
+          "indirect": "间接竞品",
+          "status_quo": "维持现状 / 不采取行动",
+          "benchmark": "标杆",
+          "publisher": "内容发布方"
+        },
+        "analysisScope": {
+          "positioning": "市场定位",
+          "product_capability": "产品能力",
+          "keyword_gap": "关键词差距",
+          "content": "内容",
+          "serp_visibility": "SERP 可见性"
+        },
+        "selectRelationship": "请选择竞品关系",
+        "nonApprovedBoundary": "候选或已排除记录只保留审核状态；竞品关系和分析范围将清空。",
+        "validation": {
+          "relationshipRequired": "确认纳入分析时，必须选择竞品关系。",
+          "analysisScopeRequired": "确认纳入分析时，至少选择一个分析范围。"
+        },
+        "revisionConflict": "审核状态已被其他操作更新。已重新读取最新版本，请核对后再次保存。",
+        "saveError": "竞品审核保存失败，请重试。",
+        "revision": "当前审核版本 {revision}",
+        "cancel": "取消",
+        "saving": "正在保存…",
+        "save": "保存审核"
+      },
       "monitor": {
         "eyebrow": "月度动态",
         "title": "竞品内容与排名变化",

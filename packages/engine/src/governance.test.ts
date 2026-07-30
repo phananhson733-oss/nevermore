@@ -263,6 +263,85 @@ describe("parseGovernanceProjectionV1", () => {
     );
   });
 
+  it("accepts exact canonical lineage for serp_overlap competitor origins", () => {
+    const input = projection();
+    const competitors = input["competitors"] as Array<{
+      originRefs: Record<string, unknown>[];
+    }>;
+    competitors[0]!.originRefs[0]!["originKind"] = "serp_overlap";
+
+    const parsed = parseGovernanceProjectionV1(input);
+
+    expect(parsed.competitors[1]?.originRefs).toEqual([
+      {
+        occurrenceId: "00000000-0000-4000-8000-000000000601",
+        originKind: "serp_overlap",
+        snapshotId: "00000000-0000-4000-8000-000000000401",
+        observationId: "00000000-0000-4000-8000-000000000501",
+      },
+    ]);
+  });
+
+  it("fails closed when serp_overlap lineage is missing or partial", () => {
+    const missingLineage = projection();
+    const missingCompetitors = missingLineage["competitors"] as Array<{
+      originRefs: Record<string, unknown>[];
+    }>;
+    missingCompetitors[0]!.originRefs[0] = {
+      ...missingCompetitors[0]!.originRefs[0],
+      originKind: "serp_overlap",
+      snapshotId: null,
+      observationId: null,
+    };
+    expect(() => parseGovernanceProjectionV1(missingLineage)).toThrow(
+      /serp_overlap.*requires snapshotId and observationId/i,
+    );
+
+    const partialLineage = projection();
+    const partialCompetitors = partialLineage["competitors"] as Array<{
+      originRefs: Record<string, unknown>[];
+    }>;
+    partialCompetitors[0]!.originRefs[0] = {
+      ...partialCompetitors[0]!.originRefs[0],
+      originKind: "serp_overlap",
+      observationId: null,
+    };
+    expect(() => parseGovernanceProjectionV1(partialLineage)).toThrow(
+      /snapshotId.*observationId.*together/i,
+    );
+  });
+
+  it.each(["product_profile", "manual"] as const)(
+    "requires %s competitor origins to omit canonical observation lineage",
+    (originKind) => {
+      const lineageFree = projection();
+      const lineageFreeCompetitors = lineageFree["competitors"] as Array<{
+        originRefs: Record<string, unknown>[];
+      }>;
+      lineageFreeCompetitors[1]!.originRefs[0] = {
+        ...lineageFreeCompetitors[1]!.originRefs[0],
+        originKind,
+        snapshotId: null,
+        observationId: null,
+      };
+      expect(() => parseGovernanceProjectionV1(lineageFree)).not.toThrow();
+
+      const falseLineage = projection();
+      const falseLineageCompetitors = falseLineage["competitors"] as Array<{
+        originRefs: Record<string, unknown>[];
+      }>;
+      falseLineageCompetitors[1]!.originRefs[0] = {
+        ...falseLineageCompetitors[1]!.originRefs[0],
+        originKind,
+        snapshotId: "00000000-0000-4000-8000-000000000401",
+        observationId: "00000000-0000-4000-8000-000000000501",
+      };
+      expect(() => parseGovernanceProjectionV1(falseLineage)).toThrow(
+        new RegExp(`${originKind} origin cannot claim`, "i"),
+      );
+    },
+  );
+
   it("requires canonical UUID identities and a positive Topic Model revision", () => {
     const malformedEntity = projection();
     const malformedClusters = malformedEntity["keywordClusters"] as Array<{

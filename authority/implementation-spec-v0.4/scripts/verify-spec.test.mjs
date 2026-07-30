@@ -72,12 +72,12 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
       head: result.migrationHead,
     },
     {
-      operations: 77,
-      async: 9,
-      tables: 76,
+      operations: 78,
+      async: 10,
+      tables: 78,
       rules: 11,
-      migrations: 32,
-      head: "0032_keyword_initial_governance",
+      migrations: 34,
+      head: "0034_dataforseo_search_landscape",
     },
   );
 });
@@ -107,7 +107,7 @@ test("rejects hand-edited generated authority SQL", () => {
 
 test("generated schema is the exact ordered migration chain", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
-  assert.equal(migrations.length, 32);
+  assert.equal(migrations.length, 34);
   assert.equal(
     readAuthority("schema.sql"),
     renderAuthoritySchema(migrations),
@@ -125,7 +125,7 @@ test("generated schema is the exact ordered migration chain", () => {
 test("catalog recognizes CREATE TABLE with and without IF NOT EXISTS", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
   const tables = migrationTableInventory(migrations);
-  assert.equal(tables.length, 76);
+  assert.equal(tables.length, 78);
   for (const table of [
     "keyword_relation_identities",
     "action_execution_state_events",
@@ -202,6 +202,107 @@ test("freezes the dedicated measurement 202 outside shared AsyncAccepted", () =>
         /'202':\s*(?:\{\s*)?\$ref:\s*'#\/components\/responses\/AsyncAccepted'\s*(?:\}\s*)?/gs,
       ) ?? []
     ).length,
-    9,
+    10,
+  );
+});
+
+test("rejects widening public collection to server-owned DFS", () => {
+  const current = readAuthority("openapi.yaml");
+  const widened = current.replace(
+    "provider: { type: string, enum: [crawl, gsc, ga4] }",
+    "provider: { type: string, enum: [crawl, gsc, ga4, dataforseo] }",
+  );
+  assert.notEqual(widened, current);
+  assert.throws(
+    () =>
+      verifySources({
+        authorityOpenApi: widened,
+        implementationOpenApi: widened,
+      }),
+    /public collection provider allowlist/,
+  );
+});
+
+test("rejects removing the confirmed Product/ICP gate from the Sources read contract", () => {
+  const current = readAuthority("openapi.yaml");
+  const operation = "operationId: listProjectSources";
+  const start = current.indexOf(operation);
+  const next = current.indexOf("operationId:", start + operation.length);
+  const block = current.slice(start, next);
+  const weakened = block
+    .replace(
+      "        Active projects require a confirmed Product Profile and ICP before this\n",
+      "        Active projects may read source metadata before Product/ICP confirmation.\n",
+    )
+    .replace(
+      "        '422': { $ref: '#/components/responses/ValidationError' }\n",
+      "",
+    );
+  assert.notEqual(weakened, block);
+  const mutated = `${current.slice(0, start)}${weakened}${current.slice(next)}`;
+
+  assert.throws(
+    () =>
+      verifySources({
+        authorityOpenApi: mutated,
+        implementationOpenApi: mutated,
+      }),
+    /Sources read must gate active projects on confirmed Product\/ICP/,
+  );
+});
+
+test("rejects removing a published-generation pin from a Growth Map read", () => {
+  const current = readAuthority("openapi.yaml");
+  const operation = "operationId: listProjectAuditKeywords";
+  const start = current.indexOf(operation);
+  const next = current.indexOf("operationId:", start + operation.length);
+  const block = current.slice(start, next);
+  const narrowed = block.replace(
+    "        - $ref: '#/components/parameters/DiagnosticRunIdPin'\n",
+    "",
+  );
+  assert.notEqual(narrowed, block);
+  const mutated = `${current.slice(0, start)}${narrowed}${current.slice(next)}`;
+  assert.throws(
+    () =>
+      verifySources({
+        authorityOpenApi: mutated,
+        implementationOpenApi: mutated,
+      }),
+    /listProjectAuditKeywords parameter contract/,
+  );
+});
+
+test("rejects mixing live review view with a published generation", () => {
+  const current = readAuthority("openapi.yaml");
+  const weakened = current.replace(
+    "x-signalframe-query-refinement: reviewViewAndDiagnosticRunIdAreMutuallyExclusive",
+    "x-signalframe-query-refinement: mayMixReviewAndDiagnosticRun",
+  );
+  assert.notEqual(weakened, current);
+  assert.throws(
+    () =>
+      verifySources({
+        authorityOpenApi: weakened,
+        implementationOpenApi: weakened,
+      }),
+    /must keep review view mutually exclusive/,
+  );
+});
+
+test("rejects a Keyword PATCH that does not reject all query parameters", () => {
+  const current = readAuthority("openapi.yaml");
+  const weakened = current.replace(
+    "x-signalframe-query-contract: rejectAllQueryParameters",
+    "x-signalframe-query-contract: allowGenerationPin",
+  );
+  assert.notEqual(weakened, current);
+  assert.throws(
+    () =>
+      verifySources({
+        authorityOpenApi: weakened,
+        implementationOpenApi: weakened,
+      }),
+    /must reject every query parameter/,
   );
 });

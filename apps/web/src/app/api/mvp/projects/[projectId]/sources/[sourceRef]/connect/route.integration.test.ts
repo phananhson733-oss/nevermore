@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { oauthIntents, workspaces } from "@sf/db/schema";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
+import { seedConfirmedSourceProfile } from "@/lib/services/__tests__/confirmed-source-profile-fixture";
 
 const operator = vi.hoisted(() => ({
   userId: "00000000-0000-4000-8000-000000000001",
@@ -134,6 +135,69 @@ describe("POST OAuth connect returnPath isolation", () => {
     });
     await expect(countOwnerIntents()).resolves.toBe(before);
   });
+
+  it("rejects a valid OAuth authorize request until Product Profile and ICP are confirmed", async () => {
+    const before = await countOwnerIntents();
+    const response = await authorizeOwner("profile-required");
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "CONTEXT_INCOMPLETE",
+      status: 422,
+      detail: "Confirm the Product Profile and ICP before connecting GSC or GA4.",
+    });
+    await expect(countOwnerIntents()).resolves.toBe(before);
+  });
+
+  it("allows OAuth authorize after the Product Profile and ICP are confirmed", async () => {
+    await seedConfirmedSourceProfile(
+      handle,
+      {
+        workspaceId: operator.workspaceId,
+        projectId: ownerProjectId,
+      },
+      operator.userId,
+    );
+    const before = await countOwnerIntents();
+    const response = await authorizeOwner("profile-confirmed");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        phase: "authorization",
+        authorizationUrl: expect.stringContaining(
+          "https://accounts.google.com/o/oauth2/v2/auth",
+        ),
+      },
+    });
+    await expect(countOwnerIntents()).resolves.toBe(before + 1);
+  });
+
+  async function authorizeOwner(requestId: string): Promise<Response> {
+    return POST(
+      new NextRequest(
+        `http://localhost:3000/api/mvp/projects/${ownerProjectId}/sources/gsc/connect`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "http://localhost:3000",
+            "x-request-id": requestId,
+          },
+          body: JSON.stringify({
+            phase: "authorize",
+            returnPath: `/p/${ownerProjectId}/sources`,
+          }),
+        },
+      ),
+      {
+        params: Promise.resolve({
+          projectId: ownerProjectId,
+          sourceRef: "gsc",
+        }),
+      },
+    );
+  }
 
   async function countOwnerIntents(): Promise<number> {
     const rows = await handle.db

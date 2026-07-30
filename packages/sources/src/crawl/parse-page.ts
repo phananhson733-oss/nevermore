@@ -17,6 +17,10 @@ import type {
   CrawlLinkProjection,
 } from "../observations.ts";
 import { boundChars, CRAWL_PROJECTION_LIMITS } from "./types.ts";
+import {
+  parseHtmlLanguageDeclaration,
+  type HtmlLanguageDeclaration,
+} from "./site-language.ts";
 
 /** Code-point-safe projection bound; see `boundChars` for why it must be. */
 function truncate(value: string, maxChars: number): string {
@@ -35,6 +39,8 @@ export interface CrawlFetchTarget {
 
 /** The content-derived fields of `CrawlPageProjection` (HTTP fields added by the engine). */
 export interface ParsedPage {
+  /** Ephemeral `<html lang>` evidence; never copied into crawl.page.v1. */
+  readonly htmlLanguage: HtmlLanguageDeclaration | null;
   readonly title: string | null;
   readonly metaDescription: string | null;
   readonly canonicalTarget: string | null;
@@ -408,8 +414,10 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
   const bodyText = extractNormalisedBody(html);
   const wordCount = bodyText ? bodyText.split(/\s+/).filter(Boolean).length : 0;
   const outlinks = collectInternalOutlinks(html, pageUrl, pageOrigin);
+  const htmlTag = firstTag(html, /<html\b[^>]*>/i);
 
   return {
+    htmlLanguage: parseHtmlLanguageDeclaration(attr(htmlTag, "lang")),
     title: tagText(html, "title", CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: description,
     canonicalTarget,

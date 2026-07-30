@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProjectAuditKeyword: vi.fn(),
+  getProjectAuditKeywordReviewDetail: vi.fn(),
   reviewProjectAuditKeyword: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/services/growth-map-keywords", () => ({
   getProjectAuditKeyword: mocks.getProjectAuditKeyword,
+  getProjectAuditKeywordReviewDetail: mocks.getProjectAuditKeywordReviewDetail,
   reviewProjectAuditKeyword: mocks.reviewProjectAuditKeyword,
 }));
 
@@ -23,12 +25,40 @@ const { GET, PATCH } = await import("./route");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
 const keywordId = "00000000-0000-4000-8000-000000000004";
+const diagnosticRunId = "00000000-0000-4000-8000-000000000006";
 
 function invoke(selectedKeywordId = keywordId) {
   return GET(
     new NextRequest(
       `http://localhost/api/mvp/projects/${projectId}/audit/keywords/${selectedKeywordId}`,
       { headers: { "X-Request-Id": "request-growth-map-keyword" } },
+    ),
+    {
+      params: Promise.resolve({ projectId, keywordId: selectedKeywordId }),
+    },
+  );
+}
+
+function invokeReview(selectedKeywordId = keywordId) {
+  return GET(
+    new NextRequest(
+      `http://localhost/api/mvp/projects/${projectId}/audit/keywords/${selectedKeywordId}?view=review`,
+      { headers: { "X-Request-Id": "request-growth-map-keyword-review" } },
+    ),
+    {
+      params: Promise.resolve({ projectId, keywordId: selectedKeywordId }),
+    },
+  );
+}
+
+function invokePinned(
+  selectedKeywordId = keywordId,
+  query = `?diagnosticRunId=${diagnosticRunId}`,
+) {
+  return GET(
+    new NextRequest(
+      `http://localhost/api/mvp/projects/${projectId}/audit/keywords/${selectedKeywordId}${query}`,
+      { headers: { "X-Request-Id": "request-growth-map-keyword-pinned" } },
     ),
     {
       params: Promise.resolve({ projectId, keywordId: selectedKeywordId }),
@@ -76,6 +106,10 @@ beforeEach(() => {
     projectId,
     data: { keywordId },
   });
+  mocks.getProjectAuditKeywordReviewDetail.mockResolvedValue({
+    projectId,
+    data: { keywordId, revision: 3 },
+  });
   mocks.reviewProjectAuditKeyword.mockResolvedValue({
     projectId,
     data: { keywordId, mapping: { revision: 3 } },
@@ -91,6 +125,7 @@ describe("GET selected Growth Map Keyword", () => {
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
       keywordId,
+      null,
     );
     await expect(response.json()).resolves.toEqual({
       data: { projectId, data: { keywordId } },
@@ -105,6 +140,69 @@ describe("GET selected Growth Map Keyword", () => {
     expect(body).toMatchObject({ code: "NOT_FOUND", status: 404 });
     expect(JSON.stringify(body)).not.toContain("customer-private-keyword");
     expect(mocks.getProjectAuditKeyword).not.toHaveBeenCalled();
+  });
+
+  it("reads live review authority only when view=review is requested", async () => {
+    const response = await invokeReview();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getProjectAuditKeywordReviewDetail).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      keywordId,
+    );
+    expect(mocks.getProjectAuditKeyword).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      data: { projectId, data: { keywordId, revision: 3 } },
+    });
+  });
+
+  it("passes a strict pinned diagnosticRunId only to the published detail read", async () => {
+    const response = await invokePinned();
+
+    expect(response.status).toBe(200);
+    expect(mocks.getProjectAuditKeyword).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      keywordId,
+      diagnosticRunId,
+    );
+    expect(mocks.getProjectAuditKeywordReviewDetail).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown keyword-detail query parameters instead of silently widening the read", async () => {
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/mvp/projects/${projectId}/audit/keywords/${keywordId}?view=published`,
+        { headers: { "X-Request-Id": "request-growth-map-keyword-invalid" } },
+      ),
+      {
+        params: Promise.resolve({ projectId, keywordId }),
+      },
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(mocks.getProjectAuditKeyword).not.toHaveBeenCalled();
+    expect(mocks.getProjectAuditKeywordReviewDetail).not.toHaveBeenCalled();
+  });
+
+  it("rejects diagnosticRunId when review view is requested", async () => {
+    const response = await invokePinned(
+      keywordId,
+      `?view=review&diagnosticRunId=${diagnosticRunId}`,
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
+    expect(mocks.getProjectAuditKeyword).not.toHaveBeenCalled();
+    expect(mocks.getProjectAuditKeywordReviewDetail).not.toHaveBeenCalled();
   });
 });
 
@@ -152,6 +250,32 @@ describe("PATCH selected Growth Map Keyword review", () => {
     await expect(response.json()).resolves.toMatchObject({
       code: "NOT_FOUND",
       status: 404,
+    });
+    expect(mocks.reviewProjectAuditKeyword).not.toHaveBeenCalled();
+  });
+
+  it("rejects any PATCH query string instead of silently changing review semantics", async () => {
+    const response = await PATCH(
+      new NextRequest(
+        `http://localhost/api/mvp/projects/${projectId}/audit/keywords/${keywordId}?diagnosticRunId=${diagnosticRunId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+            "X-Request-Id": "request-review-growth-map-keyword-invalid-query",
+          },
+          body: JSON.stringify(review),
+        },
+      ),
+      {
+        params: Promise.resolve({ projectId, keywordId }),
+      },
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
     });
     expect(mocks.reviewProjectAuditKeyword).not.toHaveBeenCalled();
   });

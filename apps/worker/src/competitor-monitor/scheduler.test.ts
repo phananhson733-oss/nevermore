@@ -43,6 +43,7 @@ function context(enabled = true) {
       login: enabled ? "provider-login" : null,
       password: enabled ? "provider-password" : null,
       maxKeywords: 200,
+      maxCompetitors: 100,
     },
     db: {
       transaction: vi.fn(

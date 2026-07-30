@@ -87,7 +87,11 @@ function row(overrides: Record<string, unknown> = {}) {
     snapshot_id: IDS.snapshot,
     snapshot_provider: "dataforseo",
     snapshot_dataset_key: "dataforseo.ranked_keywords.v1",
+    snapshot_schema_version: "dataforseo.ranked_keywords.v1",
     snapshot_method_version: "dataforseo.ranked_keywords.v1",
+    collection_provider: "dataforseo",
+    collection_operation: "keyword_gap_import",
+    collection_method_version: "dataforseo.ranked_keywords.v1",
     snapshot_availability: "available",
     observation_id: IDS.observation,
     observation_provider: "dataforseo",
@@ -162,6 +166,9 @@ describe("MeasurementTargetKeywordRanksRepository", () => {
     expect(query.sql).toContain(
       "snapshot.method_version as snapshot_method_version",
     );
+    expect(query.sql).toContain(
+      "collection.operation as collection_operation",
+    );
     expect(query.sql).not.toContain(
       "occurrence.source_kind = 'gsc_top_query'",
     );
@@ -175,6 +182,77 @@ describe("MeasurementTargetKeywordRanksRepository", () => {
     expect(query.params).toContain(scope.projectId);
     expect(query.params).toContain(IDS.page);
     expect(query.params).toContain(input.canonicalUrl);
+  });
+
+  it("accepts exact composite search-landscape ranked-keyword lineage", async () => {
+    const db = fixtureExecutor();
+    db.enqueue([
+      row({
+        snapshot_dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        snapshot_method_version: "dataforseo.search_landscape.v1",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      }),
+    ]);
+
+    await expect(
+      new MeasurementTargetKeywordRanksRepository(
+        db.executor,
+      ).readForMeasuredPage(scope, input),
+    ).resolves.toMatchObject({
+      keywords: [
+        {
+          observations: [
+            {
+              snapshotId: IDS.snapshot,
+              observationId: IDS.observation,
+              value: 12,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it.each([
+    {
+      drift: "legacy dataset with composite operation",
+      overrides: {
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+    {
+      drift: "composite dataset with legacy operation",
+      overrides: {
+        snapshot_dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        snapshot_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+    {
+      drift: "composite Snapshot with a legacy method",
+      overrides: {
+        snapshot_dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+  ])("fails closed on $drift", async ({ overrides }) => {
+    const db = fixtureExecutor();
+    db.enqueue([row(overrides)]);
+
+    await expect(
+      new MeasurementTargetKeywordRanksRepository(
+        db.executor,
+      ).readForMeasuredPage(scope, input),
+    ).rejects.toEqual(
+      new MeasurementTargetKeywordRankIntegrityError(
+        "RANK_LINEAGE_INVALID",
+      ),
+    );
   });
 
   it("returns unavailable-ready empty authority without inventing a Keyword or zero when no model exists", async () => {
@@ -202,7 +280,11 @@ describe("MeasurementTargetKeywordRanksRepository", () => {
         snapshot_id: null,
         snapshot_provider: null,
         snapshot_dataset_key: null,
+        snapshot_schema_version: null,
         snapshot_method_version: null,
+        collection_provider: null,
+        collection_operation: null,
+        collection_method_version: null,
         snapshot_availability: null,
         observation_id: null,
         observation_provider: null,

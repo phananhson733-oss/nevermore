@@ -17,12 +17,20 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { createDbHandle, type DbHandle } from "../packages/db/src/index.ts";
+import {
+  CompetitorsRepository,
+  createDbHandle,
+  KeywordGovernanceRepository,
+  KeywordsRepository,
+  TopicModelsRepository,
+  type DbHandle,
+} from "../packages/db/src/index.ts";
 import type { WorkerShutdownResult } from "../apps/worker/src/shutdown-coordinator.ts";
 import {
   KEYWORD_GAP_MAPPING,
   completeContextBody,
   keywordGapCsv,
+  publishDiagnosticThroughAnalysisRefresh,
   seedOfflineProviderSnapshots,
   verticalDefinition,
   type VerticalDefinition,
@@ -136,30 +144,41 @@ async function createProjectInBrowser(
   // hydrated client island. Wait for its script requests to settle before
   // editing so an early native form submission cannot reload the empty form.
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
-  await page.getByLabel("Client name").fill(definition.clientName);
-  await page.getByLabel("Project name").fill(definition.projectName);
-  await page.getByLabel("Site URL").fill(definition.siteUrl);
-  await page.getByLabel("Target markets").fill("US");
-  await page.getByLabel("Site languages").fill("en");
-  await page.getByLabel("Delivery language").fill("en");
+  await expect(page.getByRole("heading", { name: "Add a product" })).toBeVisible();
+  await page.getByLabel("Product URL").fill(definition.siteUrl);
+  await page
+    .getByLabel("Product and customer context (optional)")
+    .fill(definition.oneLineDescription);
 
   const createResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
-  await page.getByRole("button", { name: "Create project" }).click();
+  await page
+    .getByRole("button", { name: "Create product and fill profile" })
+    .click();
   const created = await createResponse;
   expect(
     created.status(),
     `create project failed: ${await created.text()}`,
   ).toBe(201);
-  await page.waitForURL(/\/p\/[0-9a-f-]+\/overview$/);
+  expect(created.request().postDataJSON()).toEqual({
+    mode: "product_profile",
+    productUrl: definition.siteUrl,
+    businessHint: definition.oneLineDescription,
+  });
+  await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
   const match = new URL(page.url()).pathname.match(
-    /^\/p\/([0-9a-f-]+)\/overview$/,
+    /^\/p\/([0-9a-f-]+)\/context$/,
   );
   if (!match?.[1]) throw new Error("created project id was missing from URL");
+  await expect(
+    page.getByRole("button", { name: "Edit Product Profile" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Connect live data" }),
+  ).toHaveCount(0);
   return match[1];
 }
 
@@ -168,9 +187,20 @@ async function completeContext(
   projectId: string,
   definition: VerticalDefinition,
 ): Promise<void> {
+  const current = await responseJson<
+    DataEnvelope<{ readonly version: number }>
+  >(
+    await request.get(`/api/mvp/projects/${projectId}/context`),
+    "read current context version",
+  );
   const response = await request.patch(
     `/api/mvp/projects/${projectId}/context`,
-    { data: completeContextBody(definition) },
+    {
+      data: {
+        ...completeContextBody(definition),
+        baseVersion: current.data.version,
+      },
+    },
   );
   await responseJson<DataEnvelope<unknown>>(response, "complete context");
 }
@@ -283,34 +313,192 @@ async function importCsvThroughRealWorker(
   await waitForRun(request, accepted.data.statusUrl, ["completed"]);
 }
 
-async function runDiagnosisThroughRealApi(
-  request: APIRequestContext,
+async function approveImportedGrowthGovernance(
+  db: DbHandle,
   projectId: string,
-  snapshotIds: readonly string[],
 ): Promise<void> {
+  const authority = await db.pool.query<{
+    workspace_id: string;
+    actor_id: string;
+  }>(
+    `SELECT
+       project.workspace_id,
+       operator.user_id AS actor_id
+     FROM app.client_projects AS project
+     INNER JOIN app.operator_profiles AS operator
+       ON operator.workspace_id = project.workspace_id
+     WHERE project.id = $1
+     ORDER BY operator.created_at, operator.user_id
+     LIMIT 1`,
+    [projectId],
+  );
+  const canonicalAuthority = authority.rows[0];
+  if (!canonicalAuthority) {
+    throw new Error(
+      "Growth Map fixture could not resolve its workspace-scoped review actor",
+    );
+  }
+  const scope = {
+    workspaceId: canonicalAuthority.workspace_id,
+    projectId,
+  };
+
+  const keywords = await new KeywordsRepository(db.db).listByProject(scope, {
+    limit: 20,
+    cursor: null,
+  });
+  if (keywords.rows.length !== 10 || keywords.nextCursor !== null) {
+    throw new Error(
+      "Growth Map fixture requires exactly ten imported Keyword candidates",
+    );
+  }
+
+  const topics = new TopicModelsRepository(db.db);
+  const draft = await topics.beginDraftFromLatestConfirmed(
+    scope,
+    canonicalAuthority.actor_id,
+    {
+      expectedLatestConfirmedRevision: 0,
+      reason: "Create the governed Topic for the Growth Map fixture.",
+    },
+  );
+  const edited = await topics.patchDraft(
+    scope,
+    canonicalAuthority.actor_id,
+    {
+      topicModelRevision: draft.topicModelRevision,
+      expectedEditRevision: draft.editRevision,
+      reason: "Add the imported Keyword cluster before publication.",
+      intents: [
+        {
+          kind: "create",
+          parentTopicNodeId: null,
+          label: "Revenue operations workflow",
+          description:
+            "Reviewed Keyword demand for the real Growth Map browser chain.",
+          intentEnvelope: ["Commercial"],
+        },
+      ],
+    },
+  );
+  const confirmed = await topics.confirmDraft(
+    scope,
+    canonicalAuthority.actor_id,
+    {
+      topicModelRevision: edited.topicModelRevision,
+      expectedEditRevision: edited.editRevision,
+      reason: "Confirm the Topic before freezing the Growth Audit generation.",
+    },
+  );
+  if (confirmed.rootTopicNodeId === null) {
+    throw new Error("Growth Map fixture did not produce a confirmed Topic root");
+  }
+
+  const governance = new KeywordGovernanceRepository(db.db);
+  for (const keyword of keywords.rows) {
+    await governance.reviewKeyword(
+      scope,
+      keyword.id,
+      canonicalAuthority.actor_id,
+      {
+        expectedGovernanceRevision: keyword.mapping_revision,
+        status: "approved",
+        intent: "commercial",
+        buyerStage: "consideration",
+        topicNodeId: confirmed.rootTopicNodeId,
+        topicModelRevision: confirmed.topicModelRevision,
+        mappingDecision: "new_asset",
+        mappedSitePageId: null,
+        reason:
+          "Approve the imported Keyword before freezing this browser fixture.",
+      },
+    );
+  }
+
+  const competitors = new CompetitorsRepository(db.db);
+  const competitorPage = await competitors.listByProject(scope, {
+    limit: 20,
+    cursor: null,
+  });
+  if (
+    competitorPage.rows.length !== 1 ||
+    competitorPage.nextCursor !== null
+  ) {
+    throw new Error(
+      "Growth Map fixture requires exactly one imported Competitor candidate",
+    );
+  }
+  const competitor = competitorPage.rows[0]!;
+  const reviewed = await competitors.review(scope, competitor.id, {
+    expectedRevision: competitor.revision,
+    name: competitor.name,
+    reviewStatus: "approved",
+    relationship: "direct",
+    analysisScope: ["keyword_gap", "serp_visibility"],
+  });
+  if (!reviewed || reviewed.review_status !== "approved") {
+    throw new Error(
+      "Growth Map fixture could not approve its imported Competitor",
+    );
+  }
+}
+
+async function runGrowthAuditThroughRealApi(
+  request: APIRequestContext,
+  db: DbHandle,
+  projectId: string,
+): Promise<string> {
+  const inputs = await db.pool.query<{
+    site_id: string;
+    icp_profile_id: string;
+  }>(
+    `SELECT
+       site.id AS site_id,
+       project.confirmed_icp_profile_id AS icp_profile_id
+     FROM app.client_projects AS project
+     INNER JOIN app.sites AS site
+       ON site.workspace_id = project.workspace_id
+      AND site.project_id = project.id
+      AND site.is_primary
+     WHERE project.id = $1
+       AND project.confirmed_icp_profile_id IS NOT NULL
+     LIMIT 1`,
+    [projectId],
+  );
+  const canonicalInputs = inputs.rows[0];
+  if (!canonicalInputs) {
+    throw new Error(
+      "confirmed Product Profile and primary Site were unavailable for Growth Audit",
+    );
+  }
+
   const response = await request.post(
-    `/api/mvp/projects/${projectId}/diagnostic-runs`,
+    `/api/mvp/projects/${projectId}/audit-runs`,
     {
       headers: {
         "Idempotency-Key": randomUUID(),
         cookie: "sf_ui_locale=en",
       },
       data: {
-        snapshotIds,
+        siteId: canonicalInputs.site_id,
+        icpProfileId: canonicalInputs.icp_profile_id,
+        scope: { kind: "site" },
         outputLocale: "en",
+        capabilityContractVersion: "growth-audit.0.3.0",
       },
     },
   );
   expect(
     response.status(),
-    `diagnosis enqueue failed: ${await response.text()}`,
+    `Growth Audit enqueue failed: ${await response.text()}`,
   ).toBe(202);
   const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
     response,
-    "diagnosis enqueue",
+    "Growth Audit enqueue",
   );
   expect(accepted.data.run.status).toBe("queued");
   await waitForRun(request, accepted.data.statusUrl, ["completed"]);
+  return accepted.data.run.id;
 }
 
 function objectModeButton(page: Page, label: string): Locator {
@@ -865,6 +1053,7 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     projectId = await createProjectInBrowser(page, definition);
     await completeContext(request, projectId, definition);
     await importCsvThroughRealWorker(request, projectId, definition);
+    await approveImportedGrowthGovernance(db, projectId);
     const seededProviderSnapshotIds = await seedOfflineProviderSnapshots(
       db,
       projectId,
@@ -875,10 +1064,15 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       projectId,
       seededProviderSnapshotIds,
     );
-    await runDiagnosisThroughRealApi(
+    const diagnosticRunId = await runGrowthAuditThroughRealApi(
       request,
+      db,
       projectId,
-      diagnosticSnapshots.map((snapshot) => snapshot.id),
+    );
+    await publishDiagnosticThroughAnalysisRefresh(
+      db,
+      projectId,
+      diagnosticRunId,
     );
 
     const portfolio = await readPortfolio(request, projectId);

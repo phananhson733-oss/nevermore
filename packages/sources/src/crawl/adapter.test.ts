@@ -5,6 +5,7 @@ import {
   DEFAULT_CRAWL_USER_AGENT,
 } from "./adapter.ts";
 import { CRAWL_BUDGET, type CrawlFetcher } from "./types.ts";
+import type { CrawlSiteLanguageSummary } from "./site-language.ts";
 
 const ORIGIN = "https://adapter.example";
 const CTX: CollectionContext = {
@@ -31,6 +32,7 @@ async function drain(
 describe("createCrawlAdapter", () => {
   it("uses the injected offline fetcher and maps a budget-cut graph to canonical observations", async () => {
     const calls: string[] = [];
+    let siteLanguageSummary: CrawlSiteLanguageSummary | null = null;
     const routes = new Map<string, () => Response>([
       [
         `${ORIGIN}/robots.txt`,
@@ -52,7 +54,7 @@ describe("createCrawlAdapter", () => {
         `${ORIGIN}/`,
         () =>
           new Response(
-            `<html><head><title>Adapter fixture</title></head><body><h1>Home</h1><a href="/about">About</a></body></html>`,
+            `<html lang="en-us"><head><title>Adapter fixture</title></head><body><h1>Home</h1><a href="/about">About</a></body></html>`,
             { headers: { "content-type": "text/html" } },
           ),
       ],
@@ -73,6 +75,9 @@ describe("createCrawlAdapter", () => {
           reason: null,
         }),
         budget: FAST_BUDGET,
+        onSiteLanguageSummary(summary) {
+          siteLanguageSummary = summary;
+        },
       },
     });
 
@@ -108,6 +113,14 @@ describe("createCrawlAdapter", () => {
       stopReason: "max_urls",
     });
     expect(result.limitation.trim()).not.toBe("");
+    expect(siteLanguageSummary).toMatchObject({
+      schemaVersion: "crawl.site-language-summary.v1",
+      status: "resolved",
+      languageTag: "en-US",
+      pagesAnalyzed: 1,
+    });
+    expect(result.raw).not.toHaveProperty("siteLanguage");
+    expect(result.raw.pages[0]?.projection).not.toHaveProperty("htmlLanguage");
 
     const observations = await drain(
       adapter.normalize(result.raw, {

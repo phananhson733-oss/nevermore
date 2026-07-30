@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { canonicalUtcTimestamptz } from "../instant.ts";
 import {
   clientProjects,
+  collectionRuns,
   dataSnapshots,
   keywordEntities,
   keywordEntitySources,
@@ -77,6 +78,11 @@ interface ObservationQueryRow extends Record<string, unknown> {
   readonly provider_data_as_of: string | null;
   readonly snapshot_provider: string;
   readonly dataset_key: string;
+  readonly snapshot_schema_version: string;
+  readonly snapshot_method_version: string;
+  readonly collection_provider: string;
+  readonly collection_operation: string;
+  readonly collection_method_version: string;
   readonly snapshot_availability: string;
   readonly provider: string;
   readonly metric_key: string;
@@ -164,6 +170,34 @@ function boundedLimitation(value: string): string {
   return trimmed;
 }
 
+function exactDataForSeoRankedLineage(
+  row: ObservationQueryRow,
+): boolean {
+  const legacy =
+    row.dataset_key === "dataforseo.ranked_keywords.v1" &&
+    row.snapshot_schema_version ===
+      "dataforseo.ranked_keywords.v1" &&
+    row.snapshot_method_version ===
+      "dataforseo.ranked_keywords.v1" &&
+    row.collection_operation === "keyword_gap_import" &&
+    row.collection_method_version ===
+      "dataforseo.ranked_keywords.v1";
+  const composite =
+    row.dataset_key === "dataforseo.search_landscape.v1" &&
+    row.snapshot_schema_version ===
+      "dataforseo.search_landscape.v1" &&
+    row.snapshot_method_version ===
+      "dataforseo.search_landscape.v1" &&
+    row.collection_operation === "search_landscape" &&
+    row.collection_method_version ===
+      "dataforseo.search_landscape.v1";
+  return (
+    row.snapshot_provider === "dataforseo" &&
+    row.collection_provider === "dataforseo" &&
+    (legacy || composite)
+  );
+}
+
 function checkedInstant(
   value: string,
   code:
@@ -221,9 +255,8 @@ function parseObservation(
   if (row.source_kind === "dataforseo_ranked") {
     if (
       row.source_pointer !== "/valueJson/keyword" ||
-      row.snapshot_provider !== "dataforseo" ||
       row.provider !== "dataforseo" ||
-      row.dataset_key !== "dataforseo.ranked_keywords.v1" ||
+      !exactDataForSeoRankedLineage(row) ||
       row.metric_key !== "csv.keyword_gap.v1" ||
       row.grade !== "B" ||
       providerDataAsOf !== null ||
@@ -352,6 +385,11 @@ export class KeywordRankHistoryRepository extends Repository {
         ${keywordOccurrences.provider_data_as_of}::text as provider_data_as_of,
         ${dataSnapshots.provider} as snapshot_provider,
         ${dataSnapshots.dataset_key} as dataset_key,
+        ${dataSnapshots.schema_version} as snapshot_schema_version,
+        ${dataSnapshots.method_version} as snapshot_method_version,
+        ${collectionRuns.provider} as collection_provider,
+        ${collectionRuns.operation} as collection_operation,
+        ${collectionRuns.method_version} as collection_method_version,
         ${dataSnapshots.availability} as snapshot_availability,
         ${normalizedObservations.provider} as provider,
         ${normalizedObservations.metric_key} as metric_key,
@@ -378,6 +416,10 @@ export class KeywordRankHistoryRepository extends Repository {
        and ${dataSnapshots.id} = ${normalizedObservations.snapshot_id}
        and ${dataSnapshots.workspace_id} = ${keywordOccurrences.workspace_id}
        and ${dataSnapshots.project_id} = ${keywordOccurrences.project_id}
+      inner join ${collectionRuns}
+        on ${collectionRuns.id} = ${dataSnapshots.collection_run_id}
+       and ${collectionRuns.workspace_id} = ${keywordOccurrences.workspace_id}
+       and ${collectionRuns.project_id} = ${keywordOccurrences.project_id}
       inner join ${clientProjects}
         on ${clientProjects.id} = ${keywordEntities.project_id}
        and ${clientProjects.workspace_id} = ${keywordEntities.workspace_id}

@@ -258,6 +258,129 @@ describe("freezeDiagnosticGovernance", () => {
     );
   });
 
+  it("freezes exact canonical lineage for serp_overlap competitor origins", async () => {
+    mockLibraryReads({
+      origins: new Map([
+        [
+          ids.competitor,
+          [
+            origin({
+              origin_kind: "serp_overlap",
+              import_preview_id: null,
+            }),
+          ],
+        ],
+      ]),
+    });
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(projection.competitors[0]?.originRefs).toEqual([
+      {
+        occurrenceId: ids.competitorOrigin,
+        originKind: "serp_overlap",
+        snapshotId: ids.competitorSnapshot,
+        observationId: ids.competitorObservation,
+      },
+    ]);
+  });
+
+  it("fails closed when serp_overlap lineage is missing or partial", async () => {
+    mockLibraryReads({
+      origins: new Map([
+        [
+          ids.competitor,
+          [
+            origin({
+              origin_kind: "serp_overlap",
+              data_snapshot_id: null,
+              normalized_observation_id: null,
+              import_preview_id: null,
+            }),
+          ],
+        ],
+      ]),
+    });
+    await expect(
+      freezeDiagnosticGovernance({} as never, scope),
+    ).rejects.toThrow(/competitor origin provenance is inconsistent/iu);
+
+    vi.restoreAllMocks();
+    mockLibraryReads({
+      origins: new Map([
+        [
+          ids.competitor,
+          [
+            origin({
+              origin_kind: "serp_overlap",
+              normalized_observation_id: null,
+              import_preview_id: null,
+            }),
+          ],
+        ],
+      ]),
+    });
+    await expect(
+      freezeDiagnosticGovernance({} as never, scope),
+    ).rejects.toThrow(/incomplete snapshot\/observation lineage/iu);
+  });
+
+  it.each(["product_profile", "manual"] as const)(
+    "requires %s competitor origins to omit canonical observation lineage",
+    async (originKind) => {
+      mockLibraryReads({
+        origins: new Map([
+          [
+            ids.competitor,
+            [
+              origin({
+                origin_kind: originKind,
+                data_snapshot_id: null,
+                normalized_observation_id: null,
+                import_preview_id: null,
+                source_pointer: null,
+              }),
+            ],
+          ],
+        ]),
+      });
+      await expect(
+        freezeDiagnosticGovernance({} as never, scope),
+      ).resolves.toMatchObject({
+        competitors: [
+          {
+            originRefs: [
+              {
+                originKind,
+                snapshotId: null,
+                observationId: null,
+              },
+            ],
+          },
+        ],
+      });
+
+      vi.restoreAllMocks();
+      mockLibraryReads({
+        origins: new Map([
+          [
+            ids.competitor,
+            [
+              origin({
+                origin_kind: originKind,
+                import_preview_id: null,
+                source_pointer: null,
+              }),
+            ],
+          ],
+        ]),
+      });
+      await expect(
+        freezeDiagnosticGovernance({} as never, scope),
+      ).rejects.toThrow(/competitor origin provenance is inconsistent/iu);
+    },
+  );
+
   it("canonicalizes repository order so equivalent facts hash identically", async () => {
     const keywordA = keyword();
     const keywordB = keyword({

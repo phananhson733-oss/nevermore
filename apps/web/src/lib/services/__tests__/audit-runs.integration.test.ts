@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
@@ -18,6 +18,7 @@ import {
   CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
+  ImportPreviewsRepository,
   SourceConnectionsRepository,
   type ProjectScope,
 } from "@sf/db";
@@ -31,7 +32,12 @@ import {
   workspaces,
 } from "@sf/db/schema";
 import { GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION } from "@sf/contracts";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+} from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createGrowthAuditRun } from "@/lib/services/audit-runs";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
@@ -54,6 +60,39 @@ interface AuditFixture {
   readonly siteId: string;
   readonly confirmedProfileId: string;
 }
+
+type AuditSnapshotProvider = "gsc" | "ga4" | "csv" | "dataforseo";
+
+const AUDIT_PROVIDER_CONFIG = {
+  gsc: {
+    operation: "search_analytics",
+    datasetKey: "gsc.page_query_daily.v1",
+    schemaVersion: "0.2.0",
+    methodVersion: "gsc.page_query_daily.v1",
+    connectionType: "oauth",
+  },
+  ga4: {
+    operation: "organic_landing",
+    datasetKey: "ga4.organic_landing_daily.v1",
+    schemaVersion: "0.2.0",
+    methodVersion: "ga4.organic_landing_daily.v1",
+    connectionType: "oauth",
+  },
+  csv: {
+    operation: "keyword_gap_import",
+    datasetKey: "csv.keyword_gap.v1",
+    schemaVersion: "0.2.0",
+    methodVersion: "csv.keyword_gap.v1",
+    connectionType: null,
+  },
+  dataforseo: {
+    operation: "keyword_gap_import",
+    datasetKey: DATAFORSEO_DATASET_KEY,
+    schemaVersion: DATAFORSEO_METHOD_VERSION,
+    methodVersion: DATAFORSEO_METHOD_VERSION,
+    connectionType: "api_key_stub",
+  },
+} as const;
 
 async function createAuditFixture(
   handle: DbHandle,
@@ -142,6 +181,108 @@ async function createAuditFixture(
   });
 
   return { scope, siteId, confirmedProfileId: icp!.id };
+}
+
+async function insertProviderSnapshot(
+  handle: DbHandle,
+  fixture: AuditFixture,
+  provider: AuditSnapshotProvider,
+  values: {
+    readonly capturedAt: string;
+    readonly availability: "available" | "partial" | "unavailable";
+    readonly runStatus?: "completed" | "partial" | "failed";
+    readonly methodVersion?: string;
+  },
+) {
+  const config = AUDIT_PROVIDER_CONFIG[provider];
+  let sourceConnectionId: string | null = null;
+  let importPreviewId: string | null = null;
+
+  if (provider === "csv") {
+    const preview = await new ImportPreviewsRepository(handle.db).insert({
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      siteId: fixture.siteId,
+      createdBy: actor,
+      tokenHash: randomBytes(32),
+      templateId: "keyword_gap_v1",
+      rawObjectKey: `raw/${randomUUID()}.csv`,
+      fileChecksum: contentHash({ provider, preview: randomUUID() }),
+      rowCount: 1,
+      detectedColumns: ["keyword"],
+      suggestedMapping: { keyword: "keyword" },
+      previewRows: [{ keyword: "growth audit" }],
+      validationErrors: [],
+      validationWarnings: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    importPreviewId = preview.id;
+  } else {
+    const sources = new SourceConnectionsRepository(handle.db);
+    const existing = await sources.findConnectedByProvider(
+      fixture.scope,
+      provider,
+    );
+    const source =
+      existing ??
+      (await sources.insertConnection({
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+        siteId: fixture.siteId,
+        provider,
+        connectionType: config.connectionType!,
+        state: "connected",
+        externalRef: `${provider}:${fixture.scope.projectId}`,
+        limitation: `${provider} integration fixture.`,
+        connectedAt: true,
+        createdBy: actor,
+      }));
+    sourceConnectionId = source.id;
+  }
+
+  const runStatus = values.runStatus ?? "completed";
+  const runId = randomUUID();
+  await handle.db.insert(asyncRuns).values({
+    id: runId,
+    workspace_id: fixture.scope.workspaceId,
+    project_id: fixture.scope.projectId,
+    kind: "collection",
+    status: runStatus,
+    initiated_by: actor,
+    started_at: values.capturedAt,
+    completed_at: values.capturedAt,
+  });
+  const methodVersion = values.methodVersion ?? config.methodVersion;
+  await new CollectionRunsRepository(handle.db).insertPlaceholder({
+    runId,
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    siteId: fixture.siteId,
+    sourceConnectionId,
+    provider,
+    operation: config.operation,
+    methodVersion,
+    parametersHash: contentHash({ provider, runId }),
+    ...(importPreviewId === null ? {} : { importPreviewId }),
+  });
+  return new DataSnapshotsRepository(handle.db).insert({
+    workspaceId: fixture.scope.workspaceId,
+    projectId: fixture.scope.projectId,
+    siteId: fixture.siteId,
+    collectionRunId: runId,
+    sourceConnectionId,
+    provider,
+    datasetKey: config.datasetKey,
+    schemaVersion: config.schemaVersion,
+    methodVersion,
+    capturedAt: values.capturedAt,
+    sourceWindow: { start: "2026-07-01", end: "2026-07-28" },
+    availability: values.availability,
+    limitation: `${provider} ${values.availability} integration fixture.`,
+    rawObjectKey: null,
+    rowCount: values.availability === "unavailable" ? 0 : 1,
+    checksum: contentHash({ provider, runId, availability: values.availability }),
+  });
 }
 
 describeDb("createGrowthAuditRun canonical projection", () => {
@@ -246,5 +387,138 @@ describeDb("createGrowthAuditRun canonical projection", () => {
       ),
     ).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE", status: 422 });
     expect(queueFixture.send).not.toHaveBeenCalled();
+  });
+
+  it("freezes the latest completed compatible usable canonical snapshot for every supported provider", async () => {
+    queueFixture.send.mockClear();
+    const fixture = await createAuditFixture(handle, workspaceId, randomUUID());
+
+    const gscEligible = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "gsc",
+      {
+        capturedAt: "2026-07-24T00:00:00.000Z",
+        availability: "available",
+      },
+    );
+    const gscUnavailable = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "gsc",
+      {
+        capturedAt: "2026-07-25T00:00:00.000Z",
+        availability: "unavailable",
+      },
+    );
+    const gscIncompatible = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "gsc",
+      {
+        capturedAt: "2026-07-26T00:00:00.000Z",
+        availability: "available",
+        methodVersion: "gsc.page_query_daily.v0",
+      },
+    );
+    const ga4Eligible = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "ga4",
+      {
+        capturedAt: "2026-07-24T00:00:00.000Z",
+        availability: "available",
+      },
+    );
+    const ga4FailedRun = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "ga4",
+      {
+        capturedAt: "2026-07-26T00:00:00.000Z",
+        availability: "available",
+        runStatus: "failed",
+      },
+    );
+    const ga4MismatchedTerminal = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "ga4",
+      {
+        capturedAt: "2026-07-27T00:00:00.000Z",
+        availability: "available",
+        runStatus: "partial",
+      },
+    );
+    const csvEligible = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "csv",
+      {
+        capturedAt: "2026-07-24T00:00:00.000Z",
+        availability: "partial",
+        runStatus: "partial",
+      },
+    );
+    const dataForSeoEligible = await insertProviderSnapshot(
+      handle,
+      fixture,
+      "dataforseo",
+      {
+        capturedAt: "2026-07-24T00:00:00.000Z",
+        availability: "available",
+      },
+    );
+
+    const accepted = await createGrowthAuditRun(
+      { workspaceId },
+      fixture.scope.projectId,
+      actor,
+      randomUUID(),
+      {
+        siteId: fixture.siteId,
+        icpProfileId: fixture.confirmedProfileId,
+        scope: { kind: "site" },
+        outputLocale: "en",
+        capabilityContractVersion:
+          GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+      },
+    );
+
+    const diagnosticRow = await handle.db
+      .select({ inputManifest: diagnosticRuns.input_manifest })
+      .from(diagnosticRuns)
+      .where(eq(diagnosticRuns.id, accepted.run.id));
+    const frozenSnapshots = (
+      diagnosticRow[0]!.inputManifest["snapshots"] as readonly {
+        readonly snapshotId: string;
+        readonly provider: string;
+      }[]
+    );
+    const frozenByProvider = new Map(
+      frozenSnapshots.map((snapshot) => [
+        snapshot.provider,
+        snapshot.snapshotId,
+      ]),
+    );
+
+    expect(frozenByProvider).toEqual(
+      new Map([
+        ["crawl", expect.any(String)],
+        ["gsc", gscEligible.id],
+        ["ga4", ga4Eligible.id],
+        ["csv", csvEligible.id],
+        ["dataforseo", dataForSeoEligible.id],
+      ]),
+    );
+    expect(frozenSnapshots).toHaveLength(5);
+    expect([...frozenByProvider.values()]).not.toEqual(
+      expect.arrayContaining([
+        gscUnavailable.id,
+        gscIncompatible.id,
+        ga4FailedRun.id,
+        ga4MismatchedTerminal.id,
+      ]),
+    );
   });
 });

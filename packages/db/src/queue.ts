@@ -27,7 +27,8 @@ export type QueueName =
   | "export.bundle"
   | "content-shadow"
   | "publication"
-  | "measurement";
+  | "measurement"
+  | "refresh.analysis";
 
 interface QueueConfig {
   /** Job execution timeout (spec §13.1). */
@@ -117,6 +118,12 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
   measurement: {
     expireInSeconds: 600,
     retryLimit: 3,
+    retryBackoff: true,
+    heartbeatSeconds: 60,
+  },
+  "refresh.analysis": {
+    expireInSeconds: 15 * 60,
+    retryLimit: 2,
     retryBackoff: true,
     heartbeatSeconds: 60,
   },
@@ -225,6 +232,40 @@ export async function enqueueRunInTx(
   // no corresponding queue job.
   if (jobId === null) {
     throw new Error("pg-boss rejected the explicit run job id");
+  }
+  return jobId;
+}
+
+/**
+ * Re-schedule one continuation delivery for an existing Analysis Refresh parent
+ * after a child run settles. The payload keeps the canonical parent runId, but
+ * pg-boss must mint a fresh job id: the initial enqueue already consumed
+ * `job.id = runId`, so reusing that id would be rejected as a duplicate.
+ */
+export async function enqueueAnalysisRefreshContinuationInTx(
+  boss: PgBoss,
+  tx: DbTx,
+  payload: RunJobPayload,
+  options: EnqueueRunOptions = {},
+): Promise<string> {
+  if (
+    options.startAfter !== undefined &&
+    (!(options.startAfter instanceof Date) ||
+      !Number.isFinite(options.startAfter.getTime()))
+  ) {
+    throw new TypeError("startAfter must be a valid absolute Date");
+  }
+  const jobId = await boss.send("refresh.analysis", payload, {
+    ...(options.startAfter ? { startAfter: options.startAfter } : {}),
+    db: fromDrizzle(tx, sql),
+  });
+  if (jobId === null) {
+    throw new Error("pg-boss rejected the Analysis Refresh continuation");
+  }
+  if (jobId === payload.runId) {
+    throw new Error(
+      "pg-boss reused the canonical run id for an Analysis Refresh continuation",
+    );
   }
   return jobId;
 }

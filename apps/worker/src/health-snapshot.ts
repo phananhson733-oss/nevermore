@@ -13,6 +13,7 @@ export const WORKER_HEALTH_QUERY_TIMEOUT_MS = 5_000;
 export const WORKER_HEALTH_STOP_TIMEOUT_MS = 5_000;
 
 const RUN_KINDS = [
+  "analysis_refresh",
   "collection",
   "product_profile_synthesis",
   "diagnostic",

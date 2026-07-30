@@ -4,6 +4,7 @@ import {
   AnalysisInvocationsRepository,
   AsyncRunsRepository,
   AuditRunsRepository,
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -25,6 +26,7 @@ import {
   type DataSnapshotRow,
   type DiagnosticRunRow,
   type CanonicalValue,
+  type CollectionRunRow,
   type EvidenceInsert,
   type FindingObservationInsert,
   type FindingTargetInsert,
@@ -62,6 +64,9 @@ import {
   CRAWL_PROJECTION_LIMITS,
   DATAFORSEO_DATASET_KEY,
   DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
   METRIC_CRAWL_SITEMAP,
@@ -370,27 +375,44 @@ interface FrozenSnapshotSelection {
 }
 
 interface ObservationSourceRegistration {
+  readonly provider: string;
   readonly datasetKey: string;
+  readonly schemaVersion: string;
   readonly methodVersion: string;
   readonly origin: string;
   readonly grade: string;
   readonly subjectTypeByMetric: ReadonlyMap<string, string>;
 }
 
+function observationSourceContractKey(
+  provider: string,
+  datasetKey: string,
+  methodVersion: string,
+): string {
+  return `${provider}\u0000${datasetKey}\u0000${methodVersion}`;
+}
+
 /**
  * The only provider/dataset/method/metric tuples the current source adapters can
- * produce. CSV and DataForSEO intentionally share the logical keyword-gap
- * Observation metric, while their immutable Snapshot dataset/method identities
- * and provider provenance remain distinct.
+ * produce. DataForSEO has two exact historical contracts: the legacy ranked
+ * keyword Snapshot and the composite search-landscape Snapshot. Both expose the
+ * same ranked-keyword metric, while only the composite contract may also carry
+ * factual competitor-domain rows.
  */
 const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
   string,
   ObservationSourceRegistration
 > = new Map([
   [
-    "crawl",
+    observationSourceContractKey(
+      "crawl",
+      CRAWL_DATASET_KEY,
+      CRAWL_METHOD_VERSION,
+    ),
     {
+      provider: "crawl",
       datasetKey: CRAWL_DATASET_KEY,
+      schemaVersion: "0.2.0",
       methodVersion: CRAWL_METHOD_VERSION,
       origin: "direct_public",
       grade: "B",
@@ -402,9 +424,15 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
     },
   ],
   [
-    "gsc",
+    observationSourceContractKey(
+      "gsc",
+      "gsc.page_query_daily.v1",
+      "gsc.page_query_daily.v1",
+    ),
     {
+      provider: "gsc",
       datasetKey: "gsc.page_query_daily.v1",
+      schemaVersion: "0.2.0",
       methodVersion: "gsc.page_query_daily.v1",
       origin: "first_party",
       grade: "A",
@@ -412,9 +440,15 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
     },
   ],
   [
-    "ga4",
+    observationSourceContractKey(
+      "ga4",
+      "ga4.organic_landing_daily.v1",
+      "ga4.organic_landing_daily.v1",
+    ),
     {
+      provider: "ga4",
       datasetKey: "ga4.organic_landing_daily.v1",
+      schemaVersion: "0.2.0",
       methodVersion: "ga4.organic_landing_daily.v1",
       origin: "first_party",
       grade: "A",
@@ -422,9 +456,15 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
     },
   ],
   [
-    "csv",
+    observationSourceContractKey(
+      "csv",
+      "csv.keyword_gap.v1",
+      "csv.keyword_gap.v1",
+    ),
     {
+      provider: "csv",
       datasetKey: "csv.keyword_gap.v1",
+      schemaVersion: "0.2.0",
       methodVersion: "csv.keyword_gap.v1",
       origin: "user_provided",
       grade: "C",
@@ -434,9 +474,15 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
     },
   ],
   [
-    "dataforseo",
+    observationSourceContractKey(
+      "dataforseo",
+      DATAFORSEO_DATASET_KEY,
+      DATAFORSEO_METHOD_VERSION,
+    ),
     {
+      provider: "dataforseo",
       datasetKey: DATAFORSEO_DATASET_KEY,
+      schemaVersion: DATAFORSEO_METHOD_VERSION,
       methodVersion: DATAFORSEO_METHOD_VERSION,
       origin: "vendor_observation",
       grade: "B",
@@ -445,7 +491,42 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
       ]),
     },
   ],
+  [
+    observationSourceContractKey(
+      "dataforseo",
+      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+    ),
+    {
+      provider: "dataforseo",
+      datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+      schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      origin: "vendor_observation",
+      grade: "B",
+      subjectTypeByMetric: new Map([
+        [METRIC_CSV_KEYWORD_GAP, "keyword_cluster"],
+        [METRIC_DATAFORSEO_COMPETITOR_DOMAIN, "site"],
+      ]),
+    },
+  ],
 ]);
+
+function registeredObservationSource(
+  provider: string,
+  datasetKey: string,
+  methodVersion: string,
+): ObservationSourceRegistration | undefined {
+  return OBSERVATION_SOURCE_REGISTRY.get(
+    observationSourceContractKey(provider, datasetKey, methodVersion),
+  );
+}
+
+const REGISTERED_SOURCE_PROVIDERS = new Set(
+  [...OBSERVATION_SOURCE_REGISTRY.values()].map(
+    (registration) => registration.provider,
+  ),
+);
 
 const OBSERVATION_CONTRACT_MISMATCH =
   "observation does not match its frozen source contract";
@@ -455,6 +536,29 @@ const nonnegativeInteger = z
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
 const finiteNonnegative = z.number().finite().nonnegative();
+const positiveSafeInteger = z
+  .number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
+const dataForSeoDomain = z
+  .string()
+  .max(253)
+  .regex(
+    /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u,
+  );
+const dataForSeoCompetitorDomainProjectionSchema = z
+  .object({
+    targetDomain: dataForSeoDomain,
+    competitorDomain: dataForSeoDomain,
+    intersections: positiveSafeInteger,
+    averagePosition: finiteNonnegative,
+    summedPosition: finiteNonnegative,
+    organicEstimatedTrafficVolume: finiteNonnegative,
+    marketCode: z.string().regex(/^[A-Z]{2}$/u),
+    languageCode: z.string().regex(/^[a-z]{2,8}$/u),
+  })
+  .strict();
 const boundedCrawlUrl = z.url().max(CRAWL_PROJECTION_LIMITS.maxUrlChars);
 const nullableBoundedString = (maximum: number) =>
   z.string().max(maximum).nullable();
@@ -668,7 +772,7 @@ const keywordGapProjectionSchema = z
   })
   .strict();
 
-const SOURCE_EVIDENCE_PROVIDERS = new Set(OBSERVATION_SOURCE_REGISTRY.keys());
+const SOURCE_EVIDENCE_PROVIDERS = REGISTERED_SOURCE_PROVIDERS;
 const SNAPSHOT_AVAILABILITIES = new Set([
   "available",
   "partial",
@@ -765,11 +869,8 @@ function readManifestSnapshots(
       capturedAt: requiredManifestString(entry, "capturedAt"),
       sourceWindow,
     };
-    const sourceRegistration = OBSERVATION_SOURCE_REGISTRY.get(
-      snapshot.provider,
-    );
     if (
-      !sourceRegistration ||
+      !REGISTERED_SOURCE_PROVIDERS.has(snapshot.provider) ||
       !SNAPSHOT_AVAILABILITIES.has(snapshot.availability) ||
       snapshotIds.has(snapshot.snapshotId) ||
       providers.has(snapshot.provider)
@@ -873,12 +974,17 @@ function validateFrozenSnapshotSelection(
   for (const manifestSnapshot of manifestSnapshots) {
     const actual = snapshotsById.get(manifestSnapshot.snapshotId);
     const sourceRegistration = actual
-      ? OBSERVATION_SOURCE_REGISTRY.get(actual.provider)
+      ? registeredObservationSource(
+          actual.provider,
+          actual.dataset_key,
+          actual.method_version,
+        )
       : undefined;
     if (
       !actual ||
       !sourceRegistration ||
       actual.dataset_key !== sourceRegistration.datasetKey ||
+      actual.schema_version !== sourceRegistration.schemaVersion ||
       actual.method_version !== sourceRegistration.methodVersion ||
       actual.site_id !== siteId ||
       actual.provider !== manifestSnapshot.provider ||
@@ -904,6 +1010,63 @@ function validateFrozenSnapshotSelection(
     });
   }
   return { lineageByProvider, snapshotsById };
+}
+
+function exactDataForSeoCollectionIdentity(
+  snapshot: DataSnapshotRow,
+  run: CollectionRunRow,
+  scope: ProjectScope,
+): boolean {
+  if (
+    run.id !== snapshot.collection_run_id ||
+    run.workspace_id !== scope.workspaceId ||
+    run.project_id !== scope.projectId ||
+    run.site_id !== snapshot.site_id ||
+    run.provider !== "dataforseo" ||
+    snapshot.provider !== "dataforseo"
+  ) {
+    return false;
+  }
+  const legacy =
+    snapshot.dataset_key === DATAFORSEO_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_METHOD_VERSION &&
+    run.operation === "keyword_gap_import" &&
+    run.method_version === DATAFORSEO_METHOD_VERSION;
+  const composite =
+    snapshot.dataset_key ===
+      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    run.operation === "search_landscape" &&
+    run.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+  return legacy || composite;
+}
+
+async function validateFrozenCollectionLineage(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  selection: FrozenSnapshotSelection,
+): Promise<void> {
+  const dataForSeoSnapshots = [...selection.snapshotsById.values()].filter(
+    (snapshot) => snapshot.provider === "dataforseo",
+  );
+  if (dataForSeoSnapshots.length === 0) return;
+  if (dataForSeoSnapshots.length !== 1) {
+    throw new Error("frozen DataForSEO collection lineage is ambiguous");
+  }
+  const snapshot = dataForSeoSnapshots[0]!;
+  const run = await new CollectionRunsRepository(ctx.db).findById(
+    snapshot.collection_run_id,
+  );
+  if (!run || !exactDataForSeoCollectionIdentity(snapshot, run, scope)) {
+    throw new Error(
+      "frozen DataForSEO collection lineage does not match its source contract",
+    );
+  }
 }
 
 /**
@@ -1072,6 +1235,20 @@ function validateAvailableObservationValue(
       }
       return;
     }
+    case METRIC_DATAFORSEO_COMPETITOR_DOMAIN: {
+      const parsed = dataForSeoCompetitorDomainProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        parsed.data.targetDomain !== new URL(siteOrigin).hostname ||
+        parsed.data.competitorDomain !== observation.subject_ref ||
+        parsed.data.targetDomain === parsed.data.competitorDomain
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
     default:
       invalidFrozenObservation();
   }
@@ -1082,10 +1259,15 @@ function validateFrozenObservations(
   frozenSelection: FrozenSnapshotSelection,
   siteOrigin: string,
 ): void {
+  const observationIds = new Set<string>();
   for (const observation of observations) {
     const snapshot = frozenSelection.snapshotsById.get(observation.snapshot_id);
     const sourceRegistration = snapshot
-      ? OBSERVATION_SOURCE_REGISTRY.get(snapshot.provider)
+      ? registeredObservationSource(
+          snapshot.provider,
+          snapshot.dataset_key,
+          snapshot.method_version,
+        )
       : undefined;
     const expectedSubjectType = sourceRegistration?.subjectTypeByMetric.get(
       observation.metric_key,
@@ -1093,6 +1275,7 @@ function validateFrozenObservations(
     if (
       !snapshot ||
       !sourceRegistration ||
+      observationIds.has(observation.id) ||
       observation.provider !== snapshot.provider ||
       snapshot.dataset_key !== sourceRegistration.datasetKey ||
       snapshot.method_version !== sourceRegistration.methodVersion ||
@@ -1110,6 +1293,7 @@ function validateFrozenObservations(
     ) {
       invalidFrozenObservation();
     }
+    observationIds.add(observation.id);
 
     if (observation.availability === "available") {
       validateAvailableObservationValue(observation, siteOrigin);
@@ -1503,6 +1687,7 @@ async function computeAndPersist(
     actualSnapshots,
     diagRun.site_id,
   );
+  await validateFrozenCollectionLineage(ctx, scope, frozenSelection);
 
   const site = await new SitesRepository(ctx.db).findById(
     scope,
@@ -1540,12 +1725,16 @@ async function computeAndPersist(
     frozenSelection,
     normalizedSite.origin,
   );
+  const diagnosticObservationRows = observationRows.filter(
+    (observation) =>
+      observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  );
   const observations = await loadObservationViews(
     ctx,
     scope,
     diagRun.site_id,
     normalizedSite.origin,
-    observationRows,
+    diagnosticObservationRows,
     frozenSelection,
   );
   const discrepancyRows = await new ProviderDiscrepanciesRepository(

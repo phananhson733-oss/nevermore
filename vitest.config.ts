@@ -82,6 +82,7 @@ export default defineConfig({
           exclude: [
             "**/node_modules/**",
             "**/*.integration.test.ts",
+            "**/*.integration.vitest.ts",
             "**/.next/**",
           ],
           environment: "node",
@@ -94,6 +95,7 @@ export default defineConfig({
           include: [
             "packages/**/*.integration.test.ts",
             "apps/**/*.integration.test.ts",
+            "e2e/**/*.integration.vitest.ts",
           ],
           exclude: ["**/node_modules/**", "**/.next/**"],
           environment: "node",

@@ -97,6 +97,12 @@ export function createWorkerEnvSchema(environment: string | undefined) {
         .min(1)
         .max(1000)
         .default(200),
+      DATAFORSEO_MAX_COMPETITORS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(100),
       RAW_IMPORT_BUCKET: z.string().min(1),
       EXPORT_BUCKET: z.string().min(1),
       // Production is always Supabase. Local/test may opt into Supabase, otherwise

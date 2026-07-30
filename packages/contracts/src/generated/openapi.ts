@@ -167,7 +167,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List source cards, capabilities, and latest snapshots */
+        /**
+         * List source cards, capabilities, and latest snapshots
+         * @description Active projects require a confirmed Product Profile and ICP before this
+         *     read returns any source connection or snapshot metadata; otherwise the
+         *     response is 422 `CONTEXT_INCOMPLETE`. Archived projects preserve their
+         *     retained source and snapshot history as a read-only view.
+         */
         get: operations["listProjectSources"];
         put?: never;
         post?: never;
@@ -258,8 +264,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Queue one provider collection */
+        /**
+         * Queue one customer-triggerable provider collection
+         * @description This public command accepts exactly Crawl, connected GSC, or connected
+         *     GA4. CSV uses the dedicated import endpoint. DataForSEO Search
+         *     Landscape (DFS) is a built-in, server-owned Analysis Refresh step:
+         *     clients cannot trigger or configure it here, and this request never
+         *     accepts provider credentials, API keys, Search Landscape scope, or
+         *     provider limits.
+         */
         post: operations["createCollectionRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/analysis-refresh-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue the server-owned durable Analysis Refresh plan
+         * @description Freezes the primary Site, current confirmed ICP, and the fixed ordered
+         *     Crawl → connected GSC → connected GA4 → built-in DataForSEO Search
+         *     Landscape (DFS) → Growth Audit plan. The server derives the DFS target,
+         *     market, language and cost caps from frozen project context and server
+         *     configuration. Optional unavailable inputs are recorded as skipped
+         *     steps; the client cannot add, remove, reorder, configure, or directly
+         *     invoke any step.
+         */
+        post: operations["createAnalysisRefreshRun"];
         delete?: never;
         options?: never;
         head?: never;
@@ -290,7 +330,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll any collection, Product Profile synthesis, diagnostic, artifact, or export run */
+        /** Poll any collection, Analysis Refresh, Product Profile synthesis, diagnostic, artifact, or export run */
         get: operations["getProjectRun"];
         put?: never;
         post?: never;
@@ -460,10 +500,13 @@ export interface paths {
         };
         /**
          * List the latest readable Growth Map URL portfolio
-         * @description Returns one bounded page of canonical Site Pages proven by the latest completed or
-         *     partial DiagnosticRun's frozen Crawl/GSC/GA4 inputs. The response deliberately has no
-         *     project-wide total. Missing observations remain unavailable with explicit limitations;
-         *     unresolved or definition-only Finding targets are never assigned to URL rows.
+         * @description Returns one bounded page of canonical Site Pages proven by one published
+         *     DiagnosticRun's frozen Crawl/GSC/GA4 inputs. Without diagnosticRunId the
+         *     server selects the latest readable generation; with diagnosticRunId it
+         *     reads that exact same-project published generation. The response deliberately
+         *     has no project-wide total. Missing observations remain unavailable with
+         *     explicit limitations; unresolved or definition-only Finding targets are
+         *     never assigned to URL rows.
          */
         get: operations["listProjectAuditUrls"];
         put?: never;
@@ -483,9 +526,11 @@ export interface paths {
         };
         /**
          * Read one URL from the latest readable Growth Map portfolio
-         * @description Resolves the selected canonical Site Page only inside the latest completed or partial
-         *     DiagnosticRun. Finding membership comes exclusively from resolved FindingTarget rows
-         *     for that exact run; mutable subject_refs are never used as URL membership.
+         * @description Resolves the selected canonical Site Page inside the latest readable
+         *     published DiagnosticRun, or inside the exact same-project published
+         *     generation named by diagnosticRunId. Finding membership comes exclusively
+         *     from resolved FindingTarget rows for that exact run; mutable subject_refs
+         *     are never used as URL membership.
          */
         get: operations["getProjectAuditUrl"];
         put?: never;
@@ -655,11 +700,14 @@ export interface paths {
         };
         /**
          * List the project Keyword Library
-         * @description Returns one bounded cursor page of stable Keyword identities with exact source
-         *     occurrences, canonical Observation metric pointers, governed mapped targets, and
-         *     explicit coverage and limitations. This collection read exposes no filters,
-         *     synthetic totals, Finding confirmation, Action state, or collection mutation;
-         *     one selected Keyword can be reviewed through its exact detail resource.
+         * @description Returns one bounded cursor page of stable Keyword identities from the
+         *     latest readable published generation, or from the exact same-project
+         *     published generation named by diagnosticRunId. Every row retains exact
+         *     source occurrences, canonical Observation metric pointers, governed
+         *     mapped targets, and explicit coverage and limitations. This collection
+         *     read exposes no review view, synthetic totals, Finding confirmation,
+         *     Action state, or collection mutation; one selected Keyword can be
+         *     reviewed through its exact detail resource.
          */
         get: operations["listProjectAuditKeywords"];
         put?: never;
@@ -679,8 +727,11 @@ export interface paths {
         };
         /**
          * Read one project Keyword Library entry
-         * @description Resolves one stable Keyword identity inside the selected project and returns the same
-         *     strict source, metric, mapping, coverage, and limitation contract as the cursor page.
+         * @description By default resolves one stable Keyword identity in the latest readable
+         *     published generation. diagnosticRunId pins one exact same-project
+         *     published generation. view=review instead reads the current mutable
+         *     governance projection for human review; view=review and diagnosticRunId
+         *     are mutually exclusive, and repeated scalar query parameters are rejected.
          */
         get: operations["getProjectAuditKeyword"];
         put?: never;
@@ -693,7 +744,9 @@ export interface paths {
          * @description Appends one human Keyword governance decision against an exact optimistic revision,
          *     confirmed Topic Model revision, and optional same-project Site Page. Topic labels,
          *     actor identity, timestamps, provenance, and source occurrence history remain
-         *     server-owned. An exact immediate retry is idempotent.
+         *     server-owned. An exact immediate retry is idempotent. PATCH rejects every
+         *     query parameter, including diagnosticRunId and view; review semantics come
+         *     only from the governed request body.
          */
         patch: operations["reviewProjectAuditKeyword"];
         trace?: never;
@@ -794,11 +847,13 @@ export interface paths {
         };
         /**
          * List the project Competitor Library
-         * @description Returns one bounded cursor page of stable project Competitor identities with strict
-         *     typed origin occurrences, reviewed analysis scope, canonical Observation-backed
-         *     insights, and explicit coverage. This collection read exposes no filters,
-         *     synthetic totals, or manual-entry controls; one selected Competitor can be reviewed
-         *     through its exact detail resource.
+         * @description Returns one bounded cursor page of stable project Competitor identities
+         *     from the latest readable published generation, or from the exact
+         *     same-project published generation named by diagnosticRunId. Rows retain
+         *     strict typed origin occurrences, frozen analysis scope, canonical
+         *     Observation-backed insights, and explicit coverage. This collection read
+         *     exposes no review view, synthetic totals, or manual-entry controls; one
+         *     selected Competitor can be reviewed through its exact detail resource.
          */
         get: operations["listProjectAuditCompetitors"];
         put?: never;
@@ -818,8 +873,11 @@ export interface paths {
         };
         /**
          * Read one project Competitor Library entry
-         * @description Resolves one stable Competitor identity inside the selected project and returns the
-         *     same strict origin, insight, review, coverage, and limitation contract as the page.
+         * @description By default resolves one stable Competitor identity in the latest readable
+         *     published generation. diagnosticRunId pins one exact same-project
+         *     published generation. view=review instead reads the current mutable
+         *     governance projection for human review; view=review and diagnosticRunId
+         *     are mutually exclusive, and repeated scalar query parameters are rejected.
          */
         get: operations["getProjectAuditCompetitor"];
         put?: never;
@@ -832,6 +890,8 @@ export interface paths {
          * @description Applies one optimistic Competitor review without editing immutable origin
          *     occurrences. Actor facts, timestamps, and provenance remain server-owned. An exact
          *     immediate retry is idempotent and a stale divergent revision returns a conflict.
+         *     PATCH rejects every query parameter, including diagnosticRunId and view;
+         *     review semantics come only from the governed request body.
          */
         patch: operations["reviewProjectAuditCompetitor"];
         trace?: never;
@@ -1434,7 +1494,7 @@ export interface components {
         /** @enum {string} */
         SourceState: "connecting" | "connected" | "syncing" | "available" | "partial" | "stale" | "permission_denied" | "unavailable" | "disconnected";
         /** @enum {string} */
-        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow" | "publication" | "measurement";
+        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow" | "publication" | "measurement" | "analysis_refresh";
         /** @enum {string} */
         RunStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
         /** @enum {string} */
@@ -2019,14 +2079,21 @@ export interface components {
                 warnings: string[];
             };
         };
+        /**
+         * @description Customer-triggerable collection only. DataForSEO is intentionally
+         *     absent because it runs exclusively inside the server-owned Analysis
+         *     Refresh plan; no provider credential or API-key field is accepted.
+         */
         CreateCollectionRunRequest: {
             /** @enum {string} */
-            provider: "crawl" | "gsc" | "ga4" | "dataforseo";
+            provider: "crawl" | "gsc" | "ga4";
             /** Format: uuid */
             sourceConnectionId?: string | null;
             /** @enum {string} */
-            operation?: "site_graph" | "search_analytics" | "organic_landing" | "keyword_gap_import";
+            operation?: "site_graph" | "search_analytics" | "organic_landing";
         };
+        /** @description Empty strict object. The server owns and freezes the complete Analysis Refresh plan. */
+        CreateAnalysisRefreshRunRequest: Record<string, never>;
         AsyncRun: {
             id: components["schemas"]["Uuid"];
             projectId: components["schemas"]["Uuid"];
@@ -2044,7 +2111,7 @@ export interface components {
             } | null;
             resultRef: {
                 /** @enum {string} */
-                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run" | "publication_attempt" | "measurement_window";
+                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run" | "publication_attempt" | "measurement_window" | "analysis_refresh_run";
                 id: components["schemas"]["Uuid"];
             } | null;
             queuedAt: components["schemas"]["Timestamp"];
@@ -2057,7 +2124,7 @@ export interface components {
                 statusUrl: string;
                 resourceRef: {
                     /** @enum {string} */
-                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "audit_run" | "flow_shadow_run";
+                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "audit_run" | "flow_shadow_run" | "analysis_refresh_run";
                     id: components["schemas"]["Uuid"];
                 } | null;
             };
@@ -5702,6 +5769,18 @@ export interface components {
         /** @description Opaque base64url cursor returned by the previous page. */
         Cursor: string;
         Limit: number;
+        /**
+         * @description Optional canonical lowercase UUID for one exact readable, same-project
+         *     published DiagnosticRun generation. When omitted, the server selects the
+         *     latest readable published generation. Repeated values are rejected.
+         */
+        DiagnosticRunIdPin: string;
+        /**
+         * @description Exact view=review selects the current mutable governance projection.
+         *     It is available only on Keyword and Competitor detail GET operations,
+         *     is mutually exclusive with diagnosticRunId, and rejects repeated values.
+         */
+        ReviewView: "review";
         IdempotencyKey: string;
         /** @description Required when mode=confirm; ignored for preview. */
         OptionalIdempotencyKey: string;
@@ -6090,6 +6169,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     connectProjectSource: {
@@ -6235,6 +6315,33 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateCollectionRunRequest"];
+            };
+        };
+        responses: {
+            202: components["responses"]["AsyncAccepted"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createAnalysisRefreshRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateAnalysisRefreshRunRequest"];
             };
         };
         responses: {
@@ -6516,6 +6623,12 @@ export interface operations {
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Trimmed, non-empty literal substring matched against canonical URL. Repeated scalar query parameters are rejected. */
                 search?: string;
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
             };
             header?: never;
             path: {
@@ -6543,7 +6656,14 @@ export interface operations {
     };
     getProjectAuditUrl: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
+            };
             header?: never;
             path: {
                 projectId: components["parameters"]["ProjectId"];
@@ -6565,6 +6685,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };
@@ -6782,6 +6903,12 @@ export interface operations {
                 limit?: components["parameters"]["Limit"];
                 /** @description Opaque base64url cursor returned by the previous page. */
                 cursor?: components["parameters"]["Cursor"];
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
             };
             header?: never;
             path: {
@@ -6809,7 +6936,20 @@ export interface operations {
     };
     getProjectAuditKeyword: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
+                /**
+                 * @description Exact view=review selects the current mutable governance projection.
+                 *     It is available only on Keyword and Competitor detail GET operations,
+                 *     is mutually exclusive with diagnosticRunId, and rejects repeated values.
+                 */
+                view?: components["parameters"]["ReviewView"];
+            };
             header?: never;
             path: {
                 projectId: components["parameters"]["ProjectId"];
@@ -6831,6 +6971,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };
@@ -7025,6 +7166,12 @@ export interface operations {
                 limit?: components["parameters"]["Limit"];
                 /** @description Opaque base64url cursor returned by the previous page. */
                 cursor?: components["parameters"]["Cursor"];
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
             };
             header?: never;
             path: {
@@ -7052,7 +7199,20 @@ export interface operations {
     };
     getProjectAuditCompetitor: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Optional canonical lowercase UUID for one exact readable, same-project
+                 *     published DiagnosticRun generation. When omitted, the server selects the
+                 *     latest readable published generation. Repeated values are rejected.
+                 */
+                diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
+                /**
+                 * @description Exact view=review selects the current mutable governance projection.
+                 *     It is available only on Keyword and Competitor detail GET operations,
+                 *     is mutually exclusive with diagnosticRunId, and rejects repeated values.
+                 */
+                view?: components["parameters"]["ReviewView"];
+            };
             header?: never;
             path: {
                 projectId: components["parameters"]["ProjectId"];
@@ -7074,6 +7234,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

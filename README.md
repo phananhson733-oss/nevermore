@@ -14,7 +14,7 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
+Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and
@@ -85,6 +85,19 @@ The active v0.4 authority includes keyword and competitor governance, execution
 state, durable approval, publication/rollback preview authority, receipt
 lineage, and immutable measurement windows. It does not yet include an external
 publication-attempt HTTP operation or a GitHub/WordPress provider write.
+
+`createAnalysisRefreshRun` is the server-owned full refresh command. Its fixed
+plan runs required Crawl, optional connected GSC, optional connected GA4,
+optional DataForSEO Search Landscape (DFS), then required Growth Audit. Public
+`createCollectionRun` remains limited to `crawl`, `gsc`, and `ga4`; customers
+cannot submit DFS target, market, language, limits, credentials, or provider
+queries.
+
+Growth Map URL, Keyword, and Competitor list/detail reads accept an optional
+canonical `diagnosticRunId` to pin one exact published generation. Only Keyword
+and Competitor detail GETs accept `view=review` for current governance, and that
+view is mutually exclusive with the generation pin. Keyword and Competitor
+PATCH commands reject every query parameter.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change

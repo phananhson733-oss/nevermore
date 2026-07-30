@@ -26,6 +26,11 @@ import { canonicalUrlGuard, createPinnedAgent } from "../url-safety/index.ts";
 import type { UrlGuardResult } from "../url-safety/index.ts";
 import { directivesIndexable, parsePage } from "./parse-page.ts";
 import {
+  buildCrawlSiteLanguageSummary,
+  type CrawlSiteLanguageSummary,
+  type HtmlLanguageDeclaration,
+} from "./site-language.ts";
+import {
   AI_BOT_USER_AGENTS,
   emptyRobots,
   isPathAllowed,
@@ -70,6 +75,13 @@ export interface CrawlEngineOptions {
   readonly now?: () => number;
   /** Test-only budget override; the adapter always uses the fixed CRAWL_BUDGET. */
   readonly budget?: CrawlBudgetLimits;
+  /**
+   * Receives the independent versioned site-language summary once per crawl.
+   * It is deliberately not embedded in the frozen v2 raw/page projections.
+   */
+  readonly onSiteLanguageSummary?: (
+    summary: CrawlSiteLanguageSummary,
+  ) => void;
 }
 
 /**
@@ -942,6 +954,7 @@ export async function crawlSite(
     readonly journeySubjectUrl: string;
     readonly journeyFetchUrl: string;
     readonly redirectCount: number;
+    readonly htmlLanguage: HtmlLanguageDeclaration | null;
   }
   // Persist one factual page record per exact initial HTTP request identity. Multiple
   // fetch URLs may intentionally share one subjectUrl (for example `/path` and
@@ -1116,6 +1129,7 @@ export async function crawlSite(
       journeySubjectUrl: requestSubjectUrl,
       journeyFetchUrl: requestFetchUrl,
       redirectCount: result.redirectChain.length,
+      htmlLanguage: parsed.htmlLanguage,
     });
 
     // Every successful exact transport contributes discovery facts and remains
@@ -1168,7 +1182,8 @@ export async function crawlSite(
 
   if (!stopReason && hitDepthLimit) stopReason = STOP_MAX_DEPTH;
 
-  const pages = [...pagesByFetchUrl.values()].map(
+  const pageCandidates = [...pagesByFetchUrl.values()];
+  const pages = pageCandidates.map(
     (candidate) => candidate.record,
   );
   const reachedNothing = pages.length === 0 && usage.urlsFetched === 0;
@@ -1190,6 +1205,14 @@ export async function crawlSite(
       ? subjectOrder
       : compareAscii(left.projection.fetchUrl, right.projection.fetchUrl);
   });
+  options.onSiteLanguageSummary?.(
+    buildCrawlSiteLanguageSummary(
+      pageCandidates.map((candidate) => ({
+        fetchUrl: candidate.record.projection.fetchUrl,
+        declaration: candidate.htmlLanguage,
+      })),
+    ),
+  );
 
   return {
     origin,

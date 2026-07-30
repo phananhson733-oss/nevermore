@@ -121,8 +121,16 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
     productName: profile.productName ?? "",
     oneLiner: profile.oneLiner ?? "",
     category: profile.category ?? "",
-    productType: knownProductType ? (profile.productType ?? "") : "__custom__",
-    customProductType: knownProductType ? "" : (profile.productType ?? ""),
+    productType:
+      profile.productType === null
+        ? ""
+        : knownProductType
+          ? profile.productType
+          : "__custom__",
+    customProductType:
+      profile.productType !== null && !knownProductType
+        ? profile.productType
+        : "",
     businessModels: knownModels,
     otherBusinessModels: lineValue(otherModels),
     valueProposition: profile.valueProposition ?? "",

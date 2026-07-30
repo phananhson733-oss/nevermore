@@ -96,6 +96,7 @@ describe("startWorkerHealthSnapshotLoop", () => {
           saturationRatio: 0.75,
         },
         queues: [
+          zeroMetric("analysis_refresh"),
           {
             kind: "collection",
             queuedDepth: 3,

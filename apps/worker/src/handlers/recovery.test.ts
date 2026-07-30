@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
@@ -85,6 +86,9 @@ describe("queueForRun", () => {
     expect(queueForRun(run("content_shadow", {}))).toBe("content-shadow");
     expect(queueForRun(run("publication", {}))).toBe("publication");
     expect(queueForRun(run("measurement", {}))).toBe("measurement");
+    expect(queueForRun(run("analysis_refresh", {}))).toBe(
+      "refresh.analysis",
+    );
   });
 
   it("rejects unknown/missing collection providers", () => {
@@ -697,6 +701,96 @@ describe("prepareRunDelivery", () => {
 });
 
 describe("reconcileActiveRuns", () => {
+  it("keeps an Analysis Refresh parent active when a random-id continuation is live", async () => {
+    const row = run("analysis_refresh", {});
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const direct = jobFor(row, "completed");
+    const continuation = jobFor(
+      row,
+      "created",
+      "00000000-0000-4000-8000-000000000099",
+    );
+    const findJobs = vi.fn(async () => [direct, continuation]);
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => direct),
+        findJobs,
+      }),
+    );
+
+    expect(findJobs).toHaveBeenCalledWith("refresh.analysis", {
+      data: { runId: row.id },
+    });
+    expect(terminal).not.toHaveBeenCalled();
+  });
+
+  it("fails the exact running Analysis Refresh step when recovery terminalizes its parent", async () => {
+    const row = run("analysis_refresh", {});
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    ).mockResolvedValue(true);
+    const childId = "00000000-0000-4000-8000-000000000088";
+    vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "listSteps",
+    ).mockResolvedValue([
+      {
+        analysis_refresh_run_id: row.id,
+        workspace_id: row.workspace_id,
+        project_id: row.project_id,
+        ordinal: 1,
+        step_key: "crawl",
+        required: true,
+        state: "running",
+        child_async_run_id: childId,
+        result_snapshot_id: null,
+        skip_reason: null,
+        error: null,
+        started_at: "2026-07-18T00:00:00.000Z",
+        completed_at: null,
+        created_at: "2026-07-18T00:00:00.000Z",
+        updated_at: "2026-07-18T00:00:00.000Z",
+      },
+    ]);
+    const failStep = vi
+      .spyOn(AnalysisRefreshRunsRepository.prototype, "failStep")
+      .mockResolvedValue(true);
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => jobFor(row, "failed")),
+        findJobs: vi.fn(async () => []),
+      }),
+    );
+
+    expect(failStep).toHaveBeenCalledWith(
+      scopeFor(row),
+      row.id,
+      "crawl",
+      {
+        childAsyncRunId: childId,
+        error: {
+          code: "ANALYSIS_REFRESH_RECOVERY_TERMINATED",
+          summary:
+            "Recovery terminalized the parent before its running step completed.",
+        },
+      },
+    );
+  });
+
   it("terminalizes a legacy frozen diagnostic executor before consulting its live queue job", async () => {
     const row = run("diagnostic", {}, "0.2.0");
     vi.spyOn(

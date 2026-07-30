@@ -239,13 +239,14 @@ assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
 const operations = extractOpenApiOperations(openapi);
 exactSet(operations, lock.apiOperations, "OpenAPI operations");
-assert.equal(operations.length, 77, "v0.4 must freeze 77 OpenAPI operations");
+assert.equal(operations.length, 78, "v0.4 must freeze 78 OpenAPI operations");
 exactSet(
   lock.asyncOperations,
   [
     "createProductProfileSynthesisRun",
     "importProjectSourceFile",
     "createCollectionRun",
+    "createAnalysisRefreshRun",
     "createDiagnosticRun",
     "createGrowthAuditRun",
     "createContentShadowRun",
@@ -275,7 +276,7 @@ assert.equal(
 );
 const tables = migrationTableInventory(migrations);
 exactSet(tables, lock.tables, "application tables");
-assert.equal(tables.length, 76, "v0.4 must freeze 76 application tables");
+assert.equal(tables.length, 78, "v0.4 must freeze 78 application tables");
 
 assert.ok(Array.isArray(lock.rules), "rules must be an array");
 assert.ok(

@@ -26,6 +26,7 @@ import {
   type ChainResult,
   type DbHandle,
 } from "./full-chain-harness.ts";
+import { publishDiagnosticGeneration } from "./published-growth-map-fixture.ts";
 
 const describeDb = DB_AVAILABLE ? describe : describe.skip;
 
@@ -116,6 +117,15 @@ describeDb("growth audit + opportunity decision surfaces", () => {
       },
       results,
     );
+    const published = await publishDiagnosticGeneration(handle.db, {
+      scope: chain.scope,
+      diagnosticRunId: chain.diagRunId,
+      actorId: chain.actor,
+      completedAt: new Date().toISOString(),
+    });
+    if (published.auditRunId !== auditRunId) {
+      throw new Error("published fixture selected a different Growth Audit");
+    }
   }, 120_000);
 
   afterAll(async () => {

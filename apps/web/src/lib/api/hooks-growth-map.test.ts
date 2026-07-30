@@ -7,9 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildGrowthMapCompetitorMonitorMutationOptions,
   buildGrowthMapCompetitorDetailQueryOptions,
+  buildGrowthMapCompetitorReviewDetailQueryOptions,
   buildGrowthMapCompetitorMonitorQueryOptions,
   buildGrowthMapCompetitorsQueryOptions,
+  buildReviewGrowthMapCompetitorMutationOptions,
   buildGrowthMapKeywordDetailQueryOptions,
+  buildGrowthMapKeywordReviewDetailQueryOptions,
   buildGrowthMapKeywordRelationsQueryOptions,
   buildGrowthMapKeywordRankHistoryQueryOptions,
   buildGrowthMapKeywordsQueryOptions,
@@ -22,9 +25,11 @@ import {
   confirmGrowthMapTopicModelDraft,
   decideGrowthMapKeywordRelation,
   getGrowthMapCompetitorDetail,
+  getGrowthMapCompetitorReviewDetail,
   getGrowthMapCompetitorMonitor,
   getGrowthMapCompetitors,
   getGrowthMapKeywordDetail,
+  getGrowthMapKeywordReviewDetail,
   getGrowthMapKeywordRelations,
   getGrowthMapKeywordRankHistory,
   getGrowthMapKeywords,
@@ -34,9 +39,11 @@ import {
   getGrowthMapUrlDetail,
   getGrowthMapUrls,
   growthMapCompetitorDetailQueryKey,
+  growthMapCompetitorReviewDetailQueryKey,
   growthMapCompetitorMonitorQueryKey,
   growthMapCompetitorsQueryKey,
   growthMapKeywordDetailQueryKey,
+  growthMapKeywordReviewDetailQueryKey,
   growthMapKeywordRelationsQueryKey,
   growthMapKeywordRankHistoryQueryKey,
   growthMapKeywordsQueryKey,
@@ -46,6 +53,7 @@ import {
   growthMapUrlDetailQueryKey,
   growthMapUrlsQueryKey,
   invalidateGrowthMapAfterTopicModelConfirmation,
+  invalidateGrowthMapAfterCompetitorReview,
   invalidateGrowthMapAfterKeywordReview,
   invalidateGrowthMapKeywordRelations,
   invalidateGrowthMapTopicModelAfterConflict,
@@ -54,6 +62,7 @@ import {
   refreshGrowthMapAfterFindingReview,
   refreshGrowthMapKeywordRelations,
   reviewGrowthMapKeyword,
+  reviewGrowthMapCompetitor,
   updateGrowthMapCompetitorMonitor,
 } from "./hooks-growth-map";
 import { ApiError } from "./client";
@@ -69,48 +78,50 @@ const OBSERVATION_A = "00000000-0000-4000-8000-000000000008";
 const OBSERVATION_B = "00000000-0000-4000-8000-000000000009";
 const KEYWORD_A = "00000000-0000-4000-8000-000000000010";
 const KEYWORD_B = "00000000-0000-4000-8000-000000000011";
-const KEYWORD_OCCURRENCE = "00000000-0000-4000-8000-000000000012";
-const KEYWORD_SNAPSHOT = "00000000-0000-4000-8000-000000000013";
-const KEYWORD_OBSERVATION = "00000000-0000-4000-8000-000000000014";
-const IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000015";
-const COMPETITOR_A = "00000000-0000-4000-8000-000000000016";
-const COMPETITOR_B = "00000000-0000-4000-8000-000000000017";
-const COMPETITOR_PROFILE_ORIGIN = "00000000-0000-4000-8000-000000000018";
-const COMPETITOR_CSV_ORIGIN = "00000000-0000-4000-8000-000000000019";
-const COMPETITOR_MANUAL_ORIGIN = "00000000-0000-4000-8000-000000000020";
-const PRODUCT_PROFILE = "00000000-0000-4000-8000-000000000021";
-const COMPETITOR_CANDIDATE = "00000000-0000-4000-8000-000000000022";
-const PROFILE_EVIDENCE_REF = "00000000-0000-4000-8000-000000000023";
-const COMPETITOR_SNAPSHOT = "00000000-0000-4000-8000-000000000024";
-const COMPETITOR_OBSERVATION = "00000000-0000-4000-8000-000000000025";
-const COMPETITOR_IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000026";
-const COMPETITOR_EVIDENCE = "00000000-0000-4000-8000-000000000027";
-const MANUAL_ENTRY = "00000000-0000-4000-8000-000000000028";
-const RANK_OCCURRENCE = "00000000-0000-4000-8000-000000000029";
-const RANK_SNAPSHOT = "00000000-0000-4000-8000-000000000030";
-const RANK_OBSERVATION = "00000000-0000-4000-8000-000000000031";
-const KEYWORD_RELATION = "00000000-0000-4000-8000-000000000032";
+const KEYWORD_DIAGNOSTIC_RUN =
+  "00000000-0000-4000-8000-000000000012";
+const KEYWORD_OCCURRENCE = "00000000-0000-4000-8000-000000000013";
+const KEYWORD_SNAPSHOT = "00000000-0000-4000-8000-000000000014";
+const KEYWORD_OBSERVATION = "00000000-0000-4000-8000-000000000015";
+const IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000016";
+const COMPETITOR_A = "00000000-0000-4000-8000-000000000017";
+const COMPETITOR_B = "00000000-0000-4000-8000-000000000018";
+const COMPETITOR_PROFILE_ORIGIN = "00000000-0000-4000-8000-000000000019";
+const COMPETITOR_CSV_ORIGIN = "00000000-0000-4000-8000-000000000020";
+const COMPETITOR_MANUAL_ORIGIN = "00000000-0000-4000-8000-000000000021";
+const PRODUCT_PROFILE = "00000000-0000-4000-8000-000000000022";
+const COMPETITOR_CANDIDATE = "00000000-0000-4000-8000-000000000023";
+const PROFILE_EVIDENCE_REF = "00000000-0000-4000-8000-000000000024";
+const COMPETITOR_SNAPSHOT = "00000000-0000-4000-8000-000000000025";
+const COMPETITOR_OBSERVATION = "00000000-0000-4000-8000-000000000026";
+const COMPETITOR_IMPORT_PREVIEW = "00000000-0000-4000-8000-000000000027";
+const COMPETITOR_EVIDENCE = "00000000-0000-4000-8000-000000000028";
+const MANUAL_ENTRY = "00000000-0000-4000-8000-000000000029";
+const RANK_OCCURRENCE = "00000000-0000-4000-8000-000000000030";
+const RANK_SNAPSHOT = "00000000-0000-4000-8000-000000000031";
+const RANK_OBSERVATION = "00000000-0000-4000-8000-000000000032";
+const KEYWORD_RELATION = "00000000-0000-4000-8000-000000000033";
 const KEYWORD_RELATION_CANDIDATE =
-  "00000000-0000-4000-8000-000000000033";
-const KEYWORD_RELATION_DECISION =
   "00000000-0000-4000-8000-000000000034";
-const KEYWORD_RELATION_ACTOR =
+const KEYWORD_RELATION_DECISION =
   "00000000-0000-4000-8000-000000000035";
-const KEYWORD_RELATION_PAGE =
+const KEYWORD_RELATION_ACTOR =
   "00000000-0000-4000-8000-000000000036";
-const KEYWORD_RELATION_TOPIC =
+const KEYWORD_RELATION_PAGE =
   "00000000-0000-4000-8000-000000000037";
-const TOPIC_NODE_ROOT = "00000000-0000-4000-8000-000000000038";
-const TOPIC_NODE_CHILD = "00000000-0000-4000-8000-000000000039";
-const TOPIC_ACTOR = "00000000-0000-4000-8000-000000000040";
+const KEYWORD_RELATION_TOPIC =
+  "00000000-0000-4000-8000-000000000038";
+const TOPIC_NODE_ROOT = "00000000-0000-4000-8000-000000000039";
+const TOPIC_NODE_CHILD = "00000000-0000-4000-8000-000000000040";
+const TOPIC_ACTOR = "00000000-0000-4000-8000-000000000041";
 const INTERNAL_LINK_FINDING =
-  "00000000-0000-4000-8000-000000000041";
-const INTERNAL_LINK_ACTION =
   "00000000-0000-4000-8000-000000000042";
-const INTERNAL_LINK_TOPIC =
+const INTERNAL_LINK_ACTION =
   "00000000-0000-4000-8000-000000000043";
-const COMPETITOR_MONITOR_SIGNAL =
+const INTERNAL_LINK_TOPIC =
   "00000000-0000-4000-8000-000000000044";
+const COMPETITOR_MONITOR_SIGNAL =
+  "00000000-0000-4000-8000-000000000045";
 const OBSERVED_AT = "2026-07-21T00:00:00.000Z";
 const UI_LOCALE = "en" as const;
 
@@ -832,7 +843,12 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "urls",
-      { search: "onboarding / setup", cursor: "next+/=", limit: 25 },
+      {
+        search: "onboarding / setup",
+        cursor: "next+/=",
+        limit: 25,
+        diagnosticRunId: null,
+      },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/urls?limit=25&cursor=next%2B%2F%3D&search=onboarding+%2F+setup`,
@@ -854,7 +870,12 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "urls",
-      { search: null, cursor: null, limit: 50 },
+      {
+        search: null,
+        cursor: null,
+        limit: 50,
+        diagnosticRunId: null,
+      },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/urls?limit=50`,
@@ -881,6 +902,76 @@ describe("Growth Map browser API boundary", () => {
         SITE_PAGE_A,
       ).enabled,
     ).toBe(true);
+  });
+
+  it("pins URL list and detail requests and cache keys to one Diagnostic run", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(portfolioResponse()))
+      .mockResolvedValueOnce(ok(detailResponse(SITE_PAGE_A)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const listOptions = buildGrowthMapUrlsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      { limit: 1, diagnosticRunId: DIAGNOSTIC_RUN_ID },
+    );
+    const detailOptions = buildGrowthMapUrlDetailQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      SITE_PAGE_A,
+      DIAGNOSTIC_RUN_ID,
+    );
+    await getGrowthMapUrls(PROJECT_ID, {
+      limit: 1,
+      diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    });
+    await getGrowthMapUrlDetail(
+      PROJECT_ID,
+      SITE_PAGE_A,
+      DIAGNOSTIC_RUN_ID,
+    );
+
+    expect(listOptions.queryKey).toContainEqual({
+      search: null,
+      cursor: null,
+      limit: 1,
+      diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    });
+    expect(detailOptions.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "url",
+      SITE_PAGE_A,
+      DIAGNOSTIC_RUN_ID,
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/mvp/projects/${PROJECT_ID}/audit/urls?limit=1&diagnosticRunId=${DIAGNOSTIC_RUN_ID}`,
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/mvp/projects/${PROJECT_ID}/audit/urls/${SITE_PAGE_A}?diagnosticRunId=${DIAGNOSTIC_RUN_ID}`,
+      expect.any(Object),
+    );
+  });
+
+  it("fails before transport for a non-canonical URL generation pin", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getGrowthMapUrls(PROJECT_ID, {
+        diagnosticRunId:
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".toUpperCase(),
+      }),
+    ).rejects.toThrow("canonical lowercase UUID");
+    await expect(
+      getGrowthMapUrlDetail(PROJECT_ID, SITE_PAGE_A, "not-a-run"),
+    ).rejects.toThrow("canonical lowercase UUID");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("isolates portfolio and exact-detail caches by active UI locale", () => {
@@ -1046,11 +1137,13 @@ describe("Growth Map browser API boundary", () => {
       refetchType: "active",
     });
     expect(invalidate).toHaveBeenNthCalledWith(2, {
-      queryKey: growthMapUrlDetailQueryKey(
+      queryKey: [
+        "growth-map",
         PROJECT_ID,
         UI_LOCALE,
+        "url",
         SITE_PAGE_A,
-      ),
+      ],
       refetchType: "active",
     });
     expect(invalidate).toHaveBeenNthCalledWith(3, {
@@ -1103,7 +1196,7 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "keywords",
-      { cursor: "next+/=", limit: 25 },
+      { cursor: "next+/=", limit: 25, diagnosticRunId: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=25&cursor=next%2B%2F%3D`,
@@ -1127,10 +1220,44 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "keywords",
-      { cursor: null, limit: 50 },
+      { cursor: null, limit: 50, diagnosticRunId: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=50`,
+      expect.any(Object),
+    );
+  });
+
+  it("includes a normalized diagnosticRunId pin in the published Keyword list key and path", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok(keywordLibraryResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const options = buildGrowthMapKeywordsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      {
+        cursor: "",
+        diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+      },
+    );
+    await getGrowthMapKeywords(PROJECT_ID, {
+      cursor: "",
+      diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+    });
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keywords",
+      {
+        cursor: null,
+        limit: 50,
+        diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=50&diagnosticRunId=${KEYWORD_DIAGNOSTIC_RUN}`,
       expect.any(Object),
     );
   });
@@ -1140,6 +1267,16 @@ describe("Growth Map browser API boundary", () => {
       growthMapKeywordDetailQueryKey(PROJECT_ID, UI_LOCALE, KEYWORD_A),
     ).not.toEqual(
       growthMapKeywordDetailQueryKey(PROJECT_ID, UI_LOCALE, KEYWORD_B),
+    );
+    expect(
+      growthMapKeywordDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+        KEYWORD_DIAGNOSTIC_RUN,
+      ),
+    ).not.toEqual(
+      growthMapKeywordDetailQueryKey(PROJECT_ID, UI_LOCALE, KEYWORD_A),
     );
     expect(
       growthMapKeywordsQueryKey(PROJECT_ID, "en", { limit: 25 }),
@@ -1160,6 +1297,26 @@ describe("Growth Map browser API boundary", () => {
         KEYWORD_A,
       ).enabled,
     ).toBe(true);
+    expect(
+      growthMapKeywordReviewDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+    ).not.toEqual(
+      growthMapKeywordDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        KEYWORD_A,
+      ),
+    );
+    expect(
+      buildGrowthMapKeywordReviewDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        null,
+      ).enabled,
+    ).toBe(false);
   });
 
   it("switching Keyword id performs a distinct detail request", async () => {
@@ -1196,6 +1353,70 @@ describe("Growth Map browser API boundary", () => {
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}`,
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_B}`,
     ]);
+  });
+
+  it("includes a normalized diagnosticRunId pin in the published Keyword detail key and path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_A)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const options = buildGrowthMapKeywordDetailQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+      KEYWORD_DIAGNOSTIC_RUN,
+    );
+    await getGrowthMapKeywordDetail(
+      PROJECT_ID,
+      KEYWORD_A,
+      KEYWORD_DIAGNOSTIC_RUN,
+    );
+
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "keyword",
+      KEYWORD_A,
+      KEYWORD_DIAGNOSTIC_RUN,
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}?diagnosticRunId=${KEYWORD_DIAGNOSTIC_RUN}`,
+      expect.any(Object),
+    );
+  });
+
+  it("reads live review detail from the exact review endpoint instead of the published customer path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_A)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getGrowthMapKeywordReviewDetail(
+      PROJECT_ID,
+      KEYWORD_A,
+    );
+
+    expect(response.data.keywordId).toBe(KEYWORD_A);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}?view=review`,
+      expect.any(Object),
+    );
+  });
+
+  it("never adds diagnosticRunId to the live review detail path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_A)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getGrowthMapKeywordReviewDetail(PROJECT_ID, KEYWORD_A);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain(
+      "diagnosticRunId",
+    );
   });
 
   it("does not construct a Keyword detail request without an exact id", async () => {
@@ -1267,7 +1488,7 @@ describe("Growth Map browser API boundary", () => {
     );
   });
 
-  it("refreshes Keyword list, exact detail, confirmed Topic insights, and relations after review", async () => {
+  it("refreshes only the live review-detail cache after a review conflict", async () => {
     const client = new QueryClient();
     const invalidate = vi
       .spyOn(client, "invalidateQueries")
@@ -1280,33 +1501,13 @@ describe("Growth Map browser API boundary", () => {
       KEYWORD_A,
     );
 
-    expect(invalidate).toHaveBeenCalledTimes(4);
+    expect(invalidate).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: ["growth-map", PROJECT_ID, UI_LOCALE, "keywords"],
-      refetchType: "active",
-    });
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: growthMapKeywordDetailQueryKey(
+      queryKey: growthMapKeywordReviewDetailQueryKey(
         PROJECT_ID,
         UI_LOCALE,
         KEYWORD_A,
       ),
-      refetchType: "active",
-    });
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: growthMapTopicModelInsightsQueryKey(
-        PROJECT_ID,
-        UI_LOCALE,
-      ),
-      refetchType: "active",
-    });
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [
-        "growth-map",
-        PROJECT_ID,
-        UI_LOCALE,
-        "keyword-relations",
-      ],
       refetchType: "active",
     });
   });
@@ -1778,7 +1979,7 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "competitors",
-      { cursor: "next+/=", limit: 25 },
+      { cursor: "next+/=", limit: 25, diagnosticRunId: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/competitors?limit=25&cursor=next%2B%2F%3D`,
@@ -1802,7 +2003,7 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "competitors",
-      { cursor: null, limit: 50 },
+      { cursor: null, limit: 50, diagnosticRunId: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/competitors?limit=50`,
@@ -1835,6 +2036,323 @@ describe("Growth Map browser API boundary", () => {
         COMPETITOR_A,
       ).enabled,
     ).toBe(true);
+  });
+
+  it("pins Competitor list and detail requests and cache keys to one Diagnostic run", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(competitorLibraryResponse()))
+      .mockResolvedValueOnce(ok(competitorDetailResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const listOptions = buildGrowthMapCompetitorsQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      { limit: 1, diagnosticRunId: DIAGNOSTIC_RUN_ID },
+    );
+    const detailOptions = buildGrowthMapCompetitorDetailQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      COMPETITOR_A,
+      DIAGNOSTIC_RUN_ID,
+    );
+    await getGrowthMapCompetitors(PROJECT_ID, {
+      limit: 1,
+      diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    });
+    await getGrowthMapCompetitorDetail(
+      PROJECT_ID,
+      COMPETITOR_A,
+      DIAGNOSTIC_RUN_ID,
+    );
+
+    expect(listOptions.queryKey).toContainEqual({
+      cursor: null,
+      limit: 1,
+      diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    });
+    expect(detailOptions.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "competitor",
+      COMPETITOR_A,
+      DIAGNOSTIC_RUN_ID,
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors?limit=1&diagnosticRunId=${DIAGNOSTIC_RUN_ID}`,
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors/${COMPETITOR_A}?diagnosticRunId=${DIAGNOSTIC_RUN_ID}`,
+      expect.any(Object),
+    );
+  });
+
+  it("reads live Competitor review authority from an isolated key and review path", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(competitorDetailResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const options = buildGrowthMapCompetitorReviewDetailQueryOptions(
+      PROJECT_ID,
+      UI_LOCALE,
+      COMPETITOR_A,
+    );
+    const response = await getGrowthMapCompetitorReviewDetail(
+      PROJECT_ID,
+      COMPETITOR_A,
+    );
+
+    expect(response.data.competitorId).toBe(COMPETITOR_A);
+    expect(options.queryKey).toEqual([
+      "growth-map",
+      PROJECT_ID,
+      UI_LOCALE,
+      "competitor-review",
+      COMPETITOR_A,
+    ]);
+    expect(options.queryKey).not.toEqual(
+      growthMapCompetitorDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+        DIAGNOSTIC_RUN_ID,
+      ),
+    );
+    expect(
+      buildGrowthMapCompetitorReviewDetailQueryOptions(
+        PROJECT_ID,
+        UI_LOCALE,
+        null,
+      ).enabled,
+    ).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors/${COMPETITOR_A}?view=review`,
+      expect.any(Object),
+    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain(
+      "diagnosticRunId",
+    );
+  });
+
+  it("sends the exact Competitor governance CAS body to PATCH without a query", async () => {
+    const updated = {
+      projectId: PROJECT_ID,
+      data: {
+        ...competitorItem(),
+        name: "Reviewed Competitor",
+        reviewStatus: "approved",
+        relationship: "direct",
+        analysisScope: ["keyword_gap", "content"],
+        revision: 1,
+      },
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValueOnce(ok(updated));
+    vi.stubGlobal("fetch", fetchMock);
+    const body: Parameters<typeof reviewGrowthMapCompetitor>[2] = {
+      expectedRevision: 0,
+      name: "Reviewed Competitor",
+      reviewStatus: "approved",
+      relationship: "direct",
+      analysisScope: ["keyword_gap", "content"],
+    };
+
+    const response = await reviewGrowthMapCompetitor(
+      PROJECT_ID,
+      COMPETITOR_A,
+      body,
+    );
+
+    expect(response.data.revision).toBe(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/competitors/${COMPETITOR_A}`,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify(body),
+        credentials: "same-origin",
+      }),
+    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("?");
+
+    await expect(
+      reviewGrowthMapCompetitor(PROJECT_ID, COMPETITOR_A, {
+        ...body,
+        relationship: null,
+      }),
+    ).rejects.toThrow("relationship");
+    await expect(
+      reviewGrowthMapCompetitor(PROJECT_ID, COMPETITOR_A, {
+        ...body,
+        analysisScope: [],
+      }),
+    ).rejects.toThrow("analysis scope");
+    await expect(
+      reviewGrowthMapCompetitor(PROJECT_ID, COMPETITOR_A, {
+        ...body,
+        reviewStatus: "candidate",
+      }),
+    ).rejects.toThrow("must not retain");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates only live Competitor review cache after a successful review", async () => {
+    const publishedDetail = competitorDetailResponse();
+    const publishedList = competitorLibraryResponse();
+    const updated = {
+      projectId: PROJECT_ID,
+      data: {
+        ...competitorItem(),
+        name: "Reviewed Competitor",
+        reviewStatus: "approved",
+        relationship: "direct",
+        analysisScope: ["keyword_gap"],
+        revision: 1,
+      },
+    } as const;
+    const body: Parameters<typeof reviewGrowthMapCompetitor>[2] = {
+      expectedRevision: 0,
+      name: "Reviewed Competitor",
+      reviewStatus: "approved",
+      relationship: "direct",
+      analysisScope: ["keyword_gap"],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(ok(updated));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const reviewKey = growthMapCompetitorReviewDetailQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      COMPETITOR_A,
+    );
+    const publishedDetailKey = growthMapCompetitorDetailQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      COMPETITOR_A,
+      DIAGNOSTIC_RUN_ID,
+    );
+    const publishedListKey = growthMapCompetitorsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      { limit: 50, diagnosticRunId: DIAGNOSTIC_RUN_ID },
+    );
+    client.setQueryData(reviewKey, publishedDetail);
+    client.setQueryData(publishedDetailKey, publishedDetail);
+    client.setQueryData(publishedListKey, publishedList);
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+    const observer = new MutationObserver(
+      client,
+      buildReviewGrowthMapCompetitorMutationOptions(
+        client,
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ),
+    );
+
+    await expect(observer.mutate(body)).resolves.toEqual(updated);
+
+    expect(client.getQueryData(reviewKey)).toEqual(updated);
+    expect(client.getQueryData(publishedDetailKey)).toEqual(publishedDetail);
+    expect(client.getQueryData(publishedListKey)).toEqual(publishedList);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("invalidates only live Competitor review cache after a CAS conflict", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          type: "https://example.test/problems/version-conflict",
+          title: "Version conflict",
+          status: 409,
+          code: "VERSION_CONFLICT",
+          detail: "The Competitor review revision has changed.",
+          requestId: "request-competitor-review-conflict",
+        }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/problem+json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+    const observer = new MutationObserver(
+      client,
+      buildReviewGrowthMapCompetitorMutationOptions(
+        client,
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ),
+    );
+    const body: Parameters<typeof reviewGrowthMapCompetitor>[2] = {
+      expectedRevision: 0,
+      name: null,
+      reviewStatus: "candidate",
+      relationship: null,
+      analysisScope: [],
+    };
+
+    const result = observer.mutate(body);
+
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+    await expect(result).rejects.toMatchObject({ status: 409 });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapCompetitorReviewDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ),
+      refetchType: "active",
+    });
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: growthMapCompetitorDetailQueryKey(
+          PROJECT_ID,
+          UI_LOCALE,
+          COMPETITOR_A,
+          DIAGNOSTIC_RUN_ID,
+        ),
+      }),
+    );
+  });
+
+  it("refreshes only the live Competitor review detail key directly", async () => {
+    const client = new QueryClient();
+    const invalidate = vi
+      .spyOn(client, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    await invalidateGrowthMapAfterCompetitorReview(
+      client,
+      PROJECT_ID,
+      UI_LOCALE,
+      COMPETITOR_A,
+    );
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: growthMapCompetitorReviewDetailQueryKey(
+        PROJECT_ID,
+        UI_LOCALE,
+        COMPETITOR_A,
+      ),
+      refetchType: "active",
+    });
   });
 
   it("reads one locale-scoped monitor projection for all visible Competitors", async () => {

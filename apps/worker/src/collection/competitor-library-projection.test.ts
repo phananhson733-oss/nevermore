@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CollectionRunsRepository,
   CompetitorsRepository,
+  contentHash,
   ImportPreviewsRepository,
   ObservationsRepository,
   SourceConnectionsRepository,
@@ -11,8 +12,10 @@ import {
   type ObservationRow,
   type SourceConnectionRow,
 } from "@sf/db";
+import { createDataForSeoSearchLandscapeScope } from "@sf/sources";
 import {
   deriveCsvCompetitorOriginInput,
+  deriveSerpOverlapCompetitorOriginInput,
   projectCollectionSnapshotCompetitors,
 } from "./competitor-library-projection.ts";
 
@@ -170,6 +173,92 @@ function observation(
 
 function observationValueJson(): Record<string, unknown> {
   return observation().value_json as Record<string, unknown>;
+}
+
+const searchLandscapeScope = createDataForSeoSearchLandscapeScope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "en-US",
+  rankedKeywordsLimit: 50,
+  competitorsDomainLimit: 25,
+});
+
+function dataForSeoSnapshot(
+  overrides: Partial<DataSnapshotRow> = {},
+): DataSnapshotRow {
+  return snapshot({
+    provider: "dataforseo",
+    dataset_key: "dataforseo.search_landscape.v1",
+    schema_version: "dataforseo.search_landscape.v1",
+    method_version: "dataforseo.search_landscape.v1",
+    summary: {
+      collectionScope: searchLandscapeScope,
+      timing: {
+        collectedAt,
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+    },
+    ...overrides,
+  });
+}
+
+function dataForSeoRun(
+  overrides: Partial<CollectionRunRow> = {},
+): CollectionRunRow {
+  return collectionRun({
+    provider: "dataforseo",
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v1",
+    import_preview_id: null,
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "search_landscape",
+      siteId,
+      collectionScope: searchLandscapeScope,
+    }),
+    ...overrides,
+  });
+}
+
+function dataForSeoConnection(
+  overrides: Partial<SourceConnectionRow> = {},
+): SourceConnectionRow {
+  return sourceConnection({
+    provider: "dataforseo",
+    connection_type: "api_key_stub",
+    external_ref: "example.com",
+    config: {},
+    limitation: "Server-owned DataForSEO source.",
+    ...overrides,
+  });
+}
+
+function dataForSeoObservation(
+  overrides: Partial<ObservationRow> = {},
+): ObservationRow {
+  return observation({
+    provider: "dataforseo",
+    metric_key: "dataforseo.competitor_domain.v1",
+    subject_type: "site",
+    subject_ref: "rival.example",
+    origin: "vendor_observation",
+    grade: "B",
+    value_json: {
+      targetDomain: "example.com",
+      competitorDomain: "rival.example",
+      intersections: 4,
+      averagePosition: 12.25,
+      summedPosition: 49,
+      organicEstimatedTrafficVolume: 1_850.75,
+      marketCode: "US",
+      languageCode: "en",
+    },
+    limitation: "Provider competitor-domain observation.",
+    ...overrides,
+  });
 }
 
 afterEach(() => {
@@ -342,6 +431,87 @@ describe("deriveCsvCompetitorOriginInput", () => {
   });
 });
 
+describe("deriveSerpOverlapCompetitorOriginInput", () => {
+  it("projects only the exact competitorDomain pointer without inventing governance", () => {
+    expect(
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoSnapshot(),
+        dataForSeoRun(),
+        dataForSeoObservation(),
+      ),
+    ).toEqual({
+      originKind: "serp_overlap",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+  });
+
+  it("ignores the ranked-keyword half of the same composite Snapshot", () => {
+    expect(
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoSnapshot(),
+        dataForSeoRun(),
+        dataForSeoObservation({
+          metric_key: "csv.keyword_gap.v1",
+          subject_type: "keyword_cluster",
+          subject_ref: "enterprise-seo",
+          value_json: {
+            keyword: "enterprise seo platform",
+            clusterKey: "enterprise-seo",
+            searchVolume: 720,
+            currentUrl: null,
+            currentRank: 7,
+            competitorDomain: null,
+            competitorRank: null,
+            marketCode: "US",
+            languageCode: "en",
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("fails closed on mixed run identity, scope contradiction, or inferred fields", () => {
+    expect(() =>
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoSnapshot(),
+        dataForSeoRun({
+          operation: "keyword_gap_import",
+          method_version: "dataforseo.ranked_keywords.v1",
+        }),
+        dataForSeoObservation(),
+      ),
+    ).toThrow(/CollectionRun lineage/i);
+    expect(() =>
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoSnapshot(),
+        dataForSeoRun(),
+        dataForSeoObservation({
+          value_json: {
+            ...(dataForSeoObservation().value_json as Record<string, unknown>),
+            marketCode: "CA",
+          },
+        }),
+      ),
+    ).toThrow(/frozen scope/i);
+    expect(() =>
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoSnapshot(),
+        dataForSeoRun(),
+        dataForSeoObservation({
+          value_json: {
+            ...(dataForSeoObservation().value_json as Record<string, unknown>),
+            name: "Invented Rival",
+          },
+        }),
+      ),
+    ).toThrow(/not exact/i);
+  });
+});
+
 describe("projectCollectionSnapshotCompetitors", () => {
   it("pages canonical Observations and upserts every exact CSV origin idempotently", async () => {
     vi.spyOn(
@@ -430,7 +600,60 @@ describe("projectCollectionSnapshotCompetitors", () => {
     );
   });
 
-  it("never inspects or projects DataForSEO, SERP, AI, or other providers", async () => {
+  it("projects a canonical DataForSEO SERP origin through the same transaction-scoped repository", async () => {
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoRun());
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoConnection());
+    const findPreview = vi.spyOn(
+      ImportPreviewsRepository.prototype,
+      "findById",
+    );
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIdsPage",
+    ).mockResolvedValue({
+      rows: [
+        dataForSeoObservation(),
+        dataForSeoObservation({
+          id: "00000000-0000-4000-8000-000000000099",
+          metric_key: "csv.keyword_gap.v1",
+          subject_type: "keyword_cluster",
+          subject_ref: "enterprise-seo",
+        }),
+      ],
+      nextCursor: null,
+    });
+    const upsert = vi
+      .spyOn(CompetitorsRepository.prototype, "upsertOrigin")
+      .mockResolvedValue({
+        occurrenceId: "00000000-0000-4000-8000-000000000010",
+        competitorId: "00000000-0000-4000-8000-000000000011",
+      });
+
+    await expect(
+      projectCollectionSnapshotCompetitors(
+        {} as never,
+        scope,
+        dataForSeoSnapshot(),
+      ),
+    ).resolves.toBe(1);
+    expect(findPreview).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledWith(scope, {
+      originKind: "serp_overlap",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+  });
+
+  it("never inspects or projects unrelated providers", async () => {
     const findRun = vi.spyOn(
       CollectionRunsRepository.prototype,
       "findById",
@@ -444,7 +667,7 @@ describe("projectCollectionSnapshotCompetitors", () => {
       "upsertOrigin",
     );
 
-    for (const provider of ["dataforseo", "gsc", "ai_citation", "serp"]) {
+    for (const provider of ["gsc", "ai_citation", "serp"]) {
       await expect(
         projectCollectionSnapshotCompetitors(
           {} as never,
@@ -453,6 +676,18 @@ describe("projectCollectionSnapshotCompetitors", () => {
         ),
       ).resolves.toBe(0);
     }
+    await expect(
+      projectCollectionSnapshotCompetitors(
+        {} as never,
+        scope,
+        snapshot({
+          provider: "dataforseo",
+          dataset_key: "dataforseo.ranked_keywords.v1",
+          schema_version: "dataforseo.ranked_keywords.v1",
+          method_version: "dataforseo.ranked_keywords.v1",
+        }),
+      ),
+    ).resolves.toBe(0);
 
     expect(findRun).not.toHaveBeenCalled();
     expect(list).not.toHaveBeenCalled();
@@ -470,7 +705,7 @@ describe("projectCollectionSnapshotCompetitors", () => {
 
     await expect(
       projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
-    ).rejects.toThrow(/CollectionRun.*ImportPreview/i);
+    ).rejects.toThrow(/CollectionRun lineage/i);
     await expect(
       projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
     ).rejects.toThrow(/consumed ImportPreview/i);

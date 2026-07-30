@@ -220,8 +220,13 @@ beforeEach(() => {
     project_id: attempt.projectId,
     origin: "https://example.com",
     host: "example.com",
+    language_codes: [],
     is_primary: true,
   } as never);
+  vi.spyOn(
+    SitesRepository.prototype,
+    "projectPrimaryLanguageIfEmpty",
+  ).mockResolvedValue(true);
   vi.spyOn(
     ProjectsRepository.prototype,
     "setReadyToDiagnoseIfEligible",
@@ -801,6 +806,32 @@ describe("persistCollectionResult crawl page materialization", () => {
     };
   }
 
+  function languageSummary(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      siteLanguage: {
+        schemaVersion: "crawl.site-language-summary.v1",
+        status: "resolved",
+        languageTag: "en-US",
+        pagesAnalyzed: 1,
+        declaredPageCount: 1,
+        missingPageCount: 0,
+        invalidDeclarationCount: 0,
+        canonicalTags: ["en-US"],
+        evidence: [
+          {
+            fetchUrl: "https://example.com/pricing/",
+            declaredTag: "en-us",
+            canonicalTag: "en-US",
+          },
+        ],
+        omittedEvidenceCount: 0,
+        ...overrides,
+      },
+    };
+  }
+
   function crawlPageObservation(): ObservationInsert {
     return {
       metricKey: "crawl.page.v1",
@@ -893,6 +924,188 @@ describe("persistCollectionResult crawl page materialization", () => {
       "crawl",
       [expect.objectContaining({ sitePageId: "site-page-1" })],
     );
+  });
+
+  it("projects one resolved Crawl language inside the accepted completion transaction", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        outcome: {
+          ...crawlOutcome(),
+          summary: languageSummary(),
+        },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).toHaveBeenCalledWith(
+      {
+        workspaceId: attempt.workspaceId,
+        projectId: attempt.projectId,
+      },
+      collectionRun.site_id,
+      "en-US",
+    );
+    expect(
+      vi.mocked(DataSnapshotsRepository.prototype.insert).mock.calls[0]?.[0],
+    ).toMatchObject({ summary: languageSummary() });
+  });
+
+  it("does not freeze a Site language from a partial Crawl", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        outcome: {
+          ...crawlOutcome("partial"),
+          summary: languageSummary(),
+        },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(DataSnapshotsRepository.prototype.insert).mock.calls[0]?.[0],
+    ).toMatchObject({
+      availability: "partial",
+      summary: languageSummary(),
+    });
+  });
+
+  it.each(["missing", "invalid", "conflicting"] as const)(
+    "keeps the Site language empty for %s Crawl evidence",
+    async (status) => {
+      transaction.mockImplementationOnce(
+        async (callback: (tx: object) => Promise<unknown>) => callback({}),
+      );
+
+      const statusEvidence =
+        status === "missing"
+          ? {
+              status,
+              languageTag: null,
+              pagesAnalyzed: 1,
+              declaredPageCount: 0,
+              missingPageCount: 1,
+              invalidDeclarationCount: 0,
+              canonicalTags: [],
+              evidence: [],
+            }
+          : status === "invalid"
+            ? {
+                status,
+                languageTag: null,
+                invalidDeclarationCount: 1,
+                canonicalTags: [],
+                evidence: [
+                  {
+                    fetchUrl: "https://example.com/pricing/",
+                    declaredTag: "en_US",
+                    canonicalTag: null,
+                  },
+                ],
+              }
+            : {
+                status,
+                languageTag: null,
+                pagesAnalyzed: 2,
+                declaredPageCount: 2,
+                missingPageCount: 0,
+                invalidDeclarationCount: 0,
+                canonicalTags: ["en", "fr"],
+                evidence: [
+                  {
+                    fetchUrl: "https://example.com/pricing/",
+                    declaredTag: "en",
+                    canonicalTag: "en",
+                  },
+                  {
+                    fetchUrl: "https://example.com/fr",
+                    declaredTag: "fr",
+                    canonicalTag: "fr",
+                  },
+                ],
+              };
+      const selectedOutcome =
+        status !== "conflicting"
+          ? crawlOutcome()
+          : (() => {
+              const first = crawlOutcome();
+              const raw = first.raw as {
+                readonly pages: readonly {
+                  readonly subjectUrl: string;
+                  readonly depth: number;
+                  readonly projection: typeof pageProjection;
+                }[];
+              } & Record<string, unknown>;
+              const usage = {
+                ...first.providerUsage,
+                pagesCollected: 2,
+              };
+              return {
+                ...first,
+                rowCount: 2,
+                providerUsage: usage,
+                raw: {
+                  ...raw,
+                  pages: [
+                    ...raw.pages,
+                    {
+                      subjectUrl: "https://example.com/fr",
+                      depth: 1,
+                      projection: {
+                        ...pageProjection,
+                        fetchUrl: "https://example.com/fr",
+                        canonicalTarget: null,
+                        internalOutlinks: [],
+                      },
+                    },
+                  ],
+                  providerUsage: usage,
+                },
+              };
+            })();
+      await expect(
+        persist({
+          outcome: {
+            ...selectedOutcome,
+            summary: languageSummary(statusEvidence),
+          },
+        }),
+      ).resolves.toBe("snapshot-1");
+
+      expect(
+        SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects site-language evidence whose page count drifts from the validated Crawl raw", async () => {
+    await expect(
+      persist({
+        outcome: {
+          ...crawlOutcome(),
+          summary: languageSummary({
+            pagesAnalyzed: 2,
+            missingPageCount: 1,
+          }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: "Crawl site-language snapshot summary is invalid.",
+    });
+
+    expect(transaction).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 
   it("rejects a self-consistent foreign-origin crawl before Blob or canonical writes", async () => {

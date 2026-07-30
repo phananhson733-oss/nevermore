@@ -8,13 +8,21 @@ import {
   MAX_POSTGRES_INTEGER_REVISION,
   type ReviewCompetitorRequest,
 } from "@sf/contracts";
+import { ProblemError } from "@sf/observability";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ getDb: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getDb: vi.fn(),
+  loadPublishedGrowthMapGeneration: vi.fn(),
+}));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("./growth-map-generation", () => ({
+  loadPublishedGrowthMapGeneration: mocks.loadPublishedGrowthMapGeneration,
+}));
 
 const {
   getProjectAuditCompetitor,
+  getProjectAuditCompetitorReviewDetail,
   listProjectAuditCompetitors,
   reviewProjectAuditCompetitor,
 } = await import("./growth-map-competitors.ts");
@@ -38,6 +46,15 @@ const ids = {
   historicalProfile: "10000000-0000-4000-8000-000000000016",
   historicalCandidate: "10000000-0000-4000-8000-000000000017",
   historicalEvidenceRef: "10000000-0000-4000-8000-000000000018",
+  latestRun: "10000000-0000-4000-8000-000000000019",
+  olderRun: "10000000-0000-7000-8000-000000000020",
+  foreignRun: "10000000-0000-4000-8000-000000000021",
+  unpublishedRun: "10000000-0000-4000-8000-000000000022",
+  serpOrigin: "10000000-0000-4000-8000-000000000023",
+  serpSnapshot: "10000000-0000-4000-8000-000000000024",
+  serpObservation: "10000000-0000-4000-8000-000000000025",
+  serpCollectionRun: "10000000-0000-4000-8000-000000000026",
+  serpSource: "10000000-0000-4000-8000-000000000027",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -45,6 +62,107 @@ const capturedAt = "2026-07-22T08:00:00.000Z";
 const evidenceRefs = [
   { evidenceRefId: ids.evidenceRef, kind: "userEdit" as const },
 ];
+const governance: {
+  projectionVersion: string;
+  keywordClusters: readonly [];
+  competitors: Array<{
+    competitorEntityId: string;
+    domain: string;
+    reviewStatus: "candidate" | "approved" | "excluded";
+    revision: number;
+    relationship:
+      | "direct"
+      | "indirect"
+      | "status_quo"
+      | "benchmark"
+      | "publisher"
+      | null;
+    analysisScopes: Array<
+      | "positioning"
+      | "product_capability"
+      | "keyword_gap"
+      | "content"
+      | "serp_visibility"
+    >;
+    originRefs: Array<{
+      occurrenceId: string;
+      originKind:
+        | "product_profile"
+        | "csv_keyword_gap"
+        | "manual"
+        | "serp_overlap";
+      snapshotId: string | null;
+      observationId: string | null;
+    }>;
+  }>;
+} = {
+  projectionVersion: "growth-governance.1.0.0",
+  keywordClusters: [],
+  competitors: [
+    {
+      competitorEntityId: ids.competitor,
+      domain: "example-competitor.com",
+      reviewStatus: "approved",
+      revision: 2,
+      relationship: "direct",
+      analysisScopes: ["keyword_gap", "positioning"],
+      originRefs: [
+        {
+          occurrenceId: ids.csvOrigin,
+          originKind: "csv_keyword_gap",
+          snapshotId: ids.snapshot,
+          observationId: ids.observation,
+        },
+        {
+          occurrenceId: ids.profileOrigin,
+          originKind: "product_profile",
+          snapshotId: null,
+          observationId: null,
+        },
+        {
+          occurrenceId: ids.manual,
+          originKind: "manual",
+          snapshotId: null,
+          observationId: null,
+        },
+      ],
+    },
+  ],
+};
+
+function governanceCompetitor(
+  overrides: Partial<(typeof governance.competitors)[number]> = {},
+): (typeof governance.competitors)[number] {
+  return {
+    competitorEntityId: ids.competitor,
+    domain: "example-competitor.com",
+    reviewStatus: "approved",
+    revision: 2,
+    relationship: "direct",
+    analysisScopes: ["keyword_gap", "positioning"],
+    originRefs: [
+      {
+        occurrenceId: ids.csvOrigin,
+        originKind: "csv_keyword_gap",
+        snapshotId: ids.snapshot,
+        observationId: ids.observation,
+      },
+      {
+        occurrenceId: ids.profileOrigin,
+        originKind: "product_profile",
+        snapshotId: null,
+        observationId: null,
+      },
+      {
+        occurrenceId: ids.manual,
+        originKind: "manual",
+        snapshotId: null,
+        observationId: null,
+      },
+    ],
+    ...overrides,
+  };
+}
 
 interface QueryLike {
   from(...args: unknown[]): QueryLike;
@@ -214,6 +332,35 @@ function manualOrigin(
   };
 }
 
+function serpOrigin(
+  overrides: Partial<CompetitorOriginRow> = {},
+): CompetitorOriginRow {
+  return {
+    id: ids.serpOrigin,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    competitor_id: ids.competitor,
+    origin_kind: "serp_overlap",
+    source_name: null,
+    product_profile_id: null,
+    profile_version: null,
+    candidate_id: null,
+    field_provenance_path: null,
+    evidence_refs: null,
+    source_review_status: null,
+    source_relationship: null,
+    source_analysis_scope: null,
+    data_snapshot_id: ids.serpSnapshot,
+    normalized_observation_id: ids.serpObservation,
+    import_preview_id: null,
+    source_pointer: "/valueJson/competitorDomain",
+    manual_entry_id: null,
+    observed_at: capturedAt,
+    created_at: capturedAt,
+    ...overrides,
+  };
+}
+
 function profileRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ids.profile,
@@ -356,20 +503,148 @@ function csvPreview(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function serpObservation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ids.serpObservation,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    snapshot_id: ids.serpSnapshot,
+    site_page_id: null,
+    provider: "dataforseo",
+    metric_key: "dataforseo.competitor_domain.v1",
+    subject_type: "site",
+    subject_ref: "example-competitor.com",
+    observed_at: capturedAt,
+    availability: "available",
+    value_numeric: null,
+    value_text: null,
+    value_json: {
+      targetDomain: "relayops.example",
+      competitorDomain: "example-competitor.com",
+      intersections: 17,
+      averagePosition: 8.5,
+      summedPosition: 144,
+      organicEstimatedTrafficVolume: 901.25,
+      marketCode: "US",
+      languageCode: "en",
+    },
+    unit: null,
+    origin: "vendor_observation",
+    method: "observed",
+    grade: "B",
+    support: "supports",
+    ...overrides,
+  };
+}
+
+function serpSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ids.serpSnapshot,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    site_id: ids.site,
+    collection_run_id: ids.serpCollectionRun,
+    source_connection_id: ids.serpSource,
+    provider: "dataforseo",
+    dataset_key: "dataforseo.search_landscape.v1",
+    schema_version: "dataforseo.search_landscape.v1",
+    method_version: "dataforseo.search_landscape.v1",
+    captured_at: capturedAt,
+    availability: "available",
+    ...overrides,
+  };
+}
+
+function serpCollectionRun(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ids.serpCollectionRun,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    site_id: ids.site,
+    source_connection_id: ids.serpSource,
+    provider: "dataforseo",
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v1",
+    import_preview_id: null,
+    ...overrides,
+  };
+}
+
+interface SerpProjectionDrift {
+  readonly origin?: Partial<CompetitorOriginRow>;
+  readonly observation?: Record<string, unknown>;
+  readonly snapshot?: Record<string, unknown>;
+  readonly run?: Record<string, unknown>;
+}
+
+const serpProjectionDrifts: ReadonlyArray<
+  readonly [string, SerpProjectionDrift]
+> = [
+  [
+    "a legacy DataForSEO operation",
+    { run: { operation: "keyword_gap_import" } },
+  ],
+  [
+    "a mixed Snapshot dataset",
+    { snapshot: { dataset_key: "dataforseo.ranked_keywords.v1" } },
+  ],
+  [
+    "a mixed Observation metric",
+    { observation: { metric_key: "csv.keyword_gap.v1" } },
+  ],
+  [
+    "a foreign subject domain",
+    { observation: { subject_ref: "other-competitor.example" } },
+  ],
+  [
+    "a non-exact valueJson shape",
+    {
+      observation: {
+        value_json: {
+          ...serpObservation().value_json,
+          undocumentedVendorField: "must-not-pass",
+        },
+      },
+    },
+  ],
+  [
+    "a non-canonical origin pointer",
+    { origin: { source_pointer: "/valueJson/intersections" } },
+  ],
+  [
+    "a captured/observed mismatch",
+    { observation: { observed_at: "2026-07-22T08:00:01.000Z" } },
+  ],
+];
+
 function arrangeList(input: {
   readonly entity?: CompetitorEntityRow;
   readonly origins?: readonly CompetitorOriginRow[];
+  readonly governanceCompetitors?: typeof governance.competitors;
+  readonly generationRunId?: string;
   readonly nextCursor?: string | null;
   readonly queryResults?: readonly unknown[];
   readonly confirmedProfileId?: string | null;
 } = {}) {
   activeProject(input.confirmedProfileId);
   const selected = input.entity ?? entity();
-  vi.spyOn(CompetitorsRepository.prototype, "listByProject").mockResolvedValue({
+  const generationRunId = input.generationRunId ?? "published-run";
+  mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+    run: { id: generationRunId },
+    frozen: { runId: generationRunId },
+    governance: {
+      ...governance,
+      competitors: [...(input.governanceCompetitors ?? governance.competitors)],
+    },
+  });
+  vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([
+    selected,
+  ]);
+  vi.spyOn(CompetitorsRepository.prototype, "listByIdsPage").mockResolvedValue({
     rows: [selected],
     nextCursor: input.nextCursor ?? null,
   });
-  vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue(
+  vi.spyOn(CompetitorsRepository.prototype, "listOriginsByIds").mockResolvedValue(
     [...(input.origins ?? [csvOrigin(), profileOrigin(), manualOrigin()])],
   );
   const exec = new FakeExecutor();
@@ -388,13 +663,185 @@ function arrangeList(input: {
 beforeEach(() => {
   vi.restoreAllMocks();
   mocks.getDb.mockReset();
+  mocks.loadPublishedGrowthMapGeneration.mockReset();
 });
 
 describe("Growth Map Competitor Library read service", () => {
+  it("selects the latest published generation when the list is not pinned", async () => {
+    const exec = arrangeList();
+
+    await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+      exec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      null,
+    );
+  });
+
+  it("selects one exact older published generation for the list without falling forward", async () => {
+    const exec = arrangeList({
+      generationRunId: ids.olderRun,
+      governanceCompetitors: [
+        governanceCompetitor({
+          reviewStatus: "candidate",
+          revision: 1,
+          relationship: null,
+          analysisScopes: [],
+        }),
+      ],
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+      exec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.olderRun,
+    );
+    expect(response.data[0]).toMatchObject({
+      reviewStatus: "candidate",
+      revision: 1,
+      relationship: null,
+      analysisScope: [],
+    });
+  });
+
+  it.each(["list", "detail"] as const)(
+    "fails closed when the generation loader returns a different run for an exact %s pin",
+    async (kind) => {
+      activeProject();
+      mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+        run: { id: ids.latestRun },
+        frozen: { runId: ids.latestRun },
+        governance,
+      });
+      const listByIds = vi.spyOn(
+        CompetitorsRepository.prototype,
+        "listByIds",
+      );
+      const exec = new FakeExecutor();
+
+      await expect(
+        kind === "list"
+          ? listProjectAuditCompetitors(
+              scope,
+              ids.project,
+              {
+                limit: 50,
+                cursor: null,
+                diagnosticRunId: ids.olderRun,
+              },
+              exec as never,
+            )
+          : getProjectAuditCompetitor(
+              scope,
+              ids.project,
+              ids.competitor,
+              { diagnosticRunId: ids.olderRun },
+              exec as never,
+            ),
+      ).rejects.toMatchObject({
+        code: "DEPENDENCY_UNAVAILABLE",
+        status: 503,
+      });
+      expect(listByIds).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["list", "detail"] as const)(
+    "rejects a non-canonical diagnosticRunId before database access for %s",
+    async (kind) => {
+      const invalidRunId = "10000000-0000-7000-8000-00000000000A";
+      const project = vi.spyOn(
+        ProjectsRepository.prototype,
+        "findById",
+      );
+
+      await expect(
+        kind === "list"
+          ? listProjectAuditCompetitors(scope, ids.project, {
+              limit: 50,
+              cursor: null,
+              diagnosticRunId: invalidRunId,
+            })
+          : getProjectAuditCompetitor(
+              scope,
+              ids.project,
+              ids.competitor,
+              { diagnosticRunId: invalidRunId },
+            ),
+      ).rejects.toThrow("diagnosticRunId must be a canonical UUID");
+      expect(project).not.toHaveBeenCalled();
+      expect(mocks.getDb).not.toHaveBeenCalled();
+      expect(
+        mocks.loadPublishedGrowthMapGeneration,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["foreign", ids.foreignRun],
+    ["unpublished", ids.unpublishedRun],
+  ])(
+    "fails closed for a %s exact list generation and never retries latest",
+    async (_label, diagnosticRunId) => {
+      activeProject();
+      const notPublished = new ProblemError(
+        "GROWTH_MAP_AUDIT_NOT_FOUND",
+        "No completed Growth Map audit is available for this project.",
+      );
+      mocks.loadPublishedGrowthMapGeneration.mockRejectedValue(notPublished);
+      const listByIds = vi.spyOn(
+        CompetitorsRepository.prototype,
+        "listByIds",
+      );
+
+      await expect(
+        listProjectAuditCompetitors(
+          scope,
+          ids.project,
+          { limit: 50, cursor: null, diagnosticRunId },
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toBe(notPublished);
+
+      expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
+      expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+        expect.anything(),
+        { workspaceId: ids.workspace, projectId: ids.project },
+        diagnosticRunId,
+      );
+      expect(
+        mocks.loadPublishedGrowthMapGeneration.mock.calls.some(
+          (call) => call[2] === null || call[2] === undefined,
+        ),
+      ).toBe(false);
+      expect(listByIds).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses one repeatable-read, read-only snapshot when no executor is supplied", async () => {
     const exec = new FakeExecutor();
     activeProject(null);
-    vi.spyOn(CompetitorsRepository.prototype, "listByProject").mockResolvedValue({
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance: { ...governance, competitors: [] },
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listByIdsPage").mockResolvedValue({
       rows: [],
       nextCursor: null,
     });
@@ -434,6 +881,7 @@ describe("Growth Map Competitor Library read service", () => {
       projectId: ids.project,
       competitorId: ids.competitor,
       domain: "example-competitor.com",
+      name: null,
       reviewStatus: "approved",
       relationship: "direct",
       analysisScope: ["keyword_gap", "positioning"],
@@ -442,14 +890,22 @@ describe("Growth Map Competitor Library read service", () => {
       serpOverlap: {
         availability: "unavailable",
         value: null,
-        limitation: expect.stringMatching(/canonical.*writer/i),
+        limitation: expect.stringMatching(
+          /no immutable.*source.*recorded.*no canonical derived.*ratio/i,
+        ),
       },
       aiCitationInsight: {
         availability: "unavailable",
         value: null,
         limitation: expect.stringMatching(/canonical.*writer/i),
       },
+      coverage: { availability: "partial" },
     });
+    expect(
+      item.coverage.limitations.some((limitation) =>
+        /display name is unavailable.*froze/i.test(limitation),
+      ),
+    ).toBe(true);
     expect(item.originOccurrences).toEqual(
       expect.arrayContaining([
         {
@@ -488,10 +944,229 @@ describe("Growth Map Competitor Library read service", () => {
     expect(serialized).not.toContain("privateCsvPayload");
   });
 
+  it("projects one exact DataForSEO competitor-domain origin from a pinned published generation without inventing a ratio", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.serpOrigin,
+              originKind: "serp_overlap",
+              snapshotId: ids.serpSnapshot,
+              observationId: ids.serpObservation,
+            },
+          ],
+        }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [serpObservation()],
+        [serpSnapshot()],
+        [serpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.olderRun,
+      },
+      exec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+      exec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.olderRun,
+    );
+    expect(response.data[0]).toMatchObject({
+      competitorId: ids.competitor,
+      lastObservedAt: capturedAt,
+      originOccurrences: [
+        {
+          occurrenceId: ids.serpOrigin,
+          originKind: "serp_overlap",
+          snapshotId: ids.serpSnapshot,
+          observationId: ids.serpObservation,
+          evidenceRefs: [],
+          observedAt: capturedAt,
+        },
+      ],
+      serpOverlap: {
+        availability: "unavailable",
+        value: null,
+        limitation: expect.stringMatching(
+          /immutable.*source.*recorded.*no canonical derived.*ratio/i,
+        ),
+      },
+      aiCitationInsight: {
+        availability: "unavailable",
+        value: null,
+        limitation: expect.stringMatching(/canonical.*writer/i),
+      },
+    });
+    expect(
+      response.data[0]?.coverage.limitations.some((limitation) =>
+        /immutable.*source.*recorded.*no canonical derived.*ratio/i.test(
+          limitation,
+        ),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(response)).not.toMatch(/no canonical serp-overlap writer/i);
+  });
+
+  it("projects the exact DataForSEO origin in the live review detail without widening it into a derived insight", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      entity({ name: null, origin_count: 1 }),
+    );
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      serpOrigin(),
+    ]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [serpObservation()],
+      [serpSnapshot()],
+      [serpCollectionRun()],
+    );
+
+    const response = await getProjectAuditCompetitorReviewDetail(
+      scope,
+      ids.project,
+      ids.competitor,
+      exec as never,
+    );
+
+    expect(response.data.originOccurrences).toEqual([
+      {
+        occurrenceId: ids.serpOrigin,
+        originKind: "serp_overlap",
+        snapshotId: ids.serpSnapshot,
+        observationId: ids.serpObservation,
+        evidenceRefs: [],
+        observedAt: capturedAt,
+      },
+    ]);
+    expect(response.data.serpOverlap).toEqual({
+      availability: "unavailable",
+      value: null,
+      limitation: expect.stringMatching(
+        /immutable.*source.*recorded.*no canonical derived.*ratio/i,
+      ),
+    });
+  });
+
+  it.each(serpProjectionDrifts)(
+    "fails closed for DataForSEO lineage mixed with %s",
+    async (_label, drift) => {
+      const exec = arrangeList({
+        entity: entity({ name: null, origin_count: 1 }),
+        origins: [serpOrigin(drift.origin)],
+        governanceCompetitors: [
+          governanceCompetitor({
+            originRefs: [
+              {
+                occurrenceId: ids.serpOrigin,
+                originKind: "serp_overlap",
+                snapshotId: ids.serpSnapshot,
+                observationId: ids.serpObservation,
+              },
+            ],
+          }),
+        ],
+        queryResults: [
+          [serpObservation(drift.observation)],
+          [serpSnapshot(drift.snapshot)],
+          [serpCollectionRun(drift.run)],
+        ],
+        confirmedProfileId: null,
+      });
+
+      await expect(
+        listProjectAuditCompetitors(
+          scope,
+          ids.project,
+          { limit: 50, cursor: null },
+          exec as never,
+        ),
+      ).rejects.toMatchObject({
+        code: "DEPENDENCY_UNAVAILABLE",
+        status: 503,
+      });
+    },
+  );
+
+  it("does not widen an older frozen generation with a newer live DataForSEO origin", async () => {
+    const exec = arrangeList({
+      entity: entity({ origin_count: 2 }),
+      origins: [manualOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.manual,
+              originKind: "manual",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.olderRun,
+      },
+      exec as never,
+    );
+
+    expect(
+      vi.mocked(CompetitorsRepository.prototype.listOriginsByIds),
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      [ids.manual],
+    );
+    expect(response.data[0]?.originOccurrences).toEqual([
+      {
+        occurrenceId: ids.manual,
+        originKind: "manual",
+        manualEntryId: ids.manual,
+        evidenceRefs: [],
+        observedAt: null,
+      },
+    ]);
+  });
+
   it("projects a valid immutable V1 origin after the project confirms V2", async () => {
     const exec = arrangeList({
       entity: entity({ last_observed_at: null, origin_count: 1 }),
       origins: [historicalProfileOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.historicalProfileOrigin,
+              originKind: "product_profile",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
       queryResults: [[historicalProfileRow()]],
       confirmedProfileId: ids.profile,
     });
@@ -522,6 +1197,30 @@ describe("Growth Map Competitor Library read service", () => {
   it("preserves mixed CSV, historical V1, and current V2 origin history", async () => {
     const exec = arrangeList({
       origins: [csvOrigin(), historicalProfileOrigin(), profileOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.csvOrigin,
+              originKind: "csv_keyword_gap",
+              snapshotId: ids.snapshot,
+              observationId: ids.observation,
+            },
+            {
+              occurrenceId: ids.historicalProfileOrigin,
+              originKind: "product_profile",
+              snapshotId: null,
+              observationId: null,
+            },
+            {
+              occurrenceId: ids.profileOrigin,
+              originKind: "product_profile",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
       queryResults: [
         [historicalProfileRow(), profileRow()],
         [csvObservation()],
@@ -566,10 +1265,15 @@ describe("Growth Map Competitor Library read service", () => {
 
   it("returns the same scoped projection from detail", async () => {
     activeProject();
-    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance,
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([
       entity(),
-    );
-    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+    ]);
+    vi.spyOn(CompetitorsRepository.prototype, "listOriginsByIds").mockResolvedValue([
       csvOrigin(),
       profileOrigin(),
       manualOrigin(),
@@ -592,22 +1296,179 @@ describe("Growth Map Competitor Library read service", () => {
 
     expect(response).toMatchObject({
       projectId: ids.project,
-      data: { competitorId: ids.competitor, lastObservedAt: capturedAt },
+      data: {
+        competitorId: ids.competitor,
+        name: null,
+        lastObservedAt: capturedAt,
+      },
     });
+    expect(
+      response.data.coverage.limitations.some((limitation) =>
+        /display name is unavailable.*froze/i.test(limitation),
+      ),
+    ).toBe(true);
+  });
+
+  it("selects one exact older published generation for detail", async () => {
+    activeProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: ids.olderRun },
+      frozen: { runId: ids.olderRun },
+      governance: {
+        ...governance,
+        competitors: [
+          governanceCompetitor({
+            reviewStatus: "candidate",
+            revision: 1,
+            relationship: null,
+            analysisScopes: [],
+          }),
+        ],
+      },
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([
+      entity({ revision: 3 }),
+    ]);
+    vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listOriginsByIds",
+    ).mockResolvedValue([csvOrigin(), profileOrigin(), manualOrigin()]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [profileRow()],
+      [csvObservation()],
+      [csvSnapshot()],
+      [csvCollectionRun()],
+      [csvPreview()],
+    );
+
+    const response = await getProjectAuditCompetitor(
+      scope,
+      ids.project,
+      ids.competitor,
+      { diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+      exec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.olderRun,
+    );
+    expect(response.data).toMatchObject({
+      competitorId: ids.competitor,
+      reviewStatus: "candidate",
+      revision: 1,
+      relationship: null,
+      analysisScope: [],
+    });
+  });
+
+  it.each([
+    ["foreign", ids.foreignRun],
+    ["unpublished", ids.unpublishedRun],
+  ])(
+    "fails closed for a %s exact detail generation and never retries latest",
+    async (_label, diagnosticRunId) => {
+      activeProject();
+      const notPublished = new ProblemError(
+        "GROWTH_MAP_AUDIT_NOT_FOUND",
+        "No completed Growth Map audit is available for this project.",
+      );
+      mocks.loadPublishedGrowthMapGeneration.mockRejectedValue(notPublished);
+      const listByIds = vi.spyOn(
+        CompetitorsRepository.prototype,
+        "listByIds",
+      );
+
+      await expect(
+        getProjectAuditCompetitor(
+          scope,
+          ids.project,
+          ids.competitor,
+          { diagnosticRunId },
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toBe(notPublished);
+
+      expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
+      expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
+        expect.anything(),
+        { workspaceId: ids.workspace, projectId: ids.project },
+        diagnosticRunId,
+      );
+      expect(
+        mocks.loadPublishedGrowthMapGeneration.mock.calls.some(
+          (call) => call[2] === null || call[2] === undefined,
+        ),
+      ).toBe(false);
+      expect(listByIds).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns current live governance only from the explicit review detail read", async () => {
+    activeProject();
+    const current = entity({
+      name: "Current Review",
+      review_status: "candidate",
+      relationship: null,
+      analysis_scope: [],
+      revision: 3,
+      last_observed_at: null,
+      origin_count: 1,
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      current,
+    );
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      manualOrigin({ source_name: current.name }),
+    ]);
+    const listByIds = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listByIds",
+    );
+    const exec = new FakeExecutor();
+
+    const response = await getProjectAuditCompetitorReviewDetail(
+      scope,
+      ids.project,
+      ids.competitor,
+      exec as never,
+    );
+
+    expect(response.data).toMatchObject({
+      competitorId: ids.competitor,
+      name: "Current Review",
+      reviewStatus: "candidate",
+      relationship: null,
+      analysisScope: [],
+      revision: 3,
+    });
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
+    expect(listByIds).not.toHaveBeenCalled();
   });
 
   it("keeps manual input first-class without loading or inventing provider lineage", async () => {
     const selected = entity({
-      review_status: "candidate",
-      relationship: null,
-      analysis_scope: [],
-      revision: 0,
       last_observed_at: null,
       origin_count: 1,
     });
     const exec = arrangeList({
       entity: selected,
       origins: [manualOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.manual,
+              originKind: "manual",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
       queryResults: [],
       confirmedProfileId: null,
     });
@@ -631,14 +1492,14 @@ describe("Growth Map Competitor Library read service", () => {
     expect(exec.calls).toEqual([]);
   });
 
-  it("keeps CSV-first entity governance pending when a later Product Profile source is approved", async () => {
+  it("keeps frozen governance after a newer live review changes the mutable entity", async () => {
     const exec = arrangeList({
       entity: entity({
         name: null,
         review_status: "candidate",
         relationship: null,
         analysis_scope: [],
-        revision: 0,
+        revision: 3,
       }),
     });
 
@@ -650,90 +1511,247 @@ describe("Growth Map Competitor Library read service", () => {
     );
 
     expect(response.data[0]).toMatchObject({
-      reviewStatus: "candidate",
-      relationship: null,
-      analysisScope: [],
-      revision: 0,
-      coverage: {
-        availability: "partial",
-        limitations: expect.arrayContaining([
-          expect.stringMatching(
-            /Product Profile source is approved.*still awaiting.*review/i,
-          ),
-        ]),
+      name: null,
+      reviewStatus: "approved",
+      relationship: "direct",
+      analysisScope: ["keyword_gap", "positioning"],
+      revision: 2,
+      coverage: { availability: "partial" },
+    });
+    expect(
+      response.data[0]?.coverage.limitations.some((limitation) =>
+        /display name is unavailable.*froze/i.test(limitation),
+      ),
+    ).toBe(true);
+    expect(
+      response.data[0]?.coverage.limitations.some((limitation) =>
+        /canonical.*writer/i.test(limitation),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps published name null when the live entity name differs or becomes null", async () => {
+    const renamedExec = arrangeList({
+      entity: entity({ name: "Renamed Live Competitor" }),
+    });
+    const renamedResponse = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      renamedExec as never,
+    );
+    expect(renamedResponse.data[0]).toMatchObject({
+      name: null,
+    });
+    expect(
+      renamedResponse.data[0]?.coverage.limitations.some((limitation) =>
+        /display name is unavailable.*froze/i.test(limitation),
+      ),
+    ).toBe(true);
+
+    vi.restoreAllMocks();
+    const nullExec = arrangeList({
+      entity: entity({ name: null }),
+    });
+    const nullResponse = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      nullExec as never,
+    );
+    expect(nullResponse.data[0]).toMatchObject({
+      name: null,
+    });
+    expect(
+      nullResponse.data[0]?.coverage.limitations.some((limitation) =>
+        /display name is unavailable.*froze/i.test(limitation),
+      ),
+    ).toBe(true);
+  });
+
+  it("excludes newer live origins that are absent from the frozen manifest", async () => {
+    const exec = arrangeList({
+      origins: [csvOrigin(), profileOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.csvOrigin,
+              originKind: "csv_keyword_gap",
+              snapshotId: ids.snapshot,
+              observationId: ids.observation,
+            },
+            {
+              occurrenceId: ids.profileOrigin,
+              originKind: "product_profile",
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ],
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.originOccurrences).toHaveLength(2);
+    expect(response.data[0]?.originOccurrences).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ occurrenceId: ids.manual }),
+      ]),
+    );
+  });
+
+  it("pages only over frozen manifest membership and preserves nextCursor", async () => {
+    const secondCompetitorId = "10000000-0000-4000-8000-000000000099";
+    vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([
+      entity(),
+      entity({
+        id: secondCompetitorId,
+        domain: "second-competitor.example",
+        name: "Second Competitor",
+        review_status: "candidate",
+        relationship: null,
+        analysis_scope: [],
+        revision: 8,
+        origin_count: 1,
+      }),
+    ]);
+    const listByIdsPage = vi
+      .spyOn(CompetitorsRepository.prototype, "listByIdsPage")
+      .mockResolvedValue({
+        rows: [entity()],
+        nextCursor: "opaque-next",
+      });
+    vi.spyOn(CompetitorsRepository.prototype, "listOriginsByIds").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    activeProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance: {
+        ...governance,
+        competitors: [
+          ...governance.competitors,
+          {
+            competitorEntityId: secondCompetitorId,
+            domain: "second-competitor.example",
+            reviewStatus: "approved",
+            revision: 1,
+            relationship: "benchmark",
+            analysisScopes: ["positioning"],
+            originRefs: [],
+          },
+        ],
       },
     });
-  });
-
-  it("marks an immutable origin history capped at 100 as explicitly partial", async () => {
-    const origins = Array.from({ length: 100 }, (_, index) => {
-      const suffix = (index + 20).toString(16).padStart(12, "0");
-      const id = `10000000-0000-4000-8000-${suffix}`;
-      return manualOrigin({ id, manual_entry_id: id });
-    });
-    const exec = arrangeList({
-      entity: entity({
-        review_status: "candidate",
-        relationship: null,
-        analysis_scope: [],
-        last_observed_at: null,
-        origin_count: 101,
-      }),
-      origins,
-      queryResults: [],
-      confirmedProfileId: null,
-    });
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [profileRow()],
+      [csvObservation()],
+      [csvSnapshot()],
+      [csvCollectionRun()],
+      [csvPreview()],
+    );
 
     const response = await listProjectAuditCompetitors(
       scope,
       ids.project,
-      { limit: 50, cursor: null },
+      { limit: 1, cursor: null },
       exec as never,
     );
 
-    expect(response.data[0]?.originOccurrences).toHaveLength(100);
-    expect(response.data[0]?.coverage).toMatchObject({
-      availability: "partial",
-      limitations: expect.arrayContaining([
-        expect.stringMatching(/most recent 100.*origin/i),
-      ]),
-    });
+    expect(listByIdsPage).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      [ids.competitor, secondCompetitorId],
+      { limit: 1, cursor: null },
+    );
+    expect(response.meta.nextCursor).toBe("opaque-next");
+    expect(response.meta.hasNext).toBe(true);
   });
 
-  it("keeps the approved-source governance warning when that Product Profile origin is older than the 100-origin window", async () => {
-    const origins = Array.from({ length: 100 }, (_, index) => {
-      const suffix = (index + 200).toString(16).padStart(12, "0");
-      const id = `10000000-0000-4000-8000-${suffix}`;
-      return manualOrigin({ id, manual_entry_id: id });
+  it("fails closed when one frozen competitor id is missing even if another fills the first page", async () => {
+    const secondCompetitorId = "10000000-0000-4000-8000-000000000099";
+    activeProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance: {
+        ...governance,
+        competitors: [
+          ...governance.competitors,
+          {
+            competitorEntityId: secondCompetitorId,
+            domain: "second-competitor.example",
+            reviewStatus: "approved",
+            revision: 1,
+            relationship: "benchmark",
+            analysisScopes: ["positioning"],
+            originRefs: [],
+          },
+        ],
+      },
     });
-    const exec = arrangeList({
-      entity: entity({
-        review_status: "candidate",
-        relationship: null,
-        analysis_scope: [],
-        last_observed_at: null,
-        origin_count: 101,
-      }),
-      origins,
-      queryResults: [[{ competitor_id: ids.competitor }]],
-      confirmedProfileId: null,
-    });
-
-    const response = await listProjectAuditCompetitors(
-      scope,
-      ids.project,
-      { limit: 50, cursor: null },
-      exec as never,
+    vi.spyOn(CompetitorsRepository.prototype, "listByIds").mockResolvedValue([
+      entity(),
+    ]);
+    const listByIdsPage = vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listByIdsPage",
     );
 
-    expect(response.data[0]?.coverage).toMatchObject({
-      availability: "partial",
-      limitations: expect.arrayContaining([
-        expect.stringMatching(
-          /Product Profile source is approved.*still awaiting.*review/i,
-        ),
-      ]),
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 1, cursor: null },
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    expect(listByIdsPage).not.toHaveBeenCalled();
+  });
+
+  it("returns not found when detail is absent from the frozen manifest", async () => {
+    activeProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance: { ...governance, competitors: [] },
     });
+    const find = vi.spyOn(CompetitorsRepository.prototype, "listByIds");
+
+    await expect(
+      getProjectAuditCompetitor(
+        scope,
+        ids.project,
+        ids.competitor,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a frozen origin lineage row no longer matches the manifest", async () => {
+    const exec = arrangeList({
+      origins: [csvOrigin({ data_snapshot_id: ids.importPreview }), profileOrigin(), manualOrigin()],
+    });
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
   });
 
   it("fails closed for drifted Product Profile and CSV lineage", async () => {
@@ -803,11 +1821,13 @@ describe("Growth Map Competitor Library read service", () => {
 
   it("fails closed when the final customer projection violates its strict contract", async () => {
     const exec = arrangeList({
-      entity: entity({
-        relationship: null,
-        last_observed_at: null,
-        origin_count: 1,
-      }),
+      entity: entity({ last_observed_at: null, origin_count: 1 }),
+      governanceCompetitors: [
+        governanceCompetitor({
+          reviewStatus: "approved",
+          relationship: null,
+        } as never),
+      ],
       origins: [manualOrigin()],
       queryResults: [],
       confirmedProfileId: null,
@@ -825,7 +1845,7 @@ describe("Growth Map Competitor Library read service", () => {
 
   it("rejects malformed cursors, archived projects, and foreign detail before projection", async () => {
     const find = vi.spyOn(ProjectsRepository.prototype, "findById");
-    const list = vi.spyOn(CompetitorsRepository.prototype, "listByProject");
+    const list = vi.spyOn(CompetitorsRepository.prototype, "listByIdsPage");
     const malformed = Buffer.from(
       "customer-private-not-a-semantic-cursor",
     ).toString("base64url");
@@ -858,9 +1878,11 @@ describe("Growth Map Competitor Library read service", () => {
 
     vi.restoreAllMocks();
     activeProject();
-    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
-      null,
-    );
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue({
+      run: { id: "published-run" },
+      frozen: { runId: "published-run" },
+      governance: { ...governance, competitors: [] },
+    });
     await expect(
       getProjectAuditCompetitor(
         scope,
@@ -946,6 +1968,7 @@ describe("Growth Map Competitor Library review service", () => {
         revision: 3,
       },
     });
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
   });
 
   it("runs the production write and canonical response read in one transaction", async () => {

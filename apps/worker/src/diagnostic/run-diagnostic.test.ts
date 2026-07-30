@@ -3,6 +3,7 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CompetitorsRepository,
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -42,6 +43,9 @@ import {
   CRAWL_METHOD_VERSION,
   DATAFORSEO_DATASET_KEY,
   DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
   METRIC_CSV_KEYWORD_GAP,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
@@ -541,6 +545,7 @@ function frozenSource(
   provider: SourceProvider,
   overrides: {
     readonly datasetKey?: string;
+    readonly schemaVersion?: string;
     readonly methodVersion?: string;
     readonly availability?: string;
   } = {},
@@ -551,11 +556,15 @@ function frozenSource(
   const config = SOURCE_FIXTURE_CONFIG[provider];
   const datasetKey = overrides.datasetKey ?? config.datasetKey;
   const methodVersion = overrides.methodVersion ?? config.methodVersion;
+  const schemaVersion =
+    overrides.schemaVersion ??
+    (provider === "dataforseo" ? methodVersion : "0.2.0");
   return {
     manifest: manifestEntry({
       snapshotId: config.snapshotId,
       provider,
       datasetKey,
+      schemaVersion,
       methodVersion,
       ...(overrides.availability
         ? { availability: overrides.availability }
@@ -566,6 +575,7 @@ function frozenSource(
       collection_run_id: config.collectionRunId,
       provider,
       dataset_key: datasetKey,
+      schema_version: schemaVersion,
       method_version: methodVersion,
       ...(overrides.availability
         ? { availability: overrides.availability }
@@ -695,6 +705,13 @@ async function runObservationValidationFixture(
     readonly frozenPages?: readonly FrozenPageIdentity[];
     readonly sitePages?: readonly SitePageIdentity[];
     readonly governance?: unknown;
+    readonly source?: {
+      readonly datasetKey: string;
+      readonly schemaVersion?: string;
+      readonly methodVersion: string;
+    };
+    readonly observations?: readonly ObservationRow[];
+    readonly collectionOperation?: string;
   } = {},
 ): Promise<{
   readonly contextBuild: ReturnType<typeof vi.spyOn>;
@@ -705,7 +722,10 @@ async function runObservationValidationFixture(
   readonly sitePages: ReturnType<typeof vi.spyOn>;
 }> {
   const crawl = frozenSource("crawl");
-  const source = provider === "crawl" ? crawl : frozenSource(provider);
+  const source =
+    provider === "crawl"
+      ? crawl
+      : frozenSource(provider, lineage.source);
   const manifests =
     provider === "crawl"
       ? [source.manifest]
@@ -723,6 +743,33 @@ async function runObservationValidationFixture(
   const transaction = vi.fn();
   const ctx = unitContext(transaction);
   const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+  if (provider === "dataforseo") {
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue({
+      id: source.snapshot.collection_run_id,
+      workspace_id: "workspace-1",
+      project_id: "project-1",
+      site_id: "site-1",
+      source_connection_id: null,
+      import_preview_id: null,
+      crawl_seed_site_page_id: null,
+      crawl_seed_url: null,
+      provider: "dataforseo",
+      operation:
+        lineage.collectionOperation ??
+        (source.snapshot.dataset_key ===
+        DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+          ? "search_landscape"
+          : "keyword_gap_import"),
+      method_version: source.snapshot.method_version,
+      parameters_hash: "a".repeat(64),
+      row_count: 2,
+      stop_reason: null,
+      created_at: FROZEN_AT,
+    });
+  }
   vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue(
     snapshots,
   );
@@ -736,7 +783,11 @@ async function runObservationValidationFixture(
   vi.spyOn(
     ObservationsRepository.prototype,
     "listBySnapshotIds",
-  ).mockResolvedValue([observation]);
+  ).mockResolvedValue(
+    lineage.observations === undefined
+      ? [observation]
+      : [...lineage.observations],
+  );
   const value =
     typeof observation.value_json === "object" &&
     observation.value_json !== null &&
@@ -842,6 +893,30 @@ function mockClaimedDiagnostic(
   ).mockResolvedValue(diagnostic);
   vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue(
     validSiteRow(),
+  );
+  vi.spyOn(
+    CollectionRunsRepository.prototype,
+    "findById",
+  ).mockImplementation(async (id) =>
+    id === SOURCE_FIXTURE_CONFIG.dataforseo.collectionRunId
+      ? {
+          id,
+          workspace_id: "workspace-1",
+          project_id: "project-1",
+          site_id: "site-1",
+          source_connection_id: null,
+          import_preview_id: null,
+          crawl_seed_site_page_id: null,
+          crawl_seed_url: null,
+          provider: "dataforseo",
+          operation: "keyword_gap_import",
+          method_version: DATAFORSEO_METHOD_VERSION,
+          parameters_hash: "a".repeat(64),
+          row_count: 1,
+          stop_reason: null,
+          created_at: FROZEN_AT,
+        }
+      : null,
   );
   return vi
     .spyOn(AsyncRunsRepository.prototype, "setTerminal")
@@ -2172,6 +2247,41 @@ describe("diagnostic frozen snapshot validation", () => {
     },
   );
 
+  it.each(SOURCE_PROVIDERS)(
+    "rejects a self-consistent %s snapshot with an unregistered schema before loading its ICP",
+    async (provider) => {
+      const crawl = frozenSource("crawl");
+      const corrupted = frozenSource(provider, {
+        schemaVersion: "forged.schema.v1",
+      });
+      const manifests =
+        provider === "crawl"
+          ? [corrupted.manifest]
+          : [crawl.manifest, corrupted.manifest];
+      const snapshots =
+        provider === "crawl"
+          ? [corrupted.snapshot]
+          : [crawl.snapshot, corrupted.snapshot];
+      const fixture = diagnosticFixture({ snapshots: manifests });
+      const ctx = unitContext();
+      const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+      vi.spyOn(
+        DataSnapshotsRepository.prototype,
+        "findByIds",
+      ).mockResolvedValue(snapshots);
+      const icp = vi.spyOn(IcpProfilesRepository.prototype, "findById");
+
+      await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+      expect(icp).not.toHaveBeenCalled();
+      expect(terminal).toHaveBeenCalledWith(toRunAttempt(fixture.run), {
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+        lastErrorSummary: "diagnostic failed",
+      });
+    },
+  );
+
   it.each([
     {
       mismatch: "legacy CSV dataset with the DataForSEO method",
@@ -2182,6 +2292,16 @@ describe("diagnostic frozen snapshot validation", () => {
       mismatch: "DataForSEO dataset with the CSV method",
       datasetKey: DATAFORSEO_DATASET_KEY,
       methodVersion: "csv.keyword_gap.v1",
+    },
+    {
+      mismatch: "legacy DataForSEO dataset with the composite method",
+      datasetKey: DATAFORSEO_DATASET_KEY,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+    },
+    {
+      mismatch: "composite DataForSEO dataset with the legacy method",
+      datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+      methodVersion: DATAFORSEO_METHOD_VERSION,
     },
   ])(
     "rejects a self-consistent DataForSEO snapshot using $mismatch before loading its ICP",
@@ -2236,6 +2356,169 @@ describe("diagnostic frozen snapshot validation", () => {
         lastErrorCode: "UNAVAILABLE",
         lastErrorSummary: "diagnostic failed",
       },
+    );
+  });
+
+  it("accepts composite ranked-keyword observations and excludes competitor-domain rows from DiagnosticContext", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const competitor = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000030",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "rival.example",
+        intersections: 42,
+        averagePosition: 8.5,
+        summedPosition: 357,
+        organicEstimatedTrafficVolume: 1_250,
+        marketCode: "US",
+        languageCode: "en",
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+        observations: [ranked, competitor],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observations: [
+          expect.objectContaining({
+            observationId: ranked.id,
+            metricKey: METRIC_CSV_KEYWORD_GAP,
+            provider: "dataforseo",
+          }),
+        ],
+      }),
+    );
+    expect(
+      result.contextBuild.mock.calls[0]?.[0].observations,
+    ).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metricKey: METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+        }),
+      ]),
+    );
+  });
+
+  it("fails closed when a composite competitor-domain value does not match its subject identity", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const competitor = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000031",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "different.example",
+        intersections: 42,
+        averagePosition: 8.5,
+        summedPosition: 357,
+        organicEstimatedTrafficVolume: 1_250,
+        marketCode: "US",
+        languageCode: "en",
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+        observations: [ranked, competitor],
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+    expect(result.terminal).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when a composite competitor-domain value targets another Site", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const competitor = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000032",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "other.example",
+        competitorDomain: "rival.example",
+        intersections: 42,
+        averagePosition: 8.5,
+        summedPosition: 357,
+        organicEstimatedTrafficVolume: 1_250,
+        marketCode: "US",
+        languageCode: "en",
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+        observations: [ranked, competitor],
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+    expect(result.terminal).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("fails closed when a composite Snapshot is paired with the legacy collection operation", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+        collectionOperation: "keyword_gap_import",
+      },
+    );
+
+    expect(result.contextBuild).not.toHaveBeenCalled();
+    expect(result.transaction).not.toHaveBeenCalled();
+    expect(result.terminal).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
     );
   });
 

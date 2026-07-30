@@ -159,6 +159,7 @@
   font: inherit;
   font-size: 15px;
   font-weight: 760;
+  text-decoration: none;
   border-radius: var(--sf-radius-control);
   cursor: pointer;
   transition: transform 120ms ease, background-color 160ms ease, border-color 160ms ease;

@@ -10,7 +10,6 @@ import {
 } from "@sf/contracts";
 import type { UiLocale } from "@sf/i18n";
 import {
-  DataSnapshotsRepository,
   EvidenceRepository,
   GrowthMapReadRepository,
   MAX_GROWTH_MAP_ENTITY_LOOKUP,
@@ -40,10 +39,10 @@ import {
   growthMapIsoInstant,
   projectGrowthMapUrlCoverage,
   projectGrowthMapMetricObservations,
-  validateGrowthMapFrozenRun,
   verifiedGrowthMapPageTitle,
   type FrozenGrowthMapRun,
 } from "./growth-map-projection";
+import { loadPublishedGrowthMapGeneration } from "./growth-map-generation";
 import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { isStale } from "./source-mappers";
 
@@ -68,13 +67,22 @@ const TARGET_RELATION_KIND = {
   affected_by_keyword_cluster: "keyword_cluster",
   affected_by_user_agent: "user_agent",
 } as const;
+const CANONICAL_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export interface GrowthMapUrlListOptions {
   readonly limit: number;
   readonly cursor: string | null;
   readonly search?: string | null;
+  /** Exact published generation expected by the caller; null/absent means latest. */
+  readonly diagnosticRunId?: string | null;
   /** Test/SSR clock seam; never serialized into the response. */
   readonly now?: Date;
+}
+
+export interface GrowthMapUrlDetailOptions {
+  /** Exact published generation expected by the caller; null means latest. */
+  readonly diagnosticRunId: string | null;
 }
 
 /** Request-bound workspace scope for customer-facing Growth Map copy. */
@@ -120,17 +128,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function manifestSnapshotIds(run: GrowthMapReadableRunRow): string[] {
-  const raw = run.input_manifest["snapshots"];
-  if (!Array.isArray(raw) || raw.length === 0) corruptGrowthMap();
-  const ids = raw.map((entry) => {
-    if (!isRecord(entry)) return corruptGrowthMap();
-    const id = entry["snapshotId"];
-    if (typeof id !== "string" || id.length === 0) return corruptGrowthMap();
-    return id;
-  });
-  if (unique(ids).length !== ids.length) corruptGrowthMap();
-  return ids;
+function canonicalDiagnosticRunId(
+  value: string | null | undefined,
+): string | null {
+  if (value === undefined || value === null) return null;
+  if (!CANONICAL_UUID.test(value)) {
+    throw new RangeError("diagnosticRunId must be a canonical UUID");
+  }
+  return value;
 }
 
 function validNow(now: Date): Date {
@@ -144,36 +149,33 @@ async function loadReadContext(
   exec: Executor,
   scope: GrowthMapReadScope,
   projectId: string,
+  diagnosticRunId: string | null,
 ): Promise<GrowthMapReadContext> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const project = await new ProjectsRepository(exec).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
 
-  const run = await new GrowthMapReadRepository(exec).findLatestReadableRun(
+  const generation = await loadPublishedGrowthMapGeneration(
+    exec,
     projectScope,
+    diagnosticRunId,
   );
-  if (!run) {
-    throw new ProblemError(
-      "GROWTH_MAP_AUDIT_NOT_FOUND",
-      "No completed Growth Map audit is available for this project.",
-    );
-  }
-  // The latest readable run is authoritative. The request UI locale controls
-  // chrome only: it must neither reject this run nor query backward for one
-  // whose output locale happens to match. Persisted Finding locale integrity
-  // is checked against run.output_locale when Findings are projected.
-  const snapshotIds = manifestSnapshotIds(run);
-  const snapshots = await new DataSnapshotsRepository(exec).findByIds(
-    projectScope,
-    snapshotIds,
-  );
-  let frozen: FrozenGrowthMapRun;
-  try {
-    frozen = validateGrowthMapFrozenRun(run, snapshots, projectScope);
-  } catch {
+  if (
+    diagnosticRunId !== null &&
+    generation.run.id !== diagnosticRunId
+  ) {
     return corruptGrowthMap();
   }
-  return { projectScope, uiLocale: scope.uiLocale, run, frozen };
+  // The selected published run is authoritative. The request UI locale
+  // controls chrome only: it must neither reject this run nor query backward
+  // for one whose output locale happens to match. Persisted Finding locale
+  // integrity is checked against run.output_locale during projection.
+  return {
+    projectScope,
+    uiLocale: scope.uiLocale,
+    run: generation.run,
+    frozen: generation.frozen,
+  };
 }
 
 function supportedUrlObservation(row: ObservationRow): boolean {
@@ -506,7 +508,6 @@ function findingById(
       !Object.hasOwn(SEVERITY_ORDER, finding.severity) ||
       !Number.isSafeInteger(finding.review_revision) ||
       finding.review_revision < 0 ||
-      finding.summary_locale !== outputLocale ||
       !["unreviewed", "confirmed", "ignored", "needs_more_data"].includes(
         finding.review_state,
       )
@@ -517,6 +518,7 @@ function findingById(
       assertGrowthMapFindingSummaryLocale(
         finding.summary_locale,
         outputLocale,
+        finding.summary_invocation_id ?? null,
       );
     } catch {
       corruptGrowthMap();
@@ -742,7 +744,12 @@ async function listProjectAuditUrlsInSnapshot(
   opts: GrowthMapUrlListOptions,
 ): Promise<ReturnType<typeof GrowthMapUrlPortfolioResponse.parse>> {
   const now = validNow(opts.now ?? new Date());
-  const context = await loadReadContext(exec, scope, projectId);
+  const context = await loadReadContext(
+    exec,
+    scope,
+    projectId,
+    opts.diagnosticRunId ?? null,
+  );
   const page = await new GrowthMapReadRepository(exec).listCurrentRunUrls(
     context.projectScope,
     context.run.id,
@@ -780,6 +787,7 @@ export async function listProjectAuditUrls(
   exec?: Executor,
 ): Promise<ReturnType<typeof GrowthMapUrlPortfolioResponse.parse>> {
   assertValidTimestampUuidListCursor(opts.cursor);
+  const diagnosticRunId = canonicalDiagnosticRunId(opts.diagnosticRunId);
   if (
     !Number.isSafeInteger(opts.limit) ||
     opts.limit < 1 ||
@@ -792,9 +800,23 @@ export async function listProjectAuditUrls(
   ) {
     throw new RangeError("Invalid Growth Map URL list options");
   }
-  if (exec) return listProjectAuditUrlsInSnapshot(exec, scope, projectId, opts);
+  const normalizedOptions = { ...opts, diagnosticRunId };
+  if (exec) {
+    return listProjectAuditUrlsInSnapshot(
+      exec,
+      scope,
+      projectId,
+      normalizedOptions,
+    );
+  }
   return getDb().db.transaction(
-    (tx) => listProjectAuditUrlsInSnapshot(tx, scope, projectId, opts),
+    (tx) =>
+      listProjectAuditUrlsInSnapshot(
+        tx,
+        scope,
+        projectId,
+        normalizedOptions,
+      ),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }
@@ -882,6 +904,7 @@ async function findingDetails(
         finding.summary,
         finding.summary_locale,
         context.run.output_locale,
+        finding.summary_invocation_id ?? null,
       );
     } catch {
       return corruptGrowthMap();
@@ -913,9 +936,15 @@ async function getProjectAuditUrlInSnapshot(
   scope: GrowthMapReadScope,
   projectId: string,
   sitePageId: string,
+  diagnosticRunId: string | null,
   now: Date,
 ): Promise<ReturnType<typeof GrowthMapUrlDetailResponse.parse>> {
-  const context = await loadReadContext(exec, scope, projectId);
+  const context = await loadReadContext(
+    exec,
+    scope,
+    projectId,
+    diagnosticRunId,
+  );
   const inventory = await new GrowthMapReadRepository(exec).findCurrentRunUrl(
     context.projectScope,
     context.run.id,
@@ -924,7 +953,7 @@ async function getProjectAuditUrlInSnapshot(
   if (!inventory) {
     throw new ProblemError(
       "NOT_FOUND",
-      "The selected URL is not part of the latest completed Growth Map audit.",
+      "The selected URL is not part of the requested published Growth Map generation.",
     );
   }
   const rows = await loadProjectionRows(exec, context, [inventory]);
@@ -951,13 +980,48 @@ async function getProjectAuditUrlInSnapshot(
   }
 }
 
-/** Exact public signature used by the route; the pure projector exposes the clock seam. */
-export async function getProjectAuditUrl(
+function isGrowthMapUrlDetailOptions(
+  value: GrowthMapUrlDetailOptions | Executor | undefined,
+): value is GrowthMapUrlDetailOptions {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.hasOwn(value, "diagnosticRunId")
+  );
+}
+
+/**
+ * Legacy test/integration seam: an Executor may remain the fourth argument
+ * when the caller wants the latest published generation.
+ */
+export function getProjectAuditUrl(
   scope: GrowthMapReadScope,
   projectId: string,
   sitePageId: string,
   exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapUrlDetailResponse.parse>>;
+
+/** Exact route signature: generation options precede the optional Executor. */
+export function getProjectAuditUrl(
+  scope: GrowthMapReadScope,
+  projectId: string,
+  sitePageId: string,
+  options: GrowthMapUrlDetailOptions,
+  exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapUrlDetailResponse.parse>>;
+
+export async function getProjectAuditUrl(
+  scope: GrowthMapReadScope,
+  projectId: string,
+  sitePageId: string,
+  optionsOrExec?: GrowthMapUrlDetailOptions | Executor,
+  trailingExec?: Executor,
 ): Promise<ReturnType<typeof GrowthMapUrlDetailResponse.parse>> {
+  const hasOptions = isGrowthMapUrlDetailOptions(optionsOrExec);
+  const diagnosticRunId = canonicalDiagnosticRunId(
+    hasOptions ? optionsOrExec.diagnosticRunId : null,
+  );
+  const exec = hasOptions ? trailingExec : optionsOrExec;
   const now = new Date();
   if (exec) {
     return getProjectAuditUrlInSnapshot(
@@ -965,6 +1029,7 @@ export async function getProjectAuditUrl(
       scope,
       projectId,
       sitePageId,
+      diagnosticRunId,
       now,
     );
   }
@@ -975,6 +1040,7 @@ export async function getProjectAuditUrl(
         scope,
         projectId,
         sitePageId,
+        diagnosticRunId,
         now,
       ),
     { isolationLevel: "repeatable read", accessMode: "read only" },

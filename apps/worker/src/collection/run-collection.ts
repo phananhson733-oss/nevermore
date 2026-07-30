@@ -24,7 +24,9 @@ import {
   createCrawlAdapter,
   createDefaultCrawlFetcher,
   createDataForSeoAdapter,
+  createDataForSeoSearchLandscapeAdapter,
   dataForSeoParamsFromCollectionScope,
+  dataForSeoSearchLandscapeSnapshotSummary,
   dataForSeoSnapshotSummary,
   createGa4Adapter,
   createGscAdapter,
@@ -38,6 +40,7 @@ import {
   HttpGscClient,
   HttpDataForSeoClient,
   parseDataForSeoCollectionScope,
+  parseDataForSeoSearchLandscapeScope,
   InvalidBlobObjectKeyError,
   isTransient,
   shouldRefreshCredential,
@@ -46,13 +49,19 @@ import {
   CRAWL_DATASET_KEY,
   CRAWL_METHOD_VERSION,
   DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   DEFAULT_CRAWL_USER_AGENT,
   type CollectionContext,
   type CollectionResult,
   type CrawlEngineOptions,
   type CrawlFetcher,
+  type CrawlSiteLanguageSummary,
   type CsvColumnMapping,
   type DataForSeoCollectionScope,
+  type DataForSeoSearchLandscapeScope,
   type GoogleTokenFetch,
   type NormalizedObservation,
   type NormalizeContext,
@@ -82,6 +91,48 @@ const DATASET_KEY: Record<string, string> = {
   csv: "csv.keyword_gap.v1",
   dataforseo: DATAFORSEO_DATASET_KEY,
 };
+
+interface CollectionSnapshotIdentity {
+  readonly datasetKey: string;
+  readonly schemaVersion: string;
+}
+
+/**
+ * DataForSEO has two intentionally supported identities. Reject every mixed
+ * operation/method pair before constructing a credential-bound provider client.
+ */
+export function collectionSnapshotIdentity(
+  run: Pick<CollectionRunRow, "provider" | "operation" | "method_version">,
+): CollectionSnapshotIdentity {
+  if (run.provider === "dataforseo") {
+    if (
+      run.operation === "keyword_gap_import" &&
+      run.method_version === DATAFORSEO_METHOD_VERSION
+    ) {
+      return {
+        datasetKey: DATAFORSEO_DATASET_KEY,
+        schemaVersion: DATAFORSEO_METHOD_VERSION,
+      };
+    }
+    if (
+      run.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+      run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION
+    ) {
+      return {
+        datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+        schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      };
+    }
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The DataForSEO collection operation and method version are not an exact supported pair.",
+    );
+  }
+  return {
+    datasetKey: DATASET_KEY[run.provider] ?? run.provider,
+    schemaVersion: OBSERVATION_SCHEMA_VERSION,
+  };
+}
 
 const COLLECTION_SHUTDOWN_RETRY_SUMMARY =
   "Collection was interrupted by worker shutdown; automatic retry is scheduled.";
@@ -458,6 +509,7 @@ export async function runCollection(
   const startedAtMs = Date.now();
   const providerMetrics = new ProviderMetricAccumulator(collectionRun.provider);
   try {
+    const snapshotIdentity = collectionSnapshotIdentity(collectionRun);
     const product = await collectByProvider(
       ctx,
       collectionRun,
@@ -473,8 +525,8 @@ export async function runCollection(
     providerMetrics.recordResult(product.outcome);
     const snapshotId = await persistCollectionResult(ctx, {
       collectionRun,
-      datasetKey: DATASET_KEY[collectionRun.provider] ?? collectionRun.provider,
-      schemaVersion: OBSERVATION_SCHEMA_VERSION,
+      datasetKey: snapshotIdentity.datasetKey,
+      schemaVersion: snapshotIdentity.schemaVersion,
       actorId: claimed.initiated_by,
       startedAtMs,
       attempt,
@@ -727,11 +779,18 @@ async function collectByProvider(
         ctx.crawl?.fetcher ??
           createDefaultCrawlFetcher(DEFAULT_CRAWL_USER_AGENT),
       );
+      let siteLanguageSummary: CrawlSiteLanguageSummary | null = null;
+      const callerLanguageObserver =
+        ctx.crawl?.engineOptions?.onSiteLanguageSummary;
       const adapter = createCrawlAdapter({
         fetcher,
-        ...(ctx.crawl?.engineOptions
-          ? { engineOptions: ctx.crawl.engineOptions }
-          : {}),
+        engineOptions: {
+          ...ctx.crawl?.engineOptions,
+          onSiteLanguageSummary(summary) {
+            siteLanguageSummary = summary;
+            callerLanguageObserver?.(summary);
+          },
+        },
       });
       const result = await adapter.collect(
         {
@@ -745,7 +804,17 @@ async function collectByProvider(
         adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
         adapterCtx.signal,
       );
-      return { outcome: toOutcome(result), observations };
+      const baseOutcome = toOutcome(result);
+      return {
+        outcome:
+          siteLanguageSummary === null
+            ? baseOutcome
+            : {
+                ...baseOutcome,
+                summary: { siteLanguage: siteLanguageSummary },
+              },
+        observations,
+      };
     }
     case "gsc": {
       const keywordLibraryContext =
@@ -857,11 +926,20 @@ async function collectByProvider(
           "DataForSEO collection is disabled on this worker.",
         );
       }
-      const collectionScope = resolveFrozenDataForSeoCollectionScope(
-        run,
-        acceptedRequestPayload,
-        runtime.maxKeywords,
-      );
+      const isSearchLandscape =
+        run.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION;
+      const collectionScope = isSearchLandscape
+        ? resolveFrozenDataForSeoSearchLandscapeScope(
+            run,
+            acceptedRequestPayload,
+            runtime.maxKeywords,
+            runtime.maxCompetitors,
+          )
+        : resolveFrozenDataForSeoCollectionScope(
+            run,
+            acceptedRequestPayload,
+            runtime.maxKeywords,
+          );
       if (!runtime.login || !runtime.password) {
         throw new SourceError(
           "AUTH_REQUIRED",
@@ -869,7 +947,6 @@ async function collectByProvider(
         );
       }
       await loadDataForSeoConnection(ctx, scope, run);
-      const params = dataForSeoParamsFromCollectionScope(collectionScope);
       const providerFetch = providerMetrics.wrapGoogleFetch(
         runtime.fetch ?? globalThis.fetch,
       );
@@ -878,6 +955,28 @@ async function collectByProvider(
         password: runtime.password,
         fetchImpl: providerFetch,
       });
+      if (isSearchLandscape) {
+        const searchLandscapeScope =
+          collectionScope as DataForSeoSearchLandscapeScope;
+        const adapter = createDataForSeoSearchLandscapeAdapter(client);
+        const result = await adapter.collect(searchLandscapeScope, adapterCtx);
+        const observations = await drain(
+          adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+          adapterCtx.signal,
+        );
+        return {
+          outcome: {
+            ...toOutcome(result),
+            summary: dataForSeoSearchLandscapeSnapshotSummary(
+              searchLandscapeScope,
+              result.capturedAt,
+            ),
+          },
+          observations,
+        };
+      }
+      const rankedKeywordsScope = collectionScope as DataForSeoCollectionScope;
+      const params = dataForSeoParamsFromCollectionScope(rankedKeywordsScope);
       const adapter = createDataForSeoAdapter(client);
       const result = await adapter.collect(params, adapterCtx);
       const observations = await drain(
@@ -888,7 +987,7 @@ async function collectByProvider(
         outcome: {
           ...toOutcome(result),
           summary: dataForSeoSnapshotSummary(
-            collectionScope,
+            rankedKeywordsScope,
             result.capturedAt,
           ),
         },
@@ -1009,6 +1108,7 @@ export function resolveFrozenDataForSeoCollectionScope(
     CollectionRunRow,
     | "provider"
     | "operation"
+    | "method_version"
     | "site_id"
     | "source_connection_id"
     | "parameters_hash"
@@ -1018,6 +1118,8 @@ export function resolveFrozenDataForSeoCollectionScope(
 ): DataForSeoCollectionScope {
   if (
     run.provider !== "dataforseo" ||
+    run.operation !== "keyword_gap_import" ||
+    run.method_version !== DATAFORSEO_METHOD_VERSION ||
     requestPayload["provider"] !== run.provider ||
     requestPayload["operation"] !== run.operation ||
     requestPayload["sourceConnectionId"] !== run.source_connection_id
@@ -1050,6 +1152,69 @@ export function resolveFrozenDataForSeoCollectionScope(
     throw new SourceError(
       "INVALID_CONFIGURATION",
       "The frozen DataForSEO scope does not match the accepted command.",
+    );
+  }
+  return collectionScope;
+}
+
+/**
+ * Validate the frozen two-query Analysis Refresh identity and both independent
+ * server-owned cost caps. Nothing is reconstructed from mutable Site/source
+ * configuration, and a mixed legacy/composite identity fails before HTTP I/O.
+ */
+export function resolveFrozenDataForSeoSearchLandscapeScope(
+  run: Pick<
+    CollectionRunRow,
+    | "provider"
+    | "operation"
+    | "method_version"
+    | "site_id"
+    | "source_connection_id"
+    | "parameters_hash"
+  >,
+  requestPayload: Record<string, unknown>,
+  workerMaxKeywords: number,
+  workerMaxCompetitors: number,
+): DataForSeoSearchLandscapeScope {
+  if (
+    run.provider !== "dataforseo" ||
+    run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
+    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    requestPayload["provider"] !== run.provider ||
+    requestPayload["operation"] !== run.operation ||
+    requestPayload["sourceConnectionId"] !== run.source_connection_id
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape command identity is incomplete or inconsistent.",
+    );
+  }
+  const collectionScope = parseDataForSeoSearchLandscapeScope(
+    requestPayload["collectionScope"],
+  );
+  if (
+    !Number.isSafeInteger(workerMaxKeywords) ||
+    workerMaxKeywords < 1 ||
+    collectionScope.rankedKeywords.limit > workerMaxKeywords ||
+    !Number.isSafeInteger(workerMaxCompetitors) ||
+    workerMaxCompetitors < 1 ||
+    collectionScope.competitorsDomain.limit > workerMaxCompetitors
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape limits exceed the current worker caps.",
+    );
+  }
+  const expectedParametersHash = contentHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    collectionScope,
+  });
+  if (run.parameters_hash !== expectedParametersHash) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape scope does not match the accepted command.",
     );
   }
   return collectionScope;

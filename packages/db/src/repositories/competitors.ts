@@ -28,7 +28,8 @@ export type CompetitorAnalysisScope =
 export type CompetitorOriginKind =
   | "product_profile"
   | "csv_keyword_gap"
-  | "manual";
+  | "manual"
+  | "serp_overlap";
 
 interface EvidenceRefIdentity {
   readonly evidenceRefId: string;
@@ -87,10 +88,24 @@ export interface ManualCompetitorOriginInput extends CompetitorOriginCommon {
   readonly manualEntryId: string;
 }
 
+export interface SerpOverlapCompetitorOriginInput extends CompetitorOriginCommon {
+  readonly originKind: "serp_overlap";
+  readonly name: null;
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly sourcePointer: "/valueJson/competitorDomain";
+}
+
 export type CompetitorOriginInput =
   | ProductProfileCompetitorOriginInput
   | CsvKeywordGapCompetitorOriginInput
-  | ManualCompetitorOriginInput;
+  | ManualCompetitorOriginInput
+  | SerpOverlapCompetitorOriginInput;
+
+type LegacyCompetitorOriginInput = Exclude<
+  CompetitorOriginInput,
+  SerpOverlapCompetitorOriginInput
+>;
 
 export interface CompetitorOriginUpsertResult {
   readonly occurrenceId: string;
@@ -160,6 +175,11 @@ export interface CompetitorReviewInput {
 export interface CompetitorOriginBatchOptions {
   readonly limitPerEntity: number;
   readonly totalLimit: number;
+}
+
+export interface CompetitorIdPageOptions {
+  readonly limit: number;
+  readonly cursor: string | null;
 }
 
 export const MAX_COMPETITOR_PAGE_SIZE = 100;
@@ -313,6 +333,25 @@ function assertOriginBatch(
   return [...unique].sort();
 }
 
+function assertIdBatch(
+  ids: readonly string[],
+  label: string,
+  maximum: number,
+): string[] {
+  if (ids.length > maximum) {
+    throw new RangeError(`${label} must contain at most ${maximum} ids`);
+  }
+  const unique = new Set<string>();
+  for (const id of ids) {
+    assertUuid(id, label.slice(0, -1));
+    if (unique.has(id)) {
+      throw new RangeError(`${label} must contain unique ids`);
+    }
+    unique.add(id);
+  }
+  return [...unique];
+}
+
 function assertName(name: string | null): void {
   if (
     name !== null &&
@@ -454,6 +493,18 @@ function assertOriginInput(input: CompetitorOriginInput): void {
     case "manual":
       assertUuid(input.manualEntryId, "manualEntryId");
       return;
+    case "serp_overlap":
+      assertUuid(input.snapshotId, "snapshotId");
+      assertUuid(input.observationId, "observationId");
+      if (
+        input.name !== null ||
+        input.sourcePointer !== "/valueJson/competitorDomain"
+      ) {
+        throw new RangeError(
+          "SERP overlap origin requires the canonical competitorDomain pointer and no inferred name",
+        );
+      }
+      return;
     default:
       throw new RangeError("unsupported competitor origin kind");
   }
@@ -519,7 +570,7 @@ function parseUpsertResult(value: unknown): CompetitorOriginUpsertResult {
   };
 }
 
-function originParameters(input: CompetitorOriginInput) {
+function originParameters(input: LegacyCompetitorOriginInput) {
   if (input.originKind === "product_profile") {
     return {
       productProfileId: input.productProfileId,
@@ -604,6 +655,20 @@ export class CompetitorsRepository extends Repository {
     input: CompetitorOriginInput,
   ): Promise<CompetitorOriginUpsertResult> {
     assertOriginInput(input);
+    if (input.originKind === "serp_overlap") {
+      const result = await this.exec.execute(sql`
+        select occurrence_id, competitor_id
+        from app.upsert_serp_overlap_competitor_origin(
+          ${scope.workspaceId}::uuid,
+          ${scope.projectId}::uuid,
+          ${input.domain}::text,
+          ${input.snapshotId}::uuid,
+          ${input.observationId}::uuid,
+          ${input.sourcePointer}::text
+        )
+      `);
+      return parseUpsertResult(result);
+    }
     const p = originParameters(input);
     const result = await this.exec.execute(sql`
       select occurrence_id, competitor_id
@@ -739,6 +804,64 @@ export class CompetitorsRepository extends Repository {
       )) as CompetitorEntityRow[];
   }
 
+  async listByIdsPage(
+    scope: ProjectScope,
+    competitorIds: readonly string[],
+    options: CompetitorIdPageOptions,
+  ): Promise<CompetitorListPage> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_COMPETITOR_PAGE_SIZE
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_COMPETITOR_PAGE_SIZE}`,
+      );
+    }
+    const ids = assertIdBatch(
+      competitorIds,
+      "competitorIds",
+      MAX_COMPETITOR_ENTITY_BATCH,
+    );
+    if (ids.length === 0) return { rows: [], nextCursor: null };
+    const decoded = options.cursor
+      ? decodeTimestampUuidCursor(options.cursor)
+      : null;
+    if (options.cursor && !decoded) return { rows: [], nextCursor: null };
+    const after = decoded
+      ? or(
+          lt(competitorEntities.created_at, decoded.timestamp),
+          and(
+            eq(competitorEntities.created_at, decoded.timestamp),
+            lt(competitorEntities.id, decoded.id),
+          ),
+        )
+      : undefined;
+    const rows = (await this.exec
+      .select(competitorSelection)
+      .from(competitorEntities)
+      .where(
+        and(
+          projectPredicate(competitorEntities, scope),
+          inArray(competitorEntities.id, ids),
+          activeProjectPredicate(scope),
+          after,
+        ),
+      )
+      .orderBy(desc(competitorEntities.created_at), desc(competitorEntities.id))
+      .limit(options.limit + 1)) as CompetitorEntityRow[];
+    const hasNext = rows.length > options.limit;
+    const page = hasNext ? rows.slice(0, options.limit) : rows;
+    const last = page.at(-1);
+    return {
+      rows: page,
+      nextCursor:
+        hasNext && last
+          ? encodeTimestampUuidCursor(last.created_at, last.id)
+          : null,
+    };
+  }
+
   async listOrigins(
     scope: ProjectScope,
     competitorId: string,
@@ -869,6 +992,28 @@ export class CompetitorsRepository extends Repository {
       limit ${options.totalLimit + 1}
     `);
     return result.rows as unknown as CompetitorOriginRow[];
+  }
+
+  async listOriginsByIds(
+    scope: ProjectScope,
+    occurrenceIds: readonly string[],
+  ): Promise<CompetitorOriginRow[]> {
+    const ids = assertIdBatch(
+      occurrenceIds,
+      "occurrenceIds",
+      MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
+    );
+    if (ids.length === 0) return [];
+    return (await this.exec
+      .select(originSelection)
+      .from(competitorOriginOccurrences)
+      .where(
+        and(
+          projectPredicate(competitorOriginOccurrences, scope),
+          inArray(competitorOriginOccurrences.id, ids),
+          activeProjectPredicate(scope),
+        ),
+      )) as CompetitorOriginRow[];
   }
 
   /** Null means stale revision, absent entity, foreign scope, or archived project. */

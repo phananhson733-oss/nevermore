@@ -6,7 +6,7 @@ customer-facing brand, and its approved production origin is
 contract `2026-07-21`, backed by
 `authority/implementation-spec-v0.4/`.
 
-Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
+Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
@@ -21,16 +21,16 @@ Current authority: **v0.4 complete four-module workbench**
 
 v0.4 has atomically activated Keyword/Competitor governance, execution state,
 durable approval, publication/rollback preview authority, receipt lineage and
-immutable Measurement Windows. Its 77 operations still do not include a real
+immutable Measurement Windows. Its 78 operations still do not include a real
 GitHub/WordPress external-write command. A GitHub pull request or WordPress
 Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0032_keyword_initial_governance.sql` (**32 ordered migrations**)
+Migration range: `0001_init.sql` through `0034_dataforseo_search_landscape.sql` (**34 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0032` are hosted; every release must back up,
+v0.4 migrations through `0034` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 
@@ -136,6 +136,10 @@ self-healing retry states.
    the exact same `<release SHA>`.
    Keep DataForSEO Basic Auth credentials on this worker only; Vercel receives
    the boolean feature flag and row cap, never the login/password.
+   DataForSEO Search Landscape (DFS) is invoked only by the server-owned
+   Analysis Refresh plan. The public collection API remains limited to Crawl,
+   GSC, and GA4; no client request may supply DFS target, market, language,
+   limits, credentials, or provider queries.
 6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
    completes, pg-boss starts and the worker holds its readiness lease. Logs must
    not expose environment values, provider bodies, model output or customer

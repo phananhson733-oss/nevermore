@@ -16,24 +16,22 @@ process.env["RAW_IMPORT_BUCKET"] ??= "raw-imports";
 process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { createDbHandle, type DbHandle } from "@sf/db";
 import {
-  AsyncRunsRepository,
-  CollectionRunsRepository,
-  contentHash,
-  createDbHandle,
-  type DbHandle,
-} from "@sf/db";
-import {
-  sites,
+  asyncRuns,
+  collectionRuns,
+  idempotencyKeys,
   sourceConnections,
   sourceCredentials,
   workspaces,
 } from "@sf/db/schema";
+import type { CreateCollectionRunRequest } from "@sf/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createCollectionRun } from "@/lib/services/collection";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import { listProjectSources } from "@/lib/services/sources";
+import { seedConfirmedSourceProfile } from "./confirmed-source-profile-fixture";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -45,7 +43,62 @@ const safeGuard: UrlGuard = async (url) => ({
   reason: null,
 });
 
-describeDb("DataForSEO Web collection integration", () => {
+interface PublicBoundaryState {
+  readonly sourceConnections: number;
+  readonly sourceCredentials: number;
+  readonly asyncRuns: number;
+  readonly collectionRuns: number;
+  readonly idempotencyKeys: number;
+}
+
+async function boundaryState(
+  handle: DbHandle,
+  workspaceId: string,
+  projectId: string,
+): Promise<PublicBoundaryState> {
+  const [
+    connectionRows,
+    credentialRows,
+    asyncRunRows,
+    collectionRunRows,
+    idempotencyRows,
+  ] = await Promise.all([
+    handle.db
+      .select({ id: sourceConnections.id })
+      .from(sourceConnections)
+      .where(eq(sourceConnections.project_id, projectId)),
+    handle.db
+      .select({ id: sourceCredentials.id })
+      .from(sourceCredentials)
+      .where(eq(sourceCredentials.project_id, projectId)),
+    handle.db
+      .select({ id: asyncRuns.id })
+      .from(asyncRuns)
+      .where(eq(asyncRuns.project_id, projectId)),
+    handle.db
+      .select({ id: collectionRuns.id })
+      .from(collectionRuns)
+      .where(eq(collectionRuns.project_id, projectId)),
+    handle.db
+      .select({ id: idempotencyKeys.id })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.workspace_id, workspaceId),
+          eq(idempotencyKeys.scope, "createCollectionRun"),
+        ),
+      ),
+  ]);
+  return {
+    sourceConnections: connectionRows.length,
+    sourceCredentials: credentialRows.length,
+    asyncRuns: asyncRunRows.length,
+    collectionRuns: collectionRunRows.length,
+    idempotencyKeys: idempotencyRows.length,
+  };
+}
+
+describeDb("DataForSEO public collection boundary", () => {
   let handle: DbHandle;
   let workspaceId: string;
   let projectId: string;
@@ -55,7 +108,7 @@ describeDb("DataForSEO Web collection integration", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `DFS Web ${randomUUID()}` })
+      .values({ name: `DFS boundary ${randomUUID()}` })
       .returning();
     workspaceId = workspace!.id;
 
@@ -64,9 +117,9 @@ describeDb("DataForSEO Web collection integration", () => {
       actorId,
       randomUUID(),
       {
-        clientName: "DataForSEO client",
-        projectName: "DataForSEO legacy project",
-        siteUrl: "https://www.dfs-auto.example",
+        clientName: "DataForSEO boundary client",
+        projectName: "DataForSEO boundary project",
+        siteUrl: "https://www.dfs-boundary.example",
         marketCodes: ["GB"],
         siteLanguageCodes: ["fr-FR"],
         defaultDeliveryLocale: "en",
@@ -74,6 +127,11 @@ describeDb("DataForSEO Web collection integration", () => {
       safeGuard,
     );
     projectId = created.project.id;
+    await seedConfirmedSourceProfile(
+      handle,
+      { workspaceId, projectId },
+      actorId,
+    );
   });
 
   afterAll(async () => {
@@ -87,7 +145,7 @@ describeDb("DataForSEO Web collection integration", () => {
     }
   });
 
-  it("exposes an enabled but honestly disconnected legacy slot", async () => {
+  it("keeps a credential-free internal evidence slot in the read DTO", async () => {
     const slots = await listProjectSources({ workspaceId }, projectId);
     const dataForSeo = slots.find((slot) => slot.provider === "dataforseo");
 
@@ -96,240 +154,38 @@ describeDb("DataForSEO Web collection integration", () => {
       provider: "dataforseo",
       state: "disconnected",
       connectionType: "api_key_stub",
-      featureEnabled: true,
+      externalRef: null,
+      scopes: [],
       latestSnapshot: null,
     });
-    expect(dataForSeo?.limitation).toContain(
-      "ranked-keyword collection is enabled",
-    );
+    expect(dataForSeo).not.toHaveProperty("apiKey");
+    expect(dataForSeo).not.toHaveProperty("credential");
+    expect(dataForSeo).not.toHaveProperty("credentials");
+    expect(dataForSeo).not.toHaveProperty("secret");
   });
 
-  it("atomically provisions one secret-free connection and queues collection", async () => {
-    const accepted = await createCollectionRun(
-      { workspaceId },
-      projectId,
-      actorId,
-      randomUUID(),
-      { provider: "dataforseo" },
-    );
-
-    expect(accepted).toMatchObject({
-      status: 202,
-      replayed: false,
-      run: { kind: "collection", status: "queued" },
-    });
-
-    const connections = await handle.db
-      .select()
-      .from(sourceConnections)
-      .where(eq(sourceConnections.project_id, projectId));
-    const dataForSeoConnections = connections.filter(
-      (connection) => connection.provider === "dataforseo",
-    );
-    expect(dataForSeoConnections).toHaveLength(1);
-    expect(dataForSeoConnections[0]).toMatchObject({
-      connection_type: "api_key_stub",
-      state: "connected",
-      external_ref: "dfs-auto.example",
-      scopes: [],
-      config: {
-        target: "dfs-auto.example",
-        marketCode: "GB",
-        locationName: "United Kingdom",
-        languageCode: "fr",
-        maxKeywords: 37,
-      },
-    });
-    expect(dataForSeoConnections[0]?.limitation).toContain(
-      "not a complete competitor-gap analysis",
-    );
-
-    const credentialRows = await handle.db
-      .select({ id: sourceCredentials.id })
-      .from(sourceCredentials)
-      .where(eq(sourceCredentials.project_id, projectId));
-    expect(credentialRows).toEqual([]);
-
-    const collection = await new CollectionRunsRepository(handle.db).findById(
-      accepted.run.id,
-    );
-    const canonicalRun = await new AsyncRunsRepository(handle.db).findById(
-      { workspaceId, projectId },
-      accepted.run.id,
-    );
-    const collectionScope = {
-      schemaVersion: "dataforseo.collection-scope.v1",
-      queryKind: "ranked_keywords",
-      target: "dfs-auto.example",
-      marketCode: "GB",
-      languageTag: "fr-FR",
-      providerLanguageCode: "fr",
-      location: { kind: "name", name: "United Kingdom" },
-      limit: 37,
-    };
-    expect(collection).toMatchObject({
+  it("rejects a bypassed direct command without any canonical write", async () => {
+    const before = await boundaryState(handle, workspaceId, projectId);
+    const bypassedBody = {
       provider: "dataforseo",
-      operation: "keyword_gap_import",
-      method_version: "dataforseo.ranked_keywords.v1",
-      source_connection_id: dataForSeoConnections[0]!.id,
-      parameters_hash: contentHash({
-        provider: "dataforseo",
-        operation: "keyword_gap_import",
-        siteId: collection!.site_id,
-        collectionScope,
-      }),
-    });
-    expect(canonicalRun?.request_payload).toEqual({
-      provider: "dataforseo",
-      operation: "keyword_gap_import",
-      sourceConnectionId: dataForSeoConnections[0]!.id,
-      collectionScope,
-    });
-
-    const slots = await listProjectSources({ workspaceId }, projectId);
-    expect(slots.find((slot) => slot.provider === "dataforseo")).toMatchObject({
-      id: dataForSeoConnections[0]!.id,
-      state: "connected",
-      externalRef: "dfs-auto.example",
-      featureEnabled: true,
-      activeRun: { id: accepted.run.id, status: "queued" },
-    });
-  });
-
-  it("keeps the lazy connection unique under concurrent first collections", async () => {
-    const created = await createProject(
-      { workspaceId },
-      actorId,
-      randomUUID(),
-      {
-        clientName: "Concurrent DataForSEO client",
-        projectName: "Concurrent DataForSEO project",
-        siteUrl: `https://www.dfs-race-${randomUUID()}.example`,
-        marketCodes: ["US"],
-        siteLanguageCodes: ["en-US"],
-        defaultDeliveryLocale: "en",
-      },
-      safeGuard,
-    );
-    const raceProjectId = created.project.id;
-
-    const outcomes = await Promise.allSettled([
-      createCollectionRun(
-        { workspaceId },
-        raceProjectId,
-        actorId,
-        randomUUID(),
-        { provider: "dataforseo" },
-      ),
-      createCollectionRun(
-        { workspaceId },
-        raceProjectId,
-        actorId,
-        randomUUID(),
-        { provider: "dataforseo" },
-      ),
-    ]);
-    const accepted = outcomes.filter(
-      (outcome) => outcome.status === "fulfilled",
-    );
-    const rejected = outcomes.filter(
-      (outcome) => outcome.status === "rejected",
-    );
-
-    expect(accepted).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
-      code: "RUN_ALREADY_ACTIVE",
-      status: 409,
-    });
-
-    const connections = await handle.db
-      .select({ provider: sourceConnections.provider })
-      .from(sourceConnections)
-      .where(eq(sourceConnections.project_id, raceProjectId));
-    expect(connections).toHaveLength(2);
-    expect(
-      connections.filter((connection) => connection.provider === "dataforseo"),
-    ).toHaveLength(1);
-  });
-
-  it("does not auto-provision when the client supplies an invalid connection id", async () => {
-    const created = await createProject(
-      { workspaceId },
-      actorId,
-      randomUUID(),
-      {
-        clientName: "Explicit DataForSEO client",
-        projectName: "Explicit DataForSEO project",
-        siteUrl: `https://dfs-explicit-${randomUUID()}.example`,
-        marketCodes: ["CA"],
-        siteLanguageCodes: ["en-CA"],
-        defaultDeliveryLocale: "en",
-      },
-      safeGuard,
-    );
+      apiKey: "must-never-cross-the-customer-boundary",
+    } as unknown as CreateCollectionRunRequest;
 
     await expect(
       createCollectionRun(
         { workspaceId },
-        created.project.id,
+        projectId,
         actorId,
         randomUUID(),
-        { provider: "dataforseo", sourceConnectionId: randomUUID() },
-      ),
-    ).rejects.toMatchObject({ code: "SOURCE_NOT_CONNECTED", status: 422 });
-
-    const connections = await handle.db
-      .select({ provider: sourceConnections.provider })
-      .from(sourceConnections)
-      .where(eq(sourceConnections.project_id, created.project.id));
-    expect(connections.map((connection) => connection.provider)).toEqual([
-      "crawl",
-    ]);
-  });
-
-  it("rolls back without provisioning when the primary Site scope is incomplete", async () => {
-    const created = await createProject(
-      { workspaceId },
-      actorId,
-      randomUUID(),
-      {
-        clientName: "Incomplete DataForSEO client",
-        projectName: "Incomplete DataForSEO project",
-        siteUrl: `https://dfs-incomplete-${randomUUID()}.example`,
-        marketCodes: ["US"],
-        siteLanguageCodes: ["en"],
-        defaultDeliveryLocale: "en",
-      },
-      safeGuard,
-    );
-    await handle.db
-      .update(sites)
-      .set({ market_codes: [] })
-      .where(eq(sites.project_id, created.project.id));
-
-    await expect(
-      createCollectionRun(
-        { workspaceId },
-        created.project.id,
-        actorId,
-        randomUUID(),
-        { provider: "dataforseo" },
+        bypassedBody,
       ),
     ).rejects.toMatchObject({
-      code: "CONTEXT_INCOMPLETE",
+      code: "VALIDATION_ERROR",
       status: 422,
-      current: {
-        missingField: "primaryMarket",
-      },
     });
 
-    const connections = await handle.db
-      .select({ provider: sourceConnections.provider })
-      .from(sourceConnections)
-      .where(eq(sourceConnections.project_id, created.project.id));
-    expect(connections.map((connection) => connection.provider)).toEqual([
-      "crawl",
-    ]);
+    await expect(
+      boundaryState(handle, workspaceId, projectId),
+    ).resolves.toEqual(before);
   });
 });

@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
   ProductProfileCompetitorAnalysisScope,
@@ -97,6 +98,35 @@ const ANALYSIS_SCOPES = [
   "content",
   "serp_visibility",
 ] as const satisfies readonly ProductProfileCompetitorAnalysisScope[];
+const PRODUCT_TYPE_MESSAGE_KEYS = {
+  "B2B SaaS": "b2bSaas",
+  "B2C SaaS": "b2cSaas",
+  "E-commerce": "ecommerce",
+  Marketplace: "marketplace",
+  "Professional Services": "professionalServices",
+  "Developer Tool": "developerTool",
+  "Content / Media": "contentMedia",
+} as const satisfies Record<(typeof PRODUCT_TYPES)[number], string>;
+const BUSINESS_MODEL_MESSAGE_KEYS = {
+  Subscription: "subscription",
+  Transaction: "transaction",
+  Freemium: "freemium",
+  Marketplace: "marketplace",
+  Services: "services",
+  Advertising: "advertising",
+} as const satisfies Record<(typeof BUSINESS_MODELS)[number], string>;
+
+function productTypeMessageKey(value: string): string | null {
+  return (PRODUCT_TYPES as readonly string[]).includes(value)
+    ? PRODUCT_TYPE_MESSAGE_KEYS[value as (typeof PRODUCT_TYPES)[number]]
+    : null;
+}
+
+function businessModelMessageKey(value: string): string | null {
+  return (BUSINESS_MODELS as readonly string[]).includes(value)
+    ? BUSINESS_MODEL_MESSAGE_KEYS[value as (typeof BUSINESS_MODELS)[number]]
+    : null;
+}
 
 type Feedback = {
   readonly tone: "success" | "error" | "progress";
@@ -298,8 +328,13 @@ function ProfileEditor({
   readonly onSave: (patch: UpdateProductProfileDraftRequest["patch"]) => Promise<void>;
 }) {
   const t = useTranslations("productProfile");
+  const locale = useLocale();
   const [state, setState] = useState<EditorState>(() => initialEditorState(profile));
   const [discardOpen, setDiscardOpen] = useState(false);
+  const regionNames = useMemo(
+    () => new Intl.DisplayNames([locale], { type: "region" }),
+    [locale],
+  );
   const baseline = useMemo(
     () => editorStateSignature(initialEditorState(profile)),
     [profile],
@@ -402,7 +437,11 @@ function ProfileEditor({
                 <span>{t("fields.productType")}</span>
                 <select value={state.productType} onChange={(event) => set("productType", event.target.value)}>
                   <option value="">{t("editor.choose")}</option>
-                  {PRODUCT_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
+                  {PRODUCT_TYPES.map((item) => (
+                    <option key={item} value={item}>
+                      {t(`editor.productTypes.${PRODUCT_TYPE_MESSAGE_KEYS[item]}`)}
+                    </option>
+                  ))}
                   <option value="__custom__">{t("editor.custom")}</option>
                 </select>
               </label>
@@ -427,7 +466,9 @@ function ProfileEditor({
                             : state.businessModels.filter((item) => item !== model),
                         )}
                       />
-                      <span>{model}</span>
+                      <span>
+                        {t(`editor.businessModels.${BUSINESS_MODEL_MESSAGE_KEYS[model]}`)}
+                      </span>
                     </label>
                   ))}
                 </div>
@@ -454,7 +495,9 @@ function ProfileEditor({
                 <select value={state.primaryMarket} onChange={(event) => set("primaryMarket", event.target.value)}>
                   <option value="">{t("editor.choose")}</option>
                   {[...new Set([...MARKET_CODES, ...profile.targetMarkets.map((market) => market.marketCode)])].map((code) => (
-                    <option key={code} value={code}>{code}</option>
+                    <option key={code} value={code}>
+                      {regionNames.of(code) ?? code} · {code}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -474,7 +517,7 @@ function ProfileEditor({
                             : state.secondaryMarkets.filter((item) => item !== code),
                         )}
                       />
-                      <span>{code}</span>
+                      <span>{regionNames.of(code) ?? code} · {code}</span>
                     </label>
                   ))}
                 </div>
@@ -734,13 +777,31 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     return <div className={styles.statePanel} role="alert"><AlertTriangle aria-hidden="true" /><h1>{t("errors.loadTitle")}</h1><p>{workspaceQuery.error.message}</p><button type="button" className={styles.primaryButton} onClick={() => void workspaceQuery.refetch()}>{t("actions.retry")}</button></div>;
   }
   if (!workspace || !view || !profile || !row) {
-    return <div className={styles.statePanel}><FileSearch aria-hidden="true" /><h1>{t("empty.title")}</h1><p>{t("empty.detail")}</p></div>;
+    return (
+      <div className={styles.statePanel}>
+        <FileSearch aria-hidden="true" />
+        <h1>{t("empty.title")}</h1>
+        <p>{t("empty.detail")}</p>
+        <Link className={styles.primaryButton} href="/new-project">
+          {t("actions.addProduct")}
+          <ArrowRight size={17} aria-hidden="true" />
+        </Link>
+      </div>
+    );
   }
 
   const editable = row.status === "draft";
   const currentRow = row;
   const activeRun = synthesisRun.data ?? workspace.activeSynthesisRun;
   const primaryAudience = view.primaryAudience;
+  const productTypeKey = profile.productType
+    ? productTypeMessageKey(profile.productType)
+    : null;
+  const localizedBusinessModels = profile.businessModels.map((model) => {
+    const key = businessModelMessageKey(model);
+    return key ? t(`editor.businessModels.${key}`) : model;
+  });
+  const sourceConnectionsAllowed = workspace.confirmedProfile !== null;
   const fact = (path: string) => getFieldFactState(profile, path);
   const rememberTrigger = (trigger: HTMLButtonElement) => {
     overlayTrigger.current = trigger;
@@ -828,8 +889,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     try {
       await confirmMutation.mutateAsync({ baseVersion: currentRow.version });
       closeConfirmation();
-      router.refresh();
-      setFeedback({ tone: "success", title: t("feedback.confirmed"), detail: t("feedback.confirmedDetail") });
+      router.push(`/p/${projectId}/sources`);
     } catch (error) {
       setFeedback(errorFeedback(error, t("feedback.confirmFailed")));
     }
@@ -852,6 +912,12 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             {view.profileState === "confirmed" ? t("states.confirmed") : t("states.draftVersion", { version: row.version })}
           </span>
           {editable ? <button type="button" className={styles.secondaryButton} disabled={Boolean(activeRun)} onClick={(event) => { rememberTrigger(event.currentTarget); setEditorOpen(true); }}><PencilLine size={16} aria-hidden="true" />{t("actions.edit")}</button> : null}
+          {sourceConnectionsAllowed ? (
+            <Link className={styles.secondaryButton} href={`/p/${projectId}/sources`}>
+              <Database size={16} aria-hidden="true" />
+              {t("actions.connectData")}
+            </Link>
+          ) : null}
           {editable ? <button type="button" className={styles.primaryButton} onClick={() => void synthesize()} disabled={synthesisMutation.isPending || Boolean(activeRun)}><Sparkles size={16} aria-hidden="true" />{activeRun ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
         </div>
       </header>
@@ -888,7 +954,16 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             <SectionHeading eyebrow={t("sections.identity.eyebrow")} title={t("sections.identity.title")} fact={fact("/productName")} />
             <div className={styles.identityGrid}>
               <div><span>{t("fields.category")}</span><strong>{profile.category ?? <MissingValue />}</strong></div>
-              <div><span>{t("fields.productType")}</span><strong>{profile.productType ?? <MissingValue />}</strong></div>
+              <div>
+                <span>{t("fields.productType")}</span>
+                <strong>
+                  {profile.productType
+                    ? productTypeKey
+                      ? t(`editor.productTypes.${productTypeKey}`)
+                      : profile.productType
+                    : <MissingValue />}
+                </strong>
+              </div>
             </div>
             <div className={styles.statement}><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
           </section>
@@ -896,7 +971,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
           <section className={styles.editorialCard}>
             <SectionHeading eyebrow={t("sections.business.eyebrow")} title={t("sections.business.title")} fact={fact("/coreFeatures")} />
             <div className={styles.splitContent}>
-              <div><h3>{t("fields.businessModels")}</h3><ValueList values={profile.businessModels} /></div>
+              <div><h3>{t("fields.businessModels")}</h3><ValueList values={localizedBusinessModels} /></div>
               <div><h3>{t("fields.coreFeatures")}</h3><ValueList values={profile.coreFeatures} /></div>
             </div>
           </section>
@@ -959,7 +1034,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       <ProfileEditor profile={profile} open={editorOpen} saving={updateMutation.isPending} onClose={closeEditor} onSave={saveProfile} />
       <CompetitorEditor open={competitorEditor !== null} candidate={competitorEditor === "add" ? null : competitorEditor} saving={addMutation.isPending || reviewMutation.isPending} onClose={closeCompetitorEditor} onSubmit={saveCompetitor} />
       <ModalFrame open={confirmOpen} titleId="confirm-profile-title" onRequestClose={closeConfirmation}>
-        <div className={styles.confirmDialog}><ShieldCheck size={26} aria-hidden="true" /><h2 id="confirm-profile-title">{t("confirmation.dialogTitle")}</h2><p>{t("confirmation.dialogDetail")}</p><div className={styles.dialogActions}><button type="button" className={styles.secondaryButton} onClick={closeConfirmation}>{t("actions.cancel")}</button><button type="button" className={styles.primaryButton} disabled={confirmMutation.isPending} onClick={() => void confirmProfile()}>{confirmMutation.isPending ? <LoaderCircle className={styles.spin} size={17} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}{t("actions.confirm")}</button></div></div>
+        <div className={styles.confirmDialog}><ShieldCheck size={26} aria-hidden="true" /><h2 id="confirm-profile-title">{t("confirmation.dialogTitle")}</h2><p>{t("confirmation.dialogDetail")}</p><div className={styles.dialogActions}><button type="button" className={styles.secondaryButton} onClick={closeConfirmation}>{t("actions.cancel")}</button><button type="button" className={styles.primaryButton} disabled={confirmMutation.isPending} onClick={() => void confirmProfile()}>{confirmMutation.isPending ? <LoaderCircle className={styles.spin} size={17} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}{t("actions.confirmAndConnect")}</button></div></div>
       </ModalFrame>
     </div>
   );

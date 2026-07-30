@@ -60,6 +60,7 @@ import {
   type GoogleProperty,
   type GoogleProvider,
 } from "@/lib/oauth/google";
+import { seedConfirmedSourceProfile } from "./confirmed-source-profile-fixture";
 import {
   runCollection,
   type CollectionWorkerContext,
@@ -557,8 +558,10 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
       },
       safeGuard,
     );
+    const scope = { workspaceId, projectId: created.project.id };
+    await seedConfirmedSourceProfile(handle, scope, actorId);
     return {
-      scope: { workspaceId, projectId: created.project.id },
+      scope,
       actorId,
       siteId: created.project.site.id,
       siteOrigin,
