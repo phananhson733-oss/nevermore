@@ -30,6 +30,10 @@ import {
 } from "react";
 import { type InternalLinkAuditLocale } from "./internal-link-audit-content";
 import {
+  coverageSummary,
+  stopReasonLabel,
+} from "./internal-link-audit-result-copy";
+import {
   buildInternalLinkAuditTree,
   type InternalLinkAuditTreeModel,
 } from "./internal-link-audit-tree";
@@ -49,25 +53,32 @@ const COPY = {
     running: "Crawling public HTML with a bounded safety budget…",
     help: "We crawl the site origin, respect robots.txt, and do not store your URL or page content. This preview reads static same-origin HTML only.",
     scope: "Up to 25 pages · up to depth 4 · up to 40 seconds · no login required",
-    progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the crawl tree"],
+    progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
     result: "Real bounded crawl result",
     partial: "Partial coverage",
     available: "Completed within the crawl budget",
+    stopLabel: "Why collection stopped",
+    completeLabel: "Collection status",
+    completeReason: "Completed within the safety limits",
+    completeBody: "The crawl finished without reaching an early-stop boundary.",
+    partialBody: "The collected pages and evidence remain available for review.",
     mapped: "Pages collected",
     links: "HTML links observed",
     sitemap: "Sitemap URLs observed",
     fixes: "Prioritized findings",
-    tree: "Observed crawl tree",
-    treeBody: "Each page appears under one observed shallower parent to keep the hierarchy readable. Counts still include every observed HTML link; cross-links and cycles are not erased.",
+    tree: "Site page hierarchy",
+    treeBody: "Pages with observed inbound support are grouped by their nearest collected URL-path parent, then by an observed shallower link when no path parent exists. Link counts still come from every observed HTML relationship.",
     treeSearch: "Find a page in this crawl",
     treeSearchPlaceholder: "Search URL or page title",
     clearSearch: "Clear tree search",
-    connectedBranch: "Observed hierarchy",
-    unlinkedBranch: "No displayed parent",
-    unlinkedBody: "These pages came from an allowed seed such as a sitemap, or their shallower inbound relationship falls outside the displayed edge sample.",
+    connectedBranch: "Page hierarchy",
+    unlinkedBranch: "Outside the main hierarchy",
+    unlinkedBody: "These pages have no observed inbound HTML link, or no eligible collected URL-path or shallower link parent.",
     treeMatches: "pages shown",
     noTreeMatches: "No collected page matches this filter and search.",
     additionalInbound: "additional observed inbound link(s)",
+    pathGrouped: "URL path",
+    linkGrouped: "Observed link",
     all: "All pages",
     home: "Homepage",
     orphan_candidate: "Orphan candidates",
@@ -79,7 +90,7 @@ const COPY = {
     pageContext: "Collected source-page context",
     inbound: "Inbound",
     outbound: "Outbound",
-    depthLabel: "Depth",
+    depthLabel: "Crawl depth",
     sitemapLabel: "Sitemap",
     yes: "yes",
     no: "no",
@@ -106,25 +117,32 @@ const COPY = {
     running: "正在安全预算内抓取公开 HTML…",
     help: "工具从网站根域开始抓取、遵守 robots.txt，不保存 URL 或页面内容。当前预览仅读取同源静态 HTML。",
     scope: "最多 25 页 · 最深 4 层 · 最长 40 秒 · 无需登录",
-    progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成抓取树"],
+    progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
     result: "真实受限抓取结果",
     partial: "覆盖不完整",
     available: "在抓取预算内完成",
+    stopLabel: "本次为何停止",
+    completeLabel: "采集状态",
+    completeReason: "已在安全范围内完成",
+    completeBody: "本次抓取未触发任何提前停止边界。",
+    partialBody: "已经采集到的页面和证据仍可继续查看。",
     mapped: "已采集页面",
     links: "已观测 HTML 内链",
     sitemap: "已观测 Sitemap URL",
     fixes: "优先发现",
-    tree: "已观测的抓取树",
-    treeBody: "为保持层级清晰，每个页面只挂在一个已观测到的浅层父页面下；入链与出链数量仍包含全部已观测 HTML 关系，不会丢失交叉链接或循环关系。",
+    tree: "网站页面层级树",
+    treeBody: "有已观测入链支持的页面优先按最近的已采集 URL 路径父页归组；没有路径父页时，再使用已观测到的浅层内链父页。入链与出链数量仍来自全部已观测 HTML 关系。",
     treeSearch: "在本次抓取中查找页面",
     treeSearchPlaceholder: "搜索 URL 或页面标题",
     clearSearch: "清空树状视图搜索",
-    connectedBranch: "已观测层级",
-    unlinkedBranch: "未展示父页面",
-    unlinkedBody: "这些页面来自 Sitemap 等允许的抓取入口，或指向它们的浅层入链没有进入当前展示的关系样本。",
+    connectedBranch: "页面主层级",
+    unlinkedBranch: "主层级之外",
+    unlinkedBody: "这些页面没有已观测到的 HTML 入链，或没有符合条件的已采集 URL 路径父页或浅层内链父页。",
     treeMatches: "个页面",
     noTreeMatches: "没有页面同时符合当前筛选和搜索条件。",
     additionalInbound: "条其他已观测入链",
+    pathGrouped: "URL 层级",
+    linkGrouped: "内链父页",
     all: "全部页面",
     home: "首页",
     orphan_candidate: "候选孤岛",
@@ -136,7 +154,7 @@ const COPY = {
     pageContext: "已采集来源页上下文",
     inbound: "入链",
     outbound: "出链",
-    depthLabel: "深度",
+    depthLabel: "抓取深度",
     sitemapLabel: "Sitemap",
     yes: "是",
     no: "否",
@@ -177,6 +195,18 @@ function displayPath(url: string): string {
   }
 }
 
+function displayPathSegment(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const segment = segments.at(-1);
+    if (!segment) return "/";
+    return `${segment}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 function errorMessage(code: string, copy: ToolCopy): string {
   if (code === "invalid_url" || code === "invalid_request") return copy.errorInvalid;
   if (code === "rate_limited") return copy.errorRate;
@@ -188,20 +218,24 @@ function errorMessage(code: string, copy: ToolCopy): string {
 function TreeNodeRow({
   childrenById,
   copy,
+  level,
   matchIds,
   nodeById,
   nodeId,
   onSelect,
+  parentRelationById,
   secondaryInboundById,
   selectedNodeId,
   visibleIds,
 }: {
   readonly childrenById: InternalLinkAuditTreeModel["childrenById"];
   readonly copy: ToolCopy;
+  readonly level: number;
   readonly matchIds: ReadonlySet<string>;
   readonly nodeById: ReadonlyMap<string, InternalLinkAuditNode>;
   readonly nodeId: string;
   readonly onSelect: (nodeId: string) => void;
+  readonly parentRelationById: InternalLinkAuditTreeModel["parentRelationById"];
   readonly secondaryInboundById: InternalLinkAuditTreeModel["secondaryInboundById"];
   readonly selectedNodeId: string;
   readonly visibleIds: ReadonlySet<string>;
@@ -214,10 +248,17 @@ function TreeNodeRow({
   const selected = selectedNodeId === node.id;
   const directMatch = matchIds.has(node.id);
   const nodeStyle = STYLE[node.kind];
+  const parentRelation = parentRelationById.get(node.id);
   const secondaryInbound = secondaryInboundById.get(node.id) ?? 0;
 
   return (
-    <li className="relative">
+    <li
+      className={`relative ${
+        level > 1
+          ? "before:absolute before:-left-3 before:top-7 before:w-3 before:border-t-2 before:border-brand-accent/30 sm:before:-left-5 sm:before:w-5"
+          : ""
+      }`}
+    >
       <button
         type="button"
         onClick={() => onSelect(node.id)}
@@ -226,7 +267,9 @@ function TreeNodeRow({
         className={`group flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent sm:px-4 ${
           selected
             ? "border-brand-accent/70 bg-brand-accent/12"
-            : "border-brand-border/60 bg-black/10 hover:border-brand-border hover:bg-white/[0.025]"
+            : level === 1
+              ? "border-brand-accent/35 bg-brand-accent/[0.045] hover:border-brand-accent/55"
+              : "border-brand-border/60 bg-black/10 hover:border-brand-border hover:bg-white/[0.025]"
         } ${directMatch ? "opacity-100" : "opacity-55"}`}
       >
         <span
@@ -238,13 +281,33 @@ function TreeNodeRow({
           }}
         />
         <span className="min-w-0 flex-1">
+          <span className="sr-only">{displayPath(node.url)}. </span>
           <span className="flex flex-wrap items-center gap-2">
-            <strong className="min-w-0 break-all font-mono text-[13px] font-medium leading-5 text-text-dark-primary sm:text-[14px]">
-              {displayPath(node.url)}
+            <strong
+              aria-hidden="true"
+              className="min-w-0 break-words font-mono text-[13px] font-medium leading-5 text-text-dark-primary sm:text-[14px]"
+              title={displayPath(node.url)}
+            >
+              {level === 1
+                ? displayPath(node.url)
+                : displayPathSegment(node.url)}
             </strong>
             <span className="rounded-full border border-brand-border/70 px-2 py-0.5 text-[10px] leading-4 text-text-dark-secondary">
               {copy[node.kind]}
             </span>
+            {parentRelation ? (
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] leading-4 ${
+                  parentRelation === "url_path"
+                    ? "border-brand-accent/35 bg-brand-accent/[0.07] text-brand-accent-text"
+                    : "border-brand-border/70 text-text-dark-secondary"
+                }`}
+              >
+                {parentRelation === "url_path"
+                  ? copy.pathGrouped
+                  : copy.linkGrouped}
+              </span>
+            ) : null}
           </span>
           <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-4 text-text-dark-secondary">
             <span>{copy.depthLabel} {node.depth}</span>
@@ -267,17 +330,19 @@ function TreeNodeRow({
       </button>
       {children.length ? (
         <ul
-          className="ml-2 mt-2 space-y-2 border-l border-brand-border/70 pl-2 sm:ml-5 sm:pl-4"
+          className="ml-2 mt-2 space-y-2 border-l-2 border-brand-accent/25 pl-3 sm:ml-6 sm:pl-5"
         >
           {children.map((childId) => (
             <TreeNodeRow
               key={childId}
               childrenById={childrenById}
               copy={copy}
+              level={level + 1}
               matchIds={matchIds}
               nodeById={nodeById}
               nodeId={childId}
               onSelect={onSelect}
+              parentRelationById={parentRelationById}
               secondaryInboundById={secondaryInboundById}
               selectedNodeId={selectedNodeId}
               visibleIds={visibleIds}
@@ -422,10 +487,12 @@ function LinkTree({
                       key={rootId}
                       childrenById={tree.childrenById}
                       copy={copy}
+                      level={1}
                       matchIds={matchIds}
                       nodeById={nodeById}
                       nodeId={rootId}
                       onSelect={onSelect}
+                      parentRelationById={tree.parentRelationById}
                       secondaryInboundById={tree.secondaryInboundById}
                       selectedNodeId={selectedNodeId}
                       visibleIds={visibleIds}
@@ -454,10 +521,12 @@ function LinkTree({
                       key={rootId}
                       childrenById={tree.childrenById}
                       copy={copy}
+                      level={1}
                       matchIds={matchIds}
                       nodeById={nodeById}
                       nodeId={rootId}
                       onSelect={onSelect}
+                      parentRelationById={tree.parentRelationById}
                       secondaryInboundById={tree.secondaryInboundById}
                       selectedNodeId={selectedNodeId}
                       visibleIds={visibleIds}
@@ -662,11 +731,26 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 >
                   {report.availability === "partial" ? copy.partial : copy.available}
                 </h2>
-                <p className="mt-3 text-[14px] leading-6 text-text-dark-secondary">{report.limitation}</p>
+                <p className="mt-3 text-[14px] leading-6 text-text-dark-secondary">
+                  {coverageSummary(report, locale)}
+                </p>
               </div>
               <div className="rounded-xl border border-brand-border/70 bg-black/10 px-4 py-3 text-[12px] leading-5 text-text-dark-secondary">
-                <p>{copy.actualScope}</p>
-                {report.stopReason ? <p className="mt-2 font-mono">stop: {report.stopReason}</p> : null}
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-text-dark-secondary">
+                  {report.availability === "partial"
+                    ? copy.stopLabel
+                    : copy.completeLabel}
+                </p>
+                <p className="mt-2 text-[16px] font-semibold leading-6 text-text-dark-primary">
+                  {report.availability === "partial"
+                    ? stopReasonLabel(report.stopReason, locale)
+                    : copy.completeReason}
+                </p>
+                <p className="mt-2 text-[12px] leading-5 text-text-dark-secondary">
+                  {report.availability === "partial"
+                    ? copy.partialBody
+                    : copy.completeBody}
+                </p>
               </div>
             </div>
             <dl className="grid grid-cols-2 gap-px bg-brand-border/60 lg:grid-cols-4">

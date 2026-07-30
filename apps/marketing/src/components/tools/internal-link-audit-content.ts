@@ -133,7 +133,7 @@ const EN: InternalLinkAuditContent = {
   formLabel: "Website URL",
   placeholder: "yourdomain.com",
   startCrawl: "Run internal link audit",
-  running: "Building your bounded crawl tree…",
+  running: "Building your bounded page hierarchy…",
   inputHelp:
     "The tool reads public HTML only — no Search Console, ownership verification, account, or site changes.",
   mockScope:
@@ -156,9 +156,9 @@ const EN: InternalLinkAuditContent = {
     internalLinks: "HTML internal links",
     orphanPages: "Orphan pages",
     priorityFixes: "Ready-to-review fixes",
-    graphTitle: "Observed crawl tree",
+    graphTitle: "Site page hierarchy",
     graphBody:
-      "This view places each collected page under one observed shallower parent for readability. Inbound and outbound counts still include every observed same-origin HTML link.",
+      "This view groups pages with observed inbound support under their nearest collected URL-path parent, then falls back to an observed shallower link. Inbound and outbound counts still include every observed same-origin HTML link.",
     filterAll: "All nodes",
     filterPillars: "Pillars",
     filterOrphans: "Orphans",
@@ -251,8 +251,8 @@ const EN: InternalLinkAuditContent = {
       body: "Each finding includes observed evidence and a limitation so you can decide what to verify before changing your site.",
     },
     {
-      title: "A scannable crawl tree",
-      body: "Parent-child paths, candidate islands, and deep pages are easier to review in a hierarchy, while cross-link counts remain available as evidence.",
+      title: "A scannable page hierarchy",
+      body: "URL-path branches, candidate islands, and deep pages are easier to review in a hierarchy, while observed cross-link counts remain available as evidence.",
     },
   ],
   methodEyebrow: "Method transparency",
@@ -400,7 +400,7 @@ const ZH: InternalLinkAuditContent = {
   formLabel: "网站 URL",
   placeholder: "yourdomain.com",
   startCrawl: "开始内链审计",
-  running: "正在构建受限抓取树…",
+  running: "正在构建受限页面层级…",
   inputHelp:
     "工具仅读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
   mockScope:
@@ -419,9 +419,9 @@ const ZH: InternalLinkAuditContent = {
     internalLinks: "HTML 内链",
     orphanPages: "孤岛页面",
     priorityFixes: "可审核修复项",
-    graphTitle: "已观测抓取树",
+    graphTitle: "网站页面层级树",
     graphBody:
-      "为保持层级清晰，每个已采集页面只显示在一个已观测到的浅层父页面下；入链与出链数量仍包含全部已观测到的同源 HTML 内链。",
+      "有已观测入链支持的页面优先归入最近的已采集 URL 路径父页，没有路径父页时再使用浅层内链父页；入链与出链数量仍包含全部已观测到的同源 HTML 内链。",
     filterAll: "全部节点",
     filterPillars: "Pillar",
     filterOrphans: "孤岛",
@@ -513,8 +513,8 @@ const ZH: InternalLinkAuditContent = {
       body: "每条发现都附有观测证据和限制条件，供你决定在改动网站前需要复核什么。",
     },
     {
-      title: "清晰可读的抓取树",
-      body: "相比一张扁平 URL 表，层级树更容易查看父子页面、候选孤岛和深层内容；交叉入链仍保留在页面计数与证据中。",
+      title: "清晰可读的页面层级",
+      body: "相比一张扁平 URL 表，页面树更容易查看 URL 路径分支、候选孤岛和深层内容；已观测交叉入链仍保留在页面计数与证据中。",
     },
   ],
   methodEyebrow: "方法透明",

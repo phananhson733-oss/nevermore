@@ -38,13 +38,30 @@ test("submits the audit request and renders a bounded API response", async ({ pa
   await page.getByRole("button", { name: "Run internal link audit" }).click();
   await expect(page.getByRole("heading", { level: 2, name: "Partial coverage" })).toBeVisible();
   expect(requestedBody).toEqual({ url: "acme.com" });
+  await expect(
+    page.getByText(
+      "Collected 4 page(s) before the 25-page safety budget was reached. You can review the available results, but they do not represent complete site coverage.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Page limit reached", { exact: true })).toBeVisible();
+  await expect(page.getByText("stop: max_urls", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Coverage is partial after the 25-page safety budget.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(page.getByText("4/25", { exact: true })).toBeVisible();
   const tree = page.getByTestId("internal-link-tree");
   const treeRows = tree.locator('button[data-testid^="internal-link-node-"]');
   await expect(tree).toBeVisible();
   await expect(treeRows).toHaveCount(4);
-  await expect(page.getByText("No displayed parent", { exact: true })).toBeVisible();
+  await expect(tree.getByText("URL path", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("Outside the main hierarchy", { exact: true })).toBeVisible();
   await expect(page.getByText("1 additional observed inbound link(s)", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("internal-link-node-page-03")).toHaveAccessibleName(
+    /\/guide\/article.*URL path.*Crawl depth 2.*Inbound 2.*Outbound 0.*1 additional observed inbound link/,
+  );
   const detail = page.getByTestId("internal-link-node-detail");
   await expect(
     detail.getByText("The target /pricing was not collected in this bounded crawl.", {
@@ -98,7 +115,14 @@ test("renders a touch-friendly crawl tree on mobile without horizontal overflow"
 
   const tree = page.getByTestId("internal-link-tree");
   await expect(tree).toBeVisible();
-  await expect(page.getByText("已观测的抓取树", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "本次已采集 4 个页面；达到 25 页安全预算后停止。当前结果可继续查看，但不能代表整站完整覆盖。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("已达到页面数量上限", { exact: true })).toBeVisible();
+  await expect(page.getByText("网站页面层级树", { exact: true })).toBeVisible();
   const firstTreeRow = page.getByTestId("internal-link-node-page-01");
   await expect(firstTreeRow).toBeVisible();
   const rowBox = await firstTreeRow.boundingBox();
