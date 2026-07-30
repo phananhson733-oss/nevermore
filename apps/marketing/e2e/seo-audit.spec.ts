@@ -4,7 +4,7 @@ const mockedPayload = {
   data: {
     run: {
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       mode: "public_preview",
       scope: "single_raw_page_and_standard_support_files",
       persistence: "none",
@@ -66,14 +66,14 @@ const mockedPayload = {
           limitation: null,
         },
         {
-          id: "internal_links",
-          module: "content",
+          id: "security_headers",
+          module: "technical",
           status: "warning",
           severity: "medium",
           weight: 2,
           evidence: [
             {
-              label: "static_internal_links",
+              label: "security_headers_present",
               value: 1,
               source: "submitted_page_static",
             },
@@ -195,7 +195,7 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Checks one page plus robots.txt and sitemap.xml. No login, persistence, or full-site crawl.",
+      "Checks one public page plus robots.txt and sitemap.xml. No login, Search Console data, persistence, or full-site crawl.",
     ),
   ).toBeVisible();
   await expect(
@@ -243,8 +243,8 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
     );
   expect(faqSchema.mainEntity).toHaveLength(8);
   await expect(
-    page.getByRole("link", { name: "Open Internal Link Audit" }),
-  ).toHaveAttribute("href", "/en/tools/internal-link-audit");
+    page.getByRole("link", { name: "Browse free tools" }),
+  ).toHaveAttribute("href", "/en/tools");
   await expect(
     page.getByRole("link", { name: "Read the programmatic SEO guide" }),
   ).toHaveAttribute("href", "/en/blog/programmatic-seo-at-scale");
@@ -269,11 +269,11 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
   ).toBeVisible();
   await expect(page.getByText("75", { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByText("75% weighted coverage · 2 / 3 checks measured"),
+    page.getByText("Measurement coverage 75% · 2 / 3 checks · site coverage: 1 URL"),
   ).toBeVisible();
   await expect(
     page.getByText(
-      "A summary of measured signals — not a ranking or full-site score.",
+      "This is not a website health, ranking, or full-site score.",
     ),
   ).toBeVisible();
 
@@ -294,10 +294,11 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
     page.locator('[data-testid^="seo-audit-priority-"]'),
   ).toHaveCount(3);
   await expect(
-    page
-      .getByTestId("seo-audit-priorities")
-      .getByText("Static internal discovery", { exact: true }),
-  ).toHaveCount(0);
+    page.getByTestId("seo-audit-result-stages").getByText("01 Observation"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("seo-audit-result-stages").getByText("04 Artifact"),
+  ).toBeVisible();
 
   await expect(
     page.getByRole("heading", {

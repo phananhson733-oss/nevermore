@@ -58,7 +58,7 @@ apps/web / worker / db / engine
   "data": {
     "run": {
       "tool": "seo_audit",
-      "schemaVersion": "1.0.0",
+      "schemaVersion": "1.1.0",
       "mode": "public_preview",
       "scope": "single_raw_page_and_standard_support_files",
       "persistence": "none",
@@ -90,7 +90,8 @@ apps/web / worker / db / engine
 - `limitation`：存在证据边界时使用的稳定限制码。
 
 API 不返回原始 HTML/XML、解析堆栈、DNS 地址、内部错误、Cookie、请求
-header 或服务端路径。
+header 或服务端路径。安全响应头只会被投影为四个预定义 header 的存在数量，
+不会暴露原始值。
 
 ## 4. 采集与 SSRF 安全
 
@@ -150,7 +151,7 @@ header 或服务端路径。
 2. 技术基础；
 3. 页面内信号；
 4. 内容与可提取性；
-5. 结构化数据与 AI 可读性。
+5. 静态结构化数据。
 
 V0 规则目录：
 
@@ -165,12 +166,14 @@ V0 规则目录：
 | `html_content_type` | 技术基础 | Content-Type |
 | `canonical` | 技术基础 | 静态 canonical |
 | `html_lang` | 技术基础 | 静态 `<html lang>` |
+| `viewport` | 技术基础 | 静态 viewport 是否含 `width=device-width, initial-scale=1` |
+| `meta_refresh` | 技术基础 | 静态 HTML refresh 元标签 |
+| `security_headers` | 技术基础 | 四个预定义安全响应头的存在数量（不评估策略质量） |
 | `title` | 页面内 | title 是否存在和长度 |
 | `meta_description` | 页面内 | description 是否存在和长度 |
 | `h1` | 页面内 | 静态 H1 数量 |
 | `heading_order` | 页面内 | 静态 H1—H6 层级 |
 | `text_depth` | 内容 | 可提取静态词数 |
-| `internal_links` | 内容 | 同源静态链接数量 |
 | `social_meta` | 内容 | Open Graph/Twitter 标记 |
 | `json_ld` | 结构化数据 | 静态 JSON-LD block/解析错误 |
 
@@ -191,6 +194,11 @@ V0 规则目录：
   若存在第 101 个候选则 projection 不完整，结果保持 `unverified`。
 - 响应解码不可信、响应截断或非 HTML 时，依赖 body 的文档事实，或依赖
   完整 body 的缺失、数量和比例规则为 `unverified`。
+- `viewport` 和 `meta_refresh` 只从完整、可靠的静态 HTML 推导；若只读取到
+  截断前缀，正向事实可保留，但缺失不能被推断。
+- `security_headers` 只检查 HSTS、CSP、X-Content-Type-Options、
+  X-Frame-Options 的存在性；不解析或声称验证 header 策略。HTTP 页面已经由
+  `https` 规则处理，安全 header 项保持 `unverified`，因为 HSTS 不适用。
 - `unverified` 不进入分母。其余按 `pass=1`、`warning=0.5`、`fail=0`
   乘权重计算，并四舍五入为 0—100。
 - 总分同时返回并显示 `measuredWeight / totalWeight` 计算的加权覆盖率，以及
@@ -230,9 +238,14 @@ V0 规则目录：
 - Tools 列表新增 Website Health Map 卡片；
 - 输入框支持键盘、可见 label、loading/disabled 和 `aria-live` 状态；
 - 结果同时用图标、文字和颜色表达，不能只靠颜色；
-- 首屏展示实测分数、覆盖率、最终 URL 和优先项；
+- 首屏必须把分数命名为“单页静态信号分数”，同时展示实测覆盖率、
+  `site coverage: 1 URL`、最终 URL 和优先项；
+- 结果以观测、诊断、建议、证据产物四段式呈现，且每个结论保留可复验的
+  evidence/source/limitation；
 - 五个模块可展开查看证据、状态和下一步建议；
 - 显示采集范围、证据边界、FAQ 与方法说明；
+- 不接入或要求 GSC；表格、GSC、CrUX 和人工检查仅可作为将来全站产品的
+  参考，不能被这项匿名单页扫描声称为已测；
 - CTA 只跳转完整 App，不共享其认证或数据。
 
 ## 8. 验收门禁

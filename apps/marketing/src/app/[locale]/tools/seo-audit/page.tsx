@@ -4,7 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import Link from "next/link";
-import { ArrowRight, FileQuestion, Link2 } from "lucide-react";
+import { ArrowRight, FileQuestion } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { SeoAuditTool } from "@/components/tools/seo-audit-tool";
 import {
@@ -343,11 +343,11 @@ export default async function SeoAuditPage({
                 {t("relatedToolsTitle")}
               </h2>
               <Link
-                href={`/${locale}/tools/internal-link-audit`}
+                href={`/${locale}/tools`}
                 className="mt-6 block rounded-xl border border-brand-border/70 bg-black/10 p-5 transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
-                  <Link2 aria-hidden="true" className="h-4 w-4 text-brand-accent-text" />
+                  <ArrowRight aria-hidden="true" className="h-4 w-4 text-brand-accent-text" />
                   {t("relatedToolsCta")}
                 </span>
                 <span className="mt-2 block text-[10px] leading-relaxed text-text-dark-secondary">

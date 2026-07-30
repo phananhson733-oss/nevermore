@@ -43,7 +43,10 @@ export interface SeoAuditPageProbe {
   readonly h1Count: number;
   readonly headingOutline: readonly string[];
   readonly wordCount: number;
-  readonly internalLinkCount: number;
+  readonly viewportConfigured: boolean | null;
+  readonly hasMetaRefresh: boolean | null;
+  /** Count of the four deliberately projected response security headers. */
+  readonly securityHeadersPresent: number;
   readonly socialMetaTagsPresent: number;
   readonly jsonLdBlockCount: number;
   readonly jsonLdErrorCount: number;

@@ -30,6 +30,18 @@ export type PublicResourceDecodeState =
   | "unsupported_charset"
   | "invalid_utf8";
 
+/**
+ * A deliberately small, non-sensitive projection of response headers that
+ * matter to a public page-health check. Arbitrary response headers are not
+ * retained because they can contain deployment-specific or sensitive values.
+ */
+export interface PublicResourceSecurityHeaders {
+  readonly strictTransportSecurity: boolean;
+  readonly contentSecurityPolicy: boolean;
+  readonly xContentTypeOptions: boolean;
+  readonly xFrameOptions: boolean;
+}
+
 export interface PublicResourceSuccess {
   readonly kind: "ok";
   readonly requestedUrl: string;
@@ -39,6 +51,7 @@ export interface PublicResourceSuccess {
   readonly redirectChain: readonly string[];
   readonly contentType: string | null;
   readonly xRobotsTag: string | null;
+  readonly securityHeaders: PublicResourceSecurityHeaders;
   readonly body: string;
   readonly bytes: number;
   /**
@@ -97,6 +110,17 @@ interface BoundedBody {
   readonly data: Uint8Array;
   readonly bytes: number;
   readonly complete: boolean;
+}
+
+function securityHeaders(
+  headers: Headers,
+): PublicResourceSecurityHeaders {
+  return {
+    strictTransportSecurity: headers.has("strict-transport-security"),
+    contentSecurityPolicy: headers.has("content-security-policy"),
+    xContentTypeOptions: headers.has("x-content-type-options"),
+    xFrameOptions: headers.has("x-frame-options"),
+  };
 }
 
 type SignalRace<T> =
@@ -504,6 +528,7 @@ export async function fetchPublicResource(
               redirectChain,
               contentType,
               xRobotsTag: response.headers.get("x-robots-tag"),
+              securityHeaders: securityHeaders(response.headers),
               body: decoded.body,
               bytes: bounded.bytes,
               decodeState: decoded.state,
@@ -557,6 +582,7 @@ export async function fetchPublicResource(
           redirectChain,
           contentType,
           xRobotsTag: response.headers.get("x-robots-tag"),
+          securityHeaders: securityHeaders(response.headers),
           body: decoded.body,
           bytes: bounded.bytes,
           decodeState: decoded.state,

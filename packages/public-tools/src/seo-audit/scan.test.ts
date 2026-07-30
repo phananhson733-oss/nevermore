@@ -22,6 +22,12 @@ const ok = (
   redirectChain: [],
   contentType: "text/html; charset=utf-8",
   xRobotsTag: null,
+  securityHeaders: {
+    strictTransportSecurity: false,
+    contentSecurityPolicy: false,
+    xContentTypeOptions: false,
+    xFrameOptions: false,
+  },
   decodeState: "utf8",
   body,
   bytes: new TextEncoder().encode(body).byteLength,
@@ -54,6 +60,7 @@ describe("scanSeoAuditSite", () => {
             '<html lang="en"><head>',
             "<title>Acme evidence-led growth operating system</title>",
             '<meta name="description" content="A sufficiently descriptive summary for the public health map fixture and its deterministic checks.">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
             '<meta property="og:title" content="Acme">',
             '<meta property="og:description" content="Acme growth">',
             '<meta property="og:image" content="/og.png">',
@@ -70,6 +77,12 @@ describe("scanSeoAuditSite", () => {
             finalUrl: "https://www.acme.com/",
             redirectChain: ["https://www.acme.com/"],
             firstStatus: 301,
+            securityHeaders: {
+              strictTransportSecurity: true,
+              contentSecurityPolicy: true,
+              xContentTypeOptions: true,
+              xFrameOptions: true,
+            },
           },
         );
       },
@@ -89,7 +102,9 @@ describe("scanSeoAuditSite", () => {
       robotsNoindex: false,
       htmlLang: "en",
       h1Count: 1,
-      internalLinkCount: 3,
+      viewportConfigured: true,
+      hasMetaRefresh: false,
+      securityHeadersPresent: 4,
       socialMetaTagsPresent: 4,
       jsonLdBlockCount: 1,
       jsonLdErrorCount: 0,
@@ -104,6 +119,62 @@ describe("scanSeoAuditSite", () => {
     ]);
     expect(calls[1]?.options.allowedOrigin).toBe("https://www.acme.com");
     expect(calls[2]?.options.allowedOrigin).toBe("https://www.acme.com");
+  });
+
+  it("captures viewport and meta-refresh facts without crawling the site", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        [
+          "<html><head>",
+          '<meta name="viewport" content="width=device-width, initial-scale=1">',
+          '<meta http-equiv="refresh" content="0;url=https://acme.com/new">',
+          "</head><body>Acme</body></html>",
+        ].join(""),
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.viewportConfigured).toBe(true);
+    expect(result.page.hasMetaRefresh).toBe(true);
+  });
+
+  it("does not call an empty refresh directive a redirect", async () => {
+    const fetchResource: SeoAuditFetchResource = async (url) => {
+      if (url.endsWith("/robots.txt")) {
+        return ok(url, "User-agent: *", { contentType: "text/plain" });
+      }
+      if (url.endsWith("/sitemap.xml")) {
+        return ok(url, "<urlset></urlset>", {
+          contentType: "application/xml",
+        });
+      }
+      return ok(
+        url,
+        '<html><head><meta http-equiv="refresh" content=""></head></html>',
+      );
+    };
+
+    const result = await scanSeoAuditSite(
+      "https://acme.com/",
+      {},
+      fetchResource,
+    );
+
+    expect(result.page.hasMetaRefresh).toBe(false);
   });
 
   it("throws a stable timeout only when the submitted page transport fails", async () => {

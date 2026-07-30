@@ -30,7 +30,7 @@ const probe = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     mode: "public_preview",
     scope: "single_raw_page_and_standard_support_files",
     persistence: "none",

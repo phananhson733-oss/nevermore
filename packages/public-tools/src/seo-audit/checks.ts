@@ -26,12 +26,19 @@ const CATALOG: readonly CatalogEntry[] = [
   { id: "html_content_type", module: "technical", severity: "high", weight: 2 },
   { id: "canonical", module: "technical", severity: "high", weight: 3 },
   { id: "html_lang", module: "technical", severity: "low", weight: 1 },
+  { id: "viewport", module: "technical", severity: "medium", weight: 2 },
+  { id: "meta_refresh", module: "technical", severity: "medium", weight: 2 },
+  {
+    id: "security_headers",
+    module: "technical",
+    severity: "medium",
+    weight: 2,
+  },
   { id: "title", module: "on_page", severity: "high", weight: 3 },
   { id: "meta_description", module: "on_page", severity: "medium", weight: 2 },
   { id: "h1", module: "on_page", severity: "high", weight: 3 },
   { id: "heading_order", module: "on_page", severity: "low", weight: 1 },
   { id: "text_depth", module: "content", severity: "medium", weight: 2 },
-  { id: "internal_links", module: "content", severity: "medium", weight: 2 },
   { id: "social_meta", module: "content", severity: "low", weight: 1 },
   { id: "json_ld", module: "structured_data", severity: "medium", weight: 2 },
 ] as const;
@@ -45,7 +52,8 @@ const DOCUMENT_CHECK_IDS = new Set([
   "h1",
   "heading_order",
   "text_depth",
-  "internal_links",
+  "viewport",
+  "meta_refresh",
   "social_meta",
   "json_ld",
 ]);
@@ -136,6 +144,20 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
       if (!page.decodeReliable) return "unverified";
       if (html !== true || (!page.htmlLang && incomplete)) return "unverified";
       return page.htmlLang ? "pass" : "warning";
+    case "viewport":
+      if (bodyUnknown(probe)) return "unverified";
+      if (page.viewportConfigured === true) return "pass";
+      if (page.viewportConfigured === false) return "warning";
+      return "unverified";
+    case "meta_refresh":
+      if (bodyUnknown(probe)) return "unverified";
+      if (page.hasMetaRefresh === true) return "warning";
+      if (page.hasMetaRefresh === false) return "pass";
+      return "unverified";
+    case "security_headers":
+      if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
+      if (new URL(page.finalUrl).protocol !== "https:") return "unverified";
+      return page.securityHeadersPresent === 4 ? "pass" : "warning";
     case "title":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
       if (!page.decodeReliable) return "unverified";
@@ -174,15 +196,6 @@ function checkStatus(id: string, probe: SeoAuditProbe): SeoAuditStatus {
       if (incomplete) return page.wordCount >= 500 ? "pass" : "unverified";
       if (page.wordCount >= 500) return "pass";
       return page.wordCount >= 200 ? "warning" : "fail";
-    case "internal_links":
-      if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
-      if (!page.decodeReliable) return "unverified";
-      if (html !== true) return "unverified";
-      if (incomplete) {
-        return page.internalLinkCount >= 3 ? "pass" : "unverified";
-      }
-      if (page.internalLinkCount >= 3) return "pass";
-      return page.internalLinkCount > 0 ? "warning" : "fail";
     case "social_meta":
       if (page.statusCode < 200 || page.statusCode >= 300) return "unverified";
       if (!page.decodeReliable) return "unverified";
@@ -212,6 +225,12 @@ function limitation(
 ): string | null {
   if (id === "sitemap" && probe.sitemap.state === "missing") {
     return "standard_path_only";
+  }
+  if (
+    id === "security_headers" &&
+    new URL(probe.page.finalUrl).protocol !== "https:"
+  ) {
+    return "https_required_for_hsts";
   }
   if (
     status === "unverified" &&
@@ -295,6 +314,21 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
       return observed("submitted_page_static", [
         { label: "html_lang", value: page.htmlLang },
       ]);
+    case "viewport":
+      return observed("submitted_page_static", [
+        { label: "viewport_configured", value: page.viewportConfigured },
+      ]);
+    case "meta_refresh":
+      return observed("submitted_page_static", [
+        { label: "meta_refresh_present", value: page.hasMetaRefresh },
+      ]);
+    case "security_headers":
+      return observed("submitted_page_static", [
+        {
+          label: "security_headers_present",
+          value: page.securityHeadersPresent,
+        },
+      ]);
     case "title":
       return observed("submitted_page_static", [
         { label: "title_length", value: page.title?.length ?? null },
@@ -320,10 +354,6 @@ function evidence(id: string, probe: SeoAuditProbe): readonly SeoAuditEvidence[]
     case "text_depth":
       return observed("submitted_page_static", [
         { label: "static_word_count", value: page.wordCount },
-      ]);
-    case "internal_links":
-      return observed("submitted_page_static", [
-        { label: "static_internal_links", value: page.internalLinkCount },
       ]);
     case "social_meta":
       return observed("submitted_page_static", [

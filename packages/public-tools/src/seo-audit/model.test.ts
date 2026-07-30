@@ -23,7 +23,9 @@ function healthyPage(
     h1Count: 1,
     headingOutline: ["h1", "h2", "h2"],
     wordCount: 650,
-    internalLinkCount: 8,
+    viewportConfigured: true,
+    hasMetaRefresh: false,
+    securityHeadersPresent: 4,
     socialMetaTagsPresent: 4,
     jsonLdBlockCount: 1,
     jsonLdErrorCount: 0,
@@ -60,7 +62,7 @@ describe("SEO audit evidence and scoring", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "1.1.0",
       mode: "public_preview",
       scope: "single_raw_page_and_standard_support_files",
       persistence: "none",
@@ -68,11 +70,46 @@ describe("SEO audit evidence and scoring", () => {
     });
     expect(payload.result).toMatchObject({
       score: 100,
-      measuredChecks: 17,
-      totalChecks: 17,
-      measuredWeight: 39,
-      totalWeight: 39,
+      measuredChecks: 19,
+      totalChecks: 19,
+      measuredWeight: 43,
+      totalWeight: 43,
       coveragePercent: 100,
+    });
+  });
+
+  it("keeps P02 link topology out of the page-health audit", () => {
+    const checks = buildSeoAuditReport(probe()).modules.flatMap(
+      (module) => module.checks,
+    );
+    const byId = new Map(checks.map((check) => [check.id, check]));
+
+    expect(byId.has("internal_links")).toBe(false);
+    expect(byId.get("viewport")).toMatchObject({
+      status: "pass",
+      evidence: [{ label: "viewport_configured", value: true }],
+    });
+    expect(byId.get("meta_refresh")).toMatchObject({
+      status: "pass",
+      evidence: [{ label: "meta_refresh_present", value: false }],
+    });
+    expect(byId.get("security_headers")).toMatchObject({
+      status: "pass",
+      evidence: [{ label: "security_headers_present", value: 4 }],
+    });
+  });
+
+  it("reports missing security headers as a limited presence warning", () => {
+    const report = buildSeoAuditReport(
+      probe({ page: healthyPage({ securityHeadersPresent: 2 }) }),
+    );
+    const securityHeaders = report.modules
+      .flatMap((module) => module.checks)
+      .find((check) => check.id === "security_headers");
+
+    expect(securityHeaders).toMatchObject({
+      status: "warning",
+      evidence: [{ label: "security_headers_present", value: 2 }],
     });
   });
 
@@ -94,8 +131,8 @@ describe("SEO audit evidence and scoring", () => {
       limitation: "static_html_cannot_prove_rendered_absence",
     });
     expect(report.score).toBe(100);
-    expect(report.measuredChecks).toBe(16);
-    expect(report.totalChecks).toBe(17);
+    expect(report.measuredChecks).toBe(18);
+    expect(report.totalChecks).toBe(19);
     expect(report.coveragePercent).toBeLessThan(100);
   });
 
@@ -170,7 +207,8 @@ describe("SEO audit evidence and scoring", () => {
           h1Count: 0,
           headingOutline: [],
           wordCount: 120,
-          internalLinkCount: 1,
+          viewportConfigured: null,
+          hasMetaRefresh: null,
           socialMetaTagsPresent: 0,
           jsonLdBlockCount: 0,
         }),
@@ -191,7 +229,8 @@ describe("SEO audit evidence and scoring", () => {
       "h1",
       "heading_order",
       "text_depth",
-      "internal_links",
+      "viewport",
+      "meta_refresh",
       "social_meta",
       "json_ld",
     ]) {
@@ -242,7 +281,8 @@ describe("SEO audit evidence and scoring", () => {
           h1Count: 0,
           headingOutline: [],
           wordCount: 0,
-          internalLinkCount: 0,
+          viewportConfigured: null,
+          hasMetaRefresh: null,
           socialMetaTagsPresent: 0,
           jsonLdBlockCount: 0,
         }),
@@ -263,7 +303,8 @@ describe("SEO audit evidence and scoring", () => {
       "h1",
       "heading_order",
       "text_depth",
-      "internal_links",
+      "viewport",
+      "meta_refresh",
       "social_meta",
       "json_ld",
     ]) {
@@ -284,7 +325,8 @@ describe("SEO audit evidence and scoring", () => {
           h1Count: 0,
           headingOutline: [],
           wordCount: 0,
-          internalLinkCount: 0,
+          viewportConfigured: null,
+          hasMetaRefresh: null,
           socialMetaTagsPresent: 0,
           jsonLdBlockCount: 0,
           jsonLdErrorCount: 0,
@@ -306,7 +348,8 @@ describe("SEO audit evidence and scoring", () => {
       "h1",
       "heading_order",
       "text_depth",
-      "internal_links",
+      "viewport",
+      "meta_refresh",
       "social_meta",
       "json_ld",
     ]) {

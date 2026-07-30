@@ -113,6 +113,14 @@ function CheckRow({ check }: { readonly check: SeoAuditCheck }) {
           </div>
           <div className="border-t border-brand-border/50 pt-4 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-text-dark-secondary">
+              {t("diagnosisLabel")}
+            </p>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-dark-primary">
+              {t("diagnosisText", {
+                status: t(`statuses.${check.status}`),
+              })}
+            </p>
+            <p className="mt-4 text-[10px] font-medium uppercase tracking-[0.14em] text-text-dark-secondary">
               {t("recommendationLabel")}
             </p>
             <p className="mt-2 text-[11px] leading-relaxed text-text-dark-primary">
@@ -201,6 +209,14 @@ function PriorityRow({
       </div>
       <div className="border-t border-brand-border/50 pt-4 md:border-l md:border-t-0 md:pl-5 md:pt-0">
         <p className="text-[9px] uppercase tracking-[0.12em] text-text-dark-secondary">
+          {t("diagnosisLabel")}
+        </p>
+        <p className="mt-2 text-[11px] leading-relaxed text-text-dark-primary">
+          {t("diagnosisText", {
+            status: t(`statuses.${check.status}`),
+          })}
+        </p>
+        <p className="mt-4 text-[9px] uppercase tracking-[0.12em] text-text-dark-secondary">
           {t("recommendationLabel")}
         </p>
         <p className="mt-2 text-[11px] leading-relaxed text-text-dark-primary">
@@ -410,6 +426,45 @@ export function SeoAuditHealthMap({
               {t("scoreDisclaimer")}
             </p>
           </aside>
+        </div>
+        <div
+          data-testid="seo-audit-result-stages"
+          className="grid border-t border-brand-border/60 sm:grid-cols-2 xl:grid-cols-4"
+        >
+          {[
+            {
+              title: t("stageObservationTitle"),
+              body: t("stageObservationBody"),
+            },
+            {
+              title: t("stageDiagnosisTitle"),
+              body: t("stageDiagnosisBody", {
+                attention: overallCounts.fail + overallCounts.warning,
+              }),
+            },
+            {
+              title: t("stageRecommendationTitle"),
+              body: t("stageRecommendationBody", {
+                priorities: visiblePriorities.length,
+              }),
+            },
+            {
+              title: t("stageArtifactTitle"),
+              body: t("stageArtifactBody"),
+            },
+          ].map((stage) => (
+            <div
+              key={stage.title}
+              className="border-brand-border/60 px-4 py-4 even:border-l sm:border-l sm:first:border-l-0 xl:even:border-l xl:first:border-l-0"
+            >
+              <p className="text-[9px] font-medium uppercase tracking-[0.12em] text-brand-accent-text">
+                {stage.title}
+              </p>
+              <p className="mt-2 text-[10px] leading-relaxed text-text-dark-secondary">
+                {stage.body}
+              </p>
+            </div>
+          ))}
         </div>
         <div className="grid grid-cols-2 border-t border-brand-border/60 sm:grid-cols-4">
           {STATUS_ORDER.map((status) => {

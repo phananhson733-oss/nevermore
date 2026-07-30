@@ -33,7 +33,7 @@ P04 intentionally does not compete for a generic SEO-audit keyword or make full-
 3. Three-step method, five-module field interpretation and three bounded use cases.
 4. Full-product CTA that accurately describes the additional multi-page/rendered/history scope.
 5. Eight localized FAQs, including score/coverage, robots scope, unverified evidence and preview-vs-full-product limits.
-6. A related internal-link-audit link and an existing programmatic-SEO article link.
+6. A neutral free-tools catalog link and an existing programmatic-SEO article link.
 
 The interactive result surface continues to use the required four-part rhythm: observed evidence, bounded diagnosis via the status/limitation, concrete recommendation, and a repeatable verification instruction. It presents only the top three priorities, weighted coverage, the final URL, all five expandable modules and an honest zero-priority/`unverified` state.
 
@@ -44,6 +44,59 @@ The interactive result surface continues to use the required four-part rhythm: o
 - Expanded the FAQ JSON-LD and visible FAQ from three to eight localized entries; localized the Chinese FAQ heading.
 - Added only valid internal paths for the related tool/article cards.
 - Extended the SEO Audit Playwright coverage for the template sections, in-page CTA, FAQ count and link targets, while retaining mocked-result, mobile overflow and API-rejection coverage.
+
+## V1.1 scope correction — single-page technical health only
+
+After reviewing the supplied `website-audit-tool-v2.xlsx` reference workbook's
+`A-技术健康度` sheet, the Public Tool scope was made stricter rather than
+broader. The workbook is a technical-health checklist reference only. This
+anonymous tool does **not** connect to, require, or claim to read Google Search
+Console, CrUX, GA4, browser-rendered performance data, or a full-site crawl.
+
+- Removed `internal_links` from the P04 check catalog, payload, result copy and
+  related-tool card. Link topology, orphan candidates, click depth and link
+  distribution remain the separate P02 internal-link audit responsibility.
+- Added only three measurements that the existing bounded public request can
+  actually establish: a correctly configured static mobile viewport, a
+  non-empty HTML refresh directive, and presence count for HSTS, CSP,
+  X-Content-Type-Options and X-Frame-Options. The API exposes only the count;
+  it never returns header values and does not call presence a policy-quality or
+  security verdict.
+- Bumped the Public Tools result contract from `schemaVersion: "1.0.0"` to
+  `"1.1.0"`. A fully measured pass now has 19 checks and total weight 43.
+- Reframed the result as a **single-page static signal score**, visibly showing
+  measurement coverage and `site coverage: 1 URL`; it no longer resembles a
+  whole-website health score. The result now visibly follows Observation →
+  Diagnosis → Recommendation → Artifact, with evidence/limitation/recheck text
+  attached to every detailed rule.
+
+Local read-only API verification against `https://www.gengrowth.ai/` through
+the rebuilt local Marketing app returned the V1.1 contract, 18/19 measured
+checks and 95% measurement coverage. It observed a configured viewport, no
+HTML refresh directive, and three of the four selected security-header
+presences. This is a real public-response measurement by local code, not a
+production deployment check or a whole-site claim.
+
+Revision-specific verification completed before release:
+
+```text
+pnpm test -- --reporter=dot                 # 206 files / 2,332 tests passed
+pnpm typecheck                              # all 11 applicable workspaces passed
+pnpm secrets:scan                           # scan + 74 redaction tests passed
+pnpm --filter @sf/marketing build           # passed
+pnpm --filter @sf/web build                 # passed
+pnpm --filter @sf/marketing exec playwright test --config=playwright.config.ts e2e/seo-audit.spec.ts
+                                                # 3 Chromium tests passed
+pnpm exec eslint <P04 files>                # passed
+```
+
+The full Marketing lint command is not a P04 acceptance signal in this dirty
+worktree: it currently fails on two unused symbols in the separate, uncommitted
+P02 `internal-link-audit-tool.tsx` implementation. P04's own modified files
+were linted directly and passed. `verify:public-tools-boundary` was also run in
+an isolated worktree at `c9048a0`, with only the P04 patch applied: the rebuilt
+Marketing output passed both policy tests and all 88 traced runtime files. No
+P04 runtime dependency on `apps/web`, workers, database code or GSC was found.
 
 ## Independent verification performed
 

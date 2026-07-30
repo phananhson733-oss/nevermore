@@ -102,6 +102,37 @@ describe("fetchPublicResource", () => {
     );
   });
 
+  it("projects only the presence of selected security response headers", async () => {
+    const fixture = harness([
+      new Response("<html></html>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "strict-transport-security": "max-age=31536000",
+          "content-security-policy": "default-src 'self'",
+          "x-content-type-options": "nosniff",
+          "set-cookie": "must-not-be-projected=true",
+        },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      {},
+      fixture.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      securityHeaders: {
+        strictTransportSecurity: true,
+        contentSecurityPolicy: true,
+        xContentTypeOptions: true,
+        xFrameOptions: false,
+      },
+    });
+  });
+
   it("blocks a redirect before a second network request", async () => {
     const unsafeGuard: PublicResourceFetchDependencies["guard"] = async (
       url,

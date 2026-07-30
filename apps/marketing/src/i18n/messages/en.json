@@ -522,7 +522,7 @@
       "placeholder": "example.com",
       "submit": "Run free check",
       "running": "Scanning submitted-page signals...",
-      "scopeShort": "Checks one page plus robots.txt and sitemap.xml. No login, persistence, or full-site crawl.",
+      "scopeShort": "Checks one public page plus robots.txt and sitemap.xml. No login, Search Console data, persistence, or full-site crawl.",
       "errors": {
         "invalid_url": "Enter a public website URL.",
         "invalid_request": "Send one valid website URL and try again.",
@@ -534,21 +534,31 @@
         "rate_limited": "Too many scans from this network. Try again shortly.",
         "unknown": "Something went wrong. Try again."
       },
-      "resultsTitle": "Measured page health",
-      "summaryLabel": "5-second answer",
+      "resultsTitle": "Single-page static signal report",
+      "summaryLabel": "Scope-first result",
       "fixFirstTitle": "What to fix first",
       "summaryWithPriority": "Start with {priority}. This run measured {percent}% of the weighted evidence.",
       "summaryWithoutPriority": "No measured fail or warning signals surfaced in this preview. This run measured {percent}% of the weighted evidence.",
       "targetLabel": "Scanned target",
-      "scopeBadge": "1 page + 2 standard support files",
-      "scoreLabel": "Measured score",
-      "coverage": "{percent}% weighted coverage · {measured} / {total} checks measured",
-      "scoreDisclaimer": "A summary of measured signals — not a ranking or full-site score.",
+      "scopeBadge": "1 public page · no GSC · no crawl",
+      "scoreLabel": "Single-page static signal score",
+      "coverage": "Measurement coverage {percent}% · {measured} / {total} checks · site coverage: 1 URL",
+      "scoreDisclaimer": "This is not a website health, ranking, or full-site score.",
+      "stageObservationTitle": "01 Observation",
+      "stageObservationBody": "The public page response and two standard support files were read within fixed safety limits.",
+      "stageDiagnosisTitle": "02 Diagnosis",
+      "stageDiagnosisBody": "{attention} measured signals need attention; unverified signals stay outside the diagnosis.",
+      "stageRecommendationTitle": "03 Recommendation",
+      "stageRecommendationBody": "The repair sequence below shows the first {priorities} actionable items.",
+      "stageArtifactTitle": "04 Artifact",
+      "stageArtifactBody": "Use the evidence map as the reproducible record for this single URL.",
       "priorities": "Top priorities",
       "priorityListTitle": "Repair sequence",
       "priorityListBody": "Ordered by the audit's existing severity and weight. This public preview shows the first three.",
       "noPriorities": "No measured fail or warning signals surfaced. Review coverage and unverified evidence before treating the page as healthy.",
       "observedEvidenceLabel": "Observed evidence",
+      "diagnosisLabel": "Diagnosis",
+      "diagnosisText": "The observed evidence produced a {status} result for this signal.",
       "recommendationLabel": "What to do",
       "verificationLabel": "How to verify",
       "verificationText": "Publish the change, rerun this URL, and compare the same observed evidence.",
@@ -572,7 +582,7 @@
         "technical": "Technical foundation",
         "on_page": "On-page signals",
         "content": "Content & extractability",
-        "structured_data": "Structured data & AI readability"
+        "structured_data": "Static structured data"
       },
       "statuses": {
         "pass": "Pass",
@@ -617,6 +627,18 @@
           "title": "HTML language",
           "recommendation": "Set a valid lang attribute on the html element for the page language."
         },
+        "viewport": {
+          "title": "Mobile viewport",
+          "recommendation": "Add a viewport meta tag with width=device-width and initial-scale=1 before testing rendered mobile layouts."
+        },
+        "meta_refresh": {
+          "title": "HTML refresh redirect",
+          "recommendation": "Replace HTML refresh redirects with an appropriate server-side redirect or a direct canonical link."
+        },
+        "security_headers": {
+          "title": "Security header presence",
+          "recommendation": "Review the missing transport and browser-protection headers; this preview checks only their presence, not policy quality."
+        },
         "title": {
           "title": "Title tag",
           "recommendation": "Write one descriptive, page-specific title of roughly 30 to 60 characters."
@@ -636,10 +658,6 @@
         "text_depth": {
           "title": "Static text extractability",
           "recommendation": "Expose enough useful main content in crawlable HTML to explain the product, audience, and outcome."
-        },
-        "internal_links": {
-          "title": "Static internal discovery",
-          "recommendation": "Expose descriptive HTML links to important product, proof, pricing, and resource pages."
         },
         "social_meta": {
           "title": "Social preview metadata",
@@ -667,7 +685,9 @@
         "h1_count": "H1 count",
         "heading_outline": "Heading outline",
         "static_word_count": "Static word count",
-        "static_internal_links": "Static internal links",
+        "viewport_configured": "Viewport configured",
+        "meta_refresh_present": "HTML refresh present",
+        "security_headers_present": "Security headers present",
         "social_tags_present": "Social tags present",
         "json_ld_blocks": "JSON-LD blocks",
         "malformed_blocks": "Malformed blocks"
@@ -686,7 +706,8 @@
         "response_decode_unreliable": "The response could not be decoded as declared or valid UTF-8, so document checks were not inferred.",
         "html_body_unavailable": "The response was not identifiable as an HTML document.",
         "resource_fetch_unavailable": "The standard resource could not be measured in this run.",
-        "resource_decode_unreliable": "The standard resource could not be decoded reliably in this run."
+        "resource_decode_unreliable": "The standard resource could not be decoded reliably in this run.",
+        "https_required_for_hsts": "Security-header presence is not separately assessed on HTTP because HSTS only applies after HTTPS is enabled."
       },
       "methodEyebrow": "Evidence before advice",
       "howTitle": "How this fast check works",
@@ -703,12 +724,12 @@
       "signal1Title": "Crawlability & indexation",
       "signal1Body": "Response status, noindex directives, Googlebot access to the submitted path, and the standard sitemap path.",
       "signal2Title": "Technical foundations",
-      "signal2Body": "The final protocol, redirect chain, content type, canonical URL, and HTML language declaration.",
+      "signal2Body": "The final protocol, redirect chain, content type, canonical URL, language, viewport, HTML refresh, and selected security-header presence.",
       "signal3Title": "On-page signals",
       "signal3Body": "The static title, meta description, H1 count, and heading hierarchy seen in the fetched response.",
       "signal4Title": "Content & extractability",
-      "signal4Body": "Static text depth, same-origin links, and social metadata—not a judgment of content quality or search intent.",
-      "signal5Title": "Structured data & AI readability",
+      "signal4Body": "Static text depth and social metadata—not a judgment of content quality, search intent, or site structure.",
+      "signal5Title": "Static structured data",
       "signal5Body": "Closed JSON-LD blocks visible in the raw response. JavaScript-rendered markup remains explicitly unverified.",
       "useCasesEyebrow": "When a fast check is useful",
       "useCasesTitle": "Use this as a first, evidence-led pass",
@@ -762,9 +783,9 @@
       "faq8q": "What changes in the full GenGrowth Website Audit?",
       "faq8a": "The full product can add multi-page crawling, rendered evidence, performance data, history, and an execution-ready fix queue. Those capabilities are outside this anonymous, one-page preview.",
       "relatedToolsEyebrow": "Continue the diagnosis",
-      "relatedToolsTitle": "Need to see the site structure behind the page?",
-      "relatedToolsBody": "Use Internal Link Audit to map crawlable internal links and turn structural gaps into review-ready fixes.",
-      "relatedToolsCta": "Open Internal Link Audit",
+      "relatedToolsTitle": "Choose the next focused check",
+      "relatedToolsBody": "Each public tool answers one bounded question. Browse the collection when the next question goes beyond this URL's technical response.",
+      "relatedToolsCta": "Browse free tools",
       "articlesEyebrow": "Build the next layer",
       "articlesTitle": "Planning pages at scale?",
       "articlesBody": "Read the programmatic SEO guide for the site architecture and implementation questions that a single-page check intentionally leaves open.",

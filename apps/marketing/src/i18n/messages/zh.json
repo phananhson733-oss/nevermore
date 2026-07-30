@@ -522,7 +522,7 @@
       "placeholder": "example.com",
       "submit": "免费检测",
       "running": "正在检测提交页面的信号...",
-      "scopeShort": "检测一个页面以及 robots.txt、sitemap.xml；无需登录，不持久化，也不冒充全站爬取。",
+      "scopeShort": "检测一个公开页面以及 robots.txt、sitemap.xml；无需登录，不使用 Search Console 数据，不持久化，也不冒充全站爬取。",
       "errors": {
         "invalid_url": "请输入可公开访问的网站 URL。",
         "invalid_request": "请提交一个有效的网站 URL 后重试。",
@@ -534,21 +534,31 @@
         "rate_limited": "当前网络检测次数过多，请稍后重试。",
         "unknown": "出现错误，请重试。"
       },
-      "resultsTitle": "页面实测健康度",
-      "summaryLabel": "5 秒结论",
+      "resultsTitle": "单页静态信号报告",
+      "summaryLabel": "先看检测边界",
       "fixFirstTitle": "先修什么",
       "summaryWithPriority": "先处理“{priority}”。本次获得了 {percent}% 的加权实测证据。",
       "summaryWithoutPriority": "本次体验检测没有出现已实测的失败或警告信号；加权实测证据覆盖度为 {percent}%。",
       "targetLabel": "检测对象",
-      "scopeBadge": "1 个页面 + 2 个标准支持文件",
-      "scoreLabel": "实测得分",
-      "coverage": "加权覆盖度 {percent}% · 已实测 {measured} / {total} 项",
-      "scoreDisclaimer": "仅汇总已实测信号，不代表排名，也不是全站健康得分。",
+      "scopeBadge": "1 个公开页面 · 无 GSC · 无全站爬取",
+      "scoreLabel": "单页静态信号得分",
+      "coverage": "实测覆盖度 {percent}% · 已测 {measured} / {total} 项 · 网站覆盖范围：1 个 URL",
+      "scoreDisclaimer": "这不是网站健康度、排名或全站得分。",
+      "stageObservationTitle": "01 观测",
+      "stageObservationBody": "在固定的安全限制内，读取公开页面响应和两个标准支持文件。",
+      "stageDiagnosisTitle": "02 诊断",
+      "stageDiagnosisBody": "有 {attention} 个已测信号需要关注；未验证的信号不会进入诊断。",
+      "stageRecommendationTitle": "03 建议",
+      "stageRecommendationBody": "下方修复顺序展示前 {priorities} 个可执行事项。",
+      "stageArtifactTitle": "04 产物",
+      "stageArtifactBody": "将证据地图作为这个单一 URL 可复验的检测记录。",
       "priorities": "优先修复",
       "priorityListTitle": "修复顺序",
       "priorityListBody": "沿用审计规则中的严重性与权重排序；公共体验版只展示前三项。",
       "noPriorities": "本次没有出现已实测的失败或警告信号。仍需先检查覆盖度和未验证证据，再判断页面是否健康。",
       "observedEvidenceLabel": "实测证据",
+      "diagnosisLabel": "诊断",
+      "diagnosisText": "上述实测证据使该信号得到“{status}”结果。",
       "recommendationLabel": "建议动作",
       "verificationLabel": "如何复验",
       "verificationText": "发布修复后重新检测这个 URL，并对比同一条实测证据。",
@@ -572,7 +582,7 @@
         "technical": "技术基础",
         "on_page": "页面内信号",
         "content": "内容与可提取性",
-        "structured_data": "结构化数据与 AI 可读性"
+        "structured_data": "静态结构化数据"
       },
       "statuses": {
         "pass": "通过",
@@ -617,6 +627,18 @@
           "title": "HTML 语言",
           "recommendation": "在 html 元素上设置与页面语言一致的有效 lang 属性。"
         },
+        "viewport": {
+          "title": "移动端视口配置",
+          "recommendation": "添加 width=device-width 且 initial-scale=1 的 viewport 标签，再测试渲染后的移动端布局。"
+        },
+        "meta_refresh": {
+          "title": "HTML 刷新跳转",
+          "recommendation": "将 HTML 刷新跳转替换为合适的服务端重定向，或直接链接到 canonical URL。"
+        },
+        "security_headers": {
+          "title": "安全响应头存在性",
+          "recommendation": "检查缺失的传输和浏览器保护响应头；本体验版只检测是否存在，不评估策略质量。"
+        },
         "title": {
           "title": "Title 标签",
           "recommendation": "撰写一个描述明确且页面唯一的标题，长度建议约 30 至 60 个字符。"
@@ -636,10 +658,6 @@
         "text_depth": {
           "title": "静态正文可提取性",
           "recommendation": "在可抓取 HTML 中提供足够的有效正文，说明产品、受众和价值结果。"
-        },
-        "internal_links": {
-          "title": "静态内链发现",
-          "recommendation": "通过描述性 HTML 链接暴露重要的产品、证明、定价和资源页面。"
         },
         "social_meta": {
           "title": "社交预览元数据",
@@ -667,7 +685,9 @@
         "h1_count": "H1 数量",
         "heading_outline": "标题层级",
         "static_word_count": "静态正文词数",
-        "static_internal_links": "静态内链数",
+        "viewport_configured": "视口配置正确",
+        "meta_refresh_present": "存在 HTML 刷新",
+        "security_headers_present": "已发现安全响应头数",
         "social_tags_present": "社交标签数",
         "json_ld_blocks": "JSON-LD 块",
         "malformed_blocks": "格式错误块"
@@ -686,7 +706,8 @@
         "response_decode_unreliable": "响应无法按声明编码或有效 UTF-8 可靠解码，因此不推断文档检测项。",
         "html_body_unavailable": "该响应无法被识别为 HTML 文档。",
         "resource_fetch_unavailable": "本次运行未能测量该标准资源。",
-        "resource_decode_unreliable": "本次运行无法可靠解码该标准资源。"
+        "resource_decode_unreliable": "本次运行无法可靠解码该标准资源。",
+        "https_required_for_hsts": "HTTP 尚未启用 HTTPS，HSTS 只在 HTTPS 后生效，因此不单独评估安全响应头存在性。"
       },
       "methodEyebrow": "先证据，后建议",
       "howTitle": "这项快速检测如何工作",
@@ -703,12 +724,12 @@
       "signal1Title": "抓取与索引",
       "signal1Body": "提交页面的响应状态、noindex 指令、Googlebot 对该路径的访问权限，以及标准 sitemap 路径。",
       "signal2Title": "技术基础",
-      "signal2Body": "最终协议、重定向链、内容类型、canonical URL 与 HTML 语言声明。",
+      "signal2Body": "最终协议、重定向链、内容类型、canonical URL、语言、视口、HTML 刷新以及有限的安全响应头存在性。",
       "signal3Title": "页面内信号",
       "signal3Body": "抓取到的原始响应中可见的 title、meta description、H1 数量和标题层级。",
       "signal4Title": "内容与可提取性",
-      "signal4Body": "静态文本深度、同源链接与社交元数据；不据此判断内容质量或搜索意图。",
-      "signal5Title": "结构化数据与 AI 可读性",
+      "signal4Body": "静态文本深度和社交元数据；不据此判断内容质量、搜索意图或站点结构。",
+      "signal5Title": "静态结构化数据",
       "signal5Body": "原始响应中完整闭合的 JSON-LD 数据块；JavaScript 渲染的标记会明确保留为未验证。",
       "useCasesEyebrow": "何时适合做一次快速检测",
       "useCasesTitle": "把它当作第一轮、以证据为先的排查",
@@ -762,9 +783,9 @@
       "faq8q": "完整的 GenGrowth Website Audit 多了什么？",
       "faq8a": "完整产品可增加多页面爬取、渲染证据、性能数据、历史对比和可执行修复队列；这些能力不属于匿名单页体验版。",
       "relatedToolsEyebrow": "继续诊断",
-      "relatedToolsTitle": "想看页面背后的站点结构？",
-      "relatedToolsBody": "使用内链审计绘制可抓取的站内链接，并把结构缺口转成可审核的修复动作。",
-      "relatedToolsCta": "打开内链审计",
+      "relatedToolsTitle": "选择下一项专项检测",
+      "relatedToolsBody": "每个公开工具只回答一个有边界的问题；当下一个问题超出这个 URL 的技术响应时，可浏览工具集合。",
+      "relatedToolsCta": "浏览免费工具",
       "articlesEyebrow": "构建下一层能力",
       "articlesTitle": "正在规划规模化页面？",
       "articlesBody": "阅读程序化 SEO 指南，了解单页检测有意不覆盖的网站架构和实施问题。",

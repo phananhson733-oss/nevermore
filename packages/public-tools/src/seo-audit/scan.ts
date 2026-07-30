@@ -84,6 +84,36 @@ function socialTagsPresent(html: string): number {
   return found.size;
 }
 
+function metaTags(html: string): readonly string[] {
+  return [...html.matchAll(/<meta\b[^>]*>/gi)].map((match) => match[0]);
+}
+
+function hasConfiguredViewport(html: string): boolean {
+  return metaTags(html).some((tag) => {
+    if (attr(tag, "name")?.trim().toLowerCase() !== "viewport") return false;
+    const content = attr(tag, "content")?.toLowerCase() ?? "";
+    return (
+      /(?:^|,)\s*width\s*=\s*device-width\s*(?:,|$)/.test(content) &&
+      /(?:^|,)\s*initial-scale\s*=\s*1(?:\.0+)?\s*(?:,|$)/.test(content)
+    );
+  });
+}
+
+function hasMetaRefresh(html: string): boolean {
+  return metaTags(html).some((tag) => {
+    if (attr(tag, "http-equiv")?.trim().toLowerCase() !== "refresh") {
+      return false;
+    }
+    return Boolean(attr(tag, "content")?.trim());
+  });
+}
+
+function countSecurityHeaders(
+  headers: Extract<PublicResourceResult, { kind: "ok" }>["securityHeaders"],
+): number {
+  return Object.values(headers).filter(Boolean).length;
+}
+
 function tagEnd(html: string, start: number): number {
   const namedTag = html
     .slice(start)
@@ -506,7 +536,19 @@ function pageProbe(
     h1Count: parsed?.h1.length ?? 0,
     headingOutline: htmlAvailable ? headingOutline(structure) : [],
     wordCount: parsed?.wordCount ?? 0,
-    internalLinkCount: parsed?.internalOutlinks.length ?? 0,
+    viewportConfigured:
+      htmlAvailable && result.bodyComplete
+        ? hasConfiguredViewport(structure)
+        : htmlAvailable && hasConfiguredViewport(structure)
+          ? true
+          : null,
+    hasMetaRefresh:
+      htmlAvailable && result.bodyComplete
+        ? hasMetaRefresh(structure)
+        : htmlAvailable && hasMetaRefresh(structure)
+          ? true
+          : null,
+    securityHeadersPresent: countSecurityHeaders(result.securityHeaders),
     socialMetaTagsPresent: htmlAvailable
       ? socialTagsPresent(structure)
       : 0,
