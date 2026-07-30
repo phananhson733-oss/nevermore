@@ -10,7 +10,7 @@
     "plan": "Plan",
     "studio": "Studio",
     "report": "Report",
-    "newProject": "New project",
+    "newProject": "Add product",
     "logout": "Log out",
     "workspace": "Workspace",
     "evidence": "Evidence & Diagnosis",
@@ -141,23 +141,31 @@
     "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link."
   },
   "newProject": {
+    "eyebrow": "PRODUCT · ICP",
     "title": "Add a product",
-    "subtitle": "Start with the product URL and facts you already know. You can manually complete the Product Profile and ICP before connecting live data.",
+    "subtitle": "Enter the product URL and confirmed facts. Complete the Product Profile and ICP next, then connect GSC, GA4, and DataForSEO.",
+    "shell": {
+      "productTitle": "Add product",
+      "productDetail": "Build the profile from a URL",
+      "modulesLocked": "Available after adding a product",
+      "workspace": "GenGrowth workspace",
+      "status": "Product required"
+    },
     "fields": {
       "productUrl": {
         "label": "Product URL",
         "placeholder": "https://www.example.com/product",
-        "help": "Use the homepage or the page that best represents the product. This exact URL becomes the Product Profile source and Crawl starting point."
+        "help": "Use the homepage or representative product page. It becomes the Product Profile and Crawl starting point."
       },
       "businessHint": {
         "label": "Product and customer context (optional)",
         "placeholder": "For example: onboarding automation for customer operations teams at mid-market B2B SaaS companies in North America.",
-        "help": "Enter only facts you already know. Product identity, business model, markets, and ICP remain manually editable in the next step."
+        "help": "Enter only confirmed facts. Product identity, business model, markets, and ICP remain editable next."
       }
     },
     "nextStep": {
-      "title": "Next: manually complete the Product Profile and ICP",
-      "detail": "Creation opens the editable profile directly. AI exploration and Audit are not prerequisites; save customer-declared facts, then connect GSC and GA4 while the platform uses Crawl and DataForSEO."
+      "title": "Next: complete the Product Profile and ICP",
+      "detail": "Creation opens the editable profile. Confirm it before connecting GSC and GA4; the platform runs Crawl and DataForSEO."
     },
     "createButton": "Create product and fill profile",
     "creating": "Creating Product Profile…",
@@ -686,6 +694,7 @@
     }
   },
   "appShell": {
+    "brandTagline": "Growth Workspace",
     "projectStage": "Project stage",
     "localeSwitch": "Switch language",
     "switchProject": "Switch project",

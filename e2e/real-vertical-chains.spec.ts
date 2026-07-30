@@ -27,6 +27,8 @@ const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 const DATABASE_URL = process.env["E2E_DATABASE_URL"];
 const BLOB_DIR = "/tmp/signalframe-e2e-real-blobs";
+const CLIENT_READ_MODEL_TIMEOUT_MS = 45_000;
+const ASYNC_EXPORT_TIMEOUT_MS = 90_000;
 
 interface WorkerRuntime {
   stop(): Promise<WorkerShutdownResult>;
@@ -193,7 +195,7 @@ async function createProjectInBrowser(
   if (!match?.[1]) throw new Error("created project id was missing from URL");
   await expect(
     page.getByRole("button", { name: "Edit Product Profile" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   await expect(
     page.getByRole("link", { name: "Connect live data" }),
   ).toHaveCount(0);
@@ -421,9 +423,15 @@ async function verifySourcesReadModel(
   projectId: string,
 ): Promise<void> {
   await page.goto(`/p/${projectId}/sources`);
+  // The real chain starts Next in development mode and reads multiple
+  // database-backed projections. A loaded page shell is not the same thing as
+  // a ready client read model, especially on a contended CI runner.
+  await expect(page.locator('main [role="status"]')).toHaveCount(0, {
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
   await expect(
     page.getByRole("region", { name: "Source readiness" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   await page.waitForLoadState("networkidle");
   await expect(page.locator('main [role="status"]')).toHaveCount(0);
   await expectNoDocumentOverflow(page);
@@ -553,7 +561,9 @@ async function runDiagnosisAndConfirmFinding(
   // Before the first diagnostic, a missing frozen audit is a valid empty state
   // rather than a transport failure. Pin it, together with the absent
   // provenance band, so the post-terminal recovery below proves the transition.
-  await expect(page.getByText("No URL audit result yet")).toBeVisible();
+  await expect(page.getByText("No URL audit result yet")).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
   await expect(page.getByLabel("Audit provenance for this page")).toHaveCount(
     0,
   );
@@ -642,7 +652,9 @@ async function runDiagnosisAndConfirmFinding(
     confirmedActionId,
     "Confirm must return the same-transaction Action",
   ).toBeTruthy();
-  await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible();
+  await expect(finding.getByText("Confirmed", { exact: true })).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
   // The confirmation created the canonical Action: the card now carries a
   // real execution deep link whose target is that exact Action on this
   // project's Execution surface. (The retired Diagnosis DOM's
@@ -729,7 +741,9 @@ async function generateReadyArtifact(
   // same strength: under strict mode `getByText` must resolve exactly one
   // element and it must be visible, exactly as `getByRole` did before.
   const editor = page.locator("[data-studio-editor]");
-  await expect(editor.getByText("Ready", { exact: true })).toBeVisible();
+  await expect(editor.getByText("Ready", { exact: true })).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
   // The removed control must stay removed: shipping it back is the defect.
   await expect(page.getByRole("button", { name: "Back to draft" })).toHaveCount(
     0,
@@ -762,13 +776,19 @@ async function verifyReportAndExport(
   } else {
     await reportLink.click();
   }
+  // Route navigation completes before the report projection necessarily does.
+  // Wait on the report document's own ready marker, not unrelated Results
+  // panels that may continue loading independently.
+  await expect(page.locator("[data-report-document]")).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
   // URL-first creation deliberately uses the submitted host as the honest
   // project identity until a separate project-renaming workflow exists. The
   // confirmed Product Profile name remains inside the Product/ICP snapshot; it
   // must not make this fixture pretend the project record was also renamed.
   await expect(
     page.getByRole("heading", { name: new URL(definition.siteUrl).host }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   const findings = page.getByRole("region", { name: "Findings" });
   await expect(
     findings.getByRole("heading", { name: "Findings" }),
@@ -795,7 +815,11 @@ async function verifyReportAndExport(
   const download = page.getByRole("link", {
     name: `Download ${kind} bundle`,
   });
-  await expect(download).toBeVisible({ timeout: 45_000 });
+  // Export completion includes a repeatable-read snapshot, paginated assembly,
+  // ZIP upload, and an initial detail read whose own 30s timeout may retry
+  // once. Keep this bound specific to the requested bundle instead of waiting
+  // on unrelated Results-page activity.
+  await expect(download).toBeVisible({ timeout: ASYNC_EXPORT_TIMEOUT_MS });
   await expect(
     page.getByRole("heading", { name: "Export manifest" }),
   ).toBeVisible();
@@ -907,7 +931,11 @@ test.describe
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    // This exercises the same database-backed read models and async export path
+    // as AC-044. A 120s test cap can terminate the request before the
+    // export-specific 90s assertion is allowed to finish, so both verticals
+    // share the same bounded end-to-end budget.
+    test.setTimeout(240_000);
     if (!db) throw new Error("real E2E fixture database did not start");
     await exerciseVertical({
       page,

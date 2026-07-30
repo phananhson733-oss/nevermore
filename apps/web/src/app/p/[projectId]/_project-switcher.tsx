@@ -11,7 +11,7 @@ import {
   shouldConfirmContextNavigation,
 } from "./_context-navigation-guard";
 import { projectSwitchHref } from "./_project-switcher-model.ts";
-import styles from "./layout.module.css";
+import styles from "@/components/app-shell/app-shell.module.css";
 
 interface ProjectSwitcherIdentity {
   readonly primary: string;

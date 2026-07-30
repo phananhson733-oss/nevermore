@@ -25,8 +25,8 @@ import {
   activePrimaryNavKey,
   currentProjectPageLabelKey,
   type PrimaryNavKey,
-} from "./_nav-model.ts";
-import styles from "./nav.module.css";
+} from "@/components/app-shell/nav-model";
+import styles from "@/components/app-shell/app-nav.module.css";
 
 /**
  * Customer-visible project navigation. The shell exposes exactly four stable
@@ -147,18 +147,12 @@ export function ProjectNav({
  */
 export function CurrentPageLabel({
   projectId,
-  className,
 }: {
   readonly projectId: string;
-  readonly className?: string | undefined;
 }) {
   const t = useTranslations("nav");
   const pathname = usePathname();
   const labelKey = currentProjectPageLabelKey(pathname, projectId);
   if (labelKey === null) return null;
-  return (
-    <span className={className} aria-current="page">
-      {t(labelKey)}
-    </span>
-  );
+  return t(labelKey);
 }

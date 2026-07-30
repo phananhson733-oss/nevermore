@@ -36,7 +36,7 @@ const sources = new Map([
   ],
 ]);
 const navigationSource = read(
-  "apps/web/src/app/p/[projectId]/_nav-model.ts",
+  "apps/web/src/components/app-shell/nav-model.ts",
 );
 const zhCN = readJson("packages/i18n/src/messages/zh-CN.json");
 const migrationFiles = readdirSync(

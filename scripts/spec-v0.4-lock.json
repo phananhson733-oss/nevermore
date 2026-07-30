@@ -46,8 +46,8 @@
     "scripts/verify-implementation-source.test.mjs": "35c6ca62c3ac6cca35dd910d6db56b4d87d37f81524122ddaba925672dd2c9e3",
     "scripts/verify-spec-lock.mjs": "563d906a877d96b43b88504f22363684fde4678bb0006b1e3ab1ff3159ff8406",
     "scripts/verify-spec-lock.test.mjs": "74ff61740058ef8b75272b7c542c78f64eb1aaaa6a08afdd0fbdb8080e8dc751",
-    "scripts/verify-docs-consistency.test.mjs": "d5ee3a8116d1a2431134798b6d5f5a5a145fd52c44e7e9706057f284b8fdb5b4",
-    "README.md": "5838329c4a7d66563a85a5ba7d04057157aac779657ebac7311bf785b6b396c8",
+    "scripts/verify-docs-consistency.test.mjs": "45e83231e6a6b312cfc6ff8780e5fe3b867d1f69f4a49f02a518e276fe341d70",
+    "README.md": "858dbedc2cfa9afd9e0ec35fb6957a5e1ca1d9b1df4417702e34d4fb40279d9f",
     "CLAUDE.md": "cfb51111d26527cbfc5415f9ef5a90bac2646609e360e67665ef0f9d90ccbd48",
     "docs/PROGRESS.md": "1881c4c761e6a6cb2fa12e5574af680f6c60498d056813994aac7d34b4dc57c9",
     "docs/DEPLOYMENT.md": "b3113f77ae7c7faef7f67b277b6cb2ed1d532bcfbefd82e167bf1c25c7023491"
