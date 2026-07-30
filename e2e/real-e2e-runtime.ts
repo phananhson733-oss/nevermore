@@ -9,8 +9,18 @@ export type RealE2eSegment = (typeof REAL_E2E_SEGMENTS)[number];
 
 const REAL_E2E_SEGMENT_SET = new Set<string>(REAL_E2E_SEGMENTS);
 const REPOSITORY_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const DEFAULT_BASE_PORT_FLOOR = 20_000;
-const DEFAULT_BASE_PORT_SLOTS = 10_000;
+// Keep the canonical default blocks below Linux's usual dynamic-client port
+// range. A browser connected to segment N can otherwise receive segment N+1's
+// consecutive listen port as its local ephemeral port, leaving the next Next
+// server to fail with EADDRINUSE even though every server process was stopped.
+// Explicit E2E_PORT values remain authoritative and still fail closed through
+// Playwright's reuseExistingServer=false guard.
+export const REAL_E2E_DEFAULT_PORT_BLOCK = {
+  floor: 10_000,
+  blockCount: 7_589,
+  blockSize: REAL_E2E_SEGMENTS.length,
+  exclusiveCeiling: 32_768,
+} as const;
 
 export interface RealE2eSegmentPaths {
   readonly segment: RealE2eSegment;
@@ -91,8 +101,11 @@ export function deriveRealE2eBasePort(invocationId: string): number {
   const invocationHash = realE2eInvocationHash(invocationId);
   const slot =
     Number.parseInt(invocationHash.slice(0, 8), 16) %
-    DEFAULT_BASE_PORT_SLOTS;
-  return DEFAULT_BASE_PORT_FLOOR + slot * 3;
+    REAL_E2E_DEFAULT_PORT_BLOCK.blockCount;
+  return (
+    REAL_E2E_DEFAULT_PORT_BLOCK.floor +
+    slot * REAL_E2E_DEFAULT_PORT_BLOCK.blockSize
+  );
 }
 
 /**

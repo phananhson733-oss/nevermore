@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   REAL_E2E_SEGMENTS,
+  REAL_E2E_DEFAULT_PORT_BLOCK,
   deriveRealE2eBasePort,
   deriveRealE2eDatabaseUrl,
   getRealE2eSegmentPaths,
@@ -54,9 +55,37 @@ describe("real E2E segment runtime", () => {
       deriveRealE2eBasePort("invocation-one"),
       deriveRealE2eBasePort("invocation-two"),
     ]) {
-      expect(port).toBeGreaterThanOrEqual(20_000);
-      expect(port + 2).toBeLessThanOrEqual(49_999);
+      expect(port).toBeGreaterThanOrEqual(
+        REAL_E2E_DEFAULT_PORT_BLOCK.floor,
+      );
+      expect(port + REAL_E2E_SEGMENTS.length - 1).toBeLessThan(
+        REAL_E2E_DEFAULT_PORT_BLOCK.exclusiveCeiling,
+      );
     }
+  });
+
+  it("keeps every possible default segment port below the ephemeral boundary", () => {
+    const maximumPort =
+      REAL_E2E_DEFAULT_PORT_BLOCK.floor +
+      (REAL_E2E_DEFAULT_PORT_BLOCK.blockCount - 1) *
+        REAL_E2E_DEFAULT_PORT_BLOCK.blockSize +
+      REAL_E2E_SEGMENTS.length -
+      1;
+
+    expect(REAL_E2E_DEFAULT_PORT_BLOCK.blockSize).toBe(
+      REAL_E2E_SEGMENTS.length,
+    );
+    expect(maximumPort).toBeLessThan(
+      REAL_E2E_DEFAULT_PORT_BLOCK.exclusiveCeiling,
+    );
+  });
+
+  it("keeps the CI collision regression invocation below the ephemeral boundary", () => {
+    const basePort = deriveRealE2eBasePort("ephemeral-regression-0");
+
+    expect(basePort + REAL_E2E_SEGMENTS.length - 1).toBeLessThan(
+      REAL_E2E_DEFAULT_PORT_BLOCK.exclusiveCeiling,
+    );
   });
 
   it("requires a non-empty invocation identifier", () => {
