@@ -50,6 +50,14 @@ export default async function LocaleLayout({
   const messages = await getMessages();
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        <link
+          rel="alternate"
+          type="application/rss+xml"
+          title={`GenGrowth Blog (${locale})`}
+          href={`/${locale}/blog/rss.xml`}
+        />
+      </head>
       <body className={`${fontVars} font-sans antialiased`}>
         <NextIntlClientProvider messages={messages}>
           <PageShell>{children}</PageShell>

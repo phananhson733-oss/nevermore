@@ -9,11 +9,6 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://gengrowth.ai"),
   title: { default: "GenGrowth", template: "%s — GenGrowth" },
   description: "Automated Growth Operating System",
-  alternates: {
-    types: {
-      "application/rss+xml": "/feed.xml",
-    },
-  },
 };
 
 export default function RootLayout({

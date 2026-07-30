@@ -1,6 +1,6 @@
 // @input  -- react
-// @output -- TrialContext + useTrial hook (openTrial for 5-step wizard, openWaitlist for email-only)
-// @pos    -- Global Context, allows child pages to trigger Trial or Waitlist modals
+// @output -- Product CTA context + useTrial compatibility hook
+// @pos    -- Global Context, allows child pages to route trial and waitlist CTAs to the product app
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
 

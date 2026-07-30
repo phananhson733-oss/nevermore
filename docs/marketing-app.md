@@ -4,7 +4,9 @@
 the former `gengrowth-agents` repository. It is intentionally separate from
 `apps/web`: the latter remains the authenticated SignalFrame product workbench,
 while this app owns the public website, locale routing, SEO metadata, content
-pages, calculators, trial and waitlist forms.
+pages and calculators. Product CTAs go to `https://app.gengrowth.ai`; this
+marketing deployment does not operate a separate trial or waitlist capture
+system.
 
 ## Local development
 
@@ -14,19 +16,23 @@ under `/en` and `/zh`.
 
 ## Production deployment
 
-Create or update the Vercel project serving `gengrowth.ai` with this monorepo
-as the repository and `apps/marketing` as its Root Directory. The public app
-must not be deployed from `apps/web`, which is the authenticated product app.
+The Vercel project serving `gengrowth.ai` must use this monorepo, production
+branch `main`, the `apps/marketing` Root Directory, the Next.js preset and
+Node.js 24.x. The public app must not be deployed from `apps/web`, which is the
+authenticated product app.
 
-Configure these production environment variables from the already-migrated
-GenGrowth Supabase and email setup:
+Set `BLOG_LEGACY_SUPABASE_ENABLED=false` for Preview and Production after the
+legacy blog migration is verified. No Supabase or Resend credentials are needed
+for the present public-site release. Do not copy the authenticated-product
+environment variables into this project merely because both applications share
+a repository.
 
-- `NEXT_PUBLIC_APP_URL=https://gengrowth.ai`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_POSTAL_ADDRESS`, and
-  `UNSUBSCRIBE_SECRET` when email delivery is enabled
+Until a new, migrated lead-capture data contract and email sender have been
+explicitly enabled, `/api/contact`, `/api/trial` and `/api/waitlist` deliberately
+return `503 LEAD_CAPTURE_UNAVAILABLE`. The contact page uses
+`hello@gengrowth.ai` directly and the conversion CTAs open the existing product
+application. This protects the retired Supabase project from new writes and
+prevents promises of an email workflow that is not configured.
 
 ## Blog content and media
 
@@ -52,9 +58,9 @@ the bridge enabled until every published legacy URL is exported, converted,
 reviewed and deployed. Then set it to `false`, verify sitemap/RSS/redirect
 parity, and remove the bridge in a later change.
 
-The remaining Supabase data contract is unchanged: `glossary_terms`,
-`legal_documents`, `legal_document_versions`,
-`waitlist_subscribers`, `trial_applications`, `contact_submissions`,
-`consent_events`, `change_logs`, and `link_redirects`. Glossary pages retain
-their existing data behavior; only formal blog publishing has moved to the
-repository-backed content system.
+The old Supabase tables for `waitlist_subscribers`, `trial_applications` and
+`contact_submissions` are not a runtime dependency of this release. Before
+re-enabling them, migrate and verify the intended data schema and RLS in the
+active project, add abuse protection, and configure the email sender. Glossary
+and legal-page data behavior remains unchanged; formal blog publishing has
+moved to the repository-backed content system.

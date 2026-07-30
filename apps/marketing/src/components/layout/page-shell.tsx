@@ -1,5 +1,5 @@
-// @input  -- Header, Footer, CookieBanner(lazy), TrialModal(lazy), WaitlistModal(lazy), TrialProvider
-// @output -- PageShell client wrapper (manages Trial/Waitlist/Cookie modal state)
+// @input  -- Header, Footer, CookieBanner(lazy), TrialProvider, site config
+// @output -- PageShell client wrapper (routes product CTAs to the app and manages cookie state)
 // @pos    -- Global layout client layer, used by [locale]/layout.tsx
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
@@ -9,6 +9,7 @@ import dynamic from "next/dynamic";
 import { Header } from "./header";
 import { Footer } from "./footer";
 import { TrialProvider } from "./waitlist-context";
+import { siteConfig } from "@/config/site";
 
 const CookieBanner = dynamic(
   () =>
@@ -16,31 +17,13 @@ const CookieBanner = dynamic(
   { ssr: false },
 );
 
-const TrialModal = dynamic(
-  () =>
-    import("@/components/trial/trial-modal").then((mod) => ({
-      default: mod.TrialModal,
-    })),
-  { ssr: false },
-);
-
-const WaitlistModal = dynamic(
-  () =>
-    import("@/components/waitlist/waitlist-modal").then((mod) => ({
-      default: mod.WaitlistModal,
-    })),
-  { ssr: false },
-);
-
 export function PageShell({ children }: { children: React.ReactNode }) {
-  const [trialOpen, setTrialOpen] = useState(false);
-  const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [cookiePrefsOpen, setCookiePrefsOpen] = useState(false);
 
   const ctxValue = useMemo(
     () => ({
-      openTrial: () => setTrialOpen(true),
-      openWaitlist: () => setWaitlistOpen(true),
+      openTrial: () => window.location.assign(siteConfig.appUrl),
+      openWaitlist: () => window.location.assign(siteConfig.appUrl),
     }),
     [],
   );
@@ -54,8 +37,6 @@ export function PageShell({ children }: { children: React.ReactNode }) {
         prefsOpen={cookiePrefsOpen}
         onPrefsClose={() => setCookiePrefsOpen(false)}
       />
-      <TrialModal open={trialOpen} onOpenChange={setTrialOpen} />
-      <WaitlistModal open={waitlistOpen} onOpenChange={setWaitlistOpen} />
     </TrialProvider>
   );
 }
