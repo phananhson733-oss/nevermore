@@ -97,3 +97,19 @@ data operation was performed.
   not found`. No remote ref was changed. `production-origin` was intentionally
   not used: the authorization named remote main generally, but did not
   authorize redirecting a failed `origin` push to a differently named remote.
+
+## Final remote promotion
+
+After the user confirmed that `phananhson733-oss/nevermore` replaces the
+unavailable former repository, Codex changed `origin` to
+`https://github.com/phananhson733-oss/nevermore.git` and fetched its current
+`main` at `d32c8d24fd1f2241402ca734775d9dbc1c2901ee`. The marketing commit was
+re-applied in a new isolated worktree. Its `AGENTS.md` conflict was resolved in
+favour of the more complete remote policy, and the lockfile was regenerated
+from the remote lock plus the new marketing workspace rather than hand-merged.
+
+`pnpm install --frozen-lockfile`, 43 relevant unit tests, marketing typecheck,
+marketing lint and the marketing production build passed against that exact
+remote base. Candidate `28c42a4c5132c036b4acfbe10e4ada3520fe7d44` was then
+pushed successfully to `origin/main`; no deployment, migration or production
+configuration operation followed.
