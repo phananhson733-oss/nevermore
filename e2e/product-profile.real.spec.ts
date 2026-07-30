@@ -1,9 +1,44 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { createDbHandle } from "../packages/db/src/index.ts";
 import { publicFixtureOrigin } from "./fixtures.ts";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
+const DATABASE_URL = process.env["E2E_DATABASE_URL"];
+let createdProjectId: string | undefined;
+
+test.afterEach(async () => {
+  const projectId = createdProjectId;
+  createdProjectId = undefined;
+  if (!projectId) return;
+  if (!DATABASE_URL) throw new Error("E2E_DATABASE_URL is required");
+
+  const db = createDbHandle(DATABASE_URL, 1);
+  try {
+    const table = await db.pool.query<{ queueTable: string | null }>(
+      `SELECT to_regclass('pgboss.job')::text AS "queueTable"`,
+    );
+    if (table.rows[0]?.queueTable === null) return;
+
+    // Loading the new Product Profile automatically queues the initial Crawl
+    // when no eligible snapshot exists. This spec intentionally has no worker,
+    // so remove only jobs bound to its disposable project before the later
+    // real-chain suite proves that it starts from a fresh queue.
+    await db.pool.query(
+      `DELETE FROM pgboss.job AS job
+        USING app.async_runs AS run
+       WHERE run.project_id = $1
+         AND (
+           job.id = run.id
+           OR job.data ->> 'runId' = run.id::text
+         )`,
+      [projectId],
+    );
+  } finally {
+    await db.end();
+  }
+});
 
 interface ProductProfileRead {
   readonly data: {
@@ -81,10 +116,16 @@ test("persists the customer-entered Product Profile and ICP before opening live 
       "面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。",
   });
 
-  await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
-  const projectId = new URL(page.url()).pathname.split("/")[2];
-  if (!projectId) throw new Error("URL-first creation did not expose a project id");
-  expect(created.headers()["location"]).toBe(`/p/${projectId}/context`);
+  const location = created.headers()["location"];
+  const projectId = /^\/p\/([0-9a-f-]+)\/context$/.exec(location ?? "")?.[1];
+  if (!projectId) {
+    throw new Error("URL-first creation did not expose a project id");
+  }
+  // Capture ownership before waiting for the client navigation: /context may
+  // already enqueue the initial Crawl while the document is still settling.
+  createdProjectId = projectId;
+  await page.waitForURL(`/p/${projectId}/context`);
+  expect(location).toBe(`/p/${projectId}/context`);
 
   await expect(
     page.getByRole("link", { name: "连接真实数据" }),
