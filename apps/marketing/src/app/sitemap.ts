@@ -103,6 +103,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const tools = [
     "ab-test-calculator",
     "growth-roi-calculator",
+    "internal-link-audit",
     "seo-audit",
   ];
   for (const locale of locales) {
