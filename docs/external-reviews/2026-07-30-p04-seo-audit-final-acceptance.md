@@ -153,6 +153,35 @@ The external reviewer initially made an unsupported claim that local artifacts/t
 - The rate limiter is deliberately per-isolate best effort, not a global distributed rate limit.
 - No fresh browser screenshot review was performed after this final landing-page copy extension. Production builds, DOM/mobile-overflow E2E and public-domain HTTP/API checks passed, but analytics, external crawl/indexing and UX conversion remain unverified.
 
+## V1.1 production release verification
+
+- Source commit: `1b053b57c786a4546d71db99ea9e4fb82f8043f3`
+  (`feat(marketing): refine seo audit health scope`), pushed to
+  `origin/codex/pre-v03-local-preservation-20260727`.
+- Deployed from a clean, detached worktree at exactly that commit to Vercel
+  project `gengrowth-agents` (Root Directory: `apps/marketing`). The similarly
+  named `nevermore` Vercel project for `apps/web` was not deployed.
+- Deployment: `dpl_C2HHir5f2H3JMH1dJeoieWdWvDuR`; inspect URL:
+  <https://vercel.com/wzbs-projects-39a68c1d/gengrowth-agents/C2HHir5f2H3JMH1dJeoieWdWvDuR>.
+  It reached `Ready` and was promoted to the live project aliases, including
+  `https://gengrowth.ai`.
+- Public page verification: `GET https://gengrowth.ai/en/tools/seo-audit`
+  returned HTTP 200 and contained `Single-page static signal report`, the
+  `no GSC` scope marker and the `04 Artifact` result stage. It did not contain
+  the removed `Open Internal Link Audit` card label.
+- Public API verification: a read-only `POST /api/tools/seo-audit` scan of
+  public `https://www.gengrowth.ai/` returned HTTP 200,
+  `schemaVersion: "1.1.0"`, `persistence: "none"`, 18/19 measured checks and
+  95% measurement coverage. The actual response reported a configured viewport,
+  no HTML refresh directive and three of the four selected security-header
+  presences. This is a real production public-response check, not a claim about
+  domain-wide health, Google index state or live user data.
+
+No database migration, production configuration change, authentication change,
+or real user-data operation was performed. Linking the temporary release
+worktree briefly downloaded a Vercel development environment file; it was
+deleted before deployment and was never committed, uploaded or printed.
+
 ## Related persisted materials
 
 - `docs/external-reviews/2026-07-30-public-tools-seo-audit-evaluation.md`
