@@ -607,7 +607,7 @@ async function runDiagnosisAndConfirmFinding(
   await page.getByRole("button").filter({ hasText: "/gone" }).first().click();
   await expect(
     page.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
 
   // Confirm renders only in Opportunity Review; the default panel is the
   // read-only Audit Evidence state.
