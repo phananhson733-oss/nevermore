@@ -133,7 +133,7 @@ const EN: InternalLinkAuditContent = {
   formLabel: "Website URL",
   placeholder: "yourdomain.com",
   startCrawl: "Run internal link audit",
-  running: "Building your bounded link graph…",
+  running: "Building your bounded crawl tree…",
   inputHelp:
     "The tool reads public HTML only — no Search Console, ownership verification, account, or site changes.",
   mockScope:
@@ -156,9 +156,9 @@ const EN: InternalLinkAuditContent = {
     internalLinks: "HTML internal links",
     orphanPages: "Orphan pages",
     priorityFixes: "Ready-to-review fixes",
-    graphTitle: "Site relationship map",
+    graphTitle: "Observed crawl tree",
     graphBody:
-      "This view shows pages collected in this bounded crawl. Lines are observed same-origin HTML links. Select a node to inspect the recorded structural evidence and its limitations.",
+      "This view places each collected page under one observed shallower parent for readability. Inbound and outbound counts still include every observed same-origin HTML link.",
     filterAll: "All nodes",
     filterPillars: "Pillars",
     filterOrphans: "Orphans",
@@ -201,7 +201,7 @@ const EN: InternalLinkAuditContent = {
       body: "No verification, login, or plugin. Submit any publicly reachable HTTP(S) website.",
     },
     {
-      title: "2. We crawl and build the graph",
+      title: "2. We crawl and build the tree",
       body: "The crawler starts from allowed site entry points, respects robots.txt, follows same-origin HTML links, and records bounded structural evidence.",
     },
     {
@@ -251,8 +251,8 @@ const EN: InternalLinkAuditContent = {
       body: "Each finding includes observed evidence and a limitation so you can decide what to verify before changing your site.",
     },
     {
-      title: "A visual map of the structure",
-      body: "Clusters, islands, and bottlenecks become easier to understand in a relationship map than in a flat export.",
+      title: "A scannable crawl tree",
+      body: "Parent-child paths, candidate islands, and deep pages are easier to review in a hierarchy, while cross-link counts remain available as evidence.",
     },
   ],
   methodEyebrow: "Method transparency",
@@ -400,7 +400,7 @@ const ZH: InternalLinkAuditContent = {
   formLabel: "网站 URL",
   placeholder: "yourdomain.com",
   startCrawl: "开始内链审计",
-  running: "正在构建受限关系图…",
+  running: "正在构建受限抓取树…",
   inputHelp:
     "工具仅读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
   mockScope:
@@ -419,9 +419,9 @@ const ZH: InternalLinkAuditContent = {
     internalLinks: "HTML 内链",
     orphanPages: "孤岛页面",
     priorityFixes: "可审核修复项",
-    graphTitle: "站点关系图",
+    graphTitle: "已观测抓取树",
     graphBody:
-      "当前视图展示本次受限抓取采集到的页面。连线表示已观测到的同源 HTML 内链。选择节点即可查看记录到的结构证据和解释边界。",
+      "为保持层级清晰，每个已采集页面只显示在一个已观测到的浅层父页面下；入链与出链数量仍包含全部已观测到的同源 HTML 内链。",
     filterAll: "全部节点",
     filterPillars: "Pillar",
     filterOrphans: "孤岛",
@@ -464,7 +464,7 @@ const ZH: InternalLinkAuditContent = {
       body: "无需验证、登录或安装插件。可以提交任何公开可访问的 HTTP(S) 网站。",
     },
     {
-      title: "2. 爬取并建立关系图",
+      title: "2. 爬取并建立树状结构",
       body: "爬虫从允许的网站入口开始，尊重 robots.txt，跟随同源 HTML 链接，并记录范围受限的结构证据。",
     },
     {
@@ -513,8 +513,8 @@ const ZH: InternalLinkAuditContent = {
       body: "每条发现都附有观测证据和限制条件，供你决定在改动网站前需要复核什么。",
     },
     {
-      title: "完整结构的可视化地图",
-      body: "相比一张扁平 URL 表，关系图更容易暴露主题簇、孤立小岛和关键瓶颈。",
+      title: "清晰可读的抓取树",
+      body: "相比一张扁平 URL 表，层级树更容易查看父子页面、候选孤岛和深层内容；交叉入链仍保留在页面计数与证据中。",
     },
   ],
   methodEyebrow: "方法透明",
