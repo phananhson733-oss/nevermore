@@ -18,7 +18,8 @@ export type RunKind =
   | "product_profile_synthesis"
   | "content_shadow"
   | "publication"
-  | "measurement";
+  | "measurement"
+  | "analysis_refresh";
 export type RunStatus =
   | "queued"
   | "running"
@@ -119,7 +120,8 @@ export class AsyncRunsRepository extends Repository {
           ('product_profile_synthesis'::text),
           ('content_shadow'::text),
           ('publication'::text),
-          ('measurement'::text)
+          ('measurement'::text),
+          ('analysis_refresh'::text)
       )
       select
         run_kinds.kind,
@@ -534,7 +536,8 @@ function runKind(value: unknown): RunKind | null {
     value === "product_profile_synthesis" ||
     value === "content_shadow" ||
     value === "publication" ||
-    value === "measurement"
+    value === "measurement" ||
+    value === "analysis_refresh"
     ? value
     : null;
 }

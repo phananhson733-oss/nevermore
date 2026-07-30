@@ -14,6 +14,7 @@ export * from "./zod/projects.ts";
 export * from "./zod/product-profile.ts";
 export * from "./zod/product-profile-synthesis.ts";
 export * from "./zod/sources.ts";
+export * from "./zod/analysis-refresh.ts";
 export * from "./zod/diagnostics.ts";
 export * from "./zod/artifacts.ts";
 export * from "./zod/audit.ts";

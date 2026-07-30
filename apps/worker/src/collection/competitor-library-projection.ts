@@ -1,10 +1,12 @@
 import {
   CollectionRunsRepository,
   CompetitorsRepository,
+  contentHash,
   ImportPreviewsRepository,
   ObservationsRepository,
   SourceConnectionsRepository,
   type CollectionRunRow,
+  type CompetitorOriginInput,
   type CsvKeywordGapCompetitorOriginInput,
   type DataSnapshotRow,
   type DbTx,
@@ -13,14 +15,23 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   KEYWORD_GAP_TEMPLATE_ID,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
   METRIC_CSV_KEYWORD_GAP,
   SourceError,
+  parseDataForSeoSearchLandscapeScope,
+  type DataForSeoSearchLandscapeScope,
 } from "@sf/sources";
 
 const CSV_PROVIDER = "csv";
 const CSV_OPERATION = "keyword_gap_import";
 const CSV_DATASET_KEY = "csv.keyword_gap.v1";
+const DATAFORSEO_PROVIDER = "dataforseo";
 const PROJECTION_PAGE_SIZE = 500;
 const COMPETITOR_DOMAIN_POINTER = "/valueJson/competitorDomain" as const;
 const NORMALIZED_DOMAIN =
@@ -45,10 +56,29 @@ function canonicalCompetitorDomain(value: unknown): string {
     !NORMALIZED_DOMAIN.test(value)
   ) {
     throw invalidProjection(
-      "Canonical CSV Observation contains an invalid competitor domain.",
+      "Canonical competitor Observation contains an invalid domain.",
     );
   }
   return value;
+}
+
+type SerpOverlapCompetitorOriginInput = Extract<
+  CompetitorOriginInput,
+  { readonly originKind: "serp_overlap" }
+>;
+
+function canonicalNonNegativeNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw invalidProjection(`${label} must be a non-negative number.`);
+  }
+  return value;
+}
+
+function canonicalPositiveInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw invalidProjection(`${label} must be a positive integer.`);
+  }
+  return value as number;
 }
 
 function assertCanonicalCsvLineage(
@@ -114,6 +144,202 @@ function assertObservationLineage(
   }
 }
 
+function dataForSeoCollectionScope(
+  snapshot: DataSnapshotRow,
+): DataForSeoSearchLandscapeScope {
+  if (
+    snapshot.provider !== DATAFORSEO_PROVIDER ||
+    snapshot.dataset_key !== DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
+    snapshot.schema_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.source_connection_id === null
+  ) {
+    throw invalidProjection(
+      "SERP overlap projection requires the exact DataForSEO search-landscape Snapshot identity.",
+    );
+  }
+  try {
+    return parseDataForSeoSearchLandscapeScope(
+      snapshot.summary["collectionScope"],
+    );
+  } catch {
+    throw invalidProjection(
+      "SERP overlap projection requires its frozen DataForSEO search-landscape scope.",
+    );
+  }
+}
+
+function assertCanonicalDataForSeoLineage(
+  snapshot: DataSnapshotRow,
+  run: CollectionRunRow,
+  connection: Awaited<
+    ReturnType<SourceConnectionsRepository["findById"]>
+  >,
+  collectionScope: DataForSeoSearchLandscapeScope,
+): void {
+  if (
+    run.id !== snapshot.collection_run_id ||
+    run.workspace_id !== snapshot.workspace_id ||
+    run.project_id !== snapshot.project_id ||
+    run.site_id !== snapshot.site_id ||
+    run.provider !== DATAFORSEO_PROVIDER ||
+    run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
+    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    run.source_connection_id !== snapshot.source_connection_id ||
+    run.import_preview_id !== null ||
+    run.crawl_seed_site_page_id !== null ||
+    run.crawl_seed_url !== null ||
+    run.parameters_hash !==
+      contentHash({
+        provider: DATAFORSEO_PROVIDER,
+        operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+        siteId: snapshot.site_id,
+        collectionScope,
+      })
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO search-landscape Snapshot does not match its CollectionRun lineage.",
+    );
+  }
+  if (
+    !connection ||
+    connection.id !== snapshot.source_connection_id ||
+    connection.workspace_id !== snapshot.workspace_id ||
+    connection.project_id !== snapshot.project_id ||
+    connection.site_id !== snapshot.site_id ||
+    connection.provider !== DATAFORSEO_PROVIDER
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO search-landscape Snapshot does not match its exact source connection.",
+    );
+  }
+}
+
+/**
+ * Derive one immutable SERP-overlap origin. The projection deliberately keeps
+ * the provider's integer intersections as Observation evidence only; it never
+ * invents a competitor name, relationship, review status, or analysis scope.
+ */
+export function deriveSerpOverlapCompetitorOriginInput(
+  snapshot: DataSnapshotRow,
+  run: CollectionRunRow,
+  observation: ObservationRow,
+): SerpOverlapCompetitorOriginInput | null {
+  const collectionScope = dataForSeoCollectionScope(snapshot);
+  if (
+    run.id !== snapshot.collection_run_id ||
+    run.workspace_id !== snapshot.workspace_id ||
+    run.project_id !== snapshot.project_id ||
+    run.site_id !== snapshot.site_id ||
+    run.provider !== DATAFORSEO_PROVIDER ||
+    run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
+    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    run.source_connection_id !== snapshot.source_connection_id ||
+    run.import_preview_id !== null ||
+    run.crawl_seed_site_page_id !== null ||
+    run.crawl_seed_url !== null ||
+    run.parameters_hash !==
+      contentHash({
+        provider: DATAFORSEO_PROVIDER,
+        operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+        siteId: snapshot.site_id,
+        collectionScope,
+      })
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO search-landscape Snapshot does not match its CollectionRun lineage.",
+    );
+  }
+  if (
+    observation.snapshot_id !== snapshot.id ||
+    observation.workspace_id !== snapshot.workspace_id ||
+    observation.project_id !== snapshot.project_id ||
+    observation.provider !== DATAFORSEO_PROVIDER ||
+    observation.observed_at !== snapshot.captured_at
+  ) {
+    throw invalidProjection(
+      "SERP overlap Observation does not belong to its canonical DataForSEO Snapshot.",
+    );
+  }
+  if (observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN) {
+    return null;
+  }
+  if (
+    observation.subject_type !== "site" ||
+    observation.site_page_id !== null ||
+    observation.origin !== "vendor_observation" ||
+    observation.grade !== "B" ||
+    observation.support !== "supports" ||
+    observation.availability !== "available" ||
+    observation.value_numeric !== null ||
+    observation.value_text !== null ||
+    observation.unit !== null
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO competitor-domain Observation trust or value shape is invalid.",
+    );
+  }
+  const valueJson = asRecord(
+    observation.value_json,
+    "Canonical DataForSEO competitor-domain Observation valueJson",
+  );
+  const expectedKeys = [
+    "targetDomain",
+    "competitorDomain",
+    "intersections",
+    "averagePosition",
+    "summedPosition",
+    "organicEstimatedTrafficVolume",
+    "marketCode",
+    "languageCode",
+  ] as const;
+  if (
+    Object.keys(valueJson).length !== expectedKeys.length ||
+    expectedKeys.some((key) => !Object.hasOwn(valueJson, key))
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO competitor-domain Observation valueJson is not exact.",
+    );
+  }
+  const targetDomain = canonicalCompetitorDomain(valueJson["targetDomain"]);
+  const domain = canonicalCompetitorDomain(valueJson["competitorDomain"]);
+  canonicalPositiveInteger(
+    valueJson["intersections"],
+    "DataForSEO intersections",
+  );
+  canonicalNonNegativeNumber(
+    valueJson["averagePosition"],
+    "DataForSEO averagePosition",
+  );
+  canonicalNonNegativeNumber(
+    valueJson["summedPosition"],
+    "DataForSEO summedPosition",
+  );
+  canonicalNonNegativeNumber(
+    valueJson["organicEstimatedTrafficVolume"],
+    "DataForSEO organicEstimatedTrafficVolume",
+  );
+  if (
+    targetDomain !== collectionScope.target ||
+    domain === targetDomain ||
+    observation.subject_ref !== domain ||
+    valueJson["marketCode"] !== collectionScope.marketCode ||
+    valueJson["languageCode"] !== collectionScope.providerLanguageCode
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO competitor-domain Observation contradicts its frozen scope.",
+    );
+  }
+  return {
+    originKind: "serp_overlap",
+    domain,
+    name: null,
+    snapshotId: snapshot.id,
+    observationId: observation.id,
+    sourcePointer: COMPETITOR_DOMAIN_POINTER,
+  };
+}
+
 /**
  * Derive one CSV competitor source without adding a name, score, relationship,
  * review decision, or any other fact absent from the canonical Observation.
@@ -161,10 +387,23 @@ export async function projectCollectionSnapshotCompetitors(
   scope: ProjectScope,
   snapshot: DataSnapshotRow,
 ): Promise<number> {
-  // The shared keyword metric is also emitted by DataForSEO. Provider identity
-  // is therefore the first gate: no vendor, SERP, AI, or GSC Snapshot is ever
-  // inspected as a Competitor Library source.
-  if (snapshot.provider !== CSV_PROVIDER) return 0;
+  if (
+    snapshot.provider !== CSV_PROVIDER &&
+    snapshot.provider !== DATAFORSEO_PROVIDER
+  ) {
+    return 0;
+  }
+  // Historical ranked-keyword collections never carried competitor-domain
+  // observations. Preserve that exact flow without interpreting its shared
+  // csv.keyword_gap metric as a competitor origin.
+  if (
+    snapshot.provider === DATAFORSEO_PROVIDER &&
+    snapshot.dataset_key === DATAFORSEO_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_METHOD_VERSION
+  ) {
+    return 0;
+  }
   if (
     snapshot.workspace_id !== scope.workspaceId ||
     snapshot.project_id !== scope.projectId
@@ -173,9 +412,14 @@ export async function projectCollectionSnapshotCompetitors(
       "Competitor projection Snapshot does not belong to the selected project.",
     );
   }
+  const collectionScope =
+    snapshot.provider === DATAFORSEO_PROVIDER
+      ? dataForSeoCollectionScope(snapshot)
+      : null;
   if (
-    snapshot.dataset_key !== CSV_DATASET_KEY ||
-    snapshot.method_version !== CSV_DATASET_KEY
+    snapshot.provider === CSV_PROVIDER &&
+    (snapshot.dataset_key !== CSV_DATASET_KEY ||
+      snapshot.method_version !== CSV_DATASET_KEY)
   ) {
     throw invalidProjection(
       "Competitor Library projection requires the canonical CSV Snapshot.",
@@ -185,23 +429,45 @@ export async function projectCollectionSnapshotCompetitors(
   const run = await new CollectionRunsRepository(tx).findById(
     snapshot.collection_run_id,
   );
-  if (!run?.import_preview_id) {
+  if (!run) {
+    throw invalidProjection(
+      "Canonical competitor Snapshot is missing its CollectionRun lineage.",
+    );
+  }
+
+  if (collectionScope !== null) {
+    const connection = await new SourceConnectionsRepository(tx).findById(
+      scope,
+      snapshot.source_connection_id!,
+    );
+    assertCanonicalDataForSeoLineage(
+      snapshot,
+      run,
+      connection,
+      collectionScope,
+    );
+  } else if (!run.import_preview_id) {
     throw invalidProjection(
       "Canonical CSV Snapshot is missing its CollectionRun ImportPreview lineage.",
     );
   }
-  const preview = await new ImportPreviewsRepository(tx).findById(
-    scope,
-    run.import_preview_id,
-  );
-  if (!preview) {
+  const preview =
+    collectionScope === null
+      ? await new ImportPreviewsRepository(tx).findById(
+          scope,
+          run.import_preview_id!,
+        )
+      : null;
+  if (collectionScope === null && !preview) {
     throw invalidProjection(
       "Canonical CSV CollectionRun is missing its scoped consumed ImportPreview.",
     );
   }
-  assertCanonicalCsvLineage(snapshot, run, preview);
+  if (collectionScope === null) {
+    assertCanonicalCsvLineage(snapshot, run, preview!);
+  }
 
-  if (snapshot.source_connection_id !== null) {
+  if (collectionScope === null && snapshot.source_connection_id !== null) {
     const connection = await new SourceConnectionsRepository(tx).findById(
       scope,
       snapshot.source_connection_id,
@@ -232,12 +498,19 @@ export async function projectCollectionSnapshotCompetitors(
       { limit: PROJECTION_PAGE_SIZE, cursor },
     );
     for (const observation of page.rows) {
-      const input = deriveCsvCompetitorOriginInput(
-        snapshot,
-        run,
-        preview,
-        observation,
-      );
+      const input =
+        collectionScope === null
+          ? deriveCsvCompetitorOriginInput(
+              snapshot,
+              run,
+              preview!,
+              observation,
+            )
+          : deriveSerpOverlapCompetitorOriginInput(
+              snapshot,
+              run,
+              observation,
+            );
       if (input) {
         await competitors.upsertOrigin(scope, input);
         projected += 1;

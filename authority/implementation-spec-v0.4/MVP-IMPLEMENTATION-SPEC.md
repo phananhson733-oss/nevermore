@@ -12,10 +12,10 @@ prompt_set_version: mvp.prompts.0.2.0
 
 ## 0. 规范范围
 
-本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **77 个 operation 与 9 个
-shared async operation**，ordered migrations 精确声明 **76 张应用表**，引擎
+本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **78 个 operation 与 10 个
+shared async operation**，ordered migrations 精确声明 **78 张应用表**，引擎
 精确注册 **11 条规则**。`createProjectMeasurementWindow` 是额外的 typed
-measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入九个
+measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
 
 冲突顺序为本文件 → 同目录 OpenAPI → 由 ordered migrations 生成的 schema →
@@ -66,6 +66,48 @@ GitHub 预留为未来代码交付连接；它不是当前分析数据来源。S
 keyword relation、topic model、competitor monitor、GEO citation 和 backlink
 projection 是内置能力，不要求客户另行连接。
 
+`createCollectionRun` 只允许客户触发 Crawl、已连接 GSC 或已连接 GA4；
+CSV 继续使用专用 import command。DataForSEO 是 Analysis Refresh worker 的
+内置 provider，客户不能通过 collection request 选择、配置或提供凭据/API key。
+该写边界不移除 DataForSEO 的 canonical Source/Snapshot/Observation/Evidence
+lineage，也不阻止 server-owned Analysis Refresh 运行其成本受限的可选步骤。
+
+DataForSEO Search Landscape（DFS）是该步骤唯一当前的 server-owned 身份：
+服务端从冻结 primary Site 的 host、单一 market、canonical language 与服务端
+row cap 生成固定的 ranked-keywords 与 competitors-domain 两个请求。两个请求
+共享同一 target/market/language 作用域，并原子形成一个
+`dataforseo.search_landscape.v1` Snapshot；任何一边失败都不能发布半个
+Search Landscape。DFS 只把 ranked Keyword observation 与 SERP-overlap
+Competitor origin 投影进现有增长地图，不创建第五模块，不接受客户提交 target、
+location、language、limit、provider credential 或任意第三个 query。
+
+### 2.1 Durable Analysis Refresh
+
+`createAnalysisRefreshRun` 是唯一 server-owned 的完整分析刷新 command。客户端
+只能提交空 strict object，不能选择 provider、改变顺序、注入 Snapshot 或跳过
+required step。command transaction 创建 `analysis_refresh` async run，并以
+`analysis_refresh_run` resource identity 冻结 primary Site、confirmed ICP、
+完整 plan manifest 与 plan hash；queue 名为 `refresh.analysis`。
+
+计划固定为五步，且每个父 run 都持久化全部五行：
+
+1. Crawl（required）；
+2. connected GSC（optional；未连接时明确 skipped）；
+3. connected GA4（optional；未连接时明确 skipped）；
+4. built-in DataForSEO Search Landscape（DFS，optional；
+   disabled/unavailable 时明确 skipped）；
+5. Growth Audit（required）。
+
+父 lifecycle 只来自 `async_runs`。step execution state 只能是
+pending/running/completed/skipped/failed；optional failure/skip 不得伪装成功，
+required failure 必须使父 run failed。父行与 step identity append-only，worker
+只可推进 step execution state，并保留 child async run、result Snapshot、
+skip reason 或 bounded error。最终 Growth Audit 必须消费本次 refresh 产生并
+冻结的 exact Snapshot ids，不得在末步重新选择“当时最新”数据。
+
+详细 step read model 后续另行加入；当前客户端只通过既有
+`getProjectRun` 的 progress/status 轮询，不新增 GET operation。
+
 ## 3. 概览
 
 概览只回答四类客户问题：
@@ -80,6 +122,19 @@ projection 是内置能力，不要求客户另行连接。
 
 ## 4. 增长地图
 
+URL、Keyword 与 Competitor 的 list/detail GET 属于同一个 published-generation
+读取协议：
+
+- 可选 `diagnosticRunId` 必须是 canonical lowercase UUID，并且只能固定当前
+  project 中一个已发布、可读的 DiagnosticRun generation；省略时服务端读取
+  最新可读 generation。未知、跨租户、未发布或不可读的 pin 不得回退到 latest。
+- `view=review` 只存在于 Keyword/Competitor detail GET，用于读取当前 mutable
+  governance projection；URL read 与所有 list read 都不接受该参数。
+- `view=review` 与 `diagnosticRunId` 互斥，重复 scalar 或未知 query 参数均返回
+  validation problem，不能任选一个继续。
+- Keyword/Competitor PATCH 是 mutation command，拒绝全部 query 参数；review
+  语义只来自 strict governed request body。
+
 ### 4.1 URL portfolio
 
 - 列表支持多个 URL，选择任一行必须加载该 URL 的独立指标、Finding、Action 和
@@ -93,8 +148,9 @@ projection 是内置能力，不要求客户另行连接。
 
 ### 4.2 Keyword Library
 
-- 来源包括 GSC top query、DataForSEO ranked observation、competitor/content
-  gap、VOC/manual/CSV；每条 occurrence 保留来源、scope 和时间。
+- 来源包括 GSC top query、DataForSEO Search Landscape ranked observation、
+  competitor/content gap、VOC/manual/CSV；每条 occurrence 保留来源、scope
+  和时间。
 - keyword identity、review decision、cluster/topic mapping、existing/new target、
   relation candidate/decision 与 rank history 都是稳定、可追溯的治理面。
 - volume、KD、current rank、competitor rank 等各自保留 Observation pointer；
@@ -104,8 +160,9 @@ projection 是内置能力，不要求客户另行连接。
 
 ### 4.3 Competitor Library
 
-- 产品画像可初始化直接/间接竞品；SERP overlap、keyword gap、manual、AI citation
-  等来源以 typed origin occurrence 追加。
+- 产品画像可初始化直接/间接竞品；同一个 DataForSEO Search Landscape Snapshot
+  产生的 SERP overlap、keyword gap、manual、AI citation 等来源以 typed origin
+  occurrence 追加，且不得把 intersection count 解释为百分比或竞争关系。
 - candidate/approved/excluded、relationship 和 analysis scope 都有独立 revision；
   用户审核不能改写旧来源。
 - dynamic monitor 只比较可比的 immutable snapshots，signal 必须带匹配关键词、
@@ -153,7 +210,7 @@ live canonical URL 验证的 Change Receipt 才能成为 Measurement Window anch
 
 Current v0.4 external-write boundary: **no external writes**
 
-当前 77 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
+当前 78 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
 publication-attempt command。production UI 必须把这类能力显示为
 unavailable/尚未连接，而不能写“已发布”。新增外部写入必须原子加入 provider
 adapter、worker handler、idempotency、remote precondition、rollback、
@@ -190,7 +247,7 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 9. 冻结 API inventory
 
-以下列表必须与 OpenAPI 的 77 个 operationId 完全一致。
+以下列表必须与 OpenAPI 的 78 个 operationId 完全一致。
 
 <!-- API_OPERATIONS_BEGIN -->
 - `listProjects`
@@ -211,6 +268,7 @@ reconciliation、route/OpenAPI 与测试。
 - `importProjectSourceFile`
 - `disconnectProjectSource`
 - `createCollectionRun`
+- `createAnalysisRefreshRun`
 - `listProjectSnapshots`
 - `getProjectRun`
 - `createDiagnosticRun`
@@ -272,12 +330,13 @@ reconciliation、route/OpenAPI 与测试。
 - `getProjectMeasurementWindowHistory`
 <!-- API_OPERATIONS_END -->
 
-九个共享 AsyncAccepted operation：
+十个共享 AsyncAccepted operation：
 
 <!-- ASYNC_OPERATIONS_BEGIN -->
 - `createProductProfileSynthesisRun`
 - `importProjectSourceFile`
 - `createCollectionRun`
+- `createAnalysisRefreshRun`
 - `createDiagnosticRun`
 - `createGrowthAuditRun`
 - `createContentShadowRun`
@@ -288,7 +347,7 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 10. 冻结数据库 inventory
 
-以下 76 张应用表来自 ordered migrations 与 static schema catalog；pg-boss 自有表
+以下 78 张应用表来自 ordered migrations 与 static schema catalog；pg-boss 自有表
 不计入。
 
 <!-- TABLES_BEGIN -->
@@ -302,6 +361,8 @@ reconciliation、route/OpenAPI 与测试。
 - `oauth_intents`
 - `import_previews`
 - `async_runs`
+- `analysis_refresh_runs`
+- `analysis_refresh_steps`
 - `collection_runs`
 - `data_snapshots`
 - `normalized_observations`

@@ -127,18 +127,54 @@ export type {
 } from "./dataforseo/adapter.ts";
 export {
   HttpDataForSeoClient,
+  DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+  DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT,
   DEFAULT_DATAFORSEO_LIMIT,
   MAX_DATAFORSEO_LIMIT,
 } from "./dataforseo/client.ts";
 export type {
   DataForSeoClient,
+  DataForSeoCompetitorDomainRow,
+  DataForSeoCompetitorsDomainClient,
+  DataForSeoCompetitorsDomainRequest,
+  DataForSeoCompetitorsDomainResponse,
   DataForSeoFetch,
+  DataForSeoRankedKeywordsClient,
   DataForSeoRankedKeywordRow,
   DataForSeoRankedKeywordsRequest,
   DataForSeoRankedKeywordsResponse,
+  DataForSeoSearchLandscapeClient,
   HttpDataForSeoClientOptions,
 } from "./dataforseo/client.ts";
+export {
+  createDataForSeoSearchLandscapeAdapter,
+  createDataForSeoSearchLandscapeScope,
+  dataForSeoSearchLandscapeSnapshotSummary,
+  dataforseoSearchLandscapeAdapter,
+  parseDataForSeoSearchLandscapeScope,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_QUERY_KIND,
+  DATAFORSEO_SEARCH_LANDSCAPE_ROW_CAP_STOP_REASON,
+  DATAFORSEO_SEARCH_LANDSCAPE_SCOPE_VERSION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+} from "./dataforseo/search-landscape.ts";
+export type {
+  DataForSeoCompetitorDomainProjection,
+  DataForSeoSearchLandscapeAdapter,
+  DataForSeoSearchLandscapeAdapterOptions,
+  DataForSeoSearchLandscapeCapability,
+  DataForSeoSearchLandscapeCompetitorsDomainPolicy,
+  DataForSeoSearchLandscapeCompetitorsDomainRaw,
+  DataForSeoSearchLandscapeRankedKeywordsPolicy,
+  DataForSeoSearchLandscapeRankedKeywordsRaw,
+  DataForSeoSearchLandscapeRaw,
+  DataForSeoSearchLandscapeScope,
+  DataForSeoSearchLandscapeScopeInput,
+  DataForSeoSearchLandscapeSnapshotSummary,
+} from "./dataforseo/search-landscape.ts";
 
 // Crawl adapter (spec §7.3).
 export * from "./crawl/types.ts";
@@ -152,6 +188,20 @@ export { crawlSite, createDefaultCrawlFetcher } from "./crawl/engine.ts";
 export type { CrawlEngineOptions } from "./crawl/engine.ts";
 export { parsePage, directivesIndexable } from "./crawl/parse-page.ts";
 export type { ParsedPage } from "./crawl/parse-page.ts";
+export {
+  buildCrawlSiteLanguageSummary,
+  parseCrawlSiteLanguageSnapshotSummary,
+  parseHtmlLanguageDeclaration,
+  CRAWL_SITE_LANGUAGE_EVIDENCE_LIMIT,
+  CRAWL_SITE_LANGUAGE_SUMMARY_VERSION,
+} from "./crawl/site-language.ts";
+export type {
+  CrawlPageLanguageEvidence,
+  CrawlSiteLanguageEvidenceSample,
+  CrawlSiteLanguageStatus,
+  CrawlSiteLanguageSummary,
+  HtmlLanguageDeclaration,
+} from "./crawl/site-language.ts";
 export {
   parseRobots,
   isPathAllowed,

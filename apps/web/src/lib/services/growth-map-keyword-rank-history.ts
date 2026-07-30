@@ -148,6 +148,7 @@ async function historyInSnapshot(
     scope,
     projectId,
     keywordId,
+    null,
     exec,
   );
   if (

@@ -32,6 +32,9 @@ type CompetitorReviewOperation =
 type CompetitorListQuery = NonNullable<
   CompetitorListOperation["parameters"]["query"]
 >;
+type CompetitorDetailQuery = NonNullable<
+  CompetitorDetailOperation["parameters"]["query"]
+>;
 type CompetitorListHttpResponse =
   CompetitorListOperation["responses"][200]["content"]["application/json"];
 type CompetitorDetailHttpResponse =
@@ -72,8 +75,14 @@ type AvailableAiCitationInsight = Extract<
   { availability: "available" }
 >;
 
-type _ListQueryIsCursorOnly = Expect<
-  Equal<keyof CompetitorListQuery, "limit" | "cursor">
+type _ListQueryIncludesPublishedGeneration = Expect<
+  Equal<keyof CompetitorListQuery, "limit" | "cursor" | "diagnosticRunId">
+>;
+type _DetailQueryIsGenerationOrReview = Expect<
+  Equal<keyof CompetitorDetailQuery, "diagnosticRunId" | "view">
+>;
+type _DetailReviewViewIsExact = Expect<
+  Equal<NonNullable<CompetitorDetailQuery["view"]>, "review">
 >;
 type _ListHttpEnvelope = Expect<
   Equal<

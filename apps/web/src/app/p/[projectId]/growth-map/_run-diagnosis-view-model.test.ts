@@ -1,10 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
   INITIAL_RUN_DIAGNOSIS_STATE,
-  parseDiagnosticRunPointer,
   reduceRunDiagnosis,
-  refreshAfterDiagnosticTerminal,
   runDiagnosisButtonLabelKey,
   runDiagnosisEventFromError,
   runDiagnosisLocked,
@@ -353,27 +351,6 @@ describe("view selectors", () => {
   });
 });
 
-describe("parseDiagnosticRunPointer", () => {
-  it("accepts a UUID runId", () => {
-    expect(parseDiagnosticRunPointer({ runId: RUN_ID })).toEqual({
-      runId: RUN_ID,
-    });
-    expect(
-      parseDiagnosticRunPointer({ runId: RUN_ID, statusUrl: "/anything" }),
-    ).toEqual({ runId: RUN_ID });
-  });
-
-  it("rejects missing, null, and malformed pointers", () => {
-    expect(parseDiagnosticRunPointer(undefined)).toBeNull();
-    expect(parseDiagnosticRunPointer(null)).toBeNull();
-    expect(parseDiagnosticRunPointer({})).toBeNull();
-    expect(parseDiagnosticRunPointer({ runId: null })).toBeNull();
-    expect(parseDiagnosticRunPointer({ runId: "" })).toBeNull();
-    expect(parseDiagnosticRunPointer({ runId: "not-a-uuid" })).toBeNull();
-    expect(parseDiagnosticRunPointer({ runId: 7 })).toBeNull();
-  });
-});
-
 describe("runDiagnosisEventFromError", () => {
   it("maps RUN_ALREADY_ACTIVE with a valid pointer to a conflict takeover", () => {
     expect(
@@ -402,7 +379,7 @@ describe("runDiagnosisEventFromError", () => {
       gate: "context",
     });
     expect(
-      runDiagnosisEventFromError(apiError("CRAWL_SNAPSHOT_REQUIRED")),
+      runDiagnosisEventFromError(apiError("SOURCE_NOT_CONNECTED")),
     ).toEqual({ type: "serverGate", gate: "crawl" });
     expect(runDiagnosisEventFromError(apiError("RATE_LIMITED"))).toEqual({
       type: "submitFailed",
@@ -410,28 +387,5 @@ describe("runDiagnosisEventFromError", () => {
     expect(runDiagnosisEventFromError(new Error("network"))).toEqual({
       type: "submitFailed",
     });
-  });
-});
-
-describe("refreshAfterDiagnosticTerminal", () => {
-  it("prefix-invalidates every read model the run terminal changes", async () => {
-    const invalidateQueries = vi.fn(async () => undefined);
-    const queryClient = { invalidateQueries } as unknown as Parameters<
-      typeof refreshAfterDiagnosticTerminal
-    >[0];
-    await refreshAfterDiagnosticTerminal(queryClient, "project-1");
-    const keys = invalidateQueries.mock.calls
-      .map((call) => (call as unknown[])[0])
-      .map((options) => (options as { queryKey: readonly string[] }).queryKey);
-    expect(keys).toEqual([
-      ["growth-map", "project-1"],
-      ["findings", "project-1"],
-      ["snapshots", "project-1"],
-      ["workspace", "project-1"],
-      ["project", "project-1"],
-    ]);
-    for (const call of invalidateQueries.mock.calls) {
-      expect((call as unknown[])[0]).toMatchObject({ refetchType: "active" });
-    }
   });
 });

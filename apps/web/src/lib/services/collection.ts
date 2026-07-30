@@ -20,15 +20,9 @@ import {
   type CreateCollectionRunRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
-import {
-  createDataForSeoCollectionScope,
-  CRAWL_METHOD_VERSION,
-  SourceError,
-  type DataForSeoCollectionScope,
-} from "@sf/sources";
+import { CRAWL_METHOD_VERSION } from "@sf/sources";
 import { getDb } from "@/lib/db";
 import { getBoss } from "@/lib/boss";
-import { getEnv } from "@/env";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { toAsyncRunDto, runStatusUrl, type AsyncRunDto } from "./runs";
 
@@ -63,22 +57,43 @@ const PROVIDER_CONFIG = {
     queue: "collect.ga4",
     methodVersion: "ga4.organic_landing_daily.v1",
   },
-  dataforseo: {
-    operation: "keyword_gap_import",
-    queue: "collect.dataforseo",
-    methodVersion: "dataforseo.ranked_keywords.v1",
-  },
 } as const satisfies Record<
   CreateCollectionRunRequest["provider"],
   { operation: string; queue: QueueName; methodVersion: string }
 >;
 
-interface DataForSeoConnectionConfig {
-  readonly target: string;
-  readonly marketCode: string;
-  readonly locationName: string;
-  readonly languageCode: string;
-  readonly maxKeywords: number;
+/**
+ * `createCollectionRun` is exported inside the Web process and can be invoked
+ * without the route's Zod parser. Reject every non-public provider before DB,
+ * queue, idempotency, or environment access so an internal provider cannot be
+ * smuggled through a cast or another future caller.
+ */
+function assertCustomerTriggerableProvider(
+  body: CreateCollectionRunRequest,
+): void {
+  const provider = (
+    body as { readonly provider?: unknown } | null | undefined
+  )?.provider;
+  if (
+    typeof provider === "string" &&
+    Object.hasOwn(PROVIDER_CONFIG, provider)
+  ) {
+    return;
+  }
+  throw new ProblemError(
+    "VALIDATION_ERROR",
+    "Direct collection supports only crawl, gsc, and ga4 providers.",
+    {
+      errors: [
+        {
+          pointer: "/provider",
+          code: "invalid_value",
+          message:
+            "Provider must be one of crawl, gsc, or ga4. Run Analysis Refresh for server-owned evidence providers.",
+        },
+      ],
+    },
+  );
 }
 
 /**
@@ -113,97 +128,6 @@ export function keywordLibraryContextForSite(site: {
   } catch {
     return null;
   }
-}
-
-export function dataForSeoCollectionScopeForSite(site: {
-  readonly host: string;
-  readonly market_codes: readonly string[];
-  readonly language_codes: readonly string[];
-}): DataForSeoCollectionScope {
-  const env = getEnv();
-  const marketCode = site.market_codes[0]?.trim().toUpperCase();
-  if (!marketCode) {
-    throw new ProblemError(
-      "CONTEXT_INCOMPLETE",
-      "DataForSEO collection requires an explicit primary market on the primary Site.",
-      {
-        current: {
-          missingField: "primaryMarket",
-          recovery: "Set the primary Site market, then retry collection.",
-        },
-      },
-    );
-  }
-  const languageTag = site.language_codes[0]?.trim();
-  if (!languageTag) {
-    throw new ProblemError(
-      "CONTEXT_INCOMPLETE",
-      "DataForSEO collection requires an explicit site language on the primary Site.",
-      {
-        current: {
-          missingField: "siteLanguage",
-          recovery: "Set the primary Site language, then retry collection.",
-        },
-      },
-    );
-  }
-  const locationName =
-    new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode);
-  if (!locationName) {
-    throw new ProblemError(
-      "CONTEXT_INCOMPLETE",
-      "DataForSEO collection cannot resolve the primary Site market to a provider location.",
-      {
-        current: {
-          missingField: "providerLocation",
-          recovery: "Choose a supported primary market, then retry collection.",
-        },
-      },
-    );
-  }
-  try {
-    return createDataForSeoCollectionScope({
-      target: site.host,
-      marketCode,
-      locationName,
-      languageTag,
-      limit: env.DATAFORSEO_MAX_KEYWORDS,
-    });
-  } catch (error) {
-    if (!(error instanceof SourceError)) throw error;
-    throw new ProblemError(
-      "CONTEXT_INCOMPLETE",
-      "The primary Site market or language is invalid for DataForSEO collection.",
-      {
-        current: {
-          missingField: "collectionScope",
-          recovery: "Correct the primary Site market and language, then retry collection.",
-        },
-      },
-    );
-  }
-}
-
-function dataForSeoConnectionConfig(
-  scope: DataForSeoCollectionScope,
-): DataForSeoConnectionConfig {
-  if (scope.location.kind !== "name") {
-    throw new ProblemError(
-      "CONTEXT_INCOMPLETE",
-      "DataForSEO collection requires a named provider location.",
-    );
-  }
-  return {
-    target: scope.target,
-    marketCode: scope.marketCode,
-    locationName: scope.location.name,
-    languageCode: scope.providerLanguageCode,
-    maxKeywords: scope.limit,
-  };
-}
-
-function dataForSeoLimitation(config: DataForSeoConnectionConfig): string {
-  return `DataForSEO ranked keywords for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}, capped at ${config.maxKeywords} keywords per collection. This is the target domain's ranking-keyword dataset, not a complete competitor-gap analysis.`;
 }
 
 export interface CollectionAcceptedResult {
@@ -261,9 +185,9 @@ function replayCollection(
  * operation combination, resolves the source connection, and atomically inserts
  * the run + collection placeholder and enqueues the job in ONE transaction. A
  * second active run for the same `collect:{provider}:{operation}` key returns 409
- * RUN_ALREADY_ACTIVE (AC-019). CSV uses the import endpoint. DataForSEO is
- * feature-gated and lazily creates a project-scoped, secret-free connection for
- * legacy projects when the server integration is enabled.
+ * RUN_ALREADY_ACTIVE (AC-019). CSV uses the import endpoint. DataForSEO is a
+ * server-owned Analysis Refresh provider and is never accepted by this public
+ * command, even when this service is invoked without the route parser.
  */
 export async function createCollectionRun(
   scope: WorkspaceScope,
@@ -272,16 +196,8 @@ export async function createCollectionRun(
   idempotencyKey: string,
   body: CreateCollectionRunRequest,
 ): Promise<CollectionAcceptedResult> {
+  assertCustomerTriggerableProvider(body);
   const projectScope = { workspaceId: scope.workspaceId, projectId };
-  if (
-    body.provider === "dataforseo" &&
-    getEnv().DATAFORSEO_ENABLED !== "true"
-  ) {
-    throw new ProblemError(
-      "FEATURE_DISABLED",
-      "DataForSEO collection is not enabled for this deployment.",
-    );
-  }
 
   const { db } = getDb();
   // Hash the validated wire shape before deriving defaults. Optional members
@@ -332,12 +248,7 @@ export async function createCollectionRun(
   const connection = body.sourceConnectionId
     ? await sources.findById(projectScope, body.sourceConnectionId)
     : await sources.findConnectedByProvider(projectScope, body.provider);
-  const canProvisionDataForSeo =
-    body.provider === "dataforseo" && body.sourceConnectionId == null;
-  if (
-    (!connection && !canProvisionDataForSeo) ||
-    (connection !== null && connection.provider !== body.provider)
-  ) {
+  if (!connection || connection.provider !== body.provider) {
     throw new ProblemError(
       "SOURCE_NOT_CONNECTED",
       `No connected ${body.provider} source for this project.`,
@@ -446,7 +357,7 @@ export async function createCollectionRun(
         }
       }
 
-      let currentConnection = body.sourceConnectionId
+      const currentConnection = body.sourceConnectionId
         ? await txSources.findConnectedByIdForUpdate(
             projectScope,
             body.sourceConnectionId,
@@ -455,32 +366,10 @@ export async function createCollectionRun(
             projectScope,
             body.provider,
           );
-      const dataForSeoCollectionScope =
-        body.provider === "dataforseo"
-          ? dataForSeoCollectionScopeForSite(currentSite)
-          : null;
       const keywordLibraryContext =
         body.provider === "gsc"
           ? keywordLibraryContextForSite(currentSite)
           : null;
-      if (!currentConnection && canProvisionDataForSeo) {
-        const connectionConfig = dataForSeoConnectionConfig(
-          dataForSeoCollectionScope as DataForSeoCollectionScope,
-        );
-        currentConnection = await txSources.insertConnection({
-          workspaceId: scope.workspaceId,
-          projectId,
-          siteId: currentSite.id,
-          provider: "dataforseo",
-          connectionType: "api_key_stub",
-          state: "connected",
-          externalRef: connectionConfig.target,
-          config: { ...connectionConfig },
-          limitation: dataForSeoLimitation(connectionConfig),
-          connectedAt: true,
-          createdBy: actorId,
-        });
-      }
       if (!currentConnection || currentConnection.provider !== body.provider) {
         throw new ProblemError(
           "SOURCE_NOT_CONNECTED",
@@ -488,22 +377,14 @@ export async function createCollectionRun(
         );
       }
 
-      const parametersHash =
-        body.provider === "dataforseo"
-          ? contentHash({
-              provider: body.provider,
-              operation,
-              siteId: currentSite.id,
-              collectionScope: dataForSeoCollectionScope,
-            })
-          : collectionRunParametersHash({
-              provider: body.provider,
-              operation,
-              siteId: currentSite.id,
-              crawlSeedSitePageId,
-              crawlSeedUrl,
-              keywordLibraryContext,
-            });
+      const parametersHash = collectionRunParametersHash({
+        provider: body.provider,
+        operation,
+        siteId: currentSite.id,
+        crawlSeedSitePageId,
+        crawlSeedUrl,
+        keywordLibraryContext,
+      });
 
       const run = await new AsyncRunsRepository(tx).insertQueued({
         workspaceId: scope.workspaceId,
@@ -516,9 +397,6 @@ export async function createCollectionRun(
           provider: body.provider,
           operation,
           sourceConnectionId: currentConnection.id,
-          ...(dataForSeoCollectionScope
-            ? { collectionScope: dataForSeoCollectionScope }
-            : {}),
           ...(keywordLibraryContext ? { keywordLibraryContext } : {}),
         },
       });

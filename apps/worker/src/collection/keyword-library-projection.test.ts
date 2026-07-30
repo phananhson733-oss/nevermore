@@ -3,7 +3,10 @@ import {
   type DataSnapshotRow,
   type ObservationRow,
 } from "@sf/db";
-import { createDataForSeoCollectionScope } from "@sf/sources";
+import {
+  createDataForSeoCollectionScope,
+  createDataForSeoSearchLandscapeScope,
+} from "@sf/sources";
 import { deriveKeywordOccurrenceInputs } from "./keyword-library-projection.ts";
 
 const snapshotId = "00000000-0000-4000-8000-000000000003";
@@ -110,6 +113,7 @@ describe("deriveKeywordOccurrenceInputs", () => {
     const dataForSeoSnapshot = snapshot({
       provider: "dataforseo",
       dataset_key: "dataforseo.ranked_keywords.v1",
+      schema_version: "dataforseo.ranked_keywords.v1",
       method_version: "dataforseo.ranked_keywords.v1",
       summary: {
         collectionScope,
@@ -157,6 +161,8 @@ describe("deriveKeywordOccurrenceInputs", () => {
         snapshot({
           provider: "dataforseo",
           dataset_key: "dataforseo.ranked_keywords.v1",
+          schema_version: "dataforseo.ranked_keywords.v1",
+          method_version: "dataforseo.ranked_keywords.v1",
           summary: {},
         }),
         observation({ provider: "dataforseo" }),
@@ -172,6 +178,56 @@ describe("deriveKeywordOccurrenceInputs", () => {
         observation({ provider: "dataforseo" }),
       ),
     ).toThrow(/dataset/i);
+  });
+
+  it("projects ranked keywords from the composite Search Landscape Snapshot without changing occurrence semantics", () => {
+    const collectionScope = createDataForSeoSearchLandscapeScope({
+      target: "example.com",
+      marketCode: "GB",
+      locationName: "United Kingdom",
+      languageTag: "en-GB",
+      rankedKeywordsLimit: 37,
+      competitorsDomainLimit: 19,
+    });
+    const compositeSnapshot = snapshot({
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v1",
+      schema_version: "dataforseo.search_landscape.v1",
+      method_version: "dataforseo.search_landscape.v1",
+      summary: {
+        collectionScope,
+        timing: {
+          collectedAt,
+          dataAsOf: null,
+          observedAt: null,
+          freshness: "unknown",
+        },
+      },
+    });
+    const rankedObservation = observation({
+      provider: "dataforseo",
+      origin: "vendor_observation",
+      grade: "B",
+      value_json: {
+        ...(observation().value_json as Record<string, unknown>),
+        marketCode: "GB",
+        languageCode: "en",
+      },
+    });
+
+    expect(
+      deriveKeywordOccurrenceInputs(compositeSnapshot, rankedObservation),
+    ).toEqual([
+      expect.objectContaining({
+        displayKeyword: "Customer Onboarding Software",
+        market: "GB",
+        languageTag: "en-GB",
+        sourceKind: "dataforseo_ranked",
+        scopeBasis: "provider_collection_scope",
+        sourcePointer: "/valueJson/keyword",
+        providerDataAsOf: null,
+      }),
+    ]);
   });
 
   it("projects every GSC top query only from explicitly frozen project context", () => {

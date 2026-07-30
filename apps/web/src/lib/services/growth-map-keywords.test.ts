@@ -11,17 +11,25 @@ import {
   type KeywordOccurrenceRow,
 } from "@sf/db";
 import { ProblemError } from "@sf/observability";
-import { createDataForSeoCollectionScope } from "@sf/sources";
+import {
+  createDataForSeoCollectionScope,
+  createDataForSeoSearchLandscapeScope,
+} from "@sf/sources";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
+  loadPublishedGrowthMapGeneration: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("./growth-map-generation.ts", () => ({
+  loadPublishedGrowthMapGeneration: mocks.loadPublishedGrowthMapGeneration,
+}));
 
 const {
   getProjectAuditKeyword,
+  getProjectAuditKeywordReviewDetail,
   listProjectAuditKeywords,
   reviewProjectAuditKeyword,
 } = await import("./growth-map-keywords.ts");
@@ -29,6 +37,7 @@ const {
 const ids = {
   workspace: "10000000-0000-4000-8000-000000000001",
   project: "10000000-0000-4000-8000-000000000002",
+  publishedRun: "20000000-0000-4000-8000-000000000001",
   keyword: "10000000-0000-4000-8000-000000000003",
   occurrence: "10000000-0000-4000-8000-000000000004",
   snapshot: "10000000-0000-4000-8000-000000000005",
@@ -188,6 +197,8 @@ function dataForSeoSnapshot(overrides: Record<string, unknown> = {}) {
     collection_run_id: ids.collectionRun,
     provider: "dataforseo",
     dataset_key: "dataforseo.ranked_keywords.v1",
+    schema_version: "dataforseo.ranked_keywords.v1",
+    method_version: "dataforseo.ranked_keywords.v1",
     captured_at: capturedAt,
     availability: "available",
     limitation: "Provider rows are bounded by the frozen collection scope.",
@@ -217,6 +228,45 @@ function collectionRun(overrides: Record<string, unknown> = {}) {
     import_preview_id: null,
     ...overrides,
   };
+}
+
+function dataForSeoSearchLandscapeSnapshot(
+  overrides: Record<string, unknown> = {},
+) {
+  const collectionScope = createDataForSeoSearchLandscapeScope({
+    target: "example.com",
+    marketCode: "US",
+    languageTag: "en-US",
+    locationCode: 2840,
+    rankedKeywordsLimit: 200,
+    competitorsDomainLimit: 75,
+  });
+  return dataForSeoSnapshot({
+    dataset_key: "dataforseo.search_landscape.v1",
+    schema_version: "dataforseo.search_landscape.v1",
+    method_version: "dataforseo.search_landscape.v1",
+    summary: {
+      collectionScope,
+      timing: {
+        collectedAt: capturedAt,
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+      privateRawTaskId: "must-not-leak",
+    },
+    ...overrides,
+  });
+}
+
+function searchLandscapeCollectionRun(
+  overrides: Record<string, unknown> = {},
+) {
+  return collectionRun({
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v1",
+    ...overrides,
+  });
 }
 
 function sitePage() {
@@ -302,33 +352,155 @@ function reviewedGovernance() {
   } as const;
 }
 
+function frozenGovernance(input?: {
+  readonly fact?: Partial<{
+    keywordEntityId: string;
+    displayKeyword: string;
+    normalizedKeyword: string;
+    marketCode: string;
+    languageTag: string;
+    revision: number;
+    status: "candidate" | "approved" | "excluded" | "parked";
+    queryKind: "search_query" | "generative_query";
+    intent: string | null;
+    buyerStage: string | null;
+    clusterKey: string | null;
+    mappingDecision: "unassigned" | "existing_page" | "new_asset";
+    mappedSitePageId: string | null;
+    mappingReviewState: "unreviewed" | "confirmed";
+    lastSeenAt: string;
+  }>;
+  readonly occurrenceRefs?: readonly {
+    occurrenceId: string;
+    snapshotId: string | null;
+    observationId: string | null;
+  }[];
+  readonly metricRefs?: readonly {
+    snapshotId: string;
+    observationId: string;
+    valuePointer: string;
+  }[];
+  readonly clusterTopicNodeId?: string | null;
+  readonly clusterTopicModelRevision?: number | null;
+}) {
+  const fact = input?.fact;
+  const has = (key: string) =>
+    fact !== undefined && Object.prototype.hasOwnProperty.call(fact, key);
+  return {
+    projectionVersion: "growth-governance.1.0.0",
+    keywordClusters: [
+      {
+        clusterKey:
+          has("clusterKey")
+            ? (fact!.clusterKey ?? "Customer Onboarding")
+            : "Customer Onboarding",
+        ...(input?.clusterTopicNodeId === undefined ||
+        input.clusterTopicNodeId === null
+          ? {}
+          : {
+              topicNodeId: input.clusterTopicNodeId,
+              topicModelRevision:
+                input.clusterTopicModelRevision ?? 3,
+            }),
+        keywords: [
+          {
+            keywordEntityId: fact?.keywordEntityId ?? ids.keyword,
+            displayKeyword:
+              fact?.displayKeyword ?? "Customer Onboarding Software",
+            normalizedKeyword:
+              fact?.normalizedKeyword ?? "customer onboarding software",
+            marketCode: fact?.marketCode ?? "US",
+            languageTag: fact?.languageTag ?? "en-US",
+            revision: fact?.revision ?? 2,
+            status: fact?.status ?? "approved",
+            queryKind: fact?.queryKind ?? "search_query",
+            intent:
+              has("intent")
+                ? fact!.intent ?? null
+                : "commercial",
+            buyerStage:
+              has("buyerStage")
+                ? fact!.buyerStage ?? null
+                : "consideration",
+            clusterKey:
+              has("clusterKey")
+                ? fact!.clusterKey ?? null
+                : "Customer Onboarding",
+            mappingDecision: fact?.mappingDecision ?? "existing_page",
+            mappedSitePageId:
+              has("mappedSitePageId")
+                ? fact!.mappedSitePageId ?? null
+                : ids.sitePage,
+            mappingReviewState: fact?.mappingReviewState ?? "confirmed",
+            lastSeenAt: fact?.lastSeenAt ?? capturedAt,
+            occurrenceRefs: input?.occurrenceRefs ?? [
+              {
+                occurrenceId: ids.occurrence,
+                snapshotId: ids.snapshot,
+                observationId: ids.observation,
+              },
+            ],
+            metricRefs: input?.metricRefs ?? [],
+          },
+        ],
+      },
+    ],
+    competitors: [],
+  } as const;
+}
+
+function publishedGeneration(governance = frozenGovernance()) {
+  return {
+    run: {
+      id: ids.publishedRun,
+      workspace_id: ids.workspace,
+      project_id: ids.project,
+      site_id: "10000000-0000-4000-8000-000000000009",
+      icp_profile_id: "30000000-0000-4000-8000-000000000001",
+      icp_profile_version: 1,
+      rule_set_version: "mvp.rules.0.2.2",
+      prompt_set_version: "prompt-set",
+      output_locale: "en",
+      input_manifest: { governance, snapshots: [{ snapshotId: ids.snapshot }] },
+      input_hash: "hash",
+      coverage: {},
+      created_at: capturedAt,
+      run_status: "completed",
+      run_completed_at: capturedAt,
+    },
+    frozen: { snapshots: [] },
+    governance,
+  } as const;
+}
+
 function arrangeList(input: {
   entity?: KeywordEntityRow;
   occurrence?: KeywordOccurrenceRow;
-  nextOccurrenceCursor?: string | null;
+  governance?: ReturnType<typeof frozenGovernance>;
+  nextCursor?: string | null;
   observations?: readonly unknown[];
   snapshots?: readonly unknown[];
   collectionRuns?: readonly unknown[];
   sitePages?: readonly ReturnType<typeof sitePage>[];
 } = {}) {
   mockProject();
+  mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+    publishedGeneration(input.governance),
+  );
   const keyword = input.entity ?? entity();
-  vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+  vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+    keyword,
+  ]);
+  vi.spyOn(KeywordsRepository.prototype, "listByIdsPage").mockResolvedValue({
     rows: [keyword],
-    nextCursor: null,
-  });
-  vi.spyOn(
-    KeywordOccurrencesRepository.prototype,
-    "listForEntity",
-  ).mockResolvedValue({
-    rows: [input.occurrence ?? occurrence()],
-    nextCursor: input.nextOccurrenceCursor ?? null,
+    nextCursor: input.nextCursor ?? null,
   });
   vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue(
     (input.sitePages ?? [sitePage()]) as never,
   );
   const exec = new FakeExecutor();
   exec.enqueue(
+    [input.occurrence ?? occurrence()],
     input.observations ?? [dataForSeoObservation()],
     input.snapshots ?? [dataForSeoSnapshot()],
     input.collectionRuns ?? [collectionRun()],
@@ -338,6 +510,7 @@ function arrangeList(input: {
 
 beforeEach(() => {
   mocks.getDb.mockReset();
+  mocks.loadPublishedGrowthMapGeneration.mockReset();
 });
 
 afterEach(() => {
@@ -345,6 +518,42 @@ afterEach(() => {
 });
 
 describe("Growth Map Keyword Library read service", () => {
+  it("returns an empty unavailable page for a valid published generation with no governed keywords", async () => {
+    mockProject();
+    const governance = {
+      projectionVersion: "growth-governance.1.0.0",
+      keywordClusters: [],
+      competitors: [],
+    } as const;
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(governance as never),
+    );
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([]);
+    vi.spyOn(KeywordsRepository.prototype, "listByIdsPage").mockResolvedValue({
+      rows: [],
+      nextCursor: null,
+    });
+    const exec = new FakeExecutor();
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.publishedRun },
+      exec as never,
+    );
+
+    expect(response.data).toEqual([]);
+    expect(response.meta).toMatchObject({
+      hasNext: false,
+      nextCursor: null,
+      coverage: {
+        availability: "unavailable",
+        limitations: [expect.any(String)],
+      },
+    });
+    expect(exec.calls).toEqual([]);
+  });
+
   it("projects canonical value_json pointers, real DataForSEO scope, and verified Existing Page identity", async () => {
     const exec = arrangeList();
 
@@ -361,7 +570,7 @@ describe("Growth Map Keyword Library read service", () => {
       keywordId: ids.keyword,
       cluster: null,
       classificationLimitations: {
-        intent: expect.any(String),
+        intent: null,
         buyerStage: null,
         cluster: expect.stringMatching(/canonical cluster ID/i),
       },
@@ -426,11 +635,223 @@ describe("Growth Map Keyword Library read service", () => {
     ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
   });
 
-  it("marks an occurrence history capped at 100 as partial instead of silently claiming completeness", async () => {
+  it("projects ranked-keyword evidence from the exact composite search-landscape lineage", async () => {
     const exec = arrangeList({
-      nextOccurrenceCursor: Buffer.from(
-        "2026-07-21T08:00:00.000Z 10000000-0000-4000-8000-000000000010",
-      ).toString("base64url"),
+      snapshots: [dataForSeoSearchLandscapeSnapshot()],
+      collectionRuns: [searchLandscapeCollectionRun()],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, now: new Date("2026-07-22T09:00:00.000Z") },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      sourceOccurrences: [
+        expect.objectContaining({
+          sourceKind: "dataforseo_ranked",
+          snapshotId: ids.snapshot,
+          sourceObservationId: ids.observation,
+          sourcePointer: "/valueJson/keyword",
+          scopeLimitation: expect.stringMatching(
+            /search_landscape.*example\.com.*US.*en-US.*2840.*200.*75/is,
+          ),
+        }),
+      ],
+      metrics: {
+        currentRank: expect.objectContaining({
+          snapshotId: ids.snapshot,
+          observationId: ids.observation,
+          valuePointer: "/valueJson/currentRank",
+          value: 12,
+        }),
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain("must-not-leak");
+  });
+
+  it.each([
+    {
+      drift: "legacy Snapshot with composite CollectionRun",
+      snapshots: [dataForSeoSnapshot()],
+      collectionRuns: [searchLandscapeCollectionRun()],
+    },
+    {
+      drift: "composite Snapshot with legacy CollectionRun",
+      snapshots: [dataForSeoSearchLandscapeSnapshot()],
+      collectionRuns: [collectionRun()],
+    },
+    {
+      drift: "composite Snapshot with a forged method",
+      snapshots: [dataForSeoSearchLandscapeSnapshot()],
+      collectionRuns: [
+        searchLandscapeCollectionRun({
+          method_version: "dataforseo.ranked_keywords.v1",
+        }),
+      ],
+    },
+  ])("fails closed on $drift", async ({ snapshots, collectionRuns }) => {
+    const exec = arrangeList({ snapshots, collectionRuns });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+  });
+
+  it("projects frozen review facts and only flags that a newer live revision exists", async () => {
+    const exec = arrangeList({
+      entity: entity({
+        status: "parked",
+        intent: null,
+        buyer_stage: null,
+        cluster_key: "A newer mutable cluster",
+        mapping_decision: "new_asset",
+        mapped_site_page_id: null,
+        mapping_review_state: "unreviewed",
+        mapping_revision: 9,
+      }),
+      governance: frozenGovernance({
+        fact: {
+          status: "approved",
+          intent: "commercial",
+          buyerStage: "consideration",
+          clusterKey: "Customer Onboarding",
+          mappingDecision: "existing_page",
+          mappedSitePageId: ids.sitePage,
+          mappingReviewState: "confirmed",
+          revision: 2,
+        },
+      }),
+      nextCursor: "opaque-frozen-keyset",
+    });
+    const legacyLivePage = vi.spyOn(
+      KeywordsRepository.prototype,
+      "listByProject",
+    );
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(legacyLivePage).not.toHaveBeenCalled();
+    expect(response.meta.nextCursor).toBe("opaque-frozen-keyset");
+    expect(response.data[0]).toMatchObject({
+      status: "approved",
+      revision: 2,
+      intent: "commercial",
+      buyerStage: "consideration",
+      mappedTarget: {
+        kind: "existing_page",
+        sitePageId: ids.sitePage,
+        reviewState: "approved",
+        revision: 2,
+      },
+      coverage: {
+        availability: "partial",
+        limitations: expect.arrayContaining([
+          expect.stringMatching(/newer live Keyword review/i),
+        ]),
+      },
+    });
+  });
+
+  it("passes an exact pinned diagnosticRunId to the published generation helper for list and detail", async () => {
+    const listExec = arrangeList();
+    const detailExec = arrangeList();
+
+    await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.publishedRun,
+      },
+      listExec as never,
+    );
+    await getProjectAuditKeyword(
+      scope,
+      ids.project,
+      ids.keyword,
+      ids.publishedRun,
+      detailExec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenNthCalledWith(
+      1,
+      listExec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.publishedRun,
+    );
+    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenNthCalledWith(
+      2,
+      detailExec,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ids.publishedRun,
+    );
+  });
+
+  it("fails closed when a pinned published read resolves a different diagnostic run id", async () => {
+    const exec = arrangeList();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValueOnce({
+      ...publishedGeneration(),
+      run: {
+        ...publishedGeneration().run,
+        id: "20000000-0000-4000-8000-000000000099",
+      },
+    });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: ids.publishedRun,
+        },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("keeps frozen null classification and mapping facts instead of falling back to newer live values", async () => {
+    const exec = arrangeList({
+      entity: entity({
+        status: "parked",
+        intent: "commercial",
+        buyer_stage: "decision",
+        cluster_key: "newer-live-cluster",
+        mapping_decision: "existing_page",
+        mapped_site_page_id: ids.sitePage,
+        mapping_review_state: "confirmed",
+        mapping_revision: 9,
+      }),
+      governance: frozenGovernance({
+        fact: {
+          revision: 2,
+          status: "candidate",
+          intent: null,
+          buyerStage: null,
+          clusterKey: null,
+          mappingDecision: "new_asset",
+          mappedSitePageId: null,
+          mappingReviewState: "unreviewed",
+        },
+      }),
     });
 
     const response = await listProjectAuditKeywords(
@@ -440,11 +861,27 @@ describe("Growth Map Keyword Library read service", () => {
       exec as never,
     );
 
-    expect(response.data[0]?.coverage).toMatchObject({
-      availability: "partial",
-      limitations: expect.arrayContaining([
-        expect.stringMatching(/most recent 100 source occurrences/i),
-      ]),
+    expect(response.data[0]).toMatchObject({
+      status: "candidate",
+      revision: 2,
+      intent: null,
+      buyerStage: null,
+      cluster: null,
+      classificationLimitations: {
+        intent: expect.any(String),
+        buyerStage: expect.any(String),
+        cluster: expect.any(String),
+      },
+      mappedTarget: {
+        kind: "new_asset",
+        reviewState: "unreviewed",
+        revision: 2,
+      },
+      coverage: {
+        limitations: expect.arrayContaining([
+          expect.stringMatching(/newer live Keyword review/i),
+        ]),
+      },
     });
   });
 
@@ -558,6 +995,18 @@ describe("Growth Map Keyword Library read service", () => {
         mapping_review_state: "unreviewed",
         mapping_revision: 0,
       }),
+      governance: frozenGovernance({
+        fact: {
+          revision: 0,
+          status: "candidate",
+          intent: null,
+          buyerStage: null,
+          clusterKey: null,
+          mappingDecision: "unassigned",
+          mappedSitePageId: null,
+          mappingReviewState: "unreviewed",
+        },
+      }),
       occurrence: gscOccurrence,
       observations: [gscObservation],
       snapshots: [gscSnapshot],
@@ -565,7 +1014,7 @@ describe("Growth Map Keyword Library read service", () => {
         collectionRun({
           provider: "gsc",
           operation: "search_analytics",
-          method_version: "gsc.search_analytics.v1",
+          method_version: "gsc.page_query_daily.v1",
         }),
       ],
     });
@@ -823,7 +1272,41 @@ describe("Growth Map Keyword Library read service", () => {
 
   it("keeps a manual occurrence first-class without fabricated provider lineage", async () => {
     mockProject();
-    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          fact: {
+            queryKind: "generative_query",
+            revision: 0,
+            status: "candidate",
+            intent: null,
+            buyerStage: null,
+            clusterKey: null,
+            mappingDecision: "new_asset",
+            mappedSitePageId: null,
+            mappingReviewState: "unreviewed",
+          },
+          occurrenceRefs: [
+            {
+              occurrenceId: ids.occurrence,
+              snapshotId: null,
+              observationId: null,
+            },
+          ],
+        }),
+      ),
+    );
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      entity({
+        query_kind: "generative_query",
+        cluster_key: null,
+        mapping_decision: "new_asset",
+        mapped_site_page_id: null,
+        mapping_review_state: "unreviewed",
+        mapping_revision: 0,
+      }),
+    ]);
+    vi.spyOn(KeywordsRepository.prototype, "listByIdsPage").mockResolvedValue({
       rows: [
         entity({
           query_kind: "generative_query",
@@ -836,27 +1319,21 @@ describe("Growth Map Keyword Library read service", () => {
       ],
       nextCursor: null,
     });
-    vi.spyOn(
-      KeywordOccurrencesRepository.prototype,
-      "listForEntity",
-    ).mockResolvedValue({
-      rows: [
-        occurrence({
-          id: ids.occurrence,
-          data_snapshot_id: null,
-          normalized_observation_id: null,
-          query_kind: "generative_query",
-          source_kind: "manual",
-          scope_basis: "manual",
-          source_pointer: null,
-          source_ref: `manual:${ids.occurrence}`,
-          provider_data_as_of: null,
-        }),
-      ],
-      nextCursor: null,
-    });
     vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
     const exec = new FakeExecutor();
+    exec.enqueue([
+      occurrence({
+        id: ids.occurrence,
+        data_snapshot_id: null,
+        normalized_observation_id: null,
+        query_kind: "generative_query",
+        source_kind: "manual",
+        scope_basis: "manual",
+        source_pointer: null,
+        source_ref: `manual:${ids.occurrence}`,
+        provider_data_as_of: null,
+      }),
+    ]);
 
     const response = await listProjectAuditKeywords(
       scope,
@@ -877,12 +1354,12 @@ describe("Growth Map Keyword Library read service", () => {
         scopeBasis: "manual",
       }),
     ]);
-    expect(exec.calls).toEqual([]);
+    expect(exec.calls).toEqual(["select"]);
   });
 
   it("fails closed for archived projects and foreign Existing Page identities", async () => {
     mockProject(false);
-    const list = vi.spyOn(KeywordsRepository.prototype, "listByProject");
+    const list = vi.spyOn(KeywordsRepository.prototype, "listByIdsPage");
 
     await expect(
       listProjectAuditKeywords(
@@ -908,35 +1385,42 @@ describe("Growth Map Keyword Library read service", () => {
 
   it("returns detail from the append-only governance authority, including the canonical Topic identity and server-resolved name", async () => {
     mockProject();
-    const current = reviewedGovernance();
-    const legacyEntity = entity({
-      status: "approved",
-      intent: "commercial",
-      buyer_stage: "consideration",
-      cluster_key: "Customer Onboarding",
-      mapping_decision: "existing_page",
-      mapped_site_page_id: ids.sitePage,
-      mapping_review_state: "confirmed",
-      mapping_revision: 3,
-    });
-    const findCurrent = vi
-      .spyOn(KeywordGovernanceRepository.prototype, "findCurrent")
-      .mockResolvedValue(current);
-    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
-      legacyEntity,
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          fact: {
+            status: "approved",
+            intent: "commercial",
+            buyerStage: "consideration",
+            clusterKey: "Customer Onboarding",
+            mappingDecision: "existing_page",
+            mappedSitePageId: ids.sitePage,
+            mappingReviewState: "confirmed",
+            revision: 3,
+          },
+          clusterTopicNodeId: ids.topicNode,
+          clusterTopicModelRevision: 3,
+        }),
+      ),
     );
-    vi.spyOn(
-      KeywordOccurrencesRepository.prototype,
-      "listForEntity",
-    ).mockResolvedValue({
-      rows: [occurrence()],
-      nextCursor: null,
-    });
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      entity({
+        status: "candidate",
+        intent: null,
+        buyer_stage: null,
+        cluster_key: "new mutable cluster",
+        mapping_decision: "new_asset",
+        mapped_site_page_id: null,
+        mapping_review_state: "unreviewed",
+        mapping_revision: 7,
+      }),
+    ]);
     vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
       sitePage(),
     ] as never);
     const exec = new FakeExecutor();
     exec.enqueue(
+      [occurrence()],
       [dataForSeoObservation()],
       [dataForSeoSnapshot()],
       [collectionRun()],
@@ -946,13 +1430,10 @@ describe("Growth Map Keyword Library read service", () => {
       scope,
       ids.project,
       ids.keyword,
+      null,
       exec as never,
     );
 
-    expect(findCurrent).toHaveBeenCalledWith(
-      { workspaceId: ids.workspace, projectId: ids.project },
-      ids.keyword,
-    );
     expect(response.data).toMatchObject({
       status: "approved",
       revision: 3,
@@ -966,60 +1447,256 @@ describe("Growth Map Keyword Library read service", () => {
       mappedTarget: {
         kind: "existing_page",
         sitePageId: ids.sitePage,
+        reviewState: "approved",
         revision: 3,
-        reason: current.projection.reason,
+      },
+      coverage: {
+        limitations: expect.arrayContaining([
+          expect.stringMatching(/newer live Keyword review/i),
+        ]),
       },
     });
   });
 
-  it("returns not-found only when the governance authority says the scoped Keyword is absent", async () => {
+  it("returns not-found when the scoped keyword is absent from the frozen published manifest", async () => {
     mockProject();
-    const findEntity = vi.spyOn(
-      KeywordsRepository.prototype,
-      "findById",
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          fact: {
+            keywordEntityId:
+              "10000000-0000-4000-8000-000000000099",
+          },
+        }),
+      ),
     );
-    vi.spyOn(
-      KeywordGovernanceRepository.prototype,
-      "findCurrent",
-    ).mockResolvedValue(null);
+    const findEntities = vi.spyOn(KeywordsRepository.prototype, "listByIds");
 
     await expect(
       getProjectAuditKeyword(
         scope,
         ids.project,
         ids.keyword,
+        null,
         new FakeExecutor() as never,
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(findEntity).not.toHaveBeenCalled();
+    expect(findEntities).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "CURRENT_DECISION_MISSING",
-    "CURRENT_DECISION_DIVERGED",
-    "LEGACY_PROJECTION_DIVERGED",
-  ] as const)(
-    "fails closed when detail governance authority reports %s",
-    async (code) => {
-      mockProject();
-      vi.spyOn(
-        KeywordGovernanceRepository.prototype,
-        "findCurrent",
-      ).mockRejectedValue(new KeywordGovernanceIntegrityError(code));
+  it("fails closed when frozen occurrence lineage drifts from the exact published manifest", async () => {
+    mockProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(),
+    );
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      entity(),
+    ]);
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const exec = new FakeExecutor();
+    exec.enqueue([
+      occurrence({
+        data_snapshot_id: "10000000-0000-4000-8000-000000000099",
+      }),
+    ]);
 
-      await expect(
-        getProjectAuditKeyword(
-          scope,
-          ids.project,
-          ids.keyword,
-          new FakeExecutor() as never,
-        ),
-      ).rejects.toMatchObject({
-        code: "DEPENDENCY_UNAVAILABLE",
-        status: 503,
-      });
-    },
-  );
+    await expect(
+      getProjectAuditKeyword(
+        scope,
+        ids.project,
+        ids.keyword,
+        null,
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("fails closed when a future frozen governance emits exact metricRefs", async () => {
+    mockProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          metricRefs: [
+            {
+              snapshotId: ids.snapshot,
+              observationId: ids.observation,
+              valuePointer: "/valueJson/searchVolume",
+            },
+          ],
+        }),
+      ),
+    );
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      entity(),
+    ]);
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [occurrence()],
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    await expect(
+      getProjectAuditKeyword(
+        scope,
+        ids.project,
+        ids.keyword,
+        null,
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("keeps published r2 frozen while live review detail and PATCH advance to r3", async () => {
+    mockProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          fact: {
+            revision: 2,
+            status: "approved",
+            intent: "commercial",
+            buyerStage: "consideration",
+            clusterKey: "Customer Onboarding",
+            mappingDecision: "existing_page",
+            mappedSitePageId: ids.sitePage,
+            mappingReviewState: "confirmed",
+          },
+          clusterTopicNodeId: ids.topicNode,
+          clusterTopicModelRevision: 2,
+        }),
+      ),
+    );
+    const liveGovernance = {
+      ...reviewedGovernance(),
+      decision: {
+        ...reviewedGovernance().decision,
+        governanceRevision: 3,
+      },
+      projection: {
+        ...reviewedGovernance().projection,
+        governanceRevision: 3,
+        mappingRevision: 3,
+      },
+      reviewedProjection: {
+        ...reviewedGovernance().reviewedProjection,
+        governanceRevision: 3,
+      },
+    } as const;
+    const liveEntity = entity({
+      status: "candidate",
+      intent: null,
+      buyer_stage: null,
+      cluster_key: "new mutable cluster",
+      mapping_decision: "new_asset",
+      mapped_site_page_id: null,
+      mapping_review_state: "unreviewed",
+      mapping_revision: 3,
+    });
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      liveEntity,
+    ]);
+    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
+      entity({
+        status: "approved",
+        intent: "commercial",
+        buyer_stage: "consideration",
+        cluster_key: "Customer Onboarding",
+        mapping_decision: "existing_page",
+        mapped_site_page_id: ids.sitePage,
+        mapping_review_state: "confirmed",
+        mapping_revision: 3,
+      }),
+    );
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "findCurrent",
+    ).mockResolvedValue(liveGovernance);
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({
+      rows: [occurrence()],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockResolvedValue({
+      ...liveGovernance,
+      replayed: false,
+    });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [occurrence()],
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const publishedBefore = await getProjectAuditKeyword(
+      scope,
+      ids.project,
+      ids.keyword,
+      null,
+      exec as never,
+    );
+    const patchResponse = await reviewProjectAuditKeyword(
+      { workspaceId: ids.workspace, actorId: ids.actor },
+      ids.project,
+      ids.keyword,
+      {
+        expectedGovernanceRevision: 2,
+        status: "approved",
+        intent: "commercial",
+        buyerStage: "consideration",
+        topicNodeId: ids.topicNode,
+        topicModelRevision: 3,
+        mappingDecision: "existing_page",
+        mappedSitePageId: ids.sitePage,
+        reason: reviewedGovernance().projection.reason,
+      },
+      exec as never,
+    );
+    const reviewDetail = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(publishedBefore.data.revision).toBe(2);
+    expect(patchResponse.data.revision).toBe(3);
+    expect(reviewDetail.data.revision).toBe(3);
+    expect(patchResponse.data.mappedTarget).toMatchObject({
+      kind: "existing_page",
+      sitePageId: ids.sitePage,
+      reviewState: "approved",
+      revision: 3,
+      reason: reviewedGovernance().projection.reason,
+    });
+  });
 
   it.each([
     "customer-private-malformed-keyset",
@@ -1094,16 +1771,24 @@ describe("Growth Map Keyword governance review service", () => {
 
   function arrangeReviewedDetail() {
     mockProject();
-    const reviewed = entity({
-      status: "approved",
-      intent: "commercial",
-      buyer_stage: "consideration",
-      cluster_key: "Customer Onboarding",
-      mapping_decision: "existing_page",
-      mapped_site_page_id: ids.sitePage,
-      mapping_review_state: "confirmed",
-      mapping_revision: 3,
-    });
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(
+      publishedGeneration(
+        frozenGovernance({
+          fact: {
+            status: "approved",
+            intent: "commercial",
+            buyerStage: "consideration",
+            clusterKey: "Customer Onboarding",
+            mappingDecision: "existing_page",
+            mappedSitePageId: ids.sitePage,
+            mappingReviewState: "confirmed",
+            revision: 3,
+          },
+          clusterTopicNodeId: ids.topicNode,
+          clusterTopicModelRevision: 3,
+        }),
+      ),
+    );
     vi.spyOn(
       KeywordGovernanceRepository.prototype,
       "reviewKeyword",
@@ -1116,7 +1801,16 @@ describe("Growth Map Keyword governance review service", () => {
       "findCurrent",
     ).mockResolvedValue(reviewedGovernance());
     vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
-      reviewed,
+      entity({
+        status: "approved",
+        intent: "commercial",
+        buyer_stage: "consideration",
+        cluster_key: "Customer Onboarding",
+        mapping_decision: "existing_page",
+        mapped_site_page_id: ids.sitePage,
+        mapping_review_state: "confirmed",
+        mapping_revision: 3,
+      }),
     );
     vi.spyOn(
       KeywordOccurrencesRepository.prototype,
@@ -1125,6 +1819,18 @@ describe("Growth Map Keyword governance review service", () => {
       rows: [occurrence()],
       nextCursor: null,
     });
+    vi.spyOn(KeywordsRepository.prototype, "listByIds").mockResolvedValue([
+      entity({
+        status: "approved",
+        intent: "commercial",
+        buyer_stage: "consideration",
+        cluster_key: "Customer Onboarding",
+        mapping_decision: "existing_page",
+        mapped_site_page_id: ids.sitePage,
+        mapping_review_state: "confirmed",
+        mapping_revision: 3,
+      }),
+    ]);
     vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
       sitePage(),
     ] as never);
@@ -1172,7 +1878,7 @@ describe("Growth Map Keyword governance review service", () => {
           kind: "existing_page",
           sitePageId: ids.sitePage,
           revision: 3,
-          reason: review.reason,
+          reason: reviewedGovernance().projection.reason,
         },
       },
     });

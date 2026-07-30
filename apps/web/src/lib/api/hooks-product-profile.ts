@@ -185,9 +185,11 @@ export async function getProductProfileRun(
 }
 
 /**
- * Product Profile changes affect both the read surface and the project shell's
- * readiness projection. Sources are invalidated too because an explicit Crawl
- * recovery changes the evidence state shown beside synthesis.
+ * Product Profile changes affect the read surface, project shell, source
+ * readiness, and Growth Map governance. A confirmed competitor is projected
+ * into the canonical Competitor Library in the same transaction, so keeping a
+ * previously cached Growth Map would hide a real customer change for up to the
+ * global stale window.
  */
 export async function invalidateProductProfileQueries(
   queryClient: QueryClient,
@@ -198,6 +200,7 @@ export async function invalidateProductProfileQueries(
     queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
     queryClient.invalidateQueries({ queryKey: ["workspace", projectId] }),
     queryClient.invalidateQueries({ queryKey: ["sources", projectId] }),
+    queryClient.invalidateQueries({ queryKey: ["growth-map", projectId] }),
   ]);
 }
 

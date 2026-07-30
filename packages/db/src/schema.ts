@@ -294,7 +294,60 @@ export const asyncRuns = app.table("async_runs", {
 });
 
 // ---------------------------------------------------------------------------
-// 11. collection_runs  (id shares async_runs.id)
+// 11. analysis_refresh_runs  (id shares async_runs.id)
+// ---------------------------------------------------------------------------
+export const analysisRefreshRuns = app.table("analysis_refresh_runs", {
+  id: uuid()
+    .primaryKey()
+    .references(() => asyncRuns.id),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  icp_profile_id: uuid()
+    .notNull()
+    .references(() => icpProfiles.id),
+  plan_manifest: jsonb().$type<JsonObject>().notNull(),
+  plan_hash: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 12. analysis_refresh_steps
+// ---------------------------------------------------------------------------
+export const analysisRefreshSteps = app.table("analysis_refresh_steps", {
+  analysis_refresh_run_id: uuid()
+    .notNull()
+    .references(() => analysisRefreshRuns.id),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  ordinal: smallint().notNull(),
+  step_key: text().notNull(),
+  required: boolean().notNull(),
+  state: text().notNull().default("pending"),
+  child_async_run_id: uuid().references(() => asyncRuns.id),
+  result_snapshot_id: uuid().references(
+    (): AnyPgColumn => dataSnapshots.id,
+  ),
+  skip_reason: text(),
+  error: jsonb().$type<JsonObject>(),
+  started_at: tz(),
+  completed_at: tz(),
+  created_at: tz().notNull().defaultNow(),
+  updated_at: tz().notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// 13. collection_runs  (id shares async_runs.id)
 // ---------------------------------------------------------------------------
 export const collectionRuns = app.table("collection_runs", {
   id: uuid()
@@ -2503,6 +2556,8 @@ export const schema = {
   oauthIntents,
   importPreviews,
   asyncRuns,
+  analysisRefreshRuns,
+  analysisRefreshSteps,
   collectionRuns,
   dataSnapshots,
   productProfileRuns,

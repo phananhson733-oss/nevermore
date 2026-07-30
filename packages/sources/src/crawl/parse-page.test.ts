@@ -27,6 +27,10 @@ const HOME_HTML = `<!doctype html>
 describe("parsePage", () => {
   it("extracts core content facts from a normal page", () => {
     const page = parsePage(HOME_HTML, BASE);
+    expect(page.htmlLanguage).toEqual({
+      declaredTag: "en",
+      canonicalTag: "en",
+    });
     expect(page.title).toBe("Example Home");
     expect(page.metaDescription).toBe("The example homepage.");
     expect(page.canonicalTarget).toBe("https://example.com/");
@@ -39,6 +43,42 @@ describe("parsePage", () => {
     expect(page.paragraphs).toContain("Example builds delightful widgets for delightful people.");
     expect(page.bodyExcerpt).not.toBeNull();
     expect(page.jsonLd).toEqual({ types: ["Organization"], errorCount: 0 });
+  });
+
+  it("canonicalizes a valid html lang without inferring a missing region", () => {
+    expect(
+      parsePage(`<html lang=" zh-hant-tw "><body>你好</body></html>`, BASE)
+        .htmlLanguage,
+    ).toEqual({
+      declaredTag: "zh-hant-tw",
+      canonicalTag: "zh-Hant-TW",
+    });
+    expect(
+      parsePage(`<html lang="en"><body>Hello</body></html>`, BASE)
+        .htmlLanguage,
+    ).toEqual({
+      declaredTag: "en",
+      canonicalTag: "en",
+    });
+  });
+
+  it("retains invalid non-empty declarations as evidence but never canonicalizes them", () => {
+    expect(
+      parsePage(`<html lang="en_US"><body>Hello</body></html>`, BASE)
+        .htmlLanguage,
+    ).toEqual({
+      declaredTag: "en_US",
+      canonicalTag: null,
+    });
+  });
+
+  it("treats a missing or empty html lang as missing evidence", () => {
+    expect(parsePage(`<html><body>Hello</body></html>`, BASE).htmlLanguage).toBe(
+      null,
+    );
+    expect(
+      parsePage(`<html lang="  "><body>Hello</body></html>`, BASE).htmlLanguage,
+    ).toBe(null);
   });
 
   it("keeps only same-origin outlinks, canonicalized, with rel + anchor text", () => {

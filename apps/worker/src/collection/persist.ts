@@ -16,6 +16,7 @@ import {
 } from "@sf/db";
 import {
   objectKey,
+  parseCrawlSiteLanguageSnapshotSummary,
   SourceError,
   type Availability,
   type BlobPutResult,
@@ -103,6 +104,26 @@ export async function persistCollectionResult(
         }
       : {}),
   });
+  const crawlSiteLanguage =
+    run.provider === "crawl"
+      ? parseCrawlSiteLanguageSnapshotSummary(outcome.summary ?? {})
+      : null;
+  if (crawlSiteLanguage !== null) {
+    const crawlPageUrls = new Set(
+      crawlPages.map((page) => page.normalizedUrl),
+    );
+    if (
+      crawlSiteLanguage.pagesAnalyzed !== crawlPages.length ||
+      crawlSiteLanguage.evidence.some(
+        (sample) => !crawlPageUrls.has(sample.fetchUrl),
+      )
+    ) {
+      throw new SourceError(
+        "INVALID_RESPONSE",
+        "Crawl site-language snapshot summary is invalid.",
+      );
+    }
+  }
 
   // The key is known before either side touches Storage, so the writer and
   // orphan cleanup can serialize their final decisions on the same advisory
@@ -228,6 +249,19 @@ export async function persistCollectionResult(
         run.provider,
         observationsWithPageLineage,
       );
+      if (
+        projectionsMutable &&
+        canonicalSite.is_primary &&
+        outcome.availability === "available" &&
+        crawlSiteLanguage?.status === "resolved" &&
+        crawlSiteLanguage.languageTag !== null
+      ) {
+        await new SitesRepository(tx).projectPrimaryLanguageIfEmpty(
+          scope,
+          run.site_id,
+          crawlSiteLanguage.languageTag,
+        );
+      }
       const monitorProjection = await projectCompetitorMonitorSnapshot(
         tx,
         scope,

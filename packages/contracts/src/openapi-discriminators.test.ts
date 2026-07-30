@@ -155,6 +155,7 @@ type _RunKinds = Expect<
     | "content_shadow"
     | "publication"
     | "measurement"
+    | "analysis_refresh"
   >
 >;
 type AsyncRunResult = NonNullable<
@@ -172,6 +173,7 @@ type _AsyncRunResultKinds = Expect<
     | "flow_shadow_run"
     | "publication_attempt"
     | "measurement_window"
+    | "analysis_refresh_run"
   >
 >;
 

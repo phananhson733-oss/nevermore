@@ -98,6 +98,10 @@ const EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS = [
     file: "apps/web/src/app/api/mvp/projects/[projectId]/collection-runs/route.ts",
   },
   {
+    operationId: "createAnalysisRefreshRun",
+    file: "apps/web/src/app/api/mvp/projects/[projectId]/analysis-refresh-runs/route.ts",
+  },
+  {
     operationId: "createDiagnosticRun",
     file: "apps/web/src/app/api/mvp/projects/[projectId]/diagnostic-runs/route.ts",
   },
@@ -346,6 +350,107 @@ function checkOpenApi() {
     "OpenAPI operationIds",
   );
 
+  const sourcesRead =
+    document.paths?.["/projects/{projectId}/sources"]?.get;
+  invariant(
+    sourcesRead?.operationId === "listProjectSources" &&
+      typeof sourcesRead.description === "string" &&
+      sourcesRead.description.includes("CONTEXT_INCOMPLETE") &&
+      /Archived projects preserve/.test(sourcesRead.description) &&
+      sourcesRead.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError",
+    "Sources read must gate active projects on confirmed Product/ICP, expose CONTEXT_INCOMPLETE, and preserve archived history",
+  );
+
+  const publicCollection =
+    document.paths?.["/projects/{projectId}/collection-runs"]?.post;
+  const analysisRefresh =
+    document.paths?.["/projects/{projectId}/analysis-refresh-runs"]?.post;
+  invariant(
+    publicCollection?.operationId === "createCollectionRun",
+    "public collection path/operationId drift",
+  );
+  invariant(
+    analysisRefresh?.operationId === "createAnalysisRefreshRun",
+    "Analysis Refresh path/operationId drift",
+  );
+  const collectionRequest =
+    document.components?.schemas?.CreateCollectionRunRequest;
+  invariant(
+    collectionRequest?.additionalProperties === false &&
+      Array.isArray(collectionRequest.required),
+    "public collection request must remain a closed provider command",
+  );
+  assertExactSet(
+    collectionRequest?.required ?? [],
+    ["provider"],
+    "public collection required fields",
+  );
+  assertExactSet(
+    Object.keys(collectionRequest?.properties ?? {}),
+    ["provider", "sourceConnectionId", "operation"],
+    "public collection request fields",
+  );
+  assertExactSet(
+    collectionRequest?.properties?.provider?.enum ?? [],
+    ["crawl", "gsc", "ga4"],
+    "public collection provider allowlist",
+  );
+  assertExactSet(
+    collectionRequest?.properties?.operation?.enum ?? [],
+    ["site_graph", "search_analytics", "organic_landing"],
+    "public collection operation allowlist",
+  );
+  invariant(
+    typeof publicCollection.description === "string" &&
+      /DataForSEO Search\s+Landscape \(DFS\)/.test(
+        publicCollection.description,
+      ),
+    "public collection contract must identify DFS Search Landscape as server-owned",
+  );
+  const analysisRefreshRequest =
+    document.components?.schemas?.CreateAnalysisRefreshRunRequest;
+  invariant(
+    analysisRefreshRequest?.type === "object" &&
+      analysisRefreshRequest.additionalProperties === false &&
+      analysisRefreshRequest.maxProperties === 0 &&
+      Object.keys(analysisRefreshRequest.properties ?? {}).length === 0,
+    "Analysis Refresh request must remain a strict empty object",
+  );
+  invariant(
+    analysisRefresh?.requestBody?.required === false &&
+      analysisRefresh.requestBody?.content?.["application/json"]?.schema
+        ?.$ref ===
+        "#/components/schemas/CreateAnalysisRefreshRunRequest" &&
+      typeof analysisRefresh.description === "string" &&
+      /DataForSEO Search\s+Landscape \(DFS\)/.test(
+        analysisRefresh.description,
+      ),
+    "Analysis Refresh must own the fixed DFS Search Landscape step",
+  );
+
+  const diagnosticRunIdPin =
+    document.components?.parameters?.DiagnosticRunIdPin;
+  invariant(
+    diagnosticRunIdPin?.name === "diagnosticRunId" &&
+      diagnosticRunIdPin.in === "query" &&
+      diagnosticRunIdPin.required === false &&
+      diagnosticRunIdPin.schema?.type === "string" &&
+      diagnosticRunIdPin.schema.format === "uuid" &&
+      diagnosticRunIdPin.schema.pattern ===
+        "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    "Growth Map diagnosticRunId pin must remain one optional canonical lowercase UUID",
+  );
+  const reviewView = document.components?.parameters?.ReviewView;
+  invariant(
+    reviewView?.name === "view" &&
+      reviewView.in === "query" &&
+      reviewView.required === false &&
+      reviewView.schema?.type === "string" &&
+      reviewView.schema.const === "review",
+    "Growth Map review view must remain the exact optional view=review literal",
+  );
+
   const growthMapList =
     document.paths?.["/projects/{projectId}/audit/urls"]?.get;
   const growthMapDetail =
@@ -367,6 +472,7 @@ function checkOpenApi() {
       "#/components/parameters/ProjectId",
       "#/components/parameters/Limit",
       "#/components/parameters/Cursor",
+      "#/components/parameters/DiagnosticRunIdPin",
     ],
     "Growth Map URL list shared parameters",
   );
@@ -404,6 +510,7 @@ function checkOpenApi() {
     [
       "#/components/parameters/ProjectId",
       "#/components/parameters/SitePageId",
+      "#/components/parameters/DiagnosticRunIdPin",
     ],
     "Growth Map URL detail parameters",
   );
@@ -423,9 +530,13 @@ function checkOpenApi() {
   invariant(
     growthMapList.responses?.["503"]?.$ref ===
       "#/components/responses/DependencyUnavailable" &&
+      growthMapList.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
+      growthMapDetail.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
       growthMapDetail.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable",
-    "Growth Map URL reads must expose fail-closed frozen-lineage failures as DEPENDENCY_UNAVAILABLE",
+    "Growth Map URL reads must expose query validation and fail-closed frozen-lineage failures",
   );
   const growthMapFinding =
     document.components?.schemas?.GrowthMapUrlFinding;
@@ -476,20 +587,28 @@ function checkOpenApi() {
       "#/components/parameters/ProjectId",
       "#/components/parameters/Limit",
       "#/components/parameters/Cursor",
+      "#/components/parameters/DiagnosticRunIdPin",
     ],
-    "Growth Map Keyword list query must be exactly limit/cursor",
+    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId",
   );
   invariant(
     keywordListParameterRefs.every((reference) => typeof reference === "string"),
-    "Growth Map Keyword list query must be exactly limit/cursor",
+    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId",
   );
   assertExactSet(
     (keywordDetail.parameters ?? []).map((parameter) => parameter.$ref),
     [
       "#/components/parameters/ProjectId",
       "#/components/parameters/KeywordId",
+      "#/components/parameters/DiagnosticRunIdPin",
+      "#/components/parameters/ReviewView",
     ],
     "Growth Map Keyword detail parameters",
+  );
+  invariant(
+    keywordDetail?.["x-signalframe-query-refinement"] ===
+      "reviewViewAndDiagnosticRunIdAreMutuallyExclusive",
+    "Growth Map Keyword detail must keep review view mutually exclusive with the generation pin",
   );
   assertExactSet(
     (keywordReview.parameters ?? []).map((parameter) => parameter.$ref),
@@ -498,6 +617,11 @@ function checkOpenApi() {
       "#/components/parameters/KeywordId",
     ],
     "Growth Map Keyword review parameters",
+  );
+  invariant(
+    keywordReview?.["x-signalframe-query-contract"] ===
+      "rejectAllQueryParameters",
+    "Growth Map Keyword PATCH must reject every query parameter",
   );
   invariant(
     keywordReview.requestBody?.required === true &&
@@ -522,6 +646,8 @@ function checkOpenApi() {
       "#/components/responses/ValidationError" &&
       keywordList.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
+      keywordDetail.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
       keywordDetail.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
       keywordReview.responses?.["409"]?.$ref ===
@@ -816,8 +942,9 @@ function checkOpenApi() {
       "#/components/parameters/ProjectId",
       "#/components/parameters/Limit",
       "#/components/parameters/Cursor",
+      "#/components/parameters/DiagnosticRunIdPin",
     ],
-    "Growth Map Competitor list query must be exactly limit/cursor",
+    "Growth Map Competitor list query must be exactly limit/cursor/diagnosticRunId",
   );
   assertExactSet(
     (competitorDetail?.parameters ?? []).map(
@@ -826,8 +953,15 @@ function checkOpenApi() {
     [
       "#/components/parameters/ProjectId",
       "#/components/parameters/CompetitorId",
+      "#/components/parameters/DiagnosticRunIdPin",
+      "#/components/parameters/ReviewView",
     ],
     "Growth Map Competitor detail parameters",
+  );
+  invariant(
+    competitorDetail?.["x-signalframe-query-refinement"] ===
+      "reviewViewAndDiagnosticRunIdAreMutuallyExclusive",
+    "Growth Map Competitor detail must keep review view mutually exclusive with the generation pin",
   );
   assertExactSet(
     (competitorReview?.parameters ?? []).map(
@@ -838,6 +972,11 @@ function checkOpenApi() {
       "#/components/parameters/CompetitorId",
     ],
     "Growth Map Competitor review parameters",
+  );
+  invariant(
+    competitorReview?.["x-signalframe-query-contract"] ===
+      "rejectAllQueryParameters",
+    "Growth Map Competitor PATCH must reject every query parameter",
   );
   invariant(
     competitorReview?.requestBody?.required === true &&
@@ -864,6 +1003,8 @@ function checkOpenApi() {
       "#/components/responses/ValidationError" &&
       competitorList.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
+      competitorDetail.responses?.["422"]?.$ref ===
+        "#/components/responses/ValidationError" &&
       competitorDetail?.responses?.["503"]?.$ref ===
         "#/components/responses/DependencyUnavailable" &&
       competitorReview?.responses?.["409"]?.$ref ===
@@ -1788,6 +1929,35 @@ function checkDatabaseContract() {
   invariant(
     !/^\s*status\s+/im.test(capabilityRuns),
     "capability_runs must not create a second mutable status lifecycle",
+  );
+
+  const analysisRefreshRuns = tableDefinition("analysis_refresh_runs");
+  invariant(
+    /id\s+uuid\s+PRIMARY KEY\s+REFERENCES\s+app\.async_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+      analysisRefreshRuns,
+    ) &&
+      /\bsite_id\s+uuid\s+NOT NULL[\s\S]*?REFERENCES\s+app\.sites\(id\)/i.test(
+        analysisRefreshRuns,
+      ) &&
+      /\bicp_profile_id\s+uuid\s+NOT NULL[\s\S]*?REFERENCES\s+app\.icp_profiles\(id\)/i.test(
+        analysisRefreshRuns,
+      ) &&
+      /\bplan_manifest\s+jsonb\s+NOT NULL/i.test(analysisRefreshRuns) &&
+      /\bplan_hash\s+text\s+NOT NULL/i.test(analysisRefreshRuns),
+    "analysis_refresh_runs must freeze one canonical async run, Site, ICP, manifest, and hash",
+  );
+  const analysisRefreshSteps = tableDefinition("analysis_refresh_steps");
+  invariant(
+    /state\s+text\s+NOT NULL\s+DEFAULT\s+'pending'[\s\S]*?'running'[\s\S]*?'completed'[\s\S]*?'skipped'[\s\S]*?'failed'/i.test(
+      analysisRefreshSteps,
+    ) &&
+      /UNIQUE\s*\(\s*analysis_refresh_run_id\s*,\s*step_key\s*\)/i.test(
+        analysisRefreshSteps,
+      ) &&
+      /UNIQUE\s*\(\s*analysis_refresh_run_id\s*,\s*ordinal\s*\)/i.test(
+        analysisRefreshSteps,
+      ),
+    "analysis_refresh_steps must freeze unique ordered step identity and the complete execution state vocabulary",
   );
 
   const auditRuns = tableDefinition("audit_runs");

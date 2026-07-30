@@ -1,7 +1,9 @@
-import { z } from "zod";
-import type { QueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/lib/api";
-import { isRunTerminal, type RunStatus } from "@/lib/api/hooks-diagnosis";
+import {
+  analysisRefreshRunIdFromError,
+  isTerminalRunStatus,
+  type RunStatus,
+} from "@/lib/api/hooks-sources";
 
 /**
  * Closed state machine behind the Growth Map "Run diagnosis" control
@@ -34,7 +36,7 @@ export interface RunDiagnosisState {
   /** A 409 takeover (or unknown conflict) is being surfaced to the operator. */
   readonly runActiveNotice: boolean;
   /**
-   * Sticky 422 gate (CONTEXT_INCOMPLETE or CRAWL_SNAPSHOT_REQUIRED); released
+   * Sticky 422 gate (CONTEXT_INCOMPLETE or SOURCE_NOT_CONNECTED); released
    * only by the matching explicit recheck, never by another click. Both gates
    * share one shape so neither can silently re-POST into the rate limit.
    */
@@ -57,14 +59,17 @@ export const INITIAL_RUN_DIAGNOSIS_STATE: RunDiagnosisState = {
   sessionHasTerminal: false,
 };
 
-export interface DiagnosticRunPointer {
+export interface AnalysisRefreshRunPointer {
   readonly runId: string;
 }
 
 export type RunDiagnosisEvent =
   | { readonly type: "submit" }
   | { readonly type: "accepted"; readonly runId: string }
-  | { readonly type: "conflict"; readonly pointer: DiagnosticRunPointer | null }
+  | {
+      readonly type: "conflict";
+      readonly pointer: AnalysisRefreshRunPointer | null;
+    }
   | { readonly type: "serverGate"; readonly gate: RunDiagnosisServerGate }
   | { readonly type: "submitFailed" }
   | {
@@ -131,7 +136,7 @@ export function reduceRunDiagnosis(
     case "runTerminal": {
       if (state.phase !== "tracking") return state;
       if (event.runId !== state.trackedRunId) return state;
-      if (!isRunTerminal(event.status)) return state;
+      if (!isTerminalRunStatus(event.status)) return state;
       const invalidated =
         isSuccessTerminal(event.status) &&
         !state.invalidatedRunIds.includes(event.runId)
@@ -149,7 +154,7 @@ export function reduceRunDiagnosis(
     case "recheckGate": {
       // Releases only the gate it names: a context recheck can never unlock a
       // crawl gate (and vice versa). The crawl recheck is dispatched by the
-      // component strictly after a successful snapshots.refetch().
+      // component strictly after a successful sources.refetch().
       if (state.serverGate !== event.gate) return state;
       return { ...state, serverGate: null };
     }
@@ -218,75 +223,24 @@ export function runDiagnosisStatusPill(
   return state.terminal?.status ?? null;
 }
 
-/**
- * `Problem.current` is only `Record<string, unknown>` on the wire. A 409 is
- * adopted solely when it names a well-formed run id; anything else becomes
- * `conflictUnknown` so an unvalidated value can never be polled (D7). The
- * pointer's `statusUrl` is deliberately not consumed: the poll builds its own
- * project-scoped path from the run id.
- */
-const DiagnosticRunPointerSchema = z.object({ runId: z.uuid() });
-
-export function parseDiagnosticRunPointer(
-  current: Readonly<Record<string, unknown>> | null | undefined,
-): DiagnosticRunPointer | null {
-  const parsed = DiagnosticRunPointerSchema.safeParse(current);
-  return parsed.success ? { runId: parsed.data.runId } : null;
-}
-
-/** Map one submission failure onto exactly one machine event (D7). */
+/** Map one Analysis Refresh submission failure onto one machine event (D7). */
 export function runDiagnosisEventFromError(error: unknown): RunDiagnosisEvent {
   if (error instanceof ApiError) {
     switch (error.code) {
-      case "RUN_ALREADY_ACTIVE":
+      case "RUN_ALREADY_ACTIVE": {
+        const runId = analysisRefreshRunIdFromError(error);
         return {
           type: "conflict",
-          pointer: parseDiagnosticRunPointer(error.problem.current),
+          pointer: runId === null ? null : { runId },
         };
+      }
       case "CONTEXT_INCOMPLETE":
         return { type: "serverGate", gate: "context" };
-      case "CRAWL_SNAPSHOT_REQUIRED":
+      case "SOURCE_NOT_CONNECTED":
         return { type: "serverGate", gate: "crawl" };
       default:
         return { type: "submitFailed" };
     }
   }
   return { type: "submitFailed" };
-}
-
-/**
- * Success-terminal refresh (D5). Growth Map keys are
- * `["growth-map", projectId, uiLocale, ...]`, so the two-segment prefix hits
- * every list/detail suffix in BOTH locale caches. Findings and the snapshot
- * chain feed the next run's inputs. `workspace` and `project` are included on
- * evidence, not habit: the diagnostic worker advances `project.stage` to
- * "planning" on completion (`run-diagnostic.ts` setStage) and the workspace
- * overview projects coverage/topActions/frozenDiagnosticRunId from the run.
- */
-export async function refreshAfterDiagnosticTerminal(
-  queryClient: QueryClient,
-  projectId: string,
-): Promise<void> {
-  await Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: ["growth-map", projectId],
-      refetchType: "active",
-    }),
-    queryClient.invalidateQueries({
-      queryKey: ["findings", projectId],
-      refetchType: "active",
-    }),
-    queryClient.invalidateQueries({
-      queryKey: ["snapshots", projectId],
-      refetchType: "active",
-    }),
-    queryClient.invalidateQueries({
-      queryKey: ["workspace", projectId],
-      refetchType: "active",
-    }),
-    queryClient.invalidateQueries({
-      queryKey: ["project", projectId],
-      refetchType: "active",
-    }),
-  ]);
 }

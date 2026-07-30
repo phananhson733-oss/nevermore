@@ -16,7 +16,11 @@ import {
   SitesRepository,
   type DataSnapshotRow,
 } from "@sf/db";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+} from "@sf/sources";
 import type { CreateActionRecheckRequest } from "@sf/contracts";
 
 const mocks = vi.hoisted(() => {
@@ -189,11 +193,13 @@ function mockHappyPathInputs() {
   } as never);
   vi.spyOn(
     DataSnapshotsRepository.prototype,
-    "findLatestEligibleCrawlBySite",
-  ).mockResolvedValue({ id: snapshotId } as never);
-  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
-    crawlSnapshot,
-  ]);
+    "findLatestEligibleBySite",
+  ).mockImplementation(async (_scope, _siteId, selectors) =>
+    selectors[0]?.datasetKey ===
+    DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+      ? []
+      : [crawlSnapshot],
+  );
   vi.spyOn(
     KeywordsRepository.prototype,
     "listDiagnosticEligible",

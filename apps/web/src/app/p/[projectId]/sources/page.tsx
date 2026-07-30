@@ -1,3 +1,4 @@
+import { ensureSourcesPageAccess } from "./_initial-sources";
 import { SourcesClient } from "./_sources.tsx";
 
 interface SourcesPageProps {
@@ -12,5 +13,6 @@ interface SourcesPageProps {
  */
 export default async function SourcesPage({ params }: SourcesPageProps) {
   const { projectId } = await params;
+  await ensureSourcesPageAccess(projectId, process.env);
   return <SourcesClient projectId={projectId} />;
 }

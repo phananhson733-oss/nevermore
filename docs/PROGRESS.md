@@ -1,6 +1,6 @@
 # Nevermore / GenGrowth Progress
 
-Updated: **2026-07-28**
+Updated: **2026-07-30**
 
 This is the current authority and verification handoff for the Nevermore
 repository and its customer-facing GenGrowth product. It replaces the retired
@@ -24,8 +24,8 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0032_keyword_initial_governance.sql` (**32 ordered migrations**)
-- Contract inventory: **77 API operations / 9 async operations / 76 app tables / 11 frozen rules**
+  `0034_dataforseo_search_landscape.sql` (**34 ordered migrations**)
+- Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
 this progress-only change. A tracked file cannot contain the hash of the commit
@@ -69,7 +69,7 @@ Current v0.4 external-write boundary: **no external writes**
 The active v0.4 contract has no GitHub, WordPress, CMS, Vercel, Cloudflare, or
 customer-production-site write and no post-publication attribution. Internal
 Content Shadow, approval, publication-preview and Measurement Window persistence
-are implemented; the current 77 operations still do not execute an external
+are implemented; the current 78 operations still do not execute an external
 provider write. A preview or Delivery Receipt is not a live change. Only a
 verified Change Receipt with a live canonical URL may anchor observation.
 
@@ -106,6 +106,23 @@ The active surface includes frozen external research, first-party content,
 content-quality gates, Keyword/Competitor governance, Topic/Internal
 Link/Backlink/GEO growth paths, execution state, durable approval, publication
 preview authority and immutable measurement windows.
+
+Analysis Refresh and published-generation reads are part of this same
+four-module surface:
+
+- `createAnalysisRefreshRun` owns the fixed Crawl → connected GSC → connected
+  GA4 → DataForSEO Search Landscape (DFS) → Growth Audit plan. The public
+  collection command remains exactly `crawl|gsc|ga4`; it cannot accept DFS
+  target, market, language, limits, credentials, or provider queries.
+- DFS runs one frozen ranked-keywords request and one frozen
+  competitors-domain request under the same server-derived scope, then
+  atomically persists one `dataforseo.search_landscape.v1` Snapshot for Keyword
+  and Competitor evidence. Partial provider success is not a published
+  Search Landscape.
+- URL/Keyword/Competitor list and detail GETs accept an optional canonical
+  `diagnosticRunId` pin for one exact published generation. `view=review` exists
+  only on Keyword/Competitor detail GETs, is mutually exclusive with the pin,
+  and their PATCH commands reject every query parameter.
 
 Next reviewed slice: **authorized provider external writes**
 
@@ -201,7 +218,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0032`; historical proof through `0021` does not prove
+   migrations through `0034`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live
@@ -209,8 +226,9 @@ sanitized evidence to the exact candidate SHA:
 4. Complete deployed-origin Supabase Auth/session/callback proof.
 5. Exercise Owner-approved live GSC and GA4 accounts and retain sanitized,
    token-free evidence.
-6. Exercise one cost-capped hosted DataForSEO collection and the selected
-   production OpenAI endpoint without logging credentials, provider bodies, or
+6. Exercise one cost-capped hosted DataForSEO Search Landscape collection and
+   the selected production OpenAI endpoint without logging credentials,
+   provider bodies, or
    customer/model content.
 7. Confirm private Storage permissions, object-count alerting, bounded retention
    sweeps, and signed-download behavior.

@@ -2,6 +2,8 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
+  canonicalUtcTimestamptz,
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -13,11 +15,20 @@ import {
   type CanonicalValue,
   type DataSnapshotRow,
   type Executor,
+  type ProjectScope,
   type ProjectRow,
   type WorkspaceScope,
 } from "@sf/db";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+} from "@sf/sources";
 import {
   CONTRACT_VERSION,
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
@@ -51,6 +62,59 @@ const GROWTH_AUDIT_ACTIVE_KEY = "growth_audit";
 const CAPABILITY_ID = "growth-audit";
 const CAPABILITY_VERSION = "0.3.0";
 const PROJECTION_VERSION = "growth-audit.0.3.0";
+const AUDIT_SNAPSHOT_SELECTORS = [
+  {
+    provider: "crawl",
+    datasetKey: CRAWL_DATASET_KEY,
+    methodVersion: CRAWL_METHOD_VERSION,
+    collectionOperation: "site_graph",
+    collectionMethodVersion: CRAWL_METHOD_VERSION,
+  },
+  {
+    provider: "gsc",
+    datasetKey: "gsc.page_query_daily.v1",
+    methodVersion: "gsc.page_query_daily.v1",
+    collectionOperation: "search_analytics",
+    collectionMethodVersion: "gsc.page_query_daily.v1",
+  },
+  {
+    provider: "ga4",
+    datasetKey: "ga4.organic_landing_daily.v1",
+    methodVersion: "ga4.organic_landing_daily.v1",
+    collectionOperation: "organic_landing",
+    collectionMethodVersion: "ga4.organic_landing_daily.v1",
+  },
+  {
+    provider: "csv",
+    datasetKey: "csv.keyword_gap.v1",
+    methodVersion: "csv.keyword_gap.v1",
+    collectionOperation: "keyword_gap_import",
+    collectionMethodVersion: "csv.keyword_gap.v1",
+  },
+  {
+    provider: "dataforseo",
+    datasetKey: DATAFORSEO_DATASET_KEY,
+    methodVersion: DATAFORSEO_METHOD_VERSION,
+    collectionOperation: "keyword_gap_import",
+    collectionMethodVersion: DATAFORSEO_METHOD_VERSION,
+  },
+] as const;
+const AUDIT_PROVIDER_ORDER = new Map<string, number>(
+  AUDIT_SNAPSHOT_SELECTORS.map((selector, index) => [
+    selector.provider,
+    index,
+  ]),
+);
+const AUDIT_SEARCH_LANDSCAPE_SELECTOR = [
+  {
+    provider: "dataforseo",
+    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+    collectionOperation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+    collectionMethodVersion:
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  },
+] as const;
 
 export interface GrowthAuditAcceptedResult {
   readonly status: 202;
@@ -68,7 +132,9 @@ export interface GrowthAuditInputs {
     readonly contentHash: string;
   };
   readonly siteId: string;
+  /** Compatibility pointer retained for the separately governed recheck path. */
   readonly crawlSnapshot: DataSnapshotRow;
+  readonly snapshots: readonly DataSnapshotRow[];
 }
 
 /** Canonical, `undefined`-free scope for stable content addressing. */
@@ -106,6 +172,87 @@ export function assertProjectDiagnosable(
   }
 }
 
+function corruptAuditSnapshotSelection(detail: string): never {
+  throw new ProblemError(
+    "DEPENDENCY_UNAVAILABLE",
+    detail,
+  );
+}
+
+function exactDataForSeoSnapshot(
+  snapshot: DataSnapshotRow,
+  kind: "legacy" | "search_landscape",
+): boolean {
+  const datasetKey =
+    kind === "legacy"
+      ? DATAFORSEO_DATASET_KEY
+      : DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY;
+  const methodVersion =
+    kind === "legacy"
+      ? DATAFORSEO_METHOD_VERSION
+      : DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+  return (
+    snapshot.provider === "dataforseo" &&
+    snapshot.dataset_key === datasetKey &&
+    snapshot.schema_version === methodVersion &&
+    snapshot.method_version === methodVersion
+  );
+}
+
+function latestDataForSeoSnapshot(
+  legacy: DataSnapshotRow | undefined,
+  composite: DataSnapshotRow | undefined,
+): DataSnapshotRow | undefined {
+  if (!legacy) return composite;
+  if (!composite) return legacy;
+  let legacyAt: string;
+  let compositeAt: string;
+  try {
+    legacyAt = canonicalUtcTimestamptz(legacy.captured_at);
+    compositeAt = canonicalUtcTimestamptz(composite.captured_at);
+  } catch {
+    return corruptAuditSnapshotSelection(
+      "A DataForSEO Snapshot has an invalid capture time.",
+    );
+  }
+  const ordering = Date.parse(compositeAt) - Date.parse(legacyAt);
+  if (ordering > 0) return composite;
+  if (ordering < 0) return legacy;
+  return composite.id < legacy.id ? composite : legacy;
+}
+
+async function assertExactDataForSeoCollectionRun(
+  exec: Executor,
+  scope: ProjectScope,
+  snapshot: DataSnapshotRow,
+): Promise<void> {
+  const run = await new CollectionRunsRepository(exec).findById(
+    snapshot.collection_run_id,
+  );
+  const legacy =
+    exactDataForSeoSnapshot(snapshot, "legacy") &&
+    run?.operation === "keyword_gap_import" &&
+    run.method_version === DATAFORSEO_METHOD_VERSION;
+  const composite =
+    exactDataForSeoSnapshot(snapshot, "search_landscape") &&
+    run?.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+    run.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+  if (
+    !run ||
+    run.workspace_id !== scope.workspaceId ||
+    run.project_id !== scope.projectId ||
+    run.site_id !== snapshot.site_id ||
+    run.id !== snapshot.collection_run_id ||
+    run.provider !== "dataforseo" ||
+    (!legacy && !composite)
+  ) {
+    return corruptAuditSnapshotSelection(
+      "The selected DataForSEO Snapshot does not match an exact supported collection contract.",
+    );
+  }
+}
+
 export async function loadGrowthAuditInputs(
   exec: Executor,
   scope: WorkspaceScope,
@@ -136,26 +283,56 @@ export async function loadGrowthAuditInputs(
     );
   }
 
-  const eligible = await new DataSnapshotsRepository(
-    exec,
-  ).findLatestEligibleCrawlBySite(
+  const snapshotsRepository = new DataSnapshotsRepository(exec);
+  const legacySnapshots = await snapshotsRepository.findLatestEligibleBySite(
     projectScope,
     site.id,
-    CRAWL_DATASET_KEY,
-    CRAWL_METHOD_VERSION,
+    AUDIT_SNAPSHOT_SELECTORS,
   );
-  if (!eligible) {
-    throw new ProblemError(
-      "CRAWL_SNAPSHOT_REQUIRED",
-      "A crawl snapshot is required to audit.",
+  const compositeSnapshots =
+    await snapshotsRepository.findLatestEligibleBySite(
+      projectScope,
+      site.id,
+      AUDIT_SEARCH_LANDSCAPE_SELECTOR,
+    );
+  const legacyDataForSeoSnapshots = legacySnapshots.filter(
+    (snapshot) => snapshot.provider === "dataforseo",
+  );
+  const legacyDataForSeo = legacyDataForSeoSnapshots[0];
+  if (
+    legacyDataForSeoSnapshots.length > 1 ||
+    (legacyDataForSeo &&
+      !exactDataForSeoSnapshot(legacyDataForSeo, "legacy")) ||
+    compositeSnapshots.length > 1 ||
+    (compositeSnapshots[0] &&
+      !exactDataForSeoSnapshot(
+        compositeSnapshots[0],
+        "search_landscape",
+      ))
+  ) {
+    return corruptAuditSnapshotSelection(
+      "The DataForSEO Snapshot selector returned an unsupported contract.",
     );
   }
-  // The eligibility read projects a bounded column set; re-read the full
-  // immutable row so the frozen diagnostic manifest carries every field the
-  // manifest guard validates (including source_window).
-  const [crawlSnapshot] = await new DataSnapshotsRepository(exec).findByIds(
-    projectScope,
-    [eligible.id],
+  const dataForSeoSnapshot = latestDataForSeoSnapshot(
+    legacyDataForSeo,
+    compositeSnapshots[0],
+  );
+  const snapshots = [
+    ...legacySnapshots.filter(
+      (snapshot) => snapshot.provider !== "dataforseo",
+    ),
+    ...(dataForSeoSnapshot ? [dataForSeoSnapshot] : []),
+  ];
+  if (dataForSeoSnapshot) {
+    await assertExactDataForSeoCollectionRun(
+      exec,
+      projectScope,
+      dataForSeoSnapshot,
+    );
+  }
+  const crawlSnapshot = snapshots.find(
+    (snapshot) => snapshot.provider === "crawl",
   );
   if (!crawlSnapshot) {
     throw new ProblemError(
@@ -164,10 +341,21 @@ export async function loadGrowthAuditInputs(
     );
   }
 
+  // Repository order is deterministic already, but the audit contract owns an
+  // explicit provider order so capability addressing cannot drift with a query
+  // planner or a future repository implementation. The diagnostic manifest
+  // performs its own canonical snapshot-id sort.
+  const orderedSnapshots = [...snapshots].sort(
+    (left, right) =>
+      (AUDIT_PROVIDER_ORDER.get(left.provider) ?? Number.MAX_SAFE_INTEGER) -
+      (AUDIT_PROVIDER_ORDER.get(right.provider) ?? Number.MAX_SAFE_INTEGER),
+  );
+
   return {
     icp: { id: icp.id, version: icp.version, contentHash: icp.content_hash },
     siteId: site.id,
     crawlSnapshot,
+    snapshots: orderedSnapshots,
   };
 }
 
@@ -311,7 +499,7 @@ export async function createGrowthAuditRun(
         projectId,
         siteId: inputs.siteId,
         icp: inputs.icp,
-        snapshots: [inputs.crawlSnapshot],
+        snapshots: inputs.snapshots,
         deliveryLocale: body.outputLocale,
         governance,
       });
@@ -323,7 +511,7 @@ export async function createGrowthAuditRun(
         siteId: inputs.siteId,
         icpProfileId: inputs.icp.id,
         scope: canonicalScope(body.scope),
-        selectedSnapshotIds: [inputs.crawlSnapshot.id],
+        selectedSnapshotIds: inputs.snapshots.map((snapshot) => snapshot.id),
         outputLocale: body.outputLocale,
       });
 

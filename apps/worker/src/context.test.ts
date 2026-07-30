@@ -54,6 +54,7 @@ describe("buildWorkerContext", () => {
         FINDING_SUMMARIES_ENABLED: configured,
         DATAFORSEO_ENABLED: "false",
         DATAFORSEO_MAX_KEYWORDS: 200,
+        DATAFORSEO_MAX_COMPETITORS: 100,
         RAW_IMPORT_BUCKET: "raw-imports",
         EXPORT_BUCKET: "exports",
         SF_BLOB_BACKEND: "local",
@@ -76,6 +77,7 @@ describe("buildWorkerContext", () => {
         login: null,
         password: null,
         maxKeywords: 200,
+        maxCompetitors: 100,
       });
       expect(context.signal).toBe(signal);
     },

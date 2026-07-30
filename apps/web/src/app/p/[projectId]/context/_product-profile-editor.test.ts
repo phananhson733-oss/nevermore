@@ -59,6 +59,15 @@ function profile(): ProductProfileDraft {
 }
 
 describe("Product Profile editor patch", () => {
+  it("keeps an empty initial product type on the normal selector instead of opening a custom field", () => {
+    const empty = { ...profile(), productType: null };
+
+    expect(initialEditorState(empty)).toMatchObject({
+      productType: "",
+      customProductType: "",
+    });
+  });
+
   it("does not replace evidence-backed roots when the customer changed nothing", () => {
     const current = profile();
 

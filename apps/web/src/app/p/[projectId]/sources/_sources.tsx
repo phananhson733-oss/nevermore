@@ -45,14 +45,19 @@ import {
   type StatusTone,
 } from "@/components/ui";
 import {
+  analysisRefreshRunIdFromError,
+  invalidateAnalysisRefreshTerminalQueries,
   isTerminalRunStatus,
+  readAnalysisRefreshRunId,
   useConnectSource,
+  useCreateAnalysisRefreshRun,
   useCreateCollectionRun,
   useDisconnectSource,
   useImportCsv,
   useProjectRun,
   useProjectSnapshots,
   useProjectSources,
+  withAnalysisRefreshRunId,
 } from "@/lib/api/hooks-sources";
 import type {
   Availability,
@@ -232,8 +237,8 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   heroTitle: "Every recommendation starts with trusted data.",
   heroSummary: (usable, partial) =>
     `${usable} sources have fully usable evidence${partial > 0 ? ` and ${partial} are partially usable` : ""}. Connection state and snapshot availability are shown separately.`,
-  refreshAll: "Refresh all sources",
-  refreshing: "Refreshing sources…",
+  refreshAll: "Refresh status",
+  refreshing: "Refreshing status…",
   trustNote:
     "This page reads immutable evidence snapshots. Connections, refreshes, imports, limitations, and errors remain tied to their real provider state; credentials are never displayed.",
   readinessRegionLabel: "Source readiness",
@@ -313,8 +318,8 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   heroTitle: "每一条建议，都从可信数据开始。",
   heroSummary: (usable, partial) =>
     `当前有 ${usable} 个数据来源完全可用${partial > 0 ? `，另有 ${partial} 个部分可用` : ""}；连接状态与快照可用性分别呈现。`,
-  refreshAll: "刷新所有来源",
-  refreshing: "正在刷新来源…",
+  refreshAll: "刷新状态",
+  refreshing: "正在刷新状态…",
   trustNote:
     "此页面读取不可变证据快照。连接、刷新、导入、限制和错误始终对应真实供应商状态；页面绝不展示连接凭据。",
   readinessRegionLabel: "数据源就绪度",
@@ -1327,58 +1332,6 @@ function DisabledControls() {
   return <p className={styles.disabledNote}>{t("notAvailable")}</p>;
 }
 
-function DataForSeoControls({
-  source,
-  projectId,
-  onStarted,
-  runActive,
-}: {
-  readonly source: SourceConnection;
-  readonly projectId: string;
-  readonly onStarted: (runId: string) => void;
-  readonly runActive: boolean;
-}) {
-  const t = useTranslations("sources");
-  const mutation = useCreateCollectionRun(projectId);
-  const start = () => {
-    mutation.mutate(
-      {
-        provider: "dataforseo",
-        ...(source.id === null ? {} : { sourceConnectionId: source.id }),
-      },
-      { onSuccess: (data) => onStarted(data.run.id) },
-    );
-  };
-
-  return (
-    <div className={styles.dataForSeoControls}>
-      <p className={styles.dataForSeoScope}>{t("dataForSeoScope")}</p>
-      <div className={styles.controls}>
-        <Button
-          variant="ghost"
-          onClick={start}
-          disabled={mutation.isPending || runActive}
-        >
-          <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
-          {mutation.isPending
-            ? t("collecting")
-            : source.latestSnapshot === null
-              ? t("collectDataForSeo")
-              : t("recollectDataForSeo")}
-        </Button>
-      </div>
-      {mutation.error !== null ? (
-        <ProblemNotice
-          className={styles.controlError}
-          error={mutation.error}
-          message={t("runStatusUnavailable")}
-          compact
-        />
-      ) : null}
-    </div>
-  );
-}
-
 function DisconnectButton({
   projectId,
   sourceConnectionId,
@@ -1459,16 +1412,7 @@ function SourceControls({
         />
       );
     case "dataforseo":
-      return source.featureEnabled ? (
-        <DataForSeoControls
-          source={source}
-          projectId={projectId}
-          onStarted={onStarted}
-          runActive={runActive}
-        />
-      ) : (
-        <DisabledControls />
-      );
+      return <DisabledControls />;
   }
 }
 
@@ -1941,6 +1885,7 @@ function toGoogleProvider(value: string | null): GoogleProvider | null {
 export function SourcesClient({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("sources");
   const tCommon = useTranslations("common");
+  const tRun = useTranslations("runState");
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
   const queryClient = useQueryClient();
@@ -1949,10 +1894,53 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   const gscSnapshots = useProjectSnapshots(projectId, "gsc");
   const ga4Snapshots = useProjectSnapshots(projectId, "ga4");
   const connect = useConnectSource(projectId);
+  const createAnalysisRefresh = useCreateAnalysisRefreshRun(projectId);
 
   const [intent, setIntent] = useState<PropertySelectionPhase | null>(null);
   const [topAlert, setTopAlert] = useState<string | null>(null);
+  const [analysisRefreshRunId, setAnalysisRefreshRunId] = useState<
+    string | null
+  >(null);
+  const [analysisRefreshRecovered, setAnalysisRefreshRecovered] =
+    useState(false);
+  const [analysisRefreshAdopted, setAnalysisRefreshAdopted] = useState(false);
+  const [analysisRefreshTerminal, setAnalysisRefreshTerminal] = useState<{
+    readonly status: RunStatus;
+    readonly errorSummary: string | null;
+  } | null>(null);
+  const analysisRefreshRun = useProjectRun(
+    projectId,
+    analysisRefreshRunId ?? "",
+  );
   const handledCallback = useRef(false);
+  const handledAnalysisRefreshTerminals = useRef<Set<string>>(new Set());
+
+  const replaceAnalysisRefreshRun = useCallback((runId: string | null) => {
+    window.history.replaceState(
+      null,
+      "",
+      withAnalysisRefreshRunId(window.location.href, runId),
+    );
+    setAnalysisRefreshRunId(runId);
+  }, []);
+
+  // The durable pointer lives in the URL rather than component memory, so a
+  // browser refresh resumes the exact parent run. Invalid untrusted values are
+  // removed without touching OAuth or future query parameters.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const recovered = readAnalysisRefreshRunId(window.location.search);
+    if (recovered !== null) {
+      setAnalysisRefreshRunId(recovered);
+    } else if (params.has("analysisRefreshRunId")) {
+      window.history.replaceState(
+        null,
+        "",
+        withAnalysisRefreshRunId(window.location.href, null),
+      );
+    }
+    setAnalysisRefreshRecovered(true);
+  }, []);
 
   // Recover the property-selection phase from the OAuth-callback return query
   // (spec §7.4): read `oauthIntentId` + `provider` once, fetch the candidate
@@ -1964,8 +1952,17 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     const oauthError = params.get("error");
     const oauthIntentId = params.get("oauthIntentId");
     const provider = toGoogleProvider(params.get("provider"));
-    const strip = () =>
-      window.history.replaceState(null, "", window.location.pathname);
+    const strip = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("error");
+      url.searchParams.delete("oauthIntentId");
+      url.searchParams.delete("provider");
+      window.history.replaceState(
+        null,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    };
 
     if (oauthError) {
       setTopAlert(t(oauthCallbackMessageKey(oauthError)));
@@ -1985,6 +1982,55 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
         .catch(() => setTopAlert(t("oauthError")));
     }
   }, [connect, t]);
+
+  // Every terminal outcome refreshes all evidence and audit/growth prefixes.
+  // The terminal notice is kept after polling stops so partial/failure is never
+  // visually promoted to a blanket provider success.
+  useEffect(() => {
+    const run = analysisRefreshRun.data;
+    if (
+      run === undefined ||
+      !isTerminalRunStatus(run.status) ||
+      handledAnalysisRefreshTerminals.current.has(run.id)
+    ) {
+      return;
+    }
+    handledAnalysisRefreshTerminals.current.add(run.id);
+    setAnalysisRefreshTerminal({
+      status: run.status,
+      errorSummary: run.lastError?.summary ?? null,
+    });
+    setAnalysisRefreshAdopted(false);
+    replaceAnalysisRefreshRun(null);
+    void invalidateAnalysisRefreshTerminalQueries(queryClient, projectId);
+  }, [
+    analysisRefreshRun.data,
+    projectId,
+    queryClient,
+    replaceAnalysisRefreshRun,
+  ]);
+
+  // A UUID in the URL is only an untrusted polling pointer. If the scoped run
+  // does not exist (including a run copied from another Project), remove only
+  // that pointer so the customer is not permanently locked out of starting or
+  // adopting the canonical active run.
+  useEffect(() => {
+    if (
+      analysisRefreshRunId === null ||
+      analysisRefreshRun.error === null ||
+      analysisRefreshRun.error.status !== 404
+    ) {
+      return;
+    }
+    setAnalysisRefreshAdopted(false);
+    replaceAnalysisRefreshRun(null);
+    setTopAlert(t("analysisRefresh.staleRunCleared"));
+  }, [
+    analysisRefreshRun.error,
+    analysisRefreshRunId,
+    replaceAnalysisRefreshRun,
+    t,
+  ]);
 
   const refetchSources = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["sources", projectId] });
@@ -2063,7 +2109,10 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
   }
 
   const pageReadiness = deriveCustomerConnectorReadiness(customerSources);
-  const refreshing = sources.isFetching || snapshotHistoryFetching;
+  const refreshing =
+    sources.isFetching ||
+    snapshotHistoryFetching ||
+    (analysisRefreshRunId !== null && analysisRefreshRun.isFetching);
   const customerSnapshotHistoryCount = snapshotHistoryAvailable
     ? loadedGscSnapshots.length + loadedGa4Snapshots.length
     : null;
@@ -2100,6 +2149,45 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       ),
     );
   };
+  const analysisRefreshActive = analysisRefreshRunId !== null;
+  const analysisRefreshSubmitting = createAnalysisRefresh.isPending;
+  const analysisRefreshPolling = analysisRefreshRun.data;
+  const analysisRefreshProgress =
+    analysisRefreshPolling?.progress.total !== null &&
+    analysisRefreshPolling?.progress.total !== undefined
+      ? t("analysisRefresh.progress", {
+          current: analysisRefreshPolling.progress.current,
+          total: analysisRefreshPolling.progress.total,
+        })
+      : t("analysisRefresh.inProgress");
+  const analysisRefreshTerminalMessage =
+    analysisRefreshTerminal === null
+      ? null
+      : t(`analysisRefresh.terminal.${analysisRefreshTerminal.status}`);
+
+  const startAnalysisRefresh = async (): Promise<void> => {
+    if (
+      !analysisRefreshRecovered ||
+      analysisRefreshActive ||
+      analysisRefreshSubmitting
+    ) {
+      return;
+    }
+    setAnalysisRefreshTerminal(null);
+    setAnalysisRefreshAdopted(false);
+    createAnalysisRefresh.reset();
+    try {
+      const accepted = await createAnalysisRefresh.mutateAsync();
+      replaceAnalysisRefreshRun(accepted.run.id);
+    } catch (error) {
+      const winnerRunId = analysisRefreshRunIdFromError(error);
+      if (winnerRunId !== null) {
+        createAnalysisRefresh.reset();
+        setAnalysisRefreshAdopted(true);
+        replaceAnalysisRefreshRun(winnerRunId);
+      }
+    }
+  };
 
   return (
     <div className={styles.page}>
@@ -2118,32 +2206,140 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
             )}
           </p>
         </div>
-        <Button
-          variant="primary"
-          className={styles.refreshButton}
-          onClick={() => {
-            void Promise.all([
-              sources.refetch(),
-              gscSnapshots.refetch(),
-              ga4Snapshots.refetch(),
-            ]);
-          }}
-          disabled={refreshing}
-        >
-          <RefreshCw
-            className={cx(refreshing && styles.refreshIcon)}
-            size={17}
-            strokeWidth={2}
-            aria-hidden="true"
-          />
-          {refreshing ? copy.refreshing : copy.refreshAll}
-        </Button>
+        <div className={styles.heroActions}>
+          <Button
+            variant="primary"
+            className={styles.refreshButton}
+            onClick={() => void startAnalysisRefresh()}
+            disabled={
+              !analysisRefreshRecovered ||
+              analysisRefreshActive ||
+              analysisRefreshSubmitting
+            }
+          >
+            <RefreshCw
+              className={cx(
+                (analysisRefreshActive || analysisRefreshSubmitting) &&
+                  styles.refreshIcon,
+              )}
+              size={17}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            {analysisRefreshSubmitting
+              ? t("analysisRefresh.submitting")
+              : analysisRefreshActive
+                ? t("analysisRefresh.running")
+                : t("analysisRefresh.start")}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void Promise.all([
+                sources.refetch(),
+                gscSnapshots.refetch(),
+                ga4Snapshots.refetch(),
+                ...(analysisRefreshRunId !== null
+                  ? [analysisRefreshRun.refetch()]
+                  : []),
+              ]);
+            }}
+            disabled={refreshing}
+          >
+            <RefreshCw
+              className={cx(refreshing && styles.refreshIcon)}
+              size={16}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            {refreshing ? copy.refreshing : copy.refreshAll}
+          </Button>
+        </div>
       </header>
 
       <aside className={styles.trustStrip} aria-label={copy.sourceHealth}>
         <ShieldCheck size={18} strokeWidth={1.9} aria-hidden="true" />
         <p>{copy.trustNote}</p>
       </aside>
+
+      {analysisRefreshActive ? (
+        <section
+          className={styles.analysisRefreshStatus}
+          aria-live="polite"
+          aria-label={t("analysisRefresh.statusTitle")}
+        >
+          <div className={styles.analysisRefreshStatusLead}>
+            {analysisRefreshRun.isError ? null : (
+              <Spinner
+                size="sm"
+                label={t("analysisRefresh.inProgress")}
+              />
+            )}
+            <div>
+              <strong>{t("analysisRefresh.statusTitle")}</strong>
+              <p>
+                {analysisRefreshAdopted
+                  ? t("analysisRefresh.adopted")
+                  : analysisRefreshProgress}
+              </p>
+            </div>
+          </div>
+          {analysisRefreshPolling !== undefined ? (
+            <StatusPill tone={runTone(analysisRefreshPolling.status)}>
+              {tRun(analysisRefreshPolling.status)}
+            </StatusPill>
+          ) : null}
+          {analysisRefreshRun.error !== null ? (
+            <div className={styles.analysisRefreshError}>
+              <ProblemNotice
+                error={analysisRefreshRun.error}
+                message={t("analysisRefresh.statusError")}
+                compact
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void analysisRefreshRun.refetch()}
+              >
+                {t("analysisRefresh.retryStatus")}
+              </Button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {analysisRefreshTerminal !== null &&
+      analysisRefreshTerminalMessage !== null ? (
+        <section
+          className={styles.analysisRefreshStatus}
+          aria-live="polite"
+          data-terminal-status={analysisRefreshTerminal.status}
+        >
+          <div className={styles.analysisRefreshStatusLead}>
+            <div>
+              <strong>{t("analysisRefresh.statusTitle")}</strong>
+              <p>{analysisRefreshTerminalMessage}</p>
+              {analysisRefreshTerminal.errorSummary !== null ? (
+                <p className={styles.runError}>
+                  {analysisRefreshTerminal.errorSummary}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <StatusPill tone={runTone(analysisRefreshTerminal.status)}>
+            {tRun(analysisRefreshTerminal.status)}
+          </StatusPill>
+        </section>
+      ) : null}
+
+      {!analysisRefreshActive &&
+      createAnalysisRefresh.error !== null ? (
+        <ProblemNotice
+          className={styles.alert}
+          error={createAnalysisRefresh.error}
+          message={t("analysisRefresh.submitError")}
+        />
+      ) : null}
 
       <ReadinessSummary
         sources={customerSources}

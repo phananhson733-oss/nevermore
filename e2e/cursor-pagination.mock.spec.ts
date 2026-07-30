@@ -652,7 +652,10 @@ test("Sources refetches page one when a cached history refresh fails", async ({
   await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
   const gsc = page.getByRole("region", { name: "Search Console" });
   await expect(gsc).toContainText("1 immutable snapshot");
-  await page.getByRole("button", { name: "Refresh all sources" }).click();
+  // Analysis Refresh is now the primary collection command. This regression
+  // exercises the deliberately separate status-only refresh, which refetches
+  // the cached GSC/GA4 history without starting provider collection work.
+  await page.getByRole("button", { name: "Refresh status" }).click();
 
   await expect(
     page.getByText(

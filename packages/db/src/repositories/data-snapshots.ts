@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, lt, or } from "drizzle-orm";
-import { dataSnapshots } from "../schema.ts";
+import { asyncRuns, collectionRuns, dataSnapshots } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -63,15 +63,27 @@ export interface EligibleCrawlDataSnapshotRow {
   readonly created_at: string;
 }
 
-const MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH = 256;
+export interface EligibleDataSnapshotSelector {
+  readonly provider: string;
+  readonly datasetKey: string;
+  /** Immutable Snapshot method identity. */
+  readonly methodVersion: string;
+  /** Exact canonical collection operation that produced the Snapshot. */
+  readonly collectionOperation: string;
+  /** Exact canonical collection method; it may differ from Snapshot method. */
+  readonly collectionMethodVersion: string;
+}
+
+const MAX_SNAPSHOT_SELECTOR_LENGTH = 256;
+const MAX_ELIGIBLE_SNAPSHOT_SOURCES = 16;
 
 function assertBoundedSelector(label: string, value: string): void {
   if (
     value.trim().length === 0 ||
-    value.length > MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH
+    value.length > MAX_SNAPSHOT_SELECTOR_LENGTH
   ) {
     throw new RangeError(
-      `${label} must be between 1 and ${MAX_CRAWL_SNAPSHOT_SELECTOR_LENGTH} characters`,
+      `${label} must be between 1 and ${MAX_SNAPSHOT_SELECTOR_LENGTH} characters`,
     );
   }
 }
@@ -168,6 +180,32 @@ export class DataSnapshotsRepository extends Repository {
   }
 
   /**
+   * Resolve the one immutable Snapshot produced by an exact collection run.
+   * Analysis Refresh must never substitute a later provider Snapshot. Multiple
+   * rows indicate corrupt/unsupported collection lineage and fail closed.
+   */
+  async findByCollectionRunId(
+    scope: ProjectScope,
+    collectionRunId: string,
+  ): Promise<DataSnapshotRow | null> {
+    assertBoundedSelector("collectionRunId", collectionRunId);
+    const rows = (await this.exec
+      .select()
+      .from(dataSnapshots)
+      .where(
+        and(
+          projectPredicate(dataSnapshots, scope),
+          eq(dataSnapshots.collection_run_id, collectionRunId),
+        ),
+      )
+      .limit(2)) as DataSnapshotRow[];
+    if (rows.length > 1) {
+      throw new Error("collection run produced ambiguous Snapshot lineage");
+    }
+    return rows[0] ?? null;
+  }
+
+  /**
    * Select the exact Crawl method whose immutable PageSnapshots may be frozen
    * into a Product Profile synthesis input manifest. `partial` remains
    * eligible because its limitations travel with the snapshot; unavailable or
@@ -216,6 +254,131 @@ export class DataSnapshotsRepository extends Repository {
       .orderBy(desc(dataSnapshots.captured_at), asc(dataSnapshots.id))
       .limit(1);
     return (rows[0] as EligibleCrawlDataSnapshotRow | undefined) ?? null;
+  }
+
+  /**
+   * Select one immutable, usable Snapshot per compatible provider contract for
+   * a single Site. A Snapshot becomes diagnostic input only after its canonical
+   * collection run reaches a successful terminal state; queued/running/failed
+   * runs and unavailable snapshots are never promoted into an audit.
+   *
+   * Snapshot dataset/method and collection operation/method are selected as one
+   * explicit contract. The selector does not infer collection identity from a
+   * matching provider or Snapshot label, even when the two current method
+   * strings happen to be equal. Equal capture instants use the lowest snapshot
+   * id, matching the other latest-snapshot selectors.
+   */
+  async findLatestEligibleBySite(
+    scope: ProjectScope,
+    siteId: string,
+    selectors: readonly EligibleDataSnapshotSelector[],
+  ): Promise<DataSnapshotRow[]> {
+    if (selectors.length === 0) return [];
+    assertBoundedSelector("siteId", siteId);
+    if (selectors.length > MAX_ELIGIBLE_SNAPSHOT_SOURCES) {
+      throw new RangeError(
+        `At most ${MAX_ELIGIBLE_SNAPSHOT_SOURCES} snapshot sources may be selected`,
+      );
+    }
+    const providers = new Set<string>();
+    for (const selector of selectors) {
+      assertBoundedSelector("provider", selector.provider);
+      assertBoundedSelector("datasetKey", selector.datasetKey);
+      assertBoundedSelector("methodVersion", selector.methodVersion);
+      assertBoundedSelector(
+        "collectionOperation",
+        selector.collectionOperation,
+      );
+      assertBoundedSelector(
+        "collectionMethodVersion",
+        selector.collectionMethodVersion,
+      );
+      if (providers.has(selector.provider)) {
+        throw new RangeError(
+          "Each eligible snapshot selector must use a distinct provider",
+        );
+      }
+      providers.add(selector.provider);
+    }
+
+    const compatibleContract = or(
+      ...selectors.map((selector) =>
+        and(
+          eq(dataSnapshots.provider, selector.provider),
+          eq(dataSnapshots.dataset_key, selector.datasetKey),
+          eq(dataSnapshots.method_version, selector.methodVersion),
+          eq(collectionRuns.operation, selector.collectionOperation),
+          eq(
+            collectionRuns.method_version,
+            selector.collectionMethodVersion,
+          ),
+        ),
+      ),
+    );
+    if (!compatibleContract) return [];
+
+    return (await this.exec
+      .selectDistinctOn([dataSnapshots.provider], {
+        id: dataSnapshots.id,
+        workspace_id: dataSnapshots.workspace_id,
+        project_id: dataSnapshots.project_id,
+        site_id: dataSnapshots.site_id,
+        collection_run_id: dataSnapshots.collection_run_id,
+        source_connection_id: dataSnapshots.source_connection_id,
+        provider: dataSnapshots.provider,
+        dataset_key: dataSnapshots.dataset_key,
+        schema_version: dataSnapshots.schema_version,
+        method_version: dataSnapshots.method_version,
+        captured_at: dataSnapshots.captured_at,
+        source_window: dataSnapshots.source_window,
+        availability: dataSnapshots.availability,
+        limitation: dataSnapshots.limitation,
+        raw_object_key: dataSnapshots.raw_object_key,
+        row_count: dataSnapshots.row_count,
+        checksum: dataSnapshots.checksum,
+        summary: dataSnapshots.summary,
+        created_at: dataSnapshots.created_at,
+      })
+      .from(dataSnapshots)
+      .innerJoin(
+        collectionRuns,
+        and(
+          projectPredicate(collectionRuns, scope),
+          eq(collectionRuns.id, dataSnapshots.collection_run_id),
+          eq(collectionRuns.site_id, siteId),
+          eq(collectionRuns.provider, dataSnapshots.provider),
+        ),
+      )
+      .innerJoin(
+        asyncRuns,
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.id, collectionRuns.id),
+          eq(asyncRuns.kind, "collection"),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(dataSnapshots, scope),
+          eq(dataSnapshots.site_id, siteId),
+          compatibleContract,
+          or(
+            and(
+              eq(dataSnapshots.availability, "available"),
+              eq(asyncRuns.status, "completed"),
+            ),
+            and(
+              eq(dataSnapshots.availability, "partial"),
+              eq(asyncRuns.status, "partial"),
+            ),
+          ),
+        ),
+      )
+      .orderBy(
+        asc(dataSnapshots.provider),
+        desc(dataSnapshots.captured_at),
+        asc(dataSnapshots.id),
+      )) as DataSnapshotRow[];
   }
 
   /**

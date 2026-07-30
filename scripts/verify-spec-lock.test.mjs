@@ -68,6 +68,7 @@ const ASYNC_OPERATIONS = [
   "createProductProfileSynthesisRun",
   "importProjectSourceFile",
   "createCollectionRun",
+  "createAnalysisRefreshRun",
   "createDiagnosticRun",
   "createGrowthAuditRun",
   "createContentShadowRun",
@@ -112,7 +113,7 @@ function hashMap(root, base, paths) {
 
 function fixtureOpenApi() {
   const remaining = Array.from(
-    { length: 77 - ASYNC_OPERATIONS.length },
+    { length: 78 - ASYNC_OPERATIONS.length },
     (_, index) => `fixtureOperation${String(index + 1).padStart(2, "0")}`,
   );
   return [
@@ -166,7 +167,7 @@ function makeFixture(t, options = {}) {
   const authorityRoot = "authority/active";
   const tables =
     options.tables ??
-    Array.from({ length: 76 }, (_, index) => `table_${index + 1}`);
+    Array.from({ length: 78 }, (_, index) => `table_${index + 1}`);
   const openapi = fixtureOpenApi();
 
   for (const path of REQUIRED_AUTHORITY_FILES) {
@@ -301,9 +302,9 @@ function runVerifier(fixture, extra = []) {
 
 test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeIndex.active.version, "0.4.0");
-  assert.equal(activeLock.apiOperations.length, 77);
-  assert.equal(activeLock.asyncOperations.length, 9);
-  assert.equal(activeLock.tables.length, 76);
+  assert.equal(activeLock.apiOperations.length, 78);
+  assert.equal(activeLock.asyncOperations.length, 10);
+  assert.equal(activeLock.tables.length, 78);
   assert.equal(activeLock.rules.length, 11);
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.2");
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
@@ -314,6 +315,7 @@ test("freezes the complete active v0.4 surface", () => {
     "getArtifactExecutionStateBatch",
     "issuePublicationPreview",
     "createProjectMeasurementWindow",
+    "createAnalysisRefreshRun",
   ]) {
     assert.ok(activeLock.apiOperations.includes(operationId));
   }
@@ -324,6 +326,8 @@ test("freezes the complete active v0.4 surface", () => {
     "action_execution_state_events",
     "competitor_monitor_signals",
     "backlink_facts",
+    "analysis_refresh_runs",
+    "analysis_refresh_steps",
   ]) {
     assert.ok(activeLock.tables.includes(table));
   }

@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { publicFixtureOrigin, seedProject } from "./fixtures.ts";
+import {
+  confirmSeededProjectContext,
+  publicFixtureOrigin,
+  seedProject,
+} from "./fixtures.ts";
 
 const COLD_PROJECT_PROJECTION_TIMEOUT_MS = 20_000;
 
@@ -28,6 +32,11 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
       siteUrl: publicFixtureOrigin("isolation-b"),
     }),
   ]);
+  await confirmSeededProjectContext(request, projectA, {
+    productName: "Isolation Product A",
+    oneLineDescription:
+      "A manually confirmed profile for the project-isolated Sources workflow.",
+  });
 
   /** Every anchor below is English chrome, and the app's default UI locale is
    *  zh-CN (`packages/i18n/src/config.ts:6`), so the locale has to be selected

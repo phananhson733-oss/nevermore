@@ -57,6 +57,8 @@ import {
   CRAWL_BUDGET,
   CRAWL_METHOD_VERSION,
   createDataForSeoCollectionScope,
+  createDataForSeoSearchLandscapeScope,
+  DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
   InvalidBlobObjectKeyError,
   LocalFsBlobStore,
@@ -409,6 +411,121 @@ describeDb("collection runner (spec §13)", () => {
     await expect(
       new AsyncRunsRepository(handle.db).findById(seed.scope, runId),
     ).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("projects one real html lang into an empty primary Site and persists traceable summary evidence", async () => {
+    const seed = await seedProject(handle, { languageCodes: [] });
+    const runId = randomUUID();
+    const crawlConnection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertDefaultCrawl({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "crawl",
+      operation: "site_graph",
+      methodVersion: CRAWL_METHOD_VERSION,
+      sourceConnectionId: crawlConnection.id,
+      importPreviewId: null,
+      requestPayload: {},
+    });
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        if (url === `${seed.siteOrigin}/robots.txt`) {
+          return new Response("User-agent: *\nAllow: /", {
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (url === `${seed.siteOrigin}/sitemap.xml`) {
+          return new Response("missing", { status: 404 });
+        }
+        if (url === `${seed.siteOrigin}/`) {
+          return new Response(
+            `<html lang="en-us"><head><title>Home</title></head><body><h1>Home</h1></body></html>`,
+            { headers: { "content-type": "text/html" } },
+          );
+        }
+        return new Response("unexpected", { status: 404 });
+      },
+    };
+
+    await runCollection(
+      {
+        ...ctx,
+        crawl: {
+          fetcher,
+          engineOptions: {
+            guard: async (url: string) => ({
+              safe: true as const,
+              normalizedUrl: new URL(url).href,
+              pinnedIp: "93.184.216.34",
+              reason: null,
+            }),
+            budget: {
+              ...CRAWL_BUDGET,
+              maxUrls: 1,
+              perHostConcurrency: 1,
+              minHostDelayMs: 0,
+            },
+          },
+        },
+      },
+      {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      },
+    );
+
+    await expect(
+      new SitesRepository(handle.db).findPrimary(seed.scope),
+    ).resolves.toMatchObject({ language_codes: ["en-US"] });
+    await expect(
+      new SitesRepository(handle.db).projectPrimaryLanguageIfEmpty(
+        seed.scope,
+        seed.siteId,
+        "fr",
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      new SitesRepository(handle.db).findPrimary(seed.scope),
+    ).resolves.toMatchObject({ language_codes: ["en-US"] });
+    const snapshots = await new DataSnapshotsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(snapshots.rows).toHaveLength(1);
+    expect(snapshots.rows[0]?.summary).toEqual({
+      siteLanguage: {
+        schemaVersion: "crawl.site-language-summary.v1",
+        status: "resolved",
+        languageTag: "en-US",
+        pagesAnalyzed: 1,
+        declaredPageCount: 1,
+        missingPageCount: 0,
+        invalidDeclarationCount: 0,
+        canonicalTags: ["en-US"],
+        evidence: [
+          {
+            fetchUrl: `${seed.siteOrigin}/`,
+            declaredTag: "en-us",
+            canonicalTag: "en-US",
+          },
+        ],
+        omittedEvidenceCount: 0,
+      },
+    });
+    const rawBytes = await ctx.blobStore.get(
+      snapshots.rows[0]!.raw_object_key!,
+    );
+    const raw = JSON.parse(rawBytes!.toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+    expect(raw).not.toHaveProperty("siteLanguage");
   });
 
   it("rejects a tampered null-seed Crawl hash before transport", async () => {
@@ -1157,6 +1274,7 @@ describeDb("collection runner (spec §13)", () => {
         login: fixtureLogin,
         password: fixturePassword,
         maxKeywords: 50,
+        maxCompetitors: 100,
         fetch: fetchMock,
       },
       logger: captured.logger,
@@ -1333,6 +1451,436 @@ describeDb("collection runner (spec §13)", () => {
     });
     expect(captured.lines.join("\n")).not.toContain(fixtureLogin);
     expect(captured.lines.join("\n")).not.toContain(fixturePassword);
+  });
+
+  it("atomically persists one DataForSEO Search Landscape Snapshot into both Keyword and Competitor libraries", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    const collectionScope = createDataForSeoSearchLandscapeScope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      rankedKeywordsLimit: 50,
+      competitorsDomainLimit: 25,
+    });
+    const connection = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertConnection({
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+      siteId: seed.siteId,
+      provider: "dataforseo",
+      connectionType: "api_key_stub",
+      state: "connected",
+      externalRef: "example.com",
+      config: {
+        target: "example.com",
+        marketCode: "US",
+        locationName: "United States",
+        languageCode: "en",
+        maxKeywords: 50,
+        maxCompetitors: 25,
+      },
+      limitation: "Server-owned DataForSEO Search Landscape source.",
+      connectedAt: true,
+      createdBy: seed.actor,
+    });
+    await seedCollectionRun(handle, seed, runId, {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      methodVersion: "dataforseo.search_landscape.v1",
+      sourceConnectionId: connection.id,
+      importPreviewId: null,
+      requestPayload: {
+        provider: "dataforseo",
+        operation: "search_landscape",
+        sourceConnectionId: connection.id,
+        collectionScope,
+      },
+      parametersHash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId: seed.siteId,
+        collectionScope,
+      }),
+    });
+
+    const requests: string[] = [];
+    const fetchMock = vi.fn<GoogleFetch>(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === DATAFORSEO_RANKED_KEYWORDS_LIVE_URL) {
+        return jsonResponse({
+          status_code: 20_000,
+          cost: 0.01,
+          tasks: [
+            {
+              status_code: 20_000,
+              cost: 0.01,
+              result_count: 1,
+              result: [
+                {
+                  total_count: 1,
+                  items_count: 1,
+                  items: [
+                    {
+                      keyword_data: {
+                        keyword: "enterprise seo platform",
+                        keyword_info: { search_volume: 720 },
+                      },
+                      ranked_serp_element: {
+                        serp_item: {
+                          url: "https://example.com/platform",
+                          rank_group: 7,
+                        },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url === DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL) {
+        return jsonResponse({
+          status_code: 20_000,
+          cost: 0.02,
+          tasks: [
+            {
+              status_code: 20_000,
+              cost: 0.02,
+              result_count: 1,
+              result: [
+                {
+                  total_count: 2,
+                  items_count: 2,
+                  items: [
+                    {
+                      domain: "rival-one.example",
+                      avg_position: 12.25,
+                      sum_position: 49,
+                      intersections: 4,
+                      competitor_metrics: {
+                        organic: { etv: 1_850.75 },
+                      },
+                    },
+                    {
+                      domain: "rival-two.example",
+                      avg_position: 8,
+                      sum_position: 8,
+                      intersections: 1,
+                      competitor_metrics: {
+                        organic: { etv: 700 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected DataForSEO fixture URL ${url}`);
+    });
+    const worker: WorkerContext = {
+      ...ctx,
+      dataForSeo: {
+        enabled: true,
+        login: "dfs-search-landscape-login-fixture",
+        password: "dfs-search-landscape-password-fixture",
+        maxKeywords: 100,
+        maxCompetitors: 100,
+        fetch: fetchMock,
+      },
+    };
+
+    await runCollection(worker, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+        DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
+      ]),
+    );
+    const snapshots = await new DataSnapshotsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(snapshots.rows).toHaveLength(1);
+    const snapshot = snapshots.rows[0]!;
+    expect(snapshot).toMatchObject({
+      collection_run_id: runId,
+      source_connection_id: connection.id,
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v1",
+      schema_version: "dataforseo.search_landscape.v1",
+      method_version: "dataforseo.search_landscape.v1",
+      availability: "available",
+      row_count: 3,
+      summary: {
+        collectionScope,
+        timing: {
+          collectedAt: expect.any(String),
+          dataAsOf: null,
+          observedAt: null,
+          freshness: "unknown",
+        },
+      },
+    });
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [snapshot.id]);
+    expect(
+      observations.filter((row) => row.metric_key === "csv.keyword_gap.v1"),
+    ).toHaveLength(1);
+    expect(
+      observations.filter(
+        (row) => row.metric_key === "dataforseo.competitor_domain.v1",
+      ),
+    ).toHaveLength(2);
+
+    const keywords = await new KeywordsRepository(handle.db).listByProject(
+      seed.scope,
+      { limit: 10, cursor: null },
+    );
+    expect(keywords.rows).toEqual([
+      expect.objectContaining({
+        normalized_keyword: "enterprise seo platform",
+        market: "US",
+        language_tag: "en-US",
+      }),
+    ]);
+    await expect(
+      new KeywordOccurrencesRepository(handle.db).listForEntity(
+        seed.scope,
+        keywords.rows[0]!.id,
+        { limit: 10, cursor: null },
+      ),
+    ).resolves.toMatchObject({
+      rows: [
+        expect.objectContaining({
+          data_snapshot_id: snapshot.id,
+          source_kind: "dataforseo_ranked",
+          scope_basis: "provider_collection_scope",
+          source_pointer: "/valueJson/keyword",
+        }),
+      ],
+    });
+
+    const competitors = await new CompetitorsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(competitors.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domain: "rival-one.example",
+          name: null,
+          review_status: "candidate",
+          relationship: null,
+          analysis_scope: [],
+          origin_count: 1,
+        }),
+        expect.objectContaining({
+          domain: "rival-two.example",
+          name: null,
+          review_status: "candidate",
+          relationship: null,
+          analysis_scope: [],
+          origin_count: 1,
+        }),
+      ]),
+    );
+    for (const competitor of competitors.rows) {
+      await expect(
+        new CompetitorsRepository(handle.db).listOrigins(
+          seed.scope,
+          competitor.id,
+          10,
+        ),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          origin_kind: "serp_overlap",
+          source_name: null,
+          data_snapshot_id: snapshot.id,
+          normalized_observation_id: expect.any(String),
+          import_preview_id: null,
+          source_pointer: "/valueJson/competitorDomain",
+        }),
+      ]);
+    }
+    await expect(
+      new SourceConnectionsRepository(handle.db).findById(
+        seed.scope,
+        connection.id,
+      ),
+    ).resolves.toMatchObject({
+      state: "available",
+      last_successful_snapshot_id: snapshot.id,
+    });
+
+    // Corrupt cross-half evidence must roll back the new Snapshot, keyword
+    // occurrence, and competitor origin together. The database accepts the
+    // individual Observation shapes; the projection catches the contradiction
+    // between the frozen scope and competitor target after keyword projection
+    // has already run, proving the surrounding persistence transaction is the
+    // atomic boundary.
+    const rollbackRunId = randomUUID();
+    const rollbackScope = createDataForSeoSearchLandscapeScope({
+      target: "other.example",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      rankedKeywordsLimit: 50,
+      competitorsDomainLimit: 25,
+    });
+    await seedCollectionRun(handle, seed, rollbackRunId, {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      methodVersion: "dataforseo.search_landscape.v1",
+      sourceConnectionId: connection.id,
+      importPreviewId: null,
+      requestPayload: {
+        provider: "dataforseo",
+        operation: "search_landscape",
+        sourceConnectionId: connection.id,
+        collectionScope: rollbackScope,
+      },
+      parametersHash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId: seed.siteId,
+        collectionScope: rollbackScope,
+      }),
+    });
+    const rollbackClaim = await new AsyncRunsRepository(handle.db).claim(
+      seed.scope,
+      rollbackRunId,
+    );
+    const rollbackCollection = await new CollectionRunsRepository(
+      handle.db,
+    ).findById(rollbackRunId);
+    if (!rollbackClaim || !rollbackCollection) {
+      throw new Error("atomic rollback fixture was not created");
+    }
+    const rollbackCapturedAt = "2026-07-29T09:00:00.000Z";
+    const rollbackLimitation =
+      "Intentional cross-half contradiction for atomic rollback verification.";
+    await expect(
+      persistCollectionResult(ctx, {
+        collectionRun: rollbackCollection,
+        datasetKey: "dataforseo.search_landscape.v1",
+        schemaVersion: "dataforseo.search_landscape.v1",
+        actorId: seed.actor,
+        startedAtMs: Date.now(),
+        attempt: toRunAttempt(rollbackClaim),
+        outcome: {
+          availability: "available",
+          capturedAt: rollbackCapturedAt,
+          sourceWindow: { start: null, end: null },
+          rowCount: 2,
+          stopReason: null,
+          providerUsage: {
+            apiCalls: 2,
+            rowsReturned: 2,
+            rowsRetained: 2,
+            costUsd: 0,
+          },
+          limitation: rollbackLimitation,
+          raw: {
+            schemaVersion: "dataforseo.search_landscape.v1",
+            collectionScope: rollbackScope,
+          },
+          summary: {
+            collectionScope: rollbackScope,
+            timing: {
+              collectedAt: rollbackCapturedAt,
+              dataAsOf: null,
+              observedAt: null,
+              freshness: "unknown",
+            },
+          },
+        },
+        observations: [
+          {
+            metricKey: "csv.keyword_gap.v1",
+            subjectType: "keyword_cluster",
+            subjectRef: "atomic-rollback",
+            observedAt: rollbackCapturedAt,
+            availability: "available",
+            valueNumeric: null,
+            valueText: null,
+            valueJson: {
+              keyword: "atomic rollback keyword",
+              clusterKey: "atomic-rollback",
+              searchVolume: 10,
+              currentUrl: null,
+              currentRank: 7,
+              competitorDomain: null,
+              competitorRank: null,
+              marketCode: "US",
+              languageCode: "en",
+            },
+            unit: null,
+            origin: "vendor_observation",
+            method: "observed",
+            grade: "B",
+            support: "supports",
+            limitation: rollbackLimitation,
+          },
+          {
+            metricKey: "dataforseo.competitor_domain.v1",
+            subjectType: "site",
+            subjectRef: "rollback-rival.example",
+            observedAt: rollbackCapturedAt,
+            availability: "available",
+            valueNumeric: null,
+            valueText: null,
+            valueJson: {
+              targetDomain: "example.com",
+              competitorDomain: "rollback-rival.example",
+              intersections: 1,
+              averagePosition: 10,
+              summedPosition: 10,
+              organicEstimatedTrafficVolume: 100,
+              marketCode: "US",
+              languageCode: "en",
+            },
+            unit: null,
+            origin: "vendor_observation",
+            method: "observed",
+            grade: "B",
+            support: "supports",
+            limitation: rollbackLimitation,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      message: expect.stringMatching(/frozen scope/i),
+    });
+    expect(await snapshotCount(handle, seed.scope)).toBe(1);
+    const afterRollbackKeywords = await new KeywordsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(
+      afterRollbackKeywords.rows.some(
+        (row) => row.normalized_keyword === "atomic rollback keyword",
+      ),
+    ).toBe(false);
+    const afterRollbackCompetitors = await new CompetitorsRepository(
+      handle.db,
+    ).listByProject(seed.scope, { limit: 10, cursor: null });
+    expect(
+      afterRollbackCompetitors.rows.some(
+        (row) => row.domain === "rollback-rival.example",
+      ),
+    ).toBe(false);
   });
 
   it("AC-012: an offline crawl fixture flows adapter -> worker -> partial snapshot with pages, robots, sitemap, and link graph observations", async () => {
@@ -3305,7 +3853,10 @@ describeDb("collection runner (spec §13)", () => {
   });
 });
 
-async function seedProject(handle: DbHandle): Promise<Seed> {
+async function seedProject(
+  handle: DbHandle,
+  options: { readonly languageCodes?: readonly string[] } = {},
+): Promise<Seed> {
   const actor = randomUUID();
   const [ws] = await handle.db
     .insert(workspaces)
@@ -3327,7 +3878,7 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
     origin,
     host,
     marketCodes: ["US"],
-    languageCodes: ["en"],
+    languageCodes: [...(options.languageCodes ?? ["en"])],
   });
   return {
     scope: { workspaceId, projectId: project.id },

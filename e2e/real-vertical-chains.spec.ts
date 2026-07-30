@@ -15,6 +15,7 @@ import {
   KEYWORD_GAP_MAPPING,
   completeContextBody,
   keywordGapCsv,
+  publishDiagnosticThroughAnalysisRefresh,
   seedOfflineProviderSnapshots,
   verticalDefinition,
   type RealVertical,
@@ -160,45 +161,42 @@ async function createProjectInBrowser(
     .addCookies([{ name: "sf_ui_locale", value: "en", url: BASE_URL }]);
   await page.goto("/new-project");
   await expect(
-    page.getByRole("heading", { name: "New project" }),
+    page.getByRole("heading", { name: "Add a product" }),
   ).toBeVisible();
-  await page.getByLabel("Client name").fill(definition.clientName);
-  await page.getByLabel("Project name").fill(definition.projectName);
-  await page.getByLabel("Site URL").fill(definition.siteUrl);
-  await page.getByLabel("Target markets").fill("US");
-  await page.getByLabel("Site languages").fill("en");
-  await page.getByLabel("Delivery language").fill("en");
+  await page.getByLabel("Product URL").fill(definition.siteUrl);
+  await page
+    .getByLabel("Product and customer context (optional)")
+    .fill(definition.oneLineDescription);
 
   const createResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
-  await page.getByRole("button", { name: "Create project" }).click();
+  await page
+    .getByRole("button", { name: "Create product and fill profile" })
+    .click();
   const created = await createResponse;
   expect(
     created.status(),
     `create project failed: ${await created.text()}`,
   ).toBe(201);
-  await page.waitForURL(/\/p\/[0-9a-f-]+\/overview$/);
+  expect(created.request().postDataJSON()).toEqual({
+    mode: "product_profile",
+    productUrl: definition.siteUrl,
+    businessHint: definition.oneLineDescription,
+  });
+  await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
   const match = new URL(page.url()).pathname.match(
-    /^\/p\/([0-9a-f-]+)\/overview$/,
+    /^\/p\/([0-9a-f-]+)\/context$/,
   );
   if (!match?.[1]) throw new Error("created project id was missing from URL");
-  // Re-aimed, not loosened. Slice 1 replaced the Overview surface this line was
-  // written against: `data-overview-hero` no longer exists anywhere in the app,
-  // so the old locator resolved to zero elements and the assertion could only
-  // ever fail. What it guaranteed — the Overview this redirect landed on is
-  // THIS project's, not a stale or sibling project's — is re-pinned to the
-  // element that now carries the name, the customer Overview hero's subtitle.
-  // The Overview implementation is frozen this round, so the spec moves to the
-  // surface and never the other way round. `toHaveCount(1)` is what keeps the
-  // strength: an empty match is the exact failure mode that hid here before, and
-  // a second match would mean the name is no longer being read off the hero.
-  const overviewHeroCopy = page.locator("[data-overview-page] > header p");
-  await expect(overviewHeroCopy).toHaveCount(1);
-  await expect(overviewHeroCopy).toBeVisible();
-  await expect(overviewHeroCopy).toContainText(definition.projectName);
+  await expect(
+    page.getByRole("button", { name: "Edit Product Profile" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Connect live data" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("combobox", { name: "Switch project" }),
   ).toHaveValue(match[1]);
@@ -210,9 +208,20 @@ async function completeContext(
   projectId: string,
   definition: VerticalDefinition,
 ): Promise<void> {
+  const current = await responseJson<
+    DataEnvelope<{ readonly version: number }>
+  >(
+    await request.get(`/api/mvp/projects/${projectId}/context`),
+    "read current context version",
+  );
   const response = await request.patch(
     `/api/mvp/projects/${projectId}/context`,
-    { data: completeContextBody(definition) },
+    {
+      data: {
+        ...completeContextBody(definition),
+        baseVersion: current.data.version,
+      },
+    },
   );
   await responseJson<DataEnvelope<unknown>>(response, "complete context");
 }
@@ -463,13 +472,76 @@ async function importCsvThroughRealWorker(
   await waitForRun(request, accepted.data.statusUrl, ["completed"]);
 }
 
+async function runGrowthAuditThroughRealApi(
+  request: APIRequestContext,
+  db: DbHandle,
+  projectId: string,
+): Promise<string> {
+  const inputs = await db.pool.query<{
+    site_id: string;
+    icp_profile_id: string;
+  }>(
+    `SELECT
+       site.id AS site_id,
+       project.confirmed_icp_profile_id AS icp_profile_id
+     FROM app.client_projects AS project
+     INNER JOIN app.sites AS site
+       ON site.workspace_id = project.workspace_id
+      AND site.project_id = project.id
+      AND site.is_primary
+     WHERE project.id = $1
+       AND project.confirmed_icp_profile_id IS NOT NULL
+     LIMIT 1`,
+    [projectId],
+  );
+  const canonicalInputs = inputs.rows[0];
+  if (!canonicalInputs) {
+    throw new Error(
+      "confirmed Product Profile and primary Site were unavailable for Growth Audit",
+    );
+  }
+
+  const response = await request.post(
+    `/api/mvp/projects/${projectId}/audit-runs`,
+    {
+      headers: {
+        "Idempotency-Key": randomUUID(),
+        cookie: "sf_ui_locale=en",
+      },
+      data: {
+        siteId: canonicalInputs.site_id,
+        icpProfileId: canonicalInputs.icp_profile_id,
+        scope: { kind: "site" },
+        outputLocale: "en",
+        capabilityContractVersion: "growth-audit.0.3.0",
+      },
+    },
+  );
+  expect(
+    response.status(),
+    `Growth Audit enqueue failed: ${await response.text()}`,
+  ).toBe(202);
+  const accepted = await responseJson<DataEnvelope<AcceptedRun>>(
+    response,
+    "Growth Audit enqueue",
+  );
+  expect(accepted.data.run.status).toBe("queued");
+  await waitForRun(request, accepted.data.statusUrl, ["completed"]);
+  return accepted.data.run.id;
+}
+
 async function runDiagnosisAndConfirmFinding(
   page: Page,
+  request: APIRequestContext,
+  db: DbHandle,
   projectId: string,
   keyboard: boolean,
 ): Promise<void> {
-  // R1: the Diagnosis screen is retired; the trigger lives on the Growth Map
-  // hero and the review flow is the Growth Map detail's Opportunity Review.
+  // The Diagnosis screen is retired; review lives in the Growth Map detail.
+  // This suite intentionally uses an offline Crawl/Google provider seam, so it
+  // queues the real Growth Audit child through HTTP/pg-boss and then supplies
+  // only the durable Analysis Refresh publication lineage. The customer CTA is
+  // independently wired to the full server-owned Analysis Refresh command.
   await page.goto(`/p/${projectId}/growth-map`);
   await expect(
     page.getByRole("heading", {
@@ -486,24 +558,17 @@ async function runDiagnosisAndConfirmFinding(
     0,
   );
 
-  const run = page
-    .locator("[data-run-diagnosis]")
-    .getByRole("button", { name: "Run diagnosis" });
-  await expect(run).toBeEnabled();
-  if (keyboard) {
-    await run.focus();
-    await expect(run).toBeFocused();
-    await run.press("Enter");
-  } else {
-    await run.click();
-  }
-
-  // The named live status region carries the run to its terminal state.
-  await expect(
-    page
-      .getByRole("status", { name: "Diagnostic run status" })
-      .getByText("Completed", { exact: true }),
-  ).toBeVisible({ timeout: 45_000 });
+  const diagnosticRunId = await runGrowthAuditThroughRealApi(
+    request,
+    db,
+    projectId,
+  );
+  await publishDiagnosticThroughAnalysisRefresh(
+    db,
+    projectId,
+    diagnosticRunId,
+  );
+  await page.reload({ waitUntil: "networkidle" });
 
   // The pre-diagnosis empty state pinned above must now resolve into the
   // readable portfolio.
@@ -697,8 +762,12 @@ async function verifyReportAndExport(
   } else {
     await reportLink.click();
   }
+  // URL-first creation deliberately uses the submitted host as the honest
+  // project identity until a separate project-renaming workflow exists. The
+  // confirmed Product Profile name remains inside the Product/ICP snapshot; it
+  // must not make this fixture pretend the project record was also renamed.
   await expect(
-    page.getByRole("heading", { name: definition.projectName }),
+    page.getByRole("heading", { name: new URL(definition.siteUrl).host }),
   ).toBeVisible();
   const findings = page.getByRole("region", { name: "Findings" });
   await expect(
@@ -761,7 +830,13 @@ async function exerciseVertical(input: {
   await importCsvThroughRealWorker(input.request, projectId, definition);
   await seedOfflineProviderSnapshots(input.db, projectId, definition);
 
-  await runDiagnosisAndConfirmFinding(input.page, projectId, input.keyboard);
+  await runDiagnosisAndConfirmFinding(
+    input.page,
+    input.request,
+    input.db,
+    projectId,
+    input.keyboard,
+  );
   await generateReadyArtifact(input.page, projectId, input.keyboard);
   if (input.extendedDeliveryCoverage) {
     await exerciseExtendedDeliveryCoverage(input.request, projectId);

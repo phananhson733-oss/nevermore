@@ -14,8 +14,8 @@ Authority 版本：**0.4.0**
 `authority/index.json` 指向本目录与 `scripts/spec-v0.4-lock.json`；v0.3
 保留为历史快照，不再约束当前实现。
 
-当前机器面精确包含 **77 个 operation、9 个 shared async operation、76 张应用表、11 条规则**。
-第十个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
+当前机器面精确包含 **78 个 operation、10 个 shared async operation、78 张应用表、11 条规则**。
+第十一个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
 `MeasurementWindowAcceptedHttpResponse`，不冒充共享 `AsyncAccepted`；verifier
 会同时冻结这条例外。规则集为 `mvp.rules.0.2.2`，其中
 `CONTENT-GAP-011` 为 version 2。
@@ -25,8 +25,8 @@ Authority 版本：**0.4.0**
 按冲突优先级读取：
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
-2. [openapi.yaml](openapi.yaml)：当前 77 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 32 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+2. [openapi.yaml](openapi.yaml)：当前 78 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
+3. [schema.sql](schema.sql)：由 34 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -39,7 +39,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0032_keyword_initial_governance.sql`，验证每个 migration 的事务框架与
+`0034_dataforseo_search_landscape.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -72,6 +72,15 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
 
 - GSC、GA4、Crawl 与 DataForSEO 是分析数据来源。连接状态不等于数据可用；
   只有已完成且作用域匹配的 immutable Snapshot/Observation 才能支持结论。
+- DataForSEO Search Landscape（DFS）是 Analysis Refresh worker 的内置、
+  成本受限复合步骤，不是客户连接器。服务端从冻结 Site/market/language 与配置
+  生成 ranked-keyword + competitor-domain 两个请求，并原子写入一个
+  `dataforseo.search_landscape.v1` Snapshot；公共 `createCollectionRun` 只接受
+  Crawl/GSC/GA4，且不接受 DFS scope、limit、凭据或 API key。
+- URL、Keyword、Competitor 的 list/detail GET 都可用 canonical
+  `diagnosticRunId` 固定一个已发布 Growth Map generation；省略时读取最新可读
+  generation。只有 Keyword/Competitor detail GET 支持 `view=review` 读取当前
+  governance，且不能与 `diagnosticRunId` 同时使用；对应 PATCH 拒绝全部 query。
 - Sitemap、站内解析、规则计算、关键词关系、竞品监控与 GEO/Backlink 模型是
   内置能力，不作为需要客户连接的外部数据卡重复展示。
 - `unavailable` 不等于 `0`；缺失 volume、rank、click、conversion、citation

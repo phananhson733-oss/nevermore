@@ -20,6 +20,7 @@ vi.mock("@/lib/services/growth-map", () => ({
 const { GET } = await import("./route");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
+const diagnosticRunId = "a0000000-0000-7000-8000-000000000006";
 const cursor = Buffer.from(
   "2026-07-21T00:00:00.000Z 00000000-0000-4000-8000-000000000004",
 ).toString("base64url");
@@ -45,7 +46,7 @@ beforeEach(() => {
   mocks.listProjectAuditUrls.mockResolvedValue({
     projectId,
     siteId: "00000000-0000-4000-8000-000000000005",
-    diagnosticRunId: "00000000-0000-4000-8000-000000000006",
+    diagnosticRunId,
     crawlSnapshotId: "00000000-0000-4000-8000-000000000007",
     data: [],
     meta: {
@@ -58,9 +59,9 @@ beforeEach(() => {
 });
 
 describe("GET project Growth Map URLs", () => {
-  it("passes only validated bounded list options and workspace scope", async () => {
+  it("passes a canonical UUIDv7 pin with only validated bounded list options and workspace scope", async () => {
     const response = await invoke(
-      `?limit=25&cursor=${cursor}&search=${encodeURIComponent("  onboarding / setup  ")}`,
+      `?limit=25&cursor=${cursor}&search=${encodeURIComponent("  onboarding / setup  ")}&diagnosticRunId=${diagnosticRunId}`,
     );
 
     expect(response.status).toBe(200);
@@ -74,6 +75,7 @@ describe("GET project Growth Map URLs", () => {
         limit: 25,
         cursor,
         search: "onboarding / setup",
+        diagnosticRunId,
       },
     );
     await expect(response.json()).resolves.toEqual({
@@ -91,7 +93,12 @@ describe("GET project Growth Map URLs", () => {
         uiLocale: "zh-CN",
       },
       projectId,
-      { limit: 50, cursor: null, search: null },
+      {
+        limit: 50,
+        cursor: null,
+        search: null,
+        diagnosticRunId: null,
+      },
     );
   });
 
@@ -105,7 +112,12 @@ describe("GET project Growth Map URLs", () => {
         uiLocale: "en",
       },
       projectId,
-      { limit: 50, cursor: null, search: null },
+      {
+        limit: 50,
+        cursor: null,
+        search: null,
+        diagnosticRunId: null,
+      },
     );
   });
 
@@ -115,6 +127,8 @@ describe("GET project Growth Map URLs", () => {
     ["cursor", "customer+private+cursor"],
     ["search", "   "],
     ["search", "x".repeat(257)],
+    ["diagnosticRunId", "customer-private-run"],
+    ["diagnosticRunId", diagnosticRunId.toUpperCase()],
   ])("rejects invalid %s without calling the service", async (name, value) => {
     const response = await invoke(`?${name}=${encodeURIComponent(value)}`);
     const body = await response.json();
@@ -133,6 +147,7 @@ describe("GET project Growth Map URLs", () => {
     ["limit", "25", "50"],
     ["cursor", cursor, cursor],
     ["search", "onboarding", "pricing"],
+    ["diagnosticRunId", diagnosticRunId, diagnosticRunId],
   ])("rejects duplicate %s instead of choosing one value", async (name, first, second) => {
     const response = await invoke(
       `?${name}=${encodeURIComponent(first)}&${name}=${encodeURIComponent(second)}`,
@@ -144,6 +159,28 @@ describe("GET project Growth Map URLs", () => {
       status: 422,
       errors: [{ pointer: `/${name}`, code: "duplicate_query_parameter" }],
     });
+    expect(mocks.listProjectAuditUrls).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown query parameters instead of silently widening the generation read", async () => {
+    const response = await invoke(
+      `?diagnosticRunId=${diagnosticRunId}&unexpected=customer-private-value`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      errors: [
+        {
+          pointer: "/unexpected",
+          code: "unknown_query_parameter",
+          message: "Unknown query parameter.",
+        },
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain("customer-private-value");
     expect(mocks.listProjectAuditUrls).not.toHaveBeenCalled();
   });
 });

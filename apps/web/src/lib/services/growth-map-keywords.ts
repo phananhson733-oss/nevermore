@@ -14,6 +14,7 @@ import {
   type SourceFreshness,
 } from "@sf/contracts";
 import {
+  MAX_KEYWORD_ENTITY_BATCH,
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
@@ -38,17 +39,28 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import { ProblemError } from "@sf/observability";
+import type { GovernanceKeywordFactV1 } from "@sf/engine";
 import {
   DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   canonicalizeUrl,
   parseDataForSeoCollectionScope,
+  parseDataForSeoSearchLandscapeScope,
 } from "@sf/sources";
 import { and, asc, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import {
+  loadPublishedGrowthMapGeneration,
+  type PublishedGrowthMapGeneration,
+} from "./growth-map-generation";
 import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { isStale } from "./source-mappers";
 
-const { collectionRuns, dataSnapshots, normalizedObservations } = schemaTables;
+const { collectionRuns, dataSnapshots, keywordOccurrences, normalizedObservations } =
+  schemaTables;
 
 const MAX_LOOKUP_BATCH = 500;
 const UUID =
@@ -75,6 +87,8 @@ const MANUAL_FRESHNESS_LIMITATION =
   "Manual input has no independent provider data-as-of timestamp.";
 const UNKNOWN_FRESHNESS_LIMITATION =
   "No provider data-as-of timestamp is available for this source occurrence.";
+const NEWER_LIVE_REVIEW_LIMITATION =
+  "A newer live Keyword review exists; rerun Analysis Refresh to publish it in the customer-visible Growth Map.";
 
 const CLASSIFICATION_LIMITATIONS = {
   intent: "Search intent has not been classified.",
@@ -112,6 +126,7 @@ const MISSING_METRIC_LIMITATIONS: Record<MetricField, string> = {
 export interface GrowthMapKeywordListOptions {
   readonly limit: number;
   readonly cursor: string | null;
+  readonly diagnosticRunId?: string | null;
   /** Test/SSR clock seam; never serialized. */
   readonly now?: Date;
 }
@@ -146,6 +161,8 @@ interface CanonicalSnapshotRow {
   readonly source_connection_id: string | null;
   readonly provider: string;
   readonly dataset_key: string;
+  readonly schema_version: string;
+  readonly method_version: string;
   readonly captured_at: string;
   readonly availability: string;
   readonly limitation: string;
@@ -168,6 +185,16 @@ interface EntityOccurrenceHistory {
   readonly entity: KeywordEntityRow;
   readonly rows: readonly KeywordOccurrenceRow[];
   readonly truncated: boolean;
+}
+
+interface FrozenEntityOccurrenceHistory extends EntityOccurrenceHistory {
+  readonly frozen: FrozenKeywordProjection;
+}
+
+interface FrozenKeywordProjection {
+  readonly fact: GovernanceKeywordFactV1;
+  readonly topicNodeId: string | null;
+  readonly topicModelRevision: number | null;
 }
 
 interface KeywordProjectionRows {
@@ -200,6 +227,20 @@ interface UserReviewEvidence {
 }
 
 type KeywordEvidence = InterviewSummaryEvidence | UserReviewEvidence;
+
+function normalizePinnedDiagnosticRunId(
+  diagnosticRunId: string | null | undefined,
+): string | null {
+  if (diagnosticRunId === undefined || diagnosticRunId === null) return null;
+  if (
+    diagnosticRunId.length === 0 ||
+    diagnosticRunId.trim() !== diagnosticRunId ||
+    !UUID.test(diagnosticRunId)
+  ) {
+    throw new RangeError("diagnosticRunId must be a canonical lowercase UUID");
+  }
+  return diagnosticRunId;
+}
 
 function corruptKeywordLibrary(): never {
   throw new ProblemError(
@@ -291,6 +332,44 @@ function exactOptionalTimestamp(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return corruptKeywordLibrary();
   return isoInstant(value);
+}
+
+function flattenFrozenKeywords(
+  clusters: PublishedGrowthMapGeneration["governance"]["keywordClusters"],
+): readonly FrozenKeywordProjection[] {
+  return clusters.flatMap((cluster) =>
+    cluster.keywords.map((fact) => ({
+      fact,
+      topicNodeId: cluster.topicNodeId ?? null,
+      topicModelRevision: cluster.topicModelRevision ?? null,
+    })),
+  );
+}
+
+function frozenKeywordIdentity(fact: GovernanceKeywordFactV1): string {
+  return `${fact.normalizedKeyword}::${fact.marketCode}::${fact.languageTag}::${fact.queryKind}`;
+}
+
+function assertFrozenKeywordMirror(
+  entity: KeywordEntityRow,
+  fact: GovernanceKeywordFactV1,
+  scope: ProjectScope,
+): void {
+  if (
+    entity.workspace_id !== scope.workspaceId ||
+    entity.project_id !== scope.projectId ||
+    entity.id !== fact.keywordEntityId ||
+    entity.display_keyword !== fact.displayKeyword ||
+    entity.normalized_keyword !== fact.normalizedKeyword ||
+    entity.market !== fact.marketCode ||
+    entity.language_tag !== fact.languageTag ||
+    entity.query_kind !== fact.queryKind
+  ) {
+    corruptKeywordLibrary();
+  }
+  if (entity.mapping_revision < fact.revision) {
+    corruptKeywordLibrary();
+  }
 }
 
 function summaryTimestamp(
@@ -415,7 +494,43 @@ async function loadActiveProject(
   return { workspaceId: scope.workspaceId, projectId };
 }
 
-async function loadOccurrenceHistories(
+async function loadFrozenEntities(
+  exec: Executor,
+  scope: ProjectScope,
+  frozenKeywords: readonly FrozenKeywordProjection[],
+): Promise<Map<string, KeywordEntityRow>> {
+  const repository = new KeywordsRepository(exec);
+  const ids = unique(frozenKeywords.map(({ fact }) => fact.keywordEntityId));
+  const rows: KeywordEntityRow[] = [];
+  for (const batch of batches(ids, MAX_KEYWORD_ENTITY_BATCH)) {
+    rows.push(...(await repository.listByIds(scope, batch)));
+  }
+  if (rows.length !== ids.length) {
+    return corruptKeywordLibrary();
+  }
+
+  const factsById = new Map(
+    frozenKeywords.map(({ fact }) => [fact.keywordEntityId, fact] as const),
+  );
+  const byId = new Map<string, KeywordEntityRow>();
+  const seenIdentities = new Set<string>();
+  for (const row of rows) {
+    const fact = factsById.get(row.id);
+    if (!fact || byId.has(row.id)) {
+      return corruptKeywordLibrary();
+    }
+    assertFrozenKeywordMirror(row, fact, scope);
+    const identity = frozenKeywordIdentity(fact);
+    if (seenIdentities.has(identity)) {
+      return corruptKeywordLibrary();
+    }
+    seenIdentities.add(identity);
+    byId.set(row.id, row);
+  }
+  return byId;
+}
+
+async function _loadOccurrenceHistories(
   exec: Executor,
   scope: ProjectScope,
   entities: readonly KeywordEntityRow[],
@@ -435,6 +550,99 @@ async function loadOccurrenceHistories(
     });
   }
   return histories;
+}
+
+async function loadExactFrozenOccurrenceHistories(
+  exec: Executor,
+  scope: ProjectScope,
+  reads: readonly {
+    readonly entity: KeywordEntityRow;
+    readonly frozen: FrozenKeywordProjection;
+  }[],
+): Promise<readonly FrozenEntityOccurrenceHistory[]> {
+  const requestedIds = unique(
+    reads.flatMap((read) =>
+      read.frozen.fact.occurrenceRefs.map((ref) => ref.occurrenceId),
+    ),
+  );
+  if (reads.length === 0) {
+    return [];
+  }
+  if (requestedIds.length === 0) {
+    return corruptKeywordLibrary();
+  }
+
+  const byId = new Map<string, KeywordOccurrenceRow>();
+  for (const batch of batches(requestedIds)) {
+    const rows = (await exec
+      .select({
+        id: keywordOccurrences.id,
+        workspace_id: keywordOccurrences.workspace_id,
+        project_id: keywordOccurrences.project_id,
+        data_snapshot_id: keywordOccurrences.data_snapshot_id,
+        normalized_observation_id:
+          keywordOccurrences.normalized_observation_id,
+        display_keyword: keywordOccurrences.display_keyword,
+        normalized_keyword: keywordOccurrences.normalized_keyword,
+        market: keywordOccurrences.market,
+        language_tag: keywordOccurrences.language_tag,
+        query_kind: keywordOccurrences.query_kind,
+        source_kind: keywordOccurrences.source_kind,
+        scope_basis: keywordOccurrences.scope_basis,
+        source_pointer: keywordOccurrences.source_pointer,
+        source_ref: keywordOccurrences.source_ref,
+        collected_at: keywordOccurrences.collected_at,
+        provider_data_as_of: keywordOccurrences.provider_data_as_of,
+        created_at: keywordOccurrences.created_at,
+      })
+      .from(keywordOccurrences)
+      .where(
+        and(
+          projectPredicate(keywordOccurrences, scope),
+          inArray(keywordOccurrences.id, batch),
+        ),
+      )
+      .orderBy(asc(keywordOccurrences.id))) as KeywordOccurrenceRow[];
+    for (const row of rows) {
+      if (byId.has(row.id) || !batch.includes(row.id)) {
+        return corruptKeywordLibrary();
+      }
+      byId.set(row.id, row);
+    }
+  }
+  if (byId.size !== requestedIds.length) {
+    return corruptKeywordLibrary();
+  }
+
+  return reads.map(({ entity, frozen }) => ({
+    entity,
+    frozen,
+    rows: frozen.fact.occurrenceRefs
+      .map((ref) => {
+        const row = byId.get(ref.occurrenceId);
+        if (
+          !row ||
+          row.data_snapshot_id !== ref.snapshotId ||
+          row.normalized_observation_id !== ref.observationId
+        ) {
+          return corruptKeywordLibrary();
+        }
+        validateOccurrenceIdentity(row, entity, scope);
+        return row;
+      })
+      .sort((left, right) =>
+        right.created_at < left.created_at
+          ? -1
+          : right.created_at > left.created_at
+            ? 1
+            : right.id < left.id
+              ? -1
+              : right.id > left.id
+                ? 1
+                : 0,
+      ),
+    truncated: false,
+  }));
 }
 
 async function loadCanonicalObservations(
@@ -506,6 +714,8 @@ async function loadCanonicalSnapshots(
         source_connection_id: dataSnapshots.source_connection_id,
         provider: dataSnapshots.provider,
         dataset_key: dataSnapshots.dataset_key,
+        schema_version: dataSnapshots.schema_version,
+        method_version: dataSnapshots.method_version,
         captured_at: dataSnapshots.captured_at,
         availability: dataSnapshots.availability,
         limitation: dataSnapshots.limitation,
@@ -616,12 +826,12 @@ async function loadSitePages(
   return byId;
 }
 
-async function loadProjectionRows(
+async function _loadProjectionRows(
   exec: Executor,
   scope: ProjectScope,
   entities: readonly KeywordEntityRow[],
 ): Promise<KeywordProjectionRows> {
-  const histories = await loadOccurrenceHistories(exec, scope, entities);
+  const histories = await _loadOccurrenceHistories(exec, scope, entities);
   const occurrences = histories.flatMap((history) => history.rows);
   const observationIds = occurrences.flatMap((row) =>
     row.normalized_observation_id === null
@@ -650,6 +860,63 @@ async function loadProjectionRows(
       observation.site_page_id === null ? [] : [observation.site_page_id],
     ),
   ];
+  const sitePagesById = await loadSitePages(exec, scope, sitePageIds);
+  return {
+    histories,
+    observationsById,
+    snapshotsById,
+    collectionRunsById,
+    sitePagesById,
+  };
+}
+
+async function loadFrozenProjectionRows(
+  exec: Executor,
+  scope: ProjectScope,
+  reads: readonly {
+    readonly entity: KeywordEntityRow;
+    readonly frozen: FrozenKeywordProjection;
+  }[],
+): Promise<
+  KeywordProjectionRows & {
+    readonly histories: readonly FrozenEntityOccurrenceHistory[];
+  }
+> {
+  const histories = await loadExactFrozenOccurrenceHistories(
+    exec,
+    scope,
+    reads,
+  );
+  const occurrences = histories.flatMap((history) => history.rows);
+  const observationIds = occurrences.flatMap((row) =>
+    row.normalized_observation_id === null
+      ? []
+      : [row.normalized_observation_id],
+  );
+  const snapshotIds = occurrences.flatMap((row) =>
+    row.data_snapshot_id === null ? [] : [row.data_snapshot_id],
+  );
+  const observationsById = await loadCanonicalObservations(
+    exec,
+    scope,
+    observationIds,
+  );
+  const snapshotsById = await loadCanonicalSnapshots(exec, scope, snapshotIds);
+  const collectionRunsById = await loadCanonicalCollectionRuns(
+    exec,
+    scope,
+    [...snapshotsById.values()].map((snapshot) => snapshot.collection_run_id),
+  );
+  const sitePageIds = unique([
+    ...reads.flatMap(({ frozen }) =>
+      frozen.fact.mappedSitePageId === null
+        ? []
+        : [frozen.fact.mappedSitePageId],
+    ),
+    ...[...observationsById.values()].flatMap((observation) =>
+      observation.site_page_id === null ? [] : [observation.site_page_id],
+    ),
+  ]);
   const sitePagesById = await loadSitePages(exec, scope, sitePageIds);
   return {
     histories,
@@ -773,15 +1040,62 @@ function providerOccurrenceLineage(
   return { observation, snapshot, collectionRun, providerDataAsOf };
 }
 
+type DataForSeoRankedLineageKind = "legacy_ranked" | "search_landscape";
+
+function exactDataForSeoRankedLineage(
+  snapshot: CanonicalSnapshotRow,
+  collectionRun: CanonicalCollectionRunRow,
+): DataForSeoRankedLineageKind | null {
+  if (
+    snapshot.provider !== "dataforseo" ||
+    collectionRun.provider !== "dataforseo" ||
+    collectionRun.import_preview_id !== null
+  ) {
+    return null;
+  }
+  if (
+    snapshot.dataset_key === DATAFORSEO_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_METHOD_VERSION &&
+    collectionRun.operation === "keyword_gap_import" &&
+    collectionRun.method_version === DATAFORSEO_METHOD_VERSION
+  ) {
+    return "legacy_ranked";
+  }
+  if (
+    snapshot.dataset_key ===
+      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    collectionRun.operation ===
+      DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+    collectionRun.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION
+  ) {
+    return "search_landscape";
+  }
+  return null;
+}
+
 function validateDataForSeoSummary(
   snapshot: CanonicalSnapshotRow,
   occurrence: KeywordOccurrenceRow,
+  lineageKind: DataForSeoRankedLineageKind,
 ): string {
-  let collectionScope: ReturnType<typeof parseDataForSeoCollectionScope>;
+  let collectionScope:
+    | ReturnType<typeof parseDataForSeoCollectionScope>
+    | ReturnType<typeof parseDataForSeoSearchLandscapeScope>;
   try {
-    collectionScope = parseDataForSeoCollectionScope(
-      snapshot.summary["collectionScope"],
-    );
+    collectionScope =
+      lineageKind === "legacy_ranked"
+        ? parseDataForSeoCollectionScope(
+            snapshot.summary["collectionScope"],
+          )
+        : parseDataForSeoSearchLandscapeScope(
+            snapshot.summary["collectionScope"],
+          );
   } catch {
     return corruptKeywordLibrary();
   }
@@ -802,8 +1116,12 @@ function validateDataForSeoSummary(
     collectionScope.location.kind === "code"
       ? `location code ${collectionScope.location.code}`
       : `location ${collectionScope.location.name}`;
+  const scopeDetail =
+    collectionScope.queryKind === "ranked_keywords"
+      ? `capped at ${collectionScope.limit} rows`
+      : `search_landscape capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows and ${collectionScope.competitorsDomain.limit} competitor-domain rows`;
   return boundedText(
-    `DataForSEO ${snapshot.dataset_key} scope is target ${collectionScope.target}, market ${collectionScope.marketCode}, language ${collectionScope.languageTag}, ${location}, capped at ${collectionScope.limit} rows; it is not the complete keyword universe.`,
+    `DataForSEO ${snapshot.dataset_key} scope is target ${collectionScope.target}, market ${collectionScope.marketCode}, language ${collectionScope.languageTag}, ${location}, ${scopeDetail}; it is not the complete keyword universe.`,
   );
 }
 
@@ -1043,11 +1361,14 @@ function projectProviderOccurrence(
       break;
     }
     case "dataforseo_ranked": {
+      const lineageKind = exactDataForSeoRankedLineage(
+        snapshot,
+        collectionRun,
+      );
       if (
         occurrence.scope_basis !== "provider_collection_scope" ||
         occurrence.source_pointer !== "/valueJson/keyword" ||
-        snapshot.provider !== "dataforseo" ||
-        snapshot.dataset_key !== DATAFORSEO_DATASET_KEY ||
+        lineageKind === null ||
         observation.provider !== "dataforseo" ||
         observation.metric_key !== "csv.keyword_gap.v1" ||
         observation.subject_type !== "keyword_cluster" ||
@@ -1055,15 +1376,15 @@ function projectProviderOccurrence(
         observation.origin !== "vendor_observation" ||
         observation.method !== "observed" ||
         observation.grade !== "B" ||
-        collectionRun.provider !== "dataforseo" ||
-        collectionRun.operation !== "keyword_gap_import" ||
-        collectionRun.method_version !== "dataforseo.ranked_keywords.v1" ||
-        collectionRun.import_preview_id !== null ||
         lineage.providerDataAsOf !== null
       ) {
         return corruptKeywordLibrary();
       }
-      scopeLimitation = validateDataForSeoSummary(snapshot, occurrence);
+      scopeLimitation = validateDataForSeoSummary(
+        snapshot,
+        occurrence,
+        lineageKind,
+      );
       break;
     }
     case "gsc_top_query": {
@@ -1080,7 +1401,7 @@ function projectProviderOccurrence(
         observation.grade !== "A" ||
         collectionRun.provider !== "gsc" ||
         collectionRun.operation !== "search_analytics" ||
-        collectionRun.method_version !== "gsc.search_analytics.v1" ||
+        collectionRun.method_version !== "gsc.page_query_daily.v1" ||
         collectionRun.import_preview_id !== null
       ) {
         return corruptKeywordLibrary();
@@ -1474,19 +1795,24 @@ function projectMetrics(
 function classificationLimitations(
   entity: KeywordEntityRow,
   governance?: CurrentKeywordGovernance,
+  frozen?: FrozenKeywordProjection,
 ) {
   const intent =
-    governance === undefined
-      ? entity.intent
-      : governance.projection.intent;
+    frozen !== undefined
+      ? frozen.fact.intent
+      : governance?.projection.intent ?? entity.intent;
   const buyerStage =
-    governance === undefined
-      ? entity.buyer_stage
-      : governance.projection.buyerStage;
+    frozen !== undefined
+      ? frozen.fact.buyerStage
+      : governance?.projection.buyerStage ?? entity.buyer_stage;
   const topicNodeId =
-    governance === undefined ? null : governance.projection.topicNodeId;
+    frozen !== undefined
+      ? frozen.topicNodeId
+      : governance?.projection.topicNodeId ?? null;
   const clusterKey =
-    governance === undefined ? entity.cluster_key : governance.clusterKey;
+    frozen !== undefined
+      ? frozen.fact.clusterKey
+      : governance?.clusterKey ?? entity.cluster_key;
   return {
     intent: intent === null ? CLASSIFICATION_LIMITATIONS.intent : null,
     buyerStage:
@@ -1507,6 +1833,7 @@ function itemCoverage(input: {
   readonly metrics: GrowthMapKeywordMetrics;
   readonly occurrences: readonly ProjectedOccurrence[];
   readonly truncated: boolean;
+  readonly newerLiveRevision: boolean;
 }): GrowthMapCoverage {
   const limitations = unique(
     [
@@ -1526,6 +1853,7 @@ function itemCoverage(input: {
           : occurrence.dto.limitation,
       ),
       input.truncated ? OCCURRENCE_HISTORY_LIMITATION : null,
+      input.newerLiveRevision ? NEWER_LIVE_REVIEW_LIMITATION : null,
     ].filter((value): value is string => value !== null),
   ).slice(0, 100);
   return limitations.length === 0
@@ -1538,24 +1866,67 @@ function projectItem(
   rows: KeywordProjectionRows,
   scope: ProjectScope,
   now: Date,
-  governance?: CurrentKeywordGovernance,
+  options?: {
+    readonly governance?: CurrentKeywordGovernance;
+    readonly frozen?: FrozenKeywordProjection;
+  },
 ): GrowthMapKeywordLibraryItem {
   const { entity } = history;
   validateEntity(entity, scope);
-  if (governance !== undefined) {
+  const governance = options?.governance;
+  const frozen = options?.frozen;
+  const frozenFact = frozen?.fact;
+  if (governance !== undefined && frozenFact === undefined) {
     assertGovernanceMirror(entity, governance, scope);
+  }
+  if (frozenFact !== undefined && frozenFact.metricRefs.length > 0) {
+    return corruptKeywordLibrary();
   }
   const projected = history.rows.map((occurrence) =>
     projectOccurrence(occurrence, entity, rows, scope, now),
   );
-  const classifications = classificationLimitations(entity, governance);
+  const classifications = classificationLimitations(
+    entity,
+    governance,
+    frozen,
+  );
   const metrics = projectMetrics(projected);
   const current = governance?.projection;
-  const topicNodeId = current?.topicNodeId ?? null;
-  const clusterKey = governance?.clusterKey ?? null;
+  const topicNodeId =
+    frozen !== undefined ? frozen.topicNodeId : current?.topicNodeId ?? null;
+  const clusterKey =
+    frozen !== undefined
+      ? frozenFact?.clusterKey ?? null
+      : governance?.clusterKey ?? null;
   if (topicNodeId !== null && clusterKey === null) {
     return corruptKeywordLibrary();
   }
+  const status =
+    frozen !== undefined ? frozenFact!.status : current?.status ?? entity.status;
+  const revision =
+    frozen !== undefined
+      ? frozenFact!.revision
+      : current?.governanceRevision ?? entity.mapping_revision;
+  const intent =
+    frozen !== undefined ? frozenFact!.intent : current?.intent ?? entity.intent;
+  const buyerStage =
+    frozen !== undefined
+      ? frozenFact!.buyerStage
+      : current?.buyerStage ?? entity.buyer_stage;
+  const mappedEntity =
+    frozenFact === undefined
+      ? entity
+      : {
+          ...entity,
+          mapping_decision: frozenFact.mappingDecision,
+          mapped_site_page_id: frozenFact.mappedSitePageId,
+          mapping_review_state: (
+            frozenFact.mappingReviewState === "confirmed"
+              ? "confirmed"
+              : "unreviewed"
+          ) as KeywordEntityRow["mapping_review_state"],
+          mapping_revision: frozenFact.revision,
+        };
   return {
     projectId: scope.projectId,
     keywordId: entity.id,
@@ -1564,17 +1935,16 @@ function projectItem(
     marketCode: entity.market,
     languageTag: entity.language_tag,
     queryKind: entity.query_kind,
-    status: current?.status ?? entity.status,
-    revision: current?.governanceRevision ?? entity.mapping_revision,
-    intent: current === undefined ? entity.intent : current.intent,
-    buyerStage:
-      current === undefined ? entity.buyer_stage : current.buyerStage,
+    status,
+    revision,
+    intent,
+    buyerStage,
     cluster:
       topicNodeId === null || clusterKey === null
         ? null
         : { clusterId: topicNodeId, name: clusterKey },
     classificationLimitations: classifications,
-    mappedTarget: mappedTarget(entity, rows, scope, governance),
+    mappedTarget: mappedTarget(mappedEntity, rows, scope, governance),
     sourceOccurrences: projected.map((occurrence) => occurrence.dto),
     metrics,
     coverage: itemCoverage({
@@ -1582,6 +1952,8 @@ function projectItem(
       metrics,
       occurrences: projected,
       truncated: history.truncated,
+      newerLiveRevision:
+        frozenFact !== undefined && entity.mapping_revision > frozenFact.revision,
     }),
   };
 }
@@ -1607,14 +1979,47 @@ async function listInSnapshot(
   options: GrowthMapKeywordListOptions,
 ): Promise<ReturnType<typeof GrowthMapKeywordLibraryResponse.parse>> {
   const scope = await loadActiveProject(exec, workspaceScope, projectId);
-  const page = await new KeywordsRepository(exec).listByProject(scope, {
-    limit: options.limit,
-    cursor: options.cursor,
+  const pinnedDiagnosticRunId = normalizePinnedDiagnosticRunId(
+    options.diagnosticRunId,
+  );
+  const generation = await loadPublishedGrowthMapGeneration(
+    exec,
+    scope,
+    pinnedDiagnosticRunId,
+  );
+  if (
+    pinnedDiagnosticRunId !== null &&
+    generation.run.id !== pinnedDiagnosticRunId
+  ) {
+    return corruptKeywordLibrary();
+  }
+  const frozenKeywords = flattenFrozenKeywords(
+    generation.governance.keywordClusters,
+  );
+  const factsById = new Map(
+    frozenKeywords.map((frozen) => [frozen.fact.keywordEntityId, frozen] as const),
+  );
+  await loadFrozenEntities(exec, scope, frozenKeywords);
+  const page = await new KeywordsRepository(exec).listByIdsPage(
+    scope,
+    [...factsById.keys()],
+    {
+      limit: options.limit,
+      cursor: options.cursor,
+    },
+  );
+  const reads = page.rows.map((entity) => {
+    const frozen = factsById.get(entity.id);
+    if (!frozen) return corruptKeywordLibrary();
+    return { entity, frozen };
   });
-  const rows = await loadProjectionRows(exec, scope, page.rows);
+  const rows = await loadFrozenProjectionRows(exec, scope, reads);
   const now = validNow(options.now ?? new Date());
-  const data = rows.histories.map((history) =>
-    projectItem(history, rows, scope, now),
+  const histories = rows.histories as readonly FrozenEntityOccurrenceHistory[];
+  const data = histories.map((history) =>
+    projectItem(history, rows, scope, now, {
+      frozen: history.frozen,
+    }),
   );
   try {
     return GrowthMapKeywordLibraryResponse.parse({
@@ -1627,6 +2032,91 @@ async function listInSnapshot(
         coverage: pageCoverage(data),
       },
     });
+  } catch {
+    return corruptKeywordLibrary();
+  }
+}
+
+async function detailInSnapshot(
+  exec: Executor,
+  workspaceScope: WorkspaceScope,
+  projectId: string,
+  keywordId: string,
+  diagnosticRunId: string | null,
+  now: Date,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  const scope = await loadActiveProject(exec, workspaceScope, projectId);
+  const pinnedDiagnosticRunId = normalizePinnedDiagnosticRunId(
+    diagnosticRunId,
+  );
+  const generation = await loadPublishedGrowthMapGeneration(
+    exec,
+    scope,
+    pinnedDiagnosticRunId,
+  );
+  if (
+    pinnedDiagnosticRunId !== null &&
+    generation.run.id !== pinnedDiagnosticRunId
+  ) {
+    return corruptKeywordLibrary();
+  }
+  const frozen = flattenFrozenKeywords(
+    generation.governance.keywordClusters,
+  ).find((candidate) => candidate.fact.keywordEntityId === keywordId);
+  if (!frozen) return keywordNotFound();
+  const entities = await loadFrozenEntities(exec, scope, [frozen]);
+  const entity = entities.get(keywordId);
+  if (!entity) return corruptKeywordLibrary();
+  const rows = await loadFrozenProjectionRows(exec, scope, [
+    { entity, frozen },
+  ]);
+  const history = (rows.histories as readonly FrozenEntityOccurrenceHistory[])[0];
+  if (!history) return corruptKeywordLibrary();
+  const data = projectItem(
+    history,
+    rows,
+    scope,
+    validNow(now),
+    { frozen: history.frozen },
+  );
+  try {
+    return GrowthMapKeywordDetailResponse.parse({ projectId, data });
+  } catch {
+    return corruptKeywordLibrary();
+  }
+}
+
+async function reviewDetailInSnapshot(
+  exec: Executor,
+  workspaceScope: WorkspaceScope,
+  projectId: string,
+  keywordId: string,
+  now: Date,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  const scope = await loadActiveProject(exec, workspaceScope, projectId);
+  let governance: CurrentKeywordGovernance | null;
+  try {
+    governance = await new KeywordGovernanceRepository(exec).findCurrent(
+      scope,
+      keywordId,
+    );
+  } catch (error) {
+    if (error instanceof KeywordGovernanceIntegrityError) {
+      return corruptKeywordLibrary();
+    }
+    throw error;
+  }
+  if (!governance) return keywordNotFound();
+  const entity = await new KeywordsRepository(exec).findById(scope, keywordId);
+  if (!entity) return corruptKeywordLibrary();
+  const rows = await _loadProjectionRows(exec, scope, [entity]);
+  const history = rows.histories[0];
+  if (!history) return corruptKeywordLibrary();
+  const data = projectItem(history, rows, scope, validNow(now), {
+    governance,
+  });
+  try {
+    return GrowthMapKeywordDetailResponse.parse({ projectId, data });
   } catch {
     return corruptKeywordLibrary();
   }
@@ -1654,56 +2144,54 @@ export async function listProjectAuditKeywords(
   );
 }
 
-async function detailInSnapshot(
-  exec: Executor,
-  workspaceScope: WorkspaceScope,
-  projectId: string,
-  keywordId: string,
-  now: Date,
-): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
-  const scope = await loadActiveProject(exec, workspaceScope, projectId);
-  let governance: CurrentKeywordGovernance | null;
-  try {
-    governance = await new KeywordGovernanceRepository(exec).findCurrent(
-      scope,
-      keywordId,
-    );
-  } catch (error) {
-    if (error instanceof KeywordGovernanceIntegrityError) {
-      return corruptKeywordLibrary();
-    }
-    throw error;
-  }
-  if (!governance) return keywordNotFound();
-  const entity = await new KeywordsRepository(exec).findById(scope, keywordId);
-  if (!entity) return corruptKeywordLibrary();
-  const rows = await loadProjectionRows(exec, scope, [entity]);
-  const history = rows.histories[0];
-  if (!history) return corruptKeywordLibrary();
-  const data = projectItem(
-    history,
-    rows,
-    scope,
-    validNow(now),
-    governance,
-  );
-  try {
-    return GrowthMapKeywordDetailResponse.parse({ projectId, data });
-  } catch {
-    return corruptKeywordLibrary();
-  }
-}
 
 export async function getProjectAuditKeyword(
+  scope: WorkspaceScope,
+  projectId: string,
+  keywordId: string,
+  diagnosticRunId?: string | null,
+  exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  const now = new Date();
+  const pinnedDiagnosticRunId = normalizePinnedDiagnosticRunId(
+    diagnosticRunId,
+  );
+  if (exec) {
+    return detailInSnapshot(
+      exec,
+      scope,
+      projectId,
+      keywordId,
+      pinnedDiagnosticRunId,
+      now,
+    );
+  }
+  return getDb().db.transaction(
+    (tx) =>
+      detailInSnapshot(
+        tx,
+        scope,
+        projectId,
+        keywordId,
+        pinnedDiagnosticRunId,
+        now,
+      ),
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
+
+export async function getProjectAuditKeywordReviewDetail(
   scope: WorkspaceScope,
   projectId: string,
   keywordId: string,
   exec?: Executor,
 ): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
   const now = new Date();
-  if (exec) return detailInSnapshot(exec, scope, projectId, keywordId, now);
+  if (exec) {
+    return reviewDetailInSnapshot(exec, scope, projectId, keywordId, now);
+  }
   return getDb().db.transaction(
-    (tx) => detailInSnapshot(tx, scope, projectId, keywordId, now),
+    (tx) => reviewDetailInSnapshot(tx, scope, projectId, keywordId, now),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }
@@ -1778,10 +2266,9 @@ async function reviewKeywordInSnapshot(
     );
   }
 
-  // Return the same canonical customer projection used by GET. The governance
-  // repository has already advanced the legacy read mirror and append-only
-  // decision ledger atomically inside this transaction.
-  return detailInSnapshot(
+  // PATCH returns the authoritative live review projection (r+1), not the
+  // last published frozen customer snapshot.
+  return reviewDetailInSnapshot(
     exec,
     { workspaceId: scope.workspaceId },
     projectId,

@@ -7,9 +7,14 @@ import {
   SitesRepository,
   SourceConnectionsRepository,
 } from "@sf/db";
-import { createDataForSeoCollectionScope } from "@sf/sources";
 import {
+  createDataForSeoCollectionScope,
+  createDataForSeoSearchLandscapeScope,
+} from "@sf/sources";
+import {
+  collectionSnapshotIdentity,
   resolveFrozenDataForSeoCollectionScope,
+  resolveFrozenDataForSeoSearchLandscapeScope,
   runCollection,
   type CollectionWorkerContext,
 } from "./run-collection.ts";
@@ -28,6 +33,110 @@ afterEach(() => {
 });
 
 describe("DataForSEO worker gates", () => {
+  it("recognizes only the two exact legacy/composite operation and method pairs", () => {
+    expect(
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "keyword_gap_import",
+        method_version: "dataforseo.ranked_keywords.v1",
+      }),
+    ).toEqual({
+      datasetKey: "dataforseo.ranked_keywords.v1",
+      schemaVersion: "dataforseo.ranked_keywords.v1",
+    });
+    expect(
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        method_version: "dataforseo.search_landscape.v1",
+      }),
+    ).toEqual({
+      datasetKey: "dataforseo.search_landscape.v1",
+      schemaVersion: "dataforseo.search_landscape.v1",
+    });
+    expect(() =>
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        method_version: "dataforseo.ranked_keywords.v1",
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+    expect(() =>
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "keyword_gap_import",
+        method_version: "dataforseo.search_landscape.v1",
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+  });
+
+  it("validates the exact composite scope, hash, and both worker caps", () => {
+    const collectionScope = createDataForSeoSearchLandscapeScope({
+      target: "accepted.example",
+      marketCode: "GB",
+      locationName: "United Kingdom",
+      languageTag: "en-GB",
+      rankedKeywordsLimit: 37,
+      competitorsDomainLimit: 19,
+    });
+    const run = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      method_version: "dataforseo.search_landscape.v1",
+      site_id: "00000000-0000-4000-8000-000000000005",
+      source_connection_id: "00000000-0000-4000-8000-000000000006",
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId: "00000000-0000-4000-8000-000000000005",
+        collectionScope,
+      }),
+    };
+    const requestPayload = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      sourceConnectionId: "00000000-0000-4000-8000-000000000006",
+      collectionScope,
+    };
+
+    expect(
+      resolveFrozenDataForSeoSearchLandscapeScope(
+        run as never,
+        requestPayload,
+        100,
+        50,
+      ),
+    ).toEqual(collectionScope);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeScope(
+        run as never,
+        requestPayload,
+        36,
+        50,
+      ),
+    ).toThrow(/worker caps/i);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeScope(
+        run as never,
+        requestPayload,
+        100,
+        18,
+      ),
+    ).toThrow(/worker caps/i);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeScope(
+        { ...run, method_version: "dataforseo.ranked_keywords.v1" } as never,
+        requestPayload,
+        100,
+        50,
+      ),
+    ).toThrow(/identity/i);
+  });
+
   it("uses only the canonical command-time scope and never rebuilds it from mutable Site state", () => {
     const collectionScope = createDataForSeoCollectionScope({
       target: "accepted.example",
@@ -39,6 +148,7 @@ describe("DataForSEO worker gates", () => {
     const run = {
       provider: "dataforseo",
       operation: "keyword_gap_import",
+      method_version: "dataforseo.ranked_keywords.v1",
       site_id: "00000000-0000-4000-8000-000000000005",
       source_connection_id: "00000000-0000-4000-8000-000000000006",
       parameters_hash: contentHash({
@@ -75,6 +185,7 @@ describe("DataForSEO worker gates", () => {
     const run = {
       provider: "dataforseo",
       operation: "keyword_gap_import",
+      method_version: "dataforseo.ranked_keywords.v1",
       site_id: "00000000-0000-4000-8000-000000000005",
       source_connection_id: "00000000-0000-4000-8000-000000000006",
       parameters_hash: contentHash({
@@ -124,6 +235,7 @@ describe("DataForSEO worker gates", () => {
     const run = {
       provider: "dataforseo",
       operation: "keyword_gap_import",
+      method_version: "dataforseo.ranked_keywords.v1",
       site_id: "00000000-0000-4000-8000-000000000005",
       source_connection_id: "00000000-0000-4000-8000-000000000006",
       parameters_hash: contentHash({
@@ -269,6 +381,7 @@ describe("DataForSEO worker gates", () => {
         login: "provider-login",
         password: "provider-password",
         maxKeywords: 200,
+        maxCompetitors: 100,
         fetch: providerFetch,
       },
       logger: {
@@ -315,6 +428,193 @@ describe("DataForSEO worker gates", () => {
     };
     expect(persisted.outcome.summary.timing.collectedAt).toBe(
       persisted.outcome.capturedAt,
+    );
+  });
+
+  it("executes one composite Search Landscape collection and persists one composite Snapshot input", async () => {
+    const workspaceId = "00000000-0000-4000-8000-000000000102";
+    const projectId = "00000000-0000-4000-8000-000000000103";
+    const runId = "00000000-0000-4000-8000-000000000101";
+    const siteId = "00000000-0000-4000-8000-000000000105";
+    const sourceConnectionId = "00000000-0000-4000-8000-000000000106";
+    const collectionScope = createDataForSeoSearchLandscapeScope({
+      target: "accepted.example",
+      marketCode: "GB",
+      locationName: "United Kingdom",
+      languageTag: "en-GB",
+      rankedKeywordsLimit: 37,
+      competitorsDomainLimit: 19,
+    });
+    const requestPayload = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      sourceConnectionId,
+      collectionScope,
+    };
+    const claimed = {
+      id: runId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      attempt_count: 1,
+      initiated_by: "00000000-0000-4000-8000-000000000104",
+      request_payload: requestPayload,
+    };
+    const collectionRun = {
+      id: runId,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      site_id: siteId,
+      provider: "dataforseo",
+      operation: "search_landscape",
+      method_version: "dataforseo.search_landscape.v1",
+      source_connection_id: sourceConnectionId,
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId,
+        collectionScope,
+      }),
+    };
+    vi.spyOn(AsyncRunsRepository.prototype, "claim").mockResolvedValue(
+      claimed as never,
+    );
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "lockAttemptForUpdate",
+    ).mockResolvedValue(claimed as never);
+    vi.spyOn(CollectionRunsRepository.prototype, "findById").mockResolvedValue(
+      collectionRun as never,
+    );
+    vi.spyOn(SitesRepository.prototype, "findPrimary").mockResolvedValue({
+      id: siteId,
+      origin: "https://mutated.example",
+      host: "mutated.example",
+      market_codes: ["CA"],
+      language_codes: ["fr-CA"],
+    } as never);
+    vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
+      id: projectId,
+      workspace_id: workspaceId,
+      archived_at: null,
+    } as never);
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "updateState",
+    ).mockResolvedValue(undefined);
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findConnectedById",
+    ).mockResolvedValue({
+      id: sourceConnectionId,
+      provider: "dataforseo",
+      config: { target: "mutated.example" },
+    } as never);
+    mocks.persistCollectionResult.mockResolvedValue("snapshot-1");
+
+    const providerRequests: Array<{
+      readonly url: string;
+      readonly body: unknown;
+    }> = [];
+    const providerFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      providerRequests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body)),
+      });
+      return new Response(
+        JSON.stringify({
+          status_code: 20_000,
+          cost: 0,
+          tasks: [
+            {
+              status_code: 40_102,
+              status_message: "No Search Results.",
+              cost: 0,
+              result: null,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const ctx = {
+      db: {
+        transaction: async (
+          callback: (tx: CollectionWorkerContext["db"]) => Promise<unknown>,
+        ) => callback({} as CollectionWorkerContext["db"]),
+      } as CollectionWorkerContext["db"],
+      blobStore: {},
+      credentialKey: Buffer.alloc(32),
+      googleOAuth: { clientId: "google-id", clientSecret: "google-secret" },
+      dataForSeo: {
+        enabled: true,
+        login: "provider-login",
+        password: "provider-password",
+        maxKeywords: 100,
+        maxCompetitors: 50,
+        fetch: providerFetch,
+      },
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    } as unknown as CollectionWorkerContext;
+
+    await runCollection(ctx, { runId, workspaceId, projectId });
+
+    expect(providerRequests).toHaveLength(2);
+    expect(providerRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: expect.stringContaining("/ranked_keywords/live"),
+          body: [
+            expect.objectContaining({
+              target: "accepted.example",
+              location_name: "United Kingdom",
+              language_code: "en",
+              limit: 37,
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          url: expect.stringContaining("/competitors_domain/live"),
+          body: [
+            expect.objectContaining({
+              target: "accepted.example",
+              location_name: "United Kingdom",
+              language_code: "en",
+              limit: 19,
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(JSON.stringify(providerRequests)).not.toContain("mutated.example");
+    expect(mocks.persistCollectionResult).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        collectionRun,
+        datasetKey: "dataforseo.search_landscape.v1",
+        schemaVersion: "dataforseo.search_landscape.v1",
+        outcome: expect.objectContaining({
+          rowCount: 0,
+          providerUsage: expect.objectContaining({ apiCalls: 2 }),
+          raw: expect.objectContaining({
+            schemaVersion: "dataforseo.search_landscape.v1",
+            collectionScope,
+          }),
+          summary: {
+            collectionScope,
+            timing: {
+              collectedAt: expect.any(String),
+              dataAsOf: null,
+              observedAt: null,
+              freshness: "unknown",
+            },
+          },
+        }),
+        observations: [],
+      }),
     );
   });
 
@@ -414,6 +714,7 @@ describe("DataForSEO worker gates", () => {
         login: "provider-login-sentinel",
         password: null,
         maxKeywords: 200,
+        maxCompetitors: 100,
         fetch: providerFetch,
       },
       logger: {

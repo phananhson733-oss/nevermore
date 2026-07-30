@@ -120,6 +120,7 @@ describeDb("createProject (AC-007)", () => {
       },
       safeGuard,
     );
+    expect(result.location).toBe(`/p/${result.project.id}/context`);
 
     expect(result.project).toMatchObject({
       clientName: "profile.example.com",

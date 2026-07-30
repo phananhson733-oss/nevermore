@@ -263,6 +263,7 @@ describe("createProject", () => {
     );
     expect(result.project.contextStatus).toBe("draft");
     expect(result.project.confirmedIcpProfileVersion).toBeNull();
+    expect(result.location).toBe(`/p/${projectRow.id}/context`);
   });
 
   it("replays a completed idempotent create before any DNS or reachability checks", async () => {
@@ -283,6 +284,34 @@ describe("createProject", () => {
       status: 201,
       replayed: true,
       location: "/p/project-1/overview",
+    });
+    expect(guard).not.toHaveBeenCalled();
+    expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();
+  });
+
+  it("replays a completed URL-first create to the Product Profile editor", async () => {
+    const body: CreateProjectRequest = {
+      mode: "product_profile",
+      productUrl: "https://example.com/product",
+      businessHint: "Customer-declared B2B product context",
+    };
+    const guard = vi.fn(async () => safeVerdict);
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
+      completedIdempotency(body),
+    );
+
+    const result = await createProject(
+      scope,
+      actorId,
+      idempotencyKey,
+      body,
+      guard,
+    );
+
+    expect(result).toMatchObject({
+      status: 201,
+      replayed: true,
+      location: "/p/project-1/context",
     });
     expect(guard).not.toHaveBeenCalled();
     expect(IdempotencyRepository.prototype.begin).not.toHaveBeenCalled();

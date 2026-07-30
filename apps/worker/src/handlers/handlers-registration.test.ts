@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkerContext } from "../context.ts";
 import { runCollection } from "../collection/run-collection.ts";
 import { runProductProfileSynthesis } from "../product-profile/run-product-profile-synthesis.ts";
+import { runAnalysisRefresh } from "../analysis-refresh/run-analysis-refresh.ts";
+import { registerAnalysisRefreshHandler } from "./analysis-refresh.ts";
 import { registerArtifactHandlers } from "./artifact.ts";
 import { registerContentShadowHandler } from "./content-shadow.ts";
 import { registerCollectHandlers } from "./collect.ts";
@@ -26,6 +28,9 @@ vi.mock("../product-profile/run-product-profile-synthesis.ts", () => ({
 }));
 vi.mock("../measurement/run-measurement.ts", () => ({
   runMeasurement: vi.fn(),
+}));
+vi.mock("../analysis-refresh/run-analysis-refresh.ts", () => ({
+  runAnalysisRefresh: vi.fn(),
 }));
 vi.mock("./recovery.ts", () => ({
   prepareRunDelivery: vi.fn(
@@ -53,8 +58,9 @@ describe("worker handler registration", () => {
     await registerContentShadowHandler(ctx);
     await registerPublicationHandler(ctx, vi.fn(async () => undefined));
     await registerMeasurementHandler(ctx, vi.fn(async () => undefined));
+    await registerAnalysisRefreshHandler(ctx);
 
-    expect(work).toHaveBeenCalledTimes(12);
+    expect(work).toHaveBeenCalledTimes(13);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -68,11 +74,51 @@ describe("worker handler registration", () => {
       "content-shadow",
       "publication",
       "measurement",
+      "refresh.analysis",
     ]);
     for (const call of work.mock.calls) {
       expect(call[1]).toEqual({ includeMetadata: true });
       expect(call[2]).toEqual(expect.any(Function));
     }
+  });
+
+  it("keeps Analysis Refresh delivery fencing outside the canonical payload", async () => {
+    vi.clearAllMocks();
+    let handler:
+      | ((jobs: readonly Record<string, unknown>[]) => Promise<void>)
+      | undefined;
+    const work = vi.fn(
+      async (
+        _queue: string,
+        _options: unknown,
+        callback: (jobs: readonly Record<string, unknown>[]) => Promise<void>,
+      ) => {
+        handler = callback;
+        return "worker-id";
+      },
+    );
+    const ctx = {
+      boss: { work },
+      logger: { info: vi.fn() },
+    } as unknown as WorkerContext;
+    await registerAnalysisRefreshHandler(ctx);
+    if (!handler) throw new Error("refresh.analysis handler missing");
+    const data = {
+      runId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002",
+      projectId: "00000000-0000-4000-8000-000000000003",
+    };
+    const job = { data, retryCount: 1, retryLimit: 2 };
+
+    await handler([job]);
+
+    expect(prepareRunDelivery).toHaveBeenCalledWith(
+      ctx,
+      job,
+      expect.any(Function),
+    );
+    expect(runAnalysisRefresh).toHaveBeenCalledWith(ctx, data);
+    expect(data).not.toHaveProperty("retryCount");
   });
 
   it("keeps Product Profile delivery fencing outside the canonical payload", async () => {

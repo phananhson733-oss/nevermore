@@ -8,6 +8,8 @@ import type {
   GrowthMapCompetitorAiCitationInsight,
   GrowthMapCompetitorLibraryItem,
   GrowthMapCompetitorOriginOccurrence,
+  GrowthMapCompetitorRelationship,
+  GrowthMapCompetitorReviewStatus,
   GrowthMapCompetitorSerpOverlap,
   GrowthMapKeywordLibraryItem,
   GrowthMapKeywordNumericMetric,
@@ -25,6 +27,8 @@ import type {
   GrowthMapUrlPortfolioItem,
   KeywordRelationDecisionKind,
   KeywordMappingDecision,
+  ProductProfileCompetitorAnalysisScope,
+  ReviewCompetitorRequest,
   ReviewKeywordRequest,
   TopicNodeDraftIntent,
   TopicNodeRevision,
@@ -63,7 +67,7 @@ import {
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -87,17 +91,20 @@ import {
 } from "@/components/ui";
 import { useReviewFinding } from "@/lib/api/hooks-diagnosis";
 import { ApiError } from "@/lib/api";
+import { collectAllCursorItems } from "@/lib/api/cursor-pages";
 import {
+  getGrowthMapKeywordRelations,
   refreshGrowthMapAfterFindingReview,
   useBeginGrowthMapTopicModelDraft,
   useConfirmGrowthMapTopicModelDraft,
   useGrowthMapCompetitorDetail,
+  useGrowthMapCompetitorReviewDetail,
   useGrowthMapCompetitorMonitor,
   useGrowthMapCompetitors,
   useGrowthMapKeywordDetail,
+  useGrowthMapKeywordReviewDetail,
   useGrowthMapInternalLinkMap,
   useGrowthMapKeywordRankHistory,
-  useGrowthMapKeywordRelations,
   useGrowthMapKeywords,
   useGrowthMapTopicModelInsights,
   useGrowthMapTopicModelWorkspace,
@@ -107,6 +114,7 @@ import {
   usePatchGrowthMapTopicModelDraft,
   useRefreshGrowthMapKeywordRelations,
   useReviewGrowthMapKeyword,
+  useReviewGrowthMapCompetitor,
   useUpdateGrowthMapCompetitorMonitor,
 } from "@/lib/api/hooks-growth-map";
 import { ProblemNotice, ProblemState } from "../_problem-display.tsx";
@@ -193,6 +201,62 @@ const COVERAGE_CLASS = {
   unavailable: styles.coverageUnavailable,
 } as const;
 
+interface CompleteKeywordRelationRecord {
+  readonly id: string;
+  readonly relation: GrowthMapKeywordRelation;
+}
+
+/**
+ * Fetch one visible Keyword page's complete relation set as a single atomic
+ * query value. Each transport request remains capped at 100 rows; the shared
+ * collector follows opaque cursors, de-duplicates page boundaries, and fails
+ * closed on cycles or aggregate budgets. Aborted queries stop before starting
+ * another cursor request, so a cursor-page change cannot continue an obsolete
+ * chain or publish its partial rows into the current projection.
+ */
+function useCompleteGrowthMapKeywordRelations(
+  projectId: string,
+  keywordIds: readonly string[],
+) {
+  const uiLocale = useLocale();
+  const normalizedKeywordIds = useMemo(
+    () => [...keywordIds].sort((left, right) => left.localeCompare(right)),
+    [keywordIds],
+  );
+  return useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "keyword-relations",
+      "complete",
+      normalizedKeywordIds,
+    ],
+    queryFn: async ({ signal }) => {
+      const records = await collectAllCursorItems<CompleteKeywordRelationRecord>(
+        async (pageCursor) => {
+          signal.throwIfAborted();
+          const page = await getGrowthMapKeywordRelations(projectId, {
+            keywordIds: normalizedKeywordIds,
+            cursor: pageCursor,
+            limit: 100,
+          });
+          signal.throwIfAborted();
+          return {
+            data: page.data.map((relation) => ({
+              id: relation.relationId,
+              relation,
+            })),
+            meta: { nextCursor: page.meta.nextCursor },
+          };
+        },
+      );
+      return records.map((record) => record.relation);
+    },
+    enabled: projectId.length > 0 && normalizedKeywordIds.length > 0,
+  });
+}
+
 const MODE_ICONS: Readonly<Record<GrowthMapObjectMode, typeof MapIcon>> = {
   pages: MapIcon,
   keywords: BookOpenText,
@@ -226,6 +290,28 @@ const KEYWORD_REVIEW_BUYER_STAGES = [
   "decision",
   "retention",
 ] as const;
+
+const COMPETITOR_REVIEW_STATUSES = [
+  "candidate",
+  "approved",
+  "excluded",
+] as const satisfies readonly GrowthMapCompetitorReviewStatus[];
+
+const COMPETITOR_REVIEW_RELATIONSHIPS = [
+  "direct",
+  "indirect",
+  "status_quo",
+  "benchmark",
+  "publisher",
+] as const satisfies readonly GrowthMapCompetitorRelationship[];
+
+const COMPETITOR_REVIEW_ANALYSIS_SCOPES = [
+  "positioning",
+  "product_capability",
+  "keyword_gap",
+  "content",
+  "serp_visibility",
+] as const satisfies readonly ProductProfileCompetitorAnalysisScope[];
 
 type GrowthMapNavigationPatch = Parameters<typeof growthMapLocationHref>[2];
 
@@ -1788,13 +1874,19 @@ function DetailState({
   projectId,
   selectedSitePageId,
   selectedFindingId,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly selectedSitePageId: string | null;
   readonly selectedFindingId: string | null;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap");
-  const detailQuery = useGrowthMapUrlDetail(projectId, selectedSitePageId);
+  const detailQuery = useGrowthMapUrlDetail(
+    projectId,
+    selectedSitePageId,
+    diagnosticRunId,
+  );
 
   if (selectedSitePageId === null) {
     return (
@@ -1840,10 +1932,12 @@ function PortfolioPane({
   projectId,
   locationSearch,
   navigation,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap");
   const pathname = usePathname();
@@ -1870,6 +1964,7 @@ function PortfolioPane({
     search: querySearch,
     cursor,
     limit: 50,
+    diagnosticRunId,
   });
   const items = listQuery.data?.data ?? [];
   const selectedSitePageId = resolveVisibleSitePageSelectionForFinding(
@@ -2085,6 +2180,7 @@ function PortfolioPane({
             projectId={projectId}
             selectedSitePageId={selectedSitePageId}
             selectedFindingId={selectedFindingId}
+            diagnosticRunId={diagnosticRunId}
           />
         </div>
       )}
@@ -5011,25 +5107,21 @@ function KeywordReviewDialog({
   const topicId = `${dialogId}-topic`;
   const mappingDecisionId = `${dialogId}-mapping-decision`;
   const sitePageId = `${dialogId}-site-page`;
+  const reviewDetailQuery = useGrowthMapKeywordReviewDetail(
+    projectId,
+    detail.keywordId,
+    open,
+  );
+  const reviewDetail = reviewDetailQuery.data?.data ?? null;
   const mutation = useReviewGrowthMapKeyword(projectId, detail.keywordId);
-  const [status, setStatus] = useState<GrowthMapKeywordStatus>(
-    detail.status,
-  );
-  const [intent, setIntent] = useState(detail.intent ?? "");
-  const [buyerStage, setBuyerStage] = useState(detail.buyerStage ?? "");
-  const [topicNodeId, setTopicNodeId] = useState(
-    detail.cluster?.clusterId ?? "",
-  );
+  const [status, setStatus] = useState<GrowthMapKeywordStatus>("candidate");
+  const [intent, setIntent] = useState("");
+  const [buyerStage, setBuyerStage] = useState("");
+  const [topicNodeId, setTopicNodeId] = useState("");
   const [mappingDecision, setMappingDecision] =
-    useState<KeywordMappingDecision>(detail.mappedTarget.kind);
-  const [mappedSitePageId, setMappedSitePageId] = useState(
-    detail.mappedTarget.kind === "existing_page"
-      ? detail.mappedTarget.sitePageId
-      : "",
-  );
-  const [reason, setReason] = useState(
-    detail.mappedTarget.reason ?? t("defaultReason"),
-  );
+    useState<KeywordMappingDecision>("unassigned");
+  const [mappedSitePageId, setMappedSitePageId] = useState("");
+  const [reason, setReason] = useState(t("defaultReason"));
   const [localError, setLocalError] = useState<string | null>(null);
   const [conflictCommand, setConflictCommand] =
     useState<ReviewKeywordRequest | null>(null);
@@ -5046,15 +5138,18 @@ function KeywordReviewDialog({
       (node) => node.topicNodeId === topicNodeId,
     ) ?? null;
   const pageOptions = useMemo(
-    () => keywordReviewSitePageOptions(detail, sitePages),
-    [detail, sitePages],
+    () =>
+      reviewDetail === null
+        ? []
+        : keywordReviewSitePageOptions(reviewDetail, sitePages),
+    [reviewDetail, sitePages],
   );
   const intentOptions = keywordReviewSelectValues(
-    detail.intent,
+    reviewDetail?.intent ?? null,
     KEYWORD_REVIEW_INTENTS,
   );
   const buyerStageOptions = keywordReviewSelectValues(
-    detail.buyerStage,
+    reviewDetail?.buyerStage ?? null,
     KEYWORD_REVIEW_BUYER_STAGES,
   );
   const hasConfirmedTopicAuthority =
@@ -5065,30 +5160,30 @@ function KeywordReviewDialog({
     mutation.error instanceof ApiError && mutation.error.status === 409;
 
   useEffect(() => {
-    if (!open) return;
-    setStatus(detail.status);
-    setIntent(detail.intent ?? "");
-    setBuyerStage(detail.buyerStage ?? "");
+    if (!open || reviewDetail === null) return;
+    setStatus(reviewDetail.status);
+    setIntent(reviewDetail.intent ?? "");
+    setBuyerStage(reviewDetail.buyerStage ?? "");
     setTopicNodeId(
       confirmedTopicNodes.some(
-        (node) => node.topicNodeId === detail.cluster?.clusterId,
+        (node) => node.topicNodeId === reviewDetail.cluster?.clusterId,
       )
-        ? (detail.cluster?.clusterId ?? "")
+        ? (reviewDetail.cluster?.clusterId ?? "")
         : "",
     );
-    setMappingDecision(detail.mappedTarget.kind);
+    setMappingDecision(reviewDetail.mappedTarget.kind);
     setMappedSitePageId(
-      detail.mappedTarget.kind === "existing_page"
-        ? detail.mappedTarget.sitePageId
+      reviewDetail.mappedTarget.kind === "existing_page"
+        ? reviewDetail.mappedTarget.sitePageId
         : "",
     );
-    setReason(detail.mappedTarget.reason ?? t("defaultReason"));
+    setReason(reviewDetail.mappedTarget.reason ?? t("defaultReason"));
     setLocalError(null);
     setConflictCommand(null);
   }, [
     confirmedTopicNodes,
-    detail,
     open,
+    reviewDetail,
     t,
   ]);
 
@@ -5155,8 +5250,9 @@ function KeywordReviewDialog({
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     mutation.reset();
+    if (reviewDetail === null) return;
     const command = buildKeywordGovernanceReviewCommand(
-      detail,
+      reviewDetail,
       topicInsights,
       reviewDraft(),
     );
@@ -5195,7 +5291,11 @@ function KeywordReviewDialog({
       <header className={styles.keywordRelationDialogHeader}>
         <div>
           <span>{t("eyebrow")}</span>
-          <h2 id={titleId}>{t("title", { keyword: detail.displayKeyword })}</h2>
+          <h2 id={titleId}>
+            {t("title", {
+              keyword: reviewDetail?.displayKeyword ?? detail.displayKeyword,
+            })}
+          </h2>
           <p id={descriptionId}>{t("description")}</p>
         </div>
         <button
@@ -5223,6 +5323,7 @@ function KeywordReviewDialog({
                 id={statusId}
                 className={styles.topicSelect}
                 value={status}
+                disabled={reviewDetail === null}
                 onChange={(event) =>
                   handleStatusChange(
                     event.target.value as GrowthMapKeywordStatus,
@@ -5241,6 +5342,7 @@ function KeywordReviewDialog({
                 id={intentId}
                 className={styles.topicSelect}
                 value={intent}
+                disabled={reviewDetail === null}
                 onChange={(event) => {
                   clearPendingConfirmation();
                   setIntent(event.target.value);
@@ -5263,6 +5365,7 @@ function KeywordReviewDialog({
                 id={buyerStageId}
                 className={styles.topicSelect}
                 value={buyerStage}
+                disabled={reviewDetail === null}
                 onChange={(event) => {
                   clearPendingConfirmation();
                   setBuyerStage(event.target.value);
@@ -5388,7 +5491,7 @@ function KeywordReviewDialog({
                 id={mappingDecisionId}
                 className={styles.topicSelect}
                 value={mappingDecision}
-                disabled={status === "excluded"}
+                disabled={reviewDetail === null || status === "excluded"}
                 onChange={(event) =>
                   handleMappingChange(
                     event.target.value as KeywordMappingDecision,
@@ -5520,7 +5623,9 @@ function KeywordReviewDialog({
         </section>
 
         <footer className={styles.keywordReviewFooter}>
-          <span>{t("revision", { revision: detail.revision })}</span>
+          <span>
+            {t("revision", { revision: reviewDetail?.revision ?? detail.revision })}
+          </span>
           <div>
             <Button
               type="button"
@@ -5531,7 +5636,11 @@ function KeywordReviewDialog({
             </Button>
             <Button
               type="submit"
-              disabled={mutation.isPending || conflictCommand !== null}
+              disabled={
+                reviewDetail === null ||
+                mutation.isPending ||
+                conflictCommand !== null
+              }
             >
               {mutation.isPending ? t("saving") : t("save")}
             </Button>
@@ -5767,18 +5876,27 @@ function KeywordDetailPanel({
 function KeywordDetailState({
   projectId,
   selectedKeywordId,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly selectedKeywordId: string | null;
+  readonly diagnosticRunId: string | null;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
-  const detailQuery = useGrowthMapKeywordDetail(projectId, selectedKeywordId);
+  const detailQuery = useGrowthMapKeywordDetail(
+    projectId,
+    selectedKeywordId,
+    diagnosticRunId,
+  );
   const rankHistoryQuery = useGrowthMapKeywordRankHistory(
     projectId,
     selectedKeywordId,
   );
   const topicInsightsQuery = useGrowthMapTopicModelInsights(projectId);
-  const sitePagesQuery = useGrowthMapUrls(projectId, { limit: 100 });
+  const pinnedSitePagesQuery = useGrowthMapUrls(projectId, {
+    limit: 100,
+    diagnosticRunId,
+  });
   const readState = keywordDetailReadState({
     selectedKeywordId,
     isPending: detailQuery.isPending,
@@ -5840,12 +5958,12 @@ function KeywordDetailState({
         topicInsightsQuery.isError ? topicInsightsQuery.error : null
       }
       onRetryTopicInsights={() => void topicInsightsQuery.refetch()}
-      sitePages={sitePagesQuery.data?.data ?? []}
-      isSitePagesPending={sitePagesQuery.isPending}
+      sitePages={pinnedSitePagesQuery.data?.data ?? []}
+      isSitePagesPending={pinnedSitePagesQuery.isPending}
       sitePagesError={
-        sitePagesQuery.isError ? sitePagesQuery.error : null
+        pinnedSitePagesQuery.isError ? pinnedSitePagesQuery.error : null
       }
-      sitePagesTruncated={sitePagesQuery.data?.meta.hasNext ?? false}
+      sitePagesTruncated={pinnedSitePagesQuery.data?.meta.hasNext ?? false}
     />
   );
 }
@@ -5872,10 +5990,12 @@ function KeywordLibraryPane({
   projectId,
   locationSearch,
   navigation,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
   const pathname = usePathname();
@@ -5901,7 +6021,11 @@ function KeywordLibraryPane({
   const automaticRelationRefreshProjectRef = useRef<string | null>(
     null,
   );
-  const listQuery = useGrowthMapKeywords(projectId, { cursor, limit: 50 });
+  const listQuery = useGrowthMapKeywords(projectId, {
+    cursor,
+    limit: 50,
+    diagnosticRunId,
+  });
   const items = useMemo(
     () => listQuery.data?.data ?? [],
     [listQuery.data?.data],
@@ -5910,10 +6034,10 @@ function KeywordLibraryPane({
     () => items.map((item) => item.keywordId),
     [items],
   );
-  const relationQuery = useGrowthMapKeywordRelations(projectId, {
+  const relationQuery = useCompleteGrowthMapKeywordRelations(
+    projectId,
     keywordIds,
-    limit: 100,
-  });
+  );
   const {
     mutate: refreshRelations,
     isPending: isRefreshingRelations,
@@ -5924,9 +6048,9 @@ function KeywordLibraryPane({
     () =>
       buildKeywordRelationPageProjection(
         items,
-        relationQuery.data?.data ?? [],
+        relationQuery.data ?? [],
       ),
-    [items, relationQuery.data?.data],
+    [items, relationQuery.data],
   );
   const visibleKeywordIds = useMemo(
     () =>
@@ -6094,7 +6218,7 @@ function KeywordLibraryPane({
           : relationProjection.relationsByKeywordId.size === 0
             ? t("relations.empty")
             : t("relations.ready", {
-                count: relationQuery.data?.data.length ?? 0,
+                count: relationQuery.data?.length ?? 0,
                 collapsed:
                   relationProjection.collapsedSupportingKeywordIds
                     .length,
@@ -6248,6 +6372,7 @@ function KeywordLibraryPane({
             <KeywordDetailState
               projectId={projectId}
               selectedKeywordId={selectedKeywordId}
+              diagnosticRunId={diagnosticRunId}
             />
           </div>
           <KeywordRelationDialog
@@ -7087,6 +7212,337 @@ function CompetitorMonitorSection({
   );
 }
 
+function CompetitorReviewDialog({
+  projectId,
+  open,
+  detail,
+  onRequestClose,
+  onSaved,
+}: {
+  readonly projectId: string;
+  readonly open: boolean;
+  readonly detail: GrowthMapCompetitorLibraryItem;
+  readonly onRequestClose: () => void;
+  readonly onSaved: () => void;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary.review");
+  const dialogId = useId();
+  const titleId = `${dialogId}-title`;
+  const descriptionId = `${dialogId}-description`;
+  const nameId = `${dialogId}-name`;
+  const statusId = `${dialogId}-status`;
+  const relationshipId = `${dialogId}-relationship`;
+  const reviewDetailQuery = useGrowthMapCompetitorReviewDetail(
+    projectId,
+    detail.competitorId,
+    open,
+  );
+  const reviewDetail = reviewDetailQuery.data?.data ?? null;
+  const mutation = useReviewGrowthMapCompetitor(
+    projectId,
+    detail.competitorId,
+  );
+  const [name, setName] = useState("");
+  const [reviewStatus, setReviewStatus] =
+    useState<GrowthMapCompetitorReviewStatus>("candidate");
+  const [relationship, setRelationship] =
+    useState<GrowthMapCompetitorRelationship | "">("");
+  const [analysisScope, setAnalysisScope] = useState<
+    readonly ProductProfileCompetitorAnalysisScope[]
+  >([]);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const isRevisionConflict =
+    mutation.error instanceof ApiError && mutation.error.status === 409;
+
+  useEffect(() => {
+    if (!open || reviewDetail === null) return;
+    setName(reviewDetail.name ?? "");
+    setReviewStatus(reviewDetail.reviewStatus);
+    setRelationship(reviewDetail.relationship ?? "");
+    setAnalysisScope(reviewDetail.analysisScope);
+    setLocalError(null);
+    mutation.reset();
+  }, [open, reviewDetail]);
+
+  function resetFeedback(): void {
+    setLocalError(null);
+    mutation.reset();
+  }
+
+  function changeStatus(
+    nextStatus: GrowthMapCompetitorReviewStatus,
+  ): void {
+    resetFeedback();
+    setReviewStatus(nextStatus);
+    if (nextStatus !== "approved") {
+      setRelationship("");
+      setAnalysisScope([]);
+    }
+  }
+
+  function toggleAnalysisScope(
+    scope: ProductProfileCompetitorAnalysisScope,
+    checked: boolean,
+  ): void {
+    resetFeedback();
+    const selected = new Set(analysisScope);
+    if (checked) selected.add(scope);
+    else selected.delete(scope);
+    setAnalysisScope(
+      COMPETITOR_REVIEW_ANALYSIS_SCOPES.filter((value) =>
+        selected.has(value),
+      ),
+    );
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    mutation.reset();
+    if (reviewDetail === null) return;
+
+    let reviewedRelationship: GrowthMapCompetitorRelationship | null = null;
+    let reviewedAnalysisScope:
+      readonly ProductProfileCompetitorAnalysisScope[] = [];
+    if (reviewStatus === "approved") {
+      if (relationship === "") {
+        setLocalError(t("validation.relationshipRequired"));
+        return;
+      }
+      if (analysisScope.length === 0) {
+        setLocalError(t("validation.analysisScopeRequired"));
+        return;
+      }
+      reviewedRelationship = relationship;
+      reviewedAnalysisScope = analysisScope;
+    }
+
+    const command: ReviewCompetitorRequest = {
+      expectedRevision: reviewDetail.revision,
+      name: name.trim() || null,
+      reviewStatus,
+      relationship: reviewedRelationship,
+      analysisScope: [...reviewedAnalysisScope],
+    };
+    setLocalError(null);
+    mutation.mutate(command, {
+      onSuccess: () => {
+        onSaved();
+        onRequestClose();
+      },
+    });
+  }
+
+  return (
+    <GrowthMapDialogFrame
+      open={open}
+      titleId={titleId}
+      descriptionId={descriptionId}
+      onRequestClose={onRequestClose}
+      className={styles.keywordReviewDialog}
+    >
+      <header className={styles.keywordRelationDialogHeader}>
+        <div>
+          <span>{t("eyebrow")}</span>
+          <h2 id={titleId}>
+            {t("title", {
+              competitor:
+                reviewDetail?.name ??
+                reviewDetail?.domain ??
+                detail.name ??
+                detail.domain,
+            })}
+          </h2>
+          <p id={descriptionId}>{t("description")}</p>
+        </div>
+        <button
+          type="button"
+          className={styles.keywordRelationClose}
+          aria-label={t("close")}
+          onClick={onRequestClose}
+        >
+          <X aria-hidden="true" size={19} />
+        </button>
+      </header>
+
+      <form
+        className={styles.keywordReviewForm}
+        data-testid="competitor-review-form"
+        onSubmit={submit}
+      >
+        <section className={styles.keywordReviewSection}>
+          <div className={styles.keywordReviewSectionHeading}>
+            <span>01</span>
+            <div>
+              <h3>{t("identityTitle")}</h3>
+              <p>{t("identityDescription", { domain: detail.domain })}</p>
+            </div>
+          </div>
+
+          {reviewDetailQuery.isPending ? (
+            <div className={styles.keywordReviewAuthorityState} role="status">
+              <Spinner label={t("loading")} size="sm" />
+              <span>{t("loading")}</span>
+            </div>
+          ) : reviewDetailQuery.isError ? (
+            <div className={styles.keywordReviewAuthorityState} role="alert">
+              <CircleAlert aria-hidden="true" size={17} />
+              <span>{t("loadError")}</span>
+              <button
+                type="button"
+                onClick={() => void reviewDetailQuery.refetch()}
+              >
+                {t("retry")}
+              </button>
+            </div>
+          ) : (
+            <Field
+              label={t("field.name")}
+              help={t("field.nameHelp")}
+              htmlFor={nameId}
+            >
+              <TextInput
+                id={nameId}
+                value={name}
+                maxLength={160}
+                onChange={(event) => {
+                  resetFeedback();
+                  setName(event.target.value);
+                }}
+              />
+            </Field>
+          )}
+        </section>
+
+        <section className={styles.keywordReviewSection}>
+          <div className={styles.keywordReviewSectionHeading}>
+            <span>02</span>
+            <div>
+              <h3>{t("governanceTitle")}</h3>
+              <p>{t("governanceDescription")}</p>
+            </div>
+          </div>
+          <div className={styles.keywordReviewGrid}>
+            <Field
+              label={t("field.status")}
+              htmlFor={statusId}
+              required
+            >
+              <select
+                id={statusId}
+                className={styles.topicSelect}
+                value={reviewStatus}
+                disabled={reviewDetail === null}
+                onChange={(event) =>
+                  changeStatus(
+                    event.target.value as GrowthMapCompetitorReviewStatus,
+                  )
+                }
+              >
+                {COMPETITOR_REVIEW_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {t(`status.${status}`)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {reviewStatus === "approved" ? (
+              <Field
+                label={t("field.relationship")}
+                htmlFor={relationshipId}
+                required
+              >
+                <select
+                  id={relationshipId}
+                  className={styles.topicSelect}
+                  value={relationship}
+                  disabled={reviewDetail === null}
+                  onChange={(event) => {
+                    resetFeedback();
+                    setRelationship(
+                      event.target.value as
+                        | GrowthMapCompetitorRelationship
+                        | "",
+                    );
+                  }}
+                >
+                  <option value="">{t("selectRelationship")}</option>
+                  {COMPETITOR_REVIEW_RELATIONSHIPS.map((value) => (
+                    <option key={value} value={value}>
+                      {t(`relationship.${value}`)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+          </div>
+
+          {reviewStatus === "approved" ? (
+            <fieldset
+              className={styles.topicMergeChoices}
+              data-testid="competitor-review-analysis-scope"
+            >
+              <legend>{t("field.analysisScope")}</legend>
+              {COMPETITOR_REVIEW_ANALYSIS_SCOPES.map((scope) => (
+                <label key={scope}>
+                  <input
+                    type="checkbox"
+                    checked={analysisScope.includes(scope)}
+                    disabled={reviewDetail === null}
+                    onChange={(event) =>
+                      toggleAnalysisScope(scope, event.target.checked)
+                    }
+                  />
+                  <span>{t(`analysisScope.${scope}`)}</span>
+                </label>
+              ))}
+            </fieldset>
+          ) : (
+            <p className={styles.keywordReviewDataNote}>
+              <CircleAlert aria-hidden="true" size={16} />
+              <span>{t("nonApprovedBoundary")}</span>
+            </p>
+          )}
+
+          {localError === null ? null : (
+            <p className={styles.keywordReviewError} role="alert">
+              {localError}
+            </p>
+          )}
+          {mutation.isError ? (
+            <p className={styles.keywordReviewError} role="alert">
+              {isRevisionConflict ? t("revisionConflict") : t("saveError")}
+            </p>
+          ) : null}
+        </section>
+
+        <footer className={styles.keywordReviewFooter}>
+          <span>
+            {t("revision", {
+              revision: reviewDetail?.revision ?? detail.revision,
+            })}
+          </span>
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onRequestClose}
+            >
+              {t("cancel")}
+            </Button>
+            <Button
+              type="submit"
+              disabled={reviewDetail === null || mutation.isPending}
+            >
+              {mutation.isPending ? t("saving") : t("save")}
+            </Button>
+          </div>
+        </footer>
+      </form>
+    </GrowthMapDialogFrame>
+  );
+}
+
 function CompetitorDetailPanel({
   detail,
   projectId,
@@ -7116,23 +7572,47 @@ function CompetitorDetailPanel({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState(false);
   return (
-    <aside
-      className={cx(styles.detailPanel, styles.competitorDetailPanel)}
-      aria-label={t("selectedDetailLabel")}
-    >
-      <header className={styles.competitorDetailHeader}>
-        <div className={styles.detailEyebrow}>
-          <span>{t("selectedCompetitor")}</span>
-          <CoveragePill coverage={detail.coverage} />
-        </div>
-        <h2>{detail.name ?? detail.domain}</h2>
-        <p>{detail.domain}</p>
-        <div className={styles.competitorDetailTags}>
-          <CompetitorStatusPill status={detail.reviewStatus} />
-          <CompetitorRelationship relationship={detail.relationship} />
-        </div>
-      </header>
+    <>
+      <aside
+        className={cx(styles.detailPanel, styles.competitorDetailPanel)}
+        aria-label={t("selectedDetailLabel")}
+      >
+        <header className={styles.competitorDetailHeader}>
+          <div className={styles.detailEyebrow}>
+            <span>{t("selectedCompetitor")}</span>
+            <CoveragePill coverage={detail.coverage} />
+          </div>
+          <h2>{detail.name ?? detail.domain}</h2>
+          <p>{detail.domain}</p>
+          <div className={styles.competitorDetailTags}>
+            <CompetitorStatusPill status={detail.reviewStatus} />
+            <CompetitorRelationship relationship={detail.relationship} />
+          </div>
+          <div className={styles.keywordReviewHeaderAction}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="competitor-review-open"
+              onClick={() => {
+                setReviewSaved(false);
+                setReviewOpen(true);
+              }}
+            >
+              <Pencil aria-hidden="true" size={15} />
+              {t("review.open")}
+            </Button>
+            {reviewSaved ? (
+              <span role="status">
+                <CheckCircle2 aria-hidden="true" size={15} />
+                {t("review.saved")}
+              </span>
+            ) : null}
+          </div>
+        </header>
 
       <LimitationList limitations={detail.coverage.limitations} />
 
@@ -7243,34 +7723,48 @@ function CompetitorDetailPanel({
         </div>
       </section>
 
-      <footer className={styles.keywordDetailFooter}>
-        <details className={styles.recordDisclosure}>
-          <summary>{t("viewRecordDetails")}</summary>
-          <div className={styles.recordDisclosureBody}>
-            <span>
-              {t("competitorId")}
-              <code title={detail.competitorId}>{detail.competitorId}</code>
-            </span>
-            <span>
-              {t("revision")}
-              <strong>{detail.revision}</strong>
-            </span>
-          </div>
-        </details>
-      </footer>
-    </aside>
+        <footer className={styles.keywordDetailFooter}>
+          <details className={styles.recordDisclosure}>
+            <summary>{t("viewRecordDetails")}</summary>
+            <div className={styles.recordDisclosureBody}>
+              <span>
+                {t("competitorId")}
+                <code title={detail.competitorId}>{detail.competitorId}</code>
+              </span>
+              <span>
+                {t("revision")}
+                <strong>{detail.revision}</strong>
+              </span>
+            </div>
+          </details>
+        </footer>
+      </aside>
+      <CompetitorReviewDialog
+        projectId={projectId}
+        open={reviewOpen}
+        detail={detail}
+        onRequestClose={() => setReviewOpen(false)}
+        onSaved={() => setReviewSaved(true)}
+      />
+    </>
   );
 }
 
 function CompetitorDetailState({
   projectId,
   selectedCompetitorId,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly selectedCompetitorId: string | null;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
-  const detailQuery = useGrowthMapCompetitorDetail(projectId, selectedCompetitorId);
+  const detailQuery = useGrowthMapCompetitorDetail(
+    projectId,
+    selectedCompetitorId,
+    diagnosticRunId,
+  );
   const monitorQuery = useGrowthMapCompetitorMonitor(projectId);
   const monitorUpdate = useUpdateGrowthMapCompetitorMonitor(projectId);
   const monitorItem = selectCompetitorMonitorItem(
@@ -7390,10 +7884,12 @@ function CompetitorLibraryPane({
   projectId,
   locationSearch,
   navigation,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   const pathname = usePathname();
@@ -7414,7 +7910,11 @@ function CompetitorLibraryPane({
   const [cursorPredecessors, setCursorPredecessors] = useState<
     ReadonlyMap<string, string | null>
   >(() => new Map());
-  const listQuery = useGrowthMapCompetitors(projectId, { cursor, limit: 50 });
+  const listQuery = useGrowthMapCompetitors(projectId, {
+    cursor,
+    limit: 50,
+    diagnosticRunId,
+  });
   const items = listQuery.data?.data ?? [];
   const selectedCompetitorId = resolveVisibleCompetitorSelection(
     requestedCompetitorId,
@@ -7604,6 +8104,7 @@ function CompetitorLibraryPane({
           <CompetitorDetailState
             projectId={projectId}
             selectedCompetitorId={selectedCompetitorId}
+            diagnosticRunId={diagnosticRunId}
           />
         </div>
       )}
@@ -7619,6 +8120,11 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   const mode = normalizeGrowthMapObjectMode(
     searchParams.get("object"),
   );
+  // One unpinned URL read is the published-generation authority. Every
+  // customer-visible URL, Keyword, and Competitor read below is then pinned to
+  // that exact Diagnostic run, so switching tabs cannot blend generations.
+  const generationQuery = useGrowthMapUrls(projectId, { limit: 1 });
+  const diagnosticRunId = generationQuery.data?.diagnosticRunId ?? null;
 
   const requestNavigation = useCallback(
     (patch: GrowthMapNavigationPatch): void => {
@@ -7711,23 +8217,55 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
         ))}
       </nav>
 
-      {mode === "pages" ? (
+      {mode !== "backlinks" && generationQuery.isPending ? (
+        <div className={styles.pageState} role="status">
+          <Spinner label={t("loadingPortfolio")} size="lg" />
+          <p>{t("loadingPortfolio")}</p>
+        </div>
+      ) : mode !== "backlinks" && generationQuery.isError ? (
+        generationQuery.error instanceof ApiError &&
+        generationQuery.error.code === "GROWTH_MAP_AUDIT_NOT_FOUND" ? (
+          <EmptyState
+            className={styles.pageState}
+            icon={<Globe2 size={30} />}
+            title={t("auditUnavailableTitle")}
+            description={t("auditUnavailableDescription")}
+          />
+        ) : (
+          <ProblemState
+            error={generationQuery.error}
+            onRetry={() => void generationQuery.refetch()}
+            message={t("portfolioError")}
+            className={styles.pageState}
+          />
+        )
+      ) : mode !== "backlinks" && diagnosticRunId === null ? (
+        <EmptyState
+          className={styles.pageState}
+          icon={<Globe2 size={30} />}
+          title={t("auditUnavailableTitle")}
+          description={t("auditUnavailableDescription")}
+        />
+      ) : mode === "pages" ? (
         <PortfolioPane
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
+          diagnosticRunId={diagnosticRunId!}
         />
       ) : mode === "keywords" ? (
         <KeywordLibraryPane
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
+          diagnosticRunId={diagnosticRunId!}
         />
       ) : mode === "competitors" ? (
         <CompetitorLibraryPane
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
+          diagnosticRunId={diagnosticRunId!}
         />
       ) : (
         <BacklinkGrowthPath projectId={projectId} />

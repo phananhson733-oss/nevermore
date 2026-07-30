@@ -4,7 +4,9 @@ import {
   SitesRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
+  type Executor,
   type OAuthIntentRow,
+  type ProjectRow,
   type SourceConnectionRow,
   type WorkspaceScope,
 } from "@sf/db";
@@ -78,6 +80,57 @@ function defaultClient(): GoogleOAuthClient {
 
 function isExpired(row: { expires_at: string }, now: number): boolean {
   return Date.parse(row.expires_at) <= now;
+}
+
+export type SourceConnectionGate =
+  | "allowed"
+  | "product_profile_required"
+  | "not_found";
+
+/**
+ * Read-side gate for the customer Sources route. OAuth is setup work that uses
+ * the customer's confirmed Product/ICP context; a working draft is not enough.
+ * Archived projects may still render their existing source history, while every
+ * write remains protected by the archived-project checks below.
+ */
+export async function getSourceConnectionGate(
+  scope: WorkspaceScope,
+  projectId: string,
+): Promise<SourceConnectionGate> {
+  const { db } = getDb();
+  const projects = new ProjectsRepository(db);
+  const project = await projects.findById(scope, projectId);
+  if (!project) return "not_found";
+  // Archival freezes writes but preserves the customer's historical evidence
+  // view. Legacy archived projects may predate the confirmed Product Profile
+  // pointer, so do not hide their retained source/snapshot history behind the
+  // onboarding gate.
+  if (project.archived_at) return "allowed";
+  const confirmed = await projects.findConfirmedIcpProfile(scope, projectId);
+  return confirmed ? "allowed" : "product_profile_required";
+}
+
+async function assertConfirmedProductProfile(
+  exec: Executor,
+  scope: WorkspaceScope,
+  projectId: string,
+  project: ProjectRow,
+): Promise<void> {
+  if (!project.confirmed_icp_profile_id) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "Confirm the Product Profile and ICP before connecting GSC or GA4.",
+    );
+  }
+  const confirmed = await new ProjectsRepository(
+    exec,
+  ).findConfirmedIcpProfile(scope, projectId);
+  if (!confirmed) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "The confirmed Product Profile must resolve to a complete immutable version before connecting GSC or GA4.",
+    );
+  }
 }
 
 /** POST /projects/{projectId}/sources/{provider}/connect — dispatch by phase. */
@@ -157,6 +210,7 @@ async function authorize(
     if (project.archived_at) {
       throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
     }
+    await assertConfirmedProductProfile(tx, scope, projectId, project);
     const site = await new SitesRepository(tx).findPrimary(projectScope);
     if (!site) {
       throw new ProblemError("NOT_FOUND", "Project has no primary site.");
@@ -205,6 +259,7 @@ async function propertySelection(
     if (project.archived_at) {
       throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
     }
+    await assertConfirmedProductProfile(tx, scope, projectId, project);
     const intents = new OAuthIntentsRepository(tx);
     const intent = await intents.findByIdForUpdate(projectScope, oauthIntentId);
     if (!intent || intent.provider !== provider) {
@@ -267,6 +322,7 @@ async function selectProperty(
       if (project.archived_at) {
         throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
       }
+      await assertConfirmedProductProfile(tx, scope, projectId, project);
       const intentsRepo = new OAuthIntentsRepository(tx);
       const intent = await intentsRepo.findByIdForUpdate(
         projectScope,
@@ -531,6 +587,25 @@ export async function handleGoogleCallback(
     if (isExpired(locked, now)) {
       await lockedRepo.expireAndScrub(locked.id);
       return failureLocation("OAUTH_STATE_EXPIRED");
+    }
+    try {
+      await assertConfirmedProductProfile(
+        tx,
+        scope,
+        intent.project_id,
+        project,
+      );
+    } catch (error) {
+      if (
+        error instanceof ProblemError &&
+        error.code === "CONTEXT_INCOMPLETE"
+      ) {
+        // A legacy or concurrently-invalidated OAuth intent must not exchange
+        // its authorization code or retain PKCE/token material after the
+        // Product/ICP authority disappears.
+        return failInitiated("CONTEXT_INCOMPLETE");
+      }
+      throw error;
     }
     let tokenCipher = locked.token_cipher;
     let tokenEnvelope: OAuthCredentialEnvelope | null;

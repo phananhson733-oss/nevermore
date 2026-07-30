@@ -746,6 +746,60 @@ describe("Growth Map customer-facing Finding title", () => {
     ).toBe("Missing canonical on pricing");
   });
 
+  it("accepts the engine's canonical English summary for an English regional delivery locale", () => {
+    expect(
+      customerFacingGrowthMapFindingTitle(
+        "Missing canonical on pricing",
+        "en",
+        "en-US",
+      ),
+    ).toBe("Missing canonical on pricing");
+    expect(
+      customerFacingGrowthMapFindingTitle(
+        "Missing canonical on pricing",
+        "EN",
+        " en-GB ",
+      ),
+    ).toBe("Missing canonical on pricing");
+  });
+
+  it("accepts an honestly labelled deterministic English fallback for a non-registry locale", () => {
+    expect(
+      customerFacingGrowthMapFindingTitle(
+        "English fallback for a disabled generator",
+        "en",
+        "fr-FR",
+      ),
+    ).toBe("English fallback for a disabled generator");
+    expect(
+      customerFacingGrowthMapFindingTitle(
+        "English fallback for a disabled generator",
+        "en",
+        "zh-TW",
+      ),
+    ).toBe("English fallback for a disabled generator");
+  });
+
+  it("requires a generated summary to use the exact diagnostic output locale", () => {
+    const invocationId = "00000000-0000-4000-8000-000000000099";
+    expect(
+      customerFacingGrowthMapFindingTitle(
+        "Résumé généré",
+        "fr-FR",
+        "fr-FR",
+        invocationId,
+      ),
+    ).toBe("Résumé généré");
+    expect(() =>
+      customerFacingGrowthMapFindingTitle(
+        "Incorrectly labelled fallback",
+        "en",
+        "fr-FR",
+        invocationId,
+      ),
+    ).toThrow(/customer-facing Finding summary/i);
+  });
+
   it("fails closed when summary cannot be exposed instead of falling back to an internal i18n key", () => {
     expect(() => customerFacingGrowthMapFindingTitle(" ", "en", "en")).toThrow(
       /customer-facing Finding summary/i,

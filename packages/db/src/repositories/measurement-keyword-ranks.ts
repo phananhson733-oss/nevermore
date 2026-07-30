@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { canonicalUtcTimestamptz } from "../instant.ts";
 import {
   clientProjects,
+  collectionRuns,
   dataSnapshots,
   keywordEntities,
   keywordEntitySources,
@@ -118,7 +119,11 @@ interface TargetKeywordRankQueryRow
   readonly snapshot_id: string | null;
   readonly snapshot_provider: string | null;
   readonly snapshot_dataset_key: string | null;
+  readonly snapshot_schema_version: string | null;
   readonly snapshot_method_version: string | null;
+  readonly collection_provider: string | null;
+  readonly collection_operation: string | null;
+  readonly collection_method_version: string | null;
   readonly snapshot_availability: string | null;
   readonly observation_id: string | null;
   readonly observation_provider: string | null;
@@ -247,6 +252,36 @@ function positiveRank(value: unknown): number | null {
   return value;
 }
 
+function exactDataForSeoRankedLineage(
+  row: TargetKeywordRankQueryRow,
+): boolean {
+  const legacy =
+    row.snapshot_dataset_key ===
+      "dataforseo.ranked_keywords.v1" &&
+    row.snapshot_schema_version ===
+      "dataforseo.ranked_keywords.v1" &&
+    row.snapshot_method_version ===
+      "dataforseo.ranked_keywords.v1" &&
+    row.collection_operation === "keyword_gap_import" &&
+    row.collection_method_version ===
+      "dataforseo.ranked_keywords.v1";
+  const composite =
+    row.snapshot_dataset_key ===
+      "dataforseo.search_landscape.v1" &&
+    row.snapshot_schema_version ===
+      "dataforseo.search_landscape.v1" &&
+    row.snapshot_method_version ===
+      "dataforseo.search_landscape.v1" &&
+    row.collection_operation === "search_landscape" &&
+    row.collection_method_version ===
+      "dataforseo.search_landscape.v1";
+  return (
+    row.snapshot_provider === "dataforseo" &&
+    row.collection_provider === "dataforseo" &&
+    (legacy || composite)
+  );
+}
+
 function hasNoRankFact(row: TargetKeywordRankQueryRow): boolean {
   return [
     row.occurrence_id,
@@ -267,7 +302,11 @@ function hasNoRankFact(row: TargetKeywordRankQueryRow): boolean {
     row.occurrence_source_ref,
     row.snapshot_provider,
     row.snapshot_dataset_key,
+    row.snapshot_schema_version,
     row.snapshot_method_version,
+    row.collection_provider,
+    row.collection_operation,
+    row.collection_method_version,
     row.snapshot_availability,
   ].every((value) => value === null);
 }
@@ -298,11 +337,7 @@ function rankFact(
     row.occurrence_source_ref !==
       `observation:${row.observation_id}#/valueJson/keyword` ||
     row.occurrence_provider_data_as_of !== null ||
-    row.snapshot_provider !== "dataforseo" ||
-    row.snapshot_dataset_key !==
-      "dataforseo.ranked_keywords.v1" ||
-    row.snapshot_method_version !==
-      "dataforseo.ranked_keywords.v1" ||
+    !exactDataForSeoRankedLineage(row) ||
     row.snapshot_availability === "unavailable" ||
     row.observation_provider !== "dataforseo" ||
     row.observation_metric_key !== "csv.keyword_gap.v1" ||
@@ -685,7 +720,11 @@ export class MeasurementTargetKeywordRanksRepository extends Repository {
             snapshot.id as snapshot_id,
             snapshot.provider as snapshot_provider,
             snapshot.dataset_key as snapshot_dataset_key,
+            snapshot.schema_version as snapshot_schema_version,
             snapshot.method_version as snapshot_method_version,
+            collection.provider as collection_provider,
+            collection.operation as collection_operation,
+            collection.method_version as collection_method_version,
             snapshot.availability as snapshot_availability,
             observation.id as observation_id,
             observation.provider as observation_provider,
@@ -713,8 +752,12 @@ export class MeasurementTargetKeywordRanksRepository extends Repository {
           inner join ${dataSnapshots} snapshot
             on snapshot.id = occurrence.data_snapshot_id
            and snapshot.id = observation.snapshot_id
-           and snapshot.workspace_id = occurrence.workspace_id
-           and snapshot.project_id = occurrence.project_id
+            and snapshot.workspace_id = occurrence.workspace_id
+            and snapshot.project_id = occurrence.project_id
+          inner join ${collectionRuns} collection
+            on collection.id = snapshot.collection_run_id
+           and collection.workspace_id = occurrence.workspace_id
+           and collection.project_id = occurrence.project_id
           inner join selected_page page
             on page.site_id = snapshot.site_id
           where source.workspace_id = ${scope.workspaceId}::uuid
@@ -768,7 +811,11 @@ export class MeasurementTargetKeywordRanksRepository extends Repository {
           rank.snapshot_id,
           rank.snapshot_provider,
           rank.snapshot_dataset_key,
+          rank.snapshot_schema_version,
           rank.snapshot_method_version,
+          rank.collection_provider,
+          rank.collection_operation,
+          rank.collection_method_version,
           rank.snapshot_availability,
           rank.observation_id,
           rank.observation_provider,

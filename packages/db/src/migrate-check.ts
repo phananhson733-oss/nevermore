@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 76 app tables plus every named index, trigger, and callable routine
+ * exactly 78 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -21,6 +21,8 @@ const EXPECTED_TABLES = [
   "oauth_intents",
   "import_previews",
   "async_runs",
+  "analysis_refresh_runs",
+  "analysis_refresh_steps",
   "collection_runs",
   "data_snapshots",
   "normalized_observations",
@@ -98,6 +100,11 @@ const REQUIRED_INDEXES = [
   "import_previews_expiry_idx",
   "async_runs_one_active_key_idx",
   "async_runs_project_status_idx",
+  "analysis_refresh_runs_project_created_idx",
+  "analysis_refresh_runs_site_created_idx",
+  "analysis_refresh_steps_project_state_idx",
+  "analysis_refresh_steps_child_run_idx",
+  "analysis_refresh_steps_child_run_unique_idx",
   "data_snapshots_project_provider_idx",
   "normalized_observations_lookup_idx",
   "normalized_observations_snapshot_idx",
@@ -140,6 +147,7 @@ const REQUIRED_INDEXES = [
   "competitor_origins_profile_identity_idx",
   "competitor_origins_csv_identity_idx",
   "competitor_origins_manual_identity_idx",
+  "competitor_origins_serp_identity_idx",
   "competitor_origins_entity_observed_idx",
   "flow_shadow_runs_project_created_idx",
   "flow_shadow_runs_action_idx",
@@ -203,11 +211,17 @@ const REQUIRED_TRIGGERS = [
   "import_previews_set_updated_at",
   "async_runs_set_updated_at",
   "async_runs_terminal_status_immutable",
+  "analysis_refresh_runs_provenance_guard",
+  "analysis_refresh_runs_append_only",
+  "analysis_refresh_steps_mutation_guard",
   "collection_runs_provenance_guard",
+  "collection_runs_dataforseo_provenance_guard",
   "collection_runs_voc_provenance_guard",
   "data_snapshots_provenance_guard",
+  "data_snapshots_dataforseo_provenance_guard",
   "data_snapshots_voc_provenance_guard",
   "normalized_observations_provenance_guard",
+  "normalized_observations_dataforseo_provenance_guard",
   "normalized_observations_voc_provenance_guard",
   "normalized_observations_site_page_guard",
   "diagnostic_runs_frozen_input_guard",
@@ -260,6 +274,8 @@ const REQUIRED_TRIGGERS = [
   "keyword_entity_sources_append_only",
   "competitor_entities_governance_guard",
   "competitor_origins_lineage_guard",
+  "competitor_origins_serp_lineage_guard",
+  "competitor_origins_delete_guard",
   "flow_shadow_runs_provenance_guard",
   "flow_shadow_runs_append_only",
   "flow_shadow_research_packs_provenance_guard",
@@ -335,6 +351,8 @@ const REQUIRED_TRIGGERS = [
 ] as const;
 
 const REQUIRED_ROUTINES = [
+  "enforce_analysis_refresh_run_provenance",
+  "enforce_analysis_refresh_step_mutation",
   "lock_site_page_canonical_subjects",
   "finding_target_relation_key",
   "reserve_product_profile_invocation_attempt",
@@ -352,6 +370,11 @@ const REQUIRED_ROUTINES = [
   "enforce_competitor_entity_governance",
   "enforce_competitor_origin_lineage",
   "upsert_competitor_origin",
+  "enforce_dataforseo_collection_run_provenance",
+  "enforce_dataforseo_data_snapshot_provenance",
+  "enforce_dataforseo_observation_provenance",
+  "enforce_serp_overlap_competitor_origin_lineage",
+  "upsert_serp_overlap_competitor_origin",
   "enforce_flow_shadow_run_provenance",
   "enforce_flow_shadow_child_provenance",
   "enforce_delivery_authorization_grant_transition",

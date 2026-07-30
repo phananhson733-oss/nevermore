@@ -73,9 +73,15 @@
 }
 .refreshButton {
   min-height: 42px;
-  justify-self: start;
   border-radius: 9px;
   box-shadow: 0 8px 20px color-mix(in srgb, var(--sf-accent) 20%, transparent);
+}
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
 }
 .refreshIcon {
   animation: source-spin 0.9s linear infinite;
@@ -112,8 +118,53 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .refreshButton {
+    justify-self: auto;
+  }
+  .heroActions {
     justify-self: end;
   }
+}
+
+.analysisRefreshStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 18px;
+  min-width: 0;
+  padding: 13px 15px;
+  color: var(--sf-fg);
+  background: color-mix(in srgb, var(--sf-cobalt-soft) 48%, var(--sf-surface));
+  border: 1px solid var(--sf-border);
+  border-radius: 9px;
+}
+.analysisRefreshStatusLead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.analysisRefreshStatusLead > div {
+  min-width: 0;
+}
+.analysisRefreshStatusLead strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.analysisRefreshStatusLead p {
+  margin: 2px 0 0;
+  color: var(--sf-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.analysisRefreshError {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 /* -------------------------------------------- Connection presentation ----- */
@@ -962,21 +1013,6 @@
   font-weight: 600;
   color: var(--sf-muted);
 }
-.dataForSeoControls {
-  display: flex;
-  max-width: 60ch;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-.dataForSeoScope {
-  margin: 0;
-  color: var(--sf-muted);
-  font-size: 14px;
-  line-height: 1.45;
-  text-align: right;
-}
-
 /* ------------------------------------------------------------- Footline --- */
 .footline {
   display: grid;

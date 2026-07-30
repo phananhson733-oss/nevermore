@@ -36,6 +36,7 @@ export interface WorkerContext {
     readonly login: string | null;
     readonly password: string | null;
     readonly maxKeywords: number;
+    readonly maxCompetitors: number;
     /** Offline provider seam used only by collection fixtures. */
     readonly fetch?: typeof globalThis.fetch;
   };
@@ -121,6 +122,7 @@ export function buildWorkerContext(input: {
       login: input.env.DATAFORSEO_LOGIN ?? null,
       password: input.env.DATAFORSEO_PASSWORD ?? null,
       maxKeywords: input.env.DATAFORSEO_MAX_KEYWORDS,
+      maxCompetitors: input.env.DATAFORSEO_MAX_COMPETITORS,
     },
     openai: resolveLlmClientConfig(input.env),
     findingSummariesEnabled:

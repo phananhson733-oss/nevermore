@@ -462,7 +462,7 @@ test.beforeEach(async ({ page }) => {
   ]);
 });
 
-test("关键词审核要求 conflict Topic 二次确认，并且 A→B→A 不串表单状态", async ({
+test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态且不篡改已发布代际", async ({
   page,
 }) => {
   const state = await installKeywordReviewApi(page);
@@ -540,19 +540,37 @@ test("关键词审核要求 conflict Topic 二次确认，并且 A→B→A 不�
     mappedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
     reason: "确认冲突范围后，仍将该词映射到核心客户入职页面。",
   });
-  await expect
-    .poll(() => state.topicInsightReads)
-    .toBeGreaterThan(topicReadsBeforeSave);
-  await expect
-    .poll(() => state.relationReads)
-    .toBeGreaterThan(relationReadsBeforeSave);
-
+  // Review writes update only the live governance authority. Topic insights,
+  // relations, and the customer-visible Keyword detail stay pinned to the
+  // published Analysis Refresh generation until a later refresh publishes a
+  // new generation.
+  expect(state.topicInsightReads).toBe(topicReadsBeforeSave);
+  expect(state.relationReads).toBe(relationReadsBeforeSave);
   const detail = page.locator('aside[aria-label="所选关键词详情"]');
-  await expect(detail).toContainText("流程自动化");
-  await expect(detail).toContainText(
+  await expect(detail).not.toContainText("流程自动化");
+  await expect(detail).not.toContainText(
     "https://example.test/customer-onboarding/",
   );
   await expect(detail.getByText("审核结果已同步")).toBeVisible();
+
+  // Reopening the editor reads the separately cached live review authority, so
+  // the successful write is immediately reviewable without contaminating the
+  // frozen published projection.
+  dialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
+  await expect(dialog.getByLabel("搜索意图")).toHaveValue("commercial");
+  await expect(dialog.getByLabel("购买阶段")).toHaveValue("consideration");
+  await expect(dialog.getByLabel("已发布 Topic")).toHaveValue(CONFLICT_TOPIC);
+  await expect(dialog.getByLabel("页面映射决定")).toHaveValue(
+    "existing_page",
+  );
+  await expect(dialog.getByLabel("规范页面")).toHaveValue(
+    E2E_ONBOARDING_SITE_PAGE_ID,
+  );
+  await expect(dialog.getByText("当前治理版本 1")).toBeVisible();
 });
 
 test("关键词 CAS 冲突会刷新最新 revision、提示用户并用新版本重试", async ({

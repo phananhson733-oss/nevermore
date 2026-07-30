@@ -139,6 +139,8 @@ export const APP_TABLES = [
   "backlink_authority_snapshots",
   "backlink_facts",
   "backlink_page_metrics",
+  "analysis_refresh_runs",
+  "analysis_refresh_steps",
 ];
 
 /**

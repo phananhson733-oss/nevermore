@@ -20,8 +20,13 @@ const { GET } = await import("./route");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
 const sitePageId = "00000000-0000-4000-8000-000000000004";
+const diagnosticRunId = "a0000000-0000-7000-8000-000000000006";
 
-function invoke(selectedSitePageId = sitePageId, uiLocaleCookie?: string) {
+function invoke(
+  selectedSitePageId = sitePageId,
+  uiLocaleCookie?: string,
+  query = "",
+) {
   const headers = new Headers({
     "X-Request-Id": "request-growth-map-url",
   });
@@ -30,7 +35,7 @@ function invoke(selectedSitePageId = sitePageId, uiLocaleCookie?: string) {
   }
   return GET(
     new NextRequest(
-      `http://localhost/api/mvp/projects/${projectId}/audit/urls/${selectedSitePageId}`,
+      `http://localhost/api/mvp/projects/${projectId}/audit/urls/${selectedSitePageId}${query}`,
       { headers },
     ),
     { params: Promise.resolve({ projectId, sitePageId: selectedSitePageId }) },
@@ -42,7 +47,7 @@ beforeEach(() => {
   mocks.getProjectAuditUrl.mockResolvedValue({
     projectId,
     siteId: "00000000-0000-4000-8000-000000000005",
-    diagnosticRunId: "00000000-0000-4000-8000-000000000006",
+    diagnosticRunId,
     crawlSnapshotId: "00000000-0000-4000-8000-000000000007",
     data: { sitePageId },
   });
@@ -60,6 +65,7 @@ describe("GET selected Growth Map URL", () => {
       },
       projectId,
       sitePageId,
+      { diagnosticRunId: null },
     );
     await expect(response.json()).resolves.toEqual({
       data: expect.objectContaining({ projectId, data: { sitePageId } }),
@@ -77,6 +83,26 @@ describe("GET selected Growth Map URL", () => {
       },
       projectId,
       sitePageId,
+      { diagnosticRunId: null },
+    );
+  });
+
+  it("passes an exact canonical UUIDv7 published-generation pin to the detail service", async () => {
+    const response = await invoke(
+      sitePageId,
+      undefined,
+      `?diagnosticRunId=${diagnosticRunId}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getProjectAuditUrl).toHaveBeenCalledWith(
+      {
+        workspaceId: "00000000-0000-4000-8000-000000000002",
+        uiLocale: "zh-CN",
+      },
+      projectId,
+      sitePageId,
+      { diagnosticRunId },
     );
   });
 
@@ -87,6 +113,83 @@ describe("GET selected Growth Map URL", () => {
     expect(response.status).toBe(404);
     expect(body).toMatchObject({ code: "NOT_FOUND", status: 404 });
     expect(JSON.stringify(body)).not.toContain("customer-private-url");
+    expect(mocks.getProjectAuditUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["customer-private-run"],
+    [diagnosticRunId.toUpperCase()],
+    [""],
+  ])(
+    "rejects a non-canonical diagnosticRunId %j without calling the service",
+    async (value) => {
+      const response = await invoke(
+        sitePageId,
+        undefined,
+        `?diagnosticRunId=${encodeURIComponent(value)}`,
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(422);
+      expect(body).toMatchObject({
+        code: "VALIDATION_ERROR",
+        status: 422,
+        errors: [
+          {
+            pointer: "/diagnosticRunId",
+            code: "invalid_query_value",
+          },
+        ],
+      });
+      if (value.length > 0) {
+        expect(JSON.stringify(body)).not.toContain(value);
+      }
+      expect(mocks.getProjectAuditUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects duplicate diagnosticRunId pins instead of choosing one generation", async () => {
+    const response = await invoke(
+      sitePageId,
+      undefined,
+      `?diagnosticRunId=${diagnosticRunId}&diagnosticRunId=${diagnosticRunId}`,
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      errors: [
+        {
+          pointer: "/diagnosticRunId",
+          code: "duplicate_query_parameter",
+        },
+      ],
+    });
+    expect(mocks.getProjectAuditUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown detail query parameters before service access", async () => {
+    const response = await invoke(
+      sitePageId,
+      undefined,
+      `?diagnosticRunId=${diagnosticRunId}&unexpected=customer-private-value`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      errors: [
+        {
+          pointer: "/unexpected",
+          code: "unknown_query_parameter",
+          message: "Unknown query parameter.",
+        },
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain("customer-private-value");
     expect(mocks.getProjectAuditUrl).not.toHaveBeenCalled();
   });
 });

@@ -141,44 +141,28 @@
     "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link."
   },
   "newProject": {
-    "title": "New project",
-    "subtitle": "Set up a client engagement to start collecting signals.",
+    "title": "Add a product",
+    "subtitle": "Start with the product URL and facts you already know. You can manually complete the Product Profile and ICP before connecting live data.",
     "fields": {
-      "clientName": {
-        "label": "Client name",
-        "placeholder": "Acme Inc.",
-        "help": "The company or brand this engagement is for."
+      "productUrl": {
+        "label": "Product URL",
+        "placeholder": "https://www.example.com/product",
+        "help": "Use the homepage or the page that best represents the product. This exact URL becomes the Product Profile source and Crawl starting point."
       },
-      "projectName": {
-        "label": "Project name",
-        "placeholder": "Acme 2026 SEO program",
-        "help": "An internal name to identify this engagement."
-      },
-      "siteUrl": {
-        "label": "Site URL",
-        "placeholder": "https://www.example.com",
-        "help": "The primary domain we'll crawl and analyze."
-      },
-      "marketCodes": {
-        "label": "Target markets",
-        "placeholder": "US, GB, DE",
-        "help": "ISO country codes for the markets this project targets."
-      },
-      "siteLanguageCodes": {
-        "label": "Site languages",
-        "placeholder": "en, de",
-        "help": "Language codes the site publishes content in."
-      },
-      "defaultDeliveryLocale": {
-        "label": "Delivery language",
-        "placeholder": "en",
-        "help": "The language used for client-facing reports and deliverables."
+      "businessHint": {
+        "label": "Product and customer context (optional)",
+        "placeholder": "For example: onboarding automation for customer operations teams at mid-market B2B SaaS companies in North America.",
+        "help": "Enter only facts you already know. Product identity, business model, markets, and ICP remain manually editable in the next step."
       }
     },
-    "createButton": "Create project",
-    "creating": "Creating…",
-    "createError": "We couldn't create the project. Please try again.",
-    "siteUrlInvalid": "Enter a valid URL, including https://."
+    "nextStep": {
+      "title": "Next: manually complete the Product Profile and ICP",
+      "detail": "Creation opens the editable profile directly. AI exploration and Audit are not prerequisites; save customer-declared facts, then connect GSC and GA4 while the platform uses Crawl and DataForSEO."
+    },
+    "createButton": "Create product and fill profile",
+    "creating": "Creating Product Profile…",
+    "createError": "We couldn't create the product. Check the inputs and try again.",
+    "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment."
   },
   "productProfile": {
     "heroEyebrow": "PRODUCT PROFILE · ICP",
@@ -202,13 +186,16 @@
       "discard": "Discard changes",
       "apply": "Apply review",
       "retry": "Retry",
+      "addProduct": "Add product and fill profile",
       "edit": "Edit Product Profile",
+      "connectData": "Connect live data",
       "synthesize": "Generate from site evidence",
       "synthesizing": "Generating…",
       "runCrawl": "Collect site evidence",
       "addCompetitor": "Add competitor",
       "reviewCompetitor": "Review / correct",
       "confirm": "Confirm Product Profile",
+      "confirmAndConnect": "Confirm and open data connections",
       "confirmBlocked": "Not ready to confirm"
     },
     "states": {
@@ -269,6 +256,23 @@
       "custom": "Other / custom",
       "customProductType": "Custom product type",
       "otherBusinessModels": "Other business models",
+      "productTypes": {
+        "b2bSaas": "B2B SaaS",
+        "b2cSaas": "B2C SaaS",
+        "ecommerce": "E-commerce",
+        "marketplace": "Marketplace",
+        "professionalServices": "Professional services",
+        "developerTool": "Developer tool",
+        "contentMedia": "Content / media"
+      },
+      "businessModels": {
+        "subscription": "Subscription",
+        "transaction": "Transaction",
+        "freemium": "Freemium",
+        "marketplace": "Marketplace",
+        "services": "Services",
+        "advertising": "Advertising"
+      },
       "onePerLine": "One item per line.",
       "chooseIcp": "Select an existing candidate or create one…",
       "newIcp": "Create a new Primary ICP",
@@ -727,6 +731,25 @@
     "loadMoreHistory": "Load more snapshot history",
     "inProgress": "In progress",
     "progress": "Progress: {current}/{total}",
+    "analysisRefresh": {
+      "start": "Update analysis data",
+      "submitting": "Starting update…",
+      "running": "Updating analysis data…",
+      "statusTitle": "Analysis data update",
+      "inProgress": "The server-owned Crawl, connected sources, and Growth Audit plan is in progress.",
+      "progress": "Plan progress: {current}/{total}. Provider results are shown only after they are committed.",
+      "adopted": "Another update is already active. This page adopted that run and is now following its real status.",
+      "statusError": "The update may still be running, but its current status could not be read.",
+      "retryStatus": "Retry status",
+      "staleRunCleared": "The linked analysis run does not exist or belongs to another product, so its pointer was cleared. You can start again; an existing active run will be adopted automatically.",
+      "submitError": "Analysis data update could not be started. No provider success is being assumed.",
+      "terminal": {
+        "completed": "The update plan finished. The source cards are refreshing from committed provider results and any optional steps that were skipped.",
+        "partial": "The update finished partially. Usable results were kept, but one or more steps did not complete; review the source cards and error detail.",
+        "failed": "The update did not finish. Previously committed evidence remains available; no failed provider is being shown as successful.",
+        "cancelled": "The update was cancelled. Previously committed evidence remains available."
+      }
+    },
     "runStatusUnavailable": "We couldn't refresh this run's status. The source data was refreshed; retry the status check before starting another run.",
     "collectNow": "Collect now",
     "retryCollection": "Retry collection",
@@ -1687,6 +1710,59 @@
       "viewRecordDetails": "View record details",
       "competitorId": "Competitor ID",
       "revision": "Record revision",
+      "review": {
+        "open": "Review Competitor",
+        "saved": "Review saved; awaiting analysis refresh",
+        "eyebrow": "Competitor Library review",
+        "title": "Review {competitor}",
+        "description": "Confirm the candidate's name, relationship, and analysis use. This saves current review authority; the customer delivery view updates on the next Analysis Refresh under one Diagnostic generation.",
+        "close": "Close Competitor review",
+        "loading": "Reading the latest review authority…",
+        "loadError": "The latest review authority for this Competitor could not be read.",
+        "retry": "Read again",
+        "identityTitle": "Confirm Competitor identity",
+        "identityDescription": "The canonical domain remains {domain}. A display name is optional.",
+        "governanceTitle": "Decide whether to include this Competitor",
+        "governanceDescription": "Only approved Competitors require a relationship and at least one analysis scope. Candidate and excluded records retain neither.",
+        "field": {
+          "name": "Competitor name",
+          "nameHelp": "Optional. Leave blank to display the canonical domain.",
+          "status": "Review status",
+          "relationship": "Relationship",
+          "analysisScope": "Analysis scope (select at least one)"
+        },
+        "status": {
+          "candidate": "Keep as candidate",
+          "approved": "Approve for analysis",
+          "excluded": "Exclude"
+        },
+        "relationship": {
+          "direct": "Direct competitor",
+          "indirect": "Indirect competitor",
+          "status_quo": "Status quo / no action",
+          "benchmark": "Benchmark",
+          "publisher": "Publisher"
+        },
+        "analysisScope": {
+          "positioning": "Positioning",
+          "product_capability": "Product capability",
+          "keyword_gap": "Keyword gap",
+          "content": "Content",
+          "serp_visibility": "SERP visibility"
+        },
+        "selectRelationship": "Select a relationship",
+        "nonApprovedBoundary": "Candidate and excluded records retain only their review status. Relationship and analysis scope are cleared.",
+        "validation": {
+          "relationshipRequired": "Choose a relationship before approving this Competitor.",
+          "analysisScopeRequired": "Select at least one analysis scope before approving this Competitor."
+        },
+        "revisionConflict": "Another operation updated this review. The latest version has been re-read; check it before saving again.",
+        "saveError": "The Competitor review could not be saved. Try again.",
+        "revision": "Current review revision {revision}",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "save": "Save review"
+      },
       "monitor": {
         "eyebrow": "Monthly changes",
         "title": "Competitor content and ranking changes",

@@ -78,4 +78,56 @@ describe("POST collection-runs active conflict contract (AC-019)", () => {
       current: { runId, statusUrl },
     });
   });
+
+  it.each([
+    [
+      "the internal DataForSEO provider",
+      { provider: "dataforseo" },
+      "/provider",
+      "invalid_value",
+    ],
+    [
+      "a provider API key",
+      {
+        provider: "crawl",
+        apiKey: "must-never-cross-the-customer-boundary",
+      },
+      "",
+      "unrecognized_keys",
+    ],
+  ] as const)(
+    "rejects %s at request validation without invoking the collection service",
+    async (_label, body, pointer, issueCode) => {
+      const response = await POST(
+        new NextRequest(
+          `http://localhost/api/mvp/projects/${projectId}/collection-runs`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": "public-collection-boundary",
+              Origin: "http://localhost",
+              "X-Request-Id": "request-public-collection-boundary",
+            },
+            body: JSON.stringify(body),
+          },
+        ),
+        { params: Promise.resolve({ projectId }) },
+      );
+
+      expect(response.status).toBe(422);
+      expect(response.headers.get("content-type")).toContain(
+        "application/problem+json",
+      );
+      await expect(response.json()).resolves.toMatchObject({
+        code: "VALIDATION_ERROR",
+        status: 422,
+        requestId: "request-public-collection-boundary",
+        errors: expect.arrayContaining([
+          expect.objectContaining({ pointer, code: issueCode }),
+        ]),
+      });
+      expect(mocks.createCollectionRun).not.toHaveBeenCalled();
+    },
+  );
 });

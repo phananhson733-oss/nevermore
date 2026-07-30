@@ -26,6 +26,11 @@ export interface SeededProject {
   readonly siteUrl: string;
 }
 
+export interface ConfirmedProjectContextOverrides {
+  readonly productName?: string;
+  readonly oneLineDescription?: string;
+}
+
 /**
  * Public IP literals keep the SSRF guard exercised without depending on live DNS.
  * Hashing accepts human-readable deterministic seeds without collapsing them
@@ -73,4 +78,69 @@ export async function seedProject(
   }
   const body = (await response.json()) as { data: { id: string } };
   return { projectId: body.data.id, siteUrl };
+}
+
+/**
+ * Confirm the manually supplied Product / ICP context before a fixture enters
+ * Sources. Production enforces the same ordering at both the page and OAuth
+ * service boundaries; browser fixtures must not bypass that customer workflow.
+ */
+export async function confirmSeededProjectContext(
+  request: APIRequestContext,
+  project: SeededProject,
+  overrides: ConfirmedProjectContextOverrides = {},
+): Promise<void> {
+  const origin = new URL(project.siteUrl).origin;
+  const response = await request.patch(
+    `/api/mvp/projects/${project.projectId}/context`,
+    {
+      data: {
+        mode: "complete",
+        baseVersion: 0,
+        profile: {
+          productName: overrides.productName ?? "E2E Product",
+          oneLineDescription:
+            overrides.oneLineDescription ??
+            "A manually confirmed product profile used for customer-flow verification.",
+          customerModel: "b2b",
+          businessProfile: "b2b_saas",
+          businessProfileNote: null,
+          marketCodes: ["US"],
+          siteLanguageCodes: ["en"],
+          defaultDeliveryLocale: "en",
+          segments: ["Mid-market B2B teams"],
+          personas: [
+            {
+              name: "Growth lead",
+              roleOrContext: "Owns the product growth program",
+              jobs: ["Prioritize evidence-backed growth work"],
+              painPoints: ["Growth evidence is fragmented across systems"],
+            },
+          ],
+          useCases: ["Connect first-party data to a product growth workspace"],
+          offers: ["A connected growth operations workspace"],
+          differentiators: ["Recommendations remain traceable to source evidence"],
+          primaryConversion: {
+            label: "Contact sales",
+            type: "contact",
+            targetUrl: `${origin}/contact`,
+          },
+          priorityProductsOrServices: ["Growth operations workspace"],
+          priorityUrls: [origin],
+          competitors: [],
+          brandConstraints: [],
+          complianceConstraints: [],
+          technicalConstraints: [],
+          resourceConstraints: [],
+          growthQuestions: ["Which evidence-backed opportunity should ship next?"],
+          ninetyDayGoals: ["Connect sources and ship the highest-impact work."],
+        },
+      },
+    },
+  );
+  if (!response.ok()) {
+    throw new Error(
+      `confirmSeededProjectContext failed: ${response.status()} ${await response.text()}`,
+    );
+  }
 }

@@ -12,16 +12,17 @@ import {
 import { ProblemError } from "@sf/observability";
 import { getEnv } from "@/env";
 import { getDb } from "@/lib/db";
+import { getSourceConnectionGate } from "./source-connect";
 import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mappers";
 
 /**
  * Sources read model + disconnect (spec §7, §11.2). `listProjectSources` always
  * returns EXACTLY the five provider slots (crawl, gsc, ga4, csv, dataforseo) —
- * connected or not — so the UI can render every provider card and distinguish
- * "not connected" from "connected but no snapshot" (spec §5.2). DataForSEO's
- * slot is enabled only by the validated server feature flag; an enabled legacy
- * project still remains honestly disconnected until its first collection
- * atomically provisions the project-scoped connection.
+ * connected or not — as a canonical evidence read model. Customer connector
+ * screens filter internal slots rather than rendering them. DataForSEO's slot
+ * is enabled only by the validated server feature flag and is provisioned by
+ * the server-owned Analysis Refresh worker, never by a public collection
+ * command.
  */
 
 const PROVIDER_ORDER = ["crawl", "gsc", "ga4", "csv", "dataforseo"] as const;
@@ -40,12 +41,25 @@ export async function listProjectSources(
   scope: WorkspaceScope,
   projectId: string,
 ): Promise<SourceConnectionDto[]> {
+  // This service is also the direct JSON API boundary, so the customer-page
+  // redirect cannot be the only Product/ICP gate. Fail before loading any
+  // connection, active-run, or retained snapshot rows. Archived projects are
+  // intentionally allowed by the shared gate so their read-only history stays
+  // available.
+  const gate = await getSourceConnectionGate(scope, projectId);
+  if (gate === "not_found") {
+    throw new ProblemError("NOT_FOUND", "Project not found.");
+  }
+  if (gate === "product_profile_required") {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "Confirm the Product Profile and ICP before viewing source connections.",
+    );
+  }
+
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const { db } = getDb();
   const dataForSeoEnabled = getEnv().DATAFORSEO_ENABLED === "true";
-
-  const project = await new ProjectsRepository(db).findById(scope, projectId);
-  if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
 
   const connectionsRepo = new SourceConnectionsRepository(db);
   const snapshotsRepo = new DataSnapshotsRepository(db);

@@ -112,6 +112,41 @@ function operationBlock(openapi, operationId) {
   return openapi.slice(start, next === -1 ? undefined : next);
 }
 
+function componentBlock(openapi, componentName) {
+  const lines = openapi.split("\n");
+  const header = `    ${componentName}:`;
+  const start = lines.findIndex((line) => line === header);
+  assert.ok(start >= 0, `OpenAPI component ${componentName} is missing`);
+  let end = start + 1;
+  while (
+    end < lines.length &&
+    !/^ {4}[A-Za-z_][A-Za-z0-9_]*:\s*$/.test(lines[end])
+  ) {
+    end += 1;
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+function componentPropertyNames(openapi, componentName) {
+  const block = componentBlock(openapi, componentName);
+  assert.match(
+    block,
+    /^ {6}properties:\s*$/m,
+    `OpenAPI component ${componentName} properties are missing`,
+  );
+  return [...block.matchAll(/^ {8}([A-Za-z][A-Za-z0-9]*):/gm)].map(
+    (match) => match[1],
+  );
+}
+
+function operationParameterRefs(openapi, operationId) {
+  return [
+    ...operationBlock(openapi, operationId).matchAll(
+      /- \$ref: '#\/components\/parameters\/([A-Za-z][A-Za-z0-9]+)'/g,
+    ),
+  ].map((match) => match[1]);
+}
+
 export function verifyAuthoritySourceSet({
   appRoot,
   authorityRoot,
@@ -181,7 +216,7 @@ export function verifyAuthoritySourceSet({
 
   const tables = migrationTableInventory(migrations);
   exactSet(tables, lock.tables, "application table inventory");
-  assert.equal(tables.length, 76, "v0.4 must freeze exactly 76 app tables");
+  assert.equal(tables.length, 78, "v0.4 must freeze exactly 78 app tables");
   assert.ok(
     !tables.some((table) => table === "job" || table.startsWith("pgboss")),
     "pg-boss tables are not part of the app inventory",
@@ -189,7 +224,7 @@ export function verifyAuthoritySourceSet({
 
   const operations = extractOpenApiOperations(authorityOpenApi);
   exactSet(operations, lock.apiOperations, "OpenAPI operation inventory");
-  assert.equal(operations.length, 77, "v0.4 must freeze exactly 77 operations");
+  assert.equal(operations.length, 78, "v0.4 must freeze exactly 78 operations");
   const markerOperations = listMarkerValues(
     spec,
     "<!-- API_OPERATIONS_BEGIN -->",
@@ -205,7 +240,7 @@ export function verifyAuthoritySourceSet({
     "shared async inventory",
   );
   exactSet(markerAsync, lock.asyncOperations, "narrative shared async inventory");
-  assert.equal(markerAsync.length, 9, "v0.4 must freeze nine shared async operations");
+  assert.equal(markerAsync.length, 10, "v0.4 must freeze ten shared async operations");
   for (const operationId of lock.asyncOperations) {
     assert.match(
       operationBlock(authorityOpenApi, operationId),
@@ -223,6 +258,143 @@ export function verifyAuthoritySourceSet({
     lock.asyncOperations.length,
     "OpenAPI contains an unclassified shared AsyncAccepted operation",
   );
+  const publicCollectionRequest = componentBlock(
+    authorityOpenApi,
+    "CreateCollectionRunRequest",
+  );
+  exactSet(
+    componentPropertyNames(authorityOpenApi, "CreateCollectionRunRequest"),
+    ["operation", "provider", "sourceConnectionId"],
+    "public collection request properties",
+  );
+  assert.match(
+    publicCollectionRequest,
+    /provider:\s*\{\s*type:\s*string,\s*enum:\s*\[crawl,\s*gsc,\s*ga4\]\s*\}/,
+    "public collection provider allowlist must remain exactly crawl/gsc/ga4",
+  );
+  assert.match(
+    publicCollectionRequest,
+    /enum:\s*\[site_graph,\s*search_analytics,\s*organic_landing\]/,
+    "public collection operation allowlist drifted",
+  );
+  assert.doesNotMatch(
+    publicCollectionRequest,
+    /(?:enum|const):[^\n]*(?:dataforseo|search_landscape)/i,
+    "public collection request must not expose server-owned DFS Search Landscape",
+  );
+  const analysisRefreshRequest = componentBlock(
+    authorityOpenApi,
+    "CreateAnalysisRefreshRunRequest",
+  );
+  assert.match(
+    analysisRefreshRequest,
+    /additionalProperties:\s*false[\s\S]*maxProperties:\s*0/,
+    "Analysis Refresh request must remain a strict empty object",
+  );
+  assert.match(
+    authorityOpenApi,
+    /DataForSEO Search\s+Landscape \(DFS\)/,
+    "OpenAPI must identify DFS Search Landscape as a server-owned Analysis Refresh step",
+  );
+  const sourcesRead = operationBlock(
+    authorityOpenApi,
+    "listProjectSources",
+  );
+  assert.match(
+    sourcesRead,
+    /Active projects require a confirmed Product Profile and ICP[\s\S]*CONTEXT_INCOMPLETE[\s\S]*Archived projects preserve/,
+    "Sources read must gate active projects on confirmed Product/ICP while preserving archived history",
+  );
+  assert.match(
+    sourcesRead,
+    /'422':\s*\{\s*\$ref:\s*'#\/components\/responses\/ValidationError'\s*\}/,
+    "Sources read must publish its CONTEXT_INCOMPLETE 422 response",
+  );
+
+  const diagnosticRunPin = componentBlock(
+    authorityOpenApi,
+    "DiagnosticRunIdPin",
+  );
+  assert.match(
+    diagnosticRunPin,
+    /name:\s*diagnosticRunId[\s\S]*in:\s*query[\s\S]*required:\s*false[\s\S]*format:\s*uuid[\s\S]*pattern:\s*'\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-8\]\[0-9a-f\]\{3\}-\[89ab\]\[0-9a-f\]\{3\}-\[0-9a-f\]\{12\}\$'/,
+    "diagnosticRunId pin must remain one optional canonical lowercase UUID",
+  );
+  const reviewView = componentBlock(authorityOpenApi, "ReviewView");
+  assert.match(
+    reviewView,
+    /name:\s*view[\s\S]*in:\s*query[\s\S]*required:\s*false[\s\S]*const:\s*review/,
+    "review view must remain the exact optional view=review literal",
+  );
+
+  for (const [operationId, expectedParameters] of [
+    [
+      "listProjectAuditUrls",
+      ["ProjectId", "Limit", "Cursor", "DiagnosticRunIdPin"],
+    ],
+    [
+      "getProjectAuditUrl",
+      ["ProjectId", "SitePageId", "DiagnosticRunIdPin"],
+    ],
+    [
+      "listProjectAuditKeywords",
+      ["ProjectId", "Limit", "Cursor", "DiagnosticRunIdPin"],
+    ],
+    [
+      "getProjectAuditKeyword",
+      [
+        "ProjectId",
+        "KeywordId",
+        "DiagnosticRunIdPin",
+        "ReviewView",
+      ],
+    ],
+    [
+      "listProjectAuditCompetitors",
+      ["ProjectId", "Limit", "Cursor", "DiagnosticRunIdPin"],
+    ],
+    [
+      "getProjectAuditCompetitor",
+      [
+        "ProjectId",
+        "CompetitorId",
+        "DiagnosticRunIdPin",
+        "ReviewView",
+      ],
+    ],
+  ]) {
+    exactSet(
+      operationParameterRefs(authorityOpenApi, operationId),
+      expectedParameters,
+      `${operationId} parameter contract`,
+    );
+  }
+  for (const operationId of [
+    "getProjectAuditKeyword",
+    "getProjectAuditCompetitor",
+  ]) {
+    assert.match(
+      operationBlock(authorityOpenApi, operationId),
+      /x-signalframe-query-refinement:\s*reviewViewAndDiagnosticRunIdAreMutuallyExclusive/,
+      `${operationId} must keep review view mutually exclusive with the generation pin`,
+    );
+  }
+  for (const [operationId, identityParameter] of [
+    ["reviewProjectAuditKeyword", "KeywordId"],
+    ["reviewProjectAuditCompetitor", "CompetitorId"],
+  ]) {
+    exactSet(
+      operationParameterRefs(authorityOpenApi, operationId),
+      ["ProjectId", identityParameter],
+      `${operationId} path-only parameter contract`,
+    );
+    assert.match(
+      operationBlock(authorityOpenApi, operationId),
+      /x-signalframe-query-contract:\s*rejectAllQueryParameters/,
+      `${operationId} must reject every query parameter`,
+    );
+  }
+
   const measurementOperation = operationBlock(
     authorityOpenApi,
     "createProjectMeasurementWindow",
@@ -260,9 +432,9 @@ export function verifyAuthoritySourceSet({
   );
 
   for (const [label, expected, patterns] of [
-    ["operations", 77, [/77 个 operation/g]],
-    ["shared async operations", 9, [/9 个 shared async operation/g]],
-    ["tables", 76, [/76 张应用表/g]],
+    ["operations", 78, [/78 个 operation/g]],
+    ["shared async operations", 10, [/10 个 shared async operation/g]],
+    ["tables", 78, [/78 张应用表/g]],
     ["rules", 11, [/11 条规则/g]],
   ]) {
     const count = patterns.reduce(

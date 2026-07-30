@@ -3,6 +3,7 @@ import type { DbTx } from "./client.ts";
 import {
   COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
   createBoss,
+  enqueueAnalysisRefreshContinuationInTx,
   enqueueRunInTx,
   PgBoss,
   QUEUE_CONFIG,
@@ -61,6 +62,16 @@ describe("pg-boss queue contract", () => {
     expect(QUEUE_CONFIG.measurement).toEqual({
       expireInSeconds: 600,
       retryLimit: 3,
+      retryBackoff: true,
+      heartbeatSeconds: 60,
+    });
+  });
+
+  it("registers the durable Analysis Refresh orchestration queue", () => {
+    expect(QUEUE_NAMES).toContain("refresh.analysis");
+    expect(QUEUE_CONFIG["refresh.analysis"]).toEqual({
+      expireInSeconds: 15 * 60,
+      retryLimit: 2,
       retryBackoff: true,
       heartbeatSeconds: 60,
     });
@@ -135,6 +146,78 @@ describe("pg-boss queue contract", () => {
         db: expect.objectContaining({ executeSql: expect.any(Function) }),
       }),
     );
+  });
+
+  it("mints a distinct transactional job for an Analysis Refresh continuation", async () => {
+    const continuationId =
+      "00000000-0000-4000-8000-000000000099";
+    const send = vi.fn(async () => continuationId as string | null);
+    const boss = { send } as unknown as PgBoss;
+    const tx = {} as DbTx;
+    const startAfter = new Date("2026-08-19T00:00:00.000Z");
+
+    await expect(
+      enqueueAnalysisRefreshContinuationInTx(
+        boss,
+        tx,
+        PAYLOAD,
+        { startAfter },
+      ),
+    ).resolves.toBe(continuationId);
+    expect(send).toHaveBeenCalledWith(
+      "refresh.analysis",
+      PAYLOAD,
+      expect.objectContaining({
+        startAfter,
+        db: expect.objectContaining({ executeSql: expect.any(Function) }),
+      }),
+    );
+    const sendOptions = (send.mock.calls[0] as unknown[] | undefined)?.[2];
+    expect(sendOptions).not.toHaveProperty("id");
+  });
+
+  it("fails closed when an Analysis Refresh continuation is null or reuses the parent id", async () => {
+    const send = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(PAYLOAD.runId);
+    const boss = { send } as unknown as PgBoss;
+
+    await expect(
+      enqueueAnalysisRefreshContinuationInTx(
+        boss,
+        {} as DbTx,
+        PAYLOAD,
+      ),
+    ).rejects.toThrow(/rejected.*continuation/i);
+    await expect(
+      enqueueAnalysisRefreshContinuationInTx(
+        boss,
+        {} as DbTx,
+        PAYLOAD,
+      ),
+    ).rejects.toThrow(/reused.*run id/i);
+  });
+
+  it("rejects a relative or invalid Analysis Refresh continuation schedule", async () => {
+    const send = vi.fn();
+    const boss = { send } as unknown as PgBoss;
+
+    for (const startAfter of [
+      new Date(Number.NaN),
+      "5 seconds",
+      5_000,
+    ]) {
+      await expect(
+        enqueueAnalysisRefreshContinuationInTx(
+          boss,
+          {} as DbTx,
+          PAYLOAD,
+          { startAfter } as never,
+        ),
+      ).rejects.toThrow(/valid absolute Date/i);
+    }
+    expect(send).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
+  MAX_FROZEN_KEYWORD_ENTITY_BATCH,
   KeywordsRepository,
   LegacyKeywordReviewDisabledError,
   MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
@@ -190,6 +191,53 @@ describe("KeywordsRepository", () => {
     expect(predicate.sql).toContain('"project_id" = $2');
     expect(predicate.sql).toContain('"archived_at" is null');
     expect(predicate.params).toContain(entity.id);
+  });
+
+  it("pages only the exact frozen keyword IDs while preserving the customer cursor shape", async () => {
+    const db = new FakeExecutor();
+    db.enqueue([entity, { ...entity, id: "00000000-0000-4000-8000-000000000011" }]);
+    const repo = new KeywordsRepository(db as never);
+
+    const page = await repo.listByIdsPage(
+      scope,
+      [entity.id, "00000000-0000-4000-8000-000000000011"],
+      {
+        limit: 1,
+        cursor: null,
+      },
+    );
+
+    expect(page.rows).toEqual([entity]);
+    expect(page.nextCursor).toEqual(expect.any(String));
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"id" in ($');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        entity.id,
+        "00000000-0000-4000-8000-000000000011",
+      ]),
+    );
+  });
+
+  it("rejects an oversized frozen keyword ID set before SQL", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listByIdsPage(
+        scope,
+        Array.from({ length: MAX_FROZEN_KEYWORD_ENTITY_BATCH + 1 }, (_value, index) =>
+          `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        ),
+        { limit: 1, cursor: null },
+      ),
+    ).rejects.toThrow(/entityIds/i);
+    expect(db.calls).toEqual([]);
   });
 
   it("fails closed for the retired ledger-less review command", async () => {

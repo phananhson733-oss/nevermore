@@ -131,8 +131,60 @@ $pgcrypto_contract$;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 76 THEN
-    RAISE EXCEPTION 'expected exactly 76 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 78 THEN
+    RAISE EXCEPTION 'expected exactly 78 app tables';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'analysis_refresh_runs',
+        'analysis_refresh_steps'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Analysis Refresh orchestration tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname IN (
+        'analysis_refresh_runs_project_created_idx',
+        'analysis_refresh_runs_site_created_idx',
+        'analysis_refresh_steps_project_state_idx',
+        'analysis_refresh_steps_child_run_idx',
+        'analysis_refresh_steps_child_run_unique_idx'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'Analysis Refresh orchestration indexes are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname IN (
+        'analysis_refresh_runs_provenance_guard',
+        'analysis_refresh_runs_append_only',
+        'analysis_refresh_steps_mutation_guard'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Analysis Refresh orchestration triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname IN (
+        'enforce_analysis_refresh_run_provenance',
+        'enforce_analysis_refresh_step_mutation'
+      )
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Analysis Refresh orchestration routines are incomplete';
   END IF;
   IF (
     SELECT count(*)
@@ -3613,6 +3665,319 @@ BEGIN
 END;
 $$;
 
+INSERT INTO app.async_runs (
+  id,
+  workspace_id,
+  project_id,
+  kind,
+  status,
+  active_key,
+  contract_version,
+  result_type,
+  result_id,
+  initiated_by
+) VALUES (
+  '00000000-0000-4000-8000-000000002901',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'analysis_refresh',
+  'queued',
+  'analysis_refresh',
+  '2026-07-21',
+  'analysis_refresh_run',
+  '00000000-0000-4000-8000-000000002901',
+  '00000000-0000-4000-8000-000000000101'
+);
+
+INSERT INTO app.analysis_refresh_runs (
+  id,
+  workspace_id,
+  project_id,
+  site_id,
+  icp_profile_id,
+  plan_manifest,
+  plan_hash
+) VALUES (
+  '00000000-0000-4000-8000-000000002901',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000000401',
+  '{
+    "version": "analysis-refresh.plan.v1",
+    "steps": [
+      {"ordinal": 1, "stepKey": "crawl", "required": true},
+      {"ordinal": 2, "stepKey": "gsc", "required": false},
+      {"ordinal": 3, "stepKey": "ga4", "required": false},
+      {"ordinal": 4, "stepKey": "dataforseo", "required": false},
+      {"ordinal": 5, "stepKey": "growth_audit", "required": true}
+    ]
+  }'::jsonb,
+  'd725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af'
+);
+
+INSERT INTO app.analysis_refresh_steps (
+  analysis_refresh_run_id,
+  workspace_id,
+  project_id,
+  ordinal,
+  step_key,
+  required
+) VALUES
+  (
+    '00000000-0000-4000-8000-000000002901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    1,
+    'crawl',
+    true
+  ),
+  (
+    '00000000-0000-4000-8000-000000002901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    2,
+    'gsc',
+    false
+  ),
+  (
+    '00000000-0000-4000-8000-000000002901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    3,
+    'ga4',
+    false
+  ),
+  (
+    '00000000-0000-4000-8000-000000002901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    4,
+    'dataforseo',
+    false
+  ),
+  (
+    '00000000-0000-4000-8000-000000002901',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    5,
+    'growth_audit',
+    true
+  );
+
+-- A second Crawl lineage fixture proves that a completed step cannot borrow a
+-- same-provider Snapshot from any collection other than its frozen child.
+INSERT INTO app.async_runs (
+  id,
+  workspace_id,
+  project_id,
+  kind,
+  status,
+  active_key,
+  contract_version,
+  initiated_by,
+  started_at,
+  completed_at
+) VALUES (
+  '00000000-0000-4000-8000-000000002911',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  'collection',
+  'completed',
+  'collect:crawl:analysis-refresh-wrong-lineage',
+  '2026-07-21',
+  '00000000-0000-4000-8000-000000000101',
+  now(),
+  now()
+);
+
+INSERT INTO app.collection_runs (
+  id,
+  workspace_id,
+  project_id,
+  site_id,
+  source_connection_id,
+  provider,
+  operation,
+  method_version,
+  parameters_hash
+) VALUES (
+  '00000000-0000-4000-8000-000000002911',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000000501',
+  'crawl',
+  'site_graph',
+  'crawl.site_graph.v2',
+  repeat('e', 64)
+);
+
+INSERT INTO app.data_snapshots (
+  id,
+  workspace_id,
+  project_id,
+  site_id,
+  collection_run_id,
+  source_connection_id,
+  provider,
+  dataset_key,
+  schema_version,
+  method_version,
+  captured_at,
+  source_window,
+  availability,
+  limitation,
+  row_count,
+  checksum
+) VALUES (
+  '00000000-0000-4000-8000-000000002912',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  '00000000-0000-4000-8000-000000000301',
+  '00000000-0000-4000-8000-000000002911',
+  '00000000-0000-4000-8000-000000000501',
+  'crawl',
+  'crawl.site_graph.v1',
+  'crawl.site_graph.v2',
+  'crawl.site_graph.v2',
+  now(),
+  '{"start":null,"end":null}'::jsonb,
+  'available',
+  'Analysis Refresh wrong-lineage fixture.',
+  1,
+  repeat('f', 64)
+);
+
+UPDATE app.collection_runs
+SET
+  source_window = '{"start":null,"end":null}'::jsonb,
+  row_count = 1
+WHERE id = '00000000-0000-4000-8000-000000002911';
+
+UPDATE app.analysis_refresh_steps
+SET
+  state = 'skipped',
+  skip_reason = 'source_not_connected',
+  completed_at = now()
+WHERE analysis_refresh_run_id =
+    '00000000-0000-4000-8000-000000002901'
+  AND step_key = 'gsc';
+
+DO $analysis_refresh_contract$
+BEGIN
+  IF (
+    SELECT count(*)
+    FROM app.analysis_refresh_steps
+    WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+  ) <> 5 OR (
+    SELECT state
+    FROM app.analysis_refresh_steps
+    WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'gsc'
+  ) IS DISTINCT FROM 'skipped' THEN
+    RAISE EXCEPTION 'Analysis Refresh fixed plan or optional skip did not persist';
+  END IF;
+
+  BEGIN
+    UPDATE app.analysis_refresh_steps
+    SET
+      state = 'running',
+      child_async_run_id =
+        '00000000-0000-4000-8000-000000000607',
+      started_at = now()
+    WHERE analysis_refresh_run_id =
+        '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'crawl';
+    RAISE EXCEPTION 'Analysis Refresh accepted a wrong-provider child run';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  UPDATE app.analysis_refresh_steps
+  SET
+    state = 'running',
+    child_async_run_id =
+      '00000000-0000-4000-8000-000000000601',
+    started_at = now()
+  WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+    AND step_key = 'crawl';
+
+  BEGIN
+    UPDATE app.analysis_refresh_steps
+    SET
+      state = 'completed',
+      result_snapshot_id =
+        '00000000-0000-4000-8000-000000002912',
+      completed_at = now()
+    WHERE analysis_refresh_run_id =
+        '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'crawl';
+    RAISE EXCEPTION 'Analysis Refresh accepted a Snapshot from another child';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  UPDATE app.analysis_refresh_steps
+  SET
+    state = 'completed',
+    result_snapshot_id =
+      '00000000-0000-4000-8000-000000000701',
+    completed_at = now()
+  WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+    AND step_key = 'crawl';
+
+  IF (
+    SELECT result_snapshot_id
+    FROM app.analysis_refresh_steps
+    WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'crawl'
+  ) IS DISTINCT FROM
+      '00000000-0000-4000-8000-000000000701'::uuid THEN
+    RAISE EXCEPTION 'Analysis Refresh exact child Snapshot did not persist';
+  END IF;
+
+  BEGIN
+    UPDATE app.analysis_refresh_runs
+    SET plan_hash = plan_hash
+    WHERE id = '00000000-0000-4000-8000-000000002901';
+    RAISE EXCEPTION 'Analysis Refresh parent accepted a mutation';
+  EXCEPTION
+    WHEN SQLSTATE '55000' THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE app.analysis_refresh_steps
+    SET
+      state = 'skipped',
+      skip_reason = 'invalid_required_skip',
+      completed_at = now()
+    WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'growth_audit';
+    RAISE EXCEPTION 'required Analysis Refresh step accepted skipped';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE app.analysis_refresh_steps
+    SET skip_reason = 'rewritten_terminal_fact'
+    WHERE analysis_refresh_run_id =
+      '00000000-0000-4000-8000-000000002901'
+      AND step_key = 'gsc';
+    RAISE EXCEPTION 'terminal Analysis Refresh step accepted a rewrite';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+END;
+$analysis_refresh_contract$;
+
 
 DO $$
 DECLARE
@@ -3979,7 +4344,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0032_keyword_initial_governance' THEN
+  ) IS DISTINCT FROM '0034_dataforseo_search_landscape' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF (
@@ -4262,5 +4627,296 @@ BEGIN
   END IF;
 END;
 $$;
+
+DO $dataforseo_search_landscape_contract$
+BEGIN
+  IF position(
+    '''search_landscape''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.collection_runs'::regclass
+        AND constraint_row.conname = 'collection_runs_operation_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'DataForSEO Search Landscape operation is absent';
+  END IF;
+  IF position(
+    '''dataforseo.search_landscape.v1''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.data_snapshots'::regclass
+        AND constraint_row.conname = 'data_snapshots_dataset_key_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'DataForSEO Search Landscape dataset is absent';
+  END IF;
+  IF position(
+    '''serp_overlap''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid =
+        'app.competitor_origin_occurrences'::regclass
+        AND constraint_row.conname =
+          'competitor_origin_occurrences_origin_kind_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'SERP overlap origin discriminator is absent';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname = 'competitor_origins_serp_identity_idx'
+      AND indexdef LIKE '%normalized_observation_id, source_pointer%'
+      AND indexdef LIKE '%origin_kind = ''serp_overlap''%'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'SERP overlap stable partial identity index is incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname IN (
+        'collection_runs_dataforseo_provenance_guard',
+        'data_snapshots_dataforseo_provenance_guard',
+        'normalized_observations_dataforseo_provenance_guard',
+        'competitor_origins_serp_lineage_guard',
+        'competitor_origins_delete_guard'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'DataForSEO Search Landscape triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname IN (
+        'enforce_dataforseo_collection_run_provenance',
+        'enforce_dataforseo_data_snapshot_provenance',
+        'enforce_dataforseo_observation_provenance',
+        'enforce_serp_overlap_competitor_origin_lineage',
+        'upsert_serp_overlap_competitor_origin'
+      )
+  ) <> 5 THEN
+    RAISE EXCEPTION 'DataForSEO Search Landscape routines are incomplete';
+  END IF;
+END;
+$dataforseo_search_landscape_contract$;
+
+DO $dataforseo_search_landscape_behavior$
+#variable_conflict use_variable
+DECLARE
+  workspace_id uuid := gen_random_uuid();
+  project_id uuid := gen_random_uuid();
+  site_id uuid := gen_random_uuid();
+  source_id uuid := gen_random_uuid();
+  run_id uuid := gen_random_uuid();
+  snapshot_id uuid := gen_random_uuid();
+  observation_id uuid := gen_random_uuid();
+  actor_id uuid := gen_random_uuid();
+  first_occurrence_id uuid;
+  replay_occurrence_id uuid;
+  competitor_id uuid;
+  replay_competitor_id uuid;
+  host text := project_id::text || '.search-landscape-smoke.example';
+  mixed_identity_rejected boolean := false;
+  invalid_numeric_rejected boolean := false;
+BEGIN
+  INSERT INTO app.workspaces (id, name)
+  VALUES (workspace_id, 'DataForSEO Search Landscape smoke');
+  INSERT INTO app.client_projects (
+    id, workspace_id, client_name, project_name,
+    default_delivery_locale, created_by
+  ) VALUES (
+    project_id, workspace_id, 'Search Landscape client',
+    'Search Landscape project', 'zh-CN', actor_id
+  );
+  INSERT INTO app.sites (
+    id, workspace_id, project_id, origin, host,
+    market_codes, language_codes, is_primary
+  ) VALUES (
+    site_id, workspace_id, project_id, 'https://' || host, host,
+    ARRAY['US'], ARRAY['en-US'], true
+  );
+  INSERT INTO app.source_connections (
+    id, workspace_id, project_id, site_id, provider,
+    connection_type, state, external_ref, limitation,
+    connected_at, created_by
+  ) VALUES (
+    source_id, workspace_id, project_id, site_id, 'dataforseo',
+    'api_key_stub', 'available', host,
+    'Schema smoke uses deterministic local rows, not a provider call.',
+    '2026-07-30T08:00:00.000Z', actor_id
+  );
+  INSERT INTO app.async_runs (
+    id, workspace_id, project_id, kind, status,
+    initiated_by, started_at
+  ) VALUES (
+    run_id, workspace_id, project_id, 'collection', 'running',
+    actor_id, '2026-07-30T08:00:00.000Z'
+  );
+  INSERT INTO app.collection_runs (
+    id, workspace_id, project_id, site_id, source_connection_id,
+    provider, operation, method_version, parameters_hash
+  ) VALUES (
+    run_id, workspace_id, project_id, site_id, source_id,
+    'dataforseo', 'search_landscape',
+    'dataforseo.search_landscape.v1', repeat('a', 64)
+  );
+  INSERT INTO app.data_snapshots (
+    id, workspace_id, project_id, site_id, collection_run_id,
+    source_connection_id, provider, dataset_key, schema_version,
+    method_version, captured_at, source_window, availability,
+    limitation, row_count, checksum, summary
+  ) VALUES (
+    snapshot_id, workspace_id, project_id, site_id, run_id, source_id,
+    'dataforseo', 'dataforseo.search_landscape.v1',
+    'dataforseo.search_landscape.v1',
+    'dataforseo.search_landscape.v1',
+    '2026-07-30T08:00:00.000Z',
+    '{"start":null,"end":null}'::jsonb, 'available',
+    'Provider competitor-domain data is updated weekly.',
+    1, repeat('b', 64), '{}'::jsonb
+  );
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, provider,
+    metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  ) VALUES (
+    observation_id, workspace_id, project_id, snapshot_id, 'dataforseo',
+    'dataforseo.competitor_domain.v1', 'site', 'smoke-rival.example',
+    '2026-07-30T08:00:00.000Z', 'available',
+    jsonb_build_object(
+      'targetDomain', host,
+      'competitorDomain', 'smoke-rival.example',
+      'intersections', 7,
+      'averagePosition', 4.5,
+      'summedPosition', 31,
+      'organicEstimatedTrafficVolume', 520.25,
+      'marketCode', 'US',
+      'languageCode', 'en'
+    ),
+    'vendor_observation', 'B', 'supports',
+    'Provider competitor-domain data is updated weekly.'
+  );
+
+  SELECT occurrence_id, upserted.competitor_id
+  INTO first_occurrence_id, competitor_id
+  FROM app.upsert_serp_overlap_competitor_origin(
+    workspace_id,
+    project_id,
+    'smoke-rival.example',
+    snapshot_id,
+    observation_id,
+    '/valueJson/competitorDomain'
+  ) upserted;
+  SELECT occurrence_id, upserted.competitor_id
+  INTO replay_occurrence_id, replay_competitor_id
+  FROM app.upsert_serp_overlap_competitor_origin(
+    workspace_id,
+    project_id,
+    'smoke-rival.example',
+    snapshot_id,
+    observation_id,
+    '/valueJson/competitorDomain'
+  ) upserted;
+  IF first_occurrence_id IS DISTINCT FROM replay_occurrence_id
+     OR competitor_id IS DISTINCT FROM replay_competitor_id THEN
+    RAISE EXCEPTION 'SERP overlap source replay was not idempotent';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.competitor_entities entity
+    WHERE entity.id = competitor_id
+      AND entity.workspace_id = workspace_id
+      AND entity.project_id = project_id
+      AND entity.domain = 'smoke-rival.example'
+      AND entity.name IS NULL
+      AND entity.review_status = 'candidate'
+      AND entity.relationship IS NULL
+      AND entity.analysis_scope = ARRAY[]::text[]
+      AND entity.revision = 0
+  ) THEN
+    RAISE EXCEPTION 'SERP overlap did not create a neutral candidate entity';
+  END IF;
+
+  UPDATE app.competitor_entities
+  SET name = 'Human-reviewed smoke rival',
+      review_status = 'approved',
+      relationship = 'benchmark',
+      analysis_scope = ARRAY['content'],
+      revision = revision + 1
+  WHERE id = competitor_id;
+  PERFORM *
+  FROM app.upsert_serp_overlap_competitor_origin(
+    workspace_id,
+    project_id,
+    'smoke-rival.example',
+    snapshot_id,
+    observation_id,
+    '/valueJson/competitorDomain'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.competitor_entities entity
+    WHERE entity.id = competitor_id
+      AND entity.name = 'Human-reviewed smoke rival'
+      AND entity.review_status = 'approved'
+      AND entity.relationship = 'benchmark'
+      AND entity.analysis_scope = ARRAY['content']
+      AND entity.revision = 1
+  ) THEN
+    RAISE EXCEPTION 'provider replay overwrote competitor governance';
+  END IF;
+
+  BEGIN
+    PERFORM *
+    FROM app.upsert_serp_overlap_competitor_origin(
+      workspace_id,
+      project_id,
+      'smoke-rival.example',
+      gen_random_uuid(),
+      observation_id,
+      '/valueJson/competitorDomain'
+    );
+  EXCEPTION WHEN check_violation THEN
+    mixed_identity_rejected := true;
+  END;
+  IF NOT mixed_identity_rejected THEN
+    RAISE EXCEPTION 'mixed SERP Snapshot/Observation identity was accepted';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.normalized_observations (
+      id, workspace_id, project_id, snapshot_id, provider,
+      metric_key, subject_type, subject_ref, observed_at,
+      availability, value_json, origin, grade, support, limitation
+    ) VALUES (
+      gen_random_uuid(), workspace_id, project_id, snapshot_id, 'dataforseo',
+      'dataforseo.competitor_domain.v1', 'site', 'invalid-rival.example',
+      '2026-07-30T08:00:00.000Z', 'available',
+      jsonb_build_object(
+        'targetDomain', host,
+        'competitorDomain', 'invalid-rival.example',
+        'intersections', 0,
+        'averagePosition', 1,
+        'summedPosition', 1,
+        'organicEstimatedTrafficVolume', 1,
+        'marketCode', 'US',
+        'languageCode', 'en'
+      ),
+      'vendor_observation', 'B', 'supports', 'Invalid fixture.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    invalid_numeric_rejected := true;
+  END;
+  IF NOT invalid_numeric_rejected THEN
+    RAISE EXCEPTION 'non-positive SERP intersections were accepted';
+  END IF;
+END;
+$dataforseo_search_landscape_behavior$;
 
 ROLLBACK;

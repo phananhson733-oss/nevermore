@@ -582,6 +582,82 @@ async function unloadIsFenced(page: Page): Promise<boolean> {
   });
 }
 
+test("creates a URL-first draft, supports a manual customer edit, confirms it, then opens data connections", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(page);
+  const createRequests: unknown[] = [];
+  await page.route("**/api/mvp/projects", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    createRequests.push(route.request().postDataJSON());
+    await json(
+      route,
+      {
+        id: E2E_PROJECT_ID,
+      },
+      201,
+    );
+  });
+
+  await useChineseUi(page);
+  await page.goto("/new-project");
+  await expect(page.getByRole("heading", { name: "添加产品" })).toBeVisible();
+  await page.getByLabel("产品 URL").fill("https://relayops.com/product/");
+  await page
+    .getByLabel("产品与客户背景（选填）")
+    .fill("面向海外 B2B SaaS 客户运营团队的 onboarding 产品。");
+  await page
+    .getByRole("button", { name: "创建产品并填写画像" })
+    .click();
+
+  await expect.poll(() => createRequests.length).toBe(1);
+  expect(createRequests).toEqual([
+    {
+      mode: "product_profile",
+      productUrl: "https://relayops.com/product/",
+      businessHint: "面向海外 B2B SaaS 客户运营团队的 onboarding 产品。",
+    },
+  ]);
+  await page.waitForURL(`/p/${E2E_PROJECT_ID}/context`);
+  await expect(
+    page.getByRole("button", { name: "编辑产品画像与 ICP" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑产品画像与核心 ICP",
+  });
+  await editor.getByLabel("产品名称").fill("RelayOps Global");
+  await editor.getByRole("button", { name: "保存为新版本" }).click();
+  await expect.poll(() => api.draftPatches.length).toBe(1);
+  expect(api.draftPatches[0]).toEqual({
+    baseVersion: 4,
+    patch: { productName: "RelayOps Global" },
+  });
+
+  await expect(
+    page.getByRole("link", { name: "连接真实数据" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "确认产品画像", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: "确认这份产品画像？",
+  });
+  await confirmation
+    .getByRole("button", { name: "确认并进入数据连接", exact: true })
+    .click();
+
+  await expect.poll(() => api.confirmations.length).toBe(1);
+  expect(api.confirmations).toEqual([{ baseVersion: 5 }]);
+  expect(api.auditStarts).toEqual([]);
+  expect(api.critical.diagnosticRequests).toEqual([]);
+  await page.waitForURL(`/p/${E2E_PROJECT_ID}/sources`);
+});
+
 test("only a dirty open Product Profile editor fences the browser unload", async ({
   page,
 }) => {
@@ -589,9 +665,9 @@ test("only a dirty open Product Profile editor fences the browser unload", async
   await gotoProductProfile(page);
   expect(await unloadIsFenced(page)).toBe(false);
 
-  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑 Product Profile 与 Primary ICP",
+    name: "编辑产品画像与核心 ICP",
   });
   await expect(editor).toBeVisible();
   await expect(editor.getByText("没有更改", { exact: true })).toBeVisible();
@@ -635,9 +711,9 @@ test("browser Back asks before discarding a dirty Product Profile editor", async
     window.history.pushState({}, "", window.location.href);
   });
 
-  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑 Product Profile 与 Primary ICP",
+    name: "编辑产品画像与核心 ICP",
   });
   await expect(editor).toBeVisible();
   const productName = editor.getByLabel("产品名称");
@@ -658,7 +734,7 @@ test("browser Back asks before discarding a dirty Product Profile editor", async
   await expect(editor).toBeVisible();
   await expect(productName).toHaveValue("RelayOps Global");
   expect(prompts).toEqual([
-    "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
+    "产品画像与 ICP 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
   ]);
 
   // Confirmed: the operator was asked first, which is the whole contract here.
@@ -703,9 +779,9 @@ test("browser Back still asks when the Navigation API is unavailable", async ({
     window.history.pushState({}, "", window.location.href);
   });
 
-  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑 Product Profile 与 Primary ICP",
+    name: "编辑产品画像与核心 ICP",
   });
   await expect(editor).toBeVisible();
   const productName = editor.getByLabel("产品名称");
@@ -724,7 +800,7 @@ test("browser Back still asks when the Navigation API is unavailable", async ({
   await expect(editor).toBeVisible();
   await expect(productName).toHaveValue("RelayOps Global");
   expect(prompts).toEqual([
-    "Product Profile 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
+    "产品画像与 ICP 的编辑尚未保存。要离开本页并丢弃这些更改吗？",
   ]);
   // The guarded entry is restored in place: same URL, same document, and the
   // editor was never remounted (the field above still holds the unsaved edit).
@@ -754,7 +830,7 @@ test("does not substitute a client fixture when the canonical API is unavailable
 
   const alert = page.locator("#main-content").getByRole("alert");
   await expect(
-    alert.getByRole("heading", { name: "无法加载 Product Profile" }),
+    alert.getByRole("heading", { name: "无法加载产品画像" }),
   ).toBeVisible();
   await expect(alert).toContainText(
     "The canonical Product Profile read model is unavailable.",
@@ -776,7 +852,7 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
   await expect(
     page.getByRole("paragraph").filter({ hasText: /^产品身份$/ }),
   ).toBeVisible();
-  await expect(page.getByText("Buyer Roles", { exact: true })).toBeVisible();
+  await expect(page.getByText("采购决策角色", { exact: true })).toBeVisible();
   await expect(page.getByText("JTBD", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", {
@@ -784,9 +860,9 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
     }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "编辑 Product Profile" }).click();
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑 Product Profile 与 Primary ICP",
+    name: "编辑产品画像与核心 ICP",
   });
   await expect(editor).toBeVisible();
 
@@ -794,12 +870,14 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
   await editor.getByLabel("产品类别").fill("Customer Success Operations");
   await editor.getByLabel("产品类型").selectOption("Developer Tool");
   await editor
-    .getByRole("checkbox", { name: "Services", exact: true })
+    .getByRole("checkbox", { name: "服务收费", exact: true })
     .check();
   await editor.getByLabel("主要海外市场").selectOption("GB");
-  await editor.getByRole("checkbox", { name: "US", exact: true }).check();
   await editor
-    .getByLabel("Primary ICP 候选")
+    .getByRole("checkbox", { name: "美国 · US", exact: true })
+    .check();
+  await editor
+    .getByLabel("核心 ICP 候选")
     .selectOption(SECONDARY_AUDIENCE_ID);
   await editor
     .getByLabel("目标企业 / 目标用户")
@@ -845,8 +923,10 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
   await expect(
     page.getByRole("heading", { name: "RelayOps Global" }),
   ).toBeVisible();
+  await expect(page.getByText("开发者工具", { exact: true })).toBeVisible();
+  await expect(page.getByText("服务收费", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Product Profile 已保存", { exact: true }),
+    page.getByText("产品画像已保存", { exact: true }),
   ).toBeVisible();
 });
 
@@ -916,28 +996,30 @@ test("enforces approved/candidate/excluded rules and records a declared competit
   await expect(declared.getByText("间接竞品", { exact: true })).toBeVisible();
 });
 
-test("confirmation stays independent from Audit and makes the confirmed profile read-only", async ({
+test("confirmation stays independent from Audit, opens data connections, and keeps the profile read-only", async ({
   page,
 }) => {
   const api = await installProductProfileApi(page);
   await gotoProductProfile(page);
 
   await page
-    .getByRole("button", { name: "确认 Product Profile", exact: true })
+    .getByRole("button", { name: "确认产品画像", exact: true })
     .click();
   const confirmation = page.getByRole("dialog", {
-    name: "确认这份 Product Profile？",
+    name: "确认这份产品画像？",
   });
-  await expect(confirmation).toContainText("本操作不会启动 Audit");
+  await expect(confirmation).toContainText("本操作不会启动审计");
   await confirmation
-    .getByRole("button", { name: "确认 Product Profile", exact: true })
+    .getByRole("button", { name: "确认并进入数据连接", exact: true })
     .click();
 
   await expect.poll(() => api.confirmations.length).toBe(1);
   expect(api.confirmations).toEqual([{ baseVersion: 4 }]);
   expect(api.auditStarts).toEqual([]);
   expect(api.critical.diagnosticRequests).toEqual([]);
+  await page.waitForURL(`/p/${E2E_PROJECT_ID}/sources`);
 
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
   await expect(page.getByText("客户已确认", { exact: true }).first()).toBeVisible();
   await expect(
     page.getByText("此版本已由客户明确确认，可以作为后续工作的正式背景。", {
@@ -945,7 +1027,7 @@ test("confirmation stays independent from Audit and makes the confirmed profile 
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "编辑 Product Profile" }),
+    page.getByRole("button", { name: "编辑产品画像与 ICP" }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "基于网站证据生成" }),
@@ -955,7 +1037,7 @@ test("confirmation stays independent from Audit and makes the confirmed profile 
     0,
   );
   await expect(
-    page.getByRole("button", { name: "确认 Product Profile" }),
+    page.getByRole("button", { name: "确认产品画像" }),
   ).toHaveCount(0);
 });
 
@@ -975,7 +1057,7 @@ test("renders the active synthesis as inline canonical run progress", async ({
   await expect(page.getByText("2/5", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "生成中…" })).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "编辑 Product Profile" }),
+    page.getByRole("button", { name: "编辑产品画像与 ICP" }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "暂不能确认" }),
@@ -990,10 +1072,10 @@ test("contains modal focus, closes with Escape, and restores the launch control"
   await installProductProfileApi(page);
   await gotoProductProfile(page);
 
-  const trigger = page.getByRole("button", { name: "编辑 Product Profile" });
+  const trigger = page.getByRole("button", { name: "编辑产品画像与 ICP" });
   await trigger.click();
   const editor = page.getByRole("dialog", {
-    name: "编辑 Product Profile 与 Primary ICP",
+    name: "编辑产品画像与核心 ICP",
   });
   const close = editor.getByRole("button", { name: "关闭" });
   const cancel = editor.getByRole("button", { name: "取消" });

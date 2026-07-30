@@ -42,11 +42,29 @@
 
 .grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
 .full {
   grid-column: 1 / -1;
+}
+
+.nextStep {
+  padding: 16px 18px;
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-control);
+  background: var(--sf-surface-deep);
+}
+.nextStep strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--sf-text-sm);
+}
+.nextStep p {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-sm);
+  line-height: 1.6;
 }
 
 .generalError {

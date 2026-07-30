@@ -33,6 +33,7 @@ import {
   encryptCredential,
   decryptCredential,
   decodeCredentialEnvelope,
+  encodeCredentialEnvelope,
 } from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
@@ -49,6 +50,7 @@ import {
   type GoogleProperty,
 } from "@/lib/oauth/google";
 import { archiveWinsProjectRace } from "./project-archive-race";
+import { seedConfirmedSourceProfile } from "./confirmed-source-profile-fixture";
 
 /**
  * Spec §14.3 (#4 fix): the connect flow must persist the FULL Google credential
@@ -117,12 +119,16 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     );
     scope = { workspaceId: ws!.id, projectId: created.project.id };
     siteId = created.project.site.id;
+    await seedConfirmedSourceProfile(handle, scope, actor);
   });
   afterAll(async () => {
     await handle?.end();
   });
 
-  async function isolatedProject(label: string): Promise<{
+  async function isolatedProject(
+    label: string,
+    options: { readonly confirmed?: boolean } = {},
+  ): Promise<{
     scope: ProjectScope;
     siteId: string;
     actorId: string;
@@ -146,11 +152,15 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
       },
       safeGuard,
     );
+    const projectScope = {
+      workspaceId: workspace!.id,
+      projectId: created.project.id,
+    };
+    if (options.confirmed !== false) {
+      await seedConfirmedSourceProfile(handle, projectScope, actorId);
+    }
     return {
-      scope: {
-        workspaceId: workspace!.id,
-        projectId: created.project.id,
-      },
+      scope: projectScope,
       siteId: created.project.site.id,
       actorId,
     };
@@ -269,6 +279,145 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
       );
     return rows.length;
   }
+
+  async function readyUnconfirmedGscIntent(project: {
+    scope: ProjectScope;
+    siteId: string;
+    actorId: string;
+  }): Promise<string> {
+    const repo = new OAuthIntentsRepository(handle.db);
+    const intent = await repo.insert({
+      workspaceId: project.scope.workspaceId,
+      projectId: project.scope.projectId,
+      siteId: project.siteId,
+      initiatedBy: project.actorId,
+      provider: "gsc",
+      stateHash: hashState(generateState()),
+      pkceVerifierCipher: encryptCredential(
+        generateCodeVerifier(),
+        credentialKey(),
+      ),
+      redirectPath: `/p/${project.scope.projectId}/sources`,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    await repo.setPropertiesReady(intent.id, {
+      tokenCipher: encryptCredential(
+        encodeCredentialEnvelope({
+          accessToken: "unconfirmed-access-token",
+          refreshToken: "unconfirmed-refresh-token",
+          expiresAt: EXPIRES_AT,
+          scope: "https://www.googleapis.com/auth/webmasters.readonly",
+        }),
+        credentialKey(),
+      ),
+      candidateProperties: [
+        {
+          externalPropertyId: "https://seed.example/",
+          displayName: "seed.example",
+        },
+      ],
+    });
+    return intent.id;
+  }
+
+  it("rejects authorize before Product Profile / ICP confirmation and creates no OAuth intent", async () => {
+    const project = await isolatedProject("authorize-unconfirmed", {
+      confirmed: false,
+    });
+
+    await expect(
+      connectProjectSource(
+        project.scope,
+        project.scope.projectId,
+        "gsc",
+        project.actorId,
+        {
+          phase: "authorize",
+          returnPath: `/p/${project.scope.projectId}/sources`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE", status: 422 });
+    await expect(projectIntentCount(project.scope)).resolves.toBe(0);
+  });
+
+  it.each(["property_selection", "select_property"] as const)(
+    "rejects %s before Product Profile / ICP confirmation without mutating the ready intent",
+    async (phase) => {
+      const project = await isolatedProject(`unconfirmed-${phase}`, {
+        confirmed: false,
+      });
+      const intentId = await readyUnconfirmedGscIntent(project);
+      const repo = new OAuthIntentsRepository(handle.db);
+      const before = await repo.findById(project.scope, intentId);
+
+      await expect(
+        connectProjectSource(
+          project.scope,
+          project.scope.projectId,
+          "gsc",
+          project.actorId,
+          phase === "property_selection"
+            ? { phase, oauthIntentId: intentId }
+            : {
+                phase,
+                oauthIntentId: intentId,
+                externalPropertyId: "https://seed.example/",
+              },
+        ),
+      ).rejects.toMatchObject({ code: "CONTEXT_INCOMPLETE", status: 422 });
+
+      await expect(repo.findById(project.scope, intentId)).resolves.toEqual(
+        before,
+      );
+      const sources = await new SourceConnectionsRepository(
+        handle.db,
+      ).listByProject(project.scope);
+      expect(sources.filter((source) => source.provider === "gsc")).toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it("fails and scrubs a legacy callback without contacting Google when Product / ICP is unconfirmed", async () => {
+    const project = await isolatedProject("callback-unconfirmed", {
+      confirmed: false,
+    });
+    const state = generateState();
+    const repo = new OAuthIntentsRepository(handle.db);
+    const intent = await repo.insert({
+      workspaceId: project.scope.workspaceId,
+      projectId: project.scope.projectId,
+      siteId: project.siteId,
+      initiatedBy: project.actorId,
+      provider: "gsc",
+      stateHash: hashState(state),
+      pkceVerifierCipher: encryptCredential(
+        generateCodeVerifier(),
+        credentialKey(),
+      ),
+      redirectPath: `/p/${project.scope.projectId}/sources`,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    const client: GoogleOAuthClient = {
+      exchangeCode: vi.fn(fakeClient().exchangeCode),
+      listProperties: vi.fn(fakeClient().listProperties),
+    };
+
+    await expect(
+      handleGoogleCallback(
+        { workspaceId: project.scope.workspaceId },
+        { code: "must-not-be-exchanged", state, error: null },
+        { client },
+      ),
+    ).resolves.toBe(
+      `/p/${project.scope.projectId}/sources?error=CONTEXT_INCOMPLETE`,
+    );
+    expect(client.exchangeCode).not.toHaveBeenCalled();
+    expect(client.listProperties).not.toHaveBeenCalled();
+    const failed = await repo.findById(project.scope, intent.id);
+    expect(failed?.failure_code).toBe("CONTEXT_INCOMPLETE");
+    expectScrubbed(failed, "failed");
+  });
 
   it("rejects authorize on an archived project without creating an OAuth intent", async () => {
     const project = await isolatedProject("authorize-archived");

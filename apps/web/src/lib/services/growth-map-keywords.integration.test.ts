@@ -13,7 +13,10 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import {
+  DataSnapshotsRepository,
+  DiagnosticRunsRepository,
   KeywordOccurrencesRepository,
+  ProjectsRepository,
   contentHash,
   createDbHandle,
   normalizeKeywordIdentity,
@@ -24,18 +27,28 @@ import {
   asyncRuns,
   clientProjects,
   collectionRuns,
-  dataSnapshots,
+  icpProfiles,
   normalizedObservations,
   sites,
   sourceConnections,
   workspaces,
 } from "@sf/db/schema";
-import { createDataForSeoCollectionScope } from "@sf/sources";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
+import {
+  CRAWL_METHOD_VERSION,
+  createDataForSeoCollectionScope,
+} from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildDiagnosticFrozenInput } from "./diagnostics.ts";
 import {
   getProjectAuditKeyword,
   listProjectAuditKeywords,
 } from "./growth-map-keywords.ts";
+import { publishDiagnosticGeneration } from "./__tests__/published-growth-map-fixture.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
@@ -81,8 +94,8 @@ async function seedDataForSeoKeyword(
   const projectId = randomUUID();
   const siteId = randomUUID();
   const sourceConnectionId = randomUUID();
+  const crawlSourceConnectionId = randomUUID();
   const collectionRunId = randomUUID();
-  const snapshotId = randomUUID();
   const observationId = randomUUID();
   const normalizedKeyword = normalizeKeywordIdentity(input.displayKeyword);
   const target = `${input.label.toLowerCase()}-${projectId}.example.com`;
@@ -115,6 +128,40 @@ async function seedDataForSeoKeyword(
     language_codes: ["en-US"],
     is_primary: true,
   });
+  const [icp] = await tx
+    .insert(icpProfiles)
+    .values({
+      workspace_id: input.workspaceId,
+      project_id: projectId,
+      version: 1,
+      status: "complete",
+      profile: {
+        productName: `${input.label} product`,
+        primaryMarket: "US",
+        siteLanguageCodes: ["en-US"],
+      },
+      content_hash: contentHash({
+        projectId,
+        profile: `${input.label} keyword integration`,
+      }),
+      created_by: actorId,
+    })
+    .returning();
+  const projects = new ProjectsRepository(tx);
+  if (
+    !(await projects.setCurrentIcpProfile(
+      { workspaceId: input.workspaceId },
+      projectId,
+      icp!.id,
+    )) ||
+    !(await projects.setConfirmedIcpProfile(
+      { workspaceId: input.workspaceId },
+      projectId,
+      icp!.id,
+    ))
+  ) {
+    throw new Error("Keyword fixture could not confirm its Product Profile");
+  }
   await tx.insert(sourceConnections).values({
     id: sourceConnectionId,
     workspace_id: input.workspaceId,
@@ -128,14 +175,30 @@ async function seedDataForSeoKeyword(
     connected_at: CAPTURED_AT,
     created_by: actorId,
   });
+  await tx.insert(sourceConnections).values({
+    id: crawlSourceConnectionId,
+    workspace_id: input.workspaceId,
+    project_id: projectId,
+    site_id: siteId,
+    provider: "crawl",
+    connection_type: "public",
+    state: "available",
+    external_ref: `https://${target}`,
+    limitation: "Deterministic public Crawl integration fixture.",
+    connected_at: CAPTURED_AT,
+    created_by: actorId,
+  });
   await tx.insert(asyncRuns).values({
     id: collectionRunId,
     workspace_id: input.workspaceId,
     project_id: projectId,
     kind: "collection",
-    status: "running",
+    status: "completed",
+    result_type: "collection_run",
+    result_id: collectionRunId,
     initiated_by: actorId,
     started_at: CAPTURED_AT,
+    completed_at: CAPTURED_AT,
   });
   await tx.insert(collectionRuns).values({
     id: collectionRunId,
@@ -148,24 +211,23 @@ async function seedDataForSeoKeyword(
     method_version: "dataforseo.ranked_keywords.v1",
     parameters_hash: contentHash({ projectId, collectionScope }),
   });
-  await tx.insert(dataSnapshots).values({
-    id: snapshotId,
-    workspace_id: input.workspaceId,
-    project_id: projectId,
-    site_id: siteId,
-    collection_run_id: collectionRunId,
-    source_connection_id: sourceConnectionId,
+  const dataForSeoSnapshot = await new DataSnapshotsRepository(tx).insert({
+    workspaceId: input.workspaceId,
+    projectId,
+    siteId,
+    collectionRunId,
+    sourceConnectionId,
     provider: "dataforseo",
-    dataset_key: "dataforseo.ranked_keywords.v1",
-    schema_version: "dataforseo.ranked_keywords.v1",
-    method_version: "dataforseo.ranked_keywords.v1",
-    captured_at: CAPTURED_AT,
-    source_window: { start: null, end: null },
+    datasetKey: "dataforseo.ranked_keywords.v1",
+    schemaVersion: "dataforseo.ranked_keywords.v1",
+    methodVersion: "dataforseo.ranked_keywords.v1",
+    capturedAt: CAPTURED_AT,
+    sourceWindow: { start: null, end: null },
     availability: "available",
     limitation: "Rows are bounded by the frozen provider collection scope.",
-    raw_object_key: privateRawObjectKey,
-    row_count: 1,
-    checksum: contentHash({ snapshotId, observationId }),
+    rawObjectKey: privateRawObjectKey,
+    rowCount: 1,
+    checksum: contentHash({ collectionRunId, observationId }),
     summary: {
       collectionScope,
       timing: {
@@ -181,7 +243,7 @@ async function seedDataForSeoKeyword(
     id: observationId,
     workspace_id: input.workspaceId,
     project_id: projectId,
-    snapshot_id: snapshotId,
+    snapshot_id: dataForSeoSnapshot.id,
     site_page_id: null,
     provider: "dataforseo",
     metric_key: "csv.keyword_gap.v1",
@@ -214,7 +276,7 @@ async function seedDataForSeoKeyword(
     { workspaceId: input.workspaceId, projectId },
     {
       manualEntryId: null,
-      dataSnapshotId: snapshotId,
+      dataSnapshotId: dataForSeoSnapshot.id,
       normalizedObservationId: observationId,
       displayKeyword: input.displayKeyword,
       normalizedKeyword,
@@ -230,11 +292,134 @@ async function seedDataForSeoKeyword(
     },
   );
 
+  const crawlCollectionRunId = randomUUID();
+  await tx.insert(asyncRuns).values({
+    id: crawlCollectionRunId,
+    workspace_id: input.workspaceId,
+    project_id: projectId,
+    kind: "collection",
+    status: "completed",
+    result_type: "collection_run",
+    result_id: crawlCollectionRunId,
+    initiated_by: actorId,
+    started_at: CAPTURED_AT,
+    completed_at: CAPTURED_AT,
+  });
+  await tx.insert(collectionRuns).values({
+    id: crawlCollectionRunId,
+    workspace_id: input.workspaceId,
+    project_id: projectId,
+    site_id: siteId,
+    source_connection_id: crawlSourceConnectionId,
+    provider: "crawl",
+    operation: "site_graph",
+    method_version: CRAWL_METHOD_VERSION,
+    parameters_hash: contentHash({ projectId, crawlCollectionRunId }),
+  });
+  const crawlSnapshot = await new DataSnapshotsRepository(tx).insert({
+    workspaceId: input.workspaceId,
+    projectId,
+    siteId,
+    collectionRunId: crawlCollectionRunId,
+    sourceConnectionId: crawlSourceConnectionId,
+    provider: "crawl",
+    datasetKey: "crawl.site_graph.v1",
+    schemaVersion: "0.3.0",
+    methodVersion: CRAWL_METHOD_VERSION,
+    capturedAt: CAPTURED_AT,
+    sourceWindow: { start: null, end: null },
+    availability: "available",
+    limitation: "Deterministic public Crawl integration fixture.",
+    rawObjectKey: null,
+    rowCount: 0,
+    checksum: contentHash({ projectId, crawlCollectionRunId, rows: 0 }),
+  });
+
+  const frozen = buildDiagnosticFrozenInput({
+    projectId,
+    siteId,
+    icp: {
+      id: icp!.id,
+      version: icp!.version,
+      contentHash: icp!.content_hash,
+    },
+    snapshots: [crawlSnapshot, dataForSeoSnapshot],
+    deliveryLocale: "en-US",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [
+        {
+          clusterKey: normalizedKeyword,
+          keywords: [
+            {
+              keywordEntityId: created.entityId,
+              displayKeyword: input.displayKeyword,
+              normalizedKeyword,
+              marketCode: "US",
+              languageTag: "en-US",
+              revision: 0,
+              status: "candidate",
+              queryKind: "search_query",
+              intent: null,
+              buyerStage: null,
+              clusterKey: null,
+              mappingDecision: "unassigned",
+              mappedSitePageId: null,
+              mappingReviewState: "unreviewed",
+              lastSeenAt: CAPTURED_AT,
+              occurrenceRefs: [
+                {
+                  occurrenceId: created.occurrenceId,
+                  snapshotId: dataForSeoSnapshot.id,
+                  observationId,
+                },
+              ],
+              metricRefs: [],
+            },
+          ],
+        },
+      ],
+      competitors: [],
+    },
+  });
+  const diagnosticRunId = randomUUID();
+  await tx.insert(asyncRuns).values({
+    id: diagnosticRunId,
+    workspace_id: input.workspaceId,
+    project_id: projectId,
+    kind: "diagnostic",
+    status: "completed",
+    result_type: "diagnostic_run",
+    result_id: diagnosticRunId,
+    initiated_by: actorId,
+    started_at: CAPTURED_AT,
+    completed_at: CAPTURED_AT,
+  });
+  await new DiagnosticRunsRepository(tx).insert({
+    runId: diagnosticRunId,
+    workspaceId: input.workspaceId,
+    projectId,
+    siteId,
+    icpProfileId: icp!.id,
+    icpProfileVersion: icp!.version,
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    outputLocale: "en-US",
+    inputManifest: frozen.manifest,
+    inputHash: frozen.inputHash,
+  });
+  await publishDiagnosticGeneration(tx, {
+    scope: { workspaceId: input.workspaceId, projectId },
+    diagnosticRunId,
+    actorId,
+    completedAt: CAPTURED_AT,
+  });
+
   return {
     projectId,
     keywordId: created.entityId,
     occurrenceId: created.occurrenceId,
-    snapshotId,
+    snapshotId: dataForSeoSnapshot.id,
     observationId,
     displayKeyword: input.displayKeyword,
     normalizedKeyword,
@@ -340,6 +525,7 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
         scope,
         local.projectId,
         local.keywordId,
+        null,
         tx,
       );
       expect(detail).toEqual({
@@ -348,8 +534,7 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
           ...item,
           mappedTarget: {
             ...item.mappedTarget,
-            reason:
-              "Keyword ingestion generated the initial candidate decision.",
+            reason: null,
           },
         },
       });
@@ -369,6 +554,7 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
           scope,
           local.projectId,
           foreign.keywordId,
+          null,
           tx,
         ),
       ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });

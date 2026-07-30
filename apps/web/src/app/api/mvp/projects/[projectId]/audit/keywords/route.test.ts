@@ -22,6 +22,7 @@ const projectId = "00000000-0000-4000-8000-000000000003";
 const cursor = Buffer.from(
   "2026-07-22T00:00:00.000Z 00000000-0000-4000-8000-000000000004",
 ).toString("base64url");
+const diagnosticRunId = "00000000-0000-4000-8000-000000000005";
 
 function invoke(query = "", selectedProjectId = projectId) {
   return GET(
@@ -58,7 +59,7 @@ describe("GET project Growth Map Keyword Library", () => {
     expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 25, cursor },
+      { limit: 25, cursor, diagnosticRunId: null },
     );
     await expect(response.json()).resolves.toEqual({
       data: expect.objectContaining({ projectId, data: [] }),
@@ -72,7 +73,18 @@ describe("GET project Growth Map Keyword Library", () => {
     expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 50, cursor: null },
+      { limit: 50, cursor: null, diagnosticRunId: null },
+    );
+  });
+
+  it("passes a strict lowercase diagnosticRunId pin when requested", async () => {
+    const response = await invoke(`?diagnosticRunId=${diagnosticRunId}`);
+
+    expect(response.status).toBe(200);
+    expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      { limit: 50, cursor: null, diagnosticRunId },
     );
   });
 
@@ -80,6 +92,7 @@ describe("GET project Growth Map Keyword Library", () => {
     ["limit", "0"],
     ["limit", "101"],
     ["cursor", "customer+private+cursor"],
+    ["diagnosticRunId", "ABCDEFAB-CDEF-4ABC-8ABC-ABCDEFABCDEF"],
   ])("rejects invalid %s without calling the service", async (name, value) => {
     const response = await invoke(`?${name}=${encodeURIComponent(value)}`);
     const body = await response.json();
@@ -91,6 +104,17 @@ describe("GET project Growth Map Keyword Library", () => {
       errors: [{ pointer: `/${name}`, code: "invalid_query_value" }],
     });
     expect(JSON.stringify(body)).not.toContain(value);
+    expect(mocks.listProjectAuditKeywords).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown query params instead of widening the list read", async () => {
+    const response = await invoke("?view=review");
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+    });
     expect(mocks.listProjectAuditKeywords).not.toHaveBeenCalled();
   });
 

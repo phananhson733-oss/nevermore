@@ -205,7 +205,7 @@ describe("null-not-zero honesty in the snapshot DTO (spec §1.3, AC-018)", () =>
     expect(dto.methodVersion).toBe("crawl.site_graph.v2");
   });
 
-  it("keeps an enabled DataForSEO legacy slot disconnected until collection provisions it", () => {
+  it("keeps the internal DataForSEO slot credential-free for Analysis Refresh", () => {
     const dto = toSourceConnectionDto({
       projectId: "proj-1",
       provider: "dataforseo",
@@ -224,7 +224,9 @@ describe("null-not-zero honesty in the snapshot DTO (spec §1.3, AC-018)", () =>
       featureEnabled: true,
       latestSnapshot: null,
     });
-    expect(dto.limitation).toContain("collection is enabled");
+    expect(dto.limitation).toContain("enabled for Analysis Refresh");
+    expect(dto).not.toHaveProperty("apiKey");
+    expect(dto).not.toHaveProperty("credential");
   });
 
   it("an absent snapshot surfaces as `null`, NOT a zero-filled object", () => {

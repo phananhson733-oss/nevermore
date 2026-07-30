@@ -3,18 +3,18 @@ import { mapProjectFieldErrors } from "./_form-errors";
 
 describe("mapProjectFieldErrors", () => {
   const messages = {
-    siteUrlInvalid: "localized-site-url",
+    productUrlInvalid: "localized-product-url",
     createError: "localized-create-error",
   } as const;
 
-  it("maps siteUrl to the dedicated localized validation copy", () => {
+  it("maps productUrl to the dedicated localized validation copy", () => {
     expect(
       mapProjectFieldErrors(
-        [{ pointer: "/siteUrl" }],
+        [{ pointer: "/productUrl" }],
         messages,
       ),
     ).toEqual({
-      fieldErrors: { siteUrl: "localized-site-url" },
+      fieldErrors: { productUrl: "localized-product-url" },
       generalError: null,
     });
   });
@@ -23,15 +23,13 @@ describe("mapProjectFieldErrors", () => {
     expect(
       mapProjectFieldErrors(
         [
-          { pointer: "/clientName" },
-          { pointer: "/marketCodes/0" },
+          { pointer: "/businessHint" },
         ],
         messages,
       ),
     ).toEqual({
       fieldErrors: {
-        clientName: "localized-create-error",
-        marketCodes: "localized-create-error",
+        businessHint: "localized-create-error",
       },
       generalError: null,
     });

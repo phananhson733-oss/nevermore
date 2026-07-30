@@ -197,6 +197,7 @@ describeDb("async run delivery recovery", () => {
     const metrics = await new AsyncRunsRepository(handle.db).technicalMetrics();
 
     expect(metrics.map(({ kind }) => kind)).toEqual([
+      "analysis_refresh",
       "artifact_generation",
       "collection",
       "content_shadow",

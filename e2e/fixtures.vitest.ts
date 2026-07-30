@@ -1,6 +1,10 @@
 import type { APIRequestContext } from "@playwright/test";
 import { describe, expect, it, vi } from "vitest";
-import { publicFixtureOrigin, seedProject } from "./fixtures.ts";
+import {
+  confirmSeededProjectContext,
+  publicFixtureOrigin,
+  seedProject,
+} from "./fixtures.ts";
 
 function requestWithResponse(response: object): {
   request: APIRequestContext;
@@ -10,6 +14,17 @@ function requestWithResponse(response: object): {
   return {
     request: { post } as unknown as APIRequestContext,
     post,
+  };
+}
+
+function requestWithPatchResponse(response: object): {
+  request: APIRequestContext;
+  patch: ReturnType<typeof vi.fn>;
+} {
+  const patch = vi.fn().mockResolvedValue(response);
+  return {
+    request: { patch } as unknown as APIRequestContext,
+    patch,
   };
 }
 
@@ -103,5 +118,59 @@ describe("publicFixtureOrigin", () => {
     await expect(
       seedProject(request, { siteUrl: "https://11.4.5.6" }),
     ).rejects.toThrow("seedProject failed: 422 fixture rejected");
+  });
+
+  it("confirms a complete manual Product / ICP profile before Sources", async () => {
+    const { request, patch } = requestWithPatchResponse({
+      ok: () => true,
+    });
+
+    await expect(
+      confirmSeededProjectContext(
+        request,
+        {
+          projectId: "project-confirmed",
+          siteUrl: "https://11.1.2.3",
+        },
+        {
+          productName: "Isolation Product",
+          oneLineDescription: "A manually supplied isolation profile.",
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(patch).toHaveBeenCalledWith(
+      "/api/mvp/projects/project-confirmed/context",
+      {
+        data: expect.objectContaining({
+          mode: "complete",
+          baseVersion: 0,
+          profile: expect.objectContaining({
+            productName: "Isolation Product",
+            oneLineDescription: "A manually supplied isolation profile.",
+            marketCodes: ["US"],
+            siteLanguageCodes: ["en"],
+            priorityUrls: ["https://11.1.2.3"],
+          }),
+        }),
+      },
+    );
+  });
+
+  it("surfaces a failed Product / ICP confirmation response", async () => {
+    const { request } = requestWithPatchResponse({
+      ok: () => false,
+      status: () => 422,
+      text: async () => "context rejected",
+    });
+
+    await expect(
+      confirmSeededProjectContext(request, {
+        projectId: "project-unconfirmed",
+        siteUrl: "https://11.4.5.6",
+      }),
+    ).rejects.toThrow(
+      "confirmSeededProjectContext failed: 422 context rejected",
+    );
   });
 });

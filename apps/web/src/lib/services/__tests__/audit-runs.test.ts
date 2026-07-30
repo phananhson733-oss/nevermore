@@ -3,6 +3,7 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
+  CollectionRunsRepository,
   CompetitorsRepository,
   contentHash,
   DataSnapshotsRepository,
@@ -18,7 +19,14 @@ import {
   CreateGrowthAuditRunRequest,
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
 } from "@sf/contracts";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+} from "@sf/sources";
 
 const mocks = vi.hoisted(() => {
   const tx = {};
@@ -42,7 +50,8 @@ vi.mock("@sf/db", async () => {
 vi.mock("@/lib/db", () => ({ getDb: () => ({ db: mocks.db }) }));
 vi.mock("@/lib/boss", () => ({ getBoss: mocks.getBoss }));
 
-const { createGrowthAuditRun } = await import("../audit-runs.ts");
+const { createGrowthAuditRun, loadGrowthAuditInputs } =
+  await import("../audit-runs.ts");
 
 const workspaceId = "00000000-0000-4000-8000-000000000011";
 const projectId = "00000000-0000-4000-8000-000000000012";
@@ -83,6 +92,82 @@ const crawlSnapshot: DataSnapshotRow = {
   summary: {},
   created_at: "2026-07-21T01:02:04.000Z",
 };
+
+function snapshotForProvider(
+  provider: "gsc" | "ga4" | "csv" | "dataforseo",
+  id: string,
+  datasetKey: string,
+  methodVersion: string,
+): DataSnapshotRow {
+  return {
+    ...crawlSnapshot,
+    id,
+    collection_run_id: id.replace(/.$/u, "1"),
+    source_connection_id: id.replace(/.$/u, "2"),
+    provider,
+    dataset_key: datasetKey,
+    schema_version: methodVersion,
+    method_version: methodVersion,
+    checksum: provider[0]!.repeat(64),
+  };
+}
+
+const gscSnapshot = snapshotForProvider(
+  "gsc",
+  "00000000-0000-4000-8000-000000000026",
+  "gsc.page_query_daily.v1",
+  "gsc.page_query_daily.v1",
+);
+const ga4Snapshot = snapshotForProvider(
+  "ga4",
+  "00000000-0000-4000-8000-000000000025",
+  "ga4.organic_landing_daily.v1",
+  "ga4.organic_landing_daily.v1",
+);
+const csvSnapshot = snapshotForProvider(
+  "csv",
+  "00000000-0000-4000-8000-000000000024",
+  "csv.keyword_gap.v1",
+  "csv.keyword_gap.v1",
+);
+const dataForSeoSnapshot = snapshotForProvider(
+  "dataforseo",
+  "00000000-0000-4000-8000-000000000023",
+  DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+);
+const dataForSeoSearchLandscapeSnapshot = {
+  ...snapshotForProvider(
+    "dataforseo",
+    "00000000-0000-4000-8000-000000000027",
+    DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+    DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  ),
+  captured_at: "2026-07-22T01:02:03.000Z",
+};
+
+function collectionRunForSnapshot(
+  snapshot: DataSnapshotRow,
+  operation: "keyword_gap_import" | "search_landscape",
+) {
+  return {
+    id: snapshot.collection_run_id,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    site_id: siteId,
+    source_connection_id: snapshot.source_connection_id,
+    import_preview_id: null,
+    crawl_seed_site_page_id: null,
+    crawl_seed_url: null,
+    provider: "dataforseo",
+    operation,
+    method_version: snapshot.method_version,
+    parameters_hash: "f".repeat(64),
+    row_count: snapshot.row_count,
+    stop_reason: null,
+    created_at: snapshot.created_at,
+  } as const;
+}
 
 const queuedRun = {
   id: runId,
@@ -137,11 +222,13 @@ function mockHappyPathInputs() {
   } as never);
   vi.spyOn(
     DataSnapshotsRepository.prototype,
-    "findLatestEligibleCrawlBySite",
-  ).mockResolvedValue({ id: snapshotId } as never);
-  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
-    crawlSnapshot,
-  ]);
+    "findLatestEligibleBySite",
+  ).mockImplementation(async (_scope, _siteId, selectors) =>
+    selectors[0]?.datasetKey ===
+    DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+      ? []
+      : [crawlSnapshot],
+  );
   vi.spyOn(
     KeywordsRepository.prototype,
     "listDiagnosticEligible",
@@ -228,8 +315,8 @@ describe("createGrowthAuditRun hard gates", () => {
     } as never);
     vi.spyOn(
       DataSnapshotsRepository.prototype,
-      "findLatestEligibleCrawlBySite",
-    ).mockResolvedValue(null);
+      "findLatestEligibleBySite",
+    ).mockResolvedValue([]);
     await expect(
       createGrowthAuditRun(
         { workspaceId },
@@ -239,6 +326,99 @@ describe("createGrowthAuditRun hard gates", () => {
         body,
       ),
     ).rejects.toMatchObject({ code: "CRAWL_SNAPSHOT_REQUIRED", status: 422 });
+  });
+});
+
+describe("loadGrowthAuditInputs DataForSEO selection", () => {
+  it("selects the newest exact snapshot across legacy and search-landscape contracts", async () => {
+    const newerLegacySnapshot = {
+      ...dataForSeoSnapshot,
+      captured_at: "2026-07-23T01:02:03.000Z",
+    };
+    vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
+      id: icpProfileId,
+      version: 4,
+      content_hash: "b".repeat(64),
+      status: "complete",
+    } as never);
+    vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
+      id: siteId,
+    } as never);
+    vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findLatestEligibleBySite",
+    ).mockImplementation(async (_scope, _siteId, selectors) =>
+      selectors[0]?.datasetKey ===
+      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+        ? [dataForSeoSearchLandscapeSnapshot]
+        : [crawlSnapshot, newerLegacySnapshot],
+    );
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(
+      collectionRunForSnapshot(
+        newerLegacySnapshot,
+        "keyword_gap_import",
+      ),
+    );
+
+    const inputs = await loadGrowthAuditInputs(
+      {} as never,
+      { workspaceId },
+      projectId,
+      project(),
+      body,
+    );
+
+    expect(
+      inputs.snapshots.filter(
+        (snapshot) => snapshot.provider === "dataforseo",
+      ),
+    ).toEqual([newerLegacySnapshot]);
+  });
+
+  it("fails closed when a search-landscape snapshot points to a legacy collection operation", async () => {
+    vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
+      id: icpProfileId,
+      version: 4,
+      content_hash: "b".repeat(64),
+      status: "complete",
+    } as never);
+    vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
+      id: siteId,
+    } as never);
+    vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findLatestEligibleBySite",
+    ).mockImplementation(async (_scope, _siteId, selectors) =>
+      selectors[0]?.datasetKey ===
+      DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+        ? [dataForSeoSearchLandscapeSnapshot]
+        : [crawlSnapshot],
+    );
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(
+      collectionRunForSnapshot(
+        dataForSeoSearchLandscapeSnapshot,
+        "keyword_gap_import",
+      ),
+    );
+
+    await expect(
+      loadGrowthAuditInputs(
+        {} as never,
+        { workspaceId },
+        projectId,
+        project(),
+        body,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
   });
 });
 
@@ -340,6 +520,180 @@ describe("createGrowthAuditRun contract", () => {
       expect.objectContaining({ runId }),
     );
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes the latest eligible snapshot from every supported provider", async () => {
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
+    vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValue({
+      id: "00000000-0000-4000-8000-0000000000aa",
+    } as never);
+    vi.spyOn(
+      IdempotencyRepository.prototype,
+      "complete",
+    ).mockResolvedValue(undefined as never);
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(
+      project(),
+    );
+    vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    ).mockResolvedValue(project());
+    vi.spyOn(
+      ProjectsRepository.prototype,
+      "setStage",
+    ).mockResolvedValue(undefined as never);
+    mockHappyPathInputs();
+    const selectSnapshots = vi
+      .spyOn(DataSnapshotsRepository.prototype, "findLatestEligibleBySite")
+      .mockImplementation(async (_scope, _siteId, selectors) =>
+        selectors[0]?.datasetKey ===
+        DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+          ? [dataForSeoSearchLandscapeSnapshot]
+          : [
+              gscSnapshot,
+              crawlSnapshot,
+              dataForSeoSnapshot,
+              ga4Snapshot,
+              csvSnapshot,
+            ],
+      );
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(
+      collectionRunForSnapshot(
+        dataForSeoSearchLandscapeSnapshot,
+        "search_landscape",
+      ),
+    );
+    vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(
+      null,
+    );
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "insertQueued",
+    ).mockResolvedValue(queuedRun as never);
+    const diagnosticInsert = vi
+      .spyOn(DiagnosticRunsRepository.prototype, "insert")
+      .mockResolvedValue(undefined as never);
+    vi.spyOn(
+      CapabilityRunsRepository.prototype,
+      "create",
+    ).mockResolvedValue({ async_run_id: runId } as never);
+    vi.spyOn(AuditRunsRepository.prototype, "create").mockResolvedValue({
+      id: auditRunId,
+    } as never);
+
+    await createGrowthAuditRun(
+      { workspaceId },
+      projectId,
+      actorId,
+      idempotencyKey,
+      body,
+    );
+
+    const legacySelectors = [
+      {
+        provider: "crawl",
+        datasetKey: CRAWL_DATASET_KEY,
+        methodVersion: CRAWL_METHOD_VERSION,
+        collectionOperation: "site_graph",
+        collectionMethodVersion: CRAWL_METHOD_VERSION,
+      },
+      {
+        provider: "gsc",
+        datasetKey: "gsc.page_query_daily.v1",
+        methodVersion: "gsc.page_query_daily.v1",
+        collectionOperation: "search_analytics",
+        collectionMethodVersion: "gsc.page_query_daily.v1",
+      },
+      {
+        provider: "ga4",
+        datasetKey: "ga4.organic_landing_daily.v1",
+        methodVersion: "ga4.organic_landing_daily.v1",
+        collectionOperation: "organic_landing",
+        collectionMethodVersion: "ga4.organic_landing_daily.v1",
+      },
+      {
+        provider: "csv",
+        datasetKey: "csv.keyword_gap.v1",
+        methodVersion: "csv.keyword_gap.v1",
+        collectionOperation: "keyword_gap_import",
+        collectionMethodVersion: "csv.keyword_gap.v1",
+      },
+      {
+        provider: "dataforseo",
+        datasetKey: DATAFORSEO_DATASET_KEY,
+        methodVersion: DATAFORSEO_METHOD_VERSION,
+        collectionOperation: "keyword_gap_import",
+        collectionMethodVersion: DATAFORSEO_METHOD_VERSION,
+      },
+    ];
+    const compositeSelectors = [
+      {
+        provider: "dataforseo",
+        datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+        methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        collectionOperation: "search_landscape",
+        collectionMethodVersion:
+          DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      },
+    ];
+    expect(selectSnapshots).toHaveBeenCalledTimes(4);
+    for (const callNumber of [1, 3]) {
+      expect(selectSnapshots).toHaveBeenNthCalledWith(
+        callNumber,
+        { workspaceId, projectId },
+        siteId,
+        legacySelectors,
+      );
+    }
+    for (const callNumber of [2, 4]) {
+      expect(selectSnapshots).toHaveBeenNthCalledWith(
+        callNumber,
+        { workspaceId, projectId },
+        siteId,
+        compositeSelectors,
+      );
+    }
+    const manifest = diagnosticInsert.mock.calls[0]?.[0]
+      .inputManifest as {
+      readonly snapshots: readonly {
+        readonly snapshotId: string;
+        readonly provider: string;
+      }[];
+    };
+    // The diagnostic frozen input owns canonical ID ordering independently of
+    // repository return order.
+    expect(manifest.snapshots).toEqual([
+      expect.objectContaining({
+        snapshotId: crawlSnapshot.id,
+        provider: "crawl",
+      }),
+      expect.objectContaining({
+        snapshotId: csvSnapshot.id,
+        provider: "csv",
+      }),
+      expect.objectContaining({
+        snapshotId: ga4Snapshot.id,
+        provider: "ga4",
+      }),
+      expect.objectContaining({
+        snapshotId: gscSnapshot.id,
+        provider: "gsc",
+      }),
+      expect.objectContaining({
+        snapshotId: dataForSeoSearchLandscapeSnapshot.id,
+        provider: "dataforseo",
+      }),
+    ]);
+    expect(manifest.snapshots).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          snapshotId: dataForSeoSnapshot.id,
+        }),
+      ]),
+    );
   });
 
   it("replays a completed command without re-enqueueing", async () => {

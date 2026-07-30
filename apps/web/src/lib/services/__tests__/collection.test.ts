@@ -8,6 +8,8 @@ import type { CreateCollectionRunRequest } from "@sf/contracts";
 
 const mocks = vi.hoisted(() => ({
   contentHash: vi.fn(),
+  getDb: vi.fn(() => ({ db: {} })),
+  getBoss: vi.fn(),
 }));
 
 vi.mock("@sf/db", async () => {
@@ -15,18 +17,11 @@ vi.mock("@sf/db", async () => {
   mocks.contentHash.mockImplementation(actual.contentHash);
   return { ...actual, contentHash: mocks.contentHash };
 });
-vi.mock("@/lib/db", () => ({ getDb: () => ({ db: {} }) }));
-vi.mock("@/lib/boss", () => ({ getBoss: vi.fn() }));
-vi.mock("@/env", () => ({
-  getEnv: () => ({
-    DATAFORSEO_ENABLED: "false",
-    DATAFORSEO_MAX_KEYWORDS: 200,
-  }),
-}));
+vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/boss", () => ({ getBoss: mocks.getBoss }));
 
 const {
   createCollectionRun,
-  dataForSeoCollectionScopeForSite,
   keywordLibraryContextForSite,
 } = await import("../collection.ts");
 
@@ -124,7 +119,7 @@ async function replayAgainstCapturedHash(
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  mocks.contentHash.mockClear();
+  vi.clearAllMocks();
 });
 
 describe("createCollectionRun wire-body idempotency", () => {
@@ -171,56 +166,33 @@ describe("createCollectionRun wire-body idempotency", () => {
     ).toBeNull();
   });
 
-  it.each([
-    ["primary market", { market_codes: [], language_codes: ["en"] }],
-    ["site language", { market_codes: ["US"], language_codes: [] }],
-  ] as const)(
-    "fails closed when the primary Site is missing its explicit %s scope",
-    (missingLabel, scope) => {
-      expect(() =>
-        dataForSeoCollectionScopeForSite({
-          host: "www.example.com",
-          ...scope,
-        }),
-      ).toThrowError(
-        expect.objectContaining({
-          code: "CONTEXT_INCOMPLETE",
-          status: 422,
-          message: expect.stringContaining(missingLabel),
-        }),
-      );
-    },
-  );
+  it("rejects a bypassed DataForSEO command before any DB, queue, or cost path", async () => {
+    const bypassedBody = {
+      provider: "dataforseo",
+      apiKey: "must-never-cross-the-customer-boundary",
+    } as unknown as CreateCollectionRunRequest;
 
-  it("keeps an explicitly configured historical US/en Site valid without inventing scope", () => {
-    expect(
-      dataForSeoCollectionScopeForSite({
-        host: "www.example.com",
-        market_codes: ["US"],
-        language_codes: ["en"],
-      }),
-    ).toEqual({
-      schemaVersion: "dataforseo.collection-scope.v1",
-      queryKind: "ranked_keywords",
-      target: "example.com",
-      marketCode: "US",
-      languageTag: "en",
-      providerLanguageCode: "en",
-      location: { kind: "name", name: "United States" },
-      limit: 200,
-    });
-  });
-
-  it("fails closed before database access when DataForSEO is disabled", async () => {
     await expect(
       createCollectionRun(
         { workspaceId },
         projectId,
         actorId,
         idempotencyKey,
-        { provider: "dataforseo" },
+        bypassedBody,
       ),
-    ).rejects.toMatchObject({ code: "FEATURE_DISABLED", status: 503 });
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      fieldErrors: [
+        expect.objectContaining({
+          pointer: "/provider",
+          code: "invalid_value",
+        }),
+      ],
+    });
+    expect(mocks.getDb).not.toHaveBeenCalled();
+    expect(mocks.getBoss).not.toHaveBeenCalled();
+    expect(mocks.contentHash).not.toHaveBeenCalled();
   });
 
   it("replays the original response for the exact same body", async () => {

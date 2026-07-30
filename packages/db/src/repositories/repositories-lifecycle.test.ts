@@ -769,6 +769,30 @@ describe("project and source repositories", () => {
       market_codes: ["US", "GB"],
     });
     expect(fake.last("set").args[0]).not.toHaveProperty("language_codes");
+
+    fake.enqueue([{ id: "site-1" }], []);
+    await expect(
+      repo.projectPrimaryLanguageIfEmpty(scope, "site-1", "en-US"),
+    ).resolves.toBe(true);
+    expect(fake.last("set").args[0]).toEqual({
+      language_codes: ["en-US"],
+    });
+    const languageGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(languageGuard.sql).toContain('"app"."sites"."workspace_id" =');
+    expect(languageGuard.sql).toContain('"app"."sites"."project_id" =');
+    expect(languageGuard.sql).toContain('"app"."sites"."id" =');
+    expect(languageGuard.sql).toContain('"app"."sites"."is_primary"');
+    expect(languageGuard.sql).toContain(
+      'cardinality("app"."sites"."language_codes") = 0',
+    );
+    await expect(
+      repo.projectPrimaryLanguageIfEmpty(scope, "site-1", "en-US"),
+    ).resolves.toBe(false);
+    await expect(
+      repo.projectPrimaryLanguageIfEmpty(scope, "site-1", "en_us"),
+    ).rejects.toThrow("canonical BCP-47");
   });
 
   it("maps connected sources and lifecycle updates", async () => {

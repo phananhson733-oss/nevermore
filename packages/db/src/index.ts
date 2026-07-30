@@ -85,6 +85,22 @@ export type {
   RunStatus,
 } from "./repositories/async-runs.ts";
 export {
+  ANALYSIS_REFRESH_PLAN_STEPS,
+  ANALYSIS_REFRESH_PLAN_VERSION,
+  analysisRefreshPlanHash,
+  analysisRefreshPlanManifest,
+  AnalysisRefreshRunsRepository,
+} from "./repositories/analysis-refresh-runs.ts";
+export type {
+  AnalysisRefreshPlanManifest,
+  AnalysisRefreshRunRow,
+  AnalysisRefreshStepError,
+  AnalysisRefreshStepKey,
+  AnalysisRefreshStepRow,
+  AnalysisRefreshStepState,
+  CreatedAnalysisRefreshPlan,
+} from "./repositories/analysis-refresh-runs.ts";
+export {
   collectionRunParametersHash,
   CollectionRunsRepository,
 } from "./repositories/collection-runs.ts";
@@ -96,6 +112,7 @@ export type {
 export { DataSnapshotsRepository } from "./repositories/data-snapshots.ts";
 export type {
   DataSnapshotRow,
+  EligibleDataSnapshotSelector,
   SnapshotListPage,
 } from "./repositories/data-snapshots.ts";
 export { ObservationsRepository } from "./repositories/observations.ts";
@@ -449,6 +466,7 @@ export {
   QUEUE_NAMES,
   createBoss,
   startBoss,
+  enqueueAnalysisRefreshContinuationInTx,
   enqueueRunInTx,
   PgBoss,
 } from "./queue.ts";

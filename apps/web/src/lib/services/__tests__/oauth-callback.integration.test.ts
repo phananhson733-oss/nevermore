@@ -38,6 +38,7 @@ import {
   type GoogleProperty,
 } from "@/lib/oauth/google";
 import { archiveWinsProjectRace } from "./project-archive-race";
+import { seedConfirmedSourceProfile } from "./confirmed-source-profile-fixture";
 
 const callbackOperator = vi.hoisted(() => ({
   current: null as { userId: string; workspaceId: string } | null,
@@ -141,6 +142,7 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
     );
     scope = { workspaceId, projectId: created.project.id };
     siteId = created.project.site.id;
+    await seedConfirmedSourceProfile(handle, scope, actor);
   });
   afterAll(async () => {
     await handle?.end();

@@ -479,12 +479,20 @@ export function projectGrowthMapUrlCoverage(
 export function assertGrowthMapFindingSummaryLocale(
   summaryLocale: string,
   outputLocale: string,
+  summaryInvocationId: string | null = null,
 ): void {
   const normalizedSummaryLocale = summaryLocale.trim().toLowerCase();
   const normalizedOutputLocale = outputLocale.trim().toLowerCase();
+  const expectedSummaryLocale =
+    summaryInvocationId === null
+      ? normalizedOutputLocale === "zh-cn"
+        ? "zh-cn"
+        : "en"
+      : normalizedOutputLocale;
   if (
     normalizedSummaryLocale.length === 0 ||
-    normalizedSummaryLocale !== normalizedOutputLocale
+    normalizedOutputLocale.length === 0 ||
+    normalizedSummaryLocale !== expectedSummaryLocale
   ) {
     invalidFindingSummary();
   }
@@ -494,8 +502,13 @@ export function customerFacingGrowthMapFindingTitle(
   summary: string,
   summaryLocale = "en",
   outputLocale = "en",
+  summaryInvocationId: string | null = null,
 ): string {
-  assertGrowthMapFindingSummaryLocale(summaryLocale, outputLocale);
+  assertGrowthMapFindingSummaryLocale(
+    summaryLocale,
+    outputLocale,
+    summaryInvocationId,
+  );
   const title = summary.trim();
   if (title.length === 0 || title.length > 500) invalidFindingSummary();
   return title;

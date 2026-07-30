@@ -13,17 +13,32 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import {
+  AnalysisRefreshRunsRepository,
+  AuditRunsRepository,
+  CapabilityRunsRepository,
   CompetitorsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   contentHash,
   createDbHandle,
+  type CanonicalValue,
   type DbHandle,
   type DbTx,
 } from "@sf/db";
+import {
+  GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+  type GovernanceCompetitorAnalysisScope,
+  type GovernanceCompetitorOriginRefV1,
+  type GovernanceCompetitorRelationship,
+  type GovernanceCompetitorReviewStatus,
+} from "@sf/engine";
 import {
   asyncRuns,
   clientProjects,
   collectionRuns,
   dataSnapshots,
+  diagnosticRuns,
   icpProfiles,
   importPreviews,
   normalizedObservations,
@@ -35,7 +50,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   getProjectAuditCompetitor,
+  getProjectAuditCompetitorReviewDetail,
   listProjectAuditCompetitors,
+  reviewProjectAuditCompetitor,
 } from "./growth-map-competitors.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
@@ -65,14 +82,25 @@ interface CompetitorFixture {
   readonly privateProfilePayload: string;
   readonly privateRawObjectKey: string;
   readonly privateObservationPayload: string;
+  readonly profileContentHash: string;
 }
 
 interface ProfileOriginFixture {
   readonly profileOriginId: string;
   readonly profileId: string;
   readonly profileVersion: number;
+  readonly profileContentHash: string;
   readonly candidateId: string;
   readonly evidenceRefId: string;
+}
+
+interface SerpOriginFixture {
+  readonly originId: string;
+  readonly collectionRunId: string;
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly sourceConnectionId: string;
+  readonly checksum: string;
 }
 
 async function inRolledBackFixture(
@@ -347,6 +375,7 @@ async function seedCanonicalCompetitor(
     privateProfilePayload,
     privateRawObjectKey,
     privateObservationPayload,
+    profileContentHash: contentHash(profile),
   };
 }
 
@@ -435,8 +464,556 @@ async function confirmNextProfileOrigin(
     profileOriginId: origin.occurrenceId,
     profileId,
     profileVersion,
+    profileContentHash: contentHash(profile),
     candidateId,
     evidenceRefId,
+  };
+}
+
+async function seedSerpOverlapOrigin(
+  tx: DbTx,
+  project: ProjectFixture,
+  competitor: CompetitorFixture,
+): Promise<SerpOriginFixture> {
+  const sourceConnectionId = randomUUID();
+  const collectionRunId = randomUUID();
+  const snapshotId = randomUUID();
+  const observationId = randomUUID();
+  const checksum = contentHash({ snapshotId, observationId });
+  const limitation =
+    "DataForSEO competitor-domain data is updated weekly and has no exact vendor dataset timestamp.";
+
+  await tx.insert(sourceConnections).values({
+    id: sourceConnectionId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    provider: "dataforseo",
+    connection_type: "api_key_stub",
+    state: "available",
+    external_ref: project.host,
+    limitation,
+    connected_at: OBSERVED_AT,
+    created_by: project.actorId,
+  });
+  await tx.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    kind: "collection",
+    status: "completed",
+    result_type: "collection_run",
+    result_id: collectionRunId,
+    initiated_by: project.actorId,
+    queued_at: OBSERVED_AT,
+    started_at: OBSERVED_AT,
+    completed_at: OBSERVED_AT,
+  });
+  await tx.insert(collectionRuns).values({
+    id: collectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v1",
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "search_landscape",
+      siteId: project.siteId,
+      target: project.host,
+    }),
+  });
+  await tx.insert(dataSnapshots).values({
+    id: snapshotId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    collection_run_id: collectionRunId,
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    dataset_key: "dataforseo.search_landscape.v1",
+    schema_version: "dataforseo.search_landscape.v1",
+    method_version: "dataforseo.search_landscape.v1",
+    captured_at: OBSERVED_AT,
+    source_window: { start: null, end: null },
+    availability: "available",
+    limitation,
+    raw_object_key: null,
+    row_count: 1,
+    checksum,
+    summary: {
+      collectionScope: {
+        target: project.host,
+        marketCode: "US",
+        languageTag: "en-US",
+      },
+    },
+  });
+  await tx
+    .update(collectionRuns)
+    .set({
+      row_count: 1,
+      source_window: { start: null, end: null },
+      provider_usage: {
+        apiCalls: 2,
+        rowsReturned: 1,
+        rowsRetained: 1,
+        costUsd: 0,
+      },
+      stop_reason: "completed",
+    })
+    .where(eq(collectionRuns.id, collectionRunId));
+  await tx.insert(normalizedObservations).values({
+    id: observationId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    snapshot_id: snapshotId,
+    site_page_id: null,
+    provider: "dataforseo",
+    metric_key: "dataforseo.competitor_domain.v1",
+    subject_type: "site",
+    subject_ref: "canonical-competitor.example",
+    observed_at: OBSERVED_AT,
+    availability: "available",
+    value_numeric: null,
+    value_text: null,
+    value_json: {
+      targetDomain: project.host,
+      competitorDomain: "canonical-competitor.example",
+      intersections: 17,
+      averagePosition: 8.5,
+      summedPosition: 144,
+      organicEstimatedTrafficVolume: 901.25,
+      marketCode: "US",
+      languageCode: "en",
+    },
+    unit: null,
+    origin: "vendor_observation",
+    method: "observed",
+    grade: "B",
+    support: "supports",
+    limitation,
+  });
+
+  const projected = await new CompetitorsRepository(tx).upsertOrigin(
+    {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+    },
+    {
+      originKind: "serp_overlap",
+      domain: "canonical-competitor.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    },
+  );
+  expect(projected.competitorId).toBe(competitor.competitorId);
+  return {
+    originId: projected.occurrenceId,
+    collectionRunId,
+    snapshotId,
+    observationId,
+    sourceConnectionId,
+    checksum,
+  };
+}
+
+interface PublishedCompetitorGovernance {
+  readonly reviewStatus: GovernanceCompetitorReviewStatus;
+  readonly revision: number;
+  readonly relationship: GovernanceCompetitorRelationship | null;
+  readonly analysisScopes: readonly GovernanceCompetitorAnalysisScope[];
+  readonly originRefs: readonly GovernanceCompetitorOriginRefV1[];
+}
+
+interface PublishedGenerationFixture {
+  readonly diagnosticRunId: string;
+  readonly crawlSourceConnectionId: string;
+}
+
+function competitorOriginRefs(
+  competitor: CompetitorFixture,
+  additionalProfileOrigins: readonly ProfileOriginFixture[] = [],
+  additionalOrigins: readonly GovernanceCompetitorOriginRefV1[] = [],
+): GovernanceCompetitorOriginRefV1[] {
+  return [
+    {
+      occurrenceId: competitor.csvOriginId,
+      originKind: "csv_keyword_gap",
+      snapshotId: competitor.snapshotId,
+      observationId: competitor.observationId,
+    },
+    {
+      occurrenceId: competitor.profileOriginId,
+      originKind: "product_profile",
+      snapshotId: null,
+      observationId: null,
+    },
+    ...additionalProfileOrigins.map((origin) => ({
+      occurrenceId: origin.profileOriginId,
+      originKind: "product_profile" as const,
+      snapshotId: null,
+      observationId: null,
+    })),
+    {
+      occurrenceId: competitor.manualOriginId,
+      originKind: "manual",
+      snapshotId: null,
+      observationId: null,
+    },
+    ...additionalOrigins,
+  ];
+}
+
+async function seedPublishedCompetitorGeneration(
+  tx: DbTx,
+  project: ProjectFixture,
+  competitor: CompetitorFixture,
+  input: {
+    readonly completedAt: string;
+    readonly governance: PublishedCompetitorGovernance;
+    readonly profile?: {
+      readonly id: string;
+      readonly version: number;
+      readonly contentHash: string;
+    };
+    readonly crawlSourceConnectionId?: string;
+    readonly dataForSeo?: SerpOriginFixture;
+    readonly publish?: boolean;
+  },
+): Promise<PublishedGenerationFixture> {
+  const crawlSourceConnectionId =
+    input.crawlSourceConnectionId ?? randomUUID();
+  const crawlCollectionRunId = randomUUID();
+  const crawlSnapshotId = randomUUID();
+  const crawlChecksum = contentHash({ crawlSnapshotId });
+  const sourceWindow = { start: null, end: null };
+
+  if (input.crawlSourceConnectionId === undefined) {
+    await tx.insert(sourceConnections).values({
+      id: crawlSourceConnectionId,
+      workspace_id: project.workspaceId,
+      project_id: project.projectId,
+      site_id: project.siteId,
+      provider: "crawl",
+      connection_type: "public",
+      state: "available",
+      external_ref: `https://${project.host}`,
+      limitation: "Bounded public crawl fixture.",
+      connected_at: input.completedAt,
+      created_by: project.actorId,
+    });
+  }
+  await tx.insert(asyncRuns).values({
+    id: crawlCollectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    kind: "collection",
+    status: "completed",
+    result_type: "collection_run",
+    result_id: crawlCollectionRunId,
+    initiated_by: project.actorId,
+    queued_at: input.completedAt,
+    started_at: input.completedAt,
+    completed_at: input.completedAt,
+  });
+  await tx.insert(collectionRuns).values({
+    id: crawlCollectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    source_connection_id: crawlSourceConnectionId,
+    provider: "crawl",
+    operation: "site_graph",
+    method_version: "crawl.site_graph.v2",
+    parameters_hash: contentHash({ crawlCollectionRunId }),
+  });
+  await tx.insert(dataSnapshots).values({
+    id: crawlSnapshotId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    collection_run_id: crawlCollectionRunId,
+    source_connection_id: crawlSourceConnectionId,
+    provider: "crawl",
+    dataset_key: "crawl.site_graph.v1",
+    schema_version: "0.3.0",
+    method_version: "crawl.site_graph.v2",
+    captured_at: input.completedAt,
+    source_window: sourceWindow,
+    availability: "available",
+    limitation: "Bounded public crawl fixture.",
+    raw_object_key: null,
+    row_count: 1,
+    checksum: crawlChecksum,
+    summary: {},
+  });
+  await tx
+    .update(collectionRuns)
+    .set({
+      row_count: 1,
+      source_window: sourceWindow,
+      provider_usage: {},
+      stop_reason: "completed",
+    })
+    .where(eq(collectionRuns.id, crawlCollectionRunId));
+
+  const diagnosticRunId = randomUUID();
+  const csvChecksum = contentHash({
+    snapshotId: competitor.snapshotId,
+    observationId: competitor.observationId,
+  });
+  const profile = input.profile ?? {
+    id: competitor.profileId,
+    version: competitor.profileVersion,
+    contentHash: competitor.profileContentHash,
+  };
+  const manifest = {
+    projectId: project.projectId,
+    siteId: project.siteId,
+    icp: {
+      id: profile.id,
+      version: profile.version,
+      contentHash: profile.contentHash,
+    },
+    snapshots: [
+      {
+        snapshotId: crawlSnapshotId,
+        provider: "crawl",
+        datasetKey: "crawl.site_graph.v1",
+        schemaVersion: "0.3.0",
+        methodVersion: "crawl.site_graph.v2",
+        checksum: crawlChecksum,
+        capturedAt: input.completedAt,
+        sourceWindow,
+        availability: "available",
+      },
+      {
+        snapshotId: competitor.snapshotId,
+        provider: "csv",
+        datasetKey: "csv.keyword_gap.v1",
+        schemaVersion: "0.3.0",
+        methodVersion: "csv.keyword_gap.v1",
+        checksum: csvChecksum,
+        capturedAt: OBSERVED_AT,
+        sourceWindow,
+        availability: "available",
+      },
+      ...(input.dataForSeo
+        ? [
+            {
+              snapshotId: input.dataForSeo.snapshotId,
+              provider: "dataforseo",
+              datasetKey: "dataforseo.search_landscape.v1",
+              schemaVersion: "dataforseo.search_landscape.v1",
+              methodVersion: "dataforseo.search_landscape.v1",
+              checksum: input.dataForSeo.checksum,
+              capturedAt: OBSERVED_AT,
+              sourceWindow,
+              availability: "available",
+            },
+          ]
+        : []),
+    ],
+    ruleSetVersion: RULE_SET_VERSION,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "zh-CN",
+    governance: {
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [
+        {
+          competitorEntityId: competitor.competitorId,
+          domain: "canonical-competitor.example",
+          reviewStatus: input.governance.reviewStatus,
+          revision: input.governance.revision,
+          relationship: input.governance.relationship,
+          analysisScopes: [...input.governance.analysisScopes],
+          originRefs: [...input.governance.originRefs],
+        },
+      ],
+    },
+  };
+  const manifestHash = contentHash(
+    manifest as unknown as CanonicalValue,
+  );
+
+  await tx.insert(asyncRuns).values({
+    id: diagnosticRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    kind: "diagnostic",
+    status: "completed",
+    result_type: "diagnostic_run",
+    result_id: diagnosticRunId,
+    initiated_by: project.actorId,
+    queued_at: input.completedAt,
+    started_at: input.completedAt,
+    completed_at: input.completedAt,
+  });
+  await tx.insert(diagnosticRuns).values({
+    id: diagnosticRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    icp_profile_id: profile.id,
+    icp_profile_version: profile.version,
+    rule_set_version: RULE_SET_VERSION,
+    prompt_set_version: PROMPT_SET_VERSION,
+    output_locale: "zh-CN",
+    input_manifest: manifest,
+    input_hash: manifestHash,
+    coverage: {},
+    created_at: input.completedAt,
+  });
+  await new CapabilityRunsRepository(tx).create({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    asyncRunId: diagnosticRunId,
+    capabilityId: "growth-audit",
+    capabilityVersion: "0.3.0",
+    inputManifestHash: contentHash({ diagnosticRunId }),
+    mode: "production",
+    sideEffectClass: "read_only",
+  });
+  await new AuditRunsRepository(tx).create({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    diagnosticRunId,
+    capabilityRunId: diagnosticRunId,
+    scopeKind: "site",
+    scopeKey: project.siteId,
+    projectionVersion: GROWTH_AUDIT_PROJECTION_VERSION,
+  });
+
+  if (input.publish === false) {
+    return {
+      diagnosticRunId,
+      crawlSourceConnectionId,
+    };
+  }
+
+  const analysisRefreshRunId = randomUUID();
+  await tx.insert(asyncRuns).values({
+    id: analysisRefreshRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    kind: "analysis_refresh",
+    status: "running",
+    result_type: "analysis_refresh_run",
+    result_id: analysisRefreshRunId,
+    initiated_by: project.actorId,
+    queued_at: input.completedAt,
+    started_at: input.completedAt,
+  });
+  const refreshes = new AnalysisRefreshRunsRepository(tx);
+  await refreshes.create({
+    runId: analysisRefreshRunId,
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    icpProfileId: profile.id,
+  });
+  const projectScope = {
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+  };
+  if (
+    !(await refreshes.startStep(
+      projectScope,
+      analysisRefreshRunId,
+      "crawl",
+      crawlCollectionRunId,
+    )) ||
+    !(await refreshes.completeStep(
+      projectScope,
+      analysisRefreshRunId,
+      "crawl",
+      {
+        childAsyncRunId: crawlCollectionRunId,
+        resultSnapshotId: crawlSnapshotId,
+      },
+    ))
+  ) {
+    throw new Error("Could not publish the fixture Crawl step.");
+  }
+  for (const stepKey of ["gsc", "ga4"] as const) {
+    if (
+      !(await refreshes.skipStep(
+        projectScope,
+        analysisRefreshRunId,
+        stepKey,
+        "Provider is not configured in this competitor fixture.",
+      ))
+    ) {
+      throw new Error(`Could not skip the fixture ${stepKey} step.`);
+    }
+  }
+  if (input.dataForSeo) {
+    if (
+      !(await refreshes.startStep(
+        projectScope,
+        analysisRefreshRunId,
+        "dataforseo",
+        input.dataForSeo.collectionRunId,
+      )) ||
+      !(await refreshes.completeStep(
+        projectScope,
+        analysisRefreshRunId,
+        "dataforseo",
+        {
+          childAsyncRunId: input.dataForSeo.collectionRunId,
+          resultSnapshotId: input.dataForSeo.snapshotId,
+        },
+      ))
+    ) {
+      throw new Error("Could not publish the fixture DataForSEO step.");
+    }
+  } else if (
+    !(await refreshes.skipStep(
+      projectScope,
+      analysisRefreshRunId,
+      "dataforseo",
+      "Provider is not configured in this competitor fixture.",
+    ))
+  ) {
+    throw new Error("Could not skip the fixture dataforseo step.");
+  }
+  if (
+    !(await refreshes.startStep(
+      projectScope,
+      analysisRefreshRunId,
+      "growth_audit",
+      diagnosticRunId,
+    )) ||
+    !(await refreshes.completeStep(
+      projectScope,
+      analysisRefreshRunId,
+      "growth_audit",
+      {
+        childAsyncRunId: diagnosticRunId,
+        resultSnapshotId: null,
+      },
+    ))
+  ) {
+    throw new Error("Could not publish the fixture Growth Audit step.");
+  }
+  await tx
+    .update(asyncRuns)
+    .set({
+      status: "completed",
+      completed_at: input.completedAt,
+      updated_at: input.completedAt,
+    })
+    .where(eq(asyncRuns.id, analysisRefreshRunId));
+
+  return {
+    diagnosticRunId,
+    crawlSourceConnectionId,
   };
 }
 
@@ -461,6 +1038,21 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
       const localProject = await seedProject(tx, workspaceId, "Local");
       const foreignProject = await seedProject(tx, workspaceId, "Foreign");
       const local = await seedCanonicalCompetitor(tx, localProject);
+      const published = await seedPublishedCompetitorGeneration(
+        tx,
+        localProject,
+        local,
+        {
+          completedAt: "2026-07-22T10:00:00.000Z",
+          governance: {
+            reviewStatus: "candidate",
+            revision: 0,
+            relationship: null,
+            analysisScopes: [],
+            originRefs: competitorOriginRefs(local),
+          },
+        },
+      );
       const foreignManualId = randomUUID();
       const foreign = await new CompetitorsRepository(tx).upsertOrigin(
         {
@@ -479,7 +1071,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
       const list = await listProjectAuditCompetitors(
         scope,
         localProject.projectId,
-        { limit: 50, cursor: null },
+        { limit: 50, cursor: null, diagnosticRunId: null },
         tx,
       );
       expect(list.projectId).toBe(localProject.projectId);
@@ -498,7 +1090,9 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         serpOverlap: {
           availability: "unavailable",
           value: null,
-          limitation: expect.stringMatching(/canonical.*writer/i),
+          limitation: expect.stringMatching(
+            /no immutable.*source.*recorded.*no canonical derived.*ratio/i,
+          ),
         },
         aiCitationInsight: {
           availability: "unavailable",
@@ -507,13 +1101,18 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         },
         coverage: {
           availability: "partial",
-          limitations: expect.arrayContaining([
-            expect.stringMatching(
-              /Product Profile source is approved.*still awaiting.*review/i,
-            ),
-          ]),
         },
       });
+      expect(
+        item.coverage.limitations.some((limitation) =>
+          /still a candidate.*not been approved/i.test(limitation),
+        ),
+      ).toBe(true);
+      expect(
+        item.coverage.limitations.some((limitation) =>
+          /display name.*(?:froze|frozen)/i.test(limitation),
+        ),
+      ).toBe(true);
       expect(item.originOccurrences).toEqual(
         expect.arrayContaining([
           {
@@ -555,6 +1154,27 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         tx,
       );
       expect(detail).toEqual({ projectId: localProject.projectId, data: item });
+      await expect(
+        listProjectAuditCompetitors(
+          scope,
+          localProject.projectId,
+          {
+            limit: 50,
+            cursor: null,
+            diagnosticRunId: published.diagnosticRunId,
+          },
+          tx,
+        ),
+      ).resolves.toEqual(list);
+      await expect(
+        getProjectAuditCompetitor(
+          scope,
+          localProject.projectId,
+          local.competitorId,
+          { diagnosticRunId: published.diagnosticRunId },
+          tx,
+        ),
+      ).resolves.toEqual(detail);
 
       const serialized = JSON.stringify({ list, detail });
       expect(serialized).not.toContain(foreign.competitorId);
@@ -586,11 +1206,26 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
       const project = await seedProject(tx, workspaceId, "Historical");
       const v1 = await seedCanonicalCompetitor(tx, project);
       const v2 = await confirmNextProfileOrigin(tx, project, v1);
+      await seedPublishedCompetitorGeneration(tx, project, v1, {
+        completedAt: "2026-07-22T10:00:00.000Z",
+        profile: {
+          id: v2.profileId,
+          version: v2.profileVersion,
+          contentHash: v2.profileContentHash,
+        },
+        governance: {
+          reviewStatus: "candidate",
+          revision: 0,
+          relationship: null,
+          analysisScopes: [],
+          originRefs: competitorOriginRefs(v1, [v2]),
+        },
+      });
 
       const list = await listProjectAuditCompetitors(
         { workspaceId },
         project.projectId,
-        { limit: 50, cursor: null },
+        { limit: 50, cursor: null, diagnosticRunId: null },
         tx,
       );
 
@@ -628,6 +1263,387 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           },
         ]),
       );
+    });
+  });
+
+  it("exposes an exact DataForSEO origin only in the published generation that froze it", async () => {
+    await inRolledBackFixture(handle, async (tx) => {
+      const workspaceId = randomUUID();
+      await tx.insert(workspaces).values({
+        id: workspaceId,
+        name: `Pinned SERP origin ${workspaceId}`,
+      });
+      const project = await seedProject(tx, workspaceId, "PinnedSerp");
+      const competitor = await seedCanonicalCompetitor(tx, project);
+      const oldGeneration = await seedPublishedCompetitorGeneration(
+        tx,
+        project,
+        competitor,
+        {
+          completedAt: "2026-07-22T10:00:00.000Z",
+          governance: {
+            reviewStatus: "candidate",
+            revision: 0,
+            relationship: null,
+            analysisScopes: [],
+            originRefs: competitorOriginRefs(competitor),
+          },
+        },
+      );
+      const serp = await seedSerpOverlapOrigin(tx, project, competitor);
+      const serpRef: GovernanceCompetitorOriginRefV1 = {
+        occurrenceId: serp.originId,
+        originKind: "serp_overlap",
+        snapshotId: serp.snapshotId,
+        observationId: serp.observationId,
+      };
+      const latestGeneration = await seedPublishedCompetitorGeneration(
+        tx,
+        project,
+        competitor,
+        {
+          completedAt: "2026-07-22T11:00:00.000Z",
+          crawlSourceConnectionId: oldGeneration.crawlSourceConnectionId,
+          dataForSeo: serp,
+          governance: {
+            reviewStatus: "candidate",
+            revision: 0,
+            relationship: null,
+            analysisScopes: [],
+            originRefs: competitorOriginRefs(competitor, [], [serpRef]),
+          },
+        },
+      );
+      const scope = { workspaceId };
+
+      const latest = await listProjectAuditCompetitors(
+        scope,
+        project.projectId,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: latestGeneration.diagnosticRunId,
+        },
+        tx,
+      );
+      expect(latest.data).toHaveLength(1);
+      expect(latest.data[0]?.originOccurrences).toEqual(
+        expect.arrayContaining([
+          {
+            occurrenceId: serp.originId,
+            originKind: "serp_overlap",
+            snapshotId: serp.snapshotId,
+            observationId: serp.observationId,
+            evidenceRefs: [],
+            observedAt: OBSERVED_AT,
+          },
+        ]),
+      );
+      expect(latest.data[0]?.lastObservedAt).toBe(OBSERVED_AT);
+      expect(latest.data[0]?.serpOverlap).toEqual({
+        availability: "unavailable",
+        value: null,
+        limitation: expect.stringMatching(
+          /immutable.*source.*recorded.*no canonical derived.*ratio/i,
+        ),
+      });
+      await expect(
+        getProjectAuditCompetitor(
+          scope,
+          project.projectId,
+          competitor.competitorId,
+          { diagnosticRunId: latestGeneration.diagnosticRunId },
+          tx,
+        ),
+      ).resolves.toEqual({
+        projectId: project.projectId,
+        data: latest.data[0],
+      });
+
+      const older = await listProjectAuditCompetitors(
+        scope,
+        project.projectId,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: oldGeneration.diagnosticRunId,
+        },
+        tx,
+      );
+      expect(older.data[0]?.originOccurrences).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ originKind: "serp_overlap" }),
+        ]),
+      );
+      expect(older.data[0]?.serpOverlap).toEqual({
+        availability: "unavailable",
+        value: null,
+        limitation: expect.stringMatching(
+          /no immutable.*source.*recorded.*no canonical derived.*ratio/i,
+        ),
+      });
+
+      const review = await getProjectAuditCompetitorReviewDetail(
+        scope,
+        project.projectId,
+        competitor.competitorId,
+        tx,
+      );
+      expect(review.data.originOccurrences).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            occurrenceId: serp.originId,
+            originKind: "serp_overlap",
+            snapshotId: serp.snapshotId,
+            observationId: serp.observationId,
+          }),
+        ]),
+      );
+      expect(review.data.serpOverlap).toEqual(latest.data[0]?.serpOverlap);
+    });
+  });
+
+  it("pins exact published generations while review reads and mutations remain live", async () => {
+    await inRolledBackFixture(handle, async (tx) => {
+      const workspaceId = randomUUID();
+      await tx.insert(workspaces).values({
+        id: workspaceId,
+        name: `Pinned competitor generation ${workspaceId}`,
+      });
+      const project = await seedProject(tx, workspaceId, "Pinned");
+      const competitor = await seedCanonicalCompetitor(tx, project);
+      const scope = { workspaceId };
+      const oldGeneration = await seedPublishedCompetitorGeneration(
+        tx,
+        project,
+        competitor,
+        {
+          completedAt: "2026-07-22T10:00:00.000Z",
+          governance: {
+            reviewStatus: "candidate",
+            revision: 0,
+            relationship: null,
+            analysisScopes: [],
+            originRefs: competitorOriginRefs(competitor),
+          },
+        },
+      );
+
+      const firstReview = await reviewProjectAuditCompetitor(
+        scope,
+        project.projectId,
+        competitor.competitorId,
+        {
+          expectedRevision: 0,
+          name: "Published Review",
+          reviewStatus: "approved",
+          relationship: "benchmark",
+          analysisScope: ["positioning"],
+        },
+        tx,
+      );
+      expect(firstReview.data).toMatchObject({
+        name: "Published Review",
+        reviewStatus: "approved",
+        relationship: "benchmark",
+        analysisScope: ["positioning"],
+        revision: 1,
+      });
+
+      const latestGeneration = await seedPublishedCompetitorGeneration(
+        tx,
+        project,
+        competitor,
+        {
+          completedAt: "2026-07-22T11:00:00.000Z",
+          crawlSourceConnectionId: oldGeneration.crawlSourceConnectionId,
+          governance: {
+            reviewStatus: "approved",
+            revision: 1,
+            relationship: "benchmark",
+            analysisScopes: ["positioning"],
+            originRefs: competitorOriginRefs(competitor),
+          },
+        },
+      );
+
+      const secondReview = await reviewProjectAuditCompetitor(
+        scope,
+        project.projectId,
+        competitor.competitorId,
+        {
+          expectedRevision: 1,
+          name: "Current Review",
+          reviewStatus: "approved",
+          relationship: "publisher",
+          analysisScope: ["content"],
+        },
+        tx,
+      );
+      expect(secondReview.data).toMatchObject({
+        name: "Current Review",
+        relationship: "publisher",
+        analysisScope: ["content"],
+        revision: 2,
+      });
+
+      const latest = await listProjectAuditCompetitors(
+        scope,
+        project.projectId,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        tx,
+      );
+      expect(latest.data).toHaveLength(1);
+      expect(latest.data[0]).toMatchObject({
+        competitorId: competitor.competitorId,
+        name: null,
+        reviewStatus: "approved",
+        relationship: "benchmark",
+        analysisScope: ["positioning"],
+        revision: 1,
+      });
+      await expect(
+        getProjectAuditCompetitor(
+          scope,
+          project.projectId,
+          competitor.competitorId,
+          { diagnosticRunId: latestGeneration.diagnosticRunId },
+          tx,
+        ),
+      ).resolves.toEqual({
+        projectId: project.projectId,
+        data: latest.data[0],
+      });
+
+      const older = await listProjectAuditCompetitors(
+        scope,
+        project.projectId,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: oldGeneration.diagnosticRunId,
+        },
+        tx,
+      );
+      expect(older.data).toHaveLength(1);
+      expect(older.data[0]).toMatchObject({
+        competitorId: competitor.competitorId,
+        name: null,
+        reviewStatus: "candidate",
+        relationship: null,
+        analysisScope: [],
+        revision: 0,
+      });
+      await expect(
+        getProjectAuditCompetitor(
+          scope,
+          project.projectId,
+          competitor.competitorId,
+          { diagnosticRunId: oldGeneration.diagnosticRunId },
+          tx,
+        ),
+      ).resolves.toEqual({
+        projectId: project.projectId,
+        data: older.data[0],
+      });
+
+      await expect(
+        getProjectAuditCompetitorReviewDetail(
+          scope,
+          project.projectId,
+          competitor.competitorId,
+          tx,
+        ),
+      ).resolves.toMatchObject({
+        projectId: project.projectId,
+        data: {
+          name: "Current Review",
+          reviewStatus: "approved",
+          relationship: "publisher",
+          analysisScope: ["content"],
+          revision: 2,
+        },
+      });
+
+      const unpublished = await seedPublishedCompetitorGeneration(
+        tx,
+        project,
+        competitor,
+        {
+          completedAt: "2026-07-22T12:00:00.000Z",
+          crawlSourceConnectionId: oldGeneration.crawlSourceConnectionId,
+          governance: {
+            reviewStatus: "approved",
+            revision: 2,
+            relationship: "publisher",
+            analysisScopes: ["content"],
+            originRefs: competitorOriginRefs(competitor),
+          },
+          publish: false,
+        },
+      );
+      const foreignProject = await seedProject(
+        tx,
+        workspaceId,
+        "PinnedForeign",
+      );
+      const foreignCompetitor = await seedCanonicalCompetitor(
+        tx,
+        foreignProject,
+      );
+      const foreign = await seedPublishedCompetitorGeneration(
+        tx,
+        foreignProject,
+        foreignCompetitor,
+        {
+          completedAt: "2026-07-22T13:00:00.000Z",
+          governance: {
+            reviewStatus: "candidate",
+            revision: 0,
+            relationship: null,
+            analysisScopes: [],
+            originRefs: competitorOriginRefs(foreignCompetitor),
+          },
+        },
+      );
+
+      for (const diagnosticRunId of [
+        unpublished.diagnosticRunId,
+        foreign.diagnosticRunId,
+      ]) {
+        await expect(
+          listProjectAuditCompetitors(
+            scope,
+            project.projectId,
+            { limit: 50, cursor: null, diagnosticRunId },
+            tx,
+          ),
+        ).rejects.toMatchObject({
+          code: "GROWTH_MAP_AUDIT_NOT_FOUND",
+          status: 404,
+        });
+        await expect(
+          getProjectAuditCompetitor(
+            scope,
+            project.projectId,
+            competitor.competitorId,
+            { diagnosticRunId },
+            tx,
+          ),
+        ).rejects.toMatchObject({
+          code: "GROWTH_MAP_AUDIT_NOT_FOUND",
+          status: 404,
+        });
+      }
+
+      await expect(
+        listProjectAuditCompetitors(
+          scope,
+          project.projectId,
+          { limit: 50, cursor: null, diagnosticRunId: null },
+          tx,
+        ),
+      ).resolves.toEqual(latest);
     });
   });
 });

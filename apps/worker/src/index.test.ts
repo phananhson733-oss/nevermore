@@ -16,6 +16,7 @@ const mocked = vi.hoisted(() => ({
   registerContentShadowHandler: vi.fn(),
   registerPublicationHandler: vi.fn(),
   registerMeasurementHandler: vi.fn(),
+  registerAnalysisRefreshHandler: vi.fn(),
   startWorkerMaintenance: vi.fn(),
   getWorkerMaintenanceFromStartError: vi.fn(),
   startWorkerHealthSnapshotLoop: vi.fn(),
@@ -54,6 +55,9 @@ vi.mock("./handlers/publication.ts", () => ({
 }));
 vi.mock("./handlers/measurement.ts", () => ({
   registerMeasurementHandler: mocked.registerMeasurementHandler,
+}));
+vi.mock("./handlers/analysis-refresh.ts", () => ({
+  registerAnalysisRefreshHandler: mocked.registerAnalysisRefreshHandler,
 }));
 vi.mock("./handlers/artifact.ts", () => ({
   registerArtifactHandlers: mocked.registerArtifactHandlers,
@@ -160,6 +164,9 @@ function configureSuccessfulBoot(order: string[]) {
   mocked.registerMeasurementHandler.mockImplementation(async () => {
     order.push("measurement");
   });
+  mocked.registerAnalysisRefreshHandler.mockImplementation(async () => {
+    order.push("analysis-refresh");
+  });
   mocked.startWorkerMaintenance.mockImplementation(async () => {
     order.push("maintenance.start");
     return maintenance;
@@ -226,6 +233,7 @@ describe("worker bootstrap lifecycle", () => {
       "content-shadow",
       "publication",
       "measurement",
+      "analysis-refresh",
       "maintenance.start",
       "readiness.acquire",
       "health.start",
@@ -549,6 +557,7 @@ describe("worker bootstrap lifecycle", () => {
       expect(mocked.registerContentShadowHandler).not.toHaveBeenCalled();
       expect(mocked.registerPublicationHandler).not.toHaveBeenCalled();
       expect(mocked.registerMeasurementHandler).not.toHaveBeenCalled();
+      expect(mocked.registerAnalysisRefreshHandler).not.toHaveBeenCalled();
       expect(mocked.startWorkerMaintenance).not.toHaveBeenCalled();
       expect(mocked.acquireWorkerReadinessLease).not.toHaveBeenCalled();
       expect(resources.boss.stop).toHaveBeenCalledTimes(1);

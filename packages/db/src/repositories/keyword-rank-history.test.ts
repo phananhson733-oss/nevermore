@@ -72,6 +72,11 @@ function dataForSeoRow(overrides: Record<string, unknown> = {}) {
     provider_data_as_of: null,
     snapshot_provider: "dataforseo",
     dataset_key: "dataforseo.ranked_keywords.v1",
+    snapshot_schema_version: "dataforseo.ranked_keywords.v1",
+    snapshot_method_version: "dataforseo.ranked_keywords.v1",
+    collection_provider: "dataforseo",
+    collection_operation: "keyword_gap_import",
+    collection_method_version: "dataforseo.ranked_keywords.v1",
     snapshot_availability: "available",
     provider: "dataforseo",
     metric_key: "csv.keyword_gap.v1",
@@ -102,6 +107,11 @@ function gscRow(overrides: Record<string, unknown> = {}) {
     provider_data_as_of: "2026-06-30T23:59:59.000Z",
     snapshot_provider: "gsc",
     dataset_key: "gsc.page_query_daily.v1",
+    snapshot_schema_version: "gsc.page_query_daily.v1",
+    snapshot_method_version: "gsc.page_query_daily.v1",
+    collection_provider: "gsc",
+    collection_operation: "search_analytics",
+    collection_method_version: "gsc.page_query_daily.v1",
     snapshot_availability: "available",
     provider: "gsc",
     metric_key: "gsc.page.v1",
@@ -175,6 +185,7 @@ describe("KeywordRankHistoryRepository", () => {
       'inner join "app"."normalized_observations"',
     );
     expect(query.sql).toContain('inner join "app"."data_snapshots"');
+    expect(query.sql).toContain('inner join "app"."collection_runs"');
     expect(query.sql).toContain(
       "in (\n          'dataforseo_ranked',\n          'gsc_top_query'",
     );
@@ -184,6 +195,74 @@ describe("KeywordRankHistoryRepository", () => {
     expect(query.params).toContain(scope.workspaceId);
     expect(query.params).toContain(scope.projectId);
     expect(query.params).toContain(ids.keyword);
+  });
+
+  it("accepts ranked-keyword facts from the exact composite search-landscape lineage", async () => {
+    const db = fixtureExecutor();
+    db.enqueue([
+      dataForSeoRow({
+        dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        snapshot_method_version: "dataforseo.search_landscape.v1",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      }),
+    ]);
+
+    await expect(
+      new KeywordRankHistoryRepository(db.executor).listRankObservations(
+        scope,
+        ids.keyword,
+        window,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        provider: "dataforseo",
+        metric: "absolute_rank",
+        value: 12,
+        valuePointer: "/valueJson/currentRank",
+      }),
+    ]);
+  });
+
+  it.each([
+    {
+      drift: "legacy dataset with composite operation",
+      overrides: {
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+    {
+      drift: "composite dataset with legacy operation",
+      overrides: {
+        dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        snapshot_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+    {
+      drift: "composite dataset with legacy Snapshot method",
+      overrides: {
+        dataset_key: "dataforseo.search_landscape.v1",
+        snapshot_schema_version: "dataforseo.search_landscape.v1",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v1",
+      },
+    },
+  ])("fails closed on $drift", async ({ overrides }) => {
+    const db = fixtureExecutor();
+    db.enqueue([dataForSeoRow(overrides)]);
+
+    await expect(
+      new KeywordRankHistoryRepository(db.executor).listRankObservations(
+        scope,
+        ids.keyword,
+        window,
+      ),
+    ).rejects.toMatchObject({
+      code: "OBSERVATION_LINEAGE_INVALID",
+    });
   });
 
   it("omits honest null rank values without inventing zero", async () => {

@@ -6,9 +6,11 @@ import { parseJsonBody, parseUuidParam, requireIdempotencyKey } from "@/lib/http
 import { createCollectionRun } from "@/lib/services/collection";
 
 /**
- * `POST /api/mvp/projects/{projectId}/collection-runs` — queue one provider
- * collection (spec §7.5, §13.2). Returns 202 with the run + statusUrl + Location
- * using the shared `{ data }` success envelope.
+ * `POST /api/mvp/projects/{projectId}/collection-runs` — queue one
+ * customer-triggerable Crawl/GSC/GA4 collection (spec §7.5, §13.2).
+ * Server-owned providers such as DataForSEO run only inside Analysis Refresh.
+ * Returns 202 with the run + statusUrl + Location using the shared `{ data }`
+ * success envelope.
  */
 export const POST = operatorRoute<{ projectId: string }>(async (request, ctx, routeCtx) => {
   const { projectId } = await routeCtx.params;

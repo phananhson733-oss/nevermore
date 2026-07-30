@@ -130,7 +130,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
     specLock.tables.length,
     specLock.rules.length,
   ];
-  assert.deepEqual(expected, [77, 9, 76, 11]);
+  assert.deepEqual(expected, [78, 10, 78, 11]);
   for (const path of [
     "README.md",
     "CLAUDE.md",
@@ -146,12 +146,46 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 32);
+  assert.equal(migrationFiles.length, 34);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
   assert.match(sources.get("docs/PROGRESS.md"), expected);
   assert.match(sources.get("docs/DEPLOYMENT.md"), expected);
+});
+
+test("current docs freeze server-owned DFS and published-generation reads", () => {
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /DataForSEO Search Landscape\s*[(（]DFS[)）]/);
+    assert.match(source, /diagnosticRunId/);
+    assert.match(source, /view=review/);
+    assert.match(source, /PATCH.*query|PATCH 拒绝全部 query/s);
+  }
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(
+      source,
+      /createCollectionRun|public\s+collection|公共\s+`createCollectionRun`|公开\s+`createCollectionRun`/,
+    );
+    assert.match(
+      source,
+      /(?:crawl|Crawl)[\s\S]{0,100}(?:gsc|GSC)[\s\S]{0,100}(?:ga4|GA4)/,
+    );
+  }
 });
 
 test("README mirrors the exact four-entry customer navigation", () => {

@@ -11,10 +11,14 @@ import {
 } from "@sf/db";
 import {
   DATAFORSEO_DATASET_KEY,
+  DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   METRIC_CSV_KEYWORD_GAP,
   METRIC_GSC_PAGE,
   SourceError,
   parseDataForSeoCollectionScope,
+  parseDataForSeoSearchLandscapeScope,
 } from "@sf/sources";
 
 const CSV_DATASET_KEY = "csv.keyword_gap.v1";
@@ -192,16 +196,30 @@ function projectionConfiguration(
     };
   }
   if (snapshot.provider === "dataforseo") {
-    if (snapshot.dataset_key !== DATAFORSEO_DATASET_KEY) {
+    const isLegacyRankedKeywords =
+      snapshot.dataset_key === DATAFORSEO_DATASET_KEY &&
+      snapshot.schema_version === DATAFORSEO_METHOD_VERSION &&
+      snapshot.method_version === DATAFORSEO_METHOD_VERSION;
+    const isSearchLandscape =
+      snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
+      snapshot.schema_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+      snapshot.method_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+    if (!isLegacyRankedKeywords && !isSearchLandscape) {
       throw invalidProjection(
-        "DataForSEO Keyword Library projection requires the ranked-keywords Snapshot dataset.",
+        "DataForSEO Keyword Library projection requires an exact ranked-keywords or search-landscape Snapshot dataset/method identity.",
       );
     }
     let scope;
     try {
-      scope = parseDataForSeoCollectionScope(
-        snapshot.summary["collectionScope"],
-      );
+      scope = isSearchLandscape
+        ? parseDataForSeoSearchLandscapeScope(
+            snapshot.summary["collectionScope"],
+          )
+        : parseDataForSeoCollectionScope(
+            snapshot.summary["collectionScope"],
+          );
     } catch {
       throw invalidProjection(
         "DataForSEO Keyword Library projection requires a frozen provider collection scope.",

@@ -31,6 +31,9 @@ type KeywordReviewOperation = operations["reviewProjectAuditKeyword"];
 type KeywordListQuery = NonNullable<
   KeywordListOperation["parameters"]["query"]
 >;
+type KeywordDetailQuery = NonNullable<
+  KeywordDetailOperation["parameters"]["query"]
+>;
 type KeywordListHttpResponse =
   KeywordListOperation["responses"][200]["content"]["application/json"];
 type KeywordDetailHttpResponse =
@@ -47,8 +50,14 @@ type KeywordPage = components["schemas"]["GrowthMapKeywordLibraryResponse"];
 type KeywordPageMeta =
   components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
 
-type _ListQueryIsCursorOnly = Expect<
-  Equal<keyof KeywordListQuery, "limit" | "cursor">
+type _ListQueryIncludesPublishedGeneration = Expect<
+  Equal<keyof KeywordListQuery, "limit" | "cursor" | "diagnosticRunId">
+>;
+type _DetailQueryIsGenerationOrReview = Expect<
+  Equal<keyof KeywordDetailQuery, "diagnosticRunId" | "view">
+>;
+type _DetailReviewViewIsExact = Expect<
+  Equal<NonNullable<KeywordDetailQuery["view"]>, "review">
 >;
 type _ListHttpEnvelope = Expect<
   Equal<

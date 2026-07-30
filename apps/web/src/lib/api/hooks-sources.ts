@@ -19,6 +19,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
   type UseInfiniteQueryResult,
   type UseMutationResult,
   type UseQueryResult,
@@ -35,8 +36,11 @@ const API_BASE = `${BASE_PATH}/api/mvp`;
 export type Provider = "crawl" | "gsc" | "ga4" | "csv" | "dataforseo";
 /** The two OAuth (Google) providers `connect`/property-selection applies to. */
 export type GoogleProvider = "gsc" | "ga4";
-/** Providers that accept a `collection-runs` POST (CSV collects via import). */
-export type CollectionProvider = "crawl" | "gsc" | "ga4" | "dataforseo";
+/**
+ * Customer-triggerable `collection-runs` providers. CSV uses import and
+ * DataForSEO is server-owned inside Analysis Refresh.
+ */
+export type CollectionProvider = "crawl" | "gsc" | "ga4";
 export type ConnectionType =
   | "public"
   | "oauth"
@@ -55,9 +59,14 @@ export type SourceState =
 export type Availability = "available" | "partial" | "unavailable";
 export type RunKind =
   | "collection"
+  | "product_profile_synthesis"
   | "diagnostic"
   | "artifact_generation"
-  | "export";
+  | "export"
+  | "content_shadow"
+  | "publication"
+  | "measurement"
+  | "analysis_refresh";
 export type RunStatus =
   | "queued"
   | "running"
@@ -114,7 +123,18 @@ export interface RunError {
 }
 
 export interface RunResourceRef {
-  readonly type: "collection_run" | "diagnostic_run" | "artifact" | "export";
+  readonly type:
+    | "collection_run"
+    | "product_profile_run"
+    | "icp_profile"
+    | "diagnostic_run"
+    | "artifact"
+    | "export"
+    | "audit_run"
+    | "flow_shadow_run"
+    | "publication_attempt"
+    | "measurement_window"
+    | "analysis_refresh_run";
   readonly id: string;
 }
 
@@ -256,12 +276,83 @@ const runKey = (projectId: string, runId: string): readonly unknown[] => [
   runId,
 ];
 
+export const ANALYSIS_REFRESH_RUN_PARAM = "analysisRefreshRunId";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function validRunId(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+/** Recover a refresh-safe polling pointer from the page query string. */
+export function readAnalysisRefreshRunId(search: string): string | null {
+  const value = new URLSearchParams(search).get(ANALYSIS_REFRESH_RUN_PARAM);
+  return validRunId(value) ? value : null;
+}
+
+/**
+ * Set or remove only the Analysis Refresh pointer. OAuth and any future Sources
+ * query parameters survive both start and terminal cleanup.
+ */
+export function withAnalysisRefreshRunId(
+  currentHref: string,
+  runId: string | null,
+): string {
+  const url = new URL(currentHref, "http://signalframe.local");
+  if (runId === null) {
+    url.searchParams.delete(ANALYSIS_REFRESH_RUN_PARAM);
+  } else if (validRunId(runId)) {
+    url.searchParams.set(ANALYSIS_REFRESH_RUN_PARAM, runId);
+  } else {
+    throw new TypeError("Analysis Refresh run id must be a UUID");
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** Adopt a 409 winner only from a validated body pointer. */
+export function analysisRefreshRunIdFromError(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.code !== "RUN_ALREADY_ACTIVE") {
+    return null;
+  }
+  const runId = error.problem.current?.["runId"];
+  return validRunId(runId) ? runId : null;
+}
+
+/**
+ * A terminal Analysis Refresh can replace every evidence and audit/growth
+ * projection. Prefix invalidation covers locale/detail suffixes without knowing
+ * which page happens to be mounted.
+ */
+export async function invalidateAnalysisRefreshTerminalQueries(
+  queryClient: QueryClient,
+  projectId: string,
+): Promise<void> {
+  await Promise.all(
+    [
+      ["sources", projectId],
+      ["snapshots", projectId],
+      ["growth-audit", projectId],
+      ["growth-map", projectId],
+      ["findings", projectId],
+      ["opportunities", projectId],
+      ["workspace", projectId],
+      ["project", projectId],
+    ].map((queryKey) =>
+      queryClient.invalidateQueries({
+        queryKey,
+        refetchType: "active",
+      }),
+    ),
+  );
+}
+
 // ----------------------------------------------------------------- Queries ---
 
 /**
- * The five source cards (crawl, gsc, ga4, csv, dataforseo) with capability,
- * state, latest snapshot, and active run. Returns the unwrapped array; the API
- * guarantees exactly five entries (one per provider).
+ * The five canonical source slots with capability, state, latest snapshot, and
+ * active run. Returns the unwrapped array; customer screens deliberately filter
+ * internal evidence slots such as DataForSEO instead of rendering connectors
+ * for them.
  */
 export function useProjectSources(
   projectId: string,
@@ -343,12 +434,73 @@ export function useProjectRun(
 
 // --------------------------------------------------------------- Mutations ---
 
+/** Send the strict empty Analysis Refresh command with one stable attempt key. */
+export async function createAnalysisRefreshRun(
+  projectId: string,
+  idempotencyKey: string,
+): Promise<AsyncAcceptedData> {
+  const res = await apiSend<DataEnvelope<AsyncAcceptedData>>(
+    "POST",
+    `/projects/${projectId}/analysis-refresh-runs`,
+    { body: {}, idempotencyKey },
+  );
+  return res.data;
+}
+
+/**
+ * Queue the server-owned Analysis Refresh plan. A fresh key belongs to one
+ * mutation attempt; 409 winner adoption is intentionally handled by the screen.
+ */
+export function useCreateAnalysisRefreshRun(
+  projectId: string,
+): UseMutationResult<AsyncAcceptedData, ApiError, void> {
+  return useMutation({
+    mutationFn: () =>
+      createAnalysisRefreshRun(projectId, crypto.randomUUID()),
+  });
+}
+
 /**
  * Queue one provider collection. Crawl may omit `sourceConnectionId` (the default
- * Crawl source fills it in); GSC/GA4 must pass their connected source. DataForSEO
- * may omit it because the server atomically provisions a secret-free project
- * connection for legacy projects. Returns the accepted run so the caller can
- * poll it; Sources is invalidated so the queued `activeRun` appears on the card.
+ * Crawl source fills it in); GSC/GA4 must pass their connected source. The
+ * runtime allow-list prevents untyped callers from turning this customer hook
+ * into a trigger for a server-owned provider.
+ */
+export async function createCollectionRun(
+  projectId: string,
+  idempotencyKey: string,
+  vars: CreateCollectionRunVariables,
+): Promise<AsyncAcceptedData> {
+  const provider: unknown = (
+    vars as { readonly provider?: unknown } | null | undefined
+  )?.provider;
+  if (
+    provider !== "crawl" &&
+    provider !== "gsc" &&
+    provider !== "ga4"
+  ) {
+    throw new TypeError(
+      "Direct collection supports only crawl, gsc, and ga4 providers.",
+    );
+  }
+  const body: {
+    provider: CollectionProvider;
+    sourceConnectionId?: string;
+  } = { provider };
+  if (vars.sourceConnectionId) {
+    body.sourceConnectionId = vars.sourceConnectionId;
+  }
+  const res = await apiSend<DataEnvelope<AsyncAcceptedData>>(
+    "POST",
+    `/projects/${projectId}/collection-runs`,
+    { body, idempotencyKey },
+  );
+  return res.data;
+}
+
+/**
+ * Returns the accepted run so the caller can poll it; Sources is invalidated so
+ * the queued `activeRun` appears on the matching customer-visible source card.
  */
 export function useCreateCollectionRun(
   projectId: string,
@@ -359,22 +511,8 @@ export function useCreateCollectionRun(
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: CreateCollectionRunVariables) => {
-      const body: {
-        provider: CollectionProvider;
-        sourceConnectionId?: string;
-      } = {
-        provider: vars.provider,
-      };
-      if (vars.sourceConnectionId)
-        body.sourceConnectionId = vars.sourceConnectionId;
-      const res = await apiSend<DataEnvelope<AsyncAcceptedData>>(
-        "POST",
-        `/projects/${projectId}/collection-runs`,
-        { body, idempotencyKey: crypto.randomUUID() },
-      );
-      return res.data;
-    },
+    mutationFn: (vars: CreateCollectionRunVariables) =>
+      createCollectionRun(projectId, crypto.randomUUID(), vars),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
   });

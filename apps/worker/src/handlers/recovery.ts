@@ -1,4 +1,5 @@
 import {
+  AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
@@ -143,6 +144,8 @@ export function queueForRun(
       return "publication";
     case "measurement":
       return "measurement";
+    case "analysis_refresh":
+      return "refresh.analysis";
     default:
       return null;
   }
@@ -594,12 +597,19 @@ async function findCanonicalJobs(
   throwIfRecoveryAborted(signal);
   const direct = await ctx.boss.getJobById<CanonicalJobPayload>(queue, run.id);
   throwIfRecoveryAborted(signal);
-  if (direct && jobMatchesRun(direct, run)) {
+  if (
+    direct &&
+    jobMatchesRun(direct, run) &&
+    run.kind !== "analysis_refresh"
+  ) {
     return { jobs: [direct], contractFailure: null };
   }
 
-  // Old releases generated a random pg-boss id. JSONB containment narrows the
-  // public lookup; exact scope checks below prevent a cross-project collision.
+  // Old releases generated a random pg-boss id. Analysis Refresh also uses a
+  // fresh random id for every durable continuation, so it must always inspect
+  // all jobs carrying the canonical run id even when the initial direct-id
+  // delivery still exists. JSONB containment narrows the public lookup; exact
+  // scope checks below prevent a cross-project collision.
   const legacy = await ctx.boss.findJobs<CanonicalJobPayload>(queue, {
     data: { runId: run.id },
   });
@@ -790,6 +800,33 @@ async function reconcileCanonicalAndProjection(
     );
     throwIfRecoveryAborted(signal);
     if (!reconciled) return false;
+
+    if (run.kind === "analysis_refresh") {
+      const plans = new AnalysisRefreshRunsRepository(tx);
+      const steps = await plans.listSteps(scope, run.id);
+      const running = steps.find((step) => step.state === "running");
+      if (running) {
+        const failed = await plans.failStep(
+          scope,
+          run.id,
+          running.step_key,
+          {
+            childAsyncRunId: running.child_async_run_id,
+            error: {
+              code: "ANALYSIS_REFRESH_RECOVERY_TERMINATED",
+              summary:
+                "Recovery terminalized the parent before its running step completed.",
+            },
+          },
+        );
+        if (!failed) {
+          throw new Error(
+            "recovery could not terminalize the running Analysis Refresh step",
+          );
+        }
+        throwIfRecoveryAborted(signal);
+      }
+    }
 
     const artifactId = run.request_payload["artifactId"];
     if (run.kind === "artifact_generation" && typeof artifactId === "string") {

@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
   actions,
+  analysisRefreshRuns,
+  analysisRefreshSteps,
   asyncRuns,
   auditRuns,
   dataSnapshots,
@@ -13,7 +15,7 @@ import {
   sitePages,
 } from "../schema.ts";
 import type { ActionRow } from "./actions.ts";
-import { GROWTH_AUDIT_RECHECK_PROJECTION_VERSION } from "./audit-runs.ts";
+import { GROWTH_AUDIT_PROJECTION_VERSION } from "./audit-runs.ts";
 import { Repository, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -31,7 +33,7 @@ export const MAX_GROWTH_MAP_SNAPSHOT_LOOKUP = 20;
 export const MAX_GROWTH_MAP_ENTITY_LOOKUP = 200;
 
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export interface GrowthMapReadableRunRow {
   readonly id: string;
@@ -288,6 +290,199 @@ function currentRunUrlInventoryCtes(
 }
 
 /**
+ * Complete published Growth Audit relation shared by both latest-generation
+ * and exact-generation reads. Callers may narrow or order this relation, but
+ * must not reconstruct any part of its publication lineage independently.
+ */
+function publishedGrowthAuditRuns(
+  scope: ProjectScope,
+  diagnosticRunId: string | null,
+) {
+  return sql`
+    with canonical_completed_collection_steps as (
+      select
+        collection_step.analysis_refresh_run_id,
+        collection_step.step_key
+      from ${analysisRefreshSteps} as collection_step
+      inner join ${asyncRuns} as collection_child
+        on collection_child.id = collection_step.child_async_run_id
+       and collection_child.workspace_id = ${scope.workspaceId}
+       and collection_child.project_id = ${scope.projectId}
+       and collection_child.kind = 'collection'
+       and collection_child.status in ('completed', 'partial')
+       and collection_child.result_type = 'collection_run'
+       and collection_child.result_id = collection_child.id
+       and collection_child.completed_at is not null
+      inner join ${dataSnapshots} as result_snapshot
+        on result_snapshot.id = collection_step.result_snapshot_id
+       and result_snapshot.workspace_id = ${scope.workspaceId}
+       and result_snapshot.project_id = ${scope.projectId}
+       and result_snapshot.collection_run_id = collection_child.id
+       and result_snapshot.provider = collection_step.step_key
+       and result_snapshot.availability in ('available', 'partial')
+      where collection_step.workspace_id = ${scope.workspaceId}
+        and collection_step.project_id = ${scope.projectId}
+        and collection_step.step_key in ('crawl', 'gsc', 'ga4', 'dataforseo')
+        and collection_step.state = 'completed'
+    ), publishable_analysis_refreshes as (
+      select
+        ${asyncRuns.id} as id,
+        ${asyncRuns.completed_at} as completed_at
+      from ${asyncRuns}
+      where ${asyncRuns.workspace_id} = ${scope.workspaceId}
+        and ${asyncRuns.project_id} = ${scope.projectId}
+        and ${asyncRuns.kind} = 'analysis_refresh'
+        and ${asyncRuns.status} in ('completed', 'partial')
+        and ${asyncRuns.result_type} = 'analysis_refresh_run'
+        and ${asyncRuns.result_id} = ${asyncRuns.id}
+        and ${asyncRuns.completed_at} is not null
+        and exists (
+          select 1
+          from ${analysisRefreshSteps}
+          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+            and ${analysisRefreshSteps.ordinal} = 1
+            and ${analysisRefreshSteps.step_key} = 'crawl'
+            and ${analysisRefreshSteps.required}
+            and ${analysisRefreshSteps.state} = 'completed'
+            and exists (
+              select 1
+              from canonical_completed_collection_steps
+              where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                and canonical_completed_collection_steps.step_key = 'crawl'
+            )
+        )
+        and exists (
+          select 1
+          from ${analysisRefreshSteps}
+          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+            and ${analysisRefreshSteps.ordinal} = 2
+            and ${analysisRefreshSteps.step_key} = 'gsc'
+            and not ${analysisRefreshSteps.required}
+            and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+            and (
+              ${analysisRefreshSteps.state} <> 'completed'
+              or exists (
+                select 1
+                from canonical_completed_collection_steps
+                where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                  and canonical_completed_collection_steps.step_key = 'gsc'
+              )
+            )
+        )
+        and exists (
+          select 1
+          from ${analysisRefreshSteps}
+          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+            and ${analysisRefreshSteps.ordinal} = 3
+            and ${analysisRefreshSteps.step_key} = 'ga4'
+            and not ${analysisRefreshSteps.required}
+            and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+            and (
+              ${analysisRefreshSteps.state} <> 'completed'
+              or exists (
+                select 1
+                from canonical_completed_collection_steps
+                where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                  and canonical_completed_collection_steps.step_key = 'ga4'
+              )
+            )
+        )
+        and exists (
+          select 1
+          from ${analysisRefreshSteps}
+          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+            and ${analysisRefreshSteps.ordinal} = 4
+            and ${analysisRefreshSteps.step_key} = 'dataforseo'
+            and not ${analysisRefreshSteps.required}
+            and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+            and (
+              ${analysisRefreshSteps.state} <> 'completed'
+              or exists (
+                select 1
+                from canonical_completed_collection_steps
+                where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                  and canonical_completed_collection_steps.step_key = 'dataforseo'
+              )
+            )
+        )
+        and exists (
+          select 1
+          from ${analysisRefreshSteps}
+          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+            and ${analysisRefreshSteps.ordinal} = 5
+            and ${analysisRefreshSteps.step_key} = 'growth_audit'
+            and ${analysisRefreshSteps.required}
+            and ${analysisRefreshSteps.state} = 'completed'
+        )
+    )
+    select
+      ${diagnosticRuns.id} as id,
+      ${diagnosticRuns.workspace_id} as workspace_id,
+      ${diagnosticRuns.project_id} as project_id,
+      ${diagnosticRuns.site_id} as site_id,
+      ${diagnosticRuns.icp_profile_id} as icp_profile_id,
+      ${diagnosticRuns.icp_profile_version} as icp_profile_version,
+      ${diagnosticRuns.rule_set_version} as rule_set_version,
+      ${diagnosticRuns.prompt_set_version} as prompt_set_version,
+      ${diagnosticRuns.output_locale} as output_locale,
+      ${diagnosticRuns.input_manifest} as input_manifest,
+      ${diagnosticRuns.input_hash} as input_hash,
+      ${diagnosticRuns.coverage} as coverage,
+      ${diagnosticRuns.created_at} as created_at,
+      ${asyncRuns.status} as run_status,
+      ${asyncRuns.completed_at} as run_completed_at
+    from ${diagnosticRuns}
+    inner join ${asyncRuns}
+      on ${asyncRuns.id} = ${diagnosticRuns.id}
+     and ${asyncRuns.workspace_id} = ${scope.workspaceId}
+     and ${asyncRuns.project_id} = ${scope.projectId}
+     and ${asyncRuns.kind} = 'diagnostic'
+     and ${asyncRuns.status} in ('completed', 'partial')
+     and ${asyncRuns.result_type} = 'diagnostic_run'
+     and ${asyncRuns.result_id} = ${diagnosticRuns.id}
+     and ${asyncRuns.completed_at} is not null
+    inner join ${analysisRefreshSteps}
+      on ${analysisRefreshSteps.child_async_run_id} = ${diagnosticRuns.id}
+     and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+     and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+     and ${analysisRefreshSteps.step_key} = 'growth_audit'
+     and ${analysisRefreshSteps.state} = 'completed'
+    inner join ${analysisRefreshRuns}
+      on ${analysisRefreshRuns.id} = ${analysisRefreshSteps.analysis_refresh_run_id}
+     and ${analysisRefreshRuns.workspace_id} = ${scope.workspaceId}
+     and ${analysisRefreshRuns.project_id} = ${scope.projectId}
+     and ${analysisRefreshRuns.site_id} = ${diagnosticRuns.site_id}
+     and ${analysisRefreshRuns.icp_profile_id} = ${diagnosticRuns.icp_profile_id}
+    inner join publishable_analysis_refreshes
+      on publishable_analysis_refreshes.id = ${analysisRefreshRuns.id}
+    inner join ${auditRuns}
+      on ${auditRuns.diagnostic_run_id} = ${diagnosticRuns.id}
+     and ${auditRuns.workspace_id} = ${scope.workspaceId}
+     and ${auditRuns.project_id} = ${scope.projectId}
+     and ${auditRuns.projection_version} = ${GROWTH_AUDIT_PROJECTION_VERSION}
+     and ${auditRuns.scope_kind} = 'site'
+     and ${auditRuns.scope_key} = ${diagnosticRuns.site_id}::text
+    where ${diagnosticRuns.workspace_id} = ${scope.workspaceId}
+      and ${diagnosticRuns.project_id} = ${scope.projectId}
+      ${
+        diagnosticRunId === null
+          ? sql``
+          : sql`and ${diagnosticRuns.id} = ${diagnosticRunId}::uuid`
+      }
+  `;
+}
+
+/**
  * Bounded, project-scoped read model for the URL-first Growth Map. Every URL
  * identity is selected from the current DiagnosticRun's immutable manifest;
  * Finding membership comes only from the per-run finding_targets ledger.
@@ -297,38 +492,24 @@ export class GrowthMapReadRepository extends Repository {
     scope: ProjectScope,
   ): Promise<GrowthMapReadableRunRow | null> {
     const result = await this.exec.execute<RawReadableRunRow>(sql`
-      select
-        ${diagnosticRuns.id} as id,
-        ${diagnosticRuns.workspace_id} as workspace_id,
-        ${diagnosticRuns.project_id} as project_id,
-        ${diagnosticRuns.site_id} as site_id,
-        ${diagnosticRuns.icp_profile_id} as icp_profile_id,
-        ${diagnosticRuns.icp_profile_version} as icp_profile_version,
-        ${diagnosticRuns.rule_set_version} as rule_set_version,
-        ${diagnosticRuns.prompt_set_version} as prompt_set_version,
-        ${diagnosticRuns.output_locale} as output_locale,
-        ${diagnosticRuns.input_manifest} as input_manifest,
-        ${diagnosticRuns.input_hash} as input_hash,
-        ${diagnosticRuns.coverage} as coverage,
-        ${diagnosticRuns.created_at} as created_at,
-        ${asyncRuns.status} as run_status,
-        ${asyncRuns.completed_at} as run_completed_at
-      from ${diagnosticRuns}
-      inner join ${asyncRuns}
-        on ${asyncRuns.id} = ${diagnosticRuns.id}
-       and ${asyncRuns.workspace_id} = ${scope.workspaceId}
-       and ${asyncRuns.project_id} = ${scope.projectId}
-      where ${diagnosticRuns.workspace_id} = ${scope.workspaceId}
-        and ${diagnosticRuns.project_id} = ${scope.projectId}
-        and ${asyncRuns.kind} = 'diagnostic'
-        and ${asyncRuns.status} in ('completed', 'partial')
-        and not exists (
-          select 1
-          from ${auditRuns}
-          where ${auditRuns.diagnostic_run_id} = ${diagnosticRuns.id}
-            and ${auditRuns.projection_version} = ${GROWTH_AUDIT_RECHECK_PROJECTION_VERSION}
-        )
-      order by ${diagnosticRuns.created_at} desc, ${diagnosticRuns.id} desc
+      ${publishedGrowthAuditRuns(scope, null)}
+      order by
+        publishable_analysis_refreshes.completed_at desc,
+        publishable_analysis_refreshes.id desc,
+        ${diagnosticRuns.id} desc
+      limit 1
+    `);
+    const row = result.rows[0];
+    return row ? normalizeReadableRun(row) : null;
+  }
+
+  async findReadableRunById(
+    scope: ProjectScope,
+    diagnosticRunId: string,
+  ): Promise<GrowthMapReadableRunRow | null> {
+    assertId("diagnosticRunId", diagnosticRunId);
+    const result = await this.exec.execute<RawReadableRunRow>(sql`
+      ${publishedGrowthAuditRuns(scope, diagnosticRunId)}
       limit 1
     `);
     const row = result.rows[0];

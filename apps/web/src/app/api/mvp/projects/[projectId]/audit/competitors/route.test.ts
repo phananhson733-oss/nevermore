@@ -19,6 +19,7 @@ vi.mock("@/lib/services/growth-map-competitors", () => ({
 const { GET } = await import("./route");
 
 const projectId = "00000000-0000-4000-8000-000000000003";
+const diagnosticRunId = "00000000-0000-7000-8000-000000000005";
 const cursor = Buffer.from(
   "2026-07-22T00:00:00.000Z 00000000-0000-4000-8000-000000000004",
 ).toString("base64url");
@@ -58,7 +59,7 @@ describe("GET project Growth Map Competitor Library", () => {
     expect(mocks.listProjectAuditCompetitors).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 25, cursor },
+      { limit: 25, cursor, diagnosticRunId: null },
     );
     await expect(response.json()).resolves.toEqual({
       data: expect.objectContaining({ projectId, data: [] }),
@@ -72,7 +73,20 @@ describe("GET project Growth Map Competitor Library", () => {
     expect(mocks.listProjectAuditCompetitors).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 50, cursor: null },
+      { limit: 50, cursor: null, diagnosticRunId: null },
+    );
+  });
+
+  it("accepts a lowercase UUIDv7 pin for one exact published list generation", async () => {
+    const response = await invoke(
+      `?limit=25&diagnosticRunId=${diagnosticRunId}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.listProjectAuditCompetitors).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      { limit: 25, cursor: null, diagnosticRunId },
     );
   });
 
@@ -80,6 +94,11 @@ describe("GET project Growth Map Competitor Library", () => {
     ["limit", "0"],
     ["limit", "101"],
     ["cursor", "customer+private+cursor"],
+    ["diagnosticRunId", "customer-private-run"],
+    [
+      "diagnosticRunId",
+      "00000000-0000-9000-8000-000000000005",
+    ],
   ])("rejects invalid %s without calling the service", async (name, value) => {
     const response = await invoke(`?${name}=${encodeURIComponent(value)}`);
     const body = await response.json();
@@ -94,9 +113,33 @@ describe("GET project Growth Map Competitor Library", () => {
     expect(mocks.listProjectAuditCompetitors).not.toHaveBeenCalled();
   });
 
+  it("rejects an uppercase UUIDv7 diagnostic pin as non-canonical", async () => {
+    const uppercaseRunId =
+      "00000000-0000-7000-8000-00000000000A";
+    const response = await invoke(
+      `?diagnosticRunId=${uppercaseRunId}`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(body).toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      errors: [
+        {
+          pointer: "/diagnosticRunId",
+          code: "invalid_query_value",
+        },
+      ],
+    });
+    expect(JSON.stringify(body)).not.toContain(uppercaseRunId);
+    expect(mocks.listProjectAuditCompetitors).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["limit", "25", "50"],
     ["cursor", cursor, cursor],
+    ["diagnosticRunId", diagnosticRunId, diagnosticRunId],
   ])("rejects duplicate %s rather than choosing one value", async (name, first, second) => {
     const response = await invoke(
       `?${name}=${encodeURIComponent(first)}&${name}=${encodeURIComponent(second)}`,
@@ -107,6 +150,23 @@ describe("GET project Growth Map Competitor Library", () => {
       code: "VALIDATION_ERROR",
       status: 422,
       errors: [{ pointer: `/${name}`, code: "duplicate_query_parameter" }],
+    });
+    expect(mocks.listProjectAuditCompetitors).not.toHaveBeenCalled();
+  });
+
+  it("rejects every undeclared list query parameter", async () => {
+    const response = await invoke("?view=review");
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "VALIDATION_ERROR",
+      status: 422,
+      errors: [
+        {
+          pointer: "/view",
+          code: "unknown_query_parameter",
+        },
+      ],
     });
     expect(mocks.listProjectAuditCompetitors).not.toHaveBeenCalled();
   });
