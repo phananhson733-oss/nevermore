@@ -25,6 +25,13 @@ localeExclusive: false
 ## The article
 ```
 
+The initial legacy migration retains its already-published sanitized HTML bodies
+inside `.md` files to avoid changing copy, tables, or links during the cutover.
+That HTML goes through the same strict allow-list as rendered Markdown; it is a
+lossless migration boundary, not a format for new authoring. New and revised
+articles should use GFM Markdown. The generated source and per-route checksums
+are recorded in `docs/marketing-blog-migration.md`.
+
 Required keys are `title`, `excerpt`, `author`, `category`, `status`,
 `publishedAt`, `heroImage`, and `heroImageAlt`. `pillar`, `updatedAt`, and
 `localeExclusive` are optional. Valid categories and pillars are validated by

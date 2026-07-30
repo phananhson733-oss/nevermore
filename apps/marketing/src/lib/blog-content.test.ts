@@ -86,10 +86,29 @@ describe("repository-backed blog content", () => {
     expect(english?.title).not.toBe(chinese?.title);
   });
 
-  it("sorts all local published posts by publish date and excludes no locale", async () => {
+  it("loads the complete migrated legacy URL set alongside authored Markdown", async () => {
     const posts = await getLocalBlogPosts();
 
-    expect(posts.map((post) => post.locale).sort()).toEqual(["en", "zh"]);
+    const urls = new Set(posts.map((post) => `/${post.locale}/blog/${post.slug}`));
+    const migratedLegacyUrls = [
+      "/en/blog/astrologywiki-case-study",
+      "/en/blog/growth-experiment-playbook",
+      "/en/blog/marketing-attribution-models",
+      "/en/blog/programmatic-seo-at-scale",
+      "/en/blog/social-first-week-1",
+      "/en/blog/what-is-growth-automation",
+      "/en/blog/white-label-keyword-research",
+      "/zh/blog/astrologywiki-case-study",
+      "/zh/blog/growth-experiment-playbook",
+      "/zh/blog/marketing-attribution-models",
+      "/zh/blog/programmatic-seo-at-scale",
+      "/zh/blog/social-first-week-1",
+      "/zh/blog/what-is-growth-automation",
+    ];
+
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(8);
+    expect(posts.filter((post) => post.locale === "zh")).toHaveLength(7);
+    expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(posts[0]?.slug).toBe("evidence-first-growth-experiments");
   });
