@@ -15,7 +15,7 @@ const auditResponse = {
   },
 };
 
-test("runs the real API flow and renders the returned bounded crawl report", async ({ page }) => {
+test("submits the audit request and renders a bounded API response", async ({ page }) => {
   let requestedBody: unknown;
   await page.route("**/api/tools/internal-link-audit", async (route) => {
     requestedBody = route.request().postDataJSON();
