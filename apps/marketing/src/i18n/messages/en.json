@@ -558,287 +558,277 @@
       "description": "No account required. Map internal links, expose orphan and deep pages, and turn structural gaps into prioritized, review-ready fixes."
     },
     "seoAudit": {
-      "title": "Website Health Map",
-      "description": "No account required. Scan one public page, robots.txt, and sitemap.xml for measurable SEO issues, evidence, and prioritized fixes.",
-      "metaTitle": "Free SEO Audit & Website Health Map",
-      "metaDescription": "Run a fast, evidence-led single-page SEO check covering crawlability, technical signals, on-page basics, extractability, and static structured data.",
-      "pageTitle": "See the SEO signals search engines can actually read",
-      "pageSubtitle": "A fast website health map built from the submitted page, robots.txt, and sitemap.xml. Every result shows its evidence, weighted coverage, and limits.",
-      "eyebrow": "Free SEO diagnostic",
-      "heroCta": "Run free check",
-      "heroTrust": "No login or site ownership check. We read one public page and its two standard support files.",
+      "title": "Free site-wide SEO audit",
+      "description": "Crawl up to 25 same-origin pages and inspect response, indexability, metadata, structure, link, and JSON-LD facts.",
+      "metaTitle": "Free Site-wide SEO Audit (Up to 25 Pages) | GenGrowth",
+      "metaDescription": "Run a free, anonymous SEO audit across up to 25 same-origin pages. Inspect crawl coverage, page responses, index directives, metadata, structure, links, and JSON-LD evidence.",
+      "pageTitle": "Free site-wide SEO audit",
+      "pageSubtitle": "Enter a public URL to inspect up to 25 same-origin pages. The result contains crawl coverage, neutral audit records, measured values, evidence, and the inspected-page inventory.",
+      "eyebrow": "Free bounded website audit",
+      "heroCta": "Start the audit",
+      "heroTrust": "No login · No GSC · No saved scan · Static public HTML only",
       "formLabel": "Website URL",
-      "placeholder": "example.com",
-      "submit": "Run free check",
-      "running": "Scanning submitted-page signals...",
-      "scopeShort": "Checks one public page plus robots.txt and sitemap.xml. No login, Search Console data, persistence, or full-site crawl.",
+      "placeholder": "https://example.com",
+      "running": "Auditing the site…",
+      "submit": "Run free audit",
+      "scopeShort": "Free scope: up to 25 same-origin URLs, depth 4, and 60 total requests. The crawler respects robots.txt and reads static public responses only.",
       "errors": {
-        "invalid_url": "Enter a public website URL.",
-        "invalid_request": "Send one valid website URL and try again.",
-        "payload_too_large": "The request is larger than this tool accepts.",
-        "unsupported_media_type": "This request format is not supported.",
-        "scan_failed": "We could not scan this site right now. Check that it is publicly reachable and try again.",
-        "scan_timeout": "The site did not respond within this preview's time limit.",
-        "scan_in_progress": "A scan from this network is already running. Wait a moment and try again.",
-        "rate_limited": "Too many scans from this network. Try again shortly.",
-        "unknown": "Something went wrong. Try again."
+        "invalid_url": "Enter a valid public HTTP or HTTPS URL. Private and local network destinations are blocked.",
+        "invalid_request": "The request must contain exactly one URL.",
+        "payload_too_large": "The submitted request is too large.",
+        "unsupported_media_type": "Send the request as JSON.",
+        "scan_failed": "The public site could not be audited from this environment.",
+        "scan_timeout": "The free crawl reached its execution-time boundary before a report could be returned.",
+        "scan_in_progress": "A scan is already running for this connection. Wait for it to finish before starting another.",
+        "rate_limited": "The free scan limit has been reached. Try again after the indicated wait.",
+        "unknown": "The audit could not be completed."
       },
-      "resultsTitle": "Single-page static signal report",
-      "summaryLabel": "Scope-first result",
-      "fixFirstTitle": "What to fix first",
-      "summaryWithPriority": "Start with {priority}. This run measured {percent}% of the weighted evidence.",
-      "summaryWithoutPriority": "No measured fail or warning signals surfaced in this preview. This run measured {percent}% of the weighted evidence.",
-      "targetLabel": "Scanned target",
-      "scopeBadge": "1 public page · no GSC · no crawl",
-      "scoreLabel": "Single-page static signal score",
-      "coverage": "Measurement coverage {percent}% · {measured} / {total} checks · site coverage: 1 URL",
-      "scoreDisclaimer": "This is not a website health, ranking, or full-site score.",
-      "stageObservationTitle": "01 Observation",
-      "stageObservationBody": "The public page response and two standard support files were read within fixed safety limits.",
-      "stageDiagnosisTitle": "02 Diagnosis",
-      "stageDiagnosisBody": "{attention} measured signals need attention; unverified signals stay outside the diagnosis.",
-      "stageRecommendationTitle": "03 Recommendation",
-      "stageRecommendationBody": "The repair sequence below shows the first {priorities} actionable items.",
-      "stageArtifactTitle": "04 Artifact",
-      "stageArtifactBody": "Use the evidence map as the reproducible record for this single URL.",
-      "priorities": "Top priorities",
-      "priorityListTitle": "Repair sequence",
-      "priorityListBody": "Ordered by the audit's existing severity and weight. This public preview shows the first three.",
-      "noPriorities": "No measured fail or warning signals surfaced. Review coverage and unverified evidence before treating the page as healthy.",
-      "observedEvidenceLabel": "Observed evidence",
-      "diagnosisLabel": "Diagnosis",
-      "diagnosisText": "The observed evidence produced a {status} result for this signal.",
-      "recommendationLabel": "What to do",
-      "verificationLabel": "How to verify",
-      "verificationText": "Publish the change, rerun this URL, and compare the same observed evidence.",
-      "severityLabel": "{severity} severity",
-      "severities": {
-        "critical": "Critical",
-        "high": "High",
-        "medium": "Medium",
-        "low": "Low"
+      "resultsEyebrow": "Bounded audit record",
+      "scannedAt": "Captured {value}",
+      "availability": {
+        "available": "Crawl completed",
+        "partial": "Partial coverage",
+        "unavailable": "Unavailable"
       },
-      "signalMapEyebrow": "Where signals concentrate",
-      "signalMapTitle": "Single-page signal map",
-      "signalMapBody": "Compare score, evidence coverage, and status distribution across five modules. Expand a row for the observed evidence and next step.",
-      "moduleScoreLabel": "Measured score",
-      "moduleCoverage": "{percent}% coverage",
-      "checksMeasuredShort": "{measured} / {total} checks measured",
-      "noChecks": "No checks in this module",
-      "notAvailable": "Not available",
-      "modules": {
-        "crawlability": "Crawlability & indexation",
-        "technical": "Technical foundation",
-        "on_page": "On-page signals",
-        "content": "Content & extractability",
-        "structured_data": "Static structured data"
+      "coveragePages": "Pages inspected / free cap",
+      "coverageLinks": "Internal links observed",
+      "coverageSitemap": "Sitemap URLs observed",
+      "coverageLimits": "Fixed crawl limits",
+      "coverageLimitsValue": "Depth {depth} · {requests} requests",
+      "partialCoverage": "The crawler stopped at {reason}. Every record below describes only the pages that were inspected.",
+      "boundedCoverage": "The crawl completed within the fixed free limits. Static HTML, JavaScript-rendered output, and URLs outside the observed frontier are separate evidence boundaries.",
+      "crawlCounters": "skipped {skipped} · blocked {blocked} · robots-disallowed {disallowed} · errors {errors}",
+      "stopReasons": {
+        "max_urls": "the 25-URL limit",
+        "max_depth": "the depth limit",
+        "max_duration": "the time limit",
+        "max_total_bytes": "the decoded-byte limit",
+        "max_requests": "the request limit",
+        "aborted": "cancellation"
       },
-      "statuses": {
-        "pass": "Pass",
-        "warning": "Watch",
-        "fail": "Fix",
-        "unverified": "Not verified"
+      "recordsEyebrow": "Observed conditions",
+      "recordsTitle": "Audit records",
+      "recordsBody": "Each record names one measured condition, its tested and observed counts, the supporting page-level values, and any evidence limitation. Records are not scores, priorities, or instructions.",
+      "recordStates": {
+        "observed": "Observed",
+        "not_observed": "Not observed",
+        "unverified": "Unverified"
       },
-      "checks": {
-        "page_status": {
-          "title": "Submitted-page response",
-          "recommendation": "Restore a successful 200 response for the submitted page before optimizing other signals."
+      "recordUnits": {
+        "pages": "pages",
+        "link_targets": "collected targets",
+        "site_resource": "site resource"
+      },
+      "recordCount": "{affected} observed / {tested} tested {unit}",
+      "siteLevelObservation": "Site-level observation",
+      "noVerifiableObservation": "The crawl did not retain enough evidence to verify this record.",
+      "noMatchingObservation": "No matching observation was present in the inspected set.",
+      "limitationLabel": "Evidence boundary",
+      "limitations": {
+        "resource_not_observed_does_not_prove_absence": "A resource that was not observed may be absent, unreachable, blocked, or outside the successfully fetched resource set.",
+        "static_response_directives_only": "Indexability here comes from the collected static HTTP/HTML directives. Search-engine index coverage is not measured.",
+        "normalised_text_match_within_inspected_pages": "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
+        "bounded_static_html_crawl_inlinks_only": "Inbound counts include links in collected static HTML only. This record is not a definitive orphan-page claim.",
+        "uncollected_link_targets_not_classified": "Only collected link targets with an observed 4xx/5xx response are included. Uncollected targets are not called broken.",
+        "static_html_json_ld_only": "JSON-LD observations come from collected static HTML. Client-rendered blocks are not measured."
+      },
+      "records": {
+        "robots_resource": {
+          "title": "robots.txt resource",
+          "description": "Whether the crawler successfully fetched and parsed a robots.txt resource."
         },
-        "indexability": {
-          "title": "Indexability directive",
-          "recommendation": "Remove unintended noindex directives from pages that should appear in search."
+        "sitemap_resource": {
+          "title": "Sitemap resource",
+          "description": "Whether the crawler successfully fetched a sitemap and how many sitemap URLs it retained."
         },
-        "robots_access": {
-          "title": "Googlebot robots access",
-          "recommendation": "Keep robots.txt readable and remove unintended rules that block Googlebot from the submitted path."
+        "non_2xx_final_status": {
+          "title": "Non-2xx final response",
+          "description": "Collected page journeys whose final observed HTTP status was outside 200–299."
         },
-        "sitemap": {
-          "title": "XML sitemap",
-          "recommendation": "Publish a valid XML sitemap at /sitemap.xml containing canonical, indexable URLs."
+        "redirect_chain": {
+          "title": "Redirect chain",
+          "description": "Collected page journeys that followed one or more HTTP redirect hops."
         },
-        "https": {
-          "title": "HTTPS delivery",
-          "recommendation": "Serve the canonical site over HTTPS and redirect HTTP traffic to it."
+        "http_url": {
+          "title": "Non-HTTPS final URL",
+          "description": "Collected page journeys whose final observed URL used a protocol other than HTTPS."
         },
-        "redirects": {
-          "title": "Redirect path",
-          "recommendation": "Link directly to the final URL and remove avoidable redirect hops."
+        "noindex_directive": {
+          "title": "Noindex directive",
+          "description": "Inspected HTML pages whose collected meta or X-Robots-Tag directives contained noindex or none."
         },
-        "html_content_type": {
-          "title": "HTML response type",
-          "recommendation": "Return the page as HTML so search crawlers can parse its document-level signals."
+        "canonical_missing": {
+          "title": "Canonical link not present",
+          "description": "Inspected 2xx HTML pages with no canonical link in the collected static document."
         },
-        "canonical": {
-          "title": "Canonical alignment",
-          "recommendation": "Declare one self-referencing canonical URL using the final HTTPS host and page path."
+        "canonical_differs": {
+          "title": "Canonical target differs",
+          "description": "Inspected pages whose canonical aggregation target differed from the page subject."
         },
-        "html_lang": {
-          "title": "HTML language",
-          "recommendation": "Set a valid lang attribute on the html element for the page language."
+        "title_missing": {
+          "title": "Title not present",
+          "description": "Inspected 2xx HTML pages with no non-empty title in the collected static document."
         },
-        "viewport": {
-          "title": "Mobile viewport",
-          "recommendation": "Add a viewport meta tag with width=device-width and initial-scale=1 before testing rendered mobile layouts."
+        "title_duplicate": {
+          "title": "Repeated title text",
+          "description": "Inspected pages that shared the same normalised, non-empty title text."
         },
-        "meta_refresh": {
-          "title": "HTML refresh redirect",
-          "recommendation": "Replace HTML refresh redirects with an appropriate server-side redirect or a direct canonical link."
+        "meta_description_missing": {
+          "title": "Meta description not present",
+          "description": "Inspected 2xx HTML pages with no non-empty meta description in the collected static document."
         },
-        "security_headers": {
-          "title": "Security header presence",
-          "recommendation": "Review the missing transport and browser-protection headers; this preview checks only their presence, not policy quality."
+        "meta_description_duplicate": {
+          "title": "Repeated meta-description text",
+          "description": "Inspected pages that shared the same normalised, non-empty meta-description text."
         },
-        "title": {
-          "title": "Title tag",
-          "recommendation": "Write one descriptive, page-specific title of roughly 30 to 60 characters."
+        "h1_missing": {
+          "title": "H1 not present",
+          "description": "Inspected 2xx HTML pages with no H1 element in the collected static document."
         },
-        "meta_description": {
-          "title": "Meta description",
-          "recommendation": "Add a specific description that explains the page value in about 70 to 160 characters."
+        "multiple_h1": {
+          "title": "Multiple H1 elements",
+          "description": "Inspected 2xx HTML pages with more than one H1 element in the collected static document."
         },
-        "h1": {
-          "title": "Primary heading",
-          "recommendation": "Use one clear H1 that states the page's primary topic."
+        "sitemap_page_without_observed_inlink": {
+          "title": "Sitemap page without an observed HTML inlink",
+          "description": "Collected sitemap-member pages with zero inbound links in the bounded static-HTML graph."
         },
-        "heading_order": {
-          "title": "Heading hierarchy",
-          "recommendation": "Keep heading levels sequential so crawlers and assistive technology can follow the structure."
+        "internal_target_http_error": {
+          "title": "Collected internal target returned 4xx/5xx",
+          "description": "Internal link targets that were collected and returned an observed client or server error."
         },
-        "text_depth": {
-          "title": "Static text extractability",
-          "recommendation": "Expose enough useful main content in crawlable HTML to explain the product, audience, and outcome."
-        },
-        "social_meta": {
-          "title": "Social preview metadata",
-          "recommendation": "Add complete Open Graph and Twitter Card metadata for reliable shared previews."
-        },
-        "json_ld": {
-          "title": "Static JSON-LD evidence",
-          "recommendation": "Validate the rendered page with a rich-results tool; add accurate schema only if it is truly absent."
+        "json_ld_parse_error": {
+          "title": "JSON-LD parse error",
+          "description": "Inspected static HTML pages containing JSON-LD blocks that could not be parsed as JSON."
         }
       },
       "evidence": {
-        "status_code": "HTTP status",
-        "robots_noindex": "Noindex detected",
-        "body_complete": "Complete response read",
-        "decode_reliable": "Reliable response decoding",
-        "resource_state": "Resource state",
-        "page_allowed": "Googlebot path allowed",
-        "final_protocol": "Final protocol",
+        "fetched": "Fetched",
+        "groups_observed": "Robots groups observed",
+        "sitemap_references": "Sitemap references",
+        "urls_observed": "URLs observed",
+        "initial_status": "Initial status",
+        "final_status": "Final status",
         "redirect_hops": "Redirect hops",
-        "content_type": "Content type",
-        "canonical_url": "Canonical URL",
-        "html_lang": "HTML language",
-        "title_length": "Title length",
-        "description_length": "Description length",
+        "final_url": "Final URL",
+        "final_protocol": "Final protocol",
+        "robots_directive": "Static robots directive",
+        "canonical_target": "Canonical target",
+        "page_subject": "Page subject",
+        "title": "Title text",
+        "matching_pages": "Matching pages",
+        "meta_description": "Meta-description text",
         "h1_count": "H1 count",
-        "heading_outline": "Heading outline",
-        "static_word_count": "Static word count",
-        "viewport_configured": "Viewport configured",
-        "meta_refresh_present": "HTML refresh present",
-        "security_headers_present": "Security headers present",
-        "social_tags_present": "Social tags present",
-        "json_ld_blocks": "JSON-LD blocks",
-        "malformed_blocks": "Malformed blocks"
+        "sitemap_member": "Sitemap member",
+        "observed_inbound_links": "Observed inbound links",
+        "observed_source_pages": "Observed source pages",
+        "malformed_blocks": "Malformed JSON-LD blocks",
+        "types_observed": "JSON-LD types observed"
       },
-      "sources": {
-        "submitted_page_static": "Submitted-page raw response",
-        "robots_txt": "Standard robots.txt path",
-        "sitemap_xml": "Standard sitemap.xml path"
+      "notAvailable": "Not available",
+      "booleanTrue": "Yes",
+      "booleanFalse": "No",
+      "pagesEyebrow": "Collected page facts",
+      "pagesTitle": "Inspected-page inventory",
+      "pagesBody": "{count} page journeys were retained by this bounded crawl. Values below are direct projections from those collected responses.",
+      "pageColumns": {
+        "url": "URL",
+        "response": "HTTP",
+        "depth": "Depth",
+        "indexable": "Static robots directive",
+        "title": "Title",
+        "description": "Meta description",
+        "h1": "H1",
+        "links": "In / out links",
+        "sitemap": "Sitemap",
+        "jsonLd": "JSON-LD"
       },
-      "limitationLabel": "Evidence limit",
-      "limitations": {
-        "standard_path_only": "Only /sitemap.xml was checked. Another sitemap may be declared elsewhere.",
-        "static_html_cannot_prove_rendered_absence": "The raw response cannot prove that JavaScript-rendered structured data is absent.",
-        "projection_limit_reached": "The bounded JSON-LD projection limit was reached, so later blocks were not evaluated.",
-        "response_body_truncated": "The response exceeded the bounded read, so absence and complete counts were not inferred.",
-        "response_decode_unreliable": "The response could not be decoded as declared or valid UTF-8, so document checks were not inferred.",
-        "html_body_unavailable": "The response was not identifiable as an HTML document.",
-        "resource_fetch_unavailable": "The standard resource could not be measured in this run.",
-        "resource_decode_unreliable": "The standard resource could not be decoded reliably in this run.",
-        "https_required_for_hsts": "Security-header presence is not separately assessed on HTTP because HSTS only applies after HTTPS is enabled."
+      "robotsDirectiveStates": {
+        "noindex_observed": "Noindex observed",
+        "noindex_not_observed": "No noindex observed"
       },
-      "methodEyebrow": "Evidence before advice",
-      "howTitle": "How this fast check works",
-      "howIntro": "One submitted public URL becomes a bounded repair brief. The check names what it measured and what it could not safely infer.",
-      "step1Title": "Validate the public target",
-      "step1Text": "The URL and every redirect are checked against private and reserved network ranges.",
-      "step2Title": "Measure bounded sources",
-      "step2Text": "We read the submitted page, robots.txt, and sitemap.xml with strict time and response-size limits.",
-      "step3Title": "Score only observed checks",
-      "step3Text": "Unverified checks stay outside the score and every actionable result keeps its observed evidence.",
-      "signalsEyebrow": "Read the result with its limits",
-      "signalsTitle": "What each part of the health map tells you",
-      "signalsBody": "The map separates measurable signals from assumptions, so a missing or incomplete response does not turn into a confident-looking recommendation.",
-      "signal1Title": "Crawlability & indexation",
-      "signal1Body": "Response status, noindex directives, Googlebot access to the submitted path, and the standard sitemap path.",
-      "signal2Title": "Technical foundations",
-      "signal2Body": "The final protocol, redirect chain, content type, canonical URL, language, viewport, HTML refresh, and selected security-header presence.",
-      "signal3Title": "On-page signals",
-      "signal3Body": "The static title, meta description, H1 count, and heading hierarchy seen in the fetched response.",
-      "signal4Title": "Content & extractability",
-      "signal4Body": "Static text depth and social metadata—not a judgment of content quality, search intent, or site structure.",
-      "signal5Title": "Static structured data",
-      "signal5Body": "Closed JSON-LD blocks visible in the raw response. JavaScript-rendered markup remains explicitly unverified.",
-      "useCasesEyebrow": "When a fast check is useful",
-      "useCasesTitle": "Use this as a first, evidence-led pass",
-      "useCasesBody": "It is built for a concrete URL and a concrete next action—not for claiming that a whole domain is healthy.",
-      "useCase1Title": "Before publishing an important page",
-      "useCase1Body": "Confirm the public response, canonical basics, and static on-page signals before you ask search engines to revisit it.",
-      "useCase2Title": "When a page looks unexpectedly hard to find",
-      "useCase2Body": "Check the measurable crawl and indexation signals first, then use deeper tools only where the evidence points.",
-      "useCase3Title": "Before commissioning a full-site audit",
-      "useCase3Body": "Get a bounded baseline for one URL; use the result to decide whether multi-page crawling or rendered evidence is needed.",
-      "methodTransparencyEyebrow": "Method transparency",
-      "methodTransparencyTitle": "How the health map reaches a finding",
-      "method1Title": "Measure the same bounded sources every time",
-      "method1Body": "The submitted page, its final same-origin robots.txt, and the standard sitemap.xml are the only V0 inputs. The tool does not silently add a crawl.",
-      "method2Title": "Keep evidence separate from interpretation",
-      "method2Body": "Every status carries stable evidence labels and sources. A recommendation can be reviewed against what the scanner actually observed.",
-      "method3Title": "Exclude uncertainty from the score",
-      "method3Body": "A truncated, non-HTML, unavailable, or unreliably decoded response becomes unverified where appropriate, rather than creating a false pass or fail.",
-      "limitsEyebrow": "Honest limits",
-      "limitsTitle": "What this preview will not tell you",
-      "limit1Title": "Whether Google has indexed the page",
-      "limit1Body": "The audit reads technical signals that can affect indexability. It cannot observe Google’s index, crawl scheduling, or Search Console data.",
-      "limit2Title": "What JavaScript adds after the raw response",
-      "limit2Body": "Static markup can confirm what is present, but it cannot prove that rendered metadata, links, or JSON-LD are absent.",
-      "limit3Title": "Whether the rest of the site is healthy",
-      "limit3Body": "A one-page result is a repair starting point. It is not a full crawl, performance assessment, backlink analysis, or content-quality verdict.",
-      "comparison1Title": "When a single-page check is the right first step",
-      "comparison1Body": "Use it when you need a fast, reproducible answer about a page you are publishing, repairing, or investigating before spending time on a deeper audit.",
-      "comparison2Title": "When to move to a full Website Audit",
-      "comparison2Body": "Use the full product when the evidence points beyond one URL: multi-page relationships, rendered output, performance evidence, history, and a managed repair queue.",
-      "faqEyebrow": "FAQ",
-      "ctaEyebrow": "Next step",
-      "ctaTitle": "Need the whole site, not one page?",
-      "ctaBody": "GenGrowth's full Website Audit adds multi-page crawling, rendered evidence, performance data, history, and an execution-ready fix queue.",
-      "ctaButton": "Open GenGrowth",
+      "jsonLdErrors": "{count} parse error(s)",
+      "methodEyebrow": "Collection method",
+      "howTitle": "How the free audit runs",
+      "howIntro": "The execution path is fixed in code so an anonymous request cannot turn the public tool into an unbounded crawl job.",
+      "step1Title": "Normalise one public URL",
+      "step1Text": "The submitted HTTP or HTTPS URL is normalised to its public origin; credentials, private networks, and unsafe destinations are rejected.",
+      "step2Title": "Run the fixed same-origin crawl",
+      "step2Text": "The crawler reads robots.txt and sitemaps, follows same-origin static HTML links, and enforces page, depth, request, time, redirect, and byte limits.",
+      "step3Title": "Aggregate audit records",
+      "step3Text": "Collected page facts are grouped into neutral records and an inspectable page inventory. No score, priority, or remediation text is generated.",
+      "signalsEyebrow": "Measured surface",
+      "signalsTitle": "What the audit records",
+      "signalsBody": "The free report is limited to facts available from the bounded public crawl.",
+      "signal1Title": "Crawl resources and responses",
+      "signal1Body": "robots.txt and sitemap observations, HTTP statuses, redirect hops, protocols, content types, and explicit stop reasons.",
+      "signal2Title": "Index directives and canonicals",
+      "signal2Body": "Static meta/X-Robots directives and canonical targets from collected 2xx HTML responses.",
+      "signal3Title": "Page metadata",
+      "signal3Body": "Observed title and meta-description presence plus repeated normalised text across inspected pages.",
+      "signal4Title": "HTML structure and link graph",
+      "signal4Body": "H1 counts, word counts, crawl depth, inbound/outbound link counts, sitemap membership, and collected target responses.",
+      "signal5Title": "Static JSON-LD",
+      "signal5Body": "Declared JSON-LD types and parse errors found in collected static HTML.",
+      "methodTransparencyEyebrow": "Evidence contract",
+      "methodTransparencyTitle": "How every record remains traceable",
+      "method1Title": "A measured condition",
+      "method1Body": "Each record has a stable ID, category, neutral state, tested count, and observed count.",
+      "method2Title": "Page-level evidence",
+      "method2Body": "Expandable observations retain the inspected URL and the exact projected values used by the record.",
+      "method3Title": "An explicit evidence boundary",
+      "method3Body": "Partial coverage, static-only collection, uncollected targets, and resource-fetch uncertainty stay visible in the report.",
+      "limitsEyebrow": "Not measured",
+      "limitsTitle": "Outside this free audit",
+      "limit1Title": "Search Console and index coverage",
+      "limit1Body": "The tool does not connect to GSC and does not claim that a page is indexed, ranking, or receiving traffic.",
+      "limit2Title": "Rendered and performance data",
+      "limit2Body": "The tool does not execute page JavaScript and does not produce Lighthouse, CrUX, Core Web Vitals, or mobile-render results.",
+      "limit3Title": "Exhaustive site coverage",
+      "limit3Body": "The result covers only URLs reached within the displayed free limits. It does not claim to know every page on the site.",
+      "useCasesEyebrow": "Audit records",
+      "useCasesTitle": "A repeatable public-site snapshot",
+      "useCasesBody": "The report preserves the same factual fields for every submitted site and makes coverage visible beside the observations.",
+      "useCase1Title": "Pre-launch inventory",
+      "useCase1Body": "Record the public responses and page fields that the crawler can collect before a release.",
+      "useCase2Title": "Migration snapshot",
+      "useCase2Body": "Inspect redirect journeys, final responses, canonicals, and collected URLs after a site move.",
+      "useCase3Title": "Periodic comparison input",
+      "useCase3Body": "Run the same bounded audit again and compare exported facts manually; this free tool does not store history.",
+      "comparison1Title": "What the result is",
+      "comparison1Body": "A bounded collection of directly observed public-site facts with URL-level evidence.",
+      "comparison2Title": "What the result is not",
+      "comparison2Body": "It is not a site-quality grade, ranking forecast, repair plan, search-console report, or exhaustive crawl.",
+      "faqEyebrow": "Scope and evidence",
       "faqTitle": "Frequently asked questions",
-      "faq1q": "Is this a complete SEO audit?",
-      "faq1a": "No. It is a fast static check of one submitted page plus robots.txt and sitemap.xml. It does not claim full-site, ranking, backlink, Search Console, or browser-rendered coverage.",
-      "faq2q": "Why can structured data show as not verified?",
-      "faq2a": "Many sites inject JSON-LD with JavaScript. A static fetch can confirm markup it sees, but it cannot safely prove that rendered markup is absent.",
-      "faq3q": "Does a high score guarantee rankings?",
-      "faq3a": "No. The score summarizes only measured technical and on-page signals. Search demand, content quality, competition, authority, and actual indexation require additional evidence.",
-      "faq4q": "Is the Website Health Map free, and do I need to sign in?",
-      "faq4a": "This public preview is free and does not require a login or proof of site ownership. It is rate-limited to protect the service and does not save a project or scan history.",
-      "faq5q": "How should I interpret the score and coverage?",
-      "faq5a": "The score uses only checks that were actually measured. Coverage shows how much weighted evidence was available; unverified checks are excluded rather than being treated as passing or failing.",
-      "faq6q": "Does the robots.txt check prove that Google can crawl my whole site?",
-      "faq6a": "No. It evaluates Googlebot rules for the submitted URL path in the fetched robots.txt. It does not prove discovery, crawl budget, rendering, or indexing across the rest of the site.",
-      "faq7q": "Why might a check be unverified?",
-      "faq7a": "A support file may be unavailable, the response may be non-HTML, truncated, or not safely decodable, or a signal may only exist after JavaScript runs. The report names that boundary instead of guessing.",
-      "faq8q": "What changes in the full GenGrowth Website Audit?",
-      "faq8a": "The full product can add multi-page crawling, rendered evidence, performance data, history, and an execution-ready fix queue. Those capabilities are outside this anonymous, one-page preview.",
-      "relatedToolsEyebrow": "Continue the diagnosis",
-      "relatedToolsTitle": "Continue with the site's internal structure",
-      "relatedToolsBody": "A single-page health check tells you what this URL exposes. Use an internal link audit when the next question is how pages support one another across the site.",
+      "faq1q": "Is this a real site-wide crawl?",
+      "faq1a": "Yes. The server runs a real same-origin crawl across up to 25 URLs, subject to the displayed depth, request, duration, redirect, and byte limits. “Site-wide” describes multi-page collection, not unlimited coverage.",
+      "faq2q": "Does it require a login or GSC access?",
+      "faq2a": "No. It reads only public HTTP responses and does not request site ownership, OAuth, GSC, GA4, or another provider account.",
+      "faq3q": "Does the report include a health score or grade?",
+      "faq3a": "No. It contains neutral audit records, measured values, observed counts, URL evidence, and limitations only.",
+      "faq4q": "Does it provide recommendations or a fix list?",
+      "faq4a": "No. The public result records what was observed. It does not produce remediation advice, priorities, diagnoses, or an action plan.",
+      "faq5q": "Why can coverage be partial?",
+      "faq5a": "The crawler stops when a fixed page, depth, request, duration, decoded-byte, or cancellation boundary is reached. The stop reason remains visible.",
+      "faq6q": "Are JavaScript-rendered pages audited?",
+      "faq6a": "Only their collected static HTTP/HTML response is inspected. Content and links added only after client-side JavaScript runs are outside the evidence set.",
+      "faq7q": "Does an uncollected link mean the target is broken?",
+      "faq7a": "No. A target is recorded as an HTTP error only when the crawler actually collected it and observed a 4xx or 5xx final response.",
+      "faq8q": "Are scan results saved?",
+      "faq8a": "No. The anonymous response uses no persistence and is returned with no-store caching instructions.",
+      "relatedToolsEyebrow": "Other public audits",
+      "relatedToolsTitle": "Inspect the site's internal structure",
       "relatedToolsCta": "Run an internal link audit",
-      "articlesEyebrow": "Build the next layer",
-      "articlesTitle": "Turn a finding into an evidence-led decision",
-      "articlesBody": "Read the GenGrowth method for framing a signal, choosing one success measure, and deciding the next action without overstating the evidence.",
-      "articlesCta": "Read evidence-first experiments"
+      "relatedToolsBody": "The separate internal link audit records observed links, crawl depth, and candidate orphan pages within its own stated limits.",
+      "articlesEyebrow": "Method notes",
+      "articlesTitle": "Keep every claim inside the evidence",
+      "articlesBody": "Read how GenGrowth frames observed signals without overstating what the collected evidence can prove.",
+      "articlesCta": "Read the evidence-first method",
+      "ctaEyebrow": "Saved workspace",
+      "ctaTitle": "Need stored runs and cross-run comparison?",
+      "ctaBody": "The authenticated GenGrowth app is a separate system for saved project evidence and workflows. This public audit remains anonymous and stateless.",
+      "ctaButton": "Open GenGrowth app"
     },
     "semrush": "Semrush",
     "cms": "CMS",

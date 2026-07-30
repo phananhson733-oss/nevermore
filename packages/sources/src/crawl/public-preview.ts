@@ -16,7 +16,7 @@ import type { CrawlBudget, CrawlFetcher, CrawlRaw } from "./types.ts";
 export type { CrawlRaw } from "./types.ts";
 
 export const PUBLIC_PREVIEW_CRAWL_USER_AGENT =
-  "GenGrowth-Internal-Link-Audit/1.0 (+https://gengrowth.ai/tools/internal-link-audit)";
+  "GenGrowth-Public-Tools-Crawler/1.0 (+https://gengrowth.ai/tools)";
 
 /**
  * Public-tool limits intentionally leave route-level headroom for serialization
@@ -48,13 +48,27 @@ export async function crawlPublicSitePreview(
   signal?: AbortSignal,
   options: PublicPreviewCrawlOptions = {},
 ): Promise<CrawlRaw> {
-  const normalized = normalizeSiteOrigin(inputUrl);
+  let submitted: URL;
+  try {
+    submitted = new URL(inputUrl);
+  } catch {
+    throw new Error("public_preview_requires_normalized_origin");
+  }
+  if (submitted.username || submitted.password) {
+    throw new Error("public_preview_requires_normalized_origin");
+  }
+  submitted.hash = "";
+  const normalized = normalizeSiteOrigin(`${submitted.origin}/`);
   if (!normalized) {
     throw new Error("public_preview_requires_normalized_origin");
   }
 
   return crawlSite(
-    { origin: normalized.origin, host: normalized.host },
+    {
+      origin: normalized.origin,
+      host: normalized.host,
+      seedUrl: submitted.toString(),
+    },
     { userAgent: PUBLIC_PREVIEW_CRAWL_USER_AGENT },
     // The engine requires adapter identity, but a public preview neither reads
     // nor persists any tenant/run state. Only cancellation is meaningful here.

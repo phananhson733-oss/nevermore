@@ -24,10 +24,10 @@ const DATABASE_URL = requireSafeTestDatabaseUrl(
 const REAL_E2E_NODE_OPTIONS = [
   process.env["NODE_OPTIONS"],
   // Next dev restarts itself once heap usage crosses 80% of V8's limit. The
-  // database-backed suite intentionally compiles every customer route in one
-  // long-lived process, so give that child enough headroom to finish both
-  // vertical chains without weakening any browser assertion.
-  "--max-old-space-size=5120",
+  // isolated database-backed groups compile authenticated routes while also
+  // running a browser and, for verticals, a worker. Give each child enough
+  // headroom to finish without weakening any browser assertion.
+  "--max-old-space-size=6144",
 ]
   .filter(Boolean)
   .join(" ");

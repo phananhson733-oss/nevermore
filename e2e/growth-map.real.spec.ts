@@ -40,6 +40,7 @@ const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 const DATABASE_URL = process.env["E2E_DATABASE_URL"];
 const BLOB_DIR = "/tmp/signalframe-e2e-real-blobs";
+const CLIENT_READ_MODEL_TIMEOUT_MS = 45_000;
 
 interface WorkerRuntime {
   stop(): Promise<WorkerShutdownResult>;
@@ -758,7 +759,7 @@ async function assertCompetitorLibraryTraceability(input: {
       name: item.name ?? item.domain,
       exact: true,
     }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   const recordDetails = detail.locator("details").filter({
     hasText: "View record details",
   });
