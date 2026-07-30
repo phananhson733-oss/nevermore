@@ -98,6 +98,12 @@ an isolated worktree at `c9048a0`, with only the P04 patch applied: the rebuilt
 Marketing output passed both policy tests and all 88 traced runtime files. No
 P04 runtime dependency on `apps/web`, workers, database code or GSC was found.
 
+After the separate P02 work was committed, the current branch was rechecked:
+full `pnpm lint` passed, then a fresh Marketing build and
+`pnpm verify:public-tools-boundary` passed with 89 traced runtime files. This
+post-release recheck did not redeploy P02 or change the P04 production deployment
+recorded below.
+
 ## Independent verification performed
 
 All commands below completed successfully after the final source changes:
