@@ -1,0 +1,1113 @@
+{
+  "common": {
+    "joinWaitlist": "订阅邮件",
+    "learnMore": "了解更多",
+    "backToHome": "返回首页",
+    "home": "首页"
+  },
+  "nav": {
+    "features": "核心能力",
+    "blog": "博客",
+    "templates": "示例模板",
+    "about": "关于我们",
+    "contact": "联系我们",
+    "glossary": "术语表",
+    "pricing": "定价"
+  },
+  "footer": {
+    "privacy": "隐私政策",
+    "terms": "服务条款",
+    "cookies": "Cookie 通知",
+    "copyright": "版权声明",
+    "cookiePreferences": "Cookie 偏好",
+    "glossary": "术语表",
+    "tools": "免费工具",
+    "compare": "产品对比",
+    "useCases": "使用场景",
+    "rights": "© 2026 GenGrowth. 保留所有权利。",
+    "playbooks": "Playbook 库"
+  },
+  "home": {
+    "hero": {
+      "title": "自动化增长，从第一个用户开始",
+      "subtitle": "极简配置 / 自动决策 / 全程透明 / 持续进化",
+      "cta": "立即试用",
+      "socialProof": "已有 14 个国家 237 个产品团队在使用"
+    },
+    "stats": {
+      "stat1Number": "4",
+      "stat1Label": "项输入启动增长引擎",
+      "stat2Number": "6",
+      "stat2Label": "维数据完整性验证",
+      "stat3Number": "100%",
+      "stat3Label": "渠道隔离归因精度"
+    },
+    "painPoints": {
+      "title": "增长团队的困境",
+      "card1Title": "手动操作太多",
+      "card1Desc": "每周花 20+ 小时做重复的 SEO 审计、社媒排期和归因报告。",
+      "card2Title": "归因说不清",
+      "card2Desc": "流量来了但说不清为什么。渠道混杂、数据冲突、决策缺乏证据。",
+      "card3Title": "策略靠拍脑袋",
+      "card3Desc": "缺少系统化方法发现机会、评估策略并按预期 ROI 排优先级。",
+      "card4Title": "没有自优化闭环",
+      "card4Desc": "团队在重复执行，但系统不会学习该扩量、迭代还是暂停。"
+    },
+    "solution": {
+      "definition": "增长自动化是一套帮助产品团队自动执行、衡量和优化增长实验的系统——让你专注于策略，而非手动操作。",
+      "title": "一个系统，全链路自动化",
+      "subtitle": "从 4 项输入到自动发现、策略生成、执行和优化。",
+      "step1": "极简配置",
+      "step2": "自动发现",
+      "step3": "策略引擎",
+      "step4": "动作与归因",
+      "step5": "自优化"
+    },
+    "capabilities": {
+      "title": "核心能力",
+      "card1Title": "自动发现",
+      "card1Desc": "站点审计、关键词机会、竞品空白——全部自动完成。",
+      "card2Title": "策略引擎",
+      "card2Desc": "3 条以上候选策略，附带评分、ROI 标记和证据链。",
+      "card3Title": "归因闭环",
+      "card3Desc": "UTM 指纹、渠道隔离、数据完整性验收。",
+      "viewAll": "查看全部能力 →"
+    },
+    "socialProof": {
+      "title": "透明运营，用过程证明实力",
+      "subtitle": "我们先公开每周实验日志、决策与归因证据，再宣称成果。",
+      "cta": "查看每周日志 →",
+      "earlyUsers": "UTM 指纹 + 渠道隔离归因",
+      "communityTitle": "零竞品具备同等归因能力",
+      "communitySub": "没有其他 AI 增长工具能衡量什么真正有效",
+      "rhythmTitle": "每周实验复盘",
+      "rhythmSub": "假设 → 动作 → 归因 → 决策"
+    },
+    "bottomCta": {
+      "title": "开始自动化您的增长",
+      "subtitle": "订阅邮件，获取早期访问与每周实验报告。",
+      "cta": "订阅邮件"
+    }
+  },
+  "waitlist": {
+    "emailLabel": "工作邮箱",
+    "emailPlaceholder": "you@company.com",
+    "submit": "获取早期访问",
+    "submitting": "订阅中...",
+    "successTitle": "已加入等待列表!",
+    "successDesc": "我们将发送早期访问资格、每周增长实验报告和 7 天免费试用。加入已在使用 GenGrowth 的 237 个产品团队。",
+    "duplicateError": "您已订阅过！",
+    "genericError": "出了点问题，请重试。",
+    "nameLabel": "姓名（选填）",
+    "companyLabel": "公司（选填）",
+    "roleLabel": "角色（选填）",
+    "rolePlaceholder": "选择角色",
+    "roleFounder": "创始人",
+    "rolePM": "产品经理",
+    "roleOperator": "增长运营",
+    "roleAnalyst": "数据分析师",
+    "saveProfile": "保存",
+    "skip": "跳过"
+  },
+  "features": {
+    "hero": {
+      "title": "一个系统，全栈增长自动化",
+      "subtitle": "六大核心能力，将最小输入转化为可量化的增长。"
+    },
+    "discovery": {
+      "title": "自动发现",
+      "desc": "输入您的 URL——系统自动扫描站点结构、内容空白、关键词机会和竞品占位。无需手动审计。",
+      "f1": "自动 sitemap 和页面结构分析",
+      "f2": "关键词机会簇与意图分类",
+      "f3": "竞品空白检测",
+      "f4": "等效 CPC 和月度节省金额估算",
+      "faq1Q": "自动发现使用哪些数据源？",
+      "faq1A": "系统自动读取 sitemap、robots.txt、页面结构，以及来自 Google Search Console 等已连接数据源的搜索表现数据。无需手动上传。",
+      "faq2Q": "发现多久刷新一次？",
+      "faq2A": "支持日级刷新。当有新数据或优化决策触发时，系统自动重新扫描。",
+      "cta": "了解自动发现如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "输入产品 URL——系统扫描站点结构、内容和搜索表现",
+        "step2": "AI 识别关键词缺口、竞品占位和未开发机会",
+        "step3": "查看按预期 ROI 排序的优先机会清单"
+      },
+      "relatedReading": "阅读更多 SEO 与内容增长文章"
+    },
+    "strategy": {
+      "title": "策略引擎",
+      "desc": "系统生成 3 条以上候选策略，每条附带透明的评分分解、ROI 标记和「为什么选这个策略？」证据链。",
+      "f1": "基于 ROI、历史表现、竞争空隙、技术健康度、风险等多维度加权评分",
+      "f2": "每条候选策略附带「为什么选这个策略？」证据链",
+      "f3": "支持并行策略，含资源冲突检测",
+      "faq1Q": "策略评分如何计算？",
+      "faq1A": "评分基于专有多因子模型，综合考量 ROI 潜力、历史成功模式、竞争空隙大小、技术健康指标和风险因素，所有维度归一化到 0-100。",
+      "faq2Q": "我可以覆盖推荐的策略吗？",
+      "faq2A": "可以。您可以带理由覆盖任何策略排序，系统会追踪覆盖操作并在 7 天和 14 天后对比效果。",
+      "cta": "了解策略引擎如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "系统基于已发现的机会生成策略组合",
+        "step2": "每条策略包含证据链、评分和预期影响",
+        "step3": "批准、修改或覆盖策略，全程留有审计记录"
+      },
+      "relatedReading": "阅读更多实验驱动增长文章"
+    },
+    "execution": {
+      "title": "执行编排",
+      "desc": "获批策略自动生成批次化任务队列——SEO、社媒、外链。Social-First 探测在 SEO 规模化之前验证主题。",
+      "f1": "批次化任务队列，含优先级和依赖",
+      "f2": "SEO 规模化前先做社媒探测",
+      "f3": "验证主题自动升档到 Batch-0 最高优先级",
+      "f4": "一键审批，覆盖操作全程留痕",
+      "faq1Q": "什么是 Social-First 探测？",
+      "faq1A": "在大规模 SEO 生产前，系统先在 Reddit/X 发布测试帖验证主题需求。互动率达到基准 2 倍的主题自动升档到 Batch-0 最高优先级。",
+      "faq2Q": "Batch-0 是什么意思？",
+      "faq2A": "Batch-0 是最高优先级队列。通过社媒探测验证的主题跳过常规批次排队，优先生产。",
+      "cta": "了解执行编排如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "获批策略自动加入执行队列",
+        "step2": "系统并行编排 SEO、社媒和外链任务",
+        "step3": "实时监控进度，自动更新状态"
+      },
+      "relatedReading": "阅读更多增长自动化文章"
+    },
+    "attribution": {
+      "title": "归因闭环",
+      "desc": "每个动作都有 UTM 指纹。渠道物理隔离。在做任何决策前自动验证数据完整性。",
+      "f1": "UTM 指纹：utm_term = agent_id_batch_id",
+      "f2": "SEO 与社媒渠道物理隔离",
+      "f3": "自动数据完整性验收（结构、覆盖、链路）",
+      "f4": "失败实验自动生成复盘报告",
+      "faq1Q": "渠道隔离如何工作？",
+      "faq1A": "每个动作都有唯一 UTM 指纹（utm_term = agent_id_batch_id）。SEO 和社媒流量在归因中物理隔离，并自动检测冲突。",
+      "faq2Q": "实验失败时会怎样？",
+      "faq2A": "系统自动生成复盘报告，从三个层面分析：曝光（是否被看到？）、意图（是否相关？）、转化（是否行动？）。",
+      "cta": "了解归因闭环如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "每个动作标记渠道隔离的归因标识",
+        "step2": "系统对比实际影响与预测结果",
+        "step3": "清晰的证据链展示哪条策略驱动了哪个结果"
+      },
+      "relatedReading": "阅读更多归因与度量文章"
+    },
+    "optimization": {
+      "title": "自优化决策",
+      "desc": "系统自动决策：扩量有效策略、迭代接近目标的策略、暂停失败策略。每个决策都有阈值对比可解释。",
+      "f1": "三种动作：扩量 / 迭代 / 暂停",
+      "f2": "扩量需连续 2 个窗口评分达标",
+      "f3": "成功模式自动沉淀为增长手册",
+      "f4": "反模式记录，供未来规避",
+      "faq1Q": "系统如何决定扩量、迭代还是暂停？",
+      "faq1A": "基于策略评分和阈值：连续 2 个窗口评分 ≥ 扩量阈值 → 扩量；介于迭代和扩量阈值之间 → 迭代；低于暂停阈值或连续 2 轮恶化 → 暂停。",
+      "faq2Q": "增长手册能跨产品复用吗？",
+      "faq2A": "可以。成功模式自动沉淀为增长手册并标注适用条件，可应用于具有相似特征的新产品。",
+      "cta": "了解自优化如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "系统分析归因数据，识别成功模式",
+        "step2": "自动扩量成功策略，暂停低效策略",
+        "step3": "洞察沉淀为增长手册，供未来复用"
+      },
+      "relatedReading": "阅读更多实验驱动增长文章"
+    },
+    "governance": {
+      "title": "治理合规",
+      "desc": "每次覆盖操作都追踪原因和影响。法务文档版本化。OAuth 令牌加密存储并留审计日志。",
+      "f1": "覆盖追踪：谁 / 何时 / 为什么 / 改了什么 / 影响范围",
+      "f2": "法务文档版本管理，含生效日期",
+      "f3": "社媒仅 OAuth 授权（禁止密码），最小权限",
+      "f4": "发布安全闸门：默认 AI 生成 + 人工审批",
+      "faq1Q": "我做覆盖操作时会记录什么？",
+      "faq1A": "每次覆盖记录：操作人、时间、原因（必填）、改了什么、影响范围、以及覆盖前后的评分快照。",
+      "faq2Q": "OAuth 令牌如何保护？",
+      "faq2A": "令牌静态加密存储、使用最小权限范围、并有完整审计日志。过期令牌自动刷新，一键可撤销。永不存储密码。",
+      "cta": "了解治理合规如何帮助你的产品",
+      "howItWorksTitle": "运作流程",
+      "howItWorks": {
+        "step1": "所有决策记录在案，配合基于角色的访问控制",
+        "step2": "人工覆盖需附带原因和影响评估",
+        "step3": "完整审计日志确保合规和问责"
+      },
+      "relatedReading": "阅读更多增长自动化文章"
+    }
+  },
+  "templates": {
+    "hero": {
+      "title": "可复用的增长手册，透明的实验方法",
+      "subtitle": "先公开框架和决策，再让结果在公开日志中持续累积。"
+    },
+    "framework": {
+      "title": "实验如何运行",
+      "step1": "假设",
+      "step1Desc": "选题与目标定义",
+      "step2": "动作",
+      "step2Desc": "SEO/Social 执行批次",
+      "step3": "归因",
+      "step3Desc": "渠道贡献与冲突检查",
+      "step4": "决策",
+      "step4Desc": "扩量 / 迭代 / 暂停"
+    },
+    "playbooks": {
+      "title": "增长手册",
+      "pb1Title": "SEO 规模化增长手册",
+      "pb1Desc": "已识别高意图关键词，社媒探测已验证",
+      "pb2Title": "Social-First 探测增长手册",
+      "pb2Desc": "新产品、未验证主题、SEO 前阶段",
+      "pb3Title": "外链启动增长手册",
+      "pb3Desc": "已有内容资产、检测到品牌提及"
+    },
+    "experiments": {
+      "title": "查看公开实验日志",
+      "desc": "每周在博客与社媒发布证据优先的实验日志。",
+      "blogCta": "打开博客日志 →",
+      "xCta": "在 X 关注 →",
+      "linkedinCta": "在 LinkedIn 关注 →"
+    }
+  },
+  "blog": {
+    "title": "博客",
+    "allPosts": "全部文章",
+    "readMore": "阅读更多 →",
+    "minRead": "分钟阅读",
+    "published": "发布于",
+    "updated": "更新于",
+    "noPosts": "暂无文章，请稍后再来！",
+    "categories": {
+      "case_study": "案例复盘",
+      "methodology": "方法论",
+      "weekly_review": "周报",
+      "experiment_log": "实验日志"
+    },
+    "pillars": {
+      "all": "全部主题",
+      "growth_automation": "增长自动化",
+      "experiment_driven": "实验驱动",
+      "attribution": "归因分析",
+      "seo_content": "SEO 与内容",
+      "customer_stories": "客户故事"
+    },
+    "categoryPages": {
+      "case-study": {
+        "title": "案例研究",
+        "description": "来自产品团队的真实增长故事和实验成果。"
+      },
+      "methodology": {
+        "title": "方法论",
+        "description": "增长框架、思维模型和系统化方法。"
+      },
+      "weekly-review": {
+        "title": "周报回顾",
+        "description": "包含假设、行动、归因和决策的每周实验日志。"
+      },
+      "experiment-log": {
+        "title": "实验日志",
+        "description": "增长实验的详细记录及其结果。"
+      }
+    },
+    "authorBio": {
+      "name": "GenGrowth Team",
+      "title": "增长自动化工程师",
+      "bio": "我们构建帮助产品团队自动化增长实验的工具。"
+    },
+    "relatedArticles": {
+      "title": "相关文章"
+    }
+  },
+  "cookie": {
+    "title": "我们使用 Cookie",
+    "description": "我们使用 Cookie 来改善您的体验。您可以选择允许哪些类别。",
+    "acceptAll": "全部接受",
+    "necessaryOnly": "仅必要",
+    "preferences": "偏好设置",
+    "save": "保存偏好",
+    "necessary": "必要 Cookie",
+    "necessaryDesc": "网站基本功能所需，始终开启。",
+    "analytics": "统计 Cookie",
+    "analyticsDesc": "帮助我们了解访客如何使用网站。",
+    "marketing": "营销 Cookie",
+    "marketingDesc": "用于广告和推荐追踪。"
+  },
+  "about": {
+    "hero": {
+      "title": "关于 GenGrowth",
+      "subtitle": "我们相信增长应该是透明的、系统化的、以人为中心的。GenGrowth 是一个 AI 驱动的增长操作系统，用证据驱动的策略取代猜测。"
+    },
+    "principles": {
+      "title": "设计原则",
+      "minimalInput": {
+        "title": "最小输入优先",
+        "desc": "最小输入优先是指系统只要求不可自动推断的信息。我们相信最好的工具是用最少的用户操作完成最多的事。"
+      },
+      "autoStrategy": {
+        "title": "自动策略优先",
+        "desc": "自动策略优先是指系统主动提出策略方案，由人工审批或覆盖。决策始于有证据支撑的 AI 推荐。"
+      },
+      "evidence": {
+        "title": "证据可追溯",
+        "desc": "证据可追溯意味着每条建议都有来源与计算依据。没有黑箱决策——每条建议都展示其推理过程。"
+      },
+      "signalDriven": {
+        "title": "信号驱动迭代",
+        "desc": "信号驱动迭代是指基于实际结果而非固定时间表触发行动。系统响应数据反馈，而非日历安排。"
+      },
+      "override": {
+        "title": "覆盖但不失控",
+        "desc": "覆盖但不失控确保人工覆盖操作都附带影响评估。您始终掌控全局，同时保持清晰的审计记录。"
+      },
+      "reusable": {
+        "title": "跨产品可复用",
+        "desc": "跨产品可复用意味着成功的模式会自动沉淀为增长手册模板。一个产品的有效方法可以加速下一个产品的增长。"
+      },
+      "openSource": {
+        "title": "开源借鉴最小适配",
+        "desc": "开源借鉴、最小适配是我们的承诺：学习最佳实践的同时，保持 MVP 精简与专注。"
+      }
+    },
+    "founder": {
+      "title": "我们为什么要做这件事",
+      "quote": "大多数增长工具只提供仪表盘和数据，却把最难的部分——决定下一步做什么——完全留给您。我们创建 GenGrowth，是因为我们相信 AI 应该承担分析和策略的繁重工作，同时让人类掌控每一个决策。增长不应该需要 10 人团队或六位数预算，它应该是系统化的、透明的，让每个有雄心的团队都触手可及。",
+      "attribution": "— GenGrowth 团队"
+    }
+  },
+  "contact": {
+    "hero": {
+      "title": "联系我们",
+      "subtitle": "有任何问题、合作想法，或者只是想打个招呼？我们期待您的来信。"
+    },
+    "form": {
+      "nameLabel": "姓名",
+      "namePlaceholder": "您的姓名",
+      "emailLabel": "邮箱",
+      "emailPlaceholder": "you@example.com",
+      "messageLabel": "消息",
+      "messagePlaceholder": "告诉我们您的想法（至少 10 个字符）",
+      "submit": "发送消息",
+      "submitting": "发送中...",
+      "successTitle": "消息已发送！",
+      "successDesc": "感谢您的来信，我们会尽快回复您。",
+      "genericError": "发生了一些错误，请稍后再试。"
+    }
+  },
+  "legal": {
+    "comingSoon": "文档即将发布",
+    "privacy": {
+      "title": "隐私政策"
+    },
+    "terms": {
+      "title": "服务条款"
+    },
+    "cookies": {
+      "title": "Cookie 政策"
+    },
+    "copyright": {
+      "title": "版权声明"
+    }
+  },
+  "trial": {
+    "modalTitle": "开始免费试用",
+    "modalDesc": "只需 4 步，2 分钟完成产品配置",
+    "contactTitle": "联系信息",
+    "contactDesc": "请留下您的邮箱，我们将发送试用邀请。",
+    "emailLabel": "工作邮箱",
+    "emailPlaceholder": "you@company.com",
+    "nameLabel": "姓名（选填）",
+    "namePlaceholder": "您的姓名",
+    "submitTrial": "提交试用申请",
+    "submitting": "提交中...",
+    "successTitle": "试用申请已提交！",
+    "successDesc": "我们将在 24 小时内审核您的申请，届时提供早期访问与 7 天免费试用。",
+    "duplicateError": "您已提交过试用申请！",
+    "genericError": "出了点问题，请重试。",
+    "emailInvalid": "请输入有效的邮箱地址"
+  },
+  "glossary": {
+    "title": "增长术语库",
+    "subtitle": "产品团队构建增长系统的核心术语与概念。",
+    "termCount": "{count} 个术语",
+    "allCategories": "全部",
+    "metrics": "指标",
+    "strategy": "策略",
+    "technical": "技术",
+    "methodology": "方法论",
+    "readMore": "了解更多",
+    "termPage": {
+      "whyItMatters": "为什么它对增长很重要",
+      "relatedTerms": "相关术语",
+      "relatedFeature": "GenGrowth 如何帮助",
+      "cta": "让 GenGrowth 为你的产品自动处理这一切",
+      "backToGlossary": "返回术语表"
+    }
+  },
+  "tools": {
+    "title": "免费增长工具",
+    "subtitle": "为运行增长实验的产品团队提供的实用计算器和工具。",
+    "abTest": {
+      "title": "A/B 测试样本量计算器",
+      "description": "根据基线转化率、最小可检测效应和统计参数，计算 A/B 测试所需的样本量。",
+      "pageTitle": "A/B 测试样本量计算器",
+      "pageSubtitle": "计算具有统计显著性的 A/B 测试所需样本量。",
+      "baselineRate": "基线转化率 (%)",
+      "mde": "最小可检测效应 (%)",
+      "significance": "统计显著性",
+      "power": "统计功效",
+      "dailyTraffic": "每日流量（可选）",
+      "results": "结果",
+      "samplePerVariation": "每个变体的样本量",
+      "totalSample": "总样本量",
+      "estimatedDuration": "预计测试时长",
+      "days": "天",
+      "howItWorks": "如何使用此计算器",
+      "step1": "输入当前转化率作为基线",
+      "step2": "设置希望检测到的最小改进幅度",
+      "step3": "选择统计置信度并查看结果",
+      "faq1q": "A/B 测试的合适样本量是多少？",
+      "faq1a": "这取决于基线转化率和希望检测到的效应大小。请使用此计算器输入实际数据以获得准确估算。",
+      "faq2q": "什么是最小可检测效应？",
+      "faq2a": "MDE 是测试能够可靠检测到的最小相对转化率提升。20% 的 MDE 意味着希望检测到至少 20% 的相对提升。",
+      "faq3q": "A/B 测试应该运行多长时间？",
+      "faq3a": "将总样本量除以每日流量即可得出。大多数测试需要 2-4 周才能获得可靠结果。"
+    },
+    "roi": {
+      "title": "增长 ROI 计算器",
+      "description": "估算自动化增长工作流的投资回报率 -- 查看预期的时间节省、成本降低和收入影响。",
+      "pageTitle": "增长自动化 ROI 计算器",
+      "pageSubtitle": "估算自动化增长工作流的投资回报率。",
+      "monthlyTraffic": "月流量",
+      "conversionRate": "当前转化率 (%)",
+      "revenuePerCustomer": "客均收入 ($)",
+      "manualHours": "每周手动增长工时",
+      "hourlyCost": "增长团队时薪 ($)",
+      "results": "你的 ROI 估算",
+      "timeSaved": "节省时间",
+      "costSavings": "节省成本",
+      "conversionLift": "预计转化提升",
+      "additionalRevenue": "额外收入",
+      "roi": "投资回报率",
+      "payback": "回本周期",
+      "hoursPerMonth": "小时/月",
+      "perMonth": "/月",
+      "months": "个月",
+      "chartTitle": "自动化前后对比",
+      "manual": "手动",
+      "automated": "自动化",
+      "howItWorks": "如何使用此计算器",
+      "step1": "输入你当前的流量和转化指标",
+      "step2": "添加团队的手动增长工时和成本",
+      "step3": "查看自动化带来的预计节省和 ROI",
+      "faq1q": "这个 ROI 估算有多准确？",
+      "faq1a": "此计算器使用行业平均自动化效率（70% 时间减少、15% 转化提升）。实际结果因产品和实施方式而异。",
+      "faq2q": "ROI 计算包含哪些成本？",
+      "faq2a": "包括减少手动工作带来的时间节省，以及转化率提升带来的预期收入增长，与 GenGrowth 的费用进行对比。",
+      "faq3q": "假设的转化提升是多少？",
+      "faq3a": "计算器假设转化率相对提升 15%，这是基于增长自动化基准的保守估计。"
+    },
+    "seoAudit": {
+      "title": "网站健康地图",
+      "description": "检测首页、robots.txt 与 sitemap.xml 中可实测的 SEO 问题，并提供证据和优先修复建议。",
+      "metaTitle": "免费 SEO 审计与网站健康地图 -- GenGrowth",
+      "metaDescription": "快速检测首页的抓取、技术、页面基础、内容可提取性与静态结构化数据，并查看证据和检测边界。",
+      "pageTitle": "看清搜索引擎真正能读取的 SEO 信号",
+      "pageSubtitle": "基于首页、robots.txt 与 sitemap.xml 真实测量的网站健康地图。每个结论都展示证据、覆盖度和能力边界。",
+      "eyebrow": "免费 SEO 诊断",
+      "formLabel": "网站 URL",
+      "placeholder": "example.com",
+      "submit": "免费检测",
+      "running": "正在检测首页信号...",
+      "scopeShort": "检测一个页面以及 robots.txt、sitemap.xml；无需登录，不持久化，也不冒充全站爬取。",
+      "errors": {
+        "invalid_url": "请输入可公开访问的网站 URL。",
+        "invalid_request": "请提交一个有效的网站 URL 后重试。",
+        "payload_too_large": "本次请求超过了工具允许的大小。",
+        "unsupported_media_type": "不支持当前请求格式。",
+        "scan_failed": "暂时无法检测该网站。请确认网站可公开访问后重试。",
+        "scan_timeout": "该网站未能在本次体验检测的时限内响应。",
+        "scan_in_progress": "当前网络已有检测正在运行，请稍后重试。",
+        "rate_limited": "当前网络检测次数过多，请稍后重试。",
+        "unknown": "出现错误，请重试。"
+      },
+      "resultsTitle": "首页实测健康度",
+      "scoreLabel": "实测得分",
+      "coverage": "已实测 {measured} / {total} 项",
+      "priorities": "优先修复",
+      "recommendationLabel": "建议动作",
+      "notAvailable": "暂无数据",
+      "modules": {
+        "crawlability": "抓取与索引",
+        "technical": "技术基础",
+        "on_page": "页面内信号",
+        "content": "内容与可提取性",
+        "structured_data": "结构化数据与 AI 可读性"
+      },
+      "statuses": {
+        "pass": "通过",
+        "warning": "关注",
+        "fail": "修复",
+        "unverified": "未验证"
+      },
+      "checks": {
+        "homepage_status": {
+          "title": "首页响应",
+          "recommendation": "先恢复提交页面的 200 成功响应，再优化其他 SEO 信号。"
+        },
+        "indexability": {
+          "title": "可索引指令",
+          "recommendation": "移除应进入搜索结果页面上的意外 noindex 指令。"
+        },
+        "robots_access": {
+          "title": "Robots.txt 可读性",
+          "recommendation": "发布可读取的 robots.txt，并在搜索爬虫再次访问前检查过宽的 Disallow 规则。"
+        },
+        "sitemap": {
+          "title": "XML 站点地图",
+          "recommendation": "在 /sitemap.xml 发布有效 XML Sitemap，只包含 canonical 且可索引的 URL。"
+        },
+        "https": {
+          "title": "HTTPS 交付",
+          "recommendation": "通过 HTTPS 提供 canonical 站点，并将 HTTP 流量重定向到 HTTPS。"
+        },
+        "redirects": {
+          "title": "重定向路径",
+          "recommendation": "直接链接最终 URL，移除可以避免的重定向跳转。"
+        },
+        "html_content_type": {
+          "title": "HTML 响应类型",
+          "recommendation": "以 HTML 返回页面，让搜索爬虫能够解析文档级信号。"
+        },
+        "canonical": {
+          "title": "Canonical 对齐",
+          "recommendation": "使用最终 HTTPS 主机和页面路径声明唯一的自引用 canonical URL。"
+        },
+        "html_lang": {
+          "title": "HTML 语言",
+          "recommendation": "在 html 元素上设置与页面语言一致的有效 lang 属性。"
+        },
+        "title": {
+          "title": "Title 标签",
+          "recommendation": "撰写一个描述明确且页面唯一的标题，长度建议约 30 至 60 个字符。"
+        },
+        "meta_description": {
+          "title": "Meta Description",
+          "recommendation": "添加具体说明页面价值的描述，长度建议约 70 至 160 个字符。"
+        },
+        "h1": {
+          "title": "主标题",
+          "recommendation": "使用一个清晰 H1 表达页面的主要主题。"
+        },
+        "heading_order": {
+          "title": "标题层级",
+          "recommendation": "保持标题层级连续，让爬虫和辅助技术都能理解内容结构。"
+        },
+        "text_depth": {
+          "title": "静态正文可提取性",
+          "recommendation": "在可抓取 HTML 中提供足够的有效正文，说明产品、受众和价值结果。"
+        },
+        "internal_links": {
+          "title": "静态内链发现",
+          "recommendation": "通过描述性 HTML 链接暴露重要的产品、证明、定价和资源页面。"
+        },
+        "social_meta": {
+          "title": "社交预览元数据",
+          "recommendation": "补齐 Open Graph 与 Twitter Card 元数据，保证分享预览稳定。"
+        },
+        "json_ld": {
+          "title": "静态 JSON-LD 证据",
+          "recommendation": "先使用富结果工具验证渲染后的页面；只有确认缺失时再添加准确的 Schema。"
+        }
+      },
+      "evidence": {
+        "status_code": "HTTP 状态",
+        "robots_noindex": "检测到 Noindex",
+        "body_complete": "已读取完整响应",
+        "resource_state": "资源状态",
+        "final_protocol": "最终协议",
+        "redirect_hops": "重定向跳数",
+        "content_type": "内容类型",
+        "canonical_url": "Canonical URL",
+        "html_lang": "HTML 语言",
+        "title_length": "Title 长度",
+        "description_length": "Description 长度",
+        "h1_count": "H1 数量",
+        "heading_outline": "标题层级",
+        "static_word_count": "静态正文词数",
+        "static_internal_links": "静态内链数",
+        "social_tags_present": "社交标签数",
+        "json_ld_blocks": "JSON-LD 块",
+        "malformed_blocks": "格式错误块"
+      },
+      "sources": {
+        "homepage_static": "首页原始响应",
+        "robots_txt": "标准 robots.txt 路径",
+        "sitemap_xml": "标准 sitemap.xml 路径"
+      },
+      "limitationLabel": "证据边界",
+      "limitations": {
+        "standard_path_only": "这里只检测 /sitemap.xml；网站可能在其他位置声明 Sitemap。",
+        "static_html_cannot_prove_rendered_absence": "原始响应无法证明经 JavaScript 渲染后的结构化数据仍然缺失。",
+        "response_body_truncated": "响应超过受限读取上限，因此不推断缺失，也不使用不完整的数量。",
+        "html_body_unavailable": "该响应无法被识别为 HTML 文档。",
+        "resource_fetch_unavailable": "本次运行未能测量该标准资源。"
+      },
+      "methodEyebrow": "先证据，后建议",
+      "howTitle": "这项快速检测如何工作",
+      "step1Title": "验证公开目标",
+      "step1Text": "提交 URL 及每次重定向都会检查私网和保留网络地址。",
+      "step2Title": "受限读取数据源",
+      "step2Text": "在严格超时和响应体大小限制下读取页面、robots.txt 与 sitemap.xml。",
+      "step3Title": "只为实测项评分",
+      "step3Text": "未验证项不进入分数，每条可执行结论都保留实际观测证据。",
+      "ctaTitle": "需要看的不只是一个页面？",
+      "ctaBody": "GenGrowth 完整 Website Audit 可增加多页面爬取、渲染证据、性能数据、历史对比和可执行修复队列。",
+      "ctaButton": "打开 GenGrowth",
+      "faq1q": "这是完整 SEO 审计吗？",
+      "faq1a": "不是。这是对一个提交页面以及 robots.txt、sitemap.xml 的快速静态检测，不声称覆盖全站、排名、外链、Search Console 或浏览器渲染结果。",
+      "faq2q": "为什么结构化数据可能显示“未验证”？",
+      "faq2a": "许多网站通过 JavaScript 注入 JSON-LD。静态抓取可以确认看到的标记，但不能可靠证明渲染后仍然不存在。",
+      "faq3q": "高分能保证排名吗？",
+      "faq3a": "不能。分数只汇总实际测得的技术与页面信号；搜索需求、内容质量、竞争、权威度和真实收录需要额外证据。"
+    },
+    "semrush": "Semrush",
+    "cms": "CMS内容管理系统",
+    "gsc": "Google Search Console",
+    "screaming_frog": "Screaming Frog",
+    "ahrefs": "Ahrefs",
+    "email_outreach": "邮件外联工具",
+    "social_scheduler": "社交排期工具",
+    "dev_tools": "浏览器开发者工具",
+    "lighthouse": "Lighthouse",
+    "crux": "CrUX",
+    "schema_validator": "Schema验证器",
+    "media_database": "媒体数据库",
+    "axe": "axe无障碍测试",
+    "security_scanner": "安全扫描器"
+  },
+  "compare": {
+    "title": "GenGrowth 对比",
+    "subtitle": "了解 GenGrowth 与其他增长方式和工具的对比。",
+    "bestForHeading": "最适合",
+    "faqHeading": "常见问题",
+    "cta": "免费试用 GenGrowth",
+    "ctaSubtitle": "亲自体验差异。",
+    "backToCompare": "返回对比",
+    "manual-growth": {
+      "competitor": "手动增长",
+      "heroTitle": "GenGrowth 对比手动增长",
+      "heroDescription": "将 GenGrowth 自动化增长与需要完整团队的传统手动增长运营进行对比。",
+      "tldr": "GenGrowth 自动化整个增长闭环（发现、策略、执行、归因、优化），手动完成这些工作每年需要 $400K-600K 的团队薪资和每周 20+ 小时的重复劳动。",
+      "dimensions": {
+        "discovery": {
+          "name": "机会发现",
+          "gengrowth": "AI 驱动自动扫描关键词、竞品和空白",
+          "competitor": "跨多个工具手动研究，耗时数周"
+        },
+        "strategy": {
+          "name": "策略生成",
+          "gengrowth": "基于证据的 AI 策略，含 ROI 预测",
+          "competitor": "凭直觉、电子表格、团队争论"
+        },
+        "execution": {
+          "name": "执行",
+          "gengrowth": "自动化多渠道并行执行",
+          "competitor": "手动、一次一个渠道、每周 20+ 小时"
+        },
+        "attribution": {
+          "name": "归因",
+          "gengrowth": "渠道隔离自动归因闭环",
+          "competitor": "表格猜测，无清晰归因"
+        },
+        "optimization": {
+          "name": "优化",
+          "gengrowth": "自优化闭环，持续运行",
+          "competitor": "反复试错，最多月度回顾"
+        },
+        "cost": {
+          "name": "年度成本",
+          "gengrowth": "GenGrowth 订阅",
+          "competitor": "3-5 人增长团队 $400K-600K/年"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "没有增长团队编制的独立创始人和小团队",
+          "item2": "想要数据驱动决策而非拍脑袋的团队",
+          "item3": "需要 24/7 自动化增长执行的组织"
+        },
+        "competitor": {
+          "item1": "拥有成熟增长团队、需要完全手动控制的企业",
+          "item2": "高度监管行业中需要人工审核每个动作的公司",
+          "item3": "倾向于构建自有增长基础设施的团队"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "GenGrowth 能完全替代增长团队吗？",
+          "a": "GenGrowth 自动化增长营销的运营环节 -- 策略生成、内容创建、多渠道执行和优化。对于早期团队或独立运营者，它可以作为主要增长引擎。大型组织可以用它来增强现有团队。"
+        },
+        "faq2": {
+          "q": "从手动增长切换后多久能看到效果？",
+          "a": "大多数用户在设置后几分钟内就能看到第一批自动生成的策略。执行结果通常在 1-2 周内开始显现。随着系统积累绩效数据，优化循环会越来越有效。"
+        },
+        "faq3": {
+          "q": "如果我想自定义 AI 生成的策略怎么办？",
+          "a": "GenGrowth 将策略生成为提案，你可以在执行前审查、批准、修改或拒绝。你对执行内容拥有完全控制权。系统会从你的审批模式中学习，使未来的策略更符合你的偏好。"
+        }
+      }
+    },
+    "okara-ai-cmo": {
+      "competitor": "Okara AI CMO",
+      "heroTitle": "GenGrowth 对比 Okara AI CMO",
+      "heroDescription": "将 GenGrowth 的全链路自动化与 Okara AI CMO 的建议型增长营销方式进行对比。",
+      "tldr": "Okara AI CMO（$99/月）提供营销建议并追踪 Google AI、ChatGPT、Perplexity、Gemini 和 Copilot 上的品牌可见度。GenGrowth 更进一步：执行策略、衡量结果、自我优化 -- 不仅仅是建议。",
+      "dimensions": {
+        "discovery": {
+          "name": "机会发现",
+          "gengrowth": "自动化关键词、竞品和空白分析",
+          "competitor": "AI 驱动的建议和推荐"
+        },
+        "strategy": {
+          "name": "策略生成",
+          "gengrowth": "带执行计划的证据型策略",
+          "competitor": "无执行路线图的营销建议"
+        },
+        "execution": {
+          "name": "执行",
+          "gengrowth": "自动化多渠道执行（SEO、社交、外联）",
+          "competitor": "不执行 -- 仅提供建议，需自行完成"
+        },
+        "attribution": {
+          "name": "归因",
+          "gengrowth": "渠道隔离自动归因",
+          "competitor": "无归因追踪"
+        },
+        "optimization": {
+          "name": "优化",
+          "gengrowth": "基于结果的自优化闭环",
+          "competitor": "无自动优化，需手动迭代"
+        },
+        "cost": {
+          "name": "GEO / AI 可见度",
+          "gengrowth": "GEO 集成到评分和策略生成中",
+          "competitor": "追踪 Google AI、ChatGPT、Perplexity、Gemini 和 Copilot 上的品牌可见度"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "需要从发现到优化端到端自动化的团队",
+          "item2": "需要执行而非仅需建议的产品",
+          "item3": "想要可衡量 ROI 闭环系统的增长团队"
+        },
+        "competitor": {
+          "item1": "有执行能力只需战略方向的团队",
+          "item2": "主要关注 AI 平台可见度追踪的公司",
+          "item3": "需要 AI 驱动 CMO 级建议的营销负责人"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "Okara AI CMO 能执行营销策略吗？",
+          "a": "不能。Okara AI CMO 提供建议和推荐但不执行。你需要自己的团队或工具来实施建议的策略。GenGrowth 同时处理策略生成和自动化执行。"
+        },
+        "faq2": {
+          "q": "两者的 GEO 追踪有何不同？",
+          "a": "Okara 追踪你的品牌在 Google AI、ChatGPT、Perplexity、Gemini 和 Copilot 上的可见度。GenGrowth 将 GEO 信号直接集成到评分和策略引擎中，利用 AI 可见度数据来指导和优化增长策略。"
+        },
+        "faq3": {
+          "q": "我能同时使用 GenGrowth 和 Okara 吗？",
+          "a": "可以。一些团队使用 Okara 做 AI 可见度监控，同时使用 GenGrowth 做完整的增长执行闭环。不过，GenGrowth 内置的 GEO 集成对大多数场景来说可能让额外工具变得多余。"
+        }
+      }
+    },
+    "babylovegrowth": {
+      "competitor": "BabyLoveGrowth",
+      "heroTitle": "GenGrowth 对比 BabyLoveGrowth",
+      "heroDescription": "将 GenGrowth 的智能增长自动化与 BabyLoveGrowth 的内容+链接套餐方式进行对比。",
+      "tldr": "BabyLoveGrowth（$99/月）提供每月 30 篇文章和 2,500 站点链接交换网络加 Reddit 发帖。GenGrowth 提供完整闭环：发现、策略、执行、归因和优化 -- 无 SEO 风险的链接交换。",
+      "dimensions": {
+        "discovery": {
+          "name": "机会发现",
+          "gengrowth": "AI 驱动的关键词、竞品和空白分析",
+          "competitor": "无发现环节 -- 固定内容套餐"
+        },
+        "strategy": {
+          "name": "策略框架",
+          "gengrowth": "带 ROI 预测的证据型策略",
+          "competitor": "无策略框架 -- 预设交付物"
+        },
+        "execution": {
+          "name": "执行",
+          "gengrowth": "多渠道：SEO、社交、外联，含质量控制",
+          "competitor": "每月 30 篇文章 + 2,500 站链接交换 + Reddit"
+        },
+        "attribution": {
+          "name": "归因",
+          "gengrowth": "渠道隔离自动归因",
+          "competitor": "无归因追踪"
+        },
+        "optimization": {
+          "name": "优化",
+          "gengrowth": "自优化闭环",
+          "competitor": "无优化循环，固定交付物"
+        },
+        "cost": {
+          "name": "SEO 风险",
+          "gengrowth": "白帽策略，无链接计划",
+          "competitor": "2,500 站链接交换有 Google 惩罚风险"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "需要智能数据驱动增长而非单纯数量的团队",
+          "item2": "需要归因来了解什么真正有效的产品",
+          "item3": "需要可持续 SEO 而非链接计划风险的公司"
+        },
+        "competitor": {
+          "item1": "只需要高产量内容输出不关心策略的团队",
+          "item2": "链接交换风险较低的特定利基产品",
+          "item3": "预算有限、需要简单可预测交付套餐的团队"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "链接交换对 SEO 有风险吗？",
+          "a": "Google 的指南明确警告不要进行大规模链接计划，包括互惠链接交换。2,500 站链接交换网络可能触发算法或人工惩罚。GenGrowth 使用符合搜索引擎指南的白帽链接建设策略。"
+        },
+        "faq2": {
+          "q": "BabyLoveGrowth 提供增长策略吗？",
+          "a": "BabyLoveGrowth 每月交付固定套餐的 30 篇文章、链接交换和 Reddit 帖子。没有发现环节、没有策略框架、也没有基于结果的优化。GenGrowth 根据你的产品、市场和绩效数据构建策略。"
+        },
+        "faq3": {
+          "q": "BabyLoveGrowth 能将结果归因到具体动作吗？",
+          "a": "不能。BabyLoveGrowth 不包含归因追踪。你无法确定哪些文章、链接或 Reddit 帖子带来了流量或转化。GenGrowth 将每个结果归因到其来源策略和渠道。"
+        }
+      }
+    },
+    "ahrefs": {
+      "competitor": "Ahrefs",
+      "heroTitle": "GenGrowth 对比 Ahrefs",
+      "heroDescription": "将 GenGrowth 的自动化增长执行与 Ahrefs 的行业领先 SEO 分析研究工具进行对比。",
+      "tldr": "Ahrefs（$129-$449/月）是 SEO 分析的黄金标准 -- 最大的外链数据库、关键词研究、站点审计。GenGrowth 在 Ahrefs 式洞察基础上增加了 Ahrefs 没有的：自动化策略生成、执行、归因和优化。",
+      "dimensions": {
+        "discovery": {
+          "name": "发现/研究",
+          "gengrowth": "自动化机会发现，含可执行后续步骤",
+          "competitor": "行业领先外链数据库、关键词探索、站点审计"
+        },
+        "strategy": {
+          "name": "策略生成",
+          "gengrowth": "AI 从发现数据生成可执行策略",
+          "competitor": "仅提供数据和洞察 -- 策略需自行制定"
+        },
+        "execution": {
+          "name": "执行",
+          "gengrowth": "自动化多渠道执行",
+          "competitor": "无执行能力 -- 仅分析工具"
+        },
+        "attribution": {
+          "name": "归因",
+          "gengrowth": "渠道隔离自动归因",
+          "competitor": "排名追踪和外链监控，无归因"
+        },
+        "optimization": {
+          "name": "优化",
+          "gengrowth": "自优化闭环",
+          "competitor": "手动 -- 需自行解读数据并调整策略"
+        },
+        "cost": {
+          "name": "定价",
+          "gengrowth": "GenGrowth 订阅（一体化）",
+          "competitor": "$129-$449/月仅含分析功能"
+        }
+      },
+      "bestFor": {
+        "gengrowth": {
+          "item1": "想要洞察自动转化为已执行增长策略的团队",
+          "item2": "无法分别承担分析工具+执行工具+团队的独立运营者",
+          "item3": "需要从研究到结果闭环的产品"
+        },
+        "competitor": {
+          "item1": "需要最深度外链和关键词数据的 SEO 专业人士",
+          "item2": "管理大量客户站点需要精细研究工具的代理机构",
+          "item3": "有执行能力只需顶级分析工具的团队"
+        }
+      },
+      "faqs": {
+        "faq1": {
+          "q": "GenGrowth 能完全替代 Ahrefs 吗？",
+          "a": "GenGrowth 和 Ahrefs 服务于不同目的。Ahrefs 擅长深度 SEO 研究，拥有最大的外链索引。GenGrowth 专注于将洞察转化为自动化执行。一些团队两者兼用 -- Ahrefs 做深度研究，GenGrowth 做执行闭环。"
+        },
+        "faq2": {
+          "q": "GenGrowth 能匹敌 Ahrefs 的外链数据库吗？",
+          "a": "Ahrefs 拥有行业最大的外链索引。GenGrowth 的发现引擎专注于可执行机会而非原始数据量。对于需要最深度外链数据的团队，Ahrefs 仍是标杆。"
+        },
+        "faq3": {
+          "q": "已有 GenGrowth 还值得购买 Ahrefs 吗？",
+          "a": "取决于你的需求。如果需要精细 SEO 研究（特定关键词难度、竞品外链画像、内容空白分析），Ahrefs 有价值。如果主要需求是带内置研究的自动化增长执行，GenGrowth 可能已经足够。"
+        }
+      }
+    },
+    "readComparison": "查看对比"
+  },
+  "useCases": {
+    "title": "应用场景",
+    "subtitle": "了解不同产品团队如何使用 GenGrowth 驱动增长。",
+    "learnMore": "了解更多",
+    "backToUseCases": "返回应用场景",
+    "yourChallenge": "你的挑战",
+    "howGenGrowthHelps": "GenGrowth 如何解决",
+    "gettingStarted": "分步指南：快速上手",
+    "expectedResults": "预期成果",
+    "cta": "使用 GenGrowth 开始驱动产品增长",
+    "saas": {
+      "title": "SaaS 产品：从 0 到 1,000 用户",
+      "description": "早期 SaaS 创始人如何使用 GenGrowth 系统化获取前 1,000 名用户。",
+      "challenge": "你已经构建了出色的 SaaS 产品，但增长缓慢。你尝试了所有方法 -- 博客文章、社交媒体、冷启动触达 -- 但没有形成复利效应。小团队每周花 20+ 小时在手动增长任务上，且无法清晰归因。",
+      "solution": "GenGrowth 为你的 SaaS 自动化整个增长闭环：发现未开发的关键词机会，生成有证据支撑的策略，并行执行 SEO 和社交媒体活动，并将每个结果归因到来源。",
+      "step1": "输入你的产品 URL 和目标区域",
+      "step2": "GenGrowth 扫描你的网站并识别增长机会",
+      "step3": "审核并批准按预期 ROI 排序的 AI 生成策略",
+      "step4": "观看跨 SEO、社交和触达渠道的自动化执行",
+      "results": "使用 GenGrowth 的早期 SaaS 团队通常比手动增长快 3-5 倍达到前 1,000 名用户，重复性任务时间减少 70%。"
+    },
+    "contentSite": {
+      "title": "内容站点：SEO 规模化增长",
+      "description": "内容驱动型网站如何使用 GenGrowth 通过系统化 SEO 从数百页扩展到数千页。",
+      "challenge": "你的内容站点有优质内容但流量停滞。手动关键词研究、内容规划和 SEO 审计耗时太长。你知道程序化 SEO 能带来大规模增长，但缺乏工程资源。",
+      "solution": "GenGrowth 将你的内容站点变成 SEO 引擎：自动发现关键词空白和竞品定位，生成带证据链的内容策略，并基于实际排名数据持续优化。",
+      "step1": "连接你的网站 URL 和 Google Search Console 数据",
+      "step2": "GenGrowth 映射你的内容空白与竞品定位",
+      "step3": "批准优先级排序的内容和 SEO 策略",
+      "step4": "监控自动化执行和有归因支撑的结果",
+      "results": "使用 GenGrowth 进行 SEO 自动化的内容站点通常在 3 个月内实现 2-4 倍自然流量增长，内容生产时间减少 60%。"
+    }
+  },
+  "pricing": {
+    "hero": {
+      "title": "简洁透明的定价",
+      "subtitle": "从发现到优化，选择适合你增长阶段的自动化级别。"
+    },
+    "starter": {
+      "name": "Starter",
+      "price": "$99",
+      "period": "/月",
+      "description": "发现 + 策略",
+      "features": [
+        "自动机会发现",
+        "带评分的策略生成",
+        "优先级排序",
+        "每周发现报告",
+        "1 个产品"
+      ],
+      "cta": "开始免费试用"
+    },
+    "pro": {
+      "name": "Pro",
+      "price": "$199",
+      "period": "/月",
+      "badge": "最受欢迎",
+      "description": "完整增长闭环",
+      "features": [
+        "包含 Starter 全部功能",
+        "自动化执行 (SEO/社媒/外链)",
+        "渠道隔离归因",
+        "6 维数据完整性验证",
+        "自优化闭环",
+        "Social-First 验证",
+        "3 个产品"
+      ],
+      "cta": "开始免费试用"
+    },
+    "growth": {
+      "name": "Growth",
+      "price": "$299",
+      "period": "/月",
+      "description": "规模化 + 知识沉淀",
+      "features": [
+        "包含 Pro 全部功能",
+        "无限产品",
+        "Playbook 跨产品复用",
+        "竞品监控（每周差异对比）",
+        "优先支持",
+        "自定义执行模板"
+      ],
+      "cta": "开始免费试用"
+    },
+    "comparison": {
+      "title": "方案对比",
+      "feature": "功能",
+      "rows": {
+        "discovery": "自动机会发现",
+        "strategyScoring": "带评分的策略生成",
+        "priorityRanking": "优先级排序",
+        "weeklyReports": "每周发现报告",
+        "automatedExecution": "自动化执行 (SEO/社媒/外链)",
+        "channelAttribution": "渠道隔离归因 (UTM 指纹)",
+        "dataIntegrity": "6 维数据完整性验证",
+        "selfOptimization": "自优化闭环",
+        "socialValidation": "Social-First 验证",
+        "products": "产品数量",
+        "playbookReuse": "Playbook 跨产品复用",
+        "competitorMonitoring": "竞品监控（每周差异对比）",
+        "prioritySupport": "优先支持",
+        "customTemplates": "自定义执行模板"
+      },
+      "starterLabel": "入门版",
+      "proLabel": "专业版",
+      "growthLabel": "增长版",
+      "unlimited": "不限"
+    },
+    "faq": {
+      "title": "常见问题",
+      "q1": {
+        "question": "为什么 GenGrowth 比 Okara 或 BabyLoveGrowth 贵？",
+        "answer": "那些工具每月 $99 只提供建议。GenGrowth 的 Starter 方案同样 $99 起步，提供发现和策略功能。我们的 Pro 和 Growth 方案提供了竞品不具备的能力：自动化执行、渠道隔离归因，以及从每次实验中学习的自优化闭环。"
+      },
+      "q2": {
+        "question": "可以切换方案吗？",
+        "answer": "可以。随时升级或降级，变更在下一个计费周期生效。"
+      },
+      "q3": {
+        "question": "有免费试用吗？",
+        "answer": "有。所有方案均提供 14 天免费试用，可体验全部功能。"
+      },
+      "q4": {
+        "question": "什么算一个「产品」？",
+        "answer": "一个产品是你想要增长的一个网站或应用。每个产品拥有独立的发现引擎、策略组合和执行队列。"
+      },
+      "q5": {
+        "question": "需要技术知识吗？",
+        "answer": "不需要。GenGrowth 只需 4 个输入即可启动：你的 URL、目标地区、增长目标和主要转化事件。系统会处理其余一切。"
+      }
+    },
+    "cta": {
+      "title": "准备好自动化增长了吗？",
+      "subtitle": "14 天免费试用，无需信用卡。",
+      "button": "立即开始"
+    }
+  },
+  "playbooks": {
+    "title": "增长 Playbook",
+    "subtitle": "来自真实产品数据的经过验证的增长策略，已做匿名处理。可直接导入到你的 GenGrowth 工作区。",
+    "successRate": "成功率",
+    "industrySaas": "SaaS",
+    "industryContent": "内容",
+    "industryEcommerce": "电商",
+    "industryDevtool": "开发者工具",
+    "channelSeo": "SEO",
+    "channelSocial": "社交媒体",
+    "channelLink": "外链建设",
+    "channelEmail": "邮件",
+    "channelCommunity": "社区",
+    "goalTraffic": "流量",
+    "goalConversion": "转化",
+    "goalRetention": "留存",
+    "steps": "步骤",
+    "applicableConditions": "适用条件",
+    "expectedResults": "预期效果",
+    "relatedPlaybooks": "相关 Playbook",
+    "importCta": "导入到你的产品",
+    "waitlistCta": "加入候补以导入",
+    "backToPlaybooks": "返回 Playbook 列表"
+  }
+}
