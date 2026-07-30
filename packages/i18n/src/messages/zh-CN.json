@@ -143,7 +143,7 @@
   "newProject": {
     "eyebrow": "产品与 ICP",
     "title": "添加产品",
-    "subtitle": "填写产品 URL 和已确认的基础信息。创建后继续完善产品画像与 ICP，再连接 GSC、GA4 与 DataForSEO。",
+    "subtitle": "先填写产品和增长目标。系统随后采集网站信息，生成可修改的产品画像、ICP 与竞品候选。",
     "shell": {
       "productTitle": "添加产品",
       "productDetail": "从 URL 建立产品画像",
@@ -152,25 +152,73 @@
       "status": "待添加产品"
     },
     "fields": {
+      "choose": "请选择…",
+      "productName": {
+        "label": "产品名称",
+        "placeholder": "例如：GenGrowth",
+        "help": "填写客户和团队日常使用的产品或品牌名称。"
+      },
       "productUrl": {
         "label": "产品 URL",
         "placeholder": "https://www.example.com/product",
-        "help": "填写官网首页或最能代表产品的页面；它将作为产品画像和 Crawl 的起点。"
+        "help": "填写官网首页或最能代表产品的页面；系统会从这里开始了解产品。"
+      },
+      "customerModel": {
+        "label": "客户模式",
+        "help": "选择主要付费客户类型；后续可在产品画像中调整。",
+        "options": {
+          "b2b": "B2B · 面向企业",
+          "b2c": "B2C · 面向消费者",
+          "hybrid": "混合 · 同时面向企业与消费者"
+        }
+      },
+      "primaryMarket": {
+        "label": "主要目标市场",
+        "help": "选择当前最优先增长的海外市场。",
+        "options": {
+          "US": "美国",
+          "GB": "英国",
+          "CA": "加拿大",
+          "AU": "澳大利亚",
+          "SG": "新加坡",
+          "DE": "德国",
+          "FR": "法国",
+          "JP": "日本",
+          "KR": "韩国",
+          "AE": "阿联酋",
+          "IN": "印度",
+          "BR": "巴西"
+        }
+      },
+      "growthObjectives": {
+        "label": "主要增长目标",
+        "help": "建议先选择最重要的 1–2 项，系统会据此安排后续增长机会。",
+        "options": {
+          "increase_signups": "提升注册",
+          "generate_qualified_leads": "获取高质量销售线索",
+          "increase_organic_traffic": "提升自然搜索流量",
+          "increase_ai_visibility": "提升 AI / GEO 可见度",
+          "improve_conversion": "提升转化率",
+          "increase_revenue": "提升收入",
+          "enter_new_markets": "进入新市场"
+        }
       },
       "businessHint": {
-        "label": "产品与客户背景（选填）",
+        "label": "补充业务背景（选填）",
         "placeholder": "例如：面向北美中型 B2B SaaS 客户运营团队的 onboarding automation 产品。",
-        "help": "只填写已确认的事实；产品名称、商业模式、目标市场和 ICP 可在下一步修改。"
+        "help": "只写你已确认且网站上不一定能看出的信息，后续仍可修改。"
       }
     },
     "nextStep": {
-      "title": "下一步：完善产品画像与 ICP",
-      "detail": "创建后直接进入可编辑画像；确认后再连接 GSC、GA4，Crawl 与 DataForSEO 由系统运行。"
+      "title": "下一步：自动生成初始产品画像",
+      "detail": "创建后系统会采集网站并生成可审核的 ICP 与竞品候选；你可以逐项修改，再连接 GSC、GA4 与 DataForSEO。"
     },
-    "createButton": "创建产品并填写画像",
-    "creating": "正在创建产品画像…",
+    "createButton": "创建并生成初始画像",
+    "creating": "正在创建产品…",
     "createError": "产品创建失败，请检查输入后重试。",
-    "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。"
+    "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。",
+    "requiredField": "请填写或选择此项。",
+    "growthObjectivesRequired": "请至少选择一个主要增长目标。"
   },
   "productProfile": {
     "heroEyebrow": "产品画像 · ICP",
@@ -179,7 +227,8 @@
       "detail": "正在读取客户当前审核版本及其事实来源。"
     },
     "errors": {
-      "loadTitle": "无法加载产品画像"
+      "loadTitle": "无法加载产品画像",
+      "loadDetail": "暂时无法读取这份产品画像，请稍后重试。"
     },
     "empty": {
       "title": "还没有可编辑的产品画像",
@@ -197,9 +246,9 @@
       "addProduct": "添加产品并填写画像",
       "edit": "编辑产品画像与 ICP",
       "connectData": "连接真实数据",
-      "synthesize": "基于网站证据生成",
+      "synthesize": "重新生成初始画像",
       "synthesizing": "生成中…",
-      "runCrawl": "采集网站证据",
+      "runCrawl": "重新采集网站信息",
       "addCompetitor": "添加竞品",
       "reviewCompetitor": "审核 / 纠正",
       "confirm": "确认产品画像",
@@ -230,6 +279,8 @@
     "fields": {
       "businessHint": "初始业务背景",
       "productName": "产品名称",
+      "customerModel": "客户模式",
+      "growthObjectives": "主要增长目标",
       "oneLiner": "一句话定位",
       "category": "产品类别",
       "productType": "产品类型",
@@ -250,6 +301,20 @@
       "barriers": "决策阻力",
       "qualificationSignals": "合格信号",
       "disqualifiers": "排除条件"
+    },
+    "customerModels": {
+      "b2b": "B2B · 面向企业",
+      "b2c": "B2C · 面向消费者",
+      "hybrid": "混合 · 企业与消费者"
+    },
+    "growthObjectives": {
+      "increase_signups": "提升注册",
+      "generate_qualified_leads": "获取高质量销售线索",
+      "increase_organic_traffic": "提升自然搜索流量",
+      "increase_ai_visibility": "提升 AI / GEO 可见度",
+      "improve_conversion": "提升转化率",
+      "increase_revenue": "提升收入",
+      "enter_new_markets": "进入新市场"
     },
     "editor": {
       "eyebrow": "客户审核",
@@ -295,16 +360,31 @@
       "saved": "产品画像已保存",
       "savedDetail": "新的客户编辑草稿版本已成为当前版本。",
       "saveFailed": "Product Profile 保存失败",
-      "synthesisQueued": "已进入证据分析队列",
-      "synthesisQueuedDetail": "系统正在分析冻结的 Crawl 快照；下方进度来自真实运行状态。",
-      "synthesisComplete": "Product Profile 已生成",
+      "autoSynthesisStarted": "正在准备初始产品画像",
+      "autoSynthesisStartedDetail": "系统会先检查可用的网站信息；如需采集，会自动继续，无需重复点击。",
+      "synthesisQueued": "初始画像正在生成",
+      "synthesisQueuedDetail": "系统正在根据已采集的网站信息生成产品画像、ICP 与竞品候选。",
+      "synthesisAlreadyRunning": "初始画像正在生成",
+      "synthesisAlreadyRunningDetail": "已接续当前任务，完成后页面会自动更新。",
+      "synthesisComplete": "初始产品画像已生成",
       "synthesisCompleteDetail": "当前草稿已写入本次冻结证据分析结果，请审核后再确认。",
-      "synthesisFailed": "Product Profile 无法开始或完成生成",
+      "synthesisFailed": "初始产品画像无法生成",
+      "autoCrawlPreparing": "正在准备网站采集",
+      "autoCrawlPreparingDetail": "当前还没有可用的网站信息，系统将立即开始采集。",
       "crawlQueued": "网站采集已进入队列",
-      "crawlQueuedDetail": "Crawl 正在采集产品 URL 与同站页面；完成后不会自动重试生成。",
+      "crawlQueuedDetail": "系统正在采集产品页与同站页面；完成后会自动继续生成初始画像。",
+      "autoCrawlQueuedDetail": "系统正在采集产品页与同站页面；完成后会自动生成产品画像、ICP 与竞品候选。",
+      "crawlAlreadyRunning": "网站采集正在进行",
+      "crawlAlreadyRunningDetail": "已接续当前采集任务，完成后会自动继续生成初始画像。",
       "crawlComplete": "网站证据已就绪",
-      "crawlCompleteDetail": "请先查看采集结果，再明确点击重试 Product Profile 生成。",
+      "crawlCompleteDetail": "网站信息已经采集，正在自动生成产品画像、ICP 与竞品候选。",
+      "crawlReadyDetail": "网站信息已经采集完成。",
       "crawlFailed": "网站证据采集失败",
+      "crawlInsufficient": "没有找到可用于生成的产品页面",
+      "crawlInsufficientDetail": "请确认产品 URL 可公开访问，或点击“重新采集网站信息”后再试。",
+      "progressUnavailable": "暂时无法读取任务进度",
+      "progressUnavailableDetail": "网络或服务可能短暂波动，请稍后重试；系统不会重复创建任务。",
+      "retryDetail": "本次操作未完成，请稍后重试。",
       "runEnded": "运行以 {status} 状态结束。",
       "competitorSaved": "竞品池已更新",
       "competitorSavedDetail": "客户审核结果已写入新的 Product Profile 版本。",
@@ -314,16 +394,16 @@
       "confirmFailed": "产品画像无法确认"
     },
     "run": {
-      "synthesisTitle": "正在基于冻结证据生成 Product Profile",
-      "crawlTitle": "正在采集当前网站证据",
+      "synthesisTitle": "正在生成产品画像、ICP 与竞品候选",
+      "crawlTitle": "正在采集网站信息",
       "statuses": {
         "queued": "排队中",
         "running": "运行中"
       }
     },
     "recovery": {
-      "title": "需要一份当前 Crawl 快照",
-      "detail": "先真实采集产品页面与同站证据。采集完成后，生成仍是一个独立的客户操作。"
+      "title": "需要重新采集网站信息",
+      "detail": "请确认产品 URL 可公开访问后重试；采集完成时系统会自动继续生成初始画像。"
     },
     "sections": {
       "identity": {
@@ -347,8 +427,8 @@
         "title": "SEO / GEO 分析使用的对比集合"
       },
       "evidence": {
-        "eyebrow": "事实依据",
-        "title": "这份 Product Profile 从哪里来"
+        "eyebrow": "完成状态",
+        "title": "网站采集与初始画像"
       }
     },
     "markets": {
@@ -385,18 +465,39 @@
       }
     },
     "evidence": {
-      "source": "产品来源 URL",
-      "snapshot": "冻结的 Crawl 快照",
-      "invocation": "分析调用",
-      "generatedAt": "生成时间",
-      "notFrozen": "尚无冻结快照",
-      "notGenerated": "尚无分析调用",
-      "provenance": "{count} 个字段依据",
-      "missing": "{count} 个待补充字段",
+      "source": "产品页面",
+      "websiteStatus": "网站信息",
+      "profileStatus": "初始画像",
+      "generatedAt": "最近生成",
+      "websiteReady": "已采集并用于分析",
+      "websiteCollecting": "正在采集",
+      "websiteWaiting": "等待首次采集",
+      "profileReady": "已生成，可审核修改",
+      "profileGenerating": "正在生成",
+      "profileWaiting": "等待网站采集",
+      "notGeneratedYet": "尚未生成",
+      "confirmedFacts": "{count} 项有事实依据的信息",
+      "pendingFacts": "{count} 项待确认信息",
       "conflicts": "{count} 个冲突",
-      "reviewDetails": "查看未解决字段",
-      "missingTitle": "待补充",
-      "conflictTitle": "存在冲突"
+      "reviewDetails": "查看还需要确认的内容",
+      "missingTitle": "待确认",
+      "conflictTitle": "信息存在冲突",
+      "fieldNames": {
+        "businessHint": "业务背景",
+        "productName": "产品名称",
+        "customerModel": "客户模式",
+        "growthObjectives": "主要增长目标",
+        "oneLiner": "一句话定位",
+        "category": "产品类别",
+        "productType": "产品类型",
+        "businessModels": "商业模式",
+        "valueProposition": "价值主张",
+        "coreFeatures": "核心功能",
+        "primaryMarket": "目标市场",
+        "primaryIcp": "核心 ICP",
+        "competitors": "竞品候选",
+        "other": "其他产品信息"
+      }
     },
     "confirmation": {
       "eyebrow": "客户决策",

@@ -15,15 +15,17 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const document = await getLegalDocument("terms", locale);
   return generatePageMetadata({
     title:
-      locale === "en" ? "Terms of Service — GenGrowth" : "服务条款 — GenGrowth",
+      locale === "en" ? "Terms of Service" : "服务条款",
     description:
       locale === "en"
         ? "Terms and conditions for using GenGrowth services."
         : "使用 GenGrowth 服务的条款和条件。",
     locale,
     path: "/terms",
+    noIndex: !document,
   });
 }
 

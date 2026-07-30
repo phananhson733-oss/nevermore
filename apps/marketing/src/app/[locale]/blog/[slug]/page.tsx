@@ -3,7 +3,8 @@
 // @pos    -- Blog detail page route, data fetching and layout orchestration (SPEC 2.7.3)
 // once this file is updated, update header comments and _DIR.md in this folder
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages, getTranslations } from "next-intl/server";
 import { getBlogPostBySlug, getBlogPosts } from "@/lib/blog";
 import { getLocalBlogPosts } from "@/lib/blog-content";
 import { siteConfig } from "@/config/site";
@@ -45,8 +46,8 @@ export async function generateMetadata({
     return generatePageMetadata({
       title:
         locale === "en"
-          ? "Post Not Found -- GenGrowth"
-          : "文章未找到 -- GenGrowth",
+          ? "Post Not Found"
+          : "文章未找到",
       description: "",
       locale,
       path: `/blog/${slug}`,
@@ -89,6 +90,7 @@ export default async function BlogPostPage({
     getBlogPosts({ locale }),
   ]);
   const t = await getTranslations({ locale, namespace: "blog" });
+  const messages = await getMessages();
 
   if (!post) {
     notFound();
@@ -179,14 +181,16 @@ export default async function BlogPostPage({
           </Link>
         </nav>
 
-        <BlogArticleContent
-          locale={locale}
-          post={post}
-          publishDate={publishDate}
-          updateDate={updateDate}
-          t={t}
-          relatedPosts={relatedPosts}
-        />
+        <NextIntlClientProvider messages={{ blog: messages.blog }}>
+          <BlogArticleContent
+            locale={locale}
+            post={post}
+            publishDate={publishDate}
+            updateDate={updateDate}
+            t={t}
+            relatedPosts={relatedPosts}
+          />
+        </NextIntlClientProvider>
 
         <script
           type="application/ld+json"

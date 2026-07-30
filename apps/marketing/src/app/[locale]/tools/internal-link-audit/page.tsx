@@ -315,16 +315,16 @@ export default async function InternalLinkAuditPage({
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                {content.comparisons.map((comparison) => (
+                {content.fitSignals.map((signal) => (
                   <article
-                    key={comparison.title}
+                    key={signal.title}
                     className="rounded-2xl border border-brand-border/70 bg-[#171718] p-5"
                   >
                     <h3 className="text-[14px] font-semibold text-text-dark-primary">
-                      {comparison.title}
+                      {signal.title}
                     </h3>
                     <p className="mt-3 text-[10px] leading-relaxed text-text-dark-secondary">
-                      {comparison.body}
+                      {signal.body}
                     </p>
                   </article>
                 ))}
@@ -417,6 +417,13 @@ export default async function InternalLinkAuditPage({
                   </li>
                 ))}
               </ul>
+              <Link
+                href={`/${locale}/blog/evidence-first-growth-experiments`}
+                className="mt-5 inline-flex items-center gap-2 text-[11px] font-semibold text-brand-accent-text hover:text-brand-accent-hover"
+              >
+                {content.readingCta}
+                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+              </Link>
             </article>
           </section>
 

@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.MARKETING_E2E_PORT ?? 3001);
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -8,13 +11,13 @@ export default defineConfig({
   workers: 1,
   reporter: "line",
   use: {
-    baseURL: "http://127.0.0.1:3001",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "pnpm start",
-    url: "http://127.0.0.1:3001/en/tools/seo-audit",
+    command: `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
+    url: `${baseURL}/en/tools/seo-audit`,
     timeout: 60_000,
     reuseExistingServer: false,
   },

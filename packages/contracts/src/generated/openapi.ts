@@ -1562,7 +1562,17 @@ export interface components {
             productUrl: string;
             /** @description Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact. */
             businessHint?: string;
+            /** @description Optional customer-declared product name used as the initial project display name and Product Profile fact. */
+            productName?: string;
+            customerModel?: components["schemas"]["ProductProfileCustomerModel"];
+            primaryMarket?: components["schemas"]["MarketCode"];
+            /** @description Customer-selected outcomes that guide later evidence collection and profile synthesis; they are declarations, not measured results. */
+            growthObjectives?: components["schemas"]["ProductProfileGrowthObjective"][];
         };
+        /** @enum {string} */
+        ProductProfileCustomerModel: "b2b" | "b2c" | "hybrid";
+        /** @enum {string} */
+        ProductProfileGrowthObjective: "increase_signups" | "generate_qualified_leads" | "increase_organic_traffic" | "increase_ai_visibility" | "improve_conversion" | "increase_revenue" | "enter_new_markets";
         ProductProfileTargetMarket: {
             marketCode: components["schemas"]["MarketCode"];
             /** @enum {string} */
@@ -1683,6 +1693,8 @@ export interface components {
             generatedAt: components["schemas"]["Timestamp"] | null;
             businessHint: string | null;
             productName: string | null;
+            customerModel?: components["schemas"]["ProductProfileCustomerModel"];
+            growthObjectives?: components["schemas"]["ProductProfileGrowthObjective"][];
             oneLiner: string | null;
             category: string | null;
             productType: string | null;
@@ -1713,6 +1725,8 @@ export interface components {
             generatedAt: components["schemas"]["Timestamp"] | null;
             businessHint: string | null;
             productName: string;
+            customerModel?: components["schemas"]["ProductProfileCustomerModel"];
+            growthObjectives?: components["schemas"]["ProductProfileGrowthObjective"][];
             oneLiner: string;
             category: string;
             productType: string;
@@ -1730,6 +1744,8 @@ export interface components {
         ProductProfileEditablePatch: {
             businessHint?: string | null;
             productName?: string | null;
+            customerModel?: components["schemas"]["ProductProfileCustomerModel"];
+            growthObjectives?: components["schemas"]["ProductProfileGrowthObjective"][];
             oneLiner?: string | null;
             category?: string | null;
             productType?: string | null;
@@ -1811,11 +1827,19 @@ export interface components {
             status: "queued" | "running";
             resultRef: null;
         };
+        ProductProfileActiveCrawlRun: components["schemas"]["AsyncRun"] & {
+            /** @constant */
+            kind: "collection";
+            /** @enum {string} */
+            status: "queued" | "running";
+            resultRef: null;
+        };
         ProductProfileWorkspace: {
             projectId: components["schemas"]["Uuid"];
             currentProfile: components["schemas"]["ProductProfileRowDto"] | null;
             confirmedProfile: components["schemas"]["ConfirmedProductProfileRowDto"] | null;
             activeSynthesisRun: components["schemas"]["ProductProfileActiveSynthesisRun"] | null;
+            activeCrawlRun: components["schemas"]["ProductProfileActiveCrawlRun"] | null;
         };
         ProductProfileWorkspaceResponse: {
             data: components["schemas"]["ProductProfileWorkspace"];
@@ -5840,6 +5864,7 @@ export interface operations {
             /** @description Project created. */
             201: {
                 headers: {
+                    /** @description Legacy creation opens Overview; URL-first Product Profile creation opens the Product Profile editor. */
                     Location: string;
                     "X-Request-Id": components["headers"]["RequestId"];
                     [name: string]: unknown;

@@ -208,6 +208,20 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   await expect(
     page.getByRole("heading", { level: 3, name: /\?$/ }),
   ).toHaveCount(8);
+  const faqSchema = await page
+    .locator('script[type="application/ld+json"]')
+    .evaluateAll((scripts) =>
+      scripts
+        .map((script) => JSON.parse(script.textContent ?? "{}"))
+        .find((value) => value["@type"] === "FAQPage"),
+    );
+  expect(faqSchema.mainEntity).toHaveLength(8);
+  await expect(
+    page.getByRole("link", { name: "Run an internal link audit" }),
+  ).toHaveAttribute("href", "/en/tools/internal-link-audit");
+  await expect(
+    page.getByRole("link", { name: "Read the evidence-first method" }),
+  ).toHaveAttribute("href", "/en/blog/evidence-first-growth-experiments");
 
   await page.route("**/api/tools/seo-audit", async (route) => {
     await route.fulfill({

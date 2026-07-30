@@ -382,3 +382,51 @@ final baseline.
 - No email, message, or external notification was sent.
 - Git state is local uncommitted changes on the isolated candidate branch.
 - Nothing was committed, pushed, deployed, or released.
+
+## 11. Release-candidate update after reconciling current `main`
+
+Date: 2026-07-31 (Asia/Shanghai)
+
+This section supersedes the earlier pre-release state and verification gaps in
+sections 8–10. It does not claim that production has been deployed.
+
+The candidate was reconciled with current `origin/main` at
+`4a42b56d5744e9e1595fd1ab9813e3676c8b38c3`. The pre-merge feature head was
+`141cc11527581667a2a9d0e26b8333e305a5de8b`. Conflict resolution preserved the
+current marketing shell, locale provider, internal-link tool connection, blog
+connection, and current vendor provenance while retaining the site-wide,
+audit-only product contract.
+
+The following gates passed on the resolved merge tree:
+
+- lint: all workspaces;
+- typecheck: all workspaces;
+- unit tests: 499 files, 6,070 tests;
+- PostgreSQL integration tests: 84 files, 584 tests against a fresh loopback
+  disposable database;
+- production build: marketing and authenticated web applications;
+- SEO-audit marketing E2E: 3/3;
+- real application/worker/PostgreSQL E2E: 44/44, split into 14 surface tests,
+  2 vertical-chain tests, and 28 responsive tests;
+- mock application E2E: 185/185;
+- customer Artifact E2E: 20/20;
+- secret scan plus redaction tests: no secret signature found and 75/75 tests;
+- contract generation consistency and OpenAPI lint;
+- authority, active specification lock, implementation consistency, vendor
+  baseline, documentation consistency, and deployment configuration;
+- migration check: 78 application tables, 105 indexes, 148 triggers, and 67
+  routines;
+- schema smoke: passed with every fixture rolled back.
+
+The first disposable-database E2E attempt was rejected by the database-name
+safety guard. A second empty-database attempt correctly failed because the
+schema had not yet been migrated. The final run used a new safety-compliant
+database, applied all 34 migrations, and passed. The standalone schema-smoke
+command initially could not find `psql` on the default shell path; rerunning
+with the installed Homebrew `libpq` binary passed. No safety guard or assertion
+was weakened.
+
+The temporary PostgreSQL container was stopped and automatically removed after
+verification. No hosted or production database was connected, read, or
+migrated. Production deployment and production-origin URL submission remain
+unclaimed until completed and checked separately.

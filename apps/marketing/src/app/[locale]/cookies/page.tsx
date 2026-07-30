@@ -15,15 +15,17 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const document = await getLegalDocument("cookies", locale);
   return generatePageMetadata({
     title:
-      locale === "en" ? "Cookie Policy — GenGrowth" : "Cookie 政策 — GenGrowth",
+      locale === "en" ? "Cookie Policy" : "Cookie 政策",
     description:
       locale === "en"
         ? "How GenGrowth uses cookies and similar technologies."
         : "GenGrowth 如何使用 Cookie 和类似技术。",
     locale,
     path: "/cookies",
+    noIndex: !document,
   });
 }
 

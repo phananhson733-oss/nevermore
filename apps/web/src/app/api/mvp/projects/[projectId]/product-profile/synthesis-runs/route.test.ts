@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { ProblemError } from "@sf/observability";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -31,6 +32,45 @@ afterEach(() => {
 });
 
 describe("POST Product Profile synthesis async contract", () => {
+  it("returns a safely adoptable active-run pointer on conflict", async () => {
+    mocks.createProductProfileSynthesisRun.mockRejectedValueOnce(
+      new ProblemError(
+        "RUN_ALREADY_ACTIVE",
+        "A Product Profile synthesis run is already active.",
+        {
+          headers: { Location: statusUrl },
+          current: { runId, statusUrl },
+        },
+      ),
+    );
+
+    const response = await POST(
+      new NextRequest(
+        `http://localhost/api/mvp/projects/${projectId}/product-profile/synthesis-runs`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": "profile-synthesis-active-winner",
+            Origin: "http://localhost",
+            "X-Request-Id": "request-profile-synthesis-active",
+          },
+          body: JSON.stringify({ baseVersion: 1 }),
+        },
+      ),
+      { params: Promise.resolve({ projectId }) },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Location")).toBe(statusUrl);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      requestId: "request-profile-synthesis-active",
+      current: { runId, statusUrl },
+    });
+  });
+
   it("validates, rate-limits and returns canonical 202 polling metadata", async () => {
     mocks.createProductProfileSynthesisRun.mockResolvedValueOnce({
       status: 202,

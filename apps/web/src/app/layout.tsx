@@ -22,7 +22,22 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: "GenGrowth",
+  applicationName: "GenGrowth",
   description: "Connected diagnosis and delivery workbench",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32", type: "image/x-icon" },
+      { url: "/icon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    shortcut: [{ url: "/favicon.ico", type: "image/x-icon" }],
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 export default async function RootLayout({

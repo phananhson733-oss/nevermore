@@ -124,6 +124,7 @@ function workspace(
     currentProfile: row,
     confirmedProfile: null,
     activeSynthesisRun: null,
+    activeCrawlRun: null,
   };
 }
 

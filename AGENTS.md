@@ -327,3 +327,18 @@ pnpm deploy:check
 - 有价值的报告和证据已持久保存；
 - Git、push、deploy、migration 和 production 状态被准确报告；
 - 没有把“代码已写”“本地测试通过”或“CI 通过”误报为“已上线”。
+
+## 7. 仓库与营销站发布标识
+
+- GitHub 代码仓库与 Vercel Git 集成的唯一源仓库都是
+  `phananhson733-oss/nevermore`（完整地址：
+  `https://github.com/phananhson733-oss/nevermore.git`）。引用仓库、核对
+  remote、发布来源、Production Branch 或排查 Vercel 构建问题时，必须使用
+  这个唯一标识；不得改用本地目录名、其他 fork、Vercel 组织名、部署 URL
+  或项目显示名。
+- GenGrowth 营销站源码位于 `apps/marketing`，生产域名为 `gengrowth.ai` 和
+  `www.gengrowth.ai`。Vercel 界面中显示的 `gengrowth-agents` 只是该营销站
+  的项目显示名，不是另一套 Git 仓库，也不是另一个发布来源。
+- `apps/web` 对应应用站 `app.gengrowth.ai`，与营销站是独立发布目标。用户
+  授权“只发布营销站”时，只能发布营销站产物，不能借此发布 `apps/web`、
+  worker、数据库或其他工作区改动。

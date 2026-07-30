@@ -5,7 +5,11 @@ import {
   seedProject,
 } from "./fixtures.ts";
 
-const COLD_PROJECT_PROJECTION_TIMEOUT_MS = 20_000;
+// The real app keeps Sources and Results in separate client-query boundaries.
+// In CI, proving cross-tab isolation can legitimately wait on one cold
+// projection while its sibling tab finishes a different route. The acceptance
+// claim is isolation, not a 20s rendering SLA.
+const COLD_PROJECT_PROJECTION_TIMEOUT_MS = 45_000;
 
 function projectApiRequests(page: Page): string[] {
   const urls: string[] = [];

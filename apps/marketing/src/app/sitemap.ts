@@ -1,12 +1,12 @@
-// @input  — siteConfig、统一 blog 数据层、getGlossaryTerms（术语数据）
-// @output — Next.js MetadataRoute.Sitemap，生成 /sitemap.xml
-// @pos    — SEO 基础设施，供搜索引擎发现所有页面
+// @input  — siteConfig、统一 blog 数据层
+// @output — Next.js MetadataRoute.Sitemap，生成当前营销站的 canonical URL 集
+// @pos    — SEO 基础设施；避免把旧实验页当成当前产品信息架构的一部分
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { MetadataRoute } from "next";
 import { siteConfig } from "@/config/site";
 import { getAllBlogPosts } from "@/lib/blog";
-import { getGlossaryTerms } from "@/lib/glossary";
+import { getLegalDocument } from "@/lib/legal";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
@@ -29,21 +29,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = ["en", "zh"];
   const staticPages = [
     "",
-    "/features",
-    "/pricing",
-    "/playbooks",
-    "/templates",
-    "/about",
-    "/contact",
-    "/blog",
-    "/glossary",
     "/tools",
-    "/compare",
-    "/use-cases",
-    "/privacy",
-    "/terms",
-    "/cookies",
-    "/copyright",
+    "/blog",
+    "/pricing",
   ];
 
   const entries: MetadataRoute.Sitemap = [];
@@ -54,11 +42,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const priority =
         page === ""
           ? 1.0
-          : page === "/glossary" || page === "/tools"
-            ? 0.7
-            : 0.8;
+          : page === "/tools"
+            ? 0.9
+            : page === "/blog" || page === "/pricing"
+              ? 0.8
+              : 0.2;
       const changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] =
-        page === "/blog" ? "daily" : "weekly";
+        page === "/blog" ? "weekly" : "monthly";
 
       entries.push({
         url: `${siteConfig.url}/${locale}${page}`,
@@ -71,7 +61,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Markdown posts are always included; any explicitly enabled legacy records
   // come from the same bridge used by list/detail/RSS routes.
-  const posts = await getAllBlogPosts();
+  const [posts, legalDocuments] = await Promise.all([
+    getAllBlogPosts(),
+    Promise.all(
+      locales.flatMap((locale) =>
+        (["privacy", "terms", "cookies", "copyright"] as const).map(
+          async (docType) => ({
+            locale,
+            docType,
+            document: await getLegalDocument(docType, locale),
+          }),
+        ),
+      ),
+    ),
+  ]);
   for (const post of posts) {
     entries.push({
       url: `${siteConfig.url}/${post.locale}/blog/${post.slug}`,
@@ -81,31 +84,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Blog category pages
-  const blogCategories = [
-    "case-study",
-    "methodology",
-    "weekly-review",
-    "experiment-log",
-  ];
-  for (const locale of locales) {
-    for (const category of blogCategories) {
-      entries.push({
-        url: `${siteConfig.url}/${locale}/blog/category/${category}`,
-        lastModified: BUILD_DATE,
-        changeFrequency: "weekly",
-        priority: 0.5,
-      });
-    }
+  // A legal URL stays reachable from the Footer even while its deployment-
+  // managed document is absent. Only an actual current document is canonical
+  // enough to place in the sitemap.
+  for (const { locale, docType, document } of legalDocuments) {
+    if (!document) continue;
+    entries.push({
+      url: `${siteConfig.url}/${locale}/${docType}`,
+      lastModified: new Date(document.effective_date),
+      changeFrequency: "yearly",
+      priority: 0.2,
+    });
   }
 
   // Tool pages
   const tools = [
-    "ab-test-calculator",
-    "growth-roi-calculator",
+    "seo-quick-wins",
     "internal-link-audit",
+    "traffic-drop-diagnosis",
     "seo-audit",
-  ];
+  ] as const;
   for (const locale of locales) {
     for (const tool of tools) {
       entries.push({
@@ -115,56 +113,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.7,
       });
     }
-  }
-
-  // Compare pages
-  const compareSlugs = ["manual-growth"];
-  for (const locale of locales) {
-    for (const slug of compareSlugs) {
-      entries.push({
-        url: `${siteConfig.url}/${locale}/compare/${slug}`,
-        lastModified: BUILD_DATE,
-        changeFrequency: "monthly",
-        priority: 0.7,
-      });
-    }
-  }
-
-  // Use Case pages
-  const useCaseSlugs = ["saas-zero-to-1000", "content-site-seo-scale"];
-  for (const locale of locales) {
-    for (const slug of useCaseSlugs) {
-      entries.push({
-        url: `${siteConfig.url}/${locale}/use-cases/${slug}`,
-        lastModified: BUILD_DATE,
-        changeFrequency: "monthly",
-        priority: 0.6,
-      });
-    }
-  }
-
-  // Glossary term pages (skip if Supabase unavailable at build time)
-  try {
-    const allSlugs = new Set<string>();
-    for (const locale of locales) {
-      const terms = await getGlossaryTerms(locale);
-      for (const term of terms) {
-        allSlugs.add(term.slug);
-      }
-    }
-
-    for (const slug of allSlugs) {
-      for (const locale of locales) {
-        entries.push({
-          url: `${siteConfig.url}/${locale}/glossary/${slug}`,
-          lastModified: BUILD_DATE,
-          changeFrequency: "monthly",
-          priority: 0.6,
-        });
-      }
-    }
-  } catch {
-    // Supabase not available at build time — skip glossary terms
   }
 
   return entries;

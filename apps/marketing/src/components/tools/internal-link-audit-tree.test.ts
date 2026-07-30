@@ -93,7 +93,7 @@ describe("buildInternalLinkAuditTree", () => {
     expect(model.childrenById.get("home")).toEqual(["en"]);
     expect(model.childrenById.get("en")).toEqual(["blog"]);
     expect(model.childrenById.get("blog")).toEqual(["category"]);
-    expect(model.secondaryInboundById.get("blog")).toBe(4);
+    expect(model.secondaryInboundById.get("blog")).toBe(1);
     expect(model.secondaryInboundById.get("category")).toBe(1);
   });
 
@@ -127,6 +127,23 @@ describe("buildInternalLinkAuditTree", () => {
 
     expect(model.parentById.get("article")).toBe("guide");
     expect(model.parentRelationById.get("article")).toBe("url_path");
+    expect(model.secondaryInboundById.get("article")).toBe(1);
+  });
+
+  it("counts only mapped secondary edges when aggregate inbound totals exceed the edge projection", () => {
+    const model = buildInternalLinkAuditTree({
+      nodes: [
+        node("home", 0, 0, "home", "/"),
+        node("guide", 1, 10, "page", "/guide"),
+        node("article", 2, 20, "page", "/guide/article"),
+      ],
+      edges: [
+        edge("guide", "article"),
+        edge("home", "article"),
+      ],
+    });
+
+    expect(model.parentById.get("article")).toBe("guide");
     expect(model.secondaryInboundById.get("article")).toBe(1);
   });
 });

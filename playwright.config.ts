@@ -21,6 +21,16 @@ const DATABASE_URL = requireSafeTestDatabaseUrl(
   process.env["E2E_DATABASE_URL"],
   "E2E_DATABASE_URL",
 );
+const REAL_E2E_NODE_OPTIONS = [
+  process.env["NODE_OPTIONS"],
+  // Next dev restarts itself once heap usage crosses 80% of V8's limit. The
+  // isolated database-backed groups compile authenticated routes while also
+  // running a browser and, for verticals, a worker. Give each child enough
+  // headroom to finish without weakening any browser assertion.
+  "--max-old-space-size=6144",
+]
+  .filter(Boolean)
+  .join(" ");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -82,13 +92,8 @@ export default defineConfig({
       SF_BLOB_BACKEND: "local",
       SF_BLOB_DIR: "/tmp/signalframe-e2e-real-blobs",
       SF_DEV_AUTH: "true",
-      // Next development mode restarts itself at 80% of V8's heap limit.
-      // Each isolated real-E2E group compiles authenticated routes while also
-      // running a browser and, for verticals, a worker. The default ~4.5 GB
-      // limit can trigger a mid-test restart that discards form/selection
-      // state; this gives each group headroom without pre-allocating memory.
-      NODE_OPTIONS: "--max-old-space-size=6144",
       NEXT_DIST_DIR: ".next-e2e-real",
+      NODE_OPTIONS: REAL_E2E_NODE_OPTIONS,
       PORT: String(PORT),
     },
   },

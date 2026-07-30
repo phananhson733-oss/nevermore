@@ -1,11 +1,13 @@
 {
   "common": {
     "joinWaitlist": "订阅邮件",
+    "openApp": "打开 GenGrowth",
     "learnMore": "了解更多",
     "backToHome": "返回首页",
     "home": "首页"
   },
   "nav": {
+    "tools": "免费工具",
     "features": "核心能力",
     "blog": "博客",
     "templates": "示例模板",
@@ -29,64 +31,81 @@
   },
   "home": {
     "hero": {
-      "title": "自动化增长，从第一个用户开始",
-      "subtitle": "极简配置 / 自动决策 / 全程透明 / 持续进化",
-      "cta": "立即试用",
-      "socialProof": "已有 14 个国家 237 个产品团队在使用"
+      "eyebrow": "串联起来的 SEO 增长系统",
+      "title": "知道该修什么，也知道下一步做什么。",
+      "subtitle": "GenGrowth 将诊断、关键词研究、网站结构、内链和外链建设串成一条可执行的 SEO 工作流。",
+      "primaryCta": "开始使用 GenGrowth",
+      "secondaryCta": "探索免费工具",
+      "socialProof": "先用公开诊断验证，再让每一步自然衔接。"
     },
-    "stats": {
-      "stat1Number": "4",
-      "stat1Label": "项输入启动增长引擎",
-      "stat2Number": "6",
-      "stat2Label": "维数据完整性验证",
-      "stat3Number": "100%",
-      "stat3Label": "渠道隔离归因精度"
+    "freeAudit": {
+      "eyebrow": "先看证据，再给建议",
+      "title": "几分钟，获得一个有用的 SEO 信号",
+      "body": "输入公开 URL，即可检查页面、robots.txt 和 sitemap.xml；无需账号、站点所有权验证或连接 Search Console。",
+      "point1": "每项发现均展示可测量的问题与对应证据。",
+      "point2": "明确区分已检查的内容与公开扫描无法证明的内容。",
+      "point3": "把结果作为下一步的起点，而不是一个泛泛的总分。",
+      "fullReport": "了解完整 SEO 审计如何工作"
     },
     "painPoints": {
-      "title": "增长团队的困境",
-      "card1Title": "手动操作太多",
-      "card1Desc": "每周花 20+ 小时做重复的 SEO 审计、社媒排期和归因报告。",
-      "card2Title": "归因说不清",
-      "card2Desc": "流量来了但说不清为什么。渠道混杂、数据冲突、决策缺乏证据。",
-      "card3Title": "策略靠拍脑袋",
-      "card3Desc": "缺少系统化方法发现机会、评估策略并按预期 ROI 排优先级。",
-      "card4Title": "没有自优化闭环",
-      "card4Desc": "团队在重复执行，但系统不会学习该扩量、迭代还是暂停。"
+      "title": "不知道下一步时，SEO 工作会变得很难",
+      "card1Title": "验证周期太长",
+      "card1Desc": "等待排名变化时，每一个决策都像是在猜测。",
+      "card2Title": "待办没有先后顺序",
+      "card2Desc": "审计会发现几十个问题，却很少告诉你最该先处理什么。",
+      "card3Title": "工具之间没有上下文",
+      "card3Desc": "关键词、技术和外链工作变成分散表格，而不是同一份计划。",
+      "card4Title": "建议不是产出物",
+      "card4Desc": "只有能审阅、能执行的下一步，建议才真正有用。"
     },
     "solution": {
-      "definition": "增长自动化是一套帮助产品团队自动执行、衡量和优化增长实验的系统——让你专注于策略，而非手动操作。",
-      "title": "一个系统，全链路自动化",
-      "subtitle": "从 4 项输入到自动发现、策略生成、执行和优化。",
-      "step1": "极简配置",
-      "step2": "自动发现",
-      "step3": "策略引擎",
-      "step4": "动作与归因",
-      "step5": "自优化"
+      "definition": "从信号走向行动的可复用路径，而不是又一个孤立的 SEO 仪表盘。",
+      "title": "一个项目，一条清晰的 SEO 路径。",
+      "subtitle": "每个阶段都基于同一份项目上下文，让你从有价值的信号走向有序计划，而不必反复开始分析。",
+      "step1": "明确项目",
+      "step2": "建立关键词库",
+      "step3": "规划结构与内链",
+      "step4": "建设权威度"
     },
     "capabilities": {
-      "title": "核心能力",
-      "card1Title": "自动发现",
-      "card1Desc": "站点审计、关键词机会、竞品空白——全部自动完成。",
-      "card2Title": "策略引擎",
-      "card2Desc": "3 条以上候选策略，附带评分、ROI 标记和证据链。",
-      "card3Title": "归因闭环",
-      "card3Desc": "UTM 指纹、渠道隔离、数据完整性验收。",
-      "viewAll": "查看全部能力 →"
+      "eyebrow": "免费工具，连接下一步",
+      "title": "从项目卡住的地方开始",
+      "subtitle": "使用公开工具获得即时、基于证据的信号；然后在 GenGrowth 中沿用上下文继续推进。",
+      "auditTitle": "免费 SEO 审计",
+      "auditDesc": "无需账号，检查公开页面的 SEO 信号、robots.txt 与 sitemap.xml。",
+      "linksTitle": "内链审计",
+      "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
+      "cardCta": "运行工具",
+      "viewAll": "浏览全部免费工具 →"
     },
     "socialProof": {
-      "title": "透明运营，用过程证明实力",
-      "subtitle": "我们先公开每周实验日志、决策与归因证据，再宣称成果。",
-      "cta": "查看每周日志 →",
-      "earlyUsers": "UTM 指纹 + 渠道隔离归因",
-      "communityTitle": "零竞品具备同等归因能力",
-      "communitySub": "没有其他 AI 增长工具能衡量什么真正有效",
-      "rhythmTitle": "每周实验复盘",
-      "rhythmSub": "假设 → 动作 → 归因 → 决策"
+      "title": "SEO 建议应当展示它的推导过程",
+      "subtitle": "每个公开工具都让从观察到的信号到可执行动作的路径可见，并且不凭空制造确定性。",
+      "cta": "阅读 GenGrowth 方法论 →",
+      "evidenceTitle": "先观察，再建议",
+      "evidenceSub": "每个结果都说明了产生它的来源和证据。",
+      "sequenceTitle": "诊断也要有顺序",
+      "sequenceSub": "发现会形成有序的修复或规划路径，而不是平铺的清单。",
+      "limitsTitle": "限制保持可见",
+      "limitsSub": "未经验证的数据和扫描边界会与已测量的事实清晰分开。"
+    },
+    "editorial": {
+      "eyebrow": "方法库",
+      "title": "先理解决策，再运行工具。",
+      "body": "用简短、实用的文章理解一项 SEO 决策背后的证据，再直接进入能帮助你检查它的公开工具。",
+      "viewAll": "浏览博客",
+      "experimentTitle": "证据优先的增长实验",
+      "experimentBody": "用假设、一个核心指标、护栏指标和可复核的下一步构成实验。",
+      "linksTitle": "受限内链抓取到底能证明什么",
+      "linksBody": "将抓取解读为已观测到的结构，而不是全量覆盖承诺或 Google 排名结论。",
+      "auditTitle": "公开 SEO 审计的边界",
+      "auditBody": "在期待更多之前，先理解一个公开 URL、Sitemap 和 robots.txt 能展示什么。",
+      "read": "阅读方法"
     },
     "bottomCta": {
-      "title": "开始自动化您的增长",
-      "subtitle": "订阅邮件，获取早期访问与每周实验报告。",
-      "cta": "订阅邮件"
+      "title": "让你的下一条 SEO 发现变成行动力",
+      "subtitle": "打开 GenGrowth，在同一条工作流中串联项目、关键词、网站结构、内链与外链建设。",
+      "cta": "开始使用 GenGrowth"
     }
   },
   "waitlist": {
@@ -312,6 +331,25 @@
       "title": "增长自动化工程师",
       "bio": "我们构建帮助产品团队自动化增长实验的工具。"
     },
+    "comparisons": {
+      "eyebrow": "产品对比",
+      "title": "把产品对比放进方法与证据库。",
+      "body": "对比说明应和评估所需的方法与证据放在一起。请把这些内容当作评审提示，而不是打分表或放之四海皆准的结论。",
+      "cardLabel": "对比笔记",
+      "cardBody": "评估产品周围的工作流：它能观察什么、如何把发现变成决策，以及下一步如何保持可审阅。",
+      "openChecklist": "展开评估提示",
+      "checklist": {
+        "evidence": "哪些源数据可以直接查看，哪些结论仍然只是推断？",
+        "workflow": "一项发现如何变成具体、可审阅的下一步行动？",
+        "control": "哪些决策和执行步骤始终由你的团队掌控？"
+      },
+      "questions": {
+        "manualGrowth": "哪些重复的 SEO 工作应当保留人工处理，哪些值得交给可复用的系统？",
+        "okaraAiCmo": "你需要的是建议层、执行工作流，还是经过审慎组合的两者？",
+        "babylovegrowth": "内容与 SEO 工作流的哪些步骤需要明确证据和人工审核点？",
+        "ahrefs": "研究信号如何进入一份由你掌控、可审阅的行动计划？"
+      }
+    },
     "relatedArticles": {
       "title": "相关文章"
     }
@@ -442,8 +480,19 @@
     }
   },
   "tools": {
-    "title": "免费增长工具",
-    "subtitle": "为运行增长实验的产品团队提供的实用计算器和工具。",
+    "eyebrow": "从眼前的问题开始",
+    "title": "为下一步 SEO 决策准备的免费工具",
+    "subtitle": "先通过公开工具得到一个具体信号，再把工作带入同一份 GenGrowth 项目，而不是增加一张割裂的待办清单。",
+    "diagnoseEyebrow": "我有一个需要优化的网站",
+    "diagnoseTitle": "诊断是什么拖慢了网站",
+    "diagnoseBody": "从公开 URL 开始。这些工具只读取公开页面，获得第一个结果时无需账号或站点所有权验证。",
+    "planEyebrow": "我需要规划和衡量",
+    "planTitle": "让下一次实验更容易判断",
+    "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
+    "productCtaEyebrow": "从一个答案到完整路径",
+    "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
+    "productCtaBody": "打开 GenGrowth，在一条连续路径中串联项目上下文、关键词研究、网站结构、内链与权威度建设。",
+    "productCta": "打开 GenGrowth",
     "abTest": {
       "title": "A/B 测试样本量计算器",
       "description": "根据基线转化率、最小可检测效应和统计参数，计算 A/B 测试所需的样本量。",
@@ -769,13 +818,13 @@
       "faq8q": "扫描结果会保存吗？",
       "faq8a": "不会。匿名响应不做持久化，并通过 no-store 指令禁止缓存。",
       "relatedToolsEyebrow": "其他公共审计",
-      "relatedToolsTitle": "检查其他公开表面",
-      "relatedToolsCta": "打开免费工具目录",
-      "relatedToolsBody": "浏览 GenGrowth 的其他公共工具，以及每个工具明确声明的数据边界。",
+      "relatedToolsTitle": "检查网站的内链结构",
+      "relatedToolsCta": "运行内链审计",
+      "relatedToolsBody": "单独的内链审计会在其明确边界内，记录已观测链接、抓取深度和候选孤立页面。",
       "articlesEyebrow": "方法说明",
-      "articlesTitle": "了解规模化 SEO 采集",
-      "articlesBody": "GenGrowth Blog 会说明抓取证据如何进入更大的 SEO 系统，但不会改变这个工具只做审计的输出边界。",
-      "articlesCta": "阅读文章",
+      "articlesTitle": "让每项结论都留在证据边界内",
+      "articlesBody": "了解 GenGrowth 如何陈述已观测信号，同时不夸大现有证据能够证明的内容。",
+      "articlesCta": "阅读证据优先方法",
       "ctaEyebrow": "持久化工作区",
       "ctaTitle": "需要保存每次运行并做跨期对比？",
       "ctaBody": "登录后的 GenGrowth App 是一套独立系统，用于保存项目证据和工作流；这份公共审计仍然保持匿名、无状态。",
@@ -1097,8 +1146,26 @@
   },
   "pricing": {
     "hero": {
-      "title": "简洁透明的定价",
-      "subtitle": "从发现到优化，选择适合你增长阶段的自动化级别。"
+      "eyebrow": "价值优先的定价方式",
+      "title": "先免费开始，持续使用时再付费。",
+      "subtitle": "公开工具会在你决定注册或付费之前给出一个有用的答案。完整产品的定价将以持续工作流的价值和运行成本为依据。"
+    },
+    "freeTools": {
+      "eyebrow": "现已可用",
+      "title": "免费公开工具",
+      "body": "输入公开 URL，即可获得即时、基于证据的诊断。第一个结果不是阉割 demo，也不是伪装成工具的销售闸门。",
+      "item1": "无需账号或站点所有权验证，即可运行单页 SEO 审计。",
+      "item2": "从公开可访问页面构建有明确边界的内链图谱。",
+      "item3": "当需要更快作出实验判断时，可使用规划计算器。",
+      "cta": "探索免费工具"
+    },
+    "product": {
+      "eyebrow": "GenGrowth 完整产品",
+      "title": "完整产品的定价仍在制定中",
+      "body": "我们不会发布暂定价格或还无法兑现的方案边界。完整工作流会把项目上下文、已保存工作、更深数据和持续运营放在一起。",
+      "principle": "定价原则",
+      "principleBody": "第一个有用的诊断保持开放；只有持续监控、更深数据、多站点工作或持续运营价值产生真实成本时才收费。",
+      "cta": "打开 GenGrowth"
     },
     "starter": {
       "name": "Starter",
@@ -1173,30 +1240,30 @@
     "faq": {
       "title": "常见问题",
       "q1": {
-        "question": "为什么 GenGrowth 比 Okara 或 BabyLoveGrowth 贵？",
-        "answer": "那些工具每月 $99 只提供建议。GenGrowth 的 Starter 方案同样 $99 起步，提供发现和策略功能。我们的 Pro 和 Growth 方案提供了竞品不具备的能力：自动化执行、渠道隔离归因，以及从每次实验中学习的自优化闭环。"
+      "question": "公开工具免费吗？",
+      "answer": "是的。当前公开 SEO 审计、内链审计和计算器均无需付费即可使用。每个工具都会清楚说明自己的技术范围与限制。"
       },
       "q2": {
-        "question": "可以切换方案吗？",
-        "answer": "可以。随时升级或降级，变更在下一个计费周期生效。"
+      "question": "完整产品的定价何时可用？",
+      "answer": "当完整工作流、使用边界和持续运行成本已定义到足以做出可靠承诺时，我们会发布定价。"
       },
       "q3": {
-        "question": "有免费试用吗？",
-        "answer": "有。所有方案均提供 14 天免费试用，可体验全部功能。"
+      "question": "运行公开诊断需要账号吗？",
+      "answer": "不需要。公开 SEO 审计和内链审计只读取公开页面；当工作需要保存、扩展或在产品中持续时，才需要账号。"
       },
       "q4": {
-        "question": "什么算一个「产品」？",
-        "answer": "一个产品是你想要增长的一个网站或应用。每个产品拥有独立的发现引擎、策略组合和执行队列。"
+      "question": "付费产品将覆盖什么价值？",
+      "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营；而不是把第一个有用的结果锁在付费墙后。"
       },
       "q5": {
-        "question": "需要技术知识吗？",
-        "answer": "不需要。GenGrowth 只需 4 个输入即可启动：你的 URL、目标地区、增长目标和主要转化事件。系统会处理其余一切。"
+      "question": "我应该从哪里开始？",
+      "answer": "如果你已有网站，请从公开 SEO 审计或内链审计开始；如果你正在规划实验，可使用计算器，并在需要一份连续的项目工作流时进入 GenGrowth。"
       }
     },
     "cta": {
-      "title": "准备好自动化增长了吗？",
-      "subtitle": "14 天免费试用，无需信用卡。",
-      "button": "立即开始"
+      "title": "先得到一个真实信号，而不是先作出付费承诺",
+      "subtitle": "选择最符合眼前问题的免费工具。得到有用证据后，再决定是否继续进入完整产品。",
+      "button": "探索免费工具"
     }
   },
   "playbooks": {

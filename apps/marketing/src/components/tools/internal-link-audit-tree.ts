@@ -62,9 +62,6 @@ export function buildInternalLinkAuditTree(
   const locationById = new Map(
     report.nodes.map((node) => [node.id, pageLocation(node.url)]),
   );
-  const observedEdges = new Set(
-    report.edges.map((edge) => `${edge.from}\u0000${edge.to}`),
-  );
   const candidatesByTarget = new Map<string, ParentCandidate[]>();
 
   report.edges.forEach((edge, edgeIndex) => {
@@ -157,12 +154,11 @@ export function buildInternalLinkAuditTree(
   const secondaryInboundById = new Map(
     report.nodes.map((node) => {
       const parentId = parentById.get(node.id);
-      const displayedParentIsObserved =
-        parentId !== undefined &&
-        observedEdges.has(`${parentId}\u0000${node.id}`);
       return [
         node.id,
-        Math.max(0, node.inboundLinks - (displayedParentIsObserved ? 1 : 0)),
+        report.edges.filter(
+          (edge) => edge.to === node.id && edge.from !== parentId,
+        ).length,
       ];
     }),
   );

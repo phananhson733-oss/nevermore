@@ -32,6 +32,11 @@ function profile(): ProductProfileDraft {
     generatedAt: null,
     businessHint: "Overseas B2B growth",
     productName: "RelayOps",
+    customerModel: "b2b",
+    growthObjectives: [
+      "increase_signups",
+      "generate_qualified_leads",
+    ],
     oneLiner: "Customer onboarding operations",
     category: "Customer Operations",
     productType: "B2B SaaS",
@@ -83,6 +88,26 @@ describe("Product Profile editor patch", () => {
 
     expect(buildEditorPatch(current, state)).toEqual({
       productName: "RelayOps International",
+    });
+  });
+
+  it("updates the declared customer model and growth goals without replacing ICP fields", () => {
+    const current = profile();
+    const state = {
+      ...initialEditorState(current),
+      customerModel: "hybrid" as const,
+      growthObjectives: [
+        "increase_signups",
+        "increase_ai_visibility",
+      ] as const,
+    };
+
+    expect(buildEditorPatch(current, state)).toEqual({
+      customerModel: "hybrid",
+      growthObjectives: [
+        "increase_signups",
+        "increase_ai_visibility",
+      ],
     });
   });
 

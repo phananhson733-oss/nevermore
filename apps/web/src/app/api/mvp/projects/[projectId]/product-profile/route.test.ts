@@ -28,6 +28,7 @@ describe("Product Profile route", () => {
       currentProfile: null,
       confirmedProfile: null,
       activeSynthesisRun: null,
+      activeCrawlRun: null,
     };
     mocks.getProductProfileWorkspace.mockResolvedValue(workspace);
 

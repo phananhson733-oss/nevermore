@@ -1,8 +1,10 @@
 // @input  — generatePageMetadata, OrganizationJsonLd, SoftwareApplicationJsonLd, HomePageClient
 // @output — 营销官网首页（server component + generateMetadata + JSON-LD）
-// @pos    — [locale] 下的首页入口，对应 SPEC 2.5
+// @pos    — [locale] 下的免费工具与产品工作流入口
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { generatePageMetadata } from "@/lib/seo";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages } from "next-intl/server";
 import {
   OrganizationJsonLd,
   SoftwareApplicationJsonLd,
@@ -18,23 +20,31 @@ export async function generateMetadata({
   return generatePageMetadata({
     title:
       locale === "en"
-        ? "GenGrowth — Automated Growth Operating System"
-        : "GenGrowth — 自动化增长操作系统",
+        ? "Evidence-led SEO growth, from diagnosis to action"
+        : "从诊断到行动的证据驱动 SEO 增长系统",
     description:
       locale === "en"
-        ? "Minimal input, auto decisions, explainable, self-optimizing. AI-powered growth for ambitious teams."
-        : "最小输入、自动决策、可解释、自优化。为有野心的团队打造的 AI 驱动增长系统。",
+        ? "Free SEO diagnostics and a connected workflow for keyword research, site structure, internal links, and authority building."
+        : "免费 SEO 诊断，以及串联关键词研究、网站结构、内链与外链建设的增长工作流。",
     locale,
     path: "",
   });
 }
 
-export default function Home() {
+export default async function Home() {
+  const messages = await getMessages();
   return (
     <>
       <OrganizationJsonLd />
       <SoftwareApplicationJsonLd />
-      <HomePageClient />
+      <NextIntlClientProvider
+        messages={{
+          home: messages.home,
+          tools: { seoAudit: messages.tools.seoAudit },
+        }}
+      >
+        <HomePageClient />
+      </NextIntlClientProvider>
     </>
   );
 }

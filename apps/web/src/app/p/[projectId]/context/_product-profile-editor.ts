@@ -1,8 +1,10 @@
 import type {
+  CustomerModel,
   ProductProfileCompetitorAnalysisScope,
   ProductProfileCompetitorRelationship,
   ProductProfileCompetitorReviewStatus,
   ProductProfileDraft,
+  ProductProfileGrowthObjective,
   ProductProfileTargetAudience,
   ProductProfileTargetMarket,
   UpdateProductProfileDraftRequest,
@@ -30,6 +32,8 @@ export const BUSINESS_MODELS = [
 export interface EditorState {
   readonly businessHint: string;
   readonly productName: string;
+  readonly customerModel: CustomerModel | "";
+  readonly growthObjectives: readonly ProductProfileGrowthObjective[];
   readonly oneLiner: string;
   readonly category: string;
   readonly productType: string;
@@ -119,6 +123,8 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
   return {
     businessHint: profile.businessHint ?? "",
     productName: profile.productName ?? "",
+    customerModel: profile.customerModel ?? "",
+    growthObjectives: profile.growthObjectives ?? [],
     oneLiner: profile.oneLiner ?? "",
     category: profile.category ?? "",
     productType:
@@ -282,6 +288,8 @@ export function buildEditorPatch(
   const patch: UpdateProductProfileDraftRequest["patch"] = {};
   const businessHint = nullableText(state.businessHint);
   const productName = nullableText(state.productName);
+  const customerModel = state.customerModel || undefined;
+  const growthObjectives = [...state.growthObjectives];
   const oneLiner = nullableText(state.oneLiner);
   const category = nullableText(state.category);
   const productType = selectedProductType(state);
@@ -293,6 +301,15 @@ export function buildEditorPatch(
 
   if (businessHint !== profile.businessHint) patch.businessHint = businessHint;
   if (productName !== profile.productName) patch.productName = productName;
+  if (customerModel !== profile.customerModel && customerModel !== undefined) {
+    patch.customerModel = customerModel;
+  }
+  if (
+    stringSetSignature(growthObjectives) !==
+    stringSetSignature(profile.growthObjectives ?? [])
+  ) {
+    patch.growthObjectives = growthObjectives;
+  }
   if (oneLiner !== profile.oneLiner) patch.oneLiner = oneLiner;
   if (category !== profile.category) patch.category = category;
   if (productType !== profile.productType) patch.productType = productType;
@@ -326,6 +343,8 @@ export function editorStateSignature(state: EditorState): string {
   return JSON.stringify({
     businessHint: nullableText(state.businessHint),
     productName: nullableText(state.productName),
+    customerModel: state.customerModel || null,
+    growthObjectives: [...state.growthObjectives].sort(),
     oneLiner: nullableText(state.oneLiner),
     category: nullableText(state.category),
     productType: selectedProductType(state),

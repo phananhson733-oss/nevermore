@@ -1,11 +1,13 @@
 {
   "common": {
     "joinWaitlist": "Subscribe",
+    "openApp": "Open GenGrowth",
     "learnMore": "Learn More",
     "backToHome": "Back to Home",
     "home": "Home"
   },
   "nav": {
+    "tools": "Free Tools",
     "features": "Features",
     "blog": "Blog",
     "templates": "Templates",
@@ -29,64 +31,81 @@
   },
   "home": {
     "hero": {
-      "title": "Automated Growth, Starting from User #1",
-      "subtitle": "Minimal Input. Auto Decisions. Explainable. Self-Optimizing.",
-      "cta": "Start Free Trial",
-      "socialProof": "Trusted by 237 product teams across 14 countries"
+      "eyebrow": "A connected SEO growth system",
+      "title": "Know what to fix. Know what comes next.",
+      "subtitle": "GenGrowth connects diagnosis, keyword research, site structure, internal links, and authority-building into one practical SEO workflow.",
+      "primaryCta": "Start using GenGrowth",
+      "secondaryCta": "Explore free tools",
+      "socialProof": "Start with a public diagnostic. Keep every next step connected."
     },
-    "stats": {
-      "stat1Number": "4",
-      "stat1Label": "inputs to launch your growth engine",
-      "stat2Number": "6",
-      "stat2Label": "dimensions of data integrity verification",
-      "stat3Number": "100%",
-      "stat3Label": "channel-isolated attribution accuracy"
+    "freeAudit": {
+      "eyebrow": "Start with evidence",
+      "title": "Get a useful SEO signal in minutes",
+      "body": "Enter a public URL to inspect the page, robots.txt, and sitemap.xml. No account, ownership check, or Search Console connection is required.",
+      "point1": "See measurable issues with the evidence behind each finding.",
+      "point2": "Separate what was checked from what cannot be proven in a public scan.",
+      "point3": "Use the result as the first step—not a generic scorecard.",
+      "fullReport": "See how the full SEO audit works"
     },
     "painPoints": {
-      "title": "Growth Teams Are Stuck",
-      "card1Title": "Too Much Manual Work",
-      "card1Desc": "Spending 20+ hours weekly on repetitive SEO audits, social scheduling, and attribution reports.",
-      "card2Title": "Attribution is a Black Box",
-      "card2Desc": "Traffic comes but you can't explain why. Channels overlap, data conflicts, decisions lack evidence.",
-      "card3Title": "Strategy by Gut Feeling",
-      "card3Desc": "No systematic way to discover opportunities, score strategies, or prioritize by expected ROI.",
-      "card4Title": "No Self-Optimization Loop",
-      "card4Desc": "Teams repeat work, but the system does not learn what to expand, iterate, or pause."
+      "title": "SEO work gets hard when the next move is unclear",
+      "card1Title": "Results take time",
+      "card1Desc": "Waiting for rankings to move can make every decision feel like a guess.",
+      "card2Title": "The to-do list has no order",
+      "card2Desc": "Audits surface dozens of issues, but rarely explain what deserves attention first.",
+      "card3Title": "Tools do not share context",
+      "card3Desc": "Keyword, technical, and link work become separate spreadsheets instead of one plan.",
+      "card4Title": "Advice is not an artifact",
+      "card4Desc": "A recommendation only helps when it becomes a reviewable, actionable next step."
     },
     "solution": {
-      "definition": "Growth automation is a system that helps product teams run, measure, and optimize growth experiments automatically — so you can focus on strategy, not manual execution.",
-      "title": "One System, Full Automation",
-      "subtitle": "From 4 inputs to automated discovery, strategy, execution, and optimization.",
-      "step1": "Minimal Input",
-      "step2": "Auto Discovery",
-      "step3": "Strategy Engine",
-      "step4": "Action & Attribute",
-      "step5": "Self-Optimize"
+      "definition": "A repeatable route from signal to action—not another isolated SEO dashboard.",
+      "title": "One project. A clear SEO sequence.",
+      "subtitle": "Each stage builds on shared project context, so you can move from a promising signal to an ordered plan instead of restarting the analysis.",
+      "step1": "Set the project",
+      "step2": "Build the keyword base",
+      "step3": "Shape structure & internal links",
+      "step4": "Build authority"
     },
     "capabilities": {
-      "title": "Core Capabilities",
-      "card1Title": "Auto Discovery",
-      "card1Desc": "Site audit, keyword opportunities, competitor gaps — all automatic.",
-      "card2Title": "Strategy Engine",
-      "card2Desc": "3+ strategy candidates with scores, ROI tags, and evidence chains.",
-      "card3Title": "Attribution Loop",
-      "card3Desc": "UTM fingerprinting, channel isolation, and data integrity verification.",
-      "viewAll": "Explore All Features →"
+      "eyebrow": "Free tools, connected next steps",
+      "title": "Start where your project is stuck",
+      "subtitle": "Use a public tool to get an immediate, evidence-led signal. Then keep moving through GenGrowth with the context intact.",
+      "auditTitle": "Free SEO Audit",
+      "auditDesc": "Inspect public-page SEO signals, robots.txt, and sitemap.xml without an account.",
+      "linksTitle": "Internal Link Audit",
+      "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
+      "cardCta": "Run the tool",
+      "viewAll": "Browse all free tools →"
     },
     "socialProof": {
-      "title": "Built in Public, Proven by Process",
-      "subtitle": "We publish weekly experiment logs, decisions, and attribution evidence before claiming outcomes.",
-      "cta": "View Weekly Logs →",
-      "earlyUsers": "UTM fingerprinting with channel isolation",
-      "communityTitle": "Zero competitors offer this attribution",
-      "communitySub": "No other AI growth tool measures what actually works",
-      "rhythmTitle": "Weekly Experiment Recap",
-      "rhythmSub": "Hypothesis → Action → Attribution → Decision"
+      "title": "SEO advice should show its work",
+      "subtitle": "Every public tool is designed to make the path from observed signal to a practical action visible—without inventing certainty.",
+      "cta": "Read the GenGrowth method →",
+      "evidenceTitle": "Observation before advice",
+      "evidenceSub": "A result names the source and evidence that produced it.",
+      "sequenceTitle": "Diagnosis with a sequence",
+      "sequenceSub": "Findings become an ordered repair or planning path—not a flat checklist.",
+      "limitsTitle": "Limits stay visible",
+      "limitsSub": "Unverified data and scan boundaries are kept separate from measured facts."
+    },
+    "editorial": {
+      "eyebrow": "Method library",
+      "title": "Learn the decision before you run the tool.",
+      "body": "Short, practical notes on the evidence behind a useful SEO decision—then a direct path to the public tool that can help you inspect it.",
+      "viewAll": "Browse the Blog",
+      "experimentTitle": "Evidence-first growth experiments",
+      "experimentBody": "Frame a hypothesis, one primary metric, guardrails, and a reviewable next action.",
+      "linksTitle": "What a bounded internal-link crawl can prove",
+      "linksBody": "Read a crawl as observed structure, not a promise of complete coverage or a Google ranking claim.",
+      "auditTitle": "The boundary of a public SEO audit",
+      "auditBody": "Know what one public URL, a sitemap, and robots.txt can show before asking them for more.",
+      "read": "Read the method"
     },
     "bottomCta": {
-      "title": "Ready to Automate Your Growth?",
-      "subtitle": "Subscribe to get early access and weekly experiment reports.",
-      "cta": "Subscribe"
+      "title": "Turn your next SEO finding into momentum",
+      "subtitle": "Open GenGrowth to connect your project, keywords, structure, internal links, and authority work in one workflow.",
+      "cta": "Start using GenGrowth"
     }
   },
   "waitlist": {
@@ -312,6 +331,25 @@
       "title": "Growth Automation Engineers",
       "bio": "We build tools that help product teams automate growth experiments."
     },
+    "comparisons": {
+      "eyebrow": "Product comparisons",
+      "title": "Compare workflows inside the learning library.",
+      "body": "Comparison notes belong beside the methods and evidence needed to evaluate them. Use these as review prompts, not scorecards or universal claims.",
+      "cardLabel": "Comparison note",
+      "cardBody": "Evaluate the workflow around the product: what it can observe, how it turns a finding into a decision, and how the next step stays reviewable.",
+      "openChecklist": "Open evaluation prompts",
+      "checklist": {
+        "evidence": "What source data can you inspect, and what remains inferred?",
+        "workflow": "How does a finding become a concrete, reviewable next action?",
+        "control": "Which decisions and execution steps remain under your team's control?"
+      },
+      "questions": {
+        "manualGrowth": "Which repetitive SEO tasks should remain manual, and which deserve a repeatable system?",
+        "okaraAiCmo": "Do you need a recommendation layer, an execution workflow, or a deliberate combination of both?",
+        "babylovegrowth": "Which content and SEO workflow steps require explicit evidence and a human review point?",
+        "ahrefs": "How will research signals travel into an owned, reviewable action plan?"
+      }
+    },
     "relatedArticles": {
       "title": "Related Articles"
     }
@@ -442,8 +480,19 @@
     }
   },
   "tools": {
-    "title": "Free Growth Tools",
-    "subtitle": "Practical calculators and utilities for product teams running growth experiments.",
+    "eyebrow": "Start with the question in front of you",
+    "title": "Free tools for the next SEO decision",
+    "subtitle": "Get a concrete signal from a public tool, then carry the work into one connected GenGrowth project instead of another disconnected checklist.",
+    "diagnoseEyebrow": "I have a website to improve",
+    "diagnoseTitle": "Diagnose what is holding the site back",
+    "diagnoseBody": "Start with a public URL. These tools read publicly available pages—no account or site-ownership verification is needed for the first result.",
+    "planEyebrow": "I need to plan and measure",
+    "planTitle": "Make the next experiment easier to size",
+    "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
+    "productCtaEyebrow": "From one answer to a complete route",
+    "productCtaTitle": "Your SEO work should not restart at every tool.",
+    "productCtaBody": "Open GenGrowth to connect your project context, keyword research, site structure, internal links, and authority work in one sequence.",
+    "productCta": "Open GenGrowth",
     "abTest": {
       "title": "A/B Test Sample Size Calculator",
       "description": "Calculate the required sample size for your A/B test based on baseline conversion rate, minimum detectable effect, and statistical parameters.",
@@ -506,7 +555,7 @@
     },
     "internalLinkAudit": {
       "title": "Internal Link Audit",
-      "description": "Map internal links, expose orphan and deep pages, and turn structural gaps into prioritized, review-ready fixes."
+      "description": "No account required. Map internal links, expose orphan and deep pages, and turn structural gaps into prioritized, review-ready fixes."
     },
     "seoAudit": {
       "title": "Free site-wide SEO audit",
@@ -769,13 +818,13 @@
       "faq8q": "Are scan results saved?",
       "faq8a": "No. The anonymous response uses no persistence and is returned with no-store caching instructions.",
       "relatedToolsEyebrow": "Other public audits",
-      "relatedToolsTitle": "Inspect another public surface",
-      "relatedToolsCta": "Open the free tools directory",
-      "relatedToolsBody": "Browse the other GenGrowth public tools and their explicitly stated data boundaries.",
+      "relatedToolsTitle": "Inspect the site's internal structure",
+      "relatedToolsCta": "Run an internal link audit",
+      "relatedToolsBody": "The separate internal link audit records observed links, crawl depth, and candidate orphan pages within its own stated limits.",
       "articlesEyebrow": "Method notes",
-      "articlesTitle": "Read about scalable SEO collection",
-      "articlesBody": "The GenGrowth blog explains how crawl evidence fits into larger SEO systems without changing this tool's audit-only output.",
-      "articlesCta": "Read the article",
+      "articlesTitle": "Keep every claim inside the evidence",
+      "articlesBody": "Read how GenGrowth frames observed signals without overstating what the collected evidence can prove.",
+      "articlesCta": "Read the evidence-first method",
       "ctaEyebrow": "Saved workspace",
       "ctaTitle": "Need stored runs and cross-run comparison?",
       "ctaBody": "The authenticated GenGrowth app is a separate system for saved project evidence and workflows. This public audit remains anonymous and stateless.",
@@ -1097,8 +1146,26 @@
   },
   "pricing": {
     "hero": {
-      "title": "Simple, Transparent Pricing",
-      "subtitle": "From discovery to optimization. Choose the level of automation that fits your growth stage."
+      "eyebrow": "A value-first pricing approach",
+      "title": "Start free. Pay when the work becomes continuous.",
+      "subtitle": "The public tools are designed to give you a useful answer before an account or payment decision. Product pricing will follow the ongoing value and operating cost of the full workflow."
+    },
+    "freeTools": {
+      "eyebrow": "Available now",
+      "title": "Free public tools",
+      "body": "Use a public URL to get an immediate, evidence-led diagnostic. These first results are not a limited demo or a disguised sales gate.",
+      "item1": "Run a single-page SEO audit without an account or site-ownership check.",
+      "item2": "Map a bounded internal-link graph from publicly accessible pages.",
+      "item3": "Use planning calculators when you need a quicker experimental decision.",
+      "cta": "Explore free tools"
+    },
+    "product": {
+      "eyebrow": "GenGrowth product",
+      "title": "Full-product pricing is still being shaped",
+      "body": "We are not publishing provisional prices or plan limits that we cannot yet stand behind. The full workflow is where project context, saved work, deeper data, and ongoing operations come together.",
+      "principle": "The pricing principle",
+      "principleBody": "Keep the first useful diagnostic open. Charge only when ongoing monitoring, deeper data, multi-site work, or continuous operating value creates real cost.",
+      "cta": "Open GenGrowth"
     },
     "starter": {
       "name": "Starter",
@@ -1173,30 +1240,30 @@
     "faq": {
       "title": "Frequently Asked Questions",
       "q1": {
-        "question": "Why is GenGrowth more expensive than Okara or BabyLoveGrowth?",
-        "answer": "At $99/month, those tools only provide suggestions. GenGrowth's Starter tier also starts at $99 for discovery and strategy. Our Pro and Growth tiers add what no competitor offers: automated execution, channel-isolated attribution, and self-optimization that learns from every experiment."
+      "question": "Are the public tools free?",
+      "answer": "Yes. The current public SEO audit, internal-link audit, and calculators can be used without a payment step. Each tool clearly states its own technical scope and limits."
       },
       "q2": {
-        "question": "Can I switch plans?",
-        "answer": "Yes. Upgrade or downgrade anytime. Changes take effect at your next billing cycle."
+      "question": "When will full-product pricing be available?",
+      "answer": "We will publish it after the full workflow, usage boundaries, and ongoing operating costs are defined well enough to make a reliable commitment."
       },
       "q3": {
-        "question": "Is there a free trial?",
-        "answer": "Yes. Every plan includes a 14-day free trial with full access."
+      "question": "Do I need an account to run a public diagnostic?",
+      "answer": "No. The public SEO audit and internal-link audit read only public pages. An account belongs at the point where work needs to be saved, expanded, or continued in the product."
       },
       "q4": {
-        "question": "What counts as a 'product'?",
-        "answer": "A product is one website or app you want to grow. Each product gets its own discovery engine, strategy portfolio, and execution queue."
+      "question": "What will paid product value cover?",
+      "answer": "The intended paid layer is for continuous work such as saved project context, deeper data, ongoing monitoring, and multi-site operations—not for withholding the first useful result."
       },
       "q5": {
-        "question": "Do I need technical knowledge?",
-        "answer": "No. GenGrowth requires only 4 inputs to get started: your URL, target region, growth goal, and primary conversion event. The system handles everything else."
+      "question": "Where should I start?",
+      "answer": "If you already have a website, start with the public SEO audit or internal-link audit. If you are planning an experiment, use the calculators and then move the work into GenGrowth when you need a connected project workflow."
       }
     },
     "cta": {
-      "title": "Ready to Automate Your Growth?",
-      "subtitle": "Start with a 14-day free trial. No credit card required.",
-      "button": "Get Started"
+      "title": "Start with a real signal, not a pricing commitment",
+      "subtitle": "Choose the free tool that matches the question in front of you. You can decide whether to continue only after you have useful evidence.",
+      "button": "Explore free tools"
     }
   },
   "playbooks": {

@@ -10,6 +10,7 @@ import type {
 } from "@sf/public-tools";
 import {
   ArrowRight,
+  ChevronDown,
   ChevronRight,
   FolderTree,
   GitBranch,
@@ -40,6 +41,7 @@ import {
 
 type Phase = "idle" | "running" | "result" | "error";
 type TreeFilter = "all" | InternalLinkAuditNode["kind"];
+const MAX_VISUAL_TREE_LEVEL = 5;
 
 interface InternalLinkAuditToolProps {
   readonly locale: string;
@@ -54,9 +56,9 @@ const COPY = {
     help: "We crawl the site origin, respect robots.txt, and do not store your URL or page content. This preview reads static same-origin HTML only.",
     scope: "Up to 25 pages · up to depth 4 · up to 40 seconds · no login required",
     progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
-    result: "Real bounded crawl result",
-    partial: "Partial coverage",
-    available: "Completed within the crawl budget",
+    result: "Internal link structure report",
+    partial: "Report ready · partial coverage",
+    available: "Report ready",
     stopLabel: "Why collection stopped",
     completeLabel: "Collection status",
     completeReason: "Completed within the safety limits",
@@ -67,16 +69,22 @@ const COPY = {
     sitemap: "Sitemap URLs observed",
     fixes: "Prioritized findings",
     tree: "Site page hierarchy",
-    treeBody: "Pages with observed inbound support are grouped by their nearest collected URL-path parent, then by an observed shallower link when no path parent exists. Link counts still come from every observed HTML relationship.",
+    treeBody: "Indentation follows the collected URL path where possible. When a path parent was not collected, the row is explicitly labeled as grouped under an observed shallower inbound page. Cross-links remain visible in the mapped-inbound badge and link counts.",
     treeSearch: "Find a page in this crawl",
     treeSearchPlaceholder: "Search URL or page title",
     clearSearch: "Clear tree search",
     connectedBranch: "Page hierarchy",
     unlinkedBranch: "Outside the main hierarchy",
-    unlinkedBody: "These pages have no observed inbound HTML link, or no eligible collected URL-path or shallower link parent.",
-    treeMatches: "pages shown",
+    unlinkedBody: "Each branch starts with a page that has no eligible collected URL-path or shallower link parent. Descendants may still have observed inbound links, shown on each row.",
+    treeMatches: "pages match",
     noTreeMatches: "No collected page matches this filter and search.",
-    additionalInbound: "additional observed inbound link(s)",
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    expandBranch: "Expand branch",
+    collapseBranch: "Collapse branch",
+    pageColumn: "Page",
+    depthColumn: "Crawl depth",
+    additionalInbound: "other mapped inbound link(s)",
     pathGrouped: "URL path",
     linkGrouped: "Observed link",
     all: "All pages",
@@ -118,9 +126,9 @@ const COPY = {
     help: "工具从网站根域开始抓取、遵守 robots.txt，不保存 URL 或页面内容。当前预览仅读取同源静态 HTML。",
     scope: "最多 25 页 · 最深 4 层 · 最长 40 秒 · 无需登录",
     progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
-    result: "真实受限抓取结果",
-    partial: "覆盖不完整",
-    available: "在抓取预算内完成",
+    result: "内链结构报告",
+    partial: "报告已生成 · 部分覆盖",
+    available: "报告已生成",
     stopLabel: "本次为何停止",
     completeLabel: "采集状态",
     completeReason: "已在安全范围内完成",
@@ -131,16 +139,22 @@ const COPY = {
     sitemap: "已观测 Sitemap URL",
     fixes: "优先发现",
     tree: "网站页面层级树",
-    treeBody: "有已观测入链支持的页面优先按最近的已采集 URL 路径父页归组；没有路径父页时，再使用已观测到的浅层内链父页。入链与出链数量仍来自全部已观测 HTML 关系。",
+    treeBody: "缩进优先表示本次采集到的 URL 路径层级；路径父页未被采集时，会明确标记为归入已观测到的浅层内链父页。交叉内链仍显示在已映射入链标记和链接计数中。",
     treeSearch: "在本次抓取中查找页面",
     treeSearchPlaceholder: "搜索 URL 或页面标题",
     clearSearch: "清空树状视图搜索",
     connectedBranch: "页面主层级",
     unlinkedBranch: "主层级之外",
-    unlinkedBody: "这些页面没有已观测到的 HTML 入链，或没有符合条件的已采集 URL 路径父页或浅层内链父页。",
-    treeMatches: "个页面",
+    unlinkedBody: "每个分支的起点都没有符合条件的已采集 URL 路径父页或浅层内链父页；其后代页面仍可能有已观测入链，并显示在各自行中。",
+    treeMatches: "个页面匹配",
     noTreeMatches: "没有页面同时符合当前筛选和搜索条件。",
-    additionalInbound: "条其他已观测入链",
+    expandAll: "全部展开",
+    collapseAll: "全部收起",
+    expandBranch: "展开分支",
+    collapseBranch: "收起分支",
+    pageColumn: "页面",
+    depthColumn: "抓取深度",
+    additionalInbound: "条其他已映射入链",
     pathGrouped: "URL 层级",
     linkGrouped: "内链父页",
     all: "全部页面",
@@ -217,24 +231,30 @@ function errorMessage(code: string, copy: ToolCopy): string {
 
 function TreeNodeRow({
   childrenById,
+  collapsedIds,
   copy,
+  forceExpanded,
   level,
   matchIds,
   nodeById,
   nodeId,
   onSelect,
+  onToggle,
   parentRelationById,
   secondaryInboundById,
   selectedNodeId,
   visibleIds,
 }: {
   readonly childrenById: InternalLinkAuditTreeModel["childrenById"];
+  readonly collapsedIds: ReadonlySet<string>;
   readonly copy: ToolCopy;
+  readonly forceExpanded: boolean;
   readonly level: number;
   readonly matchIds: ReadonlySet<string>;
   readonly nodeById: ReadonlyMap<string, InternalLinkAuditNode>;
   readonly nodeId: string;
   readonly onSelect: (nodeId: string) => void;
+  readonly onToggle: (nodeId: string) => void;
   readonly parentRelationById: InternalLinkAuditTreeModel["parentRelationById"];
   readonly secondaryInboundById: InternalLinkAuditTreeModel["secondaryInboundById"];
   readonly selectedNodeId: string;
@@ -250,98 +270,169 @@ function TreeNodeRow({
   const nodeStyle = STYLE[node.kind];
   const parentRelation = parentRelationById.get(node.id);
   const secondaryInbound = secondaryInboundById.get(node.id) ?? 0;
+  const hasChildren = children.length > 0;
+  const expanded = forceExpanded || !collapsedIds.has(node.id);
+  const visuallyIndented =
+    level > 1 && level <= MAX_VISUAL_TREE_LEVEL;
+  const visiblePath =
+    level === 1
+      ? displayPath(node.url)
+      : `${level > MAX_VISUAL_TREE_LEVEL ? "…/" : ""}${displayPathSegment(
+          node.url,
+        )}`;
+  const branchLabel = `${
+    expanded ? copy.collapseBranch : copy.expandBranch
+  }: ${displayPath(node.url)}`;
 
   return (
     <li
       className={`relative ${
-        level > 1
-          ? "before:absolute before:-left-3 before:top-7 before:w-3 before:border-t-2 before:border-brand-accent/30 sm:before:-left-5 sm:before:w-5"
+        visuallyIndented
+          ? "before:absolute before:-left-3 before:top-6 before:w-3 before:border-t before:border-brand-accent/45 sm:before:-left-5 sm:before:w-5"
           : ""
       }`}
     >
-      <button
-        type="button"
-        onClick={() => onSelect(node.id)}
-        aria-pressed={selected}
-        data-testid={`internal-link-node-${node.id}`}
-        className={`group flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent sm:px-4 ${
+      <div
+        className={`group flex min-h-12 w-full items-stretch overflow-hidden rounded-lg border-l-2 transition-colors ${
           selected
-            ? "border-brand-accent/70 bg-brand-accent/12"
+            ? "border-brand-accent bg-brand-accent/12"
             : level === 1
-              ? "border-brand-accent/35 bg-brand-accent/[0.045] hover:border-brand-accent/55"
-              : "border-brand-border/60 bg-black/10 hover:border-brand-border hover:bg-white/[0.025]"
+              ? "border-brand-accent/55 bg-brand-accent/[0.045] hover:bg-brand-accent/[0.075]"
+              : "border-brand-border bg-black/10 hover:bg-white/[0.025]"
         } ${directMatch ? "opacity-100" : "opacity-55"}`}
       >
-        <span
-          aria-hidden="true"
-          className="h-3 w-3 shrink-0 rounded-full border-2"
-          style={{
-            backgroundColor: nodeStyle.fill,
-            borderColor: selected ? "#F0EDE8" : nodeStyle.ring,
-          }}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="sr-only">{displayPath(node.url)}. </span>
-          <span className="flex flex-wrap items-center gap-2">
-            <strong
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={branchLabel}
+            disabled={forceExpanded}
+            onClick={() => onToggle(node.id)}
+            className="flex w-10 shrink-0 items-center justify-center border-r border-brand-border/45 text-text-dark-secondary transition-colors hover:bg-white/[0.035] hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+          >
+            {expanded ? (
+              <ChevronDown aria-hidden="true" className="h-4 w-4" />
+            ) : (
+              <ChevronRight aria-hidden="true" className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span
+            aria-hidden="true"
+            className="relative w-10 shrink-0 border-r border-brand-border/35 after:absolute after:left-1/2 after:top-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-brand-border"
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => onSelect(node.id)}
+          aria-pressed={selected}
+          data-testid={`internal-link-node-${node.id}`}
+          className="grid min-h-12 min-w-0 flex-1 grid-cols-1 items-center gap-x-2 px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_4.25rem]"
+        >
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span
               aria-hidden="true"
-              className="min-w-0 break-words font-mono text-[13px] font-medium leading-5 text-text-dark-primary sm:text-[14px]"
-              title={displayPath(node.url)}
-            >
-              {level === 1
-                ? displayPath(node.url)
-                : displayPathSegment(node.url)}
-            </strong>
-            <span className="rounded-full border border-brand-border/70 px-2 py-0.5 text-[10px] leading-4 text-text-dark-secondary">
-              {copy[node.kind]}
+              className="h-2.5 w-2.5 shrink-0 rounded-full border-2"
+              style={{
+                backgroundColor: nodeStyle.fill,
+                borderColor: selected ? "#F0EDE8" : nodeStyle.ring,
+              }}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="sr-only">{displayPath(node.url)}. </span>
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <strong
+                  aria-hidden="true"
+                  className="min-w-0 break-words font-mono text-[12px] font-medium leading-5 text-text-dark-primary sm:text-[13px]"
+                  title={displayPath(node.url)}
+                >
+                  {visiblePath}
+                </strong>
+                {node.kind !== "page" ? (
+                  <span className="rounded border border-brand-border/70 px-1.5 py-px text-[9px] uppercase tracking-[0.08em] text-text-dark-secondary">
+                    {copy[node.kind]}
+                  </span>
+                ) : null}
+                {parentRelation === "observed_link" ? (
+                  <span className="inline-flex items-center gap-1 rounded border border-brand-accent/30 bg-brand-accent/[0.06] px-1.5 py-px text-[9px] text-brand-accent-text">
+                    <Link2 aria-hidden="true" className="h-2.5 w-2.5" />
+                    {copy.linkGrouped}
+                  </span>
+                ) : null}
+                {secondaryInbound > 0 ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] text-brand-accent-text"
+                    title={`${secondaryInbound} ${copy.additionalInbound}`}
+                  >
+                    <GitBranch aria-hidden="true" className="h-3 w-3" />
+                    +{secondaryInbound}
+                    <span className="sr-only">
+                      {" "}
+                      {copy.additionalInbound}
+                    </span>
+                  </span>
+                ) : null}
+              </span>
+              {node.title && node.title !== visiblePath ? (
+                <span className="mt-0.5 block truncate text-[10px] leading-4 text-text-dark-secondary">
+                  {node.title}
+                </span>
+              ) : null}
+              <span className="mt-1 flex items-center gap-3 text-[10px] leading-4 text-text-dark-secondary sm:hidden">
+                <span>{copy.inbound} {node.inboundLinks}</span>
+                <span>{copy.outbound} {node.outboundLinks}</span>
+                <span>{copy.depthLabel} {node.depth}</span>
+              </span>
             </span>
-            {parentRelation ? (
+            {hasChildren ? (
               <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] leading-4 ${
-                  parentRelation === "url_path"
-                    ? "border-brand-accent/35 bg-brand-accent/[0.07] text-brand-accent-text"
-                    : "border-brand-border/70 text-text-dark-secondary"
-                }`}
+                aria-hidden="true"
+                className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[9px] text-text-dark-secondary"
               >
-                {parentRelation === "url_path"
-                  ? copy.pathGrouped
-                  : copy.linkGrouped}
+                {children.length}
               </span>
             ) : null}
           </span>
-          <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-4 text-text-dark-secondary">
-            <span>{copy.depthLabel} {node.depth}</span>
-            <span>{copy.inbound} {node.inboundLinks}</span>
-            <span>{copy.outbound} {node.outboundLinks}</span>
-            {secondaryInbound > 0 ? (
-              <span className="inline-flex items-center gap-1 text-brand-accent-text">
-                <GitBranch aria-hidden="true" className="h-3 w-3" />
-                {secondaryInbound} {copy.additionalInbound}
-              </span>
-            ) : null}
+          <span className="hidden text-center font-mono text-[11px] text-text-dark-secondary sm:block">
+            <span className="sr-only">{copy.inbound} </span>
+            {node.inboundLinks}
           </span>
-        </span>
-        <ChevronRight
-          aria-hidden="true"
-          className={`h-4 w-4 shrink-0 transition-transform ${
-            selected ? "translate-x-0.5 text-brand-accent-text" : "text-text-dark-secondary"
-          }`}
-        />
-      </button>
-      {children.length ? (
+          <span className="hidden text-center font-mono text-[11px] text-text-dark-secondary sm:block">
+            <span className="sr-only">{copy.outbound} </span>
+            {node.outboundLinks}
+          </span>
+          <span className="hidden text-center font-mono text-[11px] text-text-dark-secondary sm:block">
+            <span className="sr-only">{copy.depthLabel} </span>
+            {node.depth}
+          </span>
+          {parentRelation === "url_path" ? (
+            <span className="sr-only">
+              {copy.pathGrouped}
+            </span>
+          ) : null}
+        </button>
+      </div>
+      {hasChildren && expanded ? (
         <ul
-          className="ml-2 mt-2 space-y-2 border-l-2 border-brand-accent/25 pl-3 sm:ml-6 sm:pl-5"
+          className={
+            level < MAX_VISUAL_TREE_LEVEL
+              ? "ml-3 mt-1.5 space-y-1.5 border-l border-brand-accent/35 pl-3 sm:ml-5 sm:pl-5"
+              : "mt-1.5 space-y-1.5"
+          }
         >
           {children.map((childId) => (
             <TreeNodeRow
               key={childId}
               childrenById={childrenById}
+              collapsedIds={collapsedIds}
               copy={copy}
+              forceExpanded={forceExpanded}
               level={level + 1}
               matchIds={matchIds}
               nodeById={nodeById}
               nodeId={childId}
               onSelect={onSelect}
+              onToggle={onToggle}
               parentRelationById={parentRelationById}
               secondaryInboundById={secondaryInboundById}
               selectedNodeId={selectedNodeId}
@@ -367,6 +458,9 @@ function LinkTree({
 }) {
   const [filter, setFilter] = useState<TreeFilter>("all");
   const [query, setQuery] = useState("");
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const tree = useMemo(() => buildInternalLinkAuditTree(report), [report]);
   const nodeById = useMemo(
     () => new Map(report.nodes.map((node) => [node.id, node])),
@@ -415,6 +509,25 @@ function LinkTree({
   const unlinkedRoots = tree.roots.filter(
     (id) => nodeById.get(id)?.kind !== "home" && visibleIds.has(id),
   );
+  const expandableIds = useMemo(
+    () =>
+      new Set(
+        [...tree.childrenById.entries()]
+          .filter(([, children]) => children.length > 0)
+          .map(([id]) => id),
+      ),
+    [tree.childrenById],
+  );
+  const forceExpanded = filter !== "all" || Boolean(normalizedQuery);
+
+  function toggleBranch(nodeId: string) {
+    setCollapsedIds((current) => {
+      const next = new Set(current);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }
 
   return (
     <div className="rounded-2xl border border-brand-border/70 bg-[#111112]">
@@ -462,9 +575,27 @@ function LinkTree({
               {label}
             </button>
           ))}
-          <span className="ml-auto inline-flex min-h-11 items-center font-mono text-[11px] text-text-dark-secondary">
-            {visibleIds.size} {copy.treeMatches}
-          </span>
+          <div className="ml-auto flex min-h-11 items-center gap-1">
+            <button
+              type="button"
+              disabled={forceExpanded}
+              onClick={() => setCollapsedIds(new Set())}
+              className="min-h-9 rounded-lg px-2.5 text-[11px] text-text-dark-secondary hover:bg-white/[0.035] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+            >
+              {copy.expandAll}
+            </button>
+            <button
+              type="button"
+              disabled={forceExpanded}
+              onClick={() => setCollapsedIds(new Set(expandableIds))}
+              className="min-h-9 rounded-lg px-2.5 text-[11px] text-text-dark-secondary hover:bg-white/[0.035] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+            >
+              {copy.collapseAll}
+            </button>
+            <span className="ml-1 font-mono text-[11px] text-text-dark-secondary">
+              {matchIds.size}/{report.nodes.length} {copy.treeMatches}
+            </span>
+          </div>
         </div>
       </div>
       <div className="p-3 sm:p-5">
@@ -473,6 +604,18 @@ function LinkTree({
             className="max-h-[720px] overflow-y-auto overscroll-contain pr-1"
             data-testid="internal-link-tree"
           >
+            <div
+              aria-hidden="true"
+              className="mb-2 hidden items-center border-b border-brand-border/55 pb-2 text-[9px] font-medium uppercase tracking-[0.1em] text-text-dark-secondary sm:flex"
+            >
+              <span className="w-10 shrink-0" />
+              <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_4.25rem] items-center px-3">
+                <span>{copy.pageColumn}</span>
+                <span className="text-center">{copy.inbound}</span>
+                <span className="text-center">{copy.outbound}</span>
+                <span className="text-center">{copy.depthColumn}</span>
+              </span>
+            </div>
             {connectedRoots.length ? (
               <section aria-labelledby="internal-link-tree-connected">
                 <h4
@@ -486,12 +629,15 @@ function LinkTree({
                     <TreeNodeRow
                       key={rootId}
                       childrenById={tree.childrenById}
+                      collapsedIds={collapsedIds}
                       copy={copy}
+                      forceExpanded={forceExpanded}
                       level={1}
                       matchIds={matchIds}
                       nodeById={nodeById}
                       nodeId={rootId}
                       onSelect={onSelect}
+                      onToggle={toggleBranch}
                       parentRelationById={tree.parentRelationById}
                       secondaryInboundById={tree.secondaryInboundById}
                       selectedNodeId={selectedNodeId}
@@ -520,12 +666,15 @@ function LinkTree({
                     <TreeNodeRow
                       key={rootId}
                       childrenById={tree.childrenById}
+                      collapsedIds={collapsedIds}
                       copy={copy}
+                      forceExpanded={forceExpanded}
                       level={1}
                       matchIds={matchIds}
                       nodeById={nodeById}
                       nodeId={rootId}
                       onSelect={onSelect}
+                      onToggle={toggleBranch}
                       parentRelationById={tree.parentRelationById}
                       secondaryInboundById={tree.secondaryInboundById}
                       selectedNodeId={selectedNodeId}

@@ -77,7 +77,8 @@ paths:
           headers:
             Location:
               required: true
-              schema: { type: string, pattern: '^/p/[0-9a-f-]+/overview$' }
+              description: Legacy creation opens Overview; URL-first Product Profile creation opens the Product Profile editor.
+              schema: { type: string, pattern: '^/p/[0-9a-f-]+/(?:overview|context)$' }
             X-Request-Id: { $ref: '#/components/headers/RequestId' }
           content:
             application/json:
@@ -2679,6 +2680,37 @@ components:
           minLength: 1
           maxLength: 1000
           description: Optional customer-declared business context. This is recorded as declared provenance, never as an observed fact.
+        productName:
+          type: string
+          minLength: 1
+          maxLength: 160
+          description: Optional customer-declared product name used as the initial project display name and Product Profile fact.
+        customerModel:
+          $ref: '#/components/schemas/ProductProfileCustomerModel'
+        primaryMarket:
+          $ref: '#/components/schemas/MarketCode'
+        growthObjectives:
+          type: array
+          minItems: 1
+          maxItems: 7
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileGrowthObjective' }
+          description: Customer-selected outcomes that guide later evidence collection and profile synthesis; they are declarations, not measured results.
+
+    ProductProfileCustomerModel:
+      type: string
+      enum: [b2b, b2c, hybrid]
+
+    ProductProfileGrowthObjective:
+      type: string
+      enum:
+        - increase_signups
+        - generate_qualified_leads
+        - increase_organic_traffic
+        - increase_ai_visibility
+        - improve_conversion
+        - increase_revenue
+        - enter_new_markets
 
     ProductProfileTargetMarket:
       type: object
@@ -2972,6 +3004,12 @@ components:
             - type: 'null'
         businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
         productName: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        customerModel: { $ref: '#/components/schemas/ProductProfileCustomerModel' }
+        growthObjectives:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileGrowthObjective' }
         oneLiner: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
         category: { type: [string, 'null'], minLength: 1, maxLength: 160 }
         productType: { type: [string, 'null'], minLength: 1, maxLength: 160 }
@@ -3062,6 +3100,12 @@ components:
             - type: 'null'
         businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
         productName: { type: string, minLength: 1, maxLength: 160 }
+        customerModel: { $ref: '#/components/schemas/ProductProfileCustomerModel' }
+        growthObjectives:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileGrowthObjective' }
         oneLiner: { type: string, minLength: 1, maxLength: 1000 }
         category: { type: string, minLength: 1, maxLength: 160 }
         productType: { type: string, minLength: 1, maxLength: 160 }
@@ -3156,6 +3200,12 @@ components:
       properties:
         businessHint: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
         productName: { type: [string, 'null'], minLength: 1, maxLength: 160 }
+        customerModel: { $ref: '#/components/schemas/ProductProfileCustomerModel' }
+        growthObjectives:
+          type: array
+          maxItems: 7
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ProductProfileGrowthObjective' }
         oneLiner: { type: [string, 'null'], minLength: 1, maxLength: 1000 }
         category: { type: [string, 'null'], minLength: 1, maxLength: 160 }
         productType: { type: [string, 'null'], minLength: 1, maxLength: 160 }
@@ -3292,10 +3342,19 @@ components:
             kind: { const: product_profile_synthesis }
             status: { type: string, enum: [queued, running] }
             resultRef: { type: 'null' }
+    ProductProfileActiveCrawlRun:
+      allOf:
+        - $ref: '#/components/schemas/AsyncRun'
+        - type: object
+          required: [kind, status, resultRef]
+          properties:
+            kind: { const: collection }
+            status: { type: string, enum: [queued, running] }
+            resultRef: { type: 'null' }
     ProductProfileWorkspace:
       type: object
       additionalProperties: false
-      required: [projectId, currentProfile, confirmedProfile, activeSynthesisRun]
+      required: [projectId, currentProfile, confirmedProfile, activeSynthesisRun, activeCrawlRun]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
         currentProfile:
@@ -3309,6 +3368,10 @@ components:
         activeSynthesisRun:
           oneOf:
             - $ref: '#/components/schemas/ProductProfileActiveSynthesisRun'
+            - type: 'null'
+        activeCrawlRun:
+          oneOf:
+            - $ref: '#/components/schemas/ProductProfileActiveCrawlRun'
             - type: 'null'
     ProductProfileWorkspaceResponse:
       type: object

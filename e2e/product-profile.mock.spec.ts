@@ -27,6 +27,8 @@ const PROFILE_PATH =
 const RUNS_PATH = `/api/mvp/projects/${E2E_PROJECT_ID}/runs` as const;
 const SITE_ID = "00000000-0000-4000-8000-000000000043";
 const PROFILE_ROW_ID = "00000000-0000-4000-8000-000000000601";
+const SNAPSHOT_ID = "00000000-0000-4000-8000-000000000602";
+const INVOCATION_ID = "00000000-0000-4000-8000-000000000603";
 const PRIMARY_AUDIENCE_ID = "00000000-0000-4000-8000-000000000610";
 const SECONDARY_AUDIENCE_ID = "00000000-0000-4000-8000-000000000611";
 const GUIDE_CX_ID = "00000000-0000-4000-8000-000000000620";
@@ -70,6 +72,13 @@ interface ProductProfileWorkspace {
         readonly resultRef: null;
       })
     | null;
+  readonly activeCrawlRun:
+    | (ProductProfileRun & {
+        readonly kind: "collection";
+        readonly status: "queued" | "running";
+        readonly resultRef: null;
+      })
+    | null;
 }
 
 const PRIMARY_AUDIENCE = {
@@ -107,6 +116,8 @@ const SECONDARY_AUDIENCE = {
 const SEMANTIC_ROOTS = [
   "/businessHint",
   "/productName",
+  "/customerModel",
+  "/growthObjectives",
   "/oneLiner",
   "/category",
   "/productType",
@@ -123,11 +134,13 @@ function productProfileFixture(): ProductProfileDraft {
     profileSchemaVersion: "product-profile.0.3.0",
     sourceSiteId: SITE_ID,
     sourcePageUrl: "https://relayops.com/product/",
-    sourceSnapshotId: null,
-    analysisInvocationId: null,
-    generatedAt: null,
+    sourceSnapshotId: SNAPSHOT_ID,
+    analysisInvocationId: INVOCATION_ID,
+    generatedAt: NOW,
     businessHint: "Chinese B2B team serving an overseas market.",
     productName: "RelayOps API Canonical",
+    customerModel: "b2b",
+    growthObjectives: ["increase_signups", "increase_ai_visibility"],
     oneLiner: "Customer onboarding operations for global B2B teams.",
     category: "Customer Operations",
     productType: "B2B SaaS",
@@ -216,12 +229,32 @@ function draftRow(
 
 function draftWorkspace(
   activeSynthesisRun: ProductProfileWorkspace["activeSynthesisRun"] = null,
+  activeCrawlRun: ProductProfileWorkspace["activeCrawlRun"] = null,
 ): ProductProfileWorkspace {
   return {
     projectId: E2E_PROJECT_ID,
     currentProfile: draftRow(),
     confirmedProfile: null,
     activeSynthesisRun,
+    activeCrawlRun,
+  };
+}
+
+function ungeneratedDraftWorkspace(
+  activeCrawlRun: ProductProfileWorkspace["activeCrawlRun"] = null,
+): ProductProfileWorkspace {
+  const profile = ProductProfileDraftSchema.parse({
+    ...productProfileFixture(),
+    sourceSnapshotId: null,
+    analysisInvocationId: null,
+    generatedAt: null,
+  });
+  return {
+    projectId: E2E_PROJECT_ID,
+    currentProfile: draftRow(profile),
+    confirmedProfile: null,
+    activeSynthesisRun: null,
+    activeCrawlRun,
   };
 }
 
@@ -245,6 +278,30 @@ function runningSynthesisRun(): ProductProfileRun & {
     resultRef: null,
     queuedAt: NOW,
     startedAt: "2026-07-22T08:30:01.000Z",
+    completedAt: null,
+  };
+}
+
+function runningCrawlRun(): ProductProfileRun & {
+  readonly kind: "collection";
+  readonly status: "running";
+  readonly resultRef: null;
+} {
+  return {
+    id: "collection-run",
+    projectId: E2E_PROJECT_ID,
+    kind: "collection",
+    status: "running",
+    progress: {
+      phase: "collecting",
+      current: 1,
+      total: 3,
+      messageKey: "worker.collection.raw_key",
+    },
+    lastError: null,
+    resultRef: null,
+    queuedAt: NOW,
+    startedAt: NOW,
     completedAt: null,
   };
 }
@@ -291,6 +348,9 @@ function replaceCurrentDraft(
 async function installProductProfileApi(
   page: Page,
   initialWorkspace: ProductProfileWorkspace = draftWorkspace(),
+  options: {
+    readonly requireCrawlBeforeSynthesis?: boolean;
+  } = {},
 ): Promise<ProductProfileApiState> {
   const critical = await installCriticalFlowApi(page);
   const state: ProductProfileApiState = {
@@ -327,6 +387,12 @@ async function installProductProfileApi(
     const run = state.runs.get(runId);
     if (request.method() === "GET" && run) {
       await json(route, run);
+      return;
+    }
+    // Collection runs belong to the shared critical-flow mock installed
+    // below this Product Profile-specific route.
+    if (request.method() === "GET" && runId === "collection-run") {
+      await route.fallback();
       return;
     }
     await route.fulfill({
@@ -371,6 +437,25 @@ async function installProductProfileApi(
     if (method === "POST" && path === `${PROFILE_PATH}/synthesis-runs`) {
       const body = request.postDataJSON();
       state.synthesisStarts.push(body);
+      if (
+        options.requireCrawlBeforeSynthesis &&
+        state.synthesisStarts.length === 1 &&
+        state.critical.collectionRunPolls < 3
+      ) {
+        await route.fulfill({
+          status: 422,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "A current Crawl snapshot is required.",
+            status: 422,
+            code: "CRAWL_SNAPSHOT_REQUIRED",
+            detail: "The submitted Product URL is not present in a current Crawl snapshot.",
+            requestId: "e2e-product-profile-needs-crawl",
+          }),
+        });
+        return;
+      }
       const run = runningSynthesisRun();
       state.runs.set(run.id, run);
       state.workspace = { ...state.workspace, activeSynthesisRun: run };
@@ -605,19 +690,32 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
   await useChineseUi(page);
   await page.goto("/new-project");
   await expect(page.getByRole("heading", { name: "添加产品" })).toBeVisible();
+  // The mock suite runs against Next development mode. Wait for hydration so
+  // a very fast submit cannot fall through to the browser's native form GET.
+  await page.waitForLoadState("networkidle");
+  await page.getByLabel("产品名称").fill("RelayOps");
   await page.getByLabel("产品 URL").fill("https://relayops.com/product/");
+  await page.getByLabel("客户模式").selectOption("b2b");
+  await page.getByLabel("主要目标市场").selectOption("US");
   await page
-    .getByLabel("产品与客户背景（选填）")
+    .getByRole("checkbox", { name: "提升注册", exact: true })
+    .check();
+  await page
+    .getByLabel("补充业务背景（选填）")
     .fill("面向海外 B2B SaaS 客户运营团队的 onboarding 产品。");
   await page
-    .getByRole("button", { name: "创建产品并填写画像" })
+    .getByRole("button", { name: "创建并生成初始画像" })
     .click();
 
   await expect.poll(() => createRequests.length).toBe(1);
   expect(createRequests).toEqual([
     {
       mode: "product_profile",
+      productName: "RelayOps",
       productUrl: "https://relayops.com/product/",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: ["increase_signups"],
       businessHint: "面向海外 B2B SaaS 客户运营团队的 onboarding 产品。",
     },
   ]);
@@ -682,6 +780,53 @@ test("only a dirty open Product Profile editor fences the browser unload", async
   await page.getByRole("button", { name: "放弃更改" }).click();
   await expect(editor).toBeHidden();
   expect(await unloadIsFenced(page)).toBe(false);
+});
+
+test("automatically collects website evidence and resumes initial profile generation", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(
+    page,
+    ungeneratedDraftWorkspace(),
+    { requireCrawlBeforeSynthesis: true },
+  );
+
+  await gotoProductProfile(page);
+
+  await expect.poll(() => api.synthesisStarts.length).toBe(2);
+  expect(api.synthesisStarts).toEqual([
+    { baseVersion: 4 },
+    { baseVersion: 4 },
+  ]);
+  expect(api.critical.collectionRequests).toEqual([{ provider: "crawl" }]);
+  expect(api.critical.collectionRunPolls).toBeGreaterThanOrEqual(3);
+  await expect(
+    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("运行中", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "编辑产品画像与 ICP" }),
+  ).toBeDisabled();
+});
+
+test("recovers an active Crawl after refresh without starting duplicate onboarding work", async ({
+  page,
+}) => {
+  const api = await installProductProfileApi(
+    page,
+    ungeneratedDraftWorkspace(runningCrawlRun()),
+    { requireCrawlBeforeSynthesis: true },
+  );
+
+  await gotoProductProfile(page);
+
+  await expect.poll(() => api.critical.collectionRunPolls).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => api.synthesisStarts.length).toBe(1);
+  expect(api.synthesisStarts).toEqual([{ baseVersion: 4 }]);
+  expect(api.critical.collectionRequests).toEqual([]);
+  await expect(
+    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
+  ).toBeVisible();
 });
 
 /**
@@ -833,6 +978,9 @@ test("does not substitute a client fixture when the canonical API is unavailable
     alert.getByRole("heading", { name: "无法加载产品画像" }),
   ).toBeVisible();
   await expect(alert).toContainText(
+    "暂时无法读取这份产品画像，请稍后重试。",
+  );
+  await expect(alert).not.toContainText(
     "The canonical Product Profile read model is unavailable.",
   );
   await expect(
@@ -1049,10 +1197,10 @@ test("renders the active synthesis as inline canonical run progress", async ({
   await gotoProductProfile(page);
 
   await expect(
-    page.getByText("正在基于冻结证据生成 Product Profile", { exact: true }),
+    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("运行中 · analyzing_frozen_snapshot", { exact: true }),
+    page.getByText("运行中", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("2/5", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "生成中…" })).toBeDisabled();

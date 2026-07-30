@@ -2,7 +2,8 @@
 // @output -- Pricing page (server component + generateMetadata + FAQ/Breadcrumb JSON-LD)
 // @pos    -- marketing site pricing page
 // Once this file is updated, update the header comment and the folder's _DIR.md
-import { getTranslations } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages, getTranslations } from "next-intl/server";
 import { generatePageMetadata } from "@/lib/seo";
 import { siteConfig } from "@/config/site";
 import {
@@ -22,7 +23,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: "pricing.hero" });
   const tNav = await getTranslations({ locale, namespace: "nav" });
   return generatePageMetadata({
-    title: `${tNav("pricing")} -- GenGrowth`,
+    title: tNav("pricing"),
     description: t("subtitle"),
     locale,
     path: "/pricing",
@@ -38,6 +39,16 @@ export default async function PricingPage({
   const tFaq = await getTranslations({ locale, namespace: "pricing.faq" });
   const tCommon = await getTranslations({ locale, namespace: "common" });
   const tNav = await getTranslations({ locale, namespace: "nav" });
+  const messages = await getMessages();
+  const pricingMessages = {
+    pricing: {
+      hero: messages.pricing.hero,
+      freeTools: messages.pricing.freeTools,
+      product: messages.pricing.product,
+      cta: messages.pricing.cta,
+      faq: messages.pricing.faq,
+    },
+  };
 
   const faqs = FAQ_KEYS.map((key) => ({
     q: tFaq(`${key}.question`),
@@ -58,7 +69,9 @@ export default async function PricingPage({
         ]}
       />
       <FaqPageJsonLd faqs={faqs} />
-      <PricingPageClient />
+      <NextIntlClientProvider messages={pricingMessages}>
+        <PricingPageClient />
+      </NextIntlClientProvider>
     </>
   );
 }

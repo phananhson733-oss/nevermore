@@ -1,9 +1,44 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { createDbHandle } from "../packages/db/src/index.ts";
 import { publicFixtureOrigin } from "./fixtures.ts";
 
 const PORT = Number(process.env["E2E_PORT"] ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
+const DATABASE_URL = process.env["E2E_DATABASE_URL"];
+let createdProjectId: string | undefined;
+
+test.afterEach(async () => {
+  const projectId = createdProjectId;
+  createdProjectId = undefined;
+  if (!projectId) return;
+  if (!DATABASE_URL) throw new Error("E2E_DATABASE_URL is required");
+
+  const db = createDbHandle(DATABASE_URL, 1);
+  try {
+    const table = await db.pool.query<{ queueTable: string | null }>(
+      `SELECT to_regclass('pgboss.job')::text AS "queueTable"`,
+    );
+    if (table.rows[0]?.queueTable === null) return;
+
+    // Loading the new Product Profile automatically queues the initial Crawl
+    // when no eligible snapshot exists. This spec intentionally has no worker,
+    // so remove only jobs bound to its disposable project before the later
+    // real-chain suite proves that it starts from a fresh queue.
+    await db.pool.query(
+      `DELETE FROM pgboss.job AS job
+        USING app.async_runs AS run
+       WHERE run.project_id = $1
+         AND (
+           job.id = run.id
+           OR job.data ->> 'runId' = run.id::text
+         )`,
+      [projectId],
+    );
+  } finally {
+    await db.end();
+  }
+});
 
 interface ProductProfileRead {
   readonly data: {
@@ -48,9 +83,13 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   // The heading is server-rendered while the form is a hydrated client island.
   // Wait before editing so hydration cannot replace already-filled controls.
   await page.waitForLoadState("networkidle");
+  await page.getByLabel("产品名称").fill("RelayOps");
   await page.getByLabel("产品 URL").fill(productUrl);
+  await page.getByLabel("客户模式").selectOption("b2b");
+  await page.getByLabel("主要目标市场").selectOption("US");
+  await page.getByRole("checkbox", { name: "提升注册" }).check();
   await page
-    .getByLabel("产品与客户背景（选填）")
+    .getByLabel("补充业务背景（选填）")
     .fill("面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。");
 
   const createResponse = page.waitForResponse(
@@ -59,7 +98,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
   await page
-    .getByRole("button", { name: "创建产品并填写画像" })
+    .getByRole("button", { name: "创建并生成初始画像" })
     .click();
   const created = await createResponse;
   expect(
@@ -68,15 +107,25 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   ).toBe(201);
   expect(created.request().postDataJSON()).toEqual({
     mode: "product_profile",
+    productName: "RelayOps",
     productUrl,
+    customerModel: "b2b",
+    primaryMarket: "US",
+    growthObjectives: ["increase_signups"],
     businessHint:
       "面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。",
   });
 
-  await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
-  const projectId = new URL(page.url()).pathname.split("/")[2];
-  if (!projectId) throw new Error("URL-first creation did not expose a project id");
-  expect(created.headers()["location"]).toBe(`/p/${projectId}/context`);
+  const location = created.headers()["location"];
+  const projectId = /^\/p\/([0-9a-f-]+)\/context$/.exec(location ?? "")?.[1];
+  if (!projectId) {
+    throw new Error("URL-first creation did not expose a project id");
+  }
+  // Capture ownership before waiting for the client navigation: /context may
+  // already enqueue the initial Crawl while the document is still settling.
+  createdProjectId = projectId;
+  await page.waitForURL(`/p/${projectId}/context`);
+  expect(location).toBe(`/p/${projectId}/context`);
 
   await expect(
     page.getByRole("link", { name: "连接真实数据" }),

@@ -165,9 +165,17 @@ async function createProjectInBrowser(
   await expect(
     page.getByRole("heading", { name: "Add a product" }),
   ).toBeVisible();
+  await page.getByLabel("Product name").fill(definition.productName);
   await page.getByLabel("Product URL").fill(definition.siteUrl);
+  await page.getByLabel("Customer model").selectOption(definition.customerModel);
+  await page.getByLabel("Primary target market").selectOption("US");
+  const growthObjective =
+    definition.customerModel === "b2b"
+      ? "Generate qualified leads"
+      : "Increase revenue";
+  await page.getByRole("checkbox", { name: growthObjective }).check();
   await page
-    .getByLabel("Product and customer context (optional)")
+    .getByLabel("Additional business context (optional)")
     .fill(definition.oneLineDescription);
 
   const createResponse = page.waitForResponse(
@@ -176,7 +184,7 @@ async function createProjectInBrowser(
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
   await page
-    .getByRole("button", { name: "Create product and fill profile" })
+    .getByRole("button", { name: "Create and generate initial profile" })
     .click();
   const created = await createResponse;
   expect(
@@ -185,7 +193,15 @@ async function createProjectInBrowser(
   ).toBe(201);
   expect(created.request().postDataJSON()).toEqual({
     mode: "product_profile",
+    productName: definition.productName,
     productUrl: definition.siteUrl,
+    customerModel: definition.customerModel,
+    primaryMarket: "US",
+    growthObjectives: [
+      definition.customerModel === "b2b"
+        ? "generate_qualified_leads"
+        : "increase_revenue",
+    ],
     businessHint: definition.oneLineDescription,
   });
   await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
@@ -210,22 +226,43 @@ async function completeContext(
   projectId: string,
   definition: VerticalDefinition,
 ): Promise<void> {
-  const current = await responseJson<
-    DataEnvelope<{ readonly version: number }>
-  >(
-    await request.get(`/api/mvp/projects/${projectId}/context`),
-    "read current context version",
-  );
-  const response = await request.patch(
-    `/api/mvp/projects/${projectId}/context`,
-    {
-      data: {
-        ...completeContextBody(definition),
-        baseVersion: current.data.version,
-      },
-    },
-  );
-  await responseJson<DataEnvelope<unknown>>(response, "complete context");
+  const payload = completeContextBody(definition);
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const current = await responseJson<
+        DataEnvelope<{ readonly version: number }>
+      >(
+        await request.get(`/api/mvp/projects/${projectId}/context`),
+        "read current context version",
+      );
+      const response = await request.patch(
+        `/api/mvp/projects/${projectId}/context`,
+        {
+          data: {
+            ...payload,
+            baseVersion: current.data.version,
+          },
+        },
+      );
+      await responseJson<DataEnvelope<unknown>>(response, "complete context");
+      return;
+    } catch (error) {
+      const message = String(error);
+      const transientRestart =
+        /ECONNRESET|ECONNREFUSED|socket hang up|fetch failed/i.test(message);
+      if (!transientRestart || attempt >= 2) {
+        throw error;
+      }
+      // The real E2E suite can cross Next's dev-server memory watermark late
+      // in the run. Re-read the current version after the process settles and
+      // retry the same complete payload; identical complete saves are a
+      // semantic no-op, so a post-restart replay stays honest.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1_500 * (attempt + 1)),
+      );
+    }
+  }
 }
 
 async function waitForRun(
@@ -591,7 +628,7 @@ async function runDiagnosisAndConfirmFinding(
   await page.getByRole("button").filter({ hasText: "/gone" }).first().click();
   await expect(
     page.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
 
   // Confirm renders only in Opportunity Review; the default panel is the
   // read-only Audit Evidence state.
@@ -782,12 +819,21 @@ async function verifyReportAndExport(
   await expect(page.locator("[data-report-document]")).toBeVisible({
     timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
   });
-  // URL-first creation deliberately uses the submitted host as the honest
-  // project identity until a separate project-renaming workflow exists. The
-  // confirmed Product Profile name remains inside the Product/ICP snapshot; it
-  // must not make this fixture pretend the project record was also renamed.
+  // The onboarding flow now persists the declared product name as the project
+  // display name up front. The report cover therefore leads with the declared
+  // Product Profile identity while still naming the submitted host beneath it.
+  const reportDocument = page.locator("[data-report-document]");
   await expect(
-    page.getByRole("heading", { name: new URL(definition.siteUrl).host }),
+    reportDocument.getByRole("heading", {
+      level: 2,
+      name: definition.productName,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
+  await expect(
+    reportDocument.getByText(new URL(definition.siteUrl).host, {
+      exact: true,
+    }),
   ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   const findings = page.getByRole("region", { name: "Findings" });
   await expect(

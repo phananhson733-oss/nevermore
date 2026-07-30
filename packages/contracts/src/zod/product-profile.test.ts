@@ -526,6 +526,70 @@ describe("createInitialProductProfileDraft", () => {
         "/competitorCandidates",
       ]),
     );
+    expect(draft).not.toHaveProperty("customerModel");
+    expect(draft).not.toHaveProperty("growthObjectives");
+  });
+
+  it("preserves old Product Profile rows that predate the optional onboarding fields", () => {
+    const historical = completeProfile();
+
+    expect(ProductProfileDraft.safeParse(historical).success).toBe(true);
+    expect(ConfirmedProductProfile.safeParse(historical).success).toBe(true);
+  });
+
+  it("records declared onboarding facts without presenting them as observed evidence", () => {
+    const draft = createInitialProductProfileDraft({
+      sourceSiteId: ids.site,
+      sourcePageUrl: "https://example.com/product",
+      productName: "  RelayOps  ",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
+    });
+
+    expect(draft).toMatchObject({
+      productName: "RelayOps",
+      customerModel: "b2b",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
+      targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    });
+    expect(draft.missingFields).not.toContain("/productName");
+    expect(draft.missingFields).not.toContain("/targetMarkets");
+    expect(draft.fieldProvenance).toEqual(
+      expect.arrayContaining(
+        [
+          "/productName",
+          "/customerModel",
+          "/targetMarkets",
+          "/growthObjectives",
+        ].map((path) =>
+          expect.objectContaining({
+            path,
+            derivation: "declared",
+            confidence: "high",
+            evidenceRefs: [
+              expect.objectContaining({ kind: "userEdit" }),
+            ],
+            observedAt: null,
+          }),
+        ),
+      ),
+    );
+    expect(
+      draft.fieldProvenance.flatMap((entry) =>
+        entry.evidenceRefs.map((ref) => ref.evidenceRefId),
+      ),
+    ).toHaveLength(new Set(
+      draft.fieldProvenance.flatMap((entry) =>
+        entry.evidenceRefs.map((ref) => ref.evidenceRefId),
+      ),
+    ).size);
   });
 
   it("trims and records only a present declared business hint", () => {
@@ -624,6 +688,11 @@ describe("Product Profile public command contracts", () => {
     expect(
       ProductProfileEditablePatch.safeParse({
         productName: "RelayOps",
+        customerModel: "b2b",
+        growthObjectives: [
+          "increase_signups",
+          "increase_organic_traffic",
+        ],
         category: null,
         businessModels: [],
         targetMarkets: [{ marketCode: "US", priority: "primary" }],

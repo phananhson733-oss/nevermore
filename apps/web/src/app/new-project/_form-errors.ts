@@ -1,17 +1,24 @@
-const FIELD_KEYS = ["productUrl", "businessHint"] as const;
+const FIELD_KEYS = [
+  "productName",
+  "productUrl",
+  "customerModel",
+  "primaryMarket",
+  "growthObjectives",
+  "businessHint",
+] as const;
 
-type FieldKey = (typeof FIELD_KEYS)[number];
+export type ProjectFieldKey = (typeof FIELD_KEYS)[number];
 
-export type ProjectFieldErrors = Partial<Record<FieldKey, string>>;
+export type ProjectFieldErrors = Partial<Record<ProjectFieldKey, string>>;
 
 export interface ProjectFieldError {
   readonly pointer: string;
 }
 
-function pointerToField(pointer: string): FieldKey | null {
+function pointerToField(pointer: string): ProjectFieldKey | null {
   const seg = pointer.split("/")[1] ?? "";
   return (FIELD_KEYS as readonly string[]).includes(seg)
-    ? (seg as FieldKey)
+    ? (seg as ProjectFieldKey)
     : null;
 }
 
@@ -19,6 +26,8 @@ export function mapProjectFieldErrors(
   errors: readonly ProjectFieldError[],
   messages: {
     readonly productUrlInvalid: string;
+    readonly requiredField: string;
+    readonly growthObjectivesRequired: string;
     readonly createError: string;
   },
 ): {
@@ -36,7 +45,13 @@ export function mapProjectFieldErrors(
     }
     if (fieldErrors[key] !== undefined) continue;
     fieldErrors[key] =
-      key === "productUrl" ? messages.productUrlInvalid : messages.createError;
+      key === "productUrl"
+        ? messages.productUrlInvalid
+        : key === "growthObjectives"
+          ? messages.growthObjectivesRequired
+          : key === "businessHint"
+            ? messages.createError
+            : messages.requiredField;
   }
 
   return {

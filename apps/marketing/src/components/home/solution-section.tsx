@@ -1,5 +1,5 @@
 // @input  — next-intl, framer-motion
-// @output — SolutionSection 组件（5 步流程图）
+// @output — SolutionSection 组件（四步 SEO 增长工作流）
 // @pos    — 首页区块 4，深色背景，SPEC 2.5.2
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -10,18 +10,16 @@ import { fadeInUp, staggerContainer, staggerItem } from "@/lib/animations";
 import {
   FileText,
   Search,
-  Brain,
-  Zap,
-  RefreshCw,
+  Network,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 
 const STEPS: { icon: LucideIcon; labelKey: string }[] = [
   { icon: FileText, labelKey: "step1" },
   { icon: Search, labelKey: "step2" },
-  { icon: Brain, labelKey: "step3" },
-  { icon: Zap, labelKey: "step4" },
-  { icon: RefreshCw, labelKey: "step5" },
+  { icon: Network, labelKey: "step3" },
+  { icon: Waypoints, labelKey: "step4" },
 ];
 
 export function SolutionSection() {
@@ -69,13 +67,13 @@ export function SolutionSection() {
             initial="initial"
             whileInView="animate"
             viewport={{ once: true }}
-            className="flex flex-col md:flex-row items-start gap-4"
+            className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-4"
           >
             {STEPS.map((step, i) => (
               <motion.div
                 key={step.labelKey}
                 {...staggerItem}
-                className="flex items-center gap-4"
+                className="relative flex flex-col items-center gap-2"
               >
                 <div className="flex flex-col items-center gap-2">
                   <div
@@ -92,7 +90,7 @@ export function SolutionSection() {
                   </p>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className="hidden md:block w-8 border-t border-dashed border-brand-accent mb-6" />
+                  <div className="absolute left-[calc(50%+2.25rem)] top-8 hidden w-[calc(100%-3.5rem)] border-t border-dashed border-brand-accent/60 sm:block" />
                 )}
               </motion.div>
             ))}

@@ -5,7 +5,8 @@
 
 import Link from "next/link";
 import { ArrowRight, FileQuestion } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages, getTranslations } from "next-intl/server";
 import { SeoAuditTool } from "@/components/tools/seo-audit-tool";
 import {
   BreadcrumbJsonLd,
@@ -40,6 +41,7 @@ export default async function SeoAuditPage({
 }) {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "tools.seoAudit" });
+  const messages = await getMessages();
   const home = locale === "en" ? "Home" : "首页";
   const tools = locale === "en" ? "Free Growth Tools" : "免费增长工具";
   const faqs = Array.from({ length: 8 }, (_, offset) => offset + 1).map(
@@ -136,7 +138,11 @@ export default async function SeoAuditPage({
 
         <main>
           <section className="pt-8 md:pt-10">
-            <SeoAuditTool locale={locale} />
+            <NextIntlClientProvider
+              messages={{ tools: { seoAudit: messages.tools.seoAudit } }}
+            >
+              <SeoAuditTool locale={locale} />
+            </NextIntlClientProvider>
           </section>
 
           <section className="mt-24 border-t border-brand-border/60 pt-14">
@@ -343,7 +349,7 @@ export default async function SeoAuditPage({
                 {t("relatedToolsTitle")}
               </h2>
               <Link
-                href={`/${locale}/tools`}
+                href={`/${locale}/tools/internal-link-audit`}
                 className="mt-6 block rounded-xl border border-brand-border/70 bg-black/10 p-5 transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
@@ -373,7 +379,7 @@ export default async function SeoAuditPage({
                 {t("articlesBody")}
               </p>
               <Link
-                href={`/${locale}/blog/programmatic-seo-at-scale`}
+                href={`/${locale}/blog/evidence-first-growth-experiments`}
                 className="mt-5 inline-flex items-center gap-2 text-[12px] font-semibold text-brand-accent-text hover:text-brand-accent-hover"
               >
                 {t("articlesCta")}

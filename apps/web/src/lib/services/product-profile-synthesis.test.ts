@@ -133,7 +133,10 @@ const profile = createInitialProductProfileDraft({
   sourcePageUrl,
   businessHint: "Customer onboarding software for B2B SaaS teams.",
 });
-const profileHash = contentHash({ status: "draft", profile });
+const profileHash = contentHash({
+  status: "draft",
+  profile: profile as unknown as CanonicalValue,
+});
 const persistedProfile = {
   id: profileId,
   workspace_id: workspaceId,
@@ -660,7 +663,10 @@ describe("createProductProfileSynthesisRun", () => {
       profile: {
         ...persistedProfile,
         status: "complete",
-        content_hash: contentHash({ status: "complete", profile }),
+        content_hash: contentHash({
+          status: "complete",
+          profile: profile as unknown as CanonicalValue,
+        }),
       },
     });
 
