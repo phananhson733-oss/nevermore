@@ -14,7 +14,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env["CI"],
-  retries: process.env["CI"] ? 1 : 0,
+  retries: 0,
   // Cleanup is a reporter so its onEnd runs after Playwright stops Next.
   reporter: process.env["CI"]
     ? [["./e2e/mock-global-teardown.ts"], ["github"], ["list"]]
@@ -23,7 +23,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [

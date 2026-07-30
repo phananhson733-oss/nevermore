@@ -42,7 +42,7 @@
     "packages/db/migrations/schema-smoke.sql": "840dac2539fa17eb97093e05a76477d51b15182d102775afa8ef63979fcca535",
     "scripts/spec-authority-lib.mjs": "9091a9e15f051c66230e84f8a52de12ad487bbf137155305531228fa2b14aa56",
     "scripts/generate-spec-v0.4-lock.mjs": "4f9fa3fc795c6201225ba8e5b7c91ec30f00de91a8085562492cc24c39714b12",
-    "scripts/verify-implementation.mjs": "cf6cc393197d5953feb6dfb04721167e94292999ce1201f0c8267e7e52dd4458",
+    "scripts/verify-implementation.mjs": "36325af76f93b55f15844062c76aea73e558684be99b530cc8d3e26afc1fc496",
     "scripts/verify-implementation-source.test.mjs": "35c6ca62c3ac6cca35dd910d6db56b4d87d37f81524122ddaba925672dd2c9e3",
     "scripts/verify-spec-lock.mjs": "563d906a877d96b43b88504f22363684fde4678bb0006b1e3ab1ff3159ff8406",
     "scripts/verify-spec-lock.test.mjs": "74ff61740058ef8b75272b7c542c78f64eb1aaaa6a08afdd0fbdb8080e8dc751",

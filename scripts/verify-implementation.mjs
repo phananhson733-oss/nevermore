@@ -2465,6 +2465,11 @@ function checkE2eDatabaseSafety() {
       /\["\.\/e2e\/mock-global-teardown\.ts"\]/.test(mockConfig),
     "mock E2E cleanup must run as a reporter after webServer teardown",
   );
+  invariant(
+    /retries:\s*0\b/.test(mockConfig) &&
+      /trace:\s*"retain-on-failure"/.test(mockConfig),
+    "mock E2E must use one honest attempt while retaining failure traces",
+  );
 
   const cleanupReporter = read("e2e/cleanup-reporter.ts");
   invariant(
@@ -2473,7 +2478,7 @@ function checkE2eDatabaseSafety() {
     ),
     "E2E artifact cleanup reporter must remove artifacts from reporter.onEnd",
   );
-  return "E2E safety: invocation-scoped DB/Next/blob/output/ports, one honest attempt, no unknown server reuse, ordered owned cleanup";
+  return "E2E safety: invocation-scoped DB/Next/blob/output/ports, one honest attempt per real and mock test, no unknown server reuse, ordered owned cleanup";
 }
 
 /**

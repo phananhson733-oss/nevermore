@@ -140,6 +140,17 @@ assert.match(
   /trace:\s*"retain-on-failure"/,
   "the single real E2E attempt must retain failure traces",
 );
+const mockE2eConfig = read("playwright.mock.config.ts");
+assert.match(
+  mockE2eConfig,
+  /retries:\s*0\b/,
+  "the mock E2E release gate must fail its first unsuccessful attempt",
+);
+assert.match(
+  mockE2eConfig,
+  /trace:\s*"retain-on-failure"/,
+  "the single mock E2E attempt must retain failure traces",
+);
 assert.doesNotMatch(
   realE2eConfig,
   /max-old-space-size/,

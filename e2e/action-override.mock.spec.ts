@@ -43,6 +43,9 @@ const SIX_STATUSES = [
   "dismissed",
 ] as const;
 
+const BACK_PROBE_PARAM = "e2eBackProbe";
+const BACK_EVENT_STORAGE_KEY = "sf:e2e:back-observed";
+
 function sixStatusFixture() {
   const actions = SIX_STATUSES.map((status, index) =>
     overrideActionFixture(index + 1, {
@@ -77,6 +80,56 @@ async function selectArtifact(page: Page, artifactId: string): Promise<void> {
   // button label does not change), and dev-mode CSS-module names keep the
   // authored class readable.
   await expect(card).toHaveClass(/artCardSelected/);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("artifactId"))
+    .toBe(artifactId);
+}
+
+/**
+ * Build a deterministic same-document history pair without depending on
+ * Execution's target-less default, which is intentionally canonicalized.
+ */
+async function stageBackTraversal(page: Page): Promise<void> {
+  await page.evaluate((probeParam) => {
+    const previous = new URL(window.location.href);
+    previous.searchParams.set(probeParam, "previous");
+    window.history.replaceState(window.history.state, "", previous);
+
+    const current = new URL(previous);
+    current.searchParams.set(probeParam, "current");
+    window.history.pushState(window.history.state, "", current);
+  }, BACK_PROBE_PARAM);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get(BACK_PROBE_PARAM))
+    .toBe("current");
+}
+
+/**
+ * Prove both that `popstate` fired and that the browser settled on the exact
+ * previous history target. The sessionStorage marker keeps the wait bounded by
+ * Playwright's 10-second assertion timeout if no event arrives.
+ */
+async function traverseBackAndExpectPrevious(page: Page): Promise<void> {
+  await page.evaluate((eventStorageKey) => {
+    window.sessionStorage.removeItem(eventStorageKey);
+    window.addEventListener(
+      "popstate",
+      () => window.sessionStorage.setItem(eventStorageKey, "observed"),
+      { once: true },
+    );
+    window.history.back();
+  }, BACK_EVENT_STORAGE_KEY);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (eventStorageKey) => window.sessionStorage.getItem(eventStorageKey),
+        BACK_EVENT_STORAGE_KEY,
+      ),
+    )
+    .toBe("observed");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get(BACK_PROBE_PARAM))
+    .toBe("previous");
 }
 
 function overrideTrigger(page: Page): Locator {
@@ -565,15 +618,12 @@ test("browser Back asks before discarding a dirty override dialog", async ({
   const { actions, artifacts } = sixStatusFixture();
   const state = await installActionOverrideApi(page, { actions, artifacts });
   await openExecution(page);
-  // A second same-document history entry, standing in for the shell
-  // navigation that would normally precede Execution (product-profile
-  // guard-test precedent: `page.goBack()` cannot be used because a refused
-  // traversal is undone by the guard and leaves Playwright nothing to wait
-  // on).
-  await page.evaluate(() => {
-    window.history.pushState({}, "", window.location.href);
-  });
   await selectArtifact(page, artifacts[1]!.id);
+  // A deterministic same-document history pair stands in for the shell
+  // navigation that would normally precede Execution. `page.goBack()` cannot
+  // be used because a refused traversal is undone by the guard and leaves
+  // Playwright nothing to wait on.
+  await stageBackTraversal(page);
   const dialog = await openOverrideDialog(page);
   await statusSelect(dialog).selectOption("blocked");
   await reasonBox(dialog).fill("guard me");
@@ -592,33 +642,30 @@ test("browser Back asks before discarding a dirty override dialog", async ({
   await expect(dialog).toBeVisible();
   await expect(reasonBox(dialog)).toHaveValue("guard me");
   await expect(statusSelect(dialog)).toHaveValue("blocked");
-  expect(prompts).toEqual([
+  await expect.poll(() => prompts.length).toBe(1);
+  expect(prompts[0]).toBe(
     "You have unsaved action adjustments. Leave and discard them?",
-  ]);
+  );
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get(BACK_PROBE_PARAM))
+    .toBe("current");
   await expectNoNewPatch(page, state, 0);
 
   // Confirmed: the dialog closes and the traversal completes.
   answer = true;
-  await page.evaluate(() => {
-    window.history.back();
-  });
+  await traverseBackAndExpectPrevious(page);
   await expect(dialog).not.toBeVisible();
   expect(prompts).toHaveLength(2);
-  await expect
-    .poll(() => new URL(page.url()).searchParams.get("artifactId"))
-    .toBe(null);
 });
 
 test("a clean dialog neither prompts nor blocks a history traversal, and leaks no state after it", async ({
   page,
 }) => {
   const { actions, artifacts } = sixStatusFixture();
-  await installActionOverrideApi(page, { actions, artifacts });
+  const state = await installActionOverrideApi(page, { actions, artifacts });
   await openExecution(page);
-  await page.evaluate(() => {
-    window.history.pushState({}, "", window.location.href);
-  });
   await selectArtifact(page, artifacts[1]!.id);
+  await stageBackTraversal(page);
   const dialog = await openOverrideDialog(page);
 
   const prompts: string[] = [];
@@ -630,17 +677,9 @@ test("a clean dialog neither prompts nor blocks a history traversal, and leaks n
   // A clean dialog holds no work, so the guard is unarmed: the traversal
   // completes at the browser level and no confirm is raised.
   //
-  // KNOWN LIMIT (pre-R2, verified without any dialog mounted): the Next
-  // popstate restore does not reliably re-render Execution with the traversed
-  // URL in dev, so the SELECTION cannot be asserted to follow the traversal
-  // here. The cross-Action pristineness the review asked for is asserted
-  // below through the dialog identity contract instead.
-  await page.evaluate(() => {
-    window.history.back();
-  });
-  await expect
-    .poll(() => new URL(page.url()).searchParams.get("artifactId"))
-    .toBe(null);
+  // Observe the browser event and the stable previous-entry probe instead of
+  // sampling a short-lived target-less URL during canonicalization.
+  await traverseBackAndExpectPrevious(page);
   await page.waitForTimeout(300);
   expect(prompts).toEqual([]);
 
@@ -659,6 +698,40 @@ test("a clean dialog neither prompts nor blocks a history traversal, and leaks n
   await expect(statusSelect(dialogB).locator('option[value=""]')).toHaveText(
     "Keep current — Done",
   );
+  await expectNoNewPatch(page, state, 0);
+});
+
+test("a clean override allows real browser Back to the previous project module", async ({
+  page,
+}) => {
+  const { actions, artifacts } = sixStatusFixture();
+  const state = await installActionOverrideApi(page, { actions, artifacts });
+  await useEnglishUi(page);
+
+  // Build the history through the actual customer shell rather than
+  // manufacturing an Execution entry: Results -> Execution -> selected
+  // artifact is the production navigation shape this guard must not block.
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+  await page.getByRole("link", { name: "Execution", exact: true }).click();
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toBe(`/p/${E2E_PROJECT_ID}/execution`);
+  await selectArtifact(page, artifacts[1]!.id);
+  const dialog = await openOverrideDialog(page);
+
+  const prompts: string[] = [];
+  page.on("dialog", (browserDialog) => {
+    prompts.push(browserDialog.message());
+    void browserDialog.dismiss();
+  });
+
+  await page.goBack();
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toBe(`/p/${E2E_PROJECT_ID}/results`);
+  await expect(dialog).not.toBeVisible();
+  expect(prompts).toEqual([]);
+  await expectNoNewPatch(page, state, 0);
 });
 
 // ------------------------------------------------------------- 409 space ---
