@@ -231,7 +231,7 @@ const EN: InternalLinkAuditContent = {
       body: "The report shows whether a sitemap was collected and how many sitemap URLs were observed, so orphan candidates have visible scope limits.",
     },
     {
-      title: "Pages with only one or two inbound links",
+      title: "Pages with one or fewer observed inbound links",
       body: "These pages are not necessarily orphans, but they have one or fewer observed inbound HTML links in this bounded crawl.",
     },
     {
@@ -264,7 +264,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "What counts as thin-linked",
-      body: "One or two observed inbound links, with contextual body links separated from global navigation and footer links.",
+      body: "One or fewer observed inbound HTML links in this bounded crawl. Navigation, JavaScript-rendered links, and uncrawled pages can change this count.",
     },
     {
       title: "Where a crawl starts and stops",
@@ -298,7 +298,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "Compared with Search Console’s internal-links report",
-      body: "Search Console reports pages Google already knows. A crawler independently compares sitemap discovery with reachable internal links and can suggest the page to link from.",
+      body: "Search Console reports pages Google already knows. This crawler independently compares observed sitemap discovery with collected internal HTML relationships and their limits.",
     },
   ],
   faqEyebrow: "FAQ",
@@ -493,7 +493,7 @@ const ZH: InternalLinkAuditContent = {
       body: "报告会显示是否成功采集 Sitemap 及已观测 URL 数量，让候选孤岛的结论范围清晰可见。",
     },
     {
-      title: "只有一两条入链的页面",
+      title: "只有一条或没有观测入链的页面",
       body: "它们不一定是孤岛，但在本次受限抓取中只有一条或没有观测到的 HTML 入链。",
     },
     {
@@ -526,7 +526,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "什么算低入链",
-      body: "只有一至两条已观测入链，并把正文上下文链接与全站导航、页尾链接分开统计。",
+      body: "在本次受限抓取中只有一条或没有观测到的 HTML 入链。导航、JavaScript 生成链接和未采集页面都可能改变这个计数。",
     },
     {
       title: "抓取从哪里开始、在哪里停止",
@@ -560,7 +560,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "与 Search Console 内链报告的区别",
-      body: "Search Console 主要报告 Google 已知页面；独立爬虫可以对比 Sitemap 与实际可达链接，并进一步建议应该从哪个页面补链。",
+      body: "Search Console 主要报告 Google 已知页面；本工具独立对比已观测 Sitemap 发现与已采集 HTML 内链关系，并展示相应限制。",
     },
   ],
   faqEyebrow: "常见问题",
