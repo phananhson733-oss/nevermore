@@ -94,7 +94,9 @@ describe("repository-backed blog content", () => {
       "/en/blog/astrologywiki-case-study",
       "/en/blog/growth-experiment-playbook",
       "/en/blog/marketing-attribution-models",
+      "/en/blog/organic-traffic-growth-case-study",
       "/en/blog/programmatic-seo-at-scale",
+      "/en/blog/social-first-probe-week-1",
       "/en/blog/social-first-week-1",
       "/en/blog/what-is-growth-automation",
       "/en/blog/white-label-keyword-research",
@@ -106,10 +108,12 @@ describe("repository-backed blog content", () => {
       "/zh/blog/what-is-growth-automation",
     ];
 
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(8);
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(10);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(7);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
+    expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
+    expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
     expect(posts[0]?.slug).toBe("evidence-first-growth-experiments");
   });
 });

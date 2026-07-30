@@ -53,10 +53,11 @@ public route do not change.
 
 `BLOG_LEGACY_SUPABASE_ENABLED=true` enables a **temporary, read-only** bridge
 for existing `blog_posts` rows. A local article wins when it has the same
-`locale + slug`; errors from the bridge never fall back to mock content. Keep
-the bridge enabled until every published legacy URL is exported, converted,
-reviewed and deployed. Then set it to `false`, verify sitemap/RSS/redirect
-parity, and remove the bridge in a later change.
+`locale + slug`; errors from the bridge never fall back to mock content. The
+preserved legacy seed corpus has been migrated in full: 15 published rows and
+2 drafts. Keep the bridge disabled unless an independently recovered database
+export reveals a published URL outside that audited corpus; otherwise, verify
+sitemap/RSS/redirect parity and remove the bridge in a later change.
 
 The old Supabase tables for `waitlist_subscribers`, `trial_applications` and
 `contact_submissions` are not a runtime dependency of this release. Before

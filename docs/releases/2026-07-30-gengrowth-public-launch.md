@@ -25,10 +25,11 @@ above owns `https://gengrowth.ai` and `https://www.gengrowth.ai`.
 
 ## Product decisions in this release
 
-- The canonical blog source is repository-backed Markdown. The 13 published
-  legacy articles were imported from the available historical SQL seeds in
-  `0ede753077d8dffb5c21c1b3428746e61bda2caf`; the original Supabase project
-  was inactive and was not modified.
+- The canonical blog source is repository-backed Markdown. The available
+  historical SQL seeds contain 15 published articles and 2 drafts; all 17 have
+  been imported. The two drafts remain versioned but are excluded from public
+  pages, RSS and sitemap. The original Supabase project was inactive and was
+  not modified.
 - `BLOG_LEGACY_SUPABASE_ENABLED=false` is configured for Preview and Production.
   The public blog does not query the retired project at request time.
 - Trial and waitlist CTAs open the existing `https://app.gengrowth.ai` product
@@ -49,10 +50,11 @@ release:
 | --- | --- |
 | `pnpm --filter @sf/marketing typecheck` | passed |
 | `pnpm --filter @sf/marketing lint` | passed |
-| `pnpm --filter @sf/marketing build` | passed; 24 routes generated |
+| `pnpm --filter @sf/marketing build` | passed; 26 routes generated after the complete legacy corpus import |
 | `pnpm test --reporter=dot` | passed |
 | `pnpm secrets:scan` | passed; associated redaction tests: 4 files / 75 tests |
-| Local production-build smoke | passed: English/Chinese pages, blog routes, 13 migrated URLs, RSS, sitemap, robots, contact and disabled lead APIs |
+| Complete legacy-blog corpus check | passed: 15 published legacy URLs present; 2 legacy drafts retained but absent from public routes, RSS and sitemap |
+| Local production-build smoke | passed: English/Chinese pages, blog routes, migrated URLs, RSS, sitemap, robots, contact and disabled lead APIs |
 | Vercel Git production build | Ready, exact `1e393e24c9583460edf4b2e3683de7ba5bdac053` |
 | Production-domain HTTP smoke | passed: `/en`, `/zh`, both blog indexes, representative English/Chinese migrated posts, both RSS feeds, sitemap, robots, contact page, and all three disabled lead APIs |
 

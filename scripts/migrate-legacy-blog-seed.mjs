@@ -10,7 +10,8 @@
  *     --source /path/to/seed-blog.sql \
  *     --source /path/to/seed-blog-w25.sql \
  *     --output apps/marketing/content/blog \
- *     --manifest docs/marketing-blog-migration.md
+ *     --manifest docs/marketing-blog-migration.md \
+ *     --include-non-published
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -43,6 +44,11 @@ const VALID_PILLARS = new Set([
   "seo_content",
   "customer_stories",
 ]);
+const LEGACY_PILLAR_ALIASES = new Map([
+  ["automated-growth", "growth_automation"],
+  ["social-first-growth", "experiment_driven"],
+]);
+const VALID_STATUSES = new Set(["draft", "published", "archived"]);
 const VALID_LOCALES = new Set(["en", "zh"]);
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DEFAULT_HERO_IMAGE = "/images/og-default.svg";
@@ -50,7 +56,7 @@ const DEFAULT_HERO_IMAGE = "/images/og-default.svg";
 function usage(message) {
   if (message) console.error(`Error: ${message}`);
   console.error(
-    "Usage: node scripts/migrate-legacy-blog-seed.mjs --source <legacy.sql> [--source <legacy.sql>] --output <content/blog> --manifest <migration.md> [--overwrite]",
+    "Usage: node scripts/migrate-legacy-blog-seed.mjs --source <legacy.sql> [--source <legacy.sql>] --output <content/blog> --manifest <migration.md> [--overwrite] [--include-non-published]",
   );
   process.exitCode = 2;
 }
@@ -60,11 +66,16 @@ function parseArgs(argv) {
   let output;
   let manifest;
   let overwrite = false;
+  let includeNonPublished = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--overwrite") {
       overwrite = true;
+      continue;
+    }
+    if (argument === "--include-non-published") {
+      includeNonPublished = true;
       continue;
     }
     if (!["--source", "--output", "--manifest"].includes(argument)) {
@@ -86,7 +97,7 @@ function parseArgs(argv) {
     usage("--source, --output, and --manifest are required");
     return null;
   }
-  return { sources, output, manifest, overwrite };
+  return { sources, output, manifest, overwrite, includeNonPublished };
 }
 
 function skipIgnorable(source, cursor) {
@@ -222,14 +233,22 @@ function toCalendarDate(value, field, identity) {
   return date;
 }
 
+function normalizePillar(value, identity) {
+  if (!value) return undefined;
+  const normalized = LEGACY_PILLAR_ALIASES.get(value) ?? value;
+  if (!VALID_PILLARS.has(normalized)) {
+    throw new Error(`${identity}: unsupported pillar`);
+  }
+  return normalized;
+}
+
 function toMarkdown(row) {
   const identity = `${row.locale}/${row.slug}`;
   if (!VALID_LOCALES.has(row.locale)) throw new Error(`${identity}: unsupported locale`);
   if (!SLUG_PATTERN.test(row.slug)) throw new Error(`${identity}: invalid slug`);
   if (!VALID_CATEGORIES.has(row.category)) throw new Error(`${identity}: unsupported category`);
-  if (row.pillar_slug && !VALID_PILLARS.has(row.pillar_slug)) {
-    throw new Error(`${identity}: unsupported pillar`);
-  }
+  if (!VALID_STATUSES.has(row.status)) throw new Error(`${identity}: unsupported status`);
+  const pillar = normalizePillar(row.pillar_slug, identity);
   const title = singleLine(row.title);
   const excerpt = singleLine(row.excerpt);
   const author = singleLine(row.author);
@@ -244,8 +263,8 @@ function toMarkdown(row) {
     `excerpt: ${excerpt}`,
     `author: ${author}`,
     `category: ${row.category}`,
-    ...(row.pillar_slug ? [`pillar: ${row.pillar_slug}`] : []),
-    "status: published",
+    ...(pillar ? [`pillar: ${pillar}`] : []),
+    `status: ${row.status}`,
     `publishedAt: ${toCalendarDate(row.published_at, "published_at", identity)}`,
     `updatedAt: ${toCalendarDate(row.updated_at ?? row.published_at, "updated_at", identity)}`,
     `heroImage: ${heroImage}`,
@@ -293,15 +312,16 @@ async function main() {
   }
 
   const published = rows.filter((row) => row.status === "published");
+  const selected = options.includeNonPublished ? rows : published;
   const duplicateKeys = new Set();
-  for (const row of published) {
+  for (const row of selected) {
     const key = `${row.locale}:${row.slug}`;
-    if (duplicateKeys.has(key)) throw new Error(`duplicate published legacy URL: ${key}`);
+    if (duplicateKeys.has(key)) throw new Error(`duplicate selected legacy content: ${key}`);
     duplicateKeys.add(key);
   }
 
   const generated = [];
-  for (const row of published) {
+  for (const row of selected) {
     const markdown = toMarkdown(row);
     const directory = join(options.output, row.locale);
     const destination = join(directory, `${row.slug}.md`);
@@ -310,7 +330,7 @@ async function main() {
     }
     await mkdir(directory, { recursive: true });
     await writeFile(destination, markdown, "utf8");
-    generated.push({ locale: row.locale, slug: row.slug, destination, sha256: digest(markdown) });
+    generated.push({ locale: row.locale, slug: row.slug, status: row.status, destination, sha256: digest(markdown) });
   }
 
   generated.sort((left, right) => `${left.locale}:${left.slug}`.localeCompare(`${right.locale}:${right.slug}`));
@@ -329,8 +349,9 @@ async function main() {
     "",
     "## Result",
     "",
+    `- Legacy rows discovered: **${rows.length}**`,
     `- Published legacy rows discovered: **${published.length}**`,
-    `- Markdown articles generated: **${generated.length}**`,
+    `- Markdown articles generated: **${generated.length}**${options.includeNonPublished ? " (including non-published content)" : ""}`,
     ...Object.entries(byLocale)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([locale, articles]) => `- \`${locale}\`: **${articles.length}** article(s)`),
@@ -341,9 +362,9 @@ async function main() {
     "",
     "## Generated routes and hashes",
     "",
-    "| Route | Markdown SHA-256 |",
-    "| --- | --- |",
-    ...generated.map((article) => `| \`/${article.locale}/blog/${article.slug}\` | \`${article.sha256}\` |`),
+    "| Route | Status | Markdown SHA-256 |",
+    "| --- | --- | --- |",
+    ...generated.map((article) => `| \`/${article.locale}/blog/${article.slug}\` | \`${article.status}\` | \`${article.sha256}\` |`),
     "",
     "## Cutover rule",
     "",
@@ -355,7 +376,7 @@ async function main() {
   ].join("\n");
   await mkdir(dirname(options.manifest), { recursive: true });
   await writeFile(options.manifest, manifest, "utf8");
-  console.log(`Migrated ${generated.length} published articles into ${resolve(options.output)}.`);
+  console.log(`Migrated ${generated.length} article(s) into ${resolve(options.output)}.`);
 }
 
 main().catch((error) => {
