@@ -226,22 +226,43 @@ async function completeContext(
   projectId: string,
   definition: VerticalDefinition,
 ): Promise<void> {
-  const current = await responseJson<
-    DataEnvelope<{ readonly version: number }>
-  >(
-    await request.get(`/api/mvp/projects/${projectId}/context`),
-    "read current context version",
-  );
-  const response = await request.patch(
-    `/api/mvp/projects/${projectId}/context`,
-    {
-      data: {
-        ...completeContextBody(definition),
-        baseVersion: current.data.version,
-      },
-    },
-  );
-  await responseJson<DataEnvelope<unknown>>(response, "complete context");
+  const payload = completeContextBody(definition);
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const current = await responseJson<
+        DataEnvelope<{ readonly version: number }>
+      >(
+        await request.get(`/api/mvp/projects/${projectId}/context`),
+        "read current context version",
+      );
+      const response = await request.patch(
+        `/api/mvp/projects/${projectId}/context`,
+        {
+          data: {
+            ...payload,
+            baseVersion: current.data.version,
+          },
+        },
+      );
+      await responseJson<DataEnvelope<unknown>>(response, "complete context");
+      return;
+    } catch (error) {
+      const message = String(error);
+      const transientRestart =
+        /ECONNRESET|ECONNREFUSED|socket hang up|fetch failed/i.test(message);
+      if (!transientRestart || attempt >= 2) {
+        throw error;
+      }
+      // The real E2E suite can cross Next's dev-server memory watermark late
+      // in the run. Re-read the current version after the process settles and
+      // retry the same complete payload; identical complete saves are a
+      // semantic no-op, so a post-restart replay stays honest.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1_500 * (attempt + 1)),
+      );
+    }
+  }
 }
 
 async function waitForRun(
