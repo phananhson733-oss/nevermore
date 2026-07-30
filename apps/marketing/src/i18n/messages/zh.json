@@ -506,171 +506,280 @@
     },
     "internalLinkAudit": {
       "title": "内链审计",
-      "description": "绘制站内链接关系，发现孤岛页与深层页面，并把结构缺口转化为可审核的优先修复动作。"
+      "description": "绘制站内链接关系，发现孤岛与深层页面，并把结构缺口转成按优先级排序、可审核的修复动作。"
     },
     "seoAudit": {
-      "title": "网站健康地图",
-      "description": "检测首页、robots.txt 与 sitemap.xml 中可实测的 SEO 问题，并提供证据和优先修复建议。",
-      "metaTitle": "免费 SEO 审计与网站健康地图 -- GenGrowth",
-      "metaDescription": "快速检测首页的抓取、技术、页面基础、内容可提取性与静态结构化数据，并查看证据和检测边界。",
-      "pageTitle": "看清搜索引擎真正能读取的 SEO 信号",
-      "pageSubtitle": "基于首页、robots.txt 与 sitemap.xml 真实测量的网站健康地图。每个结论都展示证据、覆盖度和能力边界。",
-      "eyebrow": "免费 SEO 诊断",
+      "title": "免费全站 SEO 审计",
+      "description": "真实抓取最多 25 个同源页面，记录响应、索引指令、元数据、结构、链接和 JSON-LD 事实。",
+      "metaTitle": "免费全站 SEO 审计（最多 25 页）| GenGrowth",
+      "metaDescription": "免费、免登录地审计最多 25 个同源页面，查看抓取覆盖、页面响应、索引指令、元数据、结构、链接和 JSON-LD 证据。",
+      "pageTitle": "免费全站 SEO 审计",
+      "pageSubtitle": "输入公开 URL，真实检查最多 25 个同源页面。结果只包含抓取覆盖、审计记录、观测值、证据和已检查页面清单。",
+      "eyebrow": "免费·有明确额度的全站审计",
+      "heroCta": "开始审计",
+      "heroTrust": "无需登录 · 不接 GSC · 不保存扫描 · 只读公开静态 HTML",
       "formLabel": "网站 URL",
-      "placeholder": "example.com",
-      "submit": "免费检测",
-      "running": "正在检测首页信号...",
-      "scopeShort": "检测一个页面以及 robots.txt、sitemap.xml；无需登录，不持久化，也不冒充全站爬取。",
+      "placeholder": "https://example.com",
+      "running": "正在审计网站…",
+      "submit": "开始免费审计",
+      "scopeShort": "免费范围：最多 25 个同源 URL、深度 4、总计 60 次请求。爬虫遵守 robots.txt，只读取公开静态响应。",
       "errors": {
-        "invalid_url": "请输入可公开访问的网站 URL。",
-        "invalid_request": "请提交一个有效的网站 URL 后重试。",
-        "payload_too_large": "本次请求超过了工具允许的大小。",
-        "unsupported_media_type": "不支持当前请求格式。",
-        "scan_failed": "暂时无法检测该网站。请确认网站可公开访问后重试。",
-        "scan_timeout": "该网站未能在本次体验检测的时限内响应。",
-        "scan_in_progress": "当前网络已有检测正在运行，请稍后重试。",
-        "rate_limited": "当前网络检测次数过多，请稍后重试。",
-        "unknown": "出现错误，请重试。"
+        "invalid_url": "请输入有效的公开 HTTP 或 HTTPS URL。私有网络和本机地址会被拦截。",
+        "invalid_request": "请求中只能包含一个 URL。",
+        "payload_too_large": "提交的请求体过大。",
+        "unsupported_media_type": "请使用 JSON 格式提交请求。",
+        "scan_failed": "当前环境无法完成对该公开网站的审计。",
+        "scan_timeout": "免费抓取在返回报告前触及执行时间边界。",
+        "scan_in_progress": "当前连接已有扫描在运行，请等待完成后再发起下一次。",
+        "rate_limited": "已达到免费扫描频率限制，请在提示的等待时间后重试。",
+        "unknown": "本次审计未能完成。"
       },
-      "resultsTitle": "首页实测健康度",
-      "scoreLabel": "实测得分",
-      "coverage": "已实测 {measured} / {total} 项",
-      "priorities": "优先修复",
-      "recommendationLabel": "建议动作",
-      "notAvailable": "暂无数据",
-      "modules": {
-        "crawlability": "抓取与索引",
-        "technical": "技术基础",
-        "on_page": "页面内信号",
-        "content": "内容与可提取性",
-        "structured_data": "结构化数据与 AI 可读性"
+      "resultsEyebrow": "有边界的审计记录",
+      "scannedAt": "采集于 {value}",
+      "availability": {
+        "available": "抓取已完成",
+        "partial": "覆盖不完整",
+        "unavailable": "不可用"
       },
-      "statuses": {
-        "pass": "通过",
-        "warning": "关注",
-        "fail": "修复",
-        "unverified": "未验证"
+      "coveragePages": "已检查页面 / 免费上限",
+      "coverageLinks": "已观测内部链接",
+      "coverageSitemap": "已观测 Sitemap URL",
+      "coverageLimits": "固定抓取边界",
+      "coverageLimitsValue": "深度 {depth} · {requests} 次请求",
+      "partialCoverage": "爬虫因{reason}停止。以下每条记录只描述实际完成检查的页面。",
+      "boundedCoverage": "抓取在固定免费额度内完成。静态 HTML、JavaScript 渲染结果和未进入已观测队列的 URL 属于不同证据边界。",
+      "crawlCounters": "跳过 {skipped} · 拦截 {blocked} · robots 禁止 {disallowed} · 错误 {errors}",
+      "stopReasons": {
+        "max_urls": "达到 25 个 URL 上限",
+        "max_depth": "达到深度上限",
+        "max_duration": "达到时间上限",
+        "max_total_bytes": "达到解码字节上限",
+        "max_requests": "达到请求次数上限",
+        "aborted": "任务被取消"
       },
-      "checks": {
-        "homepage_status": {
-          "title": "首页响应",
-          "recommendation": "先恢复提交页面的 200 成功响应，再优化其他 SEO 信号。"
+      "recordsEyebrow": "已观测条件",
+      "recordsTitle": "审计记录",
+      "recordsBody": "每条记录只说明一个检测条件、已检查与已观测数量、页面级观测值和证据限制。它们不是评分、优先级或操作指令。",
+      "recordStates": {
+        "observed": "已观测",
+        "not_observed": "未观测",
+        "unverified": "无法核验"
+      },
+      "recordUnits": {
+        "pages": "个页面",
+        "link_targets": "个已采集目标",
+        "site_resource": "个站点资源"
+      },
+      "recordCount": "已观测 {affected} / 已检查 {tested} {unit}",
+      "siteLevelObservation": "站点级观测",
+      "noVerifiableObservation": "本次抓取没有保留足以核验该记录的证据。",
+      "noMatchingObservation": "在已检查集合中没有出现符合该条件的观测。",
+      "limitationLabel": "证据边界",
+      "limitations": {
+        "resource_not_observed_does_not_prove_absence": "没有观测到资源，可能是资源不存在、不可达、被拦截，或未进入成功获取的资源集合；不能据此断言资源缺失。",
+        "static_response_directives_only": "这里只读取已采集静态 HTTP/HTML 中的索引指令，不检测搜索引擎的真实索引覆盖。",
+        "normalised_text_match_within_inspected_pages": "重复分组使用忽略大小写、合并空白后的文本，只覆盖本次已检查页面。",
+        "bounded_static_html_crawl_inlinks_only": "入链数量只统计已采集静态 HTML 中的链接；该记录不是对孤立页面的最终断言。",
+        "uncollected_link_targets_not_classified": "只包含已实际采集且观测到 4xx/5xx 的链接目标；未采集目标不会被称为坏链。",
+        "static_html_json_ld_only": "JSON-LD 观测来自已采集静态 HTML，不检测客户端渲染后添加的代码块。"
+      },
+      "records": {
+        "robots_resource": {
+          "title": "robots.txt 资源",
+          "description": "爬虫是否成功获取并解析到 robots.txt 资源。"
         },
-        "indexability": {
-          "title": "可索引指令",
-          "recommendation": "移除应进入搜索结果页面上的意外 noindex 指令。"
+        "sitemap_resource": {
+          "title": "Sitemap 资源",
+          "description": "爬虫是否成功获取 Sitemap，以及保留了多少个 Sitemap URL。"
         },
-        "robots_access": {
-          "title": "Robots.txt 可读性",
-          "recommendation": "发布可读取的 robots.txt，并在搜索爬虫再次访问前检查过宽的 Disallow 规则。"
+        "non_2xx_final_status": {
+          "title": "最终响应不是 2xx",
+          "description": "已采集页面请求链中，最终 HTTP 状态不在 200–299 的页面。"
         },
-        "sitemap": {
-          "title": "XML 站点地图",
-          "recommendation": "在 /sitemap.xml 发布有效 XML Sitemap，只包含 canonical 且可索引的 URL。"
+        "redirect_chain": {
+          "title": "重定向链",
+          "description": "已采集页面请求链中，跟随过一次或多次 HTTP 重定向的页面。"
         },
-        "https": {
-          "title": "HTTPS 交付",
-          "recommendation": "通过 HTTPS 提供 canonical 站点，并将 HTTP 流量重定向到 HTTPS。"
+        "http_url": {
+          "title": "最终 URL 不是 HTTPS",
+          "description": "已采集页面请求链中，最终 URL 使用非 HTTPS 协议的页面。"
         },
-        "redirects": {
-          "title": "重定向路径",
-          "recommendation": "直接链接最终 URL，移除可以避免的重定向跳转。"
+        "noindex_directive": {
+          "title": "Noindex 指令",
+          "description": "已检查 HTML 页面中，静态 meta 或 X-Robots-Tag 包含 noindex 或 none 的页面。"
         },
-        "html_content_type": {
-          "title": "HTML 响应类型",
-          "recommendation": "以 HTML 返回页面，让搜索爬虫能够解析文档级信号。"
+        "canonical_missing": {
+          "title": "未观测到 Canonical 链接",
+          "description": "已检查的 2xx HTML 页面中，静态文档内没有 Canonical 链接的页面。"
         },
-        "canonical": {
-          "title": "Canonical 对齐",
-          "recommendation": "使用最终 HTTPS 主机和页面路径声明唯一的自引用 canonical URL。"
+        "canonical_differs": {
+          "title": "Canonical 目标不同",
+          "description": "Canonical 聚合目标与当前页面主体不同的已检查页面。"
         },
-        "html_lang": {
-          "title": "HTML 语言",
-          "recommendation": "在 html 元素上设置与页面语言一致的有效 lang 属性。"
+        "title_missing": {
+          "title": "未观测到 Title",
+          "description": "已检查的 2xx HTML 页面中，静态文档内没有非空 Title 的页面。"
         },
-        "title": {
-          "title": "Title 标签",
-          "recommendation": "撰写一个描述明确且页面唯一的标题，长度建议约 30 至 60 个字符。"
+        "title_duplicate": {
+          "title": "Title 文本重复",
+          "description": "在本次已检查页面中，共享相同标准化非空 Title 文本的页面。"
         },
-        "meta_description": {
-          "title": "Meta Description",
-          "recommendation": "添加具体说明页面价值的描述，长度建议约 70 至 160 个字符。"
+        "meta_description_missing": {
+          "title": "未观测到 Meta Description",
+          "description": "已检查的 2xx HTML 页面中，静态文档内没有非空 Meta Description 的页面。"
         },
-        "h1": {
-          "title": "主标题",
-          "recommendation": "使用一个清晰 H1 表达页面的主要主题。"
+        "meta_description_duplicate": {
+          "title": "Meta Description 文本重复",
+          "description": "在本次已检查页面中，共享相同标准化非空 Meta Description 文本的页面。"
         },
-        "heading_order": {
-          "title": "标题层级",
-          "recommendation": "保持标题层级连续，让爬虫和辅助技术都能理解内容结构。"
+        "h1_missing": {
+          "title": "未观测到 H1",
+          "description": "已检查的 2xx HTML 页面中，静态文档内没有 H1 元素的页面。"
         },
-        "text_depth": {
-          "title": "静态正文可提取性",
-          "recommendation": "在可抓取 HTML 中提供足够的有效正文，说明产品、受众和价值结果。"
+        "multiple_h1": {
+          "title": "存在多个 H1 元素",
+          "description": "已检查的 2xx HTML 页面中，静态文档内 H1 元素数量大于 1 的页面。"
         },
-        "internal_links": {
-          "title": "静态内链发现",
-          "recommendation": "通过描述性 HTML 链接暴露重要的产品、证明、定价和资源页面。"
+        "sitemap_page_without_observed_inlink": {
+          "title": "Sitemap 页面无已观测 HTML 入链",
+          "description": "已采集且属于 Sitemap 的页面中，在有边界静态 HTML 图谱内入链数量为 0 的页面。"
         },
-        "social_meta": {
-          "title": "社交预览元数据",
-          "recommendation": "补齐 Open Graph 与 Twitter Card 元数据，保证分享预览稳定。"
+        "internal_target_http_error": {
+          "title": "已采集内部链接目标返回 4xx/5xx",
+          "description": "已实际采集并观测到客户端或服务端错误响应的内部链接目标。"
         },
-        "json_ld": {
-          "title": "静态 JSON-LD 证据",
-          "recommendation": "先使用富结果工具验证渲染后的页面；只有确认缺失时再添加准确的 Schema。"
+        "json_ld_parse_error": {
+          "title": "JSON-LD 解析错误",
+          "description": "已检查静态 HTML 中，包含无法解析为 JSON 的 JSON-LD 代码块的页面。"
         }
       },
       "evidence": {
-        "status_code": "HTTP 状态",
-        "robots_noindex": "检测到 Noindex",
-        "body_complete": "已读取完整响应",
-        "resource_state": "资源状态",
-        "final_protocol": "最终协议",
+        "fetched": "是否已获取",
+        "groups_observed": "已观测 Robots 规则组",
+        "sitemap_references": "Sitemap 引用",
+        "urls_observed": "已观测 URL",
+        "initial_status": "初始状态",
+        "final_status": "最终状态",
         "redirect_hops": "重定向跳数",
-        "content_type": "内容类型",
-        "canonical_url": "Canonical URL",
-        "html_lang": "HTML 语言",
-        "title_length": "Title 长度",
-        "description_length": "Description 长度",
+        "final_url": "最终 URL",
+        "final_protocol": "最终协议",
+        "robots_directive": "静态 Robots 指令",
+        "canonical_target": "Canonical 目标",
+        "page_subject": "页面主体",
+        "title": "Title 文本",
+        "matching_pages": "匹配页面数",
+        "meta_description": "Meta Description 文本",
         "h1_count": "H1 数量",
-        "heading_outline": "标题层级",
-        "static_word_count": "静态正文词数",
-        "static_internal_links": "静态内链数",
-        "social_tags_present": "社交标签数",
-        "json_ld_blocks": "JSON-LD 块",
-        "malformed_blocks": "格式错误块"
+        "sitemap_member": "是否属于 Sitemap",
+        "observed_inbound_links": "已观测入链",
+        "observed_source_pages": "已观测来源页面",
+        "malformed_blocks": "格式错误的 JSON-LD 块",
+        "types_observed": "已观测 JSON-LD 类型"
       },
-      "sources": {
-        "homepage_static": "首页原始响应",
-        "robots_txt": "标准 robots.txt 路径",
-        "sitemap_xml": "标准 sitemap.xml 路径"
+      "notAvailable": "暂无",
+      "booleanTrue": "是",
+      "booleanFalse": "否",
+      "pagesEyebrow": "已采集页面事实",
+      "pagesTitle": "已检查页面清单",
+      "pagesBody": "本次有边界抓取保留了 {count} 条页面请求记录。下列值都直接来自这些已采集响应的投影。",
+      "pageColumns": {
+        "url": "URL",
+        "response": "HTTP",
+        "depth": "深度",
+        "indexable": "静态 Robots 指令",
+        "title": "Title",
+        "description": "Meta Description",
+        "h1": "H1",
+        "links": "入链 / 出链",
+        "sitemap": "Sitemap",
+        "jsonLd": "JSON-LD"
       },
-      "limitationLabel": "证据边界",
-      "limitations": {
-        "standard_path_only": "这里只检测 /sitemap.xml；网站可能在其他位置声明 Sitemap。",
-        "static_html_cannot_prove_rendered_absence": "原始响应无法证明经 JavaScript 渲染后的结构化数据仍然缺失。",
-        "response_body_truncated": "响应超过受限读取上限，因此不推断缺失，也不使用不完整的数量。",
-        "html_body_unavailable": "该响应无法被识别为 HTML 文档。",
-        "resource_fetch_unavailable": "本次运行未能测量该标准资源。"
+      "robotsDirectiveStates": {
+        "noindex_observed": "观测到 Noindex",
+        "noindex_not_observed": "未观测到 Noindex"
       },
-      "methodEyebrow": "先证据，后建议",
-      "howTitle": "这项快速检测如何工作",
-      "step1Title": "验证公开目标",
-      "step1Text": "提交 URL 及每次重定向都会检查私网和保留网络地址。",
-      "step2Title": "受限读取数据源",
-      "step2Text": "在严格超时和响应体大小限制下读取页面、robots.txt 与 sitemap.xml。",
-      "step3Title": "只为实测项评分",
-      "step3Text": "未验证项不进入分数，每条可执行结论都保留实际观测证据。",
-      "ctaTitle": "需要看的不只是一个页面？",
-      "ctaBody": "GenGrowth 完整 Website Audit 可增加多页面爬取、渲染证据、性能数据、历史对比和可执行修复队列。",
-      "ctaButton": "打开 GenGrowth",
-      "faq1q": "这是完整 SEO 审计吗？",
-      "faq1a": "不是。这是对一个提交页面以及 robots.txt、sitemap.xml 的快速静态检测，不声称覆盖全站、排名、外链、Search Console 或浏览器渲染结果。",
-      "faq2q": "为什么结构化数据可能显示“未验证”？",
-      "faq2a": "许多网站通过 JavaScript 注入 JSON-LD。静态抓取可以确认看到的标记，但不能可靠证明渲染后仍然不存在。",
-      "faq3q": "高分能保证排名吗？",
-      "faq3a": "不能。分数只汇总实际测得的技术与页面信号；搜索需求、内容质量、竞争、权威度和真实收录需要额外证据。"
+      "jsonLdErrors": "{count} 个解析错误",
+      "methodEyebrow": "采集方法",
+      "howTitle": "免费审计如何运行",
+      "howIntro": "执行边界固定在代码中，匿名请求无法把公共工具变成无上限抓取任务。",
+      "step1Title": "标准化一个公开 URL",
+      "step1Text": "提交的 HTTP 或 HTTPS URL 会被标准化到公开站点；带凭据地址、私有网络和不安全目标会被拒绝。",
+      "step2Title": "运行固定同源抓取",
+      "step2Text": "爬虫读取 robots.txt 和 Sitemap，沿同源静态 HTML 链接抓取，并强制执行页面、深度、请求、时间、重定向和字节限制。",
+      "step3Title": "聚合审计记录",
+      "step3Text": "已采集页面事实会被聚合成中性的审计记录和可查看的页面清单，不生成评分、优先级或修复文案。",
+      "signalsEyebrow": "检测范围",
+      "signalsTitle": "审计记录哪些事实",
+      "signalsBody": "免费报告只覆盖有边界公开抓取能够直接采集的事实。",
+      "signal1Title": "抓取资源与响应",
+      "signal1Body": "robots.txt 与 Sitemap 观测、HTTP 状态、重定向跳数、协议、内容类型和明确停止原因。",
+      "signal2Title": "索引指令与 Canonical",
+      "signal2Body": "从已采集 2xx HTML 响应中读取静态 Meta/X-Robots 指令和 Canonical 目标。",
+      "signal3Title": "页面元数据",
+      "signal3Body": "已观测 Title、Meta Description 是否存在，以及在已检查页面中的标准化重复文本。",
+      "signal4Title": "HTML 结构与链接图谱",
+      "signal4Body": "H1 数量、字数、抓取深度、入链/出链数量、Sitemap 成员关系和已采集链接目标响应。",
+      "signal5Title": "静态 JSON-LD",
+      "signal5Body": "已采集静态 HTML 中声明的 JSON-LD 类型和解析错误。",
+      "methodTransparencyEyebrow": "证据合同",
+      "methodTransparencyTitle": "每条记录如何保持可追溯",
+      "method1Title": "一个明确检测条件",
+      "method1Body": "每条记录都有稳定 ID、分类、中性状态、已检查数量和已观测数量。",
+      "method2Title": "页面级证据",
+      "method2Body": "展开记录可查看已检查 URL，以及用于生成记录的具体观测值。",
+      "method3Title": "一个明确证据边界",
+      "method3Body": "覆盖不完整、只读静态响应、未采集目标和资源获取不确定性都会保留在报告中。",
+      "limitsEyebrow": "不检测",
+      "limitsTitle": "不属于这份免费审计的内容",
+      "limit1Title": "Search Console 与真实索引覆盖",
+      "limit1Body": "工具不接入 GSC，也不声称页面已被收录、获得排名或产生流量。",
+      "limit2Title": "渲染与性能数据",
+      "limit2Body": "工具不执行页面 JavaScript，也不生成 Lighthouse、CrUX、Core Web Vitals 或移动端渲染结果。",
+      "limit3Title": "无限全站覆盖",
+      "limit3Body": "结果只覆盖在页面展示的免费额度内实际到达的 URL，不声称知道网站的全部页面。",
+      "useCasesEyebrow": "审计记录",
+      "useCasesTitle": "可重复的公开站点快照",
+      "useCasesBody": "报告对每个提交网站使用同一组事实字段，并把覆盖边界与观测结果放在一起展示。",
+      "useCase1Title": "上线前清单",
+      "useCase1Body": "在发布前记录爬虫能够采集到的公开响应和页面字段。",
+      "useCase2Title": "迁移快照",
+      "useCase2Body": "网站迁移后检查重定向路径、最终响应、Canonical 和已采集 URL。",
+      "useCase3Title": "周期对比输入",
+      "useCase3Body": "再次运行相同有边界审计并手动比较事实；免费工具本身不保存历史。",
+      "comparison1Title": "结果是什么",
+      "comparison1Body": "一组有明确边界、可追溯到 URL 的公开站点直接观测事实。",
+      "comparison2Title": "结果不是什么",
+      "comparison2Body": "它不是网站质量评分、排名预测、修复计划、Search Console 报告或无限抓取。",
+      "faqEyebrow": "范围与证据",
+      "faqTitle": "常见问题",
+      "faq1q": "这是真实的全站抓取吗？",
+      "faq1a": "是。服务器会在展示的深度、请求、时间、重定向和字节边界内，真实抓取最多 25 个同源 URL。“全站”指多页面采集，不代表无限覆盖。",
+      "faq2q": "需要登录或连接 GSC 吗？",
+      "faq2a": "不需要。工具只读取公开 HTTP 响应，不要求站点所有权、OAuth、GSC、GA4 或其他数据账号。",
+      "faq3q": "报告包含健康度评分或等级吗？",
+      "faq3a": "不包含。报告只展示中性审计记录、观测值、数量、URL 证据和限制。",
+      "faq4q": "报告会给建议或修复清单吗？",
+      "faq4a": "不会。公共结果只记录观测事实，不生成修复建议、优先级、诊断或行动计划。",
+      "faq5q": "为什么覆盖可能不完整？",
+      "faq5a": "爬虫会在达到固定页面、深度、请求、时间、解码字节或取消边界时停止，停止原因会明确显示。",
+      "faq6q": "会审计 JavaScript 渲染后的页面吗？",
+      "faq6a": "只检查其公开静态 HTTP/HTML 响应。仅由客户端 JavaScript 添加的内容和链接不在证据集合内。",
+      "faq7q": "没有采集到的链接就代表坏链吗？",
+      "faq7a": "不是。只有爬虫实际采集链接目标并观测到 4xx 或 5xx 最终响应时，才会记录 HTTP 错误。",
+      "faq8q": "扫描结果会保存吗？",
+      "faq8a": "不会。匿名响应不做持久化，并通过 no-store 指令禁止缓存。",
+      "relatedToolsEyebrow": "其他公共审计",
+      "relatedToolsTitle": "检查其他公开表面",
+      "relatedToolsCta": "打开免费工具目录",
+      "relatedToolsBody": "浏览 GenGrowth 的其他公共工具，以及每个工具明确声明的数据边界。",
+      "articlesEyebrow": "方法说明",
+      "articlesTitle": "了解规模化 SEO 采集",
+      "articlesBody": "GenGrowth Blog 会说明抓取证据如何进入更大的 SEO 系统，但不会改变这个工具只做审计的输出边界。",
+      "articlesCta": "阅读文章",
+      "ctaEyebrow": "持久化工作区",
+      "ctaTitle": "需要保存每次运行并做跨期对比？",
+      "ctaBody": "登录后的 GenGrowth App 是一套独立系统，用于保存项目证据和工作流；这份公共审计仍然保持匿名、无状态。",
+      "ctaButton": "打开 GenGrowth App"
     },
     "semrush": "Semrush",
     "cms": "CMS内容管理系统",

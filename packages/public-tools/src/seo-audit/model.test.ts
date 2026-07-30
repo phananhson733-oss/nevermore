@@ -1,237 +1,300 @@
 import { describe, expect, it } from "vitest";
+import type { CrawlPageRecord } from "@sf/sources";
 import { buildSeoAuditPayload, buildSeoAuditReport } from "./model.ts";
-import type { SeoAuditPageProbe, SeoAuditProbe } from "./types.ts";
+import type { SeoAuditRaw } from "./scan.ts";
 
-function healthyPage(
-  overrides: Partial<SeoAuditPageProbe> = {},
-): SeoAuditPageProbe {
+function page(
+  url: string,
+  overrides: Partial<CrawlPageRecord["projection"]> = {},
+  depth = 1,
+): CrawlPageRecord {
   return {
-    requestedUrl: "https://acme.com/",
-    finalUrl: "https://acme.com/",
-    firstStatus: 200,
-    statusCode: 200,
-    redirectChain: [],
-    contentType: "text/html; charset=utf-8",
-    bodyComplete: true,
-    robotsNoindex: false,
-    title: "Acme builds evidence-led growth systems",
-    metaDescription:
-      "See how Acme turns reliable market evidence into clear growth priorities, measurable experiments, and repeatable execution.",
-    canonical: "https://acme.com/",
-    htmlLang: "en",
-    h1Count: 1,
-    headingOutline: ["h1", "h2", "h2"],
-    wordCount: 650,
-    internalLinkCount: 8,
-    socialMetaTagsPresent: 4,
-    jsonLdBlockCount: 1,
-    jsonLdErrorCount: 0,
-    ...overrides,
+    subjectUrl: url,
+    depth,
+    projection: {
+      fetchUrl: url,
+      status: 200,
+      finalStatus: 200,
+      redirectChain: [],
+      canonicalTarget: url,
+      robotsIndexable: true,
+      robotsDirectives: [],
+      title: `Title for ${url}`,
+      metaDescription: `Description for ${url}`,
+      h1: ["Heading"],
+      headings: ["Heading", "Section"],
+      wordCount: 320,
+      internalOutlinks: [],
+      jsonLd: { types: ["WebPage"], errorCount: 0 },
+      sitemapMember: true,
+      bodyExcerpt: "Page body",
+      paragraphs: ["Page body"],
+      responseMs: 42,
+      contentType: "text/html; charset=utf-8",
+      ...overrides,
+    },
   };
 }
 
-function probe(overrides: Partial<SeoAuditProbe> = {}): SeoAuditProbe {
+function raw(overrides: Partial<SeoAuditRaw> = {}): SeoAuditRaw {
+  const home = page(
+    "https://acme.test/",
+    {
+      title: "Acme",
+      metaDescription: "Acme description",
+      internalOutlinks: [
+        {
+          targetSubjectUrl: "https://acme.test/about",
+          rel: null,
+          anchorText: "About",
+        },
+        {
+          targetSubjectUrl: "https://acme.test/not-collected",
+          rel: null,
+          anchorText: "Outside the free budget",
+        },
+      ],
+    },
+    0,
+  );
+  const about = page("https://acme.test/about", {
+    title: "About Acme",
+    metaDescription: "About Acme description",
+  });
   return {
-    requestedUrl: "https://acme.com/",
-    scannedAt: "2026-07-30T08:00:00.000Z",
-    page: healthyPage(),
+    origin: "https://acme.test",
+    host: "acme.test",
+    pages: [home, about],
     robots: {
-      url: "https://acme.com/robots.txt",
-      state: "parsed",
-      statusCode: 200,
-      bodyComplete: true,
+      fetched: true,
+      groups: [{ userAgent: "*", disallow: [], allow: ["/"] }],
+      sitemaps: ["https://acme.test/sitemap.xml"],
     },
-    robotsPageAllowed: true,
     sitemap: {
-      url: "https://acme.com/sitemap.xml",
-      state: "parsed",
-      statusCode: 200,
-      bodyComplete: true,
+      fetched: true,
+      urlCount: 2,
+      subjectUrls: ["https://acme.test/", "https://acme.test/about"],
     },
+    availability: "available",
+    capturedAt: "2026-07-30T09:00:00.000Z",
+    sourceWindow: {
+      start: "2026-07-30T09:00:00.000Z",
+      end: "2026-07-30T09:00:00.000Z",
+    },
+    stopReason: null,
+    providerUsage: {
+      urlsSkipped: 0,
+      urlsBlocked: 0,
+      urlsDisallowed: 0,
+      urlsErrored: 0,
+    },
+    limitation: "Fixture crawl.",
+    requestedUrl: "https://acme.test/",
     ...overrides,
   };
 }
 
-describe("SEO audit evidence and scoring", () => {
-  it("builds a versioned stateless Public Tools envelope", () => {
-    const payload = buildSeoAuditPayload(probe());
+function byId(report: ReturnType<typeof buildSeoAuditReport>, id: string) {
+  return report.records.find((record) => record.id === id);
+}
+
+describe("site-wide SEO audit model", () => {
+  it("builds a site-wide, persistence-free audit envelope without advisory fields", () => {
+    const payload = buildSeoAuditPayload(raw());
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "seo_audit.sitewide.v2",
       mode: "public_preview",
-      scope: "single_raw_page_and_standard_support_files",
+      scope: "bounded_same_origin_static_html_audit",
       persistence: "none",
-      completedAt: "2026-07-30T08:00:00.000Z",
+      completedAt: "2026-07-30T09:00:00.000Z",
     });
-    expect(payload.result).toMatchObject({
-      score: 100,
-      measuredChecks: 17,
-      totalChecks: 17,
-      measuredWeight: 39,
-      totalWeight: 39,
-      coveragePercent: 100,
+    expect(payload.result.coverage).toMatchObject({
+      availability: "available",
+      pagesInspected: 2,
+      maxPages: 25,
+      maxDepth: 4,
+      maxRequests: 60,
     });
-  });
+    expect(payload.result.pages).toHaveLength(2);
 
-  it("does not turn missing static JSON-LD into a failure or score penalty", () => {
-    const report = buildSeoAuditReport(
-      probe({
-        page: healthyPage({
-          jsonLdBlockCount: 0,
-          jsonLdErrorCount: 0,
-        }),
-      }),
-    );
-    const jsonLd = report.modules
-      .flatMap((module) => module.checks)
-      .find((check) => check.id === "json_ld");
-
-    expect(jsonLd).toMatchObject({
-      status: "unverified",
-      limitation: "static_html_cannot_prove_rendered_absence",
-    });
-    expect(report.score).toBe(100);
-    expect(report.measuredChecks).toBe(16);
-    expect(report.totalChecks).toBe(17);
-    expect(report.coveragePercent).toBeLessThan(100);
-  });
-
-  it("treats a missing standard sitemap path as a warning, not no sitemap", () => {
-    const report = buildSeoAuditReport(
-      probe({
-        sitemap: {
-          url: "https://acme.com/sitemap.xml",
-          state: "missing",
-          statusCode: 404,
-          bodyComplete: true,
-        },
-      }),
-    );
-    const sitemap = report.modules
-      .flatMap((module) => module.checks)
-      .find((check) => check.id === "sitemap");
-
-    expect(sitemap).toMatchObject({
-      status: "warning",
-      limitation: "standard_path_only",
-    });
-    expect(report.score).toBeLessThan(100);
-  });
-
-  it("marks absence/count rules unverified when the HTML body was truncated", () => {
-    const report = buildSeoAuditReport(
-      probe({
-        page: healthyPage({
-          bodyComplete: false,
-          robotsNoindex: null,
-          title: null,
-          metaDescription: null,
-          canonical: null,
-          htmlLang: null,
-          h1Count: 0,
-          headingOutline: [],
-          wordCount: 120,
-          internalLinkCount: 1,
-          socialMetaTagsPresent: 0,
-          jsonLdBlockCount: 0,
-        }),
-      }),
-    );
-    const byId = new Map(
-      report.modules
-        .flatMap((module) => module.checks)
-        .map((check) => [check.id, check]),
-    );
-
-    for (const id of [
-      "indexability",
-      "canonical",
-      "html_lang",
-      "title",
-      "meta_description",
-      "h1",
-      "heading_order",
-      "text_depth",
-      "internal_links",
-      "social_meta",
-      "json_ld",
+    const serialized = JSON.stringify(payload);
+    for (const forbidden of [
+      '"score"',
+      '"grade"',
+      '"severity"',
+      '"priority"',
+      '"diagnosis"',
+      '"recommendation"',
+      '"remediation"',
+      '"actionPlan"',
     ]) {
-      expect(byId.get(id)?.status, id).toBe("unverified");
+      expect(serialized).not.toContain(forbidden);
     }
-    expect(byId.get("homepage_status")?.status).toBe("pass");
-    expect(byId.get("https")?.status).toBe("pass");
-    expect(byId.get("html_content_type")?.status).toBe("pass");
   });
 
-  it("keeps definitive header noindex and malformed JSON-LD failures on a prefix", () => {
-    const report = buildSeoAuditReport(
-      probe({
-        page: healthyPage({
-          bodyComplete: false,
-          robotsNoindex: true,
-          jsonLdBlockCount: 1,
-          jsonLdErrorCount: 1,
-        }),
-      }),
-    );
-    const byId = new Map(
-      report.modules
-        .flatMap((module) => module.checks)
-        .map((check) => [check.id, check]),
-    );
+  it("aggregates duplicate metadata with every affected inspected URL", () => {
+    const duplicate = "Same normalised title";
+    const fixture = raw({
+      pages: [
+        page("https://acme.test/", { title: ` ${duplicate} ` }, 0),
+        page("https://acme.test/a", { title: duplicate.toUpperCase() }),
+        page("https://acme.test/b", { title: "Unique title" }),
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
 
-    expect(byId.get("indexability")?.status).toBe("fail");
-    expect(byId.get("json_ld")?.status).toBe("fail");
-  });
-
-  it("returns a report for an HTTP error response instead of a transport error", () => {
-    const report = buildSeoAuditReport(
-      probe({
-        page: healthyPage({
-          firstStatus: 404,
-          statusCode: 404,
-        }),
-      }),
-    );
-    const status = report.modules
-      .flatMap((module) => module.checks)
-      .find((check) => check.id === "homepage_status");
-
-    expect(status?.status).toBe("fail");
-    expect(report.finalUrl).toBe("https://acme.com/");
+    expect(byId(report, "title_duplicate")).toMatchObject({
+      state: "observed",
+      tested: 3,
+      affected: 2,
+      limitation: "normalised_text_match_within_inspected_pages",
+    });
     expect(
-      report.modules
-        .flatMap((module) => module.checks)
-        .find((check) => check.id === "title")?.status,
-    ).toBe("unverified");
+      byId(report, "title_duplicate")?.observations.map(
+        (observation) => observation.url,
+      ),
+    ).toEqual(["https://acme.test/", "https://acme.test/a"]);
   });
 
-  it("does not turn support-file server errors into false SEO failures", () => {
+  it("marks page-limit coverage as partial without evaluating site quality", () => {
     const report = buildSeoAuditReport(
-      probe({
-        robots: {
-          url: "https://acme.com/robots.txt",
-          state: "server_error",
-          statusCode: 500,
-          bodyComplete: true,
-        },
-        robotsPageAllowed: null,
-        sitemap: {
-          url: "https://acme.com/sitemap.xml",
-          state: "server_error",
-          statusCode: 503,
-          bodyComplete: true,
+      raw({
+        availability: "partial",
+        stopReason: "max_urls",
+        providerUsage: {
+          urlsSkipped: 4,
+          urlsBlocked: 1,
+          urlsDisallowed: 2,
+          urlsErrored: 3,
         },
       }),
     );
-    const byId = new Map(
-      report.modules
-        .flatMap((module) => module.checks)
-        .map((check) => [check.id, check.status]),
+
+    expect(report.coverage).toMatchObject({
+      availability: "partial",
+      stopReason: "max_urls",
+      urlsSkipped: 4,
+      urlsBlocked: 1,
+      urlsDisallowed: 2,
+      urlsErrored: 3,
+    });
+  });
+
+  it("preserves the submitted depth-zero URL as the reported target", () => {
+    const submitted = page(
+      "https://acme.test/zh",
+      { title: "Acme 中文" },
+      0,
+    );
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/zh",
+        pages: [
+          submitted,
+          page("https://acme.test/", { title: "Acme home" }, 1),
+        ],
+      }),
     );
 
-    expect(byId.get("robots_access")).toBe("unverified");
-    expect(byId.get("sitemap")).toBe("unverified");
+    expect(report.targetUrl).toBe("https://acme.test/zh");
+  });
+
+  it("does not infer robots indexability for a non-2xx response", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        pages: [
+          page(
+            "https://acme.test/missing",
+            {
+              status: 404,
+              finalStatus: 404,
+              robotsIndexable: true,
+            },
+            0,
+          ),
+        ],
+      }),
+    );
+
+    expect(report.pages[0]?.robotsDirectiveState).toBeNull();
+    expect(byId(report, "noindex_directive")).toMatchObject({
+      state: "unverified",
+      tested: 0,
+      affected: 0,
+    });
+  });
+
+  it("does not classify an uncollected link target as broken", () => {
+    const report = buildSeoAuditReport(raw());
+    expect(byId(report, "internal_target_http_error")).toMatchObject({
+      state: "not_observed",
+      affected: 0,
+      limitation: "uncollected_link_targets_not_classified",
+    });
+  });
+
+  it("reports only collected internal targets whose observed response is 4xx/5xx", () => {
+    const errorTarget = page("https://acme.test/missing", {
+      status: 404,
+      finalStatus: 404,
+      title: "Not found",
+    });
+    const fixture = raw({
+      pages: [
+        page(
+          "https://acme.test/",
+          {
+            internalOutlinks: [
+              {
+                targetSubjectUrl: "https://acme.test/missing",
+                rel: null,
+                anchorText: "Missing",
+              },
+            ],
+          },
+          0,
+        ),
+        errorTarget,
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    expect(byId(report, "internal_target_http_error")).toMatchObject({
+      state: "observed",
+      tested: 1,
+      affected: 1,
+    });
+    expect(
+      byId(report, "internal_target_http_error")?.observations[0],
+    ).toMatchObject({
+      url: "https://acme.test/missing",
+      values: [
+        { label: "final_status", value: 404 },
+        { label: "observed_source_pages", value: 1 },
+      ],
+    });
+  });
+
+  it("keeps robots and sitemap unverified when the crawl did not observe them", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        robots: { fetched: false, groups: [], sitemaps: [] },
+        sitemap: { fetched: false, urlCount: 0, subjectUrls: [] },
+      }),
+    );
+
+    expect(byId(report, "robots_resource")).toMatchObject({
+      state: "unverified",
+      tested: 0,
+      affected: 0,
+      limitation: "resource_not_observed_does_not_prove_absence",
+    });
+    expect(byId(report, "sitemap_resource")).toMatchObject({
+      state: "unverified",
+      tested: 0,
+      affected: 0,
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   SeoAuditPayload,
-  SeoAuditProbe,
+  SeoAuditRaw,
   SeoAuditScanErrorCode,
 } from "@sf/public-tools";
 import { SeoAuditScanError } from "@sf/public-tools";
@@ -22,29 +22,67 @@ function request(body: unknown, contentType = "application/json"): Request {
   });
 }
 
-const probe = {
-  requestedUrl: "https://acme.com/",
-  scannedAt: "2026-07-30T09:00:00.000Z",
-} as SeoAuditProbe;
+const raw = {
+  origin: "https://acme.test",
+  host: "acme.test",
+  pages: [],
+  robots: { fetched: true, groups: [], sitemaps: [] },
+  sitemap: { fetched: true, urlCount: 0, subjectUrls: [] },
+  availability: "available",
+  capturedAt: "2026-07-30T09:00:00.000Z",
+  sourceWindow: {
+    start: "2026-07-30T09:00:00.000Z",
+    end: "2026-07-30T09:00:00.000Z",
+  },
+  stopReason: null,
+  providerUsage: {},
+  limitation: "Fixture.",
+  requestedUrl: "https://acme.test/",
+} satisfies SeoAuditRaw;
 
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "1.0.0",
+    schemaVersion: "seo_audit.sitewide.v2",
     mode: "public_preview",
-    scope: "single_raw_page_and_standard_support_files",
+    scope: "bounded_same_origin_static_html_audit",
     persistence: "none",
     completedAt: "2026-07-30T09:00:00.000Z",
   },
-  result: { score: 88 },
-} as unknown as SeoAuditPayload;
+  result: {
+    targetUrl: "https://acme.test/",
+    scannedAt: "2026-07-30T09:00:00.000Z",
+    coverage: {
+      availability: "available",
+      pagesInspected: 0,
+      maxPages: 25,
+      maxDepth: 4,
+      maxRequests: 60,
+      linksObserved: 0,
+      sitemapUrlsObserved: 0,
+      urlsSkipped: 0,
+      urlsBlocked: 0,
+      urlsDisallowed: 0,
+      urlsErrored: 0,
+      stopReason: null,
+    },
+    siteResources: {
+      robotsFetched: true,
+      robotsGroupsObserved: 0,
+      sitemapReferencesObserved: 0,
+      sitemapFetched: true,
+    },
+    records: [],
+    pages: [],
+  },
+} satisfies SeoAuditPayload;
 
 function dependencies(
   overrides: Partial<SeoAuditHandlerDependencies> = {},
 ): SeoAuditHandlerDependencies {
   return {
-    normalizeUrl: () => ({ ok: true, url: "https://acme.com/" }),
-    scan: vi.fn(async () => probe),
+    normalizeUrl: () => ({ ok: true, url: "https://acme.test/" }),
+    scan: vi.fn(async () => raw),
     buildPayload: vi.fn(() => payload),
     rateLimit: () => ({
       allowed: true,
@@ -62,10 +100,10 @@ beforeEach(() => {
 });
 
 describe("handleSeoAuditRequest", () => {
-  it("returns the shared success envelope without caching", async () => {
+  it("returns the site-wide success envelope without caching", async () => {
     const deps = dependencies();
     const response = await handleSeoAuditRequest(
-      request({ url: "acme.com" }),
+      request({ url: "acme.test" }),
       deps,
     );
 
@@ -73,11 +111,12 @@ describe("handleSeoAuditRequest", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-ratelimit-remaining")).toBe("4");
     await expect(response.json()).resolves.toEqual({ data: payload });
-    expect(deps.scan).toHaveBeenCalledWith("https://acme.com/");
+    expect(deps.scan).toHaveBeenCalledWith("https://acme.test/");
+    expect(deps.buildPayload).toHaveBeenCalledWith(raw);
   });
 
   it("rejects an oversized request before validation, rate limit, or scan", async () => {
-    const scan = vi.fn(async () => probe);
+    const scan = vi.fn(async () => raw);
     const rateLimit = vi.fn(() => ({
       allowed: true,
       remaining: 4,
@@ -99,7 +138,7 @@ describe("handleSeoAuditRequest", () => {
   });
 
   it("rejects unknown input fields before rate limiting or scanning", async () => {
-    const scan = vi.fn(async () => probe);
+    const scan = vi.fn(async () => raw);
     const rateLimit = vi.fn(() => ({
       allowed: true,
       remaining: 4,
@@ -109,7 +148,7 @@ describe("handleSeoAuditRequest", () => {
     const deps = dependencies({ scan, rateLimit });
 
     const response = await handleSeoAuditRequest(
-      request({ url: "acme.com", persist: true }),
+      request({ url: "acme.test", persist: true }),
       deps,
     );
 
@@ -122,7 +161,7 @@ describe("handleSeoAuditRequest", () => {
   });
 
   it("applies the IP rate gate before any network scan", async () => {
-    const scan = vi.fn(async () => probe);
+    const scan = vi.fn(async () => raw);
     const deps = dependencies({
       scan,
       rateLimit: () => ({
@@ -133,7 +172,7 @@ describe("handleSeoAuditRequest", () => {
       }),
     });
     const response = await handleSeoAuditRequest(
-      request({ url: "acme.com" }),
+      request({ url: "acme.test" }),
       deps,
     );
 
@@ -143,19 +182,19 @@ describe("handleSeoAuditRequest", () => {
   });
 
   it("allows only one in-flight scan per IP", async () => {
-    let resolveScan: ((value: SeoAuditProbe) => void) | undefined;
+    let resolveScan: ((value: SeoAuditRaw) => void) | undefined;
     const scan = vi.fn(
       () =>
-        new Promise<SeoAuditProbe>((resolve) => {
+        new Promise<SeoAuditRaw>((resolve) => {
           resolveScan = resolve;
         }),
     );
     const deps = dependencies({ scan });
 
-    const first = handleSeoAuditRequest(request({ url: "acme.com" }), deps);
+    const first = handleSeoAuditRequest(request({ url: "acme.test" }), deps);
     await vi.waitFor(() => expect(scan).toHaveBeenCalledOnce());
     const second = await handleSeoAuditRequest(
-      request({ url: "acme.com" }),
+      request({ url: "acme.test" }),
       deps,
     );
     expect(second.status).toBe(429);
@@ -163,7 +202,7 @@ describe("handleSeoAuditRequest", () => {
       error: { code: "scan_in_progress" },
     });
 
-    resolveScan?.(probe);
+    resolveScan?.(raw);
     await first;
   });
 
@@ -185,7 +224,7 @@ describe("handleSeoAuditRequest", () => {
       });
 
       const response = await handleSeoAuditRequest(
-        request({ url: "acme.com" }),
+        request({ url: "acme.test" }),
         deps,
       );
 

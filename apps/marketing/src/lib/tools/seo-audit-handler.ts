@@ -5,7 +5,7 @@ import {
   scanSeoAuditSite,
   SeoAuditScanError,
   type SeoAuditPayload,
-  type SeoAuditProbe,
+  type SeoAuditRaw,
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
 import {
@@ -24,8 +24,8 @@ const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1_000;
 
 export interface SeoAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => SeoAuditUrlResult;
-  readonly scan: (url: string) => Promise<SeoAuditProbe>;
-  readonly buildPayload: (probe: SeoAuditProbe) => SeoAuditPayload;
+  readonly scan: (url: string) => Promise<SeoAuditRaw>;
+  readonly buildPayload: (raw: SeoAuditRaw) => SeoAuditPayload;
   readonly rateLimit: (
     key: string,
     max: number,
@@ -120,9 +120,9 @@ export async function handleSeoAuditRequest(
   }
 
   try {
-    const probe = await dependencies.scan(normalized.url);
+    const raw = await dependencies.scan(normalized.url);
     return json(
-      { data: dependencies.buildPayload(probe) },
+      { data: dependencies.buildPayload(raw) },
       200,
       { "X-RateLimit-Remaining": String(rate.remaining) },
     );

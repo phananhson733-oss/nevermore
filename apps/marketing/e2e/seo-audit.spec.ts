@@ -1,158 +1,213 @@
 import { expect, test } from "@playwright/test";
 
+const pages = [
+  {
+    url: "https://acme.com/",
+    subjectUrl: "https://acme.com/",
+    finalUrl: "https://acme.com/",
+    depth: 0,
+    initialStatus: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    contentType: "text/html; charset=utf-8",
+    robotsDirectiveState: "noindex_not_observed",
+    canonicalTarget: "https://acme.com/",
+    title: "Acme",
+    metaDescription: "Acme public site",
+    h1Count: 1,
+    headingsCount: 3,
+    wordCount: 420,
+    inboundLinks: 0,
+    outboundLinks: 2,
+    sitemapMember: true,
+    jsonLdTypes: ["Organization"],
+    jsonLdErrorCount: 0,
+  },
+  {
+    url: "https://acme.com/about",
+    subjectUrl: "https://acme.com/about",
+    finalUrl: "https://acme.com/about",
+    depth: 1,
+    initialStatus: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    contentType: "text/html",
+    robotsDirectiveState: "noindex_not_observed",
+    canonicalTarget: "https://acme.com/about",
+    title: "Repeated title",
+    metaDescription: null,
+    h1Count: 1,
+    headingsCount: 2,
+    wordCount: 210,
+    inboundLinks: 1,
+    outboundLinks: 1,
+    sitemapMember: true,
+    jsonLdTypes: [],
+    jsonLdErrorCount: 0,
+  },
+  {
+    url: "https://acme.com/team",
+    subjectUrl: "https://acme.com/team",
+    finalUrl: "https://acme.com/team",
+    depth: 2,
+    initialStatus: 200,
+    finalStatus: 200,
+    redirectHops: 0,
+    contentType: "text/html",
+    robotsDirectiveState: "noindex_not_observed",
+    canonicalTarget: "https://acme.com/team",
+    title: "Repeated title",
+    metaDescription: null,
+    h1Count: 2,
+    headingsCount: 4,
+    wordCount: 180,
+    inboundLinks: 1,
+    outboundLinks: 0,
+    sitemapMember: true,
+    jsonLdTypes: ["AboutPage"],
+    jsonLdErrorCount: 0,
+  },
+] as const;
+
 const mockedPayload = {
   data: {
     run: {
       tool: "seo_audit",
-      schemaVersion: "1.0.0",
+      schemaVersion: "seo_audit.sitewide.v2",
       mode: "public_preview",
-      scope: "single_raw_page_and_standard_support_files",
+      scope: "bounded_same_origin_static_html_audit",
       persistence: "none",
       completedAt: "2026-07-30T10:00:00.000Z",
     },
     result: {
       targetUrl: "https://acme.com/",
-      finalUrl: "https://www.acme.com/",
-      score: 75,
-      measuredChecks: 2,
-      totalChecks: 3,
-      measuredWeight: 6,
-      totalWeight: 8,
-      coveragePercent: 75,
-      priorities: [
+      scannedAt: "2026-07-30T10:00:00.000Z",
+      coverage: {
+        availability: "partial",
+        pagesInspected: 3,
+        maxPages: 25,
+        maxDepth: 4,
+        maxRequests: 60,
+        linksObserved: 3,
+        sitemapUrlsObserved: 18,
+        urlsSkipped: 1,
+        urlsBlocked: 0,
+        urlsDisallowed: 2,
+        urlsErrored: 0,
+        stopReason: "max_urls",
+      },
+      siteResources: {
+        robotsFetched: true,
+        robotsGroupsObserved: 1,
+        sitemapReferencesObserved: 1,
+        sitemapFetched: true,
+      },
+      records: [
         {
-          id: "sitemap",
-          module: "crawlability",
-          status: "warning",
-          severity: "high",
-          weight: 2,
-          evidence: [
+          id: "robots_resource",
+          category: "crawl",
+          state: "observed",
+          unit: "site_resource",
+          tested: 1,
+          affected: 1,
+          observations: [
             {
-              label: "resource_state",
-              value: "missing",
-              source: "sitemap_xml",
+              url: "https://acme.com/robots.txt",
+              values: [
+                { label: "fetched", value: true },
+                { label: "groups_observed", value: 1 },
+                { label: "sitemap_references", value: 1 },
+              ],
             },
           ],
-          limitation: "standard_path_only",
+          limitation: null,
         },
-      ],
-      modules: [
         {
-          id: "crawlability",
-          score: 75,
-          measuredChecks: 2,
-          totalChecks: 3,
-          measuredWeight: 6,
-          totalWeight: 8,
-          coveragePercent: 75,
-          checks: [
+          id: "title_duplicate",
+          category: "metadata",
+          state: "observed",
+          unit: "pages",
+          tested: 3,
+          affected: 2,
+          observations: [
             {
-              id: "homepage_status",
-              module: "crawlability",
-              status: "pass",
-              severity: "critical",
-              weight: 4,
-              evidence: [
-                {
-                  label: "status_code",
-                  value: 200,
-                  source: "submitted_page_static",
-                },
+              url: "https://acme.com/about",
+              values: [
+                { label: "title", value: "Repeated title" },
+                { label: "matching_pages", value: 2 },
               ],
-              limitation: null,
             },
             {
-              id: "sitemap",
-              module: "crawlability",
-              status: "warning",
-              severity: "high",
-              weight: 2,
-              evidence: [
-                {
-                  label: "resource_state",
-                  value: "missing",
-                  source: "sitemap_xml",
-                },
+              url: "https://acme.com/team",
+              values: [
+                { label: "title", value: "Repeated title" },
+                { label: "matching_pages", value: 2 },
               ],
-              limitation: "standard_path_only",
-            },
-            {
-              id: "json_ld",
-              module: "structured_data",
-              status: "unverified",
-              severity: "medium",
-              weight: 2,
-              evidence: [
-                {
-                  label: "json_ld_blocks",
-                  value: 0,
-                  source: "submitted_page_static",
-                },
-              ],
-              limitation: "static_html_cannot_prove_rendered_absence",
             },
           ],
+          limitation: "normalised_text_match_within_inspected_pages",
         },
         {
-          id: "technical",
-          score: null,
-          measuredChecks: 0,
-          totalChecks: 0,
-          measuredWeight: 0,
-          totalWeight: 0,
-          coveragePercent: 0,
-          checks: [],
-        },
-        {
-          id: "on_page",
-          score: null,
-          measuredChecks: 0,
-          totalChecks: 0,
-          measuredWeight: 0,
-          totalWeight: 0,
-          coveragePercent: 0,
-          checks: [],
-        },
-        {
-          id: "content",
-          score: null,
-          measuredChecks: 0,
-          totalChecks: 0,
-          measuredWeight: 0,
-          totalWeight: 0,
-          coveragePercent: 0,
-          checks: [],
-        },
-        {
-          id: "structured_data",
-          score: null,
-          measuredChecks: 0,
-          totalChecks: 0,
-          measuredWeight: 0,
-          totalWeight: 0,
-          coveragePercent: 0,
-          checks: [],
+          id: "internal_target_http_error",
+          category: "links",
+          state: "not_observed",
+          unit: "link_targets",
+          tested: 2,
+          affected: 0,
+          observations: [],
+          limitation: "uncollected_link_targets_not_classified",
         },
       ],
+      pages,
     },
   },
 };
 
-test("renders the bilingual tool shell and an evidence-led mocked report", async ({
+test("renders the bilingual site-wide shell and an audit-only multi-page report", async ({
   page,
 }) => {
   await page.goto("/en/tools/seo-audit");
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "See the SEO signals search engines can actually read",
+      name: "Free site-wide SEO audit",
     }),
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Checks one page plus robots.txt and sitemap.xml. No login, persistence, or full-site crawl.",
+      "Free scope: up to 25 same-origin URLs, depth 4, and 60 total requests. The crawler respects robots.txt and reads static public responses only.",
     ),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Start the audit" }),
+  ).toHaveAttribute("href", "#seo-audit-tool");
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "What the audit records",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "How every record remains traceable",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Outside this free audit",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      level: 2,
+      name: "Frequently asked questions",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: /\?$/ }),
+  ).toHaveCount(8);
 
   await page.route("**/api/tools/seo-audit", async (route) => {
     await route.fulfill({
@@ -162,29 +217,107 @@ test("renders the bilingual tool shell and an evidence-led mocked report", async
     });
   });
   await page.getByLabel("Website URL").fill("acme.com");
-  await page.getByRole("button", { name: "Run free check" }).click();
+  await page.getByRole("button", { name: "Run free audit" }).click();
 
-  await expect(page.getByText("Measured page health")).toBeVisible();
-  await expect(page.getByText("75", { exact: true }).first()).toBeVisible();
+  const results = page.getByTestId("seo-audit-results");
+  await expect(results).toBeVisible();
+  await expect(results.getByText("Partial coverage")).toBeVisible();
+  await expect(results.getByText("3 / 25", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("75% weighted coverage · 2 / 3 checks measured"),
-  ).toBeVisible();
-  await page.getByText("XML sitemap", { exact: true }).last().click();
-  await expect(page.getByText("Standard sitemap.xml path")).toBeVisible();
-  await expect(
-    page.getByText(
-      "Only /sitemap.xml was checked. Another sitemap may be declared elsewhere.",
+    results.getByText(
+      "The crawler stopped at the 25-URL limit. Every record below describes only the pages that were inspected.",
     ),
   ).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="seo-audit-record-"]'),
+  ).toHaveCount(3);
+
+  const duplicateRecord = page.getByTestId(
+    "seo-audit-record-title_duplicate",
+  );
+  await duplicateRecord
+    .getByText("Repeated title text", { exact: true })
+    .click();
+  await expect(
+    duplicateRecord.getByText("2 observed / 3 tested pages"),
+  ).toBeVisible();
+  await expect(
+    duplicateRecord.getByText("https://acme.com/about", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(3);
+  await expect(
+    page.getByRole("heading", {
+      level: 3,
+      name: "Inspected-page inventory",
+    }),
+  ).toBeVisible();
+
+  await expect(results.getByText("What to fix")).toHaveCount(0);
+  await expect(results.getByText("Recommendation")).toHaveCount(0);
+  await expect(results.getByText("Health score")).toHaveCount(0);
 
   await page.goto("/zh/tools/seo-audit");
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "看清搜索引擎真正能读取的 SEO 信号",
+      name: "免费全站 SEO 审计",
     }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "免费检测" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "开始免费审计" }),
+  ).toBeVisible();
+});
+
+test("keeps a long multi-page audit record contained on a mobile viewport", async ({
+  page,
+}) => {
+  const longUrl =
+    "https://acme.com/research/technical-seo/very-long-audit-path-that-must-stay-inside-the-scroll-container?campaign=public-sitewide-audit&source=experience-tool";
+  const mobilePayload = {
+    data: {
+      ...mockedPayload.data,
+      result: {
+        ...mockedPayload.data.result,
+        pages: [
+          {
+            ...pages[0],
+            url: longUrl,
+            subjectUrl: longUrl,
+            finalUrl: longUrl,
+          },
+        ],
+        coverage: {
+          ...mockedPayload.data.result.coverage,
+          availability: "available",
+          pagesInspected: 1,
+          stopReason: null,
+        },
+      },
+    },
+  };
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/tools/seo-audit", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(mobilePayload),
+    });
+  });
+
+  await page.goto("/en/tools/seo-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run free audit" }).click();
+
+  await expect(page.getByTestId("seo-audit-results")).toBeVisible();
+  await expect(page.getByText(longUrl, { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
 });
 
 test("rejects malformed requests without making an outbound scan", async ({

@@ -1,5 +1,5 @@
 // @input  -- current locale and public /api/tools/seo-audit response
-// @output -- interactive URL form and Website Health Map states
+// @output -- interactive URL form and bounded site-wide audit states
 // @pos    -- primary client surface for /[locale]/tools/seo-audit
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,7 +12,7 @@ import type {
   SeoAuditPayload,
   SeoAuditReport,
 } from "@sf/public-tools";
-import { SeoAuditHealthMap } from "./seo-audit-health-map";
+import { SeoAuditResults } from "./seo-audit-results";
 
 interface SeoAuditToolProps {
   readonly locale: string;
@@ -54,8 +54,9 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
 
   return (
     <section
+      id="seo-audit-tool"
       data-locale={locale}
-      className="space-y-5"
+      className="scroll-mt-8 space-y-5"
       aria-busy={loading}
       aria-live="polite"
     >
@@ -69,7 +70,10 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
           className="relative grid gap-3 md:grid-cols-[1fr_auto] md:items-end"
         >
           <label className="block">
-            <span className="mb-2 block text-[12px] font-medium uppercase tracking-[0.14em] text-text-dark-secondary">
+            <span
+              id="seo-audit-url-label"
+              className="mb-2 block text-[12px] font-medium uppercase tracking-[0.14em] text-text-dark-secondary"
+            >
               {t("formLabel")}
             </span>
             <span className="flex h-12 items-center gap-3 rounded-xl border border-brand-border/80 bg-brand-bg px-4 focus-within:border-brand-accent/70">
@@ -78,12 +82,19 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
                 className="h-4 w-4 shrink-0 text-brand-accent-text"
               />
               <input
+                id="seo-audit-url"
                 type="text"
                 inputMode="url"
                 autoComplete="url"
                 required
                 maxLength={2048}
                 aria-invalid={Boolean(errorCode)}
+                aria-labelledby="seo-audit-url-label"
+                aria-describedby={
+                  errorCode
+                    ? "seo-audit-scope seo-audit-error"
+                    : "seo-audit-scope"
+                }
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={t("placeholder")}
@@ -103,6 +114,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
       </div>
       {errorCode ? (
         <p
+          id="seo-audit-error"
           role="alert"
           className="rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-[13px] text-red-200"
         >
@@ -124,10 +136,13 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
           )}
         </p>
       ) : null}
-      <p className="text-[12px] leading-relaxed text-text-dark-secondary">
+      <p
+        id="seo-audit-scope"
+        className="text-[12px] leading-relaxed text-text-dark-secondary"
+      >
         {t("scopeShort")}
       </p>
-      {report ? <SeoAuditHealthMap report={report} /> : null}
+      {report ? <SeoAuditResults report={report} /> : null}
     </section>
   );
 }
