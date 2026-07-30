@@ -73,10 +73,16 @@ test("zero-project entry uses the Chinese-first four-module GenGrowth shell", as
   await expect(
     page.getByRole("heading", { name: "添加产品", level: 1 }),
   ).toBeVisible();
+  await expect(page.getByLabel("产品名称")).toBeVisible();
   await expect(page.getByLabel("产品 URL")).toBeVisible();
-  await expect(page.getByLabel("产品与客户背景（选填）")).toBeVisible();
+  await expect(page.getByLabel("客户模式")).toBeVisible();
+  await expect(page.getByLabel("主要目标市场")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "创建产品并填写画像" }),
+    page.getByRole("checkbox", { name: "提升注册" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("补充业务背景（选填）")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "创建并生成初始画像" }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("RelayOps");
   await expect(page.locator("body")).not.toContainText("SignalFrame");
@@ -84,7 +90,7 @@ test("zero-project entry uses the Chinese-first four-module GenGrowth shell", as
   expect(await hasRootHorizontalOverflow(page)).toBe(false);
 });
 
-test("URL-first creation preserves trimming, optional omission, and context redirect", async ({
+test("product creation preserves trimming, declared inputs, optional omission, and context redirect", async ({
   page,
 }) => {
   const createRequests: unknown[] = [];
@@ -99,25 +105,46 @@ test("URL-first creation preserves trimming, optional omission, and context redi
 
   const cases = [
     {
+      productName: "  RelayOps  ",
       productUrl: "  https://example.com/product/  ",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        { label: "提升注册", value: "increase_signups" },
+        {
+          label: "获取高质量销售线索",
+          value: "generate_qualified_leads",
+        },
+      ],
       businessHint: "  面向北美 B2B SaaS 增长团队的内容运营产品。  ",
     },
     {
+      productName: "  Second Product  ",
       productUrl: "https://example.com/second-product",
+      customerModel: "b2c",
+      primaryMarket: "GB",
+      growthObjectives: [{ label: "提升收入", value: "increase_revenue" }],
       businessHint: null,
     },
   ] as const;
 
   for (const [index, input] of cases.entries()) {
     await page.goto("/new-project");
+    await page.waitForLoadState("networkidle");
+    await page.getByLabel("产品名称").fill(input.productName);
     await page.getByLabel("产品 URL").fill(input.productUrl);
+    await page.getByLabel("客户模式").selectOption(input.customerModel);
+    await page.getByLabel("主要目标市场").selectOption(input.primaryMarket);
+    for (const objective of input.growthObjectives) {
+      await page.getByRole("checkbox", { name: objective.label }).check();
+    }
     if (input.businessHint !== null) {
       await page
-        .getByLabel("产品与客户背景（选填）")
+        .getByLabel("补充业务背景（选填）")
         .fill(input.businessHint);
     }
     await page
-      .getByRole("button", { name: "创建产品并填写画像" })
+      .getByRole("button", { name: "创建并生成初始画像" })
       .click();
 
     await expect.poll(() => createRequests.length).toBe(index + 1);
@@ -127,12 +154,23 @@ test("URL-first creation preserves trimming, optional omission, and context redi
   expect(createRequests).toEqual([
     {
       mode: "product_profile",
+      productName: "RelayOps",
       productUrl: "https://example.com/product/",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: [
+        "increase_signups",
+        "generate_qualified_leads",
+      ],
       businessHint: "面向北美 B2B SaaS 增长团队的内容运营产品。",
     },
     {
       mode: "product_profile",
+      productName: "Second Product",
       productUrl: "https://example.com/second-product",
+      customerModel: "b2c",
+      primaryMarket: "GB",
+      growthObjectives: ["increase_revenue"],
     },
   ]);
 });
@@ -148,9 +186,10 @@ test("zero-project shell remains usable on a mobile viewport", async ({
   await expect(
     page.locator("[data-app-shell-locked-navigation] [data-workspace-module]"),
   ).toHaveCount(4);
+  await expect(page.getByLabel("产品名称")).toBeVisible();
   await expect(page.getByLabel("产品 URL")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "创建产品并填写画像" }),
+    page.getByRole("button", { name: "创建并生成初始画像" }),
   ).toBeVisible();
 
   const sidebar = page.locator("[data-app-shell-sidebar]");
