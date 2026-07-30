@@ -48,9 +48,13 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   // The heading is server-rendered while the form is a hydrated client island.
   // Wait before editing so hydration cannot replace already-filled controls.
   await page.waitForLoadState("networkidle");
+  await page.getByLabel("产品名称").fill("RelayOps");
   await page.getByLabel("产品 URL").fill(productUrl);
+  await page.getByLabel("客户模式").selectOption("b2b");
+  await page.getByLabel("主要目标市场").selectOption("US");
+  await page.getByRole("checkbox", { name: "提升注册" }).check();
   await page
-    .getByLabel("产品与客户背景（选填）")
+    .getByLabel("补充业务背景（选填）")
     .fill("面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。");
 
   const createResponse = page.waitForResponse(
@@ -59,7 +63,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
   await page
-    .getByRole("button", { name: "创建产品并填写画像" })
+    .getByRole("button", { name: "创建并生成初始画像" })
     .click();
   const created = await createResponse;
   expect(
@@ -68,7 +72,11 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   ).toBe(201);
   expect(created.request().postDataJSON()).toEqual({
     mode: "product_profile",
+    productName: "RelayOps",
     productUrl,
+    customerModel: "b2b",
+    primaryMarket: "US",
+    growthObjectives: ["increase_signups"],
     businessHint:
       "面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。",
   });

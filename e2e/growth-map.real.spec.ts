@@ -145,9 +145,17 @@ async function createProjectInBrowser(
   // editing so an early native form submission cannot reload the empty form.
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: "Add a product" })).toBeVisible();
+  await page.getByLabel("Product name").fill(definition.productName);
   await page.getByLabel("Product URL").fill(definition.siteUrl);
+  await page.getByLabel("Customer model").selectOption(definition.customerModel);
+  await page.getByLabel("Primary target market").selectOption("US");
+  const growthObjective =
+    definition.customerModel === "b2b"
+      ? "Generate qualified leads"
+      : "Increase revenue";
+  await page.getByRole("checkbox", { name: growthObjective }).check();
   await page
-    .getByLabel("Product and customer context (optional)")
+    .getByLabel("Additional business context (optional)")
     .fill(definition.oneLineDescription);
 
   const createResponse = page.waitForResponse(
@@ -156,7 +164,7 @@ async function createProjectInBrowser(
       new URL(response.url()).pathname === "/api/mvp/projects",
   );
   await page
-    .getByRole("button", { name: "Create product and fill profile" })
+    .getByRole("button", { name: "Create and generate initial profile" })
     .click();
   const created = await createResponse;
   expect(
@@ -165,7 +173,15 @@ async function createProjectInBrowser(
   ).toBe(201);
   expect(created.request().postDataJSON()).toEqual({
     mode: "product_profile",
+    productName: definition.productName,
     productUrl: definition.siteUrl,
+    customerModel: definition.customerModel,
+    primaryMarket: "US",
+    growthObjectives: [
+      definition.customerModel === "b2b"
+        ? "generate_qualified_leads"
+        : "increase_revenue",
+    ],
     businessHint: definition.oneLineDescription,
   });
   await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
