@@ -560,7 +560,7 @@
     "seoAudit": {
       "title": "Free site-wide SEO audit",
       "description": "Crawl public same-origin pages and inspect response, indexability, metadata, structure, link, and JSON-LD facts.",
-      "metaTitle": "Free Site-wide SEO Audit | GenGrowth",
+      "metaTitle": "Free Site-wide SEO Audit",
       "metaDescription": "Run a free, anonymous SEO audit across public same-origin pages. Inspect crawl coverage, page responses, index directives, metadata, structure, links, and JSON-LD evidence.",
       "pageTitle": "Free site-wide SEO audit",
       "pageSubtitle": "Enter a public URL to inspect the same-origin pages this synchronous run can collect. The result contains crawl coverage, neutral audit records, measured values, evidence, and the inspected-page inventory.",
@@ -833,7 +833,7 @@
     "trafficDrop": {
       "title": "Traffic drop diagnosis",
       "description": "Connect Search Console and see what actually changed in your own data, with the evidence behind every claim.",
-      "metaTitle": "Free Traffic Drop Diagnosis | GenGrowth",
+      "metaTitle": "Free Traffic Drop Diagnosis",
       "metaDescription": "Diagnose an organic traffic drop against your own Search Console data. Fixed comparison windows chosen by change-point detection, layered findings, and actions that name their evidence.",
       "eyebrow": "Free tool",
       "pageTitle": "What happened to your traffic?",

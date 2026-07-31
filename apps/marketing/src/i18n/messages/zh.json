@@ -560,7 +560,7 @@
     "seoAudit": {
       "title": "免费全站 SEO 审计",
       "description": "真实抓取同源公开页面，记录响应、索引指令、元数据、结构、链接和 JSON-LD 事实。",
-      "metaTitle": "免费全站 SEO 审计 | GenGrowth",
+      "metaTitle": "免费全站 SEO 审计",
       "metaDescription": "免费、免登录地审计同源公开页面，查看抓取覆盖、页面响应、索引指令、元数据、结构、链接和 JSON-LD 证据。",
       "pageTitle": "免费全站 SEO 审计",
       "pageSubtitle": "输入公开 URL，真实检查本次同步扫描能够采集的同源页面。结果只包含抓取覆盖、审计记录、观测值、证据和已检查页面清单。",
@@ -833,7 +833,7 @@
     "trafficDrop": {
       "title": "流量下降诊断",
       "description": "连接 Search Console，在你自己的数据上看清变化，每一个结论都附带证据。",
-      "metaTitle": "免费流量下降诊断 | GenGrowth",
+      "metaTitle": "免费流量下降诊断",
       "metaDescription": "用你自己的 Search Console 数据诊断自然流量下降。对比窗口由变点检测自动选定，发现按证据强度分层，每条建议都写明它依据什么。",
       "eyebrow": "免费工具",
       "pageTitle": "你的流量发生了什么？",
