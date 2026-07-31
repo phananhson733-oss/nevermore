@@ -435,7 +435,54 @@ export type OperatorRouteHandler<P extends Record<string, string> = Record<strin
 
 type ErrorClassification =
   | Readonly<{ kind: "problem"; response: NextResponse }>
-  | Readonly<{ kind: "unexpected"; type: "internal" | "unknown" }>;
+  | Readonly<{
+      kind: "unexpected";
+      type: "internal" | "unknown";
+      /** Constructor name only, e.g. "TypeError" / "DatabaseError". */
+      fault: string | null;
+      /** Driver/PostgreSQL SQLSTATE, e.g. "42883" / "23505". */
+      sqlState: string | null;
+    }>;
+
+/**
+ * Describe an unexpected fault without reproducing anything it carries.
+ *
+ * A bare INTERNAL_ERROR is undiagnosable in production: it cannot distinguish a
+ * missing SQL function from a constraint violation from a null dereference, so
+ * the only way to find out is to reproduce the request. Names and SQLSTATE
+ * codes are fixed vocabulary chosen by the runtime and the database, never
+ * customer data, so they are safe to persist where a message or stack is not.
+ *
+ * Every read is individually guarded: a hostile thrown value can execute Proxy
+ * traps on property access, and this runs inside the error boundary.
+ */
+function faultSignature(error: unknown): {
+  readonly fault: string | null;
+  readonly sqlState: string | null;
+} {
+  let fault: string | null = null;
+  let sqlState: string | null = null;
+  try {
+    const name: unknown = (error as { readonly constructor?: unknown })
+      ?.constructor;
+    const candidate: unknown = (name as { readonly name?: unknown })?.name;
+    if (typeof candidate === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(candidate)) {
+      fault = candidate;
+    }
+  } catch {
+    // A thrown Proxy must not escape the boundary; stay anonymous instead.
+  }
+  try {
+    const code: unknown = (error as { readonly code?: unknown })?.code;
+    // SQLSTATE is exactly five alphanumerics; anything else is not one.
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/u.test(code)) {
+      sqlState = code;
+    }
+  } catch {
+    // Same guard as above.
+  }
+  return { fault, sqlState };
+}
 
 /**
  * Build a product response or a fixed unexpected-error classification in one
@@ -461,9 +508,10 @@ function classifyError(
     return {
       kind: "unexpected",
       type: error instanceof Error ? "internal" : "unknown",
+      ...faultSignature(error),
     };
   } catch {
-    return { kind: "unexpected", type: "unknown" };
+    return { kind: "unexpected", type: "unknown", fault: null, sqlState: null };
   }
 }
 
@@ -476,6 +524,8 @@ function handleError(error: unknown, ctx: RequestContext): NextResponse {
     ctx.logger.error("unhandled_error", {
       code: "INTERNAL_ERROR",
       type: classified.type,
+      ...(classified.fault === null ? {} : { fault: classified.fault }),
+      ...(classified.sqlState === null ? {} : { sqlState: classified.sqlState }),
     });
   } catch {
     // Returning the fixed 500 takes precedence over a broken logging sink.

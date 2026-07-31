@@ -215,6 +215,52 @@ describe("route unexpected-error logging", () => {
     expect(completed).toContain('"statusCode":500');
   });
 
+  it("records the fault name and SQLSTATE so a 500 is diagnosable", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    class DatabaseError extends Error {
+      readonly code = "42883";
+    }
+    const wrapped = route(() => {
+      throw new DatabaseError("relation-detail-and-values");
+    });
+
+    const response = await wrapped(
+      new NextRequest("http://localhost/api/mvp/projects"),
+    );
+
+    expect(response.status).toBe(500);
+    const logged = stderr.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain('"fault":"DatabaseError"');
+    expect(logged).toContain('"sqlState":"42883"');
+    // A signature stays a signature: the message never rides along.
+    expect(logged).not.toContain("relation-detail-and-values");
+  });
+
+  it("drops a code that is not a SQLSTATE instead of logging its content", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const wrapped = route(() => {
+      const error = new Error("boom");
+      Object.assign(error, { code: "customer-content-in-code" });
+      throw error;
+    });
+
+    const response = await wrapped(
+      new NextRequest("http://localhost/api/mvp/projects"),
+    );
+
+    expect(response.status).toBe(500);
+    const logged = stderr.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain('"fault":"Error"');
+    expect(logged).not.toContain("sqlState");
+    expect(logged).not.toContain("customer-content-in-code");
+  });
+
   it("maps a hostile getPrototypeOf trap to a generic 500 without a secondary throw", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi
