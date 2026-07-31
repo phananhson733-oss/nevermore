@@ -302,6 +302,10 @@
       "qualificationSignals": "Qualification signals",
       "disqualifiers": "Disqualifiers"
     },
+    "icp": {
+      "candidatesPendingTitle": "{count} audience candidates were derived, but none is set as the primary ICP yet",
+      "candidatesPendingHint": "Open “Edit Product Profile and ICP” to choose which candidate is your primary ICP. The Product Profile cannot be confirmed until one is chosen, and data connections stay unavailable until it is confirmed."
+    },
     "customerModels": {
       "b2b": "B2B · Business customers",
       "b2c": "B2C · Consumers",

@@ -1308,7 +1308,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
               <span>{t("fields.growthObjectives")}</span>
               <ValueList values={localizedGrowthObjectives} />
             </div>
-            <div className={styles.statement}><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
+            <div className={styles.statement} data-length={(profile.valueProposition?.length ?? 0) > 110 ? "long" : "short"}><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
           </section>
 
           <section className={styles.editorialCard}>
@@ -1332,6 +1332,19 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
                 <div className={styles.icpMatrix}>
                   {(["buyerRoles", "userRoles", "useCases", "triggers", "pains", "jtbd", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] as const).map((key) => <div key={key}><h3>{t(`fields.${key}`)}</h3><ValueList values={primaryAudience[key]} /></div>)}
                 </div>
+              </div>
+            ) : profile.targetAudiences.length ? (
+              // Synthesis writes every audience it derives as "candidate"; only a
+              // customer decision promotes one to "primary". Showing nothing here
+              // hid that work and left no way to act on it, which stalled
+              // confirmation and every downstream gate. Show the candidates and
+              // name the decision instead.
+              <div className={styles.icpCandidates}>
+                <p className={styles.icpCandidatesLead}>{t("icp.candidatesPendingTitle", { count: profile.targetAudiences.length })}</p>
+                <ul className={styles.icpCandidateList}>
+                  {profile.targetAudiences.map((audience) => <li key={audience.candidateId}><Target aria-hidden="true" size={15} /><span>{audience.targetCompanyOrAudience ?? t("states.unconfirmed")}</span></li>)}
+                </ul>
+                <p className={styles.icpCandidatesHint}>{t("icp.candidatesPendingHint")}</p>
               </div>
             ) : <MissingValue />}
           </section>
