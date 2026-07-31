@@ -78,21 +78,24 @@ describe("repository-backed blog content", () => {
       getLocalBlogPostBySlug("evidence-first-growth-experiments", "zh"),
     ]);
 
-    // The two locales carry their own hero image, which is the point of them
-    // being separately published rather than one translated pair. Asserting a
-    // shared image made the test fail the moment the English article got its
-    // own — a change the test exists to allow, not to catch.
+    // What this test is for is that the two locales load separately and keep
+    // stable URLs. The hero image is editorial: it has been changed twice while
+    // this assertion existed, and each edit turned a green suite red without
+    // anything being wrong. Assert its shape, not which picture is current.
     expect(english).toMatchObject({
       locale: "en",
       content_source: "local",
-      hero_image: "/images/blog/evidence-first-growth-experiments.jpg",
       locale_exclusive: false,
     });
     expect(chinese).toMatchObject({
       locale: "zh",
       content_source: "local",
-      hero_image: "/images/blog/best-ai-seo-tools.jpg",
     });
+    for (const post of [english, chinese]) {
+      expect(post?.hero_image).toMatch(
+        /^\/images\/blog\/.+\.(jpg|png|svg|webp)$/,
+      );
+    }
     expect(english?.title).not.toBe(chinese?.title);
   });
 

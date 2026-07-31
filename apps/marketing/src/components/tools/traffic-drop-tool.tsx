@@ -12,6 +12,7 @@ import { useTranslations } from "next-intl";
 import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
+import { formatPropertyLabel } from "@/lib/tools/property-label";
 import { TrafficDropResults } from "./traffic-drop-results";
 
 interface TrafficDropPayload {
@@ -204,9 +205,10 @@ export function TrafficDropTool({
           onChange={(event) => setProperty(event.target.value)}
           className="min-h-11 rounded-xl border border-brand-border bg-brand-bg-alt px-3 text-[13px] text-text-dark-primary"
         >
+          {/* The value stays the property id; only the label is humanised. */}
           {properties.map((entry) => (
             <option key={entry} value={entry}>
-              {entry}
+              {formatPropertyLabel(entry)}
             </option>
           ))}
         </select>
