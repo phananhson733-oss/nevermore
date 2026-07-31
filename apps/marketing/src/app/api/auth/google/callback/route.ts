@@ -93,10 +93,19 @@ export async function GET(request: Request): Promise<Response> {
         60,
         tokens.expiresInSeconds - GRANT_SAFETY_MARGIN_SECONDS,
       );
+      // Token at /api, property list at /. The page renders the picker, the
+      // route handler does the reading — and a cookie scoped to /api is not
+      // sent with a page request, so keeping both in one cookie left the page
+      // unable to see the grant its own visitor had just completed.
       jar.set(
         "gg_gsc",
-        seal("gg_gsc", { accessToken: tokens.accessToken, properties }, ttl),
+        seal("gg_gsc", { accessToken: tokens.accessToken }, ttl),
         cookieAttributes("gg_gsc", ttl),
+      );
+      jar.set(
+        "gg_sites",
+        seal("gg_sites", { properties }, ttl),
+        cookieAttributes("gg_sites", ttl),
       );
     }
 

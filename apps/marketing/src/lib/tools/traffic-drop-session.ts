@@ -83,9 +83,8 @@ export interface TrafficDropGrant {
  * payload.
  */
 export async function readTrafficDropSession(): Promise<TrafficDropSession> {
-  const grant = await readSealedGrant();
   return {
-    properties: grant?.properties ?? null,
+    properties: await readGrantedProperties(),
     connectEnabled: isGoogleConnectEnabled(),
     consentNotice: readGoogleConsentNotice(),
   };
@@ -93,28 +92,36 @@ export async function readTrafficDropSession(): Promise<TrafficDropSession> {
 
 /** API-only. Never call this from a server component. */
 export async function readTrafficDropGrant(): Promise<TrafficDropGrant | null> {
-  const grant = await readSealedGrant();
-  if (!grant || grant.accessToken.trim() === "") return null;
-  return grant;
-}
-
-async function readSealedGrant(): Promise<TrafficDropGrant | null> {
   if (!isGoogleConnectEnabled()) return null;
   const jar = await cookies();
-  const grant = open<{ accessToken?: unknown; properties?: unknown }>(
-    "gg_gsc",
-    jar.get("gg_gsc")?.value,
-  );
-  if (!grant) return null;
-
-  const properties = Array.isArray(grant.properties)
-    ? grant.properties.filter(
-        (entry): entry is string => typeof entry === "string",
-      )
-    : [];
-  if (typeof grant.accessToken !== "string") return null;
-
-  // An empty property list is a real state — the visitor authorised us but owns
-  // no verified property — and is not the same as having no grant at all.
-  return { accessToken: grant.accessToken, properties };
+  const token = open<{ accessToken?: unknown }>("gg_gsc", jar.get("gg_gsc")?.value);
+  if (!token || typeof token.accessToken !== "string" || token.accessToken.trim() === "") {
+    return null;
+  }
+  const properties = await readGrantedProperties();
+  return { accessToken: token.accessToken, properties: properties ?? [] };
 }
+
+/**
+ * The page-visible half of the grant: which properties, never the token.
+ *
+ * Reads `gg_sites` (scoped to `/`), because a page request never carries the
+ * `/api`-scoped token cookie. This split is what lets the page know a grant
+ * exists without the token ever being readable from a server component.
+ */
+async function readGrantedProperties(): Promise<readonly string[] | null> {
+  if (!isGoogleConnectEnabled()) return null;
+  const jar = await cookies();
+  const sites = open<{ properties?: unknown }>(
+    "gg_sites",
+    jar.get("gg_sites")?.value,
+  );
+  if (!sites) return null;
+
+  // An empty list is a real state — the visitor authorized but owns no verified
+  // property — and is not the same as having no grant at all.
+  return Array.isArray(sites.properties)
+    ? sites.properties.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+

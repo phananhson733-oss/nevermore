@@ -94,8 +94,21 @@ describe("sealed cookies", () => {
     expect(cookieAttributes("gg_id", 3_600).path).toBe("/");
   });
 
+  it("keeps the granted property list readable by the page", () => {
+    // The page renders the property picker, so it has to be able to read the
+    // list. Putting the list behind /api alongside the token meant a visitor
+    // who had just authorized successfully still saw the connect button,
+    // because their own grant was invisible to the page showing it.
+    expect(cookieAttributes("gg_sites", 3_600).path).toBe("/");
+  });
+
   it("marks every cookie HttpOnly and SameSite=Lax", () => {
-    for (const purpose of ["gg_oauth_tx", "gg_id", "gg_gsc"] as const) {
+    for (const purpose of [
+      "gg_oauth_tx",
+      "gg_id",
+      "gg_gsc",
+      "gg_sites",
+    ] as const) {
       const attributes = cookieAttributes(purpose, 600);
       expect(attributes.httpOnly).toBe(true);
       expect(attributes.sameSite).toBe("lax");
