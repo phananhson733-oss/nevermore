@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for SE Ranking Is a Strong Rank Tracker — The Honest Question Is Which Job You Need Covered
+heroImage: /images/blog/serankings-alternative.jpg
+heroImageAlt: An abstract editorial illustration for SE Ranking Is a Strong Rank Tracker — The Honest Question Is Which Job You Need Covered
 localeExclusive: true
 ---
 

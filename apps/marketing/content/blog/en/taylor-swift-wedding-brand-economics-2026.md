@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How Taylor Swift Wedding Brand Economics 2026 Reads as a Brand Signal — and Where It Stops
+heroImage: /images/blog/taylor-swift-wedding-brand-economics-2026.jpg
+heroImageAlt: An abstract editorial illustration for How Taylor Swift Wedding Brand Economics 2026 Reads as a Brand Signal — and Where It Stops
 localeExclusive: true
 ---
 

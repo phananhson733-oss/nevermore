@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why a Local SEO Audit Has to Separate Local Pack Signals From Organic Ones
+heroImage: /images/blog/local-seo-audit.jpg
+heroImageAlt: An abstract editorial illustration for Why a Local SEO Audit Has to Separate Local Pack Signals From Organic Ones
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for B2B SaaS SEO: A Funnel-Stage Framework for Product-Led Organic Growth
+heroImage: /images/blog/b2b-saas-seo.jpg
+heroImageAlt: An abstract editorial illustration for B2B SaaS SEO: A Funnel-Stage Framework for Product-Led Organic Growth
 localeExclusive: true
 ---
 

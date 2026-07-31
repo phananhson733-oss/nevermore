@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Free SEO Company Explained: How to Vet Providers Who Actually Compound
+heroImage: /images/blog/free-seo-company.jpg
+heroImageAlt: An abstract editorial illustration for Free SEO Company Explained: How to Vet Providers Who Actually Compound
 localeExclusive: true
 ---
 

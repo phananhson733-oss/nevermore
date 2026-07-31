@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-31
 updatedAt: 2026-07-31
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for When Agentic AI Marketing Automation Can Run the Work Without Running the Business
+heroImage: /images/blog/agentic-ai-marketing-automation.jpg
+heroImageAlt: An abstract editorial illustration for When Agentic AI Marketing Automation Can Run the Work Without Running the Business
 localeExclusive: true
 ---
 

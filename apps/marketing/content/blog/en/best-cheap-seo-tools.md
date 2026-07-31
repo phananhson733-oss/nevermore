@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Best Cheap SEO Tools: How to Rank Budget Options by Real Cost-Per-Feature
+heroImage: /images/blog/best-cheap-seo-tools.jpg
+heroImageAlt: An abstract editorial illustration for Best Cheap SEO Tools: How to Rank Budget Options by Real Cost-Per-Feature
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why the Best AI SEO Tools Automate the Workflow, Not Just the Writing
+heroImage: /images/blog/best-ai-seo-tools.jpg
+heroImageAlt: An abstract editorial illustration for Why the Best AI SEO Tools Automate the Workflow, Not Just the Writing
 localeExclusive: true
 ---
 

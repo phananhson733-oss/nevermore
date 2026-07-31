@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Your Docs and API Reference Already Rank — Treat Them as SEO Assets
+heroImage: /images/blog/seo-for-technology-companies.jpg
+heroImageAlt: An abstract editorial illustration for Your Docs and API Reference Already Rank — Treat Them as SEO Assets
 localeExclusive: true
 ---
 

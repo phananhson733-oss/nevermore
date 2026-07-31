@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-15
 updatedAt: 2026-07-15
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Where AI Agents for Sales Actually Replace the Rep — and Where They Can't
+heroImage: /images/blog/ai-agents-for-sales.jpg
+heroImageAlt: An abstract editorial illustration for Where AI Agents for Sales Actually Replace the Rep — and Where They Cant
 localeExclusive: true
 ---
 

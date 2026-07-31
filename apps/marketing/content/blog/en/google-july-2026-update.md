@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-07-09
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What the Google July 2026 Update Actually Changes for Your Content Workflow
+heroImage: /images/blog/google-july-2026-update.jpg
+heroImageAlt: An abstract editorial illustration for What the Google July 2026 Update Actually Changes for Your Content Workflow
 localeExclusive: true
 ---
 

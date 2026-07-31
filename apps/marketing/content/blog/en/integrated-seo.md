@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What Integrated SEO Really Means for B2B SaaS Buyers
+heroImage: /images/blog/integrated-seo.jpg
+heroImageAlt: An abstract editorial illustration for What Integrated SEO Really Means for B2B SaaS Buyers
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Ethical SEO Services: A Boundary Checklist for Separating Principle From Positioning
+heroImage: /images/blog/ethical-seo-services.jpg
+heroImageAlt: An abstract editorial illustration for Ethical SEO Services: A Boundary Checklist for Separating Principle From Positioning
 localeExclusive: true
 ---
 

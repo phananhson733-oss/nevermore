@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Where Generative Engine Optimization Ends and SEO Begins
+heroImage: /images/blog/generative-engine-optimization.jpg
+heroImageAlt: An abstract editorial illustration for Where Generative Engine Optimization Ends and SEO Begins
 localeExclusive: true
 ---
 

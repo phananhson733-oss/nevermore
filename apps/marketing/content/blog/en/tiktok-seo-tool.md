@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why a TikTok SEO Tool Optimizes Search Discoverability, Not Just Caption Hashtags
+heroImage: /images/blog/tiktok-seo-tool.jpg
+heroImageAlt: An abstract editorial illustration for Why a TikTok SEO Tool Optimizes Search Discoverability, Not Just Caption Hashtags
 localeExclusive: true
 ---
 

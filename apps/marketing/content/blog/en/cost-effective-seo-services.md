@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why Cost Effective SEO Services Win on the Hours They Refuse to Bill
+heroImage: /images/blog/cost-effective-seo-services.jpg
+heroImageAlt: An abstract editorial illustration for Why Cost Effective SEO Services Win on the Hours They Refuse to Bill
 localeExclusive: true
 ---
 

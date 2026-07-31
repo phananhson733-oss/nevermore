@@ -7,8 +7,8 @@ pillar: growth_automation
 status: draft
 publishedAt: 2026-02-10
 updatedAt: 2026-02-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Building SEO Content Clusters That Actually Rank
+heroImage: /images/blog/seo-content-clusters-draft.jpg
+heroImageAlt: An abstract editorial illustration for Building SEO Content Clusters That Actually Rank
 localeExclusive: false
 ---
 

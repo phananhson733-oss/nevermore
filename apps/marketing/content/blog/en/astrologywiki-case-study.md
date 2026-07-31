@@ -7,8 +7,8 @@ pillar: customer_stories
 status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-03-05
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for From 0 to 5,000 Users: How astrologywiki.com Grew with GenGrowth
+heroImage: /images/blog/astrologywiki-case-study.jpg
+heroImageAlt: An abstract editorial illustration for From 0 to 5,000 Users: How astrologywiki.com Grew with GenGrowth
 localeExclusive: false
 ---
 

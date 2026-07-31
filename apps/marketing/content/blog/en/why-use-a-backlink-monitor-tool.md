@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for A Backlink Monitor Tool Is Risk Surveillance, Not a Vanity Dashboard
+heroImage: /images/blog/why-use-a-backlink-monitor-tool.jpg
+heroImageAlt: An abstract editorial illustration for A Backlink Monitor Tool Is Risk Surveillance, Not a Vanity Dashboard
 localeExclusive: true
 ---
 

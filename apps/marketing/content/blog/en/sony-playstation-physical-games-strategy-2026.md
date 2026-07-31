@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Read Sony Playstation Physical Games Strategy 2026 Without the Rumor Noise
+heroImage: /images/blog/sony-playstation-physical-games-strategy-2026.jpg
+heroImageAlt: An abstract editorial illustration for How to Read Sony Playstation Physical Games Strategy 2026 Without the Rumor Noise
 localeExclusive: true
 ---
 

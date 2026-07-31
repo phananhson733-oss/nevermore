@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for All in One SEO for Agencies and SaaS — Not the WordPress Plugin Everyone Finds First
+heroImage: /images/blog/all-in-one-seo.jpg
+heroImageAlt: An abstract editorial illustration for All in One SEO for Agencies and SaaS — Not the WordPress Plugin Everyone Finds First
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What an SEO Starter Package Should Promise at 90 Days, Not Just Deliver Each Month
+heroImage: /images/blog/seo-starter-package.jpg
+heroImageAlt: An abstract editorial illustration for What an SEO Starter Package Should Promise at 90 Days, Not Just Deliver Each Month
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why Affordable SEO Tools Are the Ones That Automate the Most Jobs, Not the Cheapest Sticker
+heroImage: /images/blog/affordable-seo-tools.jpg
+heroImageAlt: An abstract editorial illustration for Why Affordable SEO Tools Are the Ones That Automate the Most Jobs, Not the Cheapest Sticke
 localeExclusive: true
 ---
 

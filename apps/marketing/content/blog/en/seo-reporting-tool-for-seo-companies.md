@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How an SEO Reporting Tool for SEO Companies Earns Client Trust
+heroImage: /images/blog/seo-reporting-tool-for-seo-companies.jpg
+heroImageAlt: An abstract editorial illustration for How an SEO Reporting Tool for SEO Companies Earns Client Trust
 localeExclusive: true
 ---
 

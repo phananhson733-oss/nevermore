@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Tell Which Whitelabel SEO Tool Tier Your Agency Actually Needs
+heroImage: /images/blog/whitelabel-seo-tool.jpg
+heroImageAlt: An abstract editorial illustration for How to Tell Which Whitelabel SEO Tool Tier Your Agency Actually Needs
 localeExclusive: true
 ---
 

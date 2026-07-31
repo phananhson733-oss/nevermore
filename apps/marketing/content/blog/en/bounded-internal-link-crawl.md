@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: An editorial illustration of a connected site structure.
+heroImage: /images/blog/bounded-internal-link-crawl.jpg
+heroImageAlt: An abstract editorial illustration for What a Bounded Internal Link Crawl Can Prove
 localeExclusive: false
 ---
 

@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What a Website Health Score Actually Tells You About a Site
+heroImage: /images/blog/website-health-score.jpg
+heroImageAlt: An abstract editorial illustration for What a Website Health Score Actually Tells You About a Site
 localeExclusive: true
 ---
 

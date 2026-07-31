@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: A GenGrowth editorial illustration used as the article cover.
+heroImage: /images/blog/evidence-first-growth-experiments.jpg
+heroImageAlt: An abstract editorial illustration for Evidence-First Growth Experiments for Small Product Teams
 localeExclusive: false
 ---
 

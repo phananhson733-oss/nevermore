@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What a Manual SEO Service Actually Covers — A Scope-Bounded Definition for B2B Buyers
+heroImage: /images/blog/manual-seo-service.jpg
+heroImageAlt: An abstract editorial illustration for What a Manual SEO Service Actually Covers — A Scope-Bounded Definition for B2B Buyers
 localeExclusive: true
 ---
 

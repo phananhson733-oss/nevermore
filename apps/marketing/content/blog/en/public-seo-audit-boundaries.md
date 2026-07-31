@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: An editorial illustration representing visible and hidden SEO signals.
+heroImage: /images/blog/public-seo-audit-boundaries.jpg
+heroImageAlt: An abstract editorial illustration for Sitemaps, robots.txt, and the Limits of a Public SEO Audit
 localeExclusive: false
 ---
 

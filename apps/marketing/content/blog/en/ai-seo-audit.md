@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-07-09
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Where an AI SEO Audit Ends and Your Judgment Begins
+heroImage: /images/blog/ai-seo-audit.jpg
+heroImageAlt: An abstract editorial illustration for Where an AI SEO Audit Ends and Your Judgment Begins
 localeExclusive: true
 ---
 

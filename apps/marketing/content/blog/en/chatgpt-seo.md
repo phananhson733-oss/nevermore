@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-15
 updatedAt: 2026-07-15
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Tell Which ChatGPT SEO Approach Your Team Actually Needs
+heroImage: /images/blog/chatgpt-seo.jpg
+heroImageAlt: An abstract editorial illustration for How to Tell Which ChatGPT SEO Approach Your Team Actually Needs
 localeExclusive: true
 ---
 

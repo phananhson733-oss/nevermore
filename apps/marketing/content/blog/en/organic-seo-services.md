@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How Organic SEO Services Earn the Share of Your Pipeline That Doesn't Pay Per Click
+heroImage: /images/blog/organic-seo-services.jpg
+heroImageAlt: An abstract editorial illustration for How Organic SEO Services Earn the Share of Your Pipeline That Doesnt Pay Per Click
 localeExclusive: true
 ---
 

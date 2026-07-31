@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-22
 updatedAt: 2026-06-22
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why a Content Audit Tool Decides Update-vs-Remove, Not Just Crawls Your Site
+heroImage: /images/blog/content-audit-tool.jpg
+heroImageAlt: An abstract editorial illustration for Why a Content Audit Tool Decides Update-vs-Remove, Not Just Crawls Your Site
 localeExclusive: true
 ---
 

@@ -7,8 +7,8 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-01-15
 updatedAt: 2026-02-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What is Growth Automation? A Complete Guide for Product Teams
+heroImage: /images/blog/what-is-growth-automation.jpg
+heroImageAlt: An abstract editorial illustration for What is Growth Automation? A Complete Guide for Product Teams
 localeExclusive: false
 ---
 

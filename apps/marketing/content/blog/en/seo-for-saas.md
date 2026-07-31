@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why SEO for SaaS Needs a Page-by-Page Plan, Not Just More Blog Posts
+heroImage: /images/blog/seo-for-saas.jpg
+heroImageAlt: An abstract editorial illustration for Why SEO for SaaS Needs a Page-by-Page Plan, Not Just More Blog Posts
 localeExclusive: true
 ---
 

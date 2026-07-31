@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Organic SEO Service: A Boundary-First Definition for B2B SaaS Buyers
+heroImage: /images/blog/organic-seo-service.jpg
+heroImageAlt: An abstract editorial illustration for Organic SEO Service: A Boundary-First Definition for B2B SaaS Buyers
 localeExclusive: true
 ---
 

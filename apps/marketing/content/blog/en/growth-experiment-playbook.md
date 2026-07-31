@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-02-01
 updatedAt: 2026-02-20
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Run Your First Growth Experiment: A Step-by-Step Playbook
+heroImage: /images/blog/growth-experiment-playbook.jpg
+heroImageAlt: An abstract editorial illustration for How to Run Your First Growth Experiment: A Step-by-Step Playbook
 localeExclusive: false
 ---
 

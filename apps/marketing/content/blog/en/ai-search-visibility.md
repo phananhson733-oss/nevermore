@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Where AI Search Visibility Starts and Stops for Agency Teams
+heroImage: /images/blog/ai-search-visibility.jpg
+heroImageAlt: An abstract editorial illustration for Where AI Search Visibility Starts and Stops for Agency Teams
 localeExclusive: true
 ---
 

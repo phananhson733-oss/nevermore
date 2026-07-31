@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What a SaaS SEO Platform Should Actually Do for Your Funnel
+heroImage: /images/blog/saas-seo-platform.jpg
+heroImageAlt: An abstract editorial illustration for What a SaaS SEO Platform Should Actually Do for Your Funnel
 localeExclusive: true
 ---
 

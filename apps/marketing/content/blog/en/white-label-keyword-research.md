@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How White-Label Keyword Research Reaches Clients Under Your Own Brand
+heroImage: /images/blog/white-label-keyword-research.jpg
+heroImageAlt: An abstract editorial illustration for How White-Label Keyword Research Reaches Clients Under Your Own Brand
 localeExclusive: true
 ---
 

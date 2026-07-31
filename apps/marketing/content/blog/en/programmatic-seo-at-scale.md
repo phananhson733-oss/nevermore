@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-03-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Programmatic SEO: How to Scale from 10 to 10,000 Pages
+heroImage: /images/blog/programmatic-seo-at-scale.jpg
+heroImageAlt: An abstract editorial illustration for Programmatic SEO: How to Scale from 10 to 10,000 Pages
 localeExclusive: false
 ---
 

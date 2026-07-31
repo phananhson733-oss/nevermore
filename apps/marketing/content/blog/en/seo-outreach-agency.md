@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Judge an SEO Outreach Agency on Relevance, Not Link Count
+heroImage: /images/blog/seo-outreach-agency.jpg
+heroImageAlt: An abstract editorial illustration for How to Judge an SEO Outreach Agency on Relevance, Not Link Count
 localeExclusive: true
 ---
 
