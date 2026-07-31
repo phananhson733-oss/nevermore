@@ -214,8 +214,105 @@ pages：630
 这是真实网络与本地 production build 的 API 验证，不是 fixture、mock 或生产
 部署后的验证。
 
-## 6. 部署后待补证据
+## 6. Git 与 Vercel Production
 
-提交、推送、Vercel Production Deployment、生产 API 与生产浏览器验收完成后，
-在本节记录 commit、部署 URL、部署状态、生产真实扫描结果、运行日志和仍未验证
-风险。
+实现 commit：
+
+```text
+7b315f63091cfc15062d6d9d342e54e3ce8b485c
+fix(marketing): remove public audit quotas
+```
+
+发布过程：
+
+- 推送任务分支 `origin/codex/seo-audit-no-free-quota`；
+- 再次 fetch 并确认 `origin/main` 仍为冻结基线 `c89374c`；
+- 验证该基线是候选 commit 的 ancestor；
+- 将 `origin/main` 快进到 `7b315f6`；
+- 未使用、覆盖或清理本机已有脏工作树。
+
+Vercel Production：
+
+```text
+Project ID：prj_HzRnuXaewqxu27P013fUwh6D2fWV
+Project display name：gengrowth-agents
+Git repository：phananhson733-oss/nevermore
+Git branch：main
+Git SHA：7b315f63091cfc15062d6d9d342e54e3ce8b485c
+Deployment ID：dpl_DLyxUxka4HwMTPGKfxJNEF2c4sUv
+Deployment URL：gengrowth-agents-cxx92hoon-wzbs-projects-39a68c1d.vercel.app
+Target：production
+State：READY
+Production aliases：gengrowth.ai、www.gengrowth.ai
+Alias error：无
+```
+
+Vercel 构建日志确认从
+`github.com/phananhson733-oss/nevermore (Branch: main, Commit: 7b315f6)`
+克隆并使用 Next.js 16.2.11 构建。Vercel 项目显示名虽仍是
+`gengrowth-agents`，但本次部署的实际 Git 源、分支和 commit 均属于
+`phananhson733-oss/nevermore`。
+
+## 7. 生产浏览器与真实扫描
+
+在用户指定的 Chrome 中打开：
+
+`https://gengrowth.ai/zh/tools/seo-audit`
+
+页面验证：
+
+- GenGrowth 官网导航、charcoal 背景、陶土色按钮、卡片和排版保持一致；
+- 展示“正式免费的全站 SEO 审计”；
+- 明确“无需账户，不限制正常使用次数，也不设固定页面产品额度”；
+- 不显示“公开预览”、25 页、深度 4、60 请求或频率额度；
+- 明确同步技术安全边界、大型网站可能部分覆盖和未来异步版本；
+- 明确结果不生成评分、优先级、修复文案、建议或行动计划。
+
+通过页面表单真实提交：
+
+```text
+输入：astrologywiki.com
+生产 API：POST /api/tools/seo-audit
+HTTP：200（Vercel production runtime log）
+结果状态：抓取已完成
+targetUrl：https://astrologywiki.com/
+pagesInspected：630
+linksObserved：2,551
+sitemapUrlsObserved：558
+未纳入采集 URL：2
+urlsSkipped：0
+urlsBlocked：0
+urlsDisallowed：2
+urlsErrored：0
+```
+
+页面实际渲染了 17 类中性审计记录与 630 页页面清单。结果中没有总分、
+健康度、等级、严重性、优先级、诊断、建议或修复步骤。该浏览器测试使用真实
+生产 API 和目标网站，不是 Playwright route mock。
+
+Vercel runtime log 在 `2026-07-31T05:19:27Z` 记录：
+
+```text
+POST /api/tools/seo-audit 200
+deployment=dpl_DLyxUxka4HwMTPGKfxJNEF2c4sUv
+branch=main
+cache=MISS
+```
+
+同一生产部署、同一路由、最近 30 分钟的聚合 runtime error 查询返回
+`No runtime errors found`。
+
+## 8. 仍未验证或不可严格声称
+
+- 同 IP in-flight slot 是 Vercel 单 isolate 内的 best effort。当前无共享
+  状态后端，因此不能声称跨所有并行 isolate 的全局严格互斥；实现和代码注释
+  均明确该限制。
+- 没有在生产连续发起多次大型扫描做压力测试，避免把公开目标站和生产函数当作
+  压测环境。无次数配额由 handler 单测中同 IP 连续 7 次成功、源码审查以及
+  生产响应不含额度 UI 共同证明。
+- `astrologywiki.com` 在本次同步运行中完整覆盖了本爬虫可发现的 630 个静态
+  页面；这不等于搜索引擎已知 URL 全集，也不证明所有大型网站都能在同步时限
+  内完整覆盖。
+- 生产浏览器验证了真实 200 结果和渲染字段；生产原始 JSON 的 V3 schema 与
+  禁止字段集合由同一 commit 的本地 production API 验证，不把浏览器 DOM
+  验收扩大表述成第二次原始响应合同测试。
