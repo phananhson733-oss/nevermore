@@ -833,7 +833,6 @@
     "trafficDrop": {
       "title": "流量下降诊断",
       "description": "连接 Search Console，在你自己的数据上看清变化，每一个结论都附带证据。",
-      "metaTitle": "免费流量下降诊断",
       "metaDescription": "用你自己的 Search Console 数据诊断自然流量下降。对比窗口由变点检测自动选定，发现按证据强度分层，每条建议都写明它依据什么。",
       "eyebrow": "免费工具",
       "pageTitle": "你的流量发生了什么？",

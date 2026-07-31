@@ -833,7 +833,6 @@
     "trafficDrop": {
       "title": "Traffic drop diagnosis",
       "description": "Connect Search Console and see what actually changed in your own data, with the evidence behind every claim.",
-      "metaTitle": "Free Traffic Drop Diagnosis",
       "metaDescription": "Diagnose an organic traffic drop against your own Search Console data. Fixed comparison windows chosen by change-point detection, layered findings, and actions that name their evidence.",
       "eyebrow": "Free tool",
       "pageTitle": "What happened to your traffic?",
