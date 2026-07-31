@@ -302,6 +302,10 @@
       "qualificationSignals": "合格信号",
       "disqualifiers": "排除条件"
     },
+    "icp": {
+      "candidatesPendingTitle": "已推导出 {count} 个受众候选，但尚未指定主 ICP",
+      "candidatesPendingHint": "请在「编辑产品画像与 ICP」中选择一个候选作为主 ICP。未指定前，产品画像无法确认；画像未确认时，数据连接也无法启用。"
+    },
     "customerModels": {
       "b2b": "B2B · 面向企业",
       "b2c": "B2C · 面向消费者",

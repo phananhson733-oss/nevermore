@@ -435,6 +435,19 @@
   letter-spacing: -0.018em;
 }
 
+/*
+ * The display size above is sized for a short positioning line. Synthesis often
+ * returns a full paragraph instead, and at 30px that becomes a wall of text
+ * rather than a statement. Step down to a reading size once the value
+ * proposition stops being a one-liner; the marker is set from its length at
+ * render time because CSS cannot measure text content.
+ */
+.statement[data-length="long"] p {
+  font-size: clamp(17px, 1.3vw, 20px);
+  line-height: 1.62;
+  letter-spacing: -0.006em;
+}
+
 .splitContent {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
@@ -557,6 +570,53 @@
 .icpLead strong {
   margin-top: 4px;
   color: var(--sf-fg);
+}
+
+.icpCandidates {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px dashed var(--sf-border);
+  border-radius: 12px;
+}
+
+.icpCandidatesLead {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 640;
+}
+
+.icpCandidateList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.icpCandidateList li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.icpCandidateList svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.icpCandidatesHint {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .icpMatrix {
