@@ -24,6 +24,7 @@ export default async function TrafficDropDiagnosisPage({ params }: { params: Pro
           locale={locale}
           properties={session.properties}
           connectEnabled={session.connectEnabled}
+          inviteOnly={session.inviteOnly}
         />
       </NextIntlClientProvider>
     </ConnectedToolPage>
