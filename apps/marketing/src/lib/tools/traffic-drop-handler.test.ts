@@ -34,7 +34,7 @@ function deps(
       Promise.resolve({
         properties: [PROPERTY],
         connectEnabled: true,
-        inviteOnly: false,
+        consentNotice: "none" as const,
       }),
     readDailySeries: () => Promise.resolve(series(120)),
     now: () => new Date("2026-07-31T00:00:00.000Z"),
@@ -74,7 +74,7 @@ describe("handleTrafficDropRequest", () => {
           Promise.resolve({
             properties: null,
             connectEnabled: true,
-            inviteOnly: false,
+            consentNotice: "none" as const,
           }),
       }),
     );

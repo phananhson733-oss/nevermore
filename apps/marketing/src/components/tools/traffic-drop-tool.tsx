@@ -10,6 +10,7 @@ import { ArrowRight, LineChart, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
+import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
 import { TrafficDropResults } from "./traffic-drop-results";
 
@@ -30,15 +31,15 @@ interface TrafficDropToolProps {
   readonly properties: readonly string[] | null;
   /** False until the Google grant flow is live in this environment. */
   readonly connectEnabled: boolean;
-  /** True while Google's consent screen still limits authorization to testers. */
-  readonly inviteOnly: boolean;
+  /** What Google will put in front of the visitor, if anything. */
+  readonly consentNotice: GoogleConsentNotice;
 }
 
 export function TrafficDropTool({
   locale,
   properties,
   connectEnabled,
-  inviteOnly,
+  consentNotice,
 }: TrafficDropToolProps) {
   const t = useTranslations("tools.trafficDrop");
   const [property, setProperty] = useState(properties?.[0] ?? "");
@@ -93,14 +94,12 @@ export function TrafficDropTool({
           <p className="mt-5 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
             {t("connectPending")}
           </p>
-        ) : inviteOnly ? (
+        ) : consentNotice === "invite_only" ? (
           /*
-           * Google's consent screen is still in Testing, so only accounts on
-           * its tester list can authorize. The notice comes first and the
-           * authorize link stays secondary: an invited tester gets through in
-           * one extra click, while everyone else is told why before Google
-           * stops them — which is the difference between a limitation and a
-           * broken button.
+           * The consent screen is in Testing: only accounts on its tester list
+           * can authorize, everyone else is hard-blocked. The notice leads and
+           * the authorize link stays secondary — an invited tester loses one
+           * click, a stranger learns why instead of hitting a wall.
            */
           <div className="mt-5 rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
             <p className="text-[13px] font-semibold text-text-dark-primary">
@@ -125,6 +124,43 @@ export function TrafficDropTool({
               >
                 {t("inviteOnlyRequest")}
               </Link>
+            </div>
+          </div>
+        ) : consentNotice === "unverified" ? (
+          /*
+           * Published, but Google has not finished verifying the sensitive
+           * scope, so everyone passes an "app isn't verified" interstitial.
+           * Anyone can get through, so the button stays primary — but the
+           * screen they are about to meet is described first, including the
+           * exact wording to look for. Being surprised by that page is what
+           * loses people; being told about it beforehand mostly does not.
+           */
+          <div className="mt-5 space-y-4">
+            <div className="rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+              <p className="text-[13px] font-semibold text-text-dark-primary">
+                {t("unverifiedTitle")}
+              </p>
+              <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+                {t("unverifiedBody")}
+              </p>
+              <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+                {t("unverifiedScope")}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a
+                href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
+                  localePath(locale, "/tools/traffic-drop-diagnosis"),
+                )}`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+              >
+                {t("connectCta")}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </a>
+              <p className="flex items-center gap-2 text-[12px] text-text-dark-secondary">
+                <ShieldCheck aria-hidden="true" className="size-4" />
+                {t("connectTrust")}
+              </p>
             </div>
           </div>
         ) : (

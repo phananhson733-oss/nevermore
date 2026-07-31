@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   isGoogleConnectEnabled,
-  isGoogleConnectInviteOnly,
+  readGoogleConsentNotice,
 } from "./traffic-drop-session.ts";
 
 afterEach(() => {
   delete process.env.MARKETING_GSC_CONNECT_ENABLED;
-  delete process.env.MARKETING_GSC_INVITE_ONLY;
+  delete process.env.MARKETING_GSC_CONSENT_NOTICE;
 });
 
 describe("connect flags", () => {
@@ -21,17 +21,25 @@ describe("connect flags", () => {
     expect(isGoogleConnectEnabled()).toBe(true);
   });
 
-  it("assumes invite-only until told otherwise", () => {
-    // While Google's consent screen sits in Testing, an uninvited visitor is
-    // stopped by Google with an unverified-app message. Defaulting the other
-    // way would mean a misconfiguration sends strangers into that page, so the
-    // flag has to be turned OFF deliberately, once the screen is published.
-    expect(isGoogleConnectInviteOnly()).toBe(true);
+  it("assumes the most restrictive consent notice until told otherwise", () => {
+    // A visitor who reads a warning that did not apply loses a few seconds; a
+    // visitor sent unprepared into Google's block page cannot recover at all.
+    // So the softer states have to be set deliberately, as the consent screen
+    // actually advances — never inferred.
+    expect(readGoogleConsentNotice()).toBe("invite_only");
 
-    process.env.MARKETING_GSC_INVITE_ONLY = "true";
-    expect(isGoogleConnectInviteOnly()).toBe(true);
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "";
+    expect(readGoogleConsentNotice()).toBe("invite_only");
 
-    process.env.MARKETING_GSC_INVITE_ONLY = "false";
-    expect(isGoogleConnectInviteOnly()).toBe(false);
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "published";
+    expect(readGoogleConsentNotice()).toBe("invite_only");
+  });
+
+  it("reads the two advanced states exactly", () => {
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "unverified";
+    expect(readGoogleConsentNotice()).toBe("unverified");
+
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "none";
+    expect(readGoogleConsentNotice()).toBe("none");
   });
 });
