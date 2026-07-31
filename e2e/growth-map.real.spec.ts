@@ -699,8 +699,11 @@ async function assertKeywordLibraryTraceability(input: {
   // arrived inside the panel, but the h2 can briefly remount while the
   // relation/read-model refresh settles. Assert the operator-visible identity
   // on the panel itself, then continue into the immutable record details.
+  // The rail now keeps its landmark name while loading, so this wait is the
+  // only gate on the read model; hold it to the same deadline as the other
+  // rails rather than a shorter local one.
   await expect(detail).toContainText(item.displayKeyword, {
-    timeout: 20_000,
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
   });
   const recordDetails = detail.locator("details").filter({
     hasText: "View record details",
@@ -887,15 +890,23 @@ async function assertExactSelection(input: {
   await expect(otherRow).toHaveAttribute("aria-pressed", "false");
 
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
-  await expect(detail).toBeVisible();
+  // The rail keeps its landmark name while empty, loading, and failed, so its
+  // mere presence no longer proves the read model arrived. Wait for the
+  // selected URL's own heading instead, on the same client read-model deadline
+  // the Competitor rail already uses.
   const expectedPath = new URL(expected.normalizedUrl).pathname;
-  await expect(
-    detail.getByRole("heading", {
-      level: 2,
-      name: expectedPath,
-      exact: true,
-    }),
-  ).toHaveAttribute("title", expected.normalizedUrl);
+  const detailHeading = detail.getByRole("heading", {
+    level: 2,
+    name: expectedPath,
+    exact: true,
+  });
+  await expect(detailHeading).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
+  await expect(detailHeading).toHaveAttribute(
+    "title",
+    expected.normalizedUrl,
+  );
   await expect(
     detail.getByText(expected.title ?? "Page title not collected", {
       exact: true,
