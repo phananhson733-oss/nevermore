@@ -1,5 +1,5 @@
 // @input  -- language-neutral synchronous site-wide SeoAuditReport DTO
-// @output -- crawl coverage, neutral audit records, evidence, and page inventory
+// @output -- crawl coverage, neutral audit records, evidence, and lazy collapsible page inventory
 // @pos    -- audit-only result surface for the public SEO Audit tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,6 +13,7 @@ import {
   Radar,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useState } from "react";
 import type {
   SeoAuditRecord,
   SeoAuditRecordState,
@@ -138,127 +139,151 @@ function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
 
 function PageInventory({ report }: { readonly report: SeoAuditReport }) {
   const t = useTranslations("tools.seoAudit");
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <section
+    <details
       aria-labelledby="seo-audit-pages-title"
-      className="overflow-hidden rounded-2xl border border-brand-border/70 bg-[#171718]"
+      data-testid="seo-audit-pages"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      className="group/pages overflow-hidden rounded-2xl border border-brand-border/70 bg-[#171718]"
     >
-      <div className="border-b border-brand-border/60 px-5 py-5">
-        <p className="text-[10px] uppercase tracking-[0.16em] text-brand-accent-text">
-          {t("pagesEyebrow")}
-        </p>
-        <h3
-          id="seo-audit-pages-title"
-          className="mt-2 text-[18px] font-semibold text-text-dark-primary"
-        >
-          {t("pagesTitle")}
-        </h3>
-        <p className="mt-2 text-[10px] leading-relaxed text-text-dark-secondary">
-          {t("pagesBody", { count: report.pages.length })}
-        </p>
-      </div>
+      <summary
+        data-testid="seo-audit-pages-toggle"
+        className="grid cursor-pointer list-none gap-4 px-5 py-5 transition-colors hover:bg-white/[0.018] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"
+      >
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-brand-accent-text">
+            {t("pagesEyebrow")}
+          </p>
+          <h3
+            id="seo-audit-pages-title"
+            className="mt-2 text-[18px] font-semibold text-text-dark-primary"
+          >
+            {t("pagesTitle")}
+          </h3>
+          <p className="mt-2 max-w-3xl text-[10px] leading-relaxed text-text-dark-secondary">
+            {t("pagesBody", { count: report.pages.length })}
+          </p>
+        </div>
+        <span className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full border border-brand-border/80 bg-white/[0.025] px-3 py-2 text-[10px] font-medium text-text-dark-primary transition-colors group-open/pages:border-brand-accent/35 group-open/pages:text-brand-accent-text">
+          <span className="group-open/pages:hidden">
+            {t("pagesExpand", { count: report.pages.length })}
+          </span>
+          <span className="hidden group-open/pages:inline">
+            {t("pagesCollapse")}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-3.5 w-3.5 transition-transform duration-200 group-open/pages:rotate-180"
+          />
+        </span>
+      </summary>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[1120px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-brand-border/60 text-[9px] uppercase tracking-[0.11em] text-text-dark-secondary">
-              <th scope="col" className="px-5 py-3 font-medium">
-                {t("pageColumns.url")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.response")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.depth")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.indexable")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.title")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.description")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.h1")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.links")}
-              </th>
-              <th scope="col" className="px-3 py-3 font-medium">
-                {t("pageColumns.sitemap")}
-              </th>
-              <th scope="col" className="px-5 py-3 font-medium">
-                {t("pageColumns.jsonLd")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.pages.map((page) => (
-              <tr
-                key={page.url}
-                data-testid="seo-audit-page-row"
-                className="border-b border-brand-border/45 align-top last:border-b-0"
-              >
-                <td className="max-w-[300px] px-5 py-4">
-                  <p className="break-all font-mono text-[10px] text-text-dark-primary">
-                    {page.url}
-                  </p>
-                  {page.redirectHops > 0 ? (
-                    <p className="mt-1 break-all font-mono text-[9px] text-text-dark-secondary">
-                      → {page.finalUrl}
-                    </p>
-                  ) : null}
-                </td>
-                <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
-                  {page.initialStatus ?? t("notAvailable")}
-                  {page.redirectHops > 0
-                    ? ` → ${page.finalStatus ?? t("notAvailable")}`
-                    : null}
-                </td>
-                <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
-                  {page.depth}
-                </td>
-                <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
-                  {page.robotsDirectiveState
-                    ? t(
-                        `robotsDirectiveStates.${page.robotsDirectiveState}`,
-                      )
-                    : t("notAvailable")}
-                </td>
-                <td className="max-w-[180px] px-3 py-4 text-[10px] leading-relaxed text-text-dark-primary">
-                  {page.title ?? t("notAvailable")}
-                </td>
-                <td className="max-w-[220px] px-3 py-4 text-[10px] leading-relaxed text-text-dark-secondary">
-                  {page.metaDescription ?? t("notAvailable")}
-                </td>
-                <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
-                  {page.h1Count}
-                </td>
-                <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
-                  {page.inboundLinks} / {page.outboundLinks}
-                </td>
-                <td className="px-3 py-4 text-[10px] text-text-dark-primary">
-                  {page.sitemapMember
-                    ? t("booleanTrue")
-                    : t("booleanFalse")}
-                </td>
-                <td className="max-w-[180px] px-5 py-4 text-[10px] leading-relaxed text-text-dark-secondary">
-                  {page.jsonLdTypes.join(", ") || t("notAvailable")}
-                  {page.jsonLdErrorCount > 0 ? (
-                    <span className="mt-1 block text-brand-warning">
-                      {t("jsonLdErrors", { count: page.jsonLdErrorCount })}
-                    </span>
-                  ) : null}
-                </td>
+      {isOpen ? (
+        <div className="overflow-x-auto border-t border-brand-border/60">
+          <table className="min-w-[1120px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-brand-border/60 text-[9px] uppercase tracking-[0.11em] text-text-dark-secondary">
+                <th scope="col" className="px-5 py-3 font-medium">
+                  {t("pageColumns.url")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.response")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.depth")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.indexable")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.title")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.description")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.h1")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.links")}
+                </th>
+                <th scope="col" className="px-3 py-3 font-medium">
+                  {t("pageColumns.sitemap")}
+                </th>
+                <th scope="col" className="px-5 py-3 font-medium">
+                  {t("pageColumns.jsonLd")}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+            </thead>
+            <tbody>
+              {report.pages.map((page) => (
+                <tr
+                  key={page.url}
+                  data-testid="seo-audit-page-row"
+                  className="border-b border-brand-border/45 align-top last:border-b-0"
+                >
+                  <td className="max-w-[300px] px-5 py-4">
+                    <p className="break-all font-mono text-[10px] text-text-dark-primary">
+                      {page.url}
+                    </p>
+                    {page.redirectHops > 0 ? (
+                      <p className="mt-1 break-all font-mono text-[9px] text-text-dark-secondary">
+                        → {page.finalUrl}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
+                    {page.initialStatus ?? t("notAvailable")}
+                    {page.redirectHops > 0
+                      ? ` → ${page.finalStatus ?? t("notAvailable")}`
+                      : null}
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
+                    {page.depth}
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
+                    {page.robotsDirectiveState
+                      ? t(
+                          `robotsDirectiveStates.${page.robotsDirectiveState}`,
+                        )
+                      : t("notAvailable")}
+                  </td>
+                  <td className="max-w-[180px] px-3 py-4 text-[10px] leading-relaxed text-text-dark-primary">
+                    {page.title ?? t("notAvailable")}
+                  </td>
+                  <td className="max-w-[220px] px-3 py-4 text-[10px] leading-relaxed text-text-dark-secondary">
+                    {page.metaDescription ?? t("notAvailable")}
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
+                    {page.h1Count}
+                  </td>
+                  <td className="px-3 py-4 font-mono text-[10px] text-text-dark-primary">
+                    {page.inboundLinks} / {page.outboundLinks}
+                  </td>
+                  <td className="px-3 py-4 text-[10px] text-text-dark-primary">
+                    {page.sitemapMember
+                      ? t("booleanTrue")
+                      : t("booleanFalse")}
+                  </td>
+                  <td className="max-w-[180px] px-5 py-4 text-[10px] leading-relaxed text-text-dark-secondary">
+                    {page.jsonLdTypes.join(", ") || t("notAvailable")}
+                    {page.jsonLdErrorCount > 0 ? (
+                      <span className="mt-1 block text-brand-warning">
+                        {t("jsonLdErrors", {
+                          count: page.jsonLdErrorCount,
+                        })}
+                      </span>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </details>
   );
 }
 

@@ -728,7 +728,9 @@
       "booleanFalse": "否",
       "pagesEyebrow": "已采集页面事实",
       "pagesTitle": "已检查页面清单",
-      "pagesBody": "本次同步抓取保留了 {count} 条页面请求记录。下列值都直接来自这些已采集响应的投影。",
+      "pagesBody": "本次同步抓取保留了 {count} 条页面请求记录。页面清单默认收起，展开后可查看这些已采集响应的直接投影。",
+      "pagesExpand": "展开 {count} 个页面",
+      "pagesCollapse": "收起页面清单",
       "pageColumns": {
         "url": "URL",
         "response": "HTTP",

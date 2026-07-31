@@ -728,7 +728,9 @@
       "booleanFalse": "No",
       "pagesEyebrow": "Collected page facts",
       "pagesTitle": "Inspected-page inventory",
-      "pagesBody": "{count} page journeys were retained by this synchronous crawl. Values below are direct projections from those collected responses.",
+      "pagesBody": "{count} page journeys were retained by this synchronous crawl. The inventory is collapsed by default; expand it to inspect direct projections from those responses.",
+      "pagesExpand": "Show {count} pages",
+      "pagesCollapse": "Collapse page inventory",
       "pageColumns": {
         "url": "URL",
         "response": "HTTP",

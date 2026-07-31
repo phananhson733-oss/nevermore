@@ -261,13 +261,22 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   await expect(
     duplicateRecord.getByText("https://acme.com/about", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(3);
   await expect(
     page.getByRole("heading", {
       level: 3,
       name: "Inspected-page inventory",
     }),
   ).toBeVisible();
+  const pageInventoryToggle = page.getByTestId("seo-audit-pages-toggle");
+  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(0);
+  await expect(pageInventoryToggle).toContainText("Show 3 pages");
+  await pageInventoryToggle.click();
+  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(3);
+  await expect(pageInventoryToggle).toContainText(
+    "Collapse page inventory",
+  );
+  await pageInventoryToggle.click();
+  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(0);
 
   await expect(results.getByText("What to fix")).toHaveCount(0);
   await expect(results.getByText("Recommendation")).toHaveCount(0);
@@ -327,6 +336,8 @@ test("keeps a long multi-page audit record contained on a mobile viewport", asyn
   await page.getByRole("button", { name: "Run free audit" }).click();
 
   await expect(page.getByTestId("seo-audit-results")).toBeVisible();
+  await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(0);
+  await page.getByTestId("seo-audit-pages-toggle").click();
   await expect(page.getByText(longUrl, { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
