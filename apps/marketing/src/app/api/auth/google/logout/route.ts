@@ -16,6 +16,7 @@ export async function POST(): Promise<Response> {
   const jar = await cookies();
   jar.delete("gg_id");
   jar.delete("gg_gsc");
+  jar.delete("gg_sites");
   jar.delete("gg_oauth_tx");
   return Response.json({ data: { signedOut: true } }, {
     headers: { "Cache-Control": "no-store" },

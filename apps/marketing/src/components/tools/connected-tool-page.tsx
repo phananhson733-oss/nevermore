@@ -57,10 +57,21 @@ export function ConnectedToolPage({
               </p>
             </div>
           </div>
+          {/*
+            When the page carries a working tool, this button is no longer the
+            way to use it — it leads to the product's login. Two identical
+            primary buttons, with the marketing one sitting higher, sends people
+            away from the thing they came to run. So it steps down to a link and
+            the tool below keeps the primary action.
+          */}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
             <a
               href={siteConfig.appUrl}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+              className={
+                children
+                  ? "inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-brand-accent-text transition-colors hover:underline"
+                  : "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+              }
             >
               {content.cta}
               <ArrowRight aria-hidden="true" className="size-4" />

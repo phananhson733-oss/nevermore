@@ -39,7 +39,10 @@ describe("repository-backed blog content", () => {
   it("rejects unknown frontmatter instead of publishing a malformed article", () => {
     expect(() =>
       parseBlogMarkdown(
-        validArticle.replace("status: published", "status: published\nunknown: nope"),
+        validArticle.replace(
+          "status: published",
+          "status: published\nunknown: nope",
+        ),
         "en/example.md",
       ),
     ).toThrow("invalid frontmatter");
@@ -50,7 +53,10 @@ describe("repository-backed blog content", () => {
       parseBlogMarkdown(
         validArticle
           .replace("publishedAt: 2026-07-30", "publishedAt: 2026-02-30")
-          .replace("/images/blog/example/hero.webp", "//untrusted.example/hero.webp"),
+          .replace(
+            "/images/blog/example/hero.webp",
+            "//untrusted.example/hero.webp",
+          ),
         "en/example.md",
       ),
     ).toThrow("invalid frontmatter");
@@ -72,10 +78,14 @@ describe("repository-backed blog content", () => {
       getLocalBlogPostBySlug("evidence-first-growth-experiments", "zh"),
     ]);
 
+    // The two locales carry their own hero image, which is the point of them
+    // being separately published rather than one translated pair. Asserting a
+    // shared image made the test fail the moment the English article got its
+    // own — a change the test exists to allow, not to catch.
     expect(english).toMatchObject({
       locale: "en",
       content_source: "local",
-      hero_image: "/images/blog/best-ai-seo-tools.jpg",
+      hero_image: "/images/blog/evidence-first-growth-experiments.jpg",
       locale_exclusive: false,
     });
     expect(chinese).toMatchObject({
@@ -89,7 +99,9 @@ describe("repository-backed blog content", () => {
   it("loads the complete migrated legacy URL set alongside authored Markdown", async () => {
     const posts = await getLocalBlogPosts();
 
-    const urls = new Set(posts.map((post) => `/${post.locale}/blog/${post.slug}`));
+    const urls = new Set(
+      posts.map((post) => `/${post.locale}/blog/${post.slug}`),
+    );
     const migratedLegacyUrls = [
       "/en/blog/astrologywiki-case-study",
       "/en/blog/growth-experiment-playbook",

@@ -19,7 +19,11 @@ const MIN_SECRET_BYTES = 32;
  * replayed as another — an OAuth transaction cookie cannot be presented as a
  * Search Console grant even by someone who obtained both.
  */
-export type SealedCookiePurpose = "gg_oauth_tx" | "gg_id" | "gg_gsc";
+export type SealedCookiePurpose =
+  | "gg_oauth_tx"
+  | "gg_id"
+  | "gg_gsc"
+  | "gg_sites";
 
 export class SealedCookieError extends Error {
   constructor(message: string) {
@@ -158,9 +162,18 @@ export interface CookieAttributes {
  *
  * `gg_gsc` is scoped to `/api` on purpose: the access token is only ever needed
  * by a route handler, and a token that is not attached to page requests cannot
- * be serialized into an RSC payload. Nothing is set on `.gengrowth.ai` — a
- * domain-wide cookie would hand the SaaS app's XSS blast radius to the
- * marketing site and back.
+ * be serialized into an RSC payload.
+ *
+ * That scoping is exactly why the granted property list lives in its own
+ * `gg_sites` cookie at `/`: the page has to know which properties to offer, and
+ * a page cannot read a cookie scoped to `/api`. Splitting them keeps the token
+ * out of page requests without making the page blind — the earlier shape put
+ * both in `gg_gsc`, so a visitor who authorized successfully still saw the
+ * connect button, because their own property list was unreachable from the page
+ * that needed it.
+ *
+ * Nothing is set on `.gengrowth.ai` — a domain-wide cookie would hand the SaaS
+ * app's XSS blast radius to the marketing site and back.
  */
 export function cookieAttributes(
   purpose: SealedCookiePurpose,
@@ -170,6 +183,8 @@ export function cookieAttributes(
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
+    // Only the token is confined to /api. Everything else must be readable by
+    // the pages that render from it.
     path: purpose === "gg_gsc" ? "/api" : "/",
     maxAge,
   };
