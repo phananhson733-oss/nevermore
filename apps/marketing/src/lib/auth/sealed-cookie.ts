@@ -3,7 +3,12 @@
 // @pos    -- the only place cookie contents are encrypted or trusted
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  hkdfSync,
+  randomBytes,
+} from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
@@ -72,7 +77,13 @@ function rootSecret(): Buffer {
 /** Per-purpose key. The purpose is the HKDF info, which is what separates them. */
 function deriveKey(purpose: SealedCookiePurpose): Buffer {
   return Buffer.from(
-    hkdfSync("sha256", rootSecret(), "gengrowth.marketing.v1", purpose, KEY_BYTES),
+    hkdfSync(
+      "sha256",
+      rootSecret(),
+      "gengrowth.marketing.v1",
+      purpose,
+      KEY_BYTES,
+    ),
   );
 }
 
@@ -147,6 +158,22 @@ export function open<T>(
   } catch {
     return null;
   }
+}
+
+/**
+ * Budget for one sealed cookie VALUE, in bytes.
+ *
+ * Browsers drop a cookie whose whole `name=value; attributes` line exceeds
+ * about 4096 bytes, and they drop it silently — no error reaches the server or
+ * the page. A caller that seals an unbounded list therefore does not fail
+ * loudly, it just stops having a cookie, which is indistinguishable from never
+ * having authorized. 3_600 leaves room for the name and the attribute string.
+ */
+export const MAX_SEALED_VALUE_BYTES = 3_600;
+
+/** Byte length of a sealed value, for callers that must fit inside the budget. */
+export function sealedByteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
 }
 
 export interface CookieAttributes {

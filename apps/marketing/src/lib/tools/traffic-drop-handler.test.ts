@@ -33,14 +33,20 @@ function deps(
     readSession: () =>
       Promise.resolve({
         properties: [PROPERTY],
+        propertyTotal: 1,
         connectEnabled: true,
         consentNotice: "none" as const,
       }),
     readDailySeries: () => Promise.resolve(series(120)),
     now: () => new Date("2026-07-31T00:00:00.000Z"),
+    // Each test gets its own client key so the per-client concurrency gate
+    // does not carry a held slot from one test into the next.
+    extractClientIp: () => `test-${(clientCounter += 1)}`,
     ...overrides,
   };
 }
+
+let clientCounter = 0;
 
 describe("handleTrafficDropRequest", () => {
   it("returns a report and the series it was built from", async () => {
@@ -73,6 +79,7 @@ describe("handleTrafficDropRequest", () => {
         readSession: () =>
           Promise.resolve({
             properties: null,
+            propertyTotal: 0,
             connectEnabled: true,
             consentNotice: "none" as const,
           }),
@@ -139,5 +146,51 @@ describe("handleTrafficDropRequest", () => {
       property: PROPERTY,
       lookbackDays: 480,
     });
+  });
+
+  it("serialises concurrent reads from one client", async () => {
+    // This endpoint was the only public tool without a concurrency gate, and
+    // it is the most expensive of the three: one request can hold a Search
+    // Console connection for forty seconds across retries. Search Console
+    // quota is counted per GCP PROJECT, so an unbounded caller does not just
+    // slow themselves down, they spend the quota every other visitor needs.
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+
+    const shared = deps({
+      extractClientIp: () => "198.51.100.7",
+      readDailySeries: async () => {
+        await held;
+        return series(120);
+      },
+    });
+
+    const first = handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      shared,
+    );
+    // The second arrives while the first still holds the slot.
+    const second = await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      shared,
+    );
+
+    expect(second.status).toBe(409);
+    expect(second.headers.get("Retry-After")).toBe("5");
+    await expect(second.json()).resolves.toEqual({
+      error: { code: "scan_in_progress" },
+    });
+
+    release();
+    expect((await first).status).toBe(200);
+
+    // And the slot is released, so the same client can run again afterwards.
+    const third = await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps({ extractClientIp: () => "198.51.100.7" }),
+    );
+    expect(third.status).toBe(200);
   });
 });

@@ -77,6 +77,45 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /**
+ * First day the property actually had visibility, or null if it never did.
+ *
+ * Search Console's own contract is only that the reader never INVENTS zero
+ * rows for days it did not return — not that zero rows never arrive. They do:
+ * a property that existed but drew nothing on a given day comes back as a real
+ * row with `impressions: 0`. Counting those as history would make a site look
+ * older than its visibility, which is what every history gate is actually
+ * asking about.
+ */
+export function firstVisibleDate(
+  series: readonly TrafficDailyPoint[],
+): string | null {
+  return series.find((day) => day.impressions > 0)?.date ?? null;
+}
+
+/**
+ * Days of history: the calendar span the property has been VISIBLE for.
+ *
+ * The one definition of "how much history is there", used by every gate and by
+ * the number the report shows. It used to be four definitions — the report
+ * measured from the first visible day while the twelve-week gate, the
+ * year-over-year gate and the check list each measured from the first row —
+ * so a site with a zero-impression prefix was told it had 31 days of history
+ * in one place and 32 in another, and, worse, the gates were the LOOSER pair:
+ * they could clear a twelve-week threshold the displayed number said was not
+ * met, and hand back a "sustained decline" for a site the same page called too
+ * young to judge.
+ *
+ * Deliberately not `series.length`: Search Console omits days it has nothing
+ * for, so a row count understates the age of any site with quiet stretches.
+ */
+export function historySpanDays(series: readonly TrafficDailyPoint[]): number {
+  const first = firstVisibleDate(series);
+  const last = series[series.length - 1]?.date;
+  if (!first || !last) return 0;
+  return daysBetween(first, last) + 1;
+}
+
+/**
  * Ascending by date, with duplicate dates collapsed.
  *
  * GSC may hand back rows in any order, and a detector whose verdict depends on

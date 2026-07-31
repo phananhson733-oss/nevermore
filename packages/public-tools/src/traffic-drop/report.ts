@@ -3,7 +3,7 @@ import { buildTrafficActions } from "./actions.ts";
 import { buildTrafficChecks, type TrafficCheckInputs } from "./checks.ts";
 import { detectTrafficChangePoint } from "./changepoint.ts";
 import { buildTrafficFindings } from "./findings.ts";
-import { daysBetween, sortByDate } from "./series.ts";
+import { firstVisibleDate, historySpanDays, sortByDate } from "./series.ts";
 import type { TrafficDailyPoint, TrafficDropEnvelope } from "./types.ts";
 
 export const TRAFFIC_DROP_SCHEMA_VERSION = "traffic_drop.daily.v1";
@@ -14,34 +14,6 @@ export interface TrafficDropInput {
   /** ISO timestamp the run completed. Supplied by the caller, never generated here. */
   readonly completedAt: string;
   readonly checkInputs?: TrafficCheckInputs;
-}
-
-/**
- * First day the property actually had visibility.
- *
- * Search Console hands back rows for days a young property existed but drew
- * nothing; counting those as history would make a two-month-old site look
- * eligible for a year-over-year read.
- */
-function firstNonEmptyDate(
-  series: readonly TrafficDailyPoint[],
-): string | null {
-  return series.find((day) => day.impressions > 0)?.date ?? null;
-}
-
-/**
- * Days of history, measured as the calendar span the property has been
- * visible for.
- *
- * Deliberately not `series.length`: Search Console omits days a property drew
- * nothing, so a row count understates the age of any site with quiet
- * stretches — and every history gate in the engine reads this number.
- */
-function historySpan(series: readonly TrafficDailyPoint[]): number {
-  const first = firstNonEmptyDate(series);
-  const last = series[series.length - 1]?.date;
-  if (!first || !last) return 0;
-  return daysBetween(first, last) + 1;
 }
 
 /**
@@ -57,7 +29,6 @@ export function buildTrafficDropReport(
   const series = sortByDate(input.daily);
   const changePoint = detectTrafficChangePoint(series);
   const findings = buildTrafficFindings(series, changePoint);
-  const first = series[0];
   const last = series[series.length - 1];
 
   return createPublicToolResult(
@@ -70,9 +41,15 @@ export function buildTrafficDropReport(
     {
       // Bounds come from the data or are null. A property with no rows has no
       // date range, and stamping today's date on it would fabricate one.
-      dataStartDate: firstNonEmptyDate(series) ?? first?.date ?? null,
+      //
+      // The start date and the day count are the same measurement read two
+      // ways, so they are derived from the same place and go null together.
+      // Falling back to the first ROW when nothing was ever visible used to
+      // print "0 days of history · starting 2025-04-01" — a span and a date
+      // that contradict each other on one line.
+      dataStartDate: firstVisibleDate(series),
       dataEndDate: last?.date ?? null,
-      dayCount: historySpan(series),
+      dayCount: historySpanDays(series),
       changePoint,
       findings,
       actions: buildTrafficActions(findings),
@@ -80,6 +57,9 @@ export function buildTrafficDropReport(
         changePoint,
         findings,
         series,
+        // The run date, so "is this property still visible" is asked about
+        // now rather than about whenever the last row happens to be.
+        runDate: input.completedAt.slice(0, 10),
         ...(input.checkInputs ? { inputs: input.checkInputs } : {}),
       }),
     },

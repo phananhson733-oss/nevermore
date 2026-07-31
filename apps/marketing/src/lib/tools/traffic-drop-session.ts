@@ -16,6 +16,14 @@ export interface TrafficDropSession {
    */
   readonly properties: readonly string[] | null;
   /**
+   * How many properties the grant actually covers.
+   *
+   * Usually equal to `properties.length`. It is larger when the list had to be
+   * trimmed to fit inside one cookie — the page says so rather than presenting
+   * a shortened list as if it were everything.
+   */
+  readonly propertyTotal: number;
+  /**
    * Whether the Google grant flow is open in this environment.
    *
    * The `webmasters.readonly` scope is a Google-sensitive scope and cannot ship
@@ -83,8 +91,10 @@ export interface TrafficDropGrant {
  * payload.
  */
 export async function readTrafficDropSession(): Promise<TrafficDropSession> {
+  const grant = await readGrantedProperties();
   return {
-    properties: await readGrantedProperties(),
+    properties: grant?.properties ?? null,
+    propertyTotal: grant?.total ?? 0,
     connectEnabled: isGoogleConnectEnabled(),
     consentNotice: readGoogleConsentNotice(),
   };
@@ -94,12 +104,22 @@ export async function readTrafficDropSession(): Promise<TrafficDropSession> {
 export async function readTrafficDropGrant(): Promise<TrafficDropGrant | null> {
   if (!isGoogleConnectEnabled()) return null;
   const jar = await cookies();
-  const token = open<{ accessToken?: unknown }>("gg_gsc", jar.get("gg_gsc")?.value);
-  if (!token || typeof token.accessToken !== "string" || token.accessToken.trim() === "") {
+  const token = open<{ accessToken?: unknown }>(
+    "gg_gsc",
+    jar.get("gg_gsc")?.value,
+  );
+  if (
+    !token ||
+    typeof token.accessToken !== "string" ||
+    token.accessToken.trim() === ""
+  ) {
     return null;
   }
-  const properties = await readGrantedProperties();
-  return { accessToken: token.accessToken, properties: properties ?? [] };
+  const grant = await readGrantedProperties();
+  return {
+    accessToken: token.accessToken,
+    properties: grant?.properties ?? [],
+  };
 }
 
 /**
@@ -109,10 +129,13 @@ export async function readTrafficDropGrant(): Promise<TrafficDropGrant | null> {
  * `/api`-scoped token cookie. This split is what lets the page know a grant
  * exists without the token ever being readable from a server component.
  */
-async function readGrantedProperties(): Promise<readonly string[] | null> {
+async function readGrantedProperties(): Promise<{
+  readonly properties: readonly string[];
+  readonly total: number;
+} | null> {
   if (!isGoogleConnectEnabled()) return null;
   const jar = await cookies();
-  const sites = open<{ properties?: unknown }>(
+  const sites = open<{ properties?: unknown; total?: unknown }>(
     "gg_sites",
     jar.get("gg_sites")?.value,
   );
@@ -120,8 +143,20 @@ async function readGrantedProperties(): Promise<readonly string[] | null> {
 
   // An empty list is a real state — the visitor authorized but owns no verified
   // property — and is not the same as having no grant at all.
-  return Array.isArray(sites.properties)
-    ? sites.properties.filter((entry): entry is string => typeof entry === "string")
+  const properties = Array.isArray(sites.properties)
+    ? sites.properties.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
     : [];
-}
 
+  // `total` is what the grant covered before the list was fitted to the cookie
+  // budget. A cookie sealed by an earlier build carries no `total`, and for
+  // those the list IS the whole grant — so the fallback is its length, never
+  // zero, which would claim the visitor has no properties at all.
+  const total =
+    typeof sites.total === "number" && sites.total >= properties.length
+      ? sites.total
+      : properties.length;
+
+  return { properties, total };
+}
