@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: 展示可见与不可见 SEO 信号的编辑插图。
+heroImage: /images/blog/public-seo-audit-boundaries.jpg
+heroImageAlt: Sitemap、robots.txt 与公开 SEO 审计的边界 的抽象编辑插图
 localeExclusive: false
 ---
 

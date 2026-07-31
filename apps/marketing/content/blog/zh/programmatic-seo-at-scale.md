@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-03-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 程序化 SEO：如何从 10 页扩展到 10,000 页
+heroImage: /images/blog/programmatic-seo-at-scale.jpg
+heroImageAlt: 程序化 SEO：如何从 10 页扩展到 10,000 页 的抽象编辑插图
 localeExclusive: false
 ---
 

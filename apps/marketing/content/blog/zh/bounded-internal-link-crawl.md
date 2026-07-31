@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-31
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: 展示站点页面关系的编辑插图。
+heroImage: /images/blog/bounded-internal-link-crawl.jpg
+heroImageAlt: 受限内链抓取到底能证明什么 的抽象编辑插图
 localeExclusive: false
 ---
 

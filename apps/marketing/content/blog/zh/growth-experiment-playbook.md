@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-02-01
 updatedAt: 2026-02-20
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 如何运行你的第一个增长实验：分步操作手册
+heroImage: /images/blog/growth-experiment-playbook.jpg
+heroImageAlt: 如何运行你的第一个增长实验：分步操作手册 的抽象编辑插图
 localeExclusive: false
 ---
 

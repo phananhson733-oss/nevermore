@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
-heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: 用作文章封面的 GenGrowth 编辑插图。
+heroImage: /images/blog/evidence-first-growth-experiments.jpg
+heroImageAlt: 小团队如何用证据驱动增长实验 的抽象编辑插图
 localeExclusive: false
 ---
 

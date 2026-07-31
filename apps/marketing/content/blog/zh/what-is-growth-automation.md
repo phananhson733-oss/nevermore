@@ -7,8 +7,8 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-01-15
 updatedAt: 2026-02-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 什么是增长自动化？产品团队完整指南
+heroImage: /images/blog/what-is-growth-automation.jpg
+heroImageAlt: 什么是增长自动化？产品团队完整指南 的抽象编辑插图
 localeExclusive: false
 ---
 
