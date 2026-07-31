@@ -783,6 +783,13 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const crawlRun = useProjectRun(projectId, activeCrawlId);
   const createSynthesisRun = synthesisMutation.mutateAsync;
   const createCrawlRun = crawlMutation.mutateAsync;
+  // Narrow conjunction: a bare enumeration in the reading language. The unit
+  // type is wrong here — it emits no separator at all in Chinese, running the
+  // field names together.
+  const fieldNameList = useMemo(
+    () => new Intl.ListFormat(locale, { style: "narrow", type: "conjunction" }),
+    [locale],
+  );
   const regionNames = useMemo(
     () => new Intl.DisplayNames([locale], { type: "region" }),
     [locale],
@@ -1380,7 +1387,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             <p className={styles.eyebrow}>{t("confirmation.eyebrow")}</p>
             <h2>{t("confirmation.title")}</h2>
             <p>{view.profileState === "confirmed" ? t("confirmation.confirmedDetail") : t("confirmation.detail")}</p>
-            <ul className={styles.checklist}>{view.confirmation.items.map((item) => <li key={item.id} data-complete={item.complete}>{item.complete ? <Check size={15} aria-hidden="true" /> : <span aria-hidden="true">—</span>}<span>{t(`confirmation.items.${item.id}`)}</span></li>)}</ul>
+            <ul className={styles.checklist}>{view.confirmation.items.map((item) => <li key={item.id} data-complete={item.complete}>{item.complete ? <Check size={15} aria-hidden="true" /> : <span aria-hidden="true">—</span>}<span className={styles.checklistLabel}>{t(`confirmation.items.${item.id}`)}{item.complete || item.missingFieldKeys.length === 0 ? null : <em>{t("confirmation.missingFields", { fields: fieldNameList.format(item.missingFieldKeys.map((key) => t(`fields.${key}`))) })}</em>}</span></li>)}</ul>
             {editable ? <button type="button" className={styles.confirmButton} disabled={!view.confirmation.ready} onClick={(event) => { rememberTrigger(event.currentTarget); setConfirmOpen(true); }}><ShieldCheck size={17} aria-hidden="true" />{view.confirmation.ready ? t("actions.confirm") : t("actions.confirmBlocked")}</button> : <div className={styles.confirmedStamp}><ShieldCheck aria-hidden="true" /><strong>{t("states.confirmed")}</strong></div>}
             {!view.confirmation.ready && editable ? <p className={styles.blockReason}>{activeRun ? t("confirmation.activeRunBlocked") : t("confirmation.blocked")}</p> : null}
           </div>
