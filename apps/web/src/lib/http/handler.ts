@@ -442,6 +442,8 @@ type ErrorClassification =
       fault: string | null;
       /** Driver/PostgreSQL SQLSTATE, e.g. "42883" / "23505". */
       sqlState: string | null;
+      /** Fixed argument-check text, RangeError only. See faultDetail. */
+      detail: string | null;
     }>;
 
 /**
@@ -456,6 +458,34 @@ type ErrorClassification =
  * Every read is individually guarded: a hostile thrown value can execute Proxy
  * traps on property access, and this runs inside the error boundary.
  */
+/**
+ * The argument-check sentence behind a RangeError, and only a RangeError.
+ *
+ * Throughout this codebase RangeError means one thing: a repository rejected an
+ * argument that failed its own precondition. Those sentences are written in
+ * source ("profileVersion must be a positive safe integer") and at most
+ * interpolate a field name, so they identify which check fired without
+ * reproducing what was checked. No other error type qualifies — a TypeError or
+ * a driver error can carry values in its message.
+ *
+ * The shape is still constrained rather than trusted: printable ASCII, bounded
+ * length, no quotes or newlines. A caller can construct a RangeError with an
+ * arbitrary message, so this stays a filter, not a promise.
+ */
+function faultDetail(error: unknown): string | null {
+  try {
+    if (!(error instanceof RangeError)) return null;
+    const message: unknown = error.message;
+    if (typeof message !== "string") return null;
+    if (message.length === 0 || message.length > 200) return null;
+    if (!/^[ -~]+$/u.test(message)) return null;
+    if (/["'\\]/u.test(message)) return null;
+    return message;
+  } catch {
+    return null;
+  }
+}
+
 function faultSignature(error: unknown): {
   readonly fault: string | null;
   readonly sqlState: string | null;
@@ -509,9 +539,16 @@ function classifyError(
       kind: "unexpected",
       type: error instanceof Error ? "internal" : "unknown",
       ...faultSignature(error),
+      detail: faultDetail(error),
     };
   } catch {
-    return { kind: "unexpected", type: "unknown", fault: null, sqlState: null };
+    return {
+      kind: "unexpected",
+      type: "unknown",
+      fault: null,
+      sqlState: null,
+      detail: null,
+    };
   }
 }
 
@@ -526,6 +563,7 @@ function handleError(error: unknown, ctx: RequestContext): NextResponse {
       type: classified.type,
       ...(classified.fault === null ? {} : { fault: classified.fault }),
       ...(classified.sqlState === null ? {} : { sqlState: classified.sqlState }),
+      ...(classified.detail === null ? {} : { detail: classified.detail }),
     });
   } catch {
     // Returning the fixed 500 takes precedence over a broken logging sink.
