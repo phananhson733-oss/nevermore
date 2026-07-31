@@ -11,11 +11,21 @@ export function ConnectedToolPage({
   locale,
   content,
   children,
+  connected = false,
 }: {
   readonly locale: string;
   readonly content: ConnectedToolContent;
   /** The live tool, when this page has one. Rendered directly under the header. */
   readonly children?: React.ReactNode;
+  /**
+   * True once the visitor has connected the source this page needs.
+   *
+   * The header's "you will need to connect X" block and its hand-off to the
+   * product are written for someone who cannot run the tool here. Leaving them
+   * up after a successful connection contradicts the working tool directly
+   * below them.
+   */
+  readonly connected?: boolean;
 }) {
   const toolsLabel = locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools";
   const homeLabel = locale === "zh" ? "首页" : "Home";
@@ -43,43 +53,46 @@ export function ConnectedToolPage({
           <p className="mt-6 max-w-2xl text-[16px] leading-relaxed text-text-dark-secondary md:text-[18px]">
             {content.description}
           </p>
-          <div className="mt-8 grid max-w-3xl gap-3 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/45 p-5 md:grid-cols-[auto_1fr]">
-            <ShieldCheck
-              aria-hidden="true"
-              className="size-5 text-brand-accent-text"
-            />
-            <div>
-              <p className="text-[13px] font-semibold text-text-dark-primary">
-                {content.sourceLabel}
-              </p>
-              <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">
-                {content.sourceDetail}
+          {connected ? null : (
+            <div className="mt-8 grid max-w-3xl gap-3 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/45 p-5 md:grid-cols-[auto_1fr]">
+              <ShieldCheck
+                aria-hidden="true"
+                className="size-5 text-brand-accent-text"
+              />
+              <div>
+                <p className="text-[13px] font-semibold text-text-dark-primary">
+                  {content.sourceLabel}
+                </p>
+                <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">
+                  {content.sourceDetail}
+                </p>
+              </div>
+            </div>
+          )}
+          {/*
+            The hand-off to the product is for someone who cannot run the tool
+            here. Once they have connected, it contradicts the working tool
+            below; before that, it steps down to a link so two identical primary
+            buttons do not pull people away from the thing they came to run.
+          */}
+          {connected ? null : (
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <a
+                href={siteConfig.appUrl}
+                className={
+                  children
+                    ? "inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-brand-accent-text transition-colors hover:underline"
+                    : "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+                }
+              >
+                {content.cta}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </a>
+              <p className="max-w-md text-[12px] leading-relaxed text-text-dark-secondary">
+                {content.trust}
               </p>
             </div>
-          </div>
-          {/*
-            When the page carries a working tool, this button is no longer the
-            way to use it — it leads to the product's login. Two identical
-            primary buttons, with the marketing one sitting higher, sends people
-            away from the thing they came to run. So it steps down to a link and
-            the tool below keeps the primary action.
-          */}
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <a
-              href={siteConfig.appUrl}
-              className={
-                children
-                  ? "inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-brand-accent-text transition-colors hover:underline"
-                  : "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
-              }
-            >
-              {content.cta}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </a>
-            <p className="max-w-md text-[12px] leading-relaxed text-text-dark-secondary">
-              {content.trust}
-            </p>
-          </div>
+          )}
         </header>
 
         {children ? <div className="pt-10 md:pt-12">{children}</div> : null}

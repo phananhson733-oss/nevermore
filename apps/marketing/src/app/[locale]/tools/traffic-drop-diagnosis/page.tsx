@@ -17,7 +17,7 @@ export default async function TrafficDropDiagnosisPage({ params }: { params: Pro
   const [session, messages] = await Promise.all([readTrafficDropSession(), getMessages()]);
 
   return (
-    <ConnectedToolPage locale={locale} content={getConnectedToolContent(locale, "traffic-drop-diagnosis")}>
+    <ConnectedToolPage locale={locale} content={getConnectedToolContent(locale, "traffic-drop-diagnosis")} connected={session.properties !== null}>
       {/* Only this tool's namespace crosses the client boundary, matching the shell's deliberately small provider. */}
       <NextIntlClientProvider messages={{ tools: { trafficDrop: messages.tools.trafficDrop } }}>
         <TrafficDropTool
