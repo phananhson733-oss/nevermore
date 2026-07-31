@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import createIntlMiddleware from "next-intl/middleware";
-import { routing } from "@/i18n/routing";
+// Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
+// apps/web only, so an aliased import here would not resolve in proxy.test.ts.
+import { routing } from "./i18n/routing";
 
 const intlMiddleware = createIntlMiddleware(routing);
 const localeGoPath = /^\/(?:en|zh)\/go(?:\/|$)/;
@@ -8,6 +10,10 @@ const localeGoPath = /^\/(?:en|zh)\/go(?:\/|$)/;
 const legacyDefaultLocalePrefix = /^\/en(?=\/|$)/;
 /** Header next-intl stamps on the request when it rewrites to the internal locale route. */
 const resolvedLocaleHeader = "x-next-intl-locale";
+/** Shape of next-intl's internal rewrite target: always a locale-prefixed path. */
+const localePrefixedPath = new RegExp(
+  `^/(?:${routing.locales.join("|")})(?=/|$)`,
+);
 const rootShortCodePath = /^\/([a-z0-9][a-z0-9-]{5,79})$/i;
 const reservedRootPaths = new Set([
   "api",
@@ -63,7 +69,19 @@ export function proxy(request: NextRequest): NextResponse {
   // to /pricing — an endless loop. next-intl stamps the resolved locale on the
   // rewritten request, which is what distinguishes it from a real visit to a
   // legacy /en URL, so let it through untouched.
-  if (request.headers.get(resolvedLocaleHeader)) {
+  //
+  // The pathname test is not redundant: request headers are client-controlled,
+  // and the header alone let anyone skip locale routing on any URL — the bare
+  // path then matched no route under app/[locale] and answered 404. next-intl
+  // only ever stamps the header on a path it has already prefixed, so on an
+  // unprefixed pathname it can only have come from the client. Forging it on an
+  // already-prefixed path still passes, which costs nothing: that only serves
+  // the same public page the 308 points at, to a caller who asked for it by
+  // hand.
+  if (
+    localePrefixedPath.test(pathname) &&
+    request.headers.get(resolvedLocaleHeader)
+  ) {
     return NextResponse.next();
   }
 

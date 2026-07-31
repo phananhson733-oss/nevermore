@@ -86,6 +86,12 @@ export default defineConfig({
             "**/.next/**",
           ],
           environment: "node",
+          // next-intl's ESM build imports the bare specifier "next/server",
+          // which pnpm's isolated layout does not expose inside next-intl's own
+          // directory. Inlining routes the import through Vite's resolver,
+          // which finds it from the workspace root, so apps/marketing/src/
+          // proxy.test.ts can drive the real locale middleware.
+          server: { deps: { inline: ["next-intl"] } },
         },
       },
       {
