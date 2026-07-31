@@ -30,10 +30,12 @@ record the actual source page, target, and anchor text it encountered, rather
 than only returning a count. Read Google's [link best practices](https://developers.google.com/search/docs/crawling-indexing/links-crawlable)
 for the underlying crawlability requirements.
 
-In GenGrowth's public audit, the crawl is intentionally limited to static,
-same-origin HTML; a maximum of 25 collected pages; a depth of four; and a
-short time budget. Those limits are a safety boundary, not a quality score.
-They mean a result can say:
+In GenGrowth's public audit, the crawl reads static, same-origin HTML and has
+no normal-use scan quota or fixed customer-facing page allowance. Each online
+run still has technical processing boundaries for elapsed time, request and
+response volume, redirects, concurrency, and host pacing. Those boundaries
+protect the live service; they are not a quality score. They mean a result can
+say:
 
 | Observation | What it supports | What it does not support |
 | --- | --- | --- |
@@ -92,5 +94,5 @@ the important paths on a site understandable for readers and observable in
 your own maintenance process.
 
 Run a [free internal link audit](/en/tools/internal-link-audit) when you have a
-public site to inspect. Its output is intentionally transient and bounded, so
-use the result as evidence for a decision—not as an automatic change list.
+public site to inspect. Its output is intentionally transient, so use the
+result as evidence for a decision—not as an automatic change list.

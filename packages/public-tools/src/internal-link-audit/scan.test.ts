@@ -26,6 +26,8 @@ describe("buildInternalLinkAuditPayload", () => {
   it("derives bounded graph facts and does not call an uncollected target broken", () => {
     const payload = buildInternalLinkAuditPayload(raw());
     expect(payload.run.persistence).toBe("none");
+    expect(payload.run.schemaVersion).toBe("internal_link_audit.v2");
+    expect(payload.result).not.toHaveProperty("maxPages");
     expect(payload.result.nodes).toHaveLength(3);
     expect(payload.result.edges).toEqual([{ from: "page-01", to: "page-02", anchorText: "About" }]);
     expect(payload.result.findings.some((finding) => finding.kind === "orphan_candidate")).toBe(true);

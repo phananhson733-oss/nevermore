@@ -54,7 +54,6 @@ export interface InternalLinkAuditReport {
   readonly stopReason: string | null;
   readonly limitation: string;
   readonly pagesCrawled: number;
-  readonly maxPages: number;
   readonly linksObserved: number;
   readonly sitemapFetched: boolean;
   readonly sitemapUrlsObserved: number;

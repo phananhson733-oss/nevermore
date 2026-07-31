@@ -1,6 +1,5 @@
 import {
   crawlPublicSitePreview,
-  PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 import { createPublicToolResult } from "../contract.ts";
@@ -55,7 +54,7 @@ function isHome(url: string, origin: string): boolean {
 export function buildInternalLinkAuditPayload(
   raw: CrawlRaw,
 ): InternalLinkAuditPayload {
-  const pages = raw.pages.slice(0, PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls);
+  const pages = raw.pages;
   const idByUrl = new Map(pages.map((page, index) => [page.subjectUrl, nodeId(index)]));
   const inbound = new Map<string, number>();
   const firstInbound = new Map<
@@ -177,7 +176,7 @@ export function buildInternalLinkAuditPayload(
       detail: `The target ${pagePath(target)} was not collected in this synchronous crawl.`,
       evidence: `Observed source: ${pagePath(source.source)}; anchor: ${source.anchorText ?? "not provided"}.`,
       limitation:
-        "This is not called a broken link: the target may be outside this run's collected frontier or excluded by robots.",
+        "This is not called a broken link: the target may be outside the collected static-HTML coverage, excluded by robots, or unavailable within this run's resource boundaries.",
       suggestedSourceUrl: source.source,
       observedAnchorText: source.anchorText,
     });
@@ -189,7 +188,6 @@ export function buildInternalLinkAuditPayload(
     stopReason: raw.stopReason,
     limitation: raw.limitation,
     pagesCrawled: pages.length,
-    maxPages: PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls,
     linksObserved: pages.reduce(
       (total, page) => total + page.projection.internalOutlinks.length,
       0,
@@ -203,7 +201,7 @@ export function buildInternalLinkAuditPayload(
   return createPublicToolResult(
     {
       tool: "internal_link_audit",
-      schemaVersion: "internal_link_audit.v1",
+      schemaVersion: "internal_link_audit.v2",
       scope: "bounded_same_origin_static_html_crawl",
       completedAt: raw.capturedAt,
     },

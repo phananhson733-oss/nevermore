@@ -32,6 +32,7 @@ import {
 import { type InternalLinkAuditLocale } from "./internal-link-audit-content";
 import {
   coverageSummary,
+  retryAfterMessage,
   stopReasonLabel,
 } from "./internal-link-audit-result-copy";
 import {
@@ -52,9 +53,9 @@ const COPY = {
     label: "Website URL",
     placeholder: "yourdomain.com",
     start: "Run internal link audit",
-    running: "Crawling public same-origin HTML…",
-    help: "We crawl the site origin, respect robots.txt, and do not store your URL or page content. The tool reads static same-origin HTML only.",
-    scope: "Free · no account or run-count quota · synchronous collection · no login required",
+    running: "Crawling public static HTML…",
+    help: "We start from the submitted public URL, follow same-origin static HTML links, respect robots.txt, and do not store your URL or page content.",
+    scope: "No normal-use scan quota · collects as much as this online run can safely process · no login required",
     progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
     result: "Internal link structure report",
     partial: "Report ready · partial coverage",
@@ -110,6 +111,7 @@ const COPY = {
     findingsBody: "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
     noFindings: "No prioritized structural candidates were found in the pages collected by this run.",
     errorInvalid: "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
+    errorRate: "Unusually high request volume was detected.",
     errorProgress: "An audit for this browser address is already running. Please wait for it to finish.",
     errorTimeout: "The synchronous crawl reached its execution-time boundary before a report could be returned. Large sites may need a future asynchronous scan.",
     errorGeneric: "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
@@ -121,9 +123,9 @@ const COPY = {
     label: "网站 URL",
     placeholder: "yourdomain.com",
     start: "开始内链审计",
-    running: "正在抓取公开同源 HTML…",
-    help: "工具从网站根域开始抓取、遵守 robots.txt，不保存 URL 或页面内容，只读取同源静态 HTML。",
-    scope: "正式免费 · 无账户或次数配额 · 同步采集 · 无需登录",
+    running: "正在抓取公开静态 HTML…",
+    help: "工具从提交的公开 URL 开始，跟随同源静态 HTML 链接、遵守 robots.txt，不保存 URL 或页面内容。",
+    scope: "不设置日常检测次数配额 · 在单次在线处理能力内尽可能采集 · 无需登录",
     progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
     result: "内链结构报告",
     partial: "报告已生成 · 部分覆盖",
@@ -179,6 +181,7 @@ const COPY = {
     findingsBody: "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
     noFindings: "本次已采集页面中未发现需要优先处理的结构候选项。",
     errorInvalid: "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
+    errorRate: "检测到短时间内异常高的请求量。",
     errorProgress: "该浏览器地址已有一次审计正在进行，请等待它完成。",
     errorTimeout: "同步抓取在返回报告前触及执行时间边界。大型网站可能需要后续异步扫描版本。",
     errorGeneric: "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
@@ -219,8 +222,17 @@ function displayPathSegment(url: string): string {
   }
 }
 
-function errorMessage(code: string, copy: ToolCopy): string {
+function errorMessage(
+  code: string,
+  copy: ToolCopy,
+  locale: InternalLinkAuditLocale,
+  retryAfterHeader: string | null,
+): string {
   if (code === "invalid_url" || code === "invalid_request") return copy.errorInvalid;
+  if (code === "rate_limited") {
+    const retry = retryAfterMessage(retryAfterHeader, locale);
+    return retry ? `${copy.errorRate} ${retry}` : copy.errorRate;
+  }
   if (code === "scan_in_progress") return copy.errorProgress;
   if (code === "scan_timeout") return copy.errorTimeout;
   return copy.errorGeneric;
@@ -773,7 +785,18 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
     try {
       const response = await fetch("/api/tools/internal-link-audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
       const body = (await response.json().catch(() => null)) as { data?: InternalLinkAuditPayload; error?: { code?: string } } | null;
-      if (!response.ok || !body?.data) { setError(errorMessage(body?.error?.code ?? "scan_failed", copy)); setPhase("error"); return; }
+      if (!response.ok || !body?.data) {
+        setError(
+          errorMessage(
+            body?.error?.code ?? "scan_failed",
+            copy,
+            locale,
+            response.headers.get("Retry-After"),
+          ),
+        );
+        setPhase("error");
+        return;
+      }
       const initialNodeId = body.data.result.nodes[0]?.id ?? null;
       setPayload(body.data);
       setSelectedNodeId(initialNodeId);
@@ -906,7 +929,16 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                     <span>{label}</span>
                     <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-brand-accent-text" />
                   </dt>
-                  <dd className="mt-3 font-mono text-[24px] leading-none text-text-dark-primary">{value}</dd>
+                  <dd
+                    className="mt-3 font-mono text-[24px] leading-none text-text-dark-primary"
+                    data-testid={
+                      label === copy.mapped
+                        ? "internal-link-pages-collected"
+                        : undefined
+                    }
+                  >
+                    {value}
+                  </dd>
                 </div>
               ))}
             </dl>

@@ -112,33 +112,33 @@ interface InternalLinkAuditContent {
 const EN: InternalLinkAuditContent = {
   metaTitle: "Free Internal Link Audit — Find Orphan Candidates & Weak Internal Links",
   metaDescription:
-    "Audit your internal link structure in one synchronous crawl. Find orphan candidates, weakly linked pages, deep pages, and unresolved targets. Free, no sign-up.",
+    "Audit your internal link structure in one live online crawl. Find orphan candidates, weakly linked pages, deep pages, and unresolved targets. Free, no sign-up.",
   schemaDescription:
-    "A free public internal link audit that synchronously crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
+    "A live public internal link audit that crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
   schemaFeatures: [
-    "Real synchronous same-origin static-HTML crawl",
-    "No account, normal-use run-count limit, or fixed page product quota",
+    "Real same-origin static-HTML crawl",
+    "No normal-use scan quota or fixed customer-facing page allowance",
     "Observed orphan candidates, deep pages, and unresolved targets",
     "Robots.txt and sitemap-aware collection",
     "No Search Console connection or persistent data storage",
   ],
   breadcrumb: "Internal Link Audit",
-  eyebrow: "Free internal link audit · synchronous public crawl",
+  eyebrow: "Free internal link audit · live public crawl",
   title: "Internal Link Audit",
   subtitle:
-    "One synchronous crawl maps observed same-origin HTML links, pages with little observed support, sitemap-only orphan candidates, and targets that need a follow-up check.",
+    "One live crawl maps observed same-origin HTML links, pages with little observed support, sitemap-only orphan candidates, and targets that need a follow-up check.",
   primaryCta: "Run my internal link audit free",
   trustLine: "Free · No sign-up · No software to install · Any public website",
   demoBanner:
-    "This free public tool performs a transient synchronous crawl of static same-origin HTML. It respects robots.txt, stores no report, and never changes your website.",
+    "This public tool performs a transient crawl of static same-origin HTML. It respects robots.txt, stores no report, and never changes your website.",
   formLabel: "Website URL",
   placeholder: "yourdomain.com",
   startCrawl: "Run internal link audit",
-  running: "Building your collected page hierarchy…",
+  running: "Building your live page hierarchy…",
   inputHelp:
     "The tool reads public HTML only — no Search Console, ownership verification, account, or site changes.",
   mockScope:
-    "There is no account, normal-use run-count limit, or fixed page product quota. The synchronous crawler collects as much as the current run can safely cover and marks partial coverage explicitly.",
+    "There is no normal-use scan quota or fixed customer-facing page allowance. Each online run processes as much as it safely can within time, request, response-size, redirect, concurrency, and host-pacing boundaries.",
   invalidUrl: "Enter a public domain or HTTP(S) URL.",
   stages: [
     "Reading homepage and sitemap entry points",
@@ -150,9 +150,9 @@ const EN: InternalLinkAuditContent = {
     "Every metric below is generated from the static-HTML pages collected for the URL you entered in this request.",
   result: {
     summaryEyebrow: "Five-second answer",
-    summaryTitle: "Review the collected structural evidence before changing your site",
+    summaryTitle: "Review observed structural findings before changing your site",
     summaryBody:
-      "Use the observed evidence and its limitations to decide what to verify. This free public tool never makes automatic changes to your site.",
+      "Use the observed evidence and its limitations to decide what to verify. This online audit never makes automatic changes to your site.",
     mappedPages: "Pages mapped",
     internalLinks: "HTML internal links",
     orphanPages: "Orphan pages",
@@ -176,7 +176,7 @@ const EN: InternalLinkAuditContent = {
     selectPrompt: "Choose a node or finding to inspect its evidence.",
     sampleLabel: "Crawl scope",
     fixedData:
-      "Real synchronous crawl · static HTML · same origin · no stored report",
+      "Real online crawl · static HTML · same origin · no stored report",
     fourPartTitle: "From finding to a fix you can review",
     observation: "Observation",
     observationBody:
@@ -190,12 +190,12 @@ const EN: InternalLinkAuditContent = {
     artifact: "Artifact",
     artifactBody:
       "A review-ready link brief with source URL, target URL, insertion context, anchor suggestion, evidence limit, and a re-crawl check.",
-    exportPreview: "This free tool returns a transient visual report; CSV export is not included.",
+    exportPreview: "This online tool is a transient visual report; CSV export is not included.",
   },
   howEyebrow: "How it works",
   howTitle: "Four steps from a domain to a repair list",
   howIntro:
-    "Enter a public website and receive a transient report based on the static same-origin HTML collected by this synchronous request.",
+    "Enter a public website and receive a transient report based on the static same-origin HTML collected for this request.",
   howSteps: [
     {
       title: "1. Enter your domain",
@@ -203,7 +203,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "2. We crawl and build the tree",
-      body: "The crawler starts from allowed site entry points, respects robots.txt, follows same-origin HTML links, and records the structural evidence collected in this run.",
+      body: "The crawler starts from allowed site entry points, respects robots.txt, follows same-origin HTML links, and records observed structural evidence.",
     },
     {
       title: "3. Review what the structure exposes",
@@ -215,7 +215,7 @@ const EN: InternalLinkAuditContent = {
     },
   ],
   findsEyebrow: "What it finds",
-  findsTitle: "A synchronous internal link audit shows structural evidence",
+  findsTitle: "A live internal link audit shows structural evidence",
   findsIntro:
     "It inspects the connections between pages, not just the contents of one URL.",
   findings: [
@@ -233,7 +233,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "Pages with one or fewer observed inbound links",
-      body: "These pages are not necessarily orphans, but they have one or fewer observed inbound HTML links in this synchronous crawl.",
+      body: "These pages are not necessarily orphans, but they have one or fewer observed inbound HTML links in this online run.",
     },
     {
       title: "Observed inbound relationships",
@@ -265,11 +265,11 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "What counts as thin-linked",
-      body: "One or fewer observed inbound HTML links in this synchronous crawl. Navigation, JavaScript-rendered links, and uncollected pages can change this count.",
+      body: "One or fewer observed inbound HTML links in this online run. Navigation, JavaScript-rendered links, and uncollected pages can change this count.",
     },
     {
       title: "Where a crawl starts and stops",
-      body: "The crawler stays on the validated origin, respects robots.txt, uses allowed site entry points, and stops at an explicit page, time, request, or safety boundary.",
+      body: "The crawler stays on the validated origin, respects robots.txt, uses allowed site entry points, and may stop at an explicit time, request, response-size, redirect, concurrency, or host-pacing boundary.",
     },
   ],
   limitsEyebrow: "Honest limits",
@@ -318,7 +318,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Do I need Search Console or site verification?",
       answer:
-        "No. The public audit reads public pages and does not require OAuth, a verification file, or ownership. It makes a transient bounded request only after you submit a URL.",
+        "No. The online audit reads public pages and does not require OAuth, a verification file, or ownership. It makes a transient request only after you submit a URL.",
     },
     {
       question: "Does this find orphan pages?",
@@ -328,7 +328,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "How much of a site will the free audit crawl?",
       answer:
-        "There is no account, normal-use run-count limit, or fixed page product quota. The current synchronous crawler collects as much as it can within technical safety boundaries; large sites may receive partial coverage.",
+        "There is no normal-use scan quota or fixed customer-facing page allowance. Each run collects as much static same-origin HTML as it can within its online time, request, response-size, redirect, concurrency, and host-pacing boundaries, and reports partial coverage when one of those boundaries stops it.",
     },
     {
       question: "How often should I audit internal links?",
@@ -353,7 +353,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Can I export the results?",
       answer:
-        "Not in this free tool. It shows a transient visual report only and does not claim to create or store a CSV export.",
+        "Not in this online tool. It shows a transient visual report only and does not claim to create or store a CSV export.",
     },
   ],
   relatedEyebrow: "Continue exploring",
@@ -380,18 +380,18 @@ const EN: InternalLinkAuditContent = {
 const ZH: InternalLinkAuditContent = {
   metaTitle: "免费内链审计：发现候选孤岛、低入链页面与结构缺口",
   metaDescription:
-    "通过一次同步内链审计发现候选孤岛、低入链页面、观测抓取深度和待验证目标；正式免费，无需登录或安装软件。",
+    "通过一次实时在线内链审计发现候选孤岛、低入链页面、观测抓取深度和待验证目标；免费使用，无需登录或安装软件。",
   schemaDescription:
-    "GenGrowth 内链审计会同步抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
+    "GenGrowth 内链审计会在线抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
   schemaFeatures: [
-    "真实的同步同源静态 HTML 抓取",
-    "无需账户，不限制正常使用次数，也不设固定页面产品额度",
+    "真实的同源静态 HTML 抓取",
+    "不设置日常检测次数配额或固定的前台页数额度",
     "候选孤岛、深层页面与未验证目标",
     "感知 robots.txt 与 Sitemap 的采集",
     "不连接 Search Console、不持久化保存数据",
   ],
   breadcrumb: "内链审计",
-  eyebrow: "免费内链审计 · 同步公开抓取",
+  eyebrow: "免费内链审计 · 实时公开抓取",
   title: "内链审计",
   subtitle:
     "一次看清站内页面之间的关系：哪些链接已经失效、哪些页面没有任何入口，以及哪些重要内容没有获得你的网站本来可以传递的权重。",
@@ -402,21 +402,21 @@ const ZH: InternalLinkAuditContent = {
   formLabel: "网站 URL",
   placeholder: "yourdomain.com",
   startCrawl: "开始内链审计",
-  running: "正在构建已采集页面层级…",
+  running: "正在构建实时页面层级…",
   inputHelp:
     "工具仅读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
   mockScope:
-    "无需账户，不限制正常使用次数，也不设固定页面产品额度。同步爬虫会在当前运行能力内尽可能采集，并明确标注不完整覆盖。",
+    "不设置日常检测次数配额或固定的前台页数额度。每次在线运行会在时间、请求量、响应体积、重定向、并发和主机访问节奏等技术边界内尽可能采集。",
   invalidUrl: "请输入公开域名或 HTTP(S) URL。",
   stages: ["读取首页与 Sitemap 入口", "建立页面之间的 HTML 链接关系", "排序结构缺口"],
-  demoResultLabel: "本次抓取结果",
+  demoResultLabel: "实时抓取结果",
   demoResultBody:
     "下方全部指标来自本次为你输入 URL 采集的静态 HTML 页面。",
   result: {
     summaryEyebrow: "5 秒结论",
     summaryTitle: "改动网站前，先复核有明确边界的结构发现",
     summaryBody:
-      "请根据观测证据及其限制决定需要复核什么。这个正式免费工具不会自动修改你的网站。",
+      "请根据观测证据及其限制决定需要复核什么。此在线审计不会自动修改你的网站。",
     mappedPages: "已映射页面",
     internalLinks: "HTML 内链",
     orphanPages: "孤岛页面",
@@ -440,7 +440,7 @@ const ZH: InternalLinkAuditContent = {
     selectPrompt: "请选择一个节点或问题，查看对应证据。",
     sampleLabel: "抓取范围",
     fixedData:
-      "真实同步抓取 · 静态 HTML · 同源 · 不保存报告",
+      "真实在线抓取 · 静态 HTML · 同源 · 不保存报告",
     fourPartTitle: "从发现问题到可审核的修复动作",
     observation: "Observation",
     observationBody:
@@ -454,7 +454,7 @@ const ZH: InternalLinkAuditContent = {
     artifact: "Artifact",
     artifactBody:
       "形成一条可审核的补链任务：来源 URL、目标 URL、插入语境、锚文本建议、证据边界与复验条件。",
-    exportPreview: "这个免费工具提供临时可视化报告，暂不包含 CSV 导出。",
+    exportPreview: "此在线工具仅提供临时可视化报告，暂不包含 CSV 导出。",
   },
   howEyebrow: "使用流程",
   howTitle: "从一个域名到修复清单，只需四步",
@@ -467,7 +467,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "2. 爬取并建立树状结构",
-      body: "爬虫从允许的网站入口开始，尊重 robots.txt，跟随同源 HTML 链接，并记录本次运行实际采集的结构证据。",
+      body: "爬虫从允许的网站入口开始，尊重 robots.txt，跟随同源 HTML 链接，并记录本次在线运行中观测到的结构证据。",
     },
     {
       title: "3. 查看结构暴露的问题",
@@ -479,7 +479,7 @@ const ZH: InternalLinkAuditContent = {
     },
   ],
   findsEyebrow: "能发现什么",
-  findsTitle: "同步内链审计呈现可复核的结构证据",
+  findsTitle: "实时内链审计呈现可复核的结构证据",
   findsIntro: "它检查的是页面之间的连接，而不是单独某一个 URL 的内容。",
   findings: [
     {
@@ -496,7 +496,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "只有一条或没有观测入链的页面",
-      body: "它们不一定是孤岛，但在本次同步抓取中只有一条或没有观测到的 HTML 入链。",
+      body: "它们不一定是孤岛，但在本次在线运行中只有一条或没有观测到的 HTML 入链。",
     },
     {
       title: "已观测的入链关系",
@@ -528,11 +528,11 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "什么算低入链",
-      body: "在本次同步抓取中只有一条或没有观测到的 HTML 入链。导航、JavaScript 生成链接和未采集页面都可能改变这个计数。",
+      body: "在本次在线运行中只有一条或没有观测到的 HTML 入链。导航、JavaScript 生成链接和未采集页面都可能改变这个计数。",
     },
     {
       title: "抓取从哪里开始、在哪里停止",
-      body: "爬虫限制在已验证同源、尊重 robots.txt、使用允许的网站入口，并在明确的页面数、时间、请求数或安全边界停止。",
+      body: "爬虫限制在已验证同源、尊重 robots.txt、使用允许的网站入口，并可能在时间、请求量、响应体积、重定向、并发或主机访问节奏等技术边界停止。",
     },
   ],
   limitsEyebrow: "诚实边界",
@@ -591,7 +591,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "免费审计会覆盖多少页面？",
       answer:
-        "无需账户，不限制正常使用次数，也不设固定页面产品额度。当前同步爬虫会在技术安全边界内尽可能采集；大型网站可能只得到部分覆盖。",
+        "不设置日常检测次数配额或固定的前台页数额度。每次在线运行会在时间、请求量、响应体积、重定向、并发和主机访问节奏等技术边界内尽可能采集同源静态 HTML；如提前停止，结果会明确标注覆盖不完整。",
     },
     {
       question: "多久应该做一次内链审计？",
@@ -616,7 +616,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "可以导出结果吗？",
       answer:
-        "当前免费工具不提供导出。它只展示瞬时可视化报告，也不会声称已经创建或保存 CSV。",
+        "当前在线工具不提供导出。它只展示瞬时可视化报告，也不会声称已经创建或保存 CSV。",
     },
   ],
   relatedEyebrow: "继续探索",

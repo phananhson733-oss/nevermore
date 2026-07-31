@@ -9,7 +9,9 @@ import {
   type InternalLinkAuditUrlResult,
 } from "@sf/public-tools";
 import {
+  checkRateLimit,
   extractClientIp,
+  type RateLimitResult,
 } from "../rate-limit.ts";
 import {
   acquirePublicCrawlSlot,
@@ -17,12 +19,19 @@ import {
 } from "./public-tool-request.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
+const ABUSE_FUSE_MAX = 30;
+const ABUSE_FUSE_WINDOW_MS = 10 * 60 * 1_000;
 
 export interface InternalLinkAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => InternalLinkAuditUrlResult;
   readonly scan: (url: string) => Promise<InternalLinkAuditRaw>;
   readonly buildPayload: (raw: InternalLinkAuditRaw) => InternalLinkAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
+  readonly rateLimit: (
+    key: string,
+    maxRequests: number,
+    windowMs: number,
+  ) => RateLimitResult;
 }
 
 const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
@@ -30,6 +39,7 @@ const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
   scan: scanInternalLinkAuditSite,
   buildPayload: buildInternalLinkAuditPayload,
   extractClientIp,
+  rateLimit: checkRateLimit,
 };
 
 function json(
@@ -85,6 +95,16 @@ export async function handleInternalLinkAuditRequest(
     });
   }
   try {
+    const abuseFuse = dependencies.rateLimit(
+      `tools:internal-link-audit:abuse:ip:${ip}`,
+      ABUSE_FUSE_MAX,
+      ABUSE_FUSE_WINDOW_MS,
+    );
+    if (!abuseFuse.allowed) {
+      return json(createPublicToolError("rate_limited"), 429, {
+        "Retry-After": String(abuseFuse.retryAfterSeconds),
+      });
+    }
     const raw = await dependencies.scan(normalized.url);
     return json({ data: dependencies.buildPayload(raw) }, 200);
   } catch (error) {

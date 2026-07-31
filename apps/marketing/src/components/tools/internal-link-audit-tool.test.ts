@@ -4,6 +4,7 @@ import type { InternalLinkAuditPayload } from "@sf/public-tools";
 
 import {
   coverageSummary,
+  retryAfterMessage,
   stopReasonLabel,
 } from "./internal-link-audit-result-copy";
 
@@ -18,7 +19,6 @@ function report(
     stopReason: "max_urls",
     limitation: "Backend-only limitation text.",
     pagesCrawled: 4,
-    maxPages: 2_000,
     linksObserved: 3,
     sitemapFetched: true,
     sitemapUrlsObserved: 10,
@@ -31,11 +31,11 @@ function report(
 
 describe("internal link audit result copy", () => {
   it.each([
-    ["max_urls", "Synchronous page-safety boundary reached", "已达到同步扫描页面安全边界"],
-    ["max_depth", "Synchronous depth-safety boundary reached", "已达到同步扫描深度安全边界"],
-    ["max_duration", "Synchronous time-safety boundary reached", "已达到同步扫描处理时长安全边界"],
-    ["max_total_bytes", "Synchronous response-data safety boundary reached", "已达到同步扫描响应数据安全边界"],
-    ["max_requests", "Synchronous request-safety boundary reached", "已达到同步扫描请求安全边界"],
+    ["max_urls", "Collection boundary reached", "已达到本次采集处理边界"],
+    ["max_depth", "Crawl depth limit reached", "已达到抓取深度上限"],
+    ["max_duration", "Time limit reached", "已达到处理时长上限"],
+    ["max_total_bytes", "Response data limit reached", "已达到响应数据量上限"],
+    ["max_requests", "Request limit reached", "已达到请求次数上限"],
     ["aborted", "Collection ended early", "本次采集提前结束"],
   ])("localizes %s without exposing the raw reason", (reason, en, zh) => {
     expect(stopReasonLabel(reason, "en")).toBe(en);
@@ -51,10 +51,10 @@ describe("internal link audit result copy", () => {
 
   it("builds a user-facing partial coverage summary", () => {
     expect(coverageSummary(report(), "en")).toBe(
-      "Collected 4 page(s) before the synchronous page-safety boundary was reached. You can review the available results, but they do not represent complete site coverage.",
+      "Collected 4 page(s) before this online run reached a processing boundary. You can review the available evidence, but it does not represent complete site coverage.",
     );
     expect(coverageSummary(report(), "zh")).toBe(
-      "本次已采集 4 个页面；达到同步扫描页面安全边界后停止。当前结果可继续查看，但不能代表整站完整覆盖。",
+      "本次在线扫描已采集 4 个页面，并在达到处理边界后停止。当前证据仍可继续查看，但不能代表整站完整覆盖。",
     );
   });
 
@@ -65,10 +65,17 @@ describe("internal link audit result copy", () => {
       pagesCrawled: 7,
     });
     expect(coverageSummary(completed, "en")).toBe(
-      "Collected 7 page(s) and completed within the configured safety limits.",
+      "Collected 7 reachable static HTML page(s) in this online run.",
     );
     expect(coverageSummary(completed, "zh")).toBe(
-      "本次已采集 7 个页面，并在预设安全范围内完成。",
+      "本次在线扫描已采集 7 个可访问的静态 HTML 页面。",
     );
+  });
+
+  it("formats a trusted Retry-After value without inventing a wait time", () => {
+    expect(retryAfterMessage("42", "en")).toBe("Try again in 42 seconds.");
+    expect(retryAfterMessage("42", "zh")).toBe("请在 42 秒后重试。");
+    expect(retryAfterMessage("Fri, 31 Jul 2026 12:00:00 GMT", "en")).toBeNull();
+    expect(retryAfterMessage(null, "zh")).toBeNull();
   });
 });
