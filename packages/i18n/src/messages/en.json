@@ -532,7 +532,8 @@
         "markets": "One primary market",
         "primaryIcp": "Complete Primary ICP",
         "competitors": "Valid competitor review"
-      }
+      },
+      "missingFields": "Still needed: {fields}"
     }
   },
   "context": {

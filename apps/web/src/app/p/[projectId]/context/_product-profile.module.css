@@ -842,6 +842,20 @@
   border-bottom: 1px solid var(--sf-border);
 }
 
+.checklistLabel {
+  display: grid;
+  gap: 3px;
+  padding: 9px 0;
+}
+
+.checklistLabel em {
+  color: var(--sf-amber-text);
+  font-size: 12.5px;
+  font-style: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .checklist li > svg,
 .checklist li > span:first-child {
   display: grid;

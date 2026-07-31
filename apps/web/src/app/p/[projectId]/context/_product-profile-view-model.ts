@@ -34,6 +34,15 @@ export type ConfirmationItemId =
 export interface ConfirmationItem {
   readonly id: ConfirmationItemId;
   readonly complete: boolean;
+  /**
+   * Editable field keys that are blocking this item, named so the customer can
+   * go fill exactly those instead of hunting through the editor. Only the ICP
+   * item populates this today: it gates on six separate list fields, and a
+   * single empty one silently blocks confirmation and every downstream step.
+   * The other items gate on one or two fields that the page already shows in
+   * full, so naming them would add noise rather than direction.
+   */
+  readonly missingFieldKeys: readonly string[];
 }
 
 export interface ProductProfileViewModel {
@@ -136,23 +145,43 @@ function supported(profile: ProductProfileDraft, paths: readonly string[]): bool
   );
 }
 
+/** Every list field a primary ICP must fill before the profile can be confirmed. */
+const PRIMARY_ICP_REQUIRED_LIST_FIELDS = [
+  "buyerRoles",
+  "userRoles",
+  "useCases",
+  "triggers",
+  "pains",
+  "jtbd",
+] as const;
+
+/**
+ * Name the fields blocking the primary ICP, in the order the editor shows them.
+ * Returns an empty list once every required field is filled; a complete list
+ * still needs traceable provenance, which hasPrimaryIcp checks separately
+ * because it is not something the customer fixes by typing.
+ */
+function primaryIcpMissingFieldKeys(
+  audience: ProductProfileTargetAudience | null,
+): readonly string[] {
+  if (!audience) {
+    return ["targetCompanyOrAudience", ...PRIMARY_ICP_REQUIRED_LIST_FIELDS];
+  }
+  const missing: string[] = [];
+  if (!hasText(audience.targetCompanyOrAudience)) {
+    missing.push("targetCompanyOrAudience");
+  }
+  for (const key of PRIMARY_ICP_REQUIRED_LIST_FIELDS) {
+    if (audience[key].length === 0) missing.push(key);
+  }
+  return missing;
+}
+
 function hasPrimaryIcp(
   profile: ProductProfileDraft,
   audience: ProductProfileTargetAudience | null,
 ): boolean {
-  if (!audience || !hasText(audience.targetCompanyOrAudience)) return false;
-  if (
-    [
-      audience.buyerRoles,
-      audience.userRoles,
-      audience.useCases,
-      audience.triggers,
-      audience.pains,
-      audience.jtbd,
-    ].some((values) => values.length === 0)
-  ) {
-    return false;
-  }
+  if (primaryIcpMissingFieldKeys(audience).length > 0) return false;
   return supported(profile, ["/targetAudiences"]);
 }
 
@@ -181,17 +210,21 @@ function confirmationItems(
     profile.competitorCandidates.length === 0 ||
     supported(profile, ["/competitorCandidates"]);
 
+  const icpMissingFieldKeys = primaryIcpMissingFieldKeys(primaryAudience);
+
   return [
     {
       id: "identity",
       complete:
         identityValues.every(hasText) && supported(profile, identityPaths),
+      missingFieldKeys: [],
     },
     {
       id: "business",
       complete:
         profile.businessModels.length > 0 &&
         supported(profile, ["/businessModels"]),
+      missingFieldKeys: [],
     },
     {
       id: "value",
@@ -199,20 +232,24 @@ function confirmationItems(
         hasText(profile.valueProposition) &&
         profile.coreFeatures.length > 0 &&
         supported(profile, ["/valueProposition", "/coreFeatures"]),
+      missingFieldKeys: [],
     },
     {
       id: "markets",
       complete:
         profile.targetMarkets.filter((market) => market.priority === "primary")
           .length === 1 && supported(profile, ["/targetMarkets"]),
+      missingFieldKeys: [],
     },
     {
       id: "primaryIcp",
       complete: hasPrimaryIcp(profile, primaryAudience),
+      missingFieldKeys: icpMissingFieldKeys,
     },
     {
       id: "competitors",
       complete: approvedCompetitorsValid && competitorEvidence,
+      missingFieldKeys: [],
     },
   ];
 }

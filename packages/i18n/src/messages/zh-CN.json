@@ -532,7 +532,8 @@
         "markets": "一个主要市场",
         "primaryIcp": "完整的核心 ICP",
         "competitors": "有效的竞品审核"
-      }
+      },
+      "missingFields": "还需补齐：{fields}"
     }
   },
   "context": {
