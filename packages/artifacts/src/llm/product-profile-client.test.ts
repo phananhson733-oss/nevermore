@@ -1038,6 +1038,90 @@ describe("OpenAIProductProfileClient", () => {
     });
   });
 
+  it("names the schema paths a rejected candidate failed", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...EMPTY_CANDIDATE,
+          productName: { ...EMPTY_SCALAR, confidence: "extremely-high" },
+        }),
+      ),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect((error as LLMError).code).toBe("SCHEMA_INVALID");
+    expect((error as LLMError).detail).toContain("productName.confidence");
+  });
+
+  it("keeps the rejected response's own text out of the schema detail", async () => {
+    // A value the schema will reject while carrying text that must not travel
+    // with the diagnosis: this stands in for whatever a customer's site said.
+    const canary = "CANARY-a7f3-do-not-log";
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...EMPTY_CANDIDATE,
+          businessModels: canary,
+          smuggled: canary,
+        }),
+      ),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    const detail = (error as LLMError).detail;
+    expect(detail).not.toBeNull();
+    expect(detail).toContain("businessModels");
+    expect(detail).not.toContain(canary);
+  });
+
+  it("leaves the detail empty when the failure is not a schema rejection", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(chatResponse("not-json")),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect((error as LLMError).code).toBe("SCHEMA_INVALID");
+    expect((error as LLMError).detail).toBeNull();
+  });
+
+  it("bounds the schema detail and says how much it left out", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      // An empty object fails every required key at once, which is exactly the
+      // case where an unbounded digest would be longest.
+      fetchImpl: vi.fn().mockResolvedValue(chatResponse({})),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    const detail = (error as LLMError).detail ?? "";
+    expect(detail.split(" ").filter((part) => part.includes(":"))).toHaveLength(
+      8,
+    );
+    expect(detail).toMatch(/\(\+\d+ more\)$/u);
+  });
+
   it.each([
     ["HTML", "<script>alert(1)</script>"],
     ["control characters", "Relay\u0007Ops"],

@@ -27,6 +27,12 @@ export function generatePageMetadata({
   const alternateLocale = locale === "en" ? "zh" : "en";
   const alternateUrl = localeUrl(alternateLocale, path);
   const ogImage = image || `${siteConfig.url}/images/og-default.png`;
+  /**
+   * `title` 走 root layout 的 `title.template`（`%s — GenGrowth`），但那个
+   * 模板**只作用于 <title>**，不作用于 openGraph/twitter。所以分享卡片的
+   * 标题要在这里显式补品牌名，否则社交平台上只剩裸标题。
+   */
+  const socialTitle = `${title} — ${siteConfig.name}`;
 
   return {
     title,
@@ -40,7 +46,7 @@ export function generatePageMetadata({
       },
     },
     openGraph: {
-      title,
+      title: socialTitle,
       description,
       url,
       siteName: siteConfig.name,
@@ -57,7 +63,7 @@ export function generatePageMetadata({
     twitter: {
       card: "summary_large_image",
       site: "@gengrowth",
-      title,
+      title: socialTitle,
       description,
       images: [ogImage],
     },

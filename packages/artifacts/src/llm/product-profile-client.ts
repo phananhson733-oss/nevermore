@@ -935,6 +935,42 @@ function buildInvocation(params: {
  * model output: U+200C/U+200D carry meaning in Persian, Arabic and Indic
  * scripts and in emoji ZWJ sequences, and `\n` is `\p{Cc}`.
  */
+/** Distinct issue paths to name before truncating; enough to see a pattern. */
+const MAX_REPORTED_SCHEMA_ISSUES = 8;
+
+/**
+ * Say which parts of a rejected candidate were wrong, without saying what they
+ * said.
+ *
+ * A bare SCHEMA_INVALID cannot distinguish a model that omitted one required
+ * field from one that returned a different shape entirely, so the only way to
+ * learn which happened is to replay the request against the provider. A Zod
+ * issue path is a list of field names from our own schema and the issue code is
+ * from Zod's fixed vocabulary, so together they locate the failure using no
+ * information the response supplied.
+ *
+ * Deliberately excluded: `issue.message` (interpolates received values),
+ * `unrecognized_keys.keys` (model-chosen text), and every other issue field.
+ * Array indices collapse to `[]` because which element failed adds nothing
+ * once the path is known, and a large index leaks how long the response was.
+ */
+function schemaIssueDigest(error: z.ZodError): string {
+  const seen = new Set<string>();
+  let read = 0;
+  for (const issue of error.issues) {
+    if (seen.size >= MAX_REPORTED_SCHEMA_ISSUES) break;
+    read += 1;
+    const path = issue.path
+      .map((segment) => (typeof segment === "number" ? "[]" : segment))
+      .join(".");
+    seen.add(`${path === "" ? "<root>" : path}:${issue.code}`);
+  }
+  if (seen.size === 0) return "<no issues reported>";
+  const unread = error.issues.length - read;
+  const named = [...seen].join(" ");
+  return unread > 0 ? `${named} (+${unread} more)` : named;
+}
+
 function hasUnsafeRawContent(value: unknown): boolean {
   if (typeof value === "string") {
     const flattened = value
@@ -1141,6 +1177,7 @@ export class OpenAIProductProfileClient
         prepared.inputHash,
         response.usage,
         startedAt,
+        schemaIssueDigest(parsed.error),
       );
     }
     if (hasUnsafeRawContent(parsed.data)) {
@@ -1187,6 +1224,7 @@ export class OpenAIProductProfileClient
     inputHash: string,
     usage: OpenAIUsage,
     startedAt: number,
+    detail: string | null = null,
   ): LLMError {
     return new LLMError(
       code,
@@ -1201,6 +1239,7 @@ export class OpenAIProductProfileClient
         errorCode: code,
         promptSetVersion: this.promptSetVersion,
       }),
+      detail,
     );
   }
 }
