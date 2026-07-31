@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How Agency Rank Tracking Quietly Decides Your Reporting Margin
+heroImage: /images/blog/agency-rank-tracking.jpg
+heroImageAlt: An abstract editorial illustration for How Agency Rank Tracking Quietly Decides Your Reporting Margin
 localeExclusive: true
 ---
 

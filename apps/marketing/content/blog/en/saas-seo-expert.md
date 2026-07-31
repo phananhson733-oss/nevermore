@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for What a SaaS SEO Expert Actually Covers Before You Hire One
+heroImage: /images/blog/saas-seo-expert.jpg
+heroImageAlt: An abstract editorial illustration for What a SaaS SEO Expert Actually Covers Before You Hire One
 localeExclusive: true
 ---
 

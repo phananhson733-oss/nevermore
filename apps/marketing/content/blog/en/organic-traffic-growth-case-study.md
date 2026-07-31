@@ -7,8 +7,8 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-03-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How We Grew Organic Traffic 340% in 90 Days
+heroImage: /images/blog/organic-traffic-growth-case-study.jpg
+heroImageAlt: An abstract editorial illustration for How We Grew Organic Traffic 340% in 90 Days
 localeExclusive: false
 ---
 

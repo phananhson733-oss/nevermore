@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How World Cup 2026 Content Marketing AI Splits Work Between Bots and Editors
+heroImage: /images/blog/world-cup-2026-content-marketing-ai.jpg
+heroImageAlt: An abstract editorial illustration for How World Cup 2026 Content Marketing AI Splits Work Between Bots and Editors
 localeExclusive: true
 ---
 

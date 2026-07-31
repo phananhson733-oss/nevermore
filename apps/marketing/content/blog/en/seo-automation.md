@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for SEO Automation by Task: How Many Hours Each One Actually Returns Per Month
+heroImage: /images/blog/seo-automation.jpg
+heroImageAlt: An abstract editorial illustration for SEO Automation by Task: How Many Hours Each One Actually Returns Per Month
 localeExclusive: true
 ---
 

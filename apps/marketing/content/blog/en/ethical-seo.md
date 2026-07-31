@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-22
 updatedAt: 2026-06-22
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why Ethical SEO Is the Compounding Half of Your Traffic
+heroImage: /images/blog/ethical-seo.jpg
+heroImageAlt: An abstract editorial illustration for Why Ethical SEO Is the Compounding Half of Your Traffic
 localeExclusive: true
 ---
 

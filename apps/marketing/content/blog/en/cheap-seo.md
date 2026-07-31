@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Cheap SEO: Which Low-Cost Tactics Compound and Which Reset at the Next Core Update
+heroImage: /images/blog/cheap-seo.jpg
+heroImageAlt: An abstract editorial illustration for Cheap SEO: Which Low-Cost Tactics Compound and Which Reset at the Next Core Update
 localeExclusive: true
 ---
 
