@@ -9,19 +9,19 @@ const STOP_REASON_LABELS: Record<
   Readonly<Record<string, string>>
 > = {
   en: {
-    max_urls: "Page limit reached",
-    max_depth: "Crawl depth limit reached",
-    max_duration: "Time limit reached",
-    max_total_bytes: "Response data limit reached",
-    max_requests: "Request limit reached",
+    max_urls: "Synchronous page-safety boundary reached",
+    max_depth: "Synchronous depth-safety boundary reached",
+    max_duration: "Synchronous time-safety boundary reached",
+    max_total_bytes: "Synchronous response-data safety boundary reached",
+    max_requests: "Synchronous request-safety boundary reached",
     aborted: "Collection ended early",
   },
   zh: {
-    max_urls: "已达到页面数量上限",
-    max_depth: "已达到抓取深度上限",
-    max_duration: "已达到处理时长上限",
-    max_total_bytes: "已达到响应数据量上限",
-    max_requests: "已达到请求次数上限",
+    max_urls: "已达到同步扫描页面安全边界",
+    max_depth: "已达到同步扫描深度安全边界",
+    max_duration: "已达到同步扫描处理时长安全边界",
+    max_total_bytes: "已达到同步扫描响应数据安全边界",
+    max_requests: "已达到同步扫描请求安全边界",
     aborted: "本次采集提前结束",
   },
 };
@@ -51,8 +51,8 @@ export function coverageSummary(
 
   if (report.stopReason === "max_urls") {
     return locale === "zh"
-      ? `本次已采集 ${report.pagesCrawled} 个页面；达到 ${report.maxPages} 页安全预算后停止。当前结果可继续查看，但不能代表整站完整覆盖。`
-      : `Collected ${report.pagesCrawled} page(s) before the ${report.maxPages}-page safety budget was reached. You can review the available results, but they do not represent complete site coverage.`;
+      ? `本次已采集 ${report.pagesCrawled} 个页面；达到同步扫描页面安全边界后停止。当前结果可继续查看，但不能代表整站完整覆盖。`
+      : `Collected ${report.pagesCrawled} page(s) before the synchronous page-safety boundary was reached. You can review the available results, but they do not represent complete site coverage.`;
   }
 
   return locale === "zh"

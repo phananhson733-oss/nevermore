@@ -104,18 +104,26 @@ describe("site-wide SEO audit model", () => {
 
     expect(payload.run).toEqual({
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v2",
+      schemaVersion: "seo_audit.sitewide.v3",
       mode: "public_preview",
-      scope: "bounded_same_origin_static_html_audit",
+      scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
       completedAt: "2026-07-30T09:00:00.000Z",
     });
-    expect(payload.result.coverage).toMatchObject({
+    expect(payload.result).toMatchObject({
+      targetUrl: "https://acme.test/",
+      siteOrigin: "https://acme.test",
+    });
+    expect(payload.result.coverage).toEqual({
       availability: "available",
       pagesInspected: 2,
-      maxPages: 25,
-      maxDepth: 4,
-      maxRequests: 60,
+      linksObserved: 2,
+      sitemapUrlsObserved: 2,
+      urlsSkipped: 0,
+      urlsBlocked: 0,
+      urlsDisallowed: 0,
+      urlsErrored: 0,
+      stopReason: null,
     });
     expect(payload.result.pages).toHaveLength(2);
 
@@ -158,7 +166,7 @@ describe("site-wide SEO audit model", () => {
     ).toEqual(["https://acme.test/", "https://acme.test/a"]);
   });
 
-  it("marks page-limit coverage as partial without evaluating site quality", () => {
+  it("marks a technical page-safety stop as partial without evaluating site quality", () => {
     const report = buildSeoAuditReport(
       raw({
         availability: "partial",
@@ -199,6 +207,22 @@ describe("site-wide SEO audit model", () => {
     );
 
     expect(report.targetUrl).toBe("https://acme.test/zh");
+  });
+
+  it("reports the canonical crawl origin separately from an apex entry URL", () => {
+    const report = buildSeoAuditReport(
+      raw({
+        requestedUrl: "https://acme.test/",
+        origin: "https://www.acme.test",
+        host: "www.acme.test",
+        pages: [
+          page("https://www.acme.test/", { title: "Canonical home" }, 0),
+        ],
+      }),
+    );
+
+    expect(report.targetUrl).toBe("https://acme.test/");
+    expect(report.siteOrigin).toBe("https://www.acme.test");
   });
 
   it("does not infer robots indexability for a non-2xx response", () => {

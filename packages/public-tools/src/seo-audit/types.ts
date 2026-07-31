@@ -32,7 +32,8 @@ export interface SeoAuditObservation {
  *
  * Records deliberately contain no score, severity, priority, diagnosis, or
  * remediation field. A record states only whether a named condition was
- * observed in the bounded crawl and exposes the supporting measurements.
+ * observed in the collected crawl evidence and exposes the supporting
+ * measurements.
  */
 export interface SeoAuditRecord {
   readonly id: string;
@@ -75,9 +76,6 @@ export interface SeoAuditPage {
 export interface SeoAuditCoverage {
   readonly availability: SeoAuditAvailability;
   readonly pagesInspected: number;
-  readonly maxPages: number;
-  readonly maxDepth: number;
-  readonly maxRequests: number;
   readonly linksObserved: number;
   readonly sitemapUrlsObserved: number;
   readonly urlsSkipped: number;
@@ -95,7 +93,10 @@ export interface SeoAuditSiteResources {
 }
 
 export interface SeoAuditReport {
+  /** The submitted URL, retained even when the site redirects to its canonical origin. */
   readonly targetUrl: string;
+  /** The final public origin selected after allowed entry redirects. */
+  readonly siteOrigin: string;
   readonly scannedAt: string;
   readonly coverage: SeoAuditCoverage;
   readonly siteResources: SeoAuditSiteResources;
@@ -106,5 +107,5 @@ export interface SeoAuditReport {
 export type SeoAuditPayload = PublicToolResultEnvelope<
   SeoAuditReport,
   "seo_audit",
-  "bounded_same_origin_static_html_audit"
+  "discoverable_same_origin_static_html_audit"
 >;

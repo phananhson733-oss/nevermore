@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  acquirePublicCrawlSlot,
   acquirePublicToolSlot,
   readPublicToolJson,
   resetPublicToolSlots,
@@ -62,5 +63,19 @@ describe("acquirePublicToolSlot", () => {
     const next = acquirePublicToolSlot("seo-audit:203.0.113.1");
     expect(next.acquired).toBe(true);
     if (next.acquired) next.release();
+  });
+
+  it("shares one synchronous public-crawl slot per IP", () => {
+    resetPublicToolSlots();
+    const seoAudit = acquirePublicCrawlSlot("203.0.113.1");
+    const internalLinkAudit = acquirePublicCrawlSlot("203.0.113.1");
+    const otherIp = acquirePublicCrawlSlot("203.0.113.2");
+
+    expect(seoAudit.acquired).toBe(true);
+    expect(internalLinkAudit).toEqual({ acquired: false });
+    expect(otherIp.acquired).toBe(true);
+
+    if (seoAudit.acquired) seoAudit.release();
+    if (otherIp.acquired) otherIp.release();
   });
 });

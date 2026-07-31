@@ -1,5 +1,5 @@
 // @input  -- locale param, tools.seoAudit i18n namespace, and siteConfig
-// @output -- SEO metadata, JSON-LD, methodology, FAQ, and bounded site audit
+// @output -- SEO metadata, JSON-LD, methodology, FAQ, and synchronous site audit
 // @pos    -- programmatic SEO detail route for the free site-wide audit tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 

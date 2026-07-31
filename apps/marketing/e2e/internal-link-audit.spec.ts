@@ -4,7 +4,7 @@ const auditResponse = {
   data: {
     run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v1", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
     result: {
-      targetUrl: "https://acme.com/", availability: "partial", stopReason: "max_urls", limitation: "Coverage is partial after the 25-page safety budget.", pagesCrawled: 4, maxPages: 25, linksObserved: 3, sitemapFetched: true, sitemapUrlsObserved: 32,
+      targetUrl: "https://acme.com/", availability: "partial", stopReason: "max_urls", limitation: "Coverage is partial after a synchronous safety boundary.", pagesCrawled: 4, maxPages: 2000, linksObserved: 3, sitemapFetched: true, sitemapUrlsObserved: 32,
       nodes: [
         { id: "page-01", url: "https://acme.com/", title: "Acme", depth: 0, inboundLinks: 0, outboundLinks: 2, statusCode: 200, sitemapMember: true, kind: "home" },
         { id: "page-02", url: "https://acme.com/guide", title: "Guide", depth: 1, inboundLinks: 1, outboundLinks: 1, statusCode: 200, sitemapMember: true, kind: "page" },
@@ -30,9 +30,9 @@ const deepAuditResponse = {
     run: auditResponse.data.run,
     result: {
       ...auditResponse.data.result,
-      pagesCrawled: 25,
-      linksObserved: 24,
-      nodes: Array.from({ length: 25 }, (_, index) => ({
+      pagesCrawled: 30,
+      linksObserved: 29,
+      nodes: Array.from({ length: 30 }, (_, index) => ({
         id: `deep-${index}`,
         url:
           index === 0
@@ -44,12 +44,12 @@ const deepAuditResponse = {
         title: index === 0 ? "Acme" : `Level ${index}`,
         depth: Math.min(index, 4),
         inboundLinks: index === 0 ? 0 : 1,
-        outboundLinks: index === 24 ? 0 : 1,
+        outboundLinks: index === 29 ? 0 : 1,
         statusCode: 200,
         sitemapMember: true,
         kind: index === 0 ? "home" : "page",
       })),
-      edges: Array.from({ length: 24 }, (_, index) => ({
+      edges: Array.from({ length: 29 }, (_, index) => ({
         from: `deep-${index}`,
         to: `deep-${index + 1}`,
         anchorText: `Level ${index + 1}`,
@@ -59,7 +59,7 @@ const deepAuditResponse = {
   },
 };
 
-test("submits the audit request and renders a bounded API response", async ({ page }) => {
+test("submits the audit request and renders a synchronous API response", async ({ page }) => {
   let requestedBody: unknown;
   await page.route("**/api/tools/internal-link-audit", async (route) => {
     requestedBody = route.request().postDataJSON();
@@ -74,18 +74,18 @@ test("submits the audit request and renders a bounded API response", async ({ pa
   expect(requestedBody).toEqual({ url: "acme.com" });
   await expect(
     page.getByText(
-      "Collected 4 page(s) before the 25-page safety budget was reached. You can review the available results, but they do not represent complete site coverage.",
+      "Collected 4 page(s) before the synchronous page-safety boundary was reached. You can review the available results, but they do not represent complete site coverage.",
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(page.getByText("Page limit reached", { exact: true })).toBeVisible();
+  await expect(page.getByText("Synchronous page-safety boundary reached", { exact: true })).toBeVisible();
   await expect(page.getByText("stop: max_urls", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText("Coverage is partial after the 25-page safety budget.", {
+    page.getByText("Coverage is partial after a synchronous safety boundary.", {
       exact: true,
     }),
   ).toHaveCount(0);
-  await expect(page.getByText("4/25", { exact: true })).toBeVisible();
+  await expect(page.getByText("4", { exact: true })).toBeVisible();
   const tree = page.getByTestId("internal-link-tree");
   const treeRows = tree.locator('button[data-testid^="internal-link-node-"]');
   await expect(tree).toBeVisible();
@@ -136,14 +136,14 @@ test("submits the audit request and renders a bounded API response", async ({ pa
 
 test("renders API failures and a responsive localized tool without horizontal overflow", async ({ page }) => {
   await page.route("**/api/tools/internal-link-audit", async (route) => {
-    await route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: { code: "rate_limited" } }) });
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code: "scan_in_progress" } }) });
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/zh/tools/internal-link-audit");
   await expect(page.getByRole("heading", { level: 1, name: "内链审计" })).toBeVisible();
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
-  await expect(page.getByText("公开预览有频率限制，请稍后再试。", { exact: true })).toBeVisible();
+  await expect(page.getByText("该浏览器地址已有一次审计正在进行，请等待它完成。", { exact: true })).toBeVisible();
   await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
   await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(4);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
@@ -161,14 +161,14 @@ test("renders a touch-friendly crawl tree on mobile without horizontal overflow"
 
   const tree = page.getByTestId("internal-link-tree");
   await expect(tree).toBeVisible();
-  await expect(page.getByText("25/25", { exact: true })).toBeVisible();
-  await expect(page.getByText("已达到页面数量上限", { exact: true })).toBeVisible();
+  await expect(page.getByText("30", { exact: true })).toBeVisible();
+  await expect(page.getByText("已达到同步扫描页面安全边界", { exact: true })).toBeVisible();
   await expect(page.getByText("网站页面层级树", { exact: true })).toBeVisible();
   const firstTreeRow = page.getByTestId("internal-link-node-deep-0");
   await expect(firstTreeRow).toBeVisible();
   const rowBox = await firstTreeRow.boundingBox();
   expect(rowBox?.height ?? 0).toBeGreaterThanOrEqual(56);
-  const deepestTreeRow = page.getByTestId("internal-link-node-deep-24");
+  const deepestTreeRow = page.getByTestId("internal-link-node-deep-29");
   await expect(deepestTreeRow).toBeVisible();
   const deepestBox = await deepestTreeRow.boundingBox();
   expect(deepestBox?.width ?? 0).toBeGreaterThanOrEqual(160);

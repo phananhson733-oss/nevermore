@@ -61,6 +61,12 @@ export interface PublicResourceFetchOptions {
    * Used for standard-path robots.txt and sitemap.xml probes.
    */
   readonly allowedOrigin?: string;
+  /**
+   * Optional redirect policy evaluated before the next guard or network
+   * request. This lets callers admit a narrowly defined canonical-host
+   * transition without enabling arbitrary cross-site redirects.
+   */
+  readonly allowRedirect?: (fromUrl: string, toUrl: string) => boolean;
 }
 
 export interface PublicResourceFetchInit {
@@ -463,7 +469,11 @@ export async function fetchPublicResource(
             return { kind: "error", code: "invalid_redirect" };
           }
           cancelBody(response);
-          if (!originMatches(nextUrl, allowedOrigin)) {
+          if (
+            !originMatches(nextUrl, allowedOrigin) ||
+            (options.allowRedirect &&
+              !options.allowRedirect(currentUrl, nextUrl))
+          ) {
             return { kind: "error", code: "cross_origin" };
           }
           redirectChain.push(nextUrl);

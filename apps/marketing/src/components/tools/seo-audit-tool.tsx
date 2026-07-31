@@ -1,5 +1,5 @@
 // @input  -- current locale and public /api/tools/seo-audit response
-// @output -- interactive URL form and bounded site-wide audit states
+// @output -- interactive URL form and synchronous site-wide audit states
 // @pos    -- primary client surface for /[locale]/tools/seo-audit
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -128,7 +128,6 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
                 "scan_failed",
                 "scan_timeout",
                 "scan_in_progress",
-                "rate_limited",
               ].includes(errorCode)
                 ? errorCode
                 : "unknown"

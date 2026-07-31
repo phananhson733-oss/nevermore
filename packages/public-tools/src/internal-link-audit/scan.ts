@@ -1,6 +1,6 @@
 import {
   crawlPublicSitePreview,
-  PUBLIC_PREVIEW_CRAWL_BUDGET,
+  PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 import { createPublicToolResult } from "../contract.ts";
@@ -55,7 +55,7 @@ function isHome(url: string, origin: string): boolean {
 export function buildInternalLinkAuditPayload(
   raw: CrawlRaw,
 ): InternalLinkAuditPayload {
-  const pages = raw.pages.slice(0, PUBLIC_PREVIEW_CRAWL_BUDGET.maxUrls);
+  const pages = raw.pages.slice(0, PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls);
   const idByUrl = new Map(pages.map((page, index) => [page.subjectUrl, nodeId(index)]));
   const inbound = new Map<string, number>();
   const firstInbound = new Map<
@@ -138,7 +138,7 @@ export function buildInternalLinkAuditPayload(
         limitation:
           raw.availability === "partial"
             ? "Coverage is partial, so this is a candidate rather than a definitive orphan."
-            : "JavaScript-rendered links and links outside the bounded crawl are not evaluated.",
+            : "JavaScript-rendered links and links outside this synchronous crawl are not evaluated.",
         ...common,
       });
     } else if (node.inboundLinks <= 1 && node.kind !== "home") {
@@ -147,7 +147,7 @@ export function buildInternalLinkAuditPayload(
         priority: "P2",
         kind: "low_inbound",
         title: `${pagePath(node.url)} has limited observed internal support`,
-        detail: "The page has one or fewer observed inbound HTML links in this bounded crawl.",
+        detail: "The page has one or fewer observed inbound HTML links in this synchronous crawl.",
         evidence: `${node.inboundLinks} observed inbound HTML link(s); depth: ${node.depth}.`,
         limitation: "Navigation, JavaScript-rendered links, and uncrawled pages can change this count.",
         ...common,
@@ -158,7 +158,7 @@ export function buildInternalLinkAuditPayload(
         priority: "P2",
         kind: "deep_page",
         title: `${pagePath(node.url)} is at observed crawl depth ${node.depth}`,
-        detail: "The bounded crawler reached this page after at least three crawl traversals from an allowed seed.",
+        detail: "The synchronous crawler reached this page after at least three crawl traversals from an allowed seed.",
         evidence: `Observed crawl depth: ${node.depth}; inbound HTML links: ${node.inboundLinks}.`,
         limitation: "Sitemap entries can be crawl seeds, so this is not asserted as a homepage click count or ranking prediction.",
         ...common,
@@ -174,10 +174,10 @@ export function buildInternalLinkAuditPayload(
       kind: "unresolved_target",
       nodeId: sourceId,
       title: `${pagePath(source.source)} links to an unverified target`,
-      detail: `The target ${pagePath(target)} was not collected in this bounded crawl.`,
+      detail: `The target ${pagePath(target)} was not collected in this synchronous crawl.`,
       evidence: `Observed source: ${pagePath(source.source)}; anchor: ${source.anchorText ?? "not provided"}.`,
       limitation:
-        "This is not called a broken link: the target may be outside the page/depth/time budget or excluded by robots.",
+        "This is not called a broken link: the target may be outside this run's collected frontier or excluded by robots.",
       suggestedSourceUrl: source.source,
       observedAnchorText: source.anchorText,
     });
@@ -189,7 +189,7 @@ export function buildInternalLinkAuditPayload(
     stopReason: raw.stopReason,
     limitation: raw.limitation,
     pagesCrawled: pages.length,
-    maxPages: PUBLIC_PREVIEW_CRAWL_BUDGET.maxUrls,
+    maxPages: PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls,
     linksObserved: pages.reduce(
       (total, page) => total + page.projection.internalOutlinks.length,
       0,

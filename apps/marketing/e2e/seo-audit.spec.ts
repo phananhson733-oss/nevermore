@@ -73,21 +73,19 @@ const mockedPayload = {
   data: {
     run: {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v2",
+      schemaVersion: "seo_audit.sitewide.v3",
       mode: "public_preview",
-      scope: "bounded_same_origin_static_html_audit",
+      scope: "discoverable_same_origin_static_html_audit",
       persistence: "none",
       completedAt: "2026-07-30T10:00:00.000Z",
     },
     result: {
       targetUrl: "https://acme.com/",
+      siteOrigin: "https://acme.com",
       scannedAt: "2026-07-30T10:00:00.000Z",
       coverage: {
         availability: "partial",
         pagesInspected: 3,
-        maxPages: 25,
-        maxDepth: 4,
-        maxRequests: 60,
         linksObserved: 3,
         sitemapUrlsObserved: 18,
         urlsSkipped: 1,
@@ -175,7 +173,7 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   ).toBeVisible();
   await expect(
     page.getByText(
-      "Free scope: up to 25 same-origin URLs, depth 4, and 60 total requests. The crawler respects robots.txt and reads static public responses only.",
+      "No account or normal-use run-count limit, and no fixed page product quota. The synchronous crawler collects as many public same-origin static pages as the current run can safely cover and respects robots.txt.",
     ),
   ).toBeVisible();
   await expect(
@@ -196,7 +194,7 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   await expect(
     page.getByRole("heading", {
       level: 2,
-      name: "Outside this free audit",
+      name: "Not measured by this public synchronous audit",
     }),
   ).toBeVisible();
   await expect(
@@ -236,10 +234,15 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   const results = page.getByTestId("seo-audit-results");
   await expect(results).toBeVisible();
   await expect(results.getByText("Partial coverage")).toBeVisible();
-  await expect(results.getByText("3 / 25", { exact: true })).toBeVisible();
+  await expect(
+    results
+      .getByText("Pages inspected", { exact: true })
+      .locator("..")
+      .getByText("3", { exact: true }),
+  ).toBeVisible();
   await expect(
     results.getByText(
-      "The crawler stopped at the 25-URL limit. Every record below describes only the pages that were inspected.",
+      "The crawler stopped at the synchronous page-safety boundary. Every record below describes only the pages that were inspected.",
     ),
   ).toBeVisible();
   await expect(

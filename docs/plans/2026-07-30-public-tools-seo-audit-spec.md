@@ -1,9 +1,15 @@
-# Public Tools / Website Health Map (`seo-audit`) 设计规范
+# [已废弃] Public Tools / Website Health Map (`seo-audit`) V0 设计规范
 
-状态：实现依据
+状态：历史设计，不再是实现依据
 日期：2026-07-30
 目标路由：`/{locale}/tools/seo-audit`
 目标 API：`POST /api/tools/seo-audit`
+
+> 本文记录已被放弃的单页、评分和次数限流方案，仅保留为决策历史。当前唯一
+> 实现依据是
+> [`2026-07-30-public-tools-seo-audit-sitewide-audit-only-spec.md`](./2026-07-30-public-tools-seo-audit-sitewide-audit-only-spec.md)：
+> 正式免费、无固定页数或次数产品额度、同步技术安全边界、全站发现和
+> audit-only 结果。本文下方任何与 V3 合同冲突的内容均不得实现或对外展示。
 
 ## 1. 背景与决策
 

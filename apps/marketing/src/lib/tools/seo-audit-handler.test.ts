@@ -43,21 +43,19 @@ const raw = {
 const payload = {
   run: {
     tool: "seo_audit",
-    schemaVersion: "seo_audit.sitewide.v2",
+    schemaVersion: "seo_audit.sitewide.v3",
     mode: "public_preview",
-    scope: "bounded_same_origin_static_html_audit",
+    scope: "discoverable_same_origin_static_html_audit",
     persistence: "none",
     completedAt: "2026-07-30T09:00:00.000Z",
   },
   result: {
     targetUrl: "https://acme.test/",
+    siteOrigin: "https://acme.test",
     scannedAt: "2026-07-30T09:00:00.000Z",
     coverage: {
       availability: "available",
       pagesInspected: 0,
-      maxPages: 25,
-      maxDepth: 4,
-      maxRequests: 60,
       linksObserved: 0,
       sitemapUrlsObserved: 0,
       urlsSkipped: 0,
@@ -84,12 +82,6 @@ function dependencies(
     normalizeUrl: () => ({ ok: true, url: "https://acme.test/" }),
     scan: vi.fn(async () => raw),
     buildPayload: vi.fn(() => payload),
-    rateLimit: () => ({
-      allowed: true,
-      remaining: 4,
-      resetAt: Date.now() + 60_000,
-      retryAfterSeconds: 0,
-    }),
     extractClientIp: () => "203.0.113.9",
     ...overrides,
   };
@@ -109,21 +101,15 @@ describe("handleSeoAuditRequest", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("x-ratelimit-remaining")).toBe("4");
+    expect(response.headers.get("x-ratelimit-remaining")).toBeNull();
     await expect(response.json()).resolves.toEqual({ data: payload });
     expect(deps.scan).toHaveBeenCalledWith("https://acme.test/");
     expect(deps.buildPayload).toHaveBeenCalledWith(raw);
   });
 
-  it("rejects an oversized request before validation, rate limit, or scan", async () => {
+  it("rejects an oversized request before validation or scan", async () => {
     const scan = vi.fn(async () => raw);
-    const rateLimit = vi.fn(() => ({
-      allowed: true,
-      remaining: 4,
-      resetAt: Date.now() + 60_000,
-      retryAfterSeconds: 0,
-    }));
-    const deps = dependencies({ scan, rateLimit });
+    const deps = dependencies({ scan });
     const response = await handleSeoAuditRequest(
       request({ url: "x".repeat(5_000) }),
       deps,
@@ -133,19 +119,12 @@ describe("handleSeoAuditRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "payload_too_large" },
     });
-    expect(rateLimit).not.toHaveBeenCalled();
     expect(scan).not.toHaveBeenCalled();
   });
 
-  it("rejects unknown input fields before rate limiting or scanning", async () => {
+  it("rejects unknown input fields before scanning", async () => {
     const scan = vi.fn(async () => raw);
-    const rateLimit = vi.fn(() => ({
-      allowed: true,
-      remaining: 4,
-      resetAt: Date.now() + 60_000,
-      retryAfterSeconds: 0,
-    }));
-    const deps = dependencies({ scan, rateLimit });
+    const deps = dependencies({ scan });
 
     const response = await handleSeoAuditRequest(
       request({ url: "acme.test", persist: true }),
@@ -156,29 +135,42 @@ describe("handleSeoAuditRequest", () => {
     await expect(response.json()).resolves.toEqual({
       error: { code: "invalid_request" },
     });
-    expect(rateLimit).not.toHaveBeenCalled();
     expect(scan).not.toHaveBeenCalled();
   });
 
-  it("applies the IP rate gate before any network scan", async () => {
+  it("does not impose a sequential per-IP usage quota", async () => {
     const scan = vi.fn(async () => raw);
-    const deps = dependencies({
-      scan,
-      rateLimit: () => ({
-        allowed: false,
-        remaining: 0,
-        resetAt: Date.now() + 42_000,
-        retryAfterSeconds: 42,
-      }),
-    });
-    const response = await handleSeoAuditRequest(
+    const deps = dependencies({ scan });
+
+    for (let run = 0; run < 7; run += 1) {
+      const response = await handleSeoAuditRequest(
+        request({ url: "acme.test" }),
+        deps,
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(scan).toHaveBeenCalledTimes(7);
+  });
+
+  it("releases the crawl slot after a failed scan", async () => {
+    const scan = vi
+      .fn<SeoAuditHandlerDependencies["scan"]>()
+      .mockRejectedValueOnce(new SeoAuditScanError("scan_failed"))
+      .mockResolvedValueOnce(raw);
+    const deps = dependencies({ scan });
+
+    const failed = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+    const retry = await handleSeoAuditRequest(
       request({ url: "acme.test" }),
       deps,
     );
 
-    expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBe("42");
-    expect(scan).not.toHaveBeenCalled();
+    expect(failed.status).toBe(502);
+    expect(retry.status).toBe(200);
+    expect(scan).toHaveBeenCalledTimes(2);
   });
 
   it("allows only one in-flight scan per IP", async () => {
@@ -197,7 +189,7 @@ describe("handleSeoAuditRequest", () => {
       request({ url: "acme.test" }),
       deps,
     );
-    expect(second.status).toBe(429);
+    expect(second.status).toBe(409);
     await expect(second.json()).resolves.toEqual({
       error: { code: "scan_in_progress" },
     });

@@ -1,7 +1,6 @@
 import { subjectUrlOf } from "@sf/sources/canonical-url";
 import {
-  PUBLIC_PREVIEW_CRAWL_BUDGET,
-  PUBLIC_PREVIEW_MAX_REQUESTS,
+  PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
 import { createPublicToolResult } from "../contract.ts";
@@ -18,7 +17,7 @@ import type {
 } from "./types.ts";
 import type { SeoAuditRaw } from "./scan.ts";
 
-const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_PREVIEW_CRAWL_BUDGET.maxUrls;
+const MAX_OBSERVATIONS_PER_RECORD = PUBLIC_TOOL_SYNC_CRAWL_BUDGET.maxUrls;
 
 function usage(raw: CrawlRaw, key: string): number {
   const value = raw.providerUsage[key];
@@ -444,13 +443,11 @@ export function buildSeoAuditReport(raw: SeoAuditRaw): SeoAuditReport {
   const pages = buildPages(raw);
   return {
     targetUrl: raw.requestedUrl,
+    siteOrigin: raw.origin,
     scannedAt: raw.capturedAt,
     coverage: {
       availability: raw.availability,
       pagesInspected: pages.length,
-      maxPages: PUBLIC_PREVIEW_CRAWL_BUDGET.maxUrls,
-      maxDepth: PUBLIC_PREVIEW_CRAWL_BUDGET.maxDepth,
-      maxRequests: PUBLIC_PREVIEW_MAX_REQUESTS,
       linksObserved: pages.reduce(
         (total, page) => total + page.outboundLinks,
         0,
@@ -477,8 +474,8 @@ export function buildSeoAuditPayload(raw: SeoAuditRaw): SeoAuditPayload {
   return createPublicToolResult(
     {
       tool: "seo_audit",
-      schemaVersion: "seo_audit.sitewide.v2",
-      scope: "bounded_same_origin_static_html_audit",
+      schemaVersion: "seo_audit.sitewide.v3",
+      scope: "discoverable_same_origin_static_html_audit",
       completedAt: raw.capturedAt,
     },
     buildSeoAuditReport(raw),

@@ -154,6 +154,68 @@ describe("fetchPublicResource", () => {
     expect(fixture.guarded).toEqual(["https://acme.test/robots.txt"]);
   });
 
+  it("applies a caller redirect policy before the next guard or request", async () => {
+    const fixture = harness([
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://other.test/" },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      {
+        allowRedirect: (_fromUrl, toUrl) =>
+          new URL(toUrl).hostname.endsWith(".acme.test"),
+      },
+      fixture.dependencies,
+    );
+
+    expect(result).toEqual({ kind: "error", code: "cross_origin" });
+    expect(fixture.requested).toHaveLength(1);
+    expect(fixture.guarded).toEqual(["https://acme.test/"]);
+  });
+
+  it("re-runs the guard and pins a fresh dispatcher after an allowed host redirect", async () => {
+    const fixture = harness([
+      new Response(null, {
+        status: 307,
+        headers: { location: "https://www.acme.test/" },
+      }),
+      new Response("<html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ]);
+
+    const result = await fetchPublicResource(
+      "https://acme.test/",
+      {
+        allowRedirect: (_fromUrl, toUrl) =>
+          new URL(toUrl).hostname === "www.acme.test",
+      },
+      fixture.dependencies,
+    );
+
+    expect(result).toMatchObject({
+      kind: "ok",
+      finalUrl: "https://www.acme.test/",
+      redirectChain: ["https://www.acme.test/"],
+    });
+    expect(fixture.guarded).toEqual([
+      "https://acme.test/",
+      "https://www.acme.test/",
+    ]);
+    expect(fixture.requested.map((request) => request.url)).toEqual([
+      "https://acme.test/",
+      "https://www.acme.test/",
+    ]);
+    expect(fixture.closed).toHaveLength(2);
+    expect(fixture.closed.every((close) => close.mock.calls.length === 1)).toBe(
+      true,
+    );
+  });
+
   it("preserves the submitted path, query order, and trailing slash when fetching", async () => {
     const guard: PublicResourceFetchDependencies["guard"] = async () =>
       guardResult("https://acme.test/page?b=2&a=1");

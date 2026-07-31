@@ -1,4 +1,4 @@
-# P0-4 免费全站 SEO 审计：纯审计 V2 合同
+# P0-4 免费全站 SEO 审计：纯审计 V3 合同
 
 **状态：** 本地候选实现
 
@@ -17,7 +17,7 @@
 P0-4 是 `gengrowth.ai/tools` 下的免费、匿名体验工具，不是
 `app.gengrowth.ai` 的登录后工作流。
 
-V2 只做审计：
+V3 只做审计：
 
 - 真实抓取同源多个页面；
 - 展示抓取覆盖和停止原因；
@@ -25,7 +25,7 @@ V2 只做审计：
 - 展示被记录 URL、观测值和证据边界；
 - 展示本次已检查页面清单。
 
-V2 不输出：
+V3 不输出：
 
 - 总分、模块分、等级或健康度；
 - 严重程度、优先级或排序后的修复队列；
@@ -36,23 +36,31 @@ V2 不输出：
 工具页继续复用 GenGrowth 的导航、间距、字体、颜色、卡片、表格和 FAQ
 视觉骨架，但结果内容以本合同为准。
 
-## 2. 免费抓取合同
+## 2. 免费产品合同与同步技术边界
 
-公开请求不能传入或修改抓取额度。额度固定在服务端：
+工具正式免费，不要求登录，不设账户、调用次数或 25 页产品额度。重复点击与
+失败请求不消耗任何额度，因为本产品不存在次数额度。
 
-| 边界 | 固定值 |
+当前实现是 Vercel 同步 Route Handler。它会在一次运行中尽可能采集可发现的
+同源公开静态页面；大型网站可能只得到部分覆盖。以下数值是服务端拥有、客户端
+不可修改的同步运行安全配置，不是免费用户权益或产品配额，也不在 UI 中显示为
+“最多可审计”：
+
+| 同步技术安全边界 | 当前值 |
 | --- | ---: |
-| 最大 URL | 25 |
-| 最大深度 | 4 |
-| 最大总请求 | 60 |
-| 最大执行时间 | 40 秒 |
-| 单响应解码上限 | 1 MiB |
-| 单次运行解码总量 | 12 MiB |
+| 页面队列保护 | 2,000 |
+| 遍历深度保护 | 6 |
+| 总网络请求保护 | 4,500 |
+| 爬虫墙钟时间 | 240 秒 |
+| Route Handler 时长 | 300 秒 |
+| 单响应解码上限 | 2 MiB |
+| 单次运行解码总量 | 128 MiB |
 | 最大重定向 | 5 |
-| 单主机并发 | 2 |
-| 同主机最小发起间隔 | 300 ms |
+| 单主机并发 | 5 |
+| 同主机最小发起间隔 | 250 ms |
 
 请求计数覆盖 robots.txt、Sitemap 文档、页面和每个重定向跳转。
+后续大规模完整全站抓取应改为异步任务，不继续扩大同步函数的运行边界。
 
 爬虫：
 
@@ -61,8 +69,11 @@ V2 不输出：
 - 读取 robots.txt 和其中声明的 Sitemap；无声明时检查标准
   `/sitemap.xml`；
 - 沿同源静态 HTML 链接广度优先抓取；
+- 入口允许同主机、HTTP 到 HTTPS，以及精确的裸域与 `www` 规范化跳转；
+- 入口跳转结束后，后续抓取同源边界收敛到最终公开 origin；
 - 遵守自身 User-Agent 对应的 robots 规则；
 - 在 DNS 解析后固定公开 IP，并在每次重定向重新执行 SSRF 检查；
+- 拒绝任意兄弟子域、后缀相似域和不同 registrable domain 的入口跳转；
 - 不执行页面 JavaScript；
 - 不保存原始 HTML。
 
@@ -72,16 +83,17 @@ V2 不输出：
 
 ```text
 tool = seo_audit
-schemaVersion = seo_audit.sitewide.v2
+schemaVersion = seo_audit.sitewide.v3
 mode = public_preview
-scope = bounded_same_origin_static_html_audit
+scope = discoverable_same_origin_static_html_audit
 persistence = none
 ```
 
 `result` 分四部分：
 
-1. `targetUrl` 与 `scannedAt`。`targetUrl` 保留标准化后的用户提交 URL，
-   包括路径；它不被替换为站点首页。
+1. `targetUrl`、`siteOrigin` 与 `scannedAt`。`targetUrl` 保留标准化后的
+   用户提交 URL，包括路径；`siteOrigin` 是允许的入口规范化跳转后实际使用的
+   公开 origin。
 2. `coverage`
 3. `records`
 4. `pages`
@@ -92,9 +104,6 @@ persistence = none
 
 - `availability`: `available | partial | unavailable`
 - `pagesInspected`
-- `maxPages`
-- `maxDepth`
-- `maxRequests`
 - `linksObserved`
 - `sitemapUrlsObserved`
 - `urlsSkipped`
@@ -103,8 +112,10 @@ persistence = none
 - `urlsErrored`
 - `stopReason`
 
-`partial` 不代表网站好坏，只说明固定额度提前停止。所有记录只对
-`pagesInspected` 中的页面成立。
+`partial` 不代表网站好坏，只说明本次同步运行触及技术安全边界、robots、
+站点响应或运行能力，未覆盖所有已发现页面。所有记录只对
+`pagesInspected` 中的页面成立。API 不返回 `maxPages`、`maxDepth` 或
+`maxRequests`，避免把内部安全阈值误解成免费配额。
 
 ### 3.2 records
 
@@ -191,8 +202,8 @@ HTML 入链的 Sitemap 页面也不能被断言为最终孤立页面。
 - 每次 DNS 和重定向都重新检查并固定公开 IP；
 - 手动处理重定向，不允许传输层自动绕过检查；
 - 强制请求、时间、响应体、总字节、并发和发起间隔上限；
-- 同 IP 十分钟最多 5 次；
 - 同 IP 只允许一个进行中扫描；
+- 正常连续请求、失败请求和重复点击不进入按时段计数；
 - 响应 `Cache-Control: no-store`；
 - 不写数据库，不返回原始 HTML，不返回秘密相关响应头；
 - API 请求只能包含一个 `url` 字段。
@@ -201,7 +212,7 @@ HTML 入链的 Sitemap 页面也不能被断言为最终孤立页面。
 
 结果顺序固定为：
 
-1. 抓取覆盖与免费额度；
+1. 本次抓取覆盖；
 2. 审计记录；
 3. 页面级证据；
 4. 已检查页面清单。
@@ -218,10 +229,13 @@ HTML 入链的 Sitemap 页面也不能被断言为最终孤立页面。
 
 - 提交真实公开 URL 后，API 在站点存在多个可达页面时返回多个
   `pages`；
-- 达到 25 页时返回 `partial + max_urls`，已完成页面不丢失；
+- 可发现页面超过 25 的 fixture 能采集超过 25 页；
+- 触及同步技术安全边界时返回 `partial` 与明确 `stopReason`，已完成页面不丢失；
+- 裸域到 `www` 与 HTTP 到 HTTPS 的安全入口规范化跳转可成功；任意跨站跳转仍
+  在下一次网络请求前阻断；
 - 提交深路径时，该路径保留为额外 seed；
 - Mock 多页、部分覆盖、重复元数据和链接目标边界均有测试；
-- API 请求校验、限流、单并发和稳定错误码均有测试；
+- API 请求校验、无时段次数配额、单 IP 同时一任务和稳定错误码均有测试；
 - 中英文 key 完全一致；
 - `@sf/sources`、`@sf/public-tools`、`@sf/marketing` 类型检查和 lint 通过；
 - `apps/marketing` 生产构建通过；

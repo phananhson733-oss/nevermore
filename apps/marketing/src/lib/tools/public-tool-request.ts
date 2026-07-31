@@ -92,6 +92,15 @@ export function acquirePublicToolSlot(key: string): PublicToolSlot {
   };
 }
 
+/**
+ * Share one crawl slot across every synchronous public crawler for this IP.
+ * This is intentionally per isolate; a globally strict gate would require a
+ * shared store that is outside the stateless public-tools architecture.
+ */
+export function acquirePublicCrawlSlot(clientIp: string): PublicToolSlot {
+  return acquirePublicToolSlot(`tools:public-crawl:inflight:${clientIp}`);
+}
+
 /** Test-only reset. */
 export function resetPublicToolSlots(): void {
   activeSlots.clear();

@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-30
-updatedAt: 2026-07-30
+updatedAt: 2026-07-31
 heroImage: /images/blog/best-ai-seo-tools.jpg
 heroImageAlt: 展示站点页面关系的编辑插图。
 localeExclusive: false
@@ -20,7 +20,7 @@ localeExclusive: false
 
 Google 的说明指出，可抓取链接帮助其发现页面，而锚文本能帮助用户和 Google 理解内容。因此，审计应记录真实遇到的来源页、目标页和锚文本，而不是只给出一个数量。可参考 Google 的[链接最佳实践](https://developers.google.com/search/docs/crawling-indexing/links-crawlable)。
 
-GenGrowth 的公开审计有明确边界：只读取同源静态 HTML、最多采集 25 页、最深 4 层，并有短时抓取预算。这些限制是安全边界，不是质量评分。
+GenGrowth 的公开审计只读取同源静态 HTML，并在一次同步运行中尽可能采集可发现页面。时间、下载量、重定向、并发、私网访问和运行资源仍受服务端安全边界保护；大型网站可能只得到部分覆盖，因此报告会直接列出本次实际采集范围和停止原因，而不会把某个固定页数包装成免费额度或质量评分。
 
 | 已观测到的现象 | 可以支持的判断 | 不能支持的判断 |
 | --- | --- | --- |

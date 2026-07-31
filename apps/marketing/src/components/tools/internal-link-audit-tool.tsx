@@ -1,5 +1,5 @@
 // @input  -- locale and a visitor's public website URL
-// @output -- transient, bounded real crawl report; no fixed result fixture
+// @output -- transient, synchronous real crawl report; no fixed result fixture
 // @pos    -- primary client surface for /[locale]/tools/internal-link-audit
 
 "use client";
@@ -52,9 +52,9 @@ const COPY = {
     label: "Website URL",
     placeholder: "yourdomain.com",
     start: "Run internal link audit",
-    running: "Crawling public HTML with a bounded safety budget…",
-    help: "We crawl the site origin, respect robots.txt, and do not store your URL or page content. This preview reads static same-origin HTML only.",
-    scope: "Up to 25 pages · up to depth 4 · up to 40 seconds · no login required",
+    running: "Crawling public same-origin HTML…",
+    help: "We crawl the site origin, respect robots.txt, and do not store your URL or page content. The tool reads static same-origin HTML only.",
+    scope: "Free · no account or run-count quota · synchronous collection · no login required",
     progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
     result: "Internal link structure report",
     partial: "Report ready · partial coverage",
@@ -108,11 +108,10 @@ const COPY = {
     anchor: "Observed anchor text",
     findings: "Prioritized review list",
     findingsBody: "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
-    noFindings: "No prioritized structural candidates were found within this bounded crawl.",
+    noFindings: "No prioritized structural candidates were found in the pages collected by this run.",
     errorInvalid: "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
-    errorRate: "This public preview is rate-limited. Please wait before trying another crawl.",
     errorProgress: "An audit for this browser address is already running. Please wait for it to finish.",
-    errorTimeout: "The site did not finish within the public crawl time budget. Try again later or audit a smaller site section in the full product.",
+    errorTimeout: "The synchronous crawl reached its execution-time boundary before a report could be returned. Large sites may need a future asynchronous scan.",
     errorGeneric: "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
     sourceUnavailable: "No observed source page",
     anchorUnavailable: "No anchor text recorded",
@@ -122,9 +121,9 @@ const COPY = {
     label: "网站 URL",
     placeholder: "yourdomain.com",
     start: "开始内链审计",
-    running: "正在安全预算内抓取公开 HTML…",
-    help: "工具从网站根域开始抓取、遵守 robots.txt，不保存 URL 或页面内容。当前预览仅读取同源静态 HTML。",
-    scope: "最多 25 页 · 最深 4 层 · 最长 40 秒 · 无需登录",
+    running: "正在抓取公开同源 HTML…",
+    help: "工具从网站根域开始抓取、遵守 robots.txt，不保存 URL 或页面内容，只读取同源静态 HTML。",
+    scope: "正式免费 · 无账户或次数配额 · 同步采集 · 无需登录",
     progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
     result: "内链结构报告",
     partial: "报告已生成 · 部分覆盖",
@@ -178,11 +177,10 @@ const COPY = {
     anchor: "观测到的锚文本",
     findings: "优先复核清单",
     findingsBody: "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
-    noFindings: "本次受限抓取中未发现需要优先处理的结构候选项。",
+    noFindings: "本次已采集页面中未发现需要优先处理的结构候选项。",
     errorInvalid: "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
-    errorRate: "公开预览有频率限制，请稍后再试。",
     errorProgress: "该浏览器地址已有一次审计正在进行，请等待它完成。",
-    errorTimeout: "网站未能在公开抓取的时间预算内完成。请稍后再试，或在完整产品中审计更小的网站范围。",
+    errorTimeout: "同步抓取在返回报告前触及执行时间边界。大型网站可能需要后续异步扫描版本。",
     errorGeneric: "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
     sourceUnavailable: "没有观测到来源页面",
     anchorUnavailable: "未记录锚文本",
@@ -223,7 +221,6 @@ function displayPathSegment(url: string): string {
 
 function errorMessage(code: string, copy: ToolCopy): string {
   if (code === "invalid_url" || code === "invalid_request") return copy.errorInvalid;
-  if (code === "rate_limited") return copy.errorRate;
   if (code === "scan_in_progress") return copy.errorProgress;
   if (code === "scan_timeout") return copy.errorTimeout;
   return copy.errorGeneric;
@@ -786,7 +783,7 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
       setPhase("result");
     } catch { setError(copy.errorGeneric); setPhase("error"); }
   }
-  const metricItems = report ? [[copy.mapped, `${report.pagesCrawled}/${report.maxPages}`, Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network], [copy.fixes, String(report.findings.length), Route]] as const : [];
+  const metricItems = report ? [[copy.mapped, String(report.pagesCrawled), Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network], [copy.fixes, String(report.findings.length), Route]] as const : [];
 
   return (
     <section

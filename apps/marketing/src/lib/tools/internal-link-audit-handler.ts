@@ -9,28 +9,19 @@ import {
   type InternalLinkAuditUrlResult,
 } from "@sf/public-tools";
 import {
-  checkRateLimit,
   extractClientIp,
-  type RateLimitResult,
 } from "../rate-limit.ts";
 import {
-  acquirePublicToolSlot,
+  acquirePublicCrawlSlot,
   readPublicToolJson,
 } from "./public-tool-request.ts";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
-const RATE_LIMIT_MAX = 2;
-const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1_000;
 
 export interface InternalLinkAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => InternalLinkAuditUrlResult;
   readonly scan: (url: string) => Promise<InternalLinkAuditRaw>;
   readonly buildPayload: (raw: InternalLinkAuditRaw) => InternalLinkAuditPayload;
-  readonly rateLimit: (
-    key: string,
-    max: number,
-    windowMs: number,
-  ) => RateLimitResult;
   readonly extractClientIp: (headers: Headers) => string;
 }
 
@@ -38,7 +29,6 @@ const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
   normalizeUrl: normalizeInternalLinkAuditUrl,
   scan: scanInternalLinkAuditSite,
   buildPayload: buildInternalLinkAuditPayload,
-  rateLimit: checkRateLimit,
   extractClientIp,
 };
 
@@ -88,31 +78,15 @@ export async function handleInternalLinkAuditRequest(
   if (!normalized.ok) return json(createPublicToolError(normalized.code), 400);
 
   const ip = dependencies.extractClientIp(request.headers);
-  const rate = dependencies.rateLimit(
-    `tools:internal-link-audit:ip:${ip}`,
-    RATE_LIMIT_MAX,
-    RATE_LIMIT_WINDOW_MS,
-  );
-  if (!rate.allowed) {
-    return json(createPublicToolError("rate_limited"), 429, {
-      "Retry-After": String(rate.retryAfterSeconds),
-      "X-RateLimit-Remaining": "0",
-    });
-  }
-  const slot = acquirePublicToolSlot(`tools:internal-link-audit:inflight:${ip}`);
+  const slot = acquirePublicCrawlSlot(ip);
   if (!slot.acquired) {
-    return json(createPublicToolError("scan_in_progress"), 429, {
+    return json(createPublicToolError("scan_in_progress"), 409, {
       "Retry-After": "5",
-      "X-RateLimit-Remaining": String(rate.remaining),
     });
   }
   try {
     const raw = await dependencies.scan(normalized.url);
-    return json(
-      { data: dependencies.buildPayload(raw) },
-      200,
-      { "X-RateLimit-Remaining": String(rate.remaining) },
-    );
+    return json({ data: dependencies.buildPayload(raw) }, 200);
   } catch (error) {
     if (error instanceof InternalLinkAuditScanError) {
       if (error.code === "timeout") {

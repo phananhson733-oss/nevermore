@@ -1,4 +1,4 @@
-// @input  -- language-neutral bounded site-wide SeoAuditReport DTO
+// @input  -- language-neutral synchronous site-wide SeoAuditReport DTO
 // @output -- crawl coverage, neutral audit records, evidence, and page inventory
 // @pos    -- audit-only result surface for the public SEO Audit tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
@@ -312,7 +312,7 @@ export function SeoAuditResults({
           {[
             {
               label: t("coveragePages"),
-              value: `${coverage.pagesInspected} / ${coverage.maxPages}`,
+              value: String(coverage.pagesInspected),
             },
             {
               label: t("coverageLinks"),
@@ -323,11 +323,13 @@ export function SeoAuditResults({
               value: String(coverage.sitemapUrlsObserved),
             },
             {
-              label: t("coverageLimits"),
-              value: t("coverageLimitsValue", {
-                depth: coverage.maxDepth,
-                requests: coverage.maxRequests,
-              }),
+              label: t("coverageNotCollected"),
+              value: String(
+                coverage.urlsSkipped +
+                  coverage.urlsBlocked +
+                  coverage.urlsDisallowed +
+                  coverage.urlsErrored,
+              ),
             },
           ].map((item) => (
             <div key={item.label} className="bg-[#171718] px-5 py-5">
