@@ -1888,9 +1888,16 @@ function DetailState({
     diagnosticRunId,
   );
 
+  // The detail rail is one landmark for the whole session, so it keeps the
+  // same accessible name whether it is empty, loading, failed, or showing a
+  // URL. Assistive technology can then announce what the region is before its
+  // contents exist, instead of the region appearing only once data arrives.
   if (selectedSitePageId === null) {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedUrlDetail")}
+      >
         <EmptyState
           icon={<FileSearch size={28} />}
           title={t("selectUrlTitle")}
@@ -1901,7 +1908,11 @@ function DetailState({
   }
   if (detailQuery.isPending) {
     return (
-      <aside className={styles.detailPlaceholder} role="status">
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedUrlDetail")}
+        role="status"
+      >
         <Spinner label={t("loadingDetail")} size="lg" />
         <p>{t("loadingDetail")}</p>
       </aside>
@@ -1909,7 +1920,10 @@ function DetailState({
   }
   if (detailQuery.isError) {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedUrlDetail")}
+      >
         <ProblemState
           error={detailQuery.error}
           onRetry={() => void detailQuery.refetch()}
@@ -5903,9 +5917,14 @@ function KeywordDetailState({
     isError: detailQuery.isError,
   });
 
+  // Same landmark contract as the URL rail: one stable accessible name across
+  // every read state, so the region is announceable before its data lands.
   if (readState === "unselected") {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+      >
         <EmptyState
           icon={<BookOpenText size={28} />}
           title={t("selectKeywordTitle")}
@@ -5916,7 +5935,11 @@ function KeywordDetailState({
   }
   if (readState === "loading") {
     return (
-      <aside className={styles.detailPlaceholder} role="status">
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+        role="status"
+      >
         <Spinner label={t("loadingDetail")} size="lg" />
         <p>{t("loadingDetail")}</p>
       </aside>
@@ -5924,7 +5947,10 @@ function KeywordDetailState({
   }
   if (readState === "error") {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+      >
         <ProblemState
           error={detailQuery.error}
           onRetry={() => void detailQuery.refetch()}
@@ -5935,7 +5961,11 @@ function KeywordDetailState({
   }
   if (detailQuery.data === undefined) {
     return (
-      <aside className={styles.detailPlaceholder} role="status">
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+        role="status"
+      >
         <Spinner label={t("loadingDetail")} size="lg" />
         <p>{t("loadingDetail")}</p>
       </aside>
@@ -7792,9 +7822,13 @@ function CompetitorDetailState({
     isError: detailQuery.isError,
   });
 
+  // Same landmark contract as the URL and Keyword rails.
   if (readState === "unselected") {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+      >
         <EmptyState
           icon={<Target size={28} />}
           title={t("selectCompetitorTitle")}
@@ -7805,7 +7839,11 @@ function CompetitorDetailState({
   }
   if (readState === "loading") {
     return (
-      <aside className={styles.detailPlaceholder} role="status">
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+        role="status"
+      >
         <Spinner label={t("loadingDetail")} size="lg" />
         <p>{t("loadingDetail")}</p>
       </aside>
@@ -7813,7 +7851,10 @@ function CompetitorDetailState({
   }
   if (readState === "error") {
     return (
-      <aside className={styles.detailPlaceholder}>
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+      >
         <ProblemState
           error={detailQuery.error}
           onRetry={() => void detailQuery.refetch()}
@@ -7824,7 +7865,11 @@ function CompetitorDetailState({
   }
   if (detailQuery.data === undefined) {
     return (
-      <aside className={styles.detailPlaceholder} role="status">
+      <aside
+        className={styles.detailPlaceholder}
+        aria-label={t("selectedDetailLabel")}
+        role="status"
+      >
         <Spinner label={t("loadingDetail")} size="lg" />
         <p>{t("loadingDetail")}</p>
       </aside>

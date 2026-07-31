@@ -112,12 +112,18 @@ describe("repository-backed blog content", () => {
       "/zh/blog/public-seo-audit-boundaries",
     ];
 
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(12);
+    // 63 English posts = the 12 originally authored here, plus the 49 restored
+    // from the legacy corpus the Supabase publish path never shipped, plus the
+    // 2 that had no staging source. Chinese stays at 9: the backfill was
+    // English-only. Keep both counts exact so an accidental content deletion or
+    // an unreviewed bulk import fails this gate instead of shipping silently.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(63);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    expect(posts[0]?.published_at).toBe("2026-07-30T00:00:00.000Z");
+    // Newest-first ordering: the most recent backfilled article dates to 07-31.
+    expect(posts[0]?.published_at).toBe("2026-07-31T00:00:00.000Z");
   });
 });
