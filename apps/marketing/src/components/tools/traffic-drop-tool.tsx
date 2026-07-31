@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { ArrowRight, LineChart, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
 import { localePath } from "@/lib/locale-path";
@@ -29,12 +30,15 @@ interface TrafficDropToolProps {
   readonly properties: readonly string[] | null;
   /** False until the Google grant flow is live in this environment. */
   readonly connectEnabled: boolean;
+  /** True while Google's consent screen still limits authorization to testers. */
+  readonly inviteOnly: boolean;
 }
 
 export function TrafficDropTool({
   locale,
   properties,
   connectEnabled,
+  inviteOnly,
 }: TrafficDropToolProps) {
   const t = useTranslations("tools.trafficDrop");
   const [property, setProperty] = useState(properties?.[0] ?? "");
@@ -85,7 +89,45 @@ export function TrafficDropTool({
           {t("connectBody")}
         </p>
 
-        {connectEnabled ? (
+        {!connectEnabled ? (
+          <p className="mt-5 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
+            {t("connectPending")}
+          </p>
+        ) : inviteOnly ? (
+          /*
+           * Google's consent screen is still in Testing, so only accounts on
+           * its tester list can authorize. The notice comes first and the
+           * authorize link stays secondary: an invited tester gets through in
+           * one extra click, while everyone else is told why before Google
+           * stops them — which is the difference between a limitation and a
+           * broken button.
+           */
+          <div className="mt-5 rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+            <p className="text-[13px] font-semibold text-text-dark-primary">
+              {t("inviteOnlyTitle")}
+            </p>
+            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+              {t("inviteOnlyBody")}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <a
+                href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
+                  localePath(locale, "/tools/traffic-drop-diagnosis"),
+                )}`}
+                className="inline-flex min-h-9 items-center gap-1.5 text-[13px] font-semibold text-brand-accent-text hover:underline"
+              >
+                {t("inviteOnlyCta")}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </a>
+              <Link
+                href={localePath(locale, "/contact")}
+                className="text-[13px] text-text-dark-secondary hover:underline"
+              >
+                {t("inviteOnlyRequest")}
+              </Link>
+            </div>
+          </div>
+        ) : (
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
             <a
               href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
@@ -101,10 +143,6 @@ export function TrafficDropTool({
               {t("connectTrust")}
             </p>
           </div>
-        ) : (
-          <p className="mt-5 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
-            {t("connectPending")}
-          </p>
         )}
       </section>
     );

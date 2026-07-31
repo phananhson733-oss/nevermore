@@ -23,11 +23,34 @@ export interface TrafficDropSession {
    * plainly rather than offering a button that leads nowhere.
    */
   readonly connectEnabled: boolean;
+  /**
+   * Whether the consent screen still restricts authorization to invited accounts.
+   *
+   * While the Google consent screen sits in Testing, only the accounts on its
+   * tester list can authorize; everyone else is blocked by Google with a
+   * message about an unverified app. Saying so before the click is the whole
+   * point — a visitor who is told it is invite-only has learned something,
+   * while a visitor who clicks and gets stopped by Google has learned to
+   * distrust the site.
+   */
+  readonly inviteOnly: boolean;
 }
 
 /** Server-side flag; there is deliberately no NEXT_PUBLIC_ variant of this. */
 export function isGoogleConnectEnabled(): boolean {
   return process.env.MARKETING_GSC_CONNECT_ENABLED === "true";
+}
+
+/**
+ * Defaults to true whenever the connect flow is on.
+ *
+ * The safe direction is to over-warn: an invited tester who sees the notice
+ * still gets through in one extra click, whereas a stranger sent straight at
+ * Google's block page cannot recover at all. Set the variable to "false" only
+ * once the consent screen is actually published and verified.
+ */
+export function isGoogleConnectInviteOnly(): boolean {
+  return process.env.MARKETING_GSC_INVITE_ONLY !== "false";
 }
 
 /**
@@ -55,6 +78,7 @@ export async function readTrafficDropSession(): Promise<TrafficDropSession> {
   return {
     properties: grant?.properties ?? null,
     connectEnabled: isGoogleConnectEnabled(),
+    inviteOnly: isGoogleConnectInviteOnly(),
   };
 }
 

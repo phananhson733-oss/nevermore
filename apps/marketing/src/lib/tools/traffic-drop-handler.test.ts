@@ -31,7 +31,11 @@ function deps(
 ): TrafficDropHandlerDependencies {
   return {
     readSession: () =>
-      Promise.resolve({ properties: [PROPERTY], connectEnabled: true }),
+      Promise.resolve({
+        properties: [PROPERTY],
+        connectEnabled: true,
+        inviteOnly: false,
+      }),
     readDailySeries: () => Promise.resolve(series(120)),
     now: () => new Date("2026-07-31T00:00:00.000Z"),
     ...overrides,
@@ -67,7 +71,11 @@ describe("handleTrafficDropRequest", () => {
       request({ property: PROPERTY }),
       deps({
         readSession: () =>
-          Promise.resolve({ properties: null, connectEnabled: true }),
+          Promise.resolve({
+            properties: null,
+            connectEnabled: true,
+            inviteOnly: false,
+          }),
       }),
     );
 
