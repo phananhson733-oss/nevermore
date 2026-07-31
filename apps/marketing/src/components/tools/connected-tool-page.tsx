@@ -10,13 +10,17 @@ import { localePath } from "@/lib/locale-path";
 export function ConnectedToolPage({
   locale,
   content,
+  children,
 }: {
   readonly locale: string;
   readonly content: ConnectedToolContent;
+  /** The live tool, when this page has one. Rendered directly under the header. */
+  readonly children?: React.ReactNode;
 }) {
   const toolsLabel = locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools";
   const homeLabel = locale === "zh" ? "首页" : "Home";
-  const relatedLabel = locale === "zh" ? "可先试用的公开工具" : "Public tools you can run first";
+  const relatedLabel =
+    locale === "zh" ? "可先试用的公开工具" : "Public tools you can run first";
 
   return (
     <section className="min-h-screen bg-brand-bg pb-24 pt-20 md:pt-28">
@@ -30,38 +34,95 @@ export function ConnectedToolPage({
         </nav>
 
         <header className="mt-8 border-b border-brand-border/60 pb-12 md:pb-16">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">{content.eyebrow}</p>
-          <h1 className="mt-4 max-w-4xl text-[42px] font-bold leading-[0.98] tracking-[-0.05em] text-text-dark-primary md:text-[64px]">{content.title}</h1>
-          <p className="mt-6 max-w-2xl text-[16px] leading-relaxed text-text-dark-secondary md:text-[18px]">{content.description}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">
+            {content.eyebrow}
+          </p>
+          <h1 className="mt-4 max-w-4xl text-[42px] font-bold leading-[0.98] tracking-[-0.05em] text-text-dark-primary md:text-[64px]">
+            {content.title}
+          </h1>
+          <p className="mt-6 max-w-2xl text-[16px] leading-relaxed text-text-dark-secondary md:text-[18px]">
+            {content.description}
+          </p>
           <div className="mt-8 grid max-w-3xl gap-3 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/45 p-5 md:grid-cols-[auto_1fr]">
-            <ShieldCheck aria-hidden="true" className="size-5 text-brand-accent-text" />
+            <ShieldCheck
+              aria-hidden="true"
+              className="size-5 text-brand-accent-text"
+            />
             <div>
-              <p className="text-[13px] font-semibold text-text-dark-primary">{content.sourceLabel}</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">{content.sourceDetail}</p>
+              <p className="text-[13px] font-semibold text-text-dark-primary">
+                {content.sourceLabel}
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">
+                {content.sourceDetail}
+              </p>
             </div>
           </div>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <a href={siteConfig.appUrl} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover">
-              {content.cta}<ArrowRight aria-hidden="true" className="size-4" />
+            <a
+              href={siteConfig.appUrl}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+            >
+              {content.cta}
+              <ArrowRight aria-hidden="true" className="size-4" />
             </a>
-            <p className="max-w-md text-[12px] leading-relaxed text-text-dark-secondary">{content.trust}</p>
+            <p className="max-w-md text-[12px] leading-relaxed text-text-dark-secondary">
+              {content.trust}
+            </p>
           </div>
         </header>
 
+        {children ? <div className="pt-10 md:pt-12">{children}</div> : null}
+
         <section className="grid gap-12 py-14 md:grid-cols-[0.8fr_1.2fr] md:py-20">
           <div>
-            <div className="flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text"><Database aria-hidden="true" className="size-5" /></div>
-            <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.035em] text-text-dark-primary">{content.workflowTitle}</h2>
+            <div className="flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
+              <Database aria-hidden="true" className="size-5" />
+            </div>
+            <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.035em] text-text-dark-primary">
+              {content.workflowTitle}
+            </h2>
           </div>
           <ol className="space-y-4">
-            {content.steps.map((step, index) => <li key={step} className="flex gap-4 rounded-xl border border-brand-border/60 bg-brand-bg-alt/25 p-4"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-accent/10 text-[11px] font-semibold text-brand-accent-text">{index + 1}</span><p className="pt-0.5 text-[14px] leading-relaxed text-text-dark-secondary">{step}</p></li>)}
+            {content.steps.map((step, index) => (
+              <li
+                key={step}
+                className="flex gap-4 rounded-xl border border-brand-border/60 bg-brand-bg-alt/25 p-4"
+              >
+                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-accent/10 text-[11px] font-semibold text-brand-accent-text">
+                  {index + 1}
+                </span>
+                <p className="pt-0.5 text-[14px] leading-relaxed text-text-dark-secondary">
+                  {step}
+                </p>
+              </li>
+            ))}
           </ol>
         </section>
 
         <section className="border-y border-brand-border/60 py-14 md:py-20">
-          <h2 className="max-w-2xl text-[30px] font-semibold tracking-[-0.04em] text-text-dark-primary">{content.outputTitle}</h2>
+          <h2 className="max-w-2xl text-[30px] font-semibold tracking-[-0.04em] text-text-dark-primary">
+            {content.outputTitle}
+          </h2>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {content.outputs.map((output) => <article key={output.label} className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5"><div className="flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="size-4 text-brand-accent-text" /><h3 className="text-[15px] font-semibold text-text-dark-primary">{output.label}</h3></div><p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">{output.body}</p></article>)}
+            {content.outputs.map((output) => (
+              <article
+                key={output.label}
+                className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2
+                    aria-hidden="true"
+                    className="size-4 text-brand-accent-text"
+                  />
+                  <h3 className="text-[15px] font-semibold text-text-dark-primary">
+                    {output.label}
+                  </h3>
+                </div>
+                <p className="mt-3 text-[13px] leading-relaxed text-text-dark-secondary">
+                  {output.body}
+                </p>
+              </article>
+            ))}
           </div>
         </section>
 

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@sf/public-tools": "workspace:*",
+    "@sf/sources": "workspace:*",
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@tailwindcss/postcss": "^4.1.18",
