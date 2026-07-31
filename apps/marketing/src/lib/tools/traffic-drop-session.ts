@@ -24,17 +24,25 @@ export interface TrafficDropSession {
    */
   readonly connectEnabled: boolean;
   /**
-   * Whether the consent screen still restricts authorization to invited accounts.
+   * What Google will do to the visitor on the way through, if anything.
    *
-   * While the Google consent screen sits in Testing, only the accounts on its
-   * tester list can authorize; everyone else is blocked by Google with a
-   * message about an unverified app. Saying so before the click is the whole
-   * point — a visitor who is told it is invite-only has learned something,
-   * while a visitor who clicks and gets stopped by Google has learned to
-   * distrust the site.
+   * Whatever the consent screen is going to show, saying it first is the whole
+   * point: a visitor who was told what to expect has learned something, while
+   * a visitor who is stopped by Google unprepared has learned to distrust the
+   * site.
    */
-  readonly inviteOnly: boolean;
+  readonly consentNotice: GoogleConsentNotice;
 }
+
+/**
+ * - `invite_only` — the consent screen is in Testing, so only accounts on its
+ *   tester list can authorize and everyone else is hard-blocked.
+ * - `unverified` — published, but Google has not finished verifying the
+ *   sensitive scope, so every visitor passes an "app isn't verified"
+ *   interstitial they must click through.
+ * - `none` — published and verified; the flow is unremarkable.
+ */
+export type GoogleConsentNotice = "invite_only" | "unverified" | "none";
 
 /** Server-side flag; there is deliberately no NEXT_PUBLIC_ variant of this. */
 export function isGoogleConnectEnabled(): boolean {
@@ -42,15 +50,16 @@ export function isGoogleConnectEnabled(): boolean {
 }
 
 /**
- * Defaults to true whenever the connect flow is on.
+ * Defaults to the most restrictive notice.
  *
- * The safe direction is to over-warn: an invited tester who sees the notice
- * still gets through in one extra click, whereas a stranger sent straight at
- * Google's block page cannot recover at all. Set the variable to "false" only
- * once the consent screen is actually published and verified.
+ * The safe direction is to over-warn: a visitor who reads a warning that did
+ * not apply loses a few seconds, while a visitor sent unprepared into Google's
+ * block page cannot recover at all. Both `unverified` and `none` therefore
+ * have to be set deliberately, as the consent screen actually advances.
  */
-export function isGoogleConnectInviteOnly(): boolean {
-  return process.env.MARKETING_GSC_INVITE_ONLY !== "false";
+export function readGoogleConsentNotice(): GoogleConsentNotice {
+  const value = process.env.MARKETING_GSC_CONSENT_NOTICE;
+  return value === "none" || value === "unverified" ? value : "invite_only";
 }
 
 /**
@@ -78,7 +87,7 @@ export async function readTrafficDropSession(): Promise<TrafficDropSession> {
   return {
     properties: grant?.properties ?? null,
     connectEnabled: isGoogleConnectEnabled(),
-    inviteOnly: isGoogleConnectInviteOnly(),
+    consentNotice: readGoogleConsentNotice(),
   };
 }
 

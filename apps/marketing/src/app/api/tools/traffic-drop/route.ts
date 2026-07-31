@@ -7,7 +7,7 @@ import { handleTrafficDropRequest } from "@/lib/tools/traffic-drop-handler";
 import { createTrafficDropReader } from "@/lib/tools/traffic-drop-reader";
 import {
   isGoogleConnectEnabled,
-  isGoogleConnectInviteOnly,
+  readGoogleConsentNotice,
   readTrafficDropGrant,
 } from "@/lib/tools/traffic-drop-session";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request): Promise<Response> {
       Promise.resolve({
         properties: grant?.properties ?? null,
         connectEnabled: isGoogleConnectEnabled(),
-        inviteOnly: isGoogleConnectInviteOnly(),
+        consentNotice: readGoogleConsentNotice(),
       }),
     readDailySeries: grant
       ? createTrafficDropReader({ accessToken: grant.accessToken })
