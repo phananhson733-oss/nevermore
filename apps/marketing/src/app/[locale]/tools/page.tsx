@@ -8,6 +8,7 @@ import { generatePageMetadata } from "@/lib/seo";
 import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
+import { localePath, localeUrl } from "@/lib/locale-path";
 
 const DIAGNOSIS_TOOLS = [
   {
@@ -91,13 +92,13 @@ export default async function ToolsPage({
       <div className="mx-auto max-w-[1080px] px-5 sm:px-6">
         <BreadcrumbJsonLd
           items={[
-            { name: home, url: `${siteConfig.url}/${locale}` },
+            { name: home, url: localeUrl(locale) },
             { name: tools },
           ]}
         />
         <VisibleBreadcrumb
           items={[
-            { label: home, href: `/${locale}` },
+            { label: home, href: localePath(locale) },
             { label: tools },
           ]}
         />

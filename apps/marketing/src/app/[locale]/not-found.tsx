@@ -6,6 +6,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { localePath } from "@/lib/locale-path";
 
 const copy = {
   en: {
@@ -40,7 +41,7 @@ export default function NotFound() {
         </p>
 
         <Link
-          href={`/${locale}`}
+          href={localePath(locale)}
           className="bg-brand-accent mt-8 inline-block rounded-lg px-6 py-3 text-white transition-opacity hover:opacity-90"
         >
           {t.button}

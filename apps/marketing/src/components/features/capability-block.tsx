@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { fadeInUp } from "@/lib/animations";
 import Link from "next/link";
+import { localePath } from "@/lib/locale-path";
 
 interface CapabilityBlockProps {
   ns: string;
@@ -113,7 +114,7 @@ export function CapabilityBlock({
                   {locale === "en" ? "Related reading:" : "相关阅读："}{" "}
                 </span>
                 <Link
-                  href={`/${locale}/blog?pillar=${pillarSlug}`}
+                  href={`${localePath(locale, "/blog")}?pillar=${pillarSlug}`}
                   className={`${descClass} text-xs hover:text-brand-accent transition-colors inline-flex items-center gap-0.5`}
                 >
                   {t("relatedReading")}

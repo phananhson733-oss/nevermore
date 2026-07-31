@@ -20,7 +20,7 @@ An SEO outreach agency is **a service that earns links to your site by pitching 
 - Lives or dies on editorial standards: every placement should pass a "would a human editor accept this on merit?" test
 - Reports the real funnel — emails sent, reply rate, placements won — so you can see whether the work is actually outreach or just link inventory
 
-When an agency leads with a links-per-month figure and goes quiet on where those links land, you are looking at a volume play. The relevance frame is the same one that drives durable [SEO for SaaS](/en/blog/seo-for-saas): links compound when they sit on pages search engines and buyers both trust.
+When an agency leads with a links-per-month figure and goes quiet on where those links land, you are looking at a volume play. The relevance frame is the same one that drives durable [SEO for SaaS](/blog/seo-for-saas): links compound when they sit on pages search engines and buyers both trust.
 
 ## Why It Matters for Your Workflow
 
@@ -44,11 +44,11 @@ A seed-stage SaaS founder signs a package promising 50 links a month at a flat r
 
 ### Scenario 2: The agency reselling outreach to clients
 
-A marketing agency white-labels link building from a vendor and passes the placements to its own clients. The footgun is silent: if the vendor uses a link scheme, the agency's clients absorb the risk, and the agency's reputation is on the line when a penalty hits. The fix is to demand the vendor's editorial standards and reply-rate data in writing before reselling — the same diligence you would apply to any [white-label SEO tool](/en/blog/best-white-label-seo-tool) you put your name on.
+A marketing agency white-labels link building from a vendor and passes the placements to its own clients. The footgun is silent: if the vendor uses a link scheme, the agency's clients absorb the risk, and the agency's reputation is on the line when a penalty hits. The fix is to demand the vendor's editorial standards and reply-rate data in writing before reselling — the same diligence you would apply to any [white-label SEO tool](/blog/best-white-label-seo-tool) you put your name on.
 
 ### Scenario 3: The growth team weighing in-house versus agency
 
-A growth team debates building outreach internally or hiring out. In-house gives control over relevance and tone but is slow to scale past a few campaigns. An agency scales fast but only stays relevant if you audit its standards. The deciding question is not cost per link; it is who can keep editorial quality high as volume rises. Pair either path with [SEO automation](/en/blog/seo-automation) so the repetitive prospecting and tracking work does not eat the hours that should go to pitch quality.
+A growth team debates building outreach internally or hiring out. In-house gives control over relevance and tone but is slow to scale past a few campaigns. An agency scales fast but only stays relevant if you audit its standards. The deciding question is not cost per link; it is who can keep editorial quality high as volume rises. Pair either path with [SEO automation](/blog/seo-automation) so the repetitive prospecting and tracking work does not eat the hours that should go to pitch quality.
 
 ## Common SEO Outreach Misreadings
 
@@ -58,7 +58,7 @@ Buyers and even some practitioners misread outreach in predictable ways. Each on
 2. **"A link is a link."** Search engines weigh the linking page's relevance and trust. A link from an off-topic site carries little of the ranking value you paid for.
 3. **"Reply rate is the agency's problem, not mine."** A hidden reply rate often means there is no real outreach behind the links. The funnel is your evidence the work is genuine.
 4. **"Guest posts and PBNs are basically the same tactic."** An editorially accepted guest post is earned; a private blog network is a link scheme. Industry coverage in Search Engine Journal has long drawn this line, and conflating the two is how clients walk into penalty risk.
-5. **"Cheaper per link is a better deal."** A low per-link price usually signals automated, irrelevant placements. The real cost shows up later as cleanup. Weigh it against genuinely [cost-effective SEO services](/en/blog/cost-effective-seo-services) that price on outcomes, not unit count.
+5. **"Cheaper per link is a better deal."** A low per-link price usually signals automated, irrelevant placements. The real cost shows up later as cleanup. Weigh it against genuinely [cost-effective SEO services](/blog/cost-effective-seo-services) that price on outcomes, not unit count.
 
 ## SEO Outreach Agency at a Glance — Quick Reference
 
@@ -81,7 +81,7 @@ Run every candidate through the same gauntlet. The goal is to separate a real li
 2. **Request the last campaign's reply-rate funnel.** A genuine outreach motion produces emails-sent, reply-percentage, and placements-won. No funnel usually means no real outreach.
 3. **Get the risk policy in writing.** A credible SEO outreach company states plainly that it does not use PBNs, paid-undisclosed links, or sitewide footer links. Silence here is the answer.
 4. **Check topical fit, not domain rating alone.** Research from Ahrefs on referring-domain quality is clear that a high-authority but off-topic site passes less ranking value than a mid-authority site squarely in your category.
-5. **Confirm you own the reporting.** You should be able to audit every placement yourself, the way you would with any [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies). If the agency controls the only view of the data, you cannot verify relevance.
+5. **Confirm you own the reporting.** You should be able to audit every placement yourself, the way you would with any [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies). If the agency controls the only view of the data, you cannot verify relevance.
 
 ## How to Implement an SEO Outreach Program Step by Step
 
@@ -91,7 +91,7 @@ Whether you hire an agency or run outreach in-house, the operating sequence is t
 2. **Build linkable assets before pitching.** Original data, a useful tool, or a sharp opinion piece gives editors a real reason to link. Outreach without an asset is just asking for favors.
 3. **Set a reply-rate baseline.** Track emails sent, replies, and placements won from day one so you can tell genuine traction from busywork.
 4. **Pitch on editorial merit.** Every email should answer "why would this editor's readers care?" — not "will you place my link?"
-5. **Audit each placement against the relevance map.** A link that lands off-map counts as a miss even if it went live. Tie this audit into a routine [SEO audit checklist](/en/blog/seo-audit-checklist) so relevance review becomes a habit, not an afterthought.
+5. **Audit each placement against the relevance map.** A link that lands off-map counts as a miss even if it went live. Tie this audit into a routine [SEO audit checklist](/blog/seo-audit-checklist) so relevance review becomes a habit, not an afterthought.
 6. **Review risk monthly.** Re-confirm no scheme links crept in, and disavow anything that looks bought or networked before it costs you.
 
 ## Common Questions About SEO Outreach Agencies
@@ -114,9 +114,9 @@ Demand three things: five live placements you can read, the last campaign's repl
 
 ## Related Reading
 
-- [Ethical SEO](/en/blog/ethical-seo) — the principles behind earned, compounding link acquisition
-- [Organic SEO Services](/en/blog/organic-seo-services) — how relevance-first work fits a durable organic strategy
-- [SaaS SEO Consultant](/en/blog/saas-seo-consultant) — when to bring in outside help for an outreach program
+- [Ethical SEO](/blog/ethical-seo) — the principles behind earned, compounding link acquisition
+- [Organic SEO Services](/blog/organic-seo-services) — how relevance-first work fits a durable organic strategy
+- [SaaS SEO Consultant](/blog/saas-seo-consultant) — when to bring in outside help for an outreach program
 
 ## Take Action
 

@@ -18,7 +18,7 @@ An SEO starter package is **an entry-level SEO service — typically a few hundr
 
 - Sold as a monthly bundle of activities: hours, posts, and links per month, rarely a ranking commitment
 - Aimed at first-time buyers who cannot yet tell a thorough audit from a thin one
-- Lives inside a wider growth motion, which is why a good starter tier should connect to the [organic SEO services](/en/blog/organic-seo-services) a business graduates into
+- Lives inside a wider growth motion, which is why a good starter tier should connect to the [organic SEO services](/blog/organic-seo-services) a business graduates into
 
 A small business owner comparing one bundle against another finds price tables and deliverable counts everywhere, and almost no language about what should actually rank by month three. So this piece compares them the way an outcome-minded buyer should — by the milestones they commit to.
 
@@ -28,7 +28,7 @@ The cost of buying an SEO starter package on price and deliverable count is invi
 
 That bias is baked into how the category is sold. Walk the search results and the pattern is uniform: comparison posts rank starter packages by price and deliverable count, from budget tiers near $200 a month up past $700 a month. Productized kits sit alongside them but are a different animal — Salted Pages sells a one-time keyword-and-on-page kit with no posts or backlinks, and seostarterpack is a one-time DIY toolkit of training videos and templates around $47, not a monthly service at all. What unites the monthly tiers is that each defines the offering by activity volume, posts, links, and hours per month, never by a ranking milestone you could hold the vendor to.
 
-The hours a starter buyer most needs back are the evaluation hours, and those are exactly the ones no comparison post helps with. Because so much of the field competes on the same handful of deliverable categories — posts, links, on-page fixes — differentiating on quality is impossible without an outcome frame. Two bundles at a similar price can look identical on a deliverable table while one drives first-page positions and the other produces motion with no movement. The activity count cannot tell those two apart. A milestone commitment can, which is the same discipline behind any [cost-effective SEO services](/en/blog/cost-effective-seo-services) decision — pay for what compounds, not for what fills a deliverable checklist.
+The hours a starter buyer most needs back are the evaluation hours, and those are exactly the ones no comparison post helps with. Because so much of the field competes on the same handful of deliverable categories — posts, links, on-page fixes — differentiating on quality is impossible without an outcome frame. Two bundles at a similar price can look identical on a deliverable table while one drives first-page positions and the other produces motion with no movement. The activity count cannot tell those two apart. A milestone commitment can, which is the same discipline behind any [cost-effective SEO services](/blog/cost-effective-seo-services) decision — pay for what compounds, not for what fills a deliverable checklist.
 
 ## How an SEO Starter Package Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ In practice, the gap between an activity bundle and an outcome commitment shows 
 
 ### The local services business buying its first package
 
-A plumber or dentist signs a $449 starter tier because it promised eight blog posts and twenty citations a month. Six months in, the posts exist and the citations were built, but the business still does not rank for "emergency plumber [city]." The deliverables were a perfect match for the contract. What was missing was any line tying that spend to a local ranking milestone — the kind a [local SEO audit](/en/blog/local-seo-audit) establishes as a baseline before the work starts, so progress can be measured against it.
+A plumber or dentist signs a $449 starter tier because it promised eight blog posts and twenty citations a month. Six months in, the posts exist and the citations were built, but the business still does not rank for "emergency plumber [city]." The deliverables were a perfect match for the contract. What was missing was any line tying that spend to a local ranking milestone — the kind a [local SEO audit](/blog/local-seo-audit) establishes as a baseline before the work starts, so progress can be measured against it.
 
 ### The early-stage SaaS founder with no SEO hire
 
-A founder buys a starter tier to avoid hiring. The package ships keyword-targeted pages on schedule, but the keywords were chosen for volume, not for the founder's actual buying intent, so the new traffic never converts. The activity count was met and the strategy was wrong. A package built for this buyer should anchor to milestone keywords that map to demand, the foundation any serious [SEO for SaaS startups](/en/blog/seo-for-saas-startups) motion is built on, rather than to a monthly post quota.
+A founder buys a starter tier to avoid hiring. The package ships keyword-targeted pages on schedule, but the keywords were chosen for volume, not for the founder's actual buying intent, so the new traffic never converts. The activity count was met and the strategy was wrong. A package built for this buyer should anchor to milestone keywords that map to demand, the foundation any serious [SEO for SaaS startups](/blog/seo-for-saas-startups) motion is built on, rather than to a monthly post quota.
 
 ### The agency reselling a starter tier to its own clients
 
-An agency white-labels a starter package and resells it. The reseller is judged by its clients on rankings, but the underlying package commits only to deliverables, so every month the agency absorbs the gap between "we did the work" and "you still are not ranking." A starter tier worth reselling reports against milestones the agency can show a client, which is why it should sit on a [saas seo platform](/en/blog/saas-seo-platform) that surfaces outcome data rather than a deliverable log the client cannot read.
+An agency white-labels a starter package and resells it. The reseller is judged by its clients on rankings, but the underlying package commits only to deliverables, so every month the agency absorbs the gap between "we did the work" and "you still are not ranking." A starter tier worth reselling reports against milestones the agency can show a client, which is why it should sit on a [saas seo platform](/blog/saas-seo-platform) that surfaces outcome data rather than a deliverable log the client cannot read.
 
 ## Common Implementation Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against the milestone it commits to, not the deliverable list it advert
 3. Discount any deliverable that cannot be tied to a target keyword; volume with no ranking line attached is activity, not outcome.
 4. Weigh packages by the milestone they will commit to in writing, so the tier that names a 90-day position target wins over the one that only counts posts — even if it ships fewer of them.
 
-This is the same diligence behind choosing a defensible service in the first place — the logic in [ethical SEO](/en/blog/ethical-seo) applies to package selection too: pay for what holds up at 90 days, not for what looks busy on a monthly invoice.
+This is the same diligence behind choosing a defensible service in the first place — the logic in [ethical SEO](/blog/ethical-seo) applies to package selection too: pay for what holds up at 90 days, not for what looks busy on a monthly invoice.
 
 ## How to Implement an SEO Starter Package Step by Step
 
@@ -100,13 +100,13 @@ It can be, but only if it commits to a ranking outcome. A low price attached to 
 
 **What is the difference between a starter package and full SEO services?**
 
-A starter tier is a fixed entry-level bundle for first-time buyers with a narrow keyword focus, while full services scale scope, strategy, and budget. The graduation path matters: a good package should hand you the baseline and milestone data you need to move into broader [organic SEO services](/en/blog/organic-seo-services) without starting your measurement over.
+A starter tier is a fixed entry-level bundle for first-time buyers with a narrow keyword focus, while full services scale scope, strategy, and budget. The graduation path matters: a good package should hand you the baseline and milestone data you need to move into broader [organic SEO services](/blog/organic-seo-services) without starting your measurement over.
 
 ## Related Reading
 
-- [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — anchoring a starter package to buying intent, not volume
-- [Cost-effective SEO services](/en/blog/cost-effective-seo-services) — paying for what compounds inside a tight budget
-- [Local SEO audit](/en/blog/local-seo-audit) — the baseline a starter package should establish before work begins
+- [SEO for SaaS startups](/blog/seo-for-saas-startups) — anchoring a starter package to buying intent, not volume
+- [Cost-effective SEO services](/blog/cost-effective-seo-services) — paying for what compounds inside a tight budget
+- [Local SEO audit](/blog/local-seo-audit) — the baseline a starter package should establish before work begins
 
 ## Take Action
 

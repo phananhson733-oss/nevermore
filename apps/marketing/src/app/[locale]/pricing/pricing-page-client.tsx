@@ -10,6 +10,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { siteConfig } from "@/config/site";
 import { fadeInUp } from "@/lib/animations";
 import { PricingFaq } from "./pricing-faq";
+import { localePath } from "@/lib/locale-path";
 
 const FREE_TOOL_ITEMS = ["item1", "item2", "item3"] as const;
 
@@ -68,7 +69,7 @@ export default function PricingPageClient() {
               ))}
             </ul>
             <Link
-              href={`/${locale}/tools`}
+              href={localePath(locale, "/tools")}
               className="mt-9 inline-flex items-center gap-2 rounded-xl bg-brand-accent px-5 py-3 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {tFree("cta")}
@@ -140,7 +141,7 @@ export default function PricingPageClient() {
             transition={{ ...fadeInUp.transition, delay: 0.3 }}
           >
             <Link
-              href={`/${locale}/tools`}
+              href={localePath(locale, "/tools")}
               className="mt-8 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand-accent px-8 text-base font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {tCta("button")}

@@ -93,6 +93,6 @@ review window. The goal is not to maximize the number of links. It is to make
 the important paths on a site understandable for readers and observable in
 your own maintenance process.
 
-Run a [free internal link audit](/en/tools/internal-link-audit) when you have a
+Run a [free internal link audit](/tools/internal-link-audit) when you have a
 public site to inspect. Its output is intentionally transient, so use the
 result as evidence for a decision—not as an automatic change list.

@@ -164,7 +164,7 @@ const mockedPayload = {
 test("renders the bilingual site-wide shell and an audit-only multi-page report", async ({
   page,
 }) => {
-  await page.goto("/en/tools/seo-audit");
+  await page.goto("/tools/seo-audit");
   await expect(
     page.getByRole("heading", {
       level: 1,
@@ -216,10 +216,10 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   expect(faqSchema.mainEntity).toHaveLength(8);
   await expect(
     page.getByRole("link", { name: "Run an internal link audit" }),
-  ).toHaveAttribute("href", "/en/tools/internal-link-audit");
+  ).toHaveAttribute("href", "/tools/internal-link-audit");
   await expect(
     page.getByRole("link", { name: "Read the evidence-first method" }),
-  ).toHaveAttribute("href", "/en/blog/evidence-first-growth-experiments");
+  ).toHaveAttribute("href", "/blog/evidence-first-growth-experiments");
 
   await page.route("**/api/tools/seo-audit", async (route) => {
     await route.fulfill({
@@ -331,7 +331,7 @@ test("keeps a long multi-page audit record contained on a mobile viewport", asyn
     });
   });
 
-  await page.goto("/en/tools/seo-audit");
+  await page.goto("/tools/seo-audit");
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run free audit" }).click();
 

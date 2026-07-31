@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { GlossaryTerm } from "@/lib/glossary";
+import { localePath } from "@/lib/locale-path";
 
 interface RelatedTermsProps {
   readonly terms: readonly GlossaryTerm[];
@@ -29,7 +30,7 @@ export function RelatedTerms({ terms, locale }: RelatedTermsProps) {
         {terms.map((term) => (
           <Link
             key={term.slug}
-            href={`/${locale}/glossary/${term.slug}`}
+            href={localePath(locale, `/glossary/${term.slug}`)}
             className="group block rounded-lg border border-white/[0.06] bg-brand-bg-secondary p-4 transition-colors hover:border-brand-accent/40"
           >
             <span className="text-sm font-medium text-text-dark-primary group-hover:text-brand-accent transition-colors">

@@ -18,7 +18,7 @@ A B2B SEO tool is **software that helps a B2B company win organic search demand 
 
 - Built around the B2B buying motion: long cycles, account-based targeting, and pipeline attribution — not raw keyword volume
 - Judged on whether it ties organic search to MQLs and revenue a non-marketing stakeholder will trust, not on how many backlinks it counts
-- Sits inside a wider growth stack, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) compounds across a real funnel
+- Sits inside a wider growth stack, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) compounds across a real funnel
 
 A B2B operator searching for tools to run their search program finds shelves of generic keyword-and-backlink reviews and almost nothing on the jobs that matter. So this guide compares the best tools for SEO for B2B the way a revenue team buys them — by the B2B jobs, not the feature checklist.
 
@@ -28,7 +28,7 @@ The cost of the generic framing is invisible until the quarter closes. A team pi
 
 That bias is structural, not accidental. Walk the SERP for the term and the pattern repeats: the lists are written for SEO in general, then retitled for B2B. They score tools on the Ahrefs-style criteria of keyword database size, crawl depth, and backlink index freshness — the same yardsticks you would use for an e-commerce blog. The B2B-specific jobs are almost entirely absent: there is rarely a column for MQL attribution, account-based keyword targeting, long-cycle tracking, or whether the reporting reads cleanly to a CFO who has never seen a SERP.
 
-The hours a B2B SEO tool should give back are rarely the keyword-research hours. Finding terms is visible, so it gets tested; the silent work is connecting a six-month buying cycle back to the query that started it. A tool that automates only keyword discovery leaves the compounding B2B work — the [marketing attribution for SaaS](/en/blog/marketing-attribution-for-saas) of tying organic touches to closed revenue — exactly as manual as before. You pay for an SEO tool and keep rebuilding the pipeline story in a spreadsheet.
+The hours a B2B SEO tool should give back are rarely the keyword-research hours. Finding terms is visible, so it gets tested; the silent work is connecting a six-month buying cycle back to the query that started it. A tool that automates only keyword discovery leaves the compounding B2B work — the [marketing attribution for SaaS](/blog/marketing-attribution-for-saas) of tying organic touches to closed revenue — exactly as manual as before. You pay for an SEO tool and keep rebuilding the pipeline story in a spreadsheet.
 
 ## How B2B SEO Tools Work / Play Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ In practice, the gap between "generic SEO tool" and "B2B SEO tool" shows up the 
 
 ### The SaaS company with a six-month sales cycle
 
-A consumer site can read a ranking gain on Tuesday as a win by Friday. A B2B SaaS company cannot — the deal that touch influenced may close two quarters later. The useful tool holds the thread: it tags the entry keyword, follows the account through the funnel, and attributes the eventual MQL back to search. Keyword volume is almost irrelevant; durable attribution is everything, the discipline behind a serious [SaaS SEO platform](/en/blog/saas-seo-platform). A tool that reports rankings daily but cannot connect them to a slow-closing deal has measured the wrong thing.
+A consumer site can read a ranking gain on Tuesday as a win by Friday. A B2B SaaS company cannot — the deal that touch influenced may close two quarters later. The useful tool holds the thread: it tags the entry keyword, follows the account through the funnel, and attributes the eventual MQL back to search. Keyword volume is almost irrelevant; durable attribution is everything, the discipline behind a serious [SaaS SEO platform](/blog/saas-seo-platform). A tool that reports rankings daily but cannot connect them to a slow-closing deal has measured the wrong thing.
 
 ### The agency reporting B2B results to a CFO
 
-An agency serving B2B clients does not present to a fellow marketer — it presents to a finance stakeholder who reads pipeline, not position. The tool that earns its seat is the one whose reporting speaks revenue: influenced pipeline, cost per MQL, and the keywords feeding qualified accounts. That is a different output than a rankings dashboard, which is why it should plug into a real [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) rather than exporting a SERP screenshot no CFO will read twice.
+An agency serving B2B clients does not present to a fellow marketer — it presents to a finance stakeholder who reads pipeline, not position. The tool that earns its seat is the one whose reporting speaks revenue: influenced pipeline, cost per MQL, and the keywords feeding qualified accounts. That is a different output than a rankings dashboard, which is why it should plug into a real [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) rather than exporting a SERP screenshot no CFO will read twice.
 
 ### The startup running account-based marketing
 
-A B2B startup chasing fifty named target accounts does not want the highest-volume keyword — it wants the keyword the buying committee at those accounts searches. The useful tool aligns targeting to the ABM list, mapping terms to the personas inside target accounts rather than to a national volume number, the focus a deliberate [startup SEO](/en/blog/startup-seo) motion needs. The volume score that wins most generic comparisons is, for this buyer, the least relevant number on the page.
+A B2B startup chasing fifty named target accounts does not want the highest-volume keyword — it wants the keyword the buying committee at those accounts searches. The useful tool aligns targeting to the ABM list, mapping terms to the personas inside target accounts rather than to a national volume number, the focus a deliberate [startup SEO](/blog/startup-seo) motion needs. The volume score that wins most generic comparisons is, for this buyer, the least relevant number on the page.
 
 ## Common B2B SEO Tool Misreadings
 
@@ -74,14 +74,14 @@ Evaluate against the B2B buying motion, not the demo. A useful sequence:
 3. Discount any capability that still needs a manual spreadsheet to connect to pipeline; that is a keyword tool, not a B2B SEO tool.
 4. Weigh the score by your actual revenue impact, so the tool that ties organic to MQLs wins even if its keyword database is smaller than a rival's.
 
-This is the same portfolio discipline behind picking defensible channels — the logic in [organic SEO services](/en/blog/organic-seo-services) applies to tool selection: optimize for what compounds into pipeline, not for what demos a bigger number.
+This is the same portfolio discipline behind picking defensible channels — the logic in [organic SEO services](/blog/organic-seo-services) applies to tool selection: optimize for what compounds into pipeline, not for what demos a bigger number.
 
 ## How to Implement B2B SEO Tools Step by Step
 
 1. **Baseline the funnel.** Record how organic search currently maps to MQLs and pipeline before any tool enters, so the win is measurable in revenue, not sessions. Google Search Central's "Search Essentials" guidance is the public standard any change should respect — optimize deliberately, not for a quick spike.
 2. **Wire attribution first.** Connect the tool to your CRM and your MQL definition before you chase a single new keyword — the B2B value lives in the connection, not the keyword list.
 3. **Align targeting to the ABM list.** Map keyword targets to named accounts and buying-committee personas, not to a national volume table.
-4. **Build the stakeholder report once.** Set up reporting that speaks influenced pipeline and cost per MQL, so finance reads it without a marketer translating, the same standard a [SaaS SEO consultant](/en/blog/saas-seo-consultant) would hold a program to.
+4. **Build the stakeholder report once.** Set up reporting that speaks influenced pipeline and cost per MQL, so finance reads it without a marketer translating, the same standard a [SaaS SEO consultant](/blog/saas-seo-consultant) would hold a program to.
 5. **Re-baseline each quarter** and move to the next under-served job — the B2B cycle is measured in quarters, not weeks.
 
 ## Common Questions About B2B SEO Tools
@@ -104,9 +104,9 @@ Report in their language: influenced pipeline, cost per MQL, and qualified accou
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds across a real B2B funnel
-- [Marketing attribution for SaaS](/en/blog/marketing-attribution-for-saas) — the attribution job a B2B SEO tool must support
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — the platform context any B2B tool plugs into
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds across a real B2B funnel
+- [Marketing attribution for SaaS](/blog/marketing-attribution-for-saas) — the attribution job a B2B SEO tool must support
+- [SaaS SEO platform](/blog/saas-seo-platform) — the platform context any B2B tool plugs into
 
 ## Take Action
 

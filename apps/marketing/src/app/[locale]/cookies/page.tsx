@@ -6,8 +6,8 @@ import { getTranslations } from "next-intl/server";
 import { getLegalDocument, getLegalVersions } from "@/lib/legal";
 import { LegalPageTemplate } from "@/components/legal/legal-page-template";
 import { generatePageMetadata } from "@/lib/seo";
-import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
+import { localeUrl } from "@/lib/locale-path";
 
 export async function generateMetadata({
   params,
@@ -59,7 +59,7 @@ export default async function CookiesPage({
         items={[
           {
             name: locale === "en" ? "Home" : "首页",
-            url: `${siteConfig.url}/${locale}`,
+            url: localeUrl(locale),
           },
           {
             name: locale === "en" ? "Cookie Policy" : "Cookie 政策",

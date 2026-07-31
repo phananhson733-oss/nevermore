@@ -2,6 +2,7 @@
 // @output -- permanent legacy redirect to the editorial library
 // @pos    -- retires noindex glossary pages until a verified terminology corpus exists
 import { permanentRedirect } from "next/navigation";
+import { localePath } from "@/lib/locale-path";
 
 export default async function GlossaryPage({
   params,
@@ -9,5 +10,5 @@ export default async function GlossaryPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  permanentRedirect(`/${locale}/blog`);
+  permanentRedirect(localePath(locale, "/blog"));
 }

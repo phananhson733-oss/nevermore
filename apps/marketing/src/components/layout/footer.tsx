@@ -9,6 +9,7 @@ import { useLocale } from "next-intl";
 import Link from "next/link";
 import { footerLegalLinks, footerResourceLinks } from "@/config/navigation";
 import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export function Footer({
   onOpenCookiePreferences,
@@ -43,7 +44,7 @@ export function Footer({
               {footerResourceLinks.map((link) => (
                 <li key={link.labelKey}>
                   <Link
-                    href={`/${locale}${link.href}`}
+                    href={localePath(locale, link.href)}
                     className="text-text-dark-secondary hover:text-text-dark-primary text-sm transition-colors"
                   >
                     {t(link.labelKey)}
@@ -70,7 +71,7 @@ export function Footer({
                     </button>
                   ) : (
                     <Link
-                      href={`/${locale}${link.href}`}
+                      href={localePath(locale, link.href)}
                       className="text-text-dark-secondary hover:text-text-dark-primary text-sm transition-colors"
                     >
                       {t(link.labelKey)}

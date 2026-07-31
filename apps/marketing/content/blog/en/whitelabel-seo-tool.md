@@ -64,7 +64,7 @@ Agencies usually get burned not by a bad provider but by misreading what a given
 
 ## How to Evaluate a White-Label SEO Tool Before You Commit
 
-Evaluate a whitelabel seo tool on observable isolation, not on the marketing label itself, because that single term hides the Level 1 to Level 3 gap entirely. We've found the contract clauses matter more than the demo, and [how to rank candidates by resale tier rather than feature count](/en/blog/best-white-label-seo-tool) reframes the comparison before you score anything. Score any provider against criteria you can verify before signing:
+Evaluate a whitelabel seo tool on observable isolation, not on the marketing label itself, because that single term hides the Level 1 to Level 3 gap entirely. We've found the contract clauses matter more than the demo, and [how to rank candidates by resale tier rather than feature count](/blog/best-white-label-seo-tool) reframes the comparison before you score anything. Score any provider against criteria you can verify before signing:
 
 1. **Custom domain support.** Confirm whether client logins and reports can run on your domain, or only the provider's shared subdomain. This is the single clearest tier signal.
 2. **Login isolation.** Check whether each client gets a separate, branded login that never exposes the provider's identity or other clients' data.
@@ -106,7 +106,7 @@ Generally yes, because deeper isolation means the provider gives up more brand v
 
 - Comparison of white-label and managed SEO services — for deciding between reselling and referring work out entirely
 - A guide to SEO reseller pricing and markup — for modeling the margin floor referenced in the evaluation steps
-- [How client-facing branded reports separate the tiers](/en/blog/seo-reporting-tool-for-seo-companies) — for the portal and reporting details that distinguish each level
+- [How client-facing branded reports separate the tiers](/blog/seo-reporting-tool-for-seo-companies) — for the portal and reporting details that distinguish each level
 
 ## Take Action
 

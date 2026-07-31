@@ -60,9 +60,9 @@ The table below contrasts a baseline reflex with the more durable choice a funne
 
 ## How to Evaluate a B2B SaaS SEO Approach
 
-Evaluating a B2B SaaS SEO approach is mostly a test of whether it respects the funnel. Start by asking any partner or plan to name the funnel stage each content type serves — if the answer is "we publish helpful posts," the framework is missing. A credible approach shows how top, middle, and bottom-of-funnel content differ in pattern and intent, and how each connects to a trial or freemium signup. For teams new to the model, grounding in [SEO for SaaS](/en/blog/seo-for-saas) clarifies why product-led funnels reshape keyword intent before you commit budget.
+Evaluating a B2B SaaS SEO approach is mostly a test of whether it respects the funnel. Start by asking any partner or plan to name the funnel stage each content type serves — if the answer is "we publish helpful posts," the framework is missing. A credible approach shows how top, middle, and bottom-of-funnel content differ in pattern and intent, and how each connects to a trial or freemium signup. For teams new to the model, grounding in [SEO for SaaS](/blog/seo-for-saas) clarifies why product-led funnels reshape keyword intent before you commit budget.
 
-Next, probe the measurement and the fit to your stage. A trustworthy approach reports activation and pipeline influence, not just rankings, and it adapts to whether you are pre-seed or scaling — the priorities differ sharply, which is why [SEO for SaaS startups](/en/blog/seo-for-saas-startups) treats early-stage focus as its own discipline. When you need the work executed rather than just planned, a specialized [SaaS SEO consultant](/en/blog/saas-seo-consultant) is who translates this funnel-stage mapping into a running program.
+Next, probe the measurement and the fit to your stage. A trustworthy approach reports activation and pipeline influence, not just rankings, and it adapts to whether you are pre-seed or scaling — the priorities differ sharply, which is why [SEO for SaaS startups](/blog/seo-for-saas-startups) treats early-stage focus as its own discipline. When you need the work executed rather than just planned, a specialized [SaaS SEO consultant](/blog/saas-seo-consultant) is who translates this funnel-stage mapping into a running program.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have committed to the funnel-first model, a sound B2B SaaS SEO strategy
 4. **Build bottom-up where it converts.** Prioritize the evaluation and product-led pages first, since those move trials fastest, then backfill awareness depth.
 5. **Measure by activation.** Attribute trials and pipeline to the funnel stage that earned them, prune patterns that never convert, and reinvest in the ones that compound.
 
-For teams comparing tooling to run this sequence, a survey of the [best tools for SEO for B2B](/en/blog/best-tools-for-seo-for-b2b) helps match instrumentation to each funnel stage.
+For teams comparing tooling to run this sequence, a survey of the [best tools for SEO for B2B](/blog/best-tools-for-seo-for-b2b) helps match instrumentation to each funnel stage.
 
 ## Frequently Asked Questions About B2B SaaS SEO
 
@@ -96,10 +96,10 @@ No. Because the model prioritizes by funnel stage, a small team can start with t
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — the broader playbook this funnel-stage framework specializes.
-- [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — early-stage priorities when the funnel is still forming.
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — the tooling layer that operationalizes stage-mapped content at scale.
-- [Startup SEO](/en/blog/startup-seo) — foundational moves for lean teams building organic from zero.
+- [SEO for SaaS](/blog/seo-for-saas) — the broader playbook this funnel-stage framework specializes.
+- [SEO for SaaS startups](/blog/seo-for-saas-startups) — early-stage priorities when the funnel is still forming.
+- [SaaS SEO platform](/blog/saas-seo-platform) — the tooling layer that operationalizes stage-mapped content at scale.
+- [Startup SEO](/blog/startup-seo) — foundational moves for lean teams building organic from zero.
 
 ## Take Action
 

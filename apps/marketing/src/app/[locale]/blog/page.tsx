@@ -7,11 +7,11 @@ import { getMessages, getTranslations } from "next-intl/server";
 import { getAllBlogPosts, getBlogPosts, getTotalPages } from "@/lib/blog";
 import { BlogCard } from "@/components/blog/blog-card";
 import { generatePageMetadata } from "@/lib/seo";
-import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import Link from "next/link";
 import { COMPARISON_SLUGS } from "@/lib/mock/compare-content";
+import { localePath, localeUrl } from "@/lib/locale-path";
 
 const CATEGORIES = [
   "case_study",
@@ -121,14 +121,14 @@ export default async function BlogPage({
           items={[
             {
               name: locale === "en" ? "Home" : "首页",
-              url: `${siteConfig.url}/${locale}`,
+              url: localeUrl(locale),
             },
             { name: locale === "en" ? "Blog" : "博客" },
           ]}
         />
         <VisibleBreadcrumb
           items={[
-            { label: locale === "en" ? "Home" : "首页", href: `/${locale}` },
+            { label: locale === "en" ? "Home" : "首页", href: localePath(locale) },
             { label: locale === "en" ? "Blog" : "博客" },
           ]}
         />
@@ -150,7 +150,7 @@ export default async function BlogPage({
         {/* Category filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4 border-b border-brand-border/40 pb-4">
           <Link
-            href={`/${locale}/blog${validPillar ? `?pillar=${validPillar}` : ""}`}
+            href={`${localePath(locale, "/blog")}${validPillar ? `?pillar=${validPillar}` : ""}`}
             className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
               !validCategory
                 ? "bg-brand-accent text-white"
@@ -162,7 +162,7 @@ export default async function BlogPage({
           {availableCategories.map((cat) => (
             <Link
               key={cat}
-              href={`/${locale}/blog?category=${cat}${validPillar ? `&pillar=${validPillar}` : ""}`}
+              href={`${localePath(locale, "/blog")}?category=${cat}${validPillar ? `&pillar=${validPillar}` : ""}`}
               className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
                 validCategory === cat
                   ? "bg-brand-accent text-white"
@@ -177,7 +177,7 @@ export default async function BlogPage({
         {/* Pillar filter tabs */}
         <div className="flex flex-wrap gap-2 mb-10">
           <Link
-            href={`/${locale}/blog${validCategory ? `?category=${validCategory}` : ""}`}
+            href={`${localePath(locale, "/blog")}${validCategory ? `?category=${validCategory}` : ""}`}
             className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
               !validPillar
                 ? "bg-brand-accent/20 text-brand-accent border border-brand-accent/40"
@@ -189,7 +189,7 @@ export default async function BlogPage({
           {availablePillars.map((p) => (
             <Link
               key={p}
-              href={`/${locale}/blog?${validCategory ? `category=${validCategory}&` : ""}pillar=${p}`}
+              href={`${localePath(locale, "/blog")}?${validCategory ? `category=${validCategory}&` : ""}pillar=${p}`}
               className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
                 validPillar === p
                   ? "bg-brand-accent/20 text-brand-accent border border-brand-accent/40"
@@ -223,8 +223,8 @@ export default async function BlogPage({
                       key={p}
                       href={
                         p === 1
-                          ? `/${locale}/blog${validCategory ? `?category=${validCategory}` : ""}${validPillar ? `${validCategory ? "&" : "?"}pillar=${validPillar}` : ""}`
-                          : `/${locale}/blog?page=${p}${validCategory ? `&category=${validCategory}` : ""}${validPillar ? `&pillar=${validPillar}` : ""}`
+                          ? `${localePath(locale, "/blog")}${validCategory ? `?category=${validCategory}` : ""}${validPillar ? `${validCategory ? "&" : "?"}pillar=${validPillar}` : ""}`
+                          : `${localePath(locale, "/blog")}?page=${p}${validCategory ? `&category=${validCategory}` : ""}${validPillar ? `&pillar=${validPillar}` : ""}`
                       }
                       className={`w-8 h-8 flex items-center justify-center rounded-full text-[13px] font-medium transition-colors ${
                         p === page
@@ -308,7 +308,7 @@ export default async function BlogPage({
             </p>
           </div>
           <Link
-            href={`/${locale}/tools`}
+            href={localePath(locale, "/tools")}
             className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
           >
             {locale === "en" ? "Explore free tools" : "探索免费工具"}

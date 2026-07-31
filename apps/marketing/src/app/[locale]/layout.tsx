@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { Space_Grotesk, DM_Sans, Noto_Sans_SC } from "next/font/google";
 import { routing } from "@/i18n/routing";
 import { PageShell } from "@/components/layout/page-shell";
+import { localePath } from "@/lib/locale-path";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -64,7 +65,7 @@ export default async function LocaleLayout({
           rel="alternate"
           type="application/rss+xml"
           title={`GenGrowth Blog (${locale})`}
-          href={`/${locale}/blog/rss.xml`}
+          href={localePath(locale, "/blog/rss.xml")}
         />
       </head>
       <body className={`${fontVars} font-sans antialiased`}>

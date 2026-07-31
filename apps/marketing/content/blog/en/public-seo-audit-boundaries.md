@@ -88,8 +88,8 @@ those statements apart gives a team a cleaner handoff to its next diagnostic.
 
 ## Pick the next tool by the unanswered question
 
-Run a [free SEO audit](/en/tools/seo-audit) when you want a fast public signal
-from one URL. Run an [internal link audit](/en/tools/internal-link-audit) when
+Run a [free SEO audit](/tools/seo-audit) when you want a fast public signal
+from one URL. Run an [internal link audit](/tools/internal-link-audit) when
 the question is structural and needs a bounded relationship map. Move to a
 connected project only when the decision requires data that a public request
 cannot honestly prove.

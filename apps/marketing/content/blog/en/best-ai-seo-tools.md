@@ -18,7 +18,7 @@ An AI SEO tool is **software that uses machine learning to do the repeatable par
 
 - Covers the full workflow, not one slice: audit, content, rank tracking, reporting, and technical remediation
 - Judged on what it automates end to end, not on how human its prose reads
-- Sits inside a larger growth stack, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) actually compounds
+- Sits inside a larger growth stack, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds
 
 A buyer searching for tools to automate their SEO operation finds shelves of content-quality reviews and almost nothing on the other four jobs. So this piece compares AI SEO tools the way an operator buys them — by workflow coverage.
 
@@ -28,7 +28,7 @@ The cost of the content-only framing is invisible until you have already bought.
 
 That bias is structural, not accidental. Open the typical "best AI SEO tools" roundup and the evaluation weight lands on AI content quality — keyword density, topical coverage, readability — while the tools that automate rank monitoring, audit work, and reporting get a line or two if they appear at all. A buyer skimming these lists sees content scores foregrounded again and again, until the category "best AI SEO tools" reads, in practice, like a synonym for "best AI content tools."
 
-The hours an AI SEO tool should give back are rarely the writing hours. Drafting is the visible task, so it gets tested; the silent time sinks are the recurring ones. For most operating teams, the auditing, rank-monitoring, and reporting work recurs every week and, taken together, eats more time than producing net-new drafts. A tool that automates only content leaves the compounding work — the [organic SEO services](/en/blog/organic-seo-services) motion of audits, internal linking, and rank surveillance — exactly as manual as before. You pay for automation and keep doing the toil.
+The hours an AI SEO tool should give back are rarely the writing hours. Drafting is the visible task, so it gets tested; the silent time sinks are the recurring ones. For most operating teams, the auditing, rank-monitoring, and reporting work recurs every week and, taken together, eats more time than producing net-new drafts. A tool that automates only content leaves the compounding work — the [organic SEO services](/blog/organic-seo-services) motion of audits, internal linking, and rank surveillance — exactly as manual as before. You pay for automation and keep doing the toil.
 
 ## How AI SEO Tools Work / Play Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ In practice, the gap between "AI content tool" and "AI SEO tool" shows up the mo
 
 ### The agency managing forty client sites
 
-An agency cannot read forty audit reports by hand every week. The AI SEO tool that helps here is the one that triages — surfaces the three issues per site that move rankings and suppresses the ninety that do not. Content quality is irrelevant to that job; prioritization is everything, the same logic behind a disciplined [agency rank tracking](/en/blog/agency-rank-tracking) setup. A tool that drafts beautifully but ranks audit issues alphabetically has automated the wrong thing.
+An agency cannot read forty audit reports by hand every week. The AI SEO tool that helps here is the one that triages — surfaces the three issues per site that move rankings and suppresses the ninety that do not. Content quality is irrelevant to that job; prioritization is everything, the same logic behind a disciplined [agency rank tracking](/blog/agency-rank-tracking) setup. A tool that drafts beautifully but ranks audit issues alphabetically has automated the wrong thing.
 
 ### The SaaS team with one in-house marketer
 
-Here the bottleneck is reporting, not writing. The marketer can draft. What they cannot do is rebuild a stakeholder report every Monday from five data sources. An AI SEO tool earns its seat by automating that report, which is why it should plug into a real [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) rather than exporting a static screenshot someone reformats by hand.
+Here the bottleneck is reporting, not writing. The marketer can draft. What they cannot do is rebuild a stakeholder report every Monday from five data sources. An AI SEO tool earns its seat by automating that report, which is why it should plug into a real [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) rather than exporting a static screenshot someone reformats by hand.
 
 ### The startup with no SEO hire yet
 
-A startup needs the audit it cannot afford a consultant to run. The useful tool here automates the first technical pass — the kind a [local SEO audit](/en/blog/local-seo-audit) formalizes — so a non-specialist sees what to fix before writing a single new page. A high draft-quality score is, for this buyer, the least relevant number on the page.
+A startup needs the audit it cannot afford a consultant to run. The useful tool here automates the first technical pass — the kind a [local SEO audit](/blog/local-seo-audit) formalizes — so a non-specialist sees what to fix before writing a single new page. A high draft-quality score is, for this buyer, the least relevant number on the page.
 
 ## Common Implementation Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against the workflow, not the demo. A useful sequence:
 3. Discount any capability that still needs full manual review to trust; that is assistance, not automation.
 4. Weigh the score by your actual hours, so the tool that automates your biggest time sink wins — even if its drafts read slightly worse than a rival's.
 
-This is the same portfolio discipline behind choosing sustainable, defensible channels — the logic in [ethical SEO](/en/blog/ethical-seo) applies to tool selection too: optimize for what compounds, not for what demos well.
+This is the same portfolio discipline behind choosing sustainable, defensible channels — the logic in [ethical SEO](/blog/ethical-seo) applies to tool selection too: optimize for what compounds, not for what demos well.
 
 ## How to Implement AI SEO Tools Step by Step
 
@@ -104,9 +104,9 @@ Usually two or three with clear, non-overlapping jobs — one for audit and moni
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds, the context any tool plugs into
-- [Agency rank tracking](/en/blog/agency-rank-tracking) — the monitoring job AI tools should automate
-- [Organic SEO services](/en/blog/organic-seo-services) — where automated workflow fits a real growth budget
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds, the context any tool plugs into
+- [Agency rank tracking](/blog/agency-rank-tracking) — the monitoring job AI tools should automate
+- [Organic SEO services](/blog/organic-seo-services) — where automated workflow fits a real growth budget
 
 ## Take Action
 

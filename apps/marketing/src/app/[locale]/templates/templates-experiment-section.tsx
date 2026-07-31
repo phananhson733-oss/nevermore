@@ -9,6 +9,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export function TemplatesExperimentSection() {
   const tExp = useTranslations("templates.experiments");
@@ -43,7 +44,7 @@ export function TemplatesExperimentSection() {
           {tExp("desc")}
         </motion.p>
         <div className="flex flex-wrap justify-center gap-6">
-          <Link href={`/${locale}/blog`}>
+          <Link href={localePath(locale, "/blog")}>
             <Button
               size="lg"
               className="bg-brand-accent hover:bg-brand-accent-hover text-white text-base px-8 h-12"

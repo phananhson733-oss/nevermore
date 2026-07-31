@@ -6,6 +6,7 @@
 
 import { useLocale } from "next-intl";
 import { useRouter, usePathname } from "next/navigation";
+import { localePath, stripLocalePrefix } from "@/lib/locale-path";
 
 export function LanguageSwitcher() {
   const locale = useLocale();
@@ -14,8 +15,9 @@ export function LanguageSwitcher() {
 
   const switchLocale = () => {
     const newLocale = locale === "en" ? "zh" : "en";
-    const newPath = pathname.replace(`/${locale}`, `/${newLocale}`);
-    router.push(newPath);
+    // The default locale has no prefix to swap, so rebuild the path from its
+    // locale-agnostic form rather than substituting one prefix for another.
+    router.push(localePath(newLocale, stripLocalePrefix(pathname)));
   };
 
   return (

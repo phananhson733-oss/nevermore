@@ -5,12 +5,12 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 import { generatePageMetadata } from "@/lib/seo";
-import { siteConfig } from "@/config/site";
 import {
   BreadcrumbJsonLd,
   FaqPageJsonLd,
 } from "@/components/seo/json-ld";
 import PricingPageClient from "./pricing-page-client";
+import { localeUrl } from "@/lib/locale-path";
 
 const FAQ_KEYS = ["q1", "q2", "q3", "q4", "q5"] as const;
 
@@ -61,7 +61,7 @@ export default async function PricingPage({
         items={[
           {
             name: tCommon("home"),
-            url: `${siteConfig.url}/${locale}`,
+            url: localeUrl(locale),
           },
           {
             name: tNav("pricing"),

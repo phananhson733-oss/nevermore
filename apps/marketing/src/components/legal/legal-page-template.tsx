@@ -5,6 +5,7 @@
 import type { LegalDocumentVersion } from "@/types";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { marked } from "marked";
+import { localePath } from "@/lib/locale-path";
 
 interface LegalPageTemplateProps {
   title: string;
@@ -46,7 +47,7 @@ export function LegalPageTemplate({
       <div className="max-w-3xl mx-auto px-4">
         <VisibleBreadcrumb
           items={[
-            { label: locale === "en" ? "Home" : "首页", href: `/${locale}` },
+            { label: locale === "en" ? "Home" : "首页", href: localePath(locale) },
             { label: breadcrumbLabel },
           ]}
         />

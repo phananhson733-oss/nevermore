@@ -17,7 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
-    url: `${baseURL}/en/tools/seo-audit`,
+    url: `${baseURL}/tools/seo-audit`,
     timeout: 60_000,
     reuseExistingServer: false,
   },

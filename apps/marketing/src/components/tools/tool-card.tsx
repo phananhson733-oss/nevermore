@@ -5,6 +5,7 @@
 "use client";
 
 import Link from "next/link";
+import { localePath } from "@/lib/locale-path";
 
 interface ToolCardProps {
   slug: string;
@@ -36,7 +37,7 @@ export function ToolCard({
 
   return (
     <Link
-      href={`/${locale}/tools/${slug}`}
+      href={localePath(locale, `/tools/${slug}`)}
       className="group block"
     >
       <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">

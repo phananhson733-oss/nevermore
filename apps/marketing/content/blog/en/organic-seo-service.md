@@ -62,7 +62,7 @@ The table below contrasts a baseline reflex with the more durable choice an expe
 
 Evaluating this kind of engagement is mostly an exercise in checking boundaries. Start by asking the vendor to state, in plain terms, which methods it uses and which it refuses — a clear refusal list is a stronger signal than a long capabilities list. Ask how it acquires links, and listen for earned-and-editorial language rather than anything that sounds transactional.
 
-Next, probe the reporting. A trustworthy partner shows you the work and the leading indicators, not just a rankings screenshot; if you want to see how transparent reporting should look, review the standards behind [ethical SEO](/en/blog/ethical-seo) before you sign. Finally, weigh cost against scope rather than in isolation — a low price attached to vague methods is the most expensive option on the table, and genuinely [cost-effective SEO services](/en/blog/cost-effective-seo-services) are the ones whose durability you can actually verify.
+Next, probe the reporting. A trustworthy partner shows you the work and the leading indicators, not just a rankings screenshot; if you want to see how transparent reporting should look, review the standards behind [ethical SEO](/blog/ethical-seo) before you sign. Finally, weigh cost against scope rather than in isolation — a low price attached to vague methods is the most expensive option on the table, and genuinely [cost-effective SEO services](/blog/cost-effective-seo-services) are the ones whose durability you can actually verify.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have chosen a partner, a sound organic SEO service follows a recognizab
 4. **Earn authority deliberately.** Pursue links and mentions through outreach and digital PR that would stand up to scrutiny, never bought placements.
 5. **Measure and iterate.** Track leading indicators, prune what underperforms, and reinvest in what compounds — this is where the work separates from a one-off project.
 
-For teams standardizing this sequence, a structured [SEO starter package](/en/blog/seo-starter-package) can turn these steps into a repeatable onboarding motion.
+For teams standardizing this sequence, a structured [SEO starter package](/blog/seo-starter-package) can turn these steps into a repeatable onboarding motion.
 
 ## Frequently Asked Questions About Organic SEO Service
 
@@ -96,10 +96,10 @@ White hat describes methods search engines explicitly permit. For this kind of e
 
 ## Related Reading
 
-- [Organic SEO services](/en/blog/organic-seo-services) — a companion overview of what the ongoing work includes.
-- [Ethical SEO](/en/blog/ethical-seo) — the compliance standards a credible organic program is built on.
-- [Cost-effective SEO services](/en/blog/cost-effective-seo-services) — how to weigh durability against price without overpaying.
-- [SEO starter package](/en/blog/seo-starter-package) — a structured way to operationalize the implementation sequence above.
+- [Organic SEO services](/blog/organic-seo-services) — a companion overview of what the ongoing work includes.
+- [Ethical SEO](/blog/ethical-seo) — the compliance standards a credible organic program is built on.
+- [Cost-effective SEO services](/blog/cost-effective-seo-services) — how to weigh durability against price without overpaying.
+- [SEO starter package](/blog/seo-starter-package) — a structured way to operationalize the implementation sequence above.
 
 ## Take Action
 

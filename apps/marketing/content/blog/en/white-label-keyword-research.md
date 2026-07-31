@@ -29,7 +29,7 @@ localeExclusive: true
 <ol>
 <li><strong>Tool access.</strong> The agency logs into the vendor platform, pulls keyword volume, difficulty, and clustering data, and treats that screen as an internal workspace clients never see.</li>
 <li><strong>Branded delivery.</strong> The agency exports findings into reports or a portal carrying its own logo, colors, and domain, so deliverables read as first-party work.</li>
-<li><strong>Reseller API.</strong> Larger agencies skip manual export entirely and pipe the vendor's data into their own dashboard through an API, then layer their own client-tracking views on top, often alongside <a href="/en/blog/agency-rank-tracking">rank tracking across every client account</a>.</li>
+<li><strong>Reseller API.</strong> Larger agencies skip manual export entirely and pipe the vendor's data into their own dashboard through an API, then layer their own client-tracking views on top, often alongside <a href="/blog/agency-rank-tracking">rank tracking across every client account</a>.</li>
 <li><strong>Account fronting.</strong> One account manager fronts all communication, so the client experiences a single brand even though research, reporting, and tracking run on separate systems.</li>
 </ol>
 <p>The friction shows up between layers one and two. A platform can advertise billions of keywords and still hand you a PDF stamped with its own name, which means the delivery layer is where most evaluations should focus.</p>

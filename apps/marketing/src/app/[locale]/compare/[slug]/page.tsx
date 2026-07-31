@@ -4,6 +4,7 @@
 // once this file is updated, update header comments and _DIR.md in this folder
 import { notFound, permanentRedirect } from "next/navigation";
 import { isValidComparisonSlug } from "@/lib/mock/compare-content";
+import { localePath } from "@/lib/locale-path";
 
 export default async function CompareDetailPage({
   params,
@@ -12,5 +13,5 @@ export default async function CompareDetailPage({
 }) {
   const { locale, slug } = await params;
   if (!isValidComparisonSlug(slug)) notFound();
-  permanentRedirect(`/${locale}/blog#compare-${slug}`);
+  permanentRedirect(`${localePath(locale, "/blog")}#compare-${slug}`);
 }

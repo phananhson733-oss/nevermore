@@ -3,6 +3,7 @@
 // @pos    -- legacy URL compatibility after comparisons moved into Blog
 // once this file is updated, update header comments and _DIR.md in this folder
 import { permanentRedirect } from "next/navigation";
+import { localePath } from "@/lib/locale-path";
 
 export default async function ComparePage({
   params,
@@ -10,5 +11,5 @@ export default async function ComparePage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  permanentRedirect(`/${locale}/blog#comparisons`);
+  permanentRedirect(`${localePath(locale, "/blog")}#comparisons`);
 }

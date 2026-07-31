@@ -103,7 +103,7 @@ Programmatic pages fail when teams build templates without real search demand be
 
 ## Related Reading
 
-- [running SEO from day one as a SaaS startup](/en/blog/seo-for-saas-startups) — for early teams deciding whether to run search in-house before hiring
+- [running SEO from day one as a SaaS startup](/blog/seo-for-saas-startups) — for early teams deciding whether to run search in-house before hiring
 - comparing B2B agency SEO engagement models — for weighing a consultant against an agency or in-house build
 - product-led content strategy — for the content philosophy that underpins this approach
 

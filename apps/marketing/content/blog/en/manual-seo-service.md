@@ -60,9 +60,9 @@ The table below contrasts a baseline reflex with the more durable choice an expe
 
 ## How to Evaluate a Manual SEO Service
 
-Evaluating a manual SEO service is mostly an exercise in verifying where the human work actually happens. Start by asking the vendor to show its outreach logs and its prospect-qualification process — a real manual link building service can name the domains it pitched and explain why each qualified, while a tool-only shop will show you volume metrics instead. Ask which steps are automated and which are hands-on, and be suspicious of any answer that claims everything is manual; that usually means either inflated pricing or a claim that will not survive scrutiny. For the tracking side of the engagement, confirm the vendor runs proper [agency rank tracking](/en/blog/agency-rank-tracking) so the automated layer is doing its job while humans focus on judgment.
+Evaluating a manual SEO service is mostly an exercise in verifying where the human work actually happens. Start by asking the vendor to show its outreach logs and its prospect-qualification process — a real manual link building service can name the domains it pitched and explain why each qualified, while a tool-only shop will show you volume metrics instead. Ask which steps are automated and which are hands-on, and be suspicious of any answer that claims everything is manual; that usually means either inflated pricing or a claim that will not survive scrutiny. For the tracking side of the engagement, confirm the vendor runs proper [agency rank tracking](/blog/agency-rank-tracking) so the automated layer is doing its job while humans focus on judgment.
 
-Next, probe the reporting and the tooling honestly. A trustworthy partner is candid that software compiles the numbers — you want to see how transparent reporting works before you sign, so review the standards behind a good [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies). Finally, weigh the manual premium against scope: paying human rates only makes sense on the tasks where a person changes the outcome, so map which deliverables truly need hands-on manual SEO work and which are better handed to automation.
+Next, probe the reporting and the tooling honestly. A trustworthy partner is candid that software compiles the numbers — you want to see how transparent reporting works before you sign, so review the standards behind a good [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies). Finally, weigh the manual premium against scope: paying human rates only makes sense on the tasks where a person changes the outcome, so map which deliverables truly need hands-on manual SEO work and which are better handed to automation.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have chosen a partner, a sound engagement follows a recognizable sequen
 4. **Run human outreach deliberately.** Qualify each prospect domain individually and send personalized pitches; keep logs so the manual work is auditable later.
 5. **Measure with automation, decide with people.** Let software track rankings and compile reports, then have a human read the signals and reallocate effort each cycle.
 
-For teams deciding how much of the pipeline to hand to software, a clear-eyed look at [SEO automation](/en/blog/seo-automation) helps set the line before the retainer starts, and an [all-in-one SEO](/en/blog/all-in-one-seo) view of the stack shows which layers the tooling already covers.
+For teams deciding how much of the pipeline to hand to software, a clear-eyed look at [SEO automation](/blog/seo-automation) helps set the line before the retainer starts, and an [all-in-one SEO](/blog/all-in-one-seo) view of the stack shows which layers the tooling already covers.
 
 ## Frequently Asked Questions About Manual SEO Service
 
@@ -96,10 +96,10 @@ Ask for outreach logs, named prospect lists, and the reasoning behind each quali
 
 ## Related Reading
 
-- [Agency rank tracking](/en/blog/agency-rank-tracking) — the automated layer that should run alongside any manual SEO service.
-- [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) — how transparent, software-compiled reporting should look.
-- [SEO outreach agency](/en/blog/seo-outreach-agency) — where human, relationship-driven link building fits in the mix.
-- [SEO automation](/en/blog/seo-automation) — how to draw the line between what software does and what humans should own.
+- [Agency rank tracking](/blog/agency-rank-tracking) — the automated layer that should run alongside any manual SEO service.
+- [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) — how transparent, software-compiled reporting should look.
+- [SEO outreach agency](/blog/seo-outreach-agency) — where human, relationship-driven link building fits in the mix.
+- [SEO automation](/blog/seo-automation) — how to draw the line between what software does and what humans should own.
 
 ## Take Action
 

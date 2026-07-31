@@ -47,8 +47,8 @@ Each level pulls in at a different point in delivery, and a tool tuned for Level
 Teams routinely misjudge what white-label support actually covers, and shallow comparison posts reinforce it. The recurring misreadings:
 
 1. **"White-label means everything is branded."** Reality: most tools brand only the PDF export at the entry level; the dashboard, login, and emails often still carry the vendor's name until you pay for a higher tier.
-2. **"More SEO features make a better resale tool."** Reality: feature depth and resale depth are separate axes; a tool can run deep [white-label keyword research](/en/blog/white-label-keyword-research) and still expose its own brand the moment a client logs in.
-3. **"Free white-label tools resell the same as paid ones."** Reality: a [free white label seo report generator](/en/blog/free-white-label-seo) usually caps branding at reports and watermarks the rest, so it fits Level 1 testing but rarely survives a Level 2 client portal.
+2. **"More SEO features make a better resale tool."** Reality: feature depth and resale depth are separate axes; a tool can run deep [white-label keyword research](/blog/white-label-keyword-research) and still expose its own brand the moment a client logs in.
+3. **"Free white-label tools resell the same as paid ones."** Reality: a [free white label seo report generator](/blog/free-white-label-seo) usually caps branding at reports and watermarks the rest, so it fits Level 1 testing but rarely survives a Level 2 client portal.
 4. **"Switching tiers later is trivial."** Reality: moving from report-only to full platform resale often means re-onboarding clients into a new portal, which is friction your clients feel directly.
 
 ## White-Label SEO Tools at a Glance — Quick Reference
@@ -70,7 +70,7 @@ Evaluating the best white label seo tool means scoring resale depth on things yo
 4. **Report customization.** Verify you can set your logo, colors, and sender details without the tool stamping its own brand anywhere on the output.
 5. **Migration cost.** Ask what happens when you move up a tier; if clients must re-onboard into a new portal, factor that friction in before you commit.
 
-These map directly to where agencies get burned, which is why a tool with a thinner feature set but cleaner Level 3 resale often beats a feature-rich tool stuck at Level 1. Our breakdown of [multi-client rank tracking for agencies](/en/blog/agency-rank-tracking) covers how the tracking layer specifically affects this scoring.
+These map directly to where agencies get burned, which is why a tool with a thinner feature set but cleaner Level 3 resale often beats a feature-rich tool stuck at Level 1. Our breakdown of [multi-client rank tracking for agencies](/blog/agency-rank-tracking) covers how the tracking layer specifically affects this scoring.
 
 ## How to Implement a White-Label SEO Tool Step by Step
 

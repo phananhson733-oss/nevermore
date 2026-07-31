@@ -46,4 +46,4 @@ localeExclusive: false
 <p><strong>Orphan pages.</strong> Link every page from at least one category page.</p>
 
 <h2>Scaling with GenGrowth</h2>
-<p>GenGrowth automates the programmatic SEO pipeline end-to-end. See how <a href="/en/blog/astrologywiki-case-study">astrologywiki.com scaled to 67 pages and 5,000 users in 14 weeks</a>. For measurement, read our <a href="/en/blog/marketing-attribution-models">attribution guide</a>.</p>
+<p>GenGrowth automates the programmatic SEO pipeline end-to-end. See how <a href="/blog/astrologywiki-case-study">astrologywiki.com scaled to 67 pages and 5,000 users in 14 weeks</a>. For measurement, read our <a href="/blog/marketing-attribution-models">attribution guide</a>.</p>

@@ -31,7 +31,7 @@ The margin math is unforgiving. Choosing the wrong free SEO company does not jus
 A free SEO company works by trading upfront labor for a qualified pipeline, and how that plays out depends entirely on the operator's incentives. Consider three scenarios a B2B buyer regularly encounters:
 
 1. A reputable agency offers a free SEO audit to a Series A SaaS company. The team delivers a prioritized report — crawl issues, content gaps, internal-link opportunities — and explains what a paid retainer would tackle next. The value is real and inspectable before any money changes hands, and durable gains come from fixing fundamentals.
-2. A platform bundles free SEO services inside a self-serve subscription: automated site audits, keyword tracking, and reporting. Here the offer is effectively software, and the durable-gains question becomes whether the tooling teaches your team to compound or just generates dashboards nobody acts on. Pairing this approach with [organic seo services](/en/blog/organic-seo-services) that emphasize content and authority tends to convert audits into rankings.
+2. A platform bundles free SEO services inside a self-serve subscription: automated site audits, keyword tracking, and reporting. Here the offer is effectively software, and the durable-gains question becomes whether the tooling teaches your team to compound or just generates dashboards nobody acts on. Pairing this approach with [organic seo services](/blog/organic-seo-services) that emphasize content and authority tends to convert audits into rankings.
 3. An outreach specialist offers a trial that promises rapid ranking jumps. The work turns out to be spun content and link networks — spikes that evaporate at the next update. Same category, opposite outcome.
 
 ## Common Free SEO Company Misreadings
@@ -58,9 +58,9 @@ The table below separates the baseline version of each offer from the durable ve
 
 Evaluate a free SEO company the way you would vet any vendor touching a critical channel: by inspecting incentives, methods, and evidence rather than promises. Start by asking how the provider makes money, because a transparent business model predicts transparent work.
 
-Next, examine the methods. A trustworthy provider will describe its link approach as earned outreach and its content approach as genuinely useful — an [ethical seo](/en/blog/ethical-seo) posture that aligns with published search guidance. If the pitch leans on "secret techniques," proprietary link networks, or guaranteed rankings, treat those as disqualifiers.
+Next, examine the methods. A trustworthy provider will describe its link approach as earned outreach and its content approach as genuinely useful — an [ethical seo](/blog/ethical-seo) posture that aligns with published search guidance. If the pitch leans on "secret techniques," proprietary link networks, or guaranteed rankings, treat those as disqualifiers.
 
-Then inspect the evidence. Ask to see a redacted example of a prior free SEO audit and press on how findings were prioritized. Finally, weigh the exit: a durable-minded provider is comfortable with you keeping the audit even if you never sign, because their confidence is the pitch. Comparing offers against [cost-effective seo services](/en/blog/cost-effective-seo-services) benchmarks helps you judge whether "free" is a genuine on-ramp or a trap.
+Then inspect the evidence. Ask to see a redacted example of a prior free SEO audit and press on how findings were prioritized. Finally, weigh the exit: a durable-minded provider is comfortable with you keeping the audit even if you never sign, because their confidence is the pitch. Comparing offers against [cost-effective seo services](/blog/cost-effective-seo-services) benchmarks helps you judge whether "free" is a genuine on-ramp or a trap.
 
 ## How to Implement It Step by Step
 
@@ -71,7 +71,7 @@ Once you have chosen a provider, implement the engagement deliberately so the fr
 3. Vet every recommended tactic against white-hat criteria before you act on it; discard anything that relies on manipulation.
 4. Implement the highest-impact fixes first, and log a baseline of your current rankings and traffic so you can attribute change later.
 5. Re-measure after enough time has passed for search engines to recrawl, and judge results by durable movement rather than any initial spike.
-6. Decide on the paid path only after the free work has proven the provider compounds value. A free [free-seo-consultation](/en/blog/free-seo-consultation) is a low-risk way to test that fit before committing budget.
+6. Decide on the paid path only after the free work has proven the provider compounds value. A free [free-seo-consultation](/blog/free-seo-consultation) is a low-risk way to test that fit before committing budget.
 
 ## Frequently Asked Questions About Free SEO Company
 
@@ -93,10 +93,10 @@ The biggest risk is short-term tactics that produce a ranking spike and then col
 
 ## Related Reading
 
-- [ethical seo](/en/blog/ethical-seo) — the white-hat standard a trustworthy free provider should meet.
-- [organic seo services](/en/blog/organic-seo-services) — how compounding content and authority actually build rankings.
-- [cost-effective seo services](/en/blog/cost-effective-seo-services) — benchmarking "free" against paid options that earn their keep.
-- [free seo consultation](/en/blog/free-seo-consultation) — a low-risk way to test provider fit before spending.
+- [ethical seo](/blog/ethical-seo) — the white-hat standard a trustworthy free provider should meet.
+- [organic seo services](/blog/organic-seo-services) — how compounding content and authority actually build rankings.
+- [cost-effective seo services](/blog/cost-effective-seo-services) — benchmarking "free" against paid options that earn their keep.
+- [free seo consultation](/blog/free-seo-consultation) — a low-risk way to test provider fit before spending.
 
 ## Take Action
 

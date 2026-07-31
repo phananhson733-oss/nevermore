@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   output: "standalone",
   turbopack: { root: monorepoRoot },
   outputFileTracingRoot: monorepoRoot,
+  async rewrites() {
+    // proxy.ts skips paths containing a dot, so the unprefixed default-locale
+    // feed never reaches next-intl's rewrite and would 404. Map it onto the
+    // locale route explicitly; /zh/blog/rss.xml keeps working through routing.
+    return [{ source: "/blog/rss.xml", destination: "/en/blog/rss.xml" }];
+  },
   async headers() {
     return [
       {
@@ -24,7 +30,8 @@ const nextConfig: NextConfig = {
           },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+            value:
+              "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
           },
           {
             key: "Strict-Transport-Security",

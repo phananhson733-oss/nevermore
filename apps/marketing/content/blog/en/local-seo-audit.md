@@ -28,7 +28,7 @@ A local SEO audit matters because most consultants conflate a site audit with a 
 2. **Reports that confuse instead of clarify.** A flat list of 40 mixed issues reads as thorough but leaves the client unsure what to approve, which stalls the work and the invoice.
 3. **Margin lost to rework.** Every cycle that re-audits the whole site from scratch eats time that a repeatable, prioritized review would protect.
 
-A workflow that answers the right question first saves the back-and-forth that erodes both margin and trust, and it pairs naturally with [automating rank tracking across every client](/en/blog/agency-rank-tracking).
+A workflow that answers the right question first saves the back-and-forth that erodes both margin and trust, and it pairs naturally with [automating rank tracking across every client](/blog/agency-rank-tracking).
 
 ## How the Audit Plays Out in Real Agency Work
 
@@ -81,7 +81,7 @@ Follow an ordered path so the audit stays repeatable across accounts:
 4. Run the on-page and technical checks separately, labeling them as organic-ranking inputs rather than local pack inputs, so the report never implies that a content fix will solve a profile problem.
 5. Score the local backlink and citation footprint against the closest local competitors.
 6. Prioritize every finding by local pack impact, then organic impact, into a single ordered fix list.
-7. Package the results into a client-facing report that names the next three actions, and lean on a [reporting tool built for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) when the work is resold under another brand.
+7. Package the results into a client-facing report that names the next three actions, and lean on a [reporting tool built for SEO companies](/blog/seo-reporting-tool-for-seo-companies) when the work is resold under another brand.
 
 ## Common Questions About a Local SEO Audit
 

@@ -63,4 +63,4 @@ localeExclusive: false
 <li>Human review is non-negotiable for niche content.</li>
 </ol>
 
-<p>To start your own growth journey, explore <a href="/features">GenGrowth's features</a> or read our <a href="/en/blog/what-is-growth-automation">complete guide to growth automation</a>.</p>
+<p>To start your own growth journey, explore <a href="/features">GenGrowth's features</a> or read our <a href="/blog/what-is-growth-automation">complete guide to growth automation</a>.</p>

@@ -11,6 +11,7 @@ import { motion } from "framer-motion";
 import { ArrowDownRight, ArrowRight } from "lucide-react";
 import { fadeInUp } from "@/lib/animations";
 import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export function HeroSection() {
   const t = useTranslations("home.hero");
@@ -64,7 +65,7 @@ export function HeroSection() {
             <ArrowRight aria-hidden="true" className="size-4" />
           </a>
           <Link
-            href={`/${locale}/tools`}
+            href={localePath(locale, "/tools")}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-brand-border px-6 text-sm font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/70 hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             {t("secondaryCta")}
