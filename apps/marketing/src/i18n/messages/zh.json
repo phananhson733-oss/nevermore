@@ -830,6 +830,246 @@
       "ctaBody": "登录后的 GenGrowth App 是一套独立系统，用于保存项目证据和工作流；这份公共审计仍然保持匿名、无状态。",
       "ctaButton": "打开 GenGrowth App"
     },
+    "trafficDrop": {
+      "title": "流量下降诊断",
+      "description": "连接 Search Console，在你自己的数据上看清变化，每一个结论都附带证据。",
+      "metaTitle": "免费流量下降诊断 | GenGrowth",
+      "metaDescription": "用你自己的 Search Console 数据诊断自然流量下降。对比窗口由变点检测自动选定，发现按证据强度分层，每条建议都写明它依据什么。",
+      "eyebrow": "免费工具",
+      "pageTitle": "你的流量发生了什么？",
+      "pageSubtitle": "连接 Search Console，在你自己的数据上看清变化 —— 我们展示证据和可能的解释，不假装知道唯一答案。",
+      "connectTitle": "连接 Search Console 后开始",
+      "connectBody": "这个工具读取你站点的每日点击与曝光。只读权限，仅用于生成这份报告，不在我们的服务器上保存。",
+      "connectCta": "连接 Search Console",
+      "connectTrust": "只读授权，随时可在 Google 账号里撤销。",
+      "connectPending": "本站的 Search Console 连接尚未开放。诊断引擎已经就绪，开放当天即可运行 —— 在那之前，下面两个工具完全不需要连接。",
+      "signedInNoGrant": "你已登录，但这个工具还需要 Search Console 的只读授权。",
+      "propertyLabel": "站点",
+      "rerun": "重新分析",
+      "running": "正在读取你的 Search Console 数据…",
+      "dataThrough": "数据截至 {date}",
+      "dataThroughNote": "Search Console 最终数据有 2–3 天延迟",
+      "historyCovered": "历史覆盖 {days} 天",
+      "historyFrom": "始于 {date}",
+      "chartTitle": "点击与曝光 · 每日",
+      "chartAlt": "{days} 天的每日点击与曝光折线图，{start} 至 {end}",
+      "clicks": "点击",
+      "impressions": "曝光",
+      "impressionsRightAxis": "曝光（右侧刻度）",
+      "date": "日期",
+      "viewAsTable": "以表格查看这段序列",
+      "windowsAreFixed": "高亮区 = 对比窗口",
+      "windowsFixedExplainer": "窗口由变点检测自动选定，不提供手动调整 —— 换个窗口就换一个结论，那是挑一个想听的答案，不是诊断。",
+      "notAvailable": "无法获取",
+      "limitationLabel": "边界",
+      "basisLabel": "依据",
+      "windows": {
+        "peak": {
+          "label": "A · 峰值周",
+          "short": "A"
+        },
+        "mid": {
+          "label": "B · 其后一周",
+          "short": "B"
+        },
+        "recent": {
+          "label": "C · 最近一周",
+          "short": "C"
+        }
+      },
+      "states": {
+        "sustained_decline": {
+          "summary": "定位到一次下降，并且它持续了：峰值周之后连续两个不重叠的周都停在低位。"
+        },
+        "transient_visibility_anomaly": {
+          "summary": "峰值周之后出现骤降，但又回来了 —— 我们把它与持续性下降分开报告，因为它不是。"
+        },
+        "insufficient_history": {
+          "summary": "历史长度还不足以判定下降。数据能支撑的部分照常给出，不能支撑的部分我们不下结论。"
+        },
+        "no_material_decline": {
+          "summary": "这段序列里没有发现达到检测门槛的下降。"
+        }
+      },
+      "tiers": {
+        "observed": "观察",
+        "hypothesis": "假设",
+        "data_boundary": "数据边界"
+      },
+      "findingsTitle": "我们看到了什么 · {count} 项",
+      "findingsIntro": "按证据强度分层：观察是你数据里的事实，假设是数据不矛盾但无法证明的解释。两者不混。",
+      "findings": {
+        "two_stage_decline": {
+          "title": "这不是一次下降，是两次，而且机制不同",
+          "body": "第一阶段：曝光几乎没动，点击却掉了一半以上 —— 塌的是点击率。第二阶段：曝光才开始塌，而点击率反而回升。也就是说，先是「人还看得到你、但不点了」，之后才变成「人看不到你了」。把这两段当成一件事去修，会修错方向。"
+        },
+        "sustained_decline": {
+          "title": "峰值周之后流量下降并停在低位",
+          "body": "峰值之后两个不重叠的周都远低于峰值 —— 这是「一次下降」和「一个坏周」的分界线。"
+        },
+        "decline_concentration": {
+          "title": "下降集中在一组查询上",
+          "body": "少数几个查询贡献了大部分流失，而不是你所有排名内容都在均匀下滑。"
+        },
+        "high_impression_low_click_day": {
+          "title": "曝光最高的那天，转化远低于你的峰值周",
+          "body": "某一天的曝光超过期间内任何一天，产生的点击却极少。这正是「排名没变、点击率却塌了」的样子：来的是另一批查询。"
+        },
+        "transient_visibility_anomaly": {
+          "title": "可见性有几天骤降，随后回弹",
+          "body": "曝光相对该星期几的常态水平塌了下去，之后又回来了。我们把它与下降分开报告：回弹了的骤降不构成持续性问题的证据。"
+        },
+        "seasonality_unavailable": {
+          "title": "季节性目前无法评估",
+          "body": "同比需要去年同期的数据，这个站点还没有。我们不做估算。等历史足够长，这一项会自动可用。"
+        }
+      },
+      "measures": {
+        "stage_one_clicks_change": "阶段一点击变化",
+        "stage_one_impressions_change": "阶段一曝光变化",
+        "stage_two_impressions_change": "阶段二曝光变化",
+        "peak_ctr": "峰值周 CTR",
+        "mid_ctr": "其后一周 CTR",
+        "recent_ctr": "最近一周 CTR",
+        "total_clicks_change": "点击 · 峰值至今",
+        "total_impressions_change": "曝光 · 峰值至今",
+        "peak_clicks": "峰值周点击",
+        "recent_clicks": "最近一周点击",
+        "date": "日期",
+        "clicks": "点击",
+        "impressions": "曝光",
+        "day_ctr": "当日 CTR",
+        "peak_window_ctr": "峰值周 CTR",
+        "start_date": "起",
+        "end_date": "止",
+        "day_count": "持续天数",
+        "low_impressions": "最低曝光",
+        "baseline_impressions": "该星期几的常态",
+        "rebound_impressions": "回弹后曝光",
+        "history_days": "现有历史",
+        "required_days": "所需历史"
+      },
+      "hypotheses": {
+        "demand_cohort_receded": "该主题的搜索需求可能只是自然回落了。数据与这个解释一致，但 Search Console 无法证明因果。若下个月这组查询持续接近零而其他内容恢复，这个解释成立。",
+        "low_intent_query_influx": "如果涌入的是一批很少产生点击的查询（常见于在搜索结果页就被直接回答的问题），呈现出来正是这个形态。Search Console 无法确认这一点，查询级数据是验证它的地方。"
+      },
+      "actionsTitle": "建议的下一步 · {count} 项",
+      "actionsIntro": "每条建议都写明它依据哪条证据。没有证据支撑的建议，正是这个工具存在的意义所在 —— 不产出它们。",
+      "actionKinds": {
+        "do": "先做",
+        "external_data": "需要 Search Console 之外的数据",
+        "avoid": "不建议做"
+      },
+      "actions": {
+        "split_cohorts": {
+          "title": "先把受影响的查询群组与其他内容分开，再判断站点健康度",
+          "body": "总量数字把两类内容混在了一起。分开看之后，你才知道常青内容是真的在跌，还是只是被某一组的退潮盖住了。"
+        },
+        "isolate_stage_one_ctr": {
+          "title": "查清点击率下降是「查询构成变了」还是「你的结果变差了」",
+          "body": "这两者的修法完全相反。如果是构成变了 —— 涌入了一批本来就不产生点击的查询 —— 你的页面没有需要修的东西；如果是同一批查询上你的结果变差了，才需要动页面。判别方法：只取下降之前就已存在的那批查询，看它们的点击率是否也下降了。"
+        },
+        "pull_deploy_logs": {
+          "title": "拉取异常那几天的部署记录与 CDN / 服务器日志",
+          "body": "Search Console 的索引报告滞后于性能数据，那几天的真相不在我们能读到的数据里。如果当时有过发布、缓存清空或 CDN 故障，那就是解释；如果没有，更可能是 Google 侧的临时抓取波动，可以放下。"
+        },
+        "avoid_rank_recovery": {
+          "title": "不要因为平均位置上升就去做排名恢复",
+          "body": "平均位置是按曝光加权的。高排名查询整体消失后，这个数字会自己上升，并不意味着你原有页面的排名下滑了。以它为目标去改页面，是在解决一个不存在的问题。同理，也不要按曝光量给这些工作排优先级。"
+        }
+      },
+      "checksSummary": "本次跑了 {total} 项检测，触发 {hits} 项 —— 展开看全部，包括没触发的和查不了的",
+      "checkStatus": {
+        "hit": "已触发",
+        "clear": "未发现",
+        "not_available": "查不了"
+      },
+      "checks": {
+        "sustained_decline": "持续性下降",
+        "ctr_changepoint": "点击率变点",
+        "transient_visibility_anomaly": "短暂可见性异常",
+        "decline_concentration": "下降贡献集中度",
+        "affected_page_availability": "受影响页可访问性",
+        "sitewide_visibility_zeroed": "站点级可见性归零",
+        "single_page_dominated_decline": "单页面主导型下降",
+        "seasonality_yoy": "同比季节性",
+        "index_status_at_event": "事件期间的索引状态"
+      },
+      "checkOutcomes": {
+        "sustained_decline": {
+          "hit": "峰值之后两个不重叠的周都低于持续阈值",
+          "clear": "没有峰谷组合达到检测门槛",
+          "not_available": ""
+        },
+        "ctr_changepoint": {
+          "hit": "存在一个窗口，曝光稳住而点击骤降",
+          "clear": "点击与曝光同向变化",
+          "not_available": ""
+        },
+        "transient_visibility_anomaly": {
+          "hit": "连续数日相对该星期几的常态塌陷，随后回弹",
+          "clear": "没有哪一天低于其星期几常态到需要报告的程度",
+          "not_available": ""
+        },
+        "decline_concentration": {
+          "hit": "少数查询承担了大部分流失",
+          "clear": "流失分散在多个查询上",
+          "not_available": ""
+        },
+        "affected_page_availability": {
+          "hit": "受影响页面响应异常",
+          "clear": "抽样页面均返回 200 且可索引",
+          "not_available": ""
+        },
+        "sitewide_visibility_zeroed": {
+          "hit": "最近一周完全没有曝光记录",
+          "clear": "站点仍有曝光",
+          "not_available": ""
+        },
+        "single_page_dominated_decline": {
+          "hit": "单个页面贡献了大部分流失",
+          "clear": "流失分散在多个页面上",
+          "not_available": ""
+        },
+        "seasonality_yoy": {
+          "hit": "",
+          "clear": "",
+          "not_available": ""
+        },
+        "index_status_at_event": {
+          "hit": "",
+          "clear": "",
+          "not_available": ""
+        }
+      },
+      "unavailableReasons": {
+        "history_below_twelve_weeks": "需要 12 周历史，该站点还不够",
+        "history_below_thirteen_months": "需要 13 个月才有去年同期可比 —— 我们不做估算",
+        "query_data_not_supplied": "本次未读取查询级数据",
+        "page_data_not_supplied": "本次未读取页面级数据",
+        "probe_data_not_supplied": "本次未抓取受影响页面",
+        "index_report_lag": "Search Console 的索引报告滞后于性能数据，无法覆盖事件当天 —— 在这里既不能确认也不能排除",
+        "site_below_detection_floor": "该站点从未有过一周大到足以让检测器工作",
+        "no_recent_days": "该站点没有返回最近的日期数据"
+      },
+      "limitations": {
+        "history_below_twelve_weeks": "判定下降需要 12 周历史。不足时读到的是噪声，所以我们不给结论。",
+        "post_event_history_below_two_windows": "下降是真的，但事件之后的数据还不够长，无法判断它是否持续。说它持续是猜，说它短暂是另一种猜。",
+        "recovery_observed_within_one_window": "流量在随后的周里回来了，所以这被报告为短暂异常，而不是持续性下降。",
+        "query_breakdown_unavailable": "本次运行没有拿到查询级拆分。",
+        "index_report_predates_event": "Search Console 的索引报告截止时间早于这几天，因此「是否发生过临时去索引」在这里既不能确认也不能排除。要定论，去查部署与 CDN 日志。",
+        "site_below_detection_floor": "这个站点从未有过一周大到足以让检测器工作，所以我们无法告诉你流量是否下降了。这和告诉你「没有下降」是两回事。",
+        "returned_to_prior_normal": "流量从一个尖峰回落到了这个站点在尖峰之前的水平。促销或季节性高峰结束不是下降，因此不作为下降报告。",
+        "recent_window_unfinalized": "最近的对比窗口包含 Search Console 尚未定稿的日期。这些日期会偏低并可能上修，因此最新数字请当作暂定值。",
+        "event_within_unfinalized_window": "这几天落在 Search Console 尚未定稿的窗口里，所以这可能是数据回报延迟，而不是你站点真的发生了什么。过几天再看一次，然后再决定要不要处理。"
+      },
+      "errors": {
+        "insufficient_history": "这个站点的历史长度还不足以使用本工具。",
+        "no_gsc_data": "Search Console 没有返回这个站点的数据。",
+        "gsc_unavailable": "无法连接 Search Console。我们没有用估算值代替，请稍后重试。",
+        "unknown": "出错了。我们没有用估算值代替，请稍后重试。"
+      }
+    },
     "semrush": "Semrush",
     "cms": "CMS内容管理系统",
     "gsc": "Google Search Console",
@@ -1240,24 +1480,24 @@
     "faq": {
       "title": "常见问题",
       "q1": {
-      "question": "公开工具免费吗？",
-      "answer": "是的。当前公开 SEO 审计、内链审计和计算器均无需付费即可使用。每个工具都会清楚说明自己的技术范围与限制。"
+        "question": "公开工具免费吗？",
+        "answer": "是的。当前公开 SEO 审计、内链审计和计算器均无需付费即可使用。每个工具都会清楚说明自己的技术范围与限制。"
       },
       "q2": {
-      "question": "完整产品的定价何时可用？",
-      "answer": "当完整工作流、使用边界和持续运行成本已定义到足以做出可靠承诺时，我们会发布定价。"
+        "question": "完整产品的定价何时可用？",
+        "answer": "当完整工作流、使用边界和持续运行成本已定义到足以做出可靠承诺时，我们会发布定价。"
       },
       "q3": {
-      "question": "运行公开诊断需要账号吗？",
-      "answer": "不需要。公开 SEO 审计和内链审计只读取公开页面；当工作需要保存、扩展或在产品中持续时，才需要账号。"
+        "question": "运行公开诊断需要账号吗？",
+        "answer": "不需要。公开 SEO 审计和内链审计只读取公开页面；当工作需要保存、扩展或在产品中持续时，才需要账号。"
       },
       "q4": {
-      "question": "付费产品将覆盖什么价值？",
-      "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营；而不是把第一个有用的结果锁在付费墙后。"
+        "question": "付费产品将覆盖什么价值？",
+        "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营；而不是把第一个有用的结果锁在付费墙后。"
       },
       "q5": {
-      "question": "我应该从哪里开始？",
-      "answer": "如果你已有网站，请从公开 SEO 审计或内链审计开始；如果你正在规划实验，可使用计算器，并在需要一份连续的项目工作流时进入 GenGrowth。"
+        "question": "我应该从哪里开始？",
+        "answer": "如果你已有网站，请从公开 SEO 审计或内链审计开始；如果你正在规划实验，可使用计算器，并在需要一份连续的项目工作流时进入 GenGrowth。"
       }
     },
     "cta": {

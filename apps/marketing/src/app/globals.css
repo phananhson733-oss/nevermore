@@ -63,6 +63,14 @@
   --color-brand-success: #5BB98C;
   --color-brand-warning: #D4A843;
   --color-brand-error: #D95757;
+  /*
+   * Chart series pair, validated against the #131314 surface for normal vision
+   * and for deuteranopia/protanopia/tritanopia separation. Distinct from the
+   * accent so a series is never mistaken for a call to action, and from the
+   * status colours so "series 2" never reads as "warning".
+   */
+  --color-brand-series-1: #C86444;
+  --color-brand-series-2: #4F86C8;
   --color-text-dark-primary: #F0EDE8;
   --color-text-dark-secondary: #9B9690;
   --color-text-light-primary: #1A1A1C;

@@ -830,6 +830,246 @@
       "ctaBody": "The authenticated GenGrowth app is a separate system for saved project evidence and workflows. This public audit remains anonymous and stateless.",
       "ctaButton": "Open GenGrowth app"
     },
+    "trafficDrop": {
+      "title": "Traffic drop diagnosis",
+      "description": "Connect Search Console and see what actually changed in your own data, with the evidence behind every claim.",
+      "metaTitle": "Free Traffic Drop Diagnosis | GenGrowth",
+      "metaDescription": "Diagnose an organic traffic drop against your own Search Console data. Fixed comparison windows chosen by change-point detection, layered findings, and actions that name their evidence.",
+      "eyebrow": "Free tool",
+      "pageTitle": "What happened to your traffic?",
+      "pageSubtitle": "Connect Search Console and see the change in your own data. We show the evidence and the explanations it is consistent with — we do not pretend to know the single answer.",
+      "connectTitle": "Connect Search Console to run this",
+      "connectBody": "This tool reads your property's daily clicks and impressions. Read-only, used for this report, and never stored on our servers.",
+      "connectCta": "Connect Search Console",
+      "connectTrust": "Read-only access. Revoke any time from your Google account.",
+      "connectPending": "Search Console connection is not open on this site yet. The diagnosis engine is live and runs the moment it is — until then, the two tools below need no connection at all.",
+      "signedInNoGrant": "You are signed in, but this tool still needs read-only Search Console access.",
+      "propertyLabel": "Property",
+      "rerun": "Run again",
+      "running": "Reading your Search Console data…",
+      "dataThrough": "Data through {date}",
+      "dataThroughNote": "Search Console finalises data 2–3 days late",
+      "historyCovered": "{days} days of history",
+      "historyFrom": "from {date}",
+      "chartTitle": "Daily clicks and impressions",
+      "chartAlt": "Daily clicks and impressions over {days} days, {start} to {end}",
+      "clicks": "clicks",
+      "impressions": "impressions",
+      "impressionsRightAxis": "impressions (right axis)",
+      "date": "Date",
+      "viewAsTable": "View the series as a table",
+      "windowsAreFixed": "Shaded areas are the comparison windows",
+      "windowsFixedExplainer": "Windows are chosen by change-point detection and cannot be adjusted by hand. Moving a window moves the conclusion — that is picking an answer, not diagnosing one.",
+      "notAvailable": "not available",
+      "limitationLabel": "Limitation",
+      "basisLabel": "Based on",
+      "windows": {
+        "peak": {
+          "label": "A · peak week",
+          "short": "A"
+        },
+        "mid": {
+          "label": "B · following week",
+          "short": "B"
+        },
+        "recent": {
+          "label": "C · most recent week",
+          "short": "C"
+        }
+      },
+      "states": {
+        "sustained_decline": {
+          "summary": "A decline was located and it held: traffic stayed down across two non-overlapping weeks after the peak."
+        },
+        "transient_visibility_anomaly": {
+          "summary": "Traffic dropped sharply after the peak week but came back — reported separately from a sustained decline, because it is not one."
+        },
+        "insufficient_history": {
+          "summary": "There is not enough history to judge a decline. What the data does support is reported below; what it does not is left unclaimed."
+        },
+        "no_material_decline": {
+          "summary": "No decline that meets the detection bar was found in this series."
+        }
+      },
+      "tiers": {
+        "observed": "Observed",
+        "hypothesis": "Hypothesis",
+        "data_boundary": "Data boundary"
+      },
+      "findingsTitle": "What we found · {count}",
+      "findingsIntro": "Layered by evidence strength: an observation is a fact in your data, a hypothesis is an explanation the data is consistent with but cannot establish. We do not blur the two.",
+      "findings": {
+        "two_stage_decline": {
+          "title": "This is not one decline, it is two — with different mechanics",
+          "body": "In the first stage impressions barely moved while clicks more than halved: click-through collapsed. In the second stage impressions finally fell, and click-through recovered. First people could still see you and stopped clicking; only later did they stop seeing you. Treating these as one event sends you to fix the wrong thing."
+        },
+        "sustained_decline": {
+          "title": "Traffic fell after the peak week and stayed down",
+          "body": "Two non-overlapping weeks after the peak both came in far below it, which is what separates a decline from a bad week."
+        },
+        "decline_concentration": {
+          "title": "The drop is concentrated in one group of queries",
+          "body": "A small set of queries accounts for most of the lost volume, rather than the loss being spread across everything you rank for."
+        },
+        "high_impression_low_click_day": {
+          "title": "Your biggest impression day converted far below your peak week",
+          "body": "One day drew more impressions than any other in the period while producing very few clicks. That is what a click-through collapse can look like with no ranking change at all: a different set of queries arrived."
+        },
+        "transient_visibility_anomaly": {
+          "title": "Visibility fell off a cliff for a few days, then came back",
+          "body": "Impressions collapsed against what that weekday normally draws, then rebounded. Reported apart from the decline: a dip that recovered is not evidence of a sustained problem."
+        },
+        "seasonality_unavailable": {
+          "title": "Seasonality cannot be assessed yet",
+          "body": "A year-over-year read needs the same season last year, and this property does not have it yet. We do not estimate it. This check turns itself on once the history is long enough."
+        }
+      },
+      "measures": {
+        "stage_one_clicks_change": "Stage 1 clicks",
+        "stage_one_impressions_change": "Stage 1 impressions",
+        "stage_two_impressions_change": "Stage 2 impressions",
+        "peak_ctr": "Peak week CTR",
+        "mid_ctr": "Following week CTR",
+        "recent_ctr": "Recent week CTR",
+        "total_clicks_change": "Clicks, peak to now",
+        "total_impressions_change": "Impressions, peak to now",
+        "peak_clicks": "Peak week clicks",
+        "recent_clicks": "Recent week clicks",
+        "date": "Date",
+        "clicks": "Clicks",
+        "impressions": "Impressions",
+        "day_ctr": "CTR that day",
+        "peak_window_ctr": "Peak week CTR",
+        "start_date": "From",
+        "end_date": "To",
+        "day_count": "Days",
+        "low_impressions": "Lowest impressions",
+        "baseline_impressions": "Normal for that weekday",
+        "rebound_impressions": "Impressions after rebound",
+        "history_days": "History available",
+        "required_days": "History required"
+      },
+      "hypotheses": {
+        "demand_cohort_receded": "Demand for that topic may simply have receded. The data is consistent with it, but Search Console cannot establish cause. If those queries stay near zero next month while the rest recover, the explanation holds.",
+        "low_intent_query_influx": "An influx of queries that rarely produce a click — often ones answered directly on the results page — would produce exactly this pattern. Search Console cannot confirm it; the query-level table is where you would check."
+      },
+      "actionsTitle": "What to do next · {count}",
+      "actionsIntro": "Every action names the evidence it rests on. Actions without evidence behind them are the thing this tool exists not to produce.",
+      "actionKinds": {
+        "do": "Do first",
+        "external_data": "Needs data outside Search Console",
+        "avoid": "Do not do"
+      },
+      "actions": {
+        "split_cohorts": {
+          "title": "Separate the affected query group from everything else before judging site health",
+          "body": "The headline number mixes two populations together. Split them and you will know whether your evergreen content is actually falling, or whether it is being masked by one group receding."
+        },
+        "isolate_stage_one_ctr": {
+          "title": "Establish whether click-through fell because the query mix changed or because your results got worse",
+          "body": "The two have opposite fixes. If the mix changed — queries that never produce clicks arrived — there is nothing on your pages to repair. If your results got worse on the same queries, that is when page work is warranted. To tell them apart, take only the queries that already existed before the drop and check whether their click-through fell too."
+        },
+        "pull_deploy_logs": {
+          "title": "Pull deploy records and CDN or server logs for the anomaly days",
+          "body": "Search Console's index report trails its performance data, so the truth about those days is not in what we can read. If there was a release, a cache purge or a CDN incident, that is your explanation. If there was not, a temporary crawl fluctuation on Google's side is the more likely one, and you can let it go."
+        },
+        "avoid_rank_recovery": {
+          "title": "Do not chase a rankings recovery because average position went up",
+          "body": "Average position is impression-weighted. When high-ranking queries disappear the number rises on its own, without any of your pages having moved. Optimising against it means solving a problem you do not have. For the same reason, do not prioritise this work by impression volume."
+        }
+      },
+      "checksSummary": "This run performed {total} checks and {hits} triggered — open to see all of them, including what came back clear and what could not be checked",
+      "checkStatus": {
+        "hit": "Triggered",
+        "clear": "Clear",
+        "not_available": "Cannot check"
+      },
+      "checks": {
+        "sustained_decline": "Sustained decline",
+        "ctr_changepoint": "Click-through change point",
+        "transient_visibility_anomaly": "Short visibility anomaly",
+        "decline_concentration": "Decline concentration",
+        "affected_page_availability": "Affected page availability",
+        "sitewide_visibility_zeroed": "Site-wide visibility loss",
+        "single_page_dominated_decline": "Single-page dominated decline",
+        "seasonality_yoy": "Year-over-year seasonality",
+        "index_status_at_event": "Index status during the event"
+      },
+      "checkOutcomes": {
+        "sustained_decline": {
+          "hit": "Two non-overlapping weeks after the peak both stayed below the sustain threshold",
+          "clear": "No peak-and-trough pair met the detection bar",
+          "not_available": ""
+        },
+        "ctr_changepoint": {
+          "hit": "Clicks fell sharply in a window where impressions held",
+          "clear": "Clicks and impressions moved together",
+          "not_available": ""
+        },
+        "transient_visibility_anomaly": {
+          "hit": "A short run of days collapsed against their own weekday baseline and then rebounded",
+          "clear": "No day fell far enough below its weekday baseline",
+          "not_available": ""
+        },
+        "decline_concentration": {
+          "hit": "A small group of queries carried most of the loss",
+          "clear": "The loss is spread across queries",
+          "not_available": ""
+        },
+        "affected_page_availability": {
+          "hit": "Affected pages did not respond normally",
+          "clear": "Sampled pages responded 200 and were indexable",
+          "not_available": ""
+        },
+        "sitewide_visibility_zeroed": {
+          "hit": "The most recent week recorded no impressions at all",
+          "clear": "The property still records impressions",
+          "not_available": ""
+        },
+        "single_page_dominated_decline": {
+          "hit": "One page accounts for most of the loss",
+          "clear": "The loss is spread across pages",
+          "not_available": ""
+        },
+        "seasonality_yoy": {
+          "hit": "",
+          "clear": "",
+          "not_available": ""
+        },
+        "index_status_at_event": {
+          "hit": "",
+          "clear": "",
+          "not_available": ""
+        }
+      },
+      "unavailableReasons": {
+        "history_below_twelve_weeks": "Needs twelve weeks of history; this property has less",
+        "history_below_thirteen_months": "Needs thirteen months so the same season last year exists — we do not estimate it",
+        "query_data_not_supplied": "Query-level data was not read in this run",
+        "page_data_not_supplied": "Page-level data was not read in this run",
+        "probe_data_not_supplied": "Affected pages were not fetched in this run",
+        "index_report_lag": "Search Console's index report trails its performance data, so it cannot cover the event days — this can be neither confirmed nor ruled out here",
+        "site_below_detection_floor": "This property has never had a week large enough for the detector to work on",
+        "no_recent_days": "No recent days were returned for this property"
+      },
+      "limitations": {
+        "history_below_twelve_weeks": "Twelve weeks of history are needed before a decline can be judged. Below that we would be reading noise, so we do not report a verdict.",
+        "post_event_history_below_two_windows": "The drop is real, but the property has not lived long enough past it to say whether it held. Calling it sustained would be a guess; calling it transient would be a different guess.",
+        "recovery_observed_within_one_window": "Traffic came back within the following weeks, so this is reported as a short anomaly rather than a sustained decline.",
+        "query_breakdown_unavailable": "The query-level breakdown was not available for this run.",
+        "index_report_predates_event": "Search Console's index report ends before these days, so whether the pages were temporarily de-indexed can be neither confirmed nor ruled out here. Deploy and CDN logs are where that is settled.",
+        "site_below_detection_floor": "This property has never had a week large enough for the detector to work on, so we cannot tell you whether traffic fell. That is different from telling you it did not.",
+        "returned_to_prior_normal": "Traffic came down from a spike to the level this site held before the spike. A promotion or seasonal peak ending is not a decline, so none is reported.",
+        "recent_window_unfinalized": "The most recent comparison window includes days Search Console has not finalised. Those days read low and may revise upward, so treat the newest figures as provisional.",
+        "event_within_unfinalized_window": "These days fall inside the window Search Console has not finalised yet, so this may be the reporting lag rather than something that happened to your site. Check again in a few days before acting on it."
+      },
+      "errors": {
+        "insufficient_history": "This property does not have enough history yet for this tool.",
+        "no_gsc_data": "Search Console returned no data for this property.",
+        "gsc_unavailable": "Search Console could not be reached. Nothing was estimated in its place — please try again.",
+        "unknown": "Something went wrong. Nothing was estimated in its place — please try again."
+      }
+    },
     "semrush": "Semrush",
     "cms": "CMS",
     "gsc": "Google Search Console",
@@ -1240,24 +1480,24 @@
     "faq": {
       "title": "Frequently Asked Questions",
       "q1": {
-      "question": "Are the public tools free?",
-      "answer": "Yes. The current public SEO audit, internal-link audit, and calculators can be used without a payment step. Each tool clearly states its own technical scope and limits."
+        "question": "Are the public tools free?",
+        "answer": "Yes. The current public SEO audit, internal-link audit, and calculators can be used without a payment step. Each tool clearly states its own technical scope and limits."
       },
       "q2": {
-      "question": "When will full-product pricing be available?",
-      "answer": "We will publish it after the full workflow, usage boundaries, and ongoing operating costs are defined well enough to make a reliable commitment."
+        "question": "When will full-product pricing be available?",
+        "answer": "We will publish it after the full workflow, usage boundaries, and ongoing operating costs are defined well enough to make a reliable commitment."
       },
       "q3": {
-      "question": "Do I need an account to run a public diagnostic?",
-      "answer": "No. The public SEO audit and internal-link audit read only public pages. An account belongs at the point where work needs to be saved, expanded, or continued in the product."
+        "question": "Do I need an account to run a public diagnostic?",
+        "answer": "No. The public SEO audit and internal-link audit read only public pages. An account belongs at the point where work needs to be saved, expanded, or continued in the product."
       },
       "q4": {
-      "question": "What will paid product value cover?",
-      "answer": "The intended paid layer is for continuous work such as saved project context, deeper data, ongoing monitoring, and multi-site operations—not for withholding the first useful result."
+        "question": "What will paid product value cover?",
+        "answer": "The intended paid layer is for continuous work such as saved project context, deeper data, ongoing monitoring, and multi-site operations—not for withholding the first useful result."
       },
       "q5": {
-      "question": "Where should I start?",
-      "answer": "If you already have a website, start with the public SEO audit or internal-link audit. If you are planning an experiment, use the calculators and then move the work into GenGrowth when you need a connected project workflow."
+        "question": "Where should I start?",
+        "answer": "If you already have a website, start with the public SEO audit or internal-link audit. If you are planning an experiment, use the calculators and then move the work into GenGrowth when you need a connected project workflow."
       }
     },
     "cta": {
