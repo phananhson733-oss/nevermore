@@ -78,16 +78,28 @@ export type LLMErrorCode =
 export class LLMError extends Error {
   readonly code: LLMErrorCode;
   readonly invocation: AnalysisInvocationRecord | null;
+  /**
+   * Why the rejection happened, in terms a log can carry.
+   *
+   * An error code alone says a response was refused but not what about it was
+   * wrong, which leaves a production rejection undiagnosable without replaying
+   * the request against the provider. Callers that populate this must supply
+   * structure only — field paths, issue kinds — never the response text, which
+   * is model output about a customer's site and does not belong in a log.
+   */
+  readonly detail: string | null;
 
   constructor(
     code: LLMErrorCode,
     message: string,
     invocation: AnalysisInvocationRecord | null = null,
+    detail: string | null = null,
   ) {
     super(message);
     this.name = "LLMError";
     this.code = code;
     this.invocation = invocation;
+    this.detail = detail;
   }
 }
 
