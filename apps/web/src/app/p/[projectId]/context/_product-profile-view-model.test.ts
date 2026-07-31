@@ -123,6 +123,7 @@ function workspace(
     projectId: IDS.project,
     currentProfile: row,
     confirmedProfile: null,
+    hasSynthesisAttemptForCurrentDraft: false,
     activeSynthesisRun: null,
     activeCrawlRun: null,
   };

@@ -24,6 +24,7 @@ import {
   canonicalUtcTimestamptz,
   contentHash,
   IcpProfilesRepository,
+  ProductProfileRunsRepository,
   ProjectsRepository,
   SitesRepository,
   type AsyncRunRow,
@@ -89,6 +90,8 @@ export interface ProductProfileWorkspace {
   readonly projectId: string;
   readonly currentProfile: ProductProfileRowDto | null;
   readonly confirmedProfile: ConfirmedProductProfileRowDto | null;
+  /** Durable guard against auto-recreating a failed initial synthesis on refresh. */
+  readonly hasSynthesisAttemptForCurrentDraft: boolean;
   readonly activeSynthesisRun: ActiveProductProfileSynthesisRun | null;
   readonly activeCrawlRun: ActiveProductProfileCrawlRun | null;
 }
@@ -288,11 +291,23 @@ export async function getProductProfileWorkspace(
   const confirmedProfile = confirmedRow
     ? parseConfirmedRow(confirmedRow, project.current_icp_profile_id)
     : null;
+  const hasSynthesisAttemptForCurrentDraft =
+    currentProfile?.status === "draft" && currentRow !== null
+      ? await new ProductProfileRunsRepository(db).hasAttemptForBaseProfile(
+          scoped,
+          {
+            id: currentRow.id,
+            version: currentRow.version,
+            contentHash: currentRow.content_hash,
+          },
+        )
+      : false;
 
   return {
     projectId,
     currentProfile,
     confirmedProfile,
+    hasSynthesisAttemptForCurrentDraft,
     activeSynthesisRun: activeSynthesisRun(activeSynthesis),
     activeCrawlRun: activeCrawlRun(activeCrawl),
   };

@@ -1838,6 +1838,8 @@ export interface components {
             projectId: components["schemas"]["Uuid"];
             currentProfile: components["schemas"]["ProductProfileRowDto"] | null;
             confirmedProfile: components["schemas"]["ConfirmedProductProfileRowDto"] | null;
+            /** @description Durable guard that suppresses automatic re-creation of an already-attempted draft synthesis. */
+            hasSynthesisAttemptForCurrentDraft: boolean;
             activeSynthesisRun: components["schemas"]["ProductProfileActiveSynthesisRun"] | null;
             activeCrawlRun: components["schemas"]["ProductProfileActiveCrawlRun"] | null;
         };

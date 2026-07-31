@@ -56,6 +56,7 @@ export interface ProductProfileWorkspace {
   readonly projectId: string;
   readonly currentProfile: ProductProfileRowDto | null;
   readonly confirmedProfile: ConfirmedProductProfileRowDto | null;
+  readonly hasSynthesisAttemptForCurrentDraft: boolean;
   readonly activeSynthesisRun:
     | (ProductProfileRun & {
         readonly kind: "product_profile_synthesis";

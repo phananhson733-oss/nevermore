@@ -42,6 +42,54 @@ const postgresUrl = () =>
     if (message) ctx.addIssue({ code: "custom", message });
   });
 
+const PROVIDER_PLACEHOLDER =
+  /(?:^|[^a-z0-9])(?:replace[\s_-]*me|change[\s_-]*me|placeholder|your[\s_-]*(?:api[\s_-]*)?(?:key|token|secret|model|deployment|endpoint|version)(?:[\s_-]*here)?|(?:api[\s_-]*)?(?:key|token|secret|model|deployment|endpoint|version)[\s_-]*here)(?:$|[^a-z0-9])/i;
+
+/**
+ * Return one fixed, secret-safe issue for provider configuration. Never return
+ * or interpolate the value: getWorkerEnv() includes these messages in boot logs.
+ */
+function providerConfigValueIssue(value: string): string | null {
+  if (value !== value.trim()) {
+    return "must not contain leading or trailing whitespace";
+  }
+  if (/\\[nr]/i.test(value)) {
+    return "must not contain literal newline escape sequences";
+  }
+  if (/[\r\n\u2028\u2029]/u.test(value)) {
+    return "must not contain newline characters";
+  }
+  if (/\s/u.test(value)) {
+    return "must not contain whitespace";
+  }
+  if (PROVIDER_PLACEHOLDER.test(value)) {
+    return "must not use a placeholder value";
+  }
+  return null;
+}
+
+const providerConfigValue = () =>
+  z.string().min(1).superRefine((value, ctx) => {
+    const message = providerConfigValueIssue(value);
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
+
+const azureOpenAiEndpoint = (environment: string | undefined) =>
+  z.string().min(1).superRefine((value, ctx) => {
+    const configMessage = providerConfigValueIssue(value);
+    if (configMessage) {
+      ctx.addIssue({ code: "custom", message: configMessage });
+      return;
+    }
+
+    // Keep the established gateway contract: deployments may use a private
+    // HTTPS host with a path prefix and existing query parameters. The shared
+    // runtime URL policy still rejects malformed URLs, userinfo, fragments and
+    // remote HTTP, while permitting canonical loopback HTTP in development/test.
+    const urlMessage = runtimeHttpUrlIssue(value, environment);
+    if (urlMessage) ctx.addIssue({ code: "custom", message: urlMessage });
+  });
+
 export function createWorkerEnvSchema(environment: string | undefined) {
   return z
     .object({
@@ -62,14 +110,19 @@ export function createWorkerEnvSchema(environment: string | undefined) {
       // OpenAI models + API, so it is reached through the OpenAI provider below.
       LLM_PROVIDER: z.literal("openai").default("openai"),
       // Direct OpenAI (api.openai.com, Bearer auth).
-      OPENAI_API_KEY: z.string().min(1).optional(),
-      OPENAI_MODEL: z.string().min(1).optional(),
+      OPENAI_API_KEY: providerConfigValue().optional(),
+      OPENAI_MODEL: providerConfigValue().optional(),
+      // Keep sampling policy deploy-configurable because some hosted model
+      // deployments accept only their default temperature. This remains bounded
+      // and applies uniformly to artifact, product-profile, and summary calls.
+      OPENAI_TEMPERATURE: z.coerce.number().finite().min(0).max(2).default(0.2),
       // Azure OpenAI deployment (same OpenAI models/API; api-key header + Azure
       // endpoint). Provide the full set to route the OpenAI provider via Azure.
-      AZURE_OPENAI_API_KEY: z.string().min(1).optional(),
-      AZURE_OPENAI_ENDPOINT: runtimeUrl(environment).optional(),
-      AZURE_OPENAI_DEPLOYMENT: z.string().min(1).optional(),
-      OPENAI_API_VERSION: z.string().min(1).optional(),
+      // Private gateway hosts and path/query prefixes are intentionally allowed.
+      AZURE_OPENAI_API_KEY: providerConfigValue().optional(),
+      AZURE_OPENAI_ENDPOINT: azureOpenAiEndpoint(environment).optional(),
+      AZURE_OPENAI_DEPLOYMENT: providerConfigValue().optional(),
+      OPENAI_API_VERSION: providerConfigValue().optional(),
       // Optional finding localization may be disabled independently from
       // artifact generation. Keep the raw env contract explicit at boot and
       // convert it to a boolean only when building WorkerContext.
@@ -168,6 +221,7 @@ export type WorkerEnv = z.infer<typeof EnvSchema>;
 export interface LlmClientConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly temperature: number;
   readonly baseUrl?: string;
   readonly authScheme: "bearer" | "api-key";
 }
@@ -193,6 +247,7 @@ export function resolveLlmClientConfig(env: WorkerEnv): LlmClientConfig {
     return {
       apiKey: env.AZURE_OPENAI_API_KEY,
       model: env.AZURE_OPENAI_DEPLOYMENT,
+      temperature: env.OPENAI_TEMPERATURE,
       baseUrl: endpoint.toString(),
       authScheme: "api-key",
     };
@@ -200,6 +255,7 @@ export function resolveLlmClientConfig(env: WorkerEnv): LlmClientConfig {
   return {
     apiKey: env.OPENAI_API_KEY!,
     model: env.OPENAI_MODEL!,
+    temperature: env.OPENAI_TEMPERATURE,
     authScheme: "bearer",
   };
 }

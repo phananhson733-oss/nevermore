@@ -51,6 +51,7 @@ describe("buildWorkerContext", () => {
         LLM_PROVIDER: "openai",
         OPENAI_API_KEY: "test",
         OPENAI_MODEL: "test",
+        OPENAI_TEMPERATURE: 0.2,
         FINDING_SUMMARIES_ENABLED: configured,
         DATAFORSEO_ENABLED: "false",
         DATAFORSEO_MAX_KEYWORDS: 200,

@@ -208,6 +208,38 @@ export class ProductProfileRunsRepository extends Repository {
   }
 
   /**
+   * Durable auto-orchestration guard. A draft version gets one automatic
+   * synthesis attempt; an explicit customer retry still creates a fresh run.
+   * This query reads only tenant-scoped immutable identifiers and never
+   * exposes the frozen prompt or provider output.
+   */
+  async hasAttemptForBaseProfile(
+    scope: ProjectScope,
+    baseProfile: {
+      readonly id: string;
+      readonly version: number;
+      readonly contentHash: string;
+    },
+  ): Promise<boolean> {
+    const rows = await this.exec
+      .select({ id: productProfileRuns.id })
+      .from(productProfileRuns)
+      .where(
+        and(
+          projectPredicate(productProfileRuns, scope),
+          eq(productProfileRuns.base_icp_profile_id, baseProfile.id),
+          eq(productProfileRuns.base_icp_profile_version, baseProfile.version),
+          eq(
+            productProfileRuns.base_icp_profile_content_hash,
+            baseProfile.contentHash,
+          ),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * Bind the generated immutable draft once. SQL re-validates the result's
    * Site/Snapshot/AnalysisInvocation lineage in the same statement.
    */

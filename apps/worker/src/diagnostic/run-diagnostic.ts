@@ -246,6 +246,9 @@ export function createFindingSummaryGenerator(
           client = createClient({
             apiKey: ctx.openai.apiKey,
             model: ctx.openai.model,
+            ...(ctx.openai.temperature !== undefined
+              ? { temperature: ctx.openai.temperature }
+              : {}),
             ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
             ...(ctx.openai.authScheme
               ? { authScheme: ctx.openai.authScheme }

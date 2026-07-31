@@ -79,7 +79,9 @@ import {
   automaticSynthesisKey,
   claimOnce,
   customerProfileFieldKey,
+  productProfileSynthesisFailureKind,
   shouldStartCrawlForMissingSnapshot,
+  type ProductProfileSynthesisFailureInput,
   type ProductProfileSynthesisOrigin,
 } from "./_product-profile-onboarding";
 import styles from "./_product-profile.module.css";
@@ -786,6 +788,52 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     [locale],
   );
 
+  const synthesisFailureFeedback = useCallback(
+    (
+      status: ProductProfileSynthesisFailureInput["status"],
+      lastError: ProductProfileSynthesisFailureInput["lastError"],
+    ): Feedback => {
+      switch (productProfileSynthesisFailureKind({ status, lastError })) {
+        case "configuration":
+          return errorFeedback(
+            t("feedback.synthesisConfigurationFailed"),
+            t("feedback.synthesisConfigurationFailedDetail"),
+          );
+        case "temporary_provider":
+          return errorFeedback(
+            t("feedback.synthesisTemporaryFailed"),
+            t("feedback.synthesisTemporaryFailedDetail"),
+          );
+        case "input_or_evidence":
+          return errorFeedback(
+            t("feedback.synthesisEvidenceFailed"),
+            t("feedback.synthesisEvidenceFailedDetail"),
+          );
+        case "operator_review":
+          return errorFeedback(
+            t("feedback.synthesisReviewRequired"),
+            t("feedback.synthesisReviewRequiredDetail"),
+          );
+        case "superseded":
+          return errorFeedback(
+            t("feedback.synthesisSuperseded"),
+            t("feedback.synthesisSupersededDetail"),
+          );
+        case "cancelled":
+          return errorFeedback(
+            t("feedback.synthesisCancelled"),
+            t("feedback.synthesisCancelledDetail"),
+          );
+        default:
+          return errorFeedback(
+            t("feedback.synthesisFailed"),
+            t("feedback.retryDetail"),
+          );
+      }
+    },
+    [t],
+  );
+
   const startCrawl = useCallback(
     async (automatic: boolean): Promise<void> => {
       if (crawlRequestInFlight.current) return;
@@ -906,14 +954,15 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     if (run.status === "completed") {
       setFeedback({ tone: "success", title: t("feedback.synthesisComplete"), detail: t("feedback.synthesisCompleteDetail") });
     } else {
-      setFeedback(
-        errorFeedback(
-          t("feedback.synthesisFailed"),
-          t("feedback.retryDetail"),
-        ),
-      );
+      setFeedback(synthesisFailureFeedback(run.status, run.lastError));
     }
-  }, [projectId, queryClient, synthesisRun.data, t]);
+  }, [
+    projectId,
+    queryClient,
+    synthesisFailureFeedback,
+    synthesisRun.data,
+    t,
+  ]);
 
   useEffect(() => {
     const run = crawlRun.data;
@@ -1008,6 +1057,8 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     version: row?.version ?? null,
     status: row?.status ?? null,
     generatedAt: profile?.generatedAt ?? null,
+    hasSynthesisAttemptForCurrentDraft:
+      workspace?.hasSynthesisAttemptForCurrentDraft ?? false,
     activeSynthesisRunId: activeSynthesisId || null,
     crawlRunId: activeCrawlId,
   });
