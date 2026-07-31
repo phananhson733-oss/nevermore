@@ -7,6 +7,7 @@
 import { useTranslations, useLocale } from "next-intl";
 import Link from "next/link";
 import type { BlogPost } from "@/types";
+import { localePath } from "@/lib/locale-path";
 
 export function BlogCard({ post }: { post: BlogPost }) {
   const t = useTranslations("blog");
@@ -18,7 +19,7 @@ export function BlogCard({ post }: { post: BlogPost }) {
   );
 
   return (
-    <Link href={`/${locale}/blog/${post.slug}`} className="group block">
+    <Link href={localePath(locale, `/blog/${post.slug}`)} className="group block">
       <article className="h-full overflow-hidden rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">
         {/* Hero thumbnail */}
         {post.hero_image && (

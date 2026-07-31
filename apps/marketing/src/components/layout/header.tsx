@@ -19,6 +19,7 @@ import {
 import { LanguageSwitcher } from "./language-switcher";
 import { headerNavItems } from "@/config/navigation";
 import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export function Header() {
   const t = useTranslations();
@@ -30,7 +31,7 @@ export function Header() {
       <div className="max-w-content mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo */}
         <Link
-          href={`/${locale}/`}
+          href={localePath(locale)}
           className="flex items-center gap-2 text-text-dark-primary font-semibold text-lg"
         >
           <Image
@@ -51,7 +52,7 @@ export function Header() {
           {headerNavItems.map((item) => (
             <Link
               key={item.href}
-              href={`/${locale}${item.href}`}
+              href={localePath(locale, item.href)}
               className="text-text-dark-secondary hover:text-text-dark-primary transition-colors text-sm"
             >
               {t(item.labelKey)}
@@ -91,7 +92,7 @@ export function Header() {
                 {headerNavItems.map((item) => (
                   <Link
                     key={item.href}
-                    href={`/${locale}${item.href}`}
+                    href={localePath(locale, item.href)}
                     onClick={() => setMobileOpen(false)}
                     className="text-text-dark-secondary hover:text-text-dark-primary text-lg transition-colors"
                   >

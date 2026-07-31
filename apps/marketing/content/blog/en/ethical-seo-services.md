@@ -60,9 +60,9 @@ The table below contrasts the baseline reflex with the more durable choice an ex
 
 ## How to Evaluate an Ethical SEO Services Provider
 
-Evaluating ethical SEO services is mostly an exercise in testing the three boundaries against evidence rather than assurances. Start with citability: ask the provider to name the specific guideline behind each core tactic, and treat a clear refusal list as a stronger signal than a long capabilities list. Then test auditability by asking to inspect a real deliverable — an actual outreach thread, a live link, an edit log — because a vendor that cannot show the work is asking you to trust a summary. The standards behind [ethical SEO](/en/blog/ethical-seo) are a useful yardstick for what a defensible answer sounds like.
+Evaluating ethical SEO services is mostly an exercise in testing the three boundaries against evidence rather than assurances. Start with citability: ask the provider to name the specific guideline behind each core tactic, and treat a clear refusal list as a stronger signal than a long capabilities list. Then test auditability by asking to inspect a real deliverable — an actual outreach thread, a live link, an edit log — because a vendor that cannot show the work is asking you to trust a summary. The standards behind [ethical SEO](/blog/ethical-seo) are a useful yardstick for what a defensible answer sounds like.
 
-Transparency is the boundary buyers skip most often, so probe it deliberately: a trustworthy partner volunteers the risks and the flat months, not just the wins. Ask how it builds links, and listen for earned-and-editorial language over anything transactional. Finally, weigh cost against scope rather than in isolation — a low price attached to vague methods is the most expensive option on the table, and genuinely [cost-effective SEO services](/en/blog/cost-effective-seo-services) are the ones whose durability you can actually verify against these checks.
+Transparency is the boundary buyers skip most often, so probe it deliberately: a trustworthy partner volunteers the risks and the flat months, not just the wins. Ask how it builds links, and listen for earned-and-editorial language over anything transactional. Finally, weigh cost against scope rather than in isolation — a low price attached to vague methods is the most expensive option on the table, and genuinely [cost-effective SEO services](/blog/cost-effective-seo-services) are the ones whose durability you can actually verify against these checks.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have chosen a partner, a sound ethical SEO services engagement follows 
 4. **Set risk-inclusive reporting.** Agree upfront that reports name misses, flat clusters, and risks, not only the rankings that went up.
 5. **Review and prune on a cadence.** Revisit the tactic map and link profile regularly, retiring anything that has drifted toward gray-area, because ethical is a standard you maintain, not a badge you earn once.
 
-For teams standardizing this into onboarding, a structured [organic SEO service](/en/blog/organic-seo-service) turns the sequence into a repeatable, guideline-first motion.
+For teams standardizing this into onboarding, a structured [organic SEO service](/blog/organic-seo-service) turns the sequence into a repeatable, guideline-first motion.
 
 ## Frequently Asked Questions About Ethical SEO Services
 
@@ -96,10 +96,10 @@ Because auditable, earned work takes more skilled labor than shortcuts do. You a
 
 ## Related Reading
 
-- [Ethical SEO](/en/blog/ethical-seo) — the underlying compliance standards these services are built on.
-- [Organic SEO service](/en/blog/organic-seo-service) — how guideline-first work runs as an ongoing program.
-- [Organic SEO services](/en/blog/organic-seo-services) — a companion overview of what the sustained work includes.
-- [Cost-effective SEO services](/en/blog/cost-effective-seo-services) — weighing durability against price without overpaying for a label.
+- [Ethical SEO](/blog/ethical-seo) — the underlying compliance standards these services are built on.
+- [Organic SEO service](/blog/organic-seo-service) — how guideline-first work runs as an ongoing program.
+- [Organic SEO services](/blog/organic-seo-services) — a companion overview of what the sustained work includes.
+- [Cost-effective SEO services](/blog/cost-effective-seo-services) — weighing durability against price without overpaying for a label.
 
 ## Take Action
 

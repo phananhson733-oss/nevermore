@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useLocale } from "next-intl";
 import type { UseCase } from "@/lib/use-cases";
 import { getUseCaseContent } from "@/lib/use-cases";
+import { localePath } from "@/lib/locale-path";
 
 interface UseCaseCardProps {
   readonly useCase: UseCase;
@@ -18,7 +19,7 @@ export function UseCaseCard({ useCase }: UseCaseCardProps) {
   const c = getUseCaseContent(useCase, locale);
 
   return (
-    <Link href={`/${locale}/use-cases/${useCase.slug}`} className="group block">
+    <Link href={localePath(locale, `/use-cases/${useCase.slug}`)} className="group block">
       <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">
         <div className="mb-3">
           <span className="text-brand-accent-text text-[11px] font-medium tracking-wider uppercase">

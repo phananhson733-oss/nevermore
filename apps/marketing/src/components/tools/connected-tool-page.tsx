@@ -5,6 +5,7 @@ import { ArrowRight, CheckCircle2, Database, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
 import type { ConnectedToolContent } from "./connected-tool-content";
+import { localePath } from "@/lib/locale-path";
 
 export function ConnectedToolPage({
   locale,
@@ -21,9 +22,9 @@ export function ConnectedToolPage({
     <section className="min-h-screen bg-brand-bg pb-24 pt-20 md:pt-28">
       <div className="mx-auto max-w-[1080px] px-5 sm:px-6">
         <nav className="text-[13px] text-text-dark-secondary" aria-label="Breadcrumb">
-          <Link href={`/${locale}`} className="transition-colors hover:text-text-dark-primary">{homeLabel}</Link>
+          <Link href={localePath(locale)} className="transition-colors hover:text-text-dark-primary">{homeLabel}</Link>
           <span className="mx-2 opacity-40">/</span>
-          <Link href={`/${locale}/tools`} className="transition-colors hover:text-text-dark-primary">{toolsLabel}</Link>
+          <Link href={localePath(locale, "/tools")} className="transition-colors hover:text-text-dark-primary">{toolsLabel}</Link>
           <span className="mx-2 opacity-40">/</span>
           <span>{content.title}</span>
         </nav>
@@ -66,7 +67,7 @@ export function ConnectedToolPage({
 
         <section className="grid gap-12 py-14 md:grid-cols-[1.25fr_0.75fr] md:py-20">
           <div><h2 className="text-[30px] font-semibold tracking-[-0.04em] text-text-dark-primary">FAQ</h2><div className="mt-7 space-y-5">{content.faq.map((item) => <article key={item.question}><h3 className="text-[15px] font-semibold text-text-dark-primary">{item.question}</h3><p className="mt-2 text-[13px] leading-relaxed text-text-dark-secondary">{item.answer}</p></article>)}</div></div>
-          <aside className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-accent-text">{relatedLabel}</p><p className="mt-3 text-[15px] font-semibold leading-snug text-text-dark-primary">{locale === "zh" ? "先用无需连接的数据检查网站基础。" : "Start with a site check that does not require a connection."}</p><div className="mt-5 space-y-3"><Link href={`/${locale}/tools/seo-audit`} className="block text-[13px] font-semibold text-brand-accent-text hover:underline">{locale === "zh" ? "免费 SEO 审计" : "Free SEO Audit"}</Link><Link href={`/${locale}/tools/internal-link-audit`} className="block text-[13px] font-semibold text-brand-accent-text hover:underline">{locale === "zh" ? "内链审计" : "Internal Link Audit"}</Link></div></aside>
+          <aside className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6"><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-accent-text">{relatedLabel}</p><p className="mt-3 text-[15px] font-semibold leading-snug text-text-dark-primary">{locale === "zh" ? "先用无需连接的数据检查网站基础。" : "Start with a site check that does not require a connection."}</p><div className="mt-5 space-y-3"><Link href={localePath(locale, "/tools/seo-audit")} className="block text-[13px] font-semibold text-brand-accent-text hover:underline">{locale === "zh" ? "免费 SEO 审计" : "Free SEO Audit"}</Link><Link href={localePath(locale, "/tools/internal-link-audit")} className="block text-[13px] font-semibold text-brand-accent-text hover:underline">{locale === "zh" ? "内链审计" : "Internal Link Audit"}</Link></div></aside>
         </section>
       </div>
     </section>

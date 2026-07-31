@@ -30,7 +30,7 @@ There is also delivery risk. If a cheap tool's free tier looks generous but retu
 
 The way the best cheap seo tools play out becomes obvious once you watch them inside a live workflow rather than a pricing page. The question is never "is it cheap" but "does the cheap tier still work when the account gets real."
 
-Consider a boutique agency onboarding its fifth retainer client. On a starter plan, the team tracks a focused set of priority keywords per client instead of every long-tail variant, then uses the tool's site audit to surface the highest-severity technical issues first. The budget tier holds up because the workflow is scoped to what moves rankings — a pattern that pairs naturally with disciplined [affordable seo tools](/en/blog/affordable-seo-tools) usage and honest, sustainable practice rather than shortcuts.
+Consider a boutique agency onboarding its fifth retainer client. On a starter plan, the team tracks a focused set of priority keywords per client instead of every long-tail variant, then uses the tool's site audit to surface the highest-severity technical issues first. The budget tier holds up because the workflow is scoped to what moves rankings — a pattern that pairs naturally with disciplined [affordable seo tools](/blog/affordable-seo-tools) usage and honest, sustainable practice rather than shortcuts.
 
 Now consider a SaaS growth team validating a new content pillar. They lean on a cheap tool's keyword explorer to size demand and cluster topics, publish, then watch position movement in the rank tracker. Here these tactics earn their keep when export and reporting are not paywalled — because the team needs to hand clean numbers to stakeholders. When those basics are locked behind an upsell, the "cheap" tool becomes expensive the moment the work gets serious.
 
@@ -60,7 +60,7 @@ To evaluate cheap SEO tools honestly, ignore the headline price for a moment and
 
 Next, assess the free or starter tier against that ruler rather than against the marketing copy. A useful lens is cost-per-feature at the plan you would actually buy: divide the price by the capabilities that survive the tier's caps, not by the full feature list. Tools that score well here tend to compound — you grow into them. Tools that score poorly reveal an upsell trap, where the cheap plan is a funnel, not a product.
 
-Then weigh data quality and honesty. Prefer vendors whose limits are stated plainly and whose numbers are real, an approach that aligns with [ethical seo](/en/blog/ethical-seo) practice. Finally, sanity-check any single-purpose pick — a dedicated tracker like a [rank tracking option](/en/blog/serankings) — against an all-in-one, since consolidating cheap tools sometimes beats stacking them. When comparing them, the winner is the one whose starter tier does the most real work per dollar.
+Then weigh data quality and honesty. Prefer vendors whose limits are stated plainly and whose numbers are real, an approach that aligns with [ethical seo](/blog/ethical-seo) practice. Finally, sanity-check any single-purpose pick — a dedicated tracker like a [rank tracking option](/blog/serankings) — against an all-in-one, since consolidating cheap tools sometimes beats stacking them. When comparing them, the winner is the one whose starter tier does the most real work per dollar.
 
 ## How to Choose and Roll It Out Step by Step
 
@@ -94,10 +94,10 @@ You can, but stacking single-purpose tools sometimes costs more in money and con
 
 ## Related Reading
 
-- [Affordable SEO Tools](/en/blog/affordable-seo-tools) — a companion guide to stretching a small tooling budget without losing capability.
-- [Ethical SEO](/en/blog/ethical-seo) — why honest, transparent tools and tactics protect long-term rankings.
-- [SE Ranking](/en/blog/serankings) — a closer look at a dedicated rank-tracking option for lean teams.
-- [Best White-Label SEO Tool](/en/blog/best-white-label-seo-tool) — for agencies that need client-ready reporting on a budget.
+- [Affordable SEO Tools](/blog/affordable-seo-tools) — a companion guide to stretching a small tooling budget without losing capability.
+- [Ethical SEO](/blog/ethical-seo) — why honest, transparent tools and tactics protect long-term rankings.
+- [SE Ranking](/blog/serankings) — a closer look at a dedicated rank-tracking option for lean teams.
+- [Best White-Label SEO Tool](/blog/best-white-label-seo-tool) — for agencies that need client-ready reporting on a budget.
 
 ## Take Action
 

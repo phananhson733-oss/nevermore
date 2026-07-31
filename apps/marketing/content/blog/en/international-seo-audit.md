@@ -18,7 +18,7 @@ An international SEO audit is **a structured review of how a multi-language or m
 
 - Verifies the bidirectional return-tag mesh, not just the presence of hreflang annotations
 - Confirms canonical and hreflang signals agree rather than contradict each other across language-region pairs
-- Sits inside a broader technical program, the same discipline a [local SEO audit](/en/blog/local-seo-audit) brings to a single market
+- Sits inside a broader technical program, the same discipline a [local SEO audit](/blog/local-seo-audit) brings to a single market
 
 A team running this audit from a generic checklist will confirm hreflang "exists" on every page and still lose rankings, because the annotations on the pairs that fail to reciprocate can be ignored. Per Google Search Central, when pages do not both point to each other "those annotations may be ignored or not interpreted correctly" — so every unclosed pair is at risk of dropping out of the calculation while the reciprocated pairs are still processed. Most international-SEO checklists list hreflang as a single presence item, and some even flag missing return links as a common error — yet they rarely walk through the pair-level validation that error demands. This guide audits the way the search engine actually reads the markup.
 
@@ -28,7 +28,7 @@ The cost of a shallow audit is invisible until traffic in a secondary market dro
 
 The failure is structural. Google Search Central is explicit that hreflang annotations should be reciprocal between the destination page and the source: if page A links to page B, page B must link back to page A. When that return link is missing, Google's docs warn the annotation on that non-reciprocal pair "may be ignored or not interpreted correctly," leaving the search engine to guess which version to rank — and the docs note that you can omit some languages on some pages because Google "will still process the ones that point to each other." A hreflang audit that stops at "tag present" cannot detect this, because the failing pages all look correct in isolation.
 
-This is why the work needs pair-level validation, not page-level confirmation. The unit of analysis is the pair, not the page. A site with five language-region versions has not five hreflang relationships but twenty directed links to verify, and every broken pair silently drops its own targeting — and as the unreciprocated links accumulate across a locale, the version's coverage erodes pair by pair until the targeting is effectively gone. Treating the international SEO audit as a technical workflow — the same way a disciplined [organic SEO services](/en/blog/organic-seo-services) motion treats recurring work — is the only way to catch errors that hide between pages rather than on them.
+This is why the work needs pair-level validation, not page-level confirmation. The unit of analysis is the pair, not the page. A site with five language-region versions has not five hreflang relationships but twenty directed links to verify, and every broken pair silently drops its own targeting — and as the unreciprocated links accumulate across a locale, the version's coverage erodes pair by pair until the targeting is effectively gone. Treating the international SEO audit as a technical workflow — the same way a disciplined [organic SEO services](/blog/organic-seo-services) motion treats recurring work — is the only way to catch errors that hide between pages rather than on them.
 
 ## How an International SEO Audit Plays Out in Real Agency-SaaS Scenarios
 
@@ -40,11 +40,11 @@ An agency takes over a site with twelve language-region versions and a clean-loo
 
 ### The SaaS company expanding into a fourth language
 
-A SaaS team adds a Spanish version to an existing English, German, and French site. They copy the hreflang block from an old page and ship. The new Spanish page lists all four versions correctly, but the three existing pages were never updated to point back at Spanish. Three broken pairs, one shipping mistake. A recurring audit catches the asymmetry the same week, the way a standing [agency rank tracking](/en/blog/agency-rank-tracking) cadence catches a ranking drop before the client does.
+A SaaS team adds a Spanish version to an existing English, German, and French site. They copy the hreflang block from an old page and ship. The new Spanish page lists all four versions correctly, but the three existing pages were never updated to point back at Spanish. Three broken pairs, one shipping mistake. A recurring audit catches the asymmetry the same week, the way a standing [agency rank tracking](/blog/agency-rank-tracking) cadence catches a ranking drop before the client does.
 
 ### The in-house team with a CMS that auto-generates tags
 
-A CMS promises automatic hreflang, which the in-house marketer trusts. The audit finds the generator emits self-referential tags and forward links but silently drops the return link whenever a translation is marked draft. The tags exist, the CMS reports success, and any pair whose return link the generator dropped is at risk of being ignored. The audit's job here is to test the output the crawler sees, not the dashboard the CMS shows — a distinction a strong [saas seo platform](/en/blog/saas-seo-platform) is built to enforce.
+A CMS promises automatic hreflang, which the in-house marketer trusts. The audit finds the generator emits self-referential tags and forward links but silently drops the return link whenever a translation is marked draft. The tags exist, the CMS reports success, and any pair whose return link the generator dropped is at risk of being ignored. The audit's job here is to test the output the crawler sees, not the dashboard the CMS shows — a distinction a strong [saas seo platform](/blog/saas-seo-platform) is built to enforce.
 
 ## Common Implementation Misreadings
 
@@ -73,7 +73,7 @@ Evaluate the audit by what it tests, not by how long the checklist is. A useful 
 3. Verify it cross-checks canonical tags against hreflang, since a canonical pointing elsewhere quietly cancels the hreflang signal.
 4. Confirm it reports by pair, listing exactly which directed links lack a return match, so the fix is unambiguous.
 
-A hreflang checker that only flags missing tags fails this test; one that maps the full pair mesh passes it. The same defensibility logic behind [ethical SEO](/en/blog/ethical-seo) applies — favor the audit that surfaces durable structural problems over the one that produces the longest report.
+A hreflang checker that only flags missing tags fails this test; one that maps the full pair mesh passes it. The same defensibility logic behind [ethical SEO](/blog/ethical-seo) applies — favor the audit that surfaces durable structural problems over the one that produces the longest report.
 
 ## How to Implement an International SEO Audit Step by Step
 
@@ -103,9 +103,9 @@ Only partly. A hreflang checker that maps the bidirectional pair mesh covers the
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds once technical foundations like hreflang are sound
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — the workflow tooling that turns a one-off audit into a recurring check
-- [Local SEO audit](/en/blog/local-seo-audit) — the single-market discipline the international audit extends across locales
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds once technical foundations like hreflang are sound
+- [SaaS SEO platform](/blog/saas-seo-platform) — the workflow tooling that turns a one-off audit into a recurring check
+- [Local SEO audit](/blog/local-seo-audit) — the single-market discipline the international audit extends across locales
 
 ## Take Action
 

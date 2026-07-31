@@ -4,6 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import type { Metadata } from "next";
 import { siteConfig } from "@/config/site";
+import { localeUrl } from "@/lib/locale-path";
 
 export function generatePageMetadata({
   title,
@@ -22,9 +23,9 @@ export function generatePageMetadata({
   /** Keep legacy or in-progress pages reachable without presenting them as canonical marketing pages. */
   noIndex?: boolean;
 }): Metadata {
-  const url = `${siteConfig.url}/${locale}${path}`;
+  const url = localeUrl(locale, path);
   const alternateLocale = locale === "en" ? "zh" : "en";
-  const alternateUrl = `${siteConfig.url}/${alternateLocale}${path}`;
+  const alternateUrl = localeUrl(alternateLocale, path);
   const ogImage = image || `${siteConfig.url}/images/og-default.png`;
 
   return {
@@ -35,7 +36,7 @@ export function generatePageMetadata({
       languages: {
         [locale]: url,
         [alternateLocale]: alternateUrl,
-        "x-default": `${siteConfig.url}/en${path}`,
+        "x-default": localeUrl("en", path),
       },
     },
     openGraph: {

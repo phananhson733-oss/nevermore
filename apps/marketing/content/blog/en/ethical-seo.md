@@ -14,7 +14,7 @@ localeExclusive: true
 
 ## What Is Ethical SEO?
 
-Ethical SEO is **the practice of growing organic traffic with methods a search engine's public guidelines would endorse and a reader would still respect if they could see how the page was made**. Instead of leaning on shortcuts that flip results next quarter, the work compounds: real on-page substance, sources a reader can verify, no manipulation of the link graph or the SERP layout. Ethical SEO is rarely a moral question for the team running it; it is a portfolio-risk question wearing the costume of one. This sits under the broader question of [organic SEO services](/en/blog/organic-seo-services), which maps how sustainable channels behave inside a real growth budget.
+Ethical SEO is **the practice of growing organic traffic with methods a search engine's public guidelines would endorse and a reader would still respect if they could see how the page was made**. Instead of leaning on shortcuts that flip results next quarter, the work compounds: real on-page substance, sources a reader can verify, no manipulation of the link graph or the SERP layout. Ethical SEO is rarely a moral question for the team running it; it is a portfolio-risk question wearing the costume of one. This sits under the broader question of [organic SEO services](/blog/organic-seo-services), which maps how sustainable channels behave inside a real growth budget.
 
 - Builds rankings on substance a reader would forward, not signals only a crawler sees
 - Disclosures, factual sourcing, and author identity stay legible to humans and AI search
@@ -104,7 +104,7 @@ Often more easily than a large one. Small libraries can be audited end-to-end in
 
 ## Related Reading
 
-- Comparison with [cost-effective SEO services](/en/blog/cost-effective-seo-services) — for teams weighing per-page price against portfolio durability
+- Comparison with [cost-effective SEO services](/blog/cost-effective-seo-services) — for teams weighing per-page price against portfolio durability
 - A guide to white-label SEO pricing — for agencies translating ethical practice into a retainer that pays for the rewrite work upfront
 - A look at AI search citation hygiene — for editors structuring pages to be quoted cleanly by AI Overviews and chatbots
 

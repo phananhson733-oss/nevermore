@@ -14,7 +14,7 @@ localeExclusive: true
 
 ## What Is Startup SEO?
 
-Startup SEO is **the practice of building organic search traffic from a true zero starting point — domain authority 0, zero published pages, and a single founder with a few hours a week — without assuming the budget, content backlog, or domain history that established-company SEO guides quietly take for granted**. The phrase gets used as a synonym for "early-stage SEO," but those are not the same constraint set, and conflating them is the reason most startup SEO advice fails the founder who actually needs it. The honest version of this work overlaps with disciplined [SEO for SaaS startups](/en/blog/seo-for-saas-startups), but it starts one step earlier — before there is anything to optimize.
+Startup SEO is **the practice of building organic search traffic from a true zero starting point — domain authority 0, zero published pages, and a single founder with a few hours a week — without assuming the budget, content backlog, or domain history that established-company SEO guides quietly take for granted**. The phrase gets used as a synonym for "early-stage SEO," but those are not the same constraint set, and conflating them is the reason most startup SEO advice fails the founder who actually needs it. The honest version of this work overlaps with disciplined [SEO for SaaS startups](/blog/seo-for-saas-startups), but it starts one step earlier — before there is anything to optimize.
 
 - Starts from DA 0 and zero indexed pages, not from a site with some existing authority to defend
 - Assumes founder time measured in hours per week, not a content team or recurring agency retainer
@@ -28,7 +28,7 @@ The cost of borrowing established-company SEO advice is invisible until you have
 
 That mismatch is structural. Walk the 2026 SERP for the term and the pattern repeats: CXL's guide frames startup SEO as defensive moat-building — strategic keyword capture to lock competitors out — which is excellent advice for a company with some domain history and pages already ranking, and useless on day one when there is no moat to defend yet. Respona's small-team budget guide comes closest to the founder's real constraint, but it still assumes a recurring content commitment and a working tool budget. Salesforce's beginner overview is friendly but generic, written for any small business rather than a resource-starved startup. None of them start from zero DA, zero content, and five hours a week — which is exactly where most startups actually begin.
 
-For the founder, that gap is not academic. Time spent following a plan built for a different constraint is time not spent on the two or three pages that could rank and compound. Startup SEO that respects the real constraint — limited hours, no authority, no backlog — front-loads the few moves that pay off and cuts everything that only works at scale. The compounding part of the channel, the [organic SEO services](/en/blog/organic-seo-services) motion of internal linking and steady page improvement, only begins once those first pages exist; pretending the startup is already there wastes the scarcest resource the founder has.
+For the founder, that gap is not academic. Time spent following a plan built for a different constraint is time not spent on the two or three pages that could rank and compound. Startup SEO that respects the real constraint — limited hours, no authority, no backlog — front-loads the few moves that pay off and cuts everything that only works at scale. The compounding part of the channel, the [organic SEO services](/blog/organic-seo-services) motion of internal linking and steady page improvement, only begins once those first pages exist; pretending the startup is already there wastes the scarcest resource the founder has.
 
 ## How Startup SEO Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ The gap between "startup SEO" and "early-stage SEO" stops being abstract the mom
 
 ### The solo founder with five hours a week
 
-This founder cannot publish twice a week and should not try. The startup SEO move that works is ruthless selection: pick three low-competition, high-intent keywords a competitor is too big to bother with, and write three genuinely useful pages over a month — not twelve thin ones. The moat guide's "capture the category" framing assumes a content velocity this founder does not have. Slow, deliberate, and finished beats fast and abandoned, and it is the same selectivity behind [cost-effective SEO services](/en/blog/cost-effective-seo-services) for any team short on budget.
+This founder cannot publish twice a week and should not try. The startup SEO move that works is ruthless selection: pick three low-competition, high-intent keywords a competitor is too big to bother with, and write three genuinely useful pages over a month — not twelve thin ones. The moat guide's "capture the category" framing assumes a content velocity this founder does not have. Slow, deliberate, and finished beats fast and abandoned, and it is the same selectivity behind [cost-effective SEO services](/blog/cost-effective-seo-services) for any team short on budget.
 
 ### The pre-revenue SaaS with DA 0
 
-With domain authority at zero, ranking for the head term is months away, so chasing it is wasted effort. The useful startup SEO play is the long-tail wedge: target multi-word, specific queries where the top results are weak or absent, earn a few of those, and let the early rankings build the authority that makes the harder terms reachable later. This is where a lightweight [SaaS SEO platform](/en/blog/saas-seo-platform) earns its place — it shows which long-tail terms are winnable now rather than which ones a bigger competitor already owns.
+With domain authority at zero, ranking for the head term is months away, so chasing it is wasted effort. The useful startup SEO play is the long-tail wedge: target multi-word, specific queries where the top results are weak or absent, earn a few of those, and let the early rankings build the authority that makes the harder terms reachable later. This is where a lightweight [SaaS SEO platform](/blog/saas-seo-platform) earns its place — it shows which long-tail terms are winnable now rather than which ones a bigger competitor already owns.
 
 ### The founder deciding whether to hire help
 
-At some point the founder weighs doing it alone against bringing in outside help. The honest startup SEO answer is sequencing: prove the channel can rank a handful of pages first, then hand a working motion to a [SaaS SEO consultant](/en/blog/saas-seo-consultant) rather than paying someone to discover whether SEO works for the product at all. Hiring before there is any signal converts a five-hour-a-week experiment into a recurring cost with no evidence behind it.
+At some point the founder weighs doing it alone against bringing in outside help. The honest startup SEO answer is sequencing: prove the channel can rank a handful of pages first, then hand a working motion to a [SaaS SEO consultant](/blog/saas-seo-consultant) rather than paying someone to discover whether SEO works for the product at all. Hiring before there is any signal converts a five-hour-a-week experiment into a recurring cost with no evidence behind it.
 
 ## Common Implementation Misreadings
 
@@ -74,13 +74,13 @@ Evaluate any startup SEO plan against your real constraint, not the one it was w
 3. Check the keyword realism: are the suggested targets terms a brand-new domain can rank for in months, or head terms that take years?
 4. Discount any step that only pays off at scale — link campaigns, broad topic clusters, daily publishing — until the first pages prove the channel works.
 
-This is the same selectivity behind sustainable channel choices in [ethical SEO](/en/blog/ethical-seo): pursue what compounds from your real position, not what works for a company three rounds of funding ahead.
+This is the same selectivity behind sustainable channel choices in [ethical SEO](/blog/ethical-seo): pursue what compounds from your real position, not what works for a company three rounds of funding ahead.
 
 ## How to Implement Startup SEO Step by Step
 
 1. **Pick three winnable keywords.** Find specific, multi-word terms where the current top results are thin, outdated, or off-topic — these are reachable at DA 0. Use a tool only to confirm winnability, not to build a dashboard.
 2. **Write three genuinely useful pages over a month.** One real page a week beats a daily output you will abandon. Each page should fully answer the query a searcher typed, not skim it.
-3. **Link the pages to each other deliberately.** Internal links pass the little authority you have between your own pages, the same logic disciplined [white-label keyword research](/en/blog/white-label-keyword-research) applies to topic clustering.
+3. **Link the pages to each other deliberately.** Internal links pass the little authority you have between your own pages, the same logic disciplined [white-label keyword research](/blog/white-label-keyword-research) applies to topic clustering.
 4. **Wait, measure, and re-baseline.** SEO at zero takes months to register, so resist rewriting everything in week two. After a quarter, check which pages moved and write three more in that proven direction.
 5. **Only then add tools or help.** Once a few pages rank, hand a working motion to a consultant or add tooling — never before there is signal that the channel works for your product.
 
@@ -108,9 +108,9 @@ No. At DA 0 you need just enough tooling to confirm which long-tail terms are wi
 
 ## Related Reading
 
-- [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — the next stage once your first pages rank
-- [Cost-effective SEO services](/en/blog/cost-effective-seo-services) — the same selectivity applied to budget
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — finding the long-tail terms a zero-authority site can win
+- [SEO for SaaS startups](/blog/seo-for-saas-startups) — the next stage once your first pages rank
+- [Cost-effective SEO services](/blog/cost-effective-seo-services) — the same selectivity applied to budget
+- [SaaS SEO platform](/blog/saas-seo-platform) — finding the long-tail terms a zero-authority site can win
 
 ## Take Action
 

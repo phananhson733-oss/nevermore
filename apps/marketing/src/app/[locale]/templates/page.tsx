@@ -2,6 +2,7 @@
 // @output -- permanent legacy redirect to the current editorial library
 // @pos    -- retires the noindex template hub in favor of repository-backed articles
 import { permanentRedirect } from "next/navigation";
+import { localePath } from "@/lib/locale-path";
 
 export default async function TemplatesPage({
   params,
@@ -9,5 +10,5 @@ export default async function TemplatesPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  permanentRedirect(`/${locale}/blog`);
+  permanentRedirect(localePath(locale, "/blog"));
 }

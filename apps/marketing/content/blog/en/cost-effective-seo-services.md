@@ -14,7 +14,7 @@ localeExclusive: true
 
 ## What Are Cost Effective SEO Services?
 
-Cost effective SEO services are **an engagement that produces durable organic visibility per dollar spent, by stripping out the line items that do not compound and concentrating the budget on the work that does**. The framing matters because cost effective rarely means cheap; it means a smaller surface area chosen carefully, so every retainer hour lands on a page or a fix that will still be earning attention a year out. Cost effective SEO services are rarely a sticker-price question; they are a what-the-retainer-actually-buys question wearing a price tag. This sits next to the broader practice of [organic SEO services](/en/blog/organic-seo-services), which maps the full-engagement version of the same compounding-traffic problem.
+Cost effective SEO services are **an engagement that produces durable organic visibility per dollar spent, by stripping out the line items that do not compound and concentrating the budget on the work that does**. The framing matters because cost effective rarely means cheap; it means a smaller surface area chosen carefully, so every retainer hour lands on a page or a fix that will still be earning attention a year out. Cost effective SEO services are rarely a sticker-price question; they are a what-the-retainer-actually-buys question wearing a price tag. This sits next to the broader practice of [organic SEO services](/blog/organic-seo-services), which maps the full-engagement version of the same compounding-traffic problem.
 
 - Scopes the retainer around fewer, denser pages rather than a long monthly content quota
 - Skips tactics whose returns die inside a quarter — link networks, scaled programmatic, AI-only drafts
@@ -104,10 +104,10 @@ Yes. Google's own guidance says there are no special optimisations or markup nee
 
 ## Related Reading
 
-- Comparison with [ethical SEO](/en/blog/ethical-seo) — for small teams worried about durability rather than discount price
-- A guide to [white-label SEO tooling](/en/blog/free-white-label-seo) — for agencies translating a tight scope into a retainer that still pays their writer
-- A look at [AI SEO tooling](/en/blog/best-ai-seo-tools) — for small teams wiring AI Overview and chatbot visibility into a one-page brief
-- How [startup SEO](/en/blog/startup-seo) builds early — the zero-budget playbook a cost-effective scope grows from
+- Comparison with [ethical SEO](/blog/ethical-seo) — for small teams worried about durability rather than discount price
+- A guide to [white-label SEO tooling](/blog/free-white-label-seo) — for agencies translating a tight scope into a retainer that still pays their writer
+- A look at [AI SEO tooling](/blog/best-ai-seo-tools) — for small teams wiring AI Overview and chatbot visibility into a one-page brief
+- How [startup SEO](/blog/startup-seo) builds early — the zero-budget playbook a cost-effective scope grows from
 
 ## Take Action
 

@@ -18,7 +18,7 @@ Technology company SEO is **the practice of growing organic traffic for a softwa
 
 - Counts developer documentation, API reference, integration listings, and changelogs as first-class SEO surfaces, not afterthoughts
 - Judged by whether high-intent technical queries find a tech company's own pages, not by blog traffic alone
-- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) actually compounds
+- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds
 
 ## Why It Matters for Your Workflow
 
@@ -34,11 +34,11 @@ Technology company SEO differs from a generic content program because the highes
 
 ### Scenario 1: The docs site that engineering owns but nobody optimizes
 
-A documentation portal is usually managed by engineering, deployed from a separate repo, and excluded from the marketing CMS — so it never enters the SEO workflow. The fix is rarely new content; it is hygiene. Each doc page needs a descriptive title tag instead of a bare function name, a one-paragraph intro that states what the page does before the code sample, and internal links between related endpoints. A docs platform that renders client-side puts indexing at risk — Googlebot must render the JavaScript before it sees the content, and that step is deferred and can fail or lag — so confirming server-rendered HTML or a prerender path is the first audit step. The same discipline you would apply in a [content audit tool](/en/blog/content-audit-tool) pass on the blog applies here, except the inventory is ten times larger and the intent is far higher.
+A documentation portal is usually managed by engineering, deployed from a separate repo, and excluded from the marketing CMS — so it never enters the SEO workflow. The fix is rarely new content; it is hygiene. Each doc page needs a descriptive title tag instead of a bare function name, a one-paragraph intro that states what the page does before the code sample, and internal links between related endpoints. A docs platform that renders client-side puts indexing at risk — Googlebot must render the JavaScript before it sees the content, and that step is deferred and can fail or lag — so confirming server-rendered HTML or a prerender path is the first audit step. The same discipline you would apply in a [content audit tool](/blog/content-audit-tool) pass on the blog applies here, except the inventory is ten times larger and the intent is far higher.
 
 ### Scenario 2: API reference pages that rank for exact-match queries
 
-Auto-generated API reference is a programmatic SEO goldmine that most companies never claim. Developers search for the literal endpoint, method, error code, or parameter name — "401 invalid_grant", "POST /v1/charges parameters" — and these are zero-ambiguity, high-intent queries. The reference generator can be configured to emit unique, descriptive titles and meta descriptions per endpoint, and to keep each error code on a crawlable, linkable page. This is the same programmatic discipline behind a mature [SaaS SEO platform](/en/blog/saas-seo-platform): templated pages, unique on-page signals, and an internal-link graph that mirrors how a developer actually moves through the reference.
+Auto-generated API reference is a programmatic SEO goldmine that most companies never claim. Developers search for the literal endpoint, method, error code, or parameter name — "401 invalid_grant", "POST /v1/charges parameters" — and these are zero-ambiguity, high-intent queries. The reference generator can be configured to emit unique, descriptive titles and meta descriptions per endpoint, and to keep each error code on a crawlable, linkable page. This is the same programmatic discipline behind a mature [SaaS SEO platform](/blog/saas-seo-platform): templated pages, unique on-page signals, and an internal-link graph that mirrors how a developer actually moves through the reference.
 
 ### Scenario 3: The integration directory as the buyer's highest-intent surface
 
@@ -71,7 +71,7 @@ Evaluating an SEO approach for a tech company means scoring coverage across ever
 
 1. **Surface coverage, not page count.** Ask whether the plan touches docs, reference, and the integration directory, or stops at the blog. A blog-only plan leaves the highest-intent traffic on the table.
 2. **Crawlability of engineering-owned pages.** Confirm the approach checks whether docs and directories render server-side or are prerendered, since a client-rendered surface is indexed more slowly and less reliably — and often underranks — no matter how good the content.
-3. **Programmatic reference handling.** Look for a concrete plan to give API reference pages unique titles and crawlable error-code pages, the kind of templated discipline a real [SaaS SEO consultant](/en/blog/saas-seo-consultant) brings to programmatic page types.
+3. **Programmatic reference handling.** Look for a concrete plan to give API reference pages unique titles and crawlable error-code pages, the kind of templated discipline a real [SaaS SEO consultant](/blog/saas-seo-consultant) brings to programmatic page types.
 4. **AI-search citation readiness.** Verify the approach structures docs and reference as clear, well-organized answers, since that kind of content is well positioned to earn visibility when AI search surfaces technical answers.
 5. **What the team will not do.** An approach that names the surfaces it is deliberately ignoring — and why — is usually more credible than one promising to optimize everything at once.
 
@@ -81,7 +81,7 @@ Scored this way, the conversation stops being about which agency promises the mo
 
 Rolling out tech-company SEO works best as an ordered sequence that proves value on the highest-intent surface before expanding. The goal is to capture searches the company is already positioned to win before commissioning new content. Follow a path the team can actually sustain.
 
-1. **Inventory every indexable surface.** List the blog, docs, API reference, integration directory, and changelog with page counts and current organic traffic, so the team sees how little of the real estate the blog represents. A structured [SEO audit checklist](/en/blog/seo-audit-checklist) keeps the inventory consistent across surfaces.
+1. **Inventory every indexable surface.** List the blog, docs, API reference, integration directory, and changelog with page counts and current organic traffic, so the team sees how little of the real estate the blog represents. A structured [SEO audit checklist](/blog/seo-audit-checklist) keeps the inventory consistent across surfaces.
 2. **Fix crawlability before content.** Confirm docs and the directory render server-side or are prerendered; a client-rendered surface depends on Googlebot's deferred rendering step, which can lag or fail, so it tends to index late and rank below an equivalent server-rendered page no matter how good the writing.
 3. **Optimize the docs hygiene layer.** Give each doc a descriptive title tag, a plain-language intro before the code, and internal links between related pages — no new writing required.
 4. **Claim the API reference programmatically.** Configure the reference generator to emit unique titles and meta descriptions per endpoint and to keep each error code on its own crawlable, linkable page.
@@ -92,7 +92,7 @@ Rolling out tech-company SEO works best as an ordered sequence that proves value
 
 **Is SEO for technology companies different from SEO for SaaS startups?**
 
-They overlap heavily, but the emphasis differs. SaaS startup SEO often centers on category and comparison content to establish a new product, which is why [SEO for SaaS startups](/en/blog/seo-for-saas-startups) leans toward demand creation. Technology company SEO, especially for developer tooling and infrastructure, puts more weight on the documentation, reference, and integration surfaces that capture existing high-intent demand. A mature program does both.
+They overlap heavily, but the emphasis differs. SaaS startup SEO often centers on category and comparison content to establish a new product, which is why [SEO for SaaS startups](/blog/seo-for-saas-startups) leans toward demand creation. Technology company SEO, especially for developer tooling and infrastructure, puts more weight on the documentation, reference, and integration surfaces that capture existing high-intent demand. A mature program does both.
 
 **Do API reference pages really rank in search?**
 
@@ -108,9 +108,9 @@ No — it raises the value of well-structured docs and reference. Clear, well-st
 
 ## Related Reading
 
-- A guide to [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — for early-stage teams weighing demand creation against capturing existing developer intent
-- A look at the [best AI SEO tools](/en/blog/best-ai-seo-tools) — for teams that want to automate the per-surface audit across docs, reference, and the directory
-- A primer on [startup SEO](/en/blog/startup-seo) — for founders deciding which surfaces to optimize first under a tight budget
+- A guide to [SEO for SaaS startups](/blog/seo-for-saas-startups) — for early-stage teams weighing demand creation against capturing existing developer intent
+- A look at the [best AI SEO tools](/blog/best-ai-seo-tools) — for teams that want to automate the per-surface audit across docs, reference, and the directory
+- A primer on [startup SEO](/blog/startup-seo) — for founders deciding which surfaces to optimize first under a tight budget
 
 ## Take Action
 

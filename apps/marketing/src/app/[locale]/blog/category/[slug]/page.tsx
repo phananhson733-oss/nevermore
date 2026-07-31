@@ -4,6 +4,7 @@
 // once this file is updated, update header comments and _DIR.md in this folder
 import { notFound, permanentRedirect } from "next/navigation";
 import { isValidCategorySlug } from "@/lib/blog";
+import { localePath } from "@/lib/locale-path";
 
 type PageParams = { locale: string; slug: string };
 
@@ -19,5 +20,5 @@ export default async function BlogCategoryPage({
   }
 
   const category = slug.replace(/-/g, "_");
-  permanentRedirect(`/${locale}/blog?category=${category}`);
+  permanentRedirect(`${localePath(locale, "/blog")}?category=${category}`);
 }

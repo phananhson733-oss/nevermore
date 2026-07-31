@@ -63,4 +63,4 @@ localeExclusive: false
 </ul>
 
 <h2>What to Read Next</h2>
-<p>See our <a href="/en/blog/social-first-week-1">Week 1 social experiment report</a> for attribution in action. For programmatic SEO content, read our <a href="/en/blog/programmatic-seo-at-scale">scaling guide</a>.</p>
+<p>See our <a href="/blog/social-first-week-1">Week 1 social experiment report</a> for attribution in action. For programmatic SEO content, read our <a href="/blog/programmatic-seo-at-scale">scaling guide</a>.</p>

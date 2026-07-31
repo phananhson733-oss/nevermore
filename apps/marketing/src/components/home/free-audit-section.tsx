@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowRight, ScanSearch } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { SeoAuditTool } from "@/components/tools/seo-audit-tool";
+import { localePath } from "@/lib/locale-path";
 
 export function FreeAuditSection() {
   const t = useTranslations("home.freeAudit");
@@ -47,7 +48,7 @@ export function FreeAuditSection() {
         <div className="rounded-3xl border border-brand-accent/20 bg-brand-bg p-5 shadow-[0_20px_70px_rgba(0,0,0,0.18)] md:p-7">
           <SeoAuditTool locale={locale} />
           <Link
-            href={`/${locale}/tools/seo-audit`}
+            href={localePath(locale, "/tools/seo-audit")}
             className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-brand-accent-text transition-colors hover:text-brand-accent-hover"
           >
             {t("fullReport")}

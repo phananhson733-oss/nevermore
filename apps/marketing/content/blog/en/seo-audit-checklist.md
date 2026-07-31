@@ -18,7 +18,7 @@ An SEO audit checklist is **a structured list of the technical, on-page, and off
 
 - Inventories the full surface: crawlability, indexation, on-page signals, site speed, and backlinks
 - Should rank each item by ranking impact magnitude, not file it under a tidy category header
-- Plugs into a larger growth motion, which is why the audit step matters most for [SEO for SaaS](/en/blog/seo-for-saas) teams running lean
+- Plugs into a larger growth motion, which is why the audit step matters most for [SEO for SaaS](/blog/seo-for-saas) teams running lean
 
 A practitioner who works a 50-item list top to bottom spends the same effort on a 0.1% item as on a 15% one. The fix is not a longer SEO audit checklist — it is one ordered so the highest-impact work happens first.
 
@@ -28,7 +28,7 @@ Time is the constraint a category-organized checklist quietly wastes. When items
 
 The pattern across the published field is mixed. Walk the 2026 SERP for this term and you find a 14-step audit from SpyFu, an advanced guide from Serpstat, a "50+ things we actually check" list from Shortlist, and a complete checklist with AI prompts from MarketingAid — all thorough. A few of the best, Shortlist's among them, do lead with crawlability and indexation and explicitly tell you to rank issues by impact and effort and fix the top few first, which is exactly the right instinct. But most checklists still present their items grouped by category, and even the prioritized ones stop at "rank by impact yourself" rather than handing you a finished, site-specific order — so a buyer reading a generic list cannot tell, without doing the triage by hand, what to fix on Monday morning.
 
-That distinction compounds for small teams. An agency auditing forty sites, or a startup with one marketer, does not have the hours to execute a 50-item SEO audit checklist on every property every quarter. What they need is the priority-first cut: the five or six items that, fixed, recover most of the lost rankings — the same triage discipline behind sustainable [organic SEO services](/en/blog/organic-seo-services). A checklist that forces equal attention on every item is, in practice, a checklist most teams abandon halfway through.
+That distinction compounds for small teams. An agency auditing forty sites, or a startup with one marketer, does not have the hours to execute a 50-item SEO audit checklist on every property every quarter. What they need is the priority-first cut: the five or six items that, fixed, recover most of the lost rankings — the same triage discipline behind sustainable [organic SEO services](/blog/organic-seo-services). A checklist that forces equal attention on every item is, in practice, a checklist most teams abandon halfway through.
 
 ## How an SEO Audit Checklist Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,11 +36,11 @@ The gap between a category list and an impact-ordered list shows up the moment a
 
 ### The agency auditing forty client sites
 
-An agency cannot run 50 items across forty sites by hand each quarter. The SEO audit checklist that helps here is the one that surfaces the three indexation or canonical problems per site that actually suppress rankings, and defers the cosmetic items. Category ordering forces equal time on every site; impact ordering lets the agency clear the highest-stakes issues across the whole book first. That triage is the same logic behind a disciplined [agency rank tracking](/en/blog/agency-rank-tracking) setup — watch what moves, ignore what does not.
+An agency cannot run 50 items across forty sites by hand each quarter. The SEO audit checklist that helps here is the one that surfaces the three indexation or canonical problems per site that actually suppress rankings, and defers the cosmetic items. Category ordering forces equal time on every site; impact ordering lets the agency clear the highest-stakes issues across the whole book first. That triage is the same logic behind a disciplined [agency rank tracking](/blog/agency-rank-tracking) setup — watch what moves, ignore what does not.
 
 ### The SaaS startup with one marketer
 
-A lone marketer running a technical SEO checklist needs to know what to fix before lunch, not what exists. If indexation is broken — a stray noindex directive, a canonical pointing at the wrong URL, or a robots.txt rule blocking the crawler from ever reading the page — nothing else on the list matters until it is fixed, because a page Google cannot index or read properly cannot rank on its own merits. (Note the distinction Google Search Central draws here: a noindex tag removes a page from the index, while a robots.txt disallow only blocks crawling — a robots.txt-blocked URL can still be indexed and surface in results if other sites link to it, which is its own audit problem.) An impact-ordered audit puts those items at position one, where a generic [local SEO audit](/en/blog/local-seo-audit) template would file them halfway down under "Technical."
+A lone marketer running a technical SEO checklist needs to know what to fix before lunch, not what exists. If indexation is broken — a stray noindex directive, a canonical pointing at the wrong URL, or a robots.txt rule blocking the crawler from ever reading the page — nothing else on the list matters until it is fixed, because a page Google cannot index or read properly cannot rank on its own merits. (Note the distinction Google Search Central draws here: a noindex tag removes a page from the index, while a robots.txt disallow only blocks crawling — a robots.txt-blocked URL can still be indexed and surface in results if other sites link to it, which is its own audit problem.) An impact-ordered audit puts those items at position one, where a generic [local SEO audit](/blog/local-seo-audit) template would file them halfway down under "Technical."
 
 ### The in-house team inheriting a legacy site
 
@@ -72,9 +72,9 @@ Evaluate a checklist by whether it tells you what to do first, not by how many b
 1. Open the checklist and find the indexation items. If they are not near the top, the list is ordered by category, not impact.
 2. Count how many items carry an explicit impact weight or "fix-first" flag. Most published lists carry zero.
 3. Ask whether the list distinguishes a site-wide blocker from a single-page cosmetic issue. A good SEO audit checklist treats them differently; a category list treats them as peers.
-4. Check whether it connects to your tooling. A checklist you re-key by hand into a spreadsheet every cycle costs more than it saves, which is why audit and reporting should live in one [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) rather than scattered exports.
+4. Check whether it connects to your tooling. A checklist you re-key by hand into a spreadsheet every cycle costs more than it saves, which is why audit and reporting should live in one [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) rather than scattered exports.
 
-The discipline here mirrors choosing defensible channels: optimize for what compounds, not for what looks thorough on a slide. That is the logic behind [ethical SEO](/en/blog/ethical-seo), and it applies to how you sequence an audit too.
+The discipline here mirrors choosing defensible channels: optimize for what compounds, not for what looks thorough on a slide. That is the logic behind [ethical SEO](/blog/ethical-seo), and it applies to how you sequence an audit too.
 
 ## How to Implement an SEO Audit Checklist Step by Step
 
@@ -109,9 +109,9 @@ Yes, as a reference so nothing is missed. Keep the comprehensive list, but run i
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds, the context any audit feeds
-- [Agency rank tracking](/en/blog/agency-rank-tracking) — the monitoring that tells you whether your fixes worked
-- [Organic SEO services](/en/blog/organic-seo-services) — where audit triage fits a real growth budget
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds, the context any audit feeds
+- [Agency rank tracking](/blog/agency-rank-tracking) — the monitoring that tells you whether your fixes worked
+- [Organic SEO services](/blog/organic-seo-services) — where audit triage fits a real growth budget
 
 ## Take Action
 

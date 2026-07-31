@@ -16,6 +16,7 @@ import {
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { siteConfig } from "@/config/site";
 import { generatePageMetadata } from "@/lib/seo";
+import { localePath, localeUrl } from "@/lib/locale-path";
 
 const PATH = "/tools/seo-audit";
 
@@ -56,8 +57,8 @@ export default async function SeoAuditPage({
       <div className="mx-auto max-w-[1120px] px-5 sm:px-6">
         <BreadcrumbJsonLd
           items={[
-            { name: home, url: `${siteConfig.url}/${locale}` },
-            { name: tools, url: `${siteConfig.url}/${locale}/tools` },
+            { name: home, url: localeUrl(locale) },
+            { name: tools, url: localeUrl(locale, "/tools") },
             { name: t("pageTitle") },
           ]}
         />
@@ -71,8 +72,8 @@ export default async function SeoAuditPage({
         <FaqPageJsonLd faqs={faqs} />
         <VisibleBreadcrumb
           items={[
-            { label: home, href: `/${locale}` },
-            { label: tools, href: `/${locale}/tools` },
+            { label: home, href: localePath(locale) },
+            { label: tools, href: localePath(locale, "/tools") },
             { label: t("pageTitle") },
           ]}
         />
@@ -349,7 +350,7 @@ export default async function SeoAuditPage({
                 {t("relatedToolsTitle")}
               </h2>
               <Link
-                href={`/${locale}/tools/internal-link-audit`}
+                href={localePath(locale, "/tools/internal-link-audit")}
                 className="mt-6 block rounded-xl border border-brand-border/70 bg-black/10 p-5 transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
@@ -361,7 +362,7 @@ export default async function SeoAuditPage({
                 </span>
               </Link>
               <Link
-                href={`/${locale}/tools`}
+                href={localePath(locale, "/tools")}
                 className="mt-4 inline-flex items-center gap-2 text-[11px] font-medium text-brand-accent-text"
               >
                 {tools}
@@ -379,7 +380,7 @@ export default async function SeoAuditPage({
                 {t("articlesBody")}
               </p>
               <Link
-                href={`/${locale}/blog/evidence-first-growth-experiments`}
+                href={localePath(locale, "/blog/evidence-first-growth-experiments")}
                 className="mt-5 inline-flex items-center gap-2 text-[12px] font-semibold text-brand-accent-text hover:text-brand-accent-hover"
               >
                 {t("articlesCta")}

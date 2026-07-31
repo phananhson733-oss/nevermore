@@ -62,7 +62,7 @@ The table below contrasts a common reflex with the more durable choice a coordin
 
 Evaluating integrated SEO is mostly a test of whether the coordination is real or decorative. Ask the vendor to walk you through a specific example where a finding in one lane changed the plan in another — a concrete story beats any capabilities slide. If they can only describe three services running in parallel, you are looking at bundled work, and the "integrated" label is marketing. Push on how priorities get set: an integrated program has one shared backlog, not three teams each defending their own.
 
-Then probe the tooling and the automation behind the loop, because coordination at scale is hard to sustain by hand. A serious provider leans on shared dashboards and workflow that connect the lanes; reviewing how mature [SEO automation](/en/blog/seo-automation) supports that wiring will tell you whether the integration can hold up beyond a handful of pages. It also helps to compare their model against a genuine [all-in-one SEO](/en/blog/all-in-one-seo) platform, so you can separate true integration from a stack of tools that merely sit in the same login. If the engagement is white-label, the same test applies to the underlying software: the [best white label SEO tool](/en/blog/best-white-label-seo-tool) is the one whose data actually connects across lanes rather than exporting three disconnected reports.
+Then probe the tooling and the automation behind the loop, because coordination at scale is hard to sustain by hand. A serious provider leans on shared dashboards and workflow that connect the lanes; reviewing how mature [SEO automation](/blog/seo-automation) supports that wiring will tell you whether the integration can hold up beyond a handful of pages. It also helps to compare their model against a genuine [all-in-one SEO](/blog/all-in-one-seo) platform, so you can separate true integration from a stack of tools that merely sit in the same login. If the engagement is white-label, the same test applies to the underlying software: the [best white label SEO tool](/blog/best-white-label-seo-tool) is the one whose data actually connects across lanes rather than exporting three disconnected reports.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have chosen a coordinated partner, a working integrated SEO strategy fo
 4. **Feed proven pages into outreach.** Let the pages that demonstrably rank become the concrete targets for link building, rather than guessing.
 5. **Run a recurring review of the loop.** Meet on a fixed cadence to move the bottleneck, not to report three separate statuses — this is where integration becomes durable.
 
-For teams standardizing this across many clients, the coordination discipline behind [free white label SEO](/en/blog/free-white-label-seo) offerings shows how the same loop can be operated at agency scale.
+For teams standardizing this across many clients, the coordination discipline behind [free white label SEO](/blog/free-white-label-seo) offerings shows how the same loop can be operated at agency scale.
 
 ## Frequently Asked Questions About Integrated SEO
 
@@ -96,10 +96,10 @@ Yes. Integration is procedural before it is technological. Even a three-person t
 
 ## Related Reading
 
-- [SEO automation](/en/blog/seo-automation) — how automated workflows sustain the coordination that integrated SEO depends on.
-- [All-in-one SEO](/en/blog/all-in-one-seo) — how a unified platform compares against a genuinely integrated operating model.
-- [Free white label SEO](/en/blog/free-white-label-seo) — operating the same coordinated loop at agency scale.
-- [White label keyword research](/en/blog/white-label-keyword-research) — feeding a shared, prioritized backlog that keeps the lanes aligned.
+- [SEO automation](/blog/seo-automation) — how automated workflows sustain the coordination that integrated SEO depends on.
+- [All-in-one SEO](/blog/all-in-one-seo) — how a unified platform compares against a genuinely integrated operating model.
+- [Free white label SEO](/blog/free-white-label-seo) — operating the same coordinated loop at agency scale.
+- [White label keyword research](/blog/white-label-keyword-research) — feeding a shared, prioritized backlog that keeps the lanes aligned.
 
 ## Take Action
 

@@ -36,7 +36,7 @@ In the first scenario, a Series B SaaS company hires a SaaS SEO consultant on a 
 
 ### In-House Product-Led Growth
 
-In the second scenario, an in-house SaaS SEO expert embeds with the product and growth teams. Their edge is proximity: they know which features drive retention, so they prioritize keywords around those features and around the integrations buyers search for by name. They wire content into the product-led loop — a comparison page that ends in a free-tier signup, a use-case page that surfaces the exact workflow inside the app. Here the specialist is less a writer and more a translator between what buyers type into search and what the product can immediately demonstrate. For the broader funnel-stage framework behind this work, the strategy side lives in [SEO for SaaS](/en/blog/seo-for-saas).
+In the second scenario, an in-house SaaS SEO expert embeds with the product and growth teams. Their edge is proximity: they know which features drive retention, so they prioritize keywords around those features and around the integrations buyers search for by name. They wire content into the product-led loop — a comparison page that ends in a free-tier signup, a use-case page that surfaces the exact workflow inside the app. Here the specialist is less a writer and more a translator between what buyers type into search and what the product can immediately demonstrate. For the broader funnel-stage framework behind this work, the strategy side lives in [SEO for SaaS](/blog/seo-for-saas).
 
 ## Common SaaS SEO Expert Misreadings
 
@@ -62,7 +62,7 @@ The table below contrasts the reflexive hire with the more durable choice an exp
 
 Evaluating a SaaS SEO expert is mostly a test of whether the candidate thinks in activation or in traffic. Start by asking them to walk through how they would map a specific feature of your product to search intent — a strong candidate will reach for signup and trial events unprompted, while a generalist will describe keyword volume and rankings. Ask how they would report success, and listen for product-qualified signups rather than sessions; the language a candidate defaults to tells you which metric they actually optimize.
 
-Then probe how they connect to the wider program. A genuine expert positions their work inside a strategy, not as an isolated content queue, so ask how they would coordinate with your broader plan — the funnel framework in [SEO for SaaS](/en/blog/seo-for-saas) is a fair reference point to test against. If you are still deciding between an individual hire and an outside partner, comparing the trade-offs of a [SaaS SEO consultant](/en/blog/saas-seo-consultant) engagement against an in-house role clarifies which structure fits your stage.
+Then probe how they connect to the wider program. A genuine expert positions their work inside a strategy, not as an isolated content queue, so ask how they would coordinate with your broader plan — the funnel framework in [SEO for SaaS](/blog/seo-for-saas) is a fair reference point to test against. If you are still deciding between an individual hire and an outside partner, comparing the trade-offs of a [SaaS SEO consultant](/blog/saas-seo-consultant) engagement against an in-house role clarifies which structure fits your stage.
 
 ## How to Implement It Step by Step
 
@@ -74,7 +74,7 @@ Once you have chosen a practitioner, a SaaS SEO expert engagement follows a reco
 4. **Produce content that ends in an action.** Publish pages that answer real buyer questions and close with the relevant product step — comparison, integration, and use-case pages carry the most weight.
 5. **Measure activation, then iterate.** Track product-qualified signups per cluster, prune pages that draw traffic but no action, and reinvest in the ones that compound.
 
-Teams evaluating the tooling side of this sequence often start from a [SaaS SEO platform](/en/blog/saas-seo-platform), which turns the keyword-to-activation model into a repeatable workflow.
+Teams evaluating the tooling side of this sequence often start from a [SaaS SEO platform](/blog/saas-seo-platform), which turns the keyword-to-activation model into a repeatable workflow.
 
 ## Frequently Asked Questions About a SaaS SEO Expert
 
@@ -96,10 +96,10 @@ Activation events, pricing-page and integration intent, freemium and trial mecha
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — the broader strategy and funnel-stage framework this role executes against.
-- [SaaS SEO consultant](/en/blog/saas-seo-consultant) — how a consulting engagement compares to an in-house hire.
-- [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — where the role fits when you are early and every signup counts.
-- [Best tools for SEO for B2B](/en/blog/best-tools-for-seo-for-b2b) — the tooling this role leans on to model and measure activation.
+- [SEO for SaaS](/blog/seo-for-saas) — the broader strategy and funnel-stage framework this role executes against.
+- [SaaS SEO consultant](/blog/saas-seo-consultant) — how a consulting engagement compares to an in-house hire.
+- [SEO for SaaS startups](/blog/seo-for-saas-startups) — where the role fits when you are early and every signup counts.
+- [Best tools for SEO for B2B](/blog/best-tools-for-seo-for-b2b) — the tooling this role leans on to model and measure activation.
 
 ## Take Action
 

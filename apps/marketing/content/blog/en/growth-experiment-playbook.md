@@ -78,4 +78,4 @@ localeExclusive: false
 
 <h2>Experiment Velocity Benchmarks</h2>
 <p>The best growth teams run 8-12 experiments per month. Early-stage startups should focus on 3-4 per month. The key metric is experiment velocity, not win rate.</p>
-<p>For more on measurement infrastructure, see our <a href="/en/blog/marketing-attribution-models">marketing attribution guide</a>. For a real-world example, read our <a href="/en/blog/social-first-week-1">Week 1 experiment report</a>.</p>
+<p>For more on measurement infrastructure, see our <a href="/blog/marketing-attribution-models">marketing attribution guide</a>. For a real-world example, read our <a href="/blog/social-first-week-1">Week 1 experiment report</a>.</p>

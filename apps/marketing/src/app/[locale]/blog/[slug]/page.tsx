@@ -12,6 +12,7 @@ import { generatePageMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { BlogArticleContent } from "./blog-article-content";
 import { getRelatedArticles } from "@/components/blog/related-articles";
+import { localePath, localeUrl } from "@/lib/locale-path";
 
 /** Escape `</` in JSON-LD to prevent </script> injection (XSS) */
 function safeJsonLd(data: unknown): string {
@@ -44,10 +45,7 @@ export async function generateMetadata({
 
   if (!post) {
     return generatePageMetadata({
-      title:
-        locale === "en"
-          ? "Post Not Found"
-          : "文章未找到",
+      title: locale === "en" ? "Post Not Found" : "文章未找到",
       description: "",
       locale,
       path: `/blog/${slug}`,
@@ -64,8 +62,8 @@ export async function generateMetadata({
     image: post.hero_image ? absoluteImageUrl(post.hero_image) : undefined,
   });
 
-  const canonical = `${siteConfig.url}/${locale}/blog/${slug}`;
-  const alternate = `${siteConfig.url}/${alternateLocale}/blog/${slug}`;
+  const canonical = localeUrl(locale, `/blog/${slug}`);
+  const alternate = localeUrl(alternateLocale, `/blog/${slug}`);
   return {
     ...metadata,
     alternates: {
@@ -127,15 +125,13 @@ export default async function BlogPostPage({
     datePublished: post.published_at,
     dateModified: post.updated_at || post.published_at,
     description: post.excerpt,
-    ...(post.hero_image
-      ? { image: absoluteImageUrl(post.hero_image) }
-      : {}),
+    ...(post.hero_image ? { image: absoluteImageUrl(post.hero_image) } : {}),
     publisher: {
       "@type": "Organization",
       name: siteConfig.name,
       url: siteConfig.url,
     },
-    mainEntityOfPage: `${siteConfig.url}/${locale}/blog/${slug}`,
+    mainEntityOfPage: localeUrl(locale, `/blog/${slug}`),
   };
 
   const breadcrumbLd = {
@@ -146,13 +142,13 @@ export default async function BlogPostPage({
         "@type": "ListItem",
         position: 1,
         name: locale === "zh" ? "首页" : "Home",
-        item: `${siteConfig.url}/${locale}`,
+        item: localeUrl(locale),
       },
       {
         "@type": "ListItem",
         position: 2,
         name: t("title"),
-        item: `${siteConfig.url}/${locale}/blog`,
+        item: localeUrl(locale, "/blog"),
       },
       { "@type": "ListItem", position: 3, name: post.title },
     ],
@@ -167,14 +163,14 @@ export default async function BlogPostPage({
           className="text-text-dark-secondary text-[13px] mb-12"
         >
           <Link
-            href={`/${locale}`}
+            href={localePath(locale)}
             className="hover:text-text-dark-primary transition-colors"
           >
             {locale === "zh" ? "首页" : "Home"}
           </Link>
           <span className="mx-2 opacity-40">/</span>
           <Link
-            href={`/${locale}/blog`}
+            href={localePath(locale, "/blog")}
             className="hover:text-text-dark-primary transition-colors"
           >
             {t("title")}

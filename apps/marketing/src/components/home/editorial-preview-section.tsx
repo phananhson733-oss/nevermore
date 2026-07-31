@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { ArrowRight, BookOpenCheck, Link2, ScanSearch, type LucideIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { localePath } from "@/lib/locale-path";
 
 const ARTICLES: readonly {
   readonly slug: string;
@@ -53,7 +54,7 @@ export function EditorialPreviewSection() {
             </p>
           </div>
           <Link
-            href={`/${locale}/blog`}
+            href={localePath(locale, "/blog")}
             className="inline-flex items-center gap-2 text-[13px] font-semibold text-brand-accent-text transition-colors hover:text-brand-accent-hover"
           >
             {t("viewAll")}
@@ -67,7 +68,7 @@ export function EditorialPreviewSection() {
             return (
               <Link
                 key={article.slug}
-                href={`/${locale}/blog/${article.slug}`}
+                href={localePath(locale, `/blog/${article.slug}`)}
                 className="group rounded-2xl border border-brand-border/70 bg-brand-bg p-5 transition-colors hover:border-brand-accent/60"
               >
                 <div className="flex items-center justify-between">

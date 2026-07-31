@@ -10,6 +10,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { ArrowRight, Link2, ScanSearch, type LucideIcon } from "lucide-react";
+import { localePath } from "@/lib/locale-path";
 
 const CARDS: { icon: LucideIcon; titleKey: string; descKey: string; slug: string }[] = [
   { icon: ScanSearch, titleKey: "auditTitle", descKey: "auditDesc", slug: "seo-audit" },
@@ -61,7 +62,7 @@ export function CapabilitiesPreview() {
                   {t(card.descKey)}
                 </p>
                 <Link
-                  href={`/${locale}/tools/${card.slug}`}
+                  href={localePath(locale, `/tools/${card.slug}`)}
                   className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-accent-on-light"
                 >
                   {t("cardCta")}
@@ -74,7 +75,7 @@ export function CapabilitiesPreview() {
 
         <div className="text-center">
           <Link
-            href={`/${locale}/tools`}
+            href={localePath(locale, "/tools")}
             className="text-brand-accent-on-light hover:text-brand-accent font-medium text-sm transition-colors"
           >
             {t("viewAll")}

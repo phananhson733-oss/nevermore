@@ -18,7 +18,7 @@ A content audit tool is **software that evaluates every existing page against it
 
 - Built around a decision — keep, update, merge, or prune each URL — rather than around a crawl error list
 - Joins traffic, rankings, and freshness per page so the recommendation is a judgment, not a 404 count
-- Sits inside a wider content operation, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) actually compounds over time
+- Sits inside a wider content operation, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds over time
 
 A content manager searching for one wants a verdict on each page. The SERP hands back a technical scanner instead. This guide compares the two so you buy the one that matches the job.
 
@@ -28,7 +28,7 @@ The mismatch is expensive because you only notice it after the purchase. A team 
 
 That gap is structural, not a fluke of one bad result. The friction is that content managers conflate the decision workflow with a general SEO crawler because the SERP returns crawl tools when the real need is an update-versus-remove call. A crawler answers "is this page technically broken?" The right software answers "is this page worth keeping?" Those are different questions, and the second one is the one a content audit tool exists to settle. When the two get confused, the audit produces a backlog of technical tickets while the decaying, cannibalizing, and thin pages — the ones quietly dragging the domain down — go untouched.
 
-The hours this software should give back are decision hours, not scan hours. Pulling a crawl is fast. Sitting with a spreadsheet and deciding, page by page, what to prune is the slow part, and it is exactly the part the right tool should structure. Skip it and you keep publishing new pages on top of an unexamined library, the opposite of the disciplined [ethical SEO](/en/blog/ethical-seo) habit of strengthening what you already own before chasing more.
+The hours this software should give back are decision hours, not scan hours. Pulling a crawl is fast. Sitting with a spreadsheet and deciding, page by page, what to prune is the slow part, and it is exactly the part the right tool should structure. Skip it and you keep publishing new pages on top of an unexamined library, the opposite of the disciplined [ethical SEO](/blog/ethical-seo) habit of strengthening what you already own before chasing more.
 
 ## How a Content Audit Tool Works / Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ The distance between "site crawler" and "content decision tool" only becomes obv
 
 ### The agency inheriting a 600-page client blog
 
-An agency taking over a neglected blog cannot rewrite 600 pages, and a crawl report listing every technical warning helps no one decide where to start. The tool that earns its place segments the library: pages decaying but salvageable (update), near-duplicate pages competing for the same query (merge), and zero-traffic pages with no backlinks (remove). That triage — not a list of broken links — is what lets the agency promise the client a defensible plan, the same prioritization discipline behind a clean [agency rank tracking](/en/blog/agency-rank-tracking) setup.
+An agency taking over a neglected blog cannot rewrite 600 pages, and a crawl report listing every technical warning helps no one decide where to start. The tool that earns its place segments the library: pages decaying but salvageable (update), near-duplicate pages competing for the same query (merge), and zero-traffic pages with no backlinks (remove). That triage — not a list of broken links — is what lets the agency promise the client a defensible plan, the same prioritization discipline behind a clean [agency rank tracking](/blog/agency-rank-tracking) setup.
 
 ### The SaaS team deciding update versus create
 
-A SaaS marketer with a target keyword faces one choice a crawler never surfaces: do we already have a page for this, and should we update it, or is a net-new page warranted? Software that maps existing URLs to query intent answers that directly and stops the team from publishing a fourth post that cannibalizes three older ones. This is the workflow that connects naturally to disciplined [white-label keyword research](/en/blog/white-label-keyword-research), where the audit feeds the plan rather than the crawl feeding a ticket queue.
+A SaaS marketer with a target keyword faces one choice a crawler never surfaces: do we already have a page for this, and should we update it, or is a net-new page warranted? Software that maps existing URLs to query intent answers that directly and stops the team from publishing a fourth post that cannibalizes three older ones. This is the workflow that connects naturally to disciplined [white-label keyword research](/blog/white-label-keyword-research), where the audit feeds the plan rather than the crawl feeding a ticket queue.
 
 ### The startup with a thin, aging library
 
-A startup with 40 early posts and no SEO hire needs to know which 10 to invest in and which 30 to retire so crawl budget and internal links concentrate on pages that can rank. The right software here automates the first read of the whole library — the kind of structured pass a [local SEO audit](/en/blog/local-seo-audit) formalizes — so a non-specialist sees the keep/update/remove split before writing anything new.
+A startup with 40 early posts and no SEO hire needs to know which 10 to invest in and which 30 to retire so crawl budget and internal links concentrate on pages that can rank. The right software here automates the first read of the whole library — the kind of structured pass a [local SEO audit](/blog/local-seo-audit) formalizes — so a non-specialist sees the keep/update/remove split before writing anything new.
 
 ## Common Implementation Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against the decision you need, not the size of the export. A useful seq
 3. Confirm it joins live performance data — traffic and rankings over time — so decay and cannibalization surface on their own rather than needing a separate manual pull.
 4. Test it on a slice you already know well. Run 20 pages whose fate you have already decided and see whether the recommendations match your own judgment.
 
-This is the same selection discipline behind choosing a defensible [saas seo platform](/en/blog/saas-seo-platform): buy for the decision the tool makes for you, not for the volume of data it can dump.
+This is the same selection discipline behind choosing a defensible [saas seo platform](/blog/saas-seo-platform): buy for the decision the tool makes for you, not for the volume of data it can dump.
 
 ## How to Implement a Content Audit Tool Step by Step
 
@@ -104,13 +104,13 @@ Confirm they truly have no traffic, rankings, or backlinks, then either redirect
 
 **Does this software replace keyword research?**
 
-No, it sequences with it. The audit tells you what you already have and whether to update or create; the [white-label keyword research](/en/blog/white-label-keyword-research) step tells you what to target next. It stops you from creating a page you should have updated.
+No, it sequences with it. The audit tells you what you already have and whether to update or create; the [white-label keyword research](/blog/white-label-keyword-research) step tells you what to target next. It stops you from creating a page you should have updated.
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds, the context any audit plugs into
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — where this software fits inside the wider operation
-- [Local SEO audit](/en/blog/local-seo-audit) — the structured-pass discipline a content audit borrows
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds, the context any audit plugs into
+- [SaaS SEO platform](/blog/saas-seo-platform) — where this software fits inside the wider operation
+- [Local SEO audit](/blog/local-seo-audit) — the structured-pass discipline a content audit borrows
 
 ## Take Action
 

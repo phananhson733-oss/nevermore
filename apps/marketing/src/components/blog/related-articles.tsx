@@ -4,6 +4,7 @@
 // once this file is updated, update header comments and _DIR.md in this folder
 import Link from "next/link";
 import type { BlogPost } from "@/types/blog";
+import { localePath } from "@/lib/locale-path";
 
 /**
  * Score each post relative to the current article context.
@@ -97,7 +98,7 @@ export function RelatedArticles({ posts, locale }: RelatedArticlesProps) {
           {posts.map((post) => (
             <li key={post.slug}>
               <Link
-                href={`/${locale}/blog/${post.slug}`}
+                href={localePath(locale, `/blog/${post.slug}`)}
                 className="group flex flex-col gap-1 rounded-lg border border-brand-border/40 bg-brand-bg-alt/20 p-4 transition-all hover:border-brand-accent/40 hover:bg-brand-bg-alt/40"
               >
                 <span className="text-brand-accent-text text-[11px] font-medium tracking-wider uppercase">

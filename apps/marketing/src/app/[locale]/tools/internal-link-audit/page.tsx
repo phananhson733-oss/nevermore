@@ -22,6 +22,7 @@ import { InternalLinkAuditTool } from "@/components/tools/internal-link-audit-to
 import { getInternalLinkAuditContent } from "@/components/tools/internal-link-audit-content";
 import { siteConfig } from "@/config/site";
 import { generatePageMetadata } from "@/lib/seo";
+import { localePath, localeUrl } from "@/lib/locale-path";
 
 const PATH = "/tools/internal-link-audit";
 
@@ -63,8 +64,8 @@ export default async function InternalLinkAuditPage({
       <div className="mx-auto max-w-[1120px] px-5 sm:px-6">
         <BreadcrumbJsonLd
           items={[
-            { name: home, url: `${siteConfig.url}/${locale}` },
-            { name: tools, url: `${siteConfig.url}/${locale}/tools` },
+            { name: home, url: localeUrl(locale) },
+            { name: tools, url: localeUrl(locale, "/tools") },
             { name: content.breadcrumb },
           ]}
         />
@@ -83,13 +84,13 @@ export default async function InternalLinkAuditPage({
         <ToolSoftwareApplicationJsonLd
           name={content.title}
           description={content.schemaDescription}
-          url={`${siteConfig.url}/${locale}${PATH}`}
+          url={localeUrl(locale, `${PATH}`)}
           featureList={content.schemaFeatures}
         />
         <VisibleBreadcrumb
           items={[
-            { label: home, href: `/${locale}` },
-            { label: tools, href: `/${locale}/tools` },
+            { label: home, href: localePath(locale) },
+            { label: tools, href: localePath(locale, "/tools") },
             { label: content.breadcrumb },
           ]}
         />
@@ -373,7 +374,7 @@ export default async function InternalLinkAuditPage({
                 {content.relatedTitle}
               </h2>
               <Link
-                href={`/${locale}/tools/seo-audit`}
+                href={localePath(locale, "/tools/seo-audit")}
                 className="mt-6 block rounded-xl border border-brand-border/70 bg-black/10 p-5 transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
@@ -388,7 +389,7 @@ export default async function InternalLinkAuditPage({
                 </span>
               </Link>
               <Link
-                href={`/${locale}/tools`}
+                href={localePath(locale, "/tools")}
                 className="mt-4 inline-flex items-center gap-2 text-[11px] font-medium text-brand-accent-text"
               >
                 {content.relatedTools}
@@ -418,7 +419,7 @@ export default async function InternalLinkAuditPage({
                 ))}
               </ul>
               <Link
-                href={`/${locale}/blog/evidence-first-growth-experiments`}
+                href={localePath(locale, "/blog/evidence-first-growth-experiments")}
                 className="mt-5 inline-flex items-center gap-2 text-[11px] font-semibold text-brand-accent-text hover:text-brand-accent-hover"
               >
                 {content.readingCta}

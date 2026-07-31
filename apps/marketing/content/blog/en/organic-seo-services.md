@@ -14,7 +14,7 @@ localeExclusive: true
 
 ## What Are Organic SEO Services?
 
-Organic SEO services are **an external engagement that grows a site's earned visibility in search — through substance on the page, structure a crawler can read, and credibility a reader would forward — without paying for placement**. The work spans audit, strategy, content production, technical fixes, and link earning, but the deliverable is always the same: a portfolio of pages that ranks because the page deserves to, not because the slot was bought. Organic SEO services are rarely a tactic question; they are a capacity-and-expertise question dressed up as one. This sits next to the broader practice of [ethical SEO](/en/blog/ethical-seo), which maps the durability layer beneath any organic engagement worth funding.
+Organic SEO services are **an external engagement that grows a site's earned visibility in search — through substance on the page, structure a crawler can read, and credibility a reader would forward — without paying for placement**. The work spans audit, strategy, content production, technical fixes, and link earning, but the deliverable is always the same: a portfolio of pages that ranks because the page deserves to, not because the slot was bought. Organic SEO services are rarely a tactic question; they are a capacity-and-expertise question dressed up as one. This sits next to the broader practice of [ethical SEO](/blog/ethical-seo), which maps the durability layer beneath any organic engagement worth funding.
 
 - Replaces in-house specialist hours with a team that does this work full-time across many sites
 - Compounds: a page that earns its rank tends to keep ranking long after the engagement ends
@@ -104,10 +104,10 @@ Sometimes, when one person on the team has real search-craft and the cadence is 
 
 ## Related Reading
 
-- Comparison with [cost-effective SEO services](/en/blog/cost-effective-seo-services) — for buyers weighing organic durability against a tighter monthly budget
-- A guide to [white-label SEO tooling](/en/blog/best-white-label-seo-tool) — for agencies translating organic deliverables into a retainer their fulfilment partner can hit
-- A look at [AI SEO tooling](/en/blog/best-ai-seo-tools) — for teams wiring AI Overview and chatbot visibility into a standing brief
-- How [SEO for SaaS](/en/blog/seo-for-saas) compounds — the channel context organic services build on
+- Comparison with [cost-effective SEO services](/blog/cost-effective-seo-services) — for buyers weighing organic durability against a tighter monthly budget
+- A guide to [white-label SEO tooling](/blog/best-white-label-seo-tool) — for agencies translating organic deliverables into a retainer their fulfilment partner can hit
+- A look at [AI SEO tooling](/blog/best-ai-seo-tools) — for teams wiring AI Overview and chatbot visibility into a standing brief
+- How [SEO for SaaS](/blog/seo-for-saas) compounds — the channel context organic services build on
 
 ## Take Action
 

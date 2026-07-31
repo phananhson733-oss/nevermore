@@ -7,6 +7,7 @@
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import type { GlossaryTerm } from "@/lib/glossary";
+import { localePath } from "@/lib/locale-path";
 
 interface GlossaryCardProps {
   readonly term: GlossaryTerm;
@@ -17,7 +18,7 @@ export function GlossaryCard({ term, locale }: GlossaryCardProps) {
   const t = useTranslations("glossary");
 
   return (
-    <Link href={`/${locale}/glossary/${term.slug}`} className="group block">
+    <Link href={localePath(locale, `/glossary/${term.slug}`)} className="group block">
       <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-5 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">
         {/* Category badge */}
         <div className="mb-3">

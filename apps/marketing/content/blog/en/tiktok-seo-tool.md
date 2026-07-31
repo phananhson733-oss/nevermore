@@ -18,7 +18,7 @@ A TikTok SEO tool is **software that helps a video get found through TikTok's ow
 
 - Optimizes for TikTok search and topic discovery, not page-rank web SEO
 - Reads the four signals TikTok indexes: spoken audio, on-screen text, caption copy, and topic tags
-- Sits inside a wider growth stack, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) compounds across channels
+- Sits inside a wider growth stack, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) compounds across channels
 
 A marketer searching for a way to optimize TikTok finds shelves of "viral hashtag" generators and almost nothing on the search-engine behavior that now drives a large share of discovery. So this piece evaluates a TikTok SEO tool the way an operator buys one — by what it does for searchability.
 
@@ -28,7 +28,7 @@ TikTok stopped being only a recommendation feed and became a place people type q
 
 That gap is structural. The hashtag-generator era trained a whole category of tools to treat TikTok as a feed you game with tags, so the typical "tiktok seo tool" still outputs trending hashtags and a caption template. None of that touches the signals TikTok's search now reads. A video can carry perfect hashtags and stay invisible in search because the spoken words and on-screen text never named the thing a person was looking for.
 
-The cost of the recycled-advice framing is invisible until you measure it. A team posts consistently, watches view counts, and never realizes those views came from the For You feed while search traffic — the durable, intent-driven kind — stayed near zero. Search discoverability is the compounding part of TikTok, the same way the [organic traffic growth case study](/en/blog/organic-traffic-growth-case-study) pattern compounds on the web. A hashtag-only tool leaves that surface untouched while charging you for the part that already converged to noise.
+The cost of the recycled-advice framing is invisible until you measure it. A team posts consistently, watches view counts, and never realizes those views came from the For You feed while search traffic — the durable, intent-driven kind — stayed near zero. Search discoverability is the compounding part of TikTok, the same way the [organic traffic growth case study](/blog/organic-traffic-growth-case-study) pattern compounds on the web. A hashtag-only tool leaves that surface untouched while charging you for the part that already converged to noise.
 
 ## How TikTok Search Optimization Works / Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ In practice, the gap between a hashtag generator and a TikTok SEO tool shows up 
 
 ### The agency running TikTok for a B2B SaaS client
 
-A B2B SaaS client is not chasing dance trends; it wants to be found when a buyer searches "how to do SEO reporting" or a product category term. The useful tool here surfaces the search phrases real users type, then maps them onto spoken script lines and on-screen text — not just caption hashtags. Content polish is beside the point; query-to-script mapping is the whole job, the same discipline behind a structured [white-label keyword research](/en/blog/white-label-keyword-research) process. A tool that outputs trending tags but never tells the creator to say the keyword out loud has automated the wrong thing.
+A B2B SaaS client is not chasing dance trends; it wants to be found when a buyer searches "how to do SEO reporting" or a product category term. The useful tool here surfaces the search phrases real users type, then maps them onto spoken script lines and on-screen text — not just caption hashtags. Content polish is beside the point; query-to-script mapping is the whole job, the same discipline behind a structured [white-label keyword research](/blog/white-label-keyword-research) process. A tool that outputs trending tags but never tells the creator to say the keyword out loud has automated the wrong thing.
 
 ### The in-house marketer with one TikTok account and no editor
 
-Here the bottleneck is knowing what to optimize, not posting volume. The marketer can film and cut. What they cannot do is reverse-engineer which on-screen text and spoken phrases TikTok indexes for a given topic. A TikTok SEO tool earns its seat by reading the existing library, flagging videos that rank for nothing, and prescribing the caption rewrite and on-screen text edit — work that should feed the same backlog as a [content audit tool](/en/blog/content-audit-tool) handles on the web.
+Here the bottleneck is knowing what to optimize, not posting volume. The marketer can film and cut. What they cannot do is reverse-engineer which on-screen text and spoken phrases TikTok indexes for a given topic. A TikTok SEO tool earns its seat by reading the existing library, flagging videos that rank for nothing, and prescribing the caption rewrite and on-screen text edit — work that should feed the same backlog as a [content audit tool](/blog/content-audit-tool) handles on the web.
 
 ### The startup testing TikTok as a new acquisition channel
 
-A startup needs to know whether TikTok search even carries demand for its category before committing a creator's time. The useful tool runs the keyword research that a [startup seo](/en/blog/startup-seo) motion runs for Google — search volume, related queries, competitor coverage — but against TikTok's search box, not Google's. The trending-hashtag score that wins most tool comparisons is, for this buyer, the least relevant number on the screen.
+A startup needs to know whether TikTok search even carries demand for its category before committing a creator's time. The useful tool runs the keyword research that a [startup seo](/blog/startup-seo) motion runs for Google — search volume, related queries, competitor coverage — but against TikTok's search box, not Google's. The trending-hashtag score that wins most tool comparisons is, for this buyer, the least relevant number on the screen.
 
 ## Common TikTok SEO Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against TikTok search behavior, not against a hashtag demo. A useful se
 3. Discount any output that names trending hashtags but never prescribes what to say or show on screen; that is the recycled playbook.
 4. Weigh the score by your goal: if you want durable search traffic, the spoken-keyword and on-screen-text guidance matters far more than a trend-chasing tag list.
 
-This is the same channel discipline behind picking defensible, compounding tactics — the logic in [ethical seo](/en/blog/ethical-seo) applies to TikTok tool selection too: optimize for what compounds in search, not for what spikes once in a feed.
+This is the same channel discipline behind picking defensible, compounding tactics — the logic in [ethical seo](/blog/ethical-seo) applies to TikTok tool selection too: optimize for what compounds in search, not for what spikes once in a feed.
 
 ## How to Implement TikTok Search Optimization Step by Step
 
@@ -104,9 +104,9 @@ Usually because the target query never appears in the signals TikTok indexes —
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds, the context any TikTok program plugs into
-- [White-label keyword research](/en/blog/white-label-keyword-research) — the query-discovery discipline TikTok search needs too
-- [Content audit tool](/en/blog/content-audit-tool) — the audit motion that finds which videos rank for nothing
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds, the context any TikTok program plugs into
+- [White-label keyword research](/blog/white-label-keyword-research) — the query-discovery discipline TikTok search needs too
+- [Content audit tool](/blog/content-audit-tool) — the audit motion that finds which videos rank for nothing
 
 ## Take Action
 

@@ -56,4 +56,4 @@ localeExclusive: false
 <li>Invest in long-form content for Topic A first.</li>
 </ol>
 
-<p>Follow our journey in the <a href="/en/blog?category=weekly-review">weekly review archive</a>. For methodology, see our <a href="/en/blog/growth-experiment-playbook">experiment playbook</a>.</p>
+<p>Follow our journey in the <a href="/blog?category=weekly-review">weekly review archive</a>. For methodology, see our <a href="/blog/growth-experiment-playbook">experiment playbook</a>.</p>

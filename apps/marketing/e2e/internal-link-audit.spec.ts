@@ -65,7 +65,7 @@ test("submits the audit request and renders a synchronous API response", async (
     requestedBody = route.request().postDataJSON();
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(auditResponse) });
   });
-  await page.goto("/en/tools/internal-link-audit");
+  await page.goto("/tools/internal-link-audit");
   await expect(page.getByRole("heading", { level: 1, name: "Internal Link Audit" })).toBeVisible();
   await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
   await page.getByLabel("Website URL").fill("acme.com");

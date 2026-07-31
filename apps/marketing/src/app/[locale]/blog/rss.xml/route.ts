@@ -5,6 +5,7 @@
 
 import { getAllBlogPosts } from "@/lib/blog";
 import { siteConfig } from "@/config/site";
+import { localeUrl } from "@/lib/locale-path";
 
 function escapeXml(value: string): string {
   return value
@@ -21,7 +22,7 @@ function escapeCdata(value: string): string {
 
 export async function GET(
   _request: Request,
-  { params }: { params: Promise<{ locale: string }> }
+  { params }: { params: Promise<{ locale: string }> },
 ) {
   const { locale } = await params;
   const posts = await getAllBlogPosts({ locale });
@@ -32,12 +33,12 @@ export async function GET(
       (post) => `
     <item>
       <title><![CDATA[${escapeCdata(post.title)}]]></title>
-      <link>${siteConfig.url}/${locale}/blog/${encodeURIComponent(post.slug)}</link>
+      <link>${localeUrl(locale, `/blog/${encodeURIComponent(post.slug)}`)}</link>
       <description><![CDATA[${escapeCdata(post.excerpt)}]]></description>
       <pubDate>${new Date(post.published_at).toUTCString()}</pubDate>
-      <guid>${siteConfig.url}/${locale}/blog/${encodeURIComponent(post.slug)}</guid>
+      <guid>${localeUrl(locale, `/blog/${encodeURIComponent(post.slug)}`)}</guid>
       <category>${escapeXml(post.category)}</category>
-    </item>`
+    </item>`,
     )
     .join("");
 
@@ -45,10 +46,10 @@ export async function GET(
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${siteConfig.name} Blog</title>
-    <link>${siteConfig.url}/${locale}/blog</link>
+    <link>${localeUrl(locale, "/blog")}</link>
     <description>Evidence-led SEO methods, public-tool guides, and practical decision frameworks from ${siteConfig.name}</description>
     <language>${locale}</language>
-    <atom:link href="${siteConfig.url}/${locale}/blog/rss.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="${localeUrl(locale, "/blog/rss.xml")}" rel="self" type="application/rss+xml" />
     ${items}
   </channel>
 </rss>`;

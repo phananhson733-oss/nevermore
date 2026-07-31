@@ -18,7 +18,7 @@ SEO automation is **software that runs the recurring, rule-based parts of an SEO
 
 - Targets the repeatable jobs, not the creative ones: monitoring, auditing, reporting, gap analysis
 - Measured in recovered hours and cost-per-client impact, not in feature counts
-- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) actually compounds over a quarter
+- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds over a quarter
 
 This guide compares SEO automation the way an operator buys it — by hours saved per task across a multi-client week — because that portfolio-level calculation is the one most existing coverage leaves out.
 
@@ -28,7 +28,7 @@ The ROI of SEO automation is invisible until you model it at the task level, and
 
 That gap is structural in how the category is written about, not accidental. Survey the published content for the term and the pattern repeats: Siteimprove, SearchAtlas, Marketer Milk, and eesel each catalog automatable tasks by category, and a few even attach generic per-category hour estimates such as "10+ hours a week" for rank tracking. But those figures are tool-category averages, not a model of the impact across your portfolio — none multiply the per-task time by your client count and the weeks in a month to produce a payback figure you can actually buy against, so the reader is handed a shelf of options and left to do the portfolio math alone.
 
-The hours SEO automation should return are concentrated in four jobs, and they are not evenly worth automating. Rank monitoring at scale is the clearest win: checking positions for fifty keywords across ten clients by hand is identical work a scheduled tracker absorbs entirely. Reporting is the second, because a stakeholder report rebuilt from five sources every Monday is pure assembly toil. Audits and content gap analysis sit lower — they automate the data-gathering pass but still need a person to decide what the findings mean. A tool that automates the right two, the [organic SEO services](/en/blog/organic-seo-services) work that recurs every cycle, returns real hours. One that automates the wrong ones returns a dashboard nobody reads.
+The hours SEO automation should return are concentrated in four jobs, and they are not evenly worth automating. Rank monitoring at scale is the clearest win: checking positions for fifty keywords across ten clients by hand is identical work a scheduled tracker absorbs entirely. Reporting is the second, because a stakeholder report rebuilt from five sources every Monday is pure assembly toil. Audits and content gap analysis sit lower — they automate the data-gathering pass but still need a person to decide what the findings mean. A tool that automates the right two, the [organic SEO services](/blog/organic-seo-services) work that recurs every cycle, returns real hours. One that automates the wrong ones returns a dashboard nobody reads.
 
 ## How SEO Automation Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ The hours-saved math changes completely with the shape of the team. The same aut
 
 ### The agency running thirty client sites
 
-For an agency, SEO automation pays off through multiplication. Rank monitoring done by hand might cost twenty minutes per site per week; across thirty clients that is ten hours weekly, or roughly forty hours a month of identical position-checking. Automate that one task and the recovered time funds two full days of strategy work every month. This is the math behind a disciplined [agency rank tracking](/en/blog/agency-rank-tracking) setup — the per-site cost looks trivial until you multiply it by the client count and the weeks in a month.
+For an agency, SEO automation pays off through multiplication. Rank monitoring done by hand might cost twenty minutes per site per week; across thirty clients that is ten hours weekly, or roughly forty hours a month of identical position-checking. Automate that one task and the recovered time funds two full days of strategy work every month. This is the math behind a disciplined [agency rank tracking](/blog/agency-rank-tracking) setup — the per-site cost looks trivial until you multiply it by the client count and the weeks in a month.
 
 ### The SaaS team with one in-house marketer
 
-Here the bottleneck is reporting, and the time sink is concentrated rather than multiplied. One marketer rebuilding a stakeholder deck from search console, the rank tracker, analytics, and two spreadsheets can lose half a day every Monday — call it three to four hours a week that produces nothing new, just reassembled numbers. Automating that report is the single highest-ROI move available, which is why it should feed a real [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) rather than a static export someone reformats by hand each week.
+Here the bottleneck is reporting, and the time sink is concentrated rather than multiplied. One marketer rebuilding a stakeholder deck from search console, the rank tracker, analytics, and two spreadsheets can lose half a day every Monday — call it three to four hours a week that produces nothing new, just reassembled numbers. Automating that report is the single highest-ROI move available, which is why it should feed a real [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) rather than a static export someone reformats by hand each week.
 
 ### The startup with no SEO hire yet
 
-A startup cannot afford the hours an audit consultant bills, so SEO automation here substitutes for a person who does not exist. The automated technical pass — the kind a [local SEO audit](/en/blog/local-seo-audit) formalizes — surfaces what to fix before anyone writes a new page. The saved hours are theoretical, since no salaried specialist was running them; the real return is getting a credible audit at all, on a budget that ruled out the alternative.
+A startup cannot afford the hours an audit consultant bills, so SEO automation here substitutes for a person who does not exist. The automated technical pass — the kind a [local SEO audit](/blog/local-seo-audit) formalizes — surfaces what to fix before anyone writes a new page. The saved hours are theoretical, since no salaried specialist was running them; the real return is getting a credible audit at all, on a budget that ruled out the alternative.
 
 ## Common Implementation Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against your hours, not the demo. A useful sequence:
 3. Multiply the per-task time by your client count and the weeks in a month. That product, not a feature list, is the real ROI of automating it.
 4. Discount any task that still needs full manual review to trust — that is assistance, not automation, and the hours saved are smaller than they look.
 
-This is the same portfolio discipline behind picking defensible channels — the logic in [ethical SEO](/en/blog/ethical-seo) applies to tool selection: optimize for what compounds and recurs, not for what demos well in a single session.
+This is the same portfolio discipline behind picking defensible channels — the logic in [ethical SEO](/blog/ethical-seo) applies to tool selection: optimize for what compounds and recurs, not for what demos well in a single session.
 
 ## How to Implement SEO Automation Step by Step
 
@@ -104,9 +104,9 @@ No. Automating tasks you rarely perform returns almost nothing, and automation t
 
 ## Related Reading
 
-- [SEO for SaaS](/en/blog/seo-for-saas) — how the channel compounds, the context any automation plugs into
-- [Agency rank tracking](/en/blog/agency-rank-tracking) — the monitoring task automation should absorb first
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — where automated tasks fit a full growth stack
+- [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds, the context any automation plugs into
+- [Agency rank tracking](/blog/agency-rank-tracking) — the monitoring task automation should absorb first
+- [SaaS SEO platform](/blog/saas-seo-platform) — where automated tasks fit a full growth stack
 
 ## Take Action
 

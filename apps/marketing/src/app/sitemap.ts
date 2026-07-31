@@ -4,9 +4,9 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { MetadataRoute } from "next";
-import { siteConfig } from "@/config/site";
 import { getAllBlogPosts } from "@/lib/blog";
 import { getLegalDocument } from "@/lib/legal";
+import { localeUrl } from "@/lib/locale-path";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
@@ -27,12 +27,7 @@ const BUILD_DATE = new Date();
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = ["en", "zh"];
-  const staticPages = [
-    "",
-    "/tools",
-    "/blog",
-    "/pricing",
-  ];
+  const staticPages = ["", "/tools", "/blog", "/pricing"];
 
   const entries: MetadataRoute.Sitemap = [];
 
@@ -51,7 +46,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         page === "/blog" ? "weekly" : "monthly";
 
       entries.push({
-        url: `${siteConfig.url}/${locale}${page}`,
+        url: localeUrl(locale, page),
         lastModified: BUILD_DATE,
         changeFrequency,
         priority,
@@ -77,7 +72,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]);
   for (const post of posts) {
     entries.push({
-      url: `${siteConfig.url}/${post.locale}/blog/${post.slug}`,
+      url: localeUrl(post.locale, `/blog/${post.slug}`),
       lastModified: new Date(post.updated_at),
       changeFrequency: "weekly",
       priority: 0.6,
@@ -90,7 +85,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const { locale, docType, document } of legalDocuments) {
     if (!document) continue;
     entries.push({
-      url: `${siteConfig.url}/${locale}/${docType}`,
+      url: localeUrl(locale, `/${docType}`),
       lastModified: new Date(document.effective_date),
       changeFrequency: "yearly",
       priority: 0.2,
@@ -107,7 +102,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const locale of locales) {
     for (const tool of tools) {
       entries.push({
-        url: `${siteConfig.url}/${locale}/tools/${tool}`,
+        url: localeUrl(locale, `/tools/${tool}`),
         lastModified: BUILD_DATE,
         changeFrequency: "monthly",
         priority: 0.7,

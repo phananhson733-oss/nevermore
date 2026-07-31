@@ -5,6 +5,7 @@
 
 import Link from "next/link";
 import type { PublicPlaybook, PublicPlaybookContent } from "@/lib/mock/playbook-public-data";
+import { localePath } from "@/lib/locale-path";
 
 interface PlaybookCardProps {
   readonly playbook: PublicPlaybook;
@@ -29,7 +30,7 @@ export function PlaybookCard({
 
   return (
     <Link
-      href={`/${locale}/playbooks/${playbook.slug}`}
+      href={localePath(locale, `/playbooks/${playbook.slug}`)}
       className="group block"
     >
       <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">

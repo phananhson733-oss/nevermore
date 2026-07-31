@@ -9,6 +9,7 @@ import { useLocale } from "next-intl";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { fadeInUp } from "@/lib/animations";
+import { localePath } from "@/lib/locale-path";
 
 function FingerprintIcon() {
   return (
@@ -144,7 +145,7 @@ export function SocialProofSection() {
         </motion.div>
 
         <Link
-          href={`/${locale}/blog`}
+          href={localePath(locale, "/blog")}
           className="text-brand-accent-text hover:text-brand-accent-hover font-medium text-sm transition-colors"
         >
           {t("cta")}

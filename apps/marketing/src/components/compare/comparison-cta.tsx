@@ -5,6 +5,7 @@
 "use client";
 
 import Link from "next/link";
+import { localePath } from "@/lib/locale-path";
 
 interface ComparisonCtaProps {
   readonly locale: string;
@@ -26,7 +27,7 @@ export function ComparisonCta({
           {ctaSubtitle}
         </p>
         <Link
-          href={`/${locale}#waitlist`}
+          href={`${localePath(locale)}#waitlist`}
           className="inline-block rounded-full bg-brand-accent px-8 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-brand-accent/90"
         >
           {ctaLabel}
@@ -34,7 +35,7 @@ export function ComparisonCta({
       </div>
       <div className="mt-8 text-center">
         <Link
-          href={`/${locale}/compare`}
+          href={localePath(locale, "/compare")}
           className="text-text-dark-secondary text-[13px] hover:text-text-dark-primary transition-colors"
         >
           &larr; {backLabel}

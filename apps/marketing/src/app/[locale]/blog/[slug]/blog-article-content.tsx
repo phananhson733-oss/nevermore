@@ -10,6 +10,7 @@ import { RelatedArticles } from "@/components/blog/related-articles";
 import { CaseStudyMetrics } from "@/components/blog/case-study-metrics";
 import { CASE_STUDY_METRICS_MAP } from "@/lib/mock/blog-content-case-study";
 import type { BlogPost } from "@/types/blog";
+import { localePath } from "@/lib/locale-path";
 
 interface BlogArticleContentProps {
   locale: string;
@@ -61,7 +62,7 @@ function getTopToolRecommendation(
 ) {
   if (pillar === "seo_content") {
     return {
-      href: `/${locale}/tools/internal-link-audit`,
+      href: localePath(locale, "/tools/internal-link-audit"),
       eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
       title:
         locale === "zh"
@@ -76,7 +77,7 @@ function getTopToolRecommendation(
   }
 
   return {
-    href: `/${locale}/tools/seo-audit`,
+    href: localePath(locale, "/tools/seo-audit"),
     eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
     title:
       locale === "zh"
@@ -222,14 +223,14 @@ export function BlogArticleContent({
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link
-            href={`/${locale}/tools/seo-audit`}
+            href={localePath(locale, "/tools/seo-audit")}
             className="inline-flex items-center gap-2 rounded-xl bg-brand-accent px-4 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
           >
             {locale === "zh" ? "运行免费 SEO 审计" : "Run a free SEO audit"}
             <ArrowRight aria-hidden="true" className="size-3.5" />
           </Link>
           <Link
-            href={`/${locale}/tools/internal-link-audit`}
+            href={localePath(locale, "/tools/internal-link-audit")}
             className="inline-flex items-center gap-2 rounded-xl border border-brand-border px-4 py-2.5 text-[12px] font-semibold text-text-dark-primary transition-colors hover:border-brand-accent/60"
           >
             {locale === "zh" ? "运行内链审计" : "Run an internal link audit"}
@@ -248,7 +249,7 @@ export function BlogArticleContent({
       {/* Back to blog */}
       <div className="border-t border-brand-border/50 mt-16 pt-8">
         <Link
-          href={`/${locale}/blog`}
+          href={localePath(locale, "/blog")}
           className="text-text-dark-secondary text-[13px] hover:text-brand-accent-text transition-colors"
         >
           &larr; {locale === "zh" ? "返回博客" : "Back to blog"}

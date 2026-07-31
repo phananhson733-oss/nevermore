@@ -18,7 +18,7 @@ An all-in-one SEO platform is **a single integrated tool that runs rank tracking
 
 - Covers the whole workflow from one login — audit, tracking, content analysis, and reporting — rather than a plugin bolted onto one CMS
 - Built for many sites and many clients at once, which is the agency and SaaS use case the SERP almost never shows for this term
-- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/en/blog/seo-for-saas) actually compounds over quarters
+- Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds over quarters
 
 A buyer typing "all in one seo" wants one platform for the four recurring jobs. What the results hand them is a WordPress plugin. So this comparison frames the term the way an operator means it — integrated coverage across sites, not a CMS extension.
 
@@ -28,7 +28,7 @@ The cost of the WordPress-plugin framing is hidden until you are already three t
 
 That capture is structural, not accidental. Walk the 2026 SERP for the term and the pattern is uniform: aioseo.com owns the brand result, the WordPress.org plugin page — with millions of active installs — owns the install intent, and review and roundup pages fill out the rest of the page. Every one of those properties describes a per-site WordPress add-on. The multi-client, multi-site meaning of an all-in-one SEO platform — the one agencies and SaaS teams actually need — is essentially absent from the first page.
 
-The hours an integrated platform should return are the coordination hours, not the on-page-tag hours. Switching between a separate rank tracker, a separate crawler, a separate keyword tool, and a separate reporting deck is where a week leaks time. A WordPress plugin does nothing for that leak because it lives inside one site. A true all in one seo platform consolidates the [organic SEO services](/en/blog/organic-seo-services) motion — audits, tracking, gap analysis, reporting — into one surface, so the toil of moving data between tools disappears instead of multiplying per client.
+The hours an integrated platform should return are the coordination hours, not the on-page-tag hours. Switching between a separate rank tracker, a separate crawler, a separate keyword tool, and a separate reporting deck is where a week leaks time. A WordPress plugin does nothing for that leak because it lives inside one site. A true all in one seo platform consolidates the [organic SEO services](/blog/organic-seo-services) motion — audits, tracking, gap analysis, reporting — into one surface, so the toil of moving data between tools disappears instead of multiplying per client.
 
 ## How an All-in-One SEO Platform Plays Out in Real Agency-SaaS Scenarios
 
@@ -36,15 +36,15 @@ In practice, the difference between a WordPress plugin and an integrated platfor
 
 ### The agency managing forty client sites
 
-An agency cannot install, log into, and reconcile a separate plugin on forty WordPress installs — and half its clients are not even on WordPress. What it needs is one platform that tracks all forty domains, crawls them on a schedule, and rolls findings into per-client views. The integrated approach here is the same logic behind a disciplined [agency rank tracking](/en/blog/agency-rank-tracking) setup: one source of truth across every account, not a plugin silo per site. A WordPress add-on cannot reach a Webflow, Shopify, or custom-stack client at all.
+An agency cannot install, log into, and reconcile a separate plugin on forty WordPress installs — and half its clients are not even on WordPress. What it needs is one platform that tracks all forty domains, crawls them on a schedule, and rolls findings into per-client views. The integrated approach here is the same logic behind a disciplined [agency rank tracking](/blog/agency-rank-tracking) setup: one source of truth across every account, not a plugin silo per site. A WordPress add-on cannot reach a Webflow, Shopify, or custom-stack client at all.
 
 ### The SaaS company with pages across three subdomains
 
-A SaaS marketer running a marketing site, a docs subdomain, and an app landing path needs a platform that sees all three as one property. The bottleneck is consolidated reporting and cross-property gap analysis, not per-page meta tags. An all in one seo platform earns its seat by unifying that view, which is why it should plug into a real [SEO reporting tool for SEO companies](/en/blog/seo-reporting-tool-for-seo-companies) rather than forcing three separate plugin dashboards into one slide deck by hand.
+A SaaS marketer running a marketing site, a docs subdomain, and an app landing path needs a platform that sees all three as one property. The bottleneck is consolidated reporting and cross-property gap analysis, not per-page meta tags. An all in one seo platform earns its seat by unifying that view, which is why it should plug into a real [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies) rather than forcing three separate plugin dashboards into one slide deck by hand.
 
 ### The lean team choosing between five point tools
 
-A team comparing a standalone tracker, a standalone crawler, a standalone keyword tool, and two reporting add-ons is really asking whether one integrated platform beats five subscriptions. The honest test is overlap and handoff cost — the kind of efficiency math behind [cost-effective SEO services](/en/blog/cost-effective-seo-services). Five tools that do not share data quietly cost more in reconciliation time than their combined invoice suggests.
+A team comparing a standalone tracker, a standalone crawler, a standalone keyword tool, and two reporting add-ons is really asking whether one integrated platform beats five subscriptions. The honest test is overlap and handoff cost — the kind of efficiency math behind [cost-effective SEO services](/blog/cost-effective-seo-services). Five tools that do not share data quietly cost more in reconciliation time than their combined invoice suggests.
 
 ## Common Implementation Misreadings
 
@@ -74,7 +74,7 @@ Evaluate against the multi-site workflow, not a single-blog demo. A useful seque
 3. Check the depth of each module independently — a deep tracker with a shallow audit is not truly all in one.
 4. Weigh by your real handoff cost: the platform that removes the most manual data-shuffling between tools wins, even if one rival module reads slightly better in isolation.
 
-This is the same portfolio discipline behind choosing a defensible stack — the logic in choosing a [SaaS SEO platform](/en/blog/saas-seo-platform) applies to integrated-tool selection too: optimize for what removes recurring toil, not for what demos the most logos.
+This is the same portfolio discipline behind choosing a defensible stack — the logic in choosing a [SaaS SEO platform](/blog/saas-seo-platform) applies to integrated-tool selection too: optimize for what removes recurring toil, not for what demos the most logos.
 
 ## How to Implement an All-in-One SEO Platform Step by Step
 
@@ -104,9 +104,9 @@ Check whether the tool requires a CMS install or simply a domain entry, and whet
 
 ## Related Reading
 
-- [SaaS SEO platform](/en/blog/saas-seo-platform) — what an integrated tool looks like built for SaaS, not single blogs
-- [Agency rank tracking](/en/blog/agency-rank-tracking) — the multi-client tracking job a real platform consolidates
-- [SEO for SaaS startups](/en/blog/seo-for-saas-startups) — where an all-in-one platform fits an early growth motion
+- [SaaS SEO platform](/blog/saas-seo-platform) — what an integrated tool looks like built for SaaS, not single blogs
+- [Agency rank tracking](/blog/agency-rank-tracking) — the multi-client tracking job a real platform consolidates
+- [SEO for SaaS startups](/blog/seo-for-saas-startups) — where an all-in-one platform fits an early growth motion
 
 ## Take Action
 
