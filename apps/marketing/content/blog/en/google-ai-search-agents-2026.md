@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-07-31
 updatedAt: 2026-07-31
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Google AI Search Agents 2026 in a Practical Content Workflow
+heroImage: /images/blog/google-ai-search-agents-2026.jpg
+heroImageAlt: An abstract editorial illustration for Google AI Search Agents 2026 in a Practical Content Workflow
 localeExclusive: true
 ---
 

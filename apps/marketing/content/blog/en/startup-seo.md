@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Startup SEO From Zero: DA 0, No Content, Five Hours a Week
+heroImage: /images/blog/startup-seo.jpg
+heroImageAlt: An abstract editorial illustration for Startup SEO From Zero: DA 0, No Content, Five Hours a Week
 localeExclusive: true
 ---
 

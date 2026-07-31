@@ -7,8 +7,8 @@ pillar: attribution
 status: published
 publishedAt: 2026-02-10
 updatedAt: 2026-03-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 营销归因详解：哪种模型适合你的产品？
+heroImage: /images/blog/marketing-attribution-models.jpg
+heroImageAlt: 营销归因详解：哪种模型适合你的产品？ 的抽象编辑插图
 localeExclusive: false
 ---
 

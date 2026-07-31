@@ -7,8 +7,8 @@ pillar: attribution
 status: published
 publishedAt: 2026-02-10
 updatedAt: 2026-03-01
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Marketing Attribution Explained: Which Model Fits Your Product?
+heroImage: /images/blog/marketing-attribution-models.jpg
+heroImageAlt: An abstract editorial illustration for Marketing Attribution Explained: Which Model Fits Your Product?
 localeExclusive: false
 ---
 

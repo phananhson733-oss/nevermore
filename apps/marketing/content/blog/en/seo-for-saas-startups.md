@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for How to Start SEO for SaaS Startups from Day 1 with Zero DA
+heroImage: /images/blog/seo-for-saas-startups.jpg
+heroImageAlt: An abstract editorial illustration for How to Start SEO for SaaS Startups from Day 1 with Zero DA
 localeExclusive: true
 ---
 

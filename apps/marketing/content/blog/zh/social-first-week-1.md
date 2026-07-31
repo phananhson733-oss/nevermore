@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-03-10
 updatedAt: 2026-03-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 第 1 周实验报告：社交优先的内容分发
+heroImage: /images/blog/social-first-week-1.jpg
+heroImageAlt: 第 1 周实验报告：社交优先的内容分发 的抽象编辑插图
 localeExclusive: false
 ---
 

@@ -7,8 +7,8 @@ pillar: growth_automation
 status: draft
 publishedAt: 2026-02-10
 updatedAt: 2026-02-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for 关键词缺口分析实操指南
+heroImage: /images/blog/keyword-gap-analysis-guide-draft.jpg
+heroImageAlt: 关键词缺口分析实操指南 的抽象编辑插图
 localeExclusive: false
 ---
 

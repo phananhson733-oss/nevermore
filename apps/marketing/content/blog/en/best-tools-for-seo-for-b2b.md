@@ -7,8 +7,8 @@ pillar: seo_content
 status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Why the Best B2B SEO Tools Are Judged by the Sales Cycle, Not the Feature List
+heroImage: /images/blog/best-tools-for-seo-for-b2b.jpg
+heroImageAlt: An abstract editorial illustration for Why the Best B2B SEO Tools Are Judged by the Sales Cycle, Not the Feature List
 localeExclusive: true
 ---
 

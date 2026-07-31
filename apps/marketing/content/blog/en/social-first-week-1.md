@@ -7,8 +7,8 @@ pillar: experiment_driven
 status: published
 publishedAt: 2026-03-10
 updatedAt: 2026-03-10
-heroImage: /images/og-default.svg
-heroImageAlt: Cover illustration for Week 1 Experiment Report: Social-First Content Distribution
+heroImage: /images/blog/social-first-week-1.jpg
+heroImageAlt: An abstract editorial illustration for Week 1 Experiment Report: Social-First Content Distribution
 localeExclusive: false
 ---
 
