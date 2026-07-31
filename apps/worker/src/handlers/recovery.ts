@@ -101,6 +101,30 @@ const UUID_PATTERN =
 const LEGACY_CONTRACT_VERSION = "0.2.0";
 const PUBLICATION_CONTRACT_VERSION = "publication.0.4.0";
 const MEASUREMENT_CONTRACT_VERSION = "measurement.0.1.0";
+const QUEUE_RETRY_EXHAUSTED = "QUEUE_RETRY_EXHAUSTED";
+const QUEUE_RETRY_EXHAUSTED_SUMMARY =
+  "Queue retries exhausted before the run completed.";
+const QUEUE_JOB_FAILED_SUMMARY =
+  "The queue job failed before the run completed.";
+const STABLE_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
+const SENSITIVE_ERROR_SUMMARY_PATTERN =
+  /(?:api[_ -]?key|authorization|bearer|client[_ -]?secret|password|passwd|private[_ -]?key|refresh[_ -]?token|access[_ -]?token)\s*[:=]|\b(?:sk|pk)-[A-Za-z0-9_-]{12,}/i;
+const MAX_SAFE_ERROR_SUMMARY_LENGTH = 512;
+// Preserve only exact, server-authored retry messages. A suffix match would let
+// provider/customer-controlled text masquerade as a safe canonical summary.
+const SAFE_RETRY_SUMMARIES = new Set<string>([
+  "Product Profile synthesis will be retried.",
+  "Collection was interrupted by worker shutdown; automatic retry is scheduled.",
+  "Provider rate limit reached; automatic retry is scheduled.",
+  "Provider request timed out; automatic retry is scheduled.",
+  "Provider is temporarily unavailable; automatic retry is scheduled.",
+  "Provider network request failed; automatic retry is scheduled.",
+  "Storage network request failed; automatic retry is scheduled.",
+  "Storage request timed out; automatic retry is scheduled.",
+  "Storage rate limit reached; automatic retry is scheduled.",
+  "Storage is temporarily unavailable; automatic retry is scheduled.",
+  "Database or runtime infrastructure is temporarily unavailable; automatic retry is scheduled.",
+]);
 
 type JobContractFailure = {
   readonly code: "UNSUPPORTED_JOB_CONTRACT" | "JOB_CONTRACT_MISMATCH";
@@ -110,6 +134,63 @@ type JobContractFailure = {
 interface CanonicalJobLookup {
   readonly jobs: JobWithMetadata<CanonicalJobPayload>[];
   readonly contractFailure: JobContractFailure | null;
+}
+
+interface RetryExhaustionFailure {
+  readonly lastErrorCode: string;
+  readonly lastErrorSummary: string;
+  readonly preservedRootCause: boolean;
+}
+
+function hasControlCharacters(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint <= 31 || codePoint === 127);
+  });
+}
+
+function terminalFailureWithCanonicalCause(
+  run: Pick<AsyncRunRow, "last_error_code" | "last_error_summary">,
+  fallbackCode: string,
+  fallbackSummary: string,
+): RetryExhaustionFailure {
+  const code = run.last_error_code;
+  const summary = run.last_error_summary;
+  const hasSafeCanonicalCause =
+    typeof code === "string" &&
+    STABLE_ERROR_CODE_PATTERN.test(code) &&
+    code !== QUEUE_RETRY_EXHAUSTED &&
+    typeof summary === "string" &&
+    summary.length > 0 &&
+    summary.length <= MAX_SAFE_ERROR_SUMMARY_LENGTH &&
+    summary === summary.trim() &&
+    !hasControlCharacters(summary) &&
+    !SENSITIVE_ERROR_SUMMARY_PATTERN.test(summary) &&
+    SAFE_RETRY_SUMMARIES.has(summary);
+
+  if (hasSafeCanonicalCause) {
+    return {
+      lastErrorCode: code,
+      lastErrorSummary: `${summary} ${fallbackSummary}`,
+      preservedRootCause: true,
+    };
+  }
+
+  return {
+    lastErrorCode: fallbackCode,
+    lastErrorSummary: fallbackSummary,
+    preservedRootCause: false,
+  };
+}
+
+function retryExhaustionFailure(
+  run: Pick<AsyncRunRow, "last_error_code" | "last_error_summary">,
+): RetryExhaustionFailure {
+  return terminalFailureWithCanonicalCause(
+    run,
+    QUEUE_RETRY_EXHAUSTED,
+    QUEUE_RETRY_EXHAUSTED_SUMMARY,
+  );
 }
 
 function collectionQueueForProvider(provider: unknown): QueueName | null {
@@ -251,31 +332,45 @@ export async function prepareRunDelivery<T extends CanonicalJobPayload>(
     await execute(job.data, runCtx);
   } catch (error: unknown) {
     if (job.retryCount >= job.retryLimit) {
+      // Runners persist their canonical failure after delivery preparation.
+      // Re-read it so the final retry preserves the observed cause instead of
+      // the stale pre-execution snapshot. A read failure must not mask the
+      // runner error or prevent pg-boss retry semantics.
+      const observed = await runs.findById(scope, job.data.runId).catch(
+        () => null,
+      );
+      const terminalCandidate = observed ?? prepared;
+      const exhaustionFailure = retryExhaustionFailure(terminalCandidate);
       let reconciled = false;
       try {
         reconciled = await reconcileCanonicalAndProjection(
           runCtx,
-          prepared,
+          terminalCandidate,
           scope,
           {
             status: "failed",
-            lastErrorCode: "QUEUE_RETRY_EXHAUSTED",
-            lastErrorSummary:
-              "Queue retries exhausted before the run completed.",
+            lastErrorCode: exhaustionFailure.lastErrorCode,
+            lastErrorSummary: exhaustionFailure.lastErrorSummary,
           },
         );
       } catch {
         // Preserve the runner error for pg-boss. A later recovery sweep will
         // retry the atomic canonical/projection reconciliation.
         runCtx.logger.error("run_delivery_reconciliation_failed", {
-          code: "QUEUE_RETRY_EXHAUSTED",
+          code: QUEUE_RETRY_EXHAUSTED,
           runId: job.data.runId,
+          ...(exhaustionFailure.preservedRootCause
+            ? { rootCauseCode: exhaustionFailure.lastErrorCode }
+            : {}),
         });
       }
       if (reconciled) {
         runCtx.logger.error("run_delivery_reconciled", {
-          code: "QUEUE_RETRY_EXHAUSTED",
+          code: QUEUE_RETRY_EXHAUSTED,
           runId: job.data.runId,
+          ...(exhaustionFailure.preservedRootCause
+            ? { rootCauseCode: exhaustionFailure.lastErrorCode }
+            : {}),
         });
       }
     }
@@ -511,14 +606,19 @@ async function reconcileOne(
   if (jobs.some((job) => isLiveQueueState(job.state))) return;
 
   if (jobs.some((job) => job.state === "failed")) {
+    const terminalFailure = terminalFailureWithCanonicalCause(
+      run,
+      "QUEUE_JOB_FAILED",
+      QUEUE_JOB_FAILED_SUMMARY,
+    );
     await terminalize(
       ctx,
       run,
       scope,
       {
         status: "failed",
-        code: "QUEUE_JOB_FAILED",
-        summary: "The queue job failed before the run completed.",
+        code: terminalFailure.lastErrorCode,
+        summary: terminalFailure.lastErrorSummary,
       },
       signal,
     );

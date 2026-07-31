@@ -29,6 +29,11 @@ const AZURE = {
   OPENAI_API_VERSION: "2025-01-01-preview",
 };
 
+const AZURE_NATIVE = {
+  ...AZURE,
+  AZURE_OPENAI_ENDPOINT: "https://resource-name.openai.azure.com",
+};
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -42,9 +47,104 @@ function stubWorkerEnv(values: Record<string, string>): void {
 describe("worker production URL environment policy", () => {
   const production = createWorkerEnvSchema("production");
 
-  it("accepts HTTPS direct and Azure configurations without locking the Azure host", () => {
+  it("accepts direct, native Azure and gateway Azure OpenAI configurations", () => {
     expect(production.safeParse(BASE).success).toBe(true);
     expect(production.safeParse({ ...BASE, ...AZURE }).success).toBe(true);
+    expect(production.safeParse({ ...BASE, ...AZURE_NATIVE }).success).toBe(
+      true,
+    );
+  });
+
+  it("accepts a bounded deployment-specific LLM temperature", () => {
+    const parsed = production.parse({
+      ...BASE,
+      ...AZURE_NATIVE,
+      OPENAI_TEMPERATURE: "1",
+    });
+    expect(resolveLlmClientConfig(parsed).temperature).toBe(1);
+  });
+
+  it.each(["-0.01", "2.01", "not-a-number"])(
+    "rejects an invalid LLM temperature: %s",
+    (OPENAI_TEMPERATURE) => {
+      expect(
+        production.safeParse({ ...BASE, OPENAI_TEMPERATURE }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("keeps a partial Azure set fail-closed even when direct OpenAI is complete", () => {
+    expect(
+      production.safeParse({
+        ...BASE,
+        AZURE_OPENAI_API_KEY: AZURE.AZURE_OPENAI_API_KEY,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    "not an absolute URL",
+    "http://gateway.example.com/tenant/azure",
+    "https://gateway.example.com/tenant/azure#fragment",
+    "https://user:password@gateway.example.com/tenant/azure",
+  ])("rejects an unsafe Azure OpenAI endpoint: %s", (AZURE_OPENAI_ENDPOINT) => {
+    expect(
+      production.safeParse({
+        ...BASE,
+        ...AZURE,
+        AZURE_OPENAI_ENDPOINT,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["OPENAI_API_KEY", " direct-key"],
+    ["OPENAI_API_KEY", "direct-key "],
+    ["OPENAI_API_KEY", String.raw`direct\nkey`],
+    ["OPENAI_API_KEY", String.raw`direct\rkey`],
+    ["OPENAI_API_KEY", "direct\nkey"],
+    ["OPENAI_MODEL", " gpt-model"],
+    ["OPENAI_MODEL", "gpt-model "],
+    ["OPENAI_MODEL", String.raw`gpt\nmodel`],
+    ["AZURE_OPENAI_API_KEY", " azure-key"],
+    ["AZURE_OPENAI_API_KEY", "azure-key "],
+    ["AZURE_OPENAI_API_KEY", String.raw`azure\rkey`],
+    ["AZURE_OPENAI_ENDPOINT", " https://gateway.example.com/tenant/azure"],
+    ["AZURE_OPENAI_ENDPOINT", "https://gateway.example.com/tenant/azure "],
+    ["AZURE_OPENAI_DEPLOYMENT", " gpt-blue"],
+    ["AZURE_OPENAI_DEPLOYMENT", "gpt-blue "],
+    ["AZURE_OPENAI_DEPLOYMENT", String.raw`gpt-blue\n`],
+    ["OPENAI_API_VERSION", " 2025-01-01-preview"],
+    ["OPENAI_API_VERSION", "2025-01-01-preview "],
+    ["OPENAI_API_VERSION", String.raw`2025-01-01-preview\r`],
+  ] as const)("rejects provider configuration contamination in %s", (field, value) => {
+    expect(
+      production.safeParse({
+        ...BASE,
+        ...AZURE,
+        [field]: value,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["OPENAI_API_KEY", "REPLACE_ME_WITH_OPENAI_API_KEY"],
+    ["OPENAI_MODEL", "your-model-here"],
+    ["AZURE_OPENAI_API_KEY", "CHANGE_ME"],
+    [
+      "AZURE_OPENAI_ENDPOINT",
+      "https://replace-me.example.com/tenant/azure",
+    ],
+    ["AZURE_OPENAI_DEPLOYMENT", "placeholder"],
+    ["OPENAI_API_VERSION", "YOUR_API_VERSION"],
+  ] as const)("rejects an obvious placeholder in %s", (field, value) => {
+    expect(
+      production.safeParse({
+        ...BASE,
+        ...AZURE,
+        [field]: value,
+      }).success,
+    ).toBe(false);
   });
 
   it("defaults each persistent worker database pool to two connections", () => {
@@ -178,9 +278,11 @@ describe("worker production URL environment policy", () => {
     const result = production.safeParse({
       ...BASE,
       ...AZURE,
+      OPENAI_API_KEY: ` ${sentinel}`,
       APP_ORIGIN: `https://${sentinel}:password@app.example.com`,
       DATABASE_URL: `mysql://${sentinel}:password@db.example.com/signalframe`,
-      AZURE_OPENAI_ENDPOINT: `http://${sentinel}:password@azure.example.com`,
+      AZURE_OPENAI_API_KEY: String.raw`${sentinel}\n`,
+      AZURE_OPENAI_ENDPOINT: `https://${sentinel}:password@gateway.example.com/tenant/azure`,
     });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -239,7 +341,6 @@ describe("worker development/test URL environment policy", () => {
           ...AZURE,
           APP_ORIGIN: "http://127.0.0.1:3000",
           SUPABASE_URL: "http://127.0.0.1:54321",
-          AZURE_OPENAI_ENDPOINT: "http://127.0.0.1:8080/azure",
         }).success,
       ).toBe(false);
     },
@@ -266,5 +367,30 @@ describe("Azure endpoint composition", () => {
     expect(resolveLlmClientConfig(env).baseUrl).toBe(
       "https://gateway.example.com/tenant/azure/openai/deployments/gpt-blue/chat/completions?route=private&api-version=2025-01-01-preview",
     );
+  });
+
+  it("supports a native Azure OpenAI resource origin", () => {
+    const env = createWorkerEnvSchema("production").parse({
+      ...BASE,
+      ...AZURE_NATIVE,
+    }) as WorkerEnv;
+
+    expect(resolveLlmClientConfig(env).baseUrl).toBe(
+      "https://resource-name.openai.azure.com/openai/deployments/gpt-blue/chat/completions?api-version=2025-01-01-preview",
+    );
+  });
+
+  it("keeps complete Azure configuration ahead of direct OpenAI", () => {
+    const env = createWorkerEnvSchema("production").parse({
+      ...BASE,
+      ...AZURE,
+    }) as WorkerEnv;
+
+    expect(resolveLlmClientConfig(env)).toMatchObject({
+      apiKey: AZURE.AZURE_OPENAI_API_KEY,
+      model: AZURE.AZURE_OPENAI_DEPLOYMENT,
+      temperature: 0.2,
+      authScheme: "api-key",
+    });
   });
 });

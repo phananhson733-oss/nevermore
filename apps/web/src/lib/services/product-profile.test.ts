@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   profileInsert: vi.fn(),
   profileProvenancePreflight: vi.fn(),
   activeFind: vi.fn(),
+  synthesisAttemptExists: vi.fn(),
   updateMarkets: vi.fn(),
   competitorUpsert: vi.fn(),
 }));
@@ -58,6 +59,9 @@ vi.mock("@sf/db", async (importOriginal) => {
     },
     AsyncRunsRepository: class {
       findActive = mocks.activeFind;
+    },
+    ProductProfileRunsRepository: class {
+      hasAttemptForBaseProfile = mocks.synthesisAttemptExists;
     },
     SitesRepository: class {
       updatePrimaryMarketCodes = mocks.updateMarkets;
@@ -196,6 +200,7 @@ beforeEach(() => {
   }));
   mocks.updateMarkets.mockResolvedValue(undefined);
   mocks.activeFind.mockResolvedValue(null);
+  mocks.synthesisAttemptExists.mockResolvedValue(false);
   mocks.competitorUpsert.mockResolvedValue({
     occurrenceId: "00000000-0000-4000-8000-000000000030",
     competitorId: "00000000-0000-4000-8000-000000000031",
@@ -222,6 +227,7 @@ describe("getProductProfileWorkspace", () => {
       projectId: ids.project,
       currentProfile: null,
       confirmedProfile: null,
+      hasSynthesisAttemptForCurrentDraft: false,
       activeSynthesisRun: null,
       activeCrawlRun: null,
     });
@@ -255,11 +261,26 @@ describe("getProductProfileWorkspace", () => {
       status: "queued",
       resultRef: null,
     });
+    expect(result.hasSynthesisAttemptForCurrentDraft).toBe(false);
 
     mocks.activeFind.mockResolvedValue(activeRun("diagnostic"));
     await expect(
       service.getProductProfileWorkspace(scope, ids.project),
     ).resolves.toMatchObject({ activeSynthesisRun: null });
+  });
+
+  it("exposes a durable auto-synthesis guard for an already-attempted draft", async () => {
+    mocks.projectFind.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(row(draft()));
+    mocks.synthesisAttemptExists.mockResolvedValue(true);
+
+    await expect(
+      service.getProductProfileWorkspace(scope, ids.project),
+    ).resolves.toMatchObject({ hasSynthesisAttemptForCurrentDraft: true });
+    expect(mocks.synthesisAttemptExists).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { id: ids.current, version: 3, contentHash: "a".repeat(64) },
+    );
   });
 
   it("returns the canonical active Crawl so onboarding can recover after refresh", async () => {
@@ -343,6 +364,7 @@ describe("getProductProfileWorkspace", () => {
       projectId: ids.project,
       currentProfile: null,
       confirmedProfile: null,
+      hasSynthesisAttemptForCurrentDraft: false,
       activeSynthesisRun: null,
       activeCrawlRun: null,
     });

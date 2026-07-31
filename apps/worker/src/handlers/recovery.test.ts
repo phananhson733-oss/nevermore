@@ -46,6 +46,7 @@ beforeEach(() => {
     AsyncRunsRepository.prototype,
     "lockActiveForRecovery",
   ).mockResolvedValue({} as never);
+  vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue(null);
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
     id: PAYLOAD.projectId,
     workspace_id: PAYLOAD.workspaceId,
@@ -512,6 +513,84 @@ describe("prepareRunDelivery", () => {
     expect(JSON.stringify(lines)).not.toContain("transient fixture");
   });
 
+  it("preserves a safe canonical root cause when queue retries are exhausted", async () => {
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(run("product_profile_synthesis", {}));
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...run("product_profile_synthesis", {}),
+      last_error_code: "NETWORK_ERROR",
+      last_error_summary: "Product Profile synthesis will be retried.",
+    });
+    const reconcile = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const runnerError = new Error("provider raw secret");
+    const { ctx, lines } = contextWithCapturedLogger();
+
+    await expect(
+      prepareRunDelivery(ctx, metadataJob(2, 2), async () => {
+        throw runnerError;
+      }),
+    ).rejects.toBe(runnerError);
+
+    expect(reconcile).toHaveBeenCalledWith(
+      { workspaceId: PAYLOAD.workspaceId, projectId: PAYLOAD.projectId },
+      PAYLOAD.runId,
+      {
+        status: "failed",
+        lastErrorCode: "NETWORK_ERROR",
+        lastErrorSummary:
+          "Product Profile synthesis will be retried. Queue retries exhausted before the run completed.",
+      },
+    );
+    expect(lines).toContainEqual({
+      event: "run_delivery_reconciled",
+      fields: {
+        code: "QUEUE_RETRY_EXHAUSTED",
+        rootCauseCode: "NETWORK_ERROR",
+        runId: PAYLOAD.runId,
+      },
+    });
+    expect(JSON.stringify(lines)).not.toContain("provider raw secret");
+  });
+
+  it("does not preserve a canonical retry summary that may contain a secret", async () => {
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue({
+      ...run("product_profile_synthesis", {}),
+      last_error_code: "NETWORK_ERROR",
+      last_error_summary:
+        "provider returned customer-content-secret; automatic retry is scheduled.",
+    });
+    const reconcile = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const { ctx, lines } = contextWithCapturedLogger();
+
+    await expect(
+      prepareRunDelivery(ctx, metadataJob(2, 2), async () => {
+        throw new Error("runner-customer-secret");
+      }),
+    ).rejects.toThrow("runner-customer-secret");
+
+    expect(reconcile).toHaveBeenCalledWith(
+      { workspaceId: PAYLOAD.workspaceId, projectId: PAYLOAD.projectId },
+      PAYLOAD.runId,
+      {
+        status: "failed",
+        lastErrorCode: "QUEUE_RETRY_EXHAUSTED",
+        lastErrorSummary: "Queue retries exhausted before the run completed.",
+      },
+    );
+    expect(JSON.stringify(lines)).not.toMatch(
+      /customer-content-secret|runner-customer-secret/,
+    );
+  });
+
   it("atomically recovers the scoped syncing source when a collection exhausts retries", async () => {
     vi.spyOn(
       AsyncRunsRepository.prototype,
@@ -924,6 +1003,39 @@ describe("reconcileActiveRuns", () => {
       expect.objectContaining({
         status: "failed",
         lastErrorCode: "QUEUE_JOB_COMPLETED_WITHOUT_CANONICAL_RESULT",
+      }),
+    );
+  });
+
+  it("keeps a safe canonical provider failure when a recovery sweep finds a failed queue job", async () => {
+    const failed = {
+      ...runWithId("00000000-0000-4000-8000-000000000021"),
+      last_error_code: "NETWORK_ERROR",
+      last_error_summary: "Product Profile synthesis will be retried.",
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([failed]);
+    const terminal = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => jobFor(failed, "failed")),
+        findJobs: vi.fn(async () => []),
+      }),
+    );
+
+    expect(terminal).toHaveBeenCalledWith(
+      scopeFor(failed),
+      failed.id,
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "NETWORK_ERROR",
+        lastErrorSummary:
+          "Product Profile synthesis will be retried. The queue job failed before the run completed.",
       }),
     );
   });

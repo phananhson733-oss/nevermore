@@ -936,6 +936,9 @@ export async function runProductProfileSynthesis(
     client = createClient({
       apiKey: ctx.openai.apiKey,
       model: ctx.openai.model,
+      ...(ctx.openai.temperature !== undefined
+        ? { temperature: ctx.openai.temperature }
+        : {}),
       promptSetVersion,
       ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),
       ...(ctx.openai.authScheme

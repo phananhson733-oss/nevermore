@@ -48,6 +48,8 @@ export interface WorkerContext {
   readonly openai: {
     readonly apiKey: string;
     readonly model: string;
+    /** Explicit only when a deployment needs a non-default sampling policy. */
+    readonly temperature?: number;
     readonly baseUrl?: string;
     readonly authScheme?: "bearer" | "api-key";
   };

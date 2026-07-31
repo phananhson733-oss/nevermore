@@ -291,6 +291,24 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(sentBody.messages.map((m) => m.role)).toEqual(["system", "user"]);
   });
 
+  it("forwards an explicit deployment-compatible temperature", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-5.6-luna",
+      temperature: 1,
+      fetchImpl,
+    });
+
+    await client.generateArtifact(makeInput());
+
+    const call = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const sentBody = JSON.parse(call[1].body as string) as {
+      temperature: number;
+    };
+    expect(sentBody.temperature).toBe(1);
+  });
+
   it("AC-032 sends only bounded, secret-scrubbed allowlisted data in the real outgoing request", async () => {
     const oauthToken = `ya29.${"T".repeat(40)}`;
     const rawCsv = [
