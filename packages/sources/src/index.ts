@@ -65,10 +65,7 @@ export type {
 } from "./storage/types.ts";
 export { MemoryBlobStore } from "./storage/memory.ts";
 export { LocalFsBlobStore } from "./storage/local-fs.ts";
-export {
-  SupabaseBlobStore,
-  SupabaseStorageError,
-} from "./storage/supabase.ts";
+export { SupabaseBlobStore, SupabaseStorageError } from "./storage/supabase.ts";
 export type {
   StorageFetch,
   SupabaseBlobStoreConfig,
@@ -244,6 +241,12 @@ export { createGscAdapter, gscAdapter } from "./gsc/adapter.ts";
 export type { GscConfig, GscParams, GscRaw } from "./gsc/adapter.ts";
 export { HttpGscClient } from "./gsc/client.ts";
 export type { GscClient, GscRow } from "./gsc/client.ts";
+export { HttpGscDailySeriesReader } from "./gsc/daily-series.ts";
+export type {
+  GscDailyPoint,
+  GscDailyRange,
+  GscDailySeriesReader,
+} from "./gsc/daily-series.ts";
 export { computeGscWindow } from "./gsc/window.ts";
 export { normalizeGscRows, GSC_LIMITATION } from "./gsc/normalize.ts";
 
