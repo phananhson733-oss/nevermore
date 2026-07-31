@@ -1090,6 +1090,11 @@ export async function runProductProfileSynthesis(
       ctx.logger.error("product_profile_synthesis_failed", {
         code: stableErrorCode(error),
         type: error instanceof LLMError ? "llm" : "internal",
+        // Present only where the client had something structural to say, which
+        // today means a rejected candidate naming the schema paths that failed.
+        ...(error instanceof LLMError && error.detail !== null
+          ? { detail: error.detail }
+          : {}),
       });
     } catch {
       // The terminal ledger is authoritative.

@@ -239,6 +239,66 @@ describe("route unexpected-error logging", () => {
     expect(logged).not.toContain("relation-detail-and-values");
   });
 
+  it("names the failed argument check behind a RangeError", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const wrapped = route(() => {
+      throw new RangeError("profileVersion must be a positive safe integer");
+    });
+
+    const response = await wrapped(
+      new NextRequest("http://localhost/api/mvp/projects"),
+    );
+
+    expect(response.status).toBe(500);
+    const logged = stderr.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain(
+      "profileVersion must be a positive safe integer",
+    );
+  });
+
+  it("keeps detail to RangeError so other messages cannot ride along", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const wrapped = route(() => {
+      throw new TypeError("customer-value-in-type-error");
+    });
+
+    const response = await wrapped(
+      new NextRequest("http://localhost/api/mvp/projects"),
+    );
+
+    expect(response.status).toBe(500);
+    const logged = stderr.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain(String.raw`"fault":"TypeError"`);
+    expect(logged).not.toContain("customer-value-in-type-error");
+    expect(logged).not.toContain("detail");
+  });
+
+  it("rejects a RangeError message that is not plain bounded ASCII", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    const wrapped = route(() => {
+      throw new RangeError("邮箱 customer@example.com 不合法");
+    });
+
+    const response = await wrapped(
+      new NextRequest("http://localhost/api/mvp/projects"),
+    );
+
+    expect(response.status).toBe(500);
+    const logged = stderr.mock.calls.map(([line]) => String(line)).join("");
+    expect(logged).toContain(String.raw`"fault":"RangeError"`);
+    expect(logged).not.toContain("customer@example.com");
+    expect(logged).not.toContain("detail");
+  });
+
   it("drops a code that is not a SQLSTATE instead of logging its content", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi

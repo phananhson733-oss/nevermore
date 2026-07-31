@@ -1,5 +1,5 @@
 import { NextIntlClientProvider } from "next-intl";
-import { getMessages, getTranslations } from "next-intl/server";
+import { getMessages } from "next-intl/server";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
 import { TrafficDropTool } from "@/components/tools/traffic-drop-tool";
@@ -13,13 +13,17 @@ export async function generateMetadata({
 }) {
   const { locale } = await params;
   const content = getConnectedToolContent(locale, "traffic-drop-diagnosis");
-  // Localised, like every other tool page. A hard-coded English string here put
-  // "Traffic Drop Diagnosis" in the tab title, the og:title and the Twitter
-  // card of the Chinese page — on a page whose whole job is to be found.
-  const t = await getTranslations({ locale, namespace: "tools.trafficDrop" });
+  // Localised, from the same source as the rest of this page's copy. Both
+  // branches fixed the hard-coded English title that was reaching the Chinese
+  // page's tab, og:title and Twitter card; this is main's resolution, and it
+  // is the right one — the same change removed `tools.trafficDrop.metaTitle`
+  // from the message bundles, so reading it here would throw MISSING_MESSAGE
+  // at request time. `generatePageMetadata` adds the brand for share cards and
+  // the root layout's title template adds it for `<title>`, so `content.title`
+  // must not carry it either.
   return generatePageMetadata({
-    title: t("metaTitle"),
-    description: t("metaDescription"),
+    title: content.title,
+    description: content.description,
     locale,
     path: content.path,
   });
