@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/saas-seo-platform.jpg
-heroImageAlt: An abstract editorial illustration for What a SaaS SEO Platform Should Actually Do for Your Funnel
+heroImageAlt: Flat-vector illustration: four page cards laid out in a two-by-two grid, each card carrying a different simple icon: a tag, a switch, a plug, and two side-by-side columns
 localeExclusive: true
 ---
 

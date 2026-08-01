@@ -8,7 +8,7 @@ status: draft
 publishedAt: 2026-02-10
 updatedAt: 2026-02-10
 heroImage: /images/blog/seo-content-clusters-draft.jpg
-heroImageAlt: An abstract editorial illustration for Building SEO Content Clusters That Actually Rank
+heroImageAlt: Flat-vector illustration: one large book at the centre with six smaller books arranged in a ring around it, each connected to the centre by a straight line
 localeExclusive: false
 ---
 

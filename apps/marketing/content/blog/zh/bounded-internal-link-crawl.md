@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-31
 heroImage: /images/blog/bounded-internal-link-crawl.jpg
-heroImageAlt: 受限内链抓取到底能证明什么 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：手电筒光锥照亮一部分互连的方块，光锥之外的方块隐入淡影
 localeExclusive: false
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
 heroImage: /images/blog/sony-playstation-physical-games-strategy-2026.jpg
-heroImageAlt: An abstract editorial illustration for How to Read Sony Playstation Physical Games Strategy 2026 Without the Rumor Noise
+heroImageAlt: Flat-vector illustration: an optical disc sliding halfway out of a plain square sleeve on the left, a cloud shape with a downward arrow floating on the right
 localeExclusive: true
 ---
 

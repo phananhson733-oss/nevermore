@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
 heroImage: /images/blog/world-cup-2026-content-marketing-ai.jpg
-heroImageAlt: An abstract editorial illustration for How World Cup 2026 Content Marketing AI Splits Work Between Bots and Editors
+heroImageAlt: Flat-vector illustration: a football at the centre of the frame, a boxy robot silhouette on the left and a simple human silhouette on the right, both angled toward the ball
 localeExclusive: true
 ---
 

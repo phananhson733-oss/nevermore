@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
 heroImage: /images/blog/website-health-score.jpg
-heroImageAlt: An abstract editorial illustration for What a Website Health Score Actually Tells You About a Site
+heroImageAlt: Flat-vector illustration: a large semicircular gauge dial with a single needle, five thin input lines feeding into the base of the gauge from below
 localeExclusive: true
 ---
 

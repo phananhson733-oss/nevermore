@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-for-technology-companies.jpg
-heroImageAlt: An abstract editorial illustration for Your Docs and API Reference Already Rank — Treat Them as SEO Assets
+heroImageAlt: Flat-vector illustration: a thick technical manual standing open on a low pedestal, a narrow spotlight cone falling on it from above
 localeExclusive: true
 ---
 

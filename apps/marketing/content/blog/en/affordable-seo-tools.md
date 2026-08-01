@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/affordable-seo-tools.jpg
-heroImageAlt: An abstract editorial illustration for Why Affordable SEO Tools Are the Ones That Automate the Most Jobs, Not the Cheapest Sticke
+heroImageAlt: Flat-vector illustration: a folding multi-tool opened out like a fan, five different implements splayed from one shared hinge
 localeExclusive: true
 ---
 

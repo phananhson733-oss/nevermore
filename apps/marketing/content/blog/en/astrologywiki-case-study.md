@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-03-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
-heroImageAlt: An abstract editorial illustration for From 0 to 5,000 Users: How astrologywiki.com Grew with GenGrowth
+heroImageAlt: Flat-vector illustration: three potted plants in a row, ascending left to right on a common baseline: a tiny sprout in a small pot, a leafy young plant in a medium pot, a tall thriving plant in a large pot
 localeExclusive: false
 ---
 

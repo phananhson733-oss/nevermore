@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
 heroImage: /images/blog/organic-seo-service.jpg
-heroImageAlt: An abstract editorial illustration for Organic SEO Service: A Boundary-First Definition for B2B SaaS Buyers
+heroImageAlt: Flat-vector illustration: a raised garden bed with a clear wooden border, four neat rows of small sprouts growing inside the border and bare ground outside it
 localeExclusive: true
 ---
 

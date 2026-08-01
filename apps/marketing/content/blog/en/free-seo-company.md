@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
 heroImage: /images/blog/free-seo-company.jpg
-heroImageAlt: An abstract editorial illustration for Free SEO Company Explained: How to Vet Providers Who Actually Compound
+heroImageAlt: Flat-vector illustration: a gift box with its lid lifted and tilted, revealing a cluster of gears packed inside
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/whitelabel-seo-tool.jpg
-heroImageAlt: An abstract editorial illustration for How to Tell Which Whitelabel SEO Tool Tier Your Agency Actually Needs
+heroImageAlt: Flat-vector illustration: a three-tier display stand, each tier holding a plain unmarked box, the boxes increasing in size from top tier to bottom tier
 localeExclusive: true
 ---
 

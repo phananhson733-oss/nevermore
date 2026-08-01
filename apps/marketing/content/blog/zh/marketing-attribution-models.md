@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-10
 updatedAt: 2026-03-01
 heroImage: /images/blog/marketing-attribution-models.jpg
-heroImageAlt: 营销归因详解：哪种模型适合你的产品？ 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：四条粗细不同的路径从左侧汇聚到右侧的一只奖杯
 localeExclusive: false
 ---
 

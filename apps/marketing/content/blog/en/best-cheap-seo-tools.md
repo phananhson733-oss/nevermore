@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
 heroImage: /images/blog/best-cheap-seo-tools.jpg
-heroImageAlt: An abstract editorial illustration for Best Cheap SEO Tools: How to Rank Budget Options by Real Cost-Per-Feature
+heroImageAlt: Flat-vector illustration: a vending machine with three visible shelves, each shelf holding a parcel of a different size, and a single coin dropping into its coin slot
 localeExclusive: true
 ---
 

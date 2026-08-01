@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
 heroImage: /images/blog/gpt-5-6-seo.jpg
-heroImageAlt: An abstract editorial illustration for What GPT 5.6 SEO Plausibly Means for Reseller Teams
+heroImageAlt: Flat-vector illustration: a signpost with four blank arrow boards pointing in four different directions
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-automation.jpg
-heroImageAlt: An abstract editorial illustration for SEO Automation by Task: How Many Hours Each One Actually Returns Per Month
+heroImageAlt: Flat-vector illustration: a large clock face on the left with gears meshing behind it, and a stream of small round tokens pouring from the clock into an open jar on the right
 localeExclusive: true
 ---
 

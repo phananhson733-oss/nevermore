@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/public-seo-audit-boundaries.jpg
-heroImageAlt: An abstract editorial illustration for Sitemaps, robots.txt, and the Limits of a Public SEO Audit
+heroImageAlt: Flat-vector illustration: a tall solid fence across the frame with one small open viewing window cut into it, simple building silhouettes visible through the window and nothing else
 localeExclusive: false
 ---
 

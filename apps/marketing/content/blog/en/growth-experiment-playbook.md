@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-01
 updatedAt: 2026-02-20
 heroImage: /images/blog/growth-experiment-playbook.jpg
-heroImageAlt: An abstract editorial illustration for How to Run Your First Growth Experiment: A Step-by-Step Playbook
+heroImageAlt: Flat-vector illustration: an open ring binder lying flat with five tabbed dividers fanned out and a row of five small blank step tiles laid out beside it
 localeExclusive: false
 ---
 

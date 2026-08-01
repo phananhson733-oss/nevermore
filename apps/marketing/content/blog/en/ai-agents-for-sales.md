@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-15
 updatedAt: 2026-07-15
 heroImage: /images/blog/ai-agents-for-sales.jpg
-heroImageAlt: An abstract editorial illustration for Where AI Agents for Sales Actually Replace the Rep — and Where They Cant
+heroImageAlt: Flat-vector illustration: a handshake between a mechanical claw on one side and a simple human hand silhouette on the other, meeting at the centre
 localeExclusive: true
 ---
 

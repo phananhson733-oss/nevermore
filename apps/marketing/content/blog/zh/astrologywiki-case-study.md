@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-03-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
-heroImageAlt: 从 0 到 5,000 用户：astrologywiki.com 如何用 GenGrowth 实现增长 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：三盆植物由小到大依次排开，从幼苗长成枝叶繁茂的大株
 localeExclusive: false
 ---
 

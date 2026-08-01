@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-07-09
 heroImage: /images/blog/google-july-2026-update.jpg
-heroImageAlt: An abstract editorial illustration for What the Google July 2026 Update Actually Changes for Your Content Workflow
+heroImageAlt: Flat-vector illustration: a two-pan balance scale, a hand-free weight descending onto the left pan tipping the beam, the right pan rising
 localeExclusive: true
 ---
 

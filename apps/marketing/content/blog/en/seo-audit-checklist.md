@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-audit-checklist.jpg
-heroImageAlt: An abstract editorial illustration for The SEO Audit Checklist Ordered by Ranking Impact, Not by Category
+heroImageAlt: Flat-vector illustration: a weight rack holding five cast-iron gym plates standing in a row ordered by size, the largest plate at the left end down to the smallest at the right end
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
 heroImage: /images/blog/affordable-seo-software.jpg
-heroImageAlt: An abstract editorial illustration for Affordable SEO Software: A Capability-Parity Guide for B2B SaaS Buyers
+heroImageAlt: Flat-vector illustration: a piggy bank on the left, and on the right a canvas tool roll unrolled flat with five different tools tucked into its pockets
 localeExclusive: true
 ---
 

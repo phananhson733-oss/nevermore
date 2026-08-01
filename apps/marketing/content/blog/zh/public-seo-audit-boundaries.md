@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/public-seo-audit-boundaries.jpg
-heroImageAlt: Sitemap、robots.txt 与公开 SEO 审计的边界 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：一道实心围墙上开着一扇小观察窗，窗内只看得见几个建筑剪影
 localeExclusive: false
 ---
 

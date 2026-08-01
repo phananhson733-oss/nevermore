@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-31
 updatedAt: 2026-07-31
 heroImage: /images/blog/google-ai-search-agents-2026.jpg
-heroImageAlt: An abstract editorial illustration for Google AI Search Agents 2026 in a Practical Content Workflow
+heroImageAlt: Flat-vector illustration: a small rounded robot walking across a line of stepping stones, each stone a rectangular page shape
 localeExclusive: true
 ---
 
