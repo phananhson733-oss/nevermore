@@ -471,6 +471,7 @@ async function createConfirmableProductionDraft(
     projectId: project.projectId,
     siteId: project.siteId,
     sourcePageUrl: project.sourcePageUrl,
+    outputLocale: "en",
     baseProfile: {
       id: base.id,
       version: base.version,

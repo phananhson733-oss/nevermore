@@ -45,6 +45,16 @@ describe("Sources Analysis Refresh wiring", () => {
     );
   });
 
+  it("consumes the post-confirmation intent before starting the parent command", () => {
+    expect(source).toContain(
+      "hasAutomaticAnalysisRefreshIntent(window.location.search)",
+    );
+    expect(source).toContain(
+      "withoutAutomaticAnalysisRefreshIntent(window.location.href)",
+    );
+    expect(source).toContain("void startAnalysisRefresh()");
+  });
+
   it("invalidates evidence/audit/growth at terminal and exposes honest terminal states", () => {
     expect(source).toContain(
       "invalidateAnalysisRefreshTerminalQueries(queryClient, projectId)",

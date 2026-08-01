@@ -273,6 +273,26 @@ export class ProjectsRepository extends Repository {
   }
 
   /**
+   * Soft-delete an active project inside its workspace scope. Historical
+   * evidence remains addressable for audit, while every mutable repository
+   * already treats `archived_at` as a write fence.
+   */
+  async archive(scope: WorkspaceScope, projectId: string): Promise<boolean> {
+    const rows = await this.exec
+      .update(clientProjects)
+      .set({ archived_at: sql`now()` })
+      .where(
+        and(
+          workspacePredicate(clientProjects, scope),
+          eq(clientProjects.id, projectId),
+          isNull(clientProjects.archived_at),
+        ),
+      )
+      .returning({ id: clientProjects.id });
+    return rows.length === 1;
+  }
+
+  /**
    * Server-owned lifecycle transition. The project id and workspace predicate
    * are applied in the same UPDATE so a foreign workspace cannot mutate state.
    */

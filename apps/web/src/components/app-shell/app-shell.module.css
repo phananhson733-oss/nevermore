@@ -332,6 +332,12 @@ a.newProjectLink:hover {
   background: transparent;
   border: 0;
   border-radius: 8px;
+  text-decoration: none;
+}
+
+a.sidebarUtility:hover {
+  color: var(--sf-white);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .sidebarUtility:disabled {

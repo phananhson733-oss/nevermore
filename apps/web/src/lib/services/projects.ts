@@ -16,6 +16,7 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import {
+  Bcp47Locale,
   createInitialProductProfileDraft,
   type CreateProjectWireRequest,
   type LegacyCreateProjectWireRequest,
@@ -44,6 +45,7 @@ export type UrlGuard = (rawUrl: string) => Promise<UrlGuardResult>;
 export interface CreateProjectRuntime {
   readonly environment?: string;
   readonly siteOriginProbe?: SiteOriginProbe;
+  readonly defaultDeliveryLocale?: string;
 }
 
 export interface CreateProjectResult {
@@ -112,6 +114,11 @@ export async function createProject(
 ): Promise<CreateProjectResult> {
   const requestHash = createProjectRequestHash(body);
   const productProfileMode = isProductProfileCreate(body);
+  const productProfileDeliveryLocale = productProfileMode
+    ? Bcp47Locale.parse(
+        runtime.defaultDeliveryLocale ?? URL_FIRST_DEFAULT_DELIVERY_LOCALE,
+      )
+    : null;
   const { db } = getDb();
 
   // A completed command is immutable. Replay (or reject a different hash)
@@ -322,7 +329,7 @@ export async function createProject(
         ? initialDisplayName
         : legacyBody!.projectName,
       defaultDeliveryLocale: productProfileMode
-        ? URL_FIRST_DEFAULT_DELIVERY_LOCALE
+        ? productProfileDeliveryLocale!
         : legacyBody!.defaultDeliveryLocale,
       createdBy: actorId,
     });
@@ -526,6 +533,37 @@ export async function getProject(
   const project = await new ProjectsRepository(db).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
   return loadAggregate(db, scope, project);
+}
+
+/**
+ * `DELETE /projects/{projectId}` — archive rather than physically erase.
+ *
+ * The row lock serializes this lifecycle boundary with every mutation that
+ * re-checks the project under `FOR UPDATE`. Repeating DELETE for the same
+ * scoped archived project is intentionally idempotent; foreign and absent ids
+ * remain indistinguishable as 404.
+ */
+export async function archiveProject(
+  scope: WorkspaceScope,
+  projectId: string,
+): Promise<void> {
+  const { db } = getDb();
+  await db.transaction(async (tx) => {
+    const projects = new ProjectsRepository(tx);
+    const project = await projects.findByIdForUpdate(scope, projectId);
+    if (!project) {
+      throw new ProblemError("NOT_FOUND", "Project not found.");
+    }
+    if (project.archived_at !== null) return;
+
+    const archived = await projects.archive(scope, projectId);
+    if (!archived) {
+      throw new ProblemError(
+        "DEPENDENCY_UNAVAILABLE",
+        "Project could not be archived after acquiring its lifecycle lock.",
+      );
+    }
+  });
 }
 
 export interface ProjectListResult {

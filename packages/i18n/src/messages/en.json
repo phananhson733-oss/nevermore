@@ -3,6 +3,7 @@
     "overview": "Overview",
     "context": "Context",
     "sources": "Sources",
+    "settings": "Settings",
     "diagnosis": "Diagnosis",
     "growthMap": "Growth Map",
     "execution": "Execution",
@@ -211,7 +212,7 @@
     },
     "nextStep": {
       "title": "Next: generate the initial Product Profile",
-      "detail": "GenGrowth collects the site and drafts an editable ICP and competitor set. Review them before connecting GSC, GA4, and DataForSEO."
+      "detail": "GenGrowth collects the site and drafts an editable ICP and competitor set. After you confirm it, keyword and competitor data are collected automatically; GSC and GA4 can be connected separately."
     },
     "createButton": "Create and generate initial profile",
     "creating": "Creating product…",
@@ -832,6 +833,24 @@
     "skipToContent": "Skip to content",
     "projectSections": "Project sections",
     "breadcrumb": "Breadcrumb"
+  },
+  "projectSettings": {
+    "eyebrow": "PRODUCT MANAGEMENT",
+    "title": "Product settings",
+    "subtitle": "Manage this product's workspace lifecycle and retained history.",
+    "dangerZone": "Danger zone",
+    "delete": {
+      "title": "Delete product",
+      "description": "Remove this product from the active workspace and stop all future collection, diagnosis, and delivery work.",
+      "retention": "Historical evidence and generated work are retained as read-only audit records; this action cannot currently be undone.",
+      "action": "Delete product",
+      "confirmTitle": "Delete this product?",
+      "confirmDescription": "You will return to Add product immediately after deletion.",
+      "cancel": "Keep product",
+      "confirmAction": "Confirm deletion",
+      "deleting": "Deleting…",
+      "error": "The product could not be deleted. Nothing was changed; please try again."
+    }
   },
   "contextStatus": {
     "missing": "Not started",

@@ -25,7 +25,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
   `0035_uuidv8_product_profile_competitor_evidence.sql` (**35 ordered migrations**)
-- Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+- Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
 this progress-only change. A tracked file cannot contain the hash of the commit
@@ -69,7 +69,7 @@ Current v0.4 external-write boundary: **no external writes**
 The active v0.4 contract has no GitHub, WordPress, CMS, Vercel, Cloudflare, or
 customer-production-site write and no post-publication attribution. Internal
 Content Shadow, approval, publication-preview and Measurement Window persistence
-are implemented; the current 78 operations still do not execute an external
+are implemented; the current 79 operations still do not execute an external
 provider write. A preview or Delivery Receipt is not a live change. Only a
 verified Change Receipt with a live canonical URL may anchor observation.
 

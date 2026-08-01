@@ -1,4 +1,5 @@
 import { CreateProductProfileSynthesisRunRequest } from "@sf/contracts";
+import { resolveUiLocale, UI_LOCALE_COOKIE } from "@sf/i18n";
 import { operatorRoute } from "@/lib/http/handler";
 import { assertWorkspaceRateLimit } from "@/lib/http/rate-limit";
 import { asyncAccepted } from "@/lib/http/respond";
@@ -31,6 +32,11 @@ export const POST = operatorRoute<{ projectId: string }>(
       ctx.operator.userId,
       idempotencyKey,
       body,
+      {
+        outputLocale: resolveUiLocale(
+          request.cookies.get(UI_LOCALE_COOKIE)?.value,
+        ),
+      },
     );
     return asyncAccepted(
       {

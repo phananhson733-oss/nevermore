@@ -31,7 +31,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
     assert.match(verifier, new RegExp(binding.replaceAll(".", "\\.")));
   }
   assert.equal(lock.authorityVersion, "0.4.0");
-  assert.equal(lock.apiOperations.length, 78);
+  assert.equal(lock.apiOperations.length, 79);
   assert.equal(lock.asyncOperations.length, 10);
   assert.equal(lock.tables.length, 78);
   assert.equal(lock.rules.length, 11);

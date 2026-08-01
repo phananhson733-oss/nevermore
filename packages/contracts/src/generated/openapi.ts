@@ -33,7 +33,14 @@ export interface paths {
         get: operations["getProject"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove a product from the active workspace while preserving its history
+         * @description Soft-deletes the project by archiving it. The product disappears from
+         *     active project lists and all future writes remain fenced, while its
+         *     immutable evidence and delivery history are retained for audit.
+         *     Repeating the command for the same scoped archived project is idempotent.
+         */
+        delete: operations["deleteProject"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5904,6 +5911,30 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    deleteProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Product archived and removed from the active workspace. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     getProjectContext: {

@@ -72,7 +72,7 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
       head: result.migrationHead,
     },
     {
-      operations: 78,
+      operations: 79,
       async: 10,
       tables: 78,
       rules: 11,

@@ -87,6 +87,10 @@ import {
   sourcePrimaryRowCount,
   type SourceAcquisitionMode,
 } from "./_sources-readiness.ts";
+import {
+  hasAutomaticAnalysisRefreshIntent,
+  withoutAutomaticAnalysisRefreshIntent,
+} from "./_analysis-refresh-auto.ts";
 import styles from "./sources.module.css";
 
 /** Per-provider glyph for the card logo (visual language from the Artifact). */
@@ -1912,7 +1916,10 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     analysisRefreshRunId ?? "",
   );
   const handledCallback = useRef(false);
+  const handledAutomaticAnalysisRefresh = useRef(false);
   const handledAnalysisRefreshTerminals = useRef<Set<string>>(new Set());
+  const analysisRefreshActive = analysisRefreshRunId !== null;
+  const analysisRefreshSubmitting = createAnalysisRefresh.isPending;
 
   const replaceAnalysisRefreshRun = useCallback((runId: string | null) => {
     window.history.replaceState(
@@ -1922,6 +1929,36 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     );
     setAnalysisRefreshRunId(runId);
   }, []);
+
+  const startAnalysisRefresh = useCallback(async (): Promise<void> => {
+    if (
+      !analysisRefreshRecovered ||
+      analysisRefreshActive ||
+      analysisRefreshSubmitting
+    ) {
+      return;
+    }
+    setAnalysisRefreshTerminal(null);
+    setAnalysisRefreshAdopted(false);
+    createAnalysisRefresh.reset();
+    try {
+      const accepted = await createAnalysisRefresh.mutateAsync();
+      replaceAnalysisRefreshRun(accepted.run.id);
+    } catch (error) {
+      const winnerRunId = analysisRefreshRunIdFromError(error);
+      if (winnerRunId !== null) {
+        createAnalysisRefresh.reset();
+        setAnalysisRefreshAdopted(true);
+        replaceAnalysisRefreshRun(winnerRunId);
+      }
+    }
+  }, [
+    analysisRefreshActive,
+    analysisRefreshRecovered,
+    analysisRefreshSubmitting,
+    createAnalysisRefresh,
+    replaceAnalysisRefreshRun,
+  ]);
 
   // The durable pointer lives in the URL rather than component memory, so a
   // browser refresh resumes the exact parent run. Invalid untrusted values are
@@ -1940,6 +1977,33 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     }
     setAnalysisRefreshRecovered(true);
   }, []);
+
+  // Confirmation redirects here with a one-time command intent. Consume the
+  // marker before crossing the API boundary so reloads cannot enqueue a second
+  // parent run. A 409 still adopts the canonical active winner below.
+  useEffect(() => {
+    if (
+      handledAutomaticAnalysisRefresh.current ||
+      !analysisRefreshRecovered ||
+      analysisRefreshActive ||
+      analysisRefreshSubmitting ||
+      !hasAutomaticAnalysisRefreshIntent(window.location.search)
+    ) {
+      return;
+    }
+    handledAutomaticAnalysisRefresh.current = true;
+    window.history.replaceState(
+      null,
+      "",
+      withoutAutomaticAnalysisRefreshIntent(window.location.href),
+    );
+    void startAnalysisRefresh();
+  }, [
+    analysisRefreshActive,
+    analysisRefreshRecovered,
+    analysisRefreshSubmitting,
+    startAnalysisRefresh,
+  ]);
 
   // Recover the property-selection phase from the OAuth-callback return query
   // (spec §7.4): read `oauthIntentId` + `provider` once, fetch the candidate
@@ -2148,8 +2212,6 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
       ),
     );
   };
-  const analysisRefreshActive = analysisRefreshRunId !== null;
-  const analysisRefreshSubmitting = createAnalysisRefresh.isPending;
   const analysisRefreshPolling = analysisRefreshRun.data;
   const analysisRefreshProgress =
     analysisRefreshPolling?.progress.total !== null &&
@@ -2163,30 +2225,6 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
     analysisRefreshTerminal === null
       ? null
       : t(`analysisRefresh.terminal.${analysisRefreshTerminal.status}`);
-
-  const startAnalysisRefresh = async (): Promise<void> => {
-    if (
-      !analysisRefreshRecovered ||
-      analysisRefreshActive ||
-      analysisRefreshSubmitting
-    ) {
-      return;
-    }
-    setAnalysisRefreshTerminal(null);
-    setAnalysisRefreshAdopted(false);
-    createAnalysisRefresh.reset();
-    try {
-      const accepted = await createAnalysisRefresh.mutateAsync();
-      replaceAnalysisRefreshRun(accepted.run.id);
-    } catch (error) {
-      const winnerRunId = analysisRefreshRunIdFromError(error);
-      if (winnerRunId !== null) {
-        createAnalysisRefresh.reset();
-        setAnalysisRefreshAdopted(true);
-        replaceAnalysisRefreshRun(winnerRunId);
-      }
-    }
-  };
 
   return (
     <div className={styles.page}>

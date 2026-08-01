@@ -10,7 +10,11 @@ export type PrimaryNavLabelKey =
   | "execution"
   | "results";
 
-export type ProjectPageLabelKey = PrimaryNavLabelKey | "context" | "sources";
+export type ProjectPageLabelKey =
+  | PrimaryNavLabelKey
+  | "context"
+  | "sources"
+  | "settings";
 
 export type NavigationBadgeKey = "diagnosis" | "studio" | null;
 
@@ -96,5 +100,9 @@ export function currentProjectPageLabelKey(
     );
   }
   const segment = activeSegment(pathname, projectId);
-  return segment === "context" || segment === "sources" ? segment : null;
+  return segment === "context" ||
+    segment === "sources" ||
+    segment === "settings"
+    ? segment
+    : null;
 }

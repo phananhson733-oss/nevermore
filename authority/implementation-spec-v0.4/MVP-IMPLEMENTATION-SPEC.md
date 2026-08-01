@@ -12,7 +12,7 @@ prompt_set_version: mvp.prompts.0.2.0
 
 ## 0. 规范范围
 
-本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **78 个 operation 与 10 个
+本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
 shared async operation**，ordered migrations 精确声明 **78 张应用表**，引擎
 精确注册 **11 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
@@ -48,6 +48,11 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
 5. 只有 complete profile 可成为诊断的冻结输入；确认画像不隐式启动分析。
 6. Production operator 必须来自 Supabase Auth 且已经存在对应
    `operator_profiles`；登录不能自动授予 workspace membership。
+7. 客户可在项目设置中删除产品；该命令必须以 workspace 与 project
+   双重作用域将 Project 软删除为 archived。已归档产品立即从 active list
+   消失，且后续 collection、diagnosis 与 delivery 写入继续受 archive fence
+   拦截；历史 Snapshot、Evidence、Finding、Action 与 Artifact 不级联硬删除，
+   并保留只读审计谱系。客户界面必须二次确认并告知该保留边界。
 
 ## 2. 数据来源
 
@@ -212,7 +217,7 @@ live canonical URL 验证的 Change Receipt 才能成为 Measurement Window anch
 
 Current v0.4 external-write boundary: **no external writes**
 
-当前 78 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
+当前 79 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
 publication-attempt command。production UI 必须把这类能力显示为
 unavailable/尚未连接，而不能写“已发布”。新增外部写入必须原子加入 provider
 adapter、worker handler、idempotency、remote precondition、rollback、
@@ -249,12 +254,13 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 9. 冻结 API inventory
 
-以下列表必须与 OpenAPI 的 78 个 operationId 完全一致。
+以下列表必须与 OpenAPI 的 79 个 operationId 完全一致。
 
 <!-- API_OPERATIONS_BEGIN -->
 - `listProjects`
 - `createProject`
 - `getProject`
+- `deleteProject`
 - `getProjectContext`
 - `updateProjectContext`
 - `getProjectProductProfile`

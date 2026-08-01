@@ -84,6 +84,7 @@ import {
   type ProductProfileSynthesisFailureInput,
   type ProductProfileSynthesisOrigin,
 } from "./_product-profile-onboarding";
+import { automaticAnalysisRefreshUrl } from "../sources/_analysis-refresh-auto.ts";
 import styles from "./_product-profile.module.css";
 
 const MARKET_CODES = [
@@ -1225,7 +1226,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     try {
       await confirmMutation.mutateAsync({ baseVersion: currentRow.version });
       closeConfirmation();
-      router.push(`/p/${projectId}/sources`);
+      router.push(automaticAnalysisRefreshUrl(projectId));
     } catch {
       setFeedback(
         errorFeedback(t("feedback.confirmFailed"), t("feedback.retryDetail")),

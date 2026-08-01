@@ -40,7 +40,7 @@ v1 有四处事实错误和两处算法错误，已在本版修正。四路评�
 | # | v1 的说法 | 事实 | 影响 |
 |---|---|---|---|
 | 1 | 营销站是"无数据库、无认证、无长期凭据的纯无状态站" | **错**。`@supabase/ssr`、`@supabase/supabase-js`、`resend` 已是直接依赖，`src/lib/supabase/admin.ts` 持有 service-role key，`/go/[code]`、`/api/consent`、glossary/legal/blog 线上在用 | 共享登录态的三方案打分全部作废；§8.3 的边界门禁按 v1 写法当天即红 |
-| 2 | canonical 28 表 | **错**，v0.4 是 **78 张**（`CLAUDE.md:33`，`verify-docs-consistency.test.mjs:133` 断言 `[78,10,78,11]`） | service-role 泄露的爆炸半径比 v1 描述的更大 |
+| 2 | canonical 28 表 | **错**，v0.4 是 **78 张**（`CLAUDE.md:33`，`verify-docs-consistency.test.mjs:133` 断言 `[79,10,78,11]`） | service-role 泄露的爆炸半径比 v1 描述的更大 |
 | 3 | 共享登录态在 A/B/C 里三选一 | **不完整**。A/C 都要求 `.gengrowth.ai` 域级 cookie，且都必须改 `apps/web`，与"本轮不改 apps/web"硬矛盾 | 新增方案 D 并推荐之，见 §1.2 |
 | 4 | Google 请求继承"响应体上限 1 MiB" | **自相矛盾**。25,000 行 page×query 的 JSON 轻松超 1 MiB；`provider-http.ts:7` 默认是 32 MiB | §4.2 重写 |
 | 5 | P0-1 用 `benchmark(页面平均 position) × 0.5` | **数学上错**。position 是曝光加权平均，CTR 基准是 position 的非线性函数，先平均再查表失真 | §5 重写 |

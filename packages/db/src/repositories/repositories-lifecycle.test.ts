@@ -633,6 +633,18 @@ describe("project and source repositories", () => {
       '"app"."client_projects"."archived_at" is null',
     );
     fake.enqueue([{ id: "project-1" }], []);
+    await expect(repo.archive(scope, "project-1")).resolves.toBe(true);
+    await expect(repo.archive(scope, "missing")).resolves.toBe(false);
+    const archiveGuard = new PgDialect().sqlToQuery(
+      fake.last("where").args[0] as never,
+    );
+    expect(archiveGuard.sql).toContain(
+      '"app"."client_projects"."workspace_id" =',
+    );
+    expect(archiveGuard.sql).toContain(
+      '"app"."client_projects"."archived_at" is null',
+    );
+    fake.enqueue([{ id: "project-1" }], []);
     await expect(
       repo.setReadyToDiagnoseIfEligible(scope, "project-1"),
     ).resolves.toBe(true);

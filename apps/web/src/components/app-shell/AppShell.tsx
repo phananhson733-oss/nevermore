@@ -43,10 +43,12 @@ export type AppShellProps = AppShellCommonProps &
     | {
         readonly state: "project";
         readonly sidebarPanel: ReactNode;
+        readonly settingsHref: string;
       }
     | {
         readonly state: "empty-project";
         readonly sidebarPanel?: never;
+        readonly settingsHref?: never;
       }
   );
 
@@ -61,6 +63,7 @@ export async function AppShell({
   projectControl,
   navigation,
   sidebarPanel,
+  settingsHref,
   breadcrumbRoot,
   breadcrumbCurrent,
   statusLabel,
@@ -127,16 +130,27 @@ export async function AppShell({
             <CircleHelp aria-hidden="true" size={17} strokeWidth={1.8} />
             <span>{tShell("help")}</span>
           </button>
-          <button
-            type="button"
-            className={styles.sidebarUtility}
-            aria-label={tShell("settings")}
-            title={`${tShell("settings")} — ${tShell("comingSoon")}`}
-            disabled
-          >
-            <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
-            <span>{tShell("settings")}</span>
-          </button>
+          {state === "project" ? (
+            <Link
+              href={settingsHref}
+              className={styles.sidebarUtility}
+              aria-label={tShell("settings")}
+            >
+              <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
+              <span>{tShell("settings")}</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className={styles.sidebarUtility}
+              aria-label={tShell("settings")}
+              title={`${tShell("settings")} — ${tShell("comingSoon")}`}
+              disabled
+            >
+              <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
+              <span>{tShell("settings")}</span>
+            </button>
+          )}
         </div>
       </aside>
 

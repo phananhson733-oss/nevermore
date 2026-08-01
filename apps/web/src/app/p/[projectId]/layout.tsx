@@ -76,6 +76,7 @@ export default async function ProjectLayout({
           max={shell.program.totalDays}
         />
       }
+      settingsHref={`/p/${project.id}/settings`}
       breadcrumbRoot={project.clientName}
       breadcrumbCurrent={<CurrentPageLabel projectId={project.id} />}
       statusLabel={tStage(project.stage)}

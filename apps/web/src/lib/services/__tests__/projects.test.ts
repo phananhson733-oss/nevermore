@@ -28,7 +28,7 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({ db: { transaction: mocks.transaction } }),
 }));
 
-const { createProject, getProject, listProjects } = await import(
+const { archiveProject, createProject, getProject, listProjects } = await import(
   "../projects.ts"
 );
 
@@ -233,6 +233,7 @@ describe("createProject", () => {
       idempotencyKey,
       body,
       guard,
+      { defaultDeliveryLocale: "zh-CN" },
     );
 
     expect(guard).toHaveBeenCalledWith(
@@ -242,7 +243,7 @@ describe("createProject", () => {
       workspaceId: scope.workspaceId,
       clientName: "RelayOps",
       projectName: "RelayOps",
-      defaultDeliveryLocale: "en",
+      defaultDeliveryLocale: "zh-CN",
       createdBy: actorId,
     });
     expect(SitesRepository.prototype.insertPrimary).toHaveBeenCalledWith(
@@ -871,6 +872,49 @@ describe("getProject and listProjects", () => {
     await expect(
       listProjects(scope, { limit: 50, cursor: null, archived: false }),
     ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      status: 404,
+    });
+  });
+});
+
+describe("archiveProject", () => {
+  it("locks and archives an active workspace-scoped project", async () => {
+    vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    ).mockResolvedValueOnce(projectRow);
+    const archive = vi
+      .spyOn(ProjectsRepository.prototype, "archive")
+      .mockResolvedValueOnce(true);
+
+    await expect(archiveProject(scope, projectRow.id)).resolves.toBeUndefined();
+
+    expect(archive).toHaveBeenCalledWith(scope, projectRow.id);
+  });
+
+  it("is idempotent for an already archived project", async () => {
+    vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    ).mockResolvedValueOnce({
+      ...projectRow,
+      archived_at: "2026-08-01T10:00:00.000Z",
+    });
+    const archive = vi.spyOn(ProjectsRepository.prototype, "archive");
+
+    await expect(archiveProject(scope, projectRow.id)).resolves.toBeUndefined();
+
+    expect(archive).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal a foreign or absent project", async () => {
+    vi.spyOn(
+      ProjectsRepository.prototype,
+      "findByIdForUpdate",
+    ).mockResolvedValueOnce(null);
+
+    await expect(archiveProject(scope, projectRow.id)).rejects.toMatchObject({
       code: "NOT_FOUND",
       status: 404,
     });
