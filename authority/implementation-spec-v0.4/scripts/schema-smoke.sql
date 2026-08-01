@@ -4344,8 +4344,18 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0034_dataforseo_search_landscape' THEN
+  ) IS DISTINCT FROM '0035_uuidv8_product_profile_competitor_evidence' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
+  END IF;
+  IF NOT app.is_typed_product_profile_evidence_refs(
+    '[{"evidenceRefId":"d3b07384-d9a0-8f1e-9c2b-4a5e6f708192","kind":"userEdit"}]'::jsonb
+  ) THEN
+    RAISE EXCEPTION 'Product Profile UUIDv8 evidence identity was rejected';
+  END IF;
+  IF app.is_typed_product_profile_evidence_refs(
+    '[{"evidenceRefId":"d3b07384-d9a0-9f1e-9c2b-4a5e6f708192","kind":"userEdit"}]'::jsonb
+  ) THEN
+    RAISE EXCEPTION 'unsupported Product Profile evidence UUID version was accepted';
   END IF;
   IF (
     SELECT count(*)

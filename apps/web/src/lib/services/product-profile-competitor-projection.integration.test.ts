@@ -15,14 +15,34 @@ process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
 
 import {
+  buildProductProfileDraft,
+  PRODUCT_PROFILE_PROMPT_SET_VERSION,
+  type ProductProfileSemanticCandidateEnvelope,
+} from "@sf/artifacts";
+import {
   createInitialProductProfileDraft,
+  PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_VERSION,
   type ConfirmedProductProfile,
+  type ProductProfileSynthesisInputManifest,
 } from "@sf/contracts";
 import {
+  AnalysisInvocationsRepository,
+  AsyncRunsRepository,
+  CollectionRunsRepository,
   CompetitorsRepository,
   contentHash,
+  DataSnapshotsRepository,
+  IcpProfilesRepository,
+  normalizedUrlHash,
+  PageSnapshotsRepository,
+  ProductProfileRunsRepository,
+  SitePagesRepository,
+  SourceConnectionsRepository,
   type CanonicalValue,
   type DbTx,
+  type Executor,
 } from "@sf/db";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,6 +51,7 @@ import {
   buildProductProfileCompetitorOriginInput,
   projectConfirmedProductProfileCompetitors,
 } from "./product-profile-competitor-projection";
+import { confirmProductProfile } from "./product-profile";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
@@ -150,6 +171,98 @@ function confirmedProfile(project?: ProjectFixture): ConfirmedProductProfile {
   };
 }
 
+function productionSemanticCandidate(): ProductProfileSemanticCandidateEnvelope {
+  const grounding = {
+    confidence: "high" as const,
+    sourcePageKeys: ["page-1"],
+    usesBusinessHint: false,
+  };
+  return {
+    productName: { value: "RelayOps", ...grounding },
+    oneLiner: {
+      value: "Automate customer onboarding operations.",
+      ...grounding,
+    },
+    category: { value: "Customer onboarding", ...grounding },
+    productType: { value: "B2B SaaS", ...grounding },
+    valueProposition: {
+      value: "Help operations teams standardize onboarding.",
+      ...grounding,
+    },
+    businessModels: [{ value: "subscription", ...grounding }],
+    coreFeatures: [{ value: "Workflow automation", ...grounding }],
+    targetMarkets: [
+      { marketCode: "US", priority: "primary", ...grounding },
+    ],
+    targetAudiences: [
+      {
+        targetCompanyOrAudience: "B2B SaaS companies with 50-500 employees",
+        buyerRoles: ["VP Customer Success"],
+        userRoles: ["Customer Operations Lead"],
+        useCases: ["Standardize customer onboarding"],
+        triggers: ["Onboarding volume increased"],
+        pains: ["Manual handoffs"],
+        jtbd: ["Reduce time to value"],
+        outcomes: ["Faster activation"],
+        barriers: ["Fragmented systems"],
+        qualificationSignals: ["Dedicated customer operations team"],
+        disqualifiers: [],
+        ...grounding,
+      },
+    ],
+    competitorCandidates: [
+      {
+        name: "Generated competitor",
+        domain: "generated.example",
+        relationship: "direct",
+        analysisScope: ["keyword_gap", "positioning"],
+        similarity: 0.8,
+        reason: "Grounded in a production-shaped page candidate.",
+        ...grounding,
+      },
+    ],
+    conflicts: [],
+    unknownPaths: [],
+  };
+}
+
+function productionGeneratedProfile(
+  project: ProjectFixture,
+  lineage: {
+    readonly sourceSnapshotId: string;
+    readonly analysisInvocationId: string;
+    readonly pageSnapshotId: string;
+  } = {
+    sourceSnapshotId: randomUUID(),
+    analysisInvocationId: randomUUID(),
+    pageSnapshotId: randomUUID(),
+  },
+) {
+  const generated = buildProductProfileDraft({
+    base: createInitialProductProfileDraft({
+      sourceSiteId: project.siteId,
+      sourcePageUrl: project.sourcePageUrl,
+    }),
+    candidate: productionSemanticCandidate(),
+    sourceSnapshotId: lineage.sourceSnapshotId,
+    analysisInvocationId: lineage.analysisInvocationId,
+    generatedAt: "2026-07-22T08:30:00Z",
+    pageEvidence: { "page-1": lineage.pageSnapshotId },
+  });
+  const audience = generated.targetAudiences[0];
+  const competitor = generated.competitorCandidates[0];
+  const provenance = generated.fieldProvenance.find(
+    (entry) => entry.path === "/competitorCandidates/0",
+  );
+  if (!audience || !competitor || !provenance) {
+    throw new Error("production generator did not retain its semantic identities");
+  }
+  // Selecting the Primary ICP is the user review that precedes confirmation;
+  // the generator-owned canonical evidence references stay byte-for-byte intact.
+  audience.reviewStatus = "primary";
+  return { generated, competitor, provenance };
+}
+
 describe("product-profile competitor projection", () => {
   it("prefers exact candidate provenance over the pool anchor", () => {
     const profile = confirmedProfile();
@@ -217,9 +330,10 @@ interface ProjectFixture {
   readonly projectId: string;
   readonly siteId: string;
   readonly actorId: string;
+  readonly sourcePageUrl: string;
 }
 
-async function createProject(db: DbTx): Promise<ProjectFixture> {
+async function createProject(db: Executor): Promise<ProjectFixture> {
   const workspaceId = randomUUID();
   const projectId = randomUUID();
   const siteId = randomUUID();
@@ -230,16 +344,230 @@ async function createProject(db: DbTx): Promise<ProjectFixture> {
       default_delivery_locale, created_by
     ) VALUES (${projectId},${workspaceId},${`Client ${projectId}`},${`Project ${projectId}`},'zh-CN',${actorId})`);
   const host = `p${projectId.slice(0, 8)}.projection.gengrowth.ai`;
+  const sourcePageUrl = `https://${host}/product`;
   await db.execute(sql`INSERT INTO app.sites (
       id, workspace_id, project_id, origin, host,
       market_codes, language_codes, is_primary
     ) VALUES (${siteId},${workspaceId},${projectId},${`https://${host}`},${host},ARRAY['US'],ARRAY['en-US'],true)`);
-  return { workspaceId, projectId, siteId, actorId };
+  return { workspaceId, projectId, siteId, actorId, sourcePageUrl };
+}
+
+async function createConfirmableProductionDraft(
+  db: DbHandle["db"],
+  project: ProjectFixture,
+) {
+  const scope = {
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+  };
+  const profiles = new IcpProfilesRepository(db);
+  const baseDraft = createInitialProductProfileDraft({
+    sourceSiteId: project.siteId,
+    sourcePageUrl: project.sourcePageUrl,
+  });
+  const base = await profiles.insertVersion({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    version: 1,
+    status: "draft",
+    profile: baseDraft,
+    contentHash: contentHash({
+      status: "draft",
+      profile: baseDraft as unknown as CanonicalValue,
+    }),
+    createdBy: project.actorId,
+  });
+
+  const source = await new SourceConnectionsRepository(db).insertDefaultCrawl({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    createdBy: project.actorId,
+  });
+  const collectionRun = await new AsyncRunsRepository(db).insertQueued({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    kind: "collection",
+    activeKey: `profile-source:${randomUUID()}`,
+    initiatedBy: project.actorId,
+    contractVersion: "0.3.0",
+  });
+  const methodVersion = "crawl.site_graph.v2";
+  await new CollectionRunsRepository(db).insertPlaceholder({
+    runId: collectionRun.id,
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    sourceConnectionId: source.id,
+    provider: "crawl",
+    operation: "site_graph",
+    methodVersion,
+    parametersHash: contentHash({ collectionRunId: collectionRun.id }),
+  });
+  const capturedAt = "2026-07-22T08:00:00.000Z";
+  const snapshot = await new DataSnapshotsRepository(db).insert({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    collectionRunId: collectionRun.id,
+    sourceConnectionId: source.id,
+    provider: "crawl",
+    datasetKey: "crawl.site_graph.v1",
+    schemaVersion: methodVersion,
+    methodVersion,
+    capturedAt,
+    sourceWindow: { start: null, end: null },
+    availability: "available",
+    limitation: "Disposable production-shaped Product Profile source snapshot.",
+    rawObjectKey: null,
+    rowCount: 1,
+    checksum: contentHash({ snapshotFor: collectionRun.id }),
+  });
+  const sitePage = await new SitePagesRepository(db).upsertNormalizedUrl({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    normalizedUrl: project.sourcePageUrl,
+    templateKey: null,
+  });
+  const extract = {
+    schemaVersion: "crawl.page-extract.v1",
+    subjectUrl: project.sourcePageUrl,
+    depth: 0,
+    projection: {
+      fetchUrl: project.sourcePageUrl,
+      status: 200,
+      finalStatus: 200,
+      title: "RelayOps customer onboarding",
+    },
+  };
+  const pageSnapshot = await new PageSnapshotsRepository(db).create({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    sitePageId: sitePage.id,
+    dataSnapshotId: snapshot.id,
+    contentHash: contentHash(extract),
+    extract,
+    capturedAt,
+  });
+  await new CollectionRunsRepository(db).finalize(collectionRun.id, {
+    rowCount: 1,
+    sourceWindow: { start: null, end: null },
+    providerUsage: { pagesCollected: 1 },
+    stopReason: "fixture_complete",
+  });
+
+  const synthesisRun = await new AsyncRunsRepository(db).insertQueued({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    kind: "product_profile_synthesis",
+    activeKey: `product-profile:${randomUUID()}`,
+    initiatedBy: project.actorId,
+    contractVersion: "0.3.0",
+  });
+  const inputManifest: ProductProfileSynthesisInputManifest = {
+    schemaVersion: PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
+    selectionPolicyVersion: PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    sourcePageUrl: project.sourcePageUrl,
+    baseProfile: {
+      id: base.id,
+      version: base.version,
+      contentHash: base.content_hash,
+      status: "draft",
+    },
+    crawlSnapshot: {
+      id: snapshot.id,
+      collectionRunId: collectionRun.id,
+      sourceConnectionId: source.id,
+      provider: "crawl",
+      datasetKey: "crawl.site_graph.v1",
+      schemaVersion: snapshot.schema_version,
+      methodVersion: snapshot.method_version,
+      capturedAt,
+      checksum: snapshot.checksum,
+      availability: "available",
+      rowCount: 1,
+      limitation: snapshot.limitation,
+    },
+    pages: [
+      {
+        pageSnapshotId: pageSnapshot.id,
+        sitePageId: sitePage.id,
+        dataSnapshotId: snapshot.id,
+        normalizedUrl: project.sourcePageUrl,
+        normalizedUrlHash: normalizedUrlHash(project.sourcePageUrl),
+        contentHash: pageSnapshot.content_hash,
+        capturedAt,
+      },
+    ],
+  };
+  const profileRun = new ProductProfileRunsRepository(db);
+  await profileRun.insertPlaceholder({
+    runId: synthesisRun.id,
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    siteId: project.siteId,
+    baseIcpProfileId: base.id,
+    baseIcpProfileVersion: base.version,
+    baseIcpProfileContentHash: base.content_hash,
+    sourceSnapshotId: snapshot.id,
+    synthesisVersion: PRODUCT_PROFILE_SYNTHESIS_VERSION,
+    promptSetVersion: PRODUCT_PROFILE_PROMPT_SET_VERSION,
+    inputManifest,
+    inputHash: contentHash(inputManifest as unknown as CanonicalValue),
+  });
+  const promptInputHash = contentHash({
+    promptSetVersion: PRODUCT_PROFILE_PROMPT_SET_VERSION,
+    pageSnapshotId: pageSnapshot.id,
+  });
+  await profileRun.setPromptInputHash(scope, synthesisRun.id, promptInputHash);
+  const analysisInvocationId = await new AnalysisInvocationsRepository(db).insert({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    asyncRunId: synthesisRun.id,
+    task: "product_profile_synthesis",
+    provider: "openai",
+    model: "gpt-test",
+    promptSetVersion: PRODUCT_PROFILE_PROMPT_SET_VERSION,
+    inputHash: promptInputHash,
+    outputHash: contentHash({ generatedFor: synthesisRun.id }),
+    status: "succeeded",
+    inputTokens: 100,
+    outputTokens: 80,
+    costUsd: 0.01,
+    latencyMs: 50,
+    errorCode: null,
+  });
+  const generated = productionGeneratedProfile(project, {
+    sourceSnapshotId: snapshot.id,
+    analysisInvocationId,
+    pageSnapshotId: pageSnapshot.id,
+  });
+  const draft = await profiles.insertVersion({
+    workspaceId: project.workspaceId,
+    projectId: project.projectId,
+    version: 2,
+    status: "draft",
+    profile: generated.generated,
+    contentHash: contentHash({
+      status: "draft",
+      profile: generated.generated as unknown as CanonicalValue,
+    }),
+    createdBy: project.actorId,
+  });
+  await profileRun.setResult(scope, synthesisRun.id, draft.id);
+  await db.execute(sql`UPDATE app.client_projects
+      SET current_icp_profile_id = ${draft.id}
+      WHERE workspace_id = ${project.workspaceId} AND id = ${project.projectId}`);
+  return { draft, ...generated };
 }
 
 async function createConfirmedProfile(
   db: DbHandle["db"],
   project: ProjectFixture,
+  profile: ConfirmedProductProfile = confirmedProfile(project),
 ): Promise<{
   readonly id: string;
   readonly version: number;
@@ -247,7 +575,6 @@ async function createConfirmedProfile(
 }> {
   const id = randomUUID();
   const version = 1;
-  const profile = confirmedProfile(project);
   await db.execute(sql`INSERT INTO app.icp_profiles (
       id, workspace_id, project_id, version, status, profile, content_hash, created_by
     ) VALUES (
@@ -369,6 +696,79 @@ describeDb("product-profile competitor projection integration", () => {
 
   afterAll(async () => {
     await handle?.end();
+  });
+
+  it("accepts typed competitor evidence identities minted by the production profile generator", async () => {
+    await inRolledBackFixture(handle, async (tx) => {
+      const project = await createProject(tx);
+      const generated = productionGeneratedProfile(project);
+
+      expect(generated.competitor.candidateId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      );
+      expect(generated.provenance.evidenceRefs).not.toHaveLength(0);
+      for (const reference of generated.provenance.evidenceRefs) {
+        expect(reference.evidenceRefId).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        );
+      }
+
+      const accepted = await tx.execute(sql<{ accepted: boolean }>`
+        SELECT app.is_typed_product_profile_evidence_refs(
+          ${JSON.stringify(generated.provenance.evidenceRefs)}::jsonb
+        ) AS accepted
+      `);
+      expect(accepted.rows[0]?.accepted).toBe(true);
+    });
+  });
+
+  it("confirms and projects a production UUIDv8 competitor through the real ICP confirmation service", async () => {
+    // The service owns its own database transaction/connection, so this one
+    // committed fixture deliberately lives in the disposable integration DB.
+    const project = await createProject(handle.db);
+    const generated = await createConfirmableProductionDraft(handle.db, project);
+    const scope = {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+    };
+
+    const confirmed = await confirmProductProfile(
+      { workspaceId: project.workspaceId },
+      project.projectId,
+      project.actorId,
+      { baseVersion: generated.draft.version },
+    );
+
+    expect(confirmed).toMatchObject({
+      status: "complete",
+      isCurrent: true,
+      isConfirmed: true,
+    });
+    expect(
+      confirmed.profile.fieldProvenance.find(
+        (entry) => entry.path === "/competitorCandidates/0",
+      )?.evidenceRefs,
+    ).toEqual(generated.provenance.evidenceRefs);
+
+    const repository = new CompetitorsRepository(handle.db);
+    const page = await repository.listByProject(scope, {
+      limit: 10,
+      cursor: null,
+    });
+    expect(page.rows).toHaveLength(1);
+    const origins = await repository.listOrigins(
+      scope,
+      page.rows[0]!.id,
+      10,
+    );
+    expect(origins).toHaveLength(1);
+    expect(origins[0]).toMatchObject({
+      origin_kind: "product_profile",
+      product_profile_id: confirmed.id,
+      profile_version: confirmed.version,
+      candidate_id: generated.competitor.candidateId,
+      evidence_refs: generated.provenance.evidenceRefs,
+    });
   });
 
   it("writes exact product_profile origins and stays idempotent across replay", async () => {

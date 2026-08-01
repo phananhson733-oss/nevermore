@@ -8,7 +8,35 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("tracks the exact DataForSEO Search Landscape and SERP overlap migration", () => {
+  it("tracks the UUIDv8 Product Profile competitor evidence repair", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0035_uuidv8_product_profile_competitor_evidence.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe(
+      "0035_uuidv8_product_profile_competitor_evidence",
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.is_typed_product_profile_evidence_refs/iu,
+    );
+    expect(migration).toMatch(
+      /uuid_pattern\s+constant\s+text\s*:=\s*'\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-8\]/iu,
+    );
+    expect(migration).not.toMatch(
+      /uuid_pattern\s+constant\s+text\s*:=\s*'\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-5\]/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0035_uuidv8_product_profile_competitor_evidence'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps the DataForSEO Search Landscape and SERP overlap migration immediately before the UUIDv8 repair", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
@@ -19,9 +47,6 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe(
-      "0034_dataforseo_search_landscape",
-    );
     expect(migration).toMatch(
       /NEW\.operation\s*=\s*'keyword_gap_import'[\s\S]*?NEW\.method_version\s*=\s*'dataforseo\.ranked_keywords\.v1'[\s\S]*?NEW\.operation\s*=\s*'search_landscape'[\s\S]*?NEW\.method_version\s*=\s*'dataforseo\.search_landscape\.v1'/iu,
     );
