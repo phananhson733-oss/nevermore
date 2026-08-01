@@ -1,6 +1,6 @@
 # Nevermore / GenGrowth Progress
 
-Updated: **2026-07-30**
+Updated: **2026-08-01**
 
 This is the current authority and verification handoff for the Nevermore
 repository and its customer-facing GenGrowth product. It replaces the retired
@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0034_dataforseo_search_landscape.sql` (**34 ordered migrations**)
+  `0035_uuidv8_product_profile_competitor_evidence.sql` (**35 ordered migrations**)
 - Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
