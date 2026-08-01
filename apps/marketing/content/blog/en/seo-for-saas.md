@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/seo-for-saas.jpg
-heroImageAlt: An abstract editorial illustration for Why SEO for SaaS Needs a Page-by-Page Plan, Not Just More Blog Posts
+heroImageAlt: Flat-vector illustration: an architectural floor plan viewed from above, showing six distinct rooms of different sizes separated by wall lines
 localeExclusive: true
 ---
 

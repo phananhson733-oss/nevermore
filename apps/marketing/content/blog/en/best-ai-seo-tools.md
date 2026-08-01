@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: An abstract editorial illustration for Why the Best AI SEO Tools Automate the Workflow, Not Just the Writing
+heroImageAlt: Flat-vector illustration: a conveyor belt running across the frame with three work stations above it: a pen, a pair of gears, and a checkmark stamp
 localeExclusive: true
 ---
 

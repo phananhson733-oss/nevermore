@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-03-10
 heroImage: /images/blog/programmatic-seo-at-scale.jpg
-heroImageAlt: An abstract editorial illustration for Programmatic SEO: How to Scale from 10 to 10,000 Pages
+heroImageAlt: Flat-vector illustration: a hand press stamp coming down on the left, producing a long fanned stack of identical rectangular pages spreading to the right
 localeExclusive: false
 ---
 

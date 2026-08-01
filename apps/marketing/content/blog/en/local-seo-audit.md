@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/local-seo-audit.jpg
-heroImageAlt: An abstract editorial illustration for Why a Local SEO Audit Has to Separate Local Pack Signals From Organic Ones
+heroImageAlt: Flat-vector illustration: a folded paper map with a large pin planted in it on the left, and a separate stack of horizontal list bars standing on the right
 localeExclusive: true
 ---
 

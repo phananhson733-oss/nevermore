@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-31
 updatedAt: 2026-07-31
 heroImage: /images/blog/agentic-ai-marketing-automation.jpg
-heroImageAlt: An abstract editorial illustration for When Agentic AI Marketing Automation Can Run the Work Without Running the Business
+heroImageAlt: Flat-vector illustration: a jointed robotic arm gripping a wrench and turning a large gear on the left; a ship's steering wheel stands separately on the right, untouched
 localeExclusive: true
 ---
 

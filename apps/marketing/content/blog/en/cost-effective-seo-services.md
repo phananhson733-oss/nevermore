@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/cost-effective-seo-services.jpg
-heroImageAlt: An abstract editorial illustration for Why Cost Effective SEO Services Win on the Hours They Refuse to Bill
+heroImageAlt: Flat-vector illustration: a large clock face with one wedge slice cut out and lifted away from it, a short stack of coins standing beside the clock
 localeExclusive: true
 ---
 

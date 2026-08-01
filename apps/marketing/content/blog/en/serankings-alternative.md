@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/serankings-alternative.jpg
-heroImageAlt: An abstract editorial illustration for SE Ranking Is a Strong Rank Tracker — The Honest Question Is Which Job You Need Covered
+heroImageAlt: Flat-vector illustration: a three-step podium with one round marker on the top step, and four separate loose tokens of different shapes lying on the ground beside the podium
 localeExclusive: true
 ---
 

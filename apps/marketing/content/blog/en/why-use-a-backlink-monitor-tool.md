@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/why-use-a-backlink-monitor-tool.jpg
-heroImageAlt: An abstract editorial illustration for A Backlink Monitor Tool Is Risk Surveillance, Not a Vanity Dashboard
+heroImageAlt: Flat-vector illustration: a security camera mounted at the upper left watching a horizontal chain of interlocking links, one link in the middle of the chain visibly cracked open
 localeExclusive: true
 ---
 

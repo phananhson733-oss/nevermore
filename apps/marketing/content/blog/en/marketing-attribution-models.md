@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-10
 updatedAt: 2026-03-01
 heroImage: /images/blog/marketing-attribution-models.jpg
-heroImageAlt: An abstract editorial illustration for Marketing Attribution Explained: Which Model Fits Your Product?
+heroImageAlt: Flat-vector illustration: four paths of different widths converging from the left edge into a single trophy cup standing at the right
 localeExclusive: false
 ---
 

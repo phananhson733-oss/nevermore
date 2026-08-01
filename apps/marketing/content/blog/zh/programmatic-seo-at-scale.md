@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-03-10
 heroImage: /images/blog/programmatic-seo-at-scale.jpg
-heroImageAlt: 程序化 SEO：如何从 10 页扩展到 10,000 页 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：手压印章落下，右侧扇形铺开一长叠一模一样的页面
 localeExclusive: false
 ---
 

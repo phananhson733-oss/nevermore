@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-01-15
 updatedAt: 2026-02-10
 heroImage: /images/blog/what-is-growth-automation.jpg
-heroImageAlt: 什么是增长自动化？产品团队完整指南 的抽象编辑插图
+heroImageAlt: 扁平矢量插图：机器旁躺着卸下的手摇曲柄，原位置换上马达，驱动同一个齿轮
 localeExclusive: false
 ---
 

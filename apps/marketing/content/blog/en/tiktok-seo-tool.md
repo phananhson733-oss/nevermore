@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/tiktok-seo-tool.jpg
-heroImageAlt: An abstract editorial illustration for Why a TikTok SEO Tool Optimizes Search Discoverability, Not Just Caption Hashtags
+heroImageAlt: Flat-vector illustration: an upright vertical video card with a large play triangle at its centre, three curved signal waves radiating from its upper corner
 localeExclusive: true
 ---
 

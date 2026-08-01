@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/seo-reporting-tool-for-seo-companies.jpg
-heroImageAlt: An abstract editorial illustration for How an SEO Reporting Tool for SEO Companies Earns Client Trust
+heroImageAlt: Flat-vector illustration: a boxy machine with a document sheet emerging from its output slot, a round clock face mounted on the machine's side
 localeExclusive: true
 ---
 

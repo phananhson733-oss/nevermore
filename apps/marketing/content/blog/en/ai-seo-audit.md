@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-07-09
 heroImage: /images/blog/ai-seo-audit.jpg
-heroImageAlt: An abstract editorial illustration for Where an AI SEO Audit Ends and Your Judgment Begins
+heroImageAlt: Flat-vector illustration: a clipboard holding a checklist of empty checkboxes, with a horizontal scanning light bar sweeping across it
 localeExclusive: true
 ---
 

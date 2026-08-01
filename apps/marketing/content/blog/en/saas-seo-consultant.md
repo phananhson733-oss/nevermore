@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/saas-seo-consultant.jpg
-heroImageAlt: An abstract editorial illustration for How to Tell a Real SaaS SEO Consultant From a Generalist
+heroImageAlt: Flat-vector illustration: a ring of five different keyholes with one single key inserted into the one it fits, the other four keyholes empty
 localeExclusive: true
 ---
 

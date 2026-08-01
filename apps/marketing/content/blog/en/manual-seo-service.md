@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/manual-seo-service.jpg
-heroImageAlt: An abstract editorial illustration for What a Manual SEO Service Actually Covers — A Scope-Bounded Definition for B2B Buyers
+heroImageAlt: Flat-vector illustration: a simple hand silhouette holding a pencil on the left and a large gear turning on the right, both at equal size
 localeExclusive: true
 ---
 

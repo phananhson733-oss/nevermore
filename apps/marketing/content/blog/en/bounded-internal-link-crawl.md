@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/bounded-internal-link-crawl.jpg
-heroImageAlt: An abstract editorial illustration for What a Bounded Internal Link Crawl Can Prove
+heroImageAlt: Flat-vector illustration: a flashlight on the left casting a cone of light across a network of connected boxes; the boxes inside the cone are solid, the ones outside fade to faint outlines
 localeExclusive: false
 ---
 

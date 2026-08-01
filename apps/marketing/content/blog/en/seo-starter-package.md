@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-starter-package.jpg
-heroImageAlt: An abstract editorial illustration for What an SEO Starter Package Should Promise at 90 Days, Not Just Deliver Each Month
+heroImageAlt: Flat-vector illustration: a wrapped parcel with a ribbon sitting at the start of a path, a single milestone flag planted further along the path ahead of it
 localeExclusive: true
 ---
 

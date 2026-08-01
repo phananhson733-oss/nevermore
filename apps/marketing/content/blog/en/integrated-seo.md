@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/integrated-seo.jpg
-heroImageAlt: An abstract editorial illustration for What Integrated SEO Really Means for B2B SaaS Buyers
+heroImageAlt: Flat-vector illustration: five interlocking jigsaw pieces snapped together into one solid rounded shape, no gaps
 localeExclusive: true
 ---
 

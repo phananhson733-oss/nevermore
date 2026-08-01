@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/saas-seo-expert.jpg
-heroImageAlt: An abstract editorial illustration for What a SaaS SEO Expert Actually Covers Before You Hire One
+heroImageAlt: Flat-vector illustration: an identity badge hanging from a lanyard on the left, a neat stack of documents standing beside it on the right
 localeExclusive: true
 ---
 
