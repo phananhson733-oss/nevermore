@@ -138,6 +138,57 @@ const profileOrigin = (
 });
 
 describe("CompetitorsRepository", () => {
+  it("accepts the UUIDv8 identity a Product Profile actually derives", async () => {
+    // Every identity a Product Profile mints is UUIDv8: candidateId and
+    // evidenceRefId are derived from the profile's own content so that
+    // re-synthesising a site reproduces them. The fixtures above spell v4 by
+    // hand, which is why a [1-5] version bound survived here while rejecting
+    // every real confirmation. These two are genuine derived values.
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          occurrence_id: "00000000-0000-4000-8000-000000000030",
+          competitor_id: entity.id,
+        },
+      ],
+    });
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.upsertOrigin(
+        scope,
+        profileOrigin({
+          candidateId: "d3b07384-d9a0-8f1e-9c2b-4a5e6f708192",
+          evidenceRefs: [
+            {
+              evidenceRefId: "5f2c8a1b-6e3d-8c47-b91a-2d4e6f8a0b3c",
+              kind: "userEdit",
+            },
+          ],
+        }),
+      ),
+    ).resolves.toEqual({
+      occurrenceId: "00000000-0000-4000-8000-000000000030",
+      competitorId: entity.id,
+    });
+  });
+
+  it("still rejects a version this codebase never mints", async () => {
+    // Widening to [1-8] must not become "any hex in that position". Version 0
+    // and version 9 are outside every format we produce or read.
+    const repo = new CompetitorsRepository(new FakeExecutor() as never);
+
+    for (const candidateId of [
+      "d3b07384-d9a0-0f1e-9c2b-4a5e6f708192",
+      "d3b07384-d9a0-9f1e-9c2b-4a5e6f708192",
+    ]) {
+      await expect(
+        repo.upsertOrigin(scope, profileOrigin({ candidateId })),
+      ).rejects.toThrow("candidateId must be a UUID");
+    }
+  });
+
   it("atomically converges a confirmed Product Profile origin and stable domain entity", async () => {
     const db = new FakeExecutor();
     db.enqueue({

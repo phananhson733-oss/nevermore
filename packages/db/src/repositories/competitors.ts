@@ -188,8 +188,19 @@ export const MAX_COMPETITOR_ORIGIN_BATCH_TOTAL = 2_000;
 /** 500 accepted facts plus one overflow sentinel. */
 export const MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ = 501;
 
+/**
+ * Versions 1 through 8, because Product Profile identity is UUIDv8.
+ *
+ * Competitor candidateId and evidenceRefId are derived deterministically from
+ * the profile's own content so that re-synthesising the same site yields the
+ * same identities. That derivation stamps version 8 (RFC 9562's custom
+ * format), so a [1-5] bound rejected every competitor a Product Profile ever
+ * produced — confirmation failed with a RangeError the moment a profile
+ * carried one, which the E2E suite missed by confirming empty competitor
+ * pools. Sibling repositories already accept [1-8]; this one was left behind.
+ */
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const NORMALIZED_DOMAIN =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const PROFILE_PATH = /^\/competitorCandidates\/(?:0|[1-9][0-9]*)$/u;
