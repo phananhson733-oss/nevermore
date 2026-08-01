@@ -76,7 +76,17 @@ function scenarios(): readonly (readonly TrafficDailyPoint[])[] {
     impressions: 20_000,
   }));
 
-  return [twoStage, outage, tiny, short, flat];
+  // Over thirteen months. Without this the longest scenario was 120 days, so
+  // every branch gated on `span >= SEASONALITY_MIN_DAYS` was unreachable from
+  // this suite — which is how `seasonality_yoy` shipped reporting "clear" with
+  // an empty explanation for every site old enough to reach that branch.
+  const longHistory = Array.from({ length: 430 }, (_unused, index) => ({
+    date: day(index),
+    clicks: 120,
+    impressions: 9_000,
+  }));
+
+  return [twoStage, outage, tiny, short, flat, longHistory];
 }
 
 function codesFrom(result: TrafficDropResult): readonly string[] {
@@ -130,7 +140,13 @@ describe("traffic drop copy", () => {
         });
         for (const path of codesFrom(result)) {
           const value = lookup(bundle, `tools.trafficDrop.${path}`);
-          if (typeof value !== "string") missing.add(path);
+          // An empty string is a string. Accepting one let six copy slots ship
+          // blank — including `checkOutcomes.seasonality_yoy.clear`, which the
+          // report rendered as a check with a status, a name, and no
+          // explanation at all beside it.
+          if (typeof value !== "string" || value.trim() === "") {
+            missing.add(path);
+          }
         }
       }
 

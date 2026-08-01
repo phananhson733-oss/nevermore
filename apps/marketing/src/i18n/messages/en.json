@@ -1056,7 +1056,9 @@
         "probe_data_not_supplied": "Affected pages were not fetched in this run",
         "index_report_lag": "Search Console's index report trails its performance data, so it cannot cover the event days — this can be neither confirmed nor ruled out here",
         "site_below_detection_floor": "This property has never had a week large enough for the detector to work on",
-        "no_recent_days": "No recent days were returned for this property"
+        "no_recent_days": "No recent days were returned for this property",
+        "post_event_history_below_two_windows": "The drop is real, but there is not yet enough data after it to say whether it held.",
+        "yoy_comparison_not_implemented": "This tool does not run a year-over-year comparison. It is not that nothing was found — it is that nothing was looked for."
       },
       "limitations": {
         "history_below_twelve_weeks": "Twelve weeks of history are needed before a decline can be judged. Below that we would be reading noise, so we do not report a verdict.",
@@ -1070,11 +1072,17 @@
         "event_within_unfinalized_window": "These days fall inside the window Search Console has not finalised yet, so this may be the reporting lag rather than something that happened to your site. Check again in a few days before acting on it."
       },
       "errors": {
-        "insufficient_history": "This property does not have enough history yet for this tool.",
         "no_gsc_data": "Search Console returned no data for this property.",
         "gsc_unavailable": "Search Console could not be reached. Nothing was estimated in its place — please try again.",
-        "unknown": "Something went wrong. Nothing was estimated in its place — please try again."
-      }
+        "unknown": "Something went wrong. Nothing was estimated in its place — please try again.",
+        "invalid_request": "That request was not something we could read. Reload the page and try again.",
+        "payload_too_large": "That request was larger than this tool accepts.",
+        "unsupported_media_type": "That request arrived in a format this tool does not accept."
+      },
+      "run": "Run analysis",
+      "noPropertyTitle": "No verified property on this account",
+      "noPropertyBody": "The authorization worked, but this Google account is not a verified owner of any Search Console property. Verify the site in Search Console first, then come back and run it.",
+      "propertiesTruncated": "Showing {shown} of {total} properties. The rest did not fit in one browser cookie."
     },
     "semrush": "Semrush",
     "cms": "CMS",

@@ -165,7 +165,21 @@ export type TrafficUnavailableReason =
   | "probe_data_not_supplied"
   | "index_report_lag"
   | "site_below_detection_floor"
-  | "no_recent_days";
+  | "no_recent_days"
+  /**
+   * The site is old enough, but the event is too recent to judge yet. Distinct
+   * from `history_below_twelve_weeks`: telling the owner of a two-year-old
+   * property that it "has not been around for twelve weeks" is a statement
+   * about their own data that they know to be false, and it costs the whole
+   * report its credibility.
+   */
+  | "post_event_history_below_two_windows"
+  /**
+   * Year-over-year comparison is not implemented in this tool. The honest
+   * status for a check that does not exist is `not_available`, never `clear` —
+   * `clear` claims we looked.
+   */
+  | "yoy_comparison_not_implemented";
 
 export interface TrafficCheck {
   readonly id: string;

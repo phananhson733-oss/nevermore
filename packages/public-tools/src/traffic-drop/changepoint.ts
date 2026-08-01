@@ -1,6 +1,7 @@
 import {
   addDays,
   daysBetween,
+  historySpanDays,
   indexByDate,
   lagInDays,
   median,
@@ -168,16 +169,18 @@ export function detectTrafficChangePoint(
 ): TrafficChangePoint {
   const all = sortByDate(input);
   const newest = all[all.length - 1]?.date;
-  const oldest = all[0]?.date;
 
-  // The history gate asks "has this property existed long enough", which the
-  // unfinalized tail does not change. Trimming is about which days we are
+  // The history gate asks "has this property been VISIBLE long enough", which
+  // the unfinalized tail does not change. Trimming is about which days we are
   // willing to measure, not about how old the site is.
-  if (
-    !newest ||
-    !oldest ||
-    daysBetween(oldest, newest) + 1 < TRAFFIC_MIN_HISTORY_DAYS
-  ) {
+  //
+  // Measured with the same `historySpanDays` the report shows the visitor, and
+  // deliberately not from the first row: Search Console returns real rows with
+  // `impressions: 0` for days a young property existed but drew nothing, so
+  // counting from row zero let this gate clear twelve weeks for a site the
+  // same page was calling too young to judge — and then hand back a "sustained
+  // decline" about it.
+  if (!newest || historySpanDays(all) < TRAFFIC_MIN_HISTORY_DAYS) {
     return {
       state: "insufficient_history",
       windows: [],

@@ -1056,7 +1056,9 @@
         "probe_data_not_supplied": "本次未抓取受影响页面",
         "index_report_lag": "Search Console 的索引报告滞后于性能数据，无法覆盖事件当天 —— 在这里既不能确认也不能排除",
         "site_below_detection_floor": "该站点从未有过一周大到足以让检测器工作",
-        "no_recent_days": "该站点没有返回最近的日期数据"
+        "no_recent_days": "该站点没有返回最近的日期数据",
+        "post_event_history_below_two_windows": "下降是真的，但事件之后的数据还不够长，无法判断它是否持续。",
+        "yoy_comparison_not_implemented": "这个工具不做同比比较。不是查了没发现，而是根本没查。"
       },
       "limitations": {
         "history_below_twelve_weeks": "判定下降需要 12 周历史。不足时读到的是噪声，所以我们不给结论。",
@@ -1070,11 +1072,17 @@
         "event_within_unfinalized_window": "这几天落在 Search Console 尚未定稿的窗口里，所以这可能是数据回报延迟，而不是你站点真的发生了什么。过几天再看一次，然后再决定要不要处理。"
       },
       "errors": {
-        "insufficient_history": "这个站点的历史长度还不足以使用本工具。",
         "no_gsc_data": "Search Console 没有返回这个站点的数据。",
         "gsc_unavailable": "无法连接 Search Console。我们没有用估算值代替，请稍后重试。",
-        "unknown": "出错了。我们没有用估算值代替，请稍后重试。"
-      }
+        "unknown": "出错了。我们没有用估算值代替，请稍后重试。",
+        "invalid_request": "这个请求我们读不了。请刷新页面重试。",
+        "payload_too_large": "请求超出了这个工具接受的大小。",
+        "unsupported_media_type": "请求的格式这个工具不接受。"
+      },
+      "run": "开始分析",
+      "noPropertyTitle": "这个账号下没有已验证的站点",
+      "noPropertyBody": "授权成功了，但这个 Google 账号不是任何 Search Console 站点属性的已验证所有者。请先在 Search Console 完成站点验证，再回来运行。",
+      "propertiesTruncated": "共 {total} 个站点，这里列出 {shown} 个。其余的放不进一个浏览器 cookie。"
     },
     "semrush": "Semrush",
     "cms": "CMS内容管理系统",

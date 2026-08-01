@@ -1,6 +1,7 @@
 import {
   addDays,
   daysBetween,
+  historySpanDays,
   median,
   sortByDate,
   TRAFFIC_UNFINALIZED_TAIL_DAYS,
@@ -316,17 +317,17 @@ function detectTransientDayAnomaly(
 /**
  * Year-over-year needs last year. Saying so is the finding.
  *
- * History is measured as the calendar span the property has existed for, not
- * as a row count: Search Console omits empty days, so a two-year-old site with
- * quiet stretches has far fewer rows than days and would be told it is too
- * young for a comparison it can actually support.
+ * History is the calendar span the property has been visible for, not a row
+ * count: Search Console omits empty days, so a two-year-old site with quiet
+ * stretches has far fewer rows than days and would be told it is too young for
+ * a comparison it can actually support. `historySpanDays` is the one place
+ * that measurement lives, shared with the twelve-week gate and with the number
+ * the report shows.
  */
 function detectSeasonalityBoundary(
   series: readonly TrafficDailyPoint[],
 ): TrafficFinding | null {
-  const first = series[0]?.date;
-  const last = series[series.length - 1]?.date;
-  const span = first && last ? daysBetween(first, last) + 1 : 0;
+  const span = historySpanDays(series);
   if (span >= SEASONALITY_MIN_DAYS) return null;
   return {
     id: "seasonality_unavailable",

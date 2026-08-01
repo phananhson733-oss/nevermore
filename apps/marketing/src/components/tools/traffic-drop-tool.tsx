@@ -30,6 +30,12 @@ interface TrafficDropToolProps {
    * infers a connection from the absence of an error.
    */
   readonly properties: readonly string[] | null;
+  /**
+   * How many properties the grant covers, which is not always how many are
+   * listed: a long list is trimmed to fit in one cookie. When it differs, the
+   * page says so instead of presenting the short list as the whole grant.
+   */
+  readonly propertyTotal: number;
   /** False until the Google grant flow is live in this environment. */
   readonly connectEnabled: boolean;
   /** What Google will put in front of the visitor, if anything. */
@@ -39,6 +45,7 @@ interface TrafficDropToolProps {
 export function TrafficDropTool({
   locale,
   properties,
+  propertyTotal,
   connectEnabled,
   consentNotice,
 }: TrafficDropToolProps) {
@@ -185,6 +192,27 @@ export function TrafficDropTool({
     );
   }
 
+  // Authorized, but the account owns no verified property. A real state, and
+  // one the session layer already models — but the page used to render it as
+  // an empty dropdown next to a greyed-out button and say nothing at all,
+  // which reads as broken rather than as an answer.
+  if (properties.length === 0) {
+    return (
+      <section
+        id="traffic-drop-tool"
+        data-locale={locale}
+        className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
+      >
+        <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+          {t("noPropertyTitle")}
+        </h2>
+        <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dark-secondary">
+          {t("noPropertyBody")}
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section
       id="traffic-drop-tool"
@@ -218,9 +246,20 @@ export function TrafficDropTool({
           disabled={loading || property === ""}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
         >
-          {loading ? t("running") : t("rerun")}
+          {/* "Run again" before anything has run is an instruction to repeat
+              something that never happened. */}
+          {loading ? t("running") : payload ? t("rerun") : t("run")}
         </button>
       </div>
+
+      {propertyTotal > properties.length ? (
+        <p className="text-[12px] text-text-dark-secondary">
+          {t("propertiesTruncated", {
+            shown: properties.length,
+            total: propertyTotal,
+          })}
+        </p>
+      ) : null}
 
       {errorCode ? (
         <p

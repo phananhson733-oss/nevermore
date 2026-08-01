@@ -8,7 +8,10 @@ import {
   createPublicToolError,
   type TrafficDailyPoint,
 } from "@sf/public-tools";
-import { readPublicToolJson } from "./public-tool-request.ts";
+import {
+  acquirePublicToolSlot,
+  readPublicToolJson,
+} from "./public-tool-request.ts";
 import {
   readTrafficDropSession,
   type TrafficDropSession,
@@ -33,13 +36,19 @@ export interface TrafficDropHandlerDependencies {
     readonly lookbackDays: number;
   }) => Promise<readonly TrafficDailyPoint[]>;
   readonly now: () => Date;
+  /** Same shape the other public tools use, so the gate keys the same way. */
+  readonly extractClientIp: (headers: Headers) => string;
 }
 
-function json(body: unknown, status: number): Response {
+function json(
+  body: unknown,
+  status: number,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): Response {
   return Response.json(body, {
     status,
     // A report about someone's own property is never cached or shared.
-    headers: { "Cache-Control": "no-store, private" },
+    headers: { "Cache-Control": "no-store, private", ...extraHeaders },
   });
 }
 
@@ -92,6 +101,22 @@ export async function handleTrafficDropRequest(
     return json(createPublicToolError("gsc_unavailable"), 404);
   }
 
+  // One Search Console read at a time per client, the same gate the other
+  // public tools use. This endpoint was the only one without it, and it is the
+  // most expensive of the three: a single request can hold a Search Console
+  // connection for forty seconds across retries. Search Console quota is
+  // counted per GCP PROJECT, not per visitor, so an unbounded caller does not
+  // just slow themselves down — they spend the quota every other visitor to
+  // this tool needs.
+  const slot = acquirePublicToolSlot(
+    `tools:traffic-drop:inflight:${dependencies.extractClientIp(request.headers)}`,
+  );
+  if (!slot.acquired) {
+    return json(createPublicToolError("scan_in_progress"), 409, {
+      "Retry-After": "5",
+    });
+  }
+
   try {
     const daily = await dependencies.readDailySeries({
       property: input.value,
@@ -109,6 +134,8 @@ export async function handleTrafficDropRequest(
   } catch {
     // Never substitute an estimate for data we could not read.
     return json(createPublicToolError("gsc_unavailable"), 502);
+  } finally {
+    slot.release();
   }
 }
 

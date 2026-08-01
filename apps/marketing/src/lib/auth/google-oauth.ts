@@ -139,11 +139,49 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Read a JSON response, enforcing the cap against bytes as they arrive.
+ *
+ * The earlier version awaited `response.text()` and then measured the string,
+ * which buffers the entire body before the limit can reject anything — a cap
+ * that only reports oversize after paying its full cost is not a cap. Reading
+ * from the stream and counting as we go makes it a real bound, and the
+ * declared length short-circuits the obvious case without reading at all.
+ */
 async function readJson(response: Response, label: string): Promise<unknown> {
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel();
     throw new GoogleOAuthError("provider", `${label} response was too large.`);
   }
+
+  if (!response.body) {
+    throw new GoogleOAuthError("provider", `${label} returned no body.`);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new GoogleOAuthError(
+          "provider",
+          `${label} response was too large.`,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const text = Buffer.concat(chunks).toString("utf8");
   try {
     return JSON.parse(text) as unknown;
   } catch {

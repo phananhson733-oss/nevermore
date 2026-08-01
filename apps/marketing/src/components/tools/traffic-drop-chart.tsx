@@ -9,6 +9,36 @@ import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { TrafficDailyPoint, TrafficWindow } from "@sf/public-tools";
 
+/**
+ * Calendar arithmetic, kept local on purpose.
+ *
+ * `@sf/public-tools` exports the same two helpers, but importing a VALUE from
+ * it here would pull the whole engine index into the client bundle — and that
+ * index reaches `node:net` through the source adapters, which fails the build
+ * outright. The existing type-only import is erased at compile time, which is
+ * why it was always fine.
+ *
+ * These are pure string-date functions with no dependencies; the engine-side
+ * definitions in `series.ts` are the ones under test, and these must agree
+ * with them.
+ */
+const MS_PER_DAY = 86_400_000;
+
+function daysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+      MS_PER_DAY,
+  );
+}
+
+/** Calendar span from the first VISIBLE day, matching the engine's report. */
+function historySpanDays(series: readonly TrafficDailyPoint[]): number {
+  const first = series.find((day) => day.impressions > 0)?.date;
+  const last = series[series.length - 1]?.date;
+  if (!first || !last) return 0;
+  return daysBetween(first, last) + 1;
+}
+
 const VIEW_WIDTH = 900;
 const VIEW_HEIGHT = 300;
 const PAD_LEFT = 46;
@@ -56,10 +86,24 @@ export function TrafficDropChart({
   const geometry = useMemo(() => {
     const clickMax = axisMax(series.map((day) => day.clicks));
     const impressionMax = axisMax(series.map((day) => day.impressions));
-    const x = (index: number) =>
-      series.length <= 1
-        ? PAD_LEFT
-        : PAD_LEFT + (index / (series.length - 1)) * PLOT_WIDTH;
+    // Positioned by DATE, not by array index.
+    //
+    // The engine treats a missing day as a real fact — windows are cut by
+    // calendar date precisely because Search Console omits days a property
+    // drew nothing. Plotting row N at N/(rows-1) undoes that on the one
+    // surface the reader actually looks at: a site with 480 days of history
+    // and 180 quiet ones had its silent stretches squeezed to nothing, so the
+    // comparison-window highlights sat over the wrong part of the timeline and
+    // changed width depending on how many rows happened to fall inside them.
+    const firstDate = series[0]?.date ?? null;
+    const lastDate = series[series.length - 1]?.date ?? null;
+    const totalSpan =
+      firstDate && lastDate ? daysBetween(firstDate, lastDate) : 0;
+    const x = (index: number) => {
+      const date = series[index]?.date;
+      if (!firstDate || !date || totalSpan <= 0) return PAD_LEFT;
+      return PAD_LEFT + (daysBetween(firstDate, date) / totalSpan) * PLOT_WIDTH;
+    };
     return {
       clickMax,
       impressionMax,
@@ -83,14 +127,25 @@ export function TrafficDropChart({
     .map((day, index) => `${x(index)},${yImpressions(day.impressions)}`)
     .join(" ");
   const hoveredDay = hovered === null ? null : series[hovered];
+  const spanDays = historySpanDays(series);
 
   function handleMove(event: React.MouseEvent<SVGSVGElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
     const position =
       ((event.clientX - bounds.left) / bounds.width) * VIEW_WIDTH;
-    const ratio = (position - PAD_LEFT) / PLOT_WIDTH;
-    const index = Math.round(ratio * (series.length - 1));
-    setHovered(Math.max(0, Math.min(series.length - 1, index)));
+    // Nearest point along the same DATE scale the line is drawn on. Inverting
+    // the old index scale here would put the crosshair on a different day than
+    // the one under the cursor wherever the series has gaps.
+    let nearest = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < series.length; index += 1) {
+      const distance = Math.abs(x(index) - position);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = index;
+      }
+    }
+    setHovered(nearest);
   }
 
   return (
@@ -101,7 +156,11 @@ export function TrafficDropChart({
           className="block h-auto w-full"
           role="img"
           aria-label={t("chartAlt", {
-            days: series.length,
+            // The calendar span, matching the "history covered" line above the
+            // chart. `series.length` is a row count, and quoting it here made
+            // the screen-reader label contradict the visible text on any site
+            // with gaps.
+            days: spanDays,
             start: series[0]?.date ?? "",
             end: series[series.length - 1]?.date ?? "",
           })}
