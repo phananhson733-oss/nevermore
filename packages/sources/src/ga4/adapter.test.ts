@@ -12,6 +12,7 @@ import {
   GA4_PAGINATION_CAP_STOP_REASON,
   GA4_ROW_CAP_LIMITATION,
   GA4_ROW_CAP_STOP_REASON,
+  HttpGa4Client,
 } from "./client.ts";
 import { GA4_KEY_EVENT_REPORT_TRUNCATED } from "./normalize.ts";
 
@@ -36,11 +37,7 @@ const sessionRow: Ga4ReportRow = {
   metricValues: [{ value: "10" }, { value: "7" }, { value: "0.7" }],
 };
 const keyEventRow: Ga4ReportRow = {
-  dimensionValues: [
-    { value: "20260717" },
-    { value: "/pricing" },
-    { value: "sign_up" },
-  ],
+  dimensionValues: [{ value: "20260717" }, { value: "/pricing" }],
   metricValues: [{ value: "2" }],
 };
 
@@ -95,6 +92,70 @@ async function expectSourceError(
 }
 
 describe("GA4 source adapter", () => {
+  it("accepts the proto3 empty-report shape when GA4 has zero key events", async () => {
+    const ga4 = new HttpGa4Client({
+      propertyId: "properties/123",
+      accessToken: "test-token",
+      fetch: async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+
+    await expect(
+      ga4.runReport({
+        dateRanges: [{ startDate: "2026-07-01", endDate: "2026-07-17" }],
+        dimensions: [{ name: "eventName" }],
+        metrics: [{ name: "keyEvents" }],
+      }),
+    ).resolves.toMatchObject({
+      rows: [],
+      rowCount: 0,
+      truncated: false,
+    });
+  });
+
+  it("ignores unrelated addable fields in the compatibility response", async () => {
+    const ga4 = new HttpGa4Client({
+      propertyId: "properties/123",
+      accessToken: "test-token",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            dimensionCompatibilities: [
+              {
+                dimensionMetadata: { apiName: "date" },
+                compatibility: "COMPATIBLE",
+              },
+              {
+                dimensionMetadata: { apiName: "itemBrand" },
+                compatibility: "INCOMPATIBLE",
+              },
+            ],
+            metricCompatibilities: [
+              {
+                metricMetadata: { apiName: "keyEvents" },
+                compatibility: "COMPATIBLE",
+              },
+              {
+                metricMetadata: { apiName: "advertiserAdCost" },
+                compatibility: "INCOMPATIBLE",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(
+      ga4.checkCompatibility({
+        dimensions: [{ name: "date" }, { name: "landingPage" }],
+        metrics: [{ name: "keyEvents" }],
+      }),
+    ).resolves.toEqual({ compatible: true, incompatibleFields: [] });
+  });
+
   it("validates property identifiers and deduplicates mapped key events", async () => {
     const fake = client();
     const adapter = createGa4Adapter(fake.value);
@@ -137,7 +198,7 @@ describe("GA4 source adapter", () => {
     ).resolves.toEqual([
       expect.objectContaining({
         available: true,
-        limitation: expect.stringContaining("GA4_KEY_EVENT_UNMAPPED"),
+        limitation: "",
       }),
     ]);
     await expect(
@@ -146,26 +207,37 @@ describe("GA4 source adapter", () => {
         keyEventNames: ["sign_up"],
       }),
     ).resolves.toEqual([
-      expect.objectContaining({ available: true, limitation: "" }),
+      expect.objectContaining({
+        available: true,
+        limitation:
+          "Collection is limited to an explicitly selected key-event subset.",
+      }),
     ]);
   });
 
-  it("collects sessions while reporting unmapped conversions as partial", async () => {
+  it("collects every property key event by default and scopes both reports to the site hostname", async () => {
     const fake = client();
-    fake.runReport.mockResolvedValueOnce(response(sessionRow));
+    fake.runReport
+      .mockResolvedValueOnce(response(sessionRow))
+      .mockResolvedValueOnce(response(keyEventRow));
+    fake.checkCompatibility.mockResolvedValueOnce({
+      compatible: true,
+      incompatibleFields: [],
+    });
     const adapter = createGa4Adapter(fake.value);
 
     const result = await adapter.collect(params, context);
     expect(result).toMatchObject({
-      availability: "partial",
+      availability: "available",
       capturedAt: "2026-07-18T12:00:00.000Z",
-      rowCount: 1,
+      rowCount: 2,
       stopReason: null,
-      providerUsage: { sessionRows: 1, keyEventRows: 0 },
-      limitation: "GA4_KEY_EVENT_UNMAPPED",
+      providerUsage: { sessionRows: 1, keyEventRows: 1 },
+      limitation:
+        "GA4 organic landing metrics include only Organic Search traffic on example.com and all key events defined by the GA4 property.",
       raw: {
         propertyId: "properties/123",
-        keyEventStatus: { state: "unmapped" },
+        keyEventStatus: { state: "available" },
         sessionRows: [
           expect.objectContaining({
             date: "2026-07-17",
@@ -175,8 +247,9 @@ describe("GA4 source adapter", () => {
         ],
       },
     });
-    expect(fake.checkCompatibility).not.toHaveBeenCalled();
-    expect(fake.runReport).toHaveBeenCalledWith(
+    expect(fake.checkCompatibility).toHaveBeenCalledTimes(1);
+    expect(fake.runReport).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
         dimensions: [{ name: "date" }, { name: "landingPage" }],
         metrics: [
@@ -184,9 +257,25 @@ describe("GA4 source adapter", () => {
           { name: "engagedSessions" },
           { name: "engagementRate" },
         ],
+        dimensionFilter: {
+          andGroup: {
+            expressions: expect.arrayContaining([
+              {
+                filter: {
+                  fieldName: "hostName",
+                  stringFilter: { matchType: "EXACT", value: "example.com" },
+                },
+              },
+            ]),
+          },
+        },
       }),
       context.signal,
       { maxRows: 200_000 },
+    );
+    const compatibilityRequest = fake.checkCompatibility.mock.calls[0]?.[0];
+    expect(JSON.stringify(compatibilityRequest?.dimensionFilter)).not.toContain(
+      "eventName",
     );
 
     const observations = await collectAsync(
@@ -202,8 +291,8 @@ describe("GA4 source adapter", () => {
       subjectRef: "https://example.com/pricing",
       availability: "available",
       valueJson: {
-        keyEvents: null,
-        keyEventUnavailableReason: "GA4_KEY_EVENT_UNMAPPED",
+        keyEvents: 2,
+        keyEventUnavailableReason: null,
       },
     });
   });
@@ -245,7 +334,7 @@ describe("GA4 source adapter", () => {
       availability: "available",
       rowCount: 2,
       limitation:
-        "GA4 organic landing metrics include only Organic Search traffic and the operator-selected key events.",
+        "GA4 organic landing metrics include only Organic Search traffic on example.com and the selected key events: sign_up, purchase.",
       providerUsage: { sessionRows: 1, keyEventRows: 1 },
       raw: {
         keyEventStatus: { state: "available" },
@@ -253,7 +342,7 @@ describe("GA4 source adapter", () => {
           {
             date: "2026-07-17",
             landingPage: "/pricing",
-            eventName: "sign_up",
+            eventName: "sign_up,purchase",
             keyEvents: 2,
           },
         ],
@@ -354,14 +443,20 @@ describe("GA4 source adapter", () => {
 
   it("projects pagination exhaustion as partial with a stable stop reason", async () => {
     const fake = client();
-    fake.runReport.mockResolvedValueOnce(
-      truncatedResponse({
-        rows: [sessionRow],
-        rowCount: 2,
-        stopReason: GA4_PAGINATION_CAP_STOP_REASON,
-        limitation: GA4_PAGINATION_CAP_LIMITATION,
-      }),
-    );
+    fake.runReport
+      .mockResolvedValueOnce(
+        truncatedResponse({
+          rows: [sessionRow],
+          rowCount: 2,
+          stopReason: GA4_PAGINATION_CAP_STOP_REASON,
+          limitation: GA4_PAGINATION_CAP_LIMITATION,
+        }),
+      )
+      .mockResolvedValueOnce(response());
+    fake.checkCompatibility.mockResolvedValueOnce({
+      compatible: true,
+      incompatibleFields: [],
+    });
 
     const result = await createGa4Adapter(fake.value).collect(params, context);
 

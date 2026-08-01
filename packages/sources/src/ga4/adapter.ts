@@ -6,12 +6,12 @@
  *
  * The two reports (both filtered to the `Organic Search` default channel group):
  *   1. SESSION:   dims [date, landingPage]      metrics [sessions, engagedSessions, engagementRate]
- *   2. KEY-EVENT: dims [date, landingPage, eventName] metric [keyEvents] + eventName IN-filter
+ *   2. KEY-EVENT: dims [date, landingPage] metric [keyEvents]
  *
- * Key-event honesty (spec §1.3, §7.4): no key events mapped → `unmapped`; the
- * compatibility check reports the event/metric incompatible → `incompatible`. In
- * both cases session rows are STILL collected and key events are `null` (never 0),
- * and the SNAPSHOT availability is `"partial"`.
+ * Both reports are scoped to the primary Site hostname and Organic Search. An
+ * empty key-event configuration means all key events defined by the GA4
+ * property; a non-empty list is an optional advanced subset. Only an
+ * incompatible or truncated key-event report degrades the snapshot to partial.
  *
  * `now` and the property timezone are injected via params (never machine-local).
  */
@@ -49,12 +49,7 @@ import type {
   Ga4KeyEventStatus,
   Ga4SessionRow,
 } from "./normalize.ts";
-import {
-  GA4_KEY_EVENT_UNMAPPED,
-  GA4_LIMITATION,
-  keyEventReason,
-  normalizeGa4,
-} from "./normalize.ts";
+import { keyEventReason, normalizeGa4 } from "./normalize.ts";
 import type { Ga4Window } from "./window.ts";
 import { computeGa4Window } from "./window.ts";
 
@@ -70,7 +65,6 @@ const SESSION_METRICS: readonly Ga4Metric[] = [
 const KEY_EVENT_DIMENSIONS: readonly Ga4Dimension[] = [
   { name: "date" },
   { name: "landingPage" },
-  { name: "eventName" },
 ];
 const KEY_EVENT_METRICS: readonly Ga4Metric[] = [{ name: "keyEvents" }];
 
@@ -83,7 +77,7 @@ export interface Ga4AdapterOptions {
 export interface Ga4Config {
   /** Property resource name, e.g. `properties/123456789`. */
   readonly propertyId: string;
-  /** Operator-selected key event names (empty = no key events mapped). */
+  /** Optional advanced subset; empty means every property-defined key event. */
   readonly keyEventNames: readonly string[];
 }
 
@@ -170,15 +164,54 @@ function organicChannelFilter(): Ga4FilterExpression {
   };
 }
 
-function keyEventFilter(eventNames: readonly string[]): Ga4FilterExpression {
-  return {
-    andGroup: {
-      expressions: [
-        organicChannelFilter(),
-        { filter: { fieldName: "eventName", inListFilter: { values: [...eventNames] } } },
-      ],
+function siteHostname(siteOrigin: string): string {
+  try {
+    const url = new URL(siteOrigin);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.hostname === "") {
+      throw new TypeError("unsupported site origin");
+    }
+    return url.hostname.toLowerCase();
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "GA4 siteOrigin must be an absolute HTTP(S) origin",
+    );
+  }
+}
+
+function reportFilter(
+  hostname: string,
+  eventNames: readonly string[] = [],
+): Ga4FilterExpression {
+  const expressions: Ga4FilterExpression[] = [
+    organicChannelFilter(),
+    {
+      filter: {
+        fieldName: "hostName",
+        stringFilter: { matchType: "EXACT", value: hostname },
+      },
     },
+  ];
+  if (eventNames.length > 0) {
+    expressions.push({
+      filter: {
+        fieldName: "eventName",
+        inListFilter: { values: [...eventNames] },
+      },
+    });
+  }
+  return {
+    andGroup: { expressions },
   };
+}
+
+function availableLimitation(
+  hostname: string,
+  eventNames: readonly string[],
+): string {
+  return eventNames.length === 0
+    ? `GA4 organic landing metrics include only Organic Search traffic on ${hostname} and all key events defined by the GA4 property.`
+    : `GA4 organic landing metrics include only Organic Search traffic on ${hostname} and the selected key events: ${eventNames.join(", ")}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,11 +268,16 @@ function parseSessionRows(response: Ga4ReportResponse): Ga4SessionRow[] {
   }));
 }
 
-function parseKeyEventRows(response: Ga4ReportResponse): Ga4KeyEventRow[] {
+function parseKeyEventRows(
+  response: Ga4ReportResponse,
+  eventNames: readonly string[],
+): Ga4KeyEventRow[] {
+  const eventName =
+    eventNames.length === 0 ? "(all property key events)" : eventNames.join(",");
   return response.rows.map((row) => ({
     date: formatGa4Date(dimensionValue(row, 0)),
     landingPage: dimensionValue(row, 1),
-    eventName: dimensionValue(row, 2),
+    eventName,
     keyEvents: toInt(metricValue(row, 0)),
   }));
 }
@@ -310,9 +348,10 @@ function collectionStopReason(
 
 function collectionLimitation(
   keyEventStatus: Ga4KeyEventStatus,
+  availableScope: string,
   reportLimitations: readonly string[],
 ): string {
-  const values = [keyEventReason(keyEventStatus.state) ?? GA4_LIMITATION, ...reportLimitations]
+  const values = [keyEventReason(keyEventStatus.state) ?? availableScope, ...reportLimitations]
     .map((value) => value.trim())
     .filter((value, index, all) => value !== "" && all.indexOf(value) === index);
   return values.join(" ");
@@ -346,15 +385,15 @@ export function createGa4Adapter(
     },
 
     async capabilities(config: Ga4Config): Promise<Capability[]> {
-      const hasKeyEvents = config.keyEventNames.length > 0;
       return [
         {
           datasetKey: "ga4.organic_landing_daily.v1",
           operation: "organic_landing",
           available: true,
-          limitation: hasKeyEvents
-            ? ""
-            : `Key events unmapped; conversions unavailable (${GA4_KEY_EVENT_UNMAPPED}).`,
+          limitation:
+            config.keyEventNames.length === 0
+              ? ""
+              : "Collection is limited to an explicitly selected key-event subset.",
         },
       ];
     },
@@ -366,6 +405,10 @@ export function createGa4Adapter(
       const window = computeGa4Window(params.now, params.propertyTimeZone);
       const capturedAt = params.now.toISOString();
       const dateRanges = [{ startDate: window.startDate, endDate: window.endDate }] as const;
+      const hostname = siteHostname(params.siteOrigin);
+      const sessionFilter = reportFilter(hostname);
+      const keyEventsFilter = reportFilter(hostname, params.keyEventNames);
+      const availableScope = availableLimitation(hostname, params.keyEventNames);
 
       // 1. SESSION report — always collected.
       const sessionResponse = enforceReportBudget(await client.runReport(
@@ -373,7 +416,7 @@ export function createGa4Adapter(
           dateRanges: [...dateRanges],
           dimensions: SESSION_DIMENSIONS,
           metrics: SESSION_METRICS,
-          dimensionFilter: organicChannelFilter(),
+          dimensionFilter: sessionFilter,
         },
         ctx.signal,
         { maxRows },
@@ -387,20 +430,22 @@ export function createGa4Adapter(
         if (sessionResponse.stopReason) stopReasons.push(sessionResponse.stopReason);
       }
 
-      // 2. KEY-EVENT report — behind an unmapped/compatibility gate (spec §7.4).
+      // 2. KEY-EVENT report — all property key events by default. An explicit
+      // event-name list is retained only as an advanced subset for API clients.
       let keyEventRows: readonly Ga4KeyEventRow[] = [];
       let keyEventStatus: Ga4KeyEventStatus;
       let keyEventResponse: Ga4ReportResponse | null = null;
-      if (params.keyEventNames.length === 0) {
-        keyEventStatus = { state: "unmapped" };
-      } else if (remainingRows === 0) {
+      if (remainingRows === 0) {
         keyEventStatus = { state: "truncated" };
         reportLimitations.push(GA4_ROW_CAP_LIMITATION);
         stopReasons.push(GA4_ROW_CAP_STOP_REASON);
       } else {
-        const filter = keyEventFilter(params.keyEventNames);
         const compatibility = await client.checkCompatibility(
-          { dimensions: KEY_EVENT_DIMENSIONS, metrics: KEY_EVENT_METRICS, dimensionFilter: filter },
+          {
+            dimensions: KEY_EVENT_DIMENSIONS,
+            metrics: KEY_EVENT_METRICS,
+            dimensionFilter: keyEventsFilter,
+          },
           ctx.signal,
         );
         if (!compatibility.compatible) {
@@ -411,12 +456,15 @@ export function createGa4Adapter(
               dateRanges: [...dateRanges],
               dimensions: KEY_EVENT_DIMENSIONS,
               metrics: KEY_EVENT_METRICS,
-              dimensionFilter: filter,
+              dimensionFilter: keyEventsFilter,
             },
             ctx.signal,
             { maxRows: remainingRows },
           ), remainingRows);
-          keyEventRows = parseKeyEventRows(keyEventResponse);
+          keyEventRows = parseKeyEventRows(
+            keyEventResponse,
+            params.keyEventNames,
+          );
           if (keyEventResponse.truncated) {
             keyEventStatus = { state: "truncated" };
             reportLimitations.push(keyEventResponse.limitation);
@@ -432,7 +480,11 @@ export function createGa4Adapter(
         keyEventStatus.state === "available" && stopReason === null
           ? "available"
           : "partial";
-      const limitation = collectionLimitation(keyEventStatus, reportLimitations);
+      const limitation = collectionLimitation(
+        keyEventStatus,
+        availableScope,
+        reportLimitations,
+      );
       const raw: Ga4Raw = {
         propertyId: params.propertyId,
         propertyTimeZone: params.propertyTimeZone,

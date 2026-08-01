@@ -42,8 +42,6 @@ import { oauthIntents, workspaces } from "@sf/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { Logger } from "@sf/observability";
 import {
-  GA4_LIMITATION,
-  GA4_KEY_EVENT_UNMAPPED,
   MemoryBlobStore,
   computeGa4Window,
   computeGscWindow,
@@ -418,11 +416,12 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
     });
 
     const snapshot = await snapshotFor(project.scope, connected.sourceId);
+    const hostname = new URL(project.siteOrigin).hostname;
     expect(snapshot).toMatchObject({
       provider: "ga4",
       dataset_key: "ga4.organic_landing_daily.v1",
       availability: "available",
-      limitation: GA4_LIMITATION,
+      limitation: `GA4 organic landing metrics include only Organic Search traffic on ${hostname} and the selected key events: purchase.`,
       source_window: {
         start: expectedWindow.startDate,
         end: expectedWindow.endDate,
@@ -464,7 +463,7 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
     expect(blockedGlobalFetch).not.toHaveBeenCalled();
   });
 
-  it("AC-015 keeps unmapped GA4 conversions null/unavailable while persisting sessions and the 56-day window", async () => {
+  it("AC-015 collects every property key event by default and records a real zero when none occur", async () => {
     const project = await seedProject("ga4-unmapped");
     const property: GoogleProperty = {
       externalPropertyId: "13579",
@@ -493,9 +492,11 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
     });
 
     const snapshot = await snapshotFor(project.scope, connected.sourceId);
+    const hostname = new URL(project.siteOrigin).hostname;
+    const limitation = `GA4 organic landing metrics include only Organic Search traffic on ${hostname} and all key events defined by the GA4 property.`;
     expect(snapshot).toMatchObject({
-      availability: "partial",
-      limitation: GA4_KEY_EVENT_UNMAPPED,
+      availability: "available",
+      limitation,
       source_window: {
         start: expectedWindow.startDate,
         end: expectedWindow.endDate,
@@ -513,30 +514,30 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
       value_text: null,
       value_json: {
         sessions: 10,
-        keyEvents: null,
-        keyEventUnavailableReason: GA4_KEY_EVENT_UNMAPPED,
+        keyEvents: 0,
+        keyEventUnavailableReason: null,
       },
-      limitation: GA4_KEY_EVENT_UNMAPPED,
+      limitation,
     });
     expect(
       (observation!.value_json as { keyEvents: number | null }).keyEvents,
-    ).toBeNull();
+    ).toBe(0);
     const raw = await readRaw(blobStore, snapshot.raw_object_key);
     expect(raw).toMatchObject({
       propertyTimeZone: "Pacific/Auckland",
       window: expectedWindow,
       keyEventRows: [],
-      keyEventStatus: { state: "unmapped" },
+      keyEventStatus: { state: "available" },
     });
     await expectRunAndSourceTerminal(
       project.scope,
       accepted.run.id,
       connected.sourceId,
       snapshot.id,
-      "partial",
-      "partial",
+      "completed",
+      "available",
     );
-    expect(providerFetch).toHaveBeenCalledTimes(1);
+    expect(providerFetch).toHaveBeenCalledTimes(3);
     expect(blockedGlobalFetch).not.toHaveBeenCalled();
   });
 
@@ -735,7 +736,7 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
   function ga4Fetch(
     project: ProjectFixture,
     window: { readonly startDate: string; readonly endDate: string },
-    mapped: boolean,
+    hasKeyEventRows: boolean,
   ): ReturnType<typeof vi.fn<ProviderFetch>> {
     return vi.fn<ProviderFetch>(async (input, init) => {
       const url = String(input);
@@ -743,9 +744,9 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
       const request = JSON.parse(String(init?.body)) as {
         dateRanges?: { startDate: string; endDate: string }[];
         dimensions?: { name: string }[];
+        metrics?: { name: string }[];
       };
       if (url.endsWith(":checkCompatibility")) {
-        expect(mapped).toBe(true);
         return Response.json({});
       }
       expect(url).toContain(":runReport");
@@ -753,8 +754,9 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
         { startDate: window.startDate, endDate: window.endDate },
       ]);
       const dimensions = request.dimensions?.map((dimension) => dimension.name);
-      if (dimensions?.includes("eventName")) {
-        expect(mapped).toBe(true);
+      const metrics = request.metrics?.map((metric) => metric.name);
+      if (metrics?.includes("keyEvents")) {
+        if (!hasKeyEventRows) return Response.json({});
         return Response.json({
           rowCount: 1,
           rows: [
@@ -762,7 +764,6 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
               dimensionValues: [
                 { value: window.endDate.replaceAll("-", "") },
                 { value: "/pricing" },
-                { value: "purchase" },
               ],
               metricValues: [{ value: "3" }],
             },
@@ -770,6 +771,11 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
         });
       }
       expect(dimensions).toEqual(["date", "landingPage"]);
+      expect(metrics).toEqual([
+        "sessions",
+        "engagedSessions",
+        "engagementRate",
+      ]);
       return Response.json({
         rowCount: 1,
         rows: [

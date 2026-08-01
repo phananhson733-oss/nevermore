@@ -40,12 +40,12 @@ import {
   Panel,
   Spinner,
   StatusPill,
-  TextInput,
   cx,
   type StatusTone,
 } from "@/components/ui";
 import {
   analysisRefreshRunIdFromError,
+  collectionRunIdFromError,
   invalidateAnalysisRefreshTerminalQueries,
   isTerminalRunStatus,
   readAnalysisRefreshRunId,
@@ -275,7 +275,7 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   metricLabel: {
     crawl: "Captured URLs",
     gsc: "Search performance rows",
-    ga4: "Organic landing rows",
+    ga4: "GA4 report rows",
     csv: "Imported keyword rows",
     dataforseo: "Ranking keyword rows",
   },
@@ -355,7 +355,7 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   metricLabel: {
     crawl: "已采集 URL",
     gsc: "搜索表现记录",
-    ga4: "自然落地页记录",
+    ga4: "GA4 报表记录",
     csv: "导入关键词记录",
     dataforseo: "排名关键词记录",
   },
@@ -757,11 +757,15 @@ function PropertySelection({
   provider,
   intent,
   onDone,
+  onConnected,
+  autoCollecting,
 }: {
   readonly projectId: string;
   readonly provider: GoogleProvider;
   readonly intent: PropertySelectionPhase;
   readonly onDone: () => void;
+  readonly onConnected: (source: SourceConnection) => void;
+  readonly autoCollecting: boolean;
 }) {
   const t = useTranslations("sources");
   const tCommon = useTranslations("common");
@@ -769,40 +773,22 @@ function PropertySelection({
   const [selected, setSelected] = useState<string>(
     intent.properties[0]?.id ?? "",
   );
-  const [keyEvents, setKeyEvents] = useState<string>("");
-  const busy = connect.isPending;
+  const busy = connect.isPending || autoCollecting;
   const selectId = `${provider}-property`;
 
   const confirm = () => {
-    const events =
-      provider === "ga4"
-        ? Array.from(
-            new Set(
-              keyEvents
-                .split(",")
-                .map((value) => value.trim())
-                .filter((value) => value.length > 0),
-            ),
-          ).slice(0, 20)
-        : [];
-    const request =
-      events.length > 0
-        ? {
-            phase: "select_property" as const,
-            oauthIntentId: intent.oauthIntentId,
-            externalPropertyId: selected,
-            keyEventNames: events,
-          }
-        : {
-            phase: "select_property" as const,
-            oauthIntentId: intent.oauthIntentId,
-            externalPropertyId: selected,
-          };
     connect.mutate(
-      { provider, request },
+      {
+        provider,
+        request: {
+          phase: "select_property",
+          oauthIntentId: intent.oauthIntentId,
+          externalPropertyId: selected,
+        },
+      },
       {
         onSuccess: (data) => {
-          if (data.phase === "connected") onDone();
+          if (data.phase === "connected") onConnected(data.source);
         },
       },
     );
@@ -828,15 +814,6 @@ function PropertySelection({
           ))}
         </select>
       </Field>
-      {provider === "ga4" ? (
-        <Field label={t("keyEvents")} help={t("keyEventsHelp")}>
-          <TextInput
-            value={keyEvents}
-            onChange={(event) => setKeyEvents(event.target.value)}
-            placeholder={t("keyEventsPlaceholder")}
-          />
-        </Field>
-      ) : null}
       <div className={styles.controls}>
         <Button
           variant="primary"
@@ -891,6 +868,28 @@ function OAuthControls({
         provider={provider}
         intent={intent}
         onDone={onClearIntent}
+        autoCollecting={collect.isPending}
+        onConnected={(connectedSource) => {
+          const connectedSourceId = connectedSource.id;
+          if (connectedSourceId === null) {
+            onClearIntent();
+            return;
+          }
+          collect.mutate(
+            { provider, sourceConnectionId: connectedSourceId },
+            {
+              onSuccess: (data) => {
+                onStarted(data.run.id);
+                onClearIntent();
+              },
+              onError: (error) => {
+                const winnerRunId = collectionRunIdFromError(error, projectId);
+                if (winnerRunId !== null) onStarted(winnerRunId);
+                onClearIntent();
+              },
+            },
+          );
+        }}
       />
     );
   }

@@ -231,19 +231,24 @@ function reportPage(value: unknown): {
     throw new SourceError("INVALID_RESPONSE", "GA4 report response must be an object.");
   }
   const response = value as RawReportResponse;
-  const rowCount = response.rowCount;
-  if (!Number.isSafeInteger(rowCount) || rowCount === undefined || rowCount < 0) {
-    throw new SourceError(
-      "INVALID_RESPONSE",
-      "GA4 report response has an invalid rowCount.",
-    );
-  }
   if (response.rows !== undefined && !Array.isArray(response.rows)) {
     throw new SourceError("INVALID_RESPONSE", "GA4 report response rows must be an array.");
   }
   const rows = response.rows ?? [];
   if (rows.some((row) => typeof row !== "object" || row === null)) {
     throw new SourceError("INVALID_RESPONSE", "GA4 report response contains an invalid row.");
+  }
+  // Google APIs use proto3 JSON, which omits scalar fields carrying their
+  // default value. A valid empty report can therefore be `{}` rather than
+  // `{ rows: [], rowCount: 0 }`. Missing rowCount is honest only when no rows
+  // were returned; a non-empty response still needs the provider total so
+  // pagination and truncation cannot silently fabricate completeness.
+  const rowCount = response.rowCount ?? (rows.length === 0 ? 0 : undefined);
+  if (rowCount === undefined || !Number.isSafeInteger(rowCount) || rowCount < 0) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "GA4 report response has an invalid rowCount.",
+    );
   }
   return { rows, rowCount };
 }
@@ -403,15 +408,29 @@ export class HttpGa4Client implements Ga4Client {
     if (request.dimensionFilter) body.dimensionFilter = request.dimensionFilter;
 
     const resp = await this.post<RawCompatibilityResponse>(":checkCompatibility", body, signal);
+    const requestedDimensions = new Set(
+      request.dimensions.map((dimension) => dimension.name),
+    );
+    const requestedMetrics = new Set(request.metrics.map((metric) => metric.name));
     const incompatibleFields: string[] = [];
     for (const entry of resp.dimensionCompatibilities ?? []) {
-      if (entry.compatibility !== "COMPATIBLE") {
-        incompatibleFields.push(entry.dimensionMetadata?.apiName ?? "unknown");
+      const apiName = entry.dimensionMetadata?.apiName;
+      if (
+        apiName !== undefined &&
+        requestedDimensions.has(apiName) &&
+        entry.compatibility !== "COMPATIBLE"
+      ) {
+        incompatibleFields.push(apiName);
       }
     }
     for (const entry of resp.metricCompatibilities ?? []) {
-      if (entry.compatibility !== "COMPATIBLE") {
-        incompatibleFields.push(entry.metricMetadata?.apiName ?? "unknown");
+      const apiName = entry.metricMetadata?.apiName;
+      if (
+        apiName !== undefined &&
+        requestedMetrics.has(apiName) &&
+        entry.compatibility !== "COMPATIBLE"
+      ) {
+        incompatibleFields.push(apiName);
       }
     }
     return { compatible: incompatibleFields.length === 0, incompatibleFields };

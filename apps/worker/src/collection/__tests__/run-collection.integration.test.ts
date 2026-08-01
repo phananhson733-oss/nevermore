@@ -3480,8 +3480,10 @@ describeDb("collection runner (spec §13)", () => {
     expect(bearerCalls).toEqual([
       "Bearer access-rejected-fixture",
       "Bearer access-recovered-fixture",
+      "Bearer access-recovered-fixture",
+      "Bearer access-recovered-fixture",
     ]);
-    expect(await runStatus(handle, seed.scope, runId)).toBe("partial");
+    expect(await runStatus(handle, seed.scope, runId)).toBe("completed");
     expect(
       await loadStoredEnvelope(handle, seed.scope, connectionId),
     ).toEqual({

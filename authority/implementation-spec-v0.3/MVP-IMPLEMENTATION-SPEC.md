@@ -471,7 +471,7 @@ Adapter 必须返回稳定 `errorCode`，不得把 provider 文案直接作为�
 |---|---|---:|---|---|
 | Crawl | `crawl.site_graph.v1` | 完整实现 | 最多 2,000 URL、深度 6、15 分钟 | 静态 HTML；不运行 JS |
 | GSC | `gsc.page_query_daily.v1` | 完整实现 | 最近 56 个完整日；按 page/query/date，25k rows/request、最多 250k rows/run | Search Console 返回 top rows，不保证全量 |
-| GA4 | `ga4.organic_landing_daily.v1` | 最小实现 | 最近 56 个完整日；organic landing、sessions、engagement、keyEvents；最多 200k rows/run | 依赖选定 property 与 key event mapping |
+| GA4 | `ga4.organic_landing_daily.v1` | 最小实现 | 最近 56 个完整日；organic landing、sessions、engagement、property-defined keyEvents；最多 200k rows/run | 依赖选定 property；按 primary Site hostname 隔离 |
 | CSV | `csv.keyword_gap.v1` | 完整实现 | 单文件 ≤ 20MB / 200k rows | 用户提供、列映射与 locale 有限 |
 | DataForSEO | `csv.keyword_gap.v1` canonical shape | 最小真实实现 | 当前 organic、rank 4–20、search volume > 0、默认最多 200 rows/run | DataForSEO 是 vendor observation；供应商 top rows/估算不等于完整关键词宇宙 |
 
@@ -497,20 +497,20 @@ Adapter 必须返回稳定 `errorCode`，不得把 provider 文案直接作为�
 
 1. `phase=authorize`：创建 10 分钟 `oauth_intent`，生成 256-bit random state、PKCE S256 verifier/challenge；DB 只存 state hash 和加密 verifier。返回 Google authorization URL。
 2. OAuth callback：校验 session、state hash、provider、TTL、未消费和 PKCE；交换 code；加密临时 token；拉取用户可访问 properties；将 intent 置为 `properties_ready`；303 返回 Sources 页并带不敏感 `oauthIntentId`。Sources 页以 `phase=property_selection + oauthIntentId` 调同一个 connect endpoint，读取候选 properties；响应为 `phase=property_selection`。
-3. `phase=select_property`：校验所选 property 在候选列表，创建 SourceConnection，把 token 从 intent 转为 SourceCredential，intent 置 `consumed`，返回 `phase=connected`。
+3. `phase=select_property`：校验所选 property 在候选列表，创建 SourceConnection，把 token 从 intent 转为 SourceCredential，intent 置 `consumed`，返回 `phase=connected`。Sources 客户端收到成功响应后必须立即创建该连接的首次 collection run 并展示运行状态，不要求用户再次点击“立即采集”。
 
 即便只有一个 property 也执行第 3 步，避免连错客户资产。callback、token 和 property 错误必须可恢复；失败不得写半连接 SourceConnection。OAuth state/token 不进入 URL（`oauthIntentId` 除外）、普通日志或 telemetry。
 
-GSC source 保存 property URL；GA4 source 保存 property ID 和 operator 选择的 key event names。若 GA4 未配置 key event，连接仍可用，但 conversion metric 为 `null/unavailable`，coverage 增加稳定 reason `GA4_KEY_EVENT_UNMAPPED`；首版 11 条规则中的 CRO-LANDING 会 skipped/inconclusive，不额外制造第 12 条 Finding。
+GSC source 保存 property URL；GA4 source 保存 property ID 与 property timezone。连接阶段不要求 operator 选择“注册”“购买”等事件；`keyEventNames` 缺省或空数组表示采集该 property 已定义的全部 key events。非空 `keyEventNames` 仅作为 API 客户端可选的高级子集过滤，不属于客户连接表单。兼容性检查成功但报告没有 key-event rows 时，conversion metric 是真实的 `0`，Snapshot 仍为 `available`；只有报告不兼容或被截断时才把 conversion metric 记为 `null/unavailable` 并将 Snapshot 降级为 `partial`。
 
 GSC collection 按 [Search Analytics query](https://developers.google.com/webmaster-tools/v1/searchanalytics/query) 使用 `dimensions=[date,page,query]`、`dataState=final`、`rowLimit=25000`，以 `startRow` 分页直到空页或 250k cap；超过 cap 为 partial。窗口 endDate 为采集时 America/Los_Angeles 日期减 3 天，startDate=endDate 减 55 天（共 56 天）。Adapter 必须在 Snapshot limitation 说明 Search Console API 返回按 clicks 排序的 top rows，不声称是完整 query universe。
 
 GA4 collection 通过 [Data API `runReport`](https://developers.google.com/analytics/devguides/reporting/data/v1/basics) 发两份可分页报告并按 `date+canonical landingPage` 合并：
 
-1. session report：dimensions `date,landingPage`，metrics `sessions,engagedSessions,engagementRate`，dimension filter `sessionDefaultChannelGroup=Organic Search`。
-2. key-event report：dimensions `date,landingPage,eventName`，metric `keyEvents`，同一 Organic Search filter，再以 operator 选定 `eventName` 做 IN filter；服务端聚合选中 events。
+1. session report：dimensions `date,landingPage`，metrics `sessions,engagedSessions,engagementRate`，dimension filter 同时要求 `sessionDefaultChannelGroup=Organic Search` 与 `hostName=primary Site hostname`。
+2. key-event report：dimensions `date,landingPage`，metric `keyEvents`，使用同一 Organic Search + hostname filter，由 GA4 直接聚合 property 已定义的全部 key events；只有非空高级 `keyEventNames` 配置才额外增加 `eventName IN (...)` dimension filter，但不把高基数 `eventName` 加入返回维度。
 
-Adapter 在采集前调用 compatibility/metadata 检查。若 eventName 与 landingPage/metric 在该 property 不兼容，仍保存 session rows，但 key-event value 为 null/unavailable，Snapshot 为 partial 并写稳定 reason `GA4_KEY_EVENT_REPORT_INCOMPATIBLE`；不得把不兼容解释为 0 conversion。
+Adapter 在采集前调用 compatibility/metadata 检查。`checkCompatibility` 的成功响应会列出相对当前报表可继续添加的许多字段；客户端只可检查本次请求点名的 dimensions/metrics，不得因未请求的候选字段不兼容而降级当前报表。若当前 landingPage/keyEvents 报表确实不兼容，仍保存 session rows，但 key-event value 为 null/unavailable，Snapshot 为 partial 并写稳定 reason `GA4_KEY_EVENT_REPORT_INCOMPATIBLE`；不得把不兼容解释为 0 conversion。
 
 GA4 窗口按 property timezone 取昨日为 endDate、endDate 减 55 天为 startDate。Snapshot 必须保存 property timezone；不得用 web/worker 机器本地时区切日。
 
