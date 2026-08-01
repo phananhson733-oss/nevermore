@@ -59,6 +59,48 @@ describe("POST /api/mvp/projects idempotency wire contract", () => {
       "00000000-0000-4000-8000-000000000001",
       "legacy-project-create",
       expect.objectContaining({ siteUrl }),
+      undefined,
+      { defaultDeliveryLocale: "zh-CN" },
+    );
+  });
+
+  it("passes the selected UI language into Product Profile creation", async () => {
+    mocks.createProject.mockResolvedValueOnce({
+      status: 201,
+      project: { id: "00000000-0000-4000-8000-000000000003" },
+      location: "/p/00000000-0000-4000-8000-000000000003/context",
+      replayed: false,
+    });
+
+    const body = {
+      mode: "product_profile",
+      productUrl: "https://example.com/product",
+      productName: "Example",
+      customerModel: "b2b",
+      primaryMarket: "US",
+      growthObjectives: ["increase_organic_traffic"],
+    };
+    const response = await POST(
+      new NextRequest("http://localhost/api/mvp/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "product-profile-zh-create",
+          Cookie: "sf_ui_locale=zh-CN",
+          Origin: "http://localhost",
+        },
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mocks.createProject).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      "00000000-0000-4000-8000-000000000001",
+      "product-profile-zh-create",
+      body,
+      undefined,
+      { defaultDeliveryLocale: "zh-CN" },
     );
   });
 });

@@ -88,7 +88,10 @@ test("desktop project cockpit exposes canonical progress and product chrome", as
   await expect(programProgress).toHaveAttribute("aria-valuenow", "30");
   await expect(page.getByText("Day 30 of 90", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Settings" })).toHaveAttribute(
+    "href",
+    `/p/${E2E_PROJECT_ID}/settings`,
+  );
   await expect(page.getByRole("group", { name: "Account" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
 });

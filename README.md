@@ -14,7 +14,7 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **78 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

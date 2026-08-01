@@ -6,6 +6,7 @@ import {
   MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
   MAX_PRODUCT_PROFILE_PAGES,
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   createOpenAIProductProfileClient,
@@ -59,10 +60,18 @@ function input(
 ): ProductProfileSynthesisInput {
   return {
     sourcePageUrl: "https://relayops.com/product",
+    outputLocale: "en",
     businessHint: "B2B customer onboarding workflow software",
     pages: [page()],
     ...overrides,
   };
+}
+
+function inputWithoutOutputLocale(
+  overrides: Partial<ProductProfileSynthesisInput> = {},
+): ProductProfileSynthesisInput {
+  const { outputLocale: _outputLocale, ...value } = input(overrides);
+  return value;
 }
 
 const EMPTY_SCALAR: ProductProfileSemanticCandidateEnvelope["productName"] = {
@@ -223,6 +232,7 @@ function requestBody(fetchImpl: ReturnType<typeof vi.fn>): {
 }
 
 function promptContext(fetchImpl: ReturnType<typeof vi.fn>): {
+  readonly outputLocale?: string;
   readonly businessHint: string | null;
   readonly declaredContext?: {
     readonly productName?: string;
@@ -342,14 +352,46 @@ describe("OpenAIProductProfileClient", () => {
     ).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
   });
 
-  it("executes queued 0.3.0 work with the exact legacy prompt and invocation label", async () => {
+  it("freezes the requested output locale into the prompt identity and language instruction", async () => {
+    const english = prepareProductProfileSynthesis(
+      input({ outputLocale: "en" }),
+    );
+    const chinese = prepareProductProfileSynthesis(
+      input({ outputLocale: "zh-CN" }),
+    );
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl,
+    });
+
+    await client.synthesizeProductProfile(input({ outputLocale: "zh-CN" }));
+
+    expect(chinese.inputHash).not.toBe(english.inputHash);
+    expect(promptContext(fetchImpl).outputLocale).toBe("zh-CN");
+    expect(requestBody(fetchImpl).messages[0]!.content).toContain(
+      "exactly the requested outputLocale",
+    );
+  });
+
+  it("executes queued prompt versions with their exact input contracts and labels", async () => {
     const legacyFetch = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
+    const declaredContextFetch = vi
+      .fn()
+      .mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
     const currentFetch = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
     const legacyClient = createOpenAIProductProfileClient({
       apiKey: "test-key",
       model: "gpt-4.1-mini",
       promptSetVersion: PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
       fetchImpl: legacyFetch,
+    });
+    const declaredContextClient = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      promptSetVersion: PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+      fetchImpl: declaredContextFetch,
     });
     const currentClient = createOpenAIProductProfileClient({
       apiKey: "test-key",
@@ -358,11 +400,15 @@ describe("OpenAIProductProfileClient", () => {
       fetchImpl: currentFetch,
     });
 
-    const [legacy, current] = await Promise.all([
-      legacyClient.synthesizeProductProfile(input()),
+    const [legacy, declaredContextResult, current] = await Promise.all([
+      legacyClient.synthesizeProductProfile(inputWithoutOutputLocale()),
+      declaredContextClient.synthesizeProductProfile(
+        inputWithoutOutputLocale(),
+      ),
       currentClient.synthesizeProductProfile(input()),
     ]);
     const legacyRequest = requestBody(legacyFetch);
+    const declaredContextRequest = requestBody(declaredContextFetch);
     const currentRequest = requestBody(currentFetch);
 
     expect(
@@ -376,8 +422,17 @@ describe("OpenAIProductProfileClient", () => {
     expect(currentRequest.messages[0]!.content).toContain(
       "declaredContext contains",
     );
+    expect(declaredContextRequest.messages[0]!.content).not.toContain(
+      "requested outputLocale",
+    );
+    expect(currentRequest.messages[0]!.content).toContain(
+      "requested outputLocale",
+    );
     expect(legacyRequest.messages[1]!.content).toBe(
-      currentRequest.messages[1]!.content,
+      declaredContextRequest.messages[1]!.content,
+    );
+    expect(currentRequest.messages[1]!.content).not.toBe(
+      declaredContextRequest.messages[1]!.content,
     );
     expect(legacy.invocation.promptSetVersion).toBe(
       PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
@@ -385,15 +440,18 @@ describe("OpenAIProductProfileClient", () => {
     expect(current.invocation.promptSetVersion).toBe(
       PRODUCT_PROFILE_PROMPT_SET_VERSION,
     );
+    expect(declaredContextResult.invocation.promptSetVersion).toBe(
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+    );
     expect(legacy.invocation.inputHash).toBe(
       prepareProductProfileSynthesis(
-        input(),
+        inputWithoutOutputLocale(),
         PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
       ).inputHash,
     );
     expect(() =>
       prepareProductProfileSynthesis(
-        input({
+        inputWithoutOutputLocale({
           declaredContext: {
             productName: "Must not enter a legacy prompt",
           },
@@ -869,6 +927,7 @@ describe("OpenAIProductProfileClient", () => {
       _label === "business-hint reference when no hint was supplied"
         ? {
             sourcePageUrl: "https://relayops.com/product",
+            outputLocale: "en",
             declaredContext: {
               productName: "Customer-declared RelayOps",
               customerModel: "b2b",
@@ -955,10 +1014,6 @@ describe("OpenAIProductProfileClient", () => {
     ],
     ["unknown response key", { ...EMPTY_CANDIDATE, generatedAt: "now" }],
     [
-      "fabricated unknown path",
-      { ...EMPTY_CANDIDATE, unknownPaths: ["/notAProductProfileField"] },
-    ],
-    [
       "empty scalar claiming evidence",
       {
         ...EMPTY_CANDIDATE,
@@ -1016,6 +1071,13 @@ describe("OpenAIProductProfileClient", () => {
         unknownPaths: ["/productName"],
       },
     ],
+    [
+      "non-string advisory path",
+      {
+        ...EMPTY_CANDIDATE,
+        unknownPaths: [123],
+      },
+    ],
   ])("rejects %s under the strict response schema", async (_label, output) => {
     const client = createOpenAIProductProfileClient({
       apiKey: "test-key",
@@ -1035,6 +1097,34 @@ describe("OpenAIProductProfileClient", () => {
         status: "rejected",
         outputHash: null,
       },
+    });
+  });
+
+  it("drops unsupported advisory unknown paths without rejecting valid semantics", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          unknownPaths: ["/customerModel", "/notAProductProfileField"],
+        }),
+      ),
+    });
+
+    const result = await client.synthesizeProductProfile(
+      input({ pages: [page(), page()] }),
+    );
+
+    expect(result.candidate).toMatchObject({
+      productName: VALID_B2B_CANDIDATE.productName,
+      targetAudiences: VALID_B2B_CANDIDATE.targetAudiences,
+      unknownPaths: [],
+    });
+    expect(result.invocation).toMatchObject({
+      task: "product_profile_synthesis",
+      status: "succeeded",
+      errorCode: null,
     });
   });
 
@@ -1369,14 +1459,26 @@ const FAKE_OAUTH_TOKEN = `ya29.${"A".repeat(24)}`;
 /** The exact user message the provider was handed for `synthesisInput`. */
 async function outgoingUserMessage(
   synthesisInput: ProductProfileSynthesisInput,
+  promptSetVersion:
+    | typeof PRODUCT_PROFILE_PROMPT_SET_VERSION
+    | typeof PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION =
+    PRODUCT_PROFILE_PROMPT_SET_VERSION,
 ): Promise<string> {
+  const providerInput =
+    promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION
+      ? synthesisInput
+      : (() => {
+          const { outputLocale: _outputLocale, ...value } = synthesisInput;
+          return value;
+        })();
   const fetchImpl = vi.fn().mockResolvedValue(chatResponse(EMPTY_CANDIDATE));
   const client = createOpenAIProductProfileClient({
     apiKey: "test-key",
     model: "gpt-4.1-mini",
+    promptSetVersion,
     fetchImpl,
   });
-  await client.synthesizeProductProfile(synthesisInput).catch(() => undefined);
+  await client.synthesizeProductProfile(providerInput).catch(() => undefined);
   const call = fetchImpl.mock.calls[0] as [string, RequestInit];
   const body = JSON.parse(String(call[1].body)) as {
     messages: ReadonlyArray<{ role: string; content: string }>;
@@ -1715,7 +1817,8 @@ describe("product-profile response gate sees through the same obfuscation", () =
  * Normalizing before redaction is a SANITIZER fix, not a prompt-template
  * change: the normalization step is a no-op on text whose only
  * `\p{Cc}`/`\p{Cf}` characters are ordinary whitespace, so a WELL-FORMED prompt
- * keeps its exact bytes and `PRODUCT_PROFILE_PROMPT_SET_VERSION` does not move.
+ * keeps its exact 0.3.1 bytes. The current prompt intentionally moves to carry
+ * an output locale and therefore has its own prompt version.
  *
  * The digests were captured from the implementation BEFORE the fix and are
  * hardcoded rather than derived, so the assertion cannot re-learn whatever the
@@ -1809,7 +1912,10 @@ describe("well-formed product-profile prompts stay byte-identical", () => {
   }
 
   it("keeps the baseline fixture's exact bytes", async () => {
-    expect(digest(await outgoingUserMessage(input()))).toBe(
+    expect(digest(await outgoingUserMessage(
+      input(),
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+    ))).toBe(
       PRE_FIX_SHA256.baseline,
     );
   });
@@ -1827,6 +1933,7 @@ describe("well-formed product-profile prompts stay byte-identical", () => {
           }),
         ],
       }),
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
     );
     expect(digest(user)).toBe(PRE_FIX_SHA256["multi-page"]);
   });
@@ -1843,6 +1950,7 @@ describe("well-formed product-profile prompts stay byte-identical", () => {
           }),
         ],
       }),
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
     );
     expect(digest(user)).toBe(PRE_FIX_SHA256["urls-with-query-strings"]);
   });
@@ -1850,7 +1958,10 @@ describe("well-formed product-profile prompts stay byte-identical", () => {
   it.each(WELL_FORMED_TEXTS)(
     "keeps the exact bytes of a well-formed %s payload",
     async (name, text) => {
-      expect(digest(await outgoingUserMessage(fixture(text)))).toBe(
+      expect(digest(await outgoingUserMessage(
+        fixture(text),
+        PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+      ))).toBe(
         PRE_FIX_SHA256[name],
       );
     },
@@ -1859,7 +1970,10 @@ describe("well-formed product-profile prompts stay byte-identical", () => {
   it("names the one well-formed class that DOES move: redactText's 4096-byte gate", async () => {
     // Raw UTF-8 is 4107 bytes (over the gate); collapsed and trimmed it is 4095.
     const straddler = `${"汉".repeat(1_365)}${" ".repeat(12)}`;
-    const user = await outgoingUserMessage(fixture(straddler));
+    const user = await outgoingUserMessage(
+      fixture(straddler),
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+    );
 
     // Before the fix the model was handed the literal sentinel; now it is
     // handed the crawled page's real text. Strictly better, and not a no-op.

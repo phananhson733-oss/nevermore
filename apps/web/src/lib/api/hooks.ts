@@ -11,6 +11,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseMutationResult,
   type UseQueryOptions,
   type UseQueryResult,
@@ -159,6 +160,37 @@ export function useCreateProject(): UseMutationResult<
       return res.data;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+/** Archive one product through the idempotent project DELETE endpoint. */
+export async function deleteProjectRequest(projectId: string): Promise<void> {
+  await apiSend<void>("DELETE", `/projects/${projectId}`);
+}
+
+/**
+ * Remove every query whose key is scoped to the deleted project, while keeping
+ * other products warm. Project lists are invalidated so the archived row
+ * disappears from all active switchers.
+ */
+export async function removeDeletedProjectQueries(
+  queryClient: QueryClient,
+  projectId: string,
+): Promise<void> {
+  queryClient.removeQueries({
+    predicate: (query) => query.queryKey.includes(projectId),
+  });
+  await queryClient.invalidateQueries({ queryKey: ["projects"] });
+}
+
+/** Archive a product and clean its browser cache after the server commits. */
+export function useDeleteProject(
+  projectId: string,
+): UseMutationResult<void, ApiError, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => deleteProjectRequest(projectId),
+    onSuccess: () => removeDeletedProjectQueries(queryClient, projectId),
   });
 }
 

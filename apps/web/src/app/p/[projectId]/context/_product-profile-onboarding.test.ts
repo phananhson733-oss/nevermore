@@ -72,6 +72,16 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(source).toContain("setSynthesisRunId(activeRunId)");
   });
 
+  it("sends a confirmed profile to Sources with one automatic refresh intent", () => {
+    const source = readFileSync(
+      new URL("./_product-profile.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain(
+      "router.push(automaticAnalysisRefreshUrl(projectId))",
+    );
+  });
+
   it("renders approved terminal failure copy from run.lastError without echoing its summary", () => {
     const source = readFileSync(
       new URL("./_product-profile.tsx", import.meta.url),

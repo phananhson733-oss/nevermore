@@ -3,6 +3,7 @@
     "overview": "概览",
     "context": "背景",
     "sources": "数据源",
+    "settings": "设置",
     "diagnosis": "诊断",
     "growthMap": "增长地图",
     "execution": "执行中心",
@@ -211,7 +212,7 @@
     },
     "nextStep": {
       "title": "下一步：自动生成初始产品画像",
-      "detail": "创建后系统会采集网站并生成可审核的 ICP 与竞品候选；你可以逐项修改，再连接 GSC、GA4 与 DataForSEO。"
+      "detail": "创建后系统会采集网站并生成可审核的 ICP 与竞品候选；确认画像后会自动采集关键词与竞品数据，GSC、GA4 可按需另行连接。"
     },
     "createButton": "创建并生成初始画像",
     "creating": "正在创建产品…",
@@ -832,6 +833,24 @@
     "skipToContent": "跳到主内容",
     "projectSections": "项目分区",
     "breadcrumb": "面包屑导航"
+  },
+  "projectSettings": {
+    "eyebrow": "产品管理",
+    "title": "产品设置",
+    "subtitle": "管理当前产品的工作区生命周期与历史记录。",
+    "dangerZone": "危险操作",
+    "delete": {
+      "title": "删除产品",
+      "description": "将此产品移出活跃工作区，并停止后续采集、诊断与交付任务。",
+      "retention": "历史证据和已生成内容会作为只读审计记录保留；目前无法撤销此操作。",
+      "action": "删除产品",
+      "confirmTitle": "确认删除这个产品？",
+      "confirmDescription": "删除成功后会立即返回“添加产品”页面。",
+      "cancel": "保留产品",
+      "confirmAction": "确认删除",
+      "deleting": "正在删除…",
+      "error": "产品删除失败，现有数据没有改变，请重试。"
+    }
   },
   "contextStatus": {
     "missing": "未开始",

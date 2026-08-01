@@ -239,7 +239,7 @@ assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
 const operations = extractOpenApiOperations(openapi);
 exactSet(operations, lock.apiOperations, "OpenAPI operations");
-assert.equal(operations.length, 78, "v0.4 must freeze 78 OpenAPI operations");
+assert.equal(operations.length, 79, "v0.4 must freeze 79 OpenAPI operations");
 exactSet(
   lock.asyncOperations,
   [

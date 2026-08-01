@@ -105,6 +105,7 @@ describe("POST Product Profile synthesis async contract", () => {
           headers: {
             "Content-Type": "application/json",
             "Idempotency-Key": "profile-synthesis-route-key",
+            Cookie: "sf_ui_locale=zh-CN",
             Origin: "http://localhost",
             "X-Request-Id": "request-profile-synthesis",
           },
@@ -142,6 +143,7 @@ describe("POST Product Profile synthesis async contract", () => {
       "00000000-0000-4000-8000-000000000001",
       "profile-synthesis-route-key",
       { baseVersion: 1 },
+      { outputLocale: "zh-CN" },
     );
   });
 

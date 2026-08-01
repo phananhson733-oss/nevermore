@@ -381,6 +381,7 @@ describe("Product Profile frozen synthesis manifest", () => {
       projectId,
       siteId,
       sourcePageUrl,
+      outputLocale: "zh-CN",
       baseProfile: persistedProfile,
       crawlSnapshot: { ...snapshot, availability: "partial" as const },
       pages: [sourcePage],
@@ -392,6 +393,7 @@ describe("Product Profile frozen synthesis manifest", () => {
       projectId,
       siteId,
       sourcePageUrl,
+      outputLocale: "zh-CN",
       baseProfile: {
         id: profileId,
         version: 1,
@@ -437,6 +439,7 @@ describe("Product Profile frozen synthesis manifest", () => {
       projectId,
       siteId,
       sourcePageUrl,
+      outputLocale: "en",
       baseProfile: persistedProfile,
       crawlSnapshot: {
         ...snapshot,
@@ -514,6 +517,7 @@ describe("createProductProfileSynthesisRun", () => {
       requestPayload: {
         baseVersion: 1,
         sourceSnapshotId: snapshotId,
+        outputLocale: "en",
         inputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       },
     });

@@ -55,6 +55,9 @@ describe("customer-visible primary navigation", () => {
     expect(currentProjectPageLabelKey("/p/project-1/sources", "project-1")).toBe(
       "sources",
     );
+    expect(
+      currentProjectPageLabelKey("/p/project-1/settings", "project-1"),
+    ).toBe("settings");
   });
 
   it("uses the approved Chinese-first and English labels", () => {

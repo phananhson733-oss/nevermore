@@ -105,6 +105,25 @@ paths:
               schema: { $ref: '#/components/schemas/ProjectResponse' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Projects]
+      summary: Remove a product from the active workspace while preserving its history
+      description: |
+        Soft-deletes the project by archiving it. The product disappears from
+        active project lists and all future writes remain fenced, while its
+        immutable evidence and delivery history are retained for audit.
+        Repeating the command for the same scoped archived project is idempotent.
+      operationId: deleteProject
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '204':
+          description: Product archived and removed from the active workspace.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
   /projects/{projectId}/context:
     get:

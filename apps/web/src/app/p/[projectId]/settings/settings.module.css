@@ -1,0 +1,143 @@
+.page {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: 44px 0 72px;
+}
+
+.header {
+  max-width: 680px;
+  margin-bottom: 30px;
+}
+
+.header h1 {
+  margin: 8px 0 10px;
+  font-family: var(--sf-font-display);
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--sf-fg);
+}
+
+.header > p:last-child {
+  margin: 0;
+  color: var(--sf-muted);
+  line-height: 1.65;
+}
+
+.dangerCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-lg);
+  background: color-mix(in srgb, var(--sf-coral-soft) 42%, var(--sf-surface));
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.dangerIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--sf-coral-text);
+  border-radius: 12px;
+  background: var(--sf-coral-soft);
+}
+
+.dangerBody h2 {
+  margin: 4px 0 10px;
+  font-family: var(--sf-font-display);
+  font-size: 1.55rem;
+  font-weight: 650;
+  color: var(--sf-fg);
+}
+
+.dangerBody > p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--sf-muted);
+  line-height: 1.65;
+}
+
+.sectionLabel {
+  font-size: var(--sf-text-xs);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--sf-coral-text) !important;
+}
+
+.retentionNote {
+  margin-top: 8px !important;
+  font-size: var(--sf-text-sm);
+}
+
+.deleteTrigger {
+  margin-top: 22px;
+  color: var(--sf-coral-text);
+  border-color: var(--sf-coral);
+}
+
+.confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 22px;
+  padding: 18px;
+  color: var(--sf-coral-text);
+  border: 1px solid var(--sf-coral);
+  border-radius: var(--sf-radius-md);
+  background: var(--sf-surface);
+}
+
+.confirmation strong {
+  color: var(--sf-fg);
+}
+
+.confirmation p {
+  margin: 4px 0 0;
+  color: var(--sf-muted);
+  line-height: 1.55;
+}
+
+.actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+button.deleteButton {
+  color: var(--sf-white);
+  background: var(--sf-coral-text);
+  border-color: var(--sf-coral-text);
+}
+
+button.deleteButton:hover:not(:disabled) {
+  background: var(--sf-coral);
+  border-color: var(--sf-coral);
+}
+
+.error {
+  margin-top: 16px !important;
+  font-weight: 700;
+  color: var(--sf-coral-text) !important;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 28px 0 48px;
+  }
+
+  .dangerCard {
+    grid-template-columns: 1fr;
+    padding: 22px;
+  }
+
+  .confirmation {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}

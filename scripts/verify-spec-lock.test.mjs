@@ -113,7 +113,7 @@ function hashMap(root, base, paths) {
 
 function fixtureOpenApi() {
   const remaining = Array.from(
-    { length: 78 - ASYNC_OPERATIONS.length },
+    { length: 79 - ASYNC_OPERATIONS.length },
     (_, index) => `fixtureOperation${String(index + 1).padStart(2, "0")}`,
   );
   return [
@@ -302,7 +302,7 @@ function runVerifier(fixture, extra = []) {
 
 test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeIndex.active.version, "0.4.0");
-  assert.equal(activeLock.apiOperations.length, 78);
+  assert.equal(activeLock.apiOperations.length, 79);
   assert.equal(activeLock.asyncOperations.length, 10);
   assert.equal(activeLock.tables.length, 78);
   assert.equal(activeLock.rules.length, 11);

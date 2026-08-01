@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES,
   PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_VERSION,
   ProductProfileSynthesisInputManifest,
@@ -52,6 +53,7 @@ function manifest(pageCount = 2) {
     projectId: ids.project,
     siteId: ids.site,
     sourcePageUrl: SOURCE_PAGE_URL,
+    outputLocale: "zh-CN",
     baseProfile: {
       id: ids.baseProfile,
       version: 3,
@@ -79,7 +81,7 @@ function manifest(pageCount = 2) {
 describe("ProductProfileSynthesisInputManifest", () => {
   it("pins all public protocol versions and accepts an exact frozen manifest", () => {
     expect(PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION).toBe(
-      "product-profile-synthesis-input.0.3.0",
+      "product-profile-synthesis-input.0.3.1",
     );
     expect(PRODUCT_PROFILE_SELECTION_POLICY_VERSION).toBe(
       "product-profile-page-selection.0.3.0",
@@ -91,6 +93,42 @@ describe("ProductProfileSynthesisInputManifest", () => {
     expect(ProductProfileSynthesisInputManifest.parse(manifest())).toEqual(
       manifest(),
     );
+  });
+
+  it("requires a frozen BCP-47 output locale", () => {
+    const valid = manifest();
+    const { outputLocale: _outputLocale, ...missing } = valid;
+
+    expect(
+      ProductProfileSynthesisInputManifest.safeParse(missing).success,
+    ).toBe(false);
+    expect(
+      ProductProfileSynthesisInputManifest.safeParse({
+        ...valid,
+        outputLocale: "not_a_locale",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("continues to parse frozen legacy manifests without adding locale data", () => {
+    const current = manifest();
+    const {
+      outputLocale: _outputLocale,
+      schemaVersion: _schemaVersion,
+      ...shared
+    } = current;
+    const legacy = {
+      ...shared,
+      schemaVersion: PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+    } as const;
+
+    expect(ProductProfileSynthesisInputManifest.parse(legacy)).toEqual(legacy);
+    expect(
+      ProductProfileSynthesisInputManifest.safeParse({
+        ...legacy,
+        outputLocale: "en",
+      }).success,
+    ).toBe(false);
   });
 
   it("freezes only a draft base profile and rejects a confirmed profile", () => {

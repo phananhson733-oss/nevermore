@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { IsoDateTime, Uuid } from "./common.ts";
+import { Bcp47Locale, IsoDateTime, Uuid } from "./common.ts";
 import { ProductProfileProductUrl } from "./projects.ts";
 
-export const PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION =
+export const PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION =
   "product-profile-synthesis-input.0.3.0" as const;
+export const PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION =
+  "product-profile-synthesis-input.0.3.1" as const;
 export const PRODUCT_PROFILE_SELECTION_POLICY_VERSION =
   "product-profile-page-selection.0.3.0" as const;
 export const PRODUCT_PROFILE_SYNTHESIS_VERSION =
@@ -61,25 +63,41 @@ export type ProductProfileSynthesisPage = z.infer<
   typeof ProductProfileSynthesisPage
 >;
 
-const ProductProfileSynthesisInputManifestObject = z
-  .object({
-    schemaVersion: z.literal(
-      PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
-    ),
-    selectionPolicyVersion: z.literal(
-      PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
-    ),
-    projectId: Uuid,
-    siteId: Uuid,
-    sourcePageUrl: ProductProfileProductUrl,
-    baseProfile: ProductProfileSynthesisBaseProfile,
-    crawlSnapshot: ProductProfileSynthesisCrawlSnapshot,
-    pages: z
-      .array(ProductProfileSynthesisPage)
-      .min(1)
-      .max(MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES),
-  })
-  .strict();
+const ProductProfileSynthesisInputManifestShape = {
+  selectionPolicyVersion: z.literal(PRODUCT_PROFILE_SELECTION_POLICY_VERSION),
+  projectId: Uuid,
+  siteId: Uuid,
+  sourcePageUrl: ProductProfileProductUrl,
+  baseProfile: ProductProfileSynthesisBaseProfile,
+  crawlSnapshot: ProductProfileSynthesisCrawlSnapshot,
+  pages: z
+    .array(ProductProfileSynthesisPage)
+    .min(1)
+    .max(MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES),
+} as const;
+
+const ProductProfileSynthesisInputManifestObject = z.discriminatedUnion(
+  "schemaVersion",
+  [
+    z
+      .object({
+        schemaVersion: z.literal(
+          PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+        ),
+        ...ProductProfileSynthesisInputManifestShape,
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(
+          PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
+        ),
+        outputLocale: Bcp47Locale,
+        ...ProductProfileSynthesisInputManifestShape,
+      })
+      .strict(),
+  ],
+);
 
 function addDuplicateIssue(
   values: readonly string[],

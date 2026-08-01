@@ -29,6 +29,7 @@ import {
   MAX_PRODUCT_PROFILE_HEADINGS,
   MAX_PRODUCT_PROFILE_JSON_LD_TYPES,
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
+  PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   prepareProductProfileSynthesis,
@@ -45,6 +46,8 @@ import {
 } from "@sf/artifacts";
 import {
   ProductProfileDraft,
+  PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
   ProductProfileSynthesisInputManifest,
   PRODUCT_PROFILE_SYNTHESIS_VERSION,
   type ProductProfileSynthesisPage,
@@ -106,6 +109,7 @@ function productProfilePromptSetVersion(
 ): ProductProfilePromptSetVersion {
   if (
     value === PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION ||
+    value === PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION ||
     value === PRODUCT_PROFILE_PROMPT_SET_VERSION
   ) {
     return value;
@@ -239,6 +243,8 @@ function validateLedger(
     ledger.synthesis_version !== PRODUCT_PROFILE_SYNTHESIS_VERSION ||
     (ledger.prompt_set_version !==
       PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION &&
+      ledger.prompt_set_version !==
+        PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION &&
       ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION) ||
     ledger.result_icp_profile_id !== null ||
     !SHA256_HEX.test(ledger.input_hash) ||
@@ -252,7 +258,15 @@ function validateLedger(
   );
   if (!parsed.success) invalidInput();
   const manifest = parsed.data;
+  const versionPairIsValid =
+    (ledger.prompt_set_version === PRODUCT_PROFILE_PROMPT_SET_VERSION &&
+      manifest.schemaVersion ===
+        PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION) ||
+    (ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION &&
+      manifest.schemaVersion ===
+        PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION);
   if (
+    !versionPairIsValid ||
     manifest.baseProfile.status !== "draft" ||
     manifest.projectId !== scope.projectId ||
     manifest.siteId !== ledger.site_id ||
@@ -913,11 +927,15 @@ export async function runProductProfileSynthesis(
     frozen.ledger.prompt_set_version,
   );
   const declaredContext =
-    promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION
+    promptSetVersion !== PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION
       ? buildProductProfileDeclaredContext(frozen.base)
       : undefined;
   const providerInput: ProductProfileSynthesisInput = {
     sourcePageUrl: frozen.manifest.sourcePageUrl,
+    ...(promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION &&
+    frozen.manifest.schemaVersion === PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION
+      ? { outputLocale: frozen.manifest.outputLocale }
+      : {}),
     ...(frozen.base.businessHint === null
       ? {}
       : { businessHint: frozen.base.businessHint }),

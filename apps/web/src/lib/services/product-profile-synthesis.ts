@@ -16,6 +16,7 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import {
+  Bcp47Locale,
   CONTRACT_VERSION,
   MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES,
   PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
@@ -91,6 +92,10 @@ export interface ProductProfileSynthesisAcceptedResult {
   readonly resourceRef: { type: "product_profile_run"; id: string };
   readonly location: string;
   readonly replayed: boolean;
+}
+
+export interface ProductProfileSynthesisCommandContext {
+  readonly outputLocale?: string;
 }
 
 function crawlSnapshotRequired(): never {
@@ -261,6 +266,7 @@ export function buildProductProfileSynthesisFrozenInput(input: {
   readonly projectId: string;
   readonly siteId: string;
   readonly sourcePageUrl: string;
+  readonly outputLocale: string;
   readonly baseProfile: ProductProfileSynthesisBaseRow;
   readonly crawlSnapshot: ProductProfileSynthesisSnapshotRow;
   readonly pages: readonly ProductProfileSynthesisPageRow[];
@@ -274,6 +280,7 @@ export function buildProductProfileSynthesisFrozenInput(input: {
     projectId: input.projectId,
     siteId: input.siteId,
     sourcePageUrl: input.sourcePageUrl,
+    outputLocale: input.outputLocale,
     baseProfile: {
       id: input.baseProfile.id,
       version: input.baseProfile.version,
@@ -377,8 +384,12 @@ export async function createProductProfileSynthesisRun(
   actorId: string,
   idempotencyKey: string,
   body: CreateProductProfileSynthesisRunRequest,
+  commandContext: ProductProfileSynthesisCommandContext = {},
 ): Promise<ProductProfileSynthesisAcceptedResult> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
+  const outputLocale = Bcp47Locale.parse(
+    commandContext.outputLocale ?? "en",
+  );
   const { db } = getDb();
   const requestHash = contentHash({ projectId, baseVersion: body.baseVersion });
   const idem = new IdempotencyRepository(db);
@@ -563,6 +574,7 @@ export async function createProductProfileSynthesisRun(
         projectId,
         siteId: primarySite.id,
         sourcePageUrl: parsedProfile.data.sourcePageUrl,
+        outputLocale,
         baseProfile,
         crawlSnapshot,
         pages: selectedPages,
@@ -579,6 +591,7 @@ export async function createProductProfileSynthesisRun(
         requestPayload: {
           baseVersion: body.baseVersion,
           sourceSnapshotId: crawlSnapshot.id,
+          outputLocale,
           inputHash: frozen.inputHash,
         },
       });

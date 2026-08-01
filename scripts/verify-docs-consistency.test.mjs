@@ -130,7 +130,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
     specLock.tables.length,
     specLock.rules.length,
   ];
-  assert.deepEqual(expected, [78, 10, 78, 11]);
+  assert.deepEqual(expected, [79, 10, 78, 11]);
   for (const path of [
     "README.md",
     "CLAUDE.md",

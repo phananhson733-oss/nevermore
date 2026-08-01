@@ -1,4 +1,5 @@
 import { CreateProjectWireRequest, Cursor } from "@sf/contracts";
+import { resolveUiLocale, UI_LOCALE_COOKIE } from "@sf/i18n";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
 import {
@@ -38,6 +39,12 @@ export const POST = operatorRoute(async (request, ctx) => {
     ctx.operator.userId,
     idempotencyKey,
     body,
+    undefined,
+    {
+      defaultDeliveryLocale: resolveUiLocale(
+        request.cookies.get(UI_LOCALE_COOKIE)?.value,
+      ),
+    },
   );
   return ok(result.project, ctx.requestId, {
     status: result.status,
