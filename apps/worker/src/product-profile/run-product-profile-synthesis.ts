@@ -6,6 +6,7 @@ import {
   DataSnapshotsRepository,
   IcpProfilesRepository,
   normalizedUrlHash,
+  ObservationsRepository,
   PageSnapshotsRepository,
   ProductProfileInvocationAttemptsRepository,
   ProductProfileRunsRepository,
@@ -24,6 +25,7 @@ import {
 import {
   buildProductProfileDraft,
   createOpenAIProductProfileClient,
+  discoverProductProfileCompetitors,
   LLMError,
   MAX_PRODUCT_PROFILE_H1,
   MAX_PRODUCT_PROFILE_HEADINGS,
@@ -31,12 +33,14 @@ import {
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
   PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   prepareProductProfileSynthesis,
   productProfilePageKeyForIndex,
   type AnalysisInvocationRecord,
   type ProductProfileClientOptions,
   type ProductProfileDeclaredContext,
+  type ProductProfileDiscoveredCompetitor,
   type ProductProfilePageDescriptor,
   type ProductProfilePageKeyMapEntry,
   type ProductProfilePromptSetVersion,
@@ -47,12 +51,20 @@ import {
 import {
   ProductProfileDraft,
   PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
   ProductProfileSynthesisInputManifest,
   PRODUCT_PROFILE_SYNTHESIS_VERSION,
+  type ProductProfileSynthesisCompetitorDiscovery,
   type ProductProfileSynthesisPage,
 } from "@sf/contracts";
-import type { CrawlPageProjection } from "@sf/sources";
+import {
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  parseDataForSeoSearchLandscapeScope,
+  type CrawlPageProjection,
+} from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
   isTransientInfrastructureError,
@@ -110,6 +122,7 @@ function productProfilePromptSetVersion(
   if (
     value === PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION ||
     value === PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION ||
+    value === PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION ||
     value === PRODUCT_PROFILE_PROMPT_SET_VERSION
   ) {
     return value;
@@ -127,6 +140,7 @@ interface FrozenSynthesisInput {
   readonly base: ProductProfileDraft;
   readonly snapshot: DataSnapshotRow;
   readonly descriptors: readonly ProductProfilePageDescriptor[];
+  readonly discoveredCompetitors: readonly ProductProfileDiscoveredCompetitor[];
 }
 
 class ProductProfileInputError extends Error {
@@ -241,11 +255,12 @@ function validateLedger(
     ledger.id !== runId ||
     !sameScope(ledger, scope) ||
     ledger.synthesis_version !== PRODUCT_PROFILE_SYNTHESIS_VERSION ||
-    (ledger.prompt_set_version !==
-      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION &&
-      ledger.prompt_set_version !==
-        PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION &&
-      ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION) ||
+    ![
+      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+      PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+      PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+      PRODUCT_PROFILE_PROMPT_SET_VERSION,
+    ].includes(ledger.prompt_set_version as ProductProfilePromptSetVersion) ||
     ledger.result_icp_profile_id !== null ||
     !SHA256_HEX.test(ledger.input_hash) ||
     contentHash(ledger.input_manifest as CanonicalValue) !== ledger.input_hash
@@ -262,7 +277,14 @@ function validateLedger(
     (ledger.prompt_set_version === PRODUCT_PROFILE_PROMPT_SET_VERSION &&
       manifest.schemaVersion ===
         PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION) ||
-    (ledger.prompt_set_version !== PRODUCT_PROFILE_PROMPT_SET_VERSION &&
+    (ledger.prompt_set_version ===
+      PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION &&
+      manifest.schemaVersion ===
+        PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION) ||
+    ((ledger.prompt_set_version ===
+      PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION ||
+      ledger.prompt_set_version ===
+        PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION) &&
       manifest.schemaVersion ===
         PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION);
   if (
@@ -465,6 +487,143 @@ function validatePages(
   return descriptors;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function validateCompetitorDiscoveryObservation(
+  scope: ProjectScope,
+  snapshot: DataSnapshotRow,
+  frozen: ProductProfileSynthesisCompetitorDiscovery["observations"][number],
+  row: Awaited<
+    ReturnType<ObservationsRepository["listBySnapshotIds"]>
+  >[number] | undefined,
+): void {
+  const value = objectRecord(row?.value_json);
+  const expectedKeys = [
+    "targetDomain",
+    "competitorDomain",
+    "intersections",
+    "averagePosition",
+    "summedPosition",
+    "organicEstimatedTrafficVolume",
+    "marketCode",
+    "languageCode",
+  ];
+  if (
+    row === undefined ||
+    value === null ||
+    Object.keys(value).length !== expectedKeys.length ||
+    expectedKeys.some((key) => !Object.hasOwn(value, key)) ||
+    !sameScope(row, scope) ||
+    row.id !== frozen.observationId ||
+    row.snapshot_id !== snapshot.id ||
+    row.site_page_id !== null ||
+    row.provider !== "dataforseo" ||
+    row.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN ||
+    row.subject_type !== "site" ||
+    row.subject_ref !== frozen.domain ||
+    !sameTimestamptzInstant(row.observed_at, frozen.observedAt) ||
+    row.availability !== "available" ||
+    row.value_numeric !== null ||
+    row.value_text !== null ||
+    row.unit !== null ||
+    row.origin !== "vendor_observation" ||
+    row.method !== "observed" ||
+    row.grade !== "B" ||
+    row.support !== "supports" ||
+    value["competitorDomain"] !== frozen.domain ||
+    value["intersections"] !== frozen.intersections ||
+    value["organicEstimatedTrafficVolume"] !==
+      frozen.organicEstimatedTrafficVolume ||
+    typeof value["averagePosition"] !== "number" ||
+    !Number.isFinite(value["averagePosition"]) ||
+    value["averagePosition"] < 0 ||
+    typeof value["summedPosition"] !== "number" ||
+    !Number.isFinite(value["summedPosition"]) ||
+    value["summedPosition"] < 0
+  ) {
+    invalidInput();
+  }
+}
+
+function validateCompetitorDiscovery(
+  scope: ProjectScope,
+  siteId: string,
+  frozen: ProductProfileSynthesisCompetitorDiscovery,
+  snapshot: DataSnapshotRow | null,
+  observations: Awaited<
+    ReturnType<ObservationsRepository["listBySnapshotIds"]>
+  >,
+  outputLocale: string,
+): readonly ProductProfileDiscoveredCompetitor[] {
+  let collectionScope: ReturnType<
+    typeof parseDataForSeoSearchLandscapeScope
+  >;
+  try {
+    collectionScope = parseDataForSeoSearchLandscapeScope(
+      snapshot?.summary["collectionScope"],
+    );
+  } catch {
+    invalidInput();
+  }
+  if (
+    snapshot === null ||
+    !sameScope(snapshot, scope) ||
+    snapshot.id !== frozen.snapshotId ||
+    snapshot.site_id !== siteId ||
+    snapshot.collection_run_id !== frozen.collectionRunId ||
+    snapshot.source_connection_id !== frozen.sourceConnectionId ||
+    snapshot.provider !== "dataforseo" ||
+    snapshot.dataset_key !== DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
+    snapshot.dataset_key !== frozen.datasetKey ||
+    snapshot.schema_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.schema_version !== frozen.schemaVersion ||
+    snapshot.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.method_version !== frozen.methodVersion ||
+    !sameTimestamptzInstant(snapshot.captured_at, frozen.capturedAt) ||
+    snapshot.checksum !== frozen.checksum ||
+    snapshot.availability !== frozen.availability ||
+    snapshot.row_count !== frozen.rowCount ||
+    snapshot.limitation !== frozen.limitation ||
+    collectionScope.target !== frozen.targetDomain ||
+    collectionScope.marketCode !== frozen.marketCode ||
+    collectionScope.providerLanguageCode !== frozen.languageCode
+  ) {
+    invalidInput();
+  }
+  const competitorRows = observations.filter(
+    (row) => row.metric_key === METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  );
+  const rowsById = new Map(competitorRows.map((row) => [row.id, row]));
+  for (const observation of frozen.observations) {
+    validateCompetitorDiscoveryObservation(
+      scope,
+      snapshot,
+      observation,
+      rowsById.get(observation.observationId),
+    );
+    const value = objectRecord(
+      rowsById.get(observation.observationId)?.value_json,
+    );
+    if (
+      value?.["targetDomain"] !== collectionScope.target ||
+      value?.["marketCode"] !== collectionScope.marketCode ||
+      value?.["languageCode"] !== collectionScope.providerLanguageCode
+    ) {
+      invalidInput();
+    }
+  }
+  return discoverProductProfileCompetitors({
+    targetDomain: frozen.targetDomain,
+    marketCode: frozen.marketCode,
+    outputLocale,
+    observations: frozen.observations,
+  });
+}
+
 async function loadFrozenSynthesisInput(
   ctx: WorkerContext,
   scope: ProjectScope,
@@ -505,12 +664,36 @@ async function loadFrozenSynthesisInput(
     ledgerResult.manifest,
     pageRows,
   );
+  let discoveredCompetitors: readonly ProductProfileDiscoveredCompetitor[] = [];
+  if (
+    ledgerResult.manifest.schemaVersion ===
+      PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION &&
+    ledgerResult.manifest.competitorDiscovery !== null
+  ) {
+    const frozenDiscovery = ledgerResult.manifest.competitorDiscovery;
+    const discoverySnapshot = await new DataSnapshotsRepository(ctx.db).findById(
+      scope,
+      frozenDiscovery.snapshotId,
+    );
+    const discoveryObservations = await new ObservationsRepository(
+      ctx.db,
+    ).listBySnapshotIds(scope, [frozenDiscovery.snapshotId]);
+    discoveredCompetitors = validateCompetitorDiscovery(
+      scope,
+      ledgerResult.ledger.site_id,
+      frozenDiscovery,
+      discoverySnapshot,
+      discoveryObservations,
+      ledgerResult.manifest.outputLocale,
+    );
+  }
   return {
     ledger: ledgerResult.ledger,
     manifest: ledgerResult.manifest,
     base: baseResult.profile,
     snapshot,
     descriptors,
+    discoveredCompetitors,
   };
 }
 
@@ -932,8 +1115,12 @@ export async function runProductProfileSynthesis(
       : undefined;
   const providerInput: ProductProfileSynthesisInput = {
     sourcePageUrl: frozen.manifest.sourcePageUrl,
-    ...(promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION &&
-    frozen.manifest.schemaVersion === PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION
+    ...((promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION ||
+      promptSetVersion === PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION) &&
+    (frozen.manifest.schemaVersion ===
+      PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION ||
+      frozen.manifest.schemaVersion ===
+        PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION)
       ? { outputLocale: frozen.manifest.outputLocale }
       : {}),
     ...(frozen.base.businessHint === null
@@ -1151,6 +1338,7 @@ export async function runProductProfileSynthesis(
       analysisInvocationId: invocationId,
       generatedAt: now.toISOString(),
       pageEvidence,
+      discoveredCompetitors: frozen.discoveredCompetitors,
     });
   } catch (error) {
     await terminalizeFailure(ctx, attempt, stableErrorCode(error));

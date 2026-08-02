@@ -17,6 +17,7 @@ describe("Product Profile automatic onboarding guard", () => {
     hasSynthesisAttemptForCurrentDraft: false,
     activeSynthesisRunId: null,
     crawlRunId: "",
+    discoveryRunId: "",
   };
 
   it("offers exactly one key for an ungenerated idle draft", () => {
@@ -44,6 +45,12 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(
       automaticSynthesisKey({
         ...draft,
+        discoveryRunId: "00000000-0000-4000-8000-000000000004",
+      }),
+    ).toBeNull();
+    expect(
+      automaticSynthesisKey({
+        ...draft,
         generatedAt: "2026-07-30T00:00:00.000Z",
       }),
     ).toBeNull();
@@ -59,6 +66,7 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(shouldStartCrawlForMissingSnapshot("initial")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("manual")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("after_crawl")).toBe(false);
+    expect(shouldStartCrawlForMissingSnapshot("after_discovery")).toBe(false);
   });
 
   it("wires terminal Crawl success to synthesis and active-run adoption", () => {
@@ -69,6 +77,9 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(source).toContain('startSynthesis(row.version, "after_crawl")');
     expect(source).toContain("activeProjectRunIdFromError(error, projectId)");
     expect(source).toContain('startSynthesis(row.version, "initial")');
+    expect(source).toContain(
+      'startSynthesis(row.version, "after_discovery")',
+    );
     expect(source).toContain("setSynthesisRunId(activeRunId)");
   });
 

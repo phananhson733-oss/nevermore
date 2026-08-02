@@ -8,6 +8,7 @@ import {
 } from "@sf/db";
 import {
   AsyncRunsRepository,
+  CollectionRunsRepository,
   DataSnapshotsRepository,
   IcpProfilesRepository,
   IdempotencyRepository,
@@ -15,6 +16,7 @@ import {
   ProductProfileRunsRepository,
   ProjectsRepository,
   SitesRepository,
+  SourceConnectionsRepository,
 } from "@sf/db";
 import {
   createInitialProductProfileDraft,
@@ -236,6 +238,10 @@ function arrangeAccepted(
     overrides.snapshot === undefined ? snapshot : overrides.snapshot,
   );
   vi.spyOn(
+    DataSnapshotsRepository.prototype,
+    "findLatestEligibleBySite",
+  ).mockResolvedValue([]);
+  vi.spyOn(
     PageSnapshotsRepository.prototype,
     "listByDataSnapshotWithSitePageIdentity",
   ).mockResolvedValue(overrides.pages ?? [sourcePage]);
@@ -266,6 +272,7 @@ describe("Product Profile synthesis page selection", () => {
       pageRow(10, "https://relayops.com/integrations/"),
       pageRow(9, "https://relayops.com/pricing/"),
       pageRow(8, "https://relayops.com/use-cases/"),
+      pageRow(15, "https://relayops.com/compare/rival/"),
       pageRow(7, "https://relayops.com/solutions/"),
       pageRow(6, "https://relayops.com/features/"),
       pageRow(5, "https://relayops.com/products/"),
@@ -289,11 +296,11 @@ describe("Product Profile synthesis page selection", () => {
       "https://relayops.com/features/",
       "https://relayops.com/solutions/",
       "https://relayops.com/use-cases/",
+      "https://relayops.com/compare/rival/",
       "https://relayops.com/pricing/",
       "https://relayops.com/integrations/",
       "https://relayops.com/about/",
       "https://relayops.com/company/",
-      "https://relayops.com/a-first/",
     ]);
 
     const repeated = selectProductProfileSynthesisPages(
@@ -382,6 +389,7 @@ describe("Product Profile frozen synthesis manifest", () => {
       siteId,
       sourcePageUrl,
       outputLocale: "zh-CN",
+      competitorDiscovery: null,
       baseProfile: persistedProfile,
       crawlSnapshot: { ...snapshot, availability: "partial" as const },
       pages: [sourcePage],
@@ -394,6 +402,7 @@ describe("Product Profile frozen synthesis manifest", () => {
       siteId,
       sourcePageUrl,
       outputLocale: "zh-CN",
+      competitorDiscovery: null,
       baseProfile: {
         id: profileId,
         version: 1,
@@ -562,6 +571,80 @@ describe("createProductProfileSynthesisRun", () => {
         contractVersion: expect.any(String),
       },
     );
+  });
+
+  it("queues missing DataForSEO discovery for an existing product before synthesis", async () => {
+    const marketProfile = createInitialProductProfileDraft({
+      sourceSiteId: siteId,
+      sourcePageUrl,
+      businessHint: "Customer onboarding software for B2B SaaS teams.",
+      primaryMarket: "US",
+    });
+    arrangeAccepted({
+      profile: {
+        ...persistedProfile,
+        profile: marketProfile,
+        content_hash: contentHash({
+          status: "draft",
+          profile: marketProfile as unknown as CanonicalValue,
+        }),
+      },
+    });
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findConnectedByProviderForUpdate",
+    ).mockResolvedValue(null);
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "insertConnection",
+    ).mockResolvedValue({ id: uuid(810) } as never);
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "insertPlaceholder",
+    ).mockResolvedValue({ id: uuid(811) } as never);
+
+    await expect(
+      createProductProfileSynthesisRun(
+        { workspaceId },
+        projectId,
+        actorId,
+        "backfill-discovery",
+        { baseVersion: 1 },
+        {
+          outputLocale: "en",
+          dataForSeoDiscovery: {
+            enabled: true,
+            maxKeywords: 200,
+            maxCompetitors: 100,
+          },
+        } as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "RUN_ALREADY_ACTIVE",
+      status: 409,
+      current: {
+        activeKey: "collect:dataforseo:search_landscape",
+      },
+    });
+    expect(AsyncRunsRepository.prototype.insertQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "collection",
+        activeKey: "collect:dataforseo:search_landscape",
+        requestPayload: expect.objectContaining({
+          provider: "dataforseo",
+          operation: "search_landscape",
+        }),
+      }),
+    );
+    expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      mocks.tx,
+      "collect.dataforseo",
+      expect.objectContaining({ projectId }),
+    );
+    expect(
+      ProductProfileRunsRepository.prototype.insertPlaceholder,
+    ).not.toHaveBeenCalled();
   });
 
   it("replays a completed command before reading mutable project state", async () => {

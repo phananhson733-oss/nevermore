@@ -30,7 +30,6 @@ describe("mapProjectFieldErrors", () => {
     expect(
       mapProjectFieldErrors(
         [
-          { pointer: "/businessHint" },
           { pointer: "/productName" },
           { pointer: "/customerModel" },
           { pointer: "/primaryMarket" },
@@ -40,7 +39,6 @@ describe("mapProjectFieldErrors", () => {
       ),
     ).toEqual({
       fieldErrors: {
-        businessHint: "localized-create-error",
         productName: "localized-required",
         customerModel: "localized-required",
         primaryMarket: "localized-required",
@@ -69,7 +67,6 @@ const validValues: NewProductFormValues = {
   customerModel: "b2b",
   primaryMarket: "US",
   growthObjectives: ["increase_signups", "generate_qualified_leads"],
-  businessHint: "  Customer onboarding operations.  ",
 };
 
 describe("new product customer inputs", () => {
@@ -81,7 +78,6 @@ describe("new product customer inputs", () => {
         customerModel: "",
         primaryMarket: "",
         growthObjectives: [],
-        businessHint: "",
       }),
     ).toEqual({
       productName: "required",
@@ -112,7 +108,6 @@ describe("new product customer inputs", () => {
         "increase_signups",
         "generate_qualified_leads",
       ],
-      businessHint: "Customer onboarding operations.",
     });
   });
 });

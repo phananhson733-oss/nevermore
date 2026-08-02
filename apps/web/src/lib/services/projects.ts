@@ -1,5 +1,8 @@
 import {
+  AsyncRunsRepository,
+  CollectionRunsRepository,
   contentHash,
+  enqueueRunInTx,
   IcpProfilesRepository,
   IdempotencyRepository,
   ProjectsRepository,
@@ -17,6 +20,7 @@ import {
 } from "@sf/db";
 import {
   Bcp47Locale,
+  CONTRACT_VERSION,
   createInitialProductProfileDraft,
   type CreateProjectWireRequest,
   type LegacyCreateProjectWireRequest,
@@ -26,18 +30,29 @@ import { ProblemError } from "@sf/observability";
 import {
   canonicalUrlGuard,
   canonicalizeUrl,
+  createDataForSeoSearchLandscapeScope,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   normalizeSiteOrigin,
   normalizeUrl,
   probeSiteOrigin,
   type SiteOriginProbe,
   type UrlGuardResult,
 } from "@sf/sources";
+import { getEnv } from "@/env";
+import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
 import { toProjectDto, type ProjectDto } from "./mappers";
 
 const IDEMPOTENCY_SCOPE = "createProject";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const URL_FIRST_DEFAULT_DELIVERY_LOCALE = "en";
+const PRODUCT_PROFILE_DATAFORSEO_ACTIVE_KEY =
+  "collect:dataforseo:search_landscape";
+
+function dataForSeoLocationName(marketCode: string): string | null {
+  return new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ?? null;
+}
 
 /** Injectable URL guard so tests can drive SSRF cases without live DNS. */
 export type UrlGuard = (rawUrl: string) => Promise<UrlGuardResult>;
@@ -46,6 +61,11 @@ export interface CreateProjectRuntime {
   readonly environment?: string;
   readonly siteOriginProbe?: SiteOriginProbe;
   readonly defaultDeliveryLocale?: string;
+  readonly dataForSeoDiscovery?: {
+    readonly enabled: boolean;
+    readonly maxKeywords: number;
+    readonly maxCompetitors: number;
+  };
 }
 
 export interface CreateProjectResult {
@@ -279,6 +299,21 @@ export async function createProject(
   }
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
+  const dataForSeoDiscovery = productProfileMode
+    ? (runtime.dataForSeoDiscovery ??
+      (process.env["DATAFORSEO_ENABLED"] === "true"
+        ? {
+            enabled: getEnv().DATAFORSEO_ENABLED === "true",
+            maxKeywords: getEnv().DATAFORSEO_MAX_KEYWORDS,
+            maxCompetitors: getEnv().DATAFORSEO_MAX_COMPETITORS,
+          }
+        : { enabled: false, maxKeywords: 200, maxCompetitors: 100 }))
+    : null;
+  const discoveryEnabled =
+    productProfileMode &&
+    dataForSeoDiscovery?.enabled === true &&
+    body.primaryMarket !== undefined;
+  const discoveryBoss = discoveryEnabled ? await getBoss() : null;
 
   return db.transaction(async (tx) => {
     const txIdem = new IdempotencyRepository(tx);
@@ -354,6 +389,85 @@ export async function createProject(
       createdBy: actorId,
     });
 
+    let competitorDiscoveryQueued = false;
+    if (
+      discoveryEnabled &&
+      discoveryBoss &&
+      dataForSeoDiscovery &&
+      body.primaryMarket !== undefined
+    ) {
+      const locationName = dataForSeoLocationName(body.primaryMarket);
+      const collectionScope = locationName
+        ? createDataForSeoSearchLandscapeScope({
+            target: normalized.host,
+            marketCode: body.primaryMarket,
+            locationName,
+            languageTag: productProfileDeliveryLocale!,
+            rankedKeywordsLimit: dataForSeoDiscovery.maxKeywords,
+            competitorsDomainLimit: dataForSeoDiscovery.maxCompetitors,
+          })
+        : null;
+      if (collectionScope) {
+        const connection = await sources.insertConnection({
+          workspaceId: scope.workspaceId,
+          projectId: project.id,
+          siteId: site.id,
+          provider: "dataforseo",
+          connectionType: "api_key_stub",
+          state: "connected",
+          externalRef: collectionScope.target,
+          config: {
+            target: collectionScope.target,
+            marketCode: collectionScope.marketCode,
+            locationName,
+            languageCode: collectionScope.providerLanguageCode,
+            maxKeywords: collectionScope.rankedKeywords.limit,
+            maxCompetitors: collectionScope.competitorsDomain.limit,
+          },
+          limitation: `Initial DataForSEO competitor discovery for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; ranked keywords capped at ${collectionScope.rankedKeywords.limit} and competitor domains at ${collectionScope.competitorsDomain.limit}. Intersections are counts, not similarity percentages.`,
+          connectedAt: true,
+          createdBy: actorId,
+        });
+        const run = await new AsyncRunsRepository(tx).insertQueued({
+          workspaceId: scope.workspaceId,
+          projectId: project.id,
+          kind: "collection",
+          activeKey: PRODUCT_PROFILE_DATAFORSEO_ACTIVE_KEY,
+          initiatedBy: actorId,
+          contractVersion: CONTRACT_VERSION,
+          requestPayload: {
+            provider: "dataforseo",
+            operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+            sourceConnectionId: connection.id,
+            collectionScope,
+          },
+        });
+        await new CollectionRunsRepository(tx).insertPlaceholder({
+          runId: run.id,
+          workspaceId: scope.workspaceId,
+          projectId: project.id,
+          siteId: site.id,
+          sourceConnectionId: connection.id,
+          provider: "dataforseo",
+          operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+          parametersHash: contentHash({
+            provider: "dataforseo",
+            operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+            siteId: site.id,
+            collectionScope,
+          }),
+        });
+        await enqueueRunInTx(discoveryBoss, tx, "collect.dataforseo", {
+          runId: run.id,
+          workspaceId: scope.workspaceId,
+          projectId: project.id,
+          contractVersion: CONTRACT_VERSION,
+        });
+        competitorDiscoveryQueued = true;
+      }
+    }
+
     let initialProfile: IcpProfileRow | null = null;
     if (productProfileMode && canonicalProductPage) {
       // Product-page identity is a fetch identity, not an aggregation key.
@@ -428,6 +542,7 @@ export async function createProject(
           productProfileMode && body.growthObjectives !== undefined
             ? body.growthObjectives.length
             : 0,
+        competitorDiscoveryQueued,
       },
     });
 

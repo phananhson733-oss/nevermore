@@ -6,6 +6,7 @@ import {
   DataSnapshotsRepository,
   IcpProfilesRepository,
   normalizedUrlHash,
+  ObservationsRepository,
   PageSnapshotsRepository,
   ProductProfileInvocationAttemptsRepository,
   ProductProfileRunsRepository,
@@ -16,6 +17,7 @@ import {
   type CanonicalValue,
   type DataSnapshotRow,
   type IcpProfileRow,
+  type ObservationRow,
   type ProductProfileRunRow,
   type ProductProfileInvocationAttemptRow,
   type ProjectRow,
@@ -28,6 +30,7 @@ import {
   MAX_PRODUCT_PROFILE_PARAGRAPHS,
   PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   prepareProductProfileSynthesis,
   type AnalysisInvocationRecord,
@@ -38,13 +41,16 @@ import {
 } from "@sf/artifacts";
 import {
   createInitialProductProfileDraft,
+  PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
   PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+  PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_VERSION,
   type ProductProfileSynthesisInputManifest,
 } from "@sf/contracts";
 import type { Logger } from "@sf/observability";
+import { createDataForSeoSearchLandscapeScope } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
   buildBoundedProductProfilePageDescriptor,
@@ -66,6 +72,10 @@ const IDS = {
   invocation: "00000000-0000-4000-8000-000000000010",
   resultProfile: "00000000-0000-4000-8000-000000000011",
   actor: "00000000-0000-4000-8000-000000000012",
+  discoverySnapshot: "00000000-0000-4000-8000-000000000013",
+  discoverySource: "00000000-0000-4000-8000-000000000014",
+  discoveryCollectionRun: "00000000-0000-4000-8000-000000000015",
+  discoveryObservation: "00000000-0000-4000-8000-000000000016",
 } as const;
 const capturedAt = "2026-07-22T01:00:00.000Z";
 const generatedAt = "2026-07-22T02:00:00.000Z";
@@ -125,6 +135,7 @@ const manifest: ProductProfileSynthesisInputManifest = {
   siteId: IDS.site,
   sourcePageUrl,
   outputLocale: "zh-CN",
+  competitorDiscovery: null,
   baseProfile: {
     id: IDS.baseProfile,
     version: 1,
@@ -229,6 +240,66 @@ const snapshot = {
   summary: {},
   created_at: capturedAt,
 } satisfies DataSnapshotRow;
+const discoveryScope = createDataForSeoSearchLandscapeScope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "zh-CN",
+  rankedKeywordsLimit: 200,
+  competitorsDomainLimit: 100,
+});
+const discoverySnapshot = {
+  id: IDS.discoverySnapshot,
+  workspace_id: IDS.workspace,
+  project_id: IDS.project,
+  site_id: IDS.site,
+  collection_run_id: IDS.discoveryCollectionRun,
+  source_connection_id: IDS.discoverySource,
+  provider: "dataforseo",
+  dataset_key: "dataforseo.search_landscape.v1",
+  schema_version: "dataforseo.search_landscape.v1",
+  method_version: "dataforseo.search_landscape.v1",
+  captured_at: capturedAt,
+  source_window: { start: null, end: capturedAt },
+  availability: "available",
+  limitation: "Bounded US/zh search landscape.",
+  raw_object_key: "private/dataforseo.json",
+  row_count: 1,
+  checksum: "d".repeat(64),
+  summary: { collectionScope: discoveryScope },
+  created_at: capturedAt,
+} satisfies DataSnapshotRow;
+const discoveryObservation = {
+  id: IDS.discoveryObservation,
+  workspace_id: IDS.workspace,
+  project_id: IDS.project,
+  snapshot_id: IDS.discoverySnapshot,
+  site_page_id: null,
+  provider: "dataforseo",
+  metric_key: "dataforseo.competitor_domain.v1",
+  subject_type: "site",
+  subject_ref: "rival.example",
+  observed_at: capturedAt,
+  availability: "available",
+  value_numeric: null,
+  value_text: null,
+  value_json: {
+    targetDomain: "example.com",
+    competitorDomain: "rival.example",
+    intersections: 12,
+    averagePosition: 4.5,
+    summedPosition: 54,
+    organicEstimatedTrafficVolume: 850,
+    marketCode: "US",
+    languageCode: "zh",
+  },
+  unit: null,
+  origin: "vendor_observation",
+  method: "observed",
+  grade: "B",
+  support: "supports",
+  limitation: discoverySnapshot.limitation,
+} satisfies ObservationRow;
 const pageRow = {
   page_snapshot_id: IDS.pageSnapshot,
   workspace_id: IDS.workspace,
@@ -728,6 +799,88 @@ describe("runProductProfileSynthesis", () => {
     );
   });
 
+  it("validates frozen DataForSEO observations and merges them into the Product Profile", async () => {
+    const manifestWithDiscovery: ProductProfileSynthesisInputManifest = {
+      ...manifest,
+      competitorDiscovery: {
+        snapshotId: IDS.discoverySnapshot,
+        collectionRunId: IDS.discoveryCollectionRun,
+        sourceConnectionId: IDS.discoverySource,
+        datasetKey: "dataforseo.search_landscape.v1",
+        schemaVersion: "dataforseo.search_landscape.v1",
+        methodVersion: "dataforseo.search_landscape.v1",
+        capturedAt,
+        checksum: discoverySnapshot.checksum,
+        availability: "available",
+        rowCount: 1,
+        limitation: discoverySnapshot.limitation,
+        targetDomain: "example.com",
+        marketCode: "US",
+        languageCode: "zh",
+        observations: [
+          {
+            observationId: IDS.discoveryObservation,
+            domain: "rival.example",
+            intersections: 12,
+            organicEstimatedTrafficVolume: 850,
+            observedAt: capturedAt,
+          },
+        ],
+      },
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      input_manifest: manifestWithDiscovery,
+      input_hash: contentHash(manifestWithDiscovery),
+    });
+    vi.mocked(DataSnapshotsRepository.prototype.findById)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(discoverySnapshot);
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    ).mockResolvedValueOnce([discoveryObservation]);
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    const inserted = vi.mocked(
+      IcpProfilesRepository.prototype.insertVersion,
+    ).mock.calls[0]?.[0];
+    expect(inserted?.profile).toEqual(
+      expect.objectContaining({
+        competitorCandidates: [
+          expect.objectContaining({
+            domain: "rival.example",
+            relationship: "direct",
+            reviewStatus: "candidate",
+            similarity: null,
+          }),
+        ],
+        fieldProvenance: expect.arrayContaining([
+          expect.objectContaining({
+            path: "/competitorCandidates/0",
+            evidenceRefs: [
+              expect.objectContaining({
+                kind: "observation",
+                observationId: IDS.discoveryObservation,
+              }),
+            ],
+          }),
+        ]),
+      }),
+    );
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
   it.each([
     [PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION, false],
     [PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION, true],
@@ -749,12 +902,15 @@ describe("runProductProfileSynthesis", () => {
       });
       const {
         outputLocale: _outputLocale,
+        competitorDiscovery: _competitorDiscovery,
         schemaVersion: _schemaVersion,
         ...legacyManifestBase
       } = manifest;
       const legacyManifest: ProductProfileSynthesisInputManifest = {
         ...legacyManifestBase,
         schemaVersion: PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+        selectionPolicyVersion:
+          PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
         baseProfile: {
           ...manifest.baseProfile,
           contentHash: legacyBaseHash,
@@ -866,6 +1022,96 @@ describe("runProductProfileSynthesis", () => {
       );
     },
   );
+
+  it("finishes the prior output-locale prompt with its matching frozen manifest version", async () => {
+    const {
+      competitorDiscovery: _competitorDiscovery,
+      schemaVersion: _schemaVersion,
+      ...manifestBase
+    } = manifest;
+    const priorManifest: ProductProfileSynthesisInputManifest = {
+      ...manifestBase,
+      schemaVersion:
+        PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION,
+      selectionPolicyVersion:
+        PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
+    };
+    const priorInput: ProductProfileSynthesisInput = {
+      sourcePageUrl,
+      outputLocale: "zh-CN",
+      businessHint: "B2B workflow software",
+      declaredContext: buildProductProfileDeclaredContext(baseProfile)!,
+      pages: [
+        buildBoundedProductProfilePageDescriptor(
+          priorManifest.pages[0]!,
+          extract,
+        ),
+      ],
+    };
+    const priorHash = prepareProductProfileSynthesis(
+      priorInput,
+      PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+    ).inputHash;
+    const priorInvocation = {
+      ...invocation,
+      promptSetVersion: PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+      inputHash: priorHash,
+    };
+    const priorReservation = {
+      ...reservation,
+      prompt_set_version: PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+      input_hash: priorHash,
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      prompt_set_version: PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+      input_manifest: priorManifest,
+      input_hash: contentHash(priorManifest),
+    });
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.reserve,
+    ).mockResolvedValueOnce({
+      kind: "reserved",
+      reservation: priorReservation,
+    });
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.finalizeWithInvocation,
+    ).mockResolvedValueOnce({
+      kind: "finalized",
+      reservation: {
+        ...priorReservation,
+        status: "succeeded",
+        analysis_invocation_id: IDS.invocation,
+        provider_returned_at: generatedAt,
+        finalized_at: generatedAt,
+      },
+      invocationId: IDS.invocation,
+    });
+    synthesizeProductProfile.mockResolvedValueOnce({
+      candidate: candidate(),
+      pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      invocation: priorInvocation,
+    });
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    expect(dependencies.createClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptSetVersion: PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
+      }),
+    );
+    expect(synthesizeProductProfile).toHaveBeenCalledWith(priorInput);
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
 
   it("revalidates an old frozen UTC manifest against offset database text for the same instant", async () => {
     const offsetInstant = "2026-07-22 09:00:00.000000+08";

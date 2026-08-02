@@ -21,7 +21,9 @@ export function ProjectSettings({
   async function confirmDelete(): Promise<void> {
     try {
       await deleteProject.mutateAsync();
-      router.replace("/new-project");
+      // Let the server choose the next active product. The root route falls
+      // back to /new-project only when the workspace truly has none left.
+      router.replace("/");
       router.refresh();
     } catch {
       // The mutation retains its typed error; the UI exposes only approved,

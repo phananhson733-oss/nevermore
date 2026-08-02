@@ -1,18 +1,23 @@
 import {
   AsyncRunsRepository,
   canonicalize,
+  CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
   enqueueRunInTx,
   IcpProfilesRepository,
   IdempotencyRepository,
   normalizedUrlHash,
+  ObservationsRepository,
   PageSnapshotsRepository,
   ProductProfileRunsRepository,
   ProjectsRepository,
   sha256Hex,
   SitesRepository,
+  SourceConnectionsRepository,
   type CanonicalValue,
+  type DataSnapshotRow,
+  type ObservationRow,
   type WorkspaceScope,
 } from "@sf/db";
 import {
@@ -23,12 +28,25 @@ import {
   PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_VERSION,
   ProductProfileDraft,
+  ProductProfileSynthesisCompetitorDiscovery,
+  ProductProfileSynthesisCompetitorObservation as ProductProfileSynthesisCompetitorObservationSchema,
   ProductProfileSynthesisInputManifest,
   type CreateProductProfileSynthesisRunRequest,
+  type ProductProfileSynthesisCompetitorObservation as ProductProfileSynthesisCompetitorObservationValue,
 } from "@sf/contracts";
 import { PRODUCT_PROFILE_PROMPT_SET_VERSION } from "@sf/artifacts";
 import { ProblemError } from "@sf/observability";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  createDataForSeoSearchLandscapeScope,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  parseDataForSeoSearchLandscapeScope,
+} from "@sf/sources";
+import { getEnv } from "@/env";
 import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
 import { isPostgresUniqueViolation } from "./db-errors";
@@ -37,6 +55,9 @@ import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 const IDEMPOTENCY_SCOPE = "createProductProfileSynthesisRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const PRODUCT_PROFILE_SYNTHESIS_ACTIVE_KEY = "product-profile:synthesis";
+const PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY =
+  "collect:dataforseo:search_landscape";
+const MAX_FROZEN_PRODUCT_PROFILE_COMPETITORS = 100;
 
 /**
  * The bounded joined projection the command is allowed to freeze. `extract`
@@ -96,6 +117,194 @@ export interface ProductProfileSynthesisAcceptedResult {
 
 export interface ProductProfileSynthesisCommandContext {
   readonly outputLocale?: string;
+  readonly dataForSeoDiscovery?: {
+    readonly enabled: boolean;
+    readonly maxKeywords: number;
+    readonly maxCompetitors: number;
+  };
+}
+
+interface ProductProfileCompetitorDiscoveryRun {
+  readonly id: string;
+}
+
+function dataForSeoLocationName(marketCode: string): string | null {
+  return new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ?? null;
+}
+
+function dataForSeoDiscoveryConfig(
+  commandContext: ProductProfileSynthesisCommandContext,
+): NonNullable<ProductProfileSynthesisCommandContext["dataForSeoDiscovery"]> {
+  if (commandContext.dataForSeoDiscovery) {
+    return commandContext.dataForSeoDiscovery;
+  }
+  if (process.env["DATAFORSEO_ENABLED"] !== "true") {
+    return { enabled: false, maxKeywords: 200, maxCompetitors: 100 };
+  }
+  const env = getEnv();
+  return {
+    enabled: env.DATAFORSEO_ENABLED === "true",
+    maxKeywords: env.DATAFORSEO_MAX_KEYWORDS,
+    maxCompetitors: env.DATAFORSEO_MAX_COMPETITORS,
+  };
+}
+
+/**
+ * Existing products created before initial search-landscape discovery was
+ * introduced have neither a DataForSEO connection nor a snapshot. Repair that
+ * gap before synthesis so "regenerate" follows the same evidence path as new
+ * product creation. The collection commits independently; the caller then
+ * returns the normal active-run conflict that the UI already polls and retries.
+ */
+async function ensureProductProfileCompetitorDiscovery(
+  scope: WorkspaceScope,
+  projectId: string,
+  actorId: string,
+  outputLocale: string,
+  config: NonNullable<
+    ProductProfileSynthesisCommandContext["dataForSeoDiscovery"]
+  >,
+): Promise<ProductProfileCompetitorDiscoveryRun | null> {
+  if (!config.enabled) return null;
+  const projectScope = { workspaceId: scope.workspaceId, projectId };
+  const { db } = getDb();
+
+  let discovered: ProductProfileCompetitorDiscoveryRun | null;
+  try {
+    discovered = await db.transaction(async (tx) => {
+      const active = await new AsyncRunsRepository(tx).findActive(
+        projectScope,
+        PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+      );
+      if (active) return active;
+
+      const project = await new ProjectsRepository(tx).findByIdForUpdate(
+        scope,
+        projectId,
+      );
+      if (
+        !project ||
+        project.archived_at ||
+        project.current_icp_profile_id === null
+      ) {
+        return null;
+      }
+      const profileRow = await new IcpProfilesRepository(tx).findById(
+        projectScope,
+        project.current_icp_profile_id,
+      );
+      const parsedProfile = ProductProfileDraft.safeParse(profileRow?.profile);
+      if (!profileRow || profileRow.status !== "draft" || !parsedProfile.success) {
+        return null;
+      }
+      const site = await new SitesRepository(tx).findPrimary(projectScope);
+      if (!site) return null;
+
+      const [existingSnapshot] = await new DataSnapshotsRepository(
+        tx,
+      ).findLatestEligibleBySite(projectScope, site.id, [
+        {
+          provider: "dataforseo",
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+          collectionOperation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+          collectionMethodVersion:
+            DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+      ]);
+      if (existingSnapshot) return null;
+
+      const marketCode = parsedProfile.data.targetMarkets.find(
+        (market) => market.priority === "primary",
+      )?.marketCode;
+      if (!marketCode) return null;
+      const locationName = dataForSeoLocationName(marketCode);
+      if (!locationName) return null;
+      const collectionScope = createDataForSeoSearchLandscapeScope({
+        target: site.host,
+        marketCode,
+        locationName,
+        languageTag: outputLocale,
+        rankedKeywordsLimit: config.maxKeywords,
+        competitorsDomainLimit: config.maxCompetitors,
+      });
+
+      const sources = new SourceConnectionsRepository(tx);
+      const existingConnection = await sources.findConnectedByProviderForUpdate(
+        projectScope,
+        "dataforseo",
+      );
+      const connection =
+        existingConnection ??
+        (await sources.insertConnection({
+          workspaceId: scope.workspaceId,
+          projectId,
+          siteId: site.id,
+          provider: "dataforseo",
+          connectionType: "api_key_stub",
+          state: "connected",
+          externalRef: collectionScope.target,
+          config: {
+            target: collectionScope.target,
+            marketCode: collectionScope.marketCode,
+            locationName,
+            languageCode: collectionScope.providerLanguageCode,
+            maxKeywords: collectionScope.rankedKeywords.limit,
+            maxCompetitors: collectionScope.competitorsDomain.limit,
+          },
+          limitation: `Automatic DataForSEO competitor discovery for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; ranked keywords capped at ${collectionScope.rankedKeywords.limit} and competitor domains at ${collectionScope.competitorsDomain.limit}. Intersections are counts, not similarity percentages.`,
+          connectedAt: true,
+          createdBy: actorId,
+        }));
+      const run = await new AsyncRunsRepository(tx).insertQueued({
+        workspaceId: scope.workspaceId,
+        projectId,
+        kind: "collection",
+        activeKey: PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+        initiatedBy: actorId,
+        contractVersion: CONTRACT_VERSION,
+        requestPayload: {
+          provider: "dataforseo",
+          operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+          sourceConnectionId: connection.id,
+          collectionScope,
+        },
+      });
+      await new CollectionRunsRepository(tx).insertPlaceholder({
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        siteId: site.id,
+        sourceConnectionId: connection.id,
+        provider: "dataforseo",
+        operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+        methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        parametersHash: contentHash({
+          provider: "dataforseo",
+          operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+          siteId: site.id,
+          collectionScope,
+        }),
+      });
+      await enqueueRunInTx(await getBoss(), tx, "collect.dataforseo", {
+        runId: run.id,
+        workspaceId: scope.workspaceId,
+        projectId,
+        contractVersion: CONTRACT_VERSION,
+      });
+      return run;
+    });
+  } catch (error) {
+    if (isPostgresUniqueViolation(error, "async_runs_one_active_key_idx")) {
+      discovered = await new AsyncRunsRepository(db).findActive(
+        projectScope,
+        PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+      );
+      if (discovered) return discovered;
+    }
+    throw error;
+  }
+  return discovered;
 }
 
 function crawlSnapshotRequired(): never {
@@ -122,11 +331,158 @@ function canonicalUtcInstant(value: string): string {
   return new Date(milliseconds).toISOString();
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function competitorObservation(
+  snapshot: DataSnapshotRow,
+  observation: ObservationRow,
+  collectionScope: ReturnType<typeof parseDataForSeoSearchLandscapeScope>,
+): ProductProfileSynthesisCompetitorObservationValue | null {
+  if (observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN) {
+    return null;
+  }
+  const value = record(observation.value_json);
+  const domain = value?.["competitorDomain"];
+  const intersections = value?.["intersections"];
+  const organicEstimatedTrafficVolume =
+    value?.["organicEstimatedTrafficVolume"];
+  const expectedKeys = [
+    "targetDomain",
+    "competitorDomain",
+    "intersections",
+    "averagePosition",
+    "summedPosition",
+    "organicEstimatedTrafficVolume",
+    "marketCode",
+    "languageCode",
+  ];
+  const parsed = ProductProfileSynthesisCompetitorObservationSchema.safeParse({
+    observationId: observation.id,
+    domain,
+    intersections,
+    organicEstimatedTrafficVolume,
+    observedAt: observation.observed_at,
+  });
+  if (
+    !parsed.success ||
+    value === null ||
+    Object.keys(value).length !== expectedKeys.length ||
+    expectedKeys.some((key) => !Object.hasOwn(value, key)) ||
+    observation.workspace_id !== snapshot.workspace_id ||
+    observation.project_id !== snapshot.project_id ||
+    observation.snapshot_id !== snapshot.id ||
+    observation.provider !== "dataforseo" ||
+    observation.subject_type !== "site" ||
+    observation.subject_ref !== parsed.data.domain ||
+    observation.site_page_id !== null ||
+    observation.observed_at !== snapshot.captured_at ||
+    observation.availability !== "available" ||
+    observation.value_numeric !== null ||
+    observation.value_text !== null ||
+    observation.unit !== null ||
+    observation.origin !== "vendor_observation" ||
+    observation.method !== "observed" ||
+    observation.grade !== "B" ||
+    observation.support !== "supports" ||
+    value["targetDomain"] !== collectionScope.target ||
+    value["competitorDomain"] !== parsed.data.domain ||
+    value["marketCode"] !== collectionScope.marketCode ||
+    value["languageCode"] !== collectionScope.providerLanguageCode ||
+    typeof value["averagePosition"] !== "number" ||
+    !Number.isFinite(value["averagePosition"]) ||
+    value["averagePosition"] < 0 ||
+    typeof value["summedPosition"] !== "number" ||
+    !Number.isFinite(value["summedPosition"]) ||
+    value["summedPosition"] < 0
+  ) {
+    snapshotIdentityMismatch();
+  }
+  return parsed.data;
+}
+
+/** Freeze only exact canonical DataForSEO competitor-domain facts. */
+export function buildProductProfileCompetitorDiscovery(
+  snapshot: DataSnapshotRow,
+  observations: readonly ObservationRow[],
+): ProductProfileSynthesisCompetitorDiscovery {
+  if (
+    snapshot.provider !== "dataforseo" ||
+    snapshot.dataset_key !== DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
+    snapshot.schema_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    snapshot.source_connection_id === null ||
+    (snapshot.availability !== "available" &&
+      snapshot.availability !== "partial")
+  ) {
+    snapshotIdentityMismatch();
+  }
+  let collectionScope: ReturnType<
+    typeof parseDataForSeoSearchLandscapeScope
+  >;
+  try {
+    collectionScope = parseDataForSeoSearchLandscapeScope(
+      snapshot.summary["collectionScope"],
+    );
+  } catch {
+    snapshotIdentityMismatch();
+  }
+  const competitorObservations = observations
+    .map((observation) =>
+      competitorObservation(snapshot, observation, collectionScope),
+    )
+    .filter(
+      (
+        observation,
+      ): observation is ProductProfileSynthesisCompetitorObservationValue =>
+        observation !== null,
+    )
+    .sort(
+      (left, right) =>
+        right.intersections - left.intersections ||
+        right.organicEstimatedTrafficVolume -
+          left.organicEstimatedTrafficVolume ||
+        left.domain.localeCompare(right.domain),
+    )
+    .slice(0, MAX_FROZEN_PRODUCT_PROFILE_COMPETITORS);
+  return ProductProfileSynthesisCompetitorDiscovery.parse({
+    snapshotId: snapshot.id,
+    collectionRunId: snapshot.collection_run_id,
+    sourceConnectionId: snapshot.source_connection_id,
+    datasetKey: snapshot.dataset_key,
+    schemaVersion: snapshot.schema_version,
+    methodVersion: snapshot.method_version,
+    capturedAt: canonicalUtcInstant(snapshot.captured_at),
+    checksum: snapshot.checksum,
+    availability: snapshot.availability,
+    rowCount: snapshot.row_count,
+    limitation: snapshot.limitation,
+    targetDomain: collectionScope.target,
+    marketCode: collectionScope.marketCode,
+    languageCode: collectionScope.providerLanguageCode,
+    observations: competitorObservations,
+  });
+}
+
 const CORE_PATH_BUCKETS: readonly ReadonlySet<string>[] = [
   new Set(["product", "products"]),
   new Set(["feature", "features"]),
   new Set(["solution", "solutions"]),
   new Set(["use-case", "use-cases", "usecase", "usecases"]),
+  new Set([
+    "compare",
+    "comparison",
+    "comparisons",
+    "competitor",
+    "competitors",
+    "alternative",
+    "alternatives",
+    "versus",
+    "vs",
+  ]),
   new Set(["pricing", "plans"]),
   new Set(["integration", "integrations"]),
   new Set(["about", "company", "about-us"]),
@@ -270,6 +626,7 @@ export function buildProductProfileSynthesisFrozenInput(input: {
   readonly baseProfile: ProductProfileSynthesisBaseRow;
   readonly crawlSnapshot: ProductProfileSynthesisSnapshotRow;
   readonly pages: readonly ProductProfileSynthesisPageRow[];
+  readonly competitorDiscovery?: ProductProfileSynthesisCompetitorDiscovery | null;
 }): {
   readonly manifest: ProductProfileSynthesisInputManifest;
   readonly inputHash: string;
@@ -281,6 +638,7 @@ export function buildProductProfileSynthesisFrozenInput(input: {
     siteId: input.siteId,
     sourcePageUrl: input.sourcePageUrl,
     outputLocale: input.outputLocale,
+    competitorDiscovery: input.competitorDiscovery ?? null,
     baseProfile: {
       id: input.baseProfile.id,
       version: input.baseProfile.version,
@@ -372,6 +730,25 @@ function activeConflict(projectId: string, runId: string): ProblemError {
   );
 }
 
+function competitorDiscoveryConflict(
+  projectId: string,
+  runId: string,
+): ProblemError {
+  const statusUrl = runStatusUrl(projectId, runId);
+  return new ProblemError(
+    "RUN_ALREADY_ACTIVE",
+    "Initial competitor discovery is still running.",
+    {
+      headers: { Location: statusUrl },
+      current: {
+        runId,
+        statusUrl,
+        activeKey: PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+      },
+    },
+  );
+}
+
 /**
  * Freeze and queue one Product Profile synthesis without starting a Diagnostic
  * or Audit lifecycle. The base profile, Crawl snapshot and selected pages are
@@ -421,6 +798,17 @@ export async function createProductProfileSynthesisRun(
       : null;
     if (replayed) return replayed;
     throw activeConflict(projectId, active.id);
+  }
+
+  const discovery = await ensureProductProfileCompetitorDiscovery(
+    scope,
+    projectId,
+    actorId,
+    outputLocale,
+    dataForSeoDiscoveryConfig(commandContext),
+  );
+  if (discovery) {
+    throw competitorDiscoveryConflict(projectId, discovery.id);
   }
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
@@ -554,6 +942,41 @@ export async function createProductProfileSynthesisRun(
         crawlSnapshot,
       );
 
+      const activeCompetitorDiscovery = await new AsyncRunsRepository(
+        tx,
+      ).findActive(
+        projectScope,
+        PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+      );
+      if (activeCompetitorDiscovery) {
+        throw competitorDiscoveryConflict(
+          projectId,
+          activeCompetitorDiscovery.id,
+        );
+      }
+
+      const [dataForSeoSnapshot] = await new DataSnapshotsRepository(
+        tx,
+      ).findLatestEligibleBySite(projectScope, primarySite.id, [
+        {
+          provider: "dataforseo",
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+          collectionOperation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+          collectionMethodVersion:
+            DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+        },
+      ]);
+      const competitorDiscovery = dataForSeoSnapshot
+        ? buildProductProfileCompetitorDiscovery(
+            dataForSeoSnapshot,
+            await new ObservationsRepository(tx).listBySnapshotIds(
+              projectScope,
+              [dataForSeoSnapshot.id],
+            ),
+          )
+        : null;
+
       const pageRows = (await new PageSnapshotsRepository(
         tx,
       ).listByDataSnapshotWithSitePageIdentity(
@@ -578,6 +1001,7 @@ export async function createProductProfileSynthesisRun(
         baseProfile,
         crawlSnapshot,
         pages: selectedPages,
+        competitorDiscovery,
       });
 
       const boss = await getBoss();

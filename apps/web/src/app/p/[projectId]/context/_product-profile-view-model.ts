@@ -66,6 +66,18 @@ export interface ProductProfileViewModel {
   };
 }
 
+/**
+ * A discovery run can be a backfill for an already-generated draft. Its prior
+ * generatedAt timestamp must not suppress the synthesis retry that consumes
+ * the newly collected competitor evidence.
+ */
+export function shouldContinueSynthesisAfterCompetitorDiscovery(input: {
+  readonly rowStatus: "draft" | "complete" | null;
+  readonly generatedAt: string | null;
+}): boolean {
+  return input.rowStatus === "draft";
+}
+
 const FACT_DERIVATIONS = new Set([
   "declared",
   "observed",
@@ -207,7 +219,7 @@ function confirmationItems(
       (competitor.relationship !== null && competitor.analysisScope.length > 0),
   );
   const competitorEvidence =
-    profile.competitorCandidates.length === 0 ||
+    profile.competitorCandidates.length > 0 &&
     supported(profile, ["/competitorCandidates"]);
 
   const icpMissingFieldKeys = primaryIcpMissingFieldKeys(primaryAudience);
@@ -282,7 +294,11 @@ export function buildProductProfileViewModel(
   const primaryAudience =
     profile.targetAudiences.find(
       (audience) => audience.reviewStatus === "primary",
-    ) ?? null;
+    ) ??
+    profile.targetAudiences.find(
+      (audience) => audience.reviewStatus !== "excluded",
+    ) ??
+    null;
   const items = confirmationItems(profile, primaryAudience);
   const isDraft = row.status === "draft";
   const contractReady = ConfirmedProductProfile.safeParse(profile).success;

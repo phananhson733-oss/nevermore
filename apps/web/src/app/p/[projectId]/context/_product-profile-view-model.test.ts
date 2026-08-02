@@ -7,6 +7,7 @@ import type { ProductProfileWorkspace } from "@/lib/api/hooks-product-profile";
 import {
   buildProductProfileViewModel,
   getFieldFactState,
+  shouldContinueSynthesisAfterCompetitorDiscovery,
 } from "./_product-profile-view-model";
 
 const IDS = {
@@ -243,6 +244,38 @@ describe("Product Profile customer view model", () => {
     expect(view.confirmation.items.find((item) => item.id === "competitors")).toMatchObject(
       { complete: false },
     );
+  });
+
+  it("keeps an empty competitor pool unresolved instead of marking its review valid", () => {
+    const emptyPool = profile({
+      competitorCandidates: [],
+      fieldProvenance: profile().fieldProvenance.filter(
+        (entry) => entry.path !== "/competitorCandidates",
+      ),
+      missingFields: ["/competitorCandidates"],
+    });
+
+    const view = buildProductProfileViewModel(workspace(emptyPool));
+
+    expect(view.confirmation.ready).toBe(false);
+    expect(
+      view.confirmation.items.find((item) => item.id === "competitors"),
+    ).toMatchObject({ complete: false });
+  });
+
+  it("continues synthesis after competitor backfill for an already-generated draft", () => {
+    expect(
+      shouldContinueSynthesisAfterCompetitorDiscovery({
+        rowStatus: "draft",
+        generatedAt: "2026-08-02T06:14:00.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      shouldContinueSynthesisAfterCompetitorDiscovery({
+        rowStatus: "complete",
+        generatedAt: "2026-08-02T06:14:00.000Z",
+      }),
+    ).toBe(false);
   });
 
   it("keeps confirmation unavailable while a real synthesis run is active", () => {

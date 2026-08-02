@@ -1,13 +1,18 @@
 import { z } from "zod";
-import { Bcp47Locale, IsoDateTime, Uuid } from "./common.ts";
+import { Bcp47Locale, IsoDateTime, MarketCode, Uuid } from "./common.ts";
+import { ProductProfileCompetitorDomain } from "./product-profile.ts";
 import { ProductProfileProductUrl } from "./projects.ts";
 
 export const PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION =
   "product-profile-synthesis-input.0.3.0" as const;
-export const PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION =
+export const PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION =
   "product-profile-synthesis-input.0.3.1" as const;
-export const PRODUCT_PROFILE_SELECTION_POLICY_VERSION =
+export const PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION =
+  "product-profile-synthesis-input.0.3.2" as const;
+export const PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION =
   "product-profile-page-selection.0.3.0" as const;
+export const PRODUCT_PROFILE_SELECTION_POLICY_VERSION =
+  "product-profile-page-selection.0.3.1" as const;
 export const PRODUCT_PROFILE_SYNTHESIS_VERSION =
   "product-profile-synthesis.0.3.0" as const;
 export const MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES = 12;
@@ -63,8 +68,55 @@ export type ProductProfileSynthesisPage = z.infer<
   typeof ProductProfileSynthesisPage
 >;
 
+export const ProductProfileSynthesisCompetitorObservation = z
+  .object({
+    observationId: Uuid,
+    domain: ProductProfileCompetitorDomain,
+    intersections: z.number().int().positive(),
+    organicEstimatedTrafficVolume: z.number().finite().nonnegative(),
+    observedAt: IsoDateTime,
+  })
+  .strict();
+export type ProductProfileSynthesisCompetitorObservation = z.infer<
+  typeof ProductProfileSynthesisCompetitorObservation
+>;
+
+export const ProductProfileSynthesisCompetitorDiscovery = z
+  .object({
+    snapshotId: Uuid,
+    collectionRunId: Uuid,
+    sourceConnectionId: Uuid,
+    datasetKey: z.literal("dataforseo.search_landscape.v1"),
+    schemaVersion: z.literal("dataforseo.search_landscape.v1"),
+    methodVersion: z.literal("dataforseo.search_landscape.v1"),
+    capturedAt: IsoDateTime,
+    checksum: Sha256Hex,
+    availability: z.enum(["available", "partial"]),
+    rowCount: z.number().int().positive(),
+    limitation: BoundedLimitation,
+    targetDomain: ProductProfileCompetitorDomain,
+    marketCode: MarketCode,
+    languageCode: z.string().trim().min(2).max(35),
+    observations: z
+      .array(ProductProfileSynthesisCompetitorObservation)
+      .max(100)
+      .refine(
+        (items) =>
+          new Set(items.map((item) => item.observationId)).size === items.length,
+        "competitor observation ids must be unique",
+      )
+      .refine(
+        (items) =>
+          new Set(items.map((item) => item.domain)).size === items.length,
+        "competitor observation domains must be unique",
+      ),
+  })
+  .strict();
+export type ProductProfileSynthesisCompetitorDiscovery = z.infer<
+  typeof ProductProfileSynthesisCompetitorDiscovery
+>;
+
 const ProductProfileSynthesisInputManifestShape = {
-  selectionPolicyVersion: z.literal(PRODUCT_PROFILE_SELECTION_POLICY_VERSION),
   projectId: Uuid,
   siteId: Uuid,
   sourcePageUrl: ProductProfileProductUrl,
@@ -84,6 +136,21 @@ const ProductProfileSynthesisInputManifestObject = z.discriminatedUnion(
         schemaVersion: z.literal(
           PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
         ),
+        selectionPolicyVersion: z.literal(
+          PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
+        ),
+        ...ProductProfileSynthesisInputManifestShape,
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(
+          PRODUCT_PROFILE_SYNTHESIS_OUTPUT_LOCALE_INPUT_SCHEMA_VERSION,
+        ),
+        selectionPolicyVersion: z.literal(
+          PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
+        ),
+        outputLocale: Bcp47Locale,
         ...ProductProfileSynthesisInputManifestShape,
       })
       .strict(),
@@ -92,7 +159,12 @@ const ProductProfileSynthesisInputManifestObject = z.discriminatedUnion(
         schemaVersion: z.literal(
           PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
         ),
+        selectionPolicyVersion: z.literal(
+          PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
+        ),
         outputLocale: Bcp47Locale,
+        competitorDiscovery:
+          ProductProfileSynthesisCompetitorDiscovery.nullable(),
         ...ProductProfileSynthesisInputManifestShape,
       })
       .strict(),

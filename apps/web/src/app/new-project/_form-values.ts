@@ -36,7 +36,6 @@ export interface NewProductFormValues {
   readonly customerModel: CustomerModel | "";
   readonly primaryMarket: PrimaryMarket | "";
   readonly growthObjectives: readonly GrowthObjective[];
-  readonly businessHint: string;
 }
 
 export type NewProductValidationErrors = Partial<
@@ -76,7 +75,6 @@ export function validateNewProductValues(
 }
 
 export function buildCreateProductRequest(values: NewProductFormValues) {
-  const trimmedBusinessHint = values.businessHint.trim();
   return {
     mode: "product_profile" as const,
     productName: values.productName.trim(),
@@ -84,6 +82,5 @@ export function buildCreateProductRequest(values: NewProductFormValues) {
     customerModel: values.customerModel as CustomerModel,
     primaryMarket: values.primaryMarket as PrimaryMarket,
     growthObjectives: [...values.growthObjectives],
-    ...(trimmedBusinessHint ? { businessHint: trimmedBusinessHint } : {}),
   };
 }

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AsyncRunsRepository,
+  CollectionRunsRepository,
   contentHash,
   IcpProfilesRepository,
   IdempotencyRepository,
@@ -22,11 +24,19 @@ import type { UrlGuardResult } from "@sf/sources";
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
+  enqueueRunInTx: vi.fn(async () => "job-1"),
+  getBoss: vi.fn(async () => ({ name: "boss" })),
 }));
+
+vi.mock("@sf/db", async () => {
+  const actual = await vi.importActual<typeof import("@sf/db")>("@sf/db");
+  return { ...actual, enqueueRunInTx: mocks.enqueueRunInTx };
+});
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ db: { transaction: mocks.transaction } }),
 }));
+vi.mock("@/lib/boss", () => ({ getBoss: mocks.getBoss }));
 
 const { archiveProject, createProject, getProject, listProjects } = await import(
   "../projects.ts"
@@ -182,6 +192,16 @@ beforeEach(() => {
   vi.spyOn(SourceConnectionsRepository.prototype, "insertDefaultCrawl").mockResolvedValue(
     { id: "source-1" } as never,
   );
+  vi.spyOn(SourceConnectionsRepository.prototype, "insertConnection").mockResolvedValue(
+    { id: "dataforseo-source-1" } as never,
+  );
+  vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue({
+    id: "00000000-0000-4000-8000-000000000099",
+  } as never);
+  vi.spyOn(
+    CollectionRunsRepository.prototype,
+    "insertPlaceholder",
+  ).mockResolvedValue({ id: "00000000-0000-4000-8000-000000000099" } as never);
   vi.spyOn(SitePagesRepository.prototype, "upsertNormalizedUrl").mockResolvedValue({
     id: "page-1",
   } as never);
@@ -321,6 +341,60 @@ describe("createProject", () => {
     expect(result.location).toBe(`/p/${projectRow.id}/context`);
     expect(IdempotencyRepository.prototype.begin).toHaveBeenCalledWith(
       expect.objectContaining({ requestHash: requestHash(body) }),
+    );
+  });
+
+  it("queues bounded DataForSEO competitor discovery during URL-first creation", async () => {
+    const body: CreateProjectRequest = {
+      mode: "product_profile",
+      productUrl: "https://example.com/product",
+      primaryMarket: "US",
+    };
+    const guard = vi.fn(async () => safeVerdict);
+
+    await createProject(scope, actorId, idempotencyKey, body, guard, {
+      defaultDeliveryLocale: "zh-CN",
+      dataForSeoDiscovery: {
+        enabled: true,
+        maxKeywords: 120,
+        maxCompetitors: 40,
+      },
+    });
+
+    expect(SourceConnectionsRepository.prototype.insertConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "dataforseo",
+        state: "connected",
+        config: expect.objectContaining({
+          target: "example.com",
+          marketCode: "US",
+          languageCode: "zh",
+          maxKeywords: 120,
+          maxCompetitors: 40,
+        }),
+      }),
+    );
+    expect(AsyncRunsRepository.prototype.insertQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "collection",
+        activeKey: "collect:dataforseo:search_landscape",
+        requestPayload: expect.objectContaining({
+          provider: "dataforseo",
+          operation: "search_landscape",
+        }),
+      }),
+    );
+    expect(CollectionRunsRepository.prototype.insertPlaceholder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "dataforseo",
+        operation: "search_landscape",
+      }),
+    );
+    expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "collect.dataforseo",
+      expect.objectContaining({ projectId: projectRow.id }),
     );
   });
 

@@ -63,10 +63,10 @@ import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
   buildProductProfileViewModel,
   getFieldFactState,
+  shouldContinueSynthesisAfterCompetitorDiscovery,
   type FieldFactState,
 } from "./_product-profile-view-model";
 import {
-  audienceFields,
   buildEditorPatch,
   BUSINESS_MODELS,
   editorStateSignature,
@@ -129,6 +129,8 @@ const BUSINESS_MODEL_MESSAGE_KEYS = {
   Advertising: "advertising",
 } as const satisfies Record<(typeof BUSINESS_MODELS)[number], string>;
 const CUSTOMER_MODELS = ["b2b", "b2c", "hybrid"] as const satisfies readonly CustomerModel[];
+const COMPETITOR_DISCOVERY_ACTIVE_KEY =
+  "collect:dataforseo:search_landscape";
 const GROWTH_OBJECTIVES = [
   "increase_signups",
   "generate_qualified_leads",
@@ -387,15 +389,6 @@ function ProfileEditor({
     (audience) => audience.candidateId === state.primaryAudienceId,
   );
 
-  function switchAudience(id: string) {
-    const audience = profile.targetAudiences.find((item) => item.candidateId === id) ?? null;
-    setState((current) => ({
-      ...current,
-      primaryAudienceId: id,
-      ...audienceFields(audience),
-    }));
-  }
-
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!dirty) return;
@@ -427,10 +420,6 @@ function ProfileEditor({
           <div className={styles.drawerBody}>
             <fieldset className={styles.formSection}>
               <legend>{t("editor.sections.product")}</legend>
-              <label className={styles.field}>
-                <span>{t("fields.businessHint")}</span>
-                <textarea value={state.businessHint} onChange={(event) => set("businessHint", event.target.value)} rows={3} />
-              </label>
               <div className={styles.formGrid}>
                 <label className={styles.field}>
                   <span>{t("fields.productName")}</span>
@@ -578,18 +567,6 @@ function ProfileEditor({
 
             <fieldset className={styles.formSection}>
               <legend>{t("editor.sections.icp")}</legend>
-              <label className={styles.field}>
-                <span>{t("fields.primaryIcp")}</span>
-                <select value={state.primaryAudienceId} onChange={(event) => switchAudience(event.target.value)}>
-                  <option value="">{t("editor.chooseIcp")}</option>
-                  {profile.targetAudiences.filter((audience) => audience.reviewStatus !== "excluded").map((audience) => (
-                    <option key={audience.candidateId} value={audience.candidateId}>
-                      {audience.targetCompanyOrAudience ?? t("states.unconfirmed")}
-                    </option>
-                  ))}
-                  <option value="__new__">{t("editor.newIcp")}</option>
-                </select>
-              </label>
               {state.primaryAudienceId ? (
                 <>
                   <label className={styles.field}>
@@ -605,7 +582,7 @@ function ProfileEditor({
                   ))}
                 </>
               ) : null}
-              {currentAudience ? <p className={styles.formNote}>{t("editor.preserveOtherIcp")}</p> : null}
+              {currentAudience ? <p className={styles.formNote}>{t("editor.singleProductIcp")}</p> : null}
             </fieldset>
           </div>
 
@@ -766,6 +743,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [synthesisRunId, setSynthesisRunId] = useState("");
   const [crawlRunId, setCrawlRunId] = useState("");
+  const [discoveryRunId, setDiscoveryRunId] = useState("");
   const [crawlRequired, setCrawlRequired] = useState(false);
   const completedRuns = useRef(new Set<string>());
   const failedPolls = useRef(new Set<string>());
@@ -782,6 +760,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const activeCrawlId = workspace?.activeCrawlRun?.id ?? crawlRunId;
   const synthesisRun = useProductProfileRun(projectId, activeSynthesisId);
   const crawlRun = useProjectRun(projectId, activeCrawlId);
+  const discoveryRun = useProjectRun(projectId, discoveryRunId);
   const createSynthesisRun = synthesisMutation.mutateAsync;
   const createCrawlRun = crawlMutation.mutateAsync;
   // Narrow conjunction: a bare enumeration in the reading language. The unit
@@ -923,12 +902,24 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
         ) {
           const activeRunId = activeProjectRunIdFromError(error, projectId);
           if (activeRunId) {
-            setSynthesisRunId(activeRunId);
-            setFeedback({
-              tone: "progress",
-              title: t("feedback.synthesisAlreadyRunning"),
-              detail: t("feedback.synthesisAlreadyRunningDetail"),
-            });
+            if (
+              error.problem.current?.["activeKey"] ===
+              COMPETITOR_DISCOVERY_ACTIVE_KEY
+            ) {
+              setDiscoveryRunId(activeRunId);
+              setFeedback({
+                tone: "progress",
+                title: t("feedback.discoveryRunning"),
+                detail: t("feedback.discoveryRunningDetail"),
+              });
+            } else {
+              setSynthesisRunId(activeRunId);
+              setFeedback({
+                tone: "progress",
+                title: t("feedback.synthesisAlreadyRunning"),
+                detail: t("feedback.synthesisAlreadyRunningDetail"),
+              });
+            }
             await invalidateProductProfileQueries(queryClient, projectId);
           } else {
             setFeedback(
@@ -969,6 +960,45 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     queryClient,
     synthesisFailureFeedback,
     synthesisRun.data,
+    t,
+  ]);
+
+  useEffect(() => {
+    const run = discoveryRun.data;
+    if (!run || !isTerminal(run.status) || completedRuns.current.has(run.id)) {
+      return;
+    }
+    completedRuns.current.add(run.id);
+    setDiscoveryRunId("");
+    void invalidateProductProfileQueries(queryClient, projectId);
+    if (
+      row &&
+      shouldContinueSynthesisAfterCompetitorDiscovery({
+        rowStatus: row.status,
+        generatedAt: profile?.generatedAt ?? null,
+      })
+    ) {
+      setFeedback({
+        tone: "progress",
+        title:
+          run.status === "completed" || run.status === "partial"
+            ? t("feedback.discoveryComplete")
+            : t("feedback.discoveryUnavailable"),
+        detail:
+          run.status === "completed" || run.status === "partial"
+            ? t("feedback.discoveryCompleteDetail")
+            : t("feedback.discoveryUnavailableDetail"),
+      });
+      void startSynthesis(row.version, "after_discovery");
+    }
+  }, [
+    discoveryRun.data,
+    profile?.generatedAt,
+    projectId,
+    queryClient,
+    row?.status,
+    row?.version,
+    startSynthesis,
     t,
   ]);
 
@@ -1060,6 +1090,23 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     );
   }, [activeCrawlId, crawlRun.isError, t]);
 
+  useEffect(() => {
+    if (
+      !discoveryRunId ||
+      !discoveryRun.isError ||
+      !claimOnce(failedPolls.current, `discovery:${discoveryRunId}`)
+    ) {
+      return;
+    }
+    setDiscoveryRunId("");
+    setFeedback(
+      errorFeedback(
+        t("feedback.progressUnavailable"),
+        t("feedback.progressUnavailableDetail"),
+      ),
+    );
+  }, [discoveryRun.isError, discoveryRunId, t]);
+
   const autoKey = automaticSynthesisKey({
     rowId: row?.id ?? null,
     version: row?.version ?? null,
@@ -1069,6 +1116,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       workspace?.hasSynthesisAttemptForCurrentDraft ?? false,
     activeSynthesisRunId: activeSynthesisId || null,
     crawlRunId: activeCrawlId,
+    discoveryRunId,
   });
 
   useEffect(() => {
@@ -1110,6 +1158,11 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const editable = row.status === "draft";
   const currentRow = row;
   const activeRun = synthesisRun.data ?? workspace.activeSynthesisRun;
+  const activeDiscoveryRun =
+    discoveryRun.data && !isTerminal(discoveryRun.data.status)
+      ? discoveryRun.data
+      : null;
+  const profileWorkActive = Boolean(activeRun || activeDiscoveryRun);
   const primaryAudience = view.primaryAudience;
   const productTypeKey = profile.productType
     ? productTypeMessageKey(profile.productType)
@@ -1250,14 +1303,14 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             {view.profileState === "confirmed" ? <ShieldCheck size={15} aria-hidden="true" /> : <PencilLine size={15} aria-hidden="true" />}
             {view.profileState === "confirmed" ? t("states.confirmed") : t("states.draftVersion", { version: row.version })}
           </span>
-          {editable ? <button type="button" className={styles.secondaryButton} disabled={Boolean(activeRun)} onClick={(event) => { rememberTrigger(event.currentTarget); setEditorOpen(true); }}><PencilLine size={16} aria-hidden="true" />{t("actions.edit")}</button> : null}
+          {editable ? <button type="button" className={styles.secondaryButton} disabled={profileWorkActive} onClick={(event) => { rememberTrigger(event.currentTarget); setEditorOpen(true); }}><PencilLine size={16} aria-hidden="true" />{t("actions.edit")}</button> : null}
           {sourceConnectionsAllowed ? (
             <Link className={styles.secondaryButton} href={`/p/${projectId}/sources`}>
               <Database size={16} aria-hidden="true" />
               {t("actions.connectData")}
             </Link>
           ) : null}
-          {editable ? <button type="button" className={styles.primaryButton} onClick={() => void startSynthesis(currentRow.version, "manual")} disabled={synthesisMutation.isPending || Boolean(activeRun)}><Sparkles size={16} aria-hidden="true" />{activeRun ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
+          {editable ? <button type="button" className={styles.primaryButton} onClick={() => void startSynthesis(currentRow.version, "manual")} disabled={synthesisMutation.isPending || profileWorkActive}><Sparkles size={16} aria-hidden="true" />{profileWorkActive ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
         </div>
       </header>
 
@@ -1275,6 +1328,9 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
           <div><strong>{t("run.synthesisTitle")}</strong><p>{t(`run.statuses.${activeRun.status}`)}</p></div>
           <span>{activeRun.progress.total === null ? activeRun.progress.current : `${activeRun.progress.current}/${activeRun.progress.total}`}</span>
         </section>
+      ) : null}
+      {activeDiscoveryRun ? (
+        <section className={styles.runPanel} aria-live="polite"><Target className={styles.spin} aria-hidden="true" /><div><strong>{t("run.discoveryTitle")}</strong><p>{t(`run.statuses.${activeDiscoveryRun.status as "queued" | "running"}`)}</p></div><span>{activeDiscoveryRun.progress.total === null ? activeDiscoveryRun.progress.current : `${activeDiscoveryRun.progress.current}/${activeDiscoveryRun.progress.total}`}</span></section>
       ) : null}
       {crawlRun.data && !isTerminal(crawlRun.data.status) ? (
         <section className={styles.runPanel} aria-live="polite"><RefreshCw className={styles.spin} aria-hidden="true" /><div><strong>{t("run.crawlTitle")}</strong><p>{t(`run.statuses.${crawlRun.data.status as "queued" | "running"}`)}</p></div><span>{crawlRun.data.progress.total === null ? crawlRun.data.progress.current : `${crawlRun.data.progress.current}/${crawlRun.data.progress.total}`}</span></section>
@@ -1341,31 +1397,18 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
                   {(["buyerRoles", "userRoles", "useCases", "triggers", "pains", "jtbd", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] as const).map((key) => <div key={key}><h3>{t(`fields.${key}`)}</h3><ValueList values={primaryAudience[key]} /></div>)}
                 </div>
               </div>
-            ) : profile.targetAudiences.length ? (
-              // Synthesis writes every audience it derives as "candidate"; only a
-              // customer decision promotes one to "primary". Showing nothing here
-              // hid that work and left no way to act on it, which stalled
-              // confirmation and every downstream gate. Show the candidates and
-              // name the decision instead.
-              <div className={styles.icpCandidates}>
-                <p className={styles.icpCandidatesLead}>{t("icp.candidatesPendingTitle", { count: profile.targetAudiences.length })}</p>
-                <ul className={styles.icpCandidateList}>
-                  {profile.targetAudiences.map((audience) => <li key={audience.candidateId}><Target aria-hidden="true" size={15} /><span>{audience.targetCompanyOrAudience ?? t("states.unconfirmed")}</span></li>)}
-                </ul>
-                <p className={styles.icpCandidatesHint}>{t("icp.candidatesPendingHint")}</p>
-              </div>
             ) : <MissingValue />}
           </section>
 
           <section className={styles.editorialCard}>
             <SectionHeading eyebrow={t("sections.competitors.eyebrow")} title={t("sections.competitors.title")} fact={fact("/competitorCandidates")} />
-            <div className={styles.competitorHeader}><p>{t("competitors.description")}</p>{editable ? <button type="button" className={styles.secondaryButton} disabled={Boolean(activeRun)} onClick={(event) => { rememberTrigger(event.currentTarget); setCompetitorEditor("add"); }}><Plus size={16} aria-hidden="true" />{t("actions.addCompetitor")}</button> : null}</div>
+            <div className={styles.competitorHeader}><p>{t("competitors.description")}</p>{editable ? <button type="button" className={styles.secondaryButton} disabled={profileWorkActive} onClick={(event) => { rememberTrigger(event.currentTarget); setCompetitorEditor("add"); }}><Plus size={16} aria-hidden="true" />{t("actions.addCompetitor")}</button> : null}</div>
             {profile.competitorCandidates.length ? <div className={styles.competitorList}>{profile.competitorCandidates.map((candidate) => (
               <article className={styles.competitorRow} key={candidate.candidateId} data-review={candidate.reviewStatus}>
                 <div className={styles.competitorIdentity}><strong>{candidate.name}</strong><a href={`https://${candidate.domain}`} target="_blank" rel="noreferrer">{candidate.domain}<ExternalLink size={13} aria-hidden="true" /></a></div>
                 <div className={styles.competitorMeta}><span>{t(`competitors.statuses.${candidate.reviewStatus}`)}</span><span>{candidate.relationship ? t(`competitors.relationships.${candidate.relationship}`) : t("states.unconfirmed")}</span>{candidate.analysisScope.map((scope) => <span key={scope}>{t(`competitors.scopes.${scope}`)}</span>)}</div>
                 <p>{candidate.reason}</p>
-                {editable ? <button type="button" className={styles.textButton} disabled={Boolean(activeRun)} onClick={(event) => { rememberTrigger(event.currentTarget); setCompetitorEditor(candidate); }}>{t("actions.reviewCompetitor")}<ArrowRight size={15} aria-hidden="true" /></button> : null}
+                {editable ? <button type="button" className={styles.textButton} disabled={profileWorkActive} onClick={(event) => { rememberTrigger(event.currentTarget); setCompetitorEditor(candidate); }}>{t("actions.reviewCompetitor")}<ArrowRight size={15} aria-hidden="true" /></button> : null}
               </article>
             ))}</div> : <MissingValue />}
           </section>
@@ -1390,7 +1433,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             <p>{view.profileState === "confirmed" ? t("confirmation.confirmedDetail") : t("confirmation.detail")}</p>
             <ul className={styles.checklist}>{view.confirmation.items.map((item) => <li key={item.id} data-complete={item.complete}>{item.complete ? <Check size={15} aria-hidden="true" /> : <span aria-hidden="true">—</span>}<span className={styles.checklistLabel}>{t(`confirmation.items.${item.id}`)}{item.complete || item.missingFieldKeys.length === 0 ? null : <em>{t("confirmation.missingFields", { fields: fieldNameList.format(item.missingFieldKeys.map((key) => t(`fields.${key}`))) })}</em>}</span></li>)}</ul>
             {editable ? <button type="button" className={styles.confirmButton} disabled={!view.confirmation.ready} onClick={(event) => { rememberTrigger(event.currentTarget); setConfirmOpen(true); }}><ShieldCheck size={17} aria-hidden="true" />{view.confirmation.ready ? t("actions.confirm") : t("actions.confirmBlocked")}</button> : <div className={styles.confirmedStamp}><ShieldCheck aria-hidden="true" /><strong>{t("states.confirmed")}</strong></div>}
-            {!view.confirmation.ready && editable ? <p className={styles.blockReason}>{activeRun ? t("confirmation.activeRunBlocked") : t("confirmation.blocked")}</p> : null}
+            {!view.confirmation.ready && editable ? <p className={styles.blockReason}>{profileWorkActive ? t("confirmation.activeRunBlocked") : t("confirmation.blocked")}</p> : null}
           </div>
         </aside>
       </div>

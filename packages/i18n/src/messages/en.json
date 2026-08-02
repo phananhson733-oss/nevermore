@@ -354,7 +354,7 @@
       "onePerLine": "One item per line.",
       "chooseIcp": "Select an existing candidate or create one…",
       "newIcp": "Create a new Primary ICP",
-      "preserveOtherIcp": "Other ICP candidates remain unchanged. Only the selected candidate becomes Primary ICP.",
+      "singleProductIcp": "This is this product's dedicated Primary ICP draft. Edit only where the generated draft differs from reality.",
       "unsaved": "Unsaved changes",
       "noChanges": "No changes",
       "discardTitle": "Discard these edits?",
@@ -371,6 +371,12 @@
       "synthesisQueuedDetail": "GenGrowth is using collected site data to draft the Product Profile, ICP, and competitor candidates.",
       "synthesisAlreadyRunning": "The initial profile is already being generated",
       "synthesisAlreadyRunningDetail": "GenGrowth resumed the active task and will refresh this page when it finishes.",
+      "discoveryRunning": "Discovering direct and indirect competitors",
+      "discoveryRunningDetail": "GenGrowth is combining DataForSEO search overlap with site evidence, then will continue profile generation automatically.",
+      "discoveryComplete": "Competitor search evidence is ready",
+      "discoveryCompleteDetail": "GenGrowth is now generating the Product Profile, dedicated Primary ICP, and competitor draft automatically.",
+      "discoveryUnavailable": "Search competitor data is temporarily unavailable",
+      "discoveryUnavailableDetail": "GenGrowth will continue with collected site evidence; no second click is needed.",
       "synthesisComplete": "Product Profile generated",
       "synthesisCompleteDetail": "The current draft now reflects the completed frozen-evidence analysis. Review it before confirmation.",
       "synthesisFailed": "Product Profile generation could not start or finish",
@@ -413,6 +419,7 @@
     "run": {
       "synthesisTitle": "Generating the Product Profile, ICP, and competitor candidates",
       "crawlTitle": "Collecting site information",
+      "discoveryTitle": "Analyzing the search market and competitors",
       "statuses": {
         "queued": "Queued",
         "running": "Running"

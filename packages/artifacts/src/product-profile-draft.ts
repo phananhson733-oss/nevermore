@@ -13,6 +13,7 @@ import {
   PRODUCT_PROFILE_SEMANTIC_PATHS,
   type ProductProfileSemanticCandidateEnvelope,
 } from "./llm/product-profile-client.ts";
+import type { ProductProfileDiscoveredCompetitor } from "./product-profile-competitor-discovery.ts";
 
 type SemanticPath = (typeof PRODUCT_PROFILE_SEMANTIC_PATHS)[number];
 type Grounding = {
@@ -28,6 +29,7 @@ export interface BuildProductProfileDraftInput {
   readonly analysisInvocationId: string;
   readonly generatedAt: string;
   readonly pageEvidence: Readonly<Record<string, string>>;
+  readonly discoveredCompetitors?: readonly ProductProfileDiscoveredCompetitor[];
 }
 
 const PAGE_KEY_PATTERN = /^page-[1-9]\d*$/u;
@@ -361,6 +363,29 @@ function generatedProvenance(
   };
 }
 
+function discoveredCompetitorProvenance(
+  path: string,
+  competitor: ProductProfileDiscoveredCompetitor,
+): ProductProfileFieldProvenance {
+  const observationId = Uuid.parse(competitor.observationId);
+  const observedAt = IsoDateTime.parse(competitor.observedAt);
+  return {
+    path,
+    derivation: "computed",
+    confidence: competitor.confidence,
+    evidenceRefs: [
+      {
+        evidenceRefId: evidenceRefId(path, "observation", observationId),
+        kind: "observation",
+        observationId,
+      },
+    ],
+    limitation:
+      "Candidate is ranked from a bounded DataForSEO organic search-landscape observation. Keyword intersections are counts, not a similarity percentage; relationship and scope remain reviewable draft classifications.",
+    observedAt,
+  };
+}
+
 function sortedUniqueStrings<T extends string>(values: readonly T[]): T[] {
   return [...values].sort(compareText);
 }
@@ -381,6 +406,28 @@ function audienceValue(
     qualificationSignals: sortedUniqueStrings(audience.qualificationSignals),
     disqualifiers: sortedUniqueStrings(audience.disqualifiers),
   };
+}
+
+function audiencePriority(
+  audience: ProductProfileSemanticCandidateEnvelope["targetAudiences"][number],
+): number {
+  const confidence = { high: 3, medium: 2, low: 1, unknown: 0 }[
+    audience.confidence
+  ];
+  const populated = [
+    audience.targetCompanyOrAudience,
+    ...audience.buyerRoles,
+    ...audience.userRoles,
+    ...audience.useCases,
+    ...audience.triggers,
+    ...audience.pains,
+    ...audience.jtbd,
+    ...audience.outcomes,
+    ...audience.barriers,
+    ...audience.qualificationSignals,
+    ...audience.disqualifiers,
+  ].filter((value) => value !== null).length;
+  return confidence * 1_000 + populated;
 }
 
 function remapCompetitorProvenance(
@@ -538,18 +585,24 @@ export function buildProductProfileDraft(
         grounding,
         value: audienceValue(grounding),
       }))
-      .sort((left, right) =>
-        compareText(stableStringify(left.value), stableStringify(right.value)),
-      );
-    targetAudiences = conclusions.map(({ value }, index) => ({
+      .sort(
+        (left, right) =>
+          audiencePriority(right.grounding) -
+            audiencePriority(left.grounding) ||
+          compareText(
+            stableStringify(left.value),
+            stableStringify(right.value),
+          ),
+      )
+      .slice(0, 1);
+    targetAudiences = conclusions.map(({ value }) => ({
       candidateId: deterministicUuidV8(
         stableStringify([
-          "product-profile-audience.0.3.0",
+          "product-profile-primary-audience.0.3.0",
           stableStringify(value),
-          index,
         ]),
       ),
-      reviewStatus: "candidate",
+      reviewStatus: "primary",
       ...value,
     }));
     conclusions.forEach(({ grounding }, index) =>
@@ -628,6 +681,39 @@ export function buildProductProfileDraft(
       confidence: candidate.confidence,
     });
     infer(`/competitorCandidates/${index}`, candidate);
+    preservedDomains.add(candidate.domain);
+  }
+
+  const discoveredCompetitors = [...(input.discoveredCompetitors ?? [])]
+    .sort((left, right) => compareText(left.domain, right.domain))
+    .filter((candidate) => !preservedDomains.has(candidate.domain));
+  for (const candidate of discoveredCompetitors) {
+    const index = competitorCandidates.length;
+    const domain = ProductProfileCompetitorDomain.parse(candidate.domain);
+    competitorCandidates.push({
+      candidateId: deterministicUuidV8(
+        stableStringify([
+          "product-profile-discovered-competitor.0.3.0",
+          domain,
+        ]),
+      ),
+      name: candidate.name,
+      domain,
+      relationship: candidate.relationship,
+      analysisScope: sortedUniqueStrings(candidate.analysisScope),
+      similarity: null,
+      reason: candidate.reason,
+      reviewStatus: "candidate",
+      confidence: candidate.confidence,
+    });
+    provenance.set(
+      `/competitorCandidates/${index}`,
+      discoveredCompetitorProvenance(
+        `/competitorCandidates/${index}`,
+        candidate,
+      ),
+    );
+    preservedDomains.add(domain);
   }
 
   const conflicts = [...input.candidate.conflicts].sort((left, right) =>

@@ -139,7 +139,7 @@ describe("Product Profile editor patch", () => {
     });
   });
 
-  it("changes the selected Primary ICP while preserving other candidates", () => {
+  it("edits the product's single Primary ICP without a reusable-candidate selector", () => {
     const current = profile();
     const secondary = current.targetAudiences[1]!;
     const state = {
@@ -161,14 +161,28 @@ describe("Product Profile editor patch", () => {
     const patch = buildEditorPatch(current, state);
 
     expect(Object.keys(patch)).toEqual(["targetAudiences"]);
-    expect(patch.targetAudiences).toHaveLength(2);
+    expect(patch.targetAudiences).toHaveLength(1);
     expect(patch.targetAudiences?.[0]).toMatchObject({
-      candidateId: primary.candidateId,
-      reviewStatus: "secondary",
-    });
-    expect(patch.targetAudiences?.[1]).toMatchObject({
       candidateId: secondary.candidateId,
       reviewStatus: "primary",
+    });
+  });
+
+  it("opens a legacy generated candidate as the default Primary ICP draft", () => {
+    const legacyCandidate = {
+      ...profile(),
+      targetAudiences: [
+        {
+          ...primary,
+          reviewStatus: "candidate" as const,
+        },
+      ],
+    };
+
+    expect(initialEditorState(legacyCandidate)).toMatchObject({
+      primaryAudienceId: primary.candidateId,
+      targetCompanyOrAudience: primary.targetCompanyOrAudience,
+      buyerRoles: "VP Customer Success",
     });
   });
 });

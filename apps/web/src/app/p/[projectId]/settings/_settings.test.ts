@@ -17,7 +17,8 @@ describe("product deletion settings", () => {
     expect(settingsSource).toContain("const [confirmingDelete");
     expect(settingsSource).toContain("await deleteProject.mutateAsync()");
     expect(settingsSource).toContain('t("delete.confirmAction")');
-    expect(settingsSource).toContain('router.replace("/new-project")');
+    expect(settingsSource).toContain('router.replace("/")');
+    expect(settingsSource).not.toContain('router.replace("/new-project")');
   });
 
   it("exposes Settings only for an active project shell", () => {

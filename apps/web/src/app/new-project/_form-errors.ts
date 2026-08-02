@@ -4,7 +4,6 @@ const FIELD_KEYS = [
   "customerModel",
   "primaryMarket",
   "growthObjectives",
-  "businessHint",
 ] as const;
 
 export type ProjectFieldKey = (typeof FIELD_KEYS)[number];
@@ -49,9 +48,7 @@ export function mapProjectFieldErrors(
         ? messages.productUrlInvalid
         : key === "growthObjectives"
           ? messages.growthObjectivesRequired
-          : key === "businessHint"
-            ? messages.createError
-            : messages.requiredField;
+          : messages.requiredField;
   }
 
   return {
