@@ -240,6 +240,7 @@ export function sourceSlot(
     scopes: [],
     connectedAt: crawl ? NOW : null,
     latestSnapshot: crawl ? crawlSnapshot : null,
+    latestMetricSummary: null,
     activeRun: null,
     limitation: crawl
       ? "Static HTML crawl of public pages; no snapshot has been collected yet."

@@ -83,7 +83,9 @@ import {
   SOURCE_PROVIDER_ORDER,
   abbreviateChecksum,
   sourceAcquisitionMode,
-  sourcePrimaryRowCount,
+  sourceHasUsableSnapshot,
+  sourceIsConnectedNoData,
+  sourcePrimaryMetric,
   type SourceAcquisitionMode,
 } from "./_sources-readiness.ts";
 import {
@@ -145,7 +147,7 @@ function deriveCustomerConnectorReadiness(
   const usableCount = expectedSources.filter(
     (source) =>
       source?.featureEnabled === true &&
-      source.latestSnapshot?.availability === "available",
+      sourceHasUsableSnapshot(source),
   ).length;
   const partialCount = expectedSources.filter(
     (source) =>
@@ -158,7 +160,7 @@ function deriveCustomerConnectorReadiness(
     return (
       source === undefined ||
       !source.featureEnabled ||
-      source.latestSnapshot?.availability !== "available"
+      !sourceHasUsableSnapshot(source)
     );
   });
 
@@ -217,6 +219,12 @@ interface SourcesPresentationCopy {
   readonly windowThrough: (end: string) => string;
   readonly metricLabel: Readonly<Record<Provider, string>>;
   readonly metricUnit: Readonly<Record<Provider, string>>;
+  readonly metricSupporting: Readonly<
+    Record<GoogleProvider, (value: number | null, pages: number) => string>
+  >;
+  readonly connectedNoData: string;
+  readonly noDataGuidance: Readonly<Record<GoogleProvider, string>>;
+  readonly rawProviderRecords: string;
   readonly providerRole: Readonly<Record<Provider, string>>;
   readonly snapshotDetails: string;
   readonly sourceHealth: string;
@@ -277,18 +285,30 @@ const EN_SOURCES_COPY: SourcesPresentationCopy = {
   windowThrough: (end) => `Through ${end}`,
   metricLabel: {
     crawl: "Captured URLs",
-    gsc: "Search performance rows",
-    ga4: "GA4 report rows",
+    gsc: "Search impressions · latest 28 days",
+    ga4: "Organic sessions · latest 28 days",
     csv: "Imported keyword rows",
     dataforseo: "Ranking keyword rows",
   },
   metricUnit: {
     crawl: "URLs",
-    gsc: "rows",
-    ga4: "rows",
+    gsc: "impressions",
+    ga4: "sessions",
     csv: "rows",
     dataforseo: "keywords",
   },
+  metricSupporting: {
+    gsc: (value, pages) =>
+      `${value ?? "Unavailable"} clicks · ${pages} landing pages`,
+    ga4: (value, pages) =>
+      `${value === null ? "Key events unavailable" : `${value} key events`} · ${pages} landing pages`,
+  },
+  connectedNoData: "Connected · no data detected",
+  noDataGuidance: {
+    gsc: "The connection succeeded, but the selected Search Console property returned no page/query observations for this window. Check the property and reporting window.",
+    ga4: "The connection succeeded, but GA4 returned no organic landing observations. Verify the GA tag or Measurement ID, the Web Data Stream domain, hostname, and Organic Search traffic.",
+  },
+  rawProviderRecords: "Raw provider records",
   providerRole: {
     crawl: "Network evidence",
     gsc: "First-party search",
@@ -357,18 +377,30 @@ const ZH_SOURCES_COPY: SourcesPresentationCopy = {
   windowThrough: (end) => `截至 ${end}`,
   metricLabel: {
     crawl: "已采集 URL",
-    gsc: "搜索表现记录",
-    ga4: "GA4 报表记录",
+    gsc: "近 28 天搜索曝光",
+    ga4: "近 28 天自然搜索会话",
     csv: "导入关键词记录",
     dataforseo: "排名关键词记录",
   },
   metricUnit: {
     crawl: "URLs",
-    gsc: "行",
-    ga4: "行",
+    gsc: "次曝光",
+    ga4: "次会话",
     csv: "行",
     dataforseo: "关键词",
   },
+  metricSupporting: {
+    gsc: (value, pages) =>
+      `${value ?? "不可用"} 次点击 · ${pages} 个落地页`,
+    ga4: (value, pages) =>
+      `${value === null ? "关键事件不可用" : `${value} 次关键事件`} · ${pages} 个落地页`,
+  },
+  connectedNoData: "已连接 · 未检测到数据",
+  noDataGuidance: {
+    gsc: "连接已成功，但所选 Search Console 资源在当前窗口没有返回页面/查询观察。请检查所选资源与数据窗口。",
+    ga4: "连接已成功，但 GA4 没有返回自然搜索落地页观察。请检查网站 GA 标签或 Measurement ID、Web 数据流域名、主机名以及自然搜索流量。",
+  },
+  rawProviderRecords: "原始供应商记录",
   providerRole: {
     crawl: "网络证据",
     gsc: "第一方搜索",
@@ -573,7 +605,9 @@ function Freshness({
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
   const snap = source.latestSnapshot;
-  const metricValue = sourcePrimaryRowCount(source);
+  const connectedNoData = sourceIsConnectedNoData(source);
+  const metric = sourcePrimaryMetric(source);
+  const metricValue = metric.value;
   const historyLabel =
     snapshotCount === null
       ? t("snapshotHistoryUnavailable")
@@ -592,14 +626,24 @@ function Freshness({
             {source.featureEnabled ? copy.noMeasuredValue : t("notAvailable")}
           </strong>
         ) : (
-          <p className={styles.metricValue}>
-            <strong data-testid="source-provenance-dynamic">
-              {new Intl.NumberFormat(locale, { notation: "compact" }).format(
-                metricValue,
-              )}
-            </strong>
-            <span>{copy.metricUnit[source.provider]}</span>
-          </p>
+          <div className={styles.metricStack}>
+            <p className={styles.metricValue}>
+              <strong data-testid="source-provenance-dynamic">
+                {new Intl.NumberFormat(locale, { notation: "compact" }).format(
+                  metricValue,
+                )}
+              </strong>
+              <span>{copy.metricUnit[source.provider]}</span>
+            </p>
+            {source.provider === "gsc" || source.provider === "ga4" ? (
+              <span className={styles.metricSupporting}>
+                {copy.metricSupporting[source.provider](
+                  metric.supportingValue,
+                  metric.landingPageCount ?? 0,
+                )}
+              </span>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -626,9 +670,13 @@ function Freshness({
                 t("notAvailable")
               )
             ) : (
-              <StatusPill tone={availabilityTone(snap.availability)}>
-                {tState(snap.availability)}
-              </StatusPill>
+              !connectedNoData ? (
+                <StatusPill tone={availabilityTone(snap.availability)}>
+                  {tState(snap.availability)}
+                </StatusPill>
+              ) : (
+                <StatusPill tone="warning">{copy.connectedNoData}</StatusPill>
+              )
             )}
           </dd>
         </div>
@@ -691,7 +739,7 @@ function Freshness({
                 </dd>
               </div>
               <div className={styles.provenanceItem}>
-                <dt>{t("rows")}</dt>
+                <dt>{copy.rawProviderRecords}</dt>
                 <dd className={styles.provenanceRows}>
                   {new Intl.NumberFormat(locale).format(snap.rowCount)}
                 </dd>
@@ -1461,6 +1509,7 @@ function SourceCard({
     source.state !== "disconnected";
   const ProviderIcon = PROVIDER_ICON[source.provider];
   const acquisitionMode = sourceAcquisitionMode(source);
+  const connectedNoData = sourceIsConnectedNoData(source);
   const historyLabel =
     snapshotCount === null
       ? copy.historyUnavailable
@@ -1497,8 +1546,16 @@ function SourceCard({
           </h2>
         </div>
         <div className={styles.cardStatuses}>
-          <StatusPill tone={stateTone(source.state)}>
-            {tState(source.state)}
+          <StatusPill
+            tone={
+              connectedNoData
+                ? "warning"
+                : stateTone(source.state)
+            }
+          >
+            {connectedNoData
+              ? copy.connectedNoData
+              : tState(source.state)}
           </StatusPill>
         </div>
       </header>
@@ -1512,7 +1569,12 @@ function SourceCard({
 
         <p className={styles.limitation}>
           <span className={styles.metaLabel}>{t("limitationLabel")}</span>
-          <span>{sourceLimitationForDisplay(source)}</span>
+          <span>
+            {connectedNoData &&
+            (source.provider === "gsc" || source.provider === "ga4")
+              ? copy.noDataGuidance[source.provider]
+              : sourceLimitationForDisplay(source)}
+          </span>
         </p>
 
         {hintKey !== null ? (

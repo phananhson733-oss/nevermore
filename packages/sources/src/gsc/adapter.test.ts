@@ -107,6 +107,18 @@ describe("GSC source adapter", () => {
     });
   });
 
+  it("marks a successful empty response as unavailable data rather than a measured zero", async () => {
+    const { adapter } = adapterWith([]);
+
+    await expect(adapter.collect({}, context)).resolves.toMatchObject({
+      availability: "unavailable",
+      rowCount: 0,
+      stopReason: "no_data",
+      limitation: expect.stringContaining("GSC_NO_DATA"),
+      raw: { availability: "unavailable", rowCount: 0 },
+    });
+  });
+
   it("marks the provider row cap as partial and records a stop reason", async () => {
     const rows = new Array<GscRow>(GSC_MAX_ROWS).fill(row);
     const { adapter } = adapterWith(rows);

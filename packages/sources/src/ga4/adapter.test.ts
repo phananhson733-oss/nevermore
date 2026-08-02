@@ -297,6 +297,25 @@ describe("GA4 source adapter", () => {
     });
   });
 
+  it("marks an empty organic landing report as unavailable data, not zero sessions", async () => {
+    const fake = client();
+    fake.runReport
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response());
+    fake.checkCompatibility.mockResolvedValueOnce({
+      compatible: true,
+      incompatibleFields: [],
+    });
+
+    await expect(createGa4Adapter(fake.value).collect(params, context)).resolves.toMatchObject({
+      availability: "unavailable",
+      rowCount: 0,
+      stopReason: "no_data",
+      limitation: expect.stringContaining("GA4_NO_DATA"),
+      raw: { availability: "unavailable", sessionRows: [] },
+    });
+  });
+
   it("skips an incompatible key-event report without fabricating zeroes", async () => {
     const fake = client();
     fake.runReport.mockResolvedValueOnce(response(sessionRow));

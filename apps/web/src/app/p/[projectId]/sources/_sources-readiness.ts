@@ -26,6 +26,69 @@ export interface SourcesReadiness {
   readonly missingProviders: readonly Provider[];
 }
 
+export interface SourcePrimaryMetric {
+  readonly value: number | null;
+  readonly supportingValue: number | null;
+  readonly landingPageCount: number | null;
+}
+
+/**
+ * A successful provider request is not yet usable evidence. GSC/GA4 must also
+ * have at least one normalized business observation tied to the latest
+ * snapshot; otherwise the UI reports a connected source with no detected data.
+ */
+export function sourceHasUsableSnapshot(source: SourceConnection): boolean {
+  const snapshot = source.latestSnapshot;
+  if (snapshot?.availability !== "available") return false;
+  if (source.provider === "gsc" || source.provider === "ga4") {
+    return source.latestMetricSummary?.provider === source.provider;
+  }
+  return snapshot.rowCount > 0;
+}
+
+/**
+ * Distinguish a successful zero-data analytics response from permission,
+ * provider, or partial-report failures. Older snapshots recorded zero data as
+ * `available`; new adapters persist an explicit stable no-data limitation.
+ */
+export function sourceIsConnectedNoData(source: SourceConnection): boolean {
+  const snapshot = source.latestSnapshot;
+  if (
+    snapshot === null ||
+    (source.provider !== "gsc" && source.provider !== "ga4") ||
+    source.latestMetricSummary?.provider === source.provider
+  ) {
+    return false;
+  }
+  return (
+    snapshot.availability === "available" ||
+    snapshot.limitation.startsWith("GSC_NO_DATA:") ||
+    snapshot.limitation.startsWith("GA4_NO_DATA:")
+  );
+}
+
+/** Business metric for the large customer-connector number, never raw API rows. */
+export function sourcePrimaryMetric(
+  source: SourceConnection,
+): SourcePrimaryMetric {
+  const summary = source.latestMetricSummary;
+  if (summary?.provider === "gsc") {
+    return {
+      value: summary.impressions,
+      supportingValue: summary.clicks,
+      landingPageCount: summary.landingPageCount,
+    };
+  }
+  if (summary?.provider === "ga4") {
+    return {
+      value: summary.sessions,
+      supportingValue: summary.keyEvents,
+      landingPageCount: summary.landingPageCount,
+    };
+  }
+  return { value: null, supportingValue: null, landingPageCount: null };
+}
+
 /**
  * Present the existing connection type as an acquisition mode. Feature-disabled
  * slots remain explicit instead of looking like a live integration.
@@ -62,7 +125,7 @@ export function deriveSourcesReadiness(
     (source) => source.featureEnabled,
   );
   const usableCount = enabledSources.filter(
-    (source) => source.latestSnapshot?.availability === "available",
+    sourceHasUsableSnapshot,
   ).length;
   const partialCount = enabledSources.filter(
     (source) => source.latestSnapshot?.availability === "partial",
@@ -83,7 +146,7 @@ export function deriveSourcesReadiness(
       .filter(
         (source) =>
           source.featureEnabled &&
-          source.latestSnapshot?.availability !== "available",
+          !sourceHasUsableSnapshot(source),
       )
       .map((source) => source.provider),
     missingProviders,
@@ -116,21 +179,6 @@ export function sourcesReadyForDiagnosis(
     readiness.gapProviders.length === 0 &&
     readiness.missingProviders.length === 0
   );
-}
-
-/**
- * Value used for the large card metric. `null` means "not available" and must
- * remain visually distinct from a measured zero. Partial snapshots keep their
- * real row count while their status continues to communicate the limitation.
- */
-export function sourcePrimaryRowCount(
-  source: SourceConnection,
-): number | null {
-  const snapshot = source.latestSnapshot;
-  if (snapshot === null || snapshot.availability === "unavailable") {
-    return null;
-  }
-  return snapshot.rowCount;
 }
 
 /** Keep checksums scannable without rendering the full immutable digest. */

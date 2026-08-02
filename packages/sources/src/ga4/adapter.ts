@@ -53,6 +53,9 @@ import { keyEventReason, normalizeGa4 } from "./normalize.ts";
 import type { Ga4Window } from "./window.ts";
 import { computeGa4Window } from "./window.ts";
 
+export const GA4_NO_DATA_LIMITATION =
+  "GA4_NO_DATA: the selected property returned no organic landing observations for the requested window.";
+
 const GA4_PROVIDER: Provider = "ga4";
 const GA4_ORGANIC_CHANNEL = "Organic Search";
 
@@ -105,7 +108,7 @@ export interface Ga4Raw {
   readonly sessionReport: Ga4ReportMetadata;
   readonly keyEventReport: Ga4ReportMetadata | null;
   readonly availability: Availability;
-  readonly stopReason: Ga4ReportStopReason | null;
+  readonly stopReason: Ga4ReportStopReason | "no_data" | null;
   readonly limitation: string;
   readonly capturedAt: string;
 }
@@ -475,16 +478,22 @@ export function createGa4Adapter(
         }
       }
 
-      const stopReason = collectionStopReason(stopReasons);
-      const availability: Availability =
-        keyEventStatus.state === "available" && stopReason === null
+      const noData = sessionRows.length === 0;
+      const stopReason = noData
+        ? "no_data"
+        : collectionStopReason(stopReasons);
+      const availability: Availability = noData
+        ? "unavailable"
+        : keyEventStatus.state === "available" && stopReason === null
           ? "available"
           : "partial";
-      const limitation = collectionLimitation(
-        keyEventStatus,
-        availableScope,
-        reportLimitations,
-      );
+      const limitation = noData
+        ? GA4_NO_DATA_LIMITATION
+        : collectionLimitation(
+            keyEventStatus,
+            availableScope,
+            reportLimitations,
+          );
       const raw: Ga4Raw = {
         propertyId: params.propertyId,
         propertyTimeZone: params.propertyTimeZone,

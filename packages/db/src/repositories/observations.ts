@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { normalizedObservations } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -75,6 +75,19 @@ export interface ObservationSubjectLookup {
   readonly metricKey: string;
   readonly subjectType: string;
   readonly subjectRef: string;
+}
+
+export interface GscSnapshotMetricSummary {
+  readonly landingPageCount: number;
+  readonly clicks: string;
+  readonly impressions: string;
+}
+
+export interface Ga4SnapshotMetricSummary {
+  readonly landingPageCount: number;
+  readonly sessions: string;
+  /** `null` means the property has no compatible/mapped key-event metric. */
+  readonly keyEvents: string | null;
 }
 
 const INSERT_CHUNK = 500;
@@ -220,5 +233,107 @@ export class ObservationsRepository extends Repository {
         ),
       )) as { id: string }[];
     return rows.length;
+  }
+
+  /**
+   * Aggregate the business metrics shown on the Sources screen from one exact
+   * immutable GSC snapshot. Raw provider row counts remain snapshot provenance;
+   * they are not a customer-facing search-performance metric.
+   */
+  async summarizeGscSnapshot(
+    scope: ProjectScope,
+    snapshotId: string,
+  ): Promise<GscSnapshotMetricSummary | null> {
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      select
+        count(*) filter (
+          where jsonb_typeof(observation.value_json -> 'current28d') = 'object'
+            and jsonb_typeof(observation.value_json -> 'current28d' -> 'clicks') = 'number'
+            and jsonb_typeof(observation.value_json -> 'current28d' -> 'impressions') = 'number'
+        )::integer as landing_page_count,
+        sum(
+          case
+            when jsonb_typeof(observation.value_json -> 'current28d' -> 'clicks') = 'number'
+              then (observation.value_json -> 'current28d' ->> 'clicks')::numeric
+            else null
+          end
+        )::text as clicks,
+        sum(
+          case
+            when jsonb_typeof(observation.value_json -> 'current28d' -> 'impressions') = 'number'
+              then (observation.value_json -> 'current28d' ->> 'impressions')::numeric
+            else null
+          end
+        )::text as impressions
+      from app.normalized_observations observation
+      where observation.workspace_id = ${scope.workspaceId}::uuid
+        and observation.project_id = ${scope.projectId}::uuid
+        and observation.snapshot_id = ${snapshotId}::uuid
+        and observation.provider = 'gsc'
+        and observation.metric_key = 'gsc.page.v1'
+        and observation.subject_type = 'url'
+        and observation.availability = 'available'
+    `);
+    const row = result.rows[0];
+    const landingPageCount = Number(row?.["landing_page_count"] ?? 0);
+    const clicks = row?.["clicks"];
+    const impressions = row?.["impressions"];
+    if (
+      !Number.isSafeInteger(landingPageCount) ||
+      landingPageCount <= 0 ||
+      typeof clicks !== "string" ||
+      typeof impressions !== "string"
+    ) {
+      return null;
+    }
+    return { landingPageCount, clicks, impressions };
+  }
+
+  /** Aggregate current-window organic sessions from one exact GA4 snapshot. */
+  async summarizeGa4Snapshot(
+    scope: ProjectScope,
+    snapshotId: string,
+  ): Promise<Ga4SnapshotMetricSummary | null> {
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      select
+        count(*) filter (
+          where jsonb_typeof(observation.value_json -> 'sessions') = 'number'
+        )::integer as landing_page_count,
+        sum(
+          case
+            when jsonb_typeof(observation.value_json -> 'sessions') = 'number'
+              then (observation.value_json ->> 'sessions')::numeric
+            else null
+          end
+        )::text as sessions,
+        sum(
+          case
+            when jsonb_typeof(observation.value_json -> 'keyEvents') = 'number'
+              then (observation.value_json ->> 'keyEvents')::numeric
+            else null
+          end
+        )::text as key_events
+      from app.normalized_observations observation
+      where observation.workspace_id = ${scope.workspaceId}::uuid
+        and observation.project_id = ${scope.projectId}::uuid
+        and observation.snapshot_id = ${snapshotId}::uuid
+        and observation.provider = 'ga4'
+        and observation.metric_key = 'ga4.landing.v1'
+        and observation.subject_type = 'url'
+        and observation.availability = 'available'
+    `);
+    const row = result.rows[0];
+    const landingPageCount = Number(row?.["landing_page_count"] ?? 0);
+    const sessions = row?.["sessions"];
+    const keyEvents = row?.["key_events"];
+    if (
+      !Number.isSafeInteger(landingPageCount) ||
+      landingPageCount <= 0 ||
+      typeof sessions !== "string" ||
+      (keyEvents !== null && typeof keyEvents !== "string")
+    ) {
+      return null;
+    }
+    return { landingPageCount, sessions, keyEvents };
   }
 }

@@ -32,6 +32,20 @@ export interface DataSnapshotDto {
   checksum: string;
 }
 
+export type SourceMetricSummaryDto =
+  | {
+      readonly provider: "gsc";
+      readonly landingPageCount: number;
+      readonly clicks: number;
+      readonly impressions: number;
+    }
+  | {
+      readonly provider: "ga4";
+      readonly landingPageCount: number;
+      readonly sessions: number;
+      readonly keyEvents: number | null;
+    };
+
 export interface SourceConnectionDto {
   id: string | null;
   projectId: string;
@@ -42,6 +56,7 @@ export interface SourceConnectionDto {
   scopes: string[];
   connectedAt: string | null;
   latestSnapshot: DataSnapshotDto | null;
+  latestMetricSummary: SourceMetricSummaryDto | null;
   activeRun: AsyncRunDto | null;
   limitation: string;
   featureEnabled: boolean;
@@ -100,6 +115,7 @@ export function toSourceConnectionDto(input: {
   provider: string;
   connection: SourceConnectionRow | null;
   latestSnapshot: DataSnapshotRow | null;
+  latestMetricSummary?: SourceMetricSummaryDto | null;
   activeRun: AsyncRunRow | null;
   featureEnabled: boolean;
   now: number;
@@ -124,6 +140,7 @@ export function toSourceConnectionDto(input: {
     scopes: connection ? connection.scopes : [],
     connectedAt: connection ? connection.connected_at : null,
     latestSnapshot: snapshotDto,
+    latestMetricSummary: input.latestMetricSummary ?? null,
     activeRun: activeRun ? toAsyncRunDto(activeRun) : null,
     limitation: connection
       ? connection.limitation

@@ -202,6 +202,15 @@ function source(
             checksum: "sha256:test",
           }
         : null,
+    latestMetricSummary:
+      provider === "gsc"
+        ? {
+            provider: "gsc",
+            landingPageCount: 3,
+            clicks: 2,
+            impressions: 80,
+          }
+        : null,
     activeRun: null,
     limitation: "Provider supplied an English limitation.",
     featureEnabled: true,

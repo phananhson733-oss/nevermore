@@ -68,6 +68,9 @@ OAuth connected、credential present 或 provider enabled 都不等于数据 ava
 规则只能消费已完成、未过期、scope 一致并且写入 canonical Snapshot /
 Observation 的数据。缺数据必须成为 skipped/inconclusive/no_data/unavailable，
 绝不能合成 0、虚构关键词、虚构竞品或虚构 before/after lift。
+来源读模型必须把原始 provider/API 行数留在不可变快照详情中；GSC/GA4 卡片的
+主指标只可聚合同一个最新 Snapshot 的 canonical Observation。成功请求但没有
+规范化 Observation 时，必须显示“已连接但未检测到数据”，且不得计入可用覆盖。
 
 GitHub 预留为未来代码交付连接；它不是当前分析数据来源。Sitemap、内部 Crawl、
 keyword relation、topic model、competitor monitor、GEO citation 和 backlink
