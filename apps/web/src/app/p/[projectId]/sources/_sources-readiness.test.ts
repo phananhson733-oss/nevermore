@@ -11,6 +11,7 @@ import {
   deriveSourcesReadiness,
   sourceAcquisitionMode,
   sourceHasUsableSnapshot,
+  sourceIsConnectedNoData,
   sourcePrimaryMetric,
   sourcesCoveragePercentage,
   sourcesReadyForDiagnosis,
@@ -260,12 +261,29 @@ describe("Sources readiness projection", () => {
     ];
 
     expect(sourceHasUsableSnapshot(emptyGa4)).toBe(false);
+    expect(sourceIsConnectedNoData(emptyGa4)).toBe(true);
     expect(sourcePrimaryMetric(emptyGa4).value).toBeNull();
     expect(deriveSourcesReadiness(sources)).toMatchObject({
       usableCount: 1,
       unavailableCount: 1,
       gapProviders: ["ga4"],
     });
+  });
+
+  it("keeps a partial analytics report distinct from a connected zero-data response", () => {
+    const partialGa4 = source("ga4", {
+      latestSnapshot: { ...snapshot("ga4", "partial"), rowCount: 42 },
+      latestMetricSummary: {
+        provider: "ga4",
+        landingPageCount: 12,
+        sessions: 42,
+        keyEvents: null,
+      },
+    });
+
+    expect(sourceHasUsableSnapshot(partialGa4)).toBe(false);
+    expect(sourceIsConnectedNoData(partialGa4)).toBe(false);
+    expect(sourcePrimaryMetric(partialGa4).value).toBe(42);
   });
 
   it("abbreviates long checksums while preserving both identifying ends", () => {

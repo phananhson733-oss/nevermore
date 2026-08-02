@@ -346,6 +346,12 @@ test("AC-046: Sources exposes customer permission and partial states", async ({
       state: "partial",
       connectedAt: "2026-07-18T12:00:00.000Z",
       latestSnapshot: partialSnapshot,
+      latestMetricSummary: {
+        provider: "ga4",
+        landingPageCount: 12,
+        sessions: 42,
+        keyEvents: null,
+      },
       limitation: partialSnapshot.limitation,
     }),
     sourceSlot("csv"),

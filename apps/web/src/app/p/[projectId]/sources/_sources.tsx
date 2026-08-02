@@ -84,6 +84,7 @@ import {
   abbreviateChecksum,
   sourceAcquisitionMode,
   sourceHasUsableSnapshot,
+  sourceIsConnectedNoData,
   sourcePrimaryMetric,
   type SourceAcquisitionMode,
 } from "./_sources-readiness.ts";
@@ -604,6 +605,7 @@ function Freshness({
   const locale = useLocale();
   const copy = sourcesPresentationCopy(locale);
   const snap = source.latestSnapshot;
+  const connectedNoData = sourceIsConnectedNoData(source);
   const metric = sourcePrimaryMetric(source);
   const metricValue = metric.value;
   const historyLabel =
@@ -668,7 +670,7 @@ function Freshness({
                 t("notAvailable")
               )
             ) : (
-              sourceHasUsableSnapshot(source) ? (
+              !connectedNoData ? (
                 <StatusPill tone={availabilityTone(snap.availability)}>
                   {tState(snap.availability)}
                 </StatusPill>
@@ -1507,7 +1509,7 @@ function SourceCard({
     source.state !== "disconnected";
   const ProviderIcon = PROVIDER_ICON[source.provider];
   const acquisitionMode = sourceAcquisitionMode(source);
-  const hasUsableSnapshot = sourceHasUsableSnapshot(source);
+  const connectedNoData = sourceIsConnectedNoData(source);
   const historyLabel =
     snapshotCount === null
       ? copy.historyUnavailable
@@ -1546,12 +1548,12 @@ function SourceCard({
         <div className={styles.cardStatuses}>
           <StatusPill
             tone={
-              source.latestSnapshot !== null && !hasUsableSnapshot
+              connectedNoData
                 ? "warning"
                 : stateTone(source.state)
             }
           >
-            {source.latestSnapshot !== null && !hasUsableSnapshot
+            {connectedNoData
               ? copy.connectedNoData
               : tState(source.state)}
           </StatusPill>
@@ -1568,8 +1570,7 @@ function SourceCard({
         <p className={styles.limitation}>
           <span className={styles.metaLabel}>{t("limitationLabel")}</span>
           <span>
-            {source.latestSnapshot !== null &&
-            !hasUsableSnapshot &&
+            {connectedNoData &&
             (source.provider === "gsc" || source.provider === "ga4")
               ? copy.noDataGuidance[source.provider]
               : sourceLimitationForDisplay(source)}

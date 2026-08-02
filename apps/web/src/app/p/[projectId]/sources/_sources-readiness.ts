@@ -46,6 +46,27 @@ export function sourceHasUsableSnapshot(source: SourceConnection): boolean {
   return snapshot.rowCount > 0;
 }
 
+/**
+ * Distinguish a successful zero-data analytics response from permission,
+ * provider, or partial-report failures. Older snapshots recorded zero data as
+ * `available`; new adapters persist an explicit stable no-data limitation.
+ */
+export function sourceIsConnectedNoData(source: SourceConnection): boolean {
+  const snapshot = source.latestSnapshot;
+  if (
+    snapshot === null ||
+    (source.provider !== "gsc" && source.provider !== "ga4") ||
+    source.latestMetricSummary?.provider === source.provider
+  ) {
+    return false;
+  }
+  return (
+    snapshot.availability === "available" ||
+    snapshot.limitation.startsWith("GSC_NO_DATA:") ||
+    snapshot.limitation.startsWith("GA4_NO_DATA:")
+  );
+}
+
 /** Business metric for the large customer-connector number, never raw API rows. */
 export function sourcePrimaryMetric(
   source: SourceConnection,
@@ -158,21 +179,6 @@ export function sourcesReadyForDiagnosis(
     readiness.gapProviders.length === 0 &&
     readiness.missingProviders.length === 0
   );
-}
-
-/**
- * Value used for the large card metric. `null` means "not available" and must
- * remain visually distinct from a measured zero. Partial snapshots keep their
- * real row count while their status continues to communicate the limitation.
- */
-export function sourcePrimaryRowCount(
-  source: SourceConnection,
-): number | null {
-  const snapshot = source.latestSnapshot;
-  if (snapshot === null || snapshot.availability === "unavailable") {
-    return null;
-  }
-  return snapshot.rowCount;
 }
 
 /** Keep checksums scannable without rendering the full immutable digest. */

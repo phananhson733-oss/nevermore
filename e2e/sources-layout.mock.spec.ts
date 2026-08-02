@@ -36,6 +36,22 @@ function usableSource(provider: SourceProvider, ordinal: number) {
     state: "available",
     connectedAt: "2026-07-18T12:00:00.000Z",
     latestSnapshot,
+    latestMetricSummary:
+      provider === "gsc"
+        ? {
+            provider: "gsc",
+            landingPageCount: 12,
+            clicks: 8,
+            impressions: 1_240,
+          }
+        : provider === "ga4"
+          ? {
+              provider: "ga4",
+              landingPageCount: 12,
+              sessions: 96,
+              keyEvents: null,
+            }
+          : null,
   });
 }
 
