@@ -149,7 +149,7 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
     secondaryMarkets: profile.targetMarkets
       .filter((market) => market.priority === "secondary")
       .map((market) => market.marketCode),
-    primaryAudienceId: primary?.candidateId ?? "",
+    primaryAudienceId: primary?.candidateId ?? "__new__",
     ...audienceFields(primary),
   };
 }

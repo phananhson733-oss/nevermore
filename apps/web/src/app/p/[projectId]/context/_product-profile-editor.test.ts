@@ -185,6 +185,38 @@ describe("Product Profile editor patch", () => {
       buyerRoles: "VP Customer Success",
     });
   });
+
+  it("opens a new product-specific Primary ICP draft when generation has not returned an audience yet", () => {
+    const emptyAudienceProfile = {
+      ...profile(),
+      targetAudiences: [],
+    };
+    const initial = initialEditorState(emptyAudienceProfile);
+
+    expect(initial).toMatchObject({
+      primaryAudienceId: "__new__",
+      targetCompanyOrAudience: "",
+      buyerRoles: "",
+    });
+
+    const patch = buildEditorPatch(emptyAudienceProfile, {
+      ...initial,
+      targetCompanyOrAudience: "B2B SaaS customer operations teams",
+      buyerRoles: "VP Customer Success",
+      useCases: "Standardize customer onboarding",
+    });
+
+    expect(patch.targetAudiences).toHaveLength(1);
+    expect(patch.targetAudiences?.[0]).toMatchObject({
+      candidateId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
+      reviewStatus: "primary",
+      targetCompanyOrAudience: "B2B SaaS customer operations teams",
+      buyerRoles: ["VP Customer Success"],
+      useCases: ["Standardize customer onboarding"],
+    });
+  });
 });
 
 describe("competitor review readiness", () => {
