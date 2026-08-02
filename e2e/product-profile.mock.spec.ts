@@ -701,9 +701,6 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
     .getByRole("checkbox", { name: "提升注册", exact: true })
     .check();
   await page
-    .getByLabel("补充业务背景（选填）")
-    .fill("面向海外 B2B SaaS 客户运营团队的 onboarding 产品。");
-  await page
     .getByRole("button", { name: "创建并生成初始画像" })
     .click();
 
@@ -716,7 +713,6 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
       customerModel: "b2b",
       primaryMarket: "US",
       growthObjectives: ["increase_signups"],
-      businessHint: "面向海外 B2B SaaS 客户运营团队的 onboarding 产品。",
     },
   ]);
   await page.waitForURL(`/p/${E2E_PROJECT_ID}/context`);
@@ -1025,9 +1021,6 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
     .getByRole("checkbox", { name: "美国 · US", exact: true })
     .check();
   await editor
-    .getByLabel("核心 ICP 候选")
-    .selectOption(SECONDARY_AUDIENCE_ID);
-  await editor
     .getByLabel("目标企业 / 目标用户")
     .fill("Implementation agencies with a repeatable SaaS delivery motion");
   await editor.getByRole("button", { name: "保存为新版本" }).click();
@@ -1045,10 +1038,8 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
         { marketCode: "US", priority: "secondary" },
       ],
       targetAudiences: [
-        { ...PRIMARY_AUDIENCE, reviewStatus: "secondary" },
         {
-          ...SECONDARY_AUDIENCE,
-          reviewStatus: "primary",
+          ...PRIMARY_AUDIENCE,
           targetCompanyOrAudience:
             "Implementation agencies with a repeatable SaaS delivery motion",
         },
