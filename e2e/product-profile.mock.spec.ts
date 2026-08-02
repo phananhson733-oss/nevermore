@@ -778,6 +778,32 @@ test("only a dirty open Product Profile editor fences the browser unload", async
   expect(await unloadIsFenced(page)).toBe(false);
 });
 
+test("opens the Primary ICP editor directly from confirmation readiness", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await gotoProductProfile(page);
+
+  const trigger = page.getByRole("button", {
+    name: "编辑核心 ICP",
+    exact: true,
+  });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+
+  const editor = page.getByRole("dialog", {
+    name: "编辑产品画像与核心 ICP",
+  });
+  await expect(editor).toBeVisible();
+  const primaryIcpInput = editor.getByLabel("目标企业 / 目标用户");
+  await expect(primaryIcpInput).toBeVisible();
+  await expect(primaryIcpInput).toBeFocused();
+
+  await editor.getByRole("button", { name: "关闭" }).click();
+  await expect(editor).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test("automatically collects website evidence and resumes initial profile generation", async ({
   page,
 }) => {

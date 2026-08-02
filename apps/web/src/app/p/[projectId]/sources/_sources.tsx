@@ -45,7 +45,6 @@ import {
 } from "@/components/ui";
 import {
   analysisRefreshRunIdFromError,
-  collectionRunIdFromError,
   invalidateAnalysisRefreshTerminalQueries,
   isTerminalRunStatus,
   readAnalysisRefreshRunId,
@@ -740,7 +739,9 @@ function CrawlControls({
     <div className={styles.controls}>
       <Button variant="ghost" onClick={start} disabled={busy || runActive}>
         <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
-        {busy ? t("collecting") : t(sourceCollectLabelKey(sourceState))}
+        {busy || runActive
+          ? t("collecting")
+          : t(sourceCollectLabelKey(sourceState))}
       </Button>
       {mutation.error !== null ? (
         <ProblemNotice
@@ -762,14 +763,12 @@ function PropertySelection({
   intent,
   onDone,
   onConnected,
-  autoCollecting,
 }: {
   readonly projectId: string;
   readonly provider: GoogleProvider;
   readonly intent: PropertySelectionPhase;
   readonly onDone: () => void;
   readonly onConnected: (source: SourceConnection) => void;
-  readonly autoCollecting: boolean;
 }) {
   const t = useTranslations("sources");
   const tCommon = useTranslations("common");
@@ -777,7 +776,7 @@ function PropertySelection({
   const [selected, setSelected] = useState<string>(
     intent.properties[0]?.id ?? "",
   );
-  const busy = connect.isPending || autoCollecting;
+  const busy = connect.isPending;
   const selectId = `${provider}-property`;
 
   const confirm = () => {
@@ -872,28 +871,7 @@ function OAuthControls({
         provider={provider}
         intent={intent}
         onDone={onClearIntent}
-        autoCollecting={collect.isPending}
-        onConnected={(connectedSource) => {
-          const connectedSourceId = connectedSource.id;
-          if (connectedSourceId === null) {
-            onClearIntent();
-            return;
-          }
-          collect.mutate(
-            { provider, sourceConnectionId: connectedSourceId },
-            {
-              onSuccess: (data) => {
-                onStarted(data.run.id);
-                onClearIntent();
-              },
-              onError: (error) => {
-                const winnerRunId = collectionRunIdFromError(error, projectId);
-                if (winnerRunId !== null) onStarted(winnerRunId);
-                onClearIntent();
-              },
-            },
-          );
-        }}
+        onConnected={() => onClearIntent()}
       />
     );
   }
@@ -955,7 +933,9 @@ function OAuthControls({
     <div className={styles.controls}>
       <Button variant="ghost" onClick={start} disabled={busy || runActive}>
         <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
-        {busy ? t("collecting") : t(sourceCollectLabelKey(source.state))}
+        {busy || runActive
+          ? t("collecting")
+          : t(sourceCollectLabelKey(source.state))}
       </Button>
       {collect.error !== null ? (
         <ProblemNotice

@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0035_uuidv8_product_profile_competitor_evidence.sql` (**35 ordered migrations**)
+  `0036_missing_analytics_site_page_lineage.sql` (**36 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
@@ -218,7 +218,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0034`; historical proof through `0021` does not prove
+   migrations through `0036`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

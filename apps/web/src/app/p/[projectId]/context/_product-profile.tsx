@@ -193,12 +193,14 @@ function ModalFrame({
   open,
   titleId,
   wide = false,
+  initialFocusSelector,
   onRequestClose,
   children,
 }: {
   readonly open: boolean;
   readonly titleId: string;
   readonly wide?: boolean;
+  readonly initialFocusSelector?: string | undefined;
   readonly onRequestClose: () => void;
   readonly children: ReactNode;
 }) {
@@ -222,9 +224,12 @@ function ModalFrame({
       element.setAttribute("aria-hidden", "true");
       element.setAttribute("inert", "");
     });
-    const focusFrame = requestAnimationFrame(() =>
-      focusable(frameRef.current ?? document.body)[0]?.focus(),
-    );
+    const focusFrame = requestAnimationFrame(() => {
+      const requestedFocus = initialFocusSelector
+        ? frameRef.current?.querySelector<HTMLElement>(initialFocusSelector)
+        : null;
+      (requestedFocus ?? focusable(frameRef.current ?? document.body)[0])?.focus();
+    });
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -255,7 +260,7 @@ function ModalFrame({
         if (!inert) element.removeAttribute("inert");
       });
     };
-  }, [onRequestClose, open]);
+  }, [initialFocusSelector, onRequestClose, open]);
   if (!mounted || !open) return null;
   return createPortal(
     <div
@@ -331,12 +336,14 @@ function SectionHeading({
 function ProfileEditor({
   profile,
   open,
+  initialFocus,
   saving,
   onClose,
   onSave,
 }: {
   readonly profile: ProductProfileDraft;
   readonly open: boolean;
+  readonly initialFocus: "default" | "primaryIcp";
   readonly saving: boolean;
   readonly onClose: () => void;
   readonly onSave: (patch: UpdateProductProfileDraftRequest["patch"]) => Promise<void>;
@@ -403,6 +410,11 @@ function ProfileEditor({
         open={open && !discardOpen}
         titleId={titleId}
         wide
+        initialFocusSelector={
+          initialFocus === "primaryIcp"
+            ? "[data-primary-icp-editor-input]"
+            : undefined
+        }
         onRequestClose={requestClose}
       >
         <form className={styles.editorForm} onSubmit={(event) => void submit(event)}>
@@ -571,7 +583,7 @@ function ProfileEditor({
                 <>
                   <label className={styles.field}>
                     <span>{t("fields.targetCompanyOrAudience")}</span>
-                    <textarea value={state.targetCompanyOrAudience} onChange={(event) => set("targetCompanyOrAudience", event.target.value)} rows={3} />
+                    <textarea data-primary-icp-editor-input value={state.targetCompanyOrAudience} onChange={(event) => set("targetCompanyOrAudience", event.target.value)} rows={3} />
                   </label>
                   {(["buyerRoles", "userRoles", "useCases", "triggers", "pains", "jtbd", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] as const).map((key) => (
                     <label key={key} className={styles.field}>
@@ -737,6 +749,9 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const crawlMutation = useCreateCollectionRun(projectId);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorInitialFocus, setEditorInitialFocus] = useState<
+    "default" | "primaryIcp"
+  >("default");
   const [competitorEditor, setCompetitorEditor] = useState<
     ProductProfileCompetitorCandidate | "add" | null
   >(null);
@@ -1212,6 +1227,14 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const rememberTrigger = (trigger: HTMLButtonElement) => {
     overlayTrigger.current = trigger;
   };
+  const openProfileEditor = (
+    trigger: HTMLButtonElement,
+    initialFocus: "default" | "primaryIcp" = "default",
+  ) => {
+    rememberTrigger(trigger);
+    setEditorInitialFocus(initialFocus);
+    setEditorOpen(true);
+  };
   const restoreTrigger = () => {
     requestAnimationFrame(() => overlayTrigger.current?.focus());
   };
@@ -1303,7 +1326,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             {view.profileState === "confirmed" ? <ShieldCheck size={15} aria-hidden="true" /> : <PencilLine size={15} aria-hidden="true" />}
             {view.profileState === "confirmed" ? t("states.confirmed") : t("states.draftVersion", { version: row.version })}
           </span>
-          {editable ? <button type="button" className={styles.secondaryButton} disabled={profileWorkActive} onClick={(event) => { rememberTrigger(event.currentTarget); setEditorOpen(true); }}><PencilLine size={16} aria-hidden="true" />{t("actions.edit")}</button> : null}
+          {editable ? <button type="button" className={styles.secondaryButton} disabled={profileWorkActive} onClick={(event) => openProfileEditor(event.currentTarget)}><PencilLine size={16} aria-hidden="true" />{t("actions.edit")}</button> : null}
           {sourceConnectionsAllowed ? (
             <Link className={styles.secondaryButton} href={`/p/${projectId}/sources`}>
               <Database size={16} aria-hidden="true" />
@@ -1431,14 +1454,49 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             <p className={styles.eyebrow}>{t("confirmation.eyebrow")}</p>
             <h2>{t("confirmation.title")}</h2>
             <p>{view.profileState === "confirmed" ? t("confirmation.confirmedDetail") : t("confirmation.detail")}</p>
-            <ul className={styles.checklist}>{view.confirmation.items.map((item) => <li key={item.id} data-complete={item.complete}>{item.complete ? <Check size={15} aria-hidden="true" /> : <span aria-hidden="true">—</span>}<span className={styles.checklistLabel}>{t(`confirmation.items.${item.id}`)}{item.complete || item.missingFieldKeys.length === 0 ? null : <em>{t("confirmation.missingFields", { fields: fieldNameList.format(item.missingFieldKeys.map((key) => t(`fields.${key}`))) })}</em>}</span></li>)}</ul>
+            <ul className={styles.checklist}>
+              {view.confirmation.items.map((item) => (
+                <li key={item.id} data-complete={item.complete}>
+                  {item.complete ? (
+                    <Check size={15} aria-hidden="true" />
+                  ) : (
+                    <span aria-hidden="true">—</span>
+                  )}
+                  <span className={styles.checklistLabel}>
+                    {t(`confirmation.items.${item.id}`)}
+                    {item.complete || item.missingFieldKeys.length === 0 ? null : (
+                      <em>
+                        {t("confirmation.missingFields", {
+                          fields: fieldNameList.format(
+                            item.missingFieldKeys.map((key) => t(`fields.${key}`)),
+                          ),
+                        })}
+                      </em>
+                    )}
+                  </span>
+                  {editable && item.id === "primaryIcp" ? (
+                    <button
+                      type="button"
+                      className={styles.checklistEditButton}
+                      disabled={profileWorkActive}
+                      onClick={(event) =>
+                        openProfileEditor(event.currentTarget, "primaryIcp")
+                      }
+                    >
+                      <PencilLine size={14} aria-hidden="true" />
+                      {t("actions.editPrimaryIcp")}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
             {editable ? <button type="button" className={styles.confirmButton} disabled={!view.confirmation.ready} onClick={(event) => { rememberTrigger(event.currentTarget); setConfirmOpen(true); }}><ShieldCheck size={17} aria-hidden="true" />{view.confirmation.ready ? t("actions.confirm") : t("actions.confirmBlocked")}</button> : <div className={styles.confirmedStamp}><ShieldCheck aria-hidden="true" /><strong>{t("states.confirmed")}</strong></div>}
             {!view.confirmation.ready && editable ? <p className={styles.blockReason}>{profileWorkActive ? t("confirmation.activeRunBlocked") : t("confirmation.blocked")}</p> : null}
           </div>
         </aside>
       </div>
 
-      <ProfileEditor profile={profile} open={editorOpen} saving={updateMutation.isPending} onClose={closeEditor} onSave={saveProfile} />
+      <ProfileEditor profile={profile} open={editorOpen} initialFocus={editorInitialFocus} saving={updateMutation.isPending} onClose={closeEditor} onSave={saveProfile} />
       <CompetitorEditor open={competitorEditor !== null} candidate={competitorEditor === "add" ? null : competitorEditor} saving={addMutation.isPending || reviewMutation.isPending} onClose={closeCompetitorEditor} onSubmit={saveCompetitor} />
       <ModalFrame open={confirmOpen} titleId="confirm-profile-title" onRequestClose={closeConfirmation}>
         <div className={styles.confirmDialog}><ShieldCheck size={26} aria-hidden="true" /><h2 id="confirm-profile-title">{t("confirmation.dialogTitle")}</h2><p>{t("confirmation.dialogDetail")}</p><div className={styles.dialogActions}><button type="button" className={styles.secondaryButton} onClick={closeConfirmation}>{t("actions.cancel")}</button><button type="button" className={styles.primaryButton} disabled={confirmMutation.isPending} onClick={() => void confirmProfile()}>{confirmMutation.isPending ? <LoaderCircle className={styles.spin} size={17} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}{t("actions.confirmAndConnect")}</button></div></div>

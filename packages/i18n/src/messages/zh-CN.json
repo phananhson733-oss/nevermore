@@ -246,6 +246,7 @@
       "retry": "重试",
       "addProduct": "添加产品并填写画像",
       "edit": "编辑产品画像与 ICP",
+      "editPrimaryIcp": "编辑核心 ICP",
       "connectData": "连接真实数据",
       "synthesize": "重新生成初始画像",
       "synthesizing": "生成中…",
