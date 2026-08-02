@@ -77,9 +77,12 @@ export function sourceHintMessageKey(
 
 export type SourceCollectLabelKey = "collectNow" | "retryCollection";
 
-/** Partial/stale sources are collected again, not for the first time. */
+/** Only a newly connected source is waiting for its first collection. */
 export function sourceCollectLabelKey(state: string): SourceCollectLabelKey {
-  return state === "partial" || state === "stale"
+  return state === "available" ||
+    state === "partial" ||
+    state === "stale" ||
+    state === "unavailable"
     ? "retryCollection"
     : "collectNow";
 }

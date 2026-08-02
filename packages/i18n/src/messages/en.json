@@ -246,6 +246,7 @@
       "retry": "Retry",
       "addProduct": "Add product and fill profile",
       "edit": "Edit Product Profile",
+      "editPrimaryIcp": "Edit Primary ICP",
       "connectData": "Connect live data",
       "synthesize": "Regenerate initial profile",
       "synthesizing": "Generating…",

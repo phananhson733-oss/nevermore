@@ -26,7 +26,7 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0035_uuidv8_product_profile_competitor_evidence.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0036_missing_analytics_site_page_lineage.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 

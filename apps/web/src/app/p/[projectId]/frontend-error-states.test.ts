@@ -79,9 +79,12 @@ describe("front-end run failure state", () => {
       }),
     ).toBeNull();
 
-    expect(sourceCollectLabelKey("available")).toBe("collectNow");
+    expect(sourceCollectLabelKey("connected")).toBe("collectNow");
+    expect(sourceCollectLabelKey("syncing")).toBe("collectNow");
+    expect(sourceCollectLabelKey("available")).toBe("retryCollection");
     expect(sourceCollectLabelKey("partial")).toBe("retryCollection");
     expect(sourceCollectLabelKey("stale")).toBe("retryCollection");
+    expect(sourceCollectLabelKey("unavailable")).toBe("retryCollection");
   });
 });
 

@@ -4,6 +4,7 @@ import { operatorRoute } from "@/lib/http/handler";
 import { assertWorkspaceAttemptRateLimit } from "@/lib/http/rate-limit";
 import { ok } from "@/lib/http/respond";
 import { parseJsonBody, parseUuidParam } from "@/lib/http/validate";
+import { createCollectionRun } from "@/lib/services/collection";
 import { connectProjectSource } from "@/lib/services/source-connect";
 
 /**
@@ -33,6 +34,34 @@ export const POST = operatorRoute<{ projectId: string; sourceRef: string }>(
       ctx.operator.userId,
       body,
     );
+
+    // Property selection is the customer's final connection action. Queue the
+    // first collection in this same server request so correctness never depends
+    // on the browser completing a second mutation after the connection commits.
+    // The stable source-derived key makes this hand-off idempotent.
+    if (result.phase === "connected" && result.source.id !== null) {
+      try {
+        await createCollectionRun(
+          { workspaceId: ctx.operator.workspaceId },
+          id,
+          ctx.operator.userId,
+          `oauth-initial-collection:${result.source.id}`,
+          {
+            provider: provider.data,
+            sourceConnectionId: result.source.id,
+          },
+        );
+      } catch (error) {
+        // The OAuth connection is already durably committed. Preserve that
+        // success and leave the existing retry control available, while making
+        // the exceptional queue hand-off observable to operators.
+        ctx.logger.warn("oauth_initial_collection_queue_failed", {
+          code: error instanceof ProblemError ? error.code : "DEPENDENCY_UNAVAILABLE",
+          provider: provider.data,
+          type: "collection_queue",
+        });
+      }
+    }
     return ok(result, ctx.requestId);
   },
 );

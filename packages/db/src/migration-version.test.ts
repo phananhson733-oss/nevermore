@@ -8,7 +8,33 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("tracks the UUIDv8 Product Profile competitor evidence repair", () => {
+  it("tracks the missing analytics SitePage lineage repair", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0036_missing_analytics_site_page_lineage.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe(
+      "0036_missing_analytics_site_page_lineage",
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_normalized_observation_site_page_lineage/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.site_page_id\s+IS\s+NULL[\s\S]*?is_analytics_page[\s\S]*?candidate_count\s*=\s*1/iu,
+    );
+    expect(migration).not.toMatch(/candidate_count\s*<=\s*1/iu);
+    expect(migration).toMatch(
+      /SELECT\s+'0036_missing_analytics_site_page_lineage'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps the UUIDv8 Product Profile competitor evidence repair immediately before the analytics lineage repair", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
@@ -19,9 +45,6 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe(
-      "0035_uuidv8_product_profile_competitor_evidence",
-    );
     expect(migration).toMatch(
       /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.is_typed_product_profile_evidence_refs/iu,
     );

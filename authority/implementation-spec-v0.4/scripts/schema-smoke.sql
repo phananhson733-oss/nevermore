@@ -3593,6 +3593,31 @@ BEGIN
     'Ambiguous GSC lineage remains explicitly unavailable.'
   );
 
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, site_page_id,
+    provider, metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  )
+  VALUES (
+    '00000000-0000-4000-8000-000000001911',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001871',
+    NULL,
+    'gsc',
+    'gsc.page.v1',
+    'url',
+    'https://example.com/lineage-not-crawled',
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000001871'),
+    'available',
+    '{}'::jsonb,
+    'first_party',
+    'A',
+    'context',
+    'A real analytics page absent from Crawl remains explicitly unlinked.'
+  );
+
   BEGIN
     INSERT INTO app.normalized_observations (
       id, workspace_id, project_id, snapshot_id, site_page_id,
@@ -3647,6 +3672,14 @@ BEGIN
     WHERE id = '00000000-0000-4000-8000-000000001907'
   ) IS DISTINCT FROM true THEN
     RAISE EXCEPTION 'ambiguous analytics lineage did not remain explicitly null';
+  END IF;
+
+  IF (
+    SELECT site_page_id IS NULL
+    FROM app.normalized_observations
+    WHERE id = '00000000-0000-4000-8000-000000001911'
+  ) IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'analytics lineage absent from Crawl did not remain explicitly null';
   END IF;
 
   SELECT count(*)
@@ -4344,7 +4377,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0035_uuidv8_product_profile_competitor_evidence' THEN
+  ) IS DISTINCT FROM '0036_missing_analytics_site_page_lineage' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT app.is_typed_product_profile_evidence_refs(

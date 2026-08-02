@@ -307,7 +307,7 @@ test("AC-046: Sources exposes automatic rate-limit retry on a visible connector"
   );
   await expect(gsc.getByText("Automatic retry scheduled.")).toBeVisible();
   await expect(
-    gsc.getByRole("button", { name: "Collect now" }),
+    gsc.getByRole("button", { name: "Collecting…" }),
   ).toBeDisabled();
 });
 

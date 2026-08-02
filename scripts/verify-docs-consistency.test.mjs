@@ -146,7 +146,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 35);
+  assert.equal(migrationFiles.length, 36);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
