@@ -80,7 +80,10 @@ import {
   type CollectionOutcome,
 } from "../persist.ts";
 import { projectCollectionSnapshotCompetitors } from "../competitor-library-projection.ts";
-import { runCollection } from "../run-collection.ts";
+import {
+  GSC_SITE_ORIGIN_SCOPE_LIMITATION,
+  runCollection,
+} from "../run-collection.ts";
 
 /**
  * AC-041 — collection runner error/retry + claim discipline (spec §13.1, §13.3).
@@ -2964,6 +2967,71 @@ describeDb("collection runner (spec §13)", () => {
       last_error_code: "INVALID_RESPONSE",
     });
     expect(await snapshotCount(handle, seed.scope)).toBe(0);
+  });
+
+  it("scopes a GSC domain-property result to the project's exact Site origin", async () => {
+    const seed = await seedProject(handle);
+    const runId = randomUUID();
+    await seedGoogleCollection(handle, seed, runId, {
+      provider: "gsc",
+      envelope: {
+        accessToken: "access-domain-scope-fixture",
+        refreshToken: "refresh-domain-scope-fixture",
+        expiresAt: "2026-07-18T10:00:00.000Z",
+        scope: "scope.domain.fixture",
+      },
+    });
+    const exactPage = `${seed.siteOrigin}/pricing`;
+    const foreignPage = `https://foreign.${new URL(seed.siteOrigin).host}/pricing`;
+    const providerRows = [
+      {
+        keys: ["2026-07-15", exactPage, "exact query"],
+        clicks: 2,
+        impressions: 20,
+        position: 3,
+      },
+      {
+        keys: ["2026-07-15", foreignPage, "foreign query"],
+        clicks: 4,
+        impressions: 40,
+        position: 5,
+      },
+    ];
+    const fetchMock = vi.fn<GoogleFetch>(async (input) => {
+      if (String(input).includes("/searchAnalytics/query")) {
+        return jsonResponse({ rows: providerRows });
+      }
+      throw new Error(`unexpected mocked URL: ${String(input)}`);
+    });
+
+    await withMockedGlobalFetch(fetchMock, () =>
+      runCollection(oauthContext(ctx, fetchMock), {
+        runId,
+        workspaceId: seed.scope.workspaceId,
+        projectId: seed.scope.projectId,
+      }),
+    );
+
+    const snapshot =
+      await new DataSnapshotsRepository(handle.db).findByCollectionRunId(
+        seed.scope,
+        runId,
+      );
+    expect(snapshot).toMatchObject({
+      availability: "available",
+      row_count: 2,
+    });
+    expect(snapshot?.limitation).toContain(
+      GSC_SITE_ORIGIN_SCOPE_LIMITATION,
+    );
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [snapshot!.id]);
+    expect(observations.map((row) => row.subject_ref)).toEqual([exactPage]);
+    const rawBytes = await ctx.blobStore.get(snapshot!.raw_object_key!);
+    expect(
+      (JSON.parse(rawBytes!.toString("utf8")) as { rows: unknown[] }).rows,
+    ).toHaveLength(2);
   });
 
   it("AC-046: a provider permission failure persists a reconnect-required source state and never retries", async () => {
