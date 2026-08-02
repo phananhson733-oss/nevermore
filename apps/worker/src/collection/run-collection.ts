@@ -75,6 +75,7 @@ import {
   ProviderMetricAccumulator,
   type ProviderMetricOutcome,
 } from "./provider-metrics.ts";
+import { exactCandidatesForCanonicalSubject } from "./observation-site-page-lineage.ts";
 
 /**
  * Collection job runner (spec §7, §13.3). Claims the run (queued→running winner
@@ -351,6 +352,61 @@ export type CollectionWorkerContext = Omit<WorkerContext, "googleOAuth"> & {
 interface CollectProduct {
   readonly outcome: CollectionOutcome;
   readonly observations: readonly NormalizedObservation[];
+}
+
+export const GSC_SITE_ORIGIN_SCOPE_LIMITATION =
+  "GSC_SITE_ORIGIN_SCOPE: only page observations on the project's exact Site origin are used; rows from other origins in a domain property remain in the immutable raw snapshot.";
+export const GSC_SITE_ORIGIN_NO_DATA_LIMITATION =
+  "GSC_SITE_ORIGIN_NO_DATA: the selected property returned rows, but no valid page observations matched the project's exact Site origin for the requested window.";
+
+/**
+ * A Search Console domain property can legitimately return multiple origins
+ * (for example apex and www). The project Site is one exact origin, so only
+ * observations proven to belong to it may enter the canonical evidence graph.
+ * Raw provider rows stay untouched in `outcome.raw` for immutable provenance.
+ */
+export function scopeGscCollectionToSite(input: {
+  readonly siteOrigin: string;
+  readonly outcome: CollectionOutcome;
+  readonly observations: readonly NormalizedObservation[];
+}): CollectProduct {
+  const observations = input.observations.filter(
+    (observation) =>
+      observation.metricKey === "gsc.page.v1" &&
+      observation.subjectType === "url" &&
+      exactCandidatesForCanonicalSubject(
+        observation.subjectRef,
+        input.siteOrigin,
+      ) !== null,
+  );
+  const excludedCount = input.observations.length - observations.length;
+
+  if (
+    observations.length === 0 &&
+    input.outcome.availability !== "unavailable"
+  ) {
+    return {
+      outcome: {
+        ...input.outcome,
+        availability: "unavailable",
+        stopReason: "no_data",
+        limitation: GSC_SITE_ORIGIN_NO_DATA_LIMITATION,
+      },
+      observations,
+    };
+  }
+
+  if (excludedCount > 0 && observations.length > 0) {
+    return {
+      outcome: {
+        ...input.outcome,
+        limitation: `${input.outcome.limitation} ${GSC_SITE_ORIGIN_SCOPE_LIMITATION}`,
+      },
+      observations,
+    };
+  }
+
+  return { outcome: input.outcome, observations };
 }
 
 export interface CollectionAttemptMetadata {
@@ -844,7 +900,8 @@ async function collectByProvider(
           adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
           adapterCtx.signal,
         );
-        return {
+        return scopeGscCollectionToSite({
+          siteOrigin: site.origin,
           outcome: keywordLibraryContext
             ? {
                 ...toOutcome(result),
@@ -852,7 +909,7 @@ async function collectByProvider(
               }
             : toOutcome(result),
           observations,
-        };
+        });
       });
     }
     case "ga4": {
