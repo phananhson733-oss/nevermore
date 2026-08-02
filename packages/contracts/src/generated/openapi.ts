@@ -2001,10 +2001,26 @@ export interface components {
             scopes: string[];
             connectedAt: components["schemas"]["Timestamp"] | null;
             latestSnapshot: components["schemas"]["DataSnapshot"] | null;
+            /** @description Normalized business metrics for the exact latest snapshot. Null means no usable GSC/GA4 observations, never a measured zero. */
+            latestMetricSummary: components["schemas"]["GscSourceMetricSummary"] | components["schemas"]["Ga4SourceMetricSummary"] | null;
             activeRun: components["schemas"]["AsyncRun"] | null;
             limitation: string;
             featureEnabled: boolean;
             updatedAt: components["schemas"]["Timestamp"];
+        };
+        GscSourceMetricSummary: {
+            /** @constant */
+            provider: "gsc";
+            landingPageCount: number;
+            clicks: number;
+            impressions: number;
+        };
+        Ga4SourceMetricSummary: {
+            /** @constant */
+            provider: "ga4";
+            landingPageCount: number;
+            sessions: number;
+            keyEvents: number | null;
         };
         SourceListResponse: {
             data: components["schemas"]["SourceConnection"][];

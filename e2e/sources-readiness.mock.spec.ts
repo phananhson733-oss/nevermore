@@ -15,11 +15,12 @@ const LONG_CHECKSUM = "0123456789abcdef".repeat(4);
 const SNAPSHOT_IDS = {
   crawl: "00000000-0000-4000-8000-000000000101",
   gsc: "00000000-0000-4000-8000-000000000102",
+  ga4: "00000000-0000-4000-8000-000000000103",
   csv: "00000000-0000-4000-8000-000000000104",
 } as const;
 
 function snapshot(
-  provider: "crawl" | "gsc" | "csv",
+  provider: "crawl" | "gsc" | "ga4" | "csv",
   availability: "available" | "partial",
   overrides: Partial<MockDataSnapshot> = {},
 ): MockDataSnapshot {
@@ -60,6 +61,12 @@ async function installSourcesProjection(page: Page): Promise<void> {
       state: "partial",
       connectedAt: CAPTURED_AT,
       latestSnapshot: gsc,
+      latestMetricSummary: {
+        provider: "gsc",
+        landingPageCount: 7,
+        clicks: 12,
+        impressions: 3_450,
+      },
       externalRef: "sc-domain:example.test",
       credential: "credential-must-never-render",
     }),
@@ -215,6 +222,70 @@ test("Sources never fabricates provenance when every enabled source lacks a snap
     name: "Snapshot provenance policy",
   });
   await expect(footline).toContainText("0 immutable snapshots");
+});
+
+test("Sources shows business metrics and keeps a connected empty GA4 source out of readiness", async ({
+  page,
+}) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "sf_ui_locale", value: "zh-CN", domain: "localhost", path: "/" },
+    ]);
+  const gsc = snapshot("gsc", "available", { rowCount: 1_874 });
+  const ga4 = snapshot("ga4", "available", { rowCount: 0 });
+  await page.route(`**${API_BASE}/sources`, (route) =>
+    json(route, {
+      data: [
+        sourceSlot("crawl"),
+        sourceSlot("gsc", {
+          id: "source-gsc",
+          state: "available",
+          connectedAt: CAPTURED_AT,
+          latestSnapshot: gsc,
+          latestMetricSummary: {
+            provider: "gsc",
+            landingPageCount: 63,
+            clicks: 4,
+            impressions: 4_634,
+          },
+        }),
+        sourceSlot("ga4", {
+          id: "source-ga4",
+          state: "available",
+          connectedAt: CAPTURED_AT,
+          latestSnapshot: ga4,
+          latestMetricSummary: null,
+        }),
+        sourceSlot("csv"),
+        sourceSlot("dataforseo"),
+      ],
+    }),
+  );
+  await page.route(`**${API_BASE}/snapshots**`, (route) =>
+    json(route, {
+      data: [gsc, ga4],
+      meta: { nextCursor: null, hasNext: false, limit: 100 },
+    }),
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+
+  const readiness = page.getByRole("region", { name: "数据源就绪度" });
+  await expect(readiness).toContainText("1 / 2");
+  await expect(readiness).toContainText("50%");
+
+  const gscCard = page.getByRole("region", { name: "Search Console" });
+  await expect(gscCard).toContainText("近 28 天搜索曝光");
+  await expect(gscCard).toContainText("4634");
+  await expect(gscCard).toContainText("4 次点击 · 63 个落地页");
+  await expect(gscCard).toContainText("原始供应商记录");
+  await expect(gscCard).toContainText("1,874");
+
+  const ga4Card = page.getByRole("region", { name: "Google Analytics 4" });
+  await expect(ga4Card).toContainText("已连接 · 未检测到数据");
+  await expect(ga4Card).toContainText("请检查网站 GA 标签或 Measurement ID");
+  await expect(ga4Card).not.toContainText("0 次会话");
 });
 
 /**

@@ -670,6 +670,18 @@
   min-width: 0;
   margin: 0;
 }
+.metricStack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.metricSupporting {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 650;
+  line-height: 1.35;
+}
 .metricValue strong {
   color: var(--sf-fg);
   font-family: var(--sf-font-display);

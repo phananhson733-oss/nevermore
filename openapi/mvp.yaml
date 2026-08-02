@@ -3687,7 +3687,7 @@ components:
     SourceConnection:
       type: object
       additionalProperties: false
-      required: [id, projectId, provider, connectionType, state, externalRef, scopes, connectedAt, latestSnapshot, activeRun, limitation, featureEnabled, updatedAt]
+      required: [id, projectId, provider, connectionType, state, externalRef, scopes, connectedAt, latestSnapshot, latestMetricSummary, activeRun, limitation, featureEnabled, updatedAt]
       properties:
         id: { type: [string, 'null'], format: uuid }
         projectId: { $ref: '#/components/schemas/Uuid' }
@@ -3704,6 +3704,12 @@ components:
           oneOf:
             - $ref: '#/components/schemas/DataSnapshot'
             - type: 'null'
+        latestMetricSummary:
+          description: Normalized business metrics for the exact latest snapshot. Null means no usable GSC/GA4 observations, never a measured zero.
+          oneOf:
+            - $ref: '#/components/schemas/GscSourceMetricSummary'
+            - $ref: '#/components/schemas/Ga4SourceMetricSummary'
+            - type: 'null'
         activeRun:
           oneOf:
             - $ref: '#/components/schemas/AsyncRun'
@@ -3711,6 +3717,24 @@ components:
         limitation: { type: string, minLength: 1 }
         featureEnabled: { type: boolean }
         updatedAt: { $ref: '#/components/schemas/Timestamp' }
+    GscSourceMetricSummary:
+      type: object
+      additionalProperties: false
+      required: [provider, landingPageCount, clicks, impressions]
+      properties:
+        provider: { type: string, const: gsc }
+        landingPageCount: { type: integer, minimum: 1 }
+        clicks: { type: integer, minimum: 0 }
+        impressions: { type: integer, minimum: 0 }
+    Ga4SourceMetricSummary:
+      type: object
+      additionalProperties: false
+      required: [provider, landingPageCount, sessions, keyEvents]
+      properties:
+        provider: { type: string, const: ga4 }
+        landingPageCount: { type: integer, minimum: 1 }
+        sessions: { type: integer, minimum: 0 }
+        keyEvents: { type: [integer, 'null'], minimum: 0 }
     SourceListResponse:
       type: object
       additionalProperties: false

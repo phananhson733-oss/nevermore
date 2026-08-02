@@ -10,7 +10,8 @@ import {
   abbreviateChecksum,
   deriveSourcesReadiness,
   sourceAcquisitionMode,
-  sourcePrimaryRowCount,
+  sourceHasUsableSnapshot,
+  sourcePrimaryMetric,
   sourcesCoveragePercentage,
   sourcesReadyForDiagnosis,
 } from "./_sources-readiness.ts";
@@ -50,6 +51,22 @@ function source(
         : provider === "csv"
           ? "file_import"
           : "api_key_stub";
+  const latestMetricSummary =
+    overrides.latestSnapshot && provider === "gsc"
+      ? {
+          provider: "gsc" as const,
+          landingPageCount: 6,
+          clicks: 12,
+          impressions: 345,
+        }
+      : overrides.latestSnapshot && provider === "ga4"
+        ? {
+            provider: "ga4" as const,
+            landingPageCount: 4,
+            sessions: 78,
+            keyEvents: null,
+          }
+        : null;
   return {
     id: provider === "dataforseo" ? null : `source-${provider}`,
     projectId: PROJECT_ID,
@@ -60,6 +77,7 @@ function source(
     scopes: [],
     connectedAt: provider === "dataforseo" ? null : CAPTURED_AT,
     latestSnapshot: null,
+    latestMetricSummary,
     activeRun: null,
     limitation: "Canonical fixture limitation.",
     featureEnabled: provider !== "dataforseo",
@@ -199,29 +217,55 @@ describe("Sources readiness projection", () => {
     expect(sourcesReadyForDiagnosis(sources)).toBe(false);
   });
 
-  it("keeps unavailable evidence distinct from a measured zero", () => {
-    expect(sourcePrimaryRowCount(source("crawl"))).toBeNull();
-    expect(
-      sourcePrimaryRowCount(
-        source("gsc", {
-          latestSnapshot: snapshot("gsc", "unavailable"),
-        }),
-      ),
-    ).toBeNull();
-    expect(
-      sourcePrimaryRowCount(
-        source("csv", {
-          latestSnapshot: { ...snapshot("csv", "available"), rowCount: 0 },
-        }),
-      ),
-    ).toBe(0);
-    expect(
-      sourcePrimaryRowCount(
-        source("ga4", {
-          latestSnapshot: snapshot("ga4", "partial"),
-        }),
-      ),
-    ).toBe(42);
+  it("uses normalized business metrics and keeps raw provider rows out of the primary value", () => {
+    const gsc = source("gsc", {
+      latestSnapshot: { ...snapshot("gsc", "available"), rowCount: 1_874 },
+      latestMetricSummary: {
+        provider: "gsc",
+        landingPageCount: 63,
+        clicks: 4,
+        impressions: 4_634,
+      },
+    });
+    const ga4 = source("ga4", {
+      latestSnapshot: { ...snapshot("ga4", "available"), rowCount: 18 },
+      latestMetricSummary: {
+        provider: "ga4",
+        landingPageCount: 7,
+        sessions: 91,
+        keyEvents: 3,
+      },
+    });
+
+    expect(sourcePrimaryMetric(gsc)).toEqual({
+      value: 4_634,
+      supportingValue: 4,
+      landingPageCount: 63,
+    });
+    expect(sourcePrimaryMetric(ga4)).toEqual({
+      value: 91,
+      supportingValue: 3,
+      landingPageCount: 7,
+    });
+  });
+
+  it("does not count an available-but-empty analytics response as usable evidence", () => {
+    const emptyGa4 = source("ga4", {
+      latestSnapshot: { ...snapshot("ga4", "available"), rowCount: 0 },
+      latestMetricSummary: null,
+    });
+    const sources = [
+      source("gsc", { latestSnapshot: snapshot("gsc", "available") }),
+      emptyGa4,
+    ];
+
+    expect(sourceHasUsableSnapshot(emptyGa4)).toBe(false);
+    expect(sourcePrimaryMetric(emptyGa4).value).toBeNull();
+    expect(deriveSourcesReadiness(sources)).toMatchObject({
+      usableCount: 1,
+      unavailableCount: 1,
+      gapProviders: ["ga4"],
+    });
   });
 
   it("abbreviates long checksums while preserving both identifying ends", () => {

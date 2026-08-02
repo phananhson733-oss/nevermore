@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   listConnections: vi.fn(),
   listActiveRuns: vi.fn(),
   findLatestSnapshot: vi.fn(),
+  summarizeGscSnapshot: vi.fn(),
+  summarizeGa4Snapshot: vi.fn(),
 }));
 
 vi.mock("@/env", () => ({
@@ -30,6 +32,10 @@ vi.mock("@sf/db", async (importOriginal) => {
     DataSnapshotsRepository: class {
       findLatestByConnection = mocks.findLatestSnapshot;
     },
+    ObservationsRepository: class {
+      summarizeGscSnapshot = mocks.summarizeGscSnapshot;
+      summarizeGa4Snapshot = mocks.summarizeGa4Snapshot;
+    },
     SourceConnectionsRepository: class {
       listByProject = mocks.listConnections;
     },
@@ -49,6 +55,8 @@ beforeEach(() => {
   mocks.listConnections.mockResolvedValue([]);
   mocks.listActiveRuns.mockResolvedValue([]);
   mocks.findLatestSnapshot.mockResolvedValue(null);
+  mocks.summarizeGscSnapshot.mockResolvedValue(null);
+  mocks.summarizeGa4Snapshot.mockResolvedValue(null);
 });
 
 describe("listProjectSources Product/ICP read gate", () => {
@@ -100,5 +108,79 @@ describe("listProjectSources Product/ICP read gate", () => {
       "dataforseo",
     ]);
     expect(result.every((slot) => slot.latestSnapshot === null)).toBe(true);
+    expect(result.every((slot) => slot.latestMetricSummary === null)).toBe(true);
+  });
+
+  it("projects normalized GSC and GA4 business metrics for the exact latest snapshots", async () => {
+    mocks.gate.mockResolvedValue("allowed");
+    mocks.listConnections.mockResolvedValue([
+      {
+        id: "00000000-0000-4000-8000-000000000011",
+        provider: "gsc",
+        state: "available",
+        connection_type: "oauth",
+        external_ref: "sc-domain:example.test",
+        scopes: [],
+        connected_at: "2026-08-01T00:00:00.000Z",
+        limitation: "GSC fixture.",
+        updated_at: "2026-08-02T00:00:00.000Z",
+        created_at: "2026-08-01T00:00:00.000Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000012",
+        provider: "ga4",
+        state: "available",
+        connection_type: "oauth",
+        external_ref: "properties/123",
+        scopes: [],
+        connected_at: "2026-08-01T00:00:00.000Z",
+        limitation: "GA4 fixture.",
+        updated_at: "2026-08-02T00:00:00.000Z",
+        created_at: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+    mocks.findLatestSnapshot.mockImplementation(
+      async (_scope: unknown, connectionId: string) => ({
+        id:
+          connectionId === "00000000-0000-4000-8000-000000000011"
+            ? "00000000-0000-4000-8000-000000000021"
+            : "00000000-0000-4000-8000-000000000022",
+        site_id: "00000000-0000-4000-8000-000000000030",
+        provider:
+          connectionId === "00000000-0000-4000-8000-000000000011"
+            ? "gsc"
+            : "ga4",
+        dataset_key:
+          connectionId === "00000000-0000-4000-8000-000000000011"
+            ? "gsc.page_query_daily.v1"
+            : "ga4.organic_landing_daily.v1",
+        schema_version: "0.2.0",
+        method_version: "fixture.v1",
+        captured_at: "2026-08-02T00:00:00.000Z",
+        source_window: { start: "2026-07-01", end: "2026-08-01" },
+        availability: "available",
+        limitation: "Fixture.",
+        row_count: connectionId.endsWith("11") ? 1_874 : 0,
+        checksum: "a".repeat(64),
+      }),
+    );
+    mocks.summarizeGscSnapshot.mockResolvedValue({
+      landingPageCount: 63,
+      clicks: "4",
+      impressions: "4634",
+    });
+    mocks.summarizeGa4Snapshot.mockResolvedValue(null);
+
+    const result = await listProjectSources(scope, projectId);
+
+    expect(result.find((source) => source.provider === "gsc")?.latestMetricSummary)
+      .toEqual({
+        provider: "gsc",
+        landingPageCount: 63,
+        clicks: 4,
+        impressions: 4_634,
+      });
+    expect(result.find((source) => source.provider === "ga4")?.latestMetricSummary)
+      .toBeNull();
   });
 });

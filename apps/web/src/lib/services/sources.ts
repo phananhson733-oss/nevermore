@@ -1,6 +1,7 @@
 import {
   AsyncRunsRepository,
   DataSnapshotsRepository,
+  ObservationsRepository,
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
@@ -13,7 +14,11 @@ import { ProblemError } from "@sf/observability";
 import { getEnv } from "@/env";
 import { getDb } from "@/lib/db";
 import { getSourceConnectionGate } from "./source-connect";
-import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mappers";
+import {
+  toSourceConnectionDto,
+  type SourceConnectionDto,
+  type SourceMetricSummaryDto,
+} from "./source-mappers";
 
 /**
  * Sources read model + disconnect (spec §7, §11.2). `listProjectSources` always
@@ -26,6 +31,11 @@ import { toSourceConnectionDto, type SourceConnectionDto } from "./source-mapper
  */
 
 const PROVIDER_ORDER = ["crawl", "gsc", "ga4", "csv", "dataforseo"] as const;
+
+function nonnegativeSafeInteger(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
 
 function activeRunForProvider(
   runs: readonly AsyncRunRow[],
@@ -63,6 +73,7 @@ export async function listProjectSources(
 
   const connectionsRepo = new SourceConnectionsRepository(db);
   const snapshotsRepo = new DataSnapshotsRepository(db);
+  const observationsRepo = new ObservationsRepository(db);
   const connections = await connectionsRepo.listByProject(projectScope);
   const activeRuns = await new AsyncRunsRepository(db).listActiveByProject(projectScope);
   const now = Date.now();
@@ -79,12 +90,54 @@ export async function listProjectSources(
     const latestSnapshot = connection
       ? await snapshotsRepo.findLatestByConnection(projectScope, connection.id)
       : null;
+    let latestMetricSummary: SourceMetricSummaryDto | null = null;
+    if (latestSnapshot && provider === "gsc") {
+      const summary = await observationsRepo.summarizeGscSnapshot(
+        projectScope,
+        latestSnapshot.id,
+      );
+      const clicks = summary ? nonnegativeSafeInteger(summary.clicks) : null;
+      const impressions = summary
+        ? nonnegativeSafeInteger(summary.impressions)
+        : null;
+      if (summary && clicks !== null && impressions !== null) {
+        latestMetricSummary = {
+          provider,
+          landingPageCount: summary.landingPageCount,
+          clicks,
+          impressions,
+        };
+      }
+    } else if (latestSnapshot && provider === "ga4") {
+      const summary = await observationsRepo.summarizeGa4Snapshot(
+        projectScope,
+        latestSnapshot.id,
+      );
+      const sessions = summary ? nonnegativeSafeInteger(summary.sessions) : null;
+      const keyEvents =
+        summary?.keyEvents === null || summary === null
+          ? null
+          : nonnegativeSafeInteger(summary.keyEvents);
+      if (
+        summary &&
+        sessions !== null &&
+        (summary.keyEvents === null || keyEvents !== null)
+      ) {
+        latestMetricSummary = {
+          provider,
+          landingPageCount: summary.landingPageCount,
+          sessions,
+          keyEvents,
+        };
+      }
+    }
     slots.push(
       toSourceConnectionDto({
         projectId,
         provider,
         connection,
         latestSnapshot,
+        latestMetricSummary,
         activeRun: activeRunForProvider(activeRuns, provider),
         featureEnabled:
           provider !== "dataforseo" || dataForSeoEnabled,

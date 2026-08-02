@@ -28,6 +28,8 @@ import type { GscWindow } from "./window.ts";
 
 const GSC_DATASET_KEY: DatasetKey = "gsc.page_query_daily.v1";
 const GSC_OPERATION: CollectionOperation = "search_analytics";
+export const GSC_NO_DATA_LIMITATION =
+  "GSC_NO_DATA: the selected property returned no page/query observations for the requested window.";
 
 /** Validated GSC connection config. `propertyUrl` is the verified GSC property id. */
 export interface GscConfig {
@@ -97,9 +99,19 @@ export function createGscAdapter(client: GscClient): SourceAdapter<GscConfig, Gs
         ctx.signal,
       );
 
+      const noData = rows.length === 0;
       const truncated = rows.length >= GSC_MAX_ROWS;
-      const availability: Availability = truncated ? "partial" : "available";
-      const stopReason = truncated ? "row_cap_reached" : null;
+      const availability: Availability = noData
+        ? "unavailable"
+        : truncated
+          ? "partial"
+          : "available";
+      const stopReason = noData
+        ? "no_data"
+        : truncated
+          ? "row_cap_reached"
+          : null;
+      const limitation = noData ? GSC_NO_DATA_LIMITATION : GSC_LIMITATION;
       const capturedAt = now.toISOString();
 
       const raw: GscRaw = {
@@ -121,7 +133,7 @@ export function createGscAdapter(client: GscClient): SourceAdapter<GscConfig, Gs
         rowCount: rows.length,
         stopReason,
         providerUsage: { rows: rows.length },
-        limitation: GSC_LIMITATION,
+        limitation,
       };
     },
 

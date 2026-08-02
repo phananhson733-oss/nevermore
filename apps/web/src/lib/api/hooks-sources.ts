@@ -163,6 +163,20 @@ export interface SourceConnection {
   readonly scopes: readonly string[];
   readonly connectedAt: string | null;
   readonly latestSnapshot: DataSnapshot | null;
+  readonly latestMetricSummary:
+    | {
+        readonly provider: "gsc";
+        readonly landingPageCount: number;
+        readonly clicks: number;
+        readonly impressions: number;
+      }
+    | {
+        readonly provider: "ga4";
+        readonly landingPageCount: number;
+        readonly sessions: number;
+        readonly keyEvents: number | null;
+      }
+    | null;
   readonly activeRun: AsyncRun | null;
   readonly limitation: string;
   readonly featureEnabled: boolean;
