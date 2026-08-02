@@ -80,7 +80,7 @@ test("zero-project entry uses the Chinese-first four-module GenGrowth shell", as
   await expect(
     page.getByRole("checkbox", { name: "提升注册" }),
   ).toBeVisible();
-  await expect(page.getByLabel("补充业务背景（选填）")).toBeVisible();
+  await expect(page.getByLabel("补充业务背景（选填）")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "创建并生成初始画像" }),
   ).toBeVisible();
@@ -90,7 +90,7 @@ test("zero-project entry uses the Chinese-first four-module GenGrowth shell", as
   expect(await hasRootHorizontalOverflow(page)).toBe(false);
 });
 
-test("product creation preserves trimming, declared inputs, optional omission, and context redirect", async ({
+test("product creation preserves trimming, declared inputs, and context redirect", async ({
   page,
 }) => {
   const createRequests: unknown[] = [];
@@ -116,7 +116,6 @@ test("product creation preserves trimming, declared inputs, optional omission, a
           value: "generate_qualified_leads",
         },
       ],
-      businessHint: "  面向北美 B2B SaaS 增长团队的内容运营产品。  ",
     },
     {
       productName: "  Second Product  ",
@@ -124,7 +123,6 @@ test("product creation preserves trimming, declared inputs, optional omission, a
       customerModel: "b2c",
       primaryMarket: "GB",
       growthObjectives: [{ label: "提升收入", value: "increase_revenue" }],
-      businessHint: null,
     },
   ] as const;
 
@@ -137,11 +135,6 @@ test("product creation preserves trimming, declared inputs, optional omission, a
     await page.getByLabel("主要目标市场").selectOption(input.primaryMarket);
     for (const objective of input.growthObjectives) {
       await page.getByRole("checkbox", { name: objective.label }).check();
-    }
-    if (input.businessHint !== null) {
-      await page
-        .getByLabel("补充业务背景（选填）")
-        .fill(input.businessHint);
     }
     await page
       .getByRole("button", { name: "创建并生成初始画像" })
@@ -162,7 +155,6 @@ test("product creation preserves trimming, declared inputs, optional omission, a
         "increase_signups",
         "generate_qualified_leads",
       ],
-      businessHint: "面向北美 B2B SaaS 增长团队的内容运营产品。",
     },
     {
       mode: "product_profile",

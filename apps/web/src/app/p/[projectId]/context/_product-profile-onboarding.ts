@@ -1,6 +1,7 @@
 export type ProductProfileSynthesisOrigin =
   | "initial"
   | "after_crawl"
+  | "after_discovery"
   | "manual";
 
 export interface AutomaticSynthesisInput {
@@ -11,6 +12,7 @@ export interface AutomaticSynthesisInput {
   readonly hasSynthesisAttemptForCurrentDraft: boolean;
   readonly activeSynthesisRunId: string | null;
   readonly crawlRunId: string;
+  readonly discoveryRunId: string;
 }
 
 /**
@@ -28,7 +30,8 @@ export function automaticSynthesisKey(
     input.generatedAt !== null ||
     input.hasSynthesisAttemptForCurrentDraft ||
     input.activeSynthesisRunId !== null ||
-    input.crawlRunId.length > 0
+    input.crawlRunId.length > 0 ||
+    input.discoveryRunId.length > 0
   ) {
     return null;
   }
@@ -50,7 +53,7 @@ export function claimOnce(claimed: Set<string>, key: string): boolean {
 export function shouldStartCrawlForMissingSnapshot(
   origin: ProductProfileSynthesisOrigin,
 ): boolean {
-  return origin !== "after_crawl";
+  return origin === "initial" || origin === "manual";
 }
 
 export type ProductProfileSynthesisFailureKind =

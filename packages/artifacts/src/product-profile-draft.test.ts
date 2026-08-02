@@ -18,6 +18,7 @@ const IDS = {
   excludedCompetitor: "77777777-7777-4777-8777-777777777777",
   userEvidence: "88888888-8888-4888-8888-888888888888",
   secondUserEvidence: "99999999-9999-4999-8999-999999999999",
+  dataForSeoObservation: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
 } as const;
 
 const GENERATED_AT = "2026-07-22T08:30:00Z";
@@ -197,7 +198,7 @@ describe("buildProductProfileDraft", () => {
     }
   });
 
-  it("maps and canonically orders features, markets, audiences, and audience IDs", () => {
+  it("maps one best generated audience directly to the product's Primary ICP", () => {
     const candidate = emptyCandidate();
     candidate.coreFeatures = [
       {
@@ -278,7 +279,6 @@ describe("buildProductProfileDraft", () => {
       targetAudiences: [...candidate.targetAudiences].reverse(),
     });
 
-    expect(forward).toEqual(reverse);
     expect(forward.coreFeatures).toEqual([
       "Account orchestration",
       "Workflow templates",
@@ -287,37 +287,24 @@ describe("buildProductProfileDraft", () => {
       { marketCode: "US", priority: "primary" },
       { marketCode: "GB", priority: "secondary" },
     ]);
-    expect(
-      forward.targetAudiences.map((audience) => ({
-        candidateId: audience.candidateId,
-        reviewStatus: audience.reviewStatus,
-        target: audience.targetCompanyOrAudience,
-      })),
-    ).toEqual([
-      {
+    expect(forward.targetAudiences).toEqual([
+      expect.objectContaining({
         candidateId: expect.stringMatching(
           /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
         ),
-        reviewStatus: "candidate",
-        target: "Alpha services teams",
-      },
-      {
-        candidateId: expect.stringMatching(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
-        ),
-        reviewStatus: "candidate",
-        target: "Zeta operations teams",
-      },
+        reviewStatus: "primary",
+        targetCompanyOrAudience: "Zeta operations teams",
+      }),
     ]);
-    expect(forward.targetAudiences[1]?.buyerRoles).toEqual([
+    expect(forward.targetAudiences[0]?.buyerRoles).toEqual([
       "COO",
       "VP Success",
     ]);
+    expect(reverse.targetAudiences).toEqual(forward.targetAudiences);
     expect(forward.fieldProvenance.map((entry) => entry.path)).toEqual([
       "/coreFeatures/0",
       "/coreFeatures/1",
       "/targetAudiences/0",
-      "/targetAudiences/1",
       "/targetMarkets/0",
       "/targetMarkets/1",
     ]);
@@ -794,6 +781,54 @@ describe("buildProductProfileDraft", () => {
         (entry) => entry.path === "/competitorCandidates/1",
       ),
     ).toEqual(starting.fieldProvenance[1]);
+  });
+
+  it("adds bounded DataForSEO candidates with canonical observation provenance", () => {
+    const result = build(emptyCandidate(), {
+      pageEvidence: {},
+      discoveredCompetitors: [
+        {
+          observationId: IDS.dataForSeoObservation,
+          name: "Guidecx",
+          domain: "guidecx.com",
+          relationship: "direct",
+          analysisScope: [
+            "positioning",
+            "product_capability",
+            "keyword_gap",
+            "serp_visibility",
+          ],
+          similarity: null,
+          reason:
+            "DataForSEO observed 40 shared organic-search keywords in US; direct competitor draft pending review.",
+          confidence: "medium",
+          observedAt: GENERATED_AT,
+        },
+      ],
+    });
+
+    expect(result.competitorCandidates).toEqual([
+      expect.objectContaining({
+        domain: "guidecx.com",
+        relationship: "direct",
+        reviewStatus: "candidate",
+        similarity: null,
+      }),
+    ]);
+    expect(result.missingFields).not.toContain("/competitorCandidates");
+    expect(result.fieldProvenance).toEqual([
+      expect.objectContaining({
+        path: "/competitorCandidates/0",
+        derivation: "computed",
+        evidenceRefs: [
+          expect.objectContaining({
+            kind: "observation",
+            observationId: IDS.dataForSeoObservation,
+          }),
+        ],
+      }),
+    ]);
+    expect(ProductProfileDraft.safeParse(result).success).toBe(true);
   });
 
   it("records conflicts at the top-level path without also marking them missing", () => {

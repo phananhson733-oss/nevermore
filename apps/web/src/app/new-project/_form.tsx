@@ -8,7 +8,6 @@ import {
   Button,
   Card,
   Field,
-  TextArea,
   TextInput,
   useFieldControl,
 } from "@/components/ui";
@@ -62,7 +61,6 @@ export function NewProjectForm() {
   const [customerModel, setCustomerModel] = useState<CustomerModel | "">("");
   const [primaryMarket, setPrimaryMarket] = useState<PrimaryMarket | "">("");
   const [growthObjectives, setGrowthObjectives] = useState<GrowthObjective[]>([]);
-  const [businessHint, setBusinessHint] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const objectiveHelpId = useId();
@@ -87,7 +85,6 @@ export function NewProjectForm() {
       customerModel,
       primaryMarket,
       growthObjectives,
-      businessHint,
     };
     const validation = validateNewProductValues(values);
     if (Object.keys(validation).length > 0) {
@@ -265,25 +262,6 @@ export function NewProjectForm() {
               </p>
             ) : null}
           </fieldset>
-
-          <div className={styles.full}>
-            <Field
-              label={t("fields.businessHint.label")}
-              help={t("fields.businessHint.help")}
-              error={fieldErrors.businessHint}
-            >
-              <TextArea
-                value={businessHint}
-                onChange={(event) => {
-                  setBusinessHint(event.target.value);
-                  clearFieldError("businessHint");
-                }}
-                placeholder={t("fields.businessHint.placeholder")}
-                rows={4}
-                maxLength={1000}
-              />
-            </Field>
-          </div>
 
           <div className={styles.nextStep}>
             <strong>{t("nextStep.title")}</strong>

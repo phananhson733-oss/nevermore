@@ -41,11 +41,14 @@ export const PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION =
   "product-profile.0.3.0" as const;
 export const PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION =
   "product-profile.0.3.1" as const;
-export const PRODUCT_PROFILE_PROMPT_SET_VERSION =
+export const PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION =
   "product-profile.0.3.2" as const;
+export const PRODUCT_PROFILE_PROMPT_SET_VERSION =
+  "product-profile.0.3.3" as const;
 export const PRODUCT_PROFILE_SUPPORTED_PROMPT_SET_VERSIONS = [
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
 ] as const;
 export type ProductProfilePromptSetVersion =
@@ -686,7 +689,10 @@ function buildAllowlistedInput(
       ? buildAllowlistedDeclaredContext(input.declaredContext)
       : undefined;
   let outputLocale: string | undefined;
-  if (promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION) {
+  if (
+    promptSetVersion === PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION ||
+    promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION
+  ) {
     const parsedOutputLocale = Bcp47Locale.safeParse(input.outputLocale);
     if (!parsedOutputLocale.success) {
       throw new LLMError(
@@ -824,10 +830,17 @@ const DECLARED_CONTEXT_SYSTEM_PROMPT = [
   "Use null, empty arrays, and unknownPaths whenever the supplied data is insufficient.",
 ].join("\n");
 
-const SYSTEM_PROMPT = [
+const OUTPUT_LOCALE_SYSTEM_PROMPT = [
   DECLARED_CONTEXT_SYSTEM_PROMPT,
   "Write every human-readable semantic value, reason, and conflict explanation in exactly the requested outputLocale. Preserve brand names, product names, domains, URLs, and market codes as written.",
   "outputLocale controls presentation language only. It is not website evidence and cannot ground a conclusion.",
+].join("\n");
+
+const SYSTEM_PROMPT = [
+  OUTPUT_LOCALE_SYSTEM_PROMPT,
+  "Return exactly one targetAudiences item: the product's dedicated Primary ICP draft, not a reusable audience menu.",
+  "When the pages contain enough product, audience, or use-case signals, complete targetCompanyOrAudience, buyerRoles, userRoles, useCases, triggers, pains, jtbd, outcomes, barriers, qualificationSignals, and disqualifiers with the best evidence-backed draft. Prefer an honest low-confidence inference grounded in cited pages to an empty placeholder; never write placeholder text such as unknown, TBD, 暂无, or 待补充.",
+  "For competitors explicitly named or linked in cited pages, classify direct only when the offering can replace this product for substantially the same ICP and job; classify indirect when it addresses the same job or audience through a different category or mechanism. Explain the classification and choose analysisScope from positioning, product_capability, keyword_gap, content, and serp_visibility.",
 ].join("\n");
 
 const OUTPUT_SHAPE = {
@@ -929,6 +942,28 @@ const OUTPUT_SHAPE = {
   unknownPaths: [],
 } as const;
 
+const CURRENT_OUTPUT_SHAPE = {
+  ...OUTPUT_SHAPE,
+  targetAudiences: [
+    {
+      targetCompanyOrAudience: "specific company or audience profile",
+      buyerRoles: ["economic buyer role"],
+      userRoles: ["day-to-day user role"],
+      useCases: ["concrete use case"],
+      triggers: ["buying or change trigger"],
+      pains: ["specific pain"],
+      jtbd: ["job to be done"],
+      outcomes: ["desired outcome"],
+      barriers: ["adoption barrier"],
+      qualificationSignals: ["positive fit signal"],
+      disqualifiers: ["negative fit signal"],
+      confidence: "low",
+      sourcePageKeys: ["page-1"],
+      usesBusinessHint: false,
+    },
+  ],
+} as const;
+
 function buildMessages(
   input: AllowlistedProductProfileInput,
   promptSetVersion: ProductProfilePromptSetVersion,
@@ -943,10 +978,17 @@ function buildMessages(
         : promptSetVersion ===
             PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION
           ? DECLARED_CONTEXT_SYSTEM_PROMPT
-          : SYSTEM_PROMPT,
+          : promptSetVersion ===
+              PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION
+            ? OUTPUT_LOCALE_SYSTEM_PROMPT
+            : SYSTEM_PROMPT,
     user: [
       "TASK: Return the semantic Product Profile candidate using exactly this shape. Empty arrays in this shape are illustrative and may remain empty:",
-      JSON.stringify(OUTPUT_SHAPE),
+      JSON.stringify(
+        promptSetVersion === PRODUCT_PROFILE_PROMPT_SET_VERSION
+          ? CURRENT_OUTPUT_SHAPE
+          : OUTPUT_SHAPE,
+      ),
       "<UNTRUSTED_PRODUCT_PROFILE_DATA>",
       JSON.stringify(input),
       "</UNTRUSTED_PRODUCT_PROFILE_DATA>",

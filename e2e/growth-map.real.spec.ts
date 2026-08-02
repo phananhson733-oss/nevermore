@@ -162,9 +162,6 @@ async function createProjectInBrowser(
       ? "Generate qualified leads"
       : "Increase revenue";
   await page.getByRole("checkbox", { name: growthObjective }).check();
-  await page
-    .getByLabel("Additional business context (optional)")
-    .fill(definition.oneLineDescription);
 
   const createResponse = page.waitForResponse(
     (response) =>
@@ -190,7 +187,6 @@ async function createProjectInBrowser(
         ? "generate_qualified_leads"
         : "increase_revenue",
     ],
-    businessHint: definition.oneLineDescription,
   });
   await page.waitForURL(/\/p\/[0-9a-f-]+\/context$/);
   const match = new URL(page.url()).pathname.match(

@@ -354,7 +354,7 @@
       "onePerLine": "每行一项。",
       "chooseIcp": "选择已有候选，或新建一个…",
       "newIcp": "新建核心 ICP",
-      "preserveOtherIcp": "其他 ICP 候选保持不变，只有当前选择会成为核心 ICP。",
+      "singleProductIcp": "这是当前产品独立的核心 ICP 草稿；只有生成内容与实际情况有出入时才需要修改。",
       "unsaved": "有未保存的更改",
       "noChanges": "没有更改",
       "discardTitle": "放弃本次编辑？",
@@ -371,6 +371,12 @@
       "synthesisQueuedDetail": "系统正在根据已采集的网站信息生成产品画像、ICP 与竞品候选。",
       "synthesisAlreadyRunning": "初始画像正在生成",
       "synthesisAlreadyRunningDetail": "已接续当前任务，完成后页面会自动更新。",
+      "discoveryRunning": "正在发现直接与间接竞品",
+      "discoveryRunningDetail": "系统正在结合 DataForSEO 搜索交集与网站证据建立竞品草稿；完成后会自动继续生成画像。",
+      "discoveryComplete": "竞品搜索证据已就绪",
+      "discoveryCompleteDetail": "系统正在自动继续生成产品画像、核心 ICP 与竞品草稿。",
+      "discoveryUnavailable": "搜索竞品数据暂不可用",
+      "discoveryUnavailableDetail": "系统会使用已采集的网站证据继续生成画像；无需再次点击。",
       "synthesisComplete": "初始产品画像已生成",
       "synthesisCompleteDetail": "当前草稿已写入本次冻结证据分析结果，请审核后再确认。",
       "synthesisFailed": "初始产品画像无法生成",
@@ -413,6 +419,7 @@
     "run": {
       "synthesisTitle": "正在生成产品画像、ICP 与竞品候选",
       "crawlTitle": "正在采集网站信息",
+      "discoveryTitle": "正在分析搜索市场与竞品",
       "statuses": {
         "queued": "排队中",
         "running": "运行中"

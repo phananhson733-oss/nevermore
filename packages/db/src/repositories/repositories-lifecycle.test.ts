@@ -642,6 +642,9 @@ describe("project and source repositories", () => {
       '"app"."client_projects"."workspace_id" =',
     );
     expect(archiveGuard.sql).toContain(
+      '"app"."client_projects"."id" =',
+    );
+    expect(archiveGuard.sql).toContain(
       '"app"."client_projects"."archived_at" is null',
     );
     fake.enqueue([{ id: "project-1" }], []);

@@ -30,7 +30,6 @@ export const BUSINESS_MODELS = [
 ] as const;
 
 export interface EditorState {
-  readonly businessHint: string;
   readonly productName: string;
   readonly customerModel: CustomerModel | "";
   readonly growthObjectives: readonly ProductProfileGrowthObjective[];
@@ -108,7 +107,11 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
   const primary =
     profile.targetAudiences.find(
       (audience) => audience.reviewStatus === "primary",
-    ) ?? null;
+    ) ??
+    profile.targetAudiences.find(
+      (audience) => audience.reviewStatus !== "excluded",
+    ) ??
+    null;
   const knownModels = profile.businessModels.filter((model) =>
     BUSINESS_MODELS.includes(model as (typeof BUSINESS_MODELS)[number]),
   );
@@ -121,7 +124,6 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
   );
 
   return {
-    businessHint: profile.businessHint ?? "",
     productName: profile.productName ?? "",
     customerModel: profile.customerModel ?? "",
     growthObjectives: profile.growthObjectives ?? [],
@@ -147,7 +149,7 @@ export function initialEditorState(profile: ProductProfileDraft): EditorState {
     secondaryMarkets: profile.targetMarkets
       .filter((market) => market.priority === "secondary")
       .map((market) => market.marketCode),
-    primaryAudienceId: primary?.candidateId ?? "",
+    primaryAudienceId: primary?.candidateId ?? "__new__",
     ...audienceFields(primary),
   };
 }
@@ -214,13 +216,7 @@ function buildAudiences(
   profile: ProductProfileDraft,
   state: EditorState,
 ): ProductProfileTargetAudience[] {
-  let audiences = profile.targetAudiences.map((audience) =>
-    audience.reviewStatus === "primary"
-      ? { ...audience, reviewStatus: "secondary" as const }
-      : audience,
-  );
-
-  if (!state.primaryAudienceId) return audiences;
+  if (!state.primaryAudienceId) return [];
 
   const selectedAudience =
     state.primaryAudienceId === "__new__"
@@ -231,16 +227,13 @@ function buildAudiences(
   const candidateId =
     selectedAudience?.candidateId ?? globalThis.crypto.randomUUID();
   const primary = buildPrimaryAudience(candidateId, state);
-
-  audiences = selectedAudience
-    ? audiences.map((audience) =>
-        audience.candidateId === selectedAudience.candidateId
-          ? primary
-          : audience,
-      )
-    : [...audiences, primary];
-
-  return audiences;
+  if (
+    selectedAudience?.reviewStatus === "primary" &&
+    JSON.stringify(primary) === JSON.stringify(selectedAudience)
+  ) {
+    return [...profile.targetAudiences];
+  }
+  return [primary];
 }
 
 function stringSetSignature(values: readonly string[]): string {
@@ -286,7 +279,6 @@ export function buildEditorPatch(
   state: EditorState,
 ): UpdateProductProfileDraftRequest["patch"] {
   const patch: UpdateProductProfileDraftRequest["patch"] = {};
-  const businessHint = nullableText(state.businessHint);
   const productName = nullableText(state.productName);
   const customerModel = state.customerModel || undefined;
   const growthObjectives = [...state.growthObjectives];
@@ -299,7 +291,6 @@ export function buildEditorPatch(
   const targetMarkets = buildMarkets(state);
   const targetAudiences = buildAudiences(profile, state);
 
-  if (businessHint !== profile.businessHint) patch.businessHint = businessHint;
   if (productName !== profile.productName) patch.productName = productName;
   if (customerModel !== profile.customerModel && customerModel !== undefined) {
     patch.customerModel = customerModel;
@@ -341,7 +332,6 @@ export function buildEditorPatch(
 /** Normalized form signature for a truthful unsaved-changes indicator. */
 export function editorStateSignature(state: EditorState): string {
   return JSON.stringify({
-    businessHint: nullableText(state.businessHint),
     productName: nullableText(state.productName),
     customerModel: state.customerModel || null,
     growthObjectives: [...state.growthObjectives].sort(),

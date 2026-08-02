@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_PRODUCT_PROFILE_SYNTHESIS_PAGES,
+  PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
   PRODUCT_PROFILE_SELECTION_POLICY_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
   PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION,
@@ -54,6 +55,7 @@ function manifest(pageCount = 2) {
     siteId: ids.site,
     sourcePageUrl: SOURCE_PAGE_URL,
     outputLocale: "zh-CN",
+    competitorDiscovery: null,
     baseProfile: {
       id: ids.baseProfile,
       version: 3,
@@ -81,10 +83,10 @@ function manifest(pageCount = 2) {
 describe("ProductProfileSynthesisInputManifest", () => {
   it("pins all public protocol versions and accepts an exact frozen manifest", () => {
     expect(PRODUCT_PROFILE_SYNTHESIS_INPUT_SCHEMA_VERSION).toBe(
-      "product-profile-synthesis-input.0.3.1",
+      "product-profile-synthesis-input.0.3.2",
     );
     expect(PRODUCT_PROFILE_SELECTION_POLICY_VERSION).toBe(
-      "product-profile-page-selection.0.3.0",
+      "product-profile-page-selection.0.3.1",
     );
     expect(PRODUCT_PROFILE_SYNTHESIS_VERSION).toBe(
       "product-profile-synthesis.0.3.0",
@@ -114,12 +116,15 @@ describe("ProductProfileSynthesisInputManifest", () => {
     const current = manifest();
     const {
       outputLocale: _outputLocale,
+      competitorDiscovery: _competitorDiscovery,
       schemaVersion: _schemaVersion,
       ...shared
     } = current;
     const legacy = {
       ...shared,
       schemaVersion: PRODUCT_PROFILE_SYNTHESIS_LEGACY_INPUT_SCHEMA_VERSION,
+      selectionPolicyVersion:
+        PRODUCT_PROFILE_LEGACY_SELECTION_POLICY_VERSION,
     } as const;
 
     expect(ProductProfileSynthesisInputManifest.parse(legacy)).toEqual(legacy);

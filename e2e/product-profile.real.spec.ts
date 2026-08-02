@@ -94,9 +94,6 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   await page.getByLabel("客户模式").selectOption("b2b");
   await page.getByLabel("主要目标市场").selectOption("US");
   await page.getByRole("checkbox", { name: "提升注册" }).check();
-  await page
-    .getByLabel("补充业务背景（选填）")
-    .fill("面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。");
 
   const createResponse = page.waitForResponse(
     (response) =>
@@ -118,8 +115,6 @@ test("persists the customer-entered Product Profile and ICP before opening live 
     customerModel: "b2b",
     primaryMarket: "US",
     growthObjectives: ["increase_signups"],
-    businessHint:
-      "面向北美 B2B SaaS 客户运营团队的 onboarding automation 产品。",
   });
 
   const location = created.headers()["location"];
@@ -160,7 +155,6 @@ test("persists the customer-entered Product Profile and ICP before opening live 
     .getByLabel("核心功能")
     .fill("Onboarding 工作流\n跨团队交接追踪");
   await editor.getByLabel("主要海外市场").selectOption("US");
-  await editor.getByLabel("核心 ICP 候选").selectOption("__new__");
   await editor
     .getByLabel("目标企业 / 目标用户")
     .fill("拥有 50–500 名员工的 B2B SaaS 企业");
@@ -189,6 +183,40 @@ test("persists the customer-entered Product Profile and ICP before opening live 
     `manual Product Profile save failed: ${await saved.text()}`,
   ).toBe(200);
   await expect(editor).toBeHidden();
+
+  // This real-browser fixture uses an unroutable reserved IP and deliberately
+  // does not call external DataForSEO. Complete the otherwise production-
+  // automatic competitor review through the customer-declared fallback so the
+  // confirmation gate is exercised with real persisted evidence.
+  await page.getByRole("button", { name: "添加竞品" }).click();
+  const competitorDialog = page.getByRole("dialog", {
+    name: "添加已批准竞品",
+  });
+  await competitorDialog.getByLabel("竞品名称").fill("OnboardFlow");
+  await competitorDialog
+    .getByLabel("标准化域名")
+    .fill("onboardflow.example");
+  await competitorDialog.getByLabel("竞争关系").selectOption("direct");
+  await competitorDialog
+    .getByRole("group", { name: "分析范围" })
+    .getByRole("checkbox", { name: "产品能力" })
+    .check();
+  await competitorDialog
+    .getByLabel("纳入竞品池的原因")
+    .fill("Offline acceptance fixture for the approved competitor gate.");
+  const addCompetitorResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname ===
+        `/api/mvp/projects/${projectId}/product-profile/competitors`,
+  );
+  await competitorDialog.getByRole("button", { name: "应用审核" }).click();
+  const competitorSaved = await addCompetitorResponse;
+  expect(
+    competitorSaved.status(),
+    `approved competitor save failed: ${await competitorSaved.text()}`,
+  ).toBe(200);
+  await expect(competitorDialog).toBeHidden();
 
   const confirmButton = page.getByRole("button", {
     name: "确认产品画像",
@@ -259,7 +287,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   ).toBe(200);
   const persisted = (await persistedResponse.json()) as ProductProfileRead;
   expect(persisted.data.currentProfile).toMatchObject({
-    version: 3,
+    version: 4,
     status: "complete",
     profile: {
       productName: "RelayOps",
@@ -268,6 +296,15 @@ test("persists the customer-entered Product Profile and ICP before opening live 
         {
           reviewStatus: "primary",
           targetCompanyOrAudience: "拥有 50–500 名员工的 B2B SaaS 企业",
+        },
+      ],
+      competitorCandidates: [
+        {
+          name: "OnboardFlow",
+          domain: "onboardflow.example",
+          reviewStatus: "approved",
+          relationship: "direct",
+          analysisScope: ["product_capability"],
         },
       ],
     },

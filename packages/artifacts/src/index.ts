@@ -29,6 +29,7 @@ export {
   prepareProductProfileSynthesis,
   productProfilePageKeyForIndex,
   PRODUCT_PROFILE_DECLARED_CONTEXT_PROMPT_SET_VERSION,
+  PRODUCT_PROFILE_OUTPUT_LOCALE_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_LEGACY_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_PROMPT_SET_VERSION,
   PRODUCT_PROFILE_SUPPORTED_PROMPT_SET_VERSIONS,
@@ -54,6 +55,11 @@ export type {
 } from "./llm/product-profile-client.ts";
 export { buildProductProfileDraft } from "./product-profile-draft.ts";
 export type { BuildProductProfileDraftInput } from "./product-profile-draft.ts";
+export { discoverProductProfileCompetitors } from "./product-profile-competitor-discovery.ts";
+export type {
+  ProductProfileCompetitorDiscoveryObservation,
+  ProductProfileDiscoveredCompetitor,
+} from "./product-profile-competitor-discovery.ts";
 
 // Deterministic templates (spec §10.1).
 export {

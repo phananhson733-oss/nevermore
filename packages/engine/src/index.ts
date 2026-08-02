@@ -58,7 +58,12 @@ export type {
 } from "./governance.ts";
 
 export { parseIcp, isEnglishProject } from "./icp.ts";
-export type { EngineIcp, EngineConversion, CustomerModel } from "./icp.ts";
+export type {
+  EngineIcp,
+  EngineConversion,
+  EngineCompetitor,
+  CustomerModel,
+} from "./icp.ts";
 
 export {
   RULE_SET_VERSION,
