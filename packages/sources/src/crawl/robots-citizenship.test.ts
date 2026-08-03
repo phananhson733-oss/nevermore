@@ -309,7 +309,7 @@ describe("a run that ends while robots.txt is in flight", () => {
    * really is an unreadable robots.txt and must still fail closed.
    */
   it("still fails closed when only the robots request timed out", async () => {
-    let clock = 0;
+    const clock = 0;
     const fetcher: CrawlFetcher = {
       async fetch(url: string) {
         if (url.endsWith("/robots.txt")) {
