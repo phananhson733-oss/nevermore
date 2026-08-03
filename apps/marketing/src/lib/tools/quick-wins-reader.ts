@@ -5,6 +5,7 @@
 
 import { runQuickWins, type QuickWinsEnvelope } from "@sf/public-tools";
 import { createSearchAnalyticsClient } from "@sf/sources";
+import { createDraftDependencies } from "./quick-wins-drafts.ts";
 
 /** Per-call deadline for a single Search Console request. */
 const READ_TIMEOUT_MS = 20_000;
@@ -47,6 +48,11 @@ export function createQuickWinsReader(options: {
     const deadlineAt = now().getTime() + REQUEST_BUDGET_MS;
     const remainingMs = () => deadlineAt - now().getTime();
 
+    // Null when the deployment has no draft model configured, which skips the
+    // two extra Search Console reads as well as the crawl. The evidence table
+    // does not depend on any of it.
+    const draftDependencies = createDraftDependencies({ property });
+
     return runQuickWins({
       client: createSearchAnalyticsClient({
         siteUrl: property,
@@ -57,6 +63,7 @@ export function createQuickWinsReader(options: {
       now: now(),
       brandTerms,
       budget: { isExpired: () => remainingMs() <= 0 },
+      ...(draftDependencies === null ? {} : { draftDependencies }),
     });
   };
 }

@@ -1183,6 +1183,27 @@
         "unsupported_media_type": "That request was not JSON.",
         "rate_limited": "You have run this as many times as the hourly limit allows. Search Console quota is shared across everyone using this tool, so the cap protects other visitors as much as it limits you.",
         "quota_unavailable": "We cannot check the usage limit right now, so we are not starting a read. Running without a working limit risks exhausting the Search Console quota this tool shares with every other visitor. Try again shortly."
+      },
+      "draftsTitle": "Wording candidates",
+      "draftsIntro": "For a few rows we found a page on your own site that earns clearly more at the same position. These rewrite the title and description in that page's pattern. They are candidates to react to, not advice: we do not know why the gap exists, and nothing here predicts what a change would do.",
+      "draftsSource": "Modelled on",
+      "draftTitleLabel": "Title",
+      "draftMetaLabel": "Description",
+      "draftsNone": "No wording candidates this time. A candidate needs another page on your site, in the same position band, earning clearly more with enough impressions to trust — most queries do not have one, and we would rather show nothing than a generic template.",
+      "draftSkipped": {
+        "no_shortfall": "beat your own curve, nothing to rewrite",
+        "low_dimension_coverage": "Search Console did not return enough of this query's page split to say which page carries it",
+        "no_subject_page": "no page we have totals for carries this query",
+        "no_comparable_high_ctr_page": "no page on your site in the same band earns clearly more",
+        "beyond_draft_cap": "beyond the per-run limit",
+        "page_unreadable": "the page could not be read",
+        "no_pattern_to_copy": "the comparable page has no title or description to model on",
+        "promises_outcome": "the draft claimed the rewrite would work, so it was discarded",
+        "too_long": "the draft was too long",
+        "empty": "the draft came back empty",
+        "unparseable": "the draft came back in an unusable form",
+        "model_unavailable": "the drafting model was unavailable",
+        "page_dimension_unavailable": "the page-level data needed for drafts was unavailable"
       }
     },
     "semrush": "Semrush",

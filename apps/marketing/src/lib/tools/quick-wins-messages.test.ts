@@ -47,6 +47,26 @@ const BUCKET_QUALITIES: readonly BucketQuality[] = [
   "insufficient_queries",
 ];
 
+/**
+ * Every reason the draft section can render, from DraftSkipReason plus
+ * DraftFailureReason plus the page-dimension failure runQuickWins adds.
+ */
+const DRAFT_SKIP_REASONS = [
+  "no_shortfall",
+  "low_dimension_coverage",
+  "no_subject_page",
+  "no_comparable_high_ctr_page",
+  "beyond_draft_cap",
+  "page_unreadable",
+  "no_pattern_to_copy",
+  "promises_outcome",
+  "too_long",
+  "empty",
+  "unparseable",
+  "model_unavailable",
+  "page_dimension_unavailable",
+] as const;
+
 /** Every code the client's error allowlist can render. */
 const ERROR_CODES = [
   "gsc_unavailable",
@@ -109,6 +129,13 @@ describe("quick-wins message coverage", () => {
       const node = group(bundle, "errors");
       for (const code of ERROR_CODES) {
         expect(typeof node[code], `errors.${code}`).toBe("string");
+      }
+    });
+
+    it(`has copy for every draft skip reason (${locale})`, () => {
+      const node = group(bundle, "draftSkipped");
+      for (const reason of DRAFT_SKIP_REASONS) {
+        expect(typeof node[reason], `draftSkipped.${reason}`).toBe("string");
       }
     });
 
