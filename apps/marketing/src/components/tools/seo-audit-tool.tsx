@@ -128,6 +128,11 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
                 "scan_failed",
                 "scan_timeout",
                 "scan_in_progress",
+                "rate_limited",
+                "target_busy",
+                "quota_unavailable",
+                "robots_disallowed",
+                "robots_unreachable",
               ].includes(errorCode)
                 ? errorCode
                 : "unknown"

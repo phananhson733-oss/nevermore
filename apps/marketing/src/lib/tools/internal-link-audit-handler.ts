@@ -8,30 +8,47 @@ import {
   type InternalLinkAuditPayload,
   type InternalLinkAuditUrlResult,
 } from "@sf/public-tools";
+import { extractClientIp } from "../rate-limit.ts";
+import { readPublicToolJson } from "./public-tool-request.ts";
 import {
-  checkRateLimit,
-  extractClientIp,
-  type RateLimitResult,
-} from "../rate-limit.ts";
+  openCrawlGate,
+  type CrawlGateResult,
+  DEFAULT_CRAWL_GATE_DEPENDENCIES,
+} from "./crawl-gate.ts";
 import {
-  acquirePublicCrawlSlot,
-  readPublicToolJson,
-} from "./public-tool-request.ts";
+  readCrawlCache,
+  writeCrawlCache,
+  targetHostOf,
+} from "./crawl-cache.ts";
+
+const TOOL_NAME = "internal_link_audit";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
-const ABUSE_FUSE_MAX = 30;
-const ABUSE_FUSE_WINDOW_MS = 10 * 60 * 1_000;
 
 export interface InternalLinkAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => InternalLinkAuditUrlResult;
-  readonly scan: (url: string) => Promise<InternalLinkAuditRaw>;
+  /** Receives the request signal so a client disconnect aborts the crawl. */
+  readonly scan: (url: string, signal?: AbortSignal) => Promise<InternalLinkAuditRaw>;
   readonly buildPayload: (raw: InternalLinkAuditRaw) => InternalLinkAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
-  readonly rateLimit: (
-    key: string,
-    maxRequests: number,
-    windowMs: number,
-  ) => RateLimitResult;
+  /**
+   * Shared with seo-audit. The old fuse here was a per-isolate Map, so it reset
+   * on every cold start, and it was keyed per tool — a caller who spent it
+   * simply moved to /api/tools/seo-audit, which runs the identical crawl.
+   */
+  readonly openGate: (
+    clientIp: string,
+    normalizedUrl: string,
+  ) => Promise<CrawlGateResult>;
+  /**
+   * Store a fresh result so the next caller asking about this same site does
+   * not send it another crawl's worth of traffic. Never allowed to fail the
+   * request it just served.
+   */
+  readonly cachePayload: (
+    normalizedUrl: string,
+    payload: InternalLinkAuditPayload,
+  ) => Promise<void>;
 }
 
 const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
@@ -39,7 +56,17 @@ const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
   scan: scanInternalLinkAuditSite,
   buildPayload: buildInternalLinkAuditPayload,
   extractClientIp,
-  rateLimit: checkRateLimit,
+  openGate: (clientIp, normalizedUrl) =>
+    openCrawlGate(
+      clientIp,
+      normalizedUrl,
+      DEFAULT_CRAWL_GATE_DEPENDENCIES,
+      (host) => readCrawlCache(TOOL_NAME, host),
+    ),
+  cachePayload: async (normalizedUrl, payload) => {
+    const host = targetHostOf(normalizedUrl);
+    if (host) await writeCrawlCache(TOOL_NAME, host, payload);
+  },
 };
 
 function json(
@@ -88,25 +115,22 @@ export async function handleInternalLinkAuditRequest(
   if (!normalized.ok) return json(createPublicToolError(normalized.code), 400);
 
   const ip = dependencies.extractClientIp(request.headers);
-  const slot = acquirePublicCrawlSlot(ip);
-  if (!slot.acquired) {
-    return json(createPublicToolError("scan_in_progress"), 409, {
-      "Retry-After": "5",
+  const gate = await dependencies.openGate(ip, normalized.url);
+  if (!gate.ok) return gate.response;
+  if (gate.kind === "cached") {
+    gate.release();
+    // The payload carries the timestamp of the crawl that produced it, which
+    // both tools render, so a cached answer never reads as a fresh one.
+    return json({ data: gate.payload }, 200, {
+      "X-Crawl-Cache": "hit",
+      "X-Crawl-Captured-At": gate.capturedAt,
     });
   }
   try {
-    const abuseFuse = dependencies.rateLimit(
-      `tools:internal-link-audit:abuse:ip:${ip}`,
-      ABUSE_FUSE_MAX,
-      ABUSE_FUSE_WINDOW_MS,
-    );
-    if (!abuseFuse.allowed) {
-      return json(createPublicToolError("rate_limited"), 429, {
-        "Retry-After": String(abuseFuse.retryAfterSeconds),
-      });
-    }
-    const raw = await dependencies.scan(normalized.url);
-    return json({ data: dependencies.buildPayload(raw) }, 200);
+    const raw = await dependencies.scan(normalized.url, request.signal);
+    const payload = dependencies.buildPayload(raw);
+    await dependencies.cachePayload(normalized.url, payload);
+    return json({ data: payload }, 200);
   } catch (error) {
     if (error instanceof InternalLinkAuditScanError) {
       if (error.code === "timeout") {
@@ -115,9 +139,17 @@ export async function handleInternalLinkAuditRequest(
       if (error.code === "blocked") {
         return json(createPublicToolError("invalid_url"), 400);
       }
+      // The site made a decision, or we could not read its rules. Neither is
+      // "the audit failed", and the reader deserves to know which it was.
+      if (
+        error.code === "robots_disallowed" ||
+        error.code === "robots_unreachable"
+      ) {
+        return json(createPublicToolError(error.code), 422);
+      }
     }
     return json(createPublicToolError("scan_failed"), 502);
   } finally {
-    slot.release();
+    gate.release();
   }
 }

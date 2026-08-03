@@ -8,21 +8,48 @@ import {
   type SeoAuditRaw,
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
+import { extractClientIp } from "../rate-limit.ts";
+import { readPublicToolJson } from "./public-tool-request.ts";
 import {
-  extractClientIp,
-} from "../rate-limit.ts";
+  openCrawlGate,
+  type CrawlGateResult,
+  DEFAULT_CRAWL_GATE_DEPENDENCIES,
+} from "./crawl-gate.ts";
 import {
-  acquirePublicCrawlSlot,
-  readPublicToolJson,
-} from "./public-tool-request.ts";
+  readCrawlCache,
+  writeCrawlCache,
+  targetHostOf,
+} from "./crawl-cache.ts";
+
+const TOOL_NAME = "seo_audit";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
 export interface SeoAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => SeoAuditUrlResult;
-  readonly scan: (url: string) => Promise<SeoAuditRaw>;
+  /** Receives the request signal so a client disconnect aborts the crawl. */
+  readonly scan: (url: string, signal?: AbortSignal) => Promise<SeoAuditRaw>;
   readonly buildPayload: (raw: SeoAuditRaw) => SeoAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
+  /**
+   * Admission control. This handler previously imported `extractClientIp` and
+   * nothing else from the limiter module: no request counter of any kind ran
+   * before the crawl, so one IP could replay a 240-second, 4,500-request crawl
+   * back to back indefinitely.
+   */
+  readonly openGate: (
+    clientIp: string,
+    normalizedUrl: string,
+  ) => Promise<CrawlGateResult>;
+  /**
+   * Store a fresh result so the next caller asking about this same site does
+   * not send it another crawl's worth of traffic. Never allowed to fail the
+   * request it just served.
+   */
+  readonly cachePayload: (
+    normalizedUrl: string,
+    payload: SeoAuditPayload,
+  ) => Promise<void>;
 }
 
 const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
@@ -30,6 +57,17 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
   scan: scanSeoAuditSite,
   buildPayload: buildSeoAuditPayload,
   extractClientIp,
+  openGate: (clientIp, normalizedUrl) =>
+    openCrawlGate(
+      clientIp,
+      normalizedUrl,
+      DEFAULT_CRAWL_GATE_DEPENDENCIES,
+      (host) => readCrawlCache(TOOL_NAME, host),
+    ),
+  cachePayload: async (normalizedUrl, payload) => {
+    const host = targetHostOf(normalizedUrl);
+    if (host) await writeCrawlCache(TOOL_NAME, host, payload);
+  },
 };
 
 function json(
@@ -89,16 +127,23 @@ export async function handleSeoAuditRequest(
   }
 
   const ip = dependencies.extractClientIp(request.headers);
-  const slot = acquirePublicCrawlSlot(ip);
-  if (!slot.acquired) {
-    return json(createPublicToolError("scan_in_progress"), 409, {
-      "Retry-After": "5",
+  const gate = await dependencies.openGate(ip, normalized.url);
+  if (!gate.ok) return gate.response;
+  if (gate.kind === "cached") {
+    gate.release();
+    // The payload carries the timestamp of the crawl that produced it, which
+    // both tools render, so a cached answer never reads as a fresh one.
+    return json({ data: gate.payload }, 200, {
+      "X-Crawl-Cache": "hit",
+      "X-Crawl-Captured-At": gate.capturedAt,
     });
   }
 
   try {
-    const raw = await dependencies.scan(normalized.url);
-    return json({ data: dependencies.buildPayload(raw) }, 200);
+    const raw = await dependencies.scan(normalized.url, request.signal);
+    const payload = dependencies.buildPayload(raw);
+    await dependencies.cachePayload(normalized.url, payload);
+    return json({ data: payload }, 200);
   } catch (error) {
     if (error instanceof SeoAuditScanError) {
       if (error.code === "timeout") {
@@ -107,9 +152,17 @@ export async function handleSeoAuditRequest(
       if (error.code === "blocked") {
         return json(createPublicToolError("invalid_url"), 400);
       }
+      // The site made a decision, or we could not read its rules. Neither is
+      // "the audit failed", and the reader deserves to know which it was.
+      if (
+        error.code === "robots_disallowed" ||
+        error.code === "robots_unreachable"
+      ) {
+        return json(createPublicToolError(error.code), 422);
+      }
     }
     return json(createPublicToolError("scan_failed"), 502);
   } finally {
-    slot.release();
+    gate.release();
   }
 }

@@ -26,12 +26,12 @@ describe("scanSeoAuditSite", () => {
   it("delegates to the fixed public crawler", async () => {
     const crawl = vi.fn(async () => fixture) satisfies SeoAuditCrawler;
     await expect(
-      scanSeoAuditSite("https://acme.test/path", crawl),
+      scanSeoAuditSite("https://acme.test/path", undefined, crawl),
     ).resolves.toEqual({
       ...fixture,
       requestedUrl: "https://acme.test/path",
     });
-    expect(crawl).toHaveBeenCalledWith("https://acme.test/path");
+    expect(crawl).toHaveBeenCalledWith("https://acme.test/path", undefined);
   });
 
   it("preserves a partial crawl for an honest bounded result", async () => {
@@ -41,7 +41,7 @@ describe("scanSeoAuditSite", () => {
       stopReason: "max_urls",
     };
     await expect(
-      scanSeoAuditSite("https://acme.test", async () => partial),
+      scanSeoAuditSite("https://acme.test", undefined, async () => partial),
     ).resolves.toEqual({
       ...partial,
       requestedUrl: "https://acme.test",
@@ -54,7 +54,7 @@ describe("scanSeoAuditSite", () => {
       availability: "unavailable",
     };
     await expect(
-      scanSeoAuditSite("https://acme.test", async () => unavailable),
+      scanSeoAuditSite("https://acme.test", undefined, async () => unavailable),
     ).rejects.toMatchObject({
       code: "scan_failed",
     });
@@ -62,7 +62,7 @@ describe("scanSeoAuditSite", () => {
 
   it("maps timeout-like crawler failures without exposing transport details", async () => {
     await expect(
-      scanSeoAuditSite("https://acme.test", async () => {
+      scanSeoAuditSite("https://acme.test", undefined, async () => {
         throw new Error("max_duration at private upstream");
       }),
     ).rejects.toMatchObject({ code: "timeout" });
