@@ -287,10 +287,22 @@ describeDb("Product Profile synthesis persistence", () => {
     };
   }
 
-  function manifest(project: ProjectFixture) {
+  function manifest(
+    project: ProjectFixture,
+    competitorDiscovery?: Record<string, unknown>,
+  ) {
     return {
-      schemaVersion: "product-profile-synthesis-input.0.3.0",
-      selectionPolicyVersion: "product-profile-page-selection.0.3.0",
+      ...(competitorDiscovery === undefined
+        ? {
+            schemaVersion: "product-profile-synthesis-input.0.3.0",
+            selectionPolicyVersion: "product-profile-page-selection.0.3.0",
+          }
+        : {
+            schemaVersion: "product-profile-synthesis-input.0.3.2",
+            selectionPolicyVersion: "product-profile-page-selection.0.3.1",
+            outputLocale: "en",
+            competitorDiscovery,
+          }),
       projectId: project.projectId,
       siteId: project.siteId,
       sourcePageUrl: project.sourcePageUrl,
@@ -347,8 +359,9 @@ describeDb("Product Profile synthesis persistence", () => {
   async function insertPlaceholder(
     project: ProjectFixture,
     runId: string,
+    competitorDiscovery?: Record<string, unknown>,
   ) {
-    const inputManifest = manifest(project);
+    const inputManifest = manifest(project, competitorDiscovery);
     return new ProductProfileRunsRepository(handle.db).insertPlaceholder({
       runId,
       workspaceId: project.workspaceId,
@@ -361,7 +374,7 @@ describeDb("Product Profile synthesis persistence", () => {
       synthesisVersion: "product-profile-synthesis.0.3.0",
       promptSetVersion: "product-profile-prompts.0.3.0",
       inputManifest,
-      inputHash: contentHash(inputManifest),
+      inputHash: contentHash(inputManifest as unknown as CanonicalValue),
     });
   }
 
@@ -745,7 +758,9 @@ describeDb("Product Profile synthesis persistence", () => {
   it("rejects wrong async kind, scope, Site, profile, and base version", async () => {
     const project = fixture.primary;
     const inputManifest = manifest(project);
-    const inputHash = contentHash(inputManifest);
+    const inputHash = contentHash(
+      inputManifest as unknown as CanonicalValue,
+    );
     const repository = new ProductProfileRunsRepository(handle.db);
 
     const wrongKindRun = await createRun(project, "diagnostic");
@@ -936,7 +951,9 @@ describeDb("Product Profile synthesis persistence", () => {
           synthesisVersion: "product-profile-synthesis.0.3.0",
           promptSetVersion: "product-profile-prompts.0.3.0",
           inputManifest: mismatchedManifest,
-          inputHash: contentHash(mismatchedManifest),
+          inputHash: contentHash(
+            mismatchedManifest as unknown as CanonicalValue,
+          ),
         }),
         "23514",
       );
@@ -959,7 +976,9 @@ describeDb("Product Profile synthesis persistence", () => {
         synthesisVersion: "product-profile-synthesis.0.3.0",
         promptSetVersion: "product-profile-prompts.0.3.0",
         inputManifest: invalidBaseStatusManifest,
-        inputHash: contentHash(invalidBaseStatusManifest),
+        inputHash: contentHash(
+          invalidBaseStatusManifest as unknown as CanonicalValue,
+        ),
       }),
     ).rejects.toThrow(/draft/i);
 
@@ -1505,9 +1524,12 @@ describeDb("Product Profile synthesis persistence", () => {
     const projectScope = scope(project);
     const capturedAt = "2026-07-22T08:02:00.000Z";
 
-    const successfulInvocation = async (target: ProjectFixture) => {
+    const successfulInvocation = async (
+      target: ProjectFixture,
+      competitorDiscovery?: Record<string, unknown>,
+    ) => {
       const run = await createRun(target);
-      await insertPlaceholder(target, run.id);
+      await insertPlaceholder(target, run.id, competitorDiscovery);
       const claimed = await new AsyncRunsRepository(handle.db).claim(
         scope(target),
         run.id,
@@ -1854,6 +1876,113 @@ describeDb("Product Profile synthesis persistence", () => {
         "23514",
       );
     }
+
+    // Competitor candidates are grounded in a DataForSEO snapshot collected
+    // independently of the Crawl snapshot the profile is built from. Requiring
+    // every observation to belong to the single Crawl source snapshot rejected
+    // the first profile that ever carried discovered competitors, rolling back
+    // its whole synthesis transaction with observation_snapshot_mismatch.
+    // A second snapshot is admissible — but only the exact one this profile's
+    // own run froze, and only observations that run enumerated.
+    const frozenDiscovery = (
+      observations: readonly Record<string, unknown>[],
+    ) => ({
+      snapshotId: staleSnapshot.id,
+      collectionRunId: staleCollectionRun.id,
+      sourceConnectionId: project.sourceConnectionId,
+      datasetKey: "dataforseo.search_landscape.v2",
+      schemaVersion: "dataforseo.search_landscape.v2",
+      methodVersion: "dataforseo.search_landscape.v2",
+      capturedAt,
+      checksum: contentHash({ discovery: staleSnapshot.id }),
+      availability: "partial",
+      rowCount: 1,
+      limitation: "Disposable frozen competitor discovery.",
+      targetDomain: "relayops.com",
+      marketCode: "US",
+      languageCode: "en",
+      observations,
+    });
+    const discoveryInvocationId = await successfulInvocation(
+      project,
+      frozenDiscovery([
+        {
+          sourceKind: "domain_overlap",
+          observationId: staleObservationId,
+          domain: "competitor-one.com",
+          intersections: 12,
+          organicEstimatedTrafficVolume: 340.5,
+          observedAt: capturedAt,
+        },
+      ]),
+    );
+    const discoveryProfile = replaceRef(
+      replaceRef(
+        {
+          ...structuredClone(validProfile),
+          analysisInvocationId: discoveryInvocationId,
+        },
+        "analysisInvocation",
+        { analysisInvocationId: discoveryInvocationId },
+      ),
+      "observation",
+      { observationId: staleObservationId },
+    );
+    const discoveryParsed = ProductProfileDraft.parse(discoveryProfile);
+    expect(
+      await profiles.preflightProductProfileProvenance(
+        projectScope,
+        discoveryParsed,
+      ),
+    ).toMatchObject({ ok: true });
+    await expect(
+      profiles.insertVersion({
+        workspaceId: project.workspaceId,
+        projectId: project.projectId,
+        version: 41,
+        status: "draft",
+        profile: discoveryParsed,
+        contentHash: contentHash({
+          status: "draft",
+          profile: discoveryParsed,
+        } as unknown as CanonicalValue),
+        createdBy: fixture.actorId,
+      }),
+    ).resolves.toMatchObject({ version: 41 });
+
+    // The frozen list is the fence, not the snapshot: an observation from that
+    // same snapshot which the run did not enumerate stays rejected.
+    const unlistedObservationId = await observation(
+      project,
+      staleSnapshot.id,
+      capturedAt,
+      await pageSnapshot(project, staleSnapshot.id, capturedAt, "unlisted"),
+    );
+    const unlistedParsed = ProductProfileDraft.parse(
+      replaceRef(
+        replaceRef(
+          {
+            ...structuredClone(validProfile),
+            analysisInvocationId: discoveryInvocationId,
+          },
+          "analysisInvocation",
+          { analysisInvocationId: discoveryInvocationId },
+        ),
+        "observation",
+        { observationId: unlistedObservationId },
+      ),
+    );
+    expect(
+      await profiles.preflightProductProfileProvenance(
+        projectScope,
+        unlistedParsed,
+      ),
+    ).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "observation_snapshot_mismatch" }),
+      ]),
+    });
 
     const missingTopLineage = {
       ...structuredClone(validProfile),
