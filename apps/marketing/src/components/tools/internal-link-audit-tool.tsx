@@ -91,6 +91,7 @@ const COPY = {
     all: "All pages",
     home: "Homepage",
     orphan_candidate: "Orphan candidates",
+    orphan_undetermined: "Inbound links unchecked",
     deep: "Deep pages",
     page: "Other pages",
     unresolved_target: "Unresolved targets",
@@ -111,7 +112,11 @@ const COPY = {
     findingsBody: "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
     noFindings: "No prioritized structural candidates were found in the pages collected by this run.",
     errorInvalid: "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
-    errorRate: "Unusually high request volume was detected.",
+    errorRate: "This network has run several crawls recently. Each one fetches hundreds of pages from the target site, so there is an hourly ceiling.",
+    errorTargetBusy: "This site has been crawled several times in the last hour, by you or by someone else. The limit protects the site being audited from repeated automated traffic.",
+    errorRobotsDisallowed: "This site's robots.txt asks crawlers not to fetch its pages, so nothing was crawled. That is the site owner's choice and says nothing about the site's link structure.",
+    errorRobotsUnreachable: "This site's robots.txt could not be read, so nothing was crawled. A crawler that cannot read the rules has to assume it is not allowed.",
+    errorQuotaUnavailable: "The usage-limit service is unavailable, so this crawl was not started. The tool fetches hundreds of pages from the target site and will not run without a working limit.",
     errorProgress: "An audit for this browser address is already running. Please wait for it to finish.",
     errorTimeout: "The synchronous crawl reached its execution-time boundary before a report could be returned. Large sites may need a future asynchronous scan.",
     errorGeneric: "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
@@ -161,6 +166,7 @@ const COPY = {
     all: "全部页面",
     home: "首页",
     orphan_candidate: "候选孤岛",
+    orphan_undetermined: "入链未验证",
     deep: "深层页面",
     page: "其他页面",
     unresolved_target: "未验证目标",
@@ -181,7 +187,11 @@ const COPY = {
     findingsBody: "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
     noFindings: "本次已采集页面中未发现需要优先处理的结构候选项。",
     errorInvalid: "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
-    errorRate: "检测到短时间内异常高的请求量。",
+    errorRate: "该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。",
+    errorTargetBusy: "这个站点在过去一小时内已被抓取多次（可能来自你，也可能来自其他人）。该限制用于保护被审计的站点免受重复的自动化流量。",
+    errorRobotsDisallowed: "该站点的 robots.txt 要求爬虫不要抓取其页面，因此没有抓取任何内容。这是站点所有者的选择，与该站的链接结构无关。",
+    errorRobotsUnreachable: "该站点的 robots.txt 无法读取，因此没有抓取任何内容。读不到规则的爬虫必须假定自己不被允许。",
+    errorQuotaUnavailable: "用量限制服务当前不可用，因此本次抓取没有启动。该工具会从目标站点获取数百个页面，在限制不可用时不会运行。",
     errorProgress: "该浏览器地址已有一次审计正在进行，请等待它完成。",
     errorTimeout: "同步抓取在返回报告前触及执行时间边界。大型网站可能需要后续异步扫描版本。",
     errorGeneric: "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
@@ -198,6 +208,9 @@ const STYLE: Record<InternalLinkAuditNode["kind"], { fill: string; ring: string 
   page: { fill: "#6F9C8B", ring: "#8FC8B2" },
   deep: { fill: "#D4A843", ring: "#F0C761" },
   orphan_candidate: { fill: "#D95757", ring: "#F27A7A" },
+  // Deliberately not the orphan red: the crawl stopped early, so this node is
+  // a question, not a finding.
+  orphan_undetermined: { fill: "#8A8279", ring: "#B8AFA4" },
   unresolved_target: { fill: "#9B9690", ring: "#D5D0CA" },
 };
 
@@ -229,10 +242,20 @@ function errorMessage(
   retryAfterHeader: string | null,
 ): string {
   if (code === "invalid_url" || code === "invalid_request") return copy.errorInvalid;
-  if (code === "rate_limited") {
+  if (code === "rate_limited" || code === "target_busy") {
+    const base =
+      code === "target_busy" ? copy.errorTargetBusy : copy.errorRate;
     const retry = retryAfterMessage(retryAfterHeader, locale);
-    return retry ? `${copy.errorRate} ${retry}` : copy.errorRate;
+    return retry ? `${base} ${retry}` : base;
   }
+  if (code === "quota_unavailable") {
+    const retry = retryAfterMessage(retryAfterHeader, locale);
+    return retry
+      ? `${copy.errorQuotaUnavailable} ${retry}`
+      : copy.errorQuotaUnavailable;
+  }
+  if (code === "robots_disallowed") return copy.errorRobotsDisallowed;
+  if (code === "robots_unreachable") return copy.errorRobotsUnreachable;
   if (code === "scan_in_progress") return copy.errorProgress;
   if (code === "scan_timeout") return copy.errorTimeout;
   return copy.errorGeneric;
@@ -509,6 +532,7 @@ function LinkTree({
     ["all", copy.all],
     ["home", copy.home],
     ["orphan_candidate", copy.orphan_candidate],
+    ["orphan_undetermined", copy.orphan_undetermined],
     ["deep", copy.deep],
     ["page", copy.page],
   ];

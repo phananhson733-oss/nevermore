@@ -14,7 +14,14 @@ import type {
 const MAX_EDGES = 80;
 const MAX_FINDINGS = 12;
 
-export type InternalLinkAuditScanErrorCode = "blocked" | "scan_failed" | "timeout";
+export type InternalLinkAuditScanErrorCode =
+  | "blocked"
+  | "scan_failed"
+  | "timeout"
+  /** The site's robots.txt forbids this crawler. Not a failure, and not a finding. */
+  | "robots_disallowed"
+  /** robots.txt could not be read, so RFC 9309 §2.3.1.4 forbids crawling. */
+  | "robots_unreachable";
 
 export class InternalLinkAuditScanError extends Error {
   readonly code: InternalLinkAuditScanErrorCode;
@@ -25,7 +32,10 @@ export class InternalLinkAuditScanError extends Error {
   }
 }
 
-export type InternalLinkAuditCrawler = (url: string) => Promise<CrawlRaw>;
+export type InternalLinkAuditCrawler = (
+  url: string,
+  signal?: AbortSignal,
+) => Promise<CrawlRaw>;
 /** Opaque raw crawl shape passed only between public-tool orchestration and UI handlers. */
 export type InternalLinkAuditRaw = CrawlRaw;
 
@@ -45,7 +55,9 @@ function pagePath(url: string): string {
 function isHome(url: string, origin: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.origin === origin && parsed.pathname === "/" && !parsed.search;
+    return (
+      parsed.origin === origin && parsed.pathname === "/" && !parsed.search
+    );
   } catch {
     return false;
   }
@@ -55,7 +67,9 @@ export function buildInternalLinkAuditPayload(
   raw: CrawlRaw,
 ): InternalLinkAuditPayload {
   const pages = raw.pages;
-  const idByUrl = new Map(pages.map((page, index) => [page.subjectUrl, nodeId(index)]));
+  const idByUrl = new Map(
+    pages.map((page, index) => [page.subjectUrl, nodeId(index)]),
+  );
   const inbound = new Map<string, number>();
   const firstInbound = new Map<
     string,
@@ -79,7 +93,10 @@ export function buildInternalLinkAuditPayload(
         }
         continue;
       }
-      inbound.set(link.targetSubjectUrl, (inbound.get(link.targetSubjectUrl) ?? 0) + 1);
+      inbound.set(
+        link.targetSubjectUrl,
+        (inbound.get(link.targetSubjectUrl) ?? 0) + 1,
+      );
       if (!firstInbound.has(link.targetSubjectUrl)) {
         firstInbound.set(link.targetSubjectUrl, {
           source: page.subjectUrl,
@@ -96,12 +113,20 @@ export function buildInternalLinkAuditPayload(
     }
   }
 
+  // A truncated crawl cannot tell an orphan from a page whose inbound links
+  // live on a page we never reached, so the graph must not paint one as the
+  // other. Kept in step with the finding built below.
+  const orphanKind =
+    raw.availability === "available"
+      ? "orphan_candidate"
+      : "orphan_undetermined";
+
   const nodes: InternalLinkAuditNode[] = pages.map((page, index) => {
     const inboundLinks = inbound.get(page.subjectUrl) ?? 0;
     const kind = isHome(page.subjectUrl, raw.origin)
       ? "home"
       : page.projection.sitemapMember && inboundLinks === 0
-        ? "orphan_candidate"
+        ? orphanKind
         : page.depth >= 3
           ? "deep"
           : "page";
@@ -126,29 +151,63 @@ export function buildInternalLinkAuditPayload(
       suggestedSourceUrl: inboundSource?.source ?? null,
       observedAnchorText: inboundSource?.anchorText ?? null,
     };
-    if (node.kind === "orphan_candidate") {
-      findings.push({
-        id: `orphan-${node.id}`,
-        priority: "P1",
-        kind: "orphan_candidate",
-        title: `${pagePath(node.url)} is a sitemap-only orphan candidate`,
-        detail: "The page was listed in the observed sitemap but no crawled HTML page linked to it.",
-        evidence: `0 observed inbound HTML links; sitemap member: yes; crawl depth: ${node.depth}.`,
-        limitation:
-          raw.availability === "partial"
-            ? "Coverage is partial, so this is a candidate rather than a definitive orphan."
-            : "JavaScript-rendered links and links outside this synchronous crawl are not evaluated.",
-        ...common,
-      });
+    if (
+      node.kind === "orphan_candidate" ||
+      node.kind === "orphan_undetermined"
+    ) {
+      /**
+       * A truncated crawl cannot support an orphan claim at all.
+       *
+       * "No crawled page links here" and "we ran out of budget before reaching
+       * the pages that link here" produce identical evidence, and the crawler
+       * stops at roughly 950 pages on every site — 240s of wall clock at the
+       * 250ms host pacer — so any site larger than that truncates by default.
+       *
+       * This used to keep priority P1 and the assertive title, changing only
+       * the `limitation` string, which the UI hides until the card is opened.
+       * The reader saw a confident P1 orphan finding that the run could not
+       * support. Title and detail are the always-visible fields, so the honest
+       * answer has to live there.
+       */
+      const undetermined = raw.availability !== "available";
+      findings.push(
+        undetermined
+          ? {
+              id: `orphan-${node.id}`,
+              priority: "P2",
+              kind: "orphan_undetermined",
+              title: `${pagePath(node.url)} could not be checked for inbound links`,
+              detail:
+                "The page is in the observed sitemap and no crawled page linked to it, but this crawl stopped early — the pages that link here may simply not have been reached. This is not evidence of an orphan.",
+              evidence: `0 inbound HTML links among the ${pages.length} page(s) actually crawled; sitemap member: yes; crawl depth: ${node.depth}. Crawl stopped: ${raw.stopReason ?? "coverage incomplete"}.`,
+              limitation:
+                "Re-run against a smaller section of the site, or check this URL's inbound links directly, before treating it as an orphan.",
+              ...common,
+            }
+          : {
+              id: `orphan-${node.id}`,
+              priority: "P1",
+              kind: "orphan_candidate",
+              title: `${pagePath(node.url)} is a sitemap-only orphan candidate`,
+              detail:
+                "The page was listed in the observed sitemap but no crawled HTML page linked to it.",
+              evidence: `0 observed inbound HTML links; sitemap member: yes; crawl depth: ${node.depth}.`,
+              limitation:
+                "JavaScript-rendered links and links outside this synchronous crawl are not evaluated.",
+              ...common,
+            },
+      );
     } else if (node.inboundLinks <= 1 && node.kind !== "home") {
       findings.push({
         id: `inbound-${node.id}`,
         priority: "P2",
         kind: "low_inbound",
         title: `${pagePath(node.url)} has limited observed internal support`,
-        detail: "The page has one or fewer observed inbound HTML links in this synchronous crawl.",
+        detail:
+          "The page has one or fewer observed inbound HTML links in this synchronous crawl.",
         evidence: `${node.inboundLinks} observed inbound HTML link(s); depth: ${node.depth}.`,
-        limitation: "Navigation, JavaScript-rendered links, and uncrawled pages can change this count.",
+        limitation:
+          "Navigation, JavaScript-rendered links, and uncrawled pages can change this count.",
         ...common,
       });
     } else if (node.depth >= 3) {
@@ -157,9 +216,11 @@ export function buildInternalLinkAuditPayload(
         priority: "P2",
         kind: "deep_page",
         title: `${pagePath(node.url)} is at observed crawl depth ${node.depth}`,
-        detail: "The synchronous crawler reached this page after at least three crawl traversals from an allowed seed.",
+        detail:
+          "The synchronous crawler reached this page after at least three crawl traversals from an allowed seed.",
         evidence: `Observed crawl depth: ${node.depth}; inbound HTML links: ${node.inboundLinks}.`,
-        limitation: "Sitemap entries can be crawl seeds, so this is not asserted as a homepage click count or ranking prediction.",
+        limitation:
+          "Sitemap entries can be crawl seeds, so this is not asserted as a homepage click count or ranking prediction.",
         ...common,
       });
     }
@@ -211,11 +272,27 @@ export function buildInternalLinkAuditPayload(
 
 export async function scanInternalLinkAuditSite(
   url: string,
+  /**
+   * Aborts the crawl when the client goes away. Without it an accepted POST
+   * commits the full budget — up to 4,500 requests at the target — no matter
+   * what the caller does next.
+   */
+  signal?: AbortSignal,
+  /** Offline test seam. */
   crawl: InternalLinkAuditCrawler = crawlPublicSitePreview,
 ): Promise<CrawlRaw> {
   try {
-    const raw = await crawl(url);
+    const raw = await crawl(url, signal);
     if (raw.availability === "unavailable") {
+      // "The site told us not to crawl it" and "we could not reach the site"
+      // are different answers, and neither is the generic failure the caller
+      // used to receive.
+      if (raw.stopReason === "robots_disallowed") {
+        throw new InternalLinkAuditScanError("robots_disallowed");
+      }
+      if (raw.stopReason === "robots_unreachable") {
+        throw new InternalLinkAuditScanError("robots_unreachable");
+      }
       throw new InternalLinkAuditScanError("scan_failed");
     }
     return raw;

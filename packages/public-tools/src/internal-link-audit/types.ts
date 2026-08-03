@@ -9,9 +9,17 @@ export type InternalLinkAuditNodeKind =
   | "page"
   | "deep"
   | "orphan_candidate"
+  /** Sitemap-only page on a truncated crawl: the graph cannot settle the question. */
+  | "orphan_undetermined"
   | "unresolved_target";
 export type InternalLinkAuditFindingKind =
   | "orphan_candidate"
+  /**
+   * Same page, truncated crawl. "Nothing links here" and "we stopped before
+   * reaching the pages that link here" are indistinguishable once a budget cut
+   * the crawl short, so the finding says which one it is: neither.
+   */
+  | "orphan_undetermined"
   | "low_inbound"
   | "deep_page"
   | "unresolved_target";
