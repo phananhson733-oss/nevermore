@@ -4,7 +4,17 @@ import { defineConfig } from "vitest/config";
 const webSrc = fileURLToPath(new URL("./apps/web/src", import.meta.url));
 
 /**
- * The web app uses the `@/*` -> apps/web/src alias; no other package uses `@`.
+ * `@/*` here means apps/web/src, and ONLY apps/web/src.
+ *
+ * apps/marketing declares the same specifier against its own `src` in its own
+ * tsconfig, and one Vite alias table cannot hold two entries for one
+ * specifier. So a marketing module reached through `@/` from a test resolves
+ * into the web app and fails on a missing file. Marketing modules that need to
+ * be importable from a unit test therefore import each other relatively; see
+ * `components/tools/quick-wins-evidence-table.tsx`. Fixing this properly means
+ * an importer-aware resolver or a second project, and both are their own
+ * change.
+ *
  * In Vitest 4 each entry in `test.projects` is its own Vite config and does NOT
  * inherit the root-level `resolve`, so the alias is applied per project.
  */
@@ -70,11 +80,19 @@ export default defineConfig({
     projects: [
       {
         resolve: { alias: [...webAlias] },
+        // The apps set `jsx: "preserve"` for Next's own compiler, which leaves
+        // Vite's transformer handing raw JSX to import analysis. Without this a
+        // `.test.tsx` file fails to parse rather than failing an assertion.
+        oxc: { jsx: { runtime: "automatic" } },
         test: {
           name: "unit",
           include: [
             "packages/**/*.test.ts",
             "apps/**/*.test.ts",
+            // `.tsx` too, or a component test is collected by nothing and
+            // stays green by never running.
+            "packages/**/*.test.tsx",
+            "apps/**/*.test.tsx",
             // Root E2E harness logic is unit-tested without being collected by
             // Playwright, whose test matcher only includes *.spec / *.test.
             "e2e/**/*.vitest.ts",

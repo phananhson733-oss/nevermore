@@ -17,7 +17,14 @@ export interface ConnectedToolContent {
   readonly cta: string;
   readonly trust: string;
   readonly workflowTitle: string;
-  readonly steps: readonly string[];
+  /**
+   * The how-it-works steps, each with its own heading.
+   *
+   * Named rather than a bare sentence so the step can be a real heading on the
+   * page and can carry a `HowTo` step name in structured data. Both readings
+   * want the same short label, and deriving one from a paragraph guesses.
+   */
+  readonly steps: readonly { readonly name: string; readonly text: string }[];
   readonly outputTitle: string;
   readonly outputs: readonly {
     readonly label: string;
@@ -42,11 +49,24 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     cta: "Connect Search Console",
     trust:
       "No demo data, nothing stored. Every number is computed from the property you choose.",
-    workflowTitle: "How it works",
+    workflowTitle: "How to find high impressions with low clicks",
     steps: [
-      "Authorize a read-only Search Console connection and choose a property.",
-      "We build your site's own CTR curve, band by band, from your non-brand queries.",
-      "Every query with enough impressions is compared against what your own site earns at that position.",
+      {
+        name: "Connect Search Console",
+        text: "Read-only, one click, revoke it whenever you like from your Google account.",
+      },
+      {
+        name: "We build your site's own CTR curve first",
+        text: "What counts as a normal click-through rate on your site, at each position band, computed from your own non-brand queries over the last 28 complete days.",
+      },
+      {
+        name: "Review the gaps, largest first",
+        text: "Every search query whose click-through rate falls below what your own site earns at that position, ranked by the size of the shortfall. Sort any column, or take the whole table away as CSV.",
+      },
+      {
+        name: "Where we can, we show you a query's page next to one that does better",
+        text: "Drawn from your own site and named, so you can open it and judge the comparison yourself. No comparable page, no draft.",
+      },
     ],
     outputTitle: "What you get, and what it stops short of",
     outputs: [
@@ -69,24 +89,54 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     ],
     faq: [
       {
-        question: "Why is Search Console required?",
+        question: "What does high impressions with low clicks mean?",
         answer:
-          "Click and impression performance is private property data; a public crawl cannot reproduce it.",
+          "Google is showing you in search results and people are choosing not to click. Impressions count how often you appeared; clicks count how often you were chosen. A wide gap between the two means you are visible but not being picked.",
       },
       {
-        question: "Why not use published CTR benchmarks?",
+        question: "Is a low CTR always a problem?",
         answer:
-          "We tested them against a real site and found positions 4-10 earning about a tenth of the published figure, while 11-16 earned three times what 4-10 did. Industry averages describe a plain blue-link results page; your site may not have one.",
+          "No. A 1% click-through rate at position 18 is ordinary. The same 1% at position 3 usually is not. What matters is your rate relative to what your own site achieves at that position, which is the only comparison this tool makes.",
       },
       {
-        question: "Will it tell me why the CTR is low?",
+        question: "What is a normal CTR for my position?",
         answer:
-          "No. A gap can mean a weak title, a mismatch with what searchers wanted, or Google answering the query in the results page. We measure the gap and say which causes we cannot distinguish.",
+          "Published benchmarks say roughly 28% at position 1, 11% at position 3 and 2% at position 10. Treat those as a rough map rather than a measurement. We tested them against a real site and found positions 4-10 earning about a tenth of the published figure, because that site's queries were being answered inside the results page. Your own curve is the only one that describes your site.",
+      },
+      {
+        question: "Why do I have impressions but no clicks at all?",
+        answer:
+          "Three causes are common: a title that does not match the query, an AI Overview or featured snippet answering above you, or a page ranking for a query it was never meant to serve. This tool finds the queries. Telling the three apart still takes a look at what people actually searched for.",
+      },
+      {
+        question: "Does this work without Search Console?",
+        answer:
+          "No. It reads your own site's private search performance data, which only Search Console has. For a tool that works on any public URL with no login, use the Free SEO Audit.",
+      },
+      {
+        question: "What access do you need?",
+        answer:
+          "Read-only Search Console access. We cannot modify your site, your account or your data, and you can revoke access at any time from your Google account settings.",
       },
       {
         question: "Do you store my data?",
         answer:
-          "No. We read Search Console, compute the report, and send it to your browser. Nothing is written to a database.",
+          "No. We read Search Console, compute the report, and send it to your browser. Nothing is written to a database, so export what you want to keep before you close the tab.",
+      },
+      {
+        question: "Can I keep the results after I close the tab?",
+        answer:
+          "Yes, as CSV. The file carries the same rows, the same measured window and the same blanks: a value we could not compute stays empty rather than becoming a zero. It is the only copy that survives the tab.",
+      },
+      {
+        question: "Where do the title drafts come from?",
+        answer:
+          "From your own site. We look for a page in the same position band earning a clearly higher click-through rate, show you which page that is, and draft on the same pattern. If there is no comparable page there is no draft — we do not fall back to a generic template.",
+      },
+      {
+        question: "How often should I check?",
+        answer:
+          "Monthly is enough for most sites. Title and meta changes take a few weeks to appear in Search Console data, so checking more often mostly shows noise.",
       },
     ],
   },
@@ -104,9 +154,15 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "No generic demo or automatic blame. The result is limited to the evidence available in your property.",
     workflowTitle: "What happens in the product",
     steps: [
-      "Create or open a GenGrowth project.",
-      "Authorize read-only Search Console access and choose the affected property.",
-      "Compare periods, inspect page-level changes, and review the supported root-cause hypotheses.",
+      { name: "Open a project", text: "Create or open a GenGrowth project." },
+      {
+        name: "Authorize Search Console",
+        text: "Read-only access, then choose the affected property.",
+      },
+      {
+        name: "Compare the periods",
+        text: "Inspect page-level changes and review the supported root-cause hypotheses.",
+      },
     ],
     outputTitle: "What the diagnosis keeps separate",
     outputs: [
@@ -160,9 +216,18 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "No fabricated search volume and no AI-only keyword list presented as validated demand.",
     workflowTitle: "What happens in the product",
     steps: [
-      "Create a project with your site and product context.",
-      "Connect the permitted keyword data source for the workspace.",
-      "Review site-informed candidate topics only after their available demand signals are checked.",
+      {
+        name: "Create a project",
+        text: "Set it up with your site and product context.",
+      },
+      {
+        name: "Connect a data source",
+        text: "The permitted keyword data source for the workspace.",
+      },
+      {
+        name: "Review the candidates",
+        text: "Site-informed candidate topics, only after their available demand signals are checked.",
+      },
     ],
     outputTitle: "What the opportunity map keeps separate",
     outputs: [
@@ -215,11 +280,24 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "GenGrowth 只请求 Search Console 的只读权限，不能发布页面、改变排名或修改你的 Google 账号，也不保存任何结果。",
     cta: "连接 Search Console",
     trust: "不展示演示数据，不保存任何结果。每个数字都来自你选择的站点属性。",
-    workflowTitle: "它是怎么工作的",
+    workflowTitle: "怎么找出「曝光高、点击少」的查询词",
     steps: [
-      "授权只读 Search Console 并选择一个站点属性。",
-      "我们用你自己的非品牌查询词，逐段构建你站点自己的 CTR 曲线。",
-      "每一条曝光量足够的查询词，都与你自己网站在同一位置的表现作对比。",
+      {
+        name: "连接 Search Console",
+        text: "只读、一次点击，随时可以在 Google 账号里撤销。",
+      },
+      {
+        name: "先建你站点自己的 CTR 曲线",
+        text: "用你自己的非品牌查询词，算出最近 28 个完整日里，你的网站在每个位置段上正常的点击率是多少。",
+      },
+      {
+        name: "从缺口最大的看起",
+        text: "所有点击率低于你自己网站在该位置表现的查询词，按缺口大小排序。任意一列都能排序，整张表也能导出成 CSV。",
+      },
+      {
+        name: "有对照页时，把它放在旁边给你看",
+        text: "对照页来自你自己的网站，具名可点，你可以自己判断这个对照成不成立。找不到合格对照页就不出草稿。",
+      },
     ],
     outputTitle: "你会得到什么，以及它到哪里为止",
     outputs: [
@@ -242,23 +320,54 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     ],
     faq: [
       {
-        question: "为什么需要 Search Console？",
-        answer: "点击和曝光是私有站点数据，公开爬取无法复现。",
+        question: "「曝光高、点击少」到底是什么意思？",
+        answer:
+          "Google 已经把你放进搜索结果里，而人们选择了不点。曝光是你出现了多少次，点击是你被选中了多少次。两者差得越远，说明你看得见，但没被选中。",
       },
       {
-        question: "为什么不用公开的 CTR 基准表？",
+        question: "点击率低就一定是问题吗？",
         answer:
-          "我们拿真实站点实测过：位置 4–10 的实际点击率只有公开数字的约十分之一，而 11–16 反而是 4–10 的三倍。行业平均描述的是一个普通蓝链结果页，而你的网站未必是。",
+          "不一定。位置 18 上 1% 的点击率很正常，位置 3 上的同一个 1% 通常就不正常。真正有意义的是你相对于自己网站在该位置的表现，而这也是本工具唯一做的对比。",
       },
       {
-        question: "它会告诉我点击率为什么低吗？",
+        question: "我这个位置的正常点击率是多少？",
         answer:
-          "不会。缺口可能是标题不够好，可能是搜索者想要的是别的东西，也可能是 Google 在结果页直接给出了答案。我们测量缺口，并说清楚哪些成因我们区分不了。",
+          "公开基准表说位置 1 约 28%、位置 3 约 11%、位置 10 约 2%。把它当作粗略地图，不要当作测量结果。我们拿真实站点实测过：位置 4–10 的实际点击率只有公开数字的约十分之一，因为那个站的查询在结果页里就被回答掉了。只有你自己的曲线才描述你的网站。",
+      },
+      {
+        question: "为什么我有曝光却一次点击都没有？",
+        answer:
+          "常见的有三种：标题没有对上这条查询、AI Overview 或精选摘要在你上方直接给了答案、或者这个页面在为一条它本来就不该服务的查询排名。工具能找出这些查询词，但要区分这三种，还是得你自己看几条真实的搜索词。",
+      },
+      {
+        question: "不连 Search Console 能用吗？",
+        answer:
+          "不能。它读的是只有 Search Console 才有的、你自己网站的私有搜索表现数据。如果你要一个对任意公开 URL 都能跑、无需登录的工具，请用免费 SEO 审计。",
+      },
+      {
+        question: "你们需要什么权限？",
+        answer:
+          "Search Console 的只读权限。我们不能修改你的网站、账号或数据，你随时可以在 Google 账号设置里撤销授权。",
       },
       {
         question: "你们会保存我的数据吗？",
         answer:
-          "不会。我们读取 Search Console、算出报告、发送到你的浏览器，不写入任何数据库。",
+          "不会。我们读取 Search Console、算出报告、发送到你的浏览器，不写入任何数据库。所以想留下的内容请在关闭标签页之前导出。",
+      },
+      {
+        question: "关掉页面之后结果还能留下吗？",
+        answer:
+          "能，导出成 CSV。文件里是同样的行、同样的统计区间、同样的空白：算不出来的值在文件里也是空的，不会变成 0。它是唯一能活过这个标签页的副本。",
+      },
+      {
+        question: "标题草稿是从哪来的？",
+        answer:
+          "来自你自己的网站。我们在同一个位置段里找点击率明显更高的页面，把是哪一个页面告诉你，再照同样的措辞模式起草。找不到合格对照页就不出草稿——我们不会退回到通用模板。",
+      },
+      {
+        question: "多久看一次合适？",
+        answer:
+          "多数网站一个月一次就够。标题和描述的改动要几周才会反映到 Search Console 的数据里，看得更勤基本只是在看噪声。",
       },
     ],
   },
@@ -276,9 +385,15 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "没有通用演示，也不会自动归咎于某个原因。结论受限于你的站点属性中可用的证据。",
     workflowTitle: "产品中的执行方式",
     steps: [
-      "创建或打开一个 GenGrowth 项目。",
-      "授权只读 Search Console 并选择受影响的站点属性。",
-      "比较时间段、检查页面级变化，并审阅有证据支持的根因假设。",
+      { name: "打开项目", text: "创建或打开一个 GenGrowth 项目。" },
+      {
+        name: "授权 Search Console",
+        text: "只读访问，然后选择受影响的站点属性。",
+      },
+      {
+        name: "比较时间段",
+        text: "检查页面级变化，并审阅有证据支持的根因假设。",
+      },
     ],
     outputTitle: "诊断如何区分不同层次",
     outputs: [
@@ -323,9 +438,15 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     trust: "不虚构搜索量，也不会把仅由 AI 发散出的关键词清单包装成已验证需求。",
     workflowTitle: "产品中的执行方式",
     steps: [
-      "使用网站和产品上下文创建项目。",
-      "为工作区连接允许使用的关键词数据源。",
-      "只有需求信号完成校验后，再审阅由站点上下文生成的候选主题。",
+      { name: "创建项目", text: "使用网站和产品上下文创建项目。" },
+      {
+        name: "连接数据源",
+        text: "为工作区连接允许使用的关键词数据源。",
+      },
+      {
+        name: "审阅候选主题",
+        text: "只有需求信号完成校验后，再审阅由站点上下文生成的候选主题。",
+      },
     ],
     outputTitle: "机会地图如何区分不同层次",
     outputs: [
