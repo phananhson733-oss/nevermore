@@ -55,6 +55,7 @@ import { getEnv } from "@/env";
 import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
 import {
+  competitorDiscoveryFailureHistory,
   competitorDiscoveryFailureWindowStart,
   shouldRearmCompetitorDiscovery,
 } from "./competitor-discovery-rearm";
@@ -209,22 +210,6 @@ async function ensureProductProfileCompetitorDiscovery(
       );
       if (active) return active;
 
-      // A failed collection persists no snapshot, so the evidence check below
-      // would reach the same verdict forever. Without this gate one permanently
-      // misconfigured market produced an unbounded enqueue loop that consumed
-      // the workspace's whole synthesis rate-limit budget.
-      if (
-        !shouldRearmCompetitorDiscovery(
-          await runs.summarizeTerminalFailures(
-            projectScope,
-            PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
-            competitorDiscoveryFailureWindowStart(new Date()),
-          ),
-        )
-      ) {
-        return null;
-      }
-
       const project = await new ProjectsRepository(tx).findByIdForUpdate(
         scope,
         projectId,
@@ -320,6 +305,31 @@ async function ensureProductProfileCompetitorDiscovery(
         serpCompetitorsLimit: config.maxCompetitors,
         seeds: productProfileSearchSeeds(profileRow.id, parsedProfile.data),
       });
+
+      // A failed collection persists no snapshot, so the evidence checks above
+      // reach the same verdict forever. Without this gate one misconfigured
+      // market produced an unbounded enqueue loop that consumed the workspace's
+      // whole synthesis rate-limit budget.
+      //
+      // The gate sits here, after the scope exists, because it judges *this*
+      // request: only failures of the same target/location/language count. When
+      // the earlier refusals were caused by a defect that has since been fixed,
+      // the repaired request no longer matches them and is allowed through
+      // immediately, instead of serving out a window it did not earn.
+      if (
+        !shouldRearmCompetitorDiscovery(
+          competitorDiscoveryFailureHistory(
+            await runs.listTerminalFailures(
+              projectScope,
+              PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+              competitorDiscoveryFailureWindowStart(new Date()),
+            ),
+            collectionScope,
+          ),
+        )
+      ) {
+        return null;
+      }
 
       const sources = new SourceConnectionsRepository(tx);
       const existingConnection = await sources.findConnectedByProviderForUpdate(
