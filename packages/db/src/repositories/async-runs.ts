@@ -1,4 +1,4 @@
-import { and, asc, eq, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { asyncRuns } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -237,6 +237,50 @@ export class AsyncRunsRepository extends Repository {
       )
       .limit(1);
     return (rows[0] as AsyncRunRow | undefined) ?? null;
+  }
+
+  /**
+   * How often this (project, active_key) has already ended in a terminal
+   * failure, plus the most recent failure code.
+   *
+   * Automatic re-arming reads this before enqueuing another attempt. Without it
+   * a permanently misconfigured provider produces an unbounded loop: the failed
+   * run persists no snapshot, so the next command sees the same missing
+   * evidence and enqueues the same doomed job again.
+   *
+   * The window matters as much as the count. Counting a project's whole history
+   * would let one bad afternoon disable a best-effort source forever, including
+   * after the defect that caused the failures has been fixed.
+   */
+  async summarizeTerminalFailures(
+    scope: ProjectScope,
+    activeKey: string,
+    since: Date,
+  ): Promise<{
+    readonly count: number;
+    readonly lastErrorCode: string | null;
+  }> {
+    const rows = await this.exec
+      .select({
+        count: sql<number>`count(*)::int`,
+        lastErrorCode: sql<
+          string | null
+        >`(array_agg(${asyncRuns.last_error_code} order by ${asyncRuns.queued_at} desc))[1]`,
+      })
+      .from(asyncRuns)
+      .where(
+        and(
+          projectPredicate(asyncRuns, scope),
+          eq(asyncRuns.active_key, activeKey),
+          sql`${asyncRuns.status} in ('failed','cancelled')`,
+          gte(asyncRuns.queued_at, since.toISOString()),
+        ),
+      );
+    const row = rows[0];
+    return {
+      count: row?.count ?? 0,
+      lastErrorCode: row?.lastErrorCode ?? null,
+    };
   }
 
   /**

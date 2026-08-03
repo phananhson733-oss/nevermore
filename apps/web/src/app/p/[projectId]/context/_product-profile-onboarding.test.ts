@@ -4,7 +4,9 @@ import {
   automaticSynthesisKey,
   claimOnce,
   customerProfileFieldKey,
+  isAutomaticCrawlOrigin,
   productProfileSynthesisFailureKind,
+  productProfileSynthesisRequestFailureKind,
   shouldStartCrawlForMissingSnapshot,
 } from "./_product-profile-onboarding";
 
@@ -66,7 +68,25 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(shouldStartCrawlForMissingSnapshot("initial")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("manual")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("after_crawl")).toBe(false);
-    expect(shouldStartCrawlForMissingSnapshot("after_discovery")).toBe(false);
+  });
+
+  it("lets only the customer's own attempt bypass the once-per-project crawl claim", () => {
+    // Two automatic origins can both find no snapshot — the mount attempt and
+    // the continuation after discovery. A customer's site must not be crawled
+    // twice because those two raced; the real E2E caught exactly that as a
+    // duplicate crawl snapshot.
+    expect(isAutomaticCrawlOrigin("initial")).toBe(true);
+    expect(isAutomaticCrawlOrigin("after_discovery")).toBe(true);
+    expect(isAutomaticCrawlOrigin("after_crawl")).toBe(true);
+    expect(isAutomaticCrawlOrigin("manual")).toBe(false);
+  });
+
+  it("starts Crawl after competitor discovery so the promise made to the customer holds", () => {
+    // The discovery banner tells the customer the system will carry on with
+    // website evidence. A brand-new project has no Crawl snapshot yet, and
+    // project creation enqueues only the DataForSEO landscape, so refusing to
+    // start Crawl here made that promise false and stranded the onboarding.
+    expect(shouldStartCrawlForMissingSnapshot("after_discovery")).toBe(true);
   });
 
   it("wires terminal Crawl success to synthesis and active-run adoption", () => {
@@ -273,5 +293,55 @@ describe("Product Profile synthesis failure copy", () => {
     expect(result).toBe("unknown");
     expect(result).not.toContain("private provider diagnostic");
     expect(result).not.toContain("internal-node-01");
+  });
+});
+
+describe("productProfileSynthesisRequestFailureKind", () => {
+  it("separates our own rate limit from a provider outage", () => {
+    // The synthesis route allows 20 attempts per workspace per 15 minutes. A
+    // 429 from that limiter is not a broken generation service, and telling the
+    // customer to "try again later" without saying why is what the generic copy
+    // did in production.
+    expect(productProfileSynthesisRequestFailureKind("RATE_LIMITED")).toBe(
+      "rate_limited",
+    );
+  });
+
+  it("keeps the specific copy the catalogue already has for known codes", () => {
+    expect(productProfileSynthesisRequestFailureKind("CONFIG_INVALID")).toBe(
+      "configuration",
+    );
+    expect(productProfileSynthesisRequestFailureKind("AUTH_FAILED")).toBe(
+      "configuration",
+    );
+    expect(
+      productProfileSynthesisRequestFailureKind("CRAWL_SNAPSHOT_REQUIRED"),
+    ).toBe("input_or_evidence");
+    expect(productProfileSynthesisRequestFailureKind("SERVER_ERROR")).toBe(
+      "temporary_provider",
+    );
+    expect(productProfileSynthesisRequestFailureKind("TIMEOUT")).toBe(
+      "temporary_provider",
+    );
+  });
+
+  it("normalises casing and whitespace", () => {
+    expect(productProfileSynthesisRequestFailureKind(" rate_limited ")).toBe(
+      "rate_limited",
+    );
+  });
+
+  it("falls back to the generic kind only for a genuinely unknown failure", () => {
+    expect(productProfileSynthesisRequestFailureKind(null)).toBe("unknown");
+    expect(productProfileSynthesisRequestFailureKind("")).toBe("unknown");
+    expect(productProfileSynthesisRequestFailureKind("WAT")).toBe("unknown");
+  });
+
+  it("never reports a request failure as cancelled", () => {
+    // `status` belongs to a run. A rejected POST has none, so the run-level
+    // cancelled branch must not be reachable from here.
+    expect(
+      productProfileSynthesisRequestFailureKind("QUEUE_JOB_CANCELLED"),
+    ).not.toBe("unknown");
   });
 });

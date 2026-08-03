@@ -46,14 +46,19 @@ export function claimOnce(claimed: Set<string>, key: string): boolean {
 }
 
 /**
- * A missing snapshot starts Crawl for the initial or explicit customer
- * attempt. If the retry immediately after a finished Crawl still lacks usable
- * evidence, stop and ask the customer to retry instead of creating a loop.
+ * A missing snapshot starts Crawl for the initial attempt, an explicit customer
+ * attempt, or the continuation after competitor discovery finished.
+ *
+ * Discovery runs before any Crawl on a new product, and the banner shown when
+ * it ends promises the system will carry on from website evidence. Refusing to
+ * start Crawl here made that promise false and left the onboarding with no
+ * evidence at all. Only `after_crawl` still stops: a retry immediately after a
+ * finished Crawl that still lacks usable evidence would be a loop.
  */
 export function shouldStartCrawlForMissingSnapshot(
   origin: ProductProfileSynthesisOrigin,
 ): boolean {
-  return origin === "initial" || origin === "manual";
+  return origin !== "after_crawl";
 }
 
 export type ProductProfileSynthesisFailureKind =
@@ -163,6 +168,45 @@ export function productProfileSynthesisFailureKind(
       input.lastError?.summary.trim() ?? "",
     ) ?? "unknown"
   );
+}
+
+/**
+ * A rejected synthesis *request* also deserves specific copy.
+ *
+ * `productProfileSynthesisFailureKind` classifies a terminal run. The command
+ * that queues the run can be refused before any run exists, and in production
+ * every such refusal rendered the same "try again later" fallback — including
+ * the workspace rate limit, which is neither a broken service nor something a
+ * further click can fix.
+ */
+/**
+ * Whether this origin may start Crawl without the customer asking.
+ *
+ * Only an explicit customer attempt is exempt from the once-per-project claim
+ * above it. Two automatic origins can both find no snapshot — the mount attempt
+ * and the continuation after competitor discovery — and a customer's site must
+ * not be crawled twice because the two raced.
+ */
+export function isAutomaticCrawlOrigin(
+  origin: ProductProfileSynthesisOrigin,
+): boolean {
+  return origin !== "manual";
+}
+
+export type ProductProfileSynthesisRequestFailureKind =
+  | ProductProfileSynthesisFailureKind
+  | "rate_limited";
+
+export function productProfileSynthesisRequestFailureKind(
+  code: string | null,
+): ProductProfileSynthesisRequestFailureKind {
+  const normalized = code?.trim().toUpperCase() ?? "";
+  if (normalized === "RATE_LIMITED") return "rate_limited";
+  return productProfileSynthesisFailureKind({
+    // A request carries no run status; only the code is meaningful here.
+    status: null,
+    lastError: normalized === "" ? null : { code: normalized, summary: "" },
+  });
 }
 
 export type CustomerProfileFieldKey =

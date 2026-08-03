@@ -125,6 +125,7 @@ describe("Analysis Refresh frozen helpers", () => {
         seeds: [],
       },
     });
+    expect(scope?.location).toEqual({ kind: "code", code: 2840 });
     expect(dataForSeoConnectionConfig(scope!)).toEqual({
       target: "example.test",
       marketCode: "US",
@@ -140,6 +141,46 @@ describe("Analysis Refresh frozen helpers", () => {
     expect(dataForSeoLimitation(dataForSeoConnectionConfig(scope!))).toContain(
       "integer keyword-intersection count, not a percentage",
     );
+    // A site declared in a language DataForSEO Labs does not serve for its
+    // market must still be researched in a language it does serve. Sending the
+    // declared tag produced task status 40501 and a permanent failure.
+    const zhSiteScope = dataForSeoSearchLandscapeScopeForSite(
+      {
+        host: "www.example.test",
+        market_codes: ["US"],
+        language_codes: ["zh-CN"],
+      },
+      87,
+      31,
+    );
+    expect(zhSiteScope?.providerLanguageCode).toBe("en");
+
+    // A declared language the provider does serve there is honoured.
+    expect(
+      dataForSeoSearchLandscapeScopeForSite(
+        {
+          host: "www.example.test",
+          market_codes: ["US"],
+          language_codes: ["es-MX"],
+        },
+        87,
+        31,
+      )?.providerLanguageCode,
+    ).toBe("es");
+
+    // Labs serves 92 countries. The rest must be skipped, not enqueued.
+    expect(
+      dataForSeoSearchLandscapeScopeForSite(
+        {
+          host: "www.example.test",
+          market_codes: ["VA"],
+          language_codes: ["it-IT"],
+        },
+        87,
+        31,
+      ),
+    ).toBeNull();
+
     expect(
       dataForSeoSearchLandscapeScopeForSite(
         {
