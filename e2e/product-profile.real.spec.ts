@@ -72,7 +72,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   // Product Profile editing/confirmation, Sources navigation, and scoped run
   // recovery. Keep each assertion bounded by the shared 10s expect timeout,
   // while allowing the whole real-DB journey enough time on a cold CI server.
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
   const origin = publicFixtureOrigin(`product-profile-${randomUUID()}`);
   const productUrl = `${origin}/product`;
@@ -235,6 +235,18 @@ test("persists the customer-entered Product Profile and ICP before opening live 
       new URL(response.url()).pathname ===
         `/api/mvp/projects/${projectId}/product-profile/confirm`,
   );
+  // The Sources client deliberately allows a 30s transport timeout and one
+  // retry. A cold CI Next.js development server can therefore remain in its
+  // honest loading state for longer than Playwright's shared 10s assertion
+  // timeout. Wait for the actual customer-data read instead of treating the
+  // client-side URL transition as proof that the screen has loaded.
+  const sourcesResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname ===
+        `/api/mvp/projects/${projectId}/sources`,
+    { timeout: 60_000 },
+  );
   await confirmation
     .getByRole("button", { name: "确认并进入数据连接" })
     .click();
@@ -244,6 +256,11 @@ test("persists the customer-entered Product Profile and ICP before opening live 
     `Product Profile confirmation failed: ${await confirmed.text()}`,
   ).toBe(200);
   await page.waitForURL(`/p/${projectId}/sources`);
+  const loadedSources = await sourcesResponse;
+  expect(
+    loadedSources.status(),
+    `Sources read after Product Profile confirmation failed: ${await loadedSources.text()}`,
+  ).toBe(200);
 
   await expect(page.getByRole("heading", { name: "数据来源" })).toBeVisible();
   await expect(
