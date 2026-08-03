@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { FormEvent, SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -71,10 +71,15 @@ export function NewProjectForm() {
   const [optionalSources, setOptionalSources] = useState<
     OptionalGoogleSource[]
   >([]);
+  const [hydrated, setHydrated] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const objectiveHelpId = useId();
   const objectiveErrorId = `${objectiveHelpId}-error`;
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   function clearFieldError(field: ProjectFieldKey): void {
     setFieldErrors((current) => {
@@ -370,7 +375,10 @@ export function NewProjectForm() {
           type="submit"
           variant="primary"
           className={styles.submit}
-          disabled={pending}
+          // Keep the server-rendered form inert until React owns its event
+          // handlers. This prevents an immediate click (or a development-mode
+          // Fast Refresh) from falling through to a native form submission.
+          disabled={pending || !hydrated}
         >
           {pending
             ? t("creating")

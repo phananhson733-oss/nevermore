@@ -690,9 +690,13 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
   await useChineseUi(page);
   await page.goto("/new-project");
   await expect(page.getByRole("heading", { name: "添加产品" })).toBeVisible();
-  // The mock suite runs against Next development mode. Wait for hydration so
-  // a very fast submit cannot fall through to the browser's native form GET.
-  await page.waitForLoadState("networkidle");
+  const createButton = page.getByRole("button", {
+    name: "创建并生成初始画像",
+  });
+  // The button is intentionally disabled in the server-rendered markup and
+  // enabled only after React installs the form handlers. Unlike `networkidle`,
+  // this remains a reliable hydration signal across Next Fast Refresh reloads.
+  await expect(createButton).toBeEnabled();
   await page.getByLabel("产品名称").fill("RelayOps");
   await page.getByLabel("产品 URL").fill("https://relayops.com/product/");
   await page.getByLabel("客户模式").selectOption("b2b");
@@ -700,9 +704,7 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
   await page
     .getByRole("checkbox", { name: "提升注册", exact: true })
     .check();
-  await page
-    .getByRole("button", { name: "创建并生成初始画像" })
-    .click();
+  await createButton.click();
 
   await expect.poll(() => createRequests.length).toBe(1);
   expect(createRequests).toEqual([
