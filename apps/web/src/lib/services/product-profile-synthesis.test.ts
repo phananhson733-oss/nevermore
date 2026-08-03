@@ -398,9 +398,10 @@ describe("Product Profile PageSnapshot integrity", () => {
 });
 
 describe("Product Profile DataForSEO v2 competitor discovery", () => {
-  it("freezes a distinct seed-based SERP competitor source", () => {
-    const capturedAt = "2026-08-03T01:02:03.000Z";
-    const collectionScope = createDataForSeoSearchLandscapeV2Scope({
+  const CAPTURED_AT = "2026-08-03T01:02:03.000Z";
+
+  function discoveryScope() {
+    return createDataForSeoSearchLandscapeV2Scope({
       target: "relayops.com",
       marketCode: "US",
       languageTag: "en-US",
@@ -413,7 +414,10 @@ describe("Product Profile DataForSEO v2 competitor discovery", () => {
         },
       ],
     });
-    const discoverySnapshot: DataSnapshotRow = {
+  }
+
+  function discoverySnapshotRow(capturedAt = CAPTURED_AT): DataSnapshotRow {
+    return {
       id: uuid(701),
       workspace_id: workspaceId,
       project_id: projectId,
@@ -431,20 +435,26 @@ describe("Product Profile DataForSEO v2 competitor discovery", () => {
       raw_object_key: "private/dataforseo-v2.json",
       row_count: 1,
       checksum: "d".repeat(64),
-      summary: { collectionScope },
+      summary: { collectionScope: discoveryScope() },
       created_at: capturedAt,
     };
-    const discoveryObservation: ObservationRow = {
+  }
+
+  function serpObservationRow(
+    snapshot: DataSnapshotRow,
+    observedAt = CAPTURED_AT,
+  ): ObservationRow {
+    return {
       id: uuid(704),
       workspace_id: workspaceId,
       project_id: projectId,
-      snapshot_id: discoverySnapshot.id,
+      snapshot_id: snapshot.id,
       site_page_id: null,
       provider: "dataforseo",
       metric_key: "dataforseo.serp_competitor.v1",
       subject_type: "site",
       subject_ref: "guidecx.com",
-      observed_at: capturedAt,
+      observed_at: observedAt,
       availability: "available",
       value_numeric: null,
       value_text: null,
@@ -469,6 +479,11 @@ describe("Product Profile DataForSEO v2 competitor discovery", () => {
       support: "supports",
       limitation: "Frozen seed fallback fixture.",
     };
+  }
+
+  it("freezes a distinct seed-based SERP competitor source", () => {
+    const discoverySnapshot = discoverySnapshotRow();
+    const discoveryObservation = serpObservationRow(discoverySnapshot);
 
     expect(
       buildProductProfileCompetitorDiscovery(discoverySnapshot, [
@@ -488,7 +503,38 @@ describe("Product Profile DataForSEO v2 competitor discovery", () => {
       ],
     });
   });
+
+  it("normalizes observation timestamptz text the same way as the manifest", () => {
+    // Production, 2026-08-03: DataForSEO returned 100 competitor domains and
+    // every one was rejected with SNAPSHOT_PROJECT_MISMATCH. The raw column
+    // reads "2026-08-03T13:18:44.189+00:00" while the contract's IsoDateTime
+    // requires a Zulu designator, and this path validated the raw column while
+    // the manifest path converted. Fixtures spelled "...Z" cannot catch that —
+    // only the spelling PostgreSQL actually emits can, so this one uses it.
+    const pgInstant = "2026-08-03 01:02:03+00";
+    const snapshot = discoverySnapshotRow(pgInstant);
+    const built = buildProductProfileCompetitorDiscovery(snapshot, [
+      serpObservationRow(snapshot, pgInstant),
+    ]);
+
+    expect(built.capturedAt).toBe(CAPTURED_AT);
+    expect(built.observations).toHaveLength(1);
+    expect(built.observations[0]?.observedAt).toBe(CAPTURED_AT);
+  });
+
+  it("still rejects an observation captured at a different instant", () => {
+    // Normalising both sides is what makes them comparable, not what makes them
+    // equal: a genuinely different instant must still fail identity.
+    const snapshot = discoverySnapshotRow("2026-08-03 01:02:03+00");
+
+    expect(() =>
+      buildProductProfileCompetitorDiscovery(snapshot, [
+        serpObservationRow(snapshot, "2026-08-03 01:02:04+00"),
+      ]),
+    ).toThrow(/identity/iu);
+  });
 });
+
 
 describe("Product Profile frozen synthesis manifest", () => {
   it("contains only bounded identity metadata and has the exact JCS hash", () => {

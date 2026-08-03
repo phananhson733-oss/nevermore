@@ -455,6 +455,13 @@ function competitorObservation(
   ) {
     return null;
   }
+  // PostgreSQL renders timestamptz with a numeric offset ("+00:00"), while the
+  // contract's IsoDateTime demands a Zulu designator. Both instants must pass
+  // through the same converter the manifest already uses: validating the raw
+  // column rejected every observation the provider ever returned, and comparing
+  // raw against converted would compare two different spellings of one instant.
+  const observedAt = canonicalUtcInstant(observation.observed_at);
+  const capturedAt = canonicalUtcInstant(snapshot.captured_at);
   const value = record(observation.value_json);
   const domain = value?.["competitorDomain"];
   const organicEstimatedTrafficVolume =
@@ -496,7 +503,7 @@ function competitorObservation(
           keywordsCount: value?.["keywordsCount"],
           relevantSerpItems: value?.["relevantSerpItems"],
           organicEstimatedTrafficVolume,
-          observedAt: observation.observed_at,
+          observedAt,
         }
       : {
           sourceKind: "domain_overlap",
@@ -504,7 +511,7 @@ function competitorObservation(
           domain,
           intersections: value?.["intersections"],
           organicEstimatedTrafficVolume,
-          observedAt: observation.observed_at,
+          observedAt,
         },
   );
   if (
@@ -519,7 +526,7 @@ function competitorObservation(
     observation.subject_type !== "site" ||
     observation.subject_ref !== parsed.data.domain ||
     observation.site_page_id !== null ||
-    observation.observed_at !== snapshot.captured_at ||
+    observedAt !== capturedAt ||
     observation.availability !== "available" ||
     observation.value_numeric !== null ||
     observation.value_text !== null ||
