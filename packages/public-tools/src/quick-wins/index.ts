@@ -5,3 +5,5 @@ export * from "./report.ts";
 export * from "./run.ts";
 export * from "./comparable-page.ts";
 export * from "./draft.ts";
+export * from "./draft-plan.ts";
+export * from "./draft-run.ts";
