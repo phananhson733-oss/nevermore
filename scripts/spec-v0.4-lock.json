@@ -21,7 +21,7 @@
     "scripts/schema-smoke.sql": "2a4865b0fb5b59dabfcffe3c41574e26b3f50990d7657f6e92b7e8e65cd12863",
     "scripts/generate-schema.mjs": "4c25d7e3d3d8915527066ec83135da90655701b0b1629117d2a455f2296ca0bb",
     "scripts/verify-spec.mjs": "d97b05080dd9d3c80a63be9bf8fa69ecd94d3822e3655fba66878252d0bf9c28",
-    "scripts/verify-spec.test.mjs": "38284fc049670cbc3c4857c04d7d587de5a277e097ebde53b7923ab1c61d5997",
+    "scripts/verify-spec.test.mjs": "40364be96931c12c34c70cf07f447b247cfc5bdea338440c043f1c3692d55fd0",
     "historical-publication-candidate/README.md": "c5e79e6db30bb7298b4bbe8aec788b03cf6ee8f313e2f499035b84cdfe128748",
     "historical-publication-candidate/acceptance-matrix.md": "d60555a3de38894ed48a43e1272d128051a45aa7d3e81b08de2781c12a369b19",
     "historical-publication-candidate/openapi.candidate.yaml": "18c128ae338570849047b7714dd23db99e49ac2d011040dfb6083e24cf43c91a",
