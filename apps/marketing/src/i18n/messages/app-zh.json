@@ -114,6 +114,7 @@
     "urlNoTld": "请输入完整的域名（例如 yoursite.com）。",
     "urlExample": "请输入您的真实网站 URL，而非示例域名。",
     "urlIpAddress": "请输入域名，而非 IP 地址。",
+    "urlPort": "请输入不带端口号的网址（我们只能访问标准的 http/https 端口）。",
     "urlChecking": "正在检查 URL 可访问性...",
     "urlDnsError": "该域名不存在，请检查是否有拼写错误。",
     "urlTimeout": "无法访问该 URL（连接超时），请确认地址是否正确。",
