@@ -112,6 +112,69 @@ describe("buildTrafficDropReport", () => {
     }
   });
 
+  it("lights up the query-level checks once the evidence is actually supplied", () => {
+    // The wiring test. Every other case in this file runs without query
+    // evidence, which means they would all still pass if `queryEvidence` were
+    // silently dropped on the floor between the input and the two modules
+    // that consume it.
+    const rows = (scale: number) => [
+      ...Array.from({ length: 12 }, (_unused, index) => ({
+        query: `acme ${index}`,
+        clicks: 20,
+        impressions: 400,
+        position: 4,
+      })),
+      ...Array.from({ length: 12 }, (_unused, index) => ({
+        query: `widget guide ${index}`,
+        clicks: Math.round(50 * scale),
+        impressions: Math.round(900 * scale),
+        position: scale < 1 ? 60 : 5,
+      })),
+    ];
+    const window = (startDate: string, endDate: string, scale: number) => {
+      const data = rows(scale);
+      return {
+        startDate,
+        endDate,
+        rows: data,
+        paging: { pagesFetched: 1, truncated: false },
+        queryAggregation: "byProperty",
+        totals: {
+          clicks: data.reduce((sum, row) => sum + row.clicks, 0),
+          impressions: data.reduce((sum, row) => sum + row.impressions, 0),
+          responseAggregationType: "byProperty",
+        },
+      };
+    };
+
+    const { result } = buildTrafficDropReport({
+      daily: ASTROLOGYWIKI_DAILY,
+      completedAt: COMPLETED_AT,
+      manualAction: "user_reports_none",
+      brandTerms: ["acme"],
+      brandTermsConfirmed: true,
+      queryEvidence: {
+        before: window("2026-06-01", "2026-06-28", 1),
+        after: window("2026-07-02", "2026-07-29", 0.1),
+      },
+    });
+
+    expect(result.siteSignals.brandSplit.kind).toBe("slice");
+    expect(result.siteSignals.queryCohort.kind).toBe("migration");
+    const byId = Object.fromEntries(
+      result.checks.map((check) => [check.id, check.status]),
+    );
+    expect(byId.brand_non_brand_split).toBe("hit");
+    expect(byId.query_cohort_migration).toBe("hit");
+
+    // A lopsided split points at the cheap technical checks first, not at
+    // content — a robots rule or a stray noindex on one template produces
+    // exactly this shape and is fixable this afternoon.
+    expect(result.actions.map((action) => action.id)).toContain(
+      "check_landing_page_indexability",
+    );
+  });
+
   it("degrades to a limitation instead of a verdict on a site with too little history", () => {
     const { result } = report(ASTROLOGYWIKI_DAILY.slice(-40));
 

@@ -94,6 +94,8 @@ export function comparisonWindows(
 export function createTrafficDropQueryReader(options: {
   readonly accessToken: string;
   readonly remainingMs: () => number;
+  /** Injected so a test can count upstream calls without a network. */
+  readonly fetchImpl?: typeof fetch;
 }): (input: TrafficDropQueryReadInput) => Promise<TrafficQueryEvidence | null> {
   return async ({ property, changePoint, seriesEndDate }) => {
     const windows = comparisonWindows(changePoint, seriesEndDate);
@@ -104,6 +106,7 @@ export function createTrafficDropQueryReader(options: {
       accessToken: options.accessToken,
       requestTimeoutMs: READ_TIMEOUT_MS,
       remainingMs: options.remainingMs,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     });
     const budget = { isExpired: () => options.remainingMs() <= 0 };
 
