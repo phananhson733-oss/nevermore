@@ -1091,11 +1091,11 @@
     },
     "quickWins": {
       "title": "SEO Quick Wins",
-      "description": "Find the pages Google already shows to thousands of people that almost nobody clicks, measured against your own site rather than an industry table.",
-      "metaDescription": "Google already shows these pages to thousands of people, and almost nobody clicks. Connect Search Console to find every one of them. Free, read-only.",
+      "description": "Find the search queries Google already shows you for thousands of times that almost nobody clicks, measured against your own site's click-through curve rather than an industry table.",
+      "metaDescription": "Google already shows you for these queries thousands of times, and almost nobody clicks. Connect Search Console to find every one of them. Free, read-only.",
       "eyebrow": "Free tool",
       "pageTitle": "High Impressions, Low Clicks",
-      "pageSubtitle": "Google is already showing these pages to thousands of people. Almost nobody clicks. That is not a ranking problem — it is a different one, and most audits never look for it.",
+      "pageSubtitle": "Google is already showing you for these searches thousands of times. Almost nobody clicks. This tool measures the gap against your own site — it does not claim to know what caused it.",
       "connectTitle": "Connect Search Console",
       "connectBody": "We read your Search Console performance data — impressions, clicks, and average position, query by query. Read-only: we cannot change anything on your site or in your account. We do not store your results, and you can disconnect at any time.",
       "connectCta": "Connect Search Console",
@@ -1168,18 +1168,21 @@
         "insufficient_query_sample": "Your bands are measurable, but no single query cleared the 100-impression floor. That is a statement about sample size, not about your site.",
         "high_query_anonymization_gap": "A large share of your impressions and clicks never appear in Search Console’s query report. Everything here is computed on what Google returns, which is not everything.",
         "partial_gsc_export": "Search Console had more rows than we read. Rows come back ordered by clicks descending, so what got cut is the low-click end — which is exactly the part this table looks for.",
-        "brand_segment_insufficient_evidence": "We excluded your brand queries from the baseline, but there are too few of them to say anything about the brand segment separately."
+        "brand_segment_insufficient_evidence": "We excluded your brand queries from the baseline, but there are too few of them to say anything about the brand segment separately.",
+        "aggregation_basis_mismatch": "The property total and the query rows were not measured on the same basis, so we cannot compute how much Search Console withheld. Search Console picks its own aggregation once a query groups or filters by page, and dividing one basis by another produces a number that describes neither.",
+        "anonymization_gap_uncomputable": "We could not size what Search Console withheld: either the property reported no totals for this window, or the query rows added up to more than the property total. The two readings disagree, so we are not reporting a share rather than reporting a wrong one."
       },
       "emptyTitle": "Nothing measurable this time",
       "emptyBody": "That is not the same as “no opportunities”. See what we could not measure, below.",
-      "storageNote": "We do not store your results. Note your current numbers before you edit anything, then re-run this in a few weeks and compare — Search Console keeps the history even though we do not.",
+      "storageNote": "We do not store your results. Export or note anything you want to keep before you close the tab. We deliberately do not offer a before/after comparison: a re-run weeks later cannot separate the effect of an edit from seasonal demand, and presenting it as if it could would be the one claim this tool exists to avoid.",
       "errors": {
         "gsc_unavailable": "We could not read Search Console for that property. Check the connection and try again.",
         "scan_in_progress": "One Search Console read at a time. Give the last one a few seconds.",
         "invalid_request": "That request was not something we could read.",
         "payload_too_large": "That request was too large.",
         "unsupported_media_type": "That request was not JSON.",
-        "no_gsc_data": "Search Console returned nothing for that property in this window."
+        "rate_limited": "You have run this as many times as the hourly limit allows. Search Console quota is shared across everyone using this tool, so the cap protects other visitors as much as it limits you.",
+        "quota_unavailable": "We cannot check the usage limit right now, so we are not starting a read. Running without a working limit risks exhausting the Search Console quota this tool shares with every other visitor. Try again shortly."
       }
     },
     "semrush": "Semrush",

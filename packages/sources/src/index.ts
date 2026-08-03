@@ -279,6 +279,14 @@ export type {
   GscDailyRange,
   GscDailySeriesReader,
 } from "./gsc/daily-series.ts";
+export { createSearchAnalyticsClient } from "./gsc/search-analytics.ts";
+export type {
+  SearchAnalyticsClientOptions,
+  SearchAnalyticsDimension,
+  SearchAnalyticsRequest,
+  SearchAnalyticsResponse,
+  SearchAnalyticsRow,
+} from "./gsc/search-analytics.ts";
 export { computeGscWindow } from "./gsc/window.ts";
 export { normalizeGscRows, GSC_LIMITATION } from "./gsc/normalize.ts";
 

@@ -1091,11 +1091,11 @@
     },
     "quickWins": {
       "title": "SEO Quick Wins",
-      "description": "找出那些 Google 已经展示给成千上万人、却几乎没人点击的页面。判定基准来自你自己的网站，而不是一张行业平均表。",
-      "metaDescription": "Google 已经把这些页面展示给成千上万人，却几乎没人点击。连接 Search Console 找出全部。免费，只读。",
+      "description": "找出那些 Google 已经为你展示了成千上万次、却几乎没人点击的查询词。衡量基准来自你自己网站的点击率曲线，而不是一张行业平均表。",
+      "metaDescription": "Google 已经为这些查询词把你展示了成千上万次，却几乎没人点击。连接 Search Console 找出全部。免费，只读。",
       "eyebrow": "免费工具",
       "pageTitle": "曝光很高，点击很少",
-      "pageSubtitle": "Google 已经把这些页面展示给成千上万人，几乎没人点击。这不是排名问题，是另一个问题，而且大多数审计工具从来不查它。",
+      "pageSubtitle": "Google 已经为这些搜索把你展示了成千上万次，几乎没人点击。这个工具用你自己的网站作基准来衡量这个缺口，但它不声称知道原因是什么。",
       "connectTitle": "连接 Search Console",
       "connectBody": "我们读取你的 Search Console 表现数据：逐个查询词的曝光、点击和平均位置。只读权限，不能修改你的网站或账号。我们不保存你的结果，你可以随时断开连接。",
       "connectCta": "连接 Search Console",
@@ -1168,18 +1168,21 @@
         "insufficient_query_sample": "你的位置段是可测的，但没有任何单条查询词达到 100 次曝光的门槛。这说明的是样本量，不是你的网站。",
         "high_query_anonymization_gap": "你有相当大比例的曝光和点击从未出现在 Search Console 的查询词报告里。这里的一切都基于 Google 返回的数据，而那不是全部。",
         "partial_gsc_export": "Search Console 的行数比我们读取的更多。返回顺序按点击量降序，所以被截断的正是低点击的那一端——恰好是这张表要找的部分。",
-        "brand_segment_insufficient_evidence": "我们已把品牌查询词排除出基准，但它们数量太少，无法单独就品牌部分说出任何结论。"
+        "brand_segment_insufficient_evidence": "我们已把品牌查询词排除出基准，但它们数量太少，无法单独就品牌部分说出任何结论。",
+        "aggregation_basis_mismatch": "站点总量与查询词行不是在同一口径上测得的，因此我们无法算出 Search Console 隐去了多少。一旦查询按页面分组或过滤，Search Console 会自行选择聚合口径，用一种口径去除以另一种，得到的数字哪一个都不描述。",
+        "anonymization_gap_uncomputable": "我们无法算出 Search Console 隐去了多少：要么该站点在这个时间窗内没有返回总量，要么查询词行加起来超过了站点总量。两次读数互相矛盾，所以我们不给出比例，而不是给出一个错的比例。"
       },
       "emptyTitle": "这次没有可测量的结果",
       "emptyBody": "这和「没有机会」不是一回事。下面列出了哪些我们没能测量。",
-      "storageNote": "我们不保存你的结果。修改之前先把当前数字记下来，几周后再跑一次对比——Search Console 保留着历史，即使我们不保留。",
+      "storageNote": "我们不保存你的结果。关闭页面前，请导出或记下你想留存的内容。我们刻意不提供前后对比功能：几周后重跑一次，无法把「你的改动」和「季节性需求变化」区分开，而把它呈现得好像可以，正是这个工具存在的意义所要避免的那种说法。",
       "errors": {
         "gsc_unavailable": "我们没能读取该站点的 Search Console 数据。请检查连接后重试。",
         "scan_in_progress": "同一时间只能进行一次 Search Console 读取。请等上一次跑完几秒。",
         "invalid_request": "这个请求我们无法解析。",
         "payload_too_large": "请求体过大。",
         "unsupported_media_type": "请求不是 JSON。",
-        "no_gsc_data": "在这个时间窗内，Search Console 没有返回该站点的任何数据。"
+        "rate_limited": "你在这一小时内的运行次数已经用完。Search Console 配额是所有使用本工具的人共享的，所以这个上限保护其他访客的程度不亚于限制你。",
+        "quota_unavailable": "我们暂时无法检查用量上限，因此不会开始读取。在限制器失效的情况下运行，有耗尽本工具与所有其他访客共享的 Search Console 配额的风险。请稍后再试。"
       }
     },
     "semrush": "Semrush",
