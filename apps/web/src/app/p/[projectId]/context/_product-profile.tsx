@@ -1315,7 +1315,9 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>{t("heroEyebrow")}</p>
-          <h1>{profile.productName ?? t("states.unconfirmed")}</h1>
+          <h1 data-app-page-title="">
+            {profile.productName ?? t("states.unconfirmed")}
+          </h1>
           <p className={styles.heroLede}>{profile.oneLiner ?? t("states.unconfirmed")}</p>
           <a href={profile.sourcePageUrl} target="_blank" rel="noreferrer" className={styles.sourceLink}>
             {profile.sourcePageUrl}<ExternalLink size={15} aria-hidden="true" />

@@ -4377,8 +4377,17 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0036_missing_analytics_site_page_lineage' THEN
+  ) IS DISTINCT FROM '0038_optional_source_onboarding' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'app.oauth_intents'::regclass
+      AND conname = 'oauth_intents_redirect_path_check'
+      AND pg_get_constraintdef(oid) LIKE '%(sources|setup-sources)%'
+  ) THEN
+    RAISE EXCEPTION 'OAuth return paths do not include exact optional source onboarding';
   END IF;
   IF NOT app.is_typed_product_profile_evidence_refs(
     '[{"evidenceRefId":"d3b07384-d9a0-8f1e-9c2b-4a5e6f708192","kind":"userEdit"}]'::jsonb
@@ -4759,6 +4768,9 @@ DECLARE
   run_id uuid := gen_random_uuid();
   snapshot_id uuid := gen_random_uuid();
   observation_id uuid := gen_random_uuid();
+  v2_run_id uuid := gen_random_uuid();
+  v2_snapshot_id uuid := gen_random_uuid();
+  v2_observation_id uuid := gen_random_uuid();
   actor_id uuid := gen_random_uuid();
   first_occurrence_id uuid;
   replay_occurrence_id uuid;
@@ -4958,6 +4970,82 @@ BEGIN
   END;
   IF NOT invalid_numeric_rejected THEN
     RAISE EXCEPTION 'non-positive SERP intersections were accepted';
+  END IF;
+
+  INSERT INTO app.async_runs (
+    id, workspace_id, project_id, kind, status,
+    initiated_by, started_at
+  ) VALUES (
+    v2_run_id, workspace_id, project_id, 'collection', 'running',
+    actor_id, '2026-08-03T08:00:00.000Z'
+  );
+  INSERT INTO app.collection_runs (
+    id, workspace_id, project_id, site_id, source_connection_id,
+    provider, operation, method_version, parameters_hash
+  ) VALUES (
+    v2_run_id, workspace_id, project_id, site_id, source_id,
+    'dataforseo', 'search_landscape',
+    'dataforseo.search_landscape.v2', repeat('c', 64)
+  );
+  INSERT INTO app.data_snapshots (
+    id, workspace_id, project_id, site_id, collection_run_id,
+    source_connection_id, provider, dataset_key, schema_version,
+    method_version, captured_at, source_window, availability,
+    limitation, row_count, checksum, summary
+  ) VALUES (
+    v2_snapshot_id, workspace_id, project_id, site_id, v2_run_id, source_id,
+    'dataforseo', 'dataforseo.search_landscape.v2',
+    'dataforseo.search_landscape.v2',
+    'dataforseo.search_landscape.v2',
+    '2026-08-03T08:00:00.000Z',
+    '{"start":null,"end":null}'::jsonb, 'available',
+    'Positions 1-100 with a frozen seed-based fallback.',
+    1, repeat('d', 64), '{}'::jsonb
+  );
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, provider,
+    metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  ) VALUES (
+    v2_observation_id, workspace_id, project_id, v2_snapshot_id,
+    'dataforseo', 'dataforseo.serp_competitor.v1', 'site',
+    'v2-smoke-rival.example', '2026-08-03T08:00:00.000Z', 'available',
+    jsonb_build_object(
+      'targetDomain', host,
+      'competitorDomain', 'v2-smoke-rival.example',
+      'averagePosition', 3.5,
+      'medianPosition', 3,
+      'rating', 880,
+      'organicEstimatedTrafficVolume', 1200,
+      'keywordsCount', 2,
+      'visibility', 0.42,
+      'relevantSerpItems', 2,
+      'seedCount', 3,
+      'marketCode', 'US',
+      'languageCode', 'en'
+    ),
+    'vendor_observation', 'B', 'supports',
+    'Frozen seed-based DataForSEO SERP competitor.'
+  );
+  PERFORM *
+  FROM app.upsert_serp_overlap_competitor_origin(
+    workspace_id,
+    project_id,
+    'v2-smoke-rival.example',
+    v2_snapshot_id,
+    v2_observation_id,
+    '/valueJson/competitorDomain'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.competitor_origin_occurrences occurrence
+    WHERE occurrence.workspace_id = workspace_id
+      AND occurrence.project_id = project_id
+      AND occurrence.data_snapshot_id = v2_snapshot_id
+      AND occurrence.normalized_observation_id = v2_observation_id
+      AND occurrence.origin_kind = 'serp_overlap'
+  ) THEN
+    RAISE EXCEPTION 'DataForSEO v2 SERP fallback was not projected';
   END IF;
 END;
 $dataforseo_search_landscape_behavior$;

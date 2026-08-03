@@ -45,7 +45,10 @@ import {
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_SERP_COMPETITOR,
   METRIC_CSV_KEYWORD_GAP,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
@@ -760,7 +763,9 @@ async function runObservationValidationFixture(
       operation:
         lineage.collectionOperation ??
         (source.snapshot.dataset_key ===
-        DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+          DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
+        source.snapshot.dataset_key ===
+          DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY
           ? "search_landscape"
           : "keyword_gap_import"),
       method_version: source.snapshot.method_version,
@@ -2411,6 +2416,51 @@ describe("diagnostic frozen snapshot validation", () => {
         }),
       ]),
     );
+  });
+
+  it("accepts v2 ranked-keyword observations and excludes paid SERP-competitor rows from DiagnosticContext", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const serpCompetitor = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000033",
+      metric_key: METRIC_DATAFORSEO_SERP_COMPETITOR,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "rival.example",
+        averagePosition: 4.5,
+        medianPosition: 4,
+        rating: 92,
+        organicEstimatedTrafficVolume: 850,
+        keywordsCount: 18,
+        visibility: 0.74,
+        relevantSerpItems: 6,
+        seedCount: 3,
+        marketCode: "US",
+        languageCode: "en",
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+        },
+        observations: [ranked, serpCompetitor],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild.mock.calls[0]?.[0].observations).toEqual([
+      expect.objectContaining({
+        observationId: ranked.id,
+        metricKey: METRIC_CSV_KEYWORD_GAP,
+        provider: "dataforseo",
+      }),
+    ]);
   });
 
   it("fails closed when a composite competitor-domain value does not match its subject identity", async () => {

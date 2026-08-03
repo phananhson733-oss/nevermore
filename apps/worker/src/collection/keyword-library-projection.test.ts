@@ -6,6 +6,7 @@ import {
 import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 import { deriveKeywordOccurrenceInputs } from "./keyword-library-projection.ts";
 
@@ -226,6 +227,44 @@ describe("deriveKeywordOccurrenceInputs", () => {
         scopeBasis: "provider_collection_scope",
         sourcePointer: "/valueJson/keyword",
         providerDataAsOf: null,
+      }),
+    ]);
+  });
+
+  it("projects ranked keywords from Search Landscape v2 into the current library", () => {
+    const collectionScope = createDataForSeoSearchLandscapeV2Scope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      seeds: [
+        {
+          keyword: "Customer Onboarding Software",
+          sourceKind: "gsc_top_query",
+          sourceRef: `observation:${observationId}`,
+        },
+      ],
+    });
+    const v2Snapshot = snapshot({
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v2",
+      schema_version: "dataforseo.search_landscape.v2",
+      method_version: "dataforseo.search_landscape.v2",
+      summary: { collectionScope },
+    });
+
+    expect(
+      deriveKeywordOccurrenceInputs(
+        v2Snapshot,
+        observation({ provider: "dataforseo" }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        displayKeyword: "Customer Onboarding Software",
+        market: "US",
+        languageTag: "en-US",
+        sourceKind: "dataforseo_ranked",
+        scopeBasis: "provider_collection_scope",
       }),
     ]);
   });

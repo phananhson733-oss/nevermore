@@ -26,7 +26,7 @@ Authority 版本：**0.4.0**
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
 2. [openapi.yaml](openapi.yaml)：当前 79 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 36 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+3. [schema.sql](schema.sql)：由 37 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -39,7 +39,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0036_missing_analytics_site_page_lineage.sql`，验证每个 migration 的事务框架与
+`0038_optional_source_onboarding.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -72,15 +72,21 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
 
 - GSC、GA4、Crawl 与 DataForSEO 是分析数据来源。连接状态不等于数据可用；
   只有已完成且作用域匹配的 immutable Snapshot/Observation 才能支持结论。
-- DataForSEO Search Landscape（DFS）是 Analysis Refresh worker 的内置、
-  成本受限复合步骤，不是客户连接器。服务端从冻结 Site/market/language 与配置
-  生成 ranked-keyword + competitor-domain 两个请求，并原子写入一个
-  `dataforseo.search_landscape.v1` Snapshot；公共 `createCollectionRun` 只接受
+- 添加产品时可在 Product Profile 自动 synthesis 前选择连接 GSC、GA4、两者或
+  全部跳过。只有精确的同项目 `setup-sources` OAuth return path 可在画像确认前
+  创建只读连接；普通 Sources 读模型仍要求确认画像，实际采集由确认后的自动
+  Analysis Refresh 使用完整上下文发起。
+- DataForSEO Search Landscape（DFS）v2 是 Analysis Refresh worker 的内置、
+  成本受限复合步骤，不是客户连接器。ranked-keyword 与 competitor-domain 查询
+  覆盖 1–100；仅在 domain overlap 为空时，使用保留 GSC/Crawl/Product Profile
+  来源的冻结种子追加一次 SERP Competitors fallback，并原子写入一个
+  `dataforseo.search_landscape.v2` Snapshot。公共 `createCollectionRun` 只接受
   Crawl/GSC/GA4，且不接受 DFS scope、limit、凭据或 API key。
 - URL、Keyword、Competitor 的 list/detail GET 都可用 canonical
-  `diagnosticRunId` 固定一个已发布 Growth Map generation；省略时读取最新可读
-  generation。只有 Keyword/Competitor detail GET 支持 `view=review` 读取当前
-  governance，且不能与 `diagnosticRunId` 同时使用；对应 PATCH 拒绝全部 query。
+  `diagnosticRunId` 固定一个已发布 Growth Map generation。Keyword/Competitor
+  list 省略 pin 时直接读取当前资料库并展示全部已投影 candidate；URL 省略时读取
+  latest generation。只有 Keyword/Competitor detail GET 支持 `view=review`，且
+  不能与 `diagnosticRunId` 同时使用；对应 PATCH 拒绝全部 query。
 - Sitemap、站内解析、规则计算、关键词关系、竞品监控与 GEO/Backlink 模型是
   内置能力，不作为需要客户连接的外部数据卡重复展示。
 - `unavailable` 不等于 `0`；缺失 volume、rank、click、conversion、citation

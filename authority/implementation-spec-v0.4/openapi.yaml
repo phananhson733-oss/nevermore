@@ -3752,7 +3752,7 @@ components:
       required: [phase, returnPath]
       properties:
         phase: { const: authorize }
-        returnPath: { type: string, pattern: '^/p/[0-9a-f-]+/sources$' }
+        returnPath: { type: string, pattern: '^/p/[0-9a-f-]+/(?:sources|setup-sources)$' }
     GetPropertySelectionRequest:
       type: object
       additionalProperties: false

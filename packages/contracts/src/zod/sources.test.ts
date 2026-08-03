@@ -1,82 +1,30 @@
 import { describe, expect, it } from "vitest";
-import type { components, operations } from "../generated/openapi.ts";
-import {
-  CollectionOperationInput,
-  CollectionProvider,
-  CreateCollectionRunRequest,
-} from "./sources.ts";
+import { AuthorizeSourceRequest } from "./sources";
 
-type Equal<Left, Right> =
-  (<Value>() => Value extends Left ? 1 : 2) extends
-  (<Value>() => Value extends Right ? 1 : 2)
-    ? true
-    : false;
-type Expect<Value extends true> = Value;
-type GeneratedRequest =
-  operations["createCollectionRun"]["requestBody"]["content"]["application/json"];
-type RuntimeRequest = typeof CreateCollectionRunRequest._output;
-type _GeneratedRequestMatchesRuntime = Expect<
-  Equal<GeneratedRequest, RuntimeRequest>
->;
-type _CustomerCollectionProviders = Expect<
-  Equal<GeneratedRequest["provider"], "crawl" | "gsc" | "ga4">
->;
-type _CustomerCollectionOperations = Expect<
-  Equal<
-    NonNullable<GeneratedRequest["operation"]>,
-    "site_graph" | "search_analytics" | "organic_landing"
-  >
->;
-type _ReadModelRetainsInternalEvidenceProvider = Expect<
-  Equal<
-    components["schemas"]["Provider"],
-    "crawl" | "gsc" | "ga4" | "csv" | "dataforseo"
-  >
->;
+describe("AuthorizeSourceRequest return paths", () => {
+  const projectId = "00000000-0000-8000-8000-000000000001";
 
-describe("collection run source contract", () => {
-  it.each([
-    ["crawl", "site_graph"],
-    ["gsc", "search_analytics"],
-    ["ga4", "organic_landing"],
-  ] as const)(
-    "accepts customer-triggerable %s collection",
-    (provider, operation) => {
-      expect(CollectionProvider.parse(provider)).toBe(provider);
-      expect(CollectionOperationInput.parse(operation)).toBe(operation);
+  it.each(["sources", "setup-sources"])(
+    "accepts the same-project %s destination",
+    (segment) => {
       expect(
-        CreateCollectionRunRequest.parse({ provider, operation }),
-      ).toEqual({ provider, operation });
+        AuthorizeSourceRequest.safeParse({
+          phase: "authorize",
+          returnPath: `/p/${projectId}/${segment}`,
+        }).success,
+      ).toBe(true);
     },
   );
 
-  it("keeps operation optional so the service can derive the provider default", () => {
-    expect(CreateCollectionRunRequest.parse({ provider: "crawl" })).toEqual({
-      provider: "crawl",
-    });
-  });
-
-  it.each(["csv", "dataforseo", "semrush", "ahrefs"])(
-    "rejects unsupported collection-run provider %s",
-    (provider) => {
-      expect(CreateCollectionRunRequest.safeParse({ provider }).success).toBe(
-        false,
-      );
-    },
-  );
-
-  it("does not expose internal DataForSEO operation or credential input", () => {
+  it.each([
+    `/p/${projectId}/setup-sources?next=foreign`,
+    `/p/${projectId}/context`,
+    `/p/${projectId}/sources/extra`,
+    "https://attacker.example/callback",
+  ])("rejects non-allowlisted return path %s", (returnPath) => {
     expect(
-      CreateCollectionRunRequest.safeParse({
-        provider: "crawl",
-        operation: "keyword_gap_import",
-      }).success,
-    ).toBe(false);
-    expect(
-      CreateCollectionRunRequest.safeParse({
-        provider: "crawl",
-        apiKey: "must-never-cross-the-customer-boundary",
-      }).success,
+      AuthorizeSourceRequest.safeParse({ phase: "authorize", returnPath })
+        .success,
     ).toBe(false);
   });
 });

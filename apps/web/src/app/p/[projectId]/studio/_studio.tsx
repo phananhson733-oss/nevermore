@@ -3073,7 +3073,9 @@ export function StudioClient({
           <span className="sf-eyebrow">
             {t("title")} · {t("eyebrow")}
           </span>
-          <h1 className={styles.title}>{t("heroTitle")}</h1>
+          <h1 className={styles.title} data-app-page-title="">
+            {t("heroTitle")}
+          </h1>
           <p className={styles.subtitle}>{t("subtitle")}</p>
           <div className={styles.heroActions}>
             <Button

@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0036_missing_analytics_site_page_lineage" as const;
+  "0038_optional_source_onboarding" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

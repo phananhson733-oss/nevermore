@@ -13,6 +13,7 @@ import {
   IcpProfilesRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
+  ObservationsRepository,
   ProjectsRepository,
   SitePagesRepository,
   SitesRepository,
@@ -259,7 +260,7 @@ describe("runAnalysisRefresh", () => {
       expect.objectContaining({
         provider: "dataforseo",
         operation: "search_landscape",
-        methodVersion: "dataforseo.search_landscape.v1",
+        methodVersion: "dataforseo.search_landscape.v2",
       }),
     );
     expect(collectionChildren[0]?.request_payload).toEqual({
@@ -267,13 +268,19 @@ describe("runAnalysisRefresh", () => {
       operation: "search_landscape",
       sourceConnectionId: sourceConnection("dataforseo").id,
       collectionScope: expect.objectContaining({
-        schemaVersion: "dataforseo.search-landscape-scope.v1",
+        schemaVersion: "dataforseo.search-landscape-scope.v2",
         queryKind: "search_landscape",
         target: "example.test",
         rankedKeywords: expect.objectContaining({ limit: 87 }),
         competitorsDomain: expect.objectContaining({
           limit: 31,
+          maxRankGroup: 100,
           excludeDomains: ["example.test"],
+        }),
+        serpCompetitors: expect.objectContaining({
+          limit: 31,
+          fallbackWhenDomainOverlapEmpty: true,
+          seeds: [],
         }),
       }),
     });
@@ -290,9 +297,10 @@ describe("runAnalysisRefresh", () => {
         config: expect.objectContaining({
           maxKeywords: 87,
           maxCompetitors: 31,
+          maxSerpCompetitors: 31,
         }),
         limitation: expect.stringContaining(
-          "updated weekly, but neither response supplies an exact dataset timestamp",
+          "positions 1–100",
         ),
       }),
     );
@@ -796,6 +804,14 @@ function createHarness(options: {
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue(
     project,
   );
+  vi.spyOn(
+    ProjectsRepository.prototype,
+    "findConfirmedIcpProfile",
+  ).mockResolvedValue(null);
+  vi.spyOn(
+    ObservationsRepository.prototype,
+    "listBySnapshotIds",
+  ).mockResolvedValue([]);
   vi.spyOn(ProjectsRepository.prototype, "setStage").mockImplementation(
     async (_scope, _projectId, stage) => {
       state.stage = stage;
@@ -1256,9 +1272,9 @@ function dataForSeoSnapshot(
     collection_run_id: collectionRunId,
     source_connection_id: sourceConnectionId,
     provider: "dataforseo",
-    dataset_key: "dataforseo.search_landscape.v1",
-    schema_version: "dataforseo.search_landscape.v1",
-    method_version: "dataforseo.search_landscape.v1",
+    dataset_key: "dataforseo.search_landscape.v2",
+    schema_version: "dataforseo.search_landscape.v2",
+    method_version: "dataforseo.search_landscape.v2",
     row_count: 118,
     limitation:
       "Weekly competitor refresh; exact dataset timestamps are unavailable.",

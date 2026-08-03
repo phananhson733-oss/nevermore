@@ -257,8 +257,11 @@ export class DataSnapshotsRepository extends Repository {
   }
 
   /**
-   * Select one immutable, usable Snapshot per compatible provider contract for
-   * a single Site. A Snapshot becomes diagnostic input only after its canonical
+   * Select one immutable, usable Snapshot per provider from one or more exact
+   * compatible contracts for a single Site. Multiple selectors may name the
+   * same provider so a version migration can choose the newest compatible
+   * Snapshot without weakening dataset/method/operation identity. A Snapshot
+   * becomes diagnostic input only after its canonical
    * collection run reaches a successful terminal state; queued/running/failed
    * runs and unavailable snapshots are never promoted into an audit.
    *
@@ -280,7 +283,6 @@ export class DataSnapshotsRepository extends Repository {
         `At most ${MAX_ELIGIBLE_SNAPSHOT_SOURCES} snapshot sources may be selected`,
       );
     }
-    const providers = new Set<string>();
     for (const selector of selectors) {
       assertBoundedSelector("provider", selector.provider);
       assertBoundedSelector("datasetKey", selector.datasetKey);
@@ -293,12 +295,6 @@ export class DataSnapshotsRepository extends Repository {
         "collectionMethodVersion",
         selector.collectionMethodVersion,
       );
-      if (providers.has(selector.provider)) {
-        throw new RangeError(
-          "Each eligible snapshot selector must use a distinct provider",
-        );
-      }
-      providers.add(selector.provider);
     }
 
     const compatibleContract = or(

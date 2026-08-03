@@ -923,7 +923,9 @@ export function ContextForm({ projectId, initialProfile }: ContextFormProps) {
             <span className="sf-eyebrow">{versionLabel}</span>
             <StatusPill tone={STATUS_TONE[statusKey]}>{tStatus(statusKey)}</StatusPill>
           </div>
-          <h1 className={styles.title}>{t("title")}</h1>
+          <h1 className={styles.title} data-app-page-title="">
+            {t("title")}
+          </h1>
           <p className={styles.subtitle}>{t("subtitle")}</p>
         </div>
         <div className={styles.saveBlock}>

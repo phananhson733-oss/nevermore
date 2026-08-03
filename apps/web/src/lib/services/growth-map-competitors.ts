@@ -55,9 +55,9 @@ const NO_COMPETITORS =
 const ORIGIN_HISTORY_LIMITATION =
   "Only the most recent 100 immutable origin occurrences are included; older canonical origin history remains available in storage.";
 const SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION =
-  "The immutable DataForSEO competitor-domain source is recorded in originOccurrences, but no canonical derived SERP-overlap ratio is defined.";
+  "The immutable DataForSEO competitor source is recorded in originOccurrences, but no canonical derived SERP-overlap ratio is defined.";
 const SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION =
-  "No immutable DataForSEO competitor-domain source is recorded for this Competitor, and no canonical derived SERP-overlap ratio is defined.";
+  "No immutable DataForSEO competitor source is recorded for this Competitor, and no canonical derived SERP-overlap ratio is defined.";
 const AI_CITATION_WRITER_LIMITATION =
   "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.";
 const DISPLAY_NAME_NOT_FROZEN_LIMITATION =
@@ -278,6 +278,20 @@ const DATAFORSEO_COMPETITOR_VALUE_KEYS = [
   "marketCode",
   "languageCode",
 ] as const;
+const DATAFORSEO_SERP_COMPETITOR_VALUE_KEYS = [
+  "targetDomain",
+  "competitorDomain",
+  "averagePosition",
+  "medianPosition",
+  "rating",
+  "organicEstimatedTrafficVolume",
+  "keywordsCount",
+  "visibility",
+  "relevantSerpItems",
+  "seedCount",
+  "marketCode",
+  "languageCode",
+] as const;
 
 function isCanonicalDomain(value: unknown): value is string {
   return (
@@ -294,6 +308,10 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isNonNegativeFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isExactDataForSeoCompetitorValue(
@@ -322,6 +340,40 @@ function isExactDataForSeoCompetitorValue(
     isNonNegativeFiniteNumber(value["averagePosition"]) &&
     isNonNegativeFiniteNumber(value["summedPosition"]) &&
     isNonNegativeFiniteNumber(value["organicEstimatedTrafficVolume"]) &&
+    typeof value["marketCode"] === "string" &&
+    /^[A-Z]{2}$/u.test(value["marketCode"]) &&
+    typeof value["languageCode"] === "string" &&
+    /^[a-z]{2,3}$/u.test(value["languageCode"])
+  );
+}
+
+function isExactDataForSeoSerpCompetitorValue(
+  value: unknown,
+  domain: string,
+): boolean {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  if (
+    keys.length !== DATAFORSEO_SERP_COMPETITOR_VALUE_KEYS.length ||
+    DATAFORSEO_SERP_COMPETITOR_VALUE_KEYS.some(
+      (key) => !Object.hasOwn(value, key),
+    )
+  ) {
+    return false;
+  }
+  const targetDomain = value["targetDomain"];
+  return (
+    isCanonicalDomain(targetDomain) &&
+    targetDomain !== domain &&
+    value["competitorDomain"] === domain &&
+    isNonNegativeFiniteNumber(value["averagePosition"]) &&
+    isNonNegativeFiniteNumber(value["medianPosition"]) &&
+    isNonNegativeFiniteNumber(value["rating"]) &&
+    isNonNegativeFiniteNumber(value["organicEstimatedTrafficVolume"]) &&
+    isNonNegativeInteger(value["keywordsCount"]) &&
+    isNonNegativeFiniteNumber(value["visibility"]) &&
+    isNonNegativeInteger(value["relevantSerpItems"]) &&
+    isPositiveInteger(value["seedCount"]) &&
     typeof value["marketCode"] === "string" &&
     /^[A-Z]{2}$/u.test(value["marketCode"]) &&
     typeof value["languageCode"] === "string" &&
@@ -1065,6 +1117,30 @@ function projectSerpOverlapOrigin(
   const run = snapshot
     ? rows.collectionRunsById.get(snapshot.collection_run_id)
     : undefined;
+  const isV1Identity =
+    snapshot?.dataset_key === "dataforseo.search_landscape.v1" &&
+    snapshot.schema_version === "dataforseo.search_landscape.v1" &&
+    snapshot.method_version === "dataforseo.search_landscape.v1" &&
+    run?.operation === "search_landscape" &&
+    run.method_version === "dataforseo.search_landscape.v1";
+  const isV2Identity =
+    snapshot?.dataset_key === "dataforseo.search_landscape.v2" &&
+    snapshot.schema_version === "dataforseo.search_landscape.v2" &&
+    snapshot.method_version === "dataforseo.search_landscape.v2" &&
+    run?.operation === "search_landscape" &&
+    run.method_version === "dataforseo.search_landscape.v2";
+  const hasExactProviderValue =
+    observation?.metric_key === "dataforseo.competitor_domain.v1"
+      ? isExactDataForSeoCompetitorValue(
+          observation.value_json,
+          entity.domain,
+        )
+      : observation?.metric_key === "dataforseo.serp_competitor.v1"
+        ? isExactDataForSeoSerpCompetitorValue(
+            observation.value_json,
+            entity.domain,
+          )
+        : false;
   if (
     !observation ||
     !snapshot ||
@@ -1074,7 +1150,8 @@ function projectSerpOverlapOrigin(
     observation.snapshot_id !== snapshot.id ||
     observation.site_page_id !== null ||
     observation.provider !== "dataforseo" ||
-    observation.metric_key !== "dataforseo.competitor_domain.v1" ||
+    (observation.metric_key !== "dataforseo.competitor_domain.v1" &&
+      observation.metric_key !== "dataforseo.serp_competitor.v1") ||
     observation.subject_type !== "site" ||
     observation.subject_ref !== entity.domain ||
     observation.availability !== "available" ||
@@ -1085,16 +1162,13 @@ function projectSerpOverlapOrigin(
     observation.method !== "observed" ||
     observation.grade !== "B" ||
     observation.support !== "supports" ||
-    !isExactDataForSeoCompetitorValue(
-      observation.value_json,
-      entity.domain,
-    ) ||
+    !hasExactProviderValue ||
     snapshot.workspace_id !== entity.workspace_id ||
     snapshot.project_id !== entity.project_id ||
     snapshot.provider !== "dataforseo" ||
-    snapshot.dataset_key !== "dataforseo.search_landscape.v1" ||
-    snapshot.schema_version !== "dataforseo.search_landscape.v1" ||
-    snapshot.method_version !== "dataforseo.search_landscape.v1" ||
+    (!isV1Identity && !isV2Identity) ||
+    (isV1Identity &&
+      observation.metric_key !== "dataforseo.competitor_domain.v1") ||
     snapshot.source_connection_id === null ||
     !["available", "partial"].includes(snapshot.availability) ||
     run.workspace_id !== entity.workspace_id ||
@@ -1103,8 +1177,6 @@ function projectSerpOverlapOrigin(
     run.site_id !== snapshot.site_id ||
     run.source_connection_id !== snapshot.source_connection_id ||
     run.provider !== "dataforseo" ||
-    run.operation !== "search_landscape" ||
-    run.method_version !== "dataforseo.search_landscape.v1" ||
     run.import_preview_id !== null ||
     !sameTimestamptzInstant(observation.observed_at, snapshot.captured_at) ||
     !sameTimestamptzInstant(observation.observed_at, origin.observed_at)
@@ -1403,6 +1475,38 @@ async function listPublishedInSnapshot(
   }
 }
 
+async function listCurrentLibrary(
+  exec: Executor,
+  workspaceScope: WorkspaceScope,
+  projectId: string,
+  options: GrowthMapCompetitorListOptions,
+): Promise<ReturnType<typeof GrowthMapCompetitorLibraryResponse.parse>> {
+  await loadActiveProject(exec, workspaceScope, projectId);
+  const scope = { workspaceId: workspaceScope.workspaceId, projectId };
+  const page = await new CompetitorsRepository(exec).listByProject(scope, {
+    limit: options.limit,
+    cursor: options.cursor,
+  });
+  const rows = await loadProjectionRows(exec, scope, page.rows);
+  const data = rows.histories.map((history) =>
+    projectItem(history, rows, scope),
+  );
+  try {
+    return GrowthMapCompetitorLibraryResponse.parse({
+      projectId,
+      data,
+      meta: {
+        limit: options.limit,
+        nextCursor: page.nextCursor,
+        hasNext: page.nextCursor !== null,
+        coverage: pageCoverage(data),
+      },
+    });
+  } catch {
+    return corruptCompetitorLibrary();
+  }
+}
+
 export async function listProjectAuditCompetitors(
   scope: WorkspaceScope,
   projectId: string,
@@ -1419,22 +1523,22 @@ export async function listProjectAuditCompetitors(
     throw new RangeError("Invalid Competitor Library list options");
   }
   const normalizedOptions = { ...options, diagnosticRunId };
+  const useLegacyLatestPublishedRead =
+    options.diagnosticRunId === undefined;
+  const read = (selected: Executor) =>
+    diagnosticRunId === null && !useLegacyLatestPublishedRead
+      ? listCurrentLibrary(selected, scope, projectId, normalizedOptions)
+      : listPublishedInSnapshot(
+          selected,
+          scope,
+          projectId,
+          normalizedOptions,
+        );
   if (exec) {
-    return listPublishedInSnapshot(
-      exec,
-      scope,
-      projectId,
-      normalizedOptions,
-    );
+    return read(exec);
   }
   return getDb().db.transaction(
-    (tx) =>
-      listPublishedInSnapshot(
-        tx,
-        scope,
-        projectId,
-        normalizedOptions,
-      ),
+    read,
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }

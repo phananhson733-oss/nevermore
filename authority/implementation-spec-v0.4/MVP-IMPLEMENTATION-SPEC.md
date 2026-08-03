@@ -65,6 +65,12 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
 - 客户明确上传的 CSV 或 manual entry：必须保留 origin、actor、时间和限制。
 
 OAuth connected、credential present 或 provider enabled 都不等于数据 available。
+添加产品可以在持久化 Product Profile draft 后、自动画像 synthesis 启动前进入
+一个明确可跳过的 GSC/GA4 只读授权步骤。该例外只允许同 project 的精确
+`/p/{projectId}/setup-sources` return path；普通 Sources 页面、完整来源读模型和
+未带该 intent 的连接仍要求 confirmed Product Profile。onboarding 中完成连接时
+不以不完整 market/language 上下文提前采集；画像确认后的 Analysis Refresh 再
+自动采集。用户未选择、取消或拒绝授权都不得阻断产品创建与公开证据生成。
 规则只能消费已完成、未过期、scope 一致并且写入 canonical Snapshot /
 Observation 的数据。缺数据必须成为 skipped/inconclusive/no_data/unavailable，
 绝不能合成 0、虚构关键词、虚构竞品或虚构 before/after lift。
@@ -82,14 +88,19 @@ CSV 继续使用专用 import command。DataForSEO 是 Analysis Refresh worker �
 该写边界不移除 DataForSEO 的 canonical Source/Snapshot/Observation/Evidence
 lineage，也不阻止 server-owned Analysis Refresh 运行其成本受限的可选步骤。
 
-DataForSEO Search Landscape（DFS）是该步骤唯一当前的 server-owned 身份：
-服务端从冻结 primary Site 的 host、单一 market、canonical language 与服务端
-row cap 生成固定的 ranked-keywords 与 competitors-domain 两个请求。两个请求
-共享同一 target/market/language 作用域，并原子形成一个
-`dataforseo.search_landscape.v1` Snapshot；任何一边失败都不能发布半个
-Search Landscape。DFS 只把 ranked Keyword observation 与 SERP-overlap
-Competitor origin 投影进现有增长地图，不创建第五模块，不接受客户提交 target、
-location、language、limit、provider credential 或任意第三个 query。
+DataForSEO Search Landscape（DFS）当前 server-owned 身份为
+`dataforseo.search_landscape.v2`：服务端从冻结 primary Site 的 host、单一
+market、canonical language、服务端 row cap 与有真实来源的种子生成固定请求。
+ranked-keywords 查询 positions 1–100，competitors-domain 查询 max rank group 100；
+当且仅当规范化后的 domain overlap 为空且存在冻结种子时，最多追加一次
+SERP Competitors paid fallback。种子只可来自 GSC top query、Crawl 页面文本或
+confirmed/current Product Profile，并在 scope 中保存 `sourceKind/sourceRef`；种子
+不会被重标为 DataForSEO Observation。所有实际发起的请求共享同一
+target/market/language 作用域，并原子形成一个 v2 Snapshot；任何 required call
+失败都不能发布半个 Search Landscape。v1 与 legacy Snapshot 继续只读兼容。
+DFS 自动把 ranked Keyword occurrence 与两类有区别的 competitor origin
+（domain overlap / seed SERP）投影进当前资料库，不创建第五模块，也不接受客户
+提交 target、location、language、limit 或 provider credential。
 
 ### 2.1 Durable Analysis Refresh
 
@@ -132,12 +143,16 @@ skip reason 或 bounded error。最终 Growth Audit 必须消费本次 refresh �
 
 ## 4. 增长地图
 
-URL、Keyword 与 Competitor 的 list/detail GET 属于同一个 published-generation
-读取协议：
+URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-generation
+读取协议；Keyword/Competitor 当前资料库与已发布诊断快照必须明确分开：
 
 - 可选 `diagnosticRunId` 必须是 canonical lowercase UUID，并且只能固定当前
-  project 中一个已发布、可读的 DiagnosticRun generation；省略时服务端读取
-  最新可读 generation。未知、跨租户、未发布或不可读的 pin 不得回退到 latest。
+  project 中一个已发布、可读的 DiagnosticRun generation。未知、跨租户、未发布
+  或不可读的 pin 不得回退到 latest。
+- Keyword/Competitor list 省略 `diagnosticRunId` 时读取当前 mutable 资料库，立即
+  展示已经自动投影的 candidate，不以人工 review、cluster 或 publication 作为
+  可见性前置条件；显式 pin 仍只读对应冻结 generation。URL 默认读取最新可读
+  generation。
 - `view=review` 只存在于 Keyword/Competitor detail GET，用于读取当前 mutable
   governance projection；URL read 与所有 list read 都不接受该参数。
 - `view=review` 与 `diagnosticRunId` 互斥，重复 scalar 或未知 query 参数均返回
@@ -161,6 +176,8 @@ URL、Keyword 与 Competitor 的 list/detail GET 属于同一个 published-gener
 - 来源包括 GSC top query、DataForSEO Search Landscape ranked observation、
   competitor/content gap、VOC/manual/CSV；每条 occurrence 保留来源、scope
   和时间。
+- GSC 与 DataForSEO 采集完成后必须在同一 canonical completion flow 自动 upsert
+  occurrence/entity/source membership；当前资料库不得要求用户先建立空壳记录。
 - keyword identity、review decision、cluster/topic mapping、existing/new target、
   relation candidate/decision 与 rank history 都是稳定、可追溯的治理面。
 - volume、KD、current rank、competitor rank 等各自保留 Observation pointer；
@@ -171,8 +188,12 @@ URL、Keyword 与 Competitor 的 list/detail GET 属于同一个 published-gener
 ### 4.3 Competitor Library
 
 - 产品画像可初始化直接/间接竞品；同一个 DataForSEO Search Landscape Snapshot
-  产生的 SERP overlap、keyword gap、manual、AI citation 等来源以 typed origin
-  occurrence 追加，且不得把 intersection count 解释为百分比或竞争关系。
+  产生的 domain overlap、seed-based SERP competitor、keyword gap、manual、
+  AI citation 等来源以 typed origin occurrence 追加。domain intersection count
+  与 SERP rating 必须保持不同 metric/shape，不得解释为百分比、相似度或已确认
+  竞争关系；确定性规则只形成可编辑的直接/间接草稿。
+- 采集完成后自动 upsert 当前 Competitor Library；已发布诊断仍通过冻结的 origin
+  refs 保持可追溯，后续资料库编辑不得改写旧 generation。
 - candidate/approved/excluded、relationship 和 analysis scope 都有独立 revision；
   用户审核不能改写旧来源。
 - dynamic monitor 只比较可比的 immutable snapshots，signal 必须带匹配关键词、

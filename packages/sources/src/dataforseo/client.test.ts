@@ -130,6 +130,35 @@ describe("HttpDataForSeoClient", () => {
     });
   });
 
+  it("freezes the v2 ranked-keyword window at positions 1 through 100", async () => {
+    let capturedInit: RequestInit | undefined;
+    const client = new HttpDataForSeoClient({
+      login: "fixture-login",
+      password: "fixture-password",
+      fetchImpl: async (_url, init) => {
+        capturedInit = init;
+        return jsonResponse(successEnvelope());
+      },
+    });
+
+    await client.rankedKeywords({
+      ...REQUEST,
+      minimumRankGroup: 1,
+      maximumRankGroup: 100,
+    });
+
+    const [task] = JSON.parse(String(capturedInit?.body)) as Array<{
+      filters: unknown[];
+    }>;
+    expect(task?.filters).toEqual([
+      ["keyword_data.keyword_info.search_volume", ">", 0],
+      "and",
+      ["ranked_serp_element.serp_item.rank_group", ">=", 1],
+      "and",
+      ["ranked_serp_element.serp_item.rank_group", "<=", 100],
+    ]);
+  });
+
   it("maps provider no-results status to a successful empty response", async () => {
     const client = new HttpDataForSeoClient({
       login: "fixture-login",

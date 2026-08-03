@@ -381,7 +381,7 @@ function discoveredCompetitorProvenance(
       },
     ],
     limitation:
-      "Candidate is ranked from a bounded DataForSEO organic search-landscape observation. Keyword intersections are counts, not a similarity percentage; relationship and scope remain reviewable draft classifications.",
+      "Candidate is ranked from a bounded DataForSEO organic search-landscape observation. Domain intersections and seed-based SERP ratings retain their distinct source semantics and are never presented as similarity percentages; relationship and scope remain reviewable draft classifications.",
     observedAt,
   };
 }

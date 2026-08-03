@@ -1108,11 +1108,6 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           /still a candidate.*not been approved/i.test(limitation),
         ),
       ).toBe(true);
-      expect(
-        item.coverage.limitations.some((limitation) =>
-          /display name.*(?:froze|frozen)/i.test(limitation),
-        ),
-      ).toBe(true);
       expect(item.originOccurrences).toEqual(
         expect.arrayContaining([
           {
@@ -1147,25 +1142,50 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         ]),
       );
 
+      const reviewDetail = await getProjectAuditCompetitorReviewDetail(
+        scope,
+        localProject.projectId,
+        local.competitorId,
+        tx,
+      );
+      expect(reviewDetail).toMatchObject({
+        projectId: localProject.projectId,
+        data: {
+          competitorId: local.competitorId,
+          reviewStatus: "candidate",
+          revision: 0,
+        },
+      });
+      const publishedList = await listProjectAuditCompetitors(
+        scope,
+        localProject.projectId,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: published.diagnosticRunId,
+        },
+        tx,
+      );
+      expect(publishedList.data[0]).toMatchObject({
+        competitorId: local.competitorId,
+        reviewStatus: "candidate",
+        revision: 0,
+      });
+      expect(
+        publishedList.data[0]?.coverage.limitations.some((limitation) =>
+          /display name.*(?:froze|frozen)/i.test(limitation),
+        ),
+      ).toBe(true);
       const detail = await getProjectAuditCompetitor(
         scope,
         localProject.projectId,
         local.competitorId,
         tx,
       );
-      expect(detail).toEqual({ projectId: localProject.projectId, data: item });
-      await expect(
-        listProjectAuditCompetitors(
-          scope,
-          localProject.projectId,
-          {
-            limit: 50,
-            cursor: null,
-            diagnosticRunId: published.diagnosticRunId,
-          },
-          tx,
-        ),
-      ).resolves.toEqual(list);
+      expect(detail).toEqual({
+        projectId: localProject.projectId,
+        data: publishedList.data[0],
+      });
       await expect(
         getProjectAuditCompetitor(
           scope,
@@ -1174,9 +1194,12 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           { diagnosticRunId: published.diagnosticRunId },
           tx,
         ),
-      ).resolves.toEqual(detail);
+      ).resolves.toEqual({
+        projectId: localProject.projectId,
+        data: publishedList.data[0],
+      });
 
-      const serialized = JSON.stringify({ list, detail });
+      const serialized = JSON.stringify({ list, reviewDetail, publishedList, detail });
       expect(serialized).not.toContain(foreign.competitorId);
       expect(serialized).not.toContain("foreign-only-competitor.example");
       expect(serialized).not.toContain(local.privateProfilePayload);
@@ -1496,6 +1519,24 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
       expect(latest.data).toHaveLength(1);
       expect(latest.data[0]).toMatchObject({
         competitorId: competitor.competitorId,
+        name: "Current Review",
+        reviewStatus: "approved",
+        relationship: "publisher",
+        analysisScope: ["content"],
+        revision: 2,
+      });
+      const latestPublished = await listProjectAuditCompetitors(
+        scope,
+        project.projectId,
+        {
+          limit: 50,
+          cursor: null,
+          diagnosticRunId: latestGeneration.diagnosticRunId,
+        },
+        tx,
+      );
+      expect(latestPublished.data[0]).toMatchObject({
+        competitorId: competitor.competitorId,
         name: null,
         reviewStatus: "approved",
         relationship: "benchmark",
@@ -1512,7 +1553,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         ),
       ).resolves.toEqual({
         projectId: project.projectId,
-        data: latest.data[0],
+        data: latestPublished.data[0],
       });
 
       const older = await listProjectAuditCompetitors(

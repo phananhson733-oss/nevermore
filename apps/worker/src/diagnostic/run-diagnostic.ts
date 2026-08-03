@@ -66,7 +66,10 @@ import {
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_SERP_COMPETITOR,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
   METRIC_CRAWL_SITEMAP,
@@ -513,6 +516,26 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
       ]),
     },
   ],
+  [
+    observationSourceContractKey(
+      "dataforseo",
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+    ),
+    {
+      provider: "dataforseo",
+      datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+      schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+      origin: "vendor_observation",
+      grade: "B",
+      subjectTypeByMetric: new Map([
+        [METRIC_CSV_KEYWORD_GAP, "keyword_cluster"],
+        [METRIC_DATAFORSEO_COMPETITOR_DOMAIN, "site"],
+        [METRIC_DATAFORSEO_SERP_COMPETITOR, "site"],
+      ]),
+    },
+  ],
 ]);
 
 function registeredObservationSource(
@@ -558,6 +581,22 @@ const dataForSeoCompetitorDomainProjectionSchema = z
     averagePosition: finiteNonnegative,
     summedPosition: finiteNonnegative,
     organicEstimatedTrafficVolume: finiteNonnegative,
+    marketCode: z.string().regex(/^[A-Z]{2}$/u),
+    languageCode: z.string().regex(/^[a-z]{2,8}$/u),
+  })
+  .strict();
+const dataForSeoSerpCompetitorProjectionSchema = z
+  .object({
+    targetDomain: dataForSeoDomain,
+    competitorDomain: dataForSeoDomain,
+    averagePosition: finiteNonnegative,
+    medianPosition: finiteNonnegative,
+    rating: finiteNonnegative,
+    organicEstimatedTrafficVolume: finiteNonnegative,
+    keywordsCount: nonnegativeInteger,
+    visibility: finiteNonnegative,
+    relevantSerpItems: nonnegativeInteger,
+    seedCount: positiveSafeInteger,
     marketCode: z.string().regex(/^[A-Z]{2}$/u),
     languageCode: z.string().regex(/^[a-z]{2,8}$/u),
   })
@@ -1046,7 +1085,15 @@ function exactDataForSeoCollectionIdentity(
     run.operation === "search_landscape" &&
     run.method_version ===
       DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
-  return legacy || composite;
+  const compositeV2 =
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    run.operation === "search_landscape" &&
+    run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+  return legacy || composite || compositeV2;
 }
 
 async function validateFrozenCollectionLineage(
@@ -1240,6 +1287,20 @@ function validateAvailableObservationValue(
     }
     case METRIC_DATAFORSEO_COMPETITOR_DOMAIN: {
       const parsed = dataForSeoCompetitorDomainProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        parsed.data.targetDomain !== new URL(siteOrigin).hostname ||
+        parsed.data.competitorDomain !== observation.subject_ref ||
+        parsed.data.targetDomain === parsed.data.competitorDomain
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    case METRIC_DATAFORSEO_SERP_COMPETITOR: {
+      const parsed = dataForSeoSerpCompetitorProjectionSchema.safeParse(
         observation.value_json,
       );
       if (
@@ -1730,7 +1791,8 @@ async function computeAndPersist(
   );
   const diagnosticObservationRows = observationRows.filter(
     (observation) =>
-      observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+      observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN &&
+      observation.metric_key !== METRIC_DATAFORSEO_SERP_COMPETITOR,
   );
   const observations = await loadObservationViews(
     ctx,

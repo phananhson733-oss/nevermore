@@ -2,6 +2,7 @@
   "nav": {
     "overview": "概览",
     "context": "背景",
+    "sourceSetup": "连接数据源",
     "sources": "数据源",
     "settings": "设置",
     "diagnosis": "诊断",
@@ -210,16 +211,100 @@
         "help": "只写你已确认且网站上不一定能看出的信息，后续仍可修改。"
       }
     },
+    "dataSources": {
+      "eyebrow": "数据证据",
+      "title": "连接分析数据，让后续判断更准确",
+      "detail": "选择后，产品创建完成会进入一个独立授权步骤。你可以只连接其中一个，也可以随时跳过。",
+      "optional": "可选 · 不影响创建",
+      "select": "选择",
+      "selected": "已选择",
+      "privacy": "仅申请只读权限；GenGrowth 不会修改你的 Google 数据。数据源不是必填项，之后也可以断开。",
+      "providers": {
+        "gsc": {
+          "title": "Google Search Console",
+          "detail": "补充真实搜索词、曝光、点击与落地页表现。"
+        },
+        "ga4": {
+          "title": "Google Analytics 4",
+          "detail": "补充自然搜索会话、落地页与已定义的关键事件。"
+        }
+      }
+    },
     "nextStep": {
       "title": "下一步：自动生成初始产品画像",
-      "detail": "创建后系统会采集网站并生成可审核的 ICP 与竞品候选；确认画像后会自动采集关键词与竞品数据，GSC、GA4 可按需另行连接。"
+      "detail": "不分享 Google 数据也可以继续。创建后系统会采集网站并生成可审核的 ICP 与竞品候选。",
+      "sourcesTitle": "下一步：连接所选数据源",
+      "sourcesDetail": "创建产品后连接 {count} 个所选数据源；可在授权页更改选择或直接跳过，然后开始生成画像。"
     },
     "createButton": "创建并生成初始画像",
+    "createAndConnectButton": "创建产品并连接数据源",
     "creating": "正在创建产品…",
     "createError": "产品创建失败，请检查输入后重试。",
     "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。",
     "requiredField": "请填写或选择此项。",
     "growthObjectivesRequired": "请至少选择一个主要增长目标。"
+  },
+  "sourceSetup": {
+    "eyebrow": "第 2 步 · 可选数据证据",
+    "title": "先连接真实数据，再开始生成画像",
+    "subtitle": "GSC 和 GA4 都不是必填项。连接后会用于后续搜索、流量与落地页分析；不愿分享数据时可以直接跳过。",
+    "progress": {
+      "label": "添加产品进度",
+      "product": "产品资料",
+      "sources": "数据源",
+      "profile": "生成画像",
+      "complete": "已保存",
+      "optional": "当前 · 可选",
+      "next": "下一步"
+    },
+    "privacy": {
+      "title": "由你决定分享哪些数据",
+      "detail": "Google 会展示实际授权范围；GenGrowth 只读取分析数据，不会修改账号、站点或事件配置。连接后仍可随时断开。",
+      "readOnly": "只读权限"
+    },
+    "states": {
+      "connected": "已连接",
+      "optional": "可选"
+    },
+    "providers": {
+      "gsc": {
+        "eyebrow": "第一方搜索证据",
+        "title": "Search Console",
+        "detail": "理解用户通过哪些真实搜索词发现产品，以及哪些页面已经获得曝光。",
+        "evidenceOne": "搜索词、曝光、点击和平均排名",
+        "evidenceTwo": "真实落地页与搜索需求的对应关系"
+      },
+      "ga4": {
+        "eyebrow": "第一方行为证据",
+        "title": "Google Analytics 4",
+        "detail": "理解自然搜索访问之后发生了什么，不要求你在这里挑选“注册”等事件。",
+        "evidenceOne": "自然搜索会话与落地页表现",
+        "evidenceTwo": "GA4 中已经定义的全部关键事件"
+      }
+    },
+    "property": {
+      "label": "选择要连接的资产",
+      "help": "只会连接你在 Google 授权中可访问并在这里确认的资产。"
+    },
+    "actions": {
+      "connect": "连接数据源",
+      "authorizing": "正在打开 Google…",
+      "connecting": "正在连接…",
+      "connected": "已连接",
+      "confirmProperty": "确认连接",
+      "cancel": "取消",
+      "skip": "暂不连接，直接生成画像",
+      "generate": "继续生成画像"
+    },
+    "footer": {
+      "skipTitle": "不连接也可以完整创建产品",
+      "skipDetail": "系统会使用公开网站、Crawler 和可用的第三方证据；之后可在“数据源”页面补充连接。",
+      "connectedTitle": "已连接 {count} 个数据源",
+      "connectedDetail": "连接已保存。完成画像确认后，系统会自动采集并纳入后续分析。"
+    },
+    "connectedFeedback": "{provider} 已成功连接。",
+    "oauthError": "这次 Google 授权没有完成。你可以重试、换一个数据源，或直接跳过。",
+    "noProperties": "这个 Google 账号没有返回可连接的资产。可以换账号重试或跳过此数据源。"
   },
   "productProfile": {
     "heroEyebrow": "产品画像 · ICP",

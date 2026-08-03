@@ -14,11 +14,14 @@ import {
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   METRIC_CSV_KEYWORD_GAP,
   METRIC_GSC_PAGE,
   SourceError,
   parseDataForSeoCollectionScope,
   parseDataForSeoSearchLandscapeScope,
+  parseDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 
 const CSV_DATASET_KEY = "csv.keyword_gap.v1";
@@ -200,23 +203,37 @@ function projectionConfiguration(
       snapshot.dataset_key === DATAFORSEO_DATASET_KEY &&
       snapshot.schema_version === DATAFORSEO_METHOD_VERSION &&
       snapshot.method_version === DATAFORSEO_METHOD_VERSION;
-    const isSearchLandscape =
+    const isSearchLandscapeV1 =
       snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
       snapshot.schema_version ===
         DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
       snapshot.method_version ===
         DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
-    if (!isLegacyRankedKeywords && !isSearchLandscape) {
+    const isSearchLandscapeV2 =
+      snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY &&
+      snapshot.schema_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+      snapshot.method_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+    if (
+      !isLegacyRankedKeywords &&
+      !isSearchLandscapeV1 &&
+      !isSearchLandscapeV2
+    ) {
       throw invalidProjection(
         "DataForSEO Keyword Library projection requires an exact ranked-keywords or search-landscape Snapshot dataset/method identity.",
       );
     }
     let scope;
     try {
-      scope = isSearchLandscape
-        ? parseDataForSeoSearchLandscapeScope(
+      scope = isSearchLandscapeV2
+        ? parseDataForSeoSearchLandscapeV2Scope(
             snapshot.summary["collectionScope"],
           )
+        : isSearchLandscapeV1
+          ? parseDataForSeoSearchLandscapeScope(
+              snapshot.summary["collectionScope"],
+            )
         : parseDataForSeoCollectionScope(
             snapshot.summary["collectionScope"],
           );

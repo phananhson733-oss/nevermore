@@ -50,7 +50,10 @@ import {
   type ProductProfileSynthesisInputManifest,
 } from "@sf/contracts";
 import type { Logger } from "@sf/observability";
-import { createDataForSeoSearchLandscapeScope } from "@sf/sources";
+import {
+  createDataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
+} from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
   buildBoundedProductProfilePageDescriptor,
@@ -299,6 +302,49 @@ const discoveryObservation = {
   grade: "B",
   support: "supports",
   limitation: discoverySnapshot.limitation,
+} satisfies ObservationRow;
+const fallbackDiscoveryScope = createDataForSeoSearchLandscapeV2Scope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "zh-CN",
+  rankedKeywordsLimit: 200,
+  competitorsDomainLimit: 100,
+  serpCompetitorsLimit: 100,
+  seeds: [
+    {
+      keyword: "revenue automation software",
+      sourceKind: "product_profile",
+      sourceRef: `icp_profile:${IDS.baseProfile}#/productName`,
+    },
+  ],
+});
+const fallbackDiscoverySnapshot = {
+  ...discoverySnapshot,
+  dataset_key: "dataforseo.search_landscape.v2",
+  schema_version: "dataforseo.search_landscape.v2",
+  method_version: "dataforseo.search_landscape.v2",
+  limitation: "Bounded US/zh search landscape with paid SERP fallback.",
+  summary: { collectionScope: fallbackDiscoveryScope },
+} satisfies DataSnapshotRow;
+const fallbackDiscoveryObservation = {
+  ...discoveryObservation,
+  metric_key: "dataforseo.serp_competitor.v1",
+  value_json: {
+    targetDomain: "example.com",
+    competitorDomain: "rival.example",
+    averagePosition: 4.5,
+    medianPosition: 4,
+    rating: 92,
+    organicEstimatedTrafficVolume: 850,
+    keywordsCount: 18,
+    visibility: 0.74,
+    relevantSerpItems: 6,
+    seedCount: 1,
+    marketCode: "US",
+    languageCode: "zh",
+  },
+  limitation: fallbackDiscoverySnapshot.limitation,
 } satisfies ObservationRow;
 const pageRow = {
   page_snapshot_id: IDS.pageSnapshot,
@@ -875,6 +921,93 @@ describe("runProductProfileSynthesis", () => {
         ]),
       }),
     );
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("validates frozen v2 SERP fallback evidence without representing it as domain overlap", async () => {
+    const manifestWithFallback: ProductProfileSynthesisInputManifest = {
+      ...manifest,
+      competitorDiscovery: {
+        snapshotId: IDS.discoverySnapshot,
+        collectionRunId: IDS.discoveryCollectionRun,
+        sourceConnectionId: IDS.discoverySource,
+        datasetKey: "dataforseo.search_landscape.v2",
+        schemaVersion: "dataforseo.search_landscape.v2",
+        methodVersion: "dataforseo.search_landscape.v2",
+        capturedAt,
+        checksum: fallbackDiscoverySnapshot.checksum,
+        availability: "available",
+        rowCount: 1,
+        limitation: fallbackDiscoverySnapshot.limitation,
+        targetDomain: "example.com",
+        marketCode: "US",
+        languageCode: "zh",
+        observations: [
+          {
+            sourceKind: "serp_competitor",
+            observationId: IDS.discoveryObservation,
+            domain: "rival.example",
+            rating: 92,
+            keywordsCount: 18,
+            relevantSerpItems: 6,
+            organicEstimatedTrafficVolume: 850,
+            observedAt: capturedAt,
+          },
+        ],
+      },
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      input_manifest: manifestWithFallback,
+      input_hash: contentHash(manifestWithFallback),
+    });
+    vi.mocked(DataSnapshotsRepository.prototype.findById)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(fallbackDiscoverySnapshot);
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    ).mockResolvedValueOnce([fallbackDiscoveryObservation]);
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    const inserted = vi.mocked(
+      IcpProfilesRepository.prototype.insertVersion,
+    ).mock.calls[0]?.[0];
+    expect(inserted?.profile).toEqual(
+      expect.objectContaining({
+        competitorCandidates: [
+          expect.objectContaining({
+            domain: "rival.example",
+            relationship: "direct",
+            reason: expect.stringMatching(/SERP.*92.*6/iu),
+            reviewStatus: "candidate",
+            similarity: null,
+          }),
+        ],
+        fieldProvenance: expect.arrayContaining([
+          expect.objectContaining({
+            path: "/competitorCandidates/0",
+            evidenceRefs: [
+              expect.objectContaining({
+                kind: "observation",
+                observationId: IDS.discoveryObservation,
+              }),
+            ],
+          }),
+        ]),
+      }),
+    );
+    expect(JSON.stringify(inserted?.profile)).not.toMatch(/keyword intersection/iu);
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
       attempt,
       expect.objectContaining({ status: "completed" }),

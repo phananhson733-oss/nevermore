@@ -173,6 +173,37 @@ h3 {
   margin: 0;
 }
 
+/*
+ * One typography contract for the lead heading at the top of every customer
+ * workbench page. Individual modules still own colour and weight, but they do
+ * not get to force oversized display type or balance Chinese copy into three
+ * artificially short lines. The explicit attribute keeps this rule away from
+ * card, empty-state, report, and dialog headings.
+ */
+[data-app-page-title] {
+  max-inline-size: min(100%, 30ch) !important;
+  font-size: clamp(32px, 3vw, 48px) !important;
+  letter-spacing: -0.035em !important;
+  line-height: 1.08 !important;
+  overflow-wrap: anywhere;
+  text-wrap: pretty !important;
+  white-space: normal;
+  word-break: normal;
+}
+
+:root[lang="zh-CN"] [data-app-page-title] {
+  max-inline-size: min(100%, 24em) !important;
+  line-break: strict;
+}
+
+@media (max-width: 560px) {
+  [data-app-page-title] {
+    font-size: clamp(30px, 9.4vw, 38px) !important;
+    letter-spacing: -0.025em !important;
+    line-height: 1.1 !important;
+  }
+}
+
 /* Uppercase kicker / eyebrow used above most headings. */
 .sf-eyebrow {
   font-family: var(--sf-font-body);

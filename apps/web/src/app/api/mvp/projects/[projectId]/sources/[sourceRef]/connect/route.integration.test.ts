@@ -62,14 +62,15 @@ describe("POST OAuth connect returnPath isolation", () => {
       operator.userId,
       randomUUID(),
       {
-        clientName: "Owner",
-        projectName: "Owner",
-        siteUrl: "https://route-owner.example",
-        marketCodes: ["US"],
-        siteLanguageCodes: ["en"],
-        defaultDeliveryLocale: "en",
+        mode: "product_profile",
+        productName: "Owner",
+        productUrl: "https://route-owner.example.com/product",
+        customerModel: "b2b",
+        primaryMarket: "US",
+        growthObjectives: ["increase_organic_traffic"],
       },
       safeGuard,
+      { defaultDeliveryLocale: "en" },
     );
     const foreign = await createProject(
       { workspaceId: operator.workspaceId },
@@ -149,6 +150,25 @@ describe("POST OAuth connect returnPath isolation", () => {
     await expect(countOwnerIntents()).resolves.toBe(before);
   });
 
+  it("allows the exact optional setup path before Product Profile confirmation", async () => {
+    const before = await countOwnerIntents();
+    const response = await authorizeOwner(
+      "optional-source-onboarding",
+      "setup-sources",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        phase: "authorization",
+        authorizationUrl: expect.stringContaining(
+          "https://accounts.google.com/o/oauth2/v2/auth",
+        ),
+      },
+    });
+    await expect(countOwnerIntents()).resolves.toBe(before + 1);
+  });
+
   it("allows OAuth authorize after the Product Profile and ICP are confirmed", async () => {
     await seedConfirmedSourceProfile(
       handle,
@@ -173,7 +193,10 @@ describe("POST OAuth connect returnPath isolation", () => {
     await expect(countOwnerIntents()).resolves.toBe(before + 1);
   });
 
-  async function authorizeOwner(requestId: string): Promise<Response> {
+  async function authorizeOwner(
+    requestId: string,
+    segment: "sources" | "setup-sources" = "sources",
+  ): Promise<Response> {
     return POST(
       new NextRequest(
         `http://localhost:3000/api/mvp/projects/${ownerProjectId}/sources/gsc/connect`,
@@ -186,7 +209,7 @@ describe("POST OAuth connect returnPath isolation", () => {
           },
           body: JSON.stringify({
             phase: "authorize",
-            returnPath: `/p/${ownerProjectId}/sources`,
+            returnPath: `/p/${ownerProjectId}/${segment}`,
           }),
         },
       ),

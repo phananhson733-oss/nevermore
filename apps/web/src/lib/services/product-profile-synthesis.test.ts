@@ -5,6 +5,8 @@ import {
   sha256Hex,
   type ProjectRow,
   type CanonicalValue,
+  type DataSnapshotRow,
+  type ObservationRow,
 } from "@sf/db";
 import {
   AsyncRunsRepository,
@@ -27,7 +29,11 @@ import {
   ProductProfileSynthesisInputManifest,
 } from "@sf/contracts";
 import { PRODUCT_PROFILE_PROMPT_SET_VERSION } from "@sf/artifacts";
-import { CRAWL_DATASET_KEY, CRAWL_METHOD_VERSION } from "@sf/sources";
+import {
+  CRAWL_DATASET_KEY,
+  CRAWL_METHOD_VERSION,
+  createDataForSeoSearchLandscapeV2Scope,
+} from "@sf/sources";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -54,6 +60,7 @@ vi.mock("@/lib/boss", () => ({ getBoss: mocks.getBoss }));
 
 const {
   assertProductProfileSynthesisPageRows,
+  buildProductProfileCompetitorDiscovery,
   buildProductProfileSynthesisFrozenInput,
   createProductProfileSynthesisRun,
   selectProductProfileSynthesisPages,
@@ -379,6 +386,99 @@ describe("Product Profile PageSnapshot integrity", () => {
         status: 422,
       }),
     );
+  });
+});
+
+describe("Product Profile DataForSEO v2 competitor discovery", () => {
+  it("freezes a distinct seed-based SERP competitor source", () => {
+    const capturedAt = "2026-08-03T01:02:03.000Z";
+    const collectionScope = createDataForSeoSearchLandscapeV2Scope({
+      target: "relayops.com",
+      marketCode: "US",
+      languageTag: "en-US",
+      locationName: "United States",
+      seeds: [
+        {
+          keyword: "customer onboarding software",
+          sourceKind: "product_profile",
+          sourceRef: `profile:${profileId}#/productName`,
+        },
+      ],
+    });
+    const discoverySnapshot: DataSnapshotRow = {
+      id: uuid(701),
+      workspace_id: workspaceId,
+      project_id: projectId,
+      site_id: siteId,
+      collection_run_id: uuid(702),
+      source_connection_id: uuid(703),
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v2",
+      schema_version: "dataforseo.search_landscape.v2",
+      method_version: "dataforseo.search_landscape.v2",
+      captured_at: capturedAt,
+      source_window: { start: null, end: null },
+      availability: "available",
+      limitation: "Frozen seed fallback fixture.",
+      raw_object_key: "private/dataforseo-v2.json",
+      row_count: 1,
+      checksum: "d".repeat(64),
+      summary: { collectionScope },
+      created_at: capturedAt,
+    };
+    const discoveryObservation: ObservationRow = {
+      id: uuid(704),
+      workspace_id: workspaceId,
+      project_id: projectId,
+      snapshot_id: discoverySnapshot.id,
+      site_page_id: null,
+      provider: "dataforseo",
+      metric_key: "dataforseo.serp_competitor.v1",
+      subject_type: "site",
+      subject_ref: "guidecx.com",
+      observed_at: capturedAt,
+      availability: "available",
+      value_numeric: null,
+      value_text: null,
+      value_json: {
+        targetDomain: "relayops.com",
+        competitorDomain: "guidecx.com",
+        averagePosition: 3.5,
+        medianPosition: 3,
+        rating: 880,
+        organicEstimatedTrafficVolume: 1_200,
+        keywordsCount: 2,
+        visibility: 0.42,
+        relevantSerpItems: 2,
+        seedCount: 1,
+        marketCode: "US",
+        languageCode: "en",
+      },
+      unit: null,
+      origin: "vendor_observation",
+      method: "observed",
+      grade: "B",
+      support: "supports",
+      limitation: "Frozen seed fallback fixture.",
+    };
+
+    expect(
+      buildProductProfileCompetitorDiscovery(discoverySnapshot, [
+        discoveryObservation,
+      ]),
+    ).toMatchObject({
+      datasetKey: "dataforseo.search_landscape.v2",
+      observations: [
+        {
+          sourceKind: "serp_competitor",
+          observationId: discoveryObservation.id,
+          domain: "guidecx.com",
+          rating: 880,
+          keywordsCount: 2,
+          relevantSerpItems: 2,
+        },
+      ],
+    });
   });
 });
 

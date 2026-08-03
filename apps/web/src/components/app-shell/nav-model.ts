@@ -13,6 +13,7 @@ export type PrimaryNavLabelKey =
 export type ProjectPageLabelKey =
   | PrimaryNavLabelKey
   | "context"
+  | "sourceSetup"
   | "sources"
   | "settings";
 
@@ -100,6 +101,7 @@ export function currentProjectPageLabelKey(
     );
   }
   const segment = activeSegment(pathname, projectId);
+  if (segment === "setup-sources") return "sourceSetup";
   return segment === "context" ||
     segment === "sources" ||
     segment === "settings"

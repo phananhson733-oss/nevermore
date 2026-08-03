@@ -6,6 +6,7 @@ import {
   ObservationsRepository,
   SourceConnectionsRepository,
   type CollectionRunRow,
+  type CanonicalValue,
   type CompetitorOriginInput,
   type CsvKeywordGapCompetitorOriginInput,
   type DataSnapshotRow,
@@ -20,12 +21,17 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   KEYWORD_GAP_TEMPLATE_ID,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_SERP_COMPETITOR,
   METRIC_CSV_KEYWORD_GAP,
   SourceError,
   parseDataForSeoSearchLandscapeScope,
+  parseDataForSeoSearchLandscapeV2Scope,
   type DataForSeoSearchLandscapeScope,
+  type DataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 
 const CSV_PROVIDER = "csv";
@@ -77,6 +83,13 @@ function canonicalNonNegativeNumber(value: unknown, label: string): number {
 function canonicalPositiveInteger(value: unknown, label: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 1) {
     throw invalidProjection(`${label} must be a positive integer.`);
+  }
+  return value as number;
+}
+
+function canonicalNonNegativeInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw invalidProjection(`${label} must be a non-negative integer.`);
   }
   return value as number;
 }
@@ -146,22 +159,30 @@ function assertObservationLineage(
 
 function dataForSeoCollectionScope(
   snapshot: DataSnapshotRow,
-): DataForSeoSearchLandscapeScope {
-  if (
-    snapshot.provider !== DATAFORSEO_PROVIDER ||
-    snapshot.dataset_key !== DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
-    snapshot.schema_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
-    snapshot.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
-    snapshot.source_connection_id === null
-  ) {
+): DataForSeoSearchLandscapeScope | DataForSeoSearchLandscapeV2Scope {
+  const isV1 =
+    snapshot.provider === DATAFORSEO_PROVIDER &&
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+  const isV2 =
+    snapshot.provider === DATAFORSEO_PROVIDER &&
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY &&
+    snapshot.schema_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+  if ((!isV1 && !isV2) || snapshot.source_connection_id === null) {
     throw invalidProjection(
       "SERP overlap projection requires the exact DataForSEO search-landscape Snapshot identity.",
     );
   }
   try {
-    return parseDataForSeoSearchLandscapeScope(
-      snapshot.summary["collectionScope"],
-    );
+    return isV2
+      ? parseDataForSeoSearchLandscapeV2Scope(
+          snapshot.summary["collectionScope"],
+        )
+      : parseDataForSeoSearchLandscapeScope(
+          snapshot.summary["collectionScope"],
+        );
   } catch {
     throw invalidProjection(
       "SERP overlap projection requires its frozen DataForSEO search-landscape scope.",
@@ -175,7 +196,9 @@ function assertCanonicalDataForSeoLineage(
   connection: Awaited<
     ReturnType<SourceConnectionsRepository["findById"]>
   >,
-  collectionScope: DataForSeoSearchLandscapeScope,
+  collectionScope:
+    | DataForSeoSearchLandscapeScope
+    | DataForSeoSearchLandscapeV2Scope,
 ): void {
   if (
     run.id !== snapshot.collection_run_id ||
@@ -184,7 +207,7 @@ function assertCanonicalDataForSeoLineage(
     run.site_id !== snapshot.site_id ||
     run.provider !== DATAFORSEO_PROVIDER ||
     run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
-    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    run.method_version !== snapshot.method_version ||
     run.source_connection_id !== snapshot.source_connection_id ||
     run.import_preview_id !== null ||
     run.crawl_seed_site_page_id !== null ||
@@ -194,8 +217,8 @@ function assertCanonicalDataForSeoLineage(
         provider: DATAFORSEO_PROVIDER,
         operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
         siteId: snapshot.site_id,
-        collectionScope,
-      })
+        collectionScope: collectionScope as unknown as CanonicalValue,
+      } as CanonicalValue)
   ) {
     throw invalidProjection(
       "Canonical DataForSEO search-landscape Snapshot does not match its CollectionRun lineage.",
@@ -233,7 +256,7 @@ export function deriveSerpOverlapCompetitorOriginInput(
     run.site_id !== snapshot.site_id ||
     run.provider !== DATAFORSEO_PROVIDER ||
     run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
-    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION ||
+    run.method_version !== snapshot.method_version ||
     run.source_connection_id !== snapshot.source_connection_id ||
     run.import_preview_id !== null ||
     run.crawl_seed_site_page_id !== null ||
@@ -243,8 +266,8 @@ export function deriveSerpOverlapCompetitorOriginInput(
         provider: DATAFORSEO_PROVIDER,
         operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
         siteId: snapshot.site_id,
-        collectionScope,
-      })
+        collectionScope: collectionScope as unknown as CanonicalValue,
+      } as CanonicalValue)
   ) {
     throw invalidProjection(
       "Canonical DataForSEO search-landscape Snapshot does not match its CollectionRun lineage.",
@@ -261,7 +284,10 @@ export function deriveSerpOverlapCompetitorOriginInput(
       "SERP overlap Observation does not belong to its canonical DataForSEO Snapshot.",
     );
   }
-  if (observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN) {
+  if (
+    observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN &&
+    observation.metric_key !== METRIC_DATAFORSEO_SERP_COMPETITOR
+  ) {
     return null;
   }
   if (
@@ -283,16 +309,32 @@ export function deriveSerpOverlapCompetitorOriginInput(
     observation.value_json,
     "Canonical DataForSEO competitor-domain Observation valueJson",
   );
-  const expectedKeys = [
-    "targetDomain",
-    "competitorDomain",
-    "intersections",
-    "averagePosition",
-    "summedPosition",
-    "organicEstimatedTrafficVolume",
-    "marketCode",
-    "languageCode",
-  ] as const;
+  const expectedKeys =
+    observation.metric_key === METRIC_DATAFORSEO_COMPETITOR_DOMAIN
+      ? ([
+          "targetDomain",
+          "competitorDomain",
+          "intersections",
+          "averagePosition",
+          "summedPosition",
+          "organicEstimatedTrafficVolume",
+          "marketCode",
+          "languageCode",
+        ] as const)
+      : ([
+          "targetDomain",
+          "competitorDomain",
+          "averagePosition",
+          "medianPosition",
+          "rating",
+          "organicEstimatedTrafficVolume",
+          "keywordsCount",
+          "visibility",
+          "relevantSerpItems",
+          "seedCount",
+          "marketCode",
+          "languageCode",
+        ] as const);
   if (
     Object.keys(valueJson).length !== expectedKeys.length ||
     expectedKeys.some((key) => !Object.hasOwn(valueJson, key))
@@ -303,22 +345,43 @@ export function deriveSerpOverlapCompetitorOriginInput(
   }
   const targetDomain = canonicalCompetitorDomain(valueJson["targetDomain"]);
   const domain = canonicalCompetitorDomain(valueJson["competitorDomain"]);
-  canonicalPositiveInteger(
-    valueJson["intersections"],
-    "DataForSEO intersections",
-  );
   canonicalNonNegativeNumber(
     valueJson["averagePosition"],
     "DataForSEO averagePosition",
   );
   canonicalNonNegativeNumber(
-    valueJson["summedPosition"],
-    "DataForSEO summedPosition",
-  );
-  canonicalNonNegativeNumber(
     valueJson["organicEstimatedTrafficVolume"],
     "DataForSEO organicEstimatedTrafficVolume",
   );
+  if (observation.metric_key === METRIC_DATAFORSEO_COMPETITOR_DOMAIN) {
+    canonicalPositiveInteger(
+      valueJson["intersections"],
+      "DataForSEO intersections",
+    );
+    canonicalNonNegativeNumber(
+      valueJson["summedPosition"],
+      "DataForSEO summedPosition",
+    );
+  } else {
+    canonicalNonNegativeNumber(
+      valueJson["medianPosition"],
+      "DataForSEO medianPosition",
+    );
+    canonicalNonNegativeNumber(valueJson["rating"], "DataForSEO rating");
+    canonicalNonNegativeInteger(
+      valueJson["keywordsCount"],
+      "DataForSEO keywordsCount",
+    );
+    canonicalNonNegativeNumber(
+      valueJson["visibility"],
+      "DataForSEO visibility",
+    );
+    canonicalNonNegativeInteger(
+      valueJson["relevantSerpItems"],
+      "DataForSEO relevantSerpItems",
+    );
+    canonicalPositiveInteger(valueJson["seedCount"], "DataForSEO seedCount");
+  }
   if (
     targetDomain !== collectionScope.target ||
     domain === targetDomain ||
@@ -328,6 +391,16 @@ export function deriveSerpOverlapCompetitorOriginInput(
   ) {
     throw invalidProjection(
       "Canonical DataForSEO competitor-domain Observation contradicts its frozen scope.",
+    );
+  }
+  if (
+    observation.metric_key === METRIC_DATAFORSEO_SERP_COMPETITOR &&
+    (!("serpCompetitors" in collectionScope) ||
+      valueJson["seedCount"] !==
+        collectionScope.serpCompetitors.seeds.length)
+  ) {
+    throw invalidProjection(
+      "Canonical DataForSEO SERP-competitor Observation contradicts its frozen seed scope.",
     );
   }
   return {

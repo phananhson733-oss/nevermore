@@ -56,6 +56,12 @@ describe("customer-visible primary navigation", () => {
       "sources",
     );
     expect(
+      currentProjectPageLabelKey(
+        "/p/project-1/setup-sources",
+        "project-1",
+      ),
+    ).toBe("sourceSetup");
+    expect(
       currentProjectPageLabelKey("/p/project-1/settings", "project-1"),
     ).toBe("settings");
   });
