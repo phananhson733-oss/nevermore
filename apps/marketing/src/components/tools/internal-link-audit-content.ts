@@ -393,8 +393,12 @@ const ZH: InternalLinkAuditContent = {
   breadcrumb: "内链审计",
   eyebrow: "免费内链审计 · 实时公开抓取",
   title: "内链审计",
+  // The English subtitle hedges all three of these; this one used to assert
+  // them. The tool never calls a link broken (an uncollected target may simply
+  // be outside the crawl), an orphan is a candidate rather than a verdict, and
+  // nothing here computes link equity at all.
   subtitle:
-    "一次看清站内页面之间的关系：哪些链接已经失效、哪些页面没有任何入口，以及哪些重要内容没有获得你的网站本来可以传递的权重。",
+    "一次实时抓取，梳理站内页面之间的实际链接关系：观察到的同源 HTML 链接、入链支持较少的页面、仅出现在 sitemap 中的候选孤岛，以及需要你进一步核实的目标。",
   primaryCta: "免费运行内链审计",
   trustLine: "免费 · 无需登录 · 无需安装 · 适用于公开网站",
   demoBanner:
