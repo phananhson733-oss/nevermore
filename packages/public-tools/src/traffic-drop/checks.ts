@@ -4,12 +4,15 @@ import {
   historySpanDays,
   TRAFFIC_UNFINALIZED_TAIL_DAYS,
 } from "./series.ts";
+import type { BrandSplitOutcome } from "./brand-split.ts";
+import type { QueryCohortOutcome } from "./query-cohort.ts";
 import type {
   TrafficChangePoint,
   TrafficCheck,
   TrafficDailyPoint,
   TrafficFinding,
   TrafficFindingId,
+  TrafficSiteSignals,
   TrafficUnavailableReason,
 } from "./types.ts";
 
@@ -40,7 +43,25 @@ export const TRAFFIC_CHECK_IDS = [
   "single_page_dominated_decline",
   "seasonality_yoy",
   "index_status_at_event",
+  "brand_non_brand_split",
+  "query_cohort_migration",
 ] as const;
+
+/**
+ * Two site-signal observations are deliberately NOT in this list.
+ *
+ * The manual-action status is not a check because we did not perform it — the
+ * visitor did, in Search Console. Giving it a `clear` here would break the
+ * invariant above in the most consequential place available: `clear` reads as
+ * "the tool verified this", and the tool cannot.
+ *
+ * The ranking-update timeline is not a check because a `hit` would give a
+ * calendar coincidence the same standing as a measurement, and this list is
+ * summarised to the reader as a hit count. Google's announced updates cover a
+ * large share of any year; something that fires on a large share of all inputs
+ * is background, not a finding. Both live in `result.siteSignals`, which the
+ * UI renders as context rather than as evidence.
+ */
 
 export type TrafficCheckId = (typeof TRAFFIC_CHECK_IDS)[number];
 
@@ -74,10 +95,55 @@ function check(
   return { id, status, unavailableReason };
 }
 
+/**
+ * Map a site-signal outcome's own reason onto the shared check vocabulary.
+ *
+ * The two vocabularies are kept separate on purpose: the modules that produce
+ * these outcomes are readable on their own terms, and this is the one place
+ * that has to know both. A reason that arrives here unmapped is a compile
+ * error, not a silent `not_available` with no explanation.
+ */
+function brandSplitReason(
+  outcome: BrandSplitOutcome,
+): TrafficUnavailableReason | null {
+  if (outcome.kind === "slice") return null;
+  switch (outcome.reason) {
+    case "read_not_performed":
+      return "query_read_not_performed";
+    case "brand_terms_not_confirmed":
+      return "brand_terms_not_confirmed";
+    case "property_totals_unavailable":
+      return "property_totals_unavailable";
+    case "aggregation_basis_mixed":
+      return "aggregation_basis_mixed";
+    case "coverage_below_floor":
+      return "coverage_below_floor";
+    case "coverage_shift_too_large":
+      return "coverage_shift_too_large";
+    case "brand_sample_below_floor":
+      return "brand_sample_below_floor";
+  }
+}
+
+function queryCohortReason(
+  outcome: QueryCohortOutcome,
+): TrafficUnavailableReason | null {
+  if (outcome.kind === "migration") return null;
+  switch (outcome.reason) {
+    case "read_not_performed":
+      return "query_read_not_performed";
+    case "aggregation_basis_mixed":
+      return "aggregation_basis_mixed";
+    case "cohort_below_floor":
+      return "cohort_below_floor";
+  }
+}
+
 export interface TrafficCheckContext {
   readonly changePoint: TrafficChangePoint;
   readonly findings: readonly TrafficFinding[];
   readonly series: readonly TrafficDailyPoint[];
+  readonly siteSignals: TrafficSiteSignals;
   /**
    * The day the run happened, as YYYY-MM-DD.
    *
@@ -143,6 +209,11 @@ export function buildTrafficChecks(
   );
 
   const span = historySpanDays(series);
+
+  const brandSplit = context.siteSignals.brandSplit;
+  const cohort = context.siteSignals.queryCohort;
+  const brandSplitCheck = brandSplitReason(brandSplit);
+  const cohortCheck = queryCohortReason(cohort);
 
   return [
     windowLevelUnavailable
@@ -227,5 +298,34 @@ export function buildTrafficChecks(
     // Search Console's index report always trails the Search Analytics series,
     // so a technical read of the event days is never available in-tool.
     check("index_status_at_event", "not_available", "index_report_lag"),
+    // A `hit` here means the two groups moved by materially different amounts.
+    // That is a statement about the numbers and nothing else — which
+    // explanations the shape is compatible with is left to the copy, which
+    // lists several. A lopsided split is produced just as readily by a robots
+    // rule or a `noindex` on one template as by anything to do with content.
+    brandSplitCheck === null
+      ? check(
+          "brand_non_brand_split",
+          brandSplit.kind === "slice" &&
+            (brandSplit.shape === "non_brand_declined_more" ||
+              brandSplit.shape === "brand_declined_more")
+            ? "hit"
+            : "clear",
+        )
+      : check("brand_non_brand_split", "not_available", brandSplitCheck),
+    // A `hit` means part of the cohort that started in the top ten is no
+    // longer there — either further down, or no longer visible at all. Those
+    // two are counted separately in the outcome and must stay separate in the
+    // copy: falling out of the query report happens well above zero traffic.
+    cohortCheck === null
+      ? check(
+          "query_cohort_migration",
+          cohort.kind === "migration" &&
+            cohort.topTen.startedInTopTen > 0 &&
+            cohort.topTen.heldTopTen < cohort.topTen.startedInTopTen
+            ? "hit"
+            : "clear",
+        )
+      : check("query_cohort_migration", "not_available", cohortCheck),
   ];
 }

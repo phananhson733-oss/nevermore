@@ -987,6 +987,26 @@
         "avoid_rank_recovery": {
           "title": "Do not chase a rankings recovery because average position went up",
           "body": "Average position is impression-weighted. When high-ranking queries disappear the number rises on its own, without any of your pages having moved. Optimising against it means solving a problem you do not have. For the same reason, do not prioritise this work by impression volume."
+        },
+        "resolve_manual_action": {
+          "title": "Work the manual action first — it is the only thing here with a defined path back",
+          "body": "Open Search Console → Security and Manual Actions → Manual actions and read which type it is. A manual action does not lapse on its own: the process is to fix what the notice describes and then submit a reconsideration request. Google's documentation for your specific type sets out what it expects. Everything else in this report is about where traffic went, and that question is not worth your time until this one is closed."
+        },
+        "check_manual_actions": {
+          "title": "Spend ten seconds on the one thing we cannot read for you",
+          "body": "Open Search Console → Security and Manual Actions → Manual actions. Google publishes no API for this page, so nothing in this report can see it. It matters more than anything we can see: a manual action has a defined path back and does not resolve by itself, while everything else here has no such path. Note that Security Issues is a different page — the one we mean is called Manual actions."
+        },
+        "avoid_assuming_penalty": {
+          "title": "Do not treat this as a penalty and start deleting things",
+          "body": "Google's own wording for algorithmic ranking changes is neutral: a drop does not mean your pages are bad. More often it means other results improved relative to them. Acting on a penalty you have not confirmed is how people delete content that was working, and there is no undo. Establish the manual-action status first; it costs ten seconds and it is the only part of this that has a definite answer."
+        },
+        "avoid_disavow": {
+          "title": "Do not clean up backlinks or file a disavow because traffic fell",
+          "body": "You have confirmed there is no manual action. Disavow is for one situation — a manual action that names your links — and this is not that situation. Google has said repeatedly that most sites never need the tool, and routine “toxic link cleanup” is a service people are sold rather than a fix. Filing one here spends money and can cost you links that were helping."
+        },
+        "check_landing_page_indexability": {
+          "title": "Rule out a technical cause on the landing pages before reading anything into the split",
+          "body": "One group falling while the other holds is exactly what a robots rule, a stray noindex, a canonical pointing somewhere unintended, or a rendering regression on one template produces — they hit landing pages and leave the homepage alone. It is also the cheapest thing on this list to check and the cheapest to fix. Do it before you conclude anything about content."
         }
       },
       "checksSummary": "This run performed {total} checks and {hits} triggered — open to see all of them, including what came back clear and what could not be checked",
@@ -1004,7 +1024,9 @@
         "sitewide_visibility_zeroed": "Site-wide visibility loss",
         "single_page_dominated_decline": "Single-page dominated decline",
         "seasonality_yoy": "Year-over-year seasonality",
-        "index_status_at_event": "Index status during the event"
+        "index_status_at_event": "Index status during the event",
+        "brand_non_brand_split": "Brand vs non-brand split",
+        "query_cohort_migration": "Query position migration"
       },
       "checkOutcomes": {
         "sustained_decline": {
@@ -1051,19 +1073,40 @@
           "hit": "",
           "clear": "",
           "not_available": ""
+        },
+        "brand_non_brand_split": {
+          "hit": "The two groups moved by materially different amounts",
+          "clear": "Both groups moved together, or neither moved materially",
+          "not_available": ""
+        },
+        "query_cohort_migration": {
+          "hit": "Part of the set that started in the top ten is no longer there",
+          "clear": "The queries that started in the top ten are still there",
+          "not_available": ""
         }
       },
       "unavailableReasons": {
         "history_below_twelve_weeks": "Needs twelve weeks of history; this property has less",
         "history_below_thirteen_months": "Needs thirteen months so the same season last year exists — we do not estimate it",
-        "query_data_not_supplied": "This tool reads whole-property daily totals only, not query-level data. Search Console's Queries tab is where that breakdown lives.",
+        "query_data_not_supplied": "The concentration check is not wired to the query read in this version, so it has no query rows to work from. Search Console's Queries tab has the breakdown.",
         "page_data_not_supplied": "This tool reads whole-property daily totals only, not page-level data. Search Console's Pages tab is where that breakdown lives.",
         "probe_data_not_supplied": "This tool does not fetch your pages, so it cannot say whether the affected ones still respond. Search Console's URL Inspection is where that is checked.",
         "index_report_lag": "Search Console's index report trails its performance data, so it cannot cover the event days — this can be neither confirmed nor ruled out here",
         "site_below_detection_floor": "This property has never had a week large enough for the detector to work on",
         "no_recent_days": "No recent days were returned for this property",
         "post_event_history_below_two_windows": "The drop is real, but there is not yet enough data after it to say whether it held.",
-        "yoy_comparison_not_implemented": "This tool does not run a year-over-year comparison. It is not that nothing was found — it is that nothing was looked for."
+        "yoy_comparison_not_implemented": "This tool does not run a year-over-year comparison. It is not that nothing was found — it is that nothing was looked for.",
+        "manual_action_not_checked": "You have not told us what your Manual Actions page says. Google publishes no API for it, so this is the one thing here only you can look up.",
+        "no_event_window": "No decline was located, so there is no event to place on a timeline",
+        "core_update_table_not_verified": "Our list of announced Google updates has not been checked past the date of your decline. Saying “no update around then” would be reporting our own staleness as a fact about your site.",
+        "query_read_not_performed": "The query-level read did not run for this report, so this could not be computed. It was not checked and found clear — it was not checked.",
+        "brand_terms_not_confirmed": "Needs a brand term list you have confirmed. Guessing it from the domain gets it wrong in both directions, and silently.",
+        "property_totals_unavailable": "Search Console did not return property totals for both windows, so we cannot tell how much of your traffic the query rows account for — and we will not assume it is all of it.",
+        "aggregation_basis_mixed": "Search Console aggregated the two reads differently, which makes their totals incomparable. A ratio across them would measure the aggregation change, not your site.",
+        "coverage_below_floor": "Too much of this property's traffic is withheld from the query report for a group-versus-group comparison to mean anything.",
+        "coverage_shift_too_large": "The two windows differ too much in how much of your traffic is visible. That difference alone can manufacture the pattern this check looks for.",
+        "brand_sample_below_floor": "There are too few brand queries and too few brand clicks for a percentage to be anything but noise.",
+        "cohort_below_floor": "Too few queries cleared the impression floor to describe a migration."
       },
       "limitations": {
         "history_below_twelve_weeks": "Twelve weeks of history are needed before a decline can be judged. Below that we would be reading noise, so we do not report a verdict.",
@@ -1087,7 +1130,82 @@
       "run": "Run analysis",
       "noPropertyTitle": "No verified property on this account",
       "noPropertyBody": "The authorization worked, but this Google account is not a verified owner of any Search Console property. Verify the site in Search Console first, then come back and run it.",
-      "propertiesTruncated": "Showing {shown} of {total} properties. The rest did not fit in one browser cookie."
+      "propertiesTruncated": "Showing {shown} of {total} properties. The rest did not fit in one browser cookie.",
+      "siteSignals": {
+        "sectionTitle": "What we can and cannot establish about a penalty",
+        "sectionIntro": "One of these you can settle yourself in ten seconds. The rest are observations with their limits attached — none of them decides anything on its own.",
+        "manual_action": {
+          "label": "Manual action status"
+        },
+        "core_update_timeline": {
+          "label": "Announced update timeline"
+        },
+        "brand_non_brand_split": {
+          "label": "Brand vs non-brand split"
+        },
+        "query_cohort_migration": {
+          "label": "Query position migration"
+        },
+        "manualAction": {
+          "cardTitle": "First, one thing only you can check",
+          "cardBody": "We cannot read your manual action status — Google does not publish an interface for it. You can see it in about ten seconds, and it decides which half of this report is worth your attention.",
+          "cardSteps": "Search Console → Security and Manual Actions → Manual actions",
+          "cardWhy": "Why it matters: a manual action has a defined path back — fix, then request reconsideration — and it does not clear on its own. Nothing else in this report has that.",
+          "optionManualAction": "It lists a manual action",
+          "optionNone": "It says “No issues detected”",
+          "optionUncertain": "I could not tell",
+          "optionNotChecked": "I have not looked yet",
+          "notice": "Careful: “Security Issues” is a different page, and Search Console shows one property at a time. Make sure you are on Manual actions, for this property.",
+          "recordedManualAction": "You reported: your Manual actions page lists an entry.",
+          "recordedNone": "You confirmed: your Manual actions page shows no entry. Recorded as your observation — we did not read it.",
+          "recordedUncertain": "You were not able to confirm this either way, so this report says nothing about penalties in either direction.",
+          "recordedNotChecked": "Not checked yet."
+        },
+        "paths": {
+          "manualActionTitle": "You have a manual action open",
+          "manualActionBody": "That is the finding. A manual action is applied by a reviewer and stays until you fix what the notice describes and submit a reconsideration request — it does not expire and it does not lift on its own. Read the entry for the specific type; Google's documentation for that type sets out what it expects. The traffic analysis below is still here, but it is not what to act on today.",
+          "noManualActionTitle": "These observations do not support a penalty",
+          "noManualActionBody": "One thing is settled: you checked, and Search Console shows no manual action. Whether Google's ranking systems adjusted something about your site is a separate question, and it is one no tool can answer — there is no public signal for it, so anyone claiming to detect it is inferring. We are not going to. What follows is what we actually measured, and what each observation would also be consistent with. If it points at a technical cause, start there; those are cheap to check and cheap to fix.",
+          "unconfirmedTitle": "One answer is missing, and it is the one that matters",
+          "unconfirmedBody": "Until you have looked at Manual actions, this report will not tell you that you have been penalised and will not tell you that you have not. Both would be claims about something we cannot see. The traffic observations below stand on their own — read them, but do not read a verdict into them."
+        },
+        "coreUpdate": {
+          "label": "Where your decline sits on Google's announced timeline",
+          "caveat": "Context only, and it does not count toward anything. The detector works in whole weeks, so the event is a span rather than a date; announced updates roll out over weeks too. In a typical year those windows cover a large share of the calendar, so an overlap is as likely to be coincidence as anything else.",
+          "eventWindow": "Your decline happened somewhere in {startDate} – {endDate} ({dayCount} days).",
+          "overlap": "That span overlaps {name} ({startDate} – {endDate}) by {days} day(s).",
+          "overlapOpenEnded": "That span touches the start of {name} ({startDate}); Google did not announce when the rollout finished.",
+          "noOverlap": "That span does not overlap any update we have on file. This is not evidence that nothing algorithmic happened — Google adjusts ranking continuously, and only some of it is announced.",
+          "tableStamp": "Update list version {version}, last checked against Google's status dashboard on {verifiedThrough}."
+        },
+        "brandSplit": {
+          "label": "Brand vs non-brand queries",
+          "coverage": "Computed on the queries Search Console showed us: {beforeShare} of clicks in the earlier window, {afterShare} in the later one. The rest are withheld for privacy and are mostly long-tail.",
+          "brandGroup": "Brand: {clickChange} clicks ({queries} queries)",
+          "nonBrandGroup": "Non-brand: {clickChange} clicks ({queries} queries)",
+          "shape_non_brand_declined_more": "Non-brand queries fell further than brand queries.",
+          "shape_brand_declined_more": "Brand queries fell further than non-brand queries.",
+          "shape_both_declined": "Both groups fell by similar amounts.",
+          "shape_no_material_change": "Neither group moved materially.",
+          "compatibleWith": "This shape is consistent with several things, and the numbers here cannot rank them:",
+          "explanation_technical": "a technical fault confined to landing-page templates — a robots rule, a stray noindex, a canonical, a rendering regression",
+          "explanation_freshness": "time-sensitive content whose window closed",
+          "explanation_demand": "demand for those queries changing, seasonally or otherwise",
+          "explanation_serp": "the results page changing shape — AI overviews and other features taking clicks at unchanged rankings",
+          "explanation_competition": "other sites moving onto the same queries",
+          "explanation_quality": "Google's ranking systems reassessing the site's content",
+          "explanation_uniform": "something affecting the whole property at once — availability, crawling, or indexing",
+          "truncated": "One of the windows returned more queries than we read. The rows we did not read are the low-click ones."
+        },
+        "cohort": {
+          "label": "Where a fixed set of queries sits now",
+          "intro": "Fixed on the queries, not on the pages. A page's reported position is an average across every query it appears for, so it moves when the query mix moves even if nothing changed in the results — which makes “pages that fell out of the top 50” unmeasurable from that data. These are the same {cohortSize} queries in both windows.",
+          "topTen": "{startedInTopTen} started in the top ten: {heldTopTen} still there, {slippedWithinFifty} lower but within 50, {fellBelowFifty} below 50.",
+          "noLongerVisible": "{count} are no longer in the query report at all. That is not the same as losing all their traffic: Search Console withholds low-volume queries, and the threshold sits well above zero. It could be lost ranking or it could be less demand, and this data cannot tell you which.",
+          "coverage": "These queries carried {share} of the clicks we could see in the earlier window.",
+          "truncated": "One of the windows returned more queries than we read, so the set is drawn from a prefix."
+        }
+      }
     },
     "quickWins": {
       "title": "SEO Quick Wins",

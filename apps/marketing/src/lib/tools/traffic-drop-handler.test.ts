@@ -4,6 +4,8 @@ import {
   handleTrafficDropRequest,
   type TrafficDropHandlerDependencies,
 } from "./traffic-drop-handler.ts";
+import { acquireGscSlot } from "./gsc-inflight.ts";
+import { createPublicToolError } from "@sf/public-tools";
 import type { TrafficDailyPoint } from "@sf/public-tools";
 
 const PROPERTY = "sc-domain:example.com";
@@ -26,6 +28,29 @@ function series(days: number): readonly TrafficDailyPoint[] {
   }));
 }
 
+/**
+ * The in-flight half of the real gate, without the durable quota store.
+ *
+ * The shipped gate also consumes a per-IP counter in Supabase; exercising that
+ * here would make every case in this file depend on a network service. The
+ * refusal branches it owns are driven explicitly instead, by injecting a gate
+ * that refuses.
+ */
+function inflightOnlyGate(clientIp: string) {
+  const slot = acquireGscSlot(clientIp);
+  return Promise.resolve(
+    slot.acquired
+      ? ({ ok: true, release: slot.release } as const)
+      : ({
+          ok: false,
+          response: Response.json(createPublicToolError("scan_in_progress"), {
+            status: 409,
+            headers: { "Retry-After": "5" },
+          }),
+        } as const),
+  );
+}
+
 function deps(
   overrides: Partial<TrafficDropHandlerDependencies> = {},
 ): TrafficDropHandlerDependencies {
@@ -42,6 +67,7 @@ function deps(
     // Each test gets its own client key so the per-client concurrency gate
     // does not carry a held slot from one test into the next.
     extractClientIp: () => `test-${(clientCounter += 1)}`,
+    openGate: inflightOnlyGate,
     ...overrides,
   };
 }
@@ -146,6 +172,139 @@ describe("handleTrafficDropRequest", () => {
       property: PROPERTY,
       lookbackDays: 480,
     });
+  });
+
+  it("refuses before spending any Search Console quota when the gate says no", async () => {
+    // The gate now bounds volume across cold starts, not just concurrency
+    // inside one isolate. A refusal has to happen BEFORE the read: the point
+    // of the limit is the upstream call it prevents.
+    const readDailySeries = vi.fn();
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps({
+        readDailySeries,
+        openGate: () =>
+          Promise.resolve({
+            ok: false,
+            response: Response.json(createPublicToolError("rate_limited"), {
+              status: 429,
+            }),
+          }),
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(readDailySeries).not.toHaveBeenCalled();
+  });
+
+  it("releases the gate even when the read throws", async () => {
+    const release = vi.fn();
+    await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps({
+        readDailySeries: () => Promise.reject(new Error("429")),
+        openGate: () => Promise.resolve({ ok: true, release }),
+      }),
+    );
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("still returns the report when the optional query read fails", async () => {
+    // The degradation rule. The query dimension is an attachment to a report
+    // that is already complete without it, so its failure costs two checks and
+    // nothing else. Turning it into a 502 would deny someone their decline
+    // analysis over an extra read they never asked for.
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps({ readQueryEvidence: () => Promise.reject(new Error("429")) }),
+    );
+    const body = (await response.json()) as {
+      data: {
+        result: {
+          checks: readonly {
+            id: string;
+            status: string;
+            unavailableReason: string | null;
+          }[];
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    const split = body.data.result.checks.find(
+      (check) => check.id === "brand_non_brand_split",
+    );
+    expect(split).toEqual({
+      id: "brand_non_brand_split",
+      status: "not_available",
+      unavailableReason: "query_read_not_performed",
+    });
+  });
+
+  it("does not ask for query evidence when there is no event to anchor it on", async () => {
+    // Flat series: no peak, so no before window. Spending two upstream calls
+    // to compare a window that does not exist is quota taken from someone who
+    // does have a decline.
+    const readQueryEvidence = vi.fn(() => Promise.resolve(null));
+    const flat = Array.from({ length: 120 }, (_unused, index) => ({
+      date: new Date(Date.UTC(2026, 0, 1) + index * 86_400_000)
+        .toISOString()
+        .slice(0, 10),
+      clicks: 30,
+      impressions: 1_200,
+    }));
+
+    await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps({ readDailySeries: () => Promise.resolve(flat), readQueryEvidence }),
+    );
+
+    // The reader is still consulted — it owns the window arithmetic — but it
+    // resolves null without calling upstream. What matters here is that the
+    // handler does not treat a null as a failure.
+    expect(readQueryEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a manual-action answer it does not recognise", async () => {
+    // Coercing an unknown value to `not_checked` would be tolerable; coercing
+    // it to "no manual action" would hand out the one reassurance this tool
+    // has no standing to give. Rejecting keeps that decision out of reach.
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, manualAction: "no" }),
+      deps(),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("treats an unanswered card as unanswered", async () => {
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY }),
+      deps(),
+    );
+    const body = (await response.json()) as {
+      data: { result: { siteSignals: { manualAction: { path: string } } } };
+    };
+
+    expect(body.data.result.siteSignals.manualAction.path).toBe("unconfirmed");
+  });
+
+  it("does not accept a brand list the visitor never confirmed", async () => {
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, brandTerms: ["acme"] }),
+      deps(),
+    );
+    const body = (await response.json()) as {
+      data: { result: { siteSignals: { brandSplit: { reason?: string } } } };
+    };
+
+    // No confirmation flag, so the terms are candidates. Without the query
+    // read the reason is the earlier one, which is the point: the gates report
+    // the failure closest to the root.
+    expect(body.data.result.siteSignals.brandSplit.reason).toBe(
+      "read_not_performed",
+    );
   });
 
   it("serialises concurrent reads from one client", async () => {

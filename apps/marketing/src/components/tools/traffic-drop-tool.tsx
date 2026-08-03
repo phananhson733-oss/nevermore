@@ -9,7 +9,11 @@ import { useState } from "react";
 import { ArrowRight, LineChart, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
+import type {
+  ManualActionStatus,
+  TrafficDailyPoint,
+  TrafficDropResult,
+} from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
@@ -54,8 +58,19 @@ export function TrafficDropTool({
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [payload, setPayload] = useState<TrafficDropPayload | null>(null);
+  /**
+   * What the visitor told us about their Manual Actions page.
+   *
+   * Held here rather than in the results component so a re-run for any other
+   * reason keeps the answer. It rides along with the request because the
+   * engine owns which output path the answer selects; deriving that in the
+   * browser would put the same rule in two places, and the browser's copy is
+   * the one that would drift.
+   */
+  const [manualAction, setManualAction] =
+    useState<ManualActionStatus>("not_checked");
 
-  async function run(target: string) {
+  async function run(target: string, answer: ManualActionStatus) {
     setLoading(true);
     setErrorCode(null);
     setPayload(null);
@@ -63,7 +78,7 @@ export function TrafficDropTool({
       const response = await fetch("/api/tools/traffic-drop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ property: target }),
+        body: JSON.stringify({ property: target, manualAction: answer }),
       });
       const body = (await response.json()) as {
         data?: TrafficDropPayload;
@@ -242,7 +257,7 @@ export function TrafficDropTool({
         </select>
         <button
           type="button"
-          onClick={() => void run(property)}
+          onClick={() => void run(property, manualAction)}
           disabled={loading || property === ""}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
         >
@@ -292,6 +307,16 @@ export function TrafficDropTool({
             result={payload.result}
             series={payload.series}
             locale={locale}
+            busy={loading}
+            onManualActionAnswer={(status) => {
+              // Answering costs a second run. The alternative was recomputing
+              // the affected output in the browser, which would put the rule
+              // that decides what the report may say about penalties in two
+              // places — and the browser's copy is the one that would drift.
+              // The gate allows ten runs an hour; a visitor answers once.
+              setManualAction(status);
+              void run(property, status);
+            }}
           />
         </>
       ) : null}
