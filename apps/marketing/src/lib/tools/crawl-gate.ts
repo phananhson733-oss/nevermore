@@ -138,6 +138,13 @@ export async function openCrawlGate(
     // Fail closed. A crawl endpoint with no working quota is an unbounded
     // anonymous crawler pointed at third parties; being briefly unavailable is
     // the better failure.
+    //
+    // Log the reason. The first time this fired in production it took a
+    // deployment to find out why, because the reason was captured and then
+    // dropped: a gate that refuses every request while saying nothing about
+    // what it could not reach is not operable. The message is server-side
+    // only; the caller still gets a bare error code.
+    console.error("[crawl-gate] quota store unavailable:", perIp.reason);
     return refuse(
       json(createPublicToolError("quota_unavailable"), 503, {
         "Retry-After": "60",
@@ -175,6 +182,7 @@ export async function openCrawlGate(
     dependencies.quota,
   );
   if (perTarget.kind === "unavailable") {
+    console.error("[crawl-gate] quota store unavailable:", perTarget.reason);
     return refuse(
       json(createPublicToolError("quota_unavailable"), 503, {
         "Retry-After": "60",
