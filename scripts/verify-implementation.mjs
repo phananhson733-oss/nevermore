@@ -2766,9 +2766,108 @@ function checkContentShadowQaPurity() {
   return `Content Shadow QA purity: ${qaFiles.length} files in the gate's import closure free of non-relative imports (\`from\`, \`import()\` and side-effect \`import\`), require(), process, globalThis, clock, randomness, locale-sensitive APIs and network; ${sourceFiles.length} source files across ${SIBLING_REPO_SOURCE_ROOTS.join(", ")} free of sibling-repo references, free of the identifier resolveAttribution in any syntax outside ${RESOLUTION_OWNER} and its tests, and free of any \`export *\` chain reaching it (${GUARD_SOURCE}, which must state both forbidden tokens to report them, is the single exemption)`;
 }
 
+/**
+ * Nevermore must never integrate the Ahrefs API.
+ *
+ * The owner's rule is permanent and independent of account entitlement: no
+ * Ahrefs API call, network integration, credential, or MCP/tool binding may
+ * exist in this repository. It is not a scope deferral — an earlier note filed
+ * it under "out of v0.4 scope", which is a weaker claim that a later slice
+ * could quietly reverse.
+ *
+ * The ban is deliberately NOT on the bare word. `ahrefs` is legitimate as inert
+ * provenance: a `BacklinkProvider` enum member, a SQL CHECK constraint, an
+ * OpenAPI enum, a marketing article, or a comment such as this one. Banning the
+ * token would fail the build on data that describes where evidence came from,
+ * which is the opposite of what the rule protects.
+ *
+ * What is banned is the executable surface: the API host, credential and
+ * base-URL identifiers, client/SDK module specifiers, and the MCP tool prefix.
+ * Each pattern is assembled from fragments so that this guard stays the only
+ * file in the scanned roots that contains a complete forbidden token, and its
+ * own tests can therefore run against the real matcher.
+ */
+const AHREFS = "ahrefs";
+
+const AHREFS_FORBIDDEN = [
+  [
+    new RegExp(`\\bapi\\.${AHREFS}\\.com`, "iu"),
+    `reach the ${AHREFS} API host`,
+  ],
+  [
+    // Credential and endpoint configuration, screaming-snake form.
+    new RegExp(`\\b${AHREFS.toUpperCase()}_[A-Z0-9_]+`, "u"),
+    `declare an ${AHREFS} credential or endpoint environment variable`,
+  ],
+  [
+    // The same surface in camelCase: ahrefsApiKey, ahrefsToken, ahrefsBaseUrl…
+    new RegExp(
+      `\\b${AHREFS}(?:Api|Token|Secret|Key|Login|Password|BaseUrl|Base|Endpoint|Host|Client|Sdk|Http|Request|Fetch)[A-Za-z0-9]*`,
+      "u",
+    ),
+    `name an ${AHREFS} credential, endpoint or client binding`,
+  ],
+  [
+    // Any MCP/tool binding, whatever the surrounding syntax.
+    new RegExp(`mcp__[a-z0-9_]*_${AHREFS}__`, "iu"),
+    `bind an ${AHREFS} MCP tool`,
+  ],
+  [
+    // Module specifiers: `from "ahrefs-api"`, `require("@ahrefs/sdk")`…
+    new RegExp(
+      `(?:from|require\\(|import\\()\\s*["'\`][^"'\`]*${AHREFS}[^"'\`]*["'\`]`,
+      "iu",
+    ),
+    `import an ${AHREFS} client module`,
+  ],
+];
+
+/** Package manifests may not depend on an Ahrefs client either. */
+const AHREFS_DEPENDENCY = new RegExp(`"[^"]*${AHREFS}[^"]*"\\s*:\\s*"`, "iu");
+
+function checkAhrefsApiProhibition() {
+  const executableRoots = ["packages", "apps", "e2e", "scripts"];
+  const sources = executableRoots.flatMap((root) =>
+    walkSourceFiles(root).filter(
+      (file) =>
+        /\.(?:ts|tsx|mjs|cjs|js|jsx|json|ya?ml|sh)$/u.test(file) &&
+        !file.includes("/node_modules/"),
+    ),
+  );
+  // Deployment and CI configuration can hold a network call just as easily as
+  // application code, and neither lives under the executable roots above.
+  const configuration = [
+    ...walkSourceFiles(".github").filter((file) => /\.ya?ml$/u.test(file)),
+    ...["package.json", "pnpm-workspace.yaml", "vercel.json"].filter((file) =>
+      existsSync(fromRoot(file)),
+    ),
+  ];
+
+  const violations = [];
+  for (const file of [...new Set([...sources, ...configuration])]) {
+    if (file === GUARD_SOURCE) continue;
+    const source = read(file);
+    for (const [pattern, description] of AHREFS_FORBIDDEN) {
+      if (pattern.test(source)) {
+        violations.push(`${file} must not ${description}`);
+      }
+    }
+    if (file.endsWith("package.json") && AHREFS_DEPENDENCY.test(source)) {
+      violations.push(`${file} must not depend on an ${AHREFS} package`);
+    }
+  }
+  invariant(
+    violations.length === 0,
+    `Ahrefs API integration is permanently prohibited:\n- ${violations.join("\n- ")}`,
+  );
+
+  return `Ahrefs prohibition: ${sources.length} executable sources across ${executableRoots.join(", ")} plus ${configuration.length} configuration files carry no Ahrefs API host, credential, endpoint, client module or MCP binding (${GUARD_SOURCE} is the single exemption, since it must state the tokens it forbids). Inert provenance — the provider enum, SQL constraints, OpenAPI enums and prose — stays legal by design.`;
+}
+
 const checks = [
   ["OpenAPI contract", checkOpenApi],
   ["content shadow QA purity", checkContentShadowQaPurity],
+  ["Ahrefs API prohibition", checkAhrefsApiProhibition],
   ["async route implementations", checkAsyncRouteImplementations],
   ["run polling implementation", checkRunPollingImplementation],
   ["web proxy implementation", checkWebProxyImplementation],
