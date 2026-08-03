@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import en from "../../i18n/messages/en.json" with { type: "json" };
 import zh from "../../i18n/messages/zh.json" with { type: "json" };
+import { getInternalLinkAuditContent } from "../../components/tools/internal-link-audit-content.ts";
 import { PUBLIC_TOOL_SYNC_CRAWL_BUDGET } from "@sf/sources/crawl-public-preview";
 
 /**
@@ -108,5 +109,59 @@ describe("free-tool summary copy", () => {
     ).pricing.freeTools;
     const joined = Object.values(free).join(" ").toLowerCase();
     expect(joined).not.toContain(locale === "en" ? "single-page" : "单页 seo");
+  });
+});
+
+describe("internal-link-audit page copy", () => {
+  const serialized = ["en", "zh"]
+    .map((locale) =>
+      JSON.stringify(
+        getInternalLinkAuditContent(locale as "en" | "zh"),
+      ),
+    )
+    .join(" ");
+
+  /**
+   * The sibling tool's page carried the same denial the seo-audit page did, in
+   * its own copy module rather than the message bundle, so the first pass at
+   * this missed it. It is now definitively false: there is a per-network and a
+   * per-target hourly ceiling, and a ~950 page run limit.
+   */
+  it("does not deny a scan quota that exists", () => {
+    for (const denial of [
+      "No normal-use scan quota",
+      "no normal-use scan quota",
+      "不设置日常检测次数配额",
+    ]) {
+      expect(serialized, `still claims: ${denial}`).not.toContain(denial);
+    }
+  });
+
+  it("states the ceiling in both locales", () => {
+    // Same figure the engine enforces, quoted to the reader.
+    expect(serialized).toContain("950");
+    expect((serialized.match(/950/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("the quota-outage message", () => {
+  /**
+   * The owner read "The usage-limit service is unavailable" as "you have used
+   * up your limit" and replied that they had not run the tool at all that day.
+   * If the person who wrote the limiter reads it that way, a visitor certainly
+   * will. An outage on our side must not be phrased so it can be mistaken for
+   * the reader's fault.
+   */
+  it.each(["en", "zh"] as const)("tells %s readers it is our outage", (locale) => {
+    const errors = (
+      BUNDLES[locale] as unknown as {
+        tools: { seoAudit: { errors: Record<string, string> } };
+      }
+    ).tools.seoAudit.errors;
+    const message = errors.quota_unavailable ?? "";
+    expect(message).toMatch(locale === "en" ? /our side/i : /我们这边/);
+    expect(message).toMatch(
+      locale === "en" ? /not about your usage/i : /与你的使用量无关/,
+    );
   });
 });

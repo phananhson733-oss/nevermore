@@ -117,7 +117,7 @@ const EN: InternalLinkAuditContent = {
     "A live public internal link audit that crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
   schemaFeatures: [
     "Real same-origin static-HTML crawl",
-    "No normal-use scan quota or fixed customer-facing page allowance",
+    "No account and no sign-up; a generous hourly ceiling keeps the crawler from overloading the sites it audits",
     "Observed orphan candidates, deep pages, and unresolved targets",
     "Robots.txt and sitemap-aware collection",
     "No Search Console connection or persistent data storage",
@@ -138,7 +138,7 @@ const EN: InternalLinkAuditContent = {
   inputHelp:
     "The tool reads public HTML only — no Search Console, ownership verification, account, or site changes.",
   mockScope:
-    "There is no normal-use scan quota or fixed customer-facing page allowance. Each online run processes as much as it safely can within time, request, response-size, redirect, concurrency, and host-pacing boundaries.",
+    "No account and no sign-up. One run reaches roughly 950 pages: the crawler waits at least 250 ms between requests so it does not overload the site being audited, and stops after four minutes. There is an hourly ceiling per network and per audited site, set well above normal use, because each run fetches hundreds of pages from someone else's server.",
   invalidUrl: "Enter a public domain or HTTP(S) URL.",
   stages: [
     "Reading homepage and sitemap entry points",
@@ -328,7 +328,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "How much of a site will the free audit crawl?",
       answer:
-        "There is no normal-use scan quota or fixed customer-facing page allowance. Each run collects as much static same-origin HTML as it can within its online time, request, response-size, redirect, concurrency, and host-pacing boundaries, and reports partial coverage when one of those boundaries stops it.",
+        "No account and no sign-up. One run reaches roughly 950 pages — four minutes at the 250 ms pace the crawler holds so it does not overload the site being audited — and a larger site comes back marked partial coverage, with findings that depend on having seen the whole site reported as unchecked rather than as conclusions. An hourly ceiling per network and per audited site sits well above normal use.",
     },
     {
       question: "How often should I audit internal links?",
@@ -385,7 +385,7 @@ const ZH: InternalLinkAuditContent = {
     "GenGrowth 内链审计会在线抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
   schemaFeatures: [
     "真实的同源静态 HTML 抓取",
-    "不设置日常检测次数配额或固定的前台页数额度",
+    "无需账号、无需注册；设有宽松的每小时上限，以免爬虫给被审计的站点造成压力",
     "候选孤岛、深层页面与未验证目标",
     "感知 robots.txt 与 Sitemap 的采集",
     "不连接 Search Console、不持久化保存数据",
@@ -410,7 +410,7 @@ const ZH: InternalLinkAuditContent = {
   inputHelp:
     "工具仅读取公开 HTML，不连接 Search Console、不要求所有权验证，也不会修改网站。",
   mockScope:
-    "不设置日常检测次数配额或固定的前台页数额度。每次在线运行会在时间、请求量、响应体积、重定向、并发和主机访问节奏等技术边界内尽可能采集。",
+    "无需账号、无需注册。单次运行约覆盖 950 个页面：爬虫在两次请求之间至少等待 250 毫秒，以免给被审计的站点造成压力，并在四分钟处停止。按网络地址和按被审计站点各设有每小时上限，阈值远高于正常使用——因为每次运行都会从别人的服务器上取走数百个页面。",
   invalidUrl: "请输入公开域名或 HTTP(S) URL。",
   stages: ["读取首页与 Sitemap 入口", "建立页面之间的 HTML 链接关系", "排序结构缺口"],
   demoResultLabel: "实时抓取结果",
@@ -595,7 +595,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "免费审计会覆盖多少页面？",
       answer:
-        "不设置日常检测次数配额或固定的前台页数额度。每次在线运行会在时间、请求量、响应体积、重定向、并发和主机访问节奏等技术边界内尽可能采集同源静态 HTML；如提前停止，结果会明确标注覆盖不完整。",
+        "无需账号、无需注册。单次运行约覆盖 950 个页面——四分钟，按 250 毫秒的节奏，以免给被审计的站点造成压力；规模更大的站点会返回「部分覆盖」标记，那些依赖「看过整站」才能成立的结论会被标为未验证，而不是当成结论输出。按网络地址和按被审计站点各设有每小时上限，阈值远高于正常使用。",
     },
     {
       question: "多久应该做一次内链审计？",
