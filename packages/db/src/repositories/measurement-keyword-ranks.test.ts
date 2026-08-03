@@ -215,6 +215,37 @@ describe("MeasurementTargetKeywordRanksRepository", () => {
     });
   });
 
+  it("accepts exact v2 search-landscape ranked-keyword lineage", async () => {
+    const db = fixtureExecutor();
+    db.enqueue([
+      row({
+        snapshot_dataset_key: "dataforseo.search_landscape.v2",
+        snapshot_schema_version: "dataforseo.search_landscape.v2",
+        snapshot_method_version: "dataforseo.search_landscape.v2",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v2",
+      }),
+    ]);
+
+    await expect(
+      new MeasurementTargetKeywordRanksRepository(
+        db.executor,
+      ).readForMeasuredPage(scope, input),
+    ).resolves.toMatchObject({
+      keywords: [
+        {
+          observations: [
+            {
+              snapshotId: IDS.snapshot,
+              observationId: IDS.observation,
+              value: 12,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it.each([
     {
       drift: "legacy dataset with composite operation",

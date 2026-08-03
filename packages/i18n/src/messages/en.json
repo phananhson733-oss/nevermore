@@ -2,6 +2,7 @@
   "nav": {
     "overview": "Overview",
     "context": "Context",
+    "sourceSetup": "Connect data",
     "sources": "Sources",
     "settings": "Settings",
     "diagnosis": "Diagnosis",
@@ -210,16 +211,100 @@
         "help": "Add only confirmed details the website may not reveal. Everything remains editable."
       }
     },
+    "dataSources": {
+      "eyebrow": "DATA EVIDENCE",
+      "title": "Connect analytics for stronger downstream decisions",
+      "detail": "After the product is created, your selections open a separate authorization step. Connect either source, both, or skip at any time.",
+      "optional": "Optional · Never blocks creation",
+      "select": "Select",
+      "selected": "Selected",
+      "privacy": "Read-only access only. GenGrowth cannot change your Google data. These sources are optional and can be disconnected later.",
+      "providers": {
+        "gsc": {
+          "title": "Google Search Console",
+          "detail": "Adds real queries, impressions, clicks, and landing-page performance."
+        },
+        "ga4": {
+          "title": "Google Analytics 4",
+          "detail": "Adds organic sessions, landing pages, and key events already defined in GA4."
+        }
+      }
+    },
     "nextStep": {
       "title": "Next: generate the initial Product Profile",
-      "detail": "GenGrowth collects the site and drafts an editable ICP and competitor set. After you confirm it, keyword and competitor data are collected automatically; GSC and GA4 can be connected separately."
+      "detail": "You can continue without sharing Google data. GenGrowth collects the site and drafts an editable ICP and competitor set.",
+      "sourcesTitle": "Next: connect the selected data sources",
+      "sourcesDetail": "After creating the product, connect {count} selected sources. You can change the choice or skip on the authorization step before profile generation begins."
     },
     "createButton": "Create and generate initial profile",
+    "createAndConnectButton": "Create product and connect data",
     "creating": "Creating product…",
     "createError": "We couldn't create the product. Check the inputs and try again.",
     "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment.",
     "requiredField": "Complete or select this field.",
     "growthObjectivesRequired": "Select at least one primary growth goal."
+  },
+  "sourceSetup": {
+    "eyebrow": "STEP 2 · OPTIONAL DATA EVIDENCE",
+    "title": "Connect real data before profile generation begins",
+    "subtitle": "GSC and GA4 are never required. Connect them for downstream search, traffic, and landing-page analysis, or continue without sharing private analytics.",
+    "progress": {
+      "label": "Add product progress",
+      "product": "Product details",
+      "sources": "Data sources",
+      "profile": "Generate profile",
+      "complete": "Saved",
+      "optional": "Current · Optional",
+      "next": "Next"
+    },
+    "privacy": {
+      "title": "You decide what data to share",
+      "detail": "Google shows the exact authorization scope. GenGrowth reads analytics data only and cannot change your account, site, or event configuration. You can disconnect later.",
+      "readOnly": "Read-only access"
+    },
+    "states": {
+      "connected": "Connected",
+      "optional": "Optional"
+    },
+    "providers": {
+      "gsc": {
+        "eyebrow": "First-party search evidence",
+        "title": "Search Console",
+        "detail": "See the real queries people use to discover the product and which pages already earn search visibility.",
+        "evidenceOne": "Queries, impressions, clicks, and average position",
+        "evidenceTwo": "Real landing pages mapped to search demand"
+      },
+      "ga4": {
+        "eyebrow": "First-party behavior evidence",
+        "title": "Google Analytics 4",
+        "detail": "Understand what happens after an organic visit. There is no separate sign-up-event picker in this step.",
+        "evidenceOne": "Organic sessions and landing-page performance",
+        "evidenceTwo": "All key events already defined in the GA4 property"
+      }
+    },
+    "property": {
+      "label": "Choose the property to connect",
+      "help": "Only a property available through your Google authorization and confirmed here will be connected."
+    },
+    "actions": {
+      "connect": "Connect data source",
+      "authorizing": "Opening Google…",
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "confirmProperty": "Confirm connection",
+      "cancel": "Cancel",
+      "skip": "Skip for now and generate profile",
+      "generate": "Continue to profile generation"
+    },
+    "footer": {
+      "skipTitle": "The product can be created without private analytics",
+      "skipDetail": "GenGrowth uses the public website, Crawler, and available third-party evidence. You can connect analytics later from Data Sources.",
+      "connectedTitle": "{count} data sources connected",
+      "connectedDetail": "The connection is saved. After profile confirmation, collection starts automatically and feeds downstream analysis."
+    },
+    "connectedFeedback": "{provider} connected successfully.",
+    "oauthError": "Google authorization did not finish. Try again, choose another source, or continue without it.",
+    "noProperties": "This Google account returned no connectable properties. Try another account or skip this source."
   },
   "productProfile": {
     "heroEyebrow": "PRODUCT PROFILE · ICP",

@@ -14,6 +14,7 @@ import { ProblemError } from "@sf/observability";
 import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -269,6 +270,53 @@ function searchLandscapeCollectionRun(
   });
 }
 
+function dataForSeoSearchLandscapeV2Snapshot(
+  overrides: Record<string, unknown> = {},
+) {
+  const collectionScope = createDataForSeoSearchLandscapeV2Scope({
+    target: "example.com",
+    marketCode: "US",
+    languageTag: "en-US",
+    locationCode: 2840,
+    rankedKeywordsLimit: 200,
+    competitorsDomainLimit: 100,
+    serpCompetitorsLimit: 100,
+    seeds: [
+      {
+        keyword: "customer onboarding software",
+        sourceKind: "gsc_top_query",
+        sourceRef: `observation:${ids.observation}#/valueJson/query`,
+      },
+    ],
+  });
+  return dataForSeoSnapshot({
+    dataset_key: "dataforseo.search_landscape.v2",
+    schema_version: "dataforseo.search_landscape.v2",
+    method_version: "dataforseo.search_landscape.v2",
+    summary: {
+      collectionScope,
+      timing: {
+        collectedAt: capturedAt,
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+      privateRawTaskId: "must-not-leak",
+    },
+    ...overrides,
+  });
+}
+
+function searchLandscapeV2CollectionRun(
+  overrides: Record<string, unknown> = {},
+) {
+  return collectionRun({
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v2",
+    ...overrides,
+  });
+}
+
 function sitePage() {
   return {
     id: ids.sitePage,
@@ -495,6 +543,10 @@ function arrangeList(input: {
     rows: [keyword],
     nextCursor: input.nextCursor ?? null,
   });
+  vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+    rows: [keyword],
+    nextCursor: input.nextCursor ?? null,
+  });
   vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue(
     (input.sitePages ?? [sitePage()]) as never,
   );
@@ -518,6 +570,52 @@ afterEach(() => {
 });
 
 describe("Growth Map Keyword Library read service", () => {
+  it("lists current canonical candidates even when the published generation contains no keywords", async () => {
+    mockProject();
+    const candidate = entity({
+        status: "candidate",
+        mapping_review_state: "unreviewed",
+        cluster_key: null,
+        mapping_decision: "new_asset",
+        mapped_site_page_id: null,
+    });
+    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+      rows: [candidate],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data).toEqual([
+      expect.objectContaining({
+        keywordId: ids.keyword,
+        status: "candidate",
+        displayKeyword: "Customer Onboarding Software",
+      }),
+    ]);
+    expect(KeywordsRepository.prototype.listByProject).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { limit: 50, cursor: null },
+    );
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
+  });
+
   it("returns an empty unavailable page for a valid published generation with no governed keywords", async () => {
     mockProject();
     const governance = {
@@ -667,6 +765,41 @@ describe("Growth Map Keyword Library read service", () => {
           valuePointer: "/valueJson/currentRank",
           value: 12,
         }),
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain("must-not-leak");
+  });
+
+  it("projects ranked-keyword evidence from the v2 1-100 scope with frozen fallback seeds", async () => {
+    const exec = arrangeList({
+      snapshots: [dataForSeoSearchLandscapeV2Snapshot()],
+      collectionRuns: [searchLandscapeV2CollectionRun()],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        now: new Date("2026-07-22T09:00:00.000Z"),
+      },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      sourceOccurrences: [
+        expect.objectContaining({
+          sourceKind: "dataforseo_ranked",
+          snapshotId: ids.snapshot,
+          sourceObservationId: ids.observation,
+          scopeLimitation: expect.stringMatching(
+            /search_landscape v2.*200.*100.*100.*1 frozen seed/is,
+          ),
+        }),
+      ],
+      metrics: {
+        currentRank: expect.objectContaining({ value: 12 }),
       },
     });
     expect(JSON.stringify(response)).not.toContain("must-not-leak");

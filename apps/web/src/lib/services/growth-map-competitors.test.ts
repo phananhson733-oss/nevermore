@@ -570,6 +570,43 @@ function serpCollectionRun(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function fallbackSerpObservation(overrides: Record<string, unknown> = {}) {
+  return serpObservation({
+    metric_key: "dataforseo.serp_competitor.v1",
+    value_json: {
+      targetDomain: "relayops.example",
+      competitorDomain: "example-competitor.com",
+      averagePosition: 4.5,
+      medianPosition: 4,
+      rating: 92,
+      organicEstimatedTrafficVolume: 850,
+      keywordsCount: 18,
+      visibility: 0.74,
+      relevantSerpItems: 6,
+      seedCount: 3,
+      marketCode: "US",
+      languageCode: "en",
+    },
+    ...overrides,
+  });
+}
+
+function fallbackSerpSnapshot(overrides: Record<string, unknown> = {}) {
+  return serpSnapshot({
+    dataset_key: "dataforseo.search_landscape.v2",
+    schema_version: "dataforseo.search_landscape.v2",
+    method_version: "dataforseo.search_landscape.v2",
+    ...overrides,
+  });
+}
+
+function fallbackSerpCollectionRun(overrides: Record<string, unknown> = {}) {
+  return serpCollectionRun({
+    method_version: "dataforseo.search_landscape.v2",
+    ...overrides,
+  });
+}
+
 interface SerpProjectionDrift {
   readonly origin?: Partial<CompetitorOriginRow>;
   readonly observation?: Record<string, unknown>;
@@ -644,6 +681,10 @@ function arrangeList(input: {
     rows: [selected],
     nextCursor: input.nextCursor ?? null,
   });
+  vi.spyOn(CompetitorsRepository.prototype, "listByProject").mockResolvedValue({
+    rows: [selected],
+    nextCursor: input.nextCursor ?? null,
+  });
   vi.spyOn(CompetitorsRepository.prototype, "listOriginsByIds").mockResolvedValue(
     [...(input.origins ?? [csvOrigin(), profileOrigin(), manualOrigin()])],
   );
@@ -667,22 +708,33 @@ beforeEach(() => {
 });
 
 describe("Growth Map Competitor Library read service", () => {
-  it("selects the latest published generation when the list is not pinned", async () => {
-    const exec = arrangeList();
+  it("lists the current canonical competitor when it is absent from the published generation", async () => {
+    const exec = arrangeList({ governanceCompetitors: [] });
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
 
-    await listProjectAuditCompetitors(
+    const response = await listProjectAuditCompetitors(
       scope,
       ids.project,
       { limit: 50, cursor: null, diagnosticRunId: null },
       exec as never,
     );
 
-    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledTimes(1);
-    expect(mocks.loadPublishedGrowthMapGeneration).toHaveBeenCalledWith(
-      exec,
+    expect(response.data).toEqual([
+      expect.objectContaining({
+        competitorId: ids.competitor,
+        domain: "example-competitor.com",
+        reviewStatus: "approved",
+      }),
+    ]);
+    expect(CompetitorsRepository.prototype.listByProject).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
-      null,
+      { limit: 50, cursor: null },
     );
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
   });
 
   it("selects one exact older published generation for the list without falling forward", async () => {
@@ -1019,6 +1071,58 @@ describe("Growth Map Competitor Library read service", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(response)).not.toMatch(/no canonical serp-overlap writer/i);
+  });
+
+  it("projects one exact v2 paid SERP-competitor origin without claiming domain overlap", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            {
+              occurrenceId: ids.serpOrigin,
+              originKind: "serp_overlap",
+              snapshotId: ids.serpSnapshot,
+              observationId: ids.serpObservation,
+            },
+          ],
+        }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [fallbackSerpObservation()],
+        [fallbackSerpSnapshot()],
+        [fallbackSerpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.olderRun,
+      },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      competitorId: ids.competitor,
+      originOccurrences: [
+        {
+          occurrenceId: ids.serpOrigin,
+          originKind: "serp_overlap",
+          snapshotId: ids.serpSnapshot,
+          observationId: ids.serpObservation,
+          evidenceRefs: [],
+          observedAt: capturedAt,
+        },
+      ],
+    });
+    expect(JSON.stringify(response)).not.toMatch(/17|intersections/iu);
   });
 
   it("projects the exact DataForSEO origin in the live review detail without widening it into a derived insight", async () => {

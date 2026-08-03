@@ -68,15 +68,43 @@ export type ProductProfileSynthesisPage = z.infer<
   typeof ProductProfileSynthesisPage
 >;
 
-export const ProductProfileSynthesisCompetitorObservation = z
+const ProductProfileSynthesisDomainOverlapObservationShape = {
+  observationId: Uuid,
+  domain: ProductProfileCompetitorDomain,
+  intersections: z.number().int().positive(),
+  organicEstimatedTrafficVolume: z.number().finite().nonnegative(),
+  observedAt: IsoDateTime,
+} as const;
+
+const ProductProfileSynthesisLegacyDomainOverlapObservation = z
+  .object(ProductProfileSynthesisDomainOverlapObservationShape)
+  .strict();
+
+const ProductProfileSynthesisDomainOverlapObservation = z
   .object({
+    sourceKind: z.literal("domain_overlap"),
+    ...ProductProfileSynthesisDomainOverlapObservationShape,
+  })
+  .strict();
+
+const ProductProfileSynthesisSerpCompetitorObservation = z
+  .object({
+    sourceKind: z.literal("serp_competitor"),
     observationId: Uuid,
     domain: ProductProfileCompetitorDomain,
-    intersections: z.number().int().positive(),
+    rating: z.number().finite().nonnegative(),
+    keywordsCount: z.number().int().nonnegative(),
+    relevantSerpItems: z.number().int().nonnegative(),
     organicEstimatedTrafficVolume: z.number().finite().nonnegative(),
     observedAt: IsoDateTime,
   })
   .strict();
+
+export const ProductProfileSynthesisCompetitorObservation = z.union([
+  ProductProfileSynthesisLegacyDomainOverlapObservation,
+  ProductProfileSynthesisDomainOverlapObservation,
+  ProductProfileSynthesisSerpCompetitorObservation,
+]);
 export type ProductProfileSynthesisCompetitorObservation = z.infer<
   typeof ProductProfileSynthesisCompetitorObservation
 >;
@@ -86,9 +114,18 @@ export const ProductProfileSynthesisCompetitorDiscovery = z
     snapshotId: Uuid,
     collectionRunId: Uuid,
     sourceConnectionId: Uuid,
-    datasetKey: z.literal("dataforseo.search_landscape.v1"),
-    schemaVersion: z.literal("dataforseo.search_landscape.v1"),
-    methodVersion: z.literal("dataforseo.search_landscape.v1"),
+    datasetKey: z.enum([
+      "dataforseo.search_landscape.v1",
+      "dataforseo.search_landscape.v2",
+    ]),
+    schemaVersion: z.enum([
+      "dataforseo.search_landscape.v1",
+      "dataforseo.search_landscape.v2",
+    ]),
+    methodVersion: z.enum([
+      "dataforseo.search_landscape.v1",
+      "dataforseo.search_landscape.v2",
+    ]),
     capturedAt: IsoDateTime,
     checksum: Sha256Hex,
     availability: z.enum(["available", "partial"]),
@@ -111,7 +148,13 @@ export const ProductProfileSynthesisCompetitorDiscovery = z
         "competitor observation domains must be unique",
       ),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) =>
+      value.datasetKey === value.schemaVersion &&
+      value.datasetKey === value.methodVersion,
+    "DataForSEO competitor discovery identity must use one exact version",
+  );
 export type ProductProfileSynthesisCompetitorDiscovery = z.infer<
   typeof ProductProfileSynthesisCompetitorDiscovery
 >;

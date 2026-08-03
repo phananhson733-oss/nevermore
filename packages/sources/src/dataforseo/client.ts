@@ -14,6 +14,9 @@ export const DATAFORSEO_RANKED_KEYWORDS_LIVE_URL =
 /** Official Google Labs endpoint for domain-level organic SERP competitors. */
 export const DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL =
   "https://api.dataforseo.com/v3/dataforseo_labs/google/competitors_domain/live";
+/** Official Google Labs endpoint for seed-keyword SERP competitor discovery. */
+export const DATAFORSEO_SERP_COMPETITORS_LIVE_URL =
+  "https://api.dataforseo.com/v3/dataforseo_labs/google/serp_competitors/live";
 
 export const DEFAULT_DATAFORSEO_LIMIT = 200;
 export const DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT = 100;
@@ -26,6 +29,10 @@ export interface DataForSeoRankedKeywordsRequest {
   readonly locationName?: string;
   readonly languageCode: string;
   readonly limit: number;
+  /** Defaults to the legacy v1 policy (4) when omitted. */
+  readonly minimumRankGroup?: number;
+  /** Defaults to the legacy v1 policy (20) when omitted. */
+  readonly maximumRankGroup?: number;
 }
 
 /** Provider fields retained for persistence and later canonical normalization. */
@@ -69,6 +76,8 @@ export interface DataForSeoCompetitorsDomainRequest {
   readonly locationName?: string;
   readonly languageCode: string;
   readonly limit: number;
+  /** Defaults to the legacy v1 policy (20) when omitted. */
+  readonly maximumRankGroup?: number;
 }
 
 /**
@@ -100,9 +109,47 @@ export interface DataForSeoCompetitorsDomainClient {
   ): Promise<DataForSeoCompetitorsDomainResponse>;
 }
 
+export interface DataForSeoSerpCompetitorsRequest {
+  readonly keywords: readonly string[];
+  readonly locationCode?: number;
+  readonly locationName?: string;
+  readonly languageCode: string;
+  readonly limit: number;
+}
+
+export interface DataForSeoSerpCompetitorRow {
+  readonly domain: string;
+  readonly averagePosition: number;
+  readonly medianPosition: number;
+  readonly rating: number;
+  readonly organicEstimatedTrafficVolume: number;
+  readonly keywordsCount: number;
+  readonly visibility: number;
+  readonly relevantSerpItems: number;
+}
+
+export interface DataForSeoSerpCompetitorsResponse {
+  readonly rows: readonly DataForSeoSerpCompetitorRow[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+}
+
+export interface DataForSeoSerpCompetitorsClient {
+  serpCompetitors(
+    request: DataForSeoSerpCompetitorsRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoSerpCompetitorsResponse>;
+}
+
 /** The two narrow operations required by the composite landscape adapter. */
 export type DataForSeoSearchLandscapeClient = DataForSeoRankedKeywordsClient &
   DataForSeoCompetitorsDomainClient;
+
+export type DataForSeoSearchLandscapeV2Client =
+  DataForSeoSearchLandscapeClient & DataForSeoSerpCompetitorsClient;
 
 /** Minimal injectable fetch seam; production still uses the fixed official URL. */
 export type DataForSeoFetch = (
@@ -266,7 +313,7 @@ function httpErrorCode(status: number): SourceErrorCode {
 
 function transportError(
   error: unknown,
-  operation: "ranked-keywords" | "competitors-domain",
+  operation: "ranked-keywords" | "competitors-domain" | "serp-competitors",
 ): SourceError {
   if (error instanceof SourceError) return error;
   if (isAbortLike(error)) {
@@ -398,10 +445,24 @@ function normalizeCompetitorsDomainRequest(
       `DataForSEO competitors-domain limit must be an integer from 1 to ${MAX_DATAFORSEO_LIMIT}.`,
     );
   }
+  if (
+    value.maximumRankGroup !== undefined &&
+    (!Number.isSafeInteger(value.maximumRankGroup) ||
+      value.maximumRankGroup < 1 ||
+      value.maximumRankGroup > 100)
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO competitors-domain maximumRankGroup must be an integer from 1 to 100.",
+    );
+  }
   const common = {
     target,
     languageCode: value.languageCode.trim().toLowerCase(),
     limit: value.limit,
+    ...(value.maximumRankGroup === undefined
+      ? {}
+      : { maximumRankGroup: value.maximumRankGroup }),
   };
   return locationCode !== undefined
     ? { ...common, locationCode }
@@ -798,7 +859,187 @@ function parseCompetitorsDomainResponse(
   };
 }
 
+function parseSerpCompetitorRow(
+  value: unknown,
+  index: number,
+): DataForSeoSerpCompetitorRow {
+  const item = asRecord(value, `DataForSEO SERP competitor item ${index}`);
+  return {
+    domain: canonicalProviderDomain(
+      item.domain,
+      `DataForSEO SERP competitor item ${index}`,
+    ),
+    averagePosition: asNonNegativeNumber(
+      item.avg_position,
+      `DataForSEO SERP competitor item ${index}.avg_position`,
+    ),
+    medianPosition: asNonNegativeNumber(
+      item.median_position,
+      `DataForSEO SERP competitor item ${index}.median_position`,
+    ),
+    rating: asNonNegativeNumber(
+      item.rating,
+      `DataForSEO SERP competitor item ${index}.rating`,
+    ),
+    organicEstimatedTrafficVolume: asNonNegativeNumber(
+      item.etv,
+      `DataForSEO SERP competitor item ${index}.etv`,
+    ),
+    keywordsCount: asNonNegativeInteger(
+      item.keywords_count,
+      `DataForSEO SERP competitor item ${index}.keywords_count`,
+    ),
+    visibility: asNonNegativeNumber(
+      item.visibility,
+      `DataForSEO SERP competitor item ${index}.visibility`,
+    ),
+    relevantSerpItems: asNonNegativeInteger(
+      item.relevant_serp_items,
+      `DataForSEO SERP competitor item ${index}.relevant_serp_items`,
+    ),
+  };
+}
+
+function emptySerpCompetitorsResponse(
+  providerStatusCode: number,
+  taskStatusCode: number,
+  costUsd: number,
+): DataForSeoSerpCompetitorsResponse {
+  return {
+    rows: [],
+    totalCount: 0,
+    itemsCount: 0,
+    costUsd,
+    providerStatusCode,
+    taskStatusCode,
+  };
+}
+
+function parseSerpCompetitorsResponse(
+  payload: unknown,
+): DataForSeoSerpCompetitorsResponse {
+  const envelope = asRecord(payload, "DataForSEO response");
+  const providerStatusCode = asStatusCode(
+    envelope.status_code,
+    "DataForSEO response",
+  );
+  if (
+    providerStatusCode !== SUCCESS_STATUS &&
+    providerStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(providerStatusCode, "request");
+  }
+  const envelopeCost = asNonNegativeNumber(
+    envelope.cost,
+    "DataForSEO response cost",
+  );
+  if (providerStatusCode === EMPTY_RESULT_STATUS) {
+    return emptySerpCompetitorsResponse(
+      providerStatusCode,
+      EMPTY_RESULT_STATUS,
+      envelopeCost,
+    );
+  }
+  if (!Array.isArray(envelope.tasks) || envelope.tasks.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO response did not contain exactly one task.",
+    );
+  }
+  const task = asRecord(envelope.tasks[0], "DataForSEO task");
+  const taskStatusCode = asStatusCode(task.status_code, "DataForSEO task");
+  if (
+    taskStatusCode !== SUCCESS_STATUS &&
+    taskStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(taskStatusCode, "task");
+  }
+  const taskCost = asNonNegativeNumber(task.cost, "DataForSEO task cost");
+  if (taskStatusCode === EMPTY_RESULT_STATUS) {
+    return emptySerpCompetitorsResponse(
+      providerStatusCode,
+      taskStatusCode,
+      taskCost,
+    );
+  }
+  if (task.result === null || task.result === undefined) {
+    if (task.result_count === 0) {
+      return emptySerpCompetitorsResponse(
+        providerStatusCode,
+        taskStatusCode,
+        taskCost,
+      );
+    }
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO task omitted its SERP-competitors result.",
+    );
+  }
+  if (!Array.isArray(task.result) || task.result.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO SERP-competitors task did not contain exactly one result.",
+    );
+  }
+  const result = asRecord(task.result[0], "DataForSEO SERP-competitors result");
+  const rawItems = result.items;
+  if (rawItems !== null && rawItems !== undefined && !Array.isArray(rawItems)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO SERP-competitors result items was not an array.",
+    );
+  }
+  const rows = (rawItems ?? []).map(parseSerpCompetitorRow);
+  const itemsCount =
+    result.items_count === null || result.items_count === undefined
+      ? rows.length
+      : asNonNegativeInteger(
+          result.items_count,
+          "DataForSEO SERP-competitors result items_count",
+        );
+  const totalCount =
+    result.total_count === null || result.total_count === undefined
+      ? rows.length === 0
+        ? 0
+        : asNonNegativeInteger(
+            result.total_count,
+            "DataForSEO SERP-competitors result total_count",
+          )
+      : asNonNegativeInteger(
+          result.total_count,
+          "DataForSEO SERP-competitors result total_count",
+        );
+  if (itemsCount !== rows.length || totalCount < rows.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO SERP-competitors result contained contradictory row counts.",
+    );
+  }
+  return {
+    rows,
+    totalCount,
+    itemsCount,
+    costUsd: taskCost,
+    providerStatusCode,
+    taskStatusCode,
+  };
+}
+
 function toProviderTask(request: DataForSeoRankedKeywordsRequest): JsonRecord {
+  const minimumRankGroup = request.minimumRankGroup ?? 4;
+  const maximumRankGroup = request.maximumRankGroup ?? 20;
+  if (
+    !Number.isSafeInteger(minimumRankGroup) ||
+    !Number.isSafeInteger(maximumRankGroup) ||
+    minimumRankGroup < 1 ||
+    maximumRankGroup > 100 ||
+    minimumRankGroup > maximumRankGroup
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO ranked-keywords rank-group policy must be an integer range from 1 to 100.",
+    );
+  }
   return {
     target: request.target,
     ...(request.locationCode !== undefined
@@ -813,9 +1054,9 @@ function toProviderTask(request: DataForSeoRankedKeywordsRequest): JsonRecord {
     filters: [
       ["keyword_data.keyword_info.search_volume", ">", 0],
       "and",
-      ["ranked_serp_element.serp_item.rank_group", ">=", 4],
+      ["ranked_serp_element.serp_item.rank_group", ">=", minimumRankGroup],
       "and",
-      ["ranked_serp_element.serp_item.rank_group", "<=", 20],
+      ["ranked_serp_element.serp_item.rank_group", "<=", maximumRankGroup],
     ],
     order_by: [
       "keyword_data.keyword_info.search_volume,desc",
@@ -848,10 +1089,56 @@ function toCompetitorsDomainProviderTask(
     ],
     limit: normalized.limit,
     offset: 0,
-    max_rank_group: 20,
+    max_rank_group: normalized.maximumRankGroup ?? 20,
     exclude_top_domains: true,
     exclude_domains: [normalized.target],
     ignore_synonyms: false,
+  };
+}
+
+function toSerpCompetitorsProviderTask(
+  request: DataForSeoSerpCompetitorsRequest,
+): JsonRecord {
+  if (
+    !Array.isArray(request.keywords) ||
+    request.keywords.length < 1 ||
+    request.keywords.length > 200 ||
+    request.keywords.some(
+      (keyword) => typeof keyword !== "string" || keyword.trim() === "",
+    )
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO SERP-competitors keywords must contain 1 to 200 non-empty strings.",
+    );
+  }
+  if (
+    request.locationCode === undefined &&
+    request.locationName === undefined
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO SERP-competitors request must contain one location selector.",
+    );
+  }
+  const location =
+    request.locationCode !== undefined
+      ? { locationCode: request.locationCode }
+      : { locationName: request.locationName! };
+  const normalized = normalizeCompetitorsDomainRequest({
+    target: "validation.example",
+    ...location,
+    languageCode: request.languageCode,
+    limit: request.limit,
+  });
+  return {
+    keywords: request.keywords.map((keyword) => keyword.trim()),
+    ...(normalized.locationCode !== undefined
+      ? { location_code: normalized.locationCode }
+      : { location_name: normalized.locationName }),
+    language_code: normalized.languageCode,
+    item_types: ["organic"],
+    limit: normalized.limit,
   };
 }
 
@@ -860,7 +1147,10 @@ function toCompetitorsDomainProviderTask(
  * here; neither adapters nor returned raw data can observe the credentials.
  */
 export class HttpDataForSeoClient
-  implements DataForSeoClient, DataForSeoCompetitorsDomainClient
+  implements
+    DataForSeoClient,
+    DataForSeoCompetitorsDomainClient,
+    DataForSeoSerpCompetitorsClient
 {
   private readonly authorization: string;
   private readonly fetchImpl: DataForSeoFetch;
@@ -968,6 +1258,49 @@ export class HttpDataForSeoClient
       return parseCompetitorsDomainResponse(payload);
     } catch (error) {
       throw transportError(error, "competitors-domain");
+    } finally {
+      abortScope.cleanup();
+    }
+  }
+
+  async serpCompetitors(
+    request: DataForSeoSerpCompetitorsRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoSerpCompetitorsResponse> {
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [
+      this.signal,
+      signal,
+    ]);
+    try {
+      const response = await this.fetchImpl(
+        DATAFORSEO_SERP_COMPETITORS_LIVE_URL,
+        {
+          method: "POST",
+          headers: {
+            Authorization: this.authorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify([toSerpCompetitorsProviderTask(request)]),
+          redirect: "error",
+          signal: abortScope.signal,
+        },
+      );
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          httpErrorCode(response.status),
+          `DataForSEO SERP-competitors request failed with HTTP ${response.status}.`,
+        );
+      }
+      const payload = await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        "DataForSEO SERP-competitors response",
+        abortScope.signal,
+      );
+      return parseSerpCompetitorsResponse(payload);
+    } catch (error) {
+      throw transportError(error, "serp-competitors");
     } finally {
       abortScope.cleanup();
     }

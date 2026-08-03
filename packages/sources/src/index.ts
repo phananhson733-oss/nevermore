@@ -127,6 +127,7 @@ export {
   HttpDataForSeoClient,
   DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+  DATAFORSEO_SERP_COMPETITORS_LIVE_URL,
   DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT,
   DEFAULT_DATAFORSEO_LIMIT,
   MAX_DATAFORSEO_LIMIT,
@@ -143,6 +144,11 @@ export type {
   DataForSeoRankedKeywordsRequest,
   DataForSeoRankedKeywordsResponse,
   DataForSeoSearchLandscapeClient,
+  DataForSeoSearchLandscapeV2Client,
+  DataForSeoSerpCompetitorRow,
+  DataForSeoSerpCompetitorsClient,
+  DataForSeoSerpCompetitorsRequest,
+  DataForSeoSerpCompetitorsResponse,
   HttpDataForSeoClientOptions,
 } from "./dataforseo/client.ts";
 export {
@@ -159,6 +165,32 @@ export {
   DATAFORSEO_SEARCH_LANDSCAPE_SCOPE_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
 } from "./dataforseo/search-landscape.ts";
+export {
+  createDataForSeoSearchLandscapeV2Adapter,
+  createDataForSeoSearchLandscapeV2Scope,
+  dataForSeoSearchLandscapeV2SnapshotSummary,
+  dataforseoSearchLandscapeV2Adapter,
+  parseDataForSeoSearchLandscapeV2Scope,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_QUERY_KIND,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_ROW_CAP_STOP_REASON,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_SCOPE_VERSION,
+  MAX_DATAFORSEO_SERP_COMPETITOR_SEEDS,
+  METRIC_DATAFORSEO_SERP_COMPETITOR,
+} from "./dataforseo/search-landscape-v2.ts";
+export type {
+  DataForSeoSearchLandscapeSeed,
+  DataForSeoSearchLandscapeSeedKind,
+  DataForSeoSearchLandscapeSerpCompetitorsRaw,
+  DataForSeoSearchLandscapeV2Adapter,
+  DataForSeoSearchLandscapeV2AdapterOptions,
+  DataForSeoSearchLandscapeV2Capability,
+  DataForSeoSearchLandscapeV2Raw,
+  DataForSeoSearchLandscapeV2Scope,
+  DataForSeoSearchLandscapeV2ScopeInput,
+} from "./dataforseo/search-landscape-v2.ts";
 export type {
   DataForSeoCompetitorDomainProjection,
   DataForSeoSearchLandscapeAdapter,

@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import type { FormEvent, SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { BarChart3, Search, ShieldCheck } from "lucide-react";
 import {
   Button,
   Card,
@@ -27,6 +28,12 @@ import {
   type GrowthObjective,
   type PrimaryMarket,
 } from "./_form-values";
+import {
+  newProductContinuationPath,
+  OPTIONAL_GOOGLE_SOURCES,
+  toggleOptionalGoogleSource,
+  type OptionalGoogleSource,
+} from "./_source-onboarding";
 import styles from "./new-project.module.css";
 
 /**
@@ -61,6 +68,9 @@ export function NewProjectForm() {
   const [customerModel, setCustomerModel] = useState<CustomerModel | "">("");
   const [primaryMarket, setPrimaryMarket] = useState<PrimaryMarket | "">("");
   const [growthObjectives, setGrowthObjectives] = useState<GrowthObjective[]>([]);
+  const [optionalSources, setOptionalSources] = useState<
+    OptionalGoogleSource[]
+  >([]);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
   const objectiveHelpId = useId();
@@ -105,7 +115,7 @@ export function NewProjectForm() {
       const project = await mutation.mutateAsync(
         buildCreateProductRequest(values),
       );
-      router.push(`/p/${project.id}/context`);
+      router.push(newProductContinuationPath(project.id, optionalSources));
     } catch (error) {
       if (error instanceof ApiError) {
         const mapped = mapProjectFieldErrors(error.fieldErrors(), {
@@ -263,9 +273,88 @@ export function NewProjectForm() {
             ) : null}
           </fieldset>
 
+          <section
+            className={styles.sourceStep}
+            aria-labelledby="optional-source-title"
+          >
+            <div className={styles.sourceStepHeader}>
+              <div>
+                <p className={styles.sourceEyebrow}>
+                  {t("dataSources.eyebrow")}
+                </p>
+                <h2 id="optional-source-title">{t("dataSources.title")}</h2>
+                <p>{t("dataSources.detail")}</p>
+              </div>
+              <span className={styles.optionalBadge}>
+                {t("dataSources.optional")}
+              </span>
+            </div>
+
+            <div className={styles.sourceChoices}>
+              {OPTIONAL_GOOGLE_SOURCES.map((provider) => {
+                const selected = optionalSources.includes(provider);
+                const Icon = provider === "gsc" ? Search : BarChart3;
+                return (
+                  <label
+                    key={provider}
+                    className={styles.sourceChoice}
+                    data-selected={selected ? "true" : "false"}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={(event) =>
+                        setOptionalSources((current) =>
+                          toggleOptionalGoogleSource(
+                            current,
+                            provider,
+                            event.target.checked,
+                          ),
+                        )
+                      }
+                    />
+                    <span className={styles.sourceIcon} aria-hidden="true">
+                      <Icon size={21} strokeWidth={1.8} />
+                    </span>
+                    <span className={styles.sourceCopy}>
+                      <strong>
+                        {t(`dataSources.providers.${provider}.title`)}
+                      </strong>
+                      <small>
+                        {t(`dataSources.providers.${provider}.detail`)}
+                      </small>
+                    </span>
+                    <span className={styles.sourceSelection} aria-hidden="true">
+                      {selected
+                        ? t("dataSources.selected")
+                        : t("dataSources.select")}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <p className={styles.privacyNote}>
+              <ShieldCheck size={16} strokeWidth={1.9} aria-hidden="true" />
+              <span>{t("dataSources.privacy")}</span>
+            </p>
+          </section>
+
           <div className={styles.nextStep}>
-            <strong>{t("nextStep.title")}</strong>
-            <p>{t("nextStep.detail")}</p>
+            <strong>
+              {t(
+                optionalSources.length > 0
+                  ? "nextStep.sourcesTitle"
+                  : "nextStep.title",
+              )}
+            </strong>
+            <p>
+              {optionalSources.length > 0
+                ? t("nextStep.sourcesDetail", {
+                    count: optionalSources.length,
+                  })
+                : t("nextStep.detail")}
+            </p>
           </div>
         </div>
       </Card>
@@ -283,7 +372,13 @@ export function NewProjectForm() {
           className={styles.submit}
           disabled={pending}
         >
-          {pending ? t("creating") : t("createButton")}
+          {pending
+            ? t("creating")
+            : optionalSources.length > 0
+              ? t("createAndConnectButton", {
+                  count: optionalSources.length,
+                })
+              : t("createButton")}
         </Button>
       </div>
     </form>

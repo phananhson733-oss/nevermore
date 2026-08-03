@@ -11,24 +11,34 @@ export async function seedConfirmedSourceProfile(
   scope: { readonly workspaceId: string; readonly projectId: string },
   actorId: string,
 ): Promise<string> {
+  const projects = new ProjectsRepository(handle.db);
+  const profiles = new IcpProfilesRepository(handle.db);
+  const project = await projects.findById(
+    { workspaceId: scope.workspaceId },
+    scope.projectId,
+  );
+  const current = project?.current_icp_profile_id
+    ? await profiles.findById(scope, project.current_icp_profile_id)
+    : null;
+  const version = (current?.version ?? 0) + 1;
   const profile = {
     productName: "OAuth integration fixture",
     marketCodes: ["US"],
   };
-  const row = await new IcpProfilesRepository(handle.db).insertVersion({
+  const row = await profiles.insertVersion({
     workspaceId: scope.workspaceId,
     projectId: scope.projectId,
-    version: 1,
+    version,
     status: "complete",
     profile,
     contentHash: contentHash({
       fixture: "confirmed-source-profile.v1",
       projectId: scope.projectId,
+      version,
       profile,
     }),
     createdBy: actorId,
   });
-  const projects = new ProjectsRepository(handle.db);
   await projects.setCurrentIcpProfile(
     { workspaceId: scope.workspaceId },
     scope.projectId,

@@ -9,6 +9,7 @@ import {
   dataForSeoConnectionConfig,
   dataForSeoLimitation,
   dataForSeoSearchLandscapeScopeForSite,
+  deriveDataForSeoSearchLandscapeSeeds,
   keywordLibraryContextForSite,
 } from "./collection-context.ts";
 import {
@@ -104,17 +105,24 @@ describe("Analysis Refresh frozen helpers", () => {
       31,
     );
     expect(scope).toMatchObject({
-      schemaVersion: "dataforseo.search-landscape-scope.v1",
+      schemaVersion: "dataforseo.search-landscape-scope.v2",
       queryKind: "search_landscape",
       target: "example.test",
       marketCode: "US",
       providerLanguageCode: "en",
       rankedKeywords: {
         limit: 87,
+        rankGroup: { minimum: 1, maximum: 100 },
       },
       competitorsDomain: {
         limit: 31,
+        maxRankGroup: 100,
         excludeDomains: ["example.test"],
+      },
+      serpCompetitors: {
+        limit: 31,
+        fallbackWhenDomainOverlapEmpty: true,
+        seeds: [],
       },
     });
     expect(dataForSeoConnectionConfig(scope!)).toEqual({
@@ -124,9 +132,10 @@ describe("Analysis Refresh frozen helpers", () => {
       languageCode: "en",
       maxKeywords: 87,
       maxCompetitors: 31,
+      maxSerpCompetitors: 31,
     });
     expect(dataForSeoLimitation(dataForSeoConnectionConfig(scope!))).toContain(
-      "updated weekly, but neither response supplies an exact dataset timestamp",
+      "positions 1–100",
     );
     expect(dataForSeoLimitation(dataForSeoConnectionConfig(scope!))).toContain(
       "integer keyword-intersection count, not a percentage",
@@ -164,6 +173,56 @@ describe("Analysis Refresh frozen helpers", () => {
         31,
       ),
     ).toBeNull();
+  });
+
+  it("orders GSC seeds by real demand and retains Crawler provenance without relabelling it", () => {
+    const seeds = deriveDataForSeoSearchLandscapeSeeds({
+      observations: [
+        {
+          id: "crawl-observation",
+          provider: "crawl",
+          metric_key: "crawl.page.v1",
+          availability: "available",
+          value_json: { title: "SEO Automation", h1: ["Growth Analytics"] },
+        },
+        {
+          id: "gsc-observation",
+          provider: "gsc",
+          metric_key: "gsc.page.v1",
+          availability: "available",
+          value_json: {
+            topQueries: [
+              { query: "low demand", impressions: 10, clicks: 1 },
+              { query: "high demand", impressions: 1000, clicks: 5 },
+            ],
+          },
+        },
+      ],
+      productProfile: null,
+    });
+
+    expect(seeds).toEqual([
+      {
+        keyword: "high demand",
+        sourceKind: "gsc_top_query",
+        sourceRef: "observation:gsc-observation#/valueJson/topQueries/1/query",
+      },
+      {
+        keyword: "low demand",
+        sourceKind: "gsc_top_query",
+        sourceRef: "observation:gsc-observation#/valueJson/topQueries/0/query",
+      },
+      {
+        keyword: "Growth Analytics",
+        sourceKind: "crawler_page_text",
+        sourceRef: "observation:crawl-observation#/valueJson/h1/0",
+      },
+      {
+        keyword: "SEO Automation",
+        sourceKind: "crawler_page_text",
+        sourceRef: "observation:crawl-observation#/valueJson/title",
+      },
+    ]);
   });
 
   it("freezes exact snapshots in canonical ID order with real rule, prompt, ICP, locale, and governance facts", () => {

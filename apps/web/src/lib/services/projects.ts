@@ -30,9 +30,9 @@ import { ProblemError } from "@sf/observability";
 import {
   canonicalUrlGuard,
   canonicalizeUrl,
-  createDataForSeoSearchLandscapeScope,
-  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  createDataForSeoSearchLandscapeV2Scope,
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   normalizeSiteOrigin,
   normalizeUrl,
   probeSiteOrigin,
@@ -398,13 +398,15 @@ export async function createProject(
     ) {
       const locationName = dataForSeoLocationName(body.primaryMarket);
       const collectionScope = locationName
-        ? createDataForSeoSearchLandscapeScope({
+        ? createDataForSeoSearchLandscapeV2Scope({
             target: normalized.host,
             marketCode: body.primaryMarket,
             locationName,
             languageTag: productProfileDeliveryLocale!,
             rankedKeywordsLimit: dataForSeoDiscovery.maxKeywords,
             competitorsDomainLimit: dataForSeoDiscovery.maxCompetitors,
+            serpCompetitorsLimit: dataForSeoDiscovery.maxCompetitors,
+            seeds: [],
           })
         : null;
       if (collectionScope) {
@@ -424,7 +426,7 @@ export async function createProject(
             maxKeywords: collectionScope.rankedKeywords.limit,
             maxCompetitors: collectionScope.competitorsDomain.limit,
           },
-          limitation: `Initial DataForSEO competitor discovery for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; ranked keywords capped at ${collectionScope.rankedKeywords.limit} and competitor domains at ${collectionScope.competitorsDomain.limit}. Intersections are counts, not similarity percentages.`,
+          limitation: `Initial DataForSEO search landscape for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; positions 1–100, ranked keywords capped at ${collectionScope.rankedKeywords.limit}, and competitor domains at ${collectionScope.competitorsDomain.limit}. Product Profile seeds are added by the follow-up synthesis flow if domain overlap is empty.`,
           connectedAt: true,
           createdBy: actorId,
         });
@@ -450,13 +452,13 @@ export async function createProject(
           sourceConnectionId: connection.id,
           provider: "dataforseo",
           operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
-          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
           parametersHash: contentHash({
             provider: "dataforseo",
             operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
             siteId: site.id,
-            collectionScope,
-          }),
+            collectionScope: collectionScope as unknown as CanonicalValue,
+          } as CanonicalValue),
         });
         await enqueueRunInTx(discoveryBoss, tx, "collect.dataforseo", {
           runId: run.id,

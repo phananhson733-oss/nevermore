@@ -15,6 +15,7 @@ import {
   enqueueAnalysisRefreshContinuationInTx,
   enqueueRunInTx,
   IcpProfilesRepository,
+  ObservationsRepository,
   ProjectsRepository,
   SitePagesRepository,
   SitesRepository,
@@ -26,6 +27,7 @@ import {
   type AsyncRunRow,
   type CollectionRunKeywordLibraryContext,
   type CollectionRunRow,
+  type CanonicalValue,
   type DataSnapshotRow,
   type DbTx,
   type ProjectScope,
@@ -43,8 +45,8 @@ import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import {
   CRAWL_DATASET_KEY,
   CRAWL_METHOD_VERSION,
-  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
-  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -52,6 +54,7 @@ import {
   dataForSeoSearchLandscapeScopeForSite,
   dataForSeoConnectionConfig,
   dataForSeoLimitation,
+  deriveDataForSeoSearchLandscapeSeeds,
   keywordLibraryContextForSite,
 } from "./collection-context.ts";
 import {
@@ -110,8 +113,8 @@ const COLLECTION_IDENTITY = {
     methodVersion: "ga4.organic_landing_daily.v1",
   },
   dataforseo: {
-    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
-    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   },
 } as const;
 
@@ -821,12 +824,38 @@ async function startDataForSeoStep(
     parent.scope,
     parent.payload.siteId,
   );
+  const seedSnapshotIds = steps.flatMap((step) =>
+    (step.step_key === "crawl" || step.step_key === "gsc") &&
+    step.state === "completed" &&
+    step.result_snapshot_id !== null
+      ? [step.result_snapshot_id]
+      : [],
+  );
+  const seedObservations = await new ObservationsRepository(tx).listBySnapshotIds(
+    parent.scope,
+    seedSnapshotIds,
+  );
+  const confirmedProfile = await new ProjectsRepository(tx).findConfirmedIcpProfile(
+    { workspaceId: parent.scope.workspaceId },
+    parent.scope.projectId,
+  );
+  const parsedProfile = confirmedProfile
+    ? ProductProfileDraft.safeParse(confirmedProfile.profile)
+    : null;
+  const seeds = deriveDataForSeoSearchLandscapeSeeds({
+    observations: seedObservations,
+    productProfile:
+      confirmedProfile && parsedProfile?.success
+        ? { id: confirmedProfile.id, profile: parsedProfile.data }
+        : null,
+  });
   const collectionScope =
     site?.is_primary
       ? dataForSeoSearchLandscapeScopeForSite(
           site,
           parent.payload.dataForSeo.maxKeywords,
           parent.payload.dataForSeo.maxCompetitors,
+          seeds,
         )
       : null;
   if (!site || !collectionScope) {
@@ -897,7 +926,7 @@ async function startDataForSeoStep(
       provider: "dataforseo",
       operation: config.operation,
       queue: config.queue,
-      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
       connection: source,
       requestPayload: {
         provider: "dataforseo",
@@ -909,7 +938,7 @@ async function startDataForSeoStep(
         provider: "dataforseo",
         operation: config.operation,
         siteId: site.id,
-        collectionScope,
+        collectionScope: collectionScope as unknown as CanonicalValue,
       }),
       crawlSeedSitePageId: null,
       crawlSeedUrl: null,

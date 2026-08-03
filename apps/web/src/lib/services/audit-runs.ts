@@ -28,6 +28,8 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
 } from "@sf/sources";
 import {
   CONTRACT_VERSION,
@@ -114,6 +116,13 @@ const AUDIT_SEARCH_LANDSCAPE_SELECTOR = [
     collectionMethodVersion:
       DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   },
+  {
+    provider: "dataforseo",
+    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+    collectionOperation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+    collectionMethodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  },
 ] as const;
 
 export interface GrowthAuditAcceptedResult {
@@ -181,16 +190,20 @@ function corruptAuditSnapshotSelection(detail: string): never {
 
 function exactDataForSeoSnapshot(
   snapshot: DataSnapshotRow,
-  kind: "legacy" | "search_landscape",
+  kind: "legacy" | "search_landscape_v1" | "search_landscape_v2",
 ): boolean {
   const datasetKey =
     kind === "legacy"
       ? DATAFORSEO_DATASET_KEY
-      : DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY;
+      : kind === "search_landscape_v1"
+        ? DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY
+        : DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY;
   const methodVersion =
     kind === "legacy"
       ? DATAFORSEO_METHOD_VERSION
-      : DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+      : kind === "search_landscape_v1"
+        ? DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION
+        : DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
   return (
     snapshot.provider === "dataforseo" &&
     snapshot.dataset_key === datasetKey &&
@@ -200,25 +213,25 @@ function exactDataForSeoSnapshot(
 }
 
 function latestDataForSeoSnapshot(
-  legacy: DataSnapshotRow | undefined,
-  composite: DataSnapshotRow | undefined,
+  snapshots: readonly DataSnapshotRow[],
 ): DataSnapshotRow | undefined {
-  if (!legacy) return composite;
-  if (!composite) return legacy;
-  let legacyAt: string;
-  let compositeAt: string;
-  try {
-    legacyAt = canonicalUtcTimestamptz(legacy.captured_at);
-    compositeAt = canonicalUtcTimestamptz(composite.captured_at);
-  } catch {
-    return corruptAuditSnapshotSelection(
-      "A DataForSEO Snapshot has an invalid capture time.",
-    );
-  }
-  const ordering = Date.parse(compositeAt) - Date.parse(legacyAt);
-  if (ordering > 0) return composite;
-  if (ordering < 0) return legacy;
-  return composite.id < legacy.id ? composite : legacy;
+  return snapshots.reduce<DataSnapshotRow | undefined>((latest, candidate) => {
+    if (!latest) return candidate;
+    let latestAt: string;
+    let candidateAt: string;
+    try {
+      latestAt = canonicalUtcTimestamptz(latest.captured_at);
+      candidateAt = canonicalUtcTimestamptz(candidate.captured_at);
+    } catch {
+      return corruptAuditSnapshotSelection(
+        "A DataForSEO Snapshot has an invalid capture time.",
+      );
+    }
+    const ordering = Date.parse(candidateAt) - Date.parse(latestAt);
+    if (ordering > 0) return candidate;
+    if (ordering < 0) return latest;
+    return candidate.id < latest.id ? candidate : latest;
+  }, undefined);
 }
 
 async function assertExactDataForSeoCollectionRun(
@@ -233,11 +246,15 @@ async function assertExactDataForSeoCollectionRun(
     exactDataForSeoSnapshot(snapshot, "legacy") &&
     run?.operation === "keyword_gap_import" &&
     run.method_version === DATAFORSEO_METHOD_VERSION;
-  const composite =
-    exactDataForSeoSnapshot(snapshot, "search_landscape") &&
+  const compositeV1 =
+    exactDataForSeoSnapshot(snapshot, "search_landscape_v1") &&
     run?.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
     run.method_version ===
       DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION;
+  const compositeV2 =
+    exactDataForSeoSnapshot(snapshot, "search_landscape_v2") &&
+    run?.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+    run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
   if (
     !run ||
     run.workspace_id !== scope.workspaceId ||
@@ -245,7 +262,7 @@ async function assertExactDataForSeoCollectionRun(
     run.site_id !== snapshot.site_id ||
     run.id !== snapshot.collection_run_id ||
     run.provider !== "dataforseo" ||
-    (!legacy && !composite)
+    (!legacy && !compositeV1 && !compositeV2)
   ) {
     return corruptAuditSnapshotSelection(
       "The selected DataForSEO Snapshot does not match an exact supported collection contract.",
@@ -303,21 +320,23 @@ export async function loadGrowthAuditInputs(
     legacyDataForSeoSnapshots.length > 1 ||
     (legacyDataForSeo &&
       !exactDataForSeoSnapshot(legacyDataForSeo, "legacy")) ||
-    compositeSnapshots.length > 1 ||
-    (compositeSnapshots[0] &&
-      !exactDataForSeoSnapshot(
-        compositeSnapshots[0],
-        "search_landscape",
-      ))
+    compositeSnapshots.length > 2 ||
+    compositeSnapshots.some(
+      (snapshot) =>
+        !exactDataForSeoSnapshot(snapshot, "search_landscape_v1") &&
+        !exactDataForSeoSnapshot(snapshot, "search_landscape_v2"),
+    ) ||
+    new Set(compositeSnapshots.map((snapshot) => snapshot.dataset_key)).size !==
+      compositeSnapshots.length
   ) {
     return corruptAuditSnapshotSelection(
       "The DataForSEO Snapshot selector returned an unsupported contract.",
     );
   }
-  const dataForSeoSnapshot = latestDataForSeoSnapshot(
-    legacyDataForSeo,
-    compositeSnapshots[0],
-  );
+  const dataForSeoSnapshot = latestDataForSeoSnapshot([
+    ...(legacyDataForSeo ? [legacyDataForSeo] : []),
+    ...compositeSnapshots,
+  ]);
   const snapshots = [
     ...legacySnapshots.filter(
       (snapshot) => snapshot.provider !== "dataforseo",

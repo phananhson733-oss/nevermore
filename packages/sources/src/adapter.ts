@@ -21,7 +21,8 @@ export type DatasetKey =
   | "ga4.organic_landing_daily.v1"
   | "csv.keyword_gap.v1"
   | "dataforseo.ranked_keywords.v1"
-  | "dataforseo.search_landscape.v1";
+  | "dataforseo.search_landscape.v1"
+  | "dataforseo.search_landscape.v2";
 
 export type Availability = "available" | "partial" | "unavailable";
 

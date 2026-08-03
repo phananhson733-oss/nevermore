@@ -8,7 +8,50 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("tracks the missing analytics SitePage lineage repair", () => {
+  it("tracks the optional source onboarding authority", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0038_optional_source_onboarding.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe(
+      "0038_optional_source_onboarding",
+    );
+    expect(migration).toMatch(
+      /DROP\s+CONSTRAINT\s+oauth_intents_redirect_path_check/iu,
+    );
+    expect(migration).toMatch(
+      /redirect_path\s*~\s*'\^\/p\/\[0-9a-f-\]\+\/\(sources\|setup-sources\)\$'/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0038_optional_source_onboarding'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps DataForSEO Search Landscape v2 immediately before optional source onboarding", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0037_dataforseo_search_landscape_v2.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/dataforseo\.search_landscape\.v2/iu);
+    expect(migration).toMatch(/dataforseo\.serp_competitor\.v1/iu);
+    expect(migration).toMatch(
+      /SELECT\s+'0037_dataforseo_search_landscape_v2'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps the missing analytics SitePage lineage repair immediately before DataForSEO v2", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
@@ -19,9 +62,6 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe(
-      "0036_missing_analytics_site_page_lineage",
-    );
     expect(migration).toMatch(
       /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_normalized_observation_site_page_lineage/iu,
     );

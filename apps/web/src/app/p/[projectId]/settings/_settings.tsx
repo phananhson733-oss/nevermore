@@ -35,7 +35,7 @@ export function ProjectSettings({
     <div className={styles.page}>
       <header className={styles.header}>
         <p className="sf-eyebrow">{t("eyebrow")}</p>
-        <h1>{t("title")}</h1>
+        <h1 data-app-page-title="">{t("title")}</h1>
         <p>{t("subtitle")}</p>
       </header>
 

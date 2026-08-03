@@ -1090,7 +1090,9 @@ export function PlanClient({ projectId }: { readonly projectId: string }) {
                 <StatusPill tone="success">{t("heroBadge")}</StatusPill>
               ) : null}
             </div>
-            <h1 className={styles.title}>{t("title")}</h1>
+            <h1 className={styles.title} data-app-page-title="">
+              {t("title")}
+            </h1>
             <p className={styles.subtitle}>
               {t("subtitle", {
                 count: actions.length,

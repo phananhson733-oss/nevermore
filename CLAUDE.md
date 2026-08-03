@@ -26,7 +26,7 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0036_missing_analytics_site_page_lineage.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0038_optional_source_onboarding.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
@@ -87,7 +87,7 @@ pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证�
                            # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
-pnpm db:migrate            # 按序应用 0001–0034（幂等，第二次为 no-op）
+pnpm db:migrate            # 按序应用 0001–0038（幂等，第二次为 no-op）
 pnpm db:migrate:check      # 断言 78 张 app 表 + 必需索引与 append-only trigger
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
@@ -98,14 +98,14 @@ pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 
 ### 主链硬门与状态机（规格 §5）
 
-Stage 是**服务端维护的可重建 projection**，不接受客户端提交：`setup → collecting → ready_to_diagnose → diagnosing → planning → executing → delivered`。价值链八道硬门：URL 安全规范化 + 默认 Crawl source → 只有 complete ICP 能启动诊断 → OAuth connected ≠ 数据 available（只有可用 Snapshot 才算数）→ 诊断至少需 complete ICP + 可用 Crawl snapshot，缺 GSC/GA4/CSV 使对应规则 skipped 而非阻断 → 规则只产 candidate，Finding 默认 `unreviewed` → confirm 时**同一事务幂等 upsert Action** → Artifact 只能从 Action 异步创建 → Report/Export 只读 canonical，不重算优先级。并发用 `baseVersion`/`baseRevision` → 409。
+Stage 是**服务端维护的可重建 projection**，不接受客户端提交：`setup → collecting → ready_to_diagnose → diagnosing → planning → executing → delivered`。价值链八道硬门：URL 安全规范化 + 默认 Crawl source → 新产品可在自动画像前通过精确同项目 `setup-sources` 路径选择只读 GSC/GA4 或跳过，但普通 Sources 仍要求 confirmed profile 且采集延后到上下文完整 → 只有 complete ICP 能启动诊断 → OAuth connected ≠ 数据 available（只有可用 Snapshot 才算数）→ 诊断至少需 complete ICP + 可用 Crawl snapshot，缺 GSC/GA4/CSV 使对应规则 skipped 而非阻断 → 规则只产 candidate，Finding 默认 `unreviewed` → confirm 时**同一事务幂等 upsert Action** → Artifact 只能从 Action 异步创建 → Report/Export 只读 canonical，不重算优先级。并发用 `baseVersion`/`baseRevision` → 409。
 
 ### 合同权威与原子性
 
 - JSON camelCase ↔ DB snake_case，repository 显式 mapping。成功 `{data, meta?}`；错误 `application/problem+json`（`type,title,status,code,detail,requestId,errors?`）。每响应带 `X-Request-Id`。
 - **原子 enqueue（AC-006）**：每个异步 POST 在同一 PostgreSQL 事务内校验 idempotency/硬门 → 插 AsyncRun + domain resource → 用 pg-boss 的 Drizzle adapter（`enqueueRunInTx`，`fromDrizzle(tx, sql)`）在**同一连接**入队 → 存 idempotency response → commit 后返 202。绝不先 commit 再入队或反之。
-- **Analysis Refresh / DFS**：`createAnalysisRefreshRun` 冻结五步服务端计划；DataForSEO Search Landscape（DFS）从冻结 Site/market/language 与服务端 row cap 生成 ranked-keywords + competitors-domain 两个请求并原子写一个 Snapshot。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS scope、limit 或凭据。
-- **Growth Map generation read**：URL/Keyword/Competitor list/detail GET 可用 canonical `diagnosticRunId` 固定一个已发布 generation；只有 Keyword/Competitor detail GET 允许互斥的 `view=review` 读取当前 governance。Keyword/Competitor PATCH 拒绝全部 query。
+- **Analysis Refresh / DFS**：`createAnalysisRefreshRun` 冻结五步服务端计划；DataForSEO Search Landscape（DFS）v2 从冻结 Site/market/language 与服务端 row cap 查询 positions 1–100，并仅在 domain overlap 为空时使用带来源的 GSC/Crawl/Product Profile 种子追加一次 SERP Competitors fallback，原子写一个 Snapshot。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS scope、limit 或凭据。
+- **Growth Map generation read**：URL/Keyword/Competitor list/detail GET 可用 canonical `diagnosticRunId` 固定一个已发布 generation；Keyword/Competitor list 省略 pin 时读取当前资料库，URL 默认 latest generation。只有 Keyword/Competitor detail GET 允许互斥的 `view=review` 读取当前 governance。Keyword/Competitor PATCH 拒绝全部 query。
 - **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。78 张 app 表不含任何 pg-boss 表。
 - **active-run 唯一**：`async_runs_one_active_key_idx` partial unique index 保证每项目/activeKey 只有一个 queued/running；冲突 409 `RUN_ALREADY_ACTIVE`。
 

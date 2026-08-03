@@ -97,11 +97,9 @@ import {
   refreshGrowthMapAfterFindingReview,
   useBeginGrowthMapTopicModelDraft,
   useConfirmGrowthMapTopicModelDraft,
-  useGrowthMapCompetitorDetail,
   useGrowthMapCompetitorReviewDetail,
   useGrowthMapCompetitorMonitor,
   useGrowthMapCompetitors,
-  useGrowthMapKeywordDetail,
   useGrowthMapKeywordReviewDetail,
   useGrowthMapInternalLinkMap,
   useGrowthMapKeywordRankHistory,
@@ -5897,10 +5895,9 @@ function KeywordDetailState({
   readonly diagnosticRunId: string | null;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
-  const detailQuery = useGrowthMapKeywordDetail(
+  const detailQuery = useGrowthMapKeywordReviewDetail(
     projectId,
     selectedKeywordId,
-    diagnosticRunId,
   );
   const rankHistoryQuery = useGrowthMapKeywordRankHistory(
     projectId,
@@ -6054,7 +6051,6 @@ function KeywordLibraryPane({
   const listQuery = useGrowthMapKeywords(projectId, {
     cursor,
     limit: 50,
-    diagnosticRunId,
   });
   const items = useMemo(
     () => listQuery.data?.data ?? [],
@@ -7783,17 +7779,14 @@ function CompetitorDetailPanel({
 function CompetitorDetailState({
   projectId,
   selectedCompetitorId,
-  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly selectedCompetitorId: string | null;
-  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
-  const detailQuery = useGrowthMapCompetitorDetail(
+  const detailQuery = useGrowthMapCompetitorReviewDetail(
     projectId,
     selectedCompetitorId,
-    diagnosticRunId,
   );
   const monitorQuery = useGrowthMapCompetitorMonitor(projectId);
   const monitorUpdate = useUpdateGrowthMapCompetitorMonitor(projectId);
@@ -7929,12 +7922,10 @@ function CompetitorLibraryPane({
   projectId,
   locationSearch,
   navigation,
-  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
-  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   const pathname = usePathname();
@@ -7958,7 +7949,6 @@ function CompetitorLibraryPane({
   const listQuery = useGrowthMapCompetitors(projectId, {
     cursor,
     limit: 50,
-    diagnosticRunId,
   });
   const items = listQuery.data?.data ?? [];
   const selectedCompetitorId = resolveVisibleCompetitorSelection(
@@ -8149,7 +8139,6 @@ function CompetitorLibraryPane({
           <CompetitorDetailState
             projectId={projectId}
             selectedCompetitorId={selectedCompetitorId}
-            diagnosticRunId={diagnosticRunId}
           />
         </div>
       )}
@@ -8227,7 +8216,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
             <Sparkles aria-hidden="true" size={16} />
             {t("eyebrow")}
           </span>
-          <h1>{t("title")}</h1>
+          <h1 data-app-page-title="">{t("title")}</h1>
           <p>{t("subtitle")}</p>
         </div>
         <div className={styles.heroActions}>
@@ -8310,7 +8299,6 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
-          diagnosticRunId={diagnosticRunId!}
         />
       ) : (
         <BacklinkGrowthPath projectId={projectId} />

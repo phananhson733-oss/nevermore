@@ -46,9 +46,12 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   canonicalizeUrl,
   parseDataForSeoCollectionScope,
   parseDataForSeoSearchLandscapeScope,
+  parseDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 import { and, asc, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
@@ -1040,7 +1043,10 @@ function providerOccurrenceLineage(
   return { observation, snapshot, collectionRun, providerDataAsOf };
 }
 
-type DataForSeoRankedLineageKind = "legacy_ranked" | "search_landscape";
+type DataForSeoRankedLineageKind =
+  | "legacy_ranked"
+  | "search_landscape_v1"
+  | "search_landscape_v2";
 
 function exactDataForSeoRankedLineage(
   snapshot: CanonicalSnapshotRow,
@@ -1074,7 +1080,19 @@ function exactDataForSeoRankedLineage(
     collectionRun.method_version ===
       DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION
   ) {
-    return "search_landscape";
+    return "search_landscape_v1";
+  }
+  if (
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
+    collectionRun.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+    collectionRun.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION
+  ) {
+    return "search_landscape_v2";
   }
   return null;
 }
@@ -1086,16 +1104,21 @@ function validateDataForSeoSummary(
 ): string {
   let collectionScope:
     | ReturnType<typeof parseDataForSeoCollectionScope>
-    | ReturnType<typeof parseDataForSeoSearchLandscapeScope>;
+    | ReturnType<typeof parseDataForSeoSearchLandscapeScope>
+    | ReturnType<typeof parseDataForSeoSearchLandscapeV2Scope>;
   try {
     collectionScope =
       lineageKind === "legacy_ranked"
         ? parseDataForSeoCollectionScope(
             snapshot.summary["collectionScope"],
           )
-        : parseDataForSeoSearchLandscapeScope(
-            snapshot.summary["collectionScope"],
-          );
+        : lineageKind === "search_landscape_v1"
+          ? parseDataForSeoSearchLandscapeScope(
+              snapshot.summary["collectionScope"],
+            )
+          : parseDataForSeoSearchLandscapeV2Scope(
+              snapshot.summary["collectionScope"],
+            );
   } catch {
     return corruptKeywordLibrary();
   }
@@ -1119,7 +1142,9 @@ function validateDataForSeoSummary(
   const scopeDetail =
     collectionScope.queryKind === "ranked_keywords"
       ? `capped at ${collectionScope.limit} rows`
-      : `search_landscape capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows and ${collectionScope.competitorsDomain.limit} competitor-domain rows`;
+      : "serpCompetitors" in collectionScope
+        ? `search_landscape v2 capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows, ${collectionScope.competitorsDomain.limit} competitor-domain rows, and at most ${collectionScope.serpCompetitors.limit} paid fallback rows from ${collectionScope.serpCompetitors.seeds.length} frozen seed(s)`
+        : `search_landscape capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows and ${collectionScope.competitorsDomain.limit} competitor-domain rows`;
   return boundedText(
     `DataForSEO ${snapshot.dataset_key} scope is target ${collectionScope.target}, market ${collectionScope.marketCode}, language ${collectionScope.languageTag}, ${location}, ${scopeDetail}; it is not the complete keyword universe.`,
   );
@@ -2037,6 +2062,38 @@ async function listInSnapshot(
   }
 }
 
+async function listCurrentLibrary(
+  exec: Executor,
+  workspaceScope: WorkspaceScope,
+  projectId: string,
+  options: GrowthMapKeywordListOptions,
+): Promise<ReturnType<typeof GrowthMapKeywordLibraryResponse.parse>> {
+  const scope = await loadActiveProject(exec, workspaceScope, projectId);
+  const page = await new KeywordsRepository(exec).listByProject(scope, {
+    limit: options.limit,
+    cursor: options.cursor,
+  });
+  const rows = await _loadProjectionRows(exec, scope, page.rows);
+  const now = validNow(options.now ?? new Date());
+  const data = rows.histories.map((history) =>
+    projectItem(history, rows, scope, now),
+  );
+  try {
+    return GrowthMapKeywordLibraryResponse.parse({
+      projectId,
+      data,
+      meta: {
+        limit: options.limit,
+        nextCursor: page.nextCursor,
+        hasNext: page.nextCursor !== null,
+        coverage: pageCoverage(data),
+      },
+    });
+  } catch {
+    return corruptKeywordLibrary();
+  }
+}
+
 async function detailInSnapshot(
   exec: Executor,
   workspaceScope: WorkspaceScope,
@@ -2137,9 +2194,21 @@ export async function listProjectAuditKeywords(
     throw new RangeError("Invalid Keyword Library list options");
   }
   if (options.now !== undefined) validNow(options.now);
-  if (exec) return listInSnapshot(exec, scope, projectId, options);
+  const useLegacyLatestPublishedRead =
+    options.diagnosticRunId === undefined;
+  const diagnosticRunId = normalizePinnedDiagnosticRunId(
+    options.diagnosticRunId,
+  );
+  const read = (selected: Executor) =>
+    diagnosticRunId === null && !useLegacyLatestPublishedRead
+      ? listCurrentLibrary(selected, scope, projectId, options)
+      : listInSnapshot(selected, scope, projectId, {
+          ...options,
+          diagnosticRunId,
+        });
+  if (exec) return read(exec);
   return getDb().db.transaction(
-    (tx) => listInSnapshot(tx, scope, projectId, options),
+    read,
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }

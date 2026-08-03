@@ -26,6 +26,8 @@ import {
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
 } from "@sf/sources";
 
 const mocks = vi.hoisted(() => {
@@ -637,6 +639,14 @@ describe("createGrowthAuditRun contract", () => {
         collectionOperation: "search_landscape",
         collectionMethodVersion:
           DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+      },
+      {
+        provider: "dataforseo",
+        datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+        methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+        collectionOperation: "search_landscape",
+        collectionMethodVersion:
+          DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
       },
     ];
     expect(selectSnapshots).toHaveBeenCalledTimes(4);

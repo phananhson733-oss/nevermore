@@ -1097,7 +1097,7 @@ export function OverviewClient({
       <header className={styles.hero}>
         <div>
           <span className={styles.heroEyebrow}>{t("eyebrow")}</span>
-          <h1>{t("title")}</h1>
+          <h1 data-app-page-title="">{t("title")}</h1>
           <p>{t("subtitle", { project: view.project.projectName })}</p>
         </div>
         <div className={styles.heroActions}>

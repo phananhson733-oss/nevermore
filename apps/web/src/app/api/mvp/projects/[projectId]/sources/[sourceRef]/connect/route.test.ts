@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertWorkspaceAttemptRateLimit: vi.fn(),
   connectProjectSource: vi.fn(),
+  getSourceConnectionGate: vi.fn(async () => "allowed"),
   createCollectionRun: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ vi.mock("@/lib/http/rate-limit", () => ({
 }));
 vi.mock("@/lib/services/source-connect", () => ({
   connectProjectSource: mocks.connectProjectSource,
+  getSourceConnectionGate: mocks.getSourceConnectionGate,
 }));
 vi.mock("@/lib/services/collection", () => ({
   createCollectionRun: mocks.createCollectionRun,
@@ -101,5 +103,22 @@ describe("POST OAuth connection initial collection", () => {
         source: { id: sourceConnectionId, provider: "gsc" },
       },
     });
+  });
+
+  it("defers the first collection while optional onboarding is still unconfirmed", async () => {
+    mocks.connectProjectSource.mockResolvedValueOnce({
+      phase: "connected",
+      source: { id: sourceConnectionId, provider: "gsc" },
+    });
+    mocks.getSourceConnectionGate.mockResolvedValueOnce(
+      "product_profile_required",
+    );
+
+    const response = await POST(selectPropertyRequest("gsc"), {
+      params: Promise.resolve({ projectId, sourceRef: "gsc" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.createCollectionRun).not.toHaveBeenCalled();
   });
 });

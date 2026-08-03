@@ -69,4 +69,49 @@ describe("Product Profile DataForSEO competitor discovery", () => {
     expect(candidate?.reason).toContain("12 个自然搜索关键词交集");
     expect(candidate?.reason).toContain("直接竞品草稿");
   });
+
+  it("classifies the seed-based SERP fallback without claiming keyword intersections", () => {
+    const result = discoverProductProfileCompetitors({
+      targetDomain: "relayops.com",
+      marketCode: "US",
+      outputLocale: "zh-CN",
+      observations: [
+        {
+          sourceKind: "serp_competitor",
+          observationId: "10000000-0000-4000-8000-000000000001",
+          domain: "guidecx.com",
+          rating: 100,
+          keywordsCount: 4,
+          relevantSerpItems: 3,
+          organicEstimatedTrafficVolume: 900,
+          observedAt,
+        },
+        {
+          sourceKind: "serp_competitor",
+          observationId: "10000000-0000-4000-8000-000000000002",
+          domain: "asana.com",
+          rating: 30,
+          keywordsCount: 1,
+          relevantSerpItems: 1,
+          organicEstimatedTrafficVolume: 2_000,
+          observedAt,
+        },
+      ],
+    });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        domain: "guidecx.com",
+        relationship: "direct",
+        confidence: "medium",
+      }),
+      expect.objectContaining({
+        domain: "asana.com",
+        relationship: "indirect",
+        confidence: "low",
+      }),
+    ]);
+    expect(result[0]?.reason).toContain("冻结种子 SERP");
+    expect(result[0]?.reason).not.toContain("关键词交集");
+  });
 });

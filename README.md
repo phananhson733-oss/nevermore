@@ -92,13 +92,24 @@ plan runs required Crawl, optional connected GSC, optional connected GA4,
 optional DataForSEO Search Landscape (DFS), then required Growth Audit. Public
 `createCollectionRun` remains limited to `crawl`, `gsc`, and `ga4`; customers
 cannot submit DFS target, market, language, limits, credentials, or provider
-queries.
+queries. DFS v2 queries organic positions 1–100 and, only when domain overlap
+is empty, may use frozen GSC/Crawl/Product Profile seeds for one paid SERP
+Competitors fallback while preserving each seed's real source.
+
+New-product onboarding offers an explicit optional GSC/GA4 step after the
+durable Product Profile draft is created and before the profile screen starts
+automatic synthesis. Customers may connect either source, both, or neither.
+Only the exact same-project `setup-sources` OAuth return path bypasses the
+confirmed-profile connection gate; the full Sources read model remains gated,
+and collection is deferred until confirmed context can scope it honestly.
 
 Growth Map URL, Keyword, and Competitor list/detail reads accept an optional
-canonical `diagnosticRunId` to pin one exact published generation. Only Keyword
-and Competitor detail GETs accept `view=review` for current governance, and that
-view is mutually exclusive with the generation pin. Keyword and Competitor
-PATCH commands reject every query parameter.
+canonical `diagnosticRunId` to pin one exact published generation. Without a
+pin, Keyword and Competitor lists show the current automatically materialized
+candidate libraries; URL reads remain latest-generation. Only Keyword and
+Competitor detail GETs accept `view=review` for current governance, and that view
+is mutually exclusive with the generation pin. Keyword and Competitor PATCH
+commands reject every query parameter.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change

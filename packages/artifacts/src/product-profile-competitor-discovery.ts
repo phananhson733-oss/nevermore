@@ -7,8 +7,9 @@ import {
   type ProductProfileConfidence,
 } from "@sf/contracts";
 
-/** One canonical DataForSEO competitor-domain Observation frozen for synthesis. */
-export interface ProductProfileCompetitorDiscoveryObservation {
+/** One canonical DataForSEO domain-overlap Observation frozen for synthesis. */
+export interface ProductProfileDomainOverlapDiscoveryObservation {
+  readonly sourceKind?: "domain_overlap";
   readonly observationId: string;
   readonly domain: string;
   /** DataForSEO keyword-intersection count. This is never treated as a ratio. */
@@ -16,6 +17,22 @@ export interface ProductProfileCompetitorDiscoveryObservation {
   readonly organicEstimatedTrafficVolume: number;
   readonly observedAt: string;
 }
+
+/** One canonical DataForSEO seed-based SERP-competitor Observation. */
+export interface ProductProfileSerpCompetitorDiscoveryObservation {
+  readonly sourceKind: "serp_competitor";
+  readonly observationId: string;
+  readonly domain: string;
+  readonly rating: number;
+  readonly keywordsCount: number;
+  readonly relevantSerpItems: number;
+  readonly organicEstimatedTrafficVolume: number;
+  readonly observedAt: string;
+}
+
+export type ProductProfileCompetitorDiscoveryObservation =
+  | ProductProfileDomainOverlapDiscoveryObservation
+  | ProductProfileSerpCompetitorDiscoveryObservation;
 
 export interface ProductProfileDiscoveredCompetitor {
   readonly observationId: string;
@@ -69,7 +86,7 @@ function brandName(domain: string): string {
     .join(" ");
 }
 
-function reasonFor(input: {
+function domainOverlapReason(input: {
   readonly locale: string;
   readonly relationship: ProductProfileCompetitorRelationship;
   readonly intersections: number;
@@ -86,15 +103,44 @@ function reasonFor(input: {
     : `DataForSEO observed ${intersections} shared organic-search keywords in ${marketCode}; overlap is below the direct-substitution threshold, so this is an indirect-competitor draft pending review.`;
 }
 
+function serpCompetitorReason(input: {
+  readonly locale: string;
+  readonly relationship: ProductProfileCompetitorRelationship;
+  readonly rating: number;
+  readonly relevantSerpItems: number;
+  readonly marketCode: string;
+}): string {
+  const { locale, relationship, rating, relevantSerpItems, marketCode } = input;
+  if (locale.toLowerCase().startsWith("zh")) {
+    return `DataForSEO 在 ${marketCode} 市场的冻结种子 SERP 中观测到该域名，相关度评分 ${rating}、相关结果 ${relevantSerpItems} 个；按相对评分规则列为${relationship === "direct" ? "直接" : "间接"}竞品草稿，待用户复核。`;
+  }
+  return `DataForSEO observed this domain in the frozen-seed SERPs for ${marketCode} with relevance rating ${rating} and ${relevantSerpItems} relevant result(s); the relative-rating rule classifies it as a ${relationship}-competitor draft pending review.`;
+}
+
 function compareObservation(
   left: ProductProfileCompetitorDiscoveryObservation,
   right: ProductProfileCompetitorDiscoveryObservation,
 ): number {
+  const leftIsSerp = left.sourceKind === "serp_competitor";
+  const rightIsSerp = right.sourceKind === "serp_competitor";
+  if (leftIsSerp !== rightIsSerp) return leftIsSerp ? 1 : -1;
+  if (!leftIsSerp && !rightIsSerp) {
+    return (
+      right.intersections - left.intersections ||
+      right.organicEstimatedTrafficVolume -
+        left.organicEstimatedTrafficVolume ||
+      left.domain.localeCompare(right.domain)
+    );
+  }
+  const leftSerp = left as ProductProfileSerpCompetitorDiscoveryObservation;
+  const rightSerp = right as ProductProfileSerpCompetitorDiscoveryObservation;
   return (
-    right.intersections - left.intersections ||
-    right.organicEstimatedTrafficVolume -
-      left.organicEstimatedTrafficVolume ||
-    left.domain.localeCompare(right.domain)
+    rightSerp.rating - leftSerp.rating ||
+    rightSerp.relevantSerpItems - leftSerp.relevantSerpItems ||
+    rightSerp.keywordsCount - leftSerp.keywordsCount ||
+    rightSerp.organicEstimatedTrafficVolume -
+      leftSerp.organicEstimatedTrafficVolume ||
+    leftSerp.domain.localeCompare(rightSerp.domain)
   );
 }
 
@@ -138,22 +184,48 @@ export function discoverProductProfileCompetitors(input: {
     ProductProfileCompetitorDiscoveryObservation
   >();
   for (const observation of input.observations) {
-    const parsed = {
+    const common = {
       observationId: Uuid.parse(observation.observationId),
       domain: ProductProfileCompetitorDomain.parse(observation.domain),
-      intersections: observation.intersections,
       organicEstimatedTrafficVolume:
         observation.organicEstimatedTrafficVolume,
       observedAt: IsoDateTime.parse(observation.observedAt),
     };
+    const parsed: ProductProfileCompetitorDiscoveryObservation =
+      observation.sourceKind === "serp_competitor"
+        ? {
+            ...common,
+            sourceKind: "serp_competitor",
+            rating: observation.rating,
+            keywordsCount: observation.keywordsCount,
+            relevantSerpItems: observation.relevantSerpItems,
+          }
+        : {
+            ...common,
+            ...(observation.sourceKind === undefined
+              ? {}
+              : { sourceKind: "domain_overlap" as const }),
+            intersections: observation.intersections,
+          };
     if (
-      !Number.isSafeInteger(parsed.intersections) ||
-      parsed.intersections < 1 ||
       !Number.isFinite(parsed.organicEstimatedTrafficVolume) ||
       parsed.organicEstimatedTrafficVolume < 0 ||
       parsed.domain === targetDomain ||
       parsed.domain.endsWith(`.${targetDomain}`) ||
       isBlockedDomain(parsed.domain)
+    ) {
+      continue;
+    }
+    if (
+      parsed.sourceKind === "serp_competitor"
+        ? !Number.isFinite(parsed.rating) ||
+          parsed.rating < 0 ||
+          !Number.isSafeInteger(parsed.keywordsCount) ||
+          parsed.keywordsCount < 0 ||
+          !Number.isSafeInteger(parsed.relevantSerpItems) ||
+          parsed.relevantSerpItems < 0
+        : !Number.isSafeInteger(parsed.intersections) ||
+          parsed.intersections < 1
     ) {
       continue;
     }
@@ -166,12 +238,31 @@ export function discoverProductProfileCompetitors(input: {
   const ranked = [...byDomain.values()]
     .sort(compareObservation)
     .slice(0, maxCandidates);
-  const strongest = ranked[0]?.intersections ?? 0;
-  const directThreshold = Math.max(2, Math.ceil(strongest * 0.35));
+  const strongestDomainOverlap = ranked.find(
+    (observation) => observation.sourceKind !== "serp_competitor",
+  );
+  const strongestSerp = ranked.find(
+    (observation) => observation.sourceKind === "serp_competitor",
+  );
+  const directOverlapThreshold = Math.max(
+    2,
+    Math.ceil((strongestDomainOverlap?.intersections ?? 0) * 0.35),
+  );
+  const directSerpThreshold =
+    strongestSerp?.sourceKind === "serp_competitor"
+      ? strongestSerp.rating * 0.6
+      : Number.POSITIVE_INFINITY;
 
   return ranked.map((observation) => {
-    const relationship: ProductProfileCompetitorRelationship =
-      observation.intersections >= directThreshold ? "direct" : "indirect";
+    const isSerp = observation.sourceKind === "serp_competitor";
+    const relationship: ProductProfileCompetitorRelationship = isSerp
+      ? observation.rating >= directSerpThreshold &&
+        observation.relevantSerpItems >= 2
+        ? "direct"
+        : "indirect"
+      : observation.intersections >= directOverlapThreshold
+        ? "direct"
+        : "indirect";
     const analysisScope: readonly ProductProfileCompetitorAnalysisScope[] =
       relationship === "direct"
         ? [
@@ -188,14 +279,25 @@ export function discoverProductProfileCompetitors(input: {
       relationship,
       analysisScope,
       similarity: null,
-      reason: reasonFor({
-        locale: input.outputLocale,
-        relationship,
-        intersections: observation.intersections,
-        marketCode: input.marketCode,
-      }),
-      confidence:
-        relationship === "direct" && observation.intersections >= 5
+      reason: isSerp
+        ? serpCompetitorReason({
+            locale: input.outputLocale,
+            relationship,
+            rating: observation.rating,
+            relevantSerpItems: observation.relevantSerpItems,
+            marketCode: input.marketCode,
+          })
+        : domainOverlapReason({
+            locale: input.outputLocale,
+            relationship,
+            intersections: observation.intersections,
+            marketCode: input.marketCode,
+          }),
+      confidence: isSerp
+        ? relationship === "direct" && observation.keywordsCount >= 2
+          ? "medium"
+          : "low"
+        : relationship === "direct" && observation.intersections >= 5
           ? "medium"
           : "low",
       observedAt: observation.observedAt,

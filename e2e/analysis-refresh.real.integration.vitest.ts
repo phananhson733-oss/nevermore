@@ -275,8 +275,8 @@ describeDb("Analysis Refresh real vertical chain", () => {
     );
     expect(dataForSeoSnapshots).toEqual([
       expect.objectContaining({
-        dataset_key: "dataforseo.search_landscape.v1",
-        method_version: "dataforseo.search_landscape.v1",
+        dataset_key: "dataforseo.search_landscape.v2",
+        method_version: "dataforseo.search_landscape.v2",
         availability: "available",
         row_count: 3,
       }),

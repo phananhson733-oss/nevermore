@@ -35,7 +35,9 @@ export type CreateCollectionRunRequest = z.infer<
 export const AuthorizeSourceRequest = z
   .object({
     phase: z.literal("authorize"),
-    returnPath: z.string().regex(/^\/p\/[0-9a-f-]+\/sources$/),
+    returnPath: z
+      .string()
+      .regex(/^\/p\/[0-9a-f-]+\/(?:sources|setup-sources)$/),
   })
   .strict();
 export type AuthorizeSourceRequest = z.infer<typeof AuthorizeSourceRequest>;

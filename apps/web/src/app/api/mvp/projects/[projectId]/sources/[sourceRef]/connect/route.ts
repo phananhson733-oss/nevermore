@@ -5,7 +5,10 @@ import { assertWorkspaceAttemptRateLimit } from "@/lib/http/rate-limit";
 import { ok } from "@/lib/http/respond";
 import { parseJsonBody, parseUuidParam } from "@/lib/http/validate";
 import { createCollectionRun } from "@/lib/services/collection";
-import { connectProjectSource } from "@/lib/services/source-connect";
+import {
+  connectProjectSource,
+  getSourceConnectionGate,
+} from "@/lib/services/source-connect";
 
 /**
  * `POST /api/mvp/projects/{projectId}/sources/{provider}/connect` — the three-phase
@@ -35,11 +38,25 @@ export const POST = operatorRoute<{ projectId: string; sourceRef: string }>(
       body,
     );
 
-    // Property selection is the customer's final connection action. Queue the
-    // first collection in this same server request so correctness never depends
-    // on the browser completing a second mutation after the connection commits.
-    // The stable source-derived key makes this hand-off idempotent.
-    if (result.phase === "connected" && result.source.id !== null) {
+    // Property selection is the customer's final connection action. Once the
+    // Product Profile is confirmed, queue the first collection in this same
+    // server request so correctness never depends on a second browser mutation.
+    // Optional onboarding connections remain durably connected but defer
+    // collection until confirmation provides the market and language context.
+    // The stable source-derived key makes the post-confirmation hand-off
+    // idempotent.
+    const sourceGate =
+      result.phase === "connected"
+        ? await getSourceConnectionGate(
+            { workspaceId: ctx.operator.workspaceId },
+            id,
+          )
+        : null;
+    if (
+      result.phase === "connected" &&
+      result.source.id !== null &&
+      sourceGate === "allowed"
+    ) {
       try {
         await createCollectionRun(
           { workspaceId: ctx.operator.workspaceId },

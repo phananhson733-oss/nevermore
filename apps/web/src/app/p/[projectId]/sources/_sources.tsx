@@ -2277,7 +2277,9 @@ export function SourcesClient({ projectId }: { readonly projectId: string }) {
             <span aria-hidden="true">·</span>
             <span>{copy.heroEyebrow(3)}</span>
           </div>
-          <h2 className={styles.heroTitle}>{copy.heroTitle}</h2>
+          <h2 className={styles.heroTitle} data-app-page-title="">
+            {copy.heroTitle}
+          </h2>
           <p className={styles.subtitle}>
             {copy.heroSummary(
               pageReadiness.usableCount,

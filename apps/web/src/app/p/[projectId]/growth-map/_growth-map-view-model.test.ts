@@ -1805,20 +1805,20 @@ describe("Growth Map view model", () => {
     );
   });
 
-  it("keeps published Keyword detail separate from the live review authority wiring", () => {
+  it("reads the current Keyword library while keeping published page evidence pinned", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
       "utf8",
     );
 
     expect(source).toContain(
-      "const detailQuery = useGrowthMapKeywordDetail(\n    projectId,\n    selectedKeywordId,\n    diagnosticRunId,",
+      "const detailQuery = useGrowthMapKeywordReviewDetail(\n    projectId,\n    selectedKeywordId,",
     );
     expect(source).toContain(
       "function KeywordLibraryPane({\n  projectId,\n  locationSearch,\n  navigation,\n  diagnosticRunId,",
     );
     expect(source).toContain(
-      "const listQuery = useGrowthMapKeywords(projectId, {\n    cursor,\n    limit: 50,\n    diagnosticRunId,",
+      "const listQuery = useGrowthMapKeywords(projectId, {\n    cursor,\n    limit: 50,\n  });",
     );
     expect(source).toContain(
       "const reviewDetailQuery = useGrowthMapKeywordReviewDetail(",
@@ -1887,7 +1887,7 @@ describe("Growth Map view model", () => {
     expect(source).toContain("selected.has(value)");
   });
 
-  it("bootstraps one published generation and pins all customer-visible library reads", () => {
+  it("pins page evidence while reading current Keyword and Competitor libraries", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
       "utf8",
@@ -1909,10 +1909,10 @@ describe("Growth Map view model", () => {
       "const detailQuery = useGrowthMapUrlDetail(\n    projectId,\n    selectedSitePageId,\n    diagnosticRunId,",
     );
     expect(source).toContain(
-      "const listQuery = useGrowthMapCompetitors(projectId, {\n    cursor,\n    limit: 50,\n    diagnosticRunId,",
+      "const listQuery = useGrowthMapCompetitors(projectId, {\n    cursor,\n    limit: 50,\n  });",
     );
     expect(source).toContain(
-      "const detailQuery = useGrowthMapCompetitorDetail(\n    projectId,\n    selectedCompetitorId,\n    diagnosticRunId,",
+      "const detailQuery = useGrowthMapCompetitorReviewDetail(\n    projectId,\n    selectedCompetitorId,",
     );
     expect(source).toContain(
       "const pinnedSitePagesQuery = useGrowthMapUrls(projectId, {\n    limit: 100,\n    diagnosticRunId,",

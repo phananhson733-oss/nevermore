@@ -185,7 +185,9 @@ export function ResultsClient({
   return (
     <div className={styles.page} data-results-page="">
       <header className={cx(styles.hero, styles.screenOnly)}>
-        <h1 className={styles.heroTitle}>{t("pageTitle")}</h1>
+        <h1 className={styles.heroTitle} data-app-page-title="">
+          {t("pageTitle")}
+        </h1>
         <p className={styles.heroLead}>{t("pageLead")}</p>
       </header>
       <MeasurementResultsSection projectId={projectId} />

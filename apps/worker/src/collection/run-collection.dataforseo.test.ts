@@ -10,11 +10,13 @@ import {
 import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 import {
   collectionSnapshotIdentity,
   resolveFrozenDataForSeoCollectionScope,
   resolveFrozenDataForSeoSearchLandscapeScope,
+  resolveFrozenDataForSeoSearchLandscapeV2Scope,
   runCollection,
   type CollectionWorkerContext,
 } from "./run-collection.ts";
@@ -33,7 +35,7 @@ afterEach(() => {
 });
 
 describe("DataForSEO worker gates", () => {
-  it("recognizes only the two exact legacy/composite operation and method pairs", () => {
+  it("recognizes the legacy ranked, v1 composite, and v2 composite identities", () => {
     expect(
       collectionSnapshotIdentity({
         provider: "dataforseo",
@@ -54,6 +56,16 @@ describe("DataForSEO worker gates", () => {
       datasetKey: "dataforseo.search_landscape.v1",
       schemaVersion: "dataforseo.search_landscape.v1",
     });
+    expect(
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        method_version: "dataforseo.search_landscape.v2",
+      }),
+    ).toEqual({
+      datasetKey: "dataforseo.search_landscape.v2",
+      schemaVersion: "dataforseo.search_landscape.v2",
+    });
     expect(() =>
       collectionSnapshotIdentity({
         provider: "dataforseo",
@@ -72,6 +84,69 @@ describe("DataForSEO worker gates", () => {
     ).toThrowError(
       expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
     );
+  });
+
+  it("validates the exact v2 seed scope and both base/fallback caps", () => {
+    const collectionScope = createDataForSeoSearchLandscapeV2Scope({
+      target: "accepted.example",
+      marketCode: "GB",
+      locationName: "United Kingdom",
+      languageTag: "en-GB",
+      rankedKeywordsLimit: 37,
+      competitorsDomainLimit: 19,
+      serpCompetitorsLimit: 17,
+      seeds: [
+        {
+          keyword: "seo automation",
+          sourceKind: "gsc_top_query",
+          sourceRef: "observation:one",
+        },
+      ],
+    });
+    const run = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      method_version: "dataforseo.search_landscape.v2",
+      site_id: "00000000-0000-4000-8000-000000000005",
+      source_connection_id: "00000000-0000-4000-8000-000000000006",
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId: "00000000-0000-4000-8000-000000000005",
+        collectionScope: collectionScope as never,
+      }),
+    };
+    const requestPayload = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      sourceConnectionId: run.source_connection_id,
+      collectionScope,
+    };
+
+    expect(
+      resolveFrozenDataForSeoSearchLandscapeV2Scope(
+        run as never,
+        requestPayload,
+        100,
+        50,
+      ),
+    ).toEqual(collectionScope);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeV2Scope(
+        run as never,
+        requestPayload,
+        36,
+        50,
+      ),
+    ).toThrow(/worker caps/i);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeV2Scope(
+        run as never,
+        requestPayload,
+        100,
+        16,
+      ),
+    ).toThrow(/worker caps/i);
   });
 
   it("validates the exact composite scope, hash, and both worker caps", () => {

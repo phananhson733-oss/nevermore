@@ -1,11 +1,14 @@
 import {
   type CollectionRunKeywordLibraryContext,
+  type ObservationRow,
   type SiteRow,
 } from "@sf/db";
+import { ProductProfileDraft, type ProductProfileDraft as ProductProfileDraftValue } from "@sf/contracts";
 import {
-  createDataForSeoSearchLandscapeScope,
-  DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
-  type DataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
+  DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
+  type DataForSeoSearchLandscapeSeed,
+  type DataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 
 /**
@@ -37,7 +40,7 @@ export const ANALYSIS_REFRESH_COLLECTION_CONFIG = {
   },
   dataforseo: {
     provider: "dataforseo",
-    operation: DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
+    operation: DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
     queue: "collect.dataforseo",
   },
 } as const;
@@ -49,6 +52,140 @@ export interface DataForSeoConnectionConfig {
   readonly languageCode: string;
   readonly maxKeywords: number;
   readonly maxCompetitors: number;
+  readonly maxSerpCompetitors: number;
+}
+
+interface DataForSeoSeedProfile {
+  readonly id: string;
+  readonly profile: ProductProfileDraftValue;
+}
+
+interface RankedSeed {
+  readonly seed: DataForSeoSearchLandscapeSeed;
+  readonly impressions: number;
+  readonly clicks: number;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function seedText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
+  return normalized.length > 0 && normalized.length <= 200 ? normalized : null;
+}
+
+/**
+ * Derive bounded query seeds only from canonical persisted evidence. The source
+ * kind and exact record pointer stay frozen next to every phrase; this helper
+ * never labels a GSC/Crawler/Profile phrase as a DataForSEO observation.
+ */
+export function deriveDataForSeoSearchLandscapeSeeds(input: {
+  readonly observations: readonly Pick<
+    ObservationRow,
+    "id" | "provider" | "metric_key" | "availability" | "value_json"
+  >[];
+  readonly productProfile: DataForSeoSeedProfile | null;
+}): readonly DataForSeoSearchLandscapeSeed[] {
+  const gsc: RankedSeed[] = [];
+  const crawler: DataForSeoSearchLandscapeSeed[] = [];
+  for (const observation of input.observations) {
+    if (observation.availability !== "available") continue;
+    const value = record(observation.value_json);
+    if (!value) continue;
+    if (observation.provider === "gsc" && observation.metric_key === "gsc.page.v1") {
+      const topQueries = Array.isArray(value.topQueries) ? value.topQueries : [];
+      for (const [index, candidate] of topQueries.entries()) {
+        const query = record(candidate);
+        const keyword = seedText(query?.query);
+        if (!keyword) continue;
+        gsc.push({
+          seed: {
+            keyword,
+            sourceKind: "gsc_top_query",
+            sourceRef: `observation:${observation.id}#/valueJson/topQueries/${index}/query`,
+          },
+          impressions:
+            typeof query?.impressions === "number" && Number.isFinite(query.impressions)
+              ? query.impressions
+              : 0,
+          clicks:
+            typeof query?.clicks === "number" && Number.isFinite(query.clicks)
+              ? query.clicks
+              : 0,
+        });
+      }
+      continue;
+    }
+    if (observation.provider === "crawl" && observation.metric_key === "crawl.page.v1") {
+      const values: Array<{ readonly value: unknown; readonly path: string }> = [
+        { value: value.title, path: "title" },
+        ...(Array.isArray(value.h1)
+          ? value.h1.map((heading, index) => ({ value: heading, path: `h1/${index}` }))
+          : []),
+      ];
+      for (const candidate of values) {
+        const keyword = seedText(candidate.value);
+        if (!keyword) continue;
+        crawler.push({
+          keyword,
+          sourceKind: "crawler_page_text",
+          sourceRef: `observation:${observation.id}#/valueJson/${candidate.path}`,
+        });
+      }
+    }
+  }
+  gsc.sort(
+    (left, right) =>
+      right.impressions - left.impressions ||
+      right.clicks - left.clicks ||
+      left.seed.keyword.localeCompare(right.seed.keyword, "en"),
+  );
+  crawler.sort(
+    (left, right) =>
+      left.sourceRef.localeCompare(right.sourceRef, "en") ||
+      left.keyword.localeCompare(right.keyword, "en"),
+  );
+
+  const profile: DataForSeoSearchLandscapeSeed[] = [];
+  if (input.productProfile) {
+    const parsed = ProductProfileDraft.safeParse(input.productProfile.profile);
+    if (parsed.success) {
+      const fields: Array<{ readonly value: unknown; readonly path: string }> = [
+        { value: parsed.data.productName, path: "productName" },
+        { value: parsed.data.category, path: "category" },
+        { value: parsed.data.productType, path: "productType" },
+        { value: parsed.data.oneLiner, path: "oneLiner" },
+        ...parsed.data.coreFeatures.map((value, index) => ({
+          value,
+          path: `coreFeatures/${index}`,
+        })),
+      ];
+      for (const field of fields) {
+        const keyword = seedText(field.value);
+        if (!keyword) continue;
+        profile.push({
+          keyword,
+          sourceKind: "product_profile",
+          sourceRef: `profile:${input.productProfile.id}#/${field.path}`,
+        });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const result: DataForSeoSearchLandscapeSeed[] = [];
+  for (const seed of [...gsc.map((entry) => entry.seed), ...crawler, ...profile]) {
+    const identity = seed.keyword.toLocaleLowerCase("en-US");
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    result.push(seed);
+    if (result.length === 200) break;
+  }
+  return result;
 }
 
 export function keywordLibraryContextForSite(
@@ -84,7 +221,8 @@ export function dataForSeoSearchLandscapeScopeForSite(
   site: Pick<SiteRow, "host" | "market_codes" | "language_codes">,
   maxKeywords: number,
   maxCompetitors: number,
-): DataForSeoSearchLandscapeScope | null {
+  seeds: readonly DataForSeoSearchLandscapeSeed[] = [],
+): DataForSeoSearchLandscapeV2Scope | null {
   if (site.market_codes.length !== 1 || site.language_codes.length !== 1) {
     return null;
   }
@@ -102,13 +240,15 @@ export function dataForSeoSearchLandscapeScopeForSite(
   }).of(marketCode);
   if (!locationName) return null;
   try {
-    return createDataForSeoSearchLandscapeScope({
+    return createDataForSeoSearchLandscapeV2Scope({
       target: site.host,
       marketCode,
       locationName,
       languageTag,
       rankedKeywordsLimit: maxKeywords,
       competitorsDomainLimit: maxCompetitors,
+      serpCompetitorsLimit: maxCompetitors,
+      seeds,
     });
   } catch {
     return null;
@@ -116,7 +256,7 @@ export function dataForSeoSearchLandscapeScopeForSite(
 }
 
 export function dataForSeoConnectionConfig(
-  scope: DataForSeoSearchLandscapeScope,
+  scope: DataForSeoSearchLandscapeV2Scope,
 ): DataForSeoConnectionConfig {
   if (scope.location.kind !== "name") {
     throw new Error("DataForSEO collection requires a named provider location");
@@ -128,11 +268,12 @@ export function dataForSeoConnectionConfig(
     languageCode: scope.providerLanguageCode,
     maxKeywords: scope.rankedKeywords.limit,
     maxCompetitors: scope.competitorsDomain.limit,
+    maxSerpCompetitors: scope.serpCompetitors.limit,
   };
 }
 
 export function dataForSeoLimitation(
   config: DataForSeoConnectionConfig,
 ): string {
-  return `DataForSEO search-landscape observations for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}; ranked keywords are capped at ${config.maxKeywords} and organic competitor domains at ${config.maxCompetitors} per collection. DataForSEO documents competitors-domain data as updated weekly, but neither response supplies an exact dataset timestamp, so capturedAt records collection time only. Every intersections value is an integer keyword-intersection count, not a percentage; no competitor name or business relationship is inferred.`;
+  return `DataForSEO search-landscape v2 observations for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}; ranked keywords at positions 1–100 are capped at ${config.maxKeywords}, organic competitor domains at ${config.maxCompetitors}, and the conditional SERP Competitors fallback at ${config.maxSerpCompetitors} per collection. GSC, Crawler, and Product Profile phrases remain declared seeds, never DataForSEO evidence. Every intersections value is an integer keyword-intersection count, not a percentage; no competitor name or business relationship is inferred.`;
 }

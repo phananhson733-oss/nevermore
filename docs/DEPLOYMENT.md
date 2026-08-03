@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0036_missing_analytics_site_page_lineage.sql` (**36 ordered migrations**)
+Migration range: `0001_init.sql` through `0038_optional_source_onboarding.sql` (**38 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0036` are hosted; every release must back up,
+v0.4 migrations through `0038` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 
@@ -137,9 +137,11 @@ self-healing retry states.
    Keep DataForSEO Basic Auth credentials on this worker only; Vercel receives
    the boolean feature flag and row cap, never the login/password.
    DataForSEO Search Landscape (DFS) is invoked only by the server-owned
-   Analysis Refresh plan. The public collection API remains limited to Crawl,
-   GSC, and GA4; no client request may supply DFS target, market, language,
-   limits, credentials, or provider queries.
+   Analysis Refresh plan. v2 queries positions 1–100 and can issue one paid
+   SERP Competitors fallback only when domain overlap is empty and frozen
+   GSC/Crawl/Product Profile seeds exist. The public collection API remains
+   limited to Crawl, GSC, and GA4; no client request may supply DFS target,
+   market, language, limits, credentials, or provider queries.
 6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
    completes, pg-boss starts and the worker holds its readiness lease. Logs must
    not expose environment values, provider bodies, model output or customer

@@ -50,6 +50,29 @@ import { isPostgresUniqueViolation } from "./db-errors";
 const INTENT_TTL_MS = 10 * 60 * 1000;
 const KEY_VERSION = "v1";
 
+function sourcesReturnPath(projectId: string): string {
+  return `/p/${projectId}/sources`;
+}
+
+function onboardingReturnPath(projectId: string): string {
+  return `/p/${projectId}/setup-sources`;
+}
+
+function oauthReturnPathKind(
+  projectId: string,
+  returnPath: string,
+): "sources" | "onboarding" | null {
+  if (returnPath === sourcesReturnPath(projectId)) return "sources";
+  if (returnPath === onboardingReturnPath(projectId)) return "onboarding";
+  return null;
+}
+
+function safeStoredReturnPath(projectId: string, returnPath: string): string {
+  return oauthReturnPathKind(projectId, returnPath) === "onboarding"
+    ? onboardingReturnPath(projectId)
+    : sourcesReturnPath(projectId);
+}
+
 export type ConnectResult =
   | { phase: "authorization"; authorizationUrl: string; expiresAt: string }
   | {
@@ -110,6 +133,39 @@ export async function getSourceConnectionGate(
   return confirmed ? "allowed" : "product_profile_required";
 }
 
+export interface OnboardingGoogleSourceState {
+  readonly connectedProviders: readonly OAuthProvider[];
+}
+
+/**
+ * Minimal server-only read model for the optional pre-synthesis connector step.
+ * It deliberately exposes no property ids, scopes, credentials, snapshots or
+ * retained history. The full Sources projection remains behind confirmation.
+ */
+export async function getOnboardingGoogleSourceState(
+  scope: WorkspaceScope,
+  projectId: string,
+): Promise<OnboardingGoogleSourceState | null> {
+  const { db } = getDb();
+  const project = await new ProjectsRepository(db).findById(scope, projectId);
+  if (
+    !project ||
+    project.archived_at !== null ||
+    project.current_icp_profile_id === null
+  ) {
+    return null;
+  }
+  const projectScope = { workspaceId: scope.workspaceId, projectId };
+  const sources = new SourceConnectionsRepository(db);
+  const connectedProviders: OAuthProvider[] = [];
+  for (const provider of ["gsc", "ga4"] as const) {
+    if (await sources.findConnectedByProvider(projectScope, provider)) {
+      connectedProviders.push(provider);
+    }
+  }
+  return { connectedProviders };
+}
+
 async function assertConfirmedProductProfile(
   exec: Executor,
   scope: WorkspaceScope,
@@ -131,6 +187,24 @@ async function assertConfirmedProductProfile(
       "The confirmed Product Profile must resolve to a complete immutable version before connecting GSC or GA4.",
     );
   }
+}
+
+/**
+ * The regular Sources screen still requires confirmed Product/ICP authority.
+ * The exact setup return path is the sole exception: a newly created product
+ * already has a durable draft identity, so OAuth can be completed before the
+ * customer enters the page that starts automatic synthesis.
+ */
+async function assertOAuthConnectionAuthority(
+  exec: Executor,
+  scope: WorkspaceScope,
+  projectId: string,
+  project: ProjectRow,
+  returnPath: string,
+): Promise<void> {
+  const kind = oauthReturnPathKind(projectId, returnPath);
+  if (kind === "onboarding" && project.current_icp_profile_id !== null) return;
+  await assertConfirmedProductProfile(exec, scope, projectId, project);
 }
 
 /** POST /projects/{projectId}/sources/{provider}/connect — dispatch by phase. */
@@ -177,7 +251,7 @@ async function authorize(
   const { db } = getDb();
   const now = deps.now ? deps.now() : Date.now();
 
-  if (returnPath !== `/p/${projectId}/sources`) {
+  if (oauthReturnPathKind(projectId, returnPath) === null) {
     throw new ProblemError(
       "VALIDATION_ERROR",
       "OAuth returnPath must target the current project.",
@@ -210,7 +284,13 @@ async function authorize(
     if (project.archived_at) {
       throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
     }
-    await assertConfirmedProductProfile(tx, scope, projectId, project);
+    await assertOAuthConnectionAuthority(
+      tx,
+      scope,
+      projectId,
+      project,
+      returnPath,
+    );
     const site = await new SitesRepository(tx).findPrimary(projectScope);
     if (!site) {
       throw new ProblemError("NOT_FOUND", "Project has no primary site.");
@@ -259,12 +339,18 @@ async function propertySelection(
     if (project.archived_at) {
       throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
     }
-    await assertConfirmedProductProfile(tx, scope, projectId, project);
     const intents = new OAuthIntentsRepository(tx);
     const intent = await intents.findByIdForUpdate(projectScope, oauthIntentId);
     if (!intent || intent.provider !== provider) {
       throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
     }
+    await assertOAuthConnectionAuthority(
+      tx,
+      scope,
+      projectId,
+      project,
+      intent.redirect_path,
+    );
     if (intent.status === "expired") return { kind: "expired" as const };
     if (intent.status !== "properties_ready") {
       throw new ProblemError(
@@ -322,7 +408,6 @@ async function selectProperty(
       if (project.archived_at) {
         throw new ProblemError("PROJECT_ARCHIVED", "Project is archived.");
       }
-      await assertConfirmedProductProfile(tx, scope, projectId, project);
       const intentsRepo = new OAuthIntentsRepository(tx);
       const intent = await intentsRepo.findByIdForUpdate(
         projectScope,
@@ -331,6 +416,13 @@ async function selectProperty(
       if (!intent || intent.provider !== provider) {
         throw new ProblemError("NOT_FOUND", "OAuth intent not found.");
       }
+      await assertOAuthConnectionAuthority(
+        tx,
+        scope,
+        projectId,
+        project,
+        intent.redirect_path,
+      );
       if (intent.status === "consumed") {
         throw new ProblemError(
           "OAUTH_STATE_REPLAYED",
@@ -383,7 +475,7 @@ async function selectProperty(
           ? "Search Console returns top rows by clicks, not the full query universe."
           : body.keyEventNames && body.keyEventNames.length > 0
             ? "GA4 organic landing data for the selected key events."
-            : "GA4 connected without key events; conversion metrics will be unavailable.";
+            : "GA4 organic landing data includes all key events defined by the property.";
 
       const connectionsRepo = new SourceConnectionsRepository(tx);
       const active = await connectionsRepo.findConnectedByProvider(
@@ -539,9 +631,12 @@ export async function handleGoogleCallback(
 
   // The state lookup is workspace-scoped, so its project id is the only redirect
   // target we mint even for legacy rows with a mismatched redirect_path.
-  const sourcesPath = `/p/${intent.project_id}/sources`;
+  const returnPath = safeStoredReturnPath(
+    intent.project_id,
+    intent.redirect_path,
+  );
   const failureLocation = (code: string): string =>
-    `${sourcesPath}?error=${encodeURIComponent(code)}`;
+    `${returnPath}?error=${encodeURIComponent(code)}`;
 
   return db.transaction(async (tx) => {
     // All OAuth mutations lock project → intent. The project lock also prevents
@@ -589,11 +684,12 @@ export async function handleGoogleCallback(
       return failureLocation("OAUTH_STATE_EXPIRED");
     }
     try {
-      await assertConfirmedProductProfile(
+      await assertOAuthConnectionAuthority(
         tx,
         scope,
         intent.project_id,
         project,
+        locked.redirect_path,
       );
     } catch (error) {
       if (
@@ -677,7 +773,7 @@ export async function handleGoogleCallback(
       });
       // The Sources screen needs BOTH params to open the property picker
       // (it reads `oauthIntentId` + `provider` from the URL, spec §7.4).
-      return `${sourcesPath}?oauthIntentId=${locked.id}&provider=${locked.provider}`;
+      return `${returnPath}?oauthIntentId=${locked.id}&provider=${locked.provider}`;
     } catch (error) {
       if (isRetryableCallbackError(error)) {
         return failureLocation("OAUTH_EXCHANGE_FAILED");

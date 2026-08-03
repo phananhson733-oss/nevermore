@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0036_missing_analytics_site_page_lineage.sql` (**36 ordered migrations**)
+  `0038_optional_source_onboarding.sql` (**38 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before
@@ -114,15 +114,16 @@ four-module surface:
   GA4 → DataForSEO Search Landscape (DFS) → Growth Audit plan. The public
   collection command remains exactly `crawl|gsc|ga4`; it cannot accept DFS
   target, market, language, limits, credentials, or provider queries.
-- DFS runs one frozen ranked-keywords request and one frozen
-  competitors-domain request under the same server-derived scope, then
-  atomically persists one `dataforseo.search_landscape.v1` Snapshot for Keyword
-  and Competitor evidence. Partial provider success is not a published
-  Search Landscape.
+- DFS v2 runs frozen ranked-keywords and competitors-domain requests at
+  positions/max-rank 1–100. Only when retained domain overlap is empty, it uses
+  frozen GSC/Crawl/Product Profile seeds for at most one paid SERP Competitors
+  fallback, then atomically persists one `dataforseo.search_landscape.v2`
+  Snapshot. Partial provider success is not a published Search Landscape.
 - URL/Keyword/Competitor list and detail GETs accept an optional canonical
-  `diagnosticRunId` pin for one exact published generation. `view=review` exists
-  only on Keyword/Competitor detail GETs, is mutually exclusive with the pin,
-  and their PATCH commands reject every query parameter.
+  `diagnosticRunId` pin for one exact published generation. Keyword/Competitor
+  lists without a pin show the current automatically projected candidate
+  libraries. `view=review` exists only on Keyword/Competitor detail GETs, is
+  mutually exclusive with the pin, and PATCH rejects every query parameter.
 
 Next reviewed slice: **authorized provider external writes**
 
@@ -145,6 +146,11 @@ active.
 - Production data paths: GSC, GA4, Crawl and DataForSEO; new or unconnected
   projects remain honestly empty and never fall back to the historical
   Artifact scenario.
+- New-product onboarding now exposes GSC and GA4 as explicit optional read-only
+  choices before automatic Product Profile generation. Either connector or the
+  entire step can be skipped; the narrow pre-confirmation OAuth exception is
+  restricted to the exact same-project setup route, while collection waits for
+  confirmed context.
 
 The deployed baseline before the current CI convergence was
 `2b74511c6c3a67e33c8174f455607b37e76ed63d`. A tracked file cannot embed the

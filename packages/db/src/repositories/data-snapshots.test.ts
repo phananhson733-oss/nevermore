@@ -267,7 +267,7 @@ describe("DataSnapshotsRepository latest selection", () => {
     );
   });
 
-  it("rejects ambiguous or unbounded latest-eligible selectors before querying", async () => {
+  it("allows multiple exact version contracts for one provider and selects the newest compatible Snapshot", async () => {
     const duplicateProvider = [
       {
         provider: "gsc",
@@ -285,6 +285,7 @@ describe("DataSnapshotsRepository latest selection", () => {
       },
     ];
     const fake = fakeExecutor();
+    fake.enqueue([]);
     const repository = new DataSnapshotsRepository(fake.executor);
 
     await expect(
@@ -293,7 +294,21 @@ describe("DataSnapshotsRepository latest selection", () => {
         "site-1",
         duplicateProvider,
       ),
-    ).rejects.toThrow(/provider/i);
+    ).resolves.toEqual([]);
+    const where = compiledCall(fake.calls, "where");
+    expect(where.params).toEqual(
+      expect.arrayContaining([
+        "gsc.page_query_daily.v1",
+        "gsc.page_query_daily.v2",
+        "gsc.search_analytics.v2",
+      ]),
+    );
+  });
+
+  it("rejects unbounded latest-eligible selectors before querying", async () => {
+    const fake = fakeExecutor();
+    const repository = new DataSnapshotsRepository(fake.executor);
+
     await expect(
       repository.findLatestEligibleBySite(scope, "", [
         {

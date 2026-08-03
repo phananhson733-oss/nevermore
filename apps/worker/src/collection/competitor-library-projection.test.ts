@@ -7,12 +7,16 @@ import {
   ObservationsRepository,
   SourceConnectionsRepository,
   type CollectionRunRow,
+  type CanonicalValue,
   type DataSnapshotRow,
   type ImportPreviewRow,
   type ObservationRow,
   type SourceConnectionRow,
 } from "@sf/db";
-import { createDataForSeoSearchLandscapeScope } from "@sf/sources";
+import {
+  createDataForSeoSearchLandscapeScope,
+  createDataForSeoSearchLandscapeV2Scope,
+} from "@sf/sources";
 import {
   deriveCsvCompetitorOriginInput,
   deriveSerpOverlapCompetitorOriginInput,
@@ -184,6 +188,20 @@ const searchLandscapeScope = createDataForSeoSearchLandscapeScope({
   competitorsDomainLimit: 25,
 });
 
+const searchLandscapeV2Scope = createDataForSeoSearchLandscapeV2Scope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "en-US",
+  seeds: [
+    {
+      keyword: "enterprise seo",
+      sourceKind: "gsc_top_query",
+      sourceRef: "observation:gsc-fixture",
+    },
+  ],
+});
+
 function dataForSeoSnapshot(
   overrides: Partial<DataSnapshotRow> = {},
 ): DataSnapshotRow {
@@ -257,6 +275,64 @@ function dataForSeoObservation(
       languageCode: "en",
     },
     limitation: "Provider competitor-domain observation.",
+    ...overrides,
+  });
+}
+
+function dataForSeoV2Snapshot(
+  overrides: Partial<DataSnapshotRow> = {},
+): DataSnapshotRow {
+  return dataForSeoSnapshot({
+    dataset_key: "dataforseo.search_landscape.v2",
+    schema_version: "dataforseo.search_landscape.v2",
+    method_version: "dataforseo.search_landscape.v2",
+    summary: {
+      collectionScope: searchLandscapeV2Scope,
+      timing: {
+        collectedAt,
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+    },
+    ...overrides,
+  });
+}
+
+function dataForSeoV2Run(
+  overrides: Partial<CollectionRunRow> = {},
+): CollectionRunRow {
+  return dataForSeoRun({
+    method_version: "dataforseo.search_landscape.v2",
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "search_landscape",
+      siteId,
+      collectionScope: searchLandscapeV2Scope as unknown as CanonicalValue,
+    } as CanonicalValue),
+    ...overrides,
+  });
+}
+
+function dataForSeoSerpCompetitorObservation(
+  overrides: Partial<ObservationRow> = {},
+): ObservationRow {
+  return dataForSeoObservation({
+    metric_key: "dataforseo.serp_competitor.v1",
+    value_json: {
+      targetDomain: "example.com",
+      competitorDomain: "rival.example",
+      averagePosition: 3.5,
+      medianPosition: 3,
+      rating: 880,
+      organicEstimatedTrafficVolume: 1_200,
+      keywordsCount: 2,
+      visibility: 0.42,
+      relevantSerpItems: 2,
+      seedCount: 1,
+      marketCode: "US",
+      languageCode: "en",
+    },
     ...overrides,
   });
 }
@@ -447,6 +523,39 @@ describe("deriveSerpOverlapCompetitorOriginInput", () => {
       observationId,
       sourcePointer: "/valueJson/competitorDomain",
     });
+  });
+
+  it("projects the v2 paid SERP fallback with its distinct immutable metric", () => {
+    expect(
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoV2Snapshot(),
+        dataForSeoV2Run(),
+        dataForSeoSerpCompetitorObservation(),
+      ),
+    ).toEqual({
+      originKind: "serp_overlap",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+  });
+
+  it("rejects a v2 SERP fallback that lies about its frozen seed count", () => {
+    expect(() =>
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoV2Snapshot(),
+        dataForSeoV2Run(),
+        dataForSeoSerpCompetitorObservation({
+          value_json: {
+            ...(dataForSeoSerpCompetitorObservation()
+              .value_json as Record<string, unknown>),
+            seedCount: 2,
+          },
+        }),
+      ),
+    ).toThrow(/seed scope/i);
   });
 
   it("ignores the ranked-keyword half of the same composite Snapshot", () => {

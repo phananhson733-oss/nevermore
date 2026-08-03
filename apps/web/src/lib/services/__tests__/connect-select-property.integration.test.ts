@@ -39,6 +39,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 import {
   connectProjectSource,
+  getOnboardingGoogleSourceState,
   handleGoogleCallback,
 } from "@/lib/services/source-connect";
 import { disconnectProjectSource } from "@/lib/services/sources";
@@ -340,6 +341,95 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     await expect(projectIntentCount(project.scope)).resolves.toBe(0);
   });
 
+  it("completes OAuth through the exact optional setup path for a new Product Profile draft", async () => {
+    const actorId = randomUUID();
+    const [workspace] = await handle.db
+      .insert(workspaces)
+      .values({ name: `onboarding-source-${randomUUID()}` })
+      .returning();
+    const created = await createProject(
+      { workspaceId: workspace!.id },
+      actorId,
+      randomUUID(),
+      {
+        mode: "product_profile",
+        productName: "Optional source product",
+        productUrl: "https://optional-source.example.com/product",
+        customerModel: "b2b",
+        primaryMarket: "US",
+        growthObjectives: ["increase_organic_traffic"],
+      },
+      safeGuard,
+      { defaultDeliveryLocale: "en" },
+    );
+    const projectScope = {
+      workspaceId: workspace!.id,
+      projectId: created.project.id,
+    };
+    const returnPath = `/p/${created.project.id}/setup-sources`;
+
+    const authorization = await connectProjectSource(
+      projectScope,
+      created.project.id,
+      "gsc",
+      actorId,
+      { phase: "authorize", returnPath },
+    );
+    expect(authorization.phase).toBe("authorization");
+    if (authorization.phase !== "authorization") {
+      throw new Error("authorization phase missing");
+    }
+    const state = new URL(authorization.authorizationUrl).searchParams.get(
+      "state",
+    );
+    expect(state).toBeTruthy();
+
+    const callbackLocation = await handleGoogleCallback(
+      { workspaceId: workspace!.id },
+      { code: "onboarding-code", state, error: null },
+      { client: fakeClient() },
+    );
+    const callbackUrl = new URL(callbackLocation, "https://app.example");
+    expect(callbackUrl.pathname).toBe(returnPath);
+    expect(callbackUrl.searchParams.get("provider")).toBe("gsc");
+    const oauthIntentId = callbackUrl.searchParams.get("oauthIntentId");
+    expect(oauthIntentId).toBeTruthy();
+
+    const selection = await connectProjectSource(
+      projectScope,
+      created.project.id,
+      "gsc",
+      actorId,
+      { phase: "property_selection", oauthIntentId: oauthIntentId! },
+    );
+    expect(selection).toMatchObject({
+      phase: "property_selection",
+      provider: "gsc",
+    });
+
+    const connected = await connectProjectSource(
+      projectScope,
+      created.project.id,
+      "gsc",
+      actorId,
+      {
+        phase: "select_property",
+        oauthIntentId: oauthIntentId!,
+        externalPropertyId: "https://seed.example/",
+      },
+    );
+    expect(connected).toMatchObject({
+      phase: "connected",
+      source: { provider: "gsc" },
+    });
+    await expect(
+      getOnboardingGoogleSourceState(
+        { workspaceId: workspace!.id },
+        created.project.id,
+      ),
+    ).resolves.toEqual({ connectedProviders: ["gsc"] });
+  });
+
   it.each(["property_selection", "select_property"] as const)(
     "rejects %s before Product Profile / ICP confirmation without mutating the ready intent",
     async (phase) => {
@@ -596,7 +686,7 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     expectScrubbed(consumedIntent, "consumed");
   });
 
-  it("persists the selected GA4 property's real timezone in connection config", async () => {
+  it("persists GA4 timezone and defaults to every property key event without an event picker", async () => {
     const state = generateState();
     const intent = await new OAuthIntentsRepository(handle.db).insert({
       workspaceId: scope.workspaceId,
@@ -642,7 +732,6 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
         phase: "select_property",
         oauthIntentId: intent.id,
         externalPropertyId: "123456789",
-        keyEventNames: ["purchase"],
       },
     );
     expect(result.phase).toBe("connected");
@@ -656,8 +745,11 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     expect(stored?.config).toMatchObject({
       propertyId: "123456789",
       propertyTimeZone: "Asia/Shanghai",
-      keyEventNames: ["purchase"],
+      keyEventNames: [],
     });
+    expect(stored?.limitation).toBe(
+      "GA4 organic landing data includes all key events defined by the property.",
+    );
   });
 
   it("serializes concurrent selection so one connection wins and the replay is a stable 409", async () => {
