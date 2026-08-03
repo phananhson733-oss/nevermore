@@ -47,6 +47,8 @@ const ENVELOPE: QuickWinsEnvelope = {
     },
     anonymization: null,
     limitations: ["serp_cause_unobserved"],
+    drafts: [],
+    draftsSkipped: {},
   },
 };
 
