@@ -1051,9 +1051,9 @@
       "unavailableReasons": {
         "history_below_twelve_weeks": "需要 12 周历史，该站点还不够",
         "history_below_thirteen_months": "需要 13 个月才有去年同期可比 —— 我们不做估算",
-        "query_data_not_supplied": "本次未读取查询级数据",
-        "page_data_not_supplied": "本次未读取页面级数据",
-        "probe_data_not_supplied": "本次未抓取受影响页面",
+        "query_data_not_supplied": "这个工具只读站点整体的日级数据，不读查询级。要看查询级拆分，去 Search Console 的「查询」标签页。",
+        "page_data_not_supplied": "这个工具只读站点整体的日级数据，不读页面级。要看页面级拆分，去 Search Console 的「网页」标签页。",
+        "probe_data_not_supplied": "这个工具不抓取你的页面，所以无法判断受影响的页面现在是否还能正常响应。这一项去 Search Console 的「网址检查」确认。",
         "index_report_lag": "Search Console 的索引报告滞后于性能数据，无法覆盖事件当天 —— 在这里既不能确认也不能排除",
         "site_below_detection_floor": "该站点从未有过一周大到足以让检测器工作",
         "no_recent_days": "该站点没有返回最近的日期数据",

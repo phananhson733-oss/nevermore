@@ -1051,9 +1051,9 @@
       "unavailableReasons": {
         "history_below_twelve_weeks": "Needs twelve weeks of history; this property has less",
         "history_below_thirteen_months": "Needs thirteen months so the same season last year exists — we do not estimate it",
-        "query_data_not_supplied": "Query-level data was not read in this run",
-        "page_data_not_supplied": "Page-level data was not read in this run",
-        "probe_data_not_supplied": "Affected pages were not fetched in this run",
+        "query_data_not_supplied": "This tool reads whole-property daily totals only, not query-level data. Search Console's Queries tab is where that breakdown lives.",
+        "page_data_not_supplied": "This tool reads whole-property daily totals only, not page-level data. Search Console's Pages tab is where that breakdown lives.",
+        "probe_data_not_supplied": "This tool does not fetch your pages, so it cannot say whether the affected ones still respond. Search Console's URL Inspection is where that is checked.",
         "index_report_lag": "Search Console's index report trails its performance data, so it cannot cover the event days — this can be neither confirmed nor ruled out here",
         "site_below_detection_floor": "This property has never had a week large enough for the detector to work on",
         "no_recent_days": "No recent days were returned for this property",
