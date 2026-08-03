@@ -1106,7 +1106,11 @@
         "coverage_below_floor": "Too much of this property's traffic is withheld from the query report for a group-versus-group comparison to mean anything.",
         "coverage_shift_too_large": "The two windows differ too much in how much of your traffic is visible. That difference alone can manufacture the pattern this check looks for.",
         "brand_sample_below_floor": "There are too few brand queries and too few brand clicks for a percentage to be anything but noise.",
-        "cohort_below_floor": "Too few queries cleared the impression floor to describe a migration."
+        "cohort_below_floor": "Too few queries cleared the impression floor to describe a migration.",
+        "read_truncated": "One window returned more queries than we read. Rows arrive highest-click first, so what we missed is the long tail — the part this comparison is about. A number computed from the rest could point the other way, so there is no number.",
+        "group_without_baseline": "One of the two groups had no clicks in the earlier window, so its change has no denominator. Most often the brand list matched everything, leaving nothing on the other side.",
+        "brand_group_not_observable_after": "Brand queries were there before and are absent now. That is not the same as brand traffic ending: Search Console withholds low-volume queries, and the threshold is well above zero. Both look identical from here.",
+        "no_top_ten_queries": "None of the queries in this set were in the top ten to begin with, so there is no migration out of it to describe."
       },
       "limitations": {
         "history_below_twelve_weeks": "Twelve weeks of history are needed before a decline can be judged. Below that we would be reading noise, so we do not report a verdict.",
@@ -1205,6 +1209,12 @@
           "coverage": "These queries carried {share} of the clicks we could see in the earlier window.",
           "truncated": "One of the windows returned more queries than we read, so the set is drawn from a prefix."
         }
+      },
+      "brandTerms": {
+        "label": "Your brand terms (optional)",
+        "help": "Used for one observation: whether branded and unbranded searches moved differently. We guessed from your domain, which gets it wrong often — a one-word domain never matches how people actually type the brand, and shortening it can swallow every generic query in your field. Separate with commas; include the spaced form if there is one.",
+        "placeholder": "acme, acme co, acmeapp",
+        "confirm": "These are my brand terms. Without this the split is skipped, and the report says so."
       }
     },
     "quickWins": {

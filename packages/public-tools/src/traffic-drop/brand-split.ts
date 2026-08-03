@@ -119,9 +119,32 @@ export type BrandSplitUnavailableReason =
   | "brand_terms_not_confirmed"
   | "property_totals_unavailable"
   | "aggregation_basis_mixed"
+  /**
+   * One of the windows returned a prefix rather than all its rows.
+   *
+   * Rows come back ordered by clicks descending, so a prefix is not a sample —
+   * it systematically omits the low-click tail, which is where the non-brand
+   * long tail lives. A split computed from it can invert.
+   */
+  | "read_truncated"
   | "coverage_below_floor"
   | "coverage_shift_too_large"
-  | "brand_sample_below_floor";
+  | "brand_sample_below_floor"
+  /**
+   * A group had no clicks in the earlier window, so its change has no
+   * denominator. Reported rather than rendered as "no material change" — an
+   * unknown ratio is not a measurement of stability.
+   */
+  | "group_without_baseline"
+  /**
+   * The brand group cleared the floor before and is entirely absent after.
+   *
+   * Zero visible clicks does not mean zero clicks: Search Console withholds
+   * low-volume queries, and the threshold sits well above zero. "Brand traffic
+   * ended" and "brand queries fell under the disclosure threshold" produce the
+   * identical row set, and this data cannot separate them.
+   */
+  | "brand_group_not_observable_after";
 
 export type BrandSplitOutcome =
   | {
@@ -220,16 +243,14 @@ function groupOf(
   };
 }
 
-function shapeOf(
-  brand: BrandSliceGroup,
-  nonBrand: BrandSliceGroup,
-): BrandSplitShape {
-  const brandMoved = brand.clickChangeRatio;
-  const nonBrandMoved = nonBrand.clickChangeRatio;
-  // Without both ratios there is no relative statement to make.
-  if (brandMoved === null || nonBrandMoved === null)
-    return "no_material_change";
-
+/**
+ * Both ratios are required, and the caller has already refused the split when
+ * either is null. That check does NOT belong here: returning
+ * `no_material_change` for a missing denominator renders an unknown as
+ * "neither group moved", which is the `unavailable ≠ 0` rule broken in the
+ * place it does the most damage — the reader is told nothing happened.
+ */
+function shapeOf(brandMoved: number, nonBrandMoved: number): BrandSplitShape {
   const brandFell = brandMoved <= -MATERIAL_CHANGE_RATIO;
   const nonBrandFell = nonBrandMoved <= -MATERIAL_CHANGE_RATIO;
 
@@ -287,6 +308,15 @@ export function describeBrandSplit(
     };
   }
 
+  // Before any arithmetic. Rows arrive ordered by clicks descending, so a
+  // truncated read is a prefix that systematically omits the low-click tail —
+  // which is exactly where the non-brand long tail lives. Reporting the
+  // truncation next to a computed split, as this did, still publishes the
+  // split; a reader takes the number and skims the caveat.
+  if (coverage.before.truncated || coverage.after.truncated) {
+    return { kind: "not_available", reason: "read_truncated", coverage };
+  }
+
   const beforeShare = coverage.before.clickShare;
   const afterShare = coverage.after.clickShare;
   if (beforeShare === null || afterShare === null) {
@@ -329,11 +359,40 @@ export function describeBrandSplit(
     };
   }
 
+  // The coverage gates above are property-wide: they bound how much of the
+  // SITE is withheld, not how much of either GROUP is. A brand set that
+  // cleared the floor before and shows nothing after has either lost its
+  // traffic or slipped under the disclosure threshold, and those produce the
+  // same empty row set. Property coverage can sit at 85% throughout while this
+  // happens, because high-volume non-brand rows dominate the total.
+  if (brand.clicksAfter === 0) {
+    return {
+      kind: "not_available",
+      reason: "brand_group_not_observable_after",
+      coverage,
+    };
+  }
+
+  const brandMoved = brand.clickChangeRatio;
+  const nonBrandMoved = nonBrand.clickChangeRatio;
+  if (brandMoved === null || nonBrandMoved === null) {
+    // A group with no clicks in the earlier window has no denominator. There
+    // is a real case behind this: a brand list broad enough to match every
+    // visible query leaves the non-brand group empty, and the shape function
+    // used to call that "no material change" — an unknown rendered as an
+    // all-clear, on the check most likely to be read as reassurance.
+    return {
+      kind: "not_available",
+      reason: "group_without_baseline",
+      coverage,
+    };
+  }
+
   return {
     kind: "slice",
     brand,
     nonBrand,
-    shape: shapeOf(brand, nonBrand),
+    shape: shapeOf(brandMoved, nonBrandMoved),
     coverage,
   };
 }

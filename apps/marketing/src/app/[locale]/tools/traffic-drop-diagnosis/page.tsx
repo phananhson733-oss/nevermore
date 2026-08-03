@@ -1,5 +1,6 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
+import { brandTermCandidates } from "@sf/public-tools";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
 import { TrafficDropTool } from "@/components/tools/traffic-drop-tool";
@@ -56,6 +57,24 @@ export default async function TrafficDropDiagnosisPage({
           propertyTotal={session.propertyTotal}
           connectEnabled={session.connectEnabled}
           consentNotice={session.consentNotice}
+          {...(session.properties
+            ? {
+                /*
+                 * Derived here rather than in the browser: `@sf/public-tools`
+                 * reaches `node:net` through its own index, so a client
+                 * component can only take TYPES from it. These are candidates
+                 * for a form the visitor edits — never a brand list on their
+                 * behalf; the domain gets it wrong in both directions and
+                 * silently. See brand-candidates.ts.
+                 */
+                brandCandidates: Object.fromEntries(
+                  session.properties.map((property) => [
+                    property,
+                    brandTermCandidates(property),
+                  ]),
+                ),
+              }
+            : {})}
         />
       </NextIntlClientProvider>
     </ConnectedToolPage>

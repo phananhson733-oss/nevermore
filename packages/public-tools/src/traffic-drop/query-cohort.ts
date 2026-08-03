@@ -48,8 +48,20 @@ export const COHORT_POSITION_BUCKETS: readonly PositionBucket[] = [
   "beyond_50",
 ];
 
+/**
+ * Whether a row's position is a position at all.
+ *
+ * Search Console positions start at 1. The transport client coerces a missing
+ * or non-numeric metric to 0, so a malformed row arrives here indistinguishable
+ * from a real one — and `0 <= 10` put it in the top bucket. A row that reports
+ * rank zero is a parsing artefact, not the best-ranking query on the site.
+ */
+export function isRankedPosition(position: number): boolean {
+  return Number.isFinite(position) && position >= 1;
+}
+
 export function bucketFor(position: number): PositionBucket {
-  if (!Number.isFinite(position)) return "beyond_50";
+  if (!isRankedPosition(position)) return "beyond_50";
   if (position <= 10) return "top_10";
   if (position <= 20) return "11_20";
   if (position <= 50) return "21_50";
@@ -82,7 +94,18 @@ export interface TopTenOutcome {
 export type QueryCohortUnavailableReason =
   | "read_not_performed"
   | "aggregation_basis_mixed"
-  | "cohort_below_floor";
+  /**
+   * One of the windows returned a prefix rather than all its rows.
+   *
+   * Fatal here in a way it is not elsewhere. A cohort query missing from a
+   * truncated later window is indistinguishable from one that genuinely left
+   * the report, so `noLongerVisible` — the number this module exists to state
+   * carefully — would be counting our own read limit.
+   */
+  | "read_truncated"
+  | "cohort_below_floor"
+  /** Every cohort query started below the top ten, so there is no migration to describe. */
+  | "no_top_ten_queries";
 
 export interface QueryCohortCoverage {
   readonly beforeTruncated: boolean;
@@ -156,8 +179,17 @@ export function describeQueryCohort(
     return { kind: "not_available", reason: "aggregation_basis_mixed" };
   }
 
+  // Before the cohort is drawn. A prefix in either window makes the central
+  // number here — how many cohort queries are no longer in the report —
+  // a measurement of our own paging cap rather than of the property.
+  if (input.before.paging.truncated || input.after.paging.truncated) {
+    return { kind: "not_available", reason: "read_truncated" };
+  }
+
   const cohort = input.before.rows.filter(
-    (row) => row.impressions >= MIN_COHORT_IMPRESSIONS,
+    (row) =>
+      row.impressions >= MIN_COHORT_IMPRESSIONS &&
+      isRankedPosition(row.position),
   );
   if (cohort.length < MIN_COHORT_QUERIES) {
     return { kind: "not_available", reason: "cohort_below_floor" };
@@ -194,6 +226,14 @@ export function describeQueryCohort(
     if (bucket === "top_10") topTen.heldTopTen += 1;
     else if (bucket === "beyond_50") topTen.fellBelowFifty += 1;
     else topTen.slippedWithinFifty += 1;
+  }
+
+  // Nothing started in the top ten, so the migration this module describes has
+  // no subject. Reported rather than allowed through as a `clear`, which the
+  // copy renders as "the queries that started in the top ten are still there"
+  // — a sentence about an empty set that reads as good news.
+  if (topTen.startedInTopTen === 0) {
+    return { kind: "not_available", reason: "no_top_ten_queries" };
   }
 
   const visibleClicks = input.before.rows.reduce(

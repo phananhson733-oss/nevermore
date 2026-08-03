@@ -259,7 +259,21 @@ export type TrafficUnavailableReason =
   /** The brand side is too small for a percentage to mean anything. */
   | "brand_sample_below_floor"
   /** Too few queries cleared the impression floor to describe a migration. */
-  | "cohort_below_floor";
+  | "cohort_below_floor"
+  /**
+   * A window returned a prefix instead of all its rows.
+   *
+   * Rows arrive ordered by clicks descending, so a prefix is not a sample: it
+   * systematically omits the low-click tail. Reporting truncation beside a
+   * computed number still publishes the number, and a reader takes the number.
+   */
+  | "read_truncated"
+  /** A group had no clicks in the earlier window, so its change has no denominator. */
+  | "group_without_baseline"
+  /** The brand group cleared the floor before and is entirely absent after. */
+  | "brand_group_not_observable_after"
+  /** No cohort query started in the top ten, so there is no migration to describe. */
+  | "no_top_ten_queries";
 
 export interface TrafficCheck {
   readonly id: string;

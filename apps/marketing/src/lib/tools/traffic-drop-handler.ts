@@ -38,7 +38,18 @@ export const TRAFFIC_DROP_LOOKBACK_DAYS = 480;
 export interface TrafficDropQueryReadRequest {
   readonly property: string;
   readonly changePoint: TrafficChangePoint;
-  readonly seriesEndDate: string;
+  /**
+   * The run's clock, which is what the later comparison window is derived
+   * from — NOT the last day of the series.
+   *
+   * The daily series is read with `dataState: all` so the visitor can see the
+   * days they came about, which puts its last row two to three days past
+   * finalisation. The query reads use `final`. Anchoring on the series end
+   * therefore asked for 28 days and got about 25, biasing every ratio and,
+   * worse, lowering the later window's coverage specifically — the exact
+   * asymmetry that manufactures the pattern this tool reports.
+   */
+  readonly now: Date;
 }
 
 export interface TrafficDropHandlerDependencies {
@@ -208,7 +219,8 @@ export async function handleTrafficDropRequest(
       return json(createPublicToolError("no_gsc_data"), 200);
     }
 
-    const completedAt = dependencies.now().toISOString();
+    const runAt = dependencies.now();
+    const completedAt = runAt.toISOString();
     const base = {
       daily,
       completedAt,
@@ -221,15 +233,14 @@ export async function handleTrafficDropRequest(
     // anchored on. The build is pure and cheap; the alternative is duplicating
     // the detector at the transport boundary.
     const firstPass = buildTrafficDropReport(base);
-    const seriesEndDate = firstPass.result.dataEndDate;
 
     const queryEvidence =
-      dependencies.readQueryEvidence === undefined || seriesEndDate === null
+      dependencies.readQueryEvidence === undefined
         ? null
         : await readQueryEvidenceSoftly(dependencies.readQueryEvidence, {
             property: input.value.property,
             changePoint: firstPass.result.changePoint,
-            seriesEndDate,
+            now: runAt,
           });
 
     const envelope =

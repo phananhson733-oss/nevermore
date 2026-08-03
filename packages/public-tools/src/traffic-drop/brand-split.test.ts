@@ -219,6 +219,62 @@ describe("describeBrandSplit", () => {
     expect(result.shape).toBe("no_material_change");
   });
 
+  it("refuses on a truncated read before doing any arithmetic", () => {
+    // Rows arrive ordered by clicks descending, so a prefix systematically
+    // omits the low-click tail — which is where the non-brand long tail lives,
+    // and where this comparison lives. Reporting the truncation next to a
+    // computed split still publishes the split.
+    const truncated = {
+      ...evidence(BEFORE),
+      paging: { pagesFetched: 2, truncated: true },
+    };
+
+    expect(
+      describeBrandSplit({
+        before: truncated,
+        after: evidence(AFTER),
+        ...CONFIRMED,
+      }),
+    ).toMatchObject({ kind: "not_available", reason: "read_truncated" });
+  });
+
+  it("refuses when a brand list swallowed every query", () => {
+    // The non-brand group is then empty, its ratio has no denominator, and the
+    // shape function used to call that "no material change" — an unknown
+    // rendered as an all-clear, on the check most likely to be read as
+    // reassurance. Reachable from an anonymous POST with brandTerms:["the"].
+    const result = describeBrandSplit({
+      before: evidence(BEFORE),
+      after: evidence(AFTER),
+      // Matching is on whole tokens, so "widget" alone does not catch
+      // "best widgets" — both stems are needed to empty the non-brand side.
+      brandTerms: ["acme", "widget", "best"],
+      brandTermsConfirmed: true,
+    });
+
+    expect(result).toMatchObject({
+      kind: "not_available",
+      reason: "group_without_baseline",
+    });
+  });
+
+  it("refuses when the brand group cleared the floor before and is gone after", () => {
+    // Property-wide coverage does not bound how much of a GROUP was withheld.
+    // Brand queries falling under the disclosure threshold and brand traffic
+    // ending produce the identical empty row set, while overall coverage stays
+    // high because non-brand volume dominates the totals.
+    const result = describeBrandSplit({
+      before: evidence(BEFORE),
+      after: evidence(AFTER.filter((r) => !r.query.startsWith("acme"))),
+      ...CONFIRMED,
+    });
+
+    expect(result).toMatchObject({
+      kind: "not_available",
+      reason: "brand_group_not_observable_after",
+    });
+  });
+
   it("reports an unknown withheld share as unknown, never as zero", () => {
     const result = describeBrandSplit({
       before: evidence(BEFORE, { totalClicks: null }),

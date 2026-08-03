@@ -44,6 +44,17 @@ interface TrafficDropToolProps {
   readonly connectEnabled: boolean;
   /** What Google will put in front of the visitor, if anything. */
   readonly consentNotice: GoogleConsentNotice;
+  /**
+   * Mechanical brand-term guesses per property, for the visitor to correct.
+   *
+   * Derived on the server because the module that builds them lives in a
+   * package that reaches `node:net`. They are a form's starting value and
+   * nothing else: the split refuses to run until the visitor has confirmed
+   * the list, because a domain-derived guess is wrong in both directions —
+   * too narrow to match how people type the brand, and too wide the moment it
+   * is shortened to a word that is also a topic.
+   */
+  readonly brandCandidates?: Readonly<Record<string, readonly string[]>>;
 }
 
 export function TrafficDropTool({
@@ -52,6 +63,7 @@ export function TrafficDropTool({
   propertyTotal,
   connectEnabled,
   consentNotice,
+  brandCandidates,
 }: TrafficDropToolProps) {
   const t = useTranslations("tools.trafficDrop");
   const [property, setProperty] = useState(properties?.[0] ?? "");
@@ -69,6 +81,32 @@ export function TrafficDropTool({
    */
   const [manualAction, setManualAction] =
     useState<ManualActionStatus>("not_checked");
+  /**
+   * The brand list, as text the visitor can edit.
+   *
+   * Seeded from the server's candidates for the selected property, and sent
+   * only when `brandConfirmed` is set. Without that flag the engine reports
+   * `brand_terms_not_confirmed` and withholds the split — which is the whole
+   * point: nothing here is evidence until a person has looked at it.
+   */
+  const [brandInput, setBrandInput] = useState(
+    (brandCandidates?.[properties?.[0] ?? ""] ?? []).join(", "),
+  );
+  const [brandConfirmed, setBrandConfirmed] = useState(false);
+
+  const brandTerms = brandInput
+    .split(",")
+    .map((term) => term.trim())
+    .filter((term) => term !== "");
+
+  function selectProperty(next: string) {
+    setProperty(next);
+    // A brand list belongs to one site. Carrying the previous property's terms
+    // across would quietly classify the new site's queries by someone else's
+    // brand, so the confirmation resets with them.
+    setBrandInput((brandCandidates?.[next] ?? []).join(", "));
+    setBrandConfirmed(false);
+  }
 
   async function run(target: string, answer: ManualActionStatus) {
     setLoading(true);
@@ -78,7 +116,12 @@ export function TrafficDropTool({
       const response = await fetch("/api/tools/traffic-drop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ property: target, manualAction: answer }),
+        body: JSON.stringify({
+          property: target,
+          manualAction: answer,
+          brandTerms,
+          brandTermsConfirmed: brandConfirmed,
+        }),
       });
       const body = (await response.json()) as {
         data?: TrafficDropPayload;
@@ -245,7 +288,7 @@ export function TrafficDropTool({
         <select
           id="traffic-drop-property"
           value={property}
-          onChange={(event) => setProperty(event.target.value)}
+          onChange={(event) => selectProperty(event.target.value)}
           className="min-h-11 rounded-xl border border-brand-border bg-brand-bg-alt px-3 text-[13px] text-text-dark-primary"
         >
           {/* The value stays the property id; only the label is humanised. */}
@@ -265,6 +308,48 @@ export function TrafficDropTool({
               something that never happened. */}
           {loading ? t("running") : payload ? t("rerun") : t("run")}
         </button>
+      </div>
+
+      {/*
+       * The brand list. Optional — leaving it alone costs one observation and
+       * nothing else, and the report says which one and why. It is here rather
+       * than inside the results because confirming it after a run would mean
+       * paying for a second run to use it.
+       */}
+      <div className="rounded-xl border border-brand-border/70 bg-brand-bg-alt/25 p-4">
+        <label
+          className="text-[13px] font-semibold text-text-dark-primary"
+          htmlFor="traffic-drop-brand-terms"
+        >
+          {t("brandTerms.label")}
+        </label>
+        <p className="mt-1 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+          {t("brandTerms.help")}
+        </p>
+        <input
+          id="traffic-drop-brand-terms"
+          type="text"
+          value={brandInput}
+          onChange={(event) => {
+            setBrandInput(event.target.value);
+            // Editing invalidates the confirmation. Otherwise a visitor ticks
+            // the box, then changes the terms, and the run uses a list nobody
+            // approved.
+            setBrandConfirmed(false);
+          }}
+          placeholder={t("brandTerms.placeholder")}
+          className="mt-2.5 min-h-11 w-full rounded-xl border border-brand-border bg-brand-bg px-3 text-[13px] text-text-dark-primary"
+        />
+        <label className="mt-2.5 flex items-start gap-2 text-[12.5px] leading-relaxed text-text-dark-secondary">
+          <input
+            type="checkbox"
+            checked={brandConfirmed}
+            disabled={brandTerms.length === 0}
+            onChange={(event) => setBrandConfirmed(event.target.checked)}
+            className="mt-0.5 size-4 shrink-0"
+          />
+          <span>{t("brandTerms.confirm")}</span>
+        </label>
       </div>
 
       {propertyTotal > properties.length ? (
@@ -313,7 +398,12 @@ export function TrafficDropTool({
               // the affected output in the browser, which would put the rule
               // that decides what the report may say about penalties in two
               // places — and the browser's copy is the one that would drift.
-              // The gate allows ten runs an hour; a visitor answers once.
+              //
+              // Re-selecting the current answer is a no-op. Without this, the
+              // four buttons are four re-run triggers that stay live after the
+              // report renders, and a visitor clicking around burns the hourly
+              // allowance on runs that cannot change anything.
+              if (status === manualAction) return;
               setManualAction(status);
               void run(property, status);
             }}

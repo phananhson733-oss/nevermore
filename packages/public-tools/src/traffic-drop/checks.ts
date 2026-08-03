@@ -116,12 +116,18 @@ function brandSplitReason(
       return "property_totals_unavailable";
     case "aggregation_basis_mixed":
       return "aggregation_basis_mixed";
+    case "read_truncated":
+      return "read_truncated";
     case "coverage_below_floor":
       return "coverage_below_floor";
     case "coverage_shift_too_large":
       return "coverage_shift_too_large";
     case "brand_sample_below_floor":
       return "brand_sample_below_floor";
+    case "group_without_baseline":
+      return "group_without_baseline";
+    case "brand_group_not_observable_after":
+      return "brand_group_not_observable_after";
   }
 }
 
@@ -134,8 +140,12 @@ function queryCohortReason(
       return "query_read_not_performed";
     case "aggregation_basis_mixed":
       return "aggregation_basis_mixed";
+    case "read_truncated":
+      return "read_truncated";
     case "cohort_below_floor":
       return "cohort_below_floor";
+    case "no_top_ten_queries":
+      return "no_top_ten_queries";
   }
 }
 
@@ -320,8 +330,10 @@ export function buildTrafficChecks(
     cohortCheck === null
       ? check(
           "query_cohort_migration",
+          // `startedInTopTen > 0` is guaranteed by the module: a cohort with
+          // nothing in the top ten reports `no_top_ten_queries` rather than
+          // reaching here, so `clear` cannot be a statement about an empty set.
           cohort.kind === "migration" &&
-            cohort.topTen.startedInTopTen > 0 &&
             cohort.topTen.heldTopTen < cohort.topTen.startedInTopTen
             ? "hit"
             : "clear",

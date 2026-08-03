@@ -144,19 +144,52 @@ describe("describeQueryCohort", () => {
     expect(result.noLongerVisible).toBe(0);
   });
 
-  it("carries the truncation flags so a prefix is never read as the whole", () => {
+  it("refuses outright on a truncated read, in either window", () => {
+    // Fatal here in a way it is not elsewhere. A cohort query missing from a
+    // truncated LATER window is indistinguishable from one that genuinely left
+    // the report, so `noLongerVisible` — the number this module exists to state
+    // carefully — would be counting our own paging cap. Reporting the
+    // truncation beside the migration was not enough: the migration still
+    // shipped, and a reader takes the number.
     const truncated: QueryWindowEvidence = {
       ...evidence(BEFORE),
-      paging: { pagesFetched: 4, truncated: true },
+      paging: { pagesFetched: 2, truncated: true },
     };
+
+    expect(
+      describeQueryCohort({ before: truncated, after: evidence(BEFORE) }),
+    ).toEqual({ kind: "not_available", reason: "read_truncated" });
+    expect(
+      describeQueryCohort({ before: evidence(BEFORE), after: truncated }),
+    ).toEqual({ kind: "not_available", reason: "read_truncated" });
+  });
+
+  it("will not describe a migration out of a top ten nobody was in", () => {
+    // `clear` renders as "the queries that started in the top ten are still
+    // there" — a sentence about an empty set that reads as good news.
+    const deep = Array.from({ length: 12 }, (_unused, index) =>
+      row(`deep-${index}`, 30),
+    );
+
+    expect(
+      describeQueryCohort({ before: evidence(deep), after: evidence(deep) }),
+    ).toEqual({ kind: "not_available", reason: "no_top_ten_queries" });
+  });
+
+  it("does not treat a coerced zero position as the best rank on the site", () => {
+    // The transport client turns a missing or non-numeric metric into 0, so a
+    // malformed row arrives indistinguishable from a real one — and `0 <= 10`
+    // put it straight into the top bucket. A row reporting rank zero is a
+    // parsing artefact; Search Console positions start at 1.
+    const withGarbage = [...BEFORE, row("malformed", 0)];
     const result = describeQueryCohort({
-      before: truncated,
-      after: evidence(BEFORE),
+      before: evidence(withGarbage),
+      after: evidence(withGarbage),
     });
 
     expect(result.kind).toBe("migration");
     if (result.kind !== "migration") return;
-    expect(result.coverage.beforeTruncated).toBe(true);
-    expect(result.coverage.afterTruncated).toBe(false);
+    expect(result.cohortSize).toBe(12);
+    expect(result.topTen.startedInTopTen).toBe(10);
   });
 });

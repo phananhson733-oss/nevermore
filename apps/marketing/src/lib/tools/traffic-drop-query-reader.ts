@@ -4,6 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import {
+  latestFinalWindow,
   readPropertyTotals,
   readQueryRows,
   shiftDate,
@@ -29,21 +30,38 @@ const READ_TIMEOUT_MS = 15_000;
 export const QUERY_WINDOW_DAYS = 28;
 
 /**
- * Upstream calls this reader is allowed to make.
+ * Pages each query read may fetch.
  *
- * Two windows, each needing its query rows and its property totals. Paging can
- * multiply the row reads, which is what the shared deadline is for; this cap
- * is about the plan, not the retries. Search Console quota is counted per GCP
- * project rather than per visitor, so an unbounded plan here is spent out of
- * every other visitor's budget.
+ * Deliberately below the shared `GSC_MAX_PAGES` of 4. The row reader's own cap
+ * was written for a single-window tool; here there are TWO windows, and the
+ * arithmetic that matters is the total: at 4 pages each, one run reaches 8 row
+ * requests plus 2 totals, and one retry apiece doubles that to 20 HTTP calls
+ * against quota counted per GCP project rather than per visitor.
+ *
+ * Two pages is 50,000 query rows per window, past anything the audience for a
+ * free public tool has. A property beyond it reports `read_truncated` and the
+ * split is withheld — which is the correct outcome anyway, since a prefix of
+ * click-sorted rows systematically omits the long tail.
  */
-export const QUERY_READ_CALL_BUDGET = 4;
+export const QUERY_READ_MAX_PAGES = 2;
+
+/**
+ * Worst-case upstream HTTP calls for one run of this reader.
+ *
+ * Two windows x (QUERY_READ_MAX_PAGES row pages + 1 totals call), then doubled
+ * because every attempt may retry once. This is the number the budget test
+ * asserts against, and it is a real ceiling rather than the plan's happy path
+ * — the previous constant said 4, counted only the logical reads, and its test
+ * used single-page empty responses, so nothing in the suite would have noticed
+ * a run issuing five times that.
+ */
+export const QUERY_READ_CALL_BUDGET = 2 * (QUERY_READ_MAX_PAGES + 1) * 2;
 
 export interface TrafficDropQueryReadInput {
   readonly property: string;
   readonly changePoint: TrafficChangePoint;
-  /** Last day of the series, which is already a finalised day. */
-  readonly seriesEndDate: string;
+  /** The run's clock. The later window is derived from it, not from the series. */
+  readonly now: Date;
 }
 
 interface Window {
@@ -59,20 +77,34 @@ function windowEndingOn(endDate: string): Window {
 /**
  * The two windows to compare, or null when there is nothing to compare.
  *
- * The pair must not overlap. An event too recent to have 28 clear days after
- * it produces windows that share days, and a "before versus after" built from
- * overlapping spans measures partly the same traffic twice — it would shrink
- * every difference toward zero and report the site as steadier than it is.
+ * The later window ends on the last day Search Console has FINALISED, derived
+ * from the Pacific clock — not on the last day of the daily series.
+ *
+ * Those are different days, and using the series end was a real defect. The
+ * daily series is read with `dataState: all` on purpose, so a visitor can see
+ * the event they came about; it therefore runs two to three days past
+ * finalisation. These query reads use `dataState: final`. Anchoring a 28-day
+ * window on the series end asked for 28 calendar days and got about 25 days of
+ * data, while the earlier window got all 28 — every ratio biased downward by
+ * roughly a tenth, for a reason nothing in the output would have shown. Worse,
+ * the missing days lower the later window's coverage specifically, which is
+ * the exact asymmetry the coverage-shift gate exists to catch; a shift of that
+ * size can sit under the gate's threshold and ship as a confident number.
+ *
+ * The pair must also not overlap. An event too recent to have a clear 28 days
+ * after it produces windows that share days, and a "before versus after" built
+ * from overlapping spans measures some of the same traffic twice — it shrinks
+ * every difference toward zero and reports the site as steadier than it is.
  */
 export function comparisonWindows(
   changePoint: TrafficChangePoint,
-  seriesEndDate: string,
+  now: Date,
 ): { readonly before: Window; readonly after: Window } | null {
   const peak = changePoint.windows.find((window) => window.id === "peak");
   if (peak === undefined) return null;
 
   const before = windowEndingOn(peak.endDate);
-  const after = windowEndingOn(seriesEndDate);
+  const after = latestFinalWindow(now, { lengthDays: QUERY_WINDOW_DAYS });
   if (after.startDate <= before.endDate) return null;
 
   return { before, after };
@@ -86,10 +118,21 @@ export function comparisonWindows(
  * whose property has an unreadable query dimension should get their decline
  * analysis and a `not_available` on two checks, not a 502.
  *
- * The four reads are issued as two concurrent pairs so one window's latency
- * does not stack on the other's. A failure in any of them discards the whole
- * result: a split computed from one window's rows against the other window's
- * missing totals is not a partial answer, it is a wrong one.
+ * The four reads are issued concurrently so one window's latency does not
+ * stack on the other's, and they share an AbortController: the first failure
+ * cancels the rest.
+ *
+ * That cancellation is not tidiness. `Promise.all` rejects the moment one
+ * member does, and without the signal the other three requests keep running —
+ * including their retries — after this function has already returned null, the
+ * handler has returned a 200, and the gate slot has been released. The caller
+ * is then free to start another run while those calls are still in flight,
+ * which is a per-visitor concurrency limit that does not limit concurrency,
+ * and quota spent after the visitor already has their answer.
+ *
+ * A failure in any of them discards the whole result: a split computed from
+ * one window's rows against the other window's missing totals is not a partial
+ * answer, it is a wrong one.
  */
 export function createTrafficDropQueryReader(options: {
   readonly accessToken: string;
@@ -97,15 +140,17 @@ export function createTrafficDropQueryReader(options: {
   /** Injected so a test can count upstream calls without a network. */
   readonly fetchImpl?: typeof fetch;
 }): (input: TrafficDropQueryReadInput) => Promise<TrafficQueryEvidence | null> {
-  return async ({ property, changePoint, seriesEndDate }) => {
-    const windows = comparisonWindows(changePoint, seriesEndDate);
+  return async ({ property, changePoint, now }) => {
+    const windows = comparisonWindows(changePoint, now);
     if (windows === null) return null;
 
+    const abort = new AbortController();
     const client = createSearchAnalyticsClient({
       siteUrl: property,
       accessToken: options.accessToken,
       requestTimeoutMs: READ_TIMEOUT_MS,
       remainingMs: options.remainingMs,
+      signal: abort.signal,
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     });
     const budget = { isExpired: () => options.remainingMs() <= 0 };
@@ -113,9 +158,9 @@ export function createTrafficDropQueryReader(options: {
     try {
       const [beforeRows, beforeTotals, afterRows, afterTotals] =
         await Promise.all([
-          readQueryRows(client, windows.before, budget),
+          readQueryRows(client, windows.before, budget, QUERY_READ_MAX_PAGES),
           readPropertyTotals(client, windows.before),
-          readQueryRows(client, windows.after, budget),
+          readQueryRows(client, windows.after, budget, QUERY_READ_MAX_PAGES),
           readPropertyTotals(client, windows.after),
         ]);
 
@@ -157,6 +202,11 @@ export function createTrafficDropQueryReader(options: {
         }),
       );
       return null;
+    } finally {
+      // Cancels whatever is still in flight. Without it, a fast rejection from
+      // one read leaves the other three running past the response and past the
+      // gate release.
+      abort.abort();
     }
   };
 }
