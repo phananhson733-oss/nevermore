@@ -1,6 +1,7 @@
 import {
   AsyncRunsRepository,
   canonicalize,
+  canonicalUtcTimestamptz,
   CollectionRunsRepository,
   contentHash,
   DataSnapshotsRepository,
@@ -12,6 +13,7 @@ import {
   PageSnapshotsRepository,
   ProductProfileRunsRepository,
   ProjectsRepository,
+  sameTimestamptzInstant,
   sha256Hex,
   SitesRepository,
   SourceConnectionsRepository,
@@ -424,14 +426,36 @@ function snapshotIdentityMismatch(): never {
   );
 }
 
+/** Whether the value is a timestamptz this module is willing to freeze. */
+function isTimestamptzInstant(value: string): boolean {
+  try {
+    canonicalUtcTimestamptz(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function compareAscii(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/**
+ * One RFC3339 UTC spelling of a PostgreSQL timestamptz, preserving microseconds.
+ *
+ * `Date.parse` + `toISOString` would truncate to milliseconds, because that is
+ * all a JavaScript Date holds. The worker re-validates every frozen instant
+ * against the original row with `sameTimestamptzInstant`, which compares at full
+ * microsecond precision — so a truncated instant produces a run that is accepted
+ * and then deterministically fails. Delegate to the shared converter instead,
+ * and keep this function's fail-closed contract.
+ */
 function canonicalUtcInstant(value: string): string {
-  const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds)) snapshotIdentityMismatch();
-  return new Date(milliseconds).toISOString();
+  try {
+    return canonicalUtcTimestamptz(value);
+  } catch {
+    snapshotIdentityMismatch();
+  }
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -456,12 +480,9 @@ function competitorObservation(
     return null;
   }
   // PostgreSQL renders timestamptz with a numeric offset ("+00:00"), while the
-  // contract's IsoDateTime demands a Zulu designator. Both instants must pass
-  // through the same converter the manifest already uses: validating the raw
-  // column rejected every observation the provider ever returned, and comparing
-  // raw against converted would compare two different spellings of one instant.
+  // contract's IsoDateTime demands a Zulu designator. Validating the raw column
+  // rejected every observation the provider ever returned.
   const observedAt = canonicalUtcInstant(observation.observed_at);
-  const capturedAt = canonicalUtcInstant(snapshot.captured_at);
   const value = record(observation.value_json);
   const domain = value?.["competitorDomain"];
   const organicEstimatedTrafficVolume =
@@ -526,7 +547,7 @@ function competitorObservation(
     observation.subject_type !== "site" ||
     observation.subject_ref !== parsed.data.domain ||
     observation.site_page_id !== null ||
-    observedAt !== capturedAt ||
+    !sameTimestamptzInstant(observation.observed_at, snapshot.captured_at) ||
     observation.availability !== "available" ||
     observation.value_numeric !== null ||
     observation.value_text !== null ||
@@ -770,7 +791,7 @@ export function assertProductProfileSynthesisPageRows(
       row.canonical_extract !== canonicalExtract ||
       sha256Hex(canonicalExtract) !== row.content_hash ||
       normalizedUrlHash(row.normalized_url) !== row.normalized_url_hash ||
-      !Number.isFinite(Date.parse(row.captured_at)) ||
+      !isTimestamptzInstant(row.captured_at) ||
       pageSnapshotIds.has(row.page_snapshot_id) ||
       sitePageIds.has(row.site_page_id) ||
       normalizedUrls.has(row.normalized_url)
@@ -812,7 +833,7 @@ function assertEligibleCrawlSnapshot(
     !/^[a-f0-9]{64}$/u.test(snapshot.checksum) ||
     snapshot.schema_version.trim() === "" ||
     snapshot.limitation.trim() === "" ||
-    !Number.isFinite(Date.parse(snapshot.captured_at))
+    !isTimestamptzInstant(snapshot.captured_at)
   ) {
     snapshotIdentityMismatch();
   }

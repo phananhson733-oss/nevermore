@@ -8,11 +8,11 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("tracks the optional source onboarding authority", () => {
+  it("tracks the competitor provenance authority", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
-          "../migrations/0038_optional_source_onboarding.sql",
+          "../migrations/0039_product_profile_competitor_provenance.sql",
           import.meta.url,
         ),
       ),
@@ -20,16 +20,21 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0038_optional_source_onboarding",
+      "0039_product_profile_competitor_provenance",
     );
     expect(migration).toMatch(
-      /DROP\s+CONSTRAINT\s+oauth_intents_redirect_path_check/iu,
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.validate_product_profile_provenance/iu,
+    );
+    // The admission is bounded by the run's own frozen manifest, not widened
+    // to "any observation in this project".
+    expect(migration).toMatch(
+      /input_manifest\s*\n?\s*->\s*'competitorDiscovery'\s*->>\s*'snapshotId'/iu,
     );
     expect(migration).toMatch(
-      /redirect_path\s*~\s*'\^\/p\/\[0-9a-f-\]\+\/\(sources\|setup-sources\)\$'/iu,
+      /frozen_observation\s*->>\s*'observationId'\s*=\s*ref_id_text/iu,
     );
     expect(migration).toMatch(
-      /SELECT\s+'0038_optional_source_onboarding'::text[\s\S]*?AS\s+migration_version/iu,
+      /SELECT\s+'0039_product_profile_competitor_provenance'::text[\s\S]*?AS\s+migration_version/iu,
     );
   });
 
