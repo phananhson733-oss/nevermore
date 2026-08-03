@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./quick-wins/csv": "./src/quick-wins/csv.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

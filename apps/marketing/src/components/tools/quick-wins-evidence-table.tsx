@@ -8,11 +8,15 @@
 import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { useTranslations } from "next-intl";
+import type { QuickWinsResult } from "@sf/public-tools";
+// The CSV builder by its own path, not through the package barrel. The barrel
+// re-exports the run pipeline, which reaches `@sf/sources` and `node:net`, and
+// pulling a value through it drags all of that into the browser bundle — the
+// production build fails outright rather than shipping it.
 import {
   evidenceCsv,
   evidenceCsvFilename,
-  type QuickWinsResult,
-} from "@sf/public-tools";
+} from "@sf/public-tools/quick-wins/csv";
 // Relative, not `@/`: the unit runner maps `@/` to the OTHER app, so a
 // component reached through it is unimportable from a test. See vitest.config.
 import {
