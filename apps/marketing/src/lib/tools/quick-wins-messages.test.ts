@@ -10,6 +10,7 @@ import type {
   QuickWinExclusionReason,
   QuickWinLimitationCode,
 } from "@sf/public-tools";
+import type { QuickWinsSortKey } from "./quick-wins-sort.ts";
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 
@@ -67,6 +68,25 @@ const DRAFT_SKIP_REASONS = [
   "page_dimension_unavailable",
 ] as const;
 
+/**
+ * Every column header the table can sort by.
+ *
+ * The headers became buttons labelled from this namespace. A new sortable
+ * column that type-checks everywhere still throws MISSING_MESSAGE the moment
+ * it renders, so the list is written out and fails compilation until the label
+ * exists in both locales.
+ */
+const SORT_KEYS: readonly QuickWinsSortKey[] = [
+  "query",
+  "position",
+  "impressions",
+  "clicks",
+  "observedCtr",
+  "baselineCtr",
+  "clickGap",
+  "tailProbability",
+];
+
 /** Every code the client's error allowlist can render. */
 const ERROR_CODES = [
   "gsc_unavailable",
@@ -122,6 +142,13 @@ describe("quick-wins message coverage", () => {
       const node = group(bundle, "bucketQuality");
       for (const quality of BUCKET_QUALITIES) {
         expect(typeof node[quality], `bucketQuality.${quality}`).toBe("string");
+      }
+    });
+
+    it(`has a column label for every sortable key (${locale})`, () => {
+      const node = group(bundle, "columns");
+      for (const key of SORT_KEYS) {
+        expect(typeof node[key], `columns.${key}`).toBe("string");
       }
     });
 

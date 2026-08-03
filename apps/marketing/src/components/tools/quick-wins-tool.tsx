@@ -167,11 +167,25 @@ export function QuickWinsTool({
       <button
         type="button"
         disabled={loading || property === ""}
+        aria-busy={loading}
         onClick={() => void run(property)}
         className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
       >
         {loading ? t("running") : result ? t("rerun") : t("run")}
       </button>
+
+      {/*
+        The run takes tens of seconds and replaces the page below it. Someone
+        not watching the button — a screen reader user, or anyone who tabbed
+        away — otherwise gets no signal that it started or that it finished.
+      */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {loading
+          ? t("running")
+          : result
+            ? t("statusDone", { count: result.rows.length })
+            : ""}
+      </p>
 
       {errorCode !== null ? (
         <p
@@ -201,7 +215,9 @@ export function QuickWinsTool({
         </p>
       ) : null}
 
-      {result !== null ? <QuickWinsResults result={result} /> : null}
+      {result !== null ? (
+        <QuickWinsResults result={result} locale={locale} />
+      ) : null}
     </section>
   );
 }
