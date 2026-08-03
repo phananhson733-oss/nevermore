@@ -260,3 +260,76 @@ describe("Crawl-delay", () => {
     expect(sleeps.every((ms) => ms === 0 || ms >= 250)).toBe(true);
   });
 });
+
+describe("a run that ends while robots.txt is in flight", () => {
+  /**
+   * `guardedFetch` answers `aborted` for two different events: the whole run's
+   * wall clock or abort signal fired, and this one request timed out. Only the
+   * second is "we could not read robots.txt".
+   *
+   * Conflating them relabelled an ordinary timeout as `robots_unreachable`,
+   * hiding why the crawl actually stopped. It surfaced as a flake — the abort
+   * that ends the fetch and the deadline that ends the run land in either
+   * order, and only a loaded machine reliably picks the losing one — so this
+   * test drives the clock instead of racing it.
+   */
+  it("keeps max_duration when the deadline is what ended the fetch", async () => {
+    // A clock that advances a little on every read, like a real one. The bug
+    // needed exactly this: `deadlineHit()` is false in the abort branch and
+    // true a few reads later, so a fixed clock cannot express it.
+    let ticks = 0;
+    const now = () => {
+      ticks += 1;
+      return ticks * 12;
+    };
+    const fetcher: CrawlFetcher = {
+      async fetch(url: string) {
+        if (url.endsWith("/robots.txt")) {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          throw error;
+        }
+        return res(HOME_HTML, "text/html");
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, maxWallClockMs: 50, perHostConcurrency: 1 },
+      now,
+      sleep: async () => {},
+    });
+
+    expect(raw.stopReason).toBe("max_duration");
+    expect(raw.stopReason).not.toBe("robots_unreachable");
+  });
+
+  /**
+   * The other half: when the run still has time, an aborted robots.txt fetch
+   * really is an unreadable robots.txt and must still fail closed.
+   */
+  it("still fails closed when only the robots request timed out", async () => {
+    let clock = 0;
+    const fetcher: CrawlFetcher = {
+      async fetch(url: string) {
+        if (url.endsWith("/robots.txt")) {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          throw error;
+        }
+        return res(HOME_HTML, "text/html");
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      // Plenty of wall clock left, so the abort is about this request alone.
+      budget: { ...FAST_BUDGET, maxWallClockMs: 600_000, perHostConcurrency: 1 },
+      now: () => clock,
+      sleep: async () => {},
+    });
+
+    expect(raw.stopReason).toBe("robots_unreachable");
+    expect(raw.pages).toEqual([]);
+  });
+});

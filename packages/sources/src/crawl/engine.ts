@@ -885,8 +885,14 @@ export async function crawlSite(
     | { readonly kind: "ok"; readonly body: string }
     | { readonly kind: "absent" }
     | { readonly kind: "unreachable" }
+    /**
+     * The run itself ended — deadline, abort signal, or a budget that was
+     * already spent. This is NOT a statement about robots.txt, and must not be
+     * relabelled as one: the stop already has a truthful reason.
+     */
+    | { readonly kind: "stopped" }
   > => {
-    if (stopReason || markOperationStop()) return { kind: "unreachable" };
+    if (stopReason || markOperationStop()) return { kind: "stopped" };
     const result = await guardedFetch(
       url,
       fetchDeps(() => true),
@@ -896,7 +902,12 @@ export async function crawlSite(
       return { kind: "unreachable" };
     }
     if (result.kind === "aborted") {
-      if (!markOperationStop()) usage.urlsErrored += 1;
+      // Two different events arrive here. `markOperationStop()` returning true
+      // means the wall clock or the caller's signal ended the whole run. False
+      // means only this request timed out, which genuinely is "we could not
+      // read robots.txt" and must fail closed.
+      if (markOperationStop()) return { kind: "stopped" };
+      usage.urlsErrored += 1;
       return { kind: "unreachable" };
     }
     if (result.kind !== "ok") return { kind: "unreachable" };
@@ -937,7 +948,14 @@ export async function crawlSite(
    * relabelling that as "robots unreachable" would hide the actual reason the
    * crawl stopped.
    */
-  const robotsUnreachable = robotsResult.kind === "unreachable" && !stopReason;
+  const robotsUnreachable =
+    robotsResult.kind === "unreachable" &&
+    !stopReason &&
+    // Re-check the clock at stamping time. The abort that ended the fetch and
+    // the deadline that ended the run can land in either order, and on a loaded
+    // machine they do: without this the run reports robots_unreachable for a
+    // crawl that simply ran out of time.
+    !markOperationStop();
   if (robotsUnreachable) stopReason = STOP_ROBOTS_UNREACHABLE;
 
   /**
