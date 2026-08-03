@@ -232,9 +232,13 @@ describe("Crawl-delay", () => {
       },
     });
 
-    // 2 s beats our 250 ms floor, so every paced launch waits the site's figure.
+    // robots.txt itself is paced at our own floor: a Crawl-delay cannot be
+    // honoured before the file stating it has been read. Every launch after
+    // that waits the site's figure.
     expect(sleeps.some((ms) => ms === 2_000)).toBe(true);
-    expect(sleeps.every((ms) => ms === 0 || ms >= 2_000)).toBe(true);
+    const afterRobots = sleeps.filter((ms) => ms > 0 && ms !== 250);
+    expect(afterRobots.length).toBeGreaterThan(0);
+    expect(afterRobots.every((ms) => ms >= 2_000)).toBe(true);
   });
 
   it("never speeds up below our own floor on the site's say-so", async () => {
@@ -331,5 +335,113 @@ describe("a run that ends while robots.txt is in flight", () => {
 
     expect(raw.stopReason).toBe("robots_unreachable");
     expect(raw.pages).toEqual([]);
+  });
+});
+
+describe("pacing covers every wire request, not every queue entry", () => {
+  /**
+   * `acquireHostSlot` used to be called once per queue entry, immediately
+   * before `guardedFetch`. But one queue entry is not one request: the redirect
+   * loop inside `guardedFetch` issues up to `maxRedirects` further requests,
+   * and robots.txt and every sitemap document are fetched outside the queue
+   * entirely. All of those went out unpaced.
+   *
+   * That is what makes the advertised rate untrue at the target. With the
+   * shipped 250 ms floor and 5 redirect hops, a page could cost 6 requests in
+   * the window budgeted for 1 — six times the rate the site was told to expect.
+   */
+  it("paces each redirect hop, not just the entry that started them", async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url: string) {
+        if (url.endsWith("/robots.txt")) {
+          return res("User-agent: *\nDisallow:\n", "text/plain");
+        }
+        if (url.endsWith("/sitemap.xml")) {
+          return res("nope", "text/plain", 404);
+        }
+        // A three-hop chain on the seed: /  ->  /a  ->  /b  ->  200
+        if (url === "https://example.com/") {
+          return new Response(null, {
+            status: 301,
+            headers: { location: "https://example.com/a" },
+          });
+        }
+        if (url === "https://example.com/a") {
+          return new Response(null, {
+            status: 301,
+            headers: { location: "https://example.com/b" },
+          });
+        }
+        return res(HOME_HTML, "text/html");
+      },
+    };
+
+    await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, minHostDelayMs: 250, perHostConcurrency: 1 },
+      now: () => clock,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+
+    // Seed + two redirect hops + robots + sitemap. Before this change the two
+    // hops and the two out-of-queue documents were free, so the count could not
+    // reach four paced waits.
+    const paced = sleeps.filter((ms) => ms > 0);
+    expect(paced.length).toBeGreaterThanOrEqual(4);
+    expect(paced.every((ms) => ms === 250)).toBe(true);
+  });
+});
+
+describe("frontier bookkeeping", () => {
+  /**
+   * Re-prioritisation used to scan the whole pending frontier per discovered
+   * link. The behaviour it implements has to survive being made O(1): a URL
+   * first seen deep and later reached shallower keeps its place in visit order
+   * and is crawled once, at the shallower depth.
+   */
+  it("re-prioritises a queued URL in place without duplicating it", async () => {
+    const seen: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url: string) {
+        if (url.endsWith("/robots.txt")) {
+          return res(
+            "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml\n",
+            "text/plain",
+          );
+        }
+        if (url.endsWith("/sitemap.xml")) {
+          // Seeds /deep at sitemap depth before the homepage links to it.
+          return res(
+            "<urlset><url><loc>https://example.com/deep</loc></url></urlset>",
+            "application/xml",
+          );
+        }
+        seen.push(url);
+        if (url === "https://example.com/") {
+          return res(
+            '<!doctype html><html><head><title>H</title></head><body><a href="/deep">D</a></body></html>',
+            "text/html",
+          );
+        }
+        return res(HOME_HTML, "text/html");
+      },
+    };
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
+
+    const deepFetches = seen.filter((url) => url.endsWith("/deep"));
+    expect(deepFetches).toHaveLength(1);
+    const deep = raw.pages.find((page) => page.subjectUrl.endsWith("/deep"));
+    expect(deep).toBeDefined();
+    // Reached from the homepage link, not left at the sitemap's depth.
+    expect(deep?.depth).toBe(1);
   });
 });

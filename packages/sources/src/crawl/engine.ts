@@ -324,6 +324,11 @@ interface GuardedFetchDeps {
   readonly wantBody: (contentType: string | null) => boolean;
   readonly decodedByteBudget: DecodedByteBudget;
   readonly reserveRequest: () => boolean;
+  /**
+   * Wait for this host's next allowed launch slot. Called once per *wire*
+   * request, so redirect hops pay it too.
+   */
+  readonly pace: () => Promise<void>;
 }
 
 type GuardedFetch =
@@ -577,6 +582,11 @@ async function guardedFetch(
     });
     try {
       if (!deps.reserveRequest()) return { kind: "run_limit" };
+      // Every hop pays the host delay. This function is re-entered per redirect
+      // and is also what fetches robots.txt and each sitemap document, so
+      // pacing here is what makes the advertised rate the rate the target
+      // actually sees.
+      await deps.pace();
       if (budgetCancelled) return { kind: "run_limit" };
       if (signal.aborted) {
         return { kind: "aborted" };
@@ -840,7 +850,25 @@ export async function crawlSite(
     wantBody,
     decodedByteBudget,
     reserveRequest,
+    pace: acquireHostSlot,
   });
+
+  /**
+   * Host pacing. Declared here, ahead of the robots fetch, because that fetch
+   * is itself a request against the target and must be paced like any other.
+   *
+   * The delay starts at our own floor and tightens once robots.txt has been
+   * read: a Crawl-delay cannot be honoured before it has been fetched.
+   */
+  let hostDelayMs = budget.minHostDelayMs;
+  let nextLaunchAt = 0;
+  const acquireHostSlot = async (): Promise<void> => {
+    const now = nowMs();
+    const scheduled = Math.max(now, nextLaunchAt);
+    nextLaunchAt = scheduled + hostDelayMs;
+    const wait = scheduled - now;
+    if (wait > 0) await sleepMs(wait);
+  };
 
   // Guarded text fetch for robots.txt + sitemaps (any text/xml body accepted).
   const fetchText = async (url: string): Promise<string | null> => {
@@ -963,7 +991,7 @@ export async function crawlSite(
    * pacer honours whichever is slower, ours or theirs; it never speeds up on a
    * site's say-so.
    */
-  const crawlDelayMs = Math.max(
+  hostDelayMs = Math.max(
     budget.minHostDelayMs,
     robotsCrawlDelaySeconds(robots.groups, config.userAgent) * 1_000,
   );
@@ -1025,7 +1053,9 @@ export async function crawlSite(
   // only for eventual page aggregation; deriving fetch URLs from it would lose
   // meaningful trailing-slash semantics.
   const seenFetchDepth = new Map<string, number>();
-  const queue: QueueEntry[] = [];
+  /** Visit order only; the entry for each URL lives in `pending`. */
+  const queue: string[] = [];
+  const pending = new Map<string, QueueEntry>();
   const enqueue = (
     subjectUrl: string,
     fetchUrl: string,
@@ -1048,12 +1078,27 @@ export async function crawlSite(
     const previousDepth = seenFetchDepth.get(fetchUrl);
     if (previousDepth !== undefined && previousDepth <= depth) return;
     seenFetchDepth.set(fetchUrl, depth);
-    const queuedIndex = queue.findIndex((entry) => entry.fetchUrl === fetchUrl);
-    if (queuedIndex >= 0) {
-      queue[queuedIndex] = { fetchUrl, subjectUrl, depth };
+    /**
+     * Re-prioritise in place via a map rather than scanning the frontier.
+     *
+     * This was `queue.findIndex(...)` over every pending entry, run once per
+     * discovered link. One page contributes up to 1000 targets — 500 link
+     * subjects, two fetch variants each — so enqueueing N distinct URLs cost
+     * O(N^2) comparisons and turned a crawl that should be almost entirely idle
+     * I/O into a CPU-bound one with multi-second event-loop stalls. The stalls
+     * are the real harm: they delay the abort and deadline handling that every
+     * other budget depends on.
+     *
+     * `queue` now holds fetch URLs in visit order and `pending` holds the entry
+     * for each, so an order-preserving replacement is a single map write.
+     */
+    const queued = pending.get(fetchUrl);
+    if (queued) {
+      pending.set(fetchUrl, { fetchUrl, subjectUrl, depth });
       return;
     }
-    queue.push({ fetchUrl, subjectUrl, depth });
+    pending.set(fetchUrl, { fetchUrl, subjectUrl, depth });
+    queue.push(fetchUrl);
   };
 
   const originPair = canonicalizeUrl(`${origin}/`);
@@ -1108,17 +1153,6 @@ export async function crawlSite(
   };
   let crawledCount = 0;
   let inFlight = 0;
-  let nextLaunchAt = 0;
-
-  const acquireHostSlot = async (): Promise<void> => {
-    const now = nowMs();
-    const scheduled = Math.max(now, nextLaunchAt);
-    // `crawlDelayMs` is the slower of our floor and the site's stated
-    // Crawl-delay, so a site asking for one request every 10 s gets that.
-    nextLaunchAt = scheduled + crawlDelayMs;
-    const wait = scheduled - now;
-    if (wait > 0) await sleepMs(wait);
-  };
 
   const processEntry = async (entry: QueueEntry): Promise<void> => {
     const completedDepth = completedFetchDepth.get(entry.fetchUrl);
@@ -1127,7 +1161,6 @@ export async function crawlSite(
       return;
     }
     crawledCount += 1;
-    await acquireHostSlot();
     if (stopReason || markOperationStop()) return;
     const started = nowMs();
     const result = await guardedFetch(
@@ -1266,7 +1299,9 @@ export async function crawlSite(
     for (;;) {
       if (stopReason) return;
       if (markOperationStop()) return;
-      const entry = queue.shift();
+      const fetchUrl = queue.shift();
+      const entry = fetchUrl === undefined ? undefined : pending.get(fetchUrl);
+      if (fetchUrl !== undefined) pending.delete(fetchUrl);
       if (!entry) {
         if (inFlight === 0) return;
         await sleep(0);
