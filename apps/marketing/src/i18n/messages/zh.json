@@ -1183,6 +1183,27 @@
         "unsupported_media_type": "请求不是 JSON。",
         "rate_limited": "你在这一小时内的运行次数已经用完。Search Console 配额是所有使用本工具的人共享的，所以这个上限保护其他访客的程度不亚于限制你。",
         "quota_unavailable": "我们暂时无法检查用量上限，因此不会开始读取。在限制器失效的情况下运行，有耗尽本工具与所有其他访客共享的 Search Console 配额的风险。请稍后再试。"
+      },
+      "draftsTitle": "措辞候选",
+      "draftsIntro": "有几行我们在你自己的站点上找到了同位置、点击率明显更高的页面。下面按那个页面的措辞方式重写了标题和描述。它们是供你判断的候选，不是建议：我们不知道缺口为什么存在，这里也没有任何东西在预测改动会带来什么。",
+      "draftsSource": "模仿自",
+      "draftTitleLabel": "标题",
+      "draftMetaLabel": "描述",
+      "draftsNone": "这次没有措辞候选。候选需要你站上另一个页面，位于同一位置段、点击率明显更高且曝光量足以采信——大多数查询词没有这样的页面，而我们宁可什么都不给，也不给一个通用模板。",
+      "draftSkipped": {
+        "no_shortfall": "表现优于你自己的曲线，无需重写",
+        "low_dimension_coverage": "Search Console 返回的页面拆分不足以判断哪个页面承接这条查询",
+        "no_subject_page": "我们有数据的页面里没有承接这条查询的",
+        "no_comparable_high_ctr_page": "你站上同一位置段没有点击率明显更高的页面",
+        "beyond_draft_cap": "超出单次运行的条数上限",
+        "page_unreadable": "页面读取失败",
+        "no_pattern_to_copy": "对照页没有可参照的标题或描述",
+        "promises_outcome": "草稿声称重写会奏效，已被丢弃",
+        "too_long": "草稿超长",
+        "empty": "草稿返回为空",
+        "unparseable": "草稿返回的格式无法使用",
+        "model_unavailable": "生成草稿的模型不可用",
+        "page_dimension_unavailable": "草稿所需的页面级数据不可用"
       }
     },
     "semrush": "Semrush",

@@ -134,6 +134,21 @@ export interface QuickWinAnonymization {
   readonly missingClickShare: number | null;
 }
 
+/**
+ * A wording candidate for one query, with the page it was modelled on.
+ *
+ * Optional by construction: drafts need a crawl and a model, and a run
+ * without either still produces the evidence table. An absent draft is never
+ * an error — `draftsUnavailable` says which reason applies.
+ */
+export interface QuickWinsDraftView {
+  readonly query: string;
+  readonly subjectPage: string;
+  readonly title: string;
+  readonly metaDescription: string;
+  readonly comparablePage: string;
+}
+
 export interface QuickWinsResult {
   /**
    * The days this report was measured over, in Pacific calendar days.
@@ -151,6 +166,21 @@ export interface QuickWinsResult {
   /** Null when the caller could not supply property totals to compare against. */
   readonly anonymization: QuickWinAnonymization | null;
   readonly limitations: readonly QuickWinLimitationCode[];
+  /**
+   * Wording candidates, at most one per evidence row.
+   *
+   * Empty is the normal case: drafts require a comparable page on the same
+   * site earning clearly more at the same position, and most queries do not
+   * have one.
+   */
+  readonly drafts: readonly QuickWinsDraftView[];
+  /**
+   * Why a row has no draft, keyed by query.
+   *
+   * Present so the surface can distinguish "we looked and there was no
+   * comparable page" from "we never looked".
+   */
+  readonly draftsSkipped: Readonly<Record<string, string>>;
 }
 
 export type QuickWinsEnvelope = PublicToolResultEnvelope<

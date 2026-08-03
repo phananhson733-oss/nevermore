@@ -185,6 +185,8 @@ export function QuickWinsResults({ result }: { readonly result: QuickWinsResult 
         </p>
       </section>
 
+      <DraftSection result={result} />
+
       <ExcludedCounts result={result} />
 
       <section>
@@ -206,6 +208,92 @@ export function QuickWinsResults({ result }: { readonly result: QuickWinsResult 
         </p>
       </section>
     </div>
+  );
+}
+
+/**
+ * Wording candidates, each shown with the page it was modelled on.
+ *
+ * The source link is not decoration. A draft nobody can trace to a named page
+ * on their own site is generic advice, and generic advice is what got drafts
+ * cut from v1; being able to open the comparable page and judge the pattern
+ * is the only reason they were allowed back.
+ */
+function DraftSection({ result }: { readonly result: QuickWinsResult }) {
+  const t = useTranslations("tools.quickWins");
+  const skipped = Object.entries(result.draftsSkipped);
+  if (result.drafts.length === 0 && skipped.length === 0) return null;
+
+  return (
+    <section>
+      <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+        {t("draftsTitle")}
+      </h3>
+      <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
+        {t("draftsIntro")}
+      </p>
+
+      {result.drafts.length === 0 ? (
+        <p className="mt-4 max-w-2xl rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
+          {t("draftsNone")}
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-4">
+          {result.drafts.map((draft) => (
+            <li
+              key={draft.query}
+              className="rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4"
+            >
+              <p className="text-[13px] font-medium text-text-dark-primary">
+                {draft.query}
+              </p>
+              <dl className="mt-2 space-y-1.5 text-[13px]">
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-text-dark-secondary">
+                    {t("draftTitleLabel")}
+                  </dt>
+                  <dd className="text-text-dark-primary">{draft.title}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="shrink-0 text-text-dark-secondary">
+                    {t("draftMetaLabel")}
+                  </dt>
+                  <dd className="text-text-dark-primary">
+                    {draft.metaDescription}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-2.5 text-[12px] text-text-dark-secondary">
+                {t("draftsSource")}{" "}
+                <a
+                  href={draft.comparablePage}
+                  rel="noreferrer nofollow"
+                  target="_blank"
+                  className="underline hover:no-underline"
+                >
+                  {draft.comparablePage}
+                </a>
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {skipped.length > 0 ? (
+        <ul className="mt-4 space-y-1.5">
+          {skipped.map(([query, reason]) => (
+            <li
+              key={query}
+              className="max-w-2xl text-[12px] leading-relaxed text-text-dark-secondary"
+            >
+              <span className="text-text-dark-primary">{query}</span>
+              {" — "}
+              {t(`draftSkipped.${reason}`)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

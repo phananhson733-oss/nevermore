@@ -13,6 +13,7 @@ import { buildEvidenceTable } from "./evidence.ts";
 import type {
   QuickWinAnonymization,
   QuickWinLimitationCode,
+  QuickWinsDraftView,
   QuickWinsEnvelope,
 } from "./types.ts";
 
@@ -60,6 +61,15 @@ export interface QuickWinsInput {
   readonly queryAggregation?: string | null;
   /** Whether the caller hit a row limit or stopped paging. */
   readonly truncated?: boolean;
+  /**
+   * Wording candidates produced for this run, if drafts ran at all.
+   *
+   * Omitted when the run had no crawl or model available. The evidence table
+   * does not depend on them.
+   */
+  readonly drafts?: readonly QuickWinsDraftView[];
+  /** Why a row produced no draft, keyed by query. */
+  readonly draftsSkipped?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -215,6 +225,8 @@ export function buildQuickWinsReport(input: QuickWinsInput): QuickWinsEnvelope {
       excluded: table.excluded,
       anonymization,
       limitations,
+      drafts: input.drafts ?? [],
+      draftsSkipped: input.draftsSkipped ?? {},
     },
   );
 }
