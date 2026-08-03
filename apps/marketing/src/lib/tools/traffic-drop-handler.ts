@@ -8,10 +8,8 @@ import {
   createPublicToolError,
   type TrafficDailyPoint,
 } from "@sf/public-tools";
-import {
-  acquirePublicToolSlot,
-  readPublicToolJson,
-} from "./public-tool-request.ts";
+import { acquireGscSlot } from "./gsc-inflight.ts";
+import { readPublicToolJson } from "./public-tool-request.ts";
 import {
   readTrafficDropSession,
   type TrafficDropSession,
@@ -101,16 +99,14 @@ export async function handleTrafficDropRequest(
     return json(createPublicToolError("gsc_unavailable"), 404);
   }
 
-  // One Search Console read at a time per client, the same gate the other
-  // public tools use. This endpoint was the only one without it, and it is the
-  // most expensive of the three: a single request can hold a Search Console
-  // connection for forty seconds across retries. Search Console quota is
-  // counted per GCP PROJECT, not per visitor, so an unbounded caller does not
-  // just slow themselves down — they spend the quota every other visitor to
-  // this tool needs.
-  const slot = acquirePublicToolSlot(
-    `tools:traffic-drop:inflight:${dependencies.extractClientIp(request.headers)}`,
-  );
+  // One Search Console read at a time per client, on the key SHARED with the
+  // other connected tool (see gsc-inflight.ts). A single request can hold a
+  // Search Console connection for forty seconds across retries, and quota is
+  // counted per GCP PROJECT rather than per visitor — so an unbounded caller
+  // does not just slow themselves down, they spend the quota every other
+  // visitor needs. This used to key on a traffic-drop-only string, which let
+  // one caller hold two upstream connections by running both tools at once.
+  const slot = acquireGscSlot(dependencies.extractClientIp(request.headers));
   if (!slot.acquired) {
     return json(createPublicToolError("scan_in_progress"), 409, {
       "Retry-After": "5",
