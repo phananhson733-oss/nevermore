@@ -447,9 +447,13 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
   await expect(monitor).toContainText("customer onboarding automation");
   await expect(monitor).not.toContainText("首次采集仅建立 baseline");
 
+  // The current Competitor Library is live review authority, rather than the
+  // frozen published diagnosis projection. Returning to A therefore performs
+  // a fresh authority read instead of reusing the earlier published detail.
   await expect.poll(() => api.detailReads).toEqual([
     COMPETITOR_A_ID,
     COMPETITOR_B_ID,
+    COMPETITOR_A_ID,
   ]);
 
   await monitor.getByRole("link", { name: /进入执行中心/ }).click();

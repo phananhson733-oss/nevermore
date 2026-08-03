@@ -540,15 +540,15 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     mappedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
     reason: "确认冲突范围后，仍将该词映射到核心客户入职页面。",
   });
-  // Review writes update only the live governance authority. Topic insights,
-  // relations, and the customer-visible Keyword detail stay pinned to the
-  // published Analysis Refresh generation until a later refresh publishes a
-  // new generation.
+  // Review writes update the live governance authority shown by the current
+  // Keyword Library. Frozen Topic insights and relation projections remain
+  // pinned to the published Analysis Refresh generation until a later refresh
+  // publishes a new generation.
   expect(state.topicInsightReads).toBe(topicReadsBeforeSave);
   expect(state.relationReads).toBe(relationReadsBeforeSave);
   const detail = page.locator('aside[aria-label="所选关键词详情"]');
-  await expect(detail).not.toContainText("流程自动化");
-  await expect(detail).not.toContainText(
+  await expect(detail).toContainText("流程自动化");
+  await expect(detail).toContainText(
     "https://example.test/customer-onboarding/",
   );
   await expect(detail.getByText("审核结果已同步")).toBeVisible();
