@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { asyncRuns } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
@@ -252,20 +252,32 @@ export class AsyncRunsRepository extends Repository {
    * would let one bad afternoon disable a best-effort source forever, including
    * after the defect that caused the failures has been fixed.
    */
-  async summarizeTerminalFailures(
+  /**
+   * Terminal runs for one (project, active_key) since a cutoff, newest first.
+   *
+   * Returns the stored request payloads rather than a bare count so the caller
+   * can decide which failures describe the request it is about to make. A count
+   * alone cannot distinguish a retry from a repaired configuration, and that
+   * distinction is the difference between suppressing a storm and permanently
+   * grounding a project that has already been fixed.
+   *
+   * `limit` bounds the read; callers compare against caps far below it.
+   */
+  async listTerminalFailures(
     scope: ProjectScope,
     activeKey: string,
     since: Date,
-  ): Promise<{
-    readonly count: number;
-    readonly lastErrorCode: string | null;
-  }> {
+    limit = 50,
+  ): Promise<
+    readonly {
+      readonly lastErrorCode: string | null;
+      readonly requestPayload: Record<string, unknown>;
+    }[]
+  > {
     const rows = await this.exec
       .select({
-        count: sql<number>`count(*)::int`,
-        lastErrorCode: sql<
-          string | null
-        >`(array_agg(${asyncRuns.last_error_code} order by ${asyncRuns.queued_at} desc))[1]`,
+        lastErrorCode: asyncRuns.last_error_code,
+        requestPayload: asyncRuns.request_payload,
       })
       .from(asyncRuns)
       .where(
@@ -275,12 +287,13 @@ export class AsyncRunsRepository extends Repository {
           sql`${asyncRuns.status} in ('failed','cancelled')`,
           gte(asyncRuns.queued_at, since.toISOString()),
         ),
-      );
-    const row = rows[0];
-    return {
-      count: row?.count ?? 0,
-      lastErrorCode: row?.lastErrorCode ?? null,
-    };
+      )
+      .orderBy(desc(asyncRuns.queued_at))
+      .limit(limit);
+    return rows.map((row) => ({
+      lastErrorCode: row.lastErrorCode ?? null,
+      requestPayload: row.requestPayload ?? {},
+    }));
   }
 
   /**

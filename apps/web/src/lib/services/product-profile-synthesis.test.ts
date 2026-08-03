@@ -219,10 +219,10 @@ function arrangeAccepted(
     snapshot?: typeof snapshot | null;
     pages?: ReturnType<typeof pageRow>[];
     active?: typeof queuedRun | null;
-    discoveryFailures?: {
-      readonly count: number;
+    discoveryFailures?: readonly {
       readonly lastErrorCode: string | null;
-    };
+      readonly requestPayload: Record<string, unknown>;
+    }[];
   } = {},
 ) {
   vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
@@ -235,10 +235,8 @@ function arrangeAccepted(
   );
   vi.spyOn(
     AsyncRunsRepository.prototype,
-    "summarizeTerminalFailures",
-  ).mockResolvedValue(
-    overrides.discoveryFailures ?? { count: 0, lastErrorCode: null },
-  );
+    "listTerminalFailures",
+  ).mockResolvedValue(overrides.discoveryFailures ?? []);
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue(
     overrides.project ?? project,
   );
@@ -847,7 +845,19 @@ describe("createProductProfileSynthesisRun", () => {
           profile: marketProfile as unknown as CanonicalValue,
         }),
       },
-      discoveryFailures: { count: 1, lastErrorCode: "INVALID_CONFIGURATION" },
+      discoveryFailures: [
+        {
+          lastErrorCode: "INVALID_CONFIGURATION",
+          requestPayload: {
+            collectionScope: {
+              target: "relayops.com",
+              marketCode: "US",
+              providerLanguageCode: "en",
+              location: { kind: "code", code: 2840 },
+            },
+          },
+        },
+      ],
     });
     const insertConnection = vi
       .spyOn(SourceConnectionsRepository.prototype, "insertConnection")
@@ -879,6 +889,81 @@ describe("createProductProfileSynthesisRun", () => {
       expect.anything(),
     );
     expect(mocks.enqueueRunInTx).not.toHaveBeenCalledWith(
+      expect.anything(),
+      mocks.tx,
+      "collect.dataforseo",
+      expect.anything(),
+    );
+  });
+
+  it("re-arms discovery when the failures describe a repaired configuration", async () => {
+    // Production, 2026-08-03: a project accumulated 13 refusals sent with
+    // `providerLanguageCode: "zh"` — the defect this gate's own fix removed.
+    // Once the fix shipped, the first attempt under "en" was still refused,
+    // because the gate counted attempts rather than attempts *at this request*.
+    // An operator would have had to wait out a six-hour window for a fault that
+    // no longer existed.
+    const marketProfile = createInitialProductProfileDraft({
+      sourceSiteId: siteId,
+      sourcePageUrl,
+      businessHint: "Customer onboarding software for B2B SaaS teams.",
+      primaryMarket: "US",
+    });
+    arrangeAccepted({
+      profile: {
+        ...persistedProfile,
+        profile: marketProfile,
+        content_hash: contentHash({
+          status: "draft",
+          profile: marketProfile as unknown as CanonicalValue,
+        }),
+      },
+      discoveryFailures: Array.from({ length: 13 }, () => ({
+        lastErrorCode: "INVALID_CONFIGURATION",
+        requestPayload: {
+          collectionScope: {
+            target: "relayops.com",
+            marketCode: "US",
+            providerLanguageCode: "zh",
+            location: { kind: "name", name: "United States" },
+          },
+        },
+      })),
+    });
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findConnectedByProviderForUpdate",
+    ).mockResolvedValue(null);
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "insertConnection",
+    ).mockResolvedValue({ id: uuid(811) } as never);
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "insertPlaceholder",
+    ).mockResolvedValue({ id: uuid(812) } as never);
+
+    await expect(
+      createProductProfileSynthesisRun(
+        { workspaceId },
+        projectId,
+        actorId,
+        "rearm-after-repair",
+        { baseVersion: 1 },
+        {
+          outputLocale: "zh-CN",
+          dataForSeoDiscovery: {
+            enabled: true,
+            maxKeywords: 200,
+            maxCompetitors: 100,
+          },
+        } as never,
+      ),
+    ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE" });
+
+    // Discovery was enqueued rather than skipped: the repaired request is
+    // judged on its own record.
+    expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
       expect.anything(),
       mocks.tx,
       "collect.dataforseo",
