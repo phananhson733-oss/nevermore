@@ -79,6 +79,7 @@ import {
   automaticSynthesisKey,
   claimOnce,
   customerProfileFieldKey,
+  isAutomaticCrawlOrigin,
   productProfileSynthesisFailureKind,
   productProfileSynthesisRequestFailureKind,
   shouldStartCrawlForMissingSnapshot,
@@ -766,6 +767,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const automaticAttempts = useRef(new Set<string>());
   const postCrawlAttempts = useRef(new Set<string>());
   const postDiscoveryAttempts = useRef(new Set<string>());
+  const automaticCrawlAttempts = useRef(new Set<string>());
   const synthesisRequestInFlight = useRef(false);
   const crawlRequestInFlight = useRef(false);
   const overlayTrigger = useRef<HTMLButtonElement | null>(null);
@@ -918,7 +920,11 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
           error.code === "CRAWL_SNAPSHOT_REQUIRED"
         ) {
           setCrawlRequired(true);
-          if (shouldStartCrawlForMissingSnapshot(origin)) {
+          if (
+            shouldStartCrawlForMissingSnapshot(origin) &&
+            (!isAutomaticCrawlOrigin(origin) ||
+              claimOnce(automaticCrawlAttempts.current, projectId))
+          ) {
             setFeedback({
               tone: "progress",
               title: t("feedback.autoCrawlPreparing"),

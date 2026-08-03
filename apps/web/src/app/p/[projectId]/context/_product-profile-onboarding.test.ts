@@ -4,6 +4,7 @@ import {
   automaticSynthesisKey,
   claimOnce,
   customerProfileFieldKey,
+  isAutomaticCrawlOrigin,
   productProfileSynthesisFailureKind,
   productProfileSynthesisRequestFailureKind,
   shouldStartCrawlForMissingSnapshot,
@@ -67,6 +68,17 @@ describe("Product Profile automatic onboarding guard", () => {
     expect(shouldStartCrawlForMissingSnapshot("initial")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("manual")).toBe(true);
     expect(shouldStartCrawlForMissingSnapshot("after_crawl")).toBe(false);
+  });
+
+  it("lets only the customer's own attempt bypass the once-per-project crawl claim", () => {
+    // Two automatic origins can both find no snapshot — the mount attempt and
+    // the continuation after discovery. A customer's site must not be crawled
+    // twice because those two raced; the real E2E caught exactly that as a
+    // duplicate crawl snapshot.
+    expect(isAutomaticCrawlOrigin("initial")).toBe(true);
+    expect(isAutomaticCrawlOrigin("after_discovery")).toBe(true);
+    expect(isAutomaticCrawlOrigin("after_crawl")).toBe(true);
+    expect(isAutomaticCrawlOrigin("manual")).toBe(false);
   });
 
   it("starts Crawl after competitor discovery so the promise made to the customer holds", () => {

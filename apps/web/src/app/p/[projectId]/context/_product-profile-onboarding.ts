@@ -179,6 +179,20 @@ export function productProfileSynthesisFailureKind(
  * the workspace rate limit, which is neither a broken service nor something a
  * further click can fix.
  */
+/**
+ * Whether this origin may start Crawl without the customer asking.
+ *
+ * Only an explicit customer attempt is exempt from the once-per-project claim
+ * above it. Two automatic origins can both find no snapshot — the mount attempt
+ * and the continuation after competitor discovery — and a customer's site must
+ * not be crawled twice because the two raced.
+ */
+export function isAutomaticCrawlOrigin(
+  origin: ProductProfileSynthesisOrigin,
+): boolean {
+  return origin !== "manual";
+}
+
 export type ProductProfileSynthesisRequestFailureKind =
   | ProductProfileSynthesisFailureKind
   | "rate_limited";
