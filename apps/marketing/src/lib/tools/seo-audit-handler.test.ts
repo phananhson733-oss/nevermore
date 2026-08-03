@@ -9,7 +9,23 @@ import {
   handleSeoAuditRequest,
   type SeoAuditHandlerDependencies,
 } from "./seo-audit-handler.ts";
-import { resetPublicToolSlots } from "./public-tool-request.ts";
+import {
+  acquirePublicCrawlSlot,
+  resetPublicToolSlots,
+} from "./public-tool-request.ts";
+import { openCrawlGate } from "./crawl-gate.ts";
+import type { SharedQuotaDependencies } from "./shared-rate-limit.ts";
+
+/** An always-allowing quota store, so slot behaviour can be tested in isolation. */
+function openQuota(): SharedQuotaDependencies {
+  return {
+    callQuota: async () => ({
+      allowed: true,
+      hits: 1,
+      reset_at: "2099-01-01T00:00:00.000Z",
+    }),
+  };
+}
 
 function request(body: unknown, contentType = "application/json"): Request {
   return new Request("https://gengrowth.ai/api/tools/seo-audit", {
@@ -83,6 +99,12 @@ function dependencies(
     scan: vi.fn(async () => raw),
     buildPayload: vi.fn(() => payload),
     extractClientIp: () => "203.0.113.9",
+    openGate: (clientIp, normalizedUrl) =>
+      openCrawlGate(clientIp, normalizedUrl, {
+        quota: openQuota(),
+        acquireSlot: acquirePublicCrawlSlot,
+      }),
+    cachePayload: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -103,7 +125,13 @@ describe("handleSeoAuditRequest", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-ratelimit-remaining")).toBeNull();
     await expect(response.json()).resolves.toEqual({ data: payload });
-    expect(deps.scan).toHaveBeenCalledWith("https://acme.test/");
+    // The request signal must reach the crawler: without it, a client that
+    // disconnects still leaves the full 4,500-request budget running at the
+    // target site.
+    expect(deps.scan).toHaveBeenCalledWith(
+      "https://acme.test/",
+      expect.any(AbortSignal),
+    );
     expect(deps.buildPayload).toHaveBeenCalledWith(raw);
   });
 
@@ -138,7 +166,17 @@ describe("handleSeoAuditRequest", () => {
     expect(scan).not.toHaveBeenCalled();
   });
 
-  it("does not impose a sequential per-IP usage quota", async () => {
+  /**
+   * Replaces "does not impose a sequential per-IP usage quota", which asserted
+   * the defect. Commit 7b315f6 removed RATE_LIMIT_MAX = 5 from this handler and
+   * put nothing in its place, and the sibling change's own plan describes the
+   * intent as dropping the *normal-use* quota "while preserving high-threshold
+   * abuse protection". internal-link-audit kept that protection; seo-audit lost
+   * both, and one IP could replay a 240-second, 4,500-request crawl forever.
+   *
+   * A generous ceiling is still a ceiling. Normal use never reaches it.
+   */
+  it("admits repeated normal use", async () => {
     const scan = vi.fn(async () => raw);
     const deps = dependencies({ scan });
 
@@ -150,6 +188,102 @@ describe("handleSeoAuditRequest", () => {
       expect(response.status).toBe(200);
     }
     expect(scan).toHaveBeenCalledTimes(7);
+  });
+
+  it("refuses once the durable per-IP budget is spent", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({
+      scan,
+      openGate: (clientIp, normalizedUrl) =>
+        openCrawlGate(clientIp, normalizedUrl, {
+          quota: {
+            callQuota: async () => ({
+              allowed: false,
+              hits: 13,
+              reset_at: "2099-01-01T00:00:00.000Z",
+            }),
+          },
+          acquireSlot: acquirePublicCrawlSlot,
+        }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "rate_limited" },
+    });
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The quota store being unreachable is the state a fresh deploy is in before
+   * the migration runs. Serving the crawl anyway would put an unbounded
+   * anonymous crawler in front of third-party sites, so the endpoint refuses.
+   */
+  it("fails closed when the quota store cannot answer", async () => {
+    const scan = vi.fn(async () => raw);
+    const deps = dependencies({
+      scan,
+      openGate: (clientIp, normalizedUrl) =>
+        openCrawlGate(clientIp, normalizedUrl, {
+          quota: {
+            callQuota: async () => {
+              throw new Error("relation does not exist");
+            },
+          },
+          acquireSlot: acquirePublicCrawlSlot,
+        }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "quota_unavailable" },
+    });
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it("releases the in-flight slot when the gate refuses", async () => {
+    const scan = vi.fn(async () => raw);
+    let allow = false;
+    const deps = dependencies({
+      scan,
+      openGate: (clientIp, normalizedUrl) =>
+        openCrawlGate(clientIp, normalizedUrl, {
+          quota: {
+            callQuota: async () => ({
+              allowed: allow,
+              hits: 1,
+              reset_at: "2099-01-01T00:00:00.000Z",
+            }),
+          },
+          acquireSlot: acquirePublicCrawlSlot,
+        }),
+    });
+
+    const refused = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+    expect(refused.status).toBe(429);
+
+    // A refusal that leaked the slot would lock this IP out until the isolate
+    // recycled, turning a rate limit into a persistent denial of service.
+    allow = true;
+    const allowed = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+    expect(allowed.status).toBe(200);
   });
 
   it("releases the crawl slot after a failed scan", async () => {

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CollectionContext, NormalizedObservation } from "../adapter.ts";
-import {
-  createCrawlAdapter,
-  DEFAULT_CRAWL_USER_AGENT,
-} from "./adapter.ts";
+import { createCrawlAdapter, DEFAULT_CRAWL_USER_AGENT } from "./adapter.ts";
 import { CRAWL_BUDGET, type CrawlFetcher } from "./types.ts";
 import type { CrawlSiteLanguageSummary } from "./site-language.ts";
 
@@ -139,8 +136,7 @@ describe("createCrawlAdapter", () => {
       true,
     );
     expect(
-      observations.find((row) => row.metricKey === "crawl.page.v1")
-        ?.valueJson,
+      observations.find((row) => row.metricKey === "crawl.page.v1")?.valueJson,
     ).toMatchObject({
       internalOutlinks: [{ targetSubjectUrl: `${ORIGIN}/about` }],
     });
@@ -167,8 +163,16 @@ describe("createCrawlAdapter", () => {
     expect(result).toMatchObject({
       availability: "unavailable",
       rowCount: 0,
-      stopReason: null,
+      // A guard that rejects every URL means robots.txt was never read, and a
+      // crawler that cannot read the rules must assume it is disallowed
+      // (RFC 9309 §2.3.1.4). The run now names that instead of leaving the
+      // reason blank.
+      stopReason: "robots_unreachable",
     });
-    expect(result.raw.providerUsage).toMatchObject({ urlsBlocked: 3 });
+    // One, not three. The run used to keep going after robots.txt was blocked
+    // and also attempt sitemap.xml and the seed page. Failing closed stops at
+    // the first refusal, so an unreadable site costs one request instead of a
+    // full crawl's worth.
+    expect(result.raw.providerUsage).toMatchObject({ urlsBlocked: 1 });
   });
 });

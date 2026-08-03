@@ -51,9 +51,7 @@ function ipNumberToDotted(n: number): string {
  *  null when the hostname is not an IPv4 address of any form. */
 export function parseObfuscatedIpv4(hostname: string): string | null {
   // IPv4-mapped IPv6 (::ffff:127.0.0.1, ::ffff:7f00:1, [::ffff:a.b.c.d])
-  const mapped = hostname.match(
-    /^(?:\[)?::ffff:([0-9a-f:.]+)(?:\])?$/i,
-  );
+  const mapped = hostname.match(/^(?:\[)?::ffff:([0-9a-f:.]+)(?:\])?$/i);
   if (mapped) {
     // Try dotted-decimal tail first
     const tail = mapped[1];
@@ -135,7 +133,11 @@ export function isPrivateHost(hostname: string): boolean {
   }
 
   // Localhost aliases
-  if (lower === "localhost" || lower.endsWith(".local") || lower.endsWith(".localhost")) {
+  if (
+    lower === "localhost" ||
+    lower.endsWith(".local") ||
+    lower.endsWith(".localhost")
+  ) {
     return true;
   }
 
@@ -217,6 +219,14 @@ export function validateUrlPattern(url: string): UrlValidationResult {
   // 6. Must have a TLD (at least one dot)
   if (!hostname.includes(".")) {
     return { valid: false, errorKey: "urlNoTld" };
+  }
+
+  // 6b. Explicit port. The guarded transport that performs the reachability
+  // check only speaks to standard HTTP(S) ports, so a port here would come back
+  // as "blocked" — which renders as "private IP address", a message that is
+  // simply untrue for https://acme.com:8443. Say the real reason instead.
+  if (parsed.port) {
+    return { valid: false, errorKey: "urlPort" };
   }
 
   // 7. Example/reserved domains

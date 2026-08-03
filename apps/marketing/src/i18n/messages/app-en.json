@@ -114,6 +114,7 @@
     "urlNoTld": "Please enter a complete domain name (e.g., yoursite.com).",
     "urlExample": "Please enter your actual website URL, not an example domain.",
     "urlIpAddress": "Please enter a domain name, not an IP address.",
+    "urlPort": "Please enter a URL without a port number (we can only reach standard http/https ports).",
     "urlChecking": "Checking URL accessibility...",
     "urlDnsError": "This domain does not exist. Please check for typos.",
     "urlTimeout": "Could not reach this URL (timed out). Please verify the address.",

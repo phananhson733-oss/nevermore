@@ -34,6 +34,7 @@ import {
   AI_BOT_USER_AGENTS,
   emptyRobots,
   isPathAllowed,
+  robotsCrawlDelaySeconds,
   parseRobots,
 } from "./robots.ts";
 import { collectSitemap } from "./sitemap.ts";
@@ -57,6 +58,10 @@ const STOP_MAX_DURATION = "max_duration";
 const STOP_MAX_TOTAL_BYTES = "max_total_bytes";
 const STOP_MAX_REQUESTS = "max_requests";
 const STOP_ABORTED = "aborted";
+/** robots.txt could not be read, so RFC 9309 §2.3.1.4 forbids crawling. */
+const STOP_ROBOTS_UNREACHABLE = "robots_unreachable";
+/** robots.txt forbids this crawler from the seed path. */
+const STOP_ROBOTS_DISALLOWED = "robots_disallowed";
 
 /** The crawl budget shape with widened numeric fields (CRAWL_BUDGET is assignable). */
 export interface CrawlBudgetLimits {
@@ -78,15 +83,19 @@ export interface CrawlBudgetLimits {
 export interface CrawlEngineOptions {
   readonly guard?: (url: string) => Promise<UrlGuardResult>;
   readonly now?: () => number;
+  /**
+   * Offline test seam, paired with `now`. Host pacing is measured in seconds
+   * once a site publishes Crawl-delay, which is not something a test can wait
+   * out with real timers.
+   */
+  readonly sleep?: (ms: number) => Promise<void>;
   /** Trusted internal budget override; callers must own a fixed preset. */
   readonly budget?: CrawlBudgetLimits;
   /**
    * Receives the independent versioned site-language summary once per crawl.
    * It is deliberately not embedded in the frozen v2 raw/page projections.
    */
-  readonly onSiteLanguageSummary?: (
-    summary: CrawlSiteLanguageSummary,
-  ) => void;
+  readonly onSiteLanguageSummary?: (summary: CrawlSiteLanguageSummary) => void;
   /** Trusted cap across robots, sitemap documents, page fetches, and redirects. */
   readonly maxRequests?: number;
 }
@@ -218,8 +227,7 @@ function mergeRobotsDirectives(
     : [];
   const all = [...new Set([...meta, ...header])];
   const critical = all.filter(
-    (token) =>
-      token === "noindex" || token === "none" || token === "nofollow",
+    (token) => token === "noindex" || token === "none" || token === "nofollow",
   );
   return [...new Set([...critical, ...all])]
     .slice(0, CRAWL_PROJECTION_LIMITS.maxRobotsDirectives)
@@ -517,8 +525,7 @@ async function guardedFetch(
     if (originOf(current) !== deps.allowedOrigin) {
       return { kind: "blocked" };
     }
-    const guardRemaining =
-      deps.maxWallClockMs - (deps.nowMs() - deps.startMs);
+    const guardRemaining = deps.maxWallClockMs - (deps.nowMs() - deps.startMs);
     const guardScope = makeRequestSignal(guardRemaining, deps.ctxSignal);
     const guardResult = await raceWithSignal(
       Promise.resolve().then(() => deps.guard(current)),
@@ -731,6 +738,7 @@ export async function crawlSite(
   const budget = options.budget ?? CRAWL_BUDGET;
   const guard = options.guard ?? canonicalUrlGuard;
   const nowMs = options.now ?? Date.now;
+  const sleepMs = options.sleep ?? sleep;
   const startMs = nowMs();
   const capturedAt = new Date().toISOString();
   const { origin, host } = params;
@@ -803,10 +811,7 @@ export async function crawlSite(
     },
     reserve(owner, bytes) {
       if (totalDecodedBudgetExhausted()) return false;
-      const remaining = Math.max(
-        0,
-        budget.maxTotalBytes - usage.bytesFetched,
-      );
+      const remaining = Math.max(0, budget.maxTotalBytes - usage.bytesFetched);
       const reserved = Math.min(bytes, remaining);
       usage.bytesFetched += reserved;
       const fits = bytes <= remaining;
@@ -864,14 +869,104 @@ export async function crawlSite(
     return result.body;
   };
 
+  /**
+   * robots.txt fetch that distinguishes "there is no robots.txt" from "we could
+   * not read robots.txt". RFC 9309 §2.3.1 makes these opposite outcomes:
+   * §2.3.1.3 says 4xx means no restrictions, §2.3.1.4 says 5xx means the
+   * crawler MUST assume complete disallow.
+   *
+   * `fetchText` collapses both into `null`, so the previous caller substituted
+   * an empty ruleset on a 503 and then walked every path the site had
+   * disallowed. That is the one failure mode a public crawler must not have.
+   */
+  const fetchRobotsText = async (
+    url: string,
+  ): Promise<
+    | { readonly kind: "ok"; readonly body: string }
+    | { readonly kind: "absent" }
+    | { readonly kind: "unreachable" }
+    /**
+     * The run itself ended — deadline, abort signal, or a budget that was
+     * already spent. This is NOT a statement about robots.txt, and must not be
+     * relabelled as one: the stop already has a truthful reason.
+     */
+    | { readonly kind: "stopped" }
+  > => {
+    if (stopReason || markOperationStop()) return { kind: "stopped" };
+    const result = await guardedFetch(
+      url,
+      fetchDeps(() => true),
+    );
+    if (result.kind === "blocked") {
+      usage.urlsBlocked += 1;
+      return { kind: "unreachable" };
+    }
+    if (result.kind === "aborted") {
+      // Two different events arrive here. `markOperationStop()` returning true
+      // means the wall clock or the caller's signal ended the whole run. False
+      // means only this request timed out, which genuinely is "we could not
+      // read robots.txt" and must fail closed.
+      if (markOperationStop()) return { kind: "stopped" };
+      usage.urlsErrored += 1;
+      return { kind: "unreachable" };
+    }
+    if (result.kind !== "ok") return { kind: "unreachable" };
+    usage.urlsFetched += 1;
+    usage.redirectsFollowed += result.redirectChain.length;
+    // 4xx: the file is not there, or is refused to us. RFC 9309 treats an
+    // "unavailable" robots.txt as no restrictions at all.
+    if (result.finalStatus >= 400 && result.finalStatus < 500) {
+      return { kind: "absent" };
+    }
+    if (
+      result.finalStatus < 200 ||
+      result.finalStatus >= 300 ||
+      result.body === null
+    ) {
+      return { kind: "unreachable" };
+    }
+    return { kind: "ok", body: result.body };
+  };
+
   // robots.txt (own-crawler gate + projection).
   const robotsUrl =
     canonicalizeUrl(`${origin}/robots.txt`)?.fetchUrl ?? `${origin}/robots.txt`;
-  const robotsBody = await fetchText(robotsUrl);
+  const robotsResult = await fetchRobotsText(robotsUrl);
   const robots =
-    robotsBody !== null ? parseRobots(robotsBody, origin, true) : emptyRobots();
+    robotsResult.kind === "ok"
+      ? parseRobots(robotsResult.body, origin, true)
+      : emptyRobots();
   const robotsProjection = boundedRobotsProjection(robots.projection);
-  if (robotsBody !== null) usage.robotsFetched = 1;
+  if (robotsResult.kind === "ok") usage.robotsFetched = 1;
+
+  /**
+   * Fail closed when robots.txt was unreadable: RFC 9309 §2.3.1.4 says a
+   * crawler that cannot read the rules must assume it is disallowed.
+   *
+   * The `!stopReason` qualifier matters. A run whose byte budget, request cap,
+   * or abort signal already fired never really asked for robots.txt, and
+   * relabelling that as "robots unreachable" would hide the actual reason the
+   * crawl stopped.
+   */
+  const robotsUnreachable =
+    robotsResult.kind === "unreachable" &&
+    !stopReason &&
+    // Re-check the clock at stamping time. The abort that ended the fetch and
+    // the deadline that ended the run can land in either order, and on a loaded
+    // machine they do: without this the run reports robots_unreachable for a
+    // crawl that simply ran out of time.
+    !markOperationStop();
+  if (robotsUnreachable) stopReason = STOP_ROBOTS_UNREACHABLE;
+
+  /**
+   * A site that publishes `Crawl-delay` has stated its own rate ceiling. The
+   * pacer honours whichever is slower, ours or theirs; it never speeds up on a
+   * site's say-so.
+   */
+  const crawlDelayMs = Math.max(
+    budget.minHostDelayMs,
+    robotsCrawlDelaySeconds(robots.groups, config.userAgent) * 1_000,
+  );
 
   // Sitemaps (from robots, else the conventional path).
   const sitemapSeeds =
@@ -886,7 +981,8 @@ export async function crawlSite(
     await collectSitemap(crawlOrigin, sitemapSeeds, {
       fetchText,
       onMember(target) {
-        if (target.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars) return;
+        if (target.fetchUrl.length > CRAWL_PROJECTION_LIMITS.maxUrlChars)
+          return;
         const current = exactSitemapMembers.get(target.subjectUrl) ?? [];
         if (current.some((candidate) => candidate.fetchUrl === target.fetchUrl))
           return;
@@ -952,9 +1048,7 @@ export async function crawlSite(
     const previousDepth = seenFetchDepth.get(fetchUrl);
     if (previousDepth !== undefined && previousDepth <= depth) return;
     seenFetchDepth.set(fetchUrl, depth);
-    const queuedIndex = queue.findIndex(
-      (entry) => entry.fetchUrl === fetchUrl,
-    );
+    const queuedIndex = queue.findIndex((entry) => entry.fetchUrl === fetchUrl);
     if (queuedIndex >= 0) {
       queue[queuedIndex] = { fetchUrl, subjectUrl, depth };
       return;
@@ -1019,9 +1113,11 @@ export async function crawlSite(
   const acquireHostSlot = async (): Promise<void> => {
     const now = nowMs();
     const scheduled = Math.max(now, nextLaunchAt);
-    nextLaunchAt = scheduled + budget.minHostDelayMs;
+    // `crawlDelayMs` is the slower of our floor and the site's stated
+    // Crawl-delay, so a site asking for one request every 10 s gets that.
+    nextLaunchAt = scheduled + crawlDelayMs;
     const wait = scheduled - now;
-    if (wait > 0) await sleep(wait);
+    if (wait > 0) await sleepMs(wait);
   };
 
   const processEntry = async (entry: QueueEntry): Promise<void> => {
@@ -1039,11 +1135,7 @@ export async function crawlSite(
       fetchDeps(
         (ct) => isHtmlContentType(ct),
         (url) =>
-          isPathAllowed(
-            robots.groups,
-            config.userAgent,
-            robotsPath(url),
-          ),
+          isPathAllowed(robots.groups, config.userAgent, robotsPath(url)),
       ),
     );
     const responseMs = Math.max(0, nowMs() - started);
@@ -1158,11 +1250,7 @@ export async function crawlSite(
     // aggregate to the same subject.
     if (result.finalStatus >= 200 && result.finalStatus < 300) {
       for (const target of parsed.internalFetchTargets) {
-        enqueue(
-          target.subjectUrl,
-          target.fetchUrl,
-          entry.depth + 1,
-        );
+        enqueue(target.subjectUrl, target.fetchUrl, entry.depth + 1);
       }
       if (parsed.canonicalFetchTarget) {
         enqueue(
@@ -1203,21 +1291,55 @@ export async function crawlSite(
   if (!stopReason && hitDepthLimit) stopReason = STOP_MAX_DEPTH;
 
   const pageCandidates = [...pagesByFetchUrl.values()];
-  const pages = pageCandidates.map(
-    (candidate) => candidate.record,
-  );
-  const reachedNothing = pages.length === 0 && usage.urlsFetched === 0;
-  const availability: Availability = stopReason
-    ? "partial"
-    : reachedNothing
-      ? "unavailable"
-      : "available";
+  const pages = pageCandidates.map((candidate) => candidate.record);
+  /**
+   * Zero collected pages is never a successful audit.
+   *
+   * This used to also require `usage.urlsFetched === 0`, but that counter is
+   * incremented by the robots.txt and sitemap.xml fetches, which happen before
+   * any page is considered. A site whose robots.txt says `Disallow: /`
+   * therefore reported `availability: "available"` with `stopReason: null`, and
+   * both public tools rendered that as a completed audit that found nothing —
+   * a clean bill of health for a site we never looked at.
+   */
+  const reachedNothing = pages.length === 0;
 
-  const limitation = stopReason
-    ? `Public crawl of ${origin} stopped early (${stopReason}); coverage is partial: ${pages.length} page(s) collected.`
-    : availability === "unavailable"
-      ? `Public crawl of ${origin} returned no fetchable pages.`
-      : `Public crawl of ${origin}: ${pages.length} page(s) within the fixed budget.`;
+  /**
+   * Zero pages plus at least one robots refusal means the site told us not to
+   * crawl it — a legitimate site-owner decision, not a crawl failure and
+   * emphatically not a passing audit.
+   */
+  const robotsRefused = reachedNothing && usage.urlsDisallowed > 0;
+  if (robotsRefused && !stopReason) stopReason = STOP_ROBOTS_DISALLOWED;
+
+  /**
+   * `partial` still means "a budget cut a real crawl short", which is why a run
+   * that fetched nothing before exhausting its budget keeps reporting partial.
+   *
+   * What changed: `reachedNothing` used to also require `usage.urlsFetched === 0`,
+   * and that counter is incremented by the robots.txt and sitemap.xml fetches
+   * that happen before any page is considered. A site answering `Disallow: /`
+   * therefore came back `available` with `stopReason: null`, and both public
+   * tools rendered a completed audit that found nothing — a clean bill of
+   * health for a site we never looked at.
+   */
+  const availability: Availability =
+    reachedNothing && (robotsUnreachable || robotsRefused || !stopReason)
+      ? "unavailable"
+      : stopReason
+        ? "partial"
+        : "available";
+
+  const limitation =
+    stopReason === STOP_ROBOTS_DISALLOWED
+      ? `${origin}/robots.txt forbids this crawler, so no page was fetched. This is not a finding about the site's SEO.`
+      : stopReason === STOP_ROBOTS_UNREACHABLE
+        ? `${origin}/robots.txt could not be read, so no page was fetched: a crawler that cannot read the rules must assume it is disallowed (RFC 9309 §2.3.1.4).`
+        : stopReason
+          ? `Public crawl of ${origin} stopped early (${stopReason}); coverage is partial: ${pages.length} page(s) collected.`
+          : availability === "unavailable"
+            ? `Public crawl of ${origin} returned no fetchable pages.`
+            : `Public crawl of ${origin}: ${pages.length} page(s) within the fixed budget.`;
 
   const orderedPages = [...pages].sort((left, right) => {
     const subjectOrder = compareAscii(left.subjectUrl, right.subjectUrl);

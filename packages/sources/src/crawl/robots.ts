@@ -30,12 +30,28 @@ export interface RobotsGroup {
   readonly agents: readonly string[];
   readonly allow: readonly string[];
   readonly disallow: readonly string[];
+  /**
+   * Seconds the site asks a crawler to wait between requests, or null when the
+   * group states none. Not part of RFC 9309, but published widely enough that
+   * ignoring it means crawling a site faster than it asked to be crawled.
+   */
+  readonly crawlDelaySeconds: number | null;
 }
 
 interface MutableGroup {
   agents: string[];
   allow: string[];
   disallow: string[];
+  crawlDelaySeconds: number | null;
+}
+
+/** Refuse to be paced slower than this; a hostile file could otherwise stall a run. */
+const MAX_HONOURED_CRAWL_DELAY_SECONDS = 30;
+
+function parseCrawlDelay(value: string): number | null {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.min(parsed, MAX_HONOURED_CRAWL_DELAY_SECONDS);
 }
 
 function parseGroups(content: string): readonly RobotsGroup[] {
@@ -51,7 +67,12 @@ function parseGroups(content: string): readonly RobotsGroup[] {
     const value = line.slice(separator + 1).trim();
     if (name === "user-agent") {
       if (!current || sawDirective) {
-        current = { agents: [], allow: [], disallow: [] };
+        current = {
+          agents: [],
+          allow: [],
+          disallow: [],
+          crawlDelaySeconds: null,
+        };
         groups.push(current);
         sawDirective = false;
       }
@@ -59,6 +80,10 @@ function parseGroups(content: string): readonly RobotsGroup[] {
     } else if ((name === "allow" || name === "disallow") && current) {
       sawDirective = true;
       if (value) current[name].push(value);
+    } else if (name === "crawl-delay" && current) {
+      sawDirective = true;
+      current.crawlDelaySeconds =
+        parseCrawlDelay(value) ?? current.crawlDelaySeconds;
     }
   }
   return groups;
@@ -67,10 +92,15 @@ function parseGroups(content: string): readonly RobotsGroup[] {
 /** Product token used for matching: the part before "/" in a UA string. */
 function productToken(userAgent: string): string {
   const slash = userAgent.indexOf("/");
-  return (slash >= 0 ? userAgent.slice(0, slash) : userAgent).trim().toLowerCase();
+  return (slash >= 0 ? userAgent.slice(0, slash) : userAgent)
+    .trim()
+    .toLowerCase();
 }
 
-function groupForUserAgent(groups: readonly RobotsGroup[], userAgent: string): RobotsGroup | undefined {
+function groupForUserAgent(
+  groups: readonly RobotsGroup[],
+  userAgent: string,
+): RobotsGroup | undefined {
   const token = productToken(userAgent);
   return (
     groups.find((group) => group.agents.includes(token)) ??
@@ -91,19 +121,49 @@ function globMatches(path: string, pattern: string): boolean {
  * equally specific Allow wins over Disallow. Empty content = fully allowed.
  * Governs SignalFrame's own crawler only.
  */
-export function isPathAllowed(groups: readonly RobotsGroup[], userAgent: string, path: string): boolean {
+export function isPathAllowed(
+  groups: readonly RobotsGroup[],
+  userAgent: string,
+  path: string,
+): boolean {
   const group = groupForUserAgent(groups, userAgent);
   if (!group) return true;
   const matches = [
-    ...group.disallow.filter(Boolean).filter((pattern) => globMatches(path, pattern)).map((pattern) => ({ pattern, allowed: false })),
-    ...group.allow.filter(Boolean).filter((pattern) => globMatches(path, pattern)).map((pattern) => ({ pattern, allowed: true })),
+    ...group.disallow
+      .filter(Boolean)
+      .filter((pattern) => globMatches(path, pattern))
+      .map((pattern) => ({ pattern, allowed: false })),
+    ...group.allow
+      .filter(Boolean)
+      .filter((pattern) => globMatches(path, pattern))
+      .map((pattern) => ({ pattern, allowed: true })),
   ];
   if (matches.length === 0) return true;
-  matches.sort((a, b) => b.pattern.length - a.pattern.length || Number(b.allowed) - Number(a.allowed));
+  matches.sort(
+    (a, b) =>
+      b.pattern.length - a.pattern.length ||
+      Number(b.allowed) - Number(a.allowed),
+  );
   return matches[0]?.allowed ?? true;
 }
 
-function projectionGroup(group: RobotsGroup, userAgent: string): CrawlRobotsProjection["groups"][number] {
+/**
+ * Seconds this crawler should wait between requests, per the site's own
+ * `Crawl-delay`. Returns 0 when the site states none. Resolution follows the
+ * same specificity rule as `isPathAllowed`: a group naming our product token
+ * wins over the `*` group.
+ */
+export function robotsCrawlDelaySeconds(
+  groups: readonly RobotsGroup[],
+  userAgent: string,
+): number {
+  return groupForUserAgent(groups, userAgent)?.crawlDelaySeconds ?? 0;
+}
+
+function projectionGroup(
+  group: RobotsGroup,
+  userAgent: string,
+): CrawlRobotsProjection["groups"][number] {
   return {
     userAgent,
     disallow: [...group.disallow],
@@ -111,7 +171,10 @@ function projectionGroup(group: RobotsGroup, userAgent: string): CrawlRobotsProj
   };
 }
 
-function collectSitemapUrls(content: string, origin: string): readonly string[] {
+function collectSitemapUrls(
+  content: string,
+  origin: string,
+): readonly string[] {
   return [
     ...new Set(
       [...content.matchAll(/^\s*sitemap\s*:\s*(.+?)\s*$/gim)]
@@ -139,7 +202,10 @@ export function parseRobots(
   content: string,
   origin: string,
   fetched: boolean,
-): { readonly projection: CrawlRobotsProjection; readonly groups: readonly RobotsGroup[] } {
+): {
+  readonly projection: CrawlRobotsProjection;
+  readonly groups: readonly RobotsGroup[];
+} {
   const groups = parseGroups(content);
   const projectionGroups: CrawlRobotsProjection["groups"][number][] = [];
   const seenAgents = new Set<string>();
@@ -177,6 +243,9 @@ export function parseRobots(
 }
 
 /** The projection for a robots.txt that was never successfully fetched. */
-export function emptyRobots(): { readonly projection: CrawlRobotsProjection; readonly groups: readonly RobotsGroup[] } {
+export function emptyRobots(): {
+  readonly projection: CrawlRobotsProjection;
+  readonly groups: readonly RobotsGroup[];
+} {
   return parseRobots("", "", false);
 }

@@ -23,7 +23,8 @@ const CTX: CollectionContext = {
 /** A guard that resolves the fixture host to a public IP and blocks everything else via real classification. */
 const GUARD = createCanonicalUrlGuard({
   lookup: async (hostname: string) => {
-    if (hostname === "example.com" || hostname === "www.example.com") return ["93.184.216.34"];
+    if (hostname === "example.com" || hostname === "www.example.com")
+      return ["93.184.216.34"];
     throw new Error(`unexpected DNS lookup: ${hostname}`);
   },
 });
@@ -35,15 +36,24 @@ const byteLength = (value: string): number =>
 type Route = () => Response;
 
 function html(body: string): Response {
-  return new Response(body, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
 }
 
 function xml(body: string): Response {
-  return new Response(body, { status: 200, headers: { "content-type": "application/xml" } });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "application/xml" },
+  });
 }
 
 function text(body: string): Response {
-  return new Response(body, { status: 200, headers: { "content-type": "text/plain" } });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/plain" },
+  });
 }
 
 function textOnlyHtml(body: string): Response {
@@ -61,8 +71,7 @@ async function settleWithin<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<
-  | { readonly kind: "settled"; readonly value: T }
-  | { readonly kind: "timeout" }
+  { readonly kind: "settled"; readonly value: T } | { readonly kind: "timeout" }
 > {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
@@ -99,13 +108,20 @@ function redirect(location: string): Response {
   return new Response(null, { status: 301, headers: { location } });
 }
 
-function makeFetcher(routes: Record<string, Route>): { fetcher: CrawlFetcher; calls: string[] } {
+function makeFetcher(routes: Record<string, Route>): {
+  fetcher: CrawlFetcher;
+  calls: string[];
+} {
   const calls: string[] = [];
   const fetcher: CrawlFetcher = {
     async fetch(url) {
       calls.push(url);
       const route = routes[url];
-      if (!route) return new Response("not found", { status: 404, headers: { "content-type": "text/html" } });
+      if (!route)
+        return new Response("not found", {
+          status: 404,
+          headers: { "content-type": "text/html" },
+        });
       return route();
     },
   };
@@ -328,7 +344,9 @@ describe("crawlSite", () => {
     </urlset>`;
     const { fetcher, calls } = makeFetcher({
       "https://example.com/robots.txt": () =>
-        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
       "https://example.com/sitemap.xml": () => xml(sitemapBody),
       "https://example.com/": () => html(HOME_HTML),
       "https://example.com/docs/": () =>
@@ -370,7 +388,9 @@ describe("crawlSite", () => {
         .join("")}</urlset>`;
       const { fetcher, calls } = makeFetcher({
         "https://example.com/robots.txt": () =>
-          text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+          text(
+            "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+          ),
         "https://example.com/sitemap.xml": () => xml(sitemapBody),
         "https://example.com/": () =>
           html("<html><head><title>Home</title></head></html>"),
@@ -422,8 +442,7 @@ describe("crawlSite", () => {
       "https://example.com/sitemap.xml": () => xml(sitemapBody),
       "https://example.com/": () =>
         html("<html><head><title>Home</title></head></html>"),
-      [seedUrl]: () =>
-        html("<html><head><title>Widget</title></head></html>"),
+      [seedUrl]: () => html("<html><head><title>Widget</title></head></html>"),
       "https://example.com/a": () =>
         html("<html><head><title>A</title></head></html>"),
       "https://example.com/a/": () =>
@@ -481,16 +500,10 @@ describe("crawlSite", () => {
         html("<html><head><title>Pricing</title></head></html>"),
     });
 
-    const raw = await crawlSite(
-      { ...PARAMS, seedUrl },
-      CONFIG,
-      CTX,
-      fetcher,
-      {
-        guard: GUARD,
-        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
-      },
-    );
+    const raw = await crawlSite({ ...PARAMS, seedUrl }, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
 
     expect(calls.slice(2)).toEqual([
       "https://example.com/",
@@ -499,10 +512,7 @@ describe("crawlSite", () => {
     ]);
     expect(
       raw.pages
-        .filter(
-          (page) =>
-            page.subjectUrl === "https://example.com/pricing",
-        )
+        .filter((page) => page.subjectUrl === "https://example.com/pricing")
         .map((page) => page.projection.fetchUrl),
     ).toEqual([sitemapUrl, seedUrl]);
   });
@@ -520,16 +530,10 @@ describe("crawlSite", () => {
         html("<html><head><title>Standalone</title></head></html>"),
     });
 
-    const raw = await crawlSite(
-      { ...PARAMS, seedUrl },
-      CONFIG,
-      CTX,
-      fetcher,
-      {
-        guard: GUARD,
-        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
-      },
-    );
+    const raw = await crawlSite({ ...PARAMS, seedUrl }, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
 
     expect(calls).toEqual([
       "https://example.com/robots.txt",
@@ -581,46 +585,47 @@ describe("crawlSite", () => {
     ["fragment", "https://example.com/product#details"],
     [
       "overlong",
-      `https://example.com/${"x".repeat(
-        CRAWL_PROJECTION_LIMITS.maxUrlChars,
-      )}`,
+      `https://example.com/${"x".repeat(CRAWL_PROJECTION_LIMITS.maxUrlChars)}`,
     ],
-  ])("ignores an invalid %s seed before guard and transport", async (_case, seedUrl) => {
-    const guardedUrls: string[] = [];
-    const guard = async (url: string) => {
-      guardedUrls.push(url);
-      return GUARD(url);
-    };
-    const { fetcher, calls } = makeFetcher({
-      "https://example.com/robots.txt": () =>
-        text("User-agent: *\nDisallow:\n"),
-      "https://example.com/sitemap.xml": () =>
-        new Response("not found", { status: 404 }),
-      "https://example.com/": () =>
-        html("<html><head><title>Home</title></head></html>"),
-    });
+  ])(
+    "ignores an invalid %s seed before guard and transport",
+    async (_case, seedUrl) => {
+      const guardedUrls: string[] = [];
+      const guard = async (url: string) => {
+        guardedUrls.push(url);
+        return GUARD(url);
+      };
+      const { fetcher, calls } = makeFetcher({
+        "https://example.com/robots.txt": () =>
+          text("User-agent: *\nDisallow:\n"),
+        "https://example.com/sitemap.xml": () =>
+          new Response("not found", { status: 404 }),
+        "https://example.com/": () =>
+          html("<html><head><title>Home</title></head></html>"),
+      });
 
-    const raw = await crawlSite(
-      { ...PARAMS, seedUrl },
-      CONFIG,
-      CTX,
-      fetcher,
-      {
-        guard,
-        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
-      },
-    );
+      const raw = await crawlSite(
+        { ...PARAMS, seedUrl },
+        CONFIG,
+        CTX,
+        fetcher,
+        {
+          guard,
+          budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+        },
+      );
 
-    expect(calls).toEqual([
-      "https://example.com/robots.txt",
-      "https://example.com/sitemap.xml",
-      "https://example.com/",
-    ]);
-    expect(guardedUrls).toEqual(calls);
-    expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
-      "https://example.com/",
-    ]);
-  });
+      expect(calls).toEqual([
+        "https://example.com/robots.txt",
+        "https://example.com/sitemap.xml",
+        "https://example.com/",
+      ]);
+      expect(guardedUrls).toEqual(calls);
+      expect(raw.pages.map((page) => page.projection.fetchUrl)).toEqual([
+        "https://example.com/",
+      ]);
+    },
+  );
 
   it("applies robots rules to a deep seed before its transport", async () => {
     const seedUrl = "https://example.com/private/product";
@@ -631,20 +636,13 @@ describe("crawlSite", () => {
         new Response("not found", { status: 404 }),
       "https://example.com/": () =>
         html("<html><head><title>Home</title></head></html>"),
-      [seedUrl]: () =>
-        html("<html><head><title>Private</title></head></html>"),
+      [seedUrl]: () => html("<html><head><title>Private</title></head></html>"),
     });
 
-    const raw = await crawlSite(
-      { ...PARAMS, seedUrl },
-      CONFIG,
-      CTX,
-      fetcher,
-      {
-        guard: GUARD,
-        budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
-      },
-    );
+    const raw = await crawlSite({ ...PARAMS, seedUrl }, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: { ...FAST_BUDGET, perHostConcurrency: 1 },
+    });
 
     expect(calls).not.toContain(seedUrl);
     expect(raw.providerUsage.urlsDisallowed).toBe(1);
@@ -660,7 +658,9 @@ describe("crawlSite", () => {
       <body><a href="child">Child</a></body></html>`;
     const { fetcher, calls } = makeFetcher({
       "https://example.com/robots.txt": () =>
-        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
       "https://example.com/sitemap.xml": () =>
         xml(`<urlset>
           <url><loc>${oldUrl}</loc></url>
@@ -709,9 +709,7 @@ describe("crawlSite", () => {
       },
     });
     expect(
-      oldPage?.projection.internalOutlinks.map(
-        (link) => link.targetSubjectUrl,
-      ),
+      oldPage?.projection.internalOutlinks.map((link) => link.targetSubjectUrl),
     ).toContain("https://example.com/child");
   });
 
@@ -722,12 +720,13 @@ describe("crawlSite", () => {
       <a href="${landingSlash}">Landing slash variant</a></body></html>`;
     const { fetcher, calls } = makeFetcher({
       "https://example.com/robots.txt": () =>
-        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
       "https://example.com/sitemap.xml": () =>
         xml(`<urlset><url><loc>${landing}</loc></url></urlset>`),
       "https://example.com/": () => html(home),
-      [landing]: () =>
-        html("<html><head><title>Landing</title></head></html>"),
+      [landing]: () => html("<html><head><title>Landing</title></head></html>"),
       [landingSlash]: () =>
         html("<html><head><title>Landing slash</title></head></html>"),
     });
@@ -766,7 +765,9 @@ describe("crawlSite", () => {
     </urlset>`;
     const { fetcher, calls } = makeFetcher({
       "https://example.com/robots.txt": () =>
-        text("User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml"),
+        text(
+          "User-agent: *\nDisallow:\nSitemap: https://example.com/sitemap.xml",
+        ),
       "https://example.com/sitemap.xml": () => xml(sitemapBody),
       "https://example.com/": () => html(HOME_HTML),
       "https://example.com/a-target/": () =>
@@ -782,9 +783,7 @@ describe("crawlSite", () => {
       },
     });
 
-    expect(raw.sitemap.subjectUrls).toContain(
-      "https://example.com/a-target",
-    );
+    expect(raw.sitemap.subjectUrls).toContain("https://example.com/a-target");
     expect(calls).toContain("https://example.com/a-target/");
     expect(calls).not.toContain("https://example.com/a-target");
   });
@@ -801,7 +800,10 @@ describe("crawlSite", () => {
 
     const crawlWithFirstCompletion = async (
       first: "no-slash" | "slash",
-    ): Promise<{ readonly calls: readonly string[]; readonly raw: Awaited<ReturnType<typeof crawlSite>> }> => {
+    ): Promise<{
+      readonly calls: readonly string[];
+      readonly raw: Awaited<ReturnType<typeof crawlSite>>;
+    }> => {
       const noSlashResponse = deferred<Response>();
       const slashResponse = deferred<Response>();
       const noSlashStarted = deferred<void>();
@@ -854,11 +856,15 @@ describe("crawlSite", () => {
 
       if (first === "no-slash") {
         noSlashResponse.resolve(
-          html(`<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`),
+          html(
+            `<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`,
+          ),
         );
       } else {
         slashResponse.resolve(
-          html(`<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`),
+          html(
+            `<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`,
+          ),
         );
       }
       // Do not release the other representation until the first one has been
@@ -868,11 +874,15 @@ describe("crawlSite", () => {
 
       if (first === "no-slash") {
         slashResponse.resolve(
-          html(`<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`),
+          html(
+            `<html><head><title>Slash</title><link rel="canonical" href="/canonical-from-slash"></head><body><a href="/link-from-slash">Link</a></body></html>`,
+          ),
         );
       } else {
         noSlashResponse.resolve(
-          html(`<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`),
+          html(
+            `<html><head><title>No slash</title><link rel="canonical" href="/canonical-from-no-slash"></head><body><a href="/link-from-no-slash">Link</a></body></html>`,
+          ),
         );
       }
 
@@ -941,7 +951,10 @@ describe("crawlSite", () => {
       "https://example.com/about": () => html(ABOUT_HTML),
     });
 
-    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, { guard: GUARD, budget: FAST_BUDGET });
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+    });
 
     expect(raw.availability).toBe("available");
     expect(raw.stopReason).toBeNull();
@@ -957,12 +970,21 @@ describe("crawlSite", () => {
     expect(home?.robotsIndexable).toBe(true);
     expect(home?.sitemapMember).toBe(true);
     expect(home?.jsonLd.types).toContain("Organization");
-    expect(home?.internalOutlinks.map((link) => link.targetSubjectUrl)).toContain("https://example.com/about");
+    expect(
+      home?.internalOutlinks.map((link) => link.targetSubjectUrl),
+    ).toContain("https://example.com/about");
 
     expect(raw.robots.fetched).toBe(true);
     expect(raw.robots.sitemaps).toContain("https://example.com/sitemap.xml");
-    const robotUas = raw.robots.groups.map((group) => group.userAgent.toLowerCase());
-    for (const bot of ["oai-searchbot", "chatgpt-user", "perplexitybot", "claudebot"]) {
+    const robotUas = raw.robots.groups.map((group) =>
+      group.userAgent.toLowerCase(),
+    );
+    for (const bot of [
+      "oai-searchbot",
+      "chatgpt-user",
+      "perplexitybot",
+      "claudebot",
+    ]) {
       expect(robotUas).toContain(bot);
     }
 
@@ -1343,14 +1365,11 @@ describe("crawlSite", () => {
     );
     const sitemapLines = Array.from(
       { length: CRAWL_PROJECTION_LIMITS.maxSitemaps + 5 },
-      (_unused, index) =>
-        `Sitemap: https://example.com/sitemap-${index}.xml`,
+      (_unused, index) => `Sitemap: https://example.com/sitemap-${index}.xml`,
     );
-    const robotsBody = [
-      ...wildcardRules,
-      ...extraGroups,
-      ...sitemapLines,
-    ].join("\n");
+    const robotsBody = [...wildcardRules, ...extraGroups, ...sitemapLines].join(
+      "\n",
+    );
     const { fetcher } = makeFetcher({
       "https://example.com/robots.txt": () => text(robotsBody),
     });
@@ -1373,15 +1392,13 @@ describe("crawlSite", () => {
     expect(
       raw.robots.groups.every(
         (group) =>
-          group.userAgent.length <=
-            CRAWL_PROJECTION_LIMITS.maxUserAgentChars &&
+          group.userAgent.length <= CRAWL_PROJECTION_LIMITS.maxUserAgentChars &&
           group.allow.length <=
             CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup &&
           group.disallow.length <=
             CRAWL_PROJECTION_LIMITS.maxRobotsRulesPerGroup &&
           [...group.allow, ...group.disallow].every(
-            (rule) =>
-              rule.length <= CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars,
+            (rule) => rule.length <= CRAWL_PROJECTION_LIMITS.maxRobotsRuleChars,
           ),
       ),
     ).toBe(true);
@@ -1443,7 +1460,12 @@ describe("crawlSite", () => {
 
     const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
       guard: GUARD,
-      budget: { ...CRAWL_BUDGET, maxUrls: 1, perHostConcurrency: 1, minHostDelayMs: 0 },
+      budget: {
+        ...CRAWL_BUDGET,
+        maxUrls: 1,
+        perHostConcurrency: 1,
+        minHostDelayMs: 0,
+      },
     });
 
     expect(raw.availability).toBe("partial");
@@ -1533,8 +1555,9 @@ describe("crawlSite", () => {
         (page) => page.subjectUrl === "https://example.com/dir/child",
       ),
     ).toBe(true);
-    expect(calls.filter((url) => url === "https://example.com/dir/page"))
-      .toHaveLength(2);
+    expect(
+      calls.filter((url) => url === "https://example.com/dir/page"),
+    ).toHaveLength(2);
     expect(calls).not.toContain("https://example.com/child");
   });
 
@@ -1554,7 +1577,8 @@ describe("crawlSite", () => {
     let finalCalls = 0;
     let released = false;
     const releaseRace = (): void => {
-      if (released || !aliasAResolve || !aliasBResolve || !directResolve) return;
+      if (released || !aliasAResolve || !aliasBResolve || !directResolve)
+        return;
       released = true;
       directResolve(html(finalBody));
       aliasBResolve(
@@ -1670,9 +1694,9 @@ describe("crawlSite", () => {
     expect(calls).toContain("https://example.com/public");
     expect(calls).not.toContain("https://example.com/private/secret");
     expect(raw.providerUsage.urlsDisallowed).toBe(1);
-    expect(
-      raw.pages.some((page) => page.subjectUrl.includes("/private")),
-    ).toBe(false);
+    expect(raw.pages.some((page) => page.subjectUrl.includes("/private"))).toBe(
+      false,
+    );
   });
 
   it("fails closed before guard or transport on a cross-origin redirect", async () => {
@@ -1851,18 +1875,28 @@ describe("crawlSite", () => {
     const homeWithRedirect = `<html><head><title>Home</title></head><body>
       <h1>Home</h1><a href="/go">internal redirect</a></body></html>`;
     const { fetcher, calls } = makeFetcher({
-      "https://example.com/robots.txt": () => text("User-agent: *\nDisallow:\n"),
-      "https://example.com/sitemap.xml": () => new Response("nope", { status: 404 }),
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("nope", { status: 404 }),
       "https://example.com/": () => html(homeWithRedirect),
-      "https://example.com/go": () => redirect("http://169.254.169.254/latest/meta-data"),
+      "https://example.com/go": () =>
+        redirect("http://169.254.169.254/latest/meta-data"),
     });
 
-    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, { guard: GUARD, budget: FAST_BUDGET });
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+    });
 
     expect(calls.some((url) => url.includes("169.254.169.254"))).toBe(false);
-    expect(raw.pages.some((page) => page.subjectUrl.includes("169.254.169.254"))).toBe(false);
+    expect(
+      raw.pages.some((page) => page.subjectUrl.includes("169.254.169.254")),
+    ).toBe(false);
     expect(raw.providerUsage.urlsBlocked).toBeGreaterThanOrEqual(1);
-    expect(raw.pages.map((page) => page.subjectUrl)).toContain("https://example.com/");
+    expect(raw.pages.map((page) => page.subjectUrl)).toContain(
+      "https://example.com/",
+    );
   });
 
   it("fails closed when a guard marks a URL safe without a normalized URL or pin", async () => {
@@ -1906,7 +1940,9 @@ describe("crawlSite", () => {
   });
 
   it("applies the body cap to decompressed response bytes", async () => {
-    const decompressed = new TextEncoder().encode(`<h1>${"x".repeat(128)}</h1>`);
+    const decompressed = new TextEncoder().encode(
+      `<h1>${"x".repeat(128)}</h1>`,
+    );
     const { fetcher } = makeFetcher({
       "https://example.com/robots.txt": () =>
         text("User-agent: *\nDisallow:\n"),
@@ -1949,17 +1985,29 @@ describe("crawlSite", () => {
     const homeWithPdf = `<html><head><title>Home</title></head><body>
       <h1>Home</h1><a href="/doc.pdf">the doc</a></body></html>`;
     const { fetcher } = makeFetcher({
-      "https://example.com/robots.txt": () => text("User-agent: *\nDisallow:\n"),
-      "https://example.com/sitemap.xml": () => new Response("nope", { status: 404 }),
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow:\n"),
+      "https://example.com/sitemap.xml": () =>
+        new Response("nope", { status: 404 }),
       "https://example.com/": () => html(homeWithPdf),
       "https://example.com/doc.pdf": () =>
-        new Response("%PDF-1.4 binary", { status: 200, headers: { "content-type": "application/pdf" } }),
+        new Response("%PDF-1.4 binary", {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        }),
     });
 
-    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, { guard: GUARD, budget: FAST_BUDGET });
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+    });
 
-    expect(raw.pages.some((page) => page.subjectUrl.endsWith("doc.pdf"))).toBe(false);
-    expect(raw.pages.map((page) => page.subjectUrl)).toContain("https://example.com/");
+    expect(raw.pages.some((page) => page.subjectUrl.endsWith("doc.pdf"))).toBe(
+      false,
+    );
+    expect(raw.pages.map((page) => page.subjectUrl)).toContain(
+      "https://example.com/",
+    );
     expect(raw.providerUsage.urlsSkipped).toBeGreaterThanOrEqual(1);
   });
 
@@ -2003,8 +2051,12 @@ describe("crawlSite", () => {
     const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
       guard: GUARD,
       budget: {
+        // Large enough for the 64-byte robots.txt and 59-byte sitemap, small
+        // enough that HOME_HTML overruns it. A cap that also starves robots.txt
+        // would exercise the fail-closed path instead of the page body cap this
+        // test is about.
         ...FAST_BUDGET,
-        maxBodyBytes: 10,
+        maxBodyBytes: 128,
         perHostConcurrency: 1,
       },
     });
