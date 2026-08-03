@@ -80,6 +80,7 @@ import {
   claimOnce,
   customerProfileFieldKey,
   productProfileSynthesisFailureKind,
+  productProfileSynthesisRequestFailureKind,
   shouldStartCrawlForMissingSnapshot,
   type ProductProfileSynthesisFailureInput,
   type ProductProfileSynthesisOrigin,
@@ -764,6 +765,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
   const failedPolls = useRef(new Set<string>());
   const automaticAttempts = useRef(new Set<string>());
   const postCrawlAttempts = useRef(new Set<string>());
+  const postDiscoveryAttempts = useRef(new Set<string>());
   const synthesisRequestInFlight = useRef(false);
   const crawlRequestInFlight = useRef(false);
   const overlayTrigger = useRef<HTMLButtonElement | null>(null);
@@ -834,6 +836,26 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       }
     },
     [t],
+  );
+
+  /**
+   * A refused synthesis *request* never reached a run, so it has no run status
+   * to classify. Reuse the same approved copy rather than falling back to the
+   * generic "try again later", which in production hid a workspace rate limit
+   * behind a message that invited yet another click.
+   */
+  const synthesisRequestFailureFeedback = useCallback(
+    (error: unknown): Feedback => {
+      const code = error instanceof ApiError ? error.code : null;
+      if (productProfileSynthesisRequestFailureKind(code) === "rate_limited") {
+        return errorFeedback(
+          t("feedback.synthesisRateLimited"),
+          t("feedback.synthesisRateLimitedDetail"),
+        );
+      }
+      return synthesisFailureFeedback(null, code ? { code, summary: "" } : null);
+    },
+    [synthesisFailureFeedback, t],
   );
 
   const startCrawl = useCallback(
@@ -937,26 +959,23 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             }
             await invalidateProductProfileQueries(queryClient, projectId);
           } else {
-            setFeedback(
-              errorFeedback(
-                t("feedback.synthesisFailed"),
-                t("feedback.retryDetail"),
-              ),
-            );
+            setFeedback(synthesisRequestFailureFeedback(error));
           }
         } else {
-          setFeedback(
-            errorFeedback(
-              t("feedback.synthesisFailed"),
-              t("feedback.retryDetail"),
-            ),
-          );
+          setFeedback(synthesisRequestFailureFeedback(error));
         }
       } finally {
         synthesisRequestInFlight.current = false;
       }
     },
-    [createSynthesisRun, projectId, queryClient, startCrawl, t],
+    [
+      createSynthesisRun,
+      projectId,
+      queryClient,
+      startCrawl,
+      synthesisRequestFailureFeedback,
+      t,
+    ],
   );
 
   useEffect(() => {
@@ -986,12 +1005,17 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     completedRuns.current.add(run.id);
     setDiscoveryRunId("");
     void invalidateProductProfileQueries(queryClient, projectId);
+    // `completedRuns` is keyed by run id, and the server used to mint a fresh
+    // discovery run on every synthesis POST, so it could not stop this
+    // continuation from firing again. Claim the draft itself: one automatic
+    // continuation per draft version, whatever discovery ends up doing.
     if (
       row &&
       shouldContinueSynthesisAfterCompetitorDiscovery({
         rowStatus: row.status,
         generatedAt: profile?.generatedAt ?? null,
-      })
+      }) &&
+      claimOnce(postDiscoveryAttempts.current, `${row.id}:${row.version}`)
     ) {
       setFeedback({
         tone: "progress",
@@ -1011,6 +1035,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
     profile?.generatedAt,
     projectId,
     queryClient,
+    row?.id,
     row?.status,
     row?.version,
     startSynthesis,

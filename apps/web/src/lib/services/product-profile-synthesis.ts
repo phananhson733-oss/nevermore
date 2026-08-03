@@ -49,10 +49,15 @@ import {
   METRIC_DATAFORSEO_SERP_COMPETITOR,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
+  resolveDataForSeoMarket,
 } from "@sf/sources";
 import { getEnv } from "@/env";
 import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
+import {
+  competitorDiscoveryFailureWindowStart,
+  shouldRearmCompetitorDiscovery,
+} from "./competitor-discovery-rearm";
 import { isPostgresUniqueViolation } from "./db-errors";
 import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 
@@ -132,10 +137,6 @@ interface ProductProfileCompetitorDiscoveryRun {
   readonly id: string;
 }
 
-function dataForSeoLocationName(marketCode: string): string | null {
-  return new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ?? null;
-}
-
 function dataForSeoDiscoveryConfig(
   commandContext: ProductProfileSynthesisCommandContext,
 ): NonNullable<ProductProfileSynthesisCommandContext["dataForSeoDiscovery"]> {
@@ -190,7 +191,6 @@ async function ensureProductProfileCompetitorDiscovery(
   scope: WorkspaceScope,
   projectId: string,
   actorId: string,
-  outputLocale: string,
   config: NonNullable<
     ProductProfileSynthesisCommandContext["dataForSeoDiscovery"]
   >,
@@ -202,11 +202,28 @@ async function ensureProductProfileCompetitorDiscovery(
   let discovered: ProductProfileCompetitorDiscoveryRun | null;
   try {
     discovered = await db.transaction(async (tx) => {
-      const active = await new AsyncRunsRepository(tx).findActive(
+      const runs = new AsyncRunsRepository(tx);
+      const active = await runs.findActive(
         projectScope,
         PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
       );
       if (active) return active;
+
+      // A failed collection persists no snapshot, so the evidence check below
+      // would reach the same verdict forever. Without this gate one permanently
+      // misconfigured market produced an unbounded enqueue loop that consumed
+      // the workspace's whole synthesis rate-limit budget.
+      if (
+        !shouldRearmCompetitorDiscovery(
+          await runs.summarizeTerminalFailures(
+            projectScope,
+            PRODUCT_PROFILE_COMPETITOR_DISCOVERY_ACTIVE_KEY,
+            competitorDiscoveryFailureWindowStart(new Date()),
+          ),
+        )
+      ) {
+        return null;
+      }
 
       const project = await new ProjectsRepository(tx).findByIdForUpdate(
         scope,
@@ -286,13 +303,18 @@ async function ensureProductProfileCompetitorDiscovery(
         (market) => market.priority === "primary",
       )?.marketCode;
       if (!marketCode) return null;
-      const locationName = dataForSeoLocationName(marketCode);
-      if (!locationName) return null;
+      // The search language belongs to the market, never to the operator's UI
+      // or the report language: DataForSEO Labs serves a closed language set
+      // per country and rejects anything else with task status 40501. Markets
+      // it does not serve at all resolve to null, and discovery is skipped
+      // rather than enqueued as work that could only fail.
+      const market = resolveDataForSeoMarket(marketCode);
+      if (!market) return null;
       const collectionScope = createDataForSeoSearchLandscapeV2Scope({
         target: site.host,
         marketCode,
-        locationName,
-        languageTag: outputLocale,
+        locationCode: market.locationCode,
+        languageTag: market.languageCode,
         rankedKeywordsLimit: config.maxKeywords,
         competitorsDomainLimit: config.maxCompetitors,
         serpCompetitorsLimit: config.maxCompetitors,
@@ -317,12 +339,13 @@ async function ensureProductProfileCompetitorDiscovery(
           config: {
             target: collectionScope.target,
             marketCode: collectionScope.marketCode,
-            locationName,
+            locationCode: market.locationCode,
+            locationName: market.locationName,
             languageCode: collectionScope.providerLanguageCode,
             maxKeywords: collectionScope.rankedKeywords.limit,
             maxCompetitors: collectionScope.competitorsDomain.limit,
           },
-          limitation: `Automatic DataForSEO competitor discovery for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; positions 1–100, ranked keywords capped at ${collectionScope.rankedKeywords.limit}, competitor domains at ${collectionScope.competitorsDomain.limit}, and seed-based SERP fallback at ${collectionScope.serpCompetitors.limit}. Domain intersections and fallback ratings retain distinct provenance and are not similarity percentages.`,
+          limitation: `Automatic DataForSEO competitor discovery for ${collectionScope.target} in ${market.locationName} (location ${market.locationCode}), search language ${collectionScope.providerLanguageCode} — chosen from the market, not the report language. Positions 1–100, ranked keywords capped at ${collectionScope.rankedKeywords.limit}, competitor domains at ${collectionScope.competitorsDomain.limit}, and seed-based SERP fallback at ${collectionScope.serpCompetitors.limit}. Domain intersections and fallback ratings retain distinct provenance and are not similarity percentages.`,
           connectedAt: true,
           createdBy: actorId,
         }));
@@ -965,7 +988,6 @@ export async function createProductProfileSynthesisRun(
     scope,
     projectId,
     actorId,
-    outputLocale,
     dataForSeoDiscoveryConfig(commandContext),
   );
   if (discovery) {

@@ -10,6 +10,16 @@ export type {
   SiteOriginProbeOptions,
 } from "./site-origin-probe.ts";
 export * from "./adapter.ts";
+export {
+  dataForSeoMarketLimitation,
+  isDataForSeoServedMarket,
+  resolveDataForSeoMarket,
+} from "./dataforseo/market-language.ts";
+export type {
+  DataForSeoMarketResolution,
+  DataForSeoMarketRowCaps,
+} from "./dataforseo/market-language.ts";
+export { DATAFORSEO_LABS_LOCATIONS_CAPTURED_AT } from "./dataforseo/generated/labs-locations.ts";
 
 // Contract seam (WP2 → WP3): canonical URL + observation vocabulary.
 export * from "./canonical-url.ts";

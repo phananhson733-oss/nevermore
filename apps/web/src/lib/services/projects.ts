@@ -36,6 +36,7 @@ import {
   normalizeSiteOrigin,
   normalizeUrl,
   probeSiteOrigin,
+  resolveDataForSeoMarket,
   type SiteOriginProbe,
   type UrlGuardResult,
 } from "@sf/sources";
@@ -49,10 +50,6 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const URL_FIRST_DEFAULT_DELIVERY_LOCALE = "en";
 const PRODUCT_PROFILE_DATAFORSEO_ACTIVE_KEY =
   "collect:dataforseo:search_landscape";
-
-function dataForSeoLocationName(marketCode: string): string | null {
-  return new Intl.DisplayNames(["en"], { type: "region" }).of(marketCode) ?? null;
-}
 
 /** Injectable URL guard so tests can drive SSRF cases without live DNS. */
 export type UrlGuard = (rawUrl: string) => Promise<UrlGuardResult>;
@@ -396,20 +393,26 @@ export async function createProject(
       dataForSeoDiscovery &&
       body.primaryMarket !== undefined
     ) {
-      const locationName = dataForSeoLocationName(body.primaryMarket);
-      const collectionScope = locationName
+      // The search language belongs to the market, never to the delivery
+      // locale the customer reads the report in. DataForSEO Labs serves a
+      // closed language set per country and rejects anything else with task
+      // status 40501; it also serves only a subset of countries, which resolve
+      // to null here so the landscape is skipped instead of being enqueued as
+      // work that could only fail.
+      const market = resolveDataForSeoMarket(body.primaryMarket);
+      const collectionScope = market
         ? createDataForSeoSearchLandscapeV2Scope({
             target: normalized.host,
             marketCode: body.primaryMarket,
-            locationName,
-            languageTag: productProfileDeliveryLocale!,
+            locationCode: market.locationCode,
+            languageTag: market.languageCode,
             rankedKeywordsLimit: dataForSeoDiscovery.maxKeywords,
             competitorsDomainLimit: dataForSeoDiscovery.maxCompetitors,
             serpCompetitorsLimit: dataForSeoDiscovery.maxCompetitors,
             seeds: [],
           })
         : null;
-      if (collectionScope) {
+      if (collectionScope && market) {
         const connection = await sources.insertConnection({
           workspaceId: scope.workspaceId,
           projectId: project.id,
@@ -421,12 +424,13 @@ export async function createProject(
           config: {
             target: collectionScope.target,
             marketCode: collectionScope.marketCode,
-            locationName,
+            locationCode: market.locationCode,
+            locationName: market.locationName,
             languageCode: collectionScope.providerLanguageCode,
             maxKeywords: collectionScope.rankedKeywords.limit,
             maxCompetitors: collectionScope.competitorsDomain.limit,
           },
-          limitation: `Initial DataForSEO search landscape for ${collectionScope.target}; ${collectionScope.marketCode}/${collectionScope.providerLanguageCode}; positions 1–100, ranked keywords capped at ${collectionScope.rankedKeywords.limit}, and competitor domains at ${collectionScope.competitorsDomain.limit}. Product Profile seeds are added by the follow-up synthesis flow if domain overlap is empty.`,
+          limitation: `Initial DataForSEO search landscape for ${collectionScope.target} in ${market.locationName} (location ${market.locationCode}), search language ${collectionScope.providerLanguageCode} — chosen from the market, not the report language. Positions 1–100, ranked keywords capped at ${collectionScope.rankedKeywords.limit}, and competitor domains at ${collectionScope.competitorsDomain.limit}. Product Profile seeds are added by the follow-up synthesis flow if domain overlap is empty.`,
           connectedAt: true,
           createdBy: actorId,
         });

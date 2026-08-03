@@ -219,6 +219,10 @@ function arrangeAccepted(
     snapshot?: typeof snapshot | null;
     pages?: ReturnType<typeof pageRow>[];
     active?: typeof queuedRun | null;
+    discoveryFailures?: {
+      readonly count: number;
+      readonly lastErrorCode: string | null;
+    };
   } = {},
 ) {
   vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
@@ -228,6 +232,12 @@ function arrangeAccepted(
   vi.spyOn(IdempotencyRepository.prototype, "complete").mockResolvedValue();
   vi.spyOn(AsyncRunsRepository.prototype, "findActive").mockResolvedValue(
     overrides.active ?? null,
+  );
+  vi.spyOn(
+    AsyncRunsRepository.prototype,
+    "summarizeTerminalFailures",
+  ).mockResolvedValue(
+    overrides.discoveryFailures ?? { count: 0, lastErrorCode: null },
   );
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue(
     overrides.project ?? project,
@@ -745,6 +755,135 @@ describe("createProductProfileSynthesisRun", () => {
     expect(
       ProductProfileRunsRepository.prototype.insertPlaceholder,
     ).not.toHaveBeenCalled();
+  });
+
+  it("asks DataForSEO in the market's language, never the operator's UI locale", async () => {
+    // Production defect: a Chinese-speaking operator researching the US market
+    // produced `language_code: "zh"`. DataForSEO Labs serves only en and es for
+    // the United States and answers task status 40501, which the collection
+    // layer classifies as a permanent INVALID_CONFIGURATION.
+    const marketProfile = createInitialProductProfileDraft({
+      sourceSiteId: siteId,
+      sourcePageUrl,
+      businessHint: "Customer onboarding software for B2B SaaS teams.",
+      primaryMarket: "US",
+    });
+    arrangeAccepted({
+      profile: {
+        ...persistedProfile,
+        profile: marketProfile,
+        content_hash: contentHash({
+          status: "draft",
+          profile: marketProfile as unknown as CanonicalValue,
+        }),
+      },
+    });
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findConnectedByProviderForUpdate",
+    ).mockResolvedValue(null);
+    const insertConnection = vi
+      .spyOn(SourceConnectionsRepository.prototype, "insertConnection")
+      .mockResolvedValue({ id: uuid(810) } as never);
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "insertPlaceholder",
+    ).mockResolvedValue({ id: uuid(811) } as never);
+
+    await expect(
+      createProductProfileSynthesisRun(
+        { workspaceId },
+        projectId,
+        actorId,
+        "market-language",
+        { baseVersion: 1 },
+        {
+          outputLocale: "zh-CN",
+          dataForSeoDiscovery: {
+            enabled: true,
+            maxKeywords: 200,
+            maxCompetitors: 100,
+          },
+        } as never,
+      ),
+    ).rejects.toMatchObject({ code: "RUN_ALREADY_ACTIVE" });
+
+    const connection = vi.mocked(insertConnection).mock.calls[0]![0];
+    expect(connection.config).toMatchObject({
+      marketCode: "US",
+      languageCode: "en",
+      locationCode: 2840,
+      locationName: "United States",
+    });
+    expect(connection.config).not.toMatchObject({ languageCode: "zh" });
+    const queued = vi.mocked(AsyncRunsRepository.prototype.insertQueued).mock
+      .calls[0]![0];
+    const scope = (
+      queued.requestPayload as { collectionScope: Record<string, unknown> }
+    ).collectionScope;
+    expect(scope["providerLanguageCode"]).toBe("en");
+    // location_code removes the Intl-exonym mismatch class (Türkiye, Côte
+    // d'Ivoire, Bosnia & Herzegovina) entirely.
+    expect(scope["location"]).toEqual({ kind: "code", code: 2840 });
+  });
+
+  it("stops re-arming discovery once it has failed permanently", async () => {
+    // A failed collection persists no snapshot, so the evidence check reaches
+    // the same verdict forever. Unguarded, that enqueued a fresh doomed job on
+    // every POST — 34 for one production project — until the workspace rate
+    // limit answered 429.
+    const marketProfile = createInitialProductProfileDraft({
+      sourceSiteId: siteId,
+      sourcePageUrl,
+      businessHint: "Customer onboarding software for B2B SaaS teams.",
+      primaryMarket: "US",
+    });
+    arrangeAccepted({
+      profile: {
+        ...persistedProfile,
+        profile: marketProfile,
+        content_hash: contentHash({
+          status: "draft",
+          profile: marketProfile as unknown as CanonicalValue,
+        }),
+      },
+      discoveryFailures: { count: 1, lastErrorCode: "INVALID_CONFIGURATION" },
+    });
+    const insertConnection = vi
+      .spyOn(SourceConnectionsRepository.prototype, "insertConnection")
+      .mockResolvedValue({ id: uuid(810) } as never);
+
+    const accepted = await createProductProfileSynthesisRun(
+      { workspaceId },
+      projectId,
+      actorId,
+      "no-rearm",
+      { baseVersion: 1 },
+      {
+        outputLocale: "zh-CN",
+        dataForSeoDiscovery: {
+          enabled: true,
+          maxKeywords: 200,
+          maxCompetitors: 100,
+        },
+      } as never,
+    );
+
+    // Synthesis proceeds from the evidence that does exist instead of blocking.
+    expect(accepted.status).toBe(202);
+    expect(insertConnection).not.toHaveBeenCalled();
+    expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      mocks.tx,
+      "profile.synthesize",
+      expect.anything(),
+    );
+    expect(mocks.enqueueRunInTx).not.toHaveBeenCalledWith(
+      expect.anything(),
+      mocks.tx,
+      "collect.dataforseo",
+      expect.anything(),
+    );
   });
 
   it("replays a completed command before reading mutable project state", async () => {

@@ -368,7 +368,13 @@ describe("createProject", () => {
         config: expect.objectContaining({
           target: "example.com",
           marketCode: "US",
-          languageCode: "zh",
+          // The delivery locale above is zh-CN. DataForSEO Labs serves only
+          // `en` and `es` for the United States and rejects anything else with
+          // task status 40501, so the search language must follow the market,
+          // never the language the customer reads the report in.
+          languageCode: "en",
+          locationCode: 2840,
+          locationName: "United States",
           maxKeywords: 120,
           maxCompetitors: 40,
         }),

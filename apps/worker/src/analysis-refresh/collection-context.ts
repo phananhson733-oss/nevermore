@@ -7,6 +7,7 @@ import { ProductProfileDraft, type ProductProfileDraft as ProductProfileDraftVal
 import {
   createDataForSeoSearchLandscapeV2Scope,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
+  resolveDataForSeoMarket,
   type DataForSeoSearchLandscapeSeed,
   type DataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
@@ -235,16 +236,20 @@ export function dataForSeoSearchLandscapeScopeForSite(
   ) {
     return null;
   }
-  const locationName = new Intl.DisplayNames(["en"], {
-    type: "region",
-  }).of(marketCode);
-  if (!locationName) return null;
+  // Resolve against the provider's own catalogue rather than an Intl exonym:
+  // its spelling differs for Türkiye, Bosnia & Herzegovina and Côte d'Ivoire,
+  // it serves only 92 countries, and each of those serves a closed language
+  // set. The site's configured language is honoured when Labs actually has
+  // that database, and otherwise gives way to the market's own — sending an
+  // unserved language is rejected with task status 40501.
+  const market = resolveDataForSeoMarket(marketCode, languageTag);
+  if (!market) return null;
   try {
     return createDataForSeoSearchLandscapeV2Scope({
       target: site.host,
       marketCode,
-      locationName,
-      languageTag,
+      locationCode: market.locationCode,
+      languageTag: market.languageCode,
       rankedKeywordsLimit: maxKeywords,
       competitorsDomainLimit: maxCompetitors,
       serpCompetitorsLimit: maxCompetitors,
@@ -258,13 +263,20 @@ export function dataForSeoSearchLandscapeScopeForSite(
 export function dataForSeoConnectionConfig(
   scope: DataForSeoSearchLandscapeV2Scope,
 ): DataForSeoConnectionConfig {
-  if (scope.location.kind !== "name") {
-    throw new Error("DataForSEO collection requires a named provider location");
+  // A scope may address the provider by code or by name. Only the customer-
+  // readable name belongs in the connection config, so recover it from the
+  // catalogue when the scope froze a code.
+  const locationName =
+    scope.location.kind === "name"
+      ? scope.location.name
+      : (resolveDataForSeoMarket(scope.marketCode)?.locationName ?? null);
+  if (locationName === null) {
+    throw new Error("DataForSEO collection requires a known provider location");
   }
   return {
     target: scope.target,
     marketCode: scope.marketCode,
-    locationName: scope.location.name,
+    locationName,
     languageCode: scope.providerLanguageCode,
     maxKeywords: scope.rankedKeywords.limit,
     maxCompetitors: scope.competitorsDomain.limit,
