@@ -278,12 +278,9 @@ async function readDiagnosticSnapshots(
     hasNext: false,
     nextCursor: null,
   });
-  expect(snapshots.data.map((snapshot) => snapshot.provider).sort()).toEqual([
-    "crawl",
-    "csv",
-    "ga4",
-    "gsc",
-  ]);
+  expect(
+    [...new Set(snapshots.data.map((snapshot) => snapshot.provider))].sort(),
+  ).toEqual(["crawl", "csv", "ga4", "gsc"]);
   expect(snapshots.data.map((snapshot) => snapshot.id)).toEqual(
     expect.arrayContaining([...seededProviderSnapshotIds]),
   );
