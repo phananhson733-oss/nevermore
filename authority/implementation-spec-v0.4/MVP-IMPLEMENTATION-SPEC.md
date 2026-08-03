@@ -64,6 +64,12 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
 - DataForSEO：关键词 demand/rank/competitor SERP observations。
 - 客户明确上传的 CSV 或 manual entry：必须保留 origin、actor、时间和限制。
 
+**Ahrefs API 永久禁止接入。** 本产品不得调用、依赖、配置、鉴权、暴露凭据，或以任何
+形式提供指向 Ahrefs API、Ahrefs 网络集成或 Ahrefs MCP/工具集成的可执行路径。该禁令
+与账号是否具备 API 权限无关，也不随版本范围解除。`ahrefs` 仅可作为**惰性来源标记**
+出现：provider 枚举成员、数据库 CHECK 约束、OpenAPI 枚举、客户可见文案与说明性注释
+均不受影响，被禁止的是可执行接入面。任何新的外链或权重数据能力必须选择其他来源。
+
 OAuth connected、credential present 或 provider enabled 都不等于数据 available。
 添加产品可以在持久化 Product Profile draft 后、自动画像 synthesis 启动前进入
 一个明确可跳过的 GSC/GA4 只读授权步骤。该例外只允许同 project 的精确
