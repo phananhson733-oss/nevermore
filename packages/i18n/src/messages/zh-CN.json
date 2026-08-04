@@ -913,6 +913,7 @@
         "primaryIcp": "主要 ICP",
         "approvedCompetitors": "已确认竞品",
         "competitorMix": "{direct} 个直接竞品 · {indirect} 个间接竞品",
+        "reviewCompetitors": "审核竞品候选",
         "unavailableValue": "暂无",
         "provenance": "版本与来源",
         "confirmedAt": "确认时间",

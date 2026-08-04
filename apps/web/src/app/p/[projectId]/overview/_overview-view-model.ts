@@ -110,14 +110,16 @@ export function selectTopOpportunityFinding(
   ) {
     return null;
   }
-  return [...detail.findings]
-    .filter(
-      (finding) =>
-        finding.active &&
-        finding.diagnosticRunId === detail.diagnosticRunId &&
-        finding.reviewState !== "ignored",
-    )
-    .sort(compareFindings)[0] ?? null;
+  return (
+    [...detail.findings]
+      .filter(
+        (finding) =>
+          finding.active &&
+          finding.diagnosticRunId === detail.diagnosticRunId &&
+          finding.reviewState !== "ignored",
+      )
+      .sort(compareFindings)[0] ?? null
+  );
 }
 
 /**
@@ -173,7 +175,9 @@ export interface OverviewSourceCard {
 export function buildOverviewSourceCards(
   sources: readonly SourceConnection[],
 ): OverviewSourceCard[] {
-  const byProvider = new Map(sources.map((source) => [source.provider, source]));
+  const byProvider = new Map(
+    sources.map((source) => [source.provider, source]),
+  );
   const connected = (["gsc", "ga4"] as const).map((provider) => {
     const source = byProvider.get(provider);
     return {
@@ -312,12 +316,14 @@ export function buildPortfolioSummary(
   return {
     loadedUrlCount: response.data.length,
     hasMore: response.meta.hasNext,
-    findingCount: new Set(response.data.flatMap((item) => item.findingIds)).size,
+    findingCount: new Set(response.data.flatMap((item) => item.findingIds))
+      .size,
     reviewableFindingCount: new Set(
       response.data.flatMap((item) => item.reviewableFindingIds),
     ).size,
-    opportunityUrlCount: response.data.filter((item) => item.findingIds.length > 0)
-      .length,
+    opportunityUrlCount: response.data.filter(
+      (item) => item.findingIds.length > 0,
+    ).length,
     diagnosticRunId: response.diagnosticRunId,
     coverage: response.meta.coverage,
   };
@@ -331,5 +337,16 @@ export function overviewGrowthMapHref(
   const params = new URLSearchParams({ object: "pages" });
   if (sitePageId) params.set("selectedSitePageId", sitePageId);
   if (findingId) params.set("findingId", findingId);
+  return `/p/${projectId}/growth-map?${params.toString()}`;
+}
+
+/**
+ * Competitor candidates are reviewed in the Growth Map's competitor library.
+ * That surface accepts `selectedCompetitorId` and a free-text query but no
+ * review-status filter, so this entry targets the library itself instead of
+ * promising a pre-filtered candidate queue the URL cannot actually select.
+ */
+export function overviewCompetitorLibraryHref(projectId: string): string {
+  const params = new URLSearchParams({ object: "competitors" });
   return `/p/${projectId}/growth-map?${params.toString()}`;
 }

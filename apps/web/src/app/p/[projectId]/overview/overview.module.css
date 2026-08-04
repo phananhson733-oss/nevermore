@@ -1215,6 +1215,56 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * The competitor review entry sits inside a profile cell, so it stays lighter
+ * than the card-level .textLink: same accent and arrow, one step down in size.
+ */
+.detailLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  /*
+   * Semantic text token, not the raw accent: only the `-text` tokens are
+   * contrast-verified against both the soft and surface backgrounds, and
+   * color-contrast.test.ts fails the build on a direct accent colour.
+   */
+  color: var(--sf-cobalt-text);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.detailLink > svg {
+  flex: none;
+  transition: transform 150ms ease;
+}
+
+.detailLink:hover > svg,
+.detailLink:focus-visible > svg {
+  transform: translateX(2px);
+}
+
+.detailLink:hover,
+.detailLink:focus-visible {
+  color: var(--sf-cobalt-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detailLink > svg {
+    transition: none;
+  }
+
+  .detailLink:hover > svg,
+  .detailLink:focus-visible > svg {
+    transform: none;
+  }
+}
+
 .provenanceDisclosure {
   min-width: 0;
   padding: 12px 14px;
