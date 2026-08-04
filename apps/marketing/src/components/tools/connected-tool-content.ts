@@ -24,7 +24,12 @@ export interface ConnectedToolContent {
    * page and can carry a `HowTo` step name in structured data. Both readings
    * want the same short label, and deriving one from a paragraph guesses.
    */
-  readonly steps: readonly { readonly name: string; readonly text: string }[];
+  readonly steps: readonly {
+    readonly name: string;
+    readonly text: string;
+    /** Dropped when this deployment cannot produce Title/Meta drafts. */
+    readonly requiresDrafts?: boolean;
+  }[];
   readonly outputTitle: string;
   readonly outputs: readonly {
     readonly label: string;
@@ -33,6 +38,8 @@ export interface ConnectedToolContent {
   readonly faq: readonly {
     readonly question: string;
     readonly answer: string;
+    /** Dropped when this deployment cannot produce Title/Meta drafts. */
+    readonly requiresDrafts?: boolean;
   }[];
 }
 
@@ -66,6 +73,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         name: "Where we can, we show you a query's page next to one that does better",
         text: "Drawn from your own site and named, so you can open it and judge the comparison yourself. No comparable page, no draft.",
+        requiresDrafts: true,
       },
     ],
     outputTitle: "What you get, and what it stops short of",
@@ -132,6 +140,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         question: "Where do the title drafts come from?",
         answer:
           "From your own site. We look for a page in the same position band earning a clearly higher click-through rate, show you which page that is, and draft on the same pattern. If there is no comparable page there is no draft — we do not fall back to a generic template.",
+        requiresDrafts: true,
       },
       {
         question: "How often should I check?",
@@ -297,6 +306,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         name: "有对照页时，把它放在旁边给你看",
         text: "对照页来自你自己的网站，具名可点，你可以自己判断这个对照成不成立。找不到合格对照页就不出草稿。",
+        requiresDrafts: true,
       },
     ],
     outputTitle: "你会得到什么，以及它到哪里为止",
@@ -363,6 +373,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         question: "标题草稿是从哪来的？",
         answer:
           "来自你自己的网站。我们在同一个位置段里找点击率明显更高的页面，把是哪一个页面告诉你，再照同样的措辞模式起草。找不到合格对照页就不出草稿——我们不会退回到通用模板。",
+        requiresDrafts: true,
       },
       {
         question: "多久看一次合适？",
@@ -483,9 +494,26 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   },
 };
 
+/**
+ * The copy for one tool, minus anything this deployment cannot deliver.
+ *
+ * `draftsEnabled` defaults to true because only SEO Quick Wins has copy that
+ * depends on a model key, and every other caller would otherwise have to pass
+ * a flag that means nothing to it. When it is false the draft step and the
+ * draft FAQ entry are dropped — from the page AND from the HowTo/FAQPage
+ * structured data generated off the same object, which is the half that
+ * outlives the render and gets quoted back by a search engine.
+ */
 export function getConnectedToolContent(
   locale: string,
   tool: ConnectedTool,
+  options: { readonly draftsEnabled?: boolean } = {},
 ): ConnectedToolContent {
-  return (locale === "zh" ? ZH : EN)[tool];
+  const content = (locale === "zh" ? ZH : EN)[tool];
+  if (options.draftsEnabled !== false) return content;
+  return {
+    ...content,
+    steps: content.steps.filter((step) => step.requiresDrafts !== true),
+    faq: content.faq.filter((entry) => entry.requiresDrafts !== true),
+  };
 }

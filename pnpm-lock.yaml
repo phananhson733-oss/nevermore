@@ -76,8 +76,8 @@ catalogs:
       specifier: 8.39.0
       version: 8.39.0
     undici:
-      specifier: 7.28.0
-      version: 7.28.0
+      specifier: 7.29.0
+      version: 7.29.0
     vitest:
       specifier: 4.1.10
       version: 4.1.10
@@ -92,6 +92,7 @@ overrides:
   sharp@<0.35.3: 0.35.3
   postcss@<8.5.23: 8.5.23
   js-yaml@<4.3.0: 4.3.0
+  undici@<7.29.0: 7.29.0
 
 patchedDependencies:
   brace-expansion@5.0.9:
@@ -494,7 +495,7 @@ importers:
         version: link:../contracts
       undici:
         specifier: 'catalog:'
-        version: 7.28.0
+        version: 7.29.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -4799,8 +4800,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici@7.28.0:
-    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
+  undici@7.29.0:
+    resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
 
   unrs-resolver@1.12.2:
@@ -7308,7 +7309,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.28.0
+      undici: 7.29.0
       whatwg-mimetype: 4.0.0
 
   class-variance-authority@0.7.1:
@@ -8397,7 +8398,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 7.28.0
+      undici: 7.29.0
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -9423,7 +9424,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@7.28.0: {}
+  undici@7.29.0: {}
 
   unrs-resolver@1.12.2:
     dependencies:

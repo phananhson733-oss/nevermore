@@ -7,8 +7,15 @@ import Link from "next/link";
 import { localePath } from "@/lib/locale-path";
 import { getQuickWinsArticle } from "./seo-quick-wins-article-content";
 
-export function SeoQuickWinsArticle({ locale }: { readonly locale: string }) {
-  const article = getQuickWinsArticle(locale);
+export function SeoQuickWinsArticle({
+  locale,
+  draftsEnabled,
+}: {
+  readonly locale: string;
+  /** False strips the paragraphs that describe a capability this deployment lacks. */
+  readonly draftsEnabled: boolean;
+}) {
+  const article = getQuickWinsArticle(locale, { draftsEnabled });
 
   return (
     <>
