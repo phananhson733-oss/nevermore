@@ -10,6 +10,22 @@ import type { TrafficDailyPoint } from "@sf/public-tools";
 
 const PROPERTY = "sc-domain:example.com";
 
+/**
+ * Both self-checks answered, which every well-formed request now carries.
+ *
+ * Spread into request bodies rather than defaulted in the handler: a default
+ * would let a client omit them and still get a report, and that is exactly how
+ * `brandTerms` shipped unreachable — the server accepted its absence, so
+ * nothing failed when the client never sent it.
+ */
+const ANSWERED = {
+  selfChecks: {
+    property: PROPERTY,
+    manualAction: "reports_none",
+    securityIssue: "reports_none",
+  },
+} as const;
+
 function request(body: unknown): Request {
   return new Request("https://gengrowth.ai/api/tools/traffic-drop", {
     method: "POST",
@@ -77,7 +93,7 @@ let clientCounter = 0;
 describe("handleTrafficDropRequest", () => {
   it("returns a report and the series it was built from", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps(),
     );
     const body = (await response.json()) as {
@@ -91,7 +107,7 @@ describe("handleTrafficDropRequest", () => {
 
   it("never caches or shares a report about someone's own property", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps(),
     );
 
@@ -100,7 +116,7 @@ describe("handleTrafficDropRequest", () => {
 
   it("refuses without a Search Console grant", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({
         readSession: () =>
           Promise.resolve({
@@ -121,7 +137,14 @@ describe("handleTrafficDropRequest", () => {
   it("does not confirm whether an ungranted property exists", async () => {
     const readDailySeries = vi.fn();
     const response = await handleTrafficDropRequest(
-      request({ property: "sc-domain:someone-else.com" }),
+      request({
+        property: "sc-domain:someone-else.com",
+        selfChecks: {
+          property: "sc-domain:someone-else.com",
+          manualAction: "reports_none",
+          securityIssue: "reports_none",
+        },
+      }),
       deps({ readDailySeries }),
     );
 
@@ -132,7 +155,7 @@ describe("handleTrafficDropRequest", () => {
 
   it("reports unavailability instead of substituting an estimate", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ readDailySeries: () => Promise.reject(new Error("429")) }),
     );
     const body = (await response.json()) as { error: { code: string } };
@@ -144,7 +167,7 @@ describe("handleTrafficDropRequest", () => {
 
   it("distinguishes an empty property from a failed read", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ readDailySeries: () => Promise.resolve([]) }),
     );
     const body = (await response.json()) as { error: { code: string } };
@@ -164,7 +187,7 @@ describe("handleTrafficDropRequest", () => {
   it("asks for enough history to cover a year-over-year read", async () => {
     const readDailySeries = vi.fn(() => Promise.resolve(series(120)));
     await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ readDailySeries }),
     );
 
@@ -180,7 +203,7 @@ describe("handleTrafficDropRequest", () => {
     // of the limit is the upstream call it prevents.
     const readDailySeries = vi.fn();
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({
         readDailySeries,
         openGate: () =>
@@ -200,7 +223,7 @@ describe("handleTrafficDropRequest", () => {
   it("releases the gate even when the read throws", async () => {
     const release = vi.fn();
     await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({
         readDailySeries: () => Promise.reject(new Error("429")),
         openGate: () => Promise.resolve({ ok: true, release }),
@@ -216,7 +239,7 @@ describe("handleTrafficDropRequest", () => {
     // nothing else. Turning it into a 502 would deny someone their decline
     // analysis over an extra read they never asked for.
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ readQueryEvidence: () => Promise.reject(new Error("429")) }),
     );
     const body = (await response.json()) as {
@@ -256,7 +279,7 @@ describe("handleTrafficDropRequest", () => {
     }));
 
     await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ readDailySeries: () => Promise.resolve(flat), readQueryEvidence }),
     );
 
@@ -266,33 +289,144 @@ describe("handleTrafficDropRequest", () => {
     expect(readQueryEvidence).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a manual-action answer it does not recognise", async () => {
-    // Coercing an unknown value to `not_checked` would be tolerable; coercing
-    // it to "no manual action" would hand out the one reassurance this tool
-    // has no standing to give. Rejecting keeps that decision out of reach.
+  it("refuses to run at all without both self-check answers", async () => {
+    // The gate, enforced server-side. The button is disabled without them, but
+    // a disabled button is a UI convention — this is the invariant. Every one
+    // of these used to produce a report.
+    const readDailySeries = vi.fn();
+    for (const body of [
+      { property: PROPERTY },
+      { property: PROPERTY, selfChecks: {} },
+      {
+        property: PROPERTY,
+        selfChecks: { property: PROPERTY, manualAction: "reports_none" },
+      },
+      {
+        property: PROPERTY,
+        selfChecks: { property: PROPERTY, securityIssue: "reports_none" },
+      },
+      { property: PROPERTY, selfChecks: null },
+    ]) {
+      const response = await handleTrafficDropRequest(
+        request(body),
+        deps({ readDailySeries }),
+      );
+      expect(response.status).toBe(400);
+    }
+
+    // Rejected before the upstream read, so a malformed client cannot spend
+    // the Search Console quota everyone else shares.
+    expect(readDailySeries).not.toHaveBeenCalled();
+  });
+
+  it("refuses answers that name a different property than the one being read", async () => {
+    // The bug this backstops shipped in this branch: the client reset the
+    // brand list on a property change and did not reset these, so site A's
+    // "no issues" could be attached to a report about site B. The browser now
+    // binds them structurally; this turns the next such regression into a 400
+    // rather than a false all-clear.
+    //
+    // It does NOT verify a human looked at that property — nothing can, which
+    // is why these answers come from the visitor at all. It verifies the
+    // client's two claims agree with each other.
+    const readDailySeries = vi.fn();
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY, manualAction: "no" }),
-      deps(),
+      request({
+        property: PROPERTY,
+        selfChecks: {
+          property: "sc-domain:someone-else.com",
+          manualAction: "reports_none",
+          securityIssue: "reports_none",
+        },
+      }),
+      deps({ readDailySeries }),
     );
 
     expect(response.status).toBe(400);
+    expect(readDailySeries).not.toHaveBeenCalled();
   });
 
-  it("treats an unanswered card as unanswered", async () => {
+  it("refuses answers that name no property at all", async () => {
+    for (const selfChecks of [
+      { manualAction: "reports_none", securityIssue: "reports_none" },
+      {
+        property: null,
+        manualAction: "reports_none",
+        securityIssue: "reports_none",
+      },
+    ]) {
+      const response = await handleTrafficDropRequest(
+        request({ property: PROPERTY, selfChecks }),
+        deps(),
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("rejects an answer it does not recognise rather than coercing it", async () => {
+    // Coercing an unknown value to `uncertain` would be tolerable; coercing it
+    // to "no issue" would hand out the one reassurance this tool has no
+    // standing to give. Rejecting keeps that decision out of reach. The second
+    // case is the previous design's vocabulary, which a stale client would
+    // still be sending.
+    for (const answers of [
+      { manualAction: "no", securityIssue: "reports_none" },
+      { manualAction: "user_reports_none", securityIssue: "reports_none" },
+      { manualAction: "reports_none", securityIssue: "not_checked" },
+    ]) {
+      const selfChecks = { property: PROPERTY, ...answers };
+      const response = await handleTrafficDropRequest(
+        request({ property: PROPERTY, selfChecks }),
+        deps(),
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("carries both answers through to the report it builds", async () => {
+    // The seam the brand-term field fell through: every layer tested green
+    // while nothing checked that what the client sends arrives where it is
+    // used. An answer that does not reach the engine is not an answer.
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({
+        property: PROPERTY,
+        selfChecks: {
+          property: PROPERTY,
+          manualAction: "uncertain",
+          securityIssue: "reports_issue",
+        },
+      }),
       deps(),
     );
     const body = (await response.json()) as {
-      data: { result: { siteSignals: { manualAction: { path: string } } } };
+      data: {
+        result: {
+          siteSignals: {
+            selfChecks: {
+              path: string;
+              manualAction: { answer: string; lineage: string };
+              securityIssue: { answer: string };
+            };
+          };
+          actions: readonly { readonly id: string }[];
+        };
+      };
     };
 
-    expect(body.data.result.siteSignals.manualAction.path).toBe("unconfirmed");
+    const { selfChecks } = body.data.result.siteSignals;
+    expect(selfChecks.manualAction.answer).toBe("uncertain");
+    expect(selfChecks.securityIssue.answer).toBe("reports_issue");
+    expect(selfChecks.path).toBe("issue_reported");
+    // Never presented as something we looked up.
+    expect(selfChecks.manualAction.lineage).toBe("visitor_reported");
+    expect(body.data.result.actions.map((action) => action.id)).toEqual([
+      "resolve_security_issue",
+    ]);
   });
 
   it("does not accept a brand list the visitor never confirmed", async () => {
     const response = await handleTrafficDropRequest(
-      request({ property: PROPERTY, brandTerms: ["acme"] }),
+      request({ property: PROPERTY, ...ANSWERED, brandTerms: ["acme"] }),
       deps(),
     );
     const body = (await response.json()) as {
@@ -327,12 +461,12 @@ describe("handleTrafficDropRequest", () => {
     });
 
     const first = handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       shared,
     );
     // The second arrives while the first still holds the slot.
     const second = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       shared,
     );
 
@@ -347,7 +481,7 @@ describe("handleTrafficDropRequest", () => {
 
     // And the slot is released, so the same client can run again afterwards.
     const third = await handleTrafficDropRequest(
-      request({ property: PROPERTY }),
+      request({ property: PROPERTY, ...ANSWERED }),
       deps({ extractClientIp: () => "198.51.100.7" }),
     );
     expect(third.status).toBe(200);

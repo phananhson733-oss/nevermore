@@ -2,11 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { buildTrafficDropReport } from "./report.ts";
 import { ASTROLOGYWIKI_DAILY } from "./__tests__/astrologywiki-fixture.ts";
+import { BOTH_CLEAR } from "./__tests__/self-check-fixtures.ts";
 
 const COMPLETED_AT = "2026-07-31T09:00:00.000Z";
 
 function report(daily = ASTROLOGYWIKI_DAILY) {
-  return buildTrafficDropReport({ daily, completedAt: COMPLETED_AT });
+  return buildTrafficDropReport({
+    daily,
+    completedAt: COMPLETED_AT,
+    selfChecks: BOTH_CLEAR,
+  });
 }
 
 describe("buildTrafficDropReport", () => {
@@ -39,8 +44,8 @@ describe("buildTrafficDropReport", () => {
 
     expect(Object.keys(byId).sort()).toEqual([
       "avoid_assuming_penalty",
+      "avoid_disavow",
       "avoid_rank_recovery",
-      "check_manual_actions",
       "isolate_stage_one_ctr",
       "pull_deploy_logs",
     ]);
@@ -48,17 +53,46 @@ describe("buildTrafficDropReport", () => {
     expect(byId.pull_deploy_logs?.kind).toBe("external_data");
   });
 
-  it("asks the visitor to check manual actions before saying anything about penalties", () => {
-    const { result } = report();
+  it("asks about the page that is still open, and only that one", () => {
+    // Half-answered: the security page is settled, the manual-action page is
+    // not. The ask has to name the second and leave the first alone — sending
+    // someone back to a report they just read is how a tool teaches people to
+    // skip its instructions.
+    const { result } = buildTrafficDropReport({
+      daily: ASTROLOGYWIKI_DAILY,
+      completedAt: COMPLETED_AT,
+      selfChecks: { manualAction: "uncertain", securityIssue: "reports_none" },
+    });
 
-    // Default path: the visitor has not been asked yet, so the report requests
-    // the one fact it cannot read, and withholds the disavow advice — which
-    // only makes sense once we know there is no link-related manual action.
-    expect(result.siteSignals.manualAction.path).toBe("unconfirmed");
-    expect(result.siteSignals.manualAction.lineage).toBe("not_reported");
+    expect(result.siteSignals.selfChecks.path).toBe("unconfirmed");
+    expect(result.siteSignals.selfChecks.unresolved).toEqual(["manual_action"]);
+
     const ids = result.actions.map((action) => action.id);
     expect(ids).toContain("check_manual_actions");
+    expect(ids).not.toContain("check_security_issues");
+    // Withheld: disavow advice rests on there being no manual action, and the
+    // visitor has not told us that.
     expect(ids).not.toContain("avoid_disavow");
+  });
+
+  it("keeps the disavow advice tied to the manual-action answer, not to the path", () => {
+    // A reported security issue puts the report on `issue_reported` while the
+    // manual-action page stays unsettled. Deriving "may we discuss penalties"
+    // from the path alone would hand out the disavow reassurance here, on the
+    // strength of an answer nobody gave.
+    const { result } = buildTrafficDropReport({
+      daily: ASTROLOGYWIKI_DAILY,
+      completedAt: COMPLETED_AT,
+      selfChecks: {
+        manualAction: "uncertain",
+        securityIssue: "reports_issue",
+      },
+    });
+
+    expect(result.siteSignals.selfChecks.path).toBe("issue_reported");
+    expect(result.actions.map((action) => action.id)).toEqual([
+      "resolve_security_issue",
+    ]);
   });
 
   it("never emits an action without evidence behind it", () => {
@@ -150,7 +184,7 @@ describe("buildTrafficDropReport", () => {
     const { result } = buildTrafficDropReport({
       daily: ASTROLOGYWIKI_DAILY,
       completedAt: COMPLETED_AT,
-      manualAction: "user_reports_none",
+      selfChecks: BOTH_CLEAR,
       brandTerms: ["acme"],
       brandTermsConfirmed: true,
       queryEvidence: {
@@ -184,8 +218,8 @@ describe("buildTrafficDropReport", () => {
     // same-weekday baseline, so it still reports — while every finding and
     // action that depends on the window-level verdict is withheld.
     expect(result.actions.map((action) => action.id)).toEqual([
-      "check_manual_actions",
       "avoid_assuming_penalty",
+      "avoid_disavow",
       "pull_deploy_logs",
     ]);
     expect(result.findings.map((finding) => finding.id)).not.toContain(

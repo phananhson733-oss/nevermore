@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTrafficDropReport } from "./report.ts";
 import { RANKING_UPDATE_TABLE } from "./core-updates.ts";
-import type { ManualActionStatus } from "./manual-action.ts";
+import type { SelfCheckAnswers } from "./self-checks.ts";
 import { ASTROLOGYWIKI_DAILY } from "./__tests__/astrologywiki-fixture.ts";
 
 /**
@@ -20,30 +20,34 @@ import { ASTROLOGYWIKI_DAILY } from "./__tests__/astrologywiki-fixture.ts";
  * so there is nothing to check a detection against. That asymmetry is why the
  * report does not offer such a verdict at all — see `report.ts`.
  */
-function report(manualAction: ManualActionStatus) {
+function report(selfChecks: SelfCheckAnswers) {
   return buildTrafficDropReport({
     daily: ASTROLOGYWIKI_DAILY,
     completedAt: "2026-07-31T09:00:00.000Z",
-    manualAction,
+    selfChecks,
   }).result;
 }
 
-describe("astrologywiki, on every manual-action answer", () => {
+const CLEAR: SelfCheckAnswers = {
+  manualAction: "reports_none",
+  securityIssue: "reports_none",
+};
+
+describe("astrologywiki, on every combination of the two self-checks", () => {
   it("carries no field that could hold a site-level verdict", () => {
     // The structural half of the guarantee. The copy test in apps/marketing is
     // the other half: prose is where a decision like this usually erodes.
-    for (const status of [
-      "not_checked",
-      "user_reports_none",
-      "uncertain",
-      "user_reports_manual_action",
-    ] as const) {
-      expect(Object.keys(report(status).siteSignals).sort()).toEqual([
-        "brandSplit",
-        "coreUpdateTimeline",
-        "manualAction",
-        "queryCohort",
-      ]);
+    const answers = ["reports_none", "uncertain", "reports_issue"] as const;
+    for (const manualAction of answers) {
+      for (const securityIssue of answers) {
+        const signals = report({ manualAction, securityIssue }).siteSignals;
+        expect(Object.keys(signals).sort()).toEqual([
+          "brandSplit",
+          "coreUpdateTimeline",
+          "queryCohort",
+          "selfChecks",
+        ]);
+      }
     }
   });
 
@@ -59,7 +63,7 @@ describe("astrologywiki, on every manual-action answer", () => {
     // says so. What this pins is that the two states stay distinct — an empty
     // comparison and a comparison that could not run are different facts, and
     // only one of them is about the visitor's site.
-    const timeline = report("user_reports_none").siteSignals.coreUpdateTimeline;
+    const timeline = report(CLEAR).siteSignals.coreUpdateTimeline;
 
     expect(timeline.kind).toBe("compared");
     if (timeline.kind !== "compared") return;
@@ -80,7 +84,7 @@ describe("astrologywiki, on every manual-action answer", () => {
     const stale = buildTrafficDropReport({
       daily: ASTROLOGYWIKI_DAILY,
       completedAt: "2026-07-31T09:00:00.000Z",
-      manualAction: "user_reports_none",
+      selfChecks: CLEAR,
       rankingUpdateTable: {
         ...RANKING_UPDATE_TABLE,
         verifiedThrough: "2026-07-01",
@@ -94,7 +98,7 @@ describe("astrologywiki, on every manual-action answer", () => {
   });
 
   it("reports the query-level checks as not run, never as clear", () => {
-    const { checks } = report("user_reports_none");
+    const { checks } = report(CLEAR);
     for (const id of ["brand_non_brand_split", "query_cohort_migration"]) {
       expect(checks.find((check) => check.id === id)).toEqual({
         id,
@@ -105,24 +109,44 @@ describe("astrologywiki, on every manual-action answer", () => {
   });
 
   it("withholds the disavow advice until the visitor has actually looked", () => {
-    const unchecked = report("not_checked").actions.map((a) => a.id);
-    expect(unchecked).toContain("check_manual_actions");
-    expect(unchecked).not.toContain("avoid_disavow");
+    const unsure = report({
+      manualAction: "uncertain",
+      securityIssue: "reports_none",
+    }).actions.map((a) => a.id);
+    expect(unsure).toContain("check_manual_actions");
+    expect(unsure).not.toContain("avoid_disavow");
 
-    const confirmed = report("user_reports_none").actions.map((a) => a.id);
+    const confirmed = report(CLEAR).actions.map((a) => a.id);
     expect(confirmed).toContain("avoid_disavow");
     expect(confirmed).not.toContain("check_manual_actions");
   });
 
   it("treats 'I could not tell' as unanswered, not as reassurance", () => {
-    const uncertain = report("uncertain");
-    expect(uncertain.siteSignals.manualAction.path).toBe("unconfirmed");
+    const uncertain = report({
+      manualAction: "uncertain",
+      securityIssue: "uncertain",
+    });
+    expect(uncertain.siteSignals.selfChecks.path).toBe("unconfirmed");
     expect(uncertain.actions.map((a) => a.id)).not.toContain("avoid_disavow");
   });
 
-  it("leads with the manual action and drops everything else when there is one", () => {
-    const ids = report("user_reports_manual_action").actions.map((a) => a.id);
-    expect(ids).toEqual(["resolve_manual_action"]);
+  it("leads with the reported issue and drops everything else", () => {
+    expect(
+      report({
+        manualAction: "reports_issue",
+        securityIssue: "reports_none",
+      }).actions.map((a) => a.id),
+    ).toEqual(["resolve_manual_action"]);
+
+    // A security issue takes the same precedence for the same reason: a
+    // Safe Browsing interstitial takes clicks to near zero on its own, and it
+    // has a defined review procedure that none of the traffic observations do.
+    expect(
+      report({
+        manualAction: "reports_none",
+        securityIssue: "reports_issue",
+      }).actions.map((a) => a.id),
+    ).toEqual(["resolve_security_issue"]);
   });
 
   it("still fires the average-position warning it was written from", () => {
@@ -130,7 +154,7 @@ describe("astrologywiki, on every manual-action answer", () => {
     // the site was collapsing, because the high-ranking queries had gone. The
     // advice needs only the daily series, so it fires today and must keep
     // firing — this was the one acceptance item the requirement named.
-    expect(report("user_reports_none").actions.map((a) => a.id)).toContain(
+    expect(report(CLEAR).actions.map((a) => a.id)).toContain(
       "avoid_rank_recovery",
     );
   });
@@ -138,7 +162,7 @@ describe("astrologywiki, on every manual-action answer", () => {
   it("finds the decline it is supposed to find", () => {
     // Guards the negative results above from becoming vacuous: a detector that
     // saw nothing at all would also pass every "does not over-claim" test.
-    const result = report("user_reports_none");
+    const result = report(CLEAR);
     expect(result.changePoint.state).toBe("sustained_decline");
     // The finding is `two_stage_decline`: on this property impressions held
     // for a window while clicks fell, and only then did both go. The state and

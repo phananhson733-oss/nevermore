@@ -44,6 +44,19 @@ describe("traffic drop copy never claims a demotion", () => {
             "site-level demotion",
             "consistent with the pattern of a site-level",
             "algorithmic penalty",
+            // The NEGATIVE direction, which is the same violation. Shipped in
+            // the security-issue advice as "which is why it looks like a
+            // demotion and is not one" — a claim about this visitor's drop
+            // that no measurement supports. A security issue suppresses
+            // clicks; it does not establish that nothing else moved.
+            // Scoped to demotion claims on purpose. A bare "is not one" also
+            // matches "This is not one decline, it is two", which is a
+            // finding title and entirely fine.
+            "is not a demotion",
+            "a demotion and is not one",
+            "like a demotion and is not",
+            "was not demoted",
+            "rules out a demotion",
           ]
         : [
             "你被降权",
@@ -52,6 +65,10 @@ describe("traffic drop copy never claims a demotion", () => {
             "与站点级排名下调的模式一致",
             "与站点级下调的模式一致",
             "算法惩罚",
+            "像降权但不是",
+            "不是降权",
+            "没有被降权",
+            "排除了降权",
           ];
 
     for (const phrase of forbidden) {
@@ -96,6 +113,51 @@ describe("traffic drop copy never claims a demotion", () => {
               "1-3 update cycles",
             ]
           : ["几天到几周", "等下一次核心更新", "1-3 个更新周期"];
+
+      for (const phrase of forbidden) {
+        expect(text, `${locale} copy contains: ${phrase}`).not.toContain(
+          phrase.toLowerCase(),
+        );
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "names the %s Search Console pages the way Search Console names them",
+    (locale) => {
+      // Shipped with the wrong menu path in both locales: "安全和人工处置 →
+      // 人工处置" against an actual sidebar reading "安全问题和人工处置措施 →
+      // 人工处置措施". Nothing caught it, because nothing had ever asserted
+      // anything about the navigation instructions — they were prose pointing
+      // at a UI the test suite has no access to.
+      //
+      // This cannot verify the labels against Google. What it does is make the
+      // strings a decision rather than a detail: changing them means changing
+      // a test, which means going and looking at the product first.
+      const text = BUNDLES[locale];
+      const required =
+        locale === "en"
+          ? ["Security & Manual Actions", "Manual Actions", "Security Issues"]
+          : ["安全问题和人工处置措施", "人工处置措施", "安全问题"];
+
+      for (const label of required) {
+        expect(text, `${locale} copy is missing: ${label}`).toContain(label);
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "never claims in %s that Search Console has no entry point for these",
+    (locale) => {
+      // The API has no endpoint; the UI very much has a page, and we send the
+      // visitor to it two paragraphs later. Wording that blurs the two reads
+      // as "there is nowhere to look", which contradicts the instruction it
+      // sits next to.
+      const text = BUNDLES[locale].toLowerCase();
+      const forbidden =
+        locale === "en"
+          ? ["google publishes no api for this page", "no interface for it"]
+          : ["没有为这个页面开放接口", "没有为它开放接口"];
 
       for (const phrase of forbidden) {
         expect(text, `${locale} copy contains: ${phrase}`).not.toContain(

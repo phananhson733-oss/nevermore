@@ -1,5 +1,5 @@
-// @input  -- the site-signal group from a traffic-drop result, plus an answer callback
-// @output -- the manual-action card, the path this report is on, and the observations
+// @input  -- the site-signal group from a traffic-drop result
+// @output -- the recorded self-checks, the path this report is on, and the observations
 // @pos    -- top of the report surface; renders before the chart on purpose
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -9,8 +9,8 @@ import { useTranslations } from "next-intl";
 import type {
   BrandSplitOutcome,
   CoreUpdateTimeline,
-  ManualActionStatus,
   QueryCohortOutcome,
+  SelfCheckObservation,
   TrafficSiteSignals,
 } from "@sf/public-tools";
 
@@ -41,16 +41,11 @@ const SHAPE_EXPLANATIONS: Record<string, readonly string[]> = {
 interface TrafficDropSiteSignalsProps {
   readonly signals: TrafficSiteSignals;
   readonly locale: string;
-  /** Re-runs the report with the visitor's answer. */
-  readonly onAnswer: (status: ManualActionStatus) => void;
-  readonly busy: boolean;
 }
 
 export function TrafficDropSiteSignals({
   signals,
   locale,
-  onAnswer,
-  busy,
 }: TrafficDropSiteSignalsProps) {
   const t = useTranslations("tools.trafficDrop");
   const percent = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
@@ -63,39 +58,34 @@ export function TrafficDropSiteSignals({
     signDisplay: "exceptZero",
   });
 
-  const { path, status } = signals.manualAction;
+  const { path } = signals.selfChecks;
 
   return (
     <div className="space-y-4">
-      <ManualActionCard
-        status={status}
-        busy={busy}
-        onAnswer={onAnswer}
-        t={t}
-      />
+      <RecordedSelfChecks signals={signals} t={t} />
 
       <section
         className={`rounded-2xl border p-5 md:p-6 ${
-          path === "manual_action"
+          path === "issue_reported"
             ? "border-brand-error/40 bg-[rgba(197,84,72,0.07)]"
             : "border-brand-border/70 bg-brand-bg-alt/35"
         }`}
       >
         <h2 className="text-[16px] font-semibold text-text-dark-primary">
           {t(
-            path === "manual_action"
-              ? "siteSignals.paths.manualActionTitle"
-              : path === "no_manual_action"
-                ? "siteSignals.paths.noManualActionTitle"
+            path === "issue_reported"
+              ? "siteSignals.paths.issueReportedTitle"
+              : path === "no_issue_reported"
+                ? "siteSignals.paths.noIssueTitle"
                 : "siteSignals.paths.unconfirmedTitle",
           )}
         </h2>
         <p className="mt-2 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
           {t(
-            path === "manual_action"
-              ? "siteSignals.paths.manualActionBody"
-              : path === "no_manual_action"
-                ? "siteSignals.paths.noManualActionBody"
+            path === "issue_reported"
+              ? "siteSignals.paths.issueReportedBody"
+              : path === "no_issue_reported"
+                ? "siteSignals.paths.noIssueBody"
                 : "siteSignals.paths.unconfirmedBody",
           )}
         </p>
@@ -130,84 +120,62 @@ export function TrafficDropSiteSignals({
 
 type Translate = ReturnType<typeof useTranslations<"tools.trafficDrop">>;
 
-const ANSWERS: readonly {
-  readonly status: ManualActionStatus;
-  readonly key: string;
-}[] = [
-  { status: "user_reports_manual_action", key: "optionManualAction" },
-  { status: "user_reports_none", key: "optionNone" },
-  { status: "uncertain", key: "optionUncertain" },
-  { status: "not_checked", key: "optionNotChecked" },
-];
-
-function ManualActionCard({
-  status,
-  busy,
-  onAnswer,
+/**
+ * What the visitor told us, played back as their words rather than ours.
+ *
+ * Read-only on purpose. The answers are collected before the run — see the
+ * gate in `traffic-drop-tool.tsx` — so by the time this renders they are
+ * settled inputs, not a question. When the card lived here and answering
+ * re-ran the report, every visitor read a hedged first draft before the real
+ * one, and each of the four buttons stayed live afterwards as a re-run trigger
+ * against an hourly allowance shared with everyone else.
+ *
+ * The lineage line is not decoration. A reader who skims will remember "no
+ * manual action" as something the tool established; it was not, and this is
+ * the only place that says so.
+ */
+function RecordedSelfChecks({
+  signals,
   t,
 }: {
-  readonly status: ManualActionStatus;
-  readonly busy: boolean;
-  readonly onAnswer: (status: ManualActionStatus) => void;
+  readonly signals: TrafficSiteSignals;
   readonly t: Translate;
 }) {
   return (
-    <section className="rounded-2xl border border-brand-accent/30 bg-brand-accent/[0.06] p-5 md:p-6">
+    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/25 p-5 md:p-6">
       <h2 className="text-[16px] font-semibold text-text-dark-primary">
-        {t("siteSignals.manualAction.cardTitle")}
+        {t("siteSignals.recorded.title")}
       </h2>
-      <p className="mt-2 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
-        {t("siteSignals.manualAction.cardBody")}
-      </p>
-      <p className="mt-3 rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-[13px] font-semibold text-text-dark-primary">
-        {t("siteSignals.manualAction.cardSteps")}
-      </p>
-
-      <fieldset className="mt-4 border-0 p-0">
-        <legend className="sr-only">
-          {t("siteSignals.manualAction.cardTitle")}
-        </legend>
-        <div className="flex flex-wrap gap-2">
-          {ANSWERS.map((answer) => {
-            const active = answer.status === status;
-            return (
-              <button
-                key={answer.status}
-                type="button"
-                disabled={busy}
-                aria-pressed={active}
-                onClick={() => onAnswer(answer.status)}
-                className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition disabled:opacity-60 ${
-                  active
-                    ? "border-brand-accent bg-brand-accent text-white"
-                    : "border-brand-border bg-brand-bg text-text-dark-secondary hover:border-brand-accent/50"
-                }`}
-              >
-                {t(`siteSignals.manualAction.${answer.key}`)}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
-
-      <p className="mt-3 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary/85">
-        {t("siteSignals.manualAction.notice")}
-      </p>
-      <p className="mt-2 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
-        {t("siteSignals.manualAction.cardWhy")}
-      </p>
-      <p className="mt-2 text-[12.5px] font-semibold text-text-dark-primary">
-        {t(
-          status === "user_reports_manual_action"
-            ? "siteSignals.manualAction.recordedManualAction"
-            : status === "user_reports_none"
-              ? "siteSignals.manualAction.recordedNone"
-              : status === "uncertain"
-                ? "siteSignals.manualAction.recordedUncertain"
-                : "siteSignals.manualAction.recordedNotChecked",
-        )}
+      <dl className="mt-3 space-y-2">
+        <RecordedAnswer check={signals.selfChecks.manualAction} t={t} />
+        <RecordedAnswer check={signals.selfChecks.securityIssue} t={t} />
+      </dl>
+      <p className="mt-3 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+        {t("siteSignals.recorded.lineage")}
       </p>
     </section>
+  );
+}
+
+function RecordedAnswer({
+  check,
+  t,
+}: {
+  readonly check: SelfCheckObservation;
+  readonly t: Translate;
+}) {
+  const label =
+    check.id === "manual_action"
+      ? "siteSignals.manual_action.label"
+      : "siteSignals.security_issue.label";
+
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
+      <dt className="text-text-dark-secondary">{t(label)}</dt>
+      <dd className="font-semibold text-text-dark-primary">
+        {t(`siteSignals.recorded.${check.id}.${check.answer}`)}
+      </dd>
+    </div>
   );
 }
 

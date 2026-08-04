@@ -1,4 +1,4 @@
-import { mayDiscussPenalty } from "./manual-action.ts";
+import { manualActionRuledOutByVisitor } from "./self-checks.ts";
 import type {
   TrafficAction,
   TrafficActionKind,
@@ -68,9 +68,9 @@ const TRAFFIC_ACTION_RULES: readonly TrafficActionRule[] = [
 /**
  * Actions that rest on the site-signal group rather than on a finding.
  *
- * The manual-action ones come first in the returned list on purpose. A visitor
- * with a live manual action has exactly one useful next step, and every other
- * recommendation in the report competes with it for their attention.
+ * The self-check ones come first in the returned list on purpose. A visitor
+ * with a live manual action or an active security issue has exactly one useful
+ * next step, and every other recommendation competes with it for attention.
  */
 function siteSignalActions(
   signals: TrafficSiteSignals,
@@ -81,25 +81,50 @@ function siteSignalActions(
     signalBasis: [id] as readonly TrafficSiteSignalId[],
   });
 
-  const path = signals.manualAction.path;
+  const selfChecks = signals.selfChecks;
 
-  if (path === "manual_action") {
+  if (selfChecks.path === "issue_reported") {
     // Nothing else is added on this path. The algorithm-side observations are
     // still in the result for the UI to fold away, but pushing them forward as
     // ACTIONS would have someone with a live manual action rewriting titles.
-    return [
-      { id: "resolve_manual_action", kind: "do", ...signal("manual_action") },
-    ];
+    //
+    // Both are listed when both were reported. They have different procedures
+    // — a reconsideration request against a quality notice, a security review
+    // after the compromise is cleaned up — and neither substitutes for the
+    // other, so choosing one to lead with would leave the other looking
+    // optional.
+    return selfChecks.issues.map((id) =>
+      id === "manual_action"
+        ? {
+            id: "resolve_manual_action",
+            kind: "do",
+            ...signal("manual_action"),
+          }
+        : {
+            id: "resolve_security_issue",
+            kind: "do",
+            ...signal("security_issue"),
+          },
+    );
   }
 
-  if (path === "unconfirmed") {
-    // Ten seconds of the visitor's time buys the one fact that decides the
-    // rest of the report. It is the highest-value thing we can ask for.
-    actions.push({
-      id: "check_manual_actions",
-      kind: "external_data",
-      ...signal("manual_action"),
-    });
+  // Ten seconds of the visitor's time buys the fact that decides the rest of
+  // the report, and the ask names the page that is actually still open rather
+  // than sending them back to both.
+  for (const id of selfChecks.unresolved) {
+    actions.push(
+      id === "manual_action"
+        ? {
+            id: "check_manual_actions",
+            kind: "external_data",
+            ...signal("manual_action"),
+          }
+        : {
+            id: "check_security_issues",
+            kind: "external_data",
+            ...signal("security_issue"),
+          },
+    );
   }
 
   // Safe on both remaining paths: on `unconfirmed` it is advice about what not
@@ -110,11 +135,15 @@ function siteSignalActions(
     ...signal("manual_action"),
   });
 
-  if (mayDiscussPenalty(signals.manualAction)) {
+  if (manualActionRuledOutByVisitor(selfChecks)) {
     // Disavow is only indicated by a manual action that names links. Having
     // established there is none, saying so is the whole value of this entry:
     // "traffic fell, therefore the backlinks are toxic" is the most common
     // wrong reflex in this situation, and an expensive one.
+    //
+    // Gated on the manual-action answer specifically, NOT on the path. A
+    // visitor who could not settle that page is on `unconfirmed` and has told
+    // us nothing that would justify this.
     actions.push({
       id: "avoid_disavow",
       kind: "avoid",
@@ -157,11 +186,11 @@ export function buildTrafficActions(
     actions.set(action.id, action);
   }
 
-  // On the manual-action path the report leads with that and nothing else, so
-  // the finding-driven recommendations are withheld rather than ranked below
-  // it. They are all about where traffic went; the answer to that question is
-  // not actionable until the manual action is resolved.
-  if (signals.manualAction.path === "manual_action") {
+  // On the issue path the report leads with that and nothing else, so the
+  // finding-driven recommendations are withheld rather than ranked below it.
+  // They are all about where traffic went; the answer to that question is not
+  // actionable until the reported issue is resolved.
+  if (signals.selfChecks.path === "issue_reported") {
     return [...actions.values()];
   }
 

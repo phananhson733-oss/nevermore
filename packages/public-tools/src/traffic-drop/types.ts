@@ -1,8 +1,8 @@
 import type { PublicToolResultEnvelope } from "../contract.ts";
 import type { BrandSplitOutcome } from "./brand-split.ts";
 import type { CoreUpdateTimeline } from "./core-updates.ts";
-import type { ManualActionObservation } from "./manual-action.ts";
 import type { QueryCohortOutcome } from "./query-cohort.ts";
+import type { SelfCheckObservations } from "./self-checks.ts";
 
 /**
  * One day of Search Console totals for the whole property.
@@ -167,12 +167,13 @@ export interface TrafficAction {
 /**
  * The site-signal observations, as ids an action can point at.
  *
- * `manual_action` is the only one of these the tool can act on with any
- * confidence, and it is the only one that arrives from the visitor rather than
- * from Search Console.
+ * The first two are the only ones the tool can act on with any confidence, and
+ * they are the only ones that arrive from the visitor rather than from Search
+ * Console — because Google publishes no API for either.
  */
 export type TrafficSiteSignalId =
   | "manual_action"
+  | "security_issue"
   | "core_update_timeline"
   | "brand_non_brand_split"
   | "query_cohort_migration";
@@ -187,7 +188,7 @@ export type TrafficSiteSignalId =
  * filled in by someone eventually.
  */
 export interface TrafficSiteSignals {
-  readonly manualAction: ManualActionObservation;
+  readonly selfChecks: SelfCheckObservations;
   readonly coreUpdateTimeline: CoreUpdateTimeline;
   readonly brandSplit: BrandSplitOutcome;
   readonly queryCohort: QueryCohortOutcome;
@@ -223,13 +224,6 @@ export type TrafficUnavailableReason =
    * `clear` claims we looked.
    */
   | "yoy_comparison_not_implemented"
-  /**
-   * The visitor has not told us what their Manual Actions report says.
-   *
-   * Distinct from every other reason here: this one is answerable, by them, in
-   * about ten seconds. The copy for it is an instruction, not an apology.
-   */
-  | "manual_action_not_checked"
   /** No peak/mid pair, so there is no event to place on a timeline. */
   | "no_event_window"
   /**

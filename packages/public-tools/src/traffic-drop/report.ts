@@ -9,12 +9,8 @@ import {
   type RankingUpdateTable,
 } from "./core-updates.ts";
 import { buildTrafficFindings } from "./findings.ts";
-import {
-  DEFAULT_MANUAL_ACTION_STATUS,
-  observeManualAction,
-  type ManualActionStatus,
-} from "./manual-action.ts";
 import { describeQueryCohort } from "./query-cohort.ts";
+import { observeSelfChecks, type SelfCheckAnswers } from "./self-checks.ts";
 import { firstVisibleDate, historySpanDays, sortByDate } from "./series.ts";
 import type {
   TrafficDailyPoint,
@@ -49,12 +45,15 @@ export interface TrafficDropInput {
   readonly completedAt: string;
   readonly checkInputs?: TrafficCheckInputs;
   /**
-   * What the visitor reported about their Manual Actions page.
+   * What the visitor reported about their Manual Actions and Security Issues
+   * pages, both of which they answer before the run starts.
    *
-   * Defaults to `not_checked`, which is the honest default: a run that was
-   * never asked has not been told.
+   * Required, with no default. A default would let a caller forget to wire the
+   * question up and still get a report that reads as if it had been asked —
+   * which is exactly how the brand-term field shipped unreachable: every layer
+   * tested green while the client never sent it.
    */
-  readonly manualAction?: ManualActionStatus;
+  readonly selfChecks: SelfCheckAnswers;
   readonly queryEvidence?: TrafficQueryEvidence | null;
   /** Brand terms as confirmed by the visitor. A domain guess is not one. */
   readonly brandTerms?: readonly string[];
@@ -96,9 +95,7 @@ export function buildTrafficDropReport(
 
   const queryEvidence = input.queryEvidence ?? null;
   const siteSignals: TrafficSiteSignals = {
-    manualAction: observeManualAction(
-      input.manualAction ?? DEFAULT_MANUAL_ACTION_STATUS,
-    ),
+    selfChecks: observeSelfChecks(input.selfChecks),
     coreUpdateTimeline: compareToRankingUpdates(
       changePoint.windows,
       input.rankingUpdateTable ?? RANKING_UPDATE_TABLE,

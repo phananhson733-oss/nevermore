@@ -6,8 +6,8 @@
 import {
   buildTrafficDropReport,
   createPublicToolError,
-  isManualActionStatus,
-  type ManualActionStatus,
+  isSelfCheckAnswer,
+  type SelfCheckAnswers,
   type TrafficChangePoint,
   type TrafficDailyPoint,
   type TrafficQueryEvidence,
@@ -19,7 +19,7 @@ import {
   type TrafficDropSession,
 } from "./traffic-drop-session.ts";
 
-/** Room for a property, a manual-action answer and a short brand list. */
+/** Room for a property, two self-check answers and a short brand list. */
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
 /** Matches the sibling tool, which shares the same brand-term form. */
@@ -95,7 +95,7 @@ function json(
 
 interface ParsedInput {
   readonly property: string;
-  readonly manualAction: ManualActionStatus;
+  readonly selfChecks: SelfCheckAnswers;
   readonly brandTerms: readonly string[];
   readonly brandTermsConfirmed: boolean;
 }
@@ -112,17 +112,41 @@ function parseInput(
     return { ok: false };
   }
 
-  // Absent means the visitor has not been asked yet, which is a real answer
-  // and the default. An unrecognised value is rejected rather than coerced:
-  // silently mapping a typo onto "no manual action" would hand out the one
-  // reassurance this tool has no standing to give.
-  const rawStatus = (body as { readonly manualAction?: unknown }).manualAction;
-  if (rawStatus !== undefined && !isManualActionStatus(rawStatus)) {
+  // Both self-checks are REQUIRED, and there is no default. Absent used to
+  // mean "not asked yet", which made a run possible with the question
+  // unanswered — and a report built that way has to hedge every sentence, so
+  // the hedged version was the one visitors read first. Answering now precedes
+  // running, and a request without both answers is malformed.
+  //
+  // An unrecognised value is rejected rather than coerced: silently mapping a
+  // typo onto "no issue" would hand out the one reassurance this tool has no
+  // standing to give.
+  const rawChecks = (body as { readonly selfChecks?: unknown }).selfChecks;
+  if (typeof rawChecks !== "object" || rawChecks === null) {
     return { ok: false };
   }
-  const manualAction: ManualActionStatus = isManualActionStatus(rawStatus)
-    ? rawStatus
-    : "not_checked";
+  const rawManualAction = (rawChecks as { readonly manualAction?: unknown })
+    .manualAction;
+  const rawSecurityIssue = (rawChecks as { readonly securityIssue?: unknown })
+    .securityIssue;
+  if (!isSelfCheckAnswer(rawManualAction)) return { ok: false };
+  if (!isSelfCheckAnswer(rawSecurityIssue)) return { ok: false };
+
+  // The answers must name the property they were given for, and it must be the
+  // one being diagnosed.
+  //
+  // This does NOT verify that a human looked at that property — nothing can;
+  // Google publishes no API for either page, which is the entire reason these
+  // arrive from the visitor. What it does verify is that the CLIENT's own two
+  // claims agree. That is worth a field: a report where site A's "no issues"
+  // was attached to site B shipped in this very branch, produced by a client
+  // that reset the brand list on a property change and forgot to reset these.
+  // The browser now binds them structurally, and this is the backstop that
+  // turns the next such regression into a 400 instead of a false all-clear.
+  const checkedProperty = (rawChecks as { readonly property?: unknown })
+    .property;
+  if (typeof checkedProperty !== "string") return { ok: false };
+  if (checkedProperty.trim() !== property.trim()) return { ok: false };
 
   const rawTerms = (body as { readonly brandTerms?: unknown }).brandTerms;
   if (rawTerms !== undefined && !Array.isArray(rawTerms)) return { ok: false };
@@ -148,7 +172,10 @@ function parseInput(
     ok: true,
     value: {
       property: property.trim(),
-      manualAction,
+      selfChecks: {
+        manualAction: rawManualAction,
+        securityIssue: rawSecurityIssue,
+      },
       brandTerms: terms,
       // Confirmation has to be asserted, and it means nothing without terms.
       // A client that sends the flag with an empty list has confirmed an empty
@@ -224,7 +251,7 @@ export async function handleTrafficDropRequest(
     const base = {
       daily,
       completedAt,
-      manualAction: input.value.manualAction,
+      selfChecks: input.value.selfChecks,
       brandTerms: input.value.brandTerms,
       brandTermsConfirmed: input.value.brandTermsConfirmed,
     } as const;
