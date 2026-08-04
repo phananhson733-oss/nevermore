@@ -23,7 +23,7 @@ const PROPERTY = "sc-domain:astrologywiki.com";
 const ENVELOPE: QuickWinsEnvelope = {
   run: {
     tool: "seo_quick_wins",
-    schemaVersion: "seo_quick_wins.evidence.v1",
+    schemaVersion: "seo_quick_wins.evidence.v2",
     scope: "property",
     mode: "public_preview",
     persistence: "none",
@@ -32,6 +32,7 @@ const ENVELOPE: QuickWinsEnvelope = {
   result: {
     window: { startDate: "2026-07-06", endDate: "2026-08-02" },
     rows: [],
+    actions: [],
     curve: {
       buckets: [],
       rowsUsed: 0,

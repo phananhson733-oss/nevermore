@@ -40,6 +40,10 @@ const COLUMNS = [
   "clickGap",
   "tailProbability",
   "baselineBandUnderOnePercent",
+  // The stable code, not the localized label. Someone filtering the export to
+  // their morning's worklist filters on `track == "read_the_serp"`, and that
+  // has to keep working when the page is read in the other language.
+  "track",
 ] as const;
 
 /**
@@ -116,6 +120,7 @@ export function evidenceCsv(result: QuickWinsResult): string {
       num(row.clickGap),
       tail(row.tailProbability),
       String(row.baselineBandUnderOnePercent),
+      text(row.track),
     ].join(","),
   );
 

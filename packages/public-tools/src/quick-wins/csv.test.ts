@@ -20,6 +20,7 @@ function row(
     clickGap: 14.5389,
     tailProbability: 0.0004,
     baselineBandUnderOnePercent: true,
+    track: "band_is_the_story",
     ...overrides,
   };
 }
@@ -28,6 +29,7 @@ function result(rows: readonly QuickWinEvidenceRow[]): QuickWinsResult {
   return {
     window: WINDOW,
     rows,
+    actions: [],
     curve: {
       buckets: [],
       rowsUsed: 0,
@@ -72,6 +74,18 @@ describe("evidenceCsv", () => {
 
     expect(header?.startsWith("windowStart,windowEnd,query")).toBe(true);
     expect(first?.startsWith("2026-07-06,2026-08-02,")).toBe(true);
+  });
+
+  it("exports the checking path as its stable code, not a localized label", () => {
+    // Someone filtering the export down to their morning's worklist filters on
+    // `track == "read_the_serp"`. A column carrying the reader's language
+    // breaks that the first time a colleague opens the page in the other one.
+    const csv = evidenceCsv(result([row({ track: "read_the_serp" })]));
+    const [header, first] = lines(csv);
+    const index = (header?.split(",") ?? []).indexOf("track");
+
+    expect(index).toBeGreaterThan(-1);
+    expect((first?.split(",") ?? [])[index]).toBe("read_the_serp");
   });
 
   it("writes an unavailable rate as an empty cell, never as zero", () => {

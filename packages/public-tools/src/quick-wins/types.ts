@@ -52,7 +52,43 @@ export interface QuickWinEvidenceRow {
    * a dozen rows that are all "below baseline" for the same structural reason.
    */
   readonly baselineBandUnderOnePercent: boolean;
+  /**
+   * Which checking path this row belongs to.
+   *
+   * Assigned in `report.ts` rather than here, because one of the paths depends
+   * on whether a wording candidate was found, and candidates are produced from
+   * the finished table. `buildEvidenceTable` emits `read_the_serp` as the
+   * provisional value and the report narrows it.
+   */
+  readonly track: QuickWinTrack;
 }
+
+/**
+ * What to do with one row, as a code the surface renders.
+ *
+ * This is a triage, not a verdict. The engine still refuses to say whether a
+ * row is a problem — the 2026-07-31 evaluation settled that question, and it
+ * settled it against us. What it can say is which *checking path* a row
+ * belongs to, because that follows from the numbers alone:
+ *
+ * - a row with a comparable page on the same site has a control to compare against;
+ * - a row in a band earning under 1% overall shares its shortfall with the
+ *   whole band, so reading it alone re-describes the band;
+ * - a row with a material shortfall and no control needs SERP context, which
+ *   is exactly the thing this tool cannot see and the visitor can;
+ * - a row whose shortfall is under a single click is inside the noise its own
+ *   sample size creates;
+ * - a row at or above the site's own rate has nothing to check.
+ *
+ * Every one of those is a statement about the evidence, and none of them says
+ * a rewrite would recover anything.
+ */
+export type QuickWinTrack =
+  | "compare_with_own_page"
+  | "band_is_the_story"
+  | "read_the_serp"
+  | "gap_within_noise"
+  | "at_or_above_curve";
 
 /** Why a query never reached the evidence table. */
 export type QuickWinExclusionReason =
@@ -149,6 +185,61 @@ export interface QuickWinsDraftView {
   readonly comparablePage: string;
 }
 
+/**
+ * What the reader should do next.
+ *
+ * `avoid` is a first-class kind, carried over from the traffic-drop tool for
+ * the same reason: naming the wrong move is as useful as naming the right one,
+ * and on this table the most expensive wrong move — reading the gap column as
+ * clicks a rewrite would recover — is one the numbers actively invite.
+ *
+ * `external_data` covers everything that needs a look the tool cannot take.
+ * That is not a hedge: SERP features are the leading cause of the gaps in this
+ * table, we do not observe them, and the visitor can observe them in a browser
+ * tab in about a minute.
+ */
+export type QuickWinActionKind = "do" | "external_data" | "avoid";
+
+export type QuickWinActionId =
+  /** Wording candidates exist; compare them against the page they were modelled on. */
+  | "apply_wording_candidates"
+  /** Rows with a material shortfall and no same-site control. Open their SERPs. */
+  | "open_serps_for_top_gaps"
+  /** A whole band earns under 1%. One finding, not a dozen. */
+  | "read_low_band_as_one_finding"
+  /** The gap column is a measured difference, not a forecast. Always fires. */
+  | "avoid_gap_as_forecast"
+  /** A large share of the property never reached the query report. */
+  | "size_the_withheld_share"
+  /** Most queries never cleared the impression floor; the page report sees them. */
+  | "check_pages_report"
+  /** A lower band out-earns a higher one, so the curve is not a rank→CTR law here. */
+  | "avoid_curve_as_law";
+
+/** One measured quantity backing an action. Rendered as-is; never re-derived in the UI. */
+export interface QuickWinMeasure {
+  /** i18n key (`measures.<key>`), not display text. */
+  readonly key: string;
+  /** Null carries "not available", which the UI must not render as 0. */
+  readonly value: number | null;
+}
+
+export interface QuickWinAction {
+  readonly id: QuickWinActionId;
+  readonly kind: QuickWinActionKind;
+  /**
+   * The evidence rows this action points at, in table order.
+   *
+   * Empty when the action is about the table as a whole. A non-empty list is
+   * the difference between advice and a worklist: "open the SERPs" is a
+   * sentiment until it names the five queries.
+   */
+  readonly queries: readonly string[];
+  /** Position bands this action points at. Empty unless the action is about bands. */
+  readonly bands: readonly PositionBucketId[];
+  readonly measures: readonly QuickWinMeasure[];
+}
+
 export interface QuickWinsResult {
   /**
    * The days this report was measured over, in Pacific calendar days.
@@ -159,6 +250,15 @@ export interface QuickWinsResult {
    */
   readonly window: { readonly startDate: string; readonly endDate: string };
   readonly rows: readonly QuickWinEvidenceRow[];
+  /**
+   * What to do next, derived from the table and nothing else.
+   *
+   * Ordered do → external_data → avoid, which is the order someone reading a
+   * report acts in. Every entry is gated on evidence that is present in this
+   * same result, so an action can never appear without the numbers that put it
+   * there being visible on the same page.
+   */
+  readonly actions: readonly QuickWinAction[];
   readonly curve: SiteCtrCurve;
   /** Bands under 1%, reported at site level rather than per query. */
   readonly lowCtrBands: readonly CtrBucket[];

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./quick-wins/csv": "./src/quick-wins/csv.ts"
+    "./quick-wins/csv": "./src/quick-wins/csv.ts",
+    "./quick-wins/track": "./src/quick-wins/track.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

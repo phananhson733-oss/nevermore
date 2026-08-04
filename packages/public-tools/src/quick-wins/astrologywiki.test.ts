@@ -34,7 +34,10 @@ describe("P0-1 on real astrologywiki data", () => {
       (sum, r) => sum + r.impressions,
       0,
     );
-    const clicks = ASTROLOGYWIKI_BAND_8_11.reduce((sum, r) => sum + r.clicks, 0);
+    const clicks = ASTROLOGYWIKI_BAND_8_11.reduce(
+      (sum, r) => sum + r.clicks,
+      0,
+    );
 
     expect(ASTROLOGYWIKI_BAND_8_11).toHaveLength(
       ASTROLOGYWIKI_BAND_TOTALS.queries,
@@ -117,5 +120,43 @@ describe("P0-1 on real astrologywiki data", () => {
     // stopped doing its job.
     expect(run().result.rows.length).toBeLessThanOrEqual(10);
     expect(run().result.excluded.below_impression_floor).toBe(445);
+  });
+
+  it("sends nobody to a search results page on this property", () => {
+    // Every row here sits in a band earning 0.51% overall, so the band is the
+    // finding and inspecting six SERPs would be six looks at the same fact.
+    // This is the assertion the v2 detector would have failed: it flagged
+    // these same rows individually, and every flag was wrong.
+    const { rows, actions } = run().result;
+
+    expect(rows.every((row) => row.track !== "read_the_serp")).toBe(true);
+    expect(actions.map((action) => action.id)).not.toContain(
+      "open_serps_for_top_gaps",
+    );
+    expect(actions.map((action) => action.id)).toContain(
+      "read_low_band_as_one_finding",
+    );
+  });
+
+  it("points this property at its Pages report, where its demand actually is", () => {
+    // 445 of 451 queries never cleared the impression floor. Per-query is the
+    // wrong resolution for this site, and saying so is more use than any
+    // number in the six rows that did clear it.
+    expect(run().result.actions.map((action) => action.id)).toContain(
+      "check_pages_report",
+    );
+  });
+
+  it("keeps the shortfall total attached to the warning about it", () => {
+    // The summed gap is the number most likely to be read as a target. It is
+    // published exactly once, inside the action whose text denies that reading.
+    const { actions } = run().result;
+    const forecast = actions.find(
+      (action) => action.id === "avoid_gap_as_forecast",
+    );
+
+    expect(forecast?.kind).toBe("avoid");
+    expect(forecast?.measures[0]?.key).toBe("totalGapClicks");
+    expect(forecast!.measures[0]!.value!).toBeGreaterThan(0);
   });
 });

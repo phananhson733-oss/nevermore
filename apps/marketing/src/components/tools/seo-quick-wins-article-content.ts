@@ -74,8 +74,12 @@ const EN: QuickWinsArticle = {
       body: "We cannot tell you why. A gap this size can come from a title that does not match the query, from searchers wanting something this page was never meant to answer, or from Google answering the question inside the results page so nobody needs to click. Those need different fixes, and one of them is not fixable at all.",
     },
     {
+      heading: "What the report tells you to do about it",
+      body: "Not to rewrite this one on its own. Its whole band earns 0.51%, so every query in there falls short of baseline for the same structural reason, and treating this row as its own problem turns one fact into 451. The report says so in as many words and points at the band rather than the title. It also sends this property to the Pages report, because 445 of its 451 queries never cleared the impression floor — per-query is the wrong resolution for a site whose demand is spread that thin.",
+    },
+    {
       heading: "What you can take away",
-      body: "The full evidence table — every query with its observed rate, your site's rate at that position, the gap between them, and the tail probability — sortable by any column and exportable as CSV.",
+      body: "A short list of what to do next, each entry naming the rows that put it there, over the full evidence table — every query with its observed rate, your site's rate at that position, the gap between them, the tail probability, and which checking path the row is on — sortable by any column and exportable as CSV.",
     },
   ],
   sections: [
@@ -228,8 +232,12 @@ const ZH: QuickWinsArticle = {
       body: "我们说不出原因。这么大的缺口可能来自标题没有对上这条查询，可能来自搜索者想要的本来就不是这个页面能回答的东西，也可能来自 Google 在结果页里直接给出了答案、没人需要点击。这三种要用完全不同的办法处理，而其中一种根本处理不了。",
     },
     {
+      heading: "报告让你拿它怎么办",
+      body: "不要单独去改这一条。它整个位置段的点击率是 0.51%，段里每条查询词低于基准都是同一个结构性原因，把这一行当成它自己的问题，就是把一件事变成 451 件。报告会直接这么说，并把你指向这个段而不是那条标题。它还会把这个站点指向「网页」报告——451 条查询词里有 445 条没过曝光门槛，对需求摊得这么薄的站点来说，逐条查询词本来就是错的分辨率。",
+    },
+    {
       heading: "你能带走什么",
-      body: "完整的证据表——每条查询词的实测点击率、你自己网站在该位置的点击率、两者的缺口、以及尾部概率。任意一列可排序，整表可导出 CSV。",
+      body: "一份很短的「接下来做什么」，每一条都会点名是哪几行把它放进来的；再加上完整的证据表——每条查询词的实测点击率、你自己网站在该位置的点击率、两者的缺口、尾部概率，以及这一行属于哪条检查路径。任意一列可排序，整表可导出 CSV。",
     },
   ],
   sections: [

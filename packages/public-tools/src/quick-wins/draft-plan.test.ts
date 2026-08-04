@@ -17,6 +17,7 @@ function row(query: string, clickGap: number): QuickWinEvidenceRow {
     clickGap,
     tailProbability: 0.0001,
     baselineBandUnderOnePercent: false,
+    track: "read_the_serp",
   };
 }
 

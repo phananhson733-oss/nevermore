@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
 import type { QuickWinEvidenceRow, QuickWinsResult } from "@sf/public-tools";
 
 import en from "../../i18n/messages/en.json";
-import { QuickWinsEvidenceTable } from "./quick-wins-evidence-table.tsx";
+import {
+  QuickWinsEvidenceTable,
+  activeTrack,
+} from "./quick-wins-evidence-table.tsx";
 
 function row(
   overrides: Partial<QuickWinEvidenceRow> = {},
@@ -26,6 +29,7 @@ function row(
     clickGap: 14.5,
     tailProbability: 0.0234,
     baselineBandUnderOnePercent: false,
+    track: "read_the_serp",
     ...overrides,
   };
 }
@@ -34,6 +38,7 @@ function result(rows: readonly QuickWinEvidenceRow[]): QuickWinsResult {
   return {
     window: { startDate: "2026-07-06", endDate: "2026-08-02" },
     rows,
+    actions: [],
     curve: {
       buckets: [],
       rowsUsed: 0,
@@ -97,14 +102,14 @@ describe("QuickWinsEvidenceTable", () => {
   });
 
   it("leaves the caveat out when no row carries it", () => {
-    expect(render(result([row()]))).not.toContain(
-      'id="quick-wins-band-note"',
-    );
+    expect(render(result([row()]))).not.toContain('id="quick-wins-band-note"');
   });
 
   it("renders an unavailable rate as unavailable, never as 0%", () => {
     const html = render(
-      result([row({ impressions: 0, observedCtr: null, tailProbability: null })]),
+      result([
+        row({ impressions: 0, observedCtr: null, tailProbability: null }),
+      ]),
     );
 
     expect(html).toContain("—");
@@ -118,5 +123,65 @@ describe("QuickWinsEvidenceTable", () => {
 
   it("offers the export", () => {
     expect(render(result([row()]))).toContain("Download CSV");
+  });
+
+  it("says what to check next on every row", () => {
+    // The column is why the table stopped being a spreadsheet. A row whose
+    // badge is missing is a row the reader has to work out on their own, which
+    // is the state this whole change was reported against.
+    const html = render(
+      result([
+        row({ query: "a", track: "read_the_serp" }),
+        row({ query: "b", track: "compare_with_own_page" }),
+      ]),
+    );
+
+    expect(html).toContain("Check the SERP");
+    expect(html).toContain("Has a control");
+  });
+
+  it("offers a filter per path that has rows, and none for the paths that do not", () => {
+    const html = render(
+      result([
+        row({ query: "a", track: "read_the_serp" }),
+        row({ query: "b", track: "read_the_serp" }),
+        row({ query: "c", track: "at_or_above_curve" }),
+      ]),
+    );
+
+    expect(html).toContain("Check the SERP");
+    expect(html).toContain("At or above");
+    // A chip labelled 0 invites a click that empties the table. An absent chip
+    // says there is nothing on that path, which is what is true here.
+    expect(html).not.toContain("Band-wide");
+    expect(html).not.toContain("Has a control");
+  });
+
+  it("drops a filter the next run has no rows for", () => {
+    // A second run replaces the rows without remounting the table, so a filter
+    // chosen against the previous result survives. Its chip does not — the
+    // list only renders paths with rows — so leaving it in force would show an
+    // empty table with no visible filter and no way to clear it.
+    const counts = {
+      compare_with_own_page: 0,
+      read_the_serp: 3,
+      band_is_the_story: 0,
+      gap_within_noise: 0,
+      at_or_above_curve: 1,
+    };
+
+    expect(activeTrack("compare_with_own_page", counts)).toBeNull();
+    // Still applies, so it survives the new result.
+    expect(activeTrack("read_the_serp", counts)).toBe("read_the_serp");
+    expect(activeTrack(null, counts)).toBeNull();
+  });
+
+  it("presses no filter until the reader presses one", () => {
+    // The whole table first. Opening on a filtered view would hide rows the
+    // reader never chose to hide.
+    const html = render(result([row()]));
+
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="true"[^]*?All/);
   });
 });
