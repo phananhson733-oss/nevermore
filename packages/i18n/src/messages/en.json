@@ -145,7 +145,7 @@
   "newProject": {
     "eyebrow": "PRODUCT · ICP",
     "title": "Add a product",
-    "subtitle": "Start with the product and growth goal. GenGrowth then collects the site and drafts an editable Product Profile, ICP, and competitor set.",
+    "subtitle": "Start with the product and growth goal. GenGrowth then collects the site and drafts an editable Product Profile, ICP, and default direct / indirect competitor set.",
     "shell": {
       "productTitle": "Add product",
       "productDetail": "Build the profile from a URL",
@@ -232,7 +232,7 @@
     },
     "nextStep": {
       "title": "Next: generate the initial Product Profile",
-      "detail": "You can continue without sharing Google data. GenGrowth collects the site and drafts an editable ICP and competitor set.",
+      "detail": "You can continue without sharing Google data. GenGrowth collects the site and drafts an editable ICP and default direct / indirect competitor set.",
       "sourcesTitle": "Next: connect the selected data sources",
       "sourcesDetail": "After creating the product, connect {count} selected sources. You can change the choice or skip on the authorization step before profile generation begins."
     },
@@ -454,13 +454,13 @@
       "autoSynthesisStarted": "Preparing the initial Product Profile",
       "autoSynthesisStartedDetail": "GenGrowth first checks available site data and automatically collects it when needed.",
       "synthesisQueued": "The initial profile is being generated",
-      "synthesisQueuedDetail": "GenGrowth is using collected site data to draft the Product Profile, ICP, and competitor candidates.",
+      "synthesisQueuedDetail": "GenGrowth is using collected site data to draft the Product Profile, ICP, and a default direct / indirect competitor set.",
       "synthesisAlreadyRunning": "The initial profile is already being generated",
       "synthesisAlreadyRunningDetail": "GenGrowth resumed the active task and will refresh this page when it finishes.",
       "discoveryRunning": "Discovering direct and indirect competitors",
-      "discoveryRunningDetail": "GenGrowth is combining DataForSEO search overlap with site evidence, then will continue profile generation automatically.",
+      "discoveryRunningDetail": "GenGrowth is combining DataForSEO search overlap with site evidence into a default direct / indirect competitor set, then will continue profile generation automatically.",
       "discoveryComplete": "Competitor search evidence is ready",
-      "discoveryCompleteDetail": "GenGrowth is now generating the Product Profile, dedicated Primary ICP, and competitor draft automatically.",
+      "discoveryCompleteDetail": "GenGrowth is now generating the Product Profile, dedicated Primary ICP, and default competitor set automatically.",
       "discoveryUnavailable": "No search competitor data was obtained",
       "discoveryUnavailableDetail": "GenGrowth continues from site evidence and starts collection if none exists yet. This profile carries no search competitor data; no second click is needed.",
       "synthesisComplete": "Product Profile generated",
@@ -484,11 +484,11 @@
       "autoCrawlPreparingDetail": "No usable site data is available yet, so GenGrowth will collect it now.",
       "crawlQueued": "Site collection queued",
       "crawlQueuedDetail": "GenGrowth is collecting the product and same-site pages, then will continue initial profile generation automatically.",
-      "autoCrawlQueuedDetail": "GenGrowth is collecting the product and same-site pages, then will generate the Product Profile, ICP, and competitor candidates.",
+      "autoCrawlQueuedDetail": "GenGrowth is collecting the product and same-site pages, then will generate the Product Profile, ICP, and default direct / indirect competitor set.",
       "crawlAlreadyRunning": "Site collection is already running",
       "crawlAlreadyRunningDetail": "GenGrowth resumed the active collection task and will continue profile generation when it finishes.",
       "crawlComplete": "Site evidence is ready",
-      "crawlCompleteDetail": "Site collection finished. GenGrowth is now generating the Product Profile, ICP, and competitor candidates.",
+      "crawlCompleteDetail": "Site collection finished. GenGrowth is now generating the Product Profile, ICP, and default direct / indirect competitor set.",
       "crawlReadyDetail": "Site collection is complete.",
       "crawlFailed": "Site evidence collection failed",
       "crawlInsufficient": "No usable product page was found",
@@ -505,7 +505,7 @@
       "confirmFailed": "Product Profile could not be confirmed"
     },
     "run": {
-      "synthesisTitle": "Generating the Product Profile, ICP, and competitor candidates",
+      "synthesisTitle": "Generating the Product Profile, ICP, and default competitor set",
       "crawlTitle": "Collecting site information",
       "discoveryTitle": "Analyzing the search market and competitors",
       "statuses": {
@@ -548,10 +548,10 @@
       "secondary": "Secondary market"
     },
     "competitors": {
-      "description": "Candidate, approved, and excluded companies stay visible so the analysis scope is explicit.",
+      "description": "Evidence-backed competitors with a complete direct / indirect classification are included by default. Adjust the relationship or exclude only where the generated set differs from reality; every decision stays visible.",
       "reviewEyebrow": "COMPETITOR REVIEW",
       "addEyebrow": "CUSTOMER DECLARED",
-      "addTitle": "Add an approved competitor",
+      "addTitle": "Add and include a competitor",
       "name": "Competitor name",
       "domain": "Normalized domain",
       "status": "Review status",
@@ -560,8 +560,8 @@
       "reason": "Why it belongs in the pool",
       "identityCorrection": "The endpoint keeps a discovered candidate’s name and domain immutable. If identity is wrong, exclude this candidate and add the corrected company separately.",
       "statuses": {
-        "candidate": "Candidate",
-        "approved": "Approved",
+        "candidate": "Needs classification",
+        "approved": "Included",
         "excluded": "Excluded"
       },
       "relationships": {
@@ -607,7 +607,7 @@
         "coreFeatures": "Core features",
         "primaryMarket": "Target markets",
         "primaryIcp": "Primary ICP",
-        "competitors": "Competitor candidates",
+        "competitors": "Direct / indirect competitor set",
         "other": "Other product information"
       }
     },
@@ -627,7 +627,7 @@
         "value": "Value and core features",
         "markets": "One primary market",
         "primaryIcp": "Complete Primary ICP",
-        "competitors": "Valid competitor review"
+        "competitors": "Valid default competitor set"
       },
       "missingFields": "Still needed: {fields}"
     }
@@ -911,7 +911,7 @@
         "unavailableDescription": "A draft or legacy context is not substituted for confirmed customer context.",
         "primaryMarket": "Primary market",
         "primaryIcp": "Primary ICP",
-        "approvedCompetitors": "Approved competitors",
+        "approvedCompetitors": "Default competitor set",
         "competitorMix": "{direct} direct · {indirect} indirect",
         "reviewCompetitors": "Review competitor candidates",
         "unavailableValue": "Unavailable",

@@ -12,6 +12,7 @@ import type { UiLocale } from "@sf/i18n";
 import {
   EvidenceRepository,
   GrowthMapReadRepository,
+  isGrowthMapUrlCursorValid,
   MAX_GROWTH_MAP_ENTITY_LOOKUP,
   MAX_GROWTH_MAP_SEARCH_LENGTH as DB_MAX_GROWTH_MAP_SEARCH_LENGTH,
   MAX_GROWTH_MAP_URL_PAGE_SIZE,
@@ -43,7 +44,6 @@ import {
   type FrozenGrowthMapRun,
 } from "./growth-map-projection";
 import { loadPublishedGrowthMapGeneration } from "./growth-map-generation";
-import { assertValidTimestampUuidListCursor } from "./list-cursor";
 import { isStale } from "./source-mappers";
 
 export const MAX_GROWTH_MAP_SEARCH_LENGTH =
@@ -756,6 +756,7 @@ async function listProjectAuditUrlsInSnapshot(
     {
       limit: opts.limit,
       cursor: opts.cursor,
+      opportunitiesOnly: true,
       ...(opts.search ? { search: opts.search } : {}),
     },
   );
@@ -786,7 +787,21 @@ export async function listProjectAuditUrls(
   opts: GrowthMapUrlListOptions,
   exec?: Executor,
 ): Promise<ReturnType<typeof GrowthMapUrlPortfolioResponse.parse>> {
-  assertValidTimestampUuidListCursor(opts.cursor);
+  if (opts.cursor !== null && !isGrowthMapUrlCursorValid(opts.cursor)) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Query parameter failed validation.",
+      {
+        errors: [
+          {
+            pointer: "/cursor",
+            code: "invalid_query_value",
+            message: "Invalid query parameter.",
+          },
+        ],
+      },
+    );
+  }
   const diagnosticRunId = canonicalDiagnosticRunId(opts.diagnosticRunId);
   if (
     !Number.isSafeInteger(opts.limit) ||

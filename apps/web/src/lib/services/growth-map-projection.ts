@@ -13,6 +13,7 @@ import type {
 } from "@sf/contracts";
 import {
   LEGACY_RULE_SET_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
   parseGovernanceProjectionV1,
   RULE_SET_VERSION,
 } from "@sf/engine";
@@ -236,7 +237,10 @@ function validateManifestAuthority(
   manifest: Record<string, unknown>,
   ruleSetVersion: string,
 ): void {
-  if (ruleSetVersion === RULE_SET_VERSION) {
+  if (
+    ruleSetVersion === RULE_SET_VERSION ||
+    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION
+  ) {
     if (!hasExactKeys(manifest, CURRENT_MANIFEST_KEYS)) {
       invalidFrozenRun();
     }

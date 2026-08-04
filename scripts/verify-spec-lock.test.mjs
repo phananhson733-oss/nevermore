@@ -80,7 +80,7 @@ const ASYNC_OPERATIONS = [
 const RULES = [
   ["TECH-HTTP-001", 2],
   ["TECH-CANONICAL-002", 2],
-  ["TECH-LINKGRAPH-005", 2],
+  ["TECH-LINKGRAPH-005", 3],
   ["SEARCH-CTR-004", 1],
   ["SEARCH-DECAY-002", 1],
   ["CONTENT-COVERAGE-001", 1],
@@ -265,7 +265,7 @@ function makeFixture(t, options = {}) {
     normative: true,
     productVersion: "0.3.0",
     contractVersion: "2026-07-21",
-    ruleSetVersion: "mvp.rules.0.2.2",
+    ruleSetVersion: "mvp.rules.0.2.3",
     promptSetVersion: "mvp.prompts.0.2.0",
     authorityRoot,
     lockPath,
@@ -306,8 +306,9 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.asyncOperations.length, 10);
   assert.equal(activeLock.tables.length, 78);
   assert.equal(activeLock.rules.length, 11);
-  assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.2");
+  assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.3");
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
+  assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
   for (const operationId of [
     "getProjectAuditBacklinks",
     "listProjectAuditKeywordRelations",

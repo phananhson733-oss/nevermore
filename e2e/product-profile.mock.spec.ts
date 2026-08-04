@@ -825,7 +825,9 @@ test("automatically collects website evidence and resumes initial profile genera
   expect(api.critical.collectionRequests).toEqual([{ provider: "crawl" }]);
   expect(api.critical.collectionRunPolls).toBeGreaterThanOrEqual(3);
   await expect(
-    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
+    page.getByText("正在生成产品画像、ICP 与默认竞品集合", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(page.getByText("运行中", { exact: true })).toBeVisible();
   await expect(
@@ -849,7 +851,9 @@ test("recovers an active Crawl after refresh without starting duplicate onboardi
   expect(api.synthesisStarts).toEqual([{ baseVersion: 4 }]);
   expect(api.critical.collectionRequests).toEqual([]);
   await expect(
-    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
+    page.getByText("正在生成产品画像、ICP 与默认竞品集合", {
+      exact: true,
+    }),
   ).toBeVisible();
 });
 
@@ -1097,7 +1101,7 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
   ).toBeVisible();
 });
 
-test("enforces approved/candidate/excluded rules and records a declared competitor through the API", async ({
+test("enforces included/unclassified/excluded rules and records a declared competitor through the API", async ({
   page,
 }) => {
   const api = await installProductProfileApi(page);
@@ -1106,8 +1110,8 @@ test("enforces approved/candidate/excluded rules and records a declared competit
   const approved = page.locator("article").filter({ hasText: "GuideCX" });
   const candidate = page.locator("article").filter({ hasText: "Userpilot" });
   const excluded = page.locator("article").filter({ hasText: "Appcues" });
-  await expect(approved.getByText("已批准", { exact: true })).toBeVisible();
-  await expect(candidate.getByText("候选", { exact: true })).toBeVisible();
+  await expect(approved.getByText("已纳入", { exact: true })).toBeVisible();
+  await expect(candidate.getByText("待补充", { exact: true })).toBeVisible();
   await expect(excluded.getByText("已排除", { exact: true })).toBeVisible();
 
   await candidate.getByRole("button", { name: "审核 / 纠正" }).click();
@@ -1134,7 +1138,7 @@ test("enforces approved/candidate/excluded rules and records a declared competit
   });
 
   await page.getByRole("button", { name: "添加竞品" }).click();
-  const addDialog = page.getByRole("dialog", { name: "添加已批准竞品" });
+  const addDialog = page.getByRole("dialog", { name: "添加并纳入竞品" });
   await addDialog.getByLabel("竞品名称").fill("ChurnZero");
   await addDialog
     .getByLabel("标准化域名")
@@ -1159,7 +1163,7 @@ test("enforces approved/candidate/excluded rules and records a declared competit
     reason: "Customer-declared alternative in enterprise evaluations.",
   });
   const declared = page.locator("article").filter({ hasText: "ChurnZero" });
-  await expect(declared.getByText("已批准", { exact: true })).toBeVisible();
+  await expect(declared.getByText("已纳入", { exact: true })).toBeVisible();
   await expect(declared.getByText("间接竞品", { exact: true })).toBeVisible();
 });
 
@@ -1216,7 +1220,9 @@ test("renders the active synthesis as inline canonical run progress", async ({
   await gotoProductProfile(page);
 
   await expect(
-    page.getByText("正在生成产品画像、ICP 与竞品候选", { exact: true }),
+    page.getByText("正在生成产品画像、ICP 与默认竞品集合", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("运行中", { exact: true }),

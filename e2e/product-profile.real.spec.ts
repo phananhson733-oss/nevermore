@@ -190,7 +190,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
   // confirmation gate is exercised with real persisted evidence.
   await page.getByRole("button", { name: "添加竞品" }).click();
   const competitorDialog = page.getByRole("dialog", {
-    name: "添加已批准竞品",
+    name: "添加并纳入竞品",
   });
   await competitorDialog.getByLabel("竞品名称").fill("OnboardFlow");
   await competitorDialog

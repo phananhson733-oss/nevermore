@@ -1172,9 +1172,73 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-LINKGRAP
         "evidence": [
           {
             "availability": "available",
-            "claim": "1 commercial page(s) receive fewer than 2 internal inlinks.",
+            "claim": "2 indexable non-home page(s) have at most 1 observed internal inlink(s).",
             "grade": "B",
-            "limitation": "Inlink counts are derived from the crawled internal outlinks only; links from uncrawled pages are not counted.",
+            "limitation": "Internal-link facts are limited to static HTML links observed in the frozen crawl; navigation rendered only by JavaScript and pages outside the crawl are not counted.",
+            "method": "computed",
+            "observedAt": "2026-07-18T00:00:00.000Z",
+            "origin": "derived",
+            "sourceProvider": "crawl",
+            "subjectRefs": [
+              "https://example.com/home",
+              "https://example.com/pricing",
+            ],
+            "support": "supports",
+          },
+        ],
+        "metrics": {
+          "affectedCount": 2,
+          "maximumObservedInlinks": 1,
+        },
+        "severity": "high",
+        "subjectRefs": [
+          "page_set:low_internal_inlinks",
+        ],
+        "target": {
+          "members": [
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/home",
+              "observationId": "28d1fbbf-4603-4062-8e08-de378f172be8",
+              "pageSnapshotId": "0ad77856-8e33-4cab-867e-ecf1bb4a3375",
+              "resolutionState": "resolved",
+              "sitePageId": "694ff067-cc2c-4332-8c12-08a137989b79",
+              "sitePageUrl": "https://example.com/home",
+              "snapshotId": "05e95957-9d7a-4dfd-8408-be8d3d3bb100",
+            },
+            {
+              "basisKind": "crawl_exact_fetch",
+              "memberRef": "https://example.com/pricing",
+              "observationId": "b25d81a8-bec0-47a1-8790-98d8ac592710",
+              "pageSnapshotId": "40e3de3f-5eaa-4232-810f-787d62b66bba",
+              "resolutionState": "resolved",
+              "sitePageId": "3cdaa70a-52ec-467b-8570-fb0068f394a2",
+              "sitePageUrl": "https://example.com/pricing",
+              "snapshotId": "f3fc340e-5fe8-47a2-8a43-b2d298009828",
+            },
+          ],
+          "relation": "affected_by_page_set",
+          "targetKind": "page_set",
+          "targetRef": "low_internal_inlinks",
+          "version": 1,
+        },
+        "titleArgs": {
+          "affectedCount": 2,
+          "kind": "low_inbound",
+        },
+      },
+    ],
+    "status": "candidate",
+  },
+  "edge": {
+    "candidates": [
+      {
+        "evidence": [
+          {
+            "availability": "partial",
+            "claim": "1 indexable non-home page(s) have at most 1 observed internal inlink(s).",
+            "grade": "B",
+            "limitation": "Internal-link facts are limited to static HTML links observed in the frozen crawl; navigation rendered only by JavaScript and pages outside the crawl are not counted.",
             "method": "computed",
             "observedAt": "2026-07-18T00:00:00.000Z",
             "origin": "derived",
@@ -1187,8 +1251,9 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-LINKGRAP
         ],
         "metrics": {
           "affectedCount": 1,
+          "maximumObservedInlinks": 1,
         },
-        "severity": "high",
+        "severity": "medium",
         "subjectRefs": [
           "page_set:low_internal_inlinks",
         ],
@@ -1212,14 +1277,11 @@ exports[`AC-021 canonical outputs for all 11 deterministic rules > TECH-LINKGRAP
         },
         "titleArgs": {
           "affectedCount": 1,
+          "kind": "low_inbound",
         },
       },
     ],
     "status": "candidate",
-  },
-  "edge": {
-    "reason": "partial_crawl_incomplete_link_graph",
-    "status": "inconclusive",
   },
   "missing": {
     "reason": "missing_dataset",

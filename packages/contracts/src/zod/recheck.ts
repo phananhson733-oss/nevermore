@@ -84,7 +84,7 @@ export type CreateActionRecheckRequest = z.infer<
 export const ActionRecheckRuleComparison = z
   .object({
     ruleId: OpportunityRuleId,
-    ruleVersion: z.union([z.literal(1), z.literal(2)]),
+    ruleVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     priorStatus: RecheckRuleStatus,
     currentStatus: RecheckRuleStatus,
     state: RecheckComparisonState,

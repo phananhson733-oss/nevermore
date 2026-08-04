@@ -60,12 +60,19 @@ export interface ObservationView extends ObservationLineageView {
   readonly availability: string;
   readonly valueJson: unknown;
   readonly observedAt: string;
+  /**
+   * Exact traversal depth frozen in the Crawl PageSnapshot extract. This is
+   * intentionally not inferred from the normalized projection: historical
+   * fixtures and non-crawl observations omit it.
+   */
+  readonly crawlDepth?: number;
 }
 
 /** Projection and lineage are retained together; rules never re-join by URL. */
 export interface UrlObservationProjection<T> extends ObservationLineageView {
   readonly subjectRef: string;
   readonly projection: T;
+  readonly crawlDepth?: number;
 }
 
 export interface CoverageInput {
@@ -194,6 +201,8 @@ export class DiagnosticContext {
   >;
   /** Derived internal inlink counts per subjectUrl (pipeline step 4). */
   readonly internalInlinks: ReadonlyMap<string, number>;
+  /** Minimum frozen traversal depth across exact fetch variants per subject. */
+  readonly crawlDepths: ReadonlyMap<string, number>;
 
   private readonly prioritySet: ReadonlySet<string>;
   private readonly crawlObservationsByFetchUrl: ReadonlyMap<
@@ -489,6 +498,7 @@ export class DiagnosticContext {
     // Derived: union every exact source variant's internal outlinks, while
     // counting one aggregation source subject at most once per target.
     const inlinks = new Map<string, number>();
+    const crawlDepths = new Map<string, number>();
     for (const variants of pageVariants.values()) {
       const targetSubjects = new Set<string>();
       for (const page of variants) {
@@ -499,6 +509,12 @@ export class DiagnosticContext {
       for (const target of [...targetSubjects].sort(compareAscii)) {
         inlinks.set(target, (inlinks.get(target) ?? 0) + 1);
       }
+    }
+    for (const [subjectRef, observations] of crawlPageObservations) {
+      const depths = observations
+        .map((observation) => observation.crawlDepth)
+        .filter((depth): depth is number => depth !== undefined);
+      if (depths.length > 0) crawlDepths.set(subjectRef, Math.min(...depths));
     }
 
     this.pages = pages;
@@ -522,6 +538,7 @@ export class DiagnosticContext {
     this.governedKeywordGapKeywordsByCluster =
       governedKeywordGapKeywordsByCluster;
     this.internalInlinks = inlinks;
+    this.crawlDepths = crawlDepths;
   }
 
   static build(input: DiagnosticContextInput): DiagnosticContext {
@@ -730,6 +747,9 @@ function observationProjection<T>(
     pageSnapshotId: observation.pageSnapshotId,
     subjectRef: observation.subjectRef,
     projection,
+    ...(observation.crawlDepth === undefined
+      ? {}
+      : { crawlDepth: observation.crawlDepth }),
   };
 }
 

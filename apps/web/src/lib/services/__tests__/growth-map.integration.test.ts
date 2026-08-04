@@ -643,7 +643,7 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     const aggregateFinding = await insertFinding({
       name: "aggregate",
       ruleId: "TECH-LINKGRAPH-005",
-      ruleVersion: 2,
+      ruleVersion: 3,
       summary: "Two commercial pages have insufficient internal-link support.",
       severity: "medium",
       reviewState: "unreviewed",
@@ -959,7 +959,7 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     await handle?.end();
   });
 
-  it("projects multiple frozen URLs without manufacturing missing values", async () => {
+  it("projects only frozen URLs with Opportunities without manufacturing missing values", async () => {
     const result = await listProjectAuditUrls(
       growthMapScope(fixture.scope),
       fixture.scope.projectId,
@@ -974,11 +974,15 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       crawlSnapshotId: fixture.crawlSnapshotId,
       meta: { hasNext: false, nextCursor: null, limit: 100 },
     });
-    expect(result.data).toHaveLength(3);
+    expect(result.data).toHaveLength(2);
     const byId = new Map(result.data.map((row) => [row.sitePageId, row]));
     const pricing = byId.get(fixture.pricing.id)!;
     const docs = byId.get(fixture.docs.id)!;
-    const analyticsOnly = byId.get(fixture.analyticsOnly.id)!;
+    expect(byId.has(fixture.analyticsOnly.id)).toBe(false);
+    expect(result.data.map((row) => row.sitePageId)).toEqual([
+      fixture.pricing.id,
+      fixture.docs.id,
+    ]);
 
     expect(pricing).toMatchObject({
       normalizedUrl: fixture.pricing.normalizedUrl,
@@ -1018,30 +1022,6 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       "该页面没有可用的冻结 GA4 URL Observation。",
     ]);
 
-    expect(analyticsOnly).toMatchObject({
-      normalizedUrl: fixture.analyticsOnly.normalizedUrl,
-      title: null,
-      pageSnapshotId: null,
-      pageSnapshotCapturedAt: null,
-      coverage: { availability: "partial" },
-      findingIds: [],
-      reviewableFindingIds: [],
-      priority: { availability: "unavailable", value: null },
-    });
-    expect(
-      analyticsOnly.identitySources.every(
-        (source) => source.kind === "url_observation",
-      ),
-    ).toBe(true);
-    expect(
-      analyticsOnly.metricObservations.every(
-        (metric) => metric.provider === "gsc",
-      ),
-    ).toBe(true);
-    expect(analyticsOnly.priority.limitation).toBe(
-      "当前诊断没有指向该 URL 的 Finding。",
-    );
-
     const serialized = JSON.stringify(result);
     for (const findingId of fixture.excludedFindingIds) {
       expect(serialized).not.toContain(findingId);
@@ -1054,17 +1034,17 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     const first = await listProjectAuditUrls(
       growthMapScope(fixture.scope),
       fixture.scope.projectId,
-      { limit: 2, cursor: null, now: PROJECTED_AT },
+      { limit: 1, cursor: null, now: PROJECTED_AT },
       handle.db,
     );
-    expect(first.data).toHaveLength(2);
+    expect(first.data).toHaveLength(1);
     expect(first.meta).toMatchObject({ hasNext: true });
     expect(first.meta.nextCursor).not.toBeNull();
 
     const second = await listProjectAuditUrls(
       growthMapScope(fixture.scope),
       fixture.scope.projectId,
-      { limit: 2, cursor: first.meta.nextCursor, now: PROJECTED_AT },
+      { limit: 1, cursor: first.meta.nextCursor, now: PROJECTED_AT },
       handle.db,
     );
     expect(second.data).toHaveLength(1);
@@ -1075,7 +1055,6 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       new Set([
         fixture.pricing.id,
         fixture.docs.id,
-        fixture.analyticsOnly.id,
       ]),
     );
   });

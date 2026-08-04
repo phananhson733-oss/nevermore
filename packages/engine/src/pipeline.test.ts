@@ -62,13 +62,13 @@ function candidate(
 }
 
 describe("runPipeline async rule contract (spec §8.3)", () => {
-  it("exposes the exact mixed rule-version registry for rule set 0.2.2", () => {
-    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.2");
+  it("exposes the exact mixed rule-version registry for rule set 0.2.3", () => {
+    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.3");
     expect(Object.fromEntries(ALL_RULES.map((rule) => [rule.id, rule.version])))
       .toEqual({
         "TECH-HTTP-001": 2,
         "TECH-CANONICAL-002": 2,
-        "TECH-LINKGRAPH-005": 2,
+        "TECH-LINKGRAPH-005": 3,
         "SEARCH-CTR-004": 1,
         "SEARCH-DECAY-002": 1,
         "CONTENT-COVERAGE-001": 1,

@@ -2,6 +2,7 @@ import type { DiagnosticRunRow } from "@sf/db";
 import {
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
   rulesForRuleSetVersion,
   type DiagnosticRule,
 } from "@sf/engine";
@@ -33,7 +34,8 @@ export function resolveDiagnosticExecutor(
     ruleSetVersion: diagnostic.rule_set_version,
     promptSetVersion: diagnostic.prompt_set_version,
     governance:
-      diagnostic.rule_set_version === RULE_SET_VERSION
+      diagnostic.rule_set_version === RULE_SET_VERSION ||
+      diagnostic.rule_set_version === GOVERNED_LEGACY_RULE_SET_VERSION
         ? "required"
         : "forbidden",
     rules,

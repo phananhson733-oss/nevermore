@@ -151,5 +151,6 @@ export {
   ALL_RULES,
   LEGACY_ALL_RULES,
   LEGACY_RULE_SET_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
   rulesForRuleSetVersion,
 } from "./rules/index.ts";

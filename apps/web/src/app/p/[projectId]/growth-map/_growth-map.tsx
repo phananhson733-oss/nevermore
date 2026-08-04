@@ -192,6 +192,13 @@ const PRIORITY_CLASS = {
   low: styles.priorityLow,
 } as const;
 
+const PRIORITY_CODE = {
+  critical: "P0",
+  high: "P1",
+  medium: "P2",
+  low: "P3",
+} as const;
+
 const COVERAGE_CLASS = {
   available: styles.coverageAvailable,
   partial: styles.coveragePartial,
@@ -411,7 +418,7 @@ function PriorityPill({ item }: { readonly item: GrowthMapUrlPortfolioItem }) {
         PRIORITY_CLASS[item.priority.value],
       )}
     >
-      {tPriority(item.priority.value)}
+      {PRIORITY_CODE[item.priority.value]} · {tPriority(item.priority.value)}
     </span>
   );
 }
@@ -1727,7 +1734,7 @@ function UrlDetailPanel({
           <span>{t("priority")}</span>
           {detail.priority.availability === "available" ? (
             <strong className={PRIORITY_CLASS[detail.priority.value]}>
-              {tPriority(detail.priority.value)}
+              {PRIORITY_CODE[detail.priority.value]} · {tPriority(detail.priority.value)}
             </strong>
           ) : (
             <strong className={styles.summaryMissing}>

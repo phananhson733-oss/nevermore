@@ -884,7 +884,7 @@ test("ready Overview renders the four current customer modules", async ({
   await expect(metricByLabel(context, "JTBD")).toContainText(
     "Launch customers predictably",
   );
-  await expect(metricByLabel(context, "Approved competitors")).toContainText(
+  await expect(metricByLabel(context, "Default competitor set")).toContainText(
     "1 direct · 1 indirect",
   );
   // PRD R5.11 requires the Overview to carry an explicit competitor-candidate

@@ -45,7 +45,7 @@
       "$ref": "#/$defs/locale"
     },
     "ruleSetVersion": {
-      "const": "mvp.rules.0.2.2"
+      "const": "mvp.rules.0.2.3"
     },
     "sourceSnapshotIds": {
       "type": "array",

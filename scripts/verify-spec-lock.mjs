@@ -233,7 +233,7 @@ assert.equal(
   lock.productVersion,
   "package version drifted from the active lock",
 );
-assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.2");
+assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
 assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");

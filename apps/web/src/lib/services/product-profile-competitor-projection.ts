@@ -3,6 +3,7 @@ import type {
   ProductProfileFieldProvenance,
   ProductProfileProvenanceDerivation,
 } from "@sf/contracts";
+import { isProductProfileCompetitorIncludedByDefault } from "@sf/contracts";
 import {
   CompetitorsRepository,
   type Executor,
@@ -87,9 +88,25 @@ export async function projectConfirmedProductProfileCompetitors(
   if (profile.competitorCandidates.length === 0) return;
   const repository = new CompetitorsRepository(tx);
   for (let index = 0; index < profile.competitorCandidates.length; index += 1) {
-    await repository.upsertOrigin(
+    const candidate = profile.competitorCandidates[index]!;
+    const origin = await repository.upsertOrigin(
       scope,
       buildProductProfileCompetitorOriginInput(profileIdentity, profile, index),
+    );
+    const included = isProductProfileCompetitorIncludedByDefault(candidate);
+    await repository.applyProductProfileDefaultGovernance(
+      scope,
+      origin.competitorId,
+      {
+        name: candidate.name,
+        reviewStatus: included
+          ? "approved"
+          : candidate.reviewStatus === "excluded"
+            ? "excluded"
+            : "candidate",
+        relationship: included ? candidate.relationship : null,
+        analysisScope: included ? candidate.analysisScope : [],
+      },
     );
   }
 }

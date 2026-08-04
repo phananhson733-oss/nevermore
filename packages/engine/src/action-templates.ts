@@ -26,7 +26,7 @@ export interface ActionCopy {
 export interface ActionTemplate {
   readonly templateId: string;
   readonly artifactType: ArtifactType;
-  readonly templateVersion: 1;
+  readonly templateVersion: 1 | 2;
   readonly effort: Effort;
   readonly risk: Risk;
   readonly copy: Readonly<Record<ContentLocale, ActionCopy>>;
@@ -80,24 +80,25 @@ export const ACTION_TEMPLATES: Record<RuleId, ActionTemplate> = {
     },
   },
   "TECH-LINKGRAPH-005": {
-    templateId: "strengthen_internal_links.v1",
+    templateId: "repair_internal_link_architecture.v2",
     artifactType: "technical_ticket",
-    templateVersion: 1,
-    effort: "small",
+    templateVersion: 2,
+    effort: "medium",
     risk: "low",
     copy: {
       en: {
-        title: "Strengthen internal links to key pages",
+        title: "Repair internal-link architecture opportunities",
         description:
-          "Add contextual internal links so commercial/priority pages have at least two internal inlinks.",
+          "Review low-inbound pages, shorten avoidable crawl paths, and verify unresolved internal targets before changing links.",
         expectedOutcome:
-          "Priority pages gain internal link equity and are easier to discover.",
+          "Important pages gain stronger internal support, crawl paths become shorter, and unresolved targets are verified or repaired.",
       },
       "zh-CN": {
-        title: "加强指向关键页面的内链",
+        title: "修复内链架构机会",
         description:
-          "为商业/优先页面补充上下文内链，使其至少获得两个内部入链。",
-        expectedOutcome: "优先页面获得内链权重，更易被发现与抓取。",
+          "检查低入链页面、缩短不必要的抓取路径，并在修改链接前核验未解析的内部目标。",
+        expectedOutcome:
+          "重要页面获得更强的内部支持，抓取路径缩短，未解析目标得到核验或修复。",
       },
     },
   },

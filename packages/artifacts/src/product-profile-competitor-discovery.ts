@@ -95,12 +95,12 @@ function domainOverlapReason(input: {
   const { locale, relationship, intersections, marketCode } = input;
   if (locale.toLowerCase().startsWith("zh")) {
     return relationship === "direct"
-      ? `DataForSEO 在 ${marketCode} 市场观测到 ${intersections} 个自然搜索关键词交集；按同类搜索需求的高重合规则列为直接竞品草稿，待用户复核。`
-      : `DataForSEO 在 ${marketCode} 市场观测到 ${intersections} 个自然搜索关键词交集；重合度低于直接替代阈值，按相邻需求列为间接竞品草稿，待用户复核。`;
+      ? `DataForSEO 在 ${marketCode} 市场观测到 ${intersections} 个自然搜索关键词交集；按同类搜索需求的高重合规则默认纳入直接竞品，用户可随时调整或排除。`
+      : `DataForSEO 在 ${marketCode} 市场观测到 ${intersections} 个自然搜索关键词交集；重合度低于直接替代阈值，按相邻需求默认纳入间接竞品，用户可随时调整或排除。`;
   }
   return relationship === "direct"
-    ? `DataForSEO observed ${intersections} shared organic-search keywords in ${marketCode}; the high-overlap rule classifies this as a direct-competitor draft pending review.`
-    : `DataForSEO observed ${intersections} shared organic-search keywords in ${marketCode}; overlap is below the direct-substitution threshold, so this is an indirect-competitor draft pending review.`;
+    ? `DataForSEO observed ${intersections} shared organic-search keywords in ${marketCode}; the high-overlap rule includes this as a direct competitor by default, and the customer can adjust or exclude it.`
+    : `DataForSEO observed ${intersections} shared organic-search keywords in ${marketCode}; overlap is below the direct-substitution threshold, so this is included as an indirect competitor by default and remains editable.`;
 }
 
 function serpCompetitorReason(input: {
@@ -112,9 +112,9 @@ function serpCompetitorReason(input: {
 }): string {
   const { locale, relationship, rating, relevantSerpItems, marketCode } = input;
   if (locale.toLowerCase().startsWith("zh")) {
-    return `DataForSEO 在 ${marketCode} 市场的冻结种子 SERP 中观测到该域名，相关度评分 ${rating}、相关结果 ${relevantSerpItems} 个；按相对评分规则列为${relationship === "direct" ? "直接" : "间接"}竞品草稿，待用户复核。`;
+    return `DataForSEO 在 ${marketCode} 市场的冻结种子 SERP 中观测到该域名，相关度评分 ${rating}、相关结果 ${relevantSerpItems} 个；按相对评分规则默认纳入${relationship === "direct" ? "直接" : "间接"}竞品，用户可随时调整或排除。`;
   }
-  return `DataForSEO observed this domain in the frozen-seed SERPs for ${marketCode} with relevance rating ${rating} and ${relevantSerpItems} relevant result(s); the relative-rating rule classifies it as a ${relationship}-competitor draft pending review.`;
+  return `DataForSEO observed this domain in the frozen-seed SERPs for ${marketCode} with relevance rating ${rating} and ${relevantSerpItems} relevant result(s); the relative-rating rule includes it as a ${relationship} competitor by default, and the customer can adjust or exclude it.`;
 }
 
 function compareObservation(

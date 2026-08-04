@@ -31,15 +31,16 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type {
-  CustomerModel,
-  ProductProfileCompetitorAnalysisScope,
-  ProductProfileCompetitorCandidate,
-  ProductProfileCompetitorRelationship,
-  ProductProfileCompetitorReviewStatus,
-  ProductProfileDraft,
-  ProductProfileGrowthObjective,
-  UpdateProductProfileDraftRequest,
+import {
+  isProductProfileCompetitorIncludedByDefault,
+  type CustomerModel,
+  type ProductProfileCompetitorAnalysisScope,
+  type ProductProfileCompetitorCandidate,
+  type ProductProfileCompetitorRelationship,
+  type ProductProfileCompetitorReviewStatus,
+  type ProductProfileDraft,
+  type ProductProfileGrowthObjective,
+  type UpdateProductProfileDraftRequest,
 } from "@sf/contracts";
 import {
   ApiError,
@@ -639,6 +640,14 @@ interface CompetitorFormState {
   readonly reason: string;
 }
 
+function effectiveCompetitorReviewStatus(
+  candidate: ProductProfileCompetitorCandidate,
+): ProductProfileCompetitorReviewStatus {
+  return isProductProfileCompetitorIncludedByDefault(candidate)
+    ? "approved"
+    : candidate.reviewStatus;
+}
+
 function CompetitorEditor({
   open,
   candidate,
@@ -656,7 +665,9 @@ function CompetitorEditor({
   const [state, setState] = useState<CompetitorFormState>(() => ({
     name: candidate?.name ?? "",
     domain: candidate?.domain ?? "",
-    reviewStatus: candidate?.reviewStatus ?? "approved",
+    reviewStatus: candidate
+      ? effectiveCompetitorReviewStatus(candidate)
+      : "approved",
     relationship: candidate?.relationship ?? "",
     analysisScope: candidate?.analysisScope ?? [],
     reason: candidate?.reason ?? "",
@@ -665,7 +676,9 @@ function CompetitorEditor({
     setState({
       name: candidate?.name ?? "",
       domain: candidate?.domain ?? "",
-      reviewStatus: candidate?.reviewStatus ?? "approved",
+      reviewStatus: candidate
+        ? effectiveCompetitorReviewStatus(candidate)
+        : "approved",
       relationship: candidate?.relationship ?? "",
       analysisScope: candidate?.analysisScope ?? [],
       reason: candidate?.reason ?? "",
@@ -1462,7 +1475,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
             {profile.competitorCandidates.length ? <div className={styles.competitorList}>{profile.competitorCandidates.map((candidate) => (
               <article className={styles.competitorRow} key={candidate.candidateId} data-review={candidate.reviewStatus}>
                 <div className={styles.competitorIdentity}><strong>{candidate.name}</strong><a href={`https://${candidate.domain}`} target="_blank" rel="noreferrer">{candidate.domain}<ExternalLink size={13} aria-hidden="true" /></a></div>
-                <div className={styles.competitorMeta}><span>{t(`competitors.statuses.${candidate.reviewStatus}`)}</span><span>{candidate.relationship ? t(`competitors.relationships.${candidate.relationship}`) : t("states.unconfirmed")}</span>{candidate.analysisScope.map((scope) => <span key={scope}>{t(`competitors.scopes.${scope}`)}</span>)}</div>
+                <div className={styles.competitorMeta}><span>{t(`competitors.statuses.${effectiveCompetitorReviewStatus(candidate)}`)}</span><span>{candidate.relationship ? t(`competitors.relationships.${candidate.relationship}`) : t("states.unconfirmed")}</span>{candidate.analysisScope.map((scope) => <span key={scope}>{t(`competitors.scopes.${scope}`)}</span>)}</div>
                 <p>{candidate.reason}</p>
                 {editable ? <button type="button" className={styles.textButton} disabled={profileWorkActive} onClick={(event) => { rememberTrigger(event.currentTarget); setCompetitorEditor(candidate); }}>{t("actions.reviewCompetitor")}<ArrowRight size={15} aria-hidden="true" /></button> : null}
               </article>

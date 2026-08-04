@@ -36,12 +36,6 @@ import {
  * never writes one.
  */
 
-const EXACT_VARIANT_RULE_IDS = new Set<OpportunityRuleId>([
-  "TECH-HTTP-001",
-  "TECH-CANONICAL-002",
-  "TECH-LINKGRAPH-005",
-]);
-
 const OPPORTUNITY_RULES = new Set<string>(
   Object.keys(RULE_OPPORTUNITY_PROJECTION),
 );
@@ -68,9 +62,17 @@ export function isOpportunityRule(ruleId: string): ruleId is OpportunityRuleId {
   return OPPORTUNITY_RULES.has(ruleId);
 }
 
-/** The frozen projection rule version: exact-variant technical rules are v2. */
-export function opportunityRuleVersion(ruleId: OpportunityRuleId): 1 | 2 {
-  return EXACT_VARIANT_RULE_IDS.has(ruleId) ? 2 : 1;
+/** Exact current governed executor version for each Opportunity rule. */
+export function opportunityRuleVersion(ruleId: OpportunityRuleId): 1 | 2 | 3 {
+  if (ruleId === "TECH-LINKGRAPH-005") return 3;
+  if (
+    ruleId === "TECH-HTTP-001" ||
+    ruleId === "TECH-CANONICAL-002" ||
+    ruleId === "CONTENT-GAP-011"
+  ) {
+    return 2;
+  }
+  return 1;
 }
 
 /** Minimal Finding projection input; decoupled from the DB row shape. */

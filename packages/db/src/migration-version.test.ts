@@ -8,11 +8,11 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("tracks the competitor provenance authority", () => {
+  it("tracks opt-out Product Profile competitor defaults", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
-          "../migrations/0039_product_profile_competitor_provenance.sql",
+          "../migrations/0041_product_profile_default_competitors.sql",
           import.meta.url,
         ),
       ),
@@ -20,21 +20,42 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0039_product_profile_competitor_provenance",
+      "0041_product_profile_default_competitors",
     );
     expect(migration).toMatch(
-      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.validate_product_profile_provenance/iu,
+      /origin\.source_review_status\s*=\s*'candidate'[\s\S]*?origin\.source_relationship\s+IN\s*\(\s*'direct'\s*,\s*'indirect'\s*\)[\s\S]*?cardinality\(origin\.source_analysis_scope\)\s+BETWEEN\s+1\s+AND\s+5/iu,
     );
-    // The admission is bounded by the run's own frozen manifest, not widened
-    // to "any observation in this project".
+    expect(migration).toMatch(/entity\.revision\s*=\s*0/iu);
     expect(migration).toMatch(
-      /input_manifest\s*\n?\s*->\s*'competitorDiscovery'\s*->>\s*'snapshotId'/iu,
-    );
-    expect(migration).toMatch(
-      /frozen_observation\s*->>\s*'observationId'\s*=\s*ref_id_text/iu,
+      /revision\s*=\s*entity\.revision\s*\+\s*1/iu,
     );
     expect(migration).toMatch(
-      /SELECT\s+'0039_product_profile_competitor_provenance'::text[\s\S]*?AS\s+migration_version/iu,
+      /source_rank\s*=\s*1/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0041_product_profile_default_competitors'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps internal-link Opportunity coverage immediately before Product Profile defaults", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0040_internal_link_opportunity_coverage.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.expected_diagnostic_rule_version/iu,
+    );
+    expect(migration).toMatch(
+      /selected_rule_set\s*=\s*'mvp\.rules\.0\.2\.3'[\s\S]*?selected_rule_id\s*=\s*'TECH-LINKGRAPH-005'\s+THEN\s+3/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0040_internal_link_opportunity_coverage'::text[\s\S]*?AS\s+migration_version/iu,
     );
   });
 

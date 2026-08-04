@@ -783,6 +783,37 @@ describe("buildProductProfileDraft", () => {
     ).toEqual(starting.fieldProvenance[1]);
   });
 
+  it("includes a fully classified crawler-grounded competitor by default", () => {
+    const candidate = emptyCandidate();
+    candidate.competitorCandidates = [
+      {
+        name: "Grounded Peer",
+        domain: "grounded.example.com",
+        relationship: "indirect",
+        analysisScope: ["content", "serp_visibility"],
+        similarity: 0.61,
+        reason: "Named on the frozen comparison page.",
+        confidence: "medium",
+        sourcePageKeys: ["page-1"],
+        usesBusinessHint: false,
+      },
+    ];
+    candidate.unknownPaths = candidate.unknownPaths.filter(
+      (path) => path !== "/competitorCandidates",
+    );
+
+    const result = build(candidate);
+
+    expect(result.competitorCandidates).toEqual([
+      expect.objectContaining({
+        domain: "grounded.example.com",
+        relationship: "indirect",
+        analysisScope: ["content", "serp_visibility"],
+        reviewStatus: "approved",
+      }),
+    ]);
+  });
+
   it("adds bounded DataForSEO candidates with canonical observation provenance", () => {
     const result = build(emptyCandidate(), {
       pageEvidence: {},
@@ -800,7 +831,7 @@ describe("buildProductProfileDraft", () => {
           ],
           similarity: null,
           reason:
-            "DataForSEO observed 40 shared organic-search keywords in US; direct competitor draft pending review.",
+            "DataForSEO observed 40 shared organic-search keywords in US; included as a direct competitor by default.",
           confidence: "medium",
           observedAt: GENERATED_AT,
         },
@@ -811,7 +842,7 @@ describe("buildProductProfileDraft", () => {
       expect.objectContaining({
         domain: "guidecx.com",
         relationship: "direct",
-        reviewStatus: "candidate",
+        reviewStatus: "approved",
         similarity: null,
       }),
     ]);

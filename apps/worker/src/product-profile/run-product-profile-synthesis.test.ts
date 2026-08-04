@@ -904,7 +904,7 @@ describe("runProductProfileSynthesis", () => {
           expect.objectContaining({
             domain: "rival.example",
             relationship: "direct",
-            reviewStatus: "candidate",
+            reviewStatus: "approved",
             similarity: null,
           }),
         ],
@@ -990,7 +990,7 @@ describe("runProductProfileSynthesis", () => {
             domain: "rival.example",
             relationship: "direct",
             reason: expect.stringMatching(/SERP.*92.*6/iu),
-            reviewStatus: "candidate",
+            reviewStatus: "approved",
             similarity: null,
           }),
         ],

@@ -1079,13 +1079,13 @@ VALUES (
   '00000000-0000-4000-8000-000000000301',
   '00000000-0000-4000-8000-000000000401',
   1,
-  'mvp.rules.0.2.2',
+  'mvp.rules.0.2.3',
   'mvp.prompts.0.2.0',
   'en',
   jsonb_build_object(
     'projectId', '00000000-0000-4000-8000-000000000201',
     'siteId', '00000000-0000-4000-8000-000000000301',
-    'ruleSetVersion', 'mvp.rules.0.2.2',
+    'ruleSetVersion', 'mvp.rules.0.2.3',
     'promptSetVersion', 'mvp.prompts.0.2.0',
     'deliveryLocale', 'en',
     'icp', jsonb_build_object(
@@ -1228,7 +1228,7 @@ INSERT INTO app.diagnostic_run_rules (
 VALUES (
   '00000000-0000-4000-8000-000000000602',
   'TECH-LINKGRAPH-005',
-  2,
+  3,
   'technical_seo',
   'candidate',
   NULL,
@@ -1572,7 +1572,7 @@ VALUES (
   '00000000-0000-4000-8000-000000000201',
   repeat('5', 64),
   'TECH-LINKGRAPH-005',
-  2,
+  3,
   'internal-link-equity',
   'strengthen_internal_links',
   'technical_seo',
@@ -4142,6 +4142,7 @@ BEGIN
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.0%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.1%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.2%'
+      AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.3%'
   ) THEN
     RAISE EXCEPTION 'diagnostic rule-set compatibility is stale';
   END IF;
@@ -4377,7 +4378,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0039_product_profile_competitor_provenance' THEN
+  ) IS DISTINCT FROM '0041_product_profile_default_competitors' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

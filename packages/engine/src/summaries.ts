@@ -47,6 +47,29 @@ function s(args: Args, key: string): string {
   return v === undefined ? "" : String(v);
 }
 
+function linkgraphSummary(args: Args, locale: SummaryLocale): string {
+  const count = n(args, "affectedCount");
+  switch (s(args, "kind")) {
+    case "low_inbound":
+      return locale === "zh-CN"
+        ? `${count} 个可收录非首页在冻结抓取中只有 0–1 个内部入链。`
+        : `${count} indexable non-home page(s) have only 0–1 observed internal inlink(s).`;
+    case "deep_page":
+      return locale === "zh-CN"
+        ? `${count} 个可收录页面在冻结抓取中的观测深度至少为 3。`
+        : `${count} indexable page(s) were observed at crawl depth 3 or deeper.`;
+    case "unresolved_target":
+      return locale === "zh-CN"
+        ? `${count} 个来源页面链接到了本次冻结抓取未解析的内部目标。`
+        : `${count} source page(s) link to internal targets unresolved by the frozen crawl.`;
+    default:
+      // Historical TECH-LINKGRAPH-005@2 replay has no kind argument.
+      return locale === "zh-CN"
+        ? `${count} 个商业页面的内部入链少于两个。`
+        : `${count} commercial page(s) have fewer than two internal inlinks.`;
+  }
+}
+
 const TEMPLATES: Record<RuleId, Record<SummaryLocale, (a: Args) => string>> = {
   "TECH-HTTP-001": {
     en: (a) => `${n(a, "count")} page(s) return HTTP ${s(a, "status")}, blocking users and crawlers.`,
@@ -57,8 +80,8 @@ const TEMPLATES: Record<RuleId, Record<SummaryLocale, (a: Args) => string>> = {
     "zh-CN": (a) => `检测到 canonical 冲突（${s(a, "subtype")}），影响 ${n(a, "count")} 个页面。`,
   },
   "TECH-LINKGRAPH-005": {
-    en: (a) => `${n(a, "affectedCount")} commercial page(s) have fewer than two internal inlinks.`,
-    "zh-CN": (a) => `${n(a, "affectedCount")} 个商业页面的内部入链少于两个。`,
+    en: (a) => linkgraphSummary(a, "en"),
+    "zh-CN": (a) => linkgraphSummary(a, "zh-CN"),
   },
   "SEARCH-CTR-004": {
     en: (a) => `A ranking page has CTR ${s(a, "ctr")} below the benchmark for position ${s(a, "position")}.`,

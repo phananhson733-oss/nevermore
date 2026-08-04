@@ -145,7 +145,7 @@
   "newProject": {
     "eyebrow": "产品与 ICP",
     "title": "添加产品",
-    "subtitle": "先填写产品和增长目标。系统随后采集网站信息，生成可修改的产品画像、ICP 与竞品候选。",
+    "subtitle": "先填写产品和增长目标。系统随后采集网站信息，生成可修改的产品画像、ICP 与默认直接 / 间接竞品集合。",
     "shell": {
       "productTitle": "添加产品",
       "productDetail": "从 URL 建立产品画像",
@@ -232,7 +232,7 @@
     },
     "nextStep": {
       "title": "下一步：自动生成初始产品画像",
-      "detail": "不分享 Google 数据也可以继续。创建后系统会采集网站并生成可审核的 ICP 与竞品候选。",
+      "detail": "不分享 Google 数据也可以继续。创建后系统会采集网站并生成可修改的 ICP 与默认直接 / 间接竞品集合。",
       "sourcesTitle": "下一步：连接所选数据源",
       "sourcesDetail": "创建产品后连接 {count} 个所选数据源；可在授权页更改选择或直接跳过，然后开始生成画像。"
     },
@@ -454,13 +454,13 @@
       "autoSynthesisStarted": "正在准备初始产品画像",
       "autoSynthesisStartedDetail": "系统会先检查可用的网站信息；如需采集，会自动继续，无需重复点击。",
       "synthesisQueued": "初始画像正在生成",
-      "synthesisQueuedDetail": "系统正在根据已采集的网站信息生成产品画像、ICP 与竞品候选。",
+      "synthesisQueuedDetail": "系统正在根据已采集的网站信息生成产品画像、ICP 与默认直接 / 间接竞品集合。",
       "synthesisAlreadyRunning": "初始画像正在生成",
       "synthesisAlreadyRunningDetail": "已接续当前任务，完成后页面会自动更新。",
       "discoveryRunning": "正在发现直接与间接竞品",
-      "discoveryRunningDetail": "系统正在结合 DataForSEO 搜索交集与网站证据建立竞品草稿；完成后会自动继续生成画像。",
+      "discoveryRunningDetail": "系统正在结合 DataForSEO 搜索交集与网站证据建立默认直接 / 间接竞品集合；完成后会自动继续生成画像。",
       "discoveryComplete": "竞品搜索证据已就绪",
-      "discoveryCompleteDetail": "系统正在自动继续生成产品画像、核心 ICP 与竞品草稿。",
+      "discoveryCompleteDetail": "系统正在自动继续生成产品画像、核心 ICP 与默认竞品集合。",
       "discoveryUnavailable": "本次未取得搜索竞品数据",
       "discoveryUnavailableDetail": "系统改用网站证据继续生成画像；如尚未采集会自动开始。本次画像不含搜索竞品数据，无需重复点击。",
       "synthesisComplete": "初始产品画像已生成",
@@ -484,11 +484,11 @@
       "autoCrawlPreparingDetail": "当前还没有可用的网站信息，系统将立即开始采集。",
       "crawlQueued": "网站采集已进入队列",
       "crawlQueuedDetail": "系统正在采集产品页与同站页面；完成后会自动继续生成初始画像。",
-      "autoCrawlQueuedDetail": "系统正在采集产品页与同站页面；完成后会自动生成产品画像、ICP 与竞品候选。",
+      "autoCrawlQueuedDetail": "系统正在采集产品页与同站页面；完成后会自动生成产品画像、ICP 与默认直接 / 间接竞品集合。",
       "crawlAlreadyRunning": "网站采集正在进行",
       "crawlAlreadyRunningDetail": "已接续当前采集任务，完成后会自动继续生成初始画像。",
       "crawlComplete": "网站证据已就绪",
-      "crawlCompleteDetail": "网站信息已经采集，正在自动生成产品画像、ICP 与竞品候选。",
+      "crawlCompleteDetail": "网站信息已经采集，正在自动生成产品画像、ICP 与默认直接 / 间接竞品集合。",
       "crawlReadyDetail": "网站信息已经采集完成。",
       "crawlFailed": "网站证据采集失败",
       "crawlInsufficient": "没有找到可用于生成的产品页面",
@@ -505,7 +505,7 @@
       "confirmFailed": "产品画像无法确认"
     },
     "run": {
-      "synthesisTitle": "正在生成产品画像、ICP 与竞品候选",
+      "synthesisTitle": "正在生成产品画像、ICP 与默认竞品集合",
       "crawlTitle": "正在采集网站信息",
       "discoveryTitle": "正在分析搜索市场与竞品",
       "statuses": {
@@ -548,10 +548,10 @@
       "secondary": "次要市场"
     },
     "competitors": {
-      "description": "候选、已批准和已排除的公司都会保留显示，让分析范围清晰可见。",
+      "description": "系统会把有证据且分类完整的直接 / 间接竞品默认纳入分析；你只需在有出入时调整关系或排除，所有历史决定都会保留。",
       "reviewEyebrow": "竞品审核",
       "addEyebrow": "客户声明",
-      "addTitle": "添加已批准竞品",
+      "addTitle": "添加并纳入竞品",
       "name": "竞品名称",
       "domain": "标准化域名",
       "status": "审核状态",
@@ -560,8 +560,8 @@
       "reason": "纳入竞品池的原因",
       "identityCorrection": "接口会保留已发现候选的名称和域名。如果身份错误，请排除该候选，再单独添加纠正后的公司。",
       "statuses": {
-        "candidate": "候选",
-        "approved": "已批准",
+        "candidate": "待补充",
+        "approved": "已纳入",
         "excluded": "已排除"
       },
       "relationships": {
@@ -607,7 +607,7 @@
         "coreFeatures": "核心功能",
         "primaryMarket": "目标市场",
         "primaryIcp": "核心 ICP",
-        "competitors": "竞品候选",
+        "competitors": "直接 / 间接竞品集合",
         "other": "其他产品信息"
       }
     },
@@ -627,7 +627,7 @@
         "value": "价值与核心功能",
         "markets": "一个主要市场",
         "primaryIcp": "完整的核心 ICP",
-        "competitors": "有效的竞品审核"
+        "competitors": "有效的默认竞品集合"
       },
       "missingFields": "还需补齐：{fields}"
     }
@@ -911,7 +911,7 @@
         "unavailableDescription": "草稿或旧版 Context 不会替代客户已经确认的产品画像。",
         "primaryMarket": "主要市场",
         "primaryIcp": "主要 ICP",
-        "approvedCompetitors": "已确认竞品",
+        "approvedCompetitors": "默认竞品范围",
         "competitorMix": "{direct} 个直接竞品 · {indirect} 个间接竞品",
         "reviewCompetitors": "审核竞品候选",
         "unavailableValue": "暂无",

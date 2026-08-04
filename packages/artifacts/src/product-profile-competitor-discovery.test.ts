@@ -67,7 +67,7 @@ describe("Product Profile DataForSEO competitor discovery", () => {
     });
 
     expect(candidate?.reason).toContain("12 个自然搜索关键词交集");
-    expect(candidate?.reason).toContain("直接竞品草稿");
+    expect(candidate?.reason).toContain("默认纳入直接竞品");
   });
 
   it("classifies the seed-based SERP fallback without claiming keyword intersections", () => {

@@ -367,9 +367,26 @@ describe("Overview customer projection", () => {
           },
         ],
         competitorCandidates: [
-          { relationship: "direct", reviewStatus: "approved" },
-          { relationship: "indirect", reviewStatus: "approved" },
-          { relationship: "direct", reviewStatus: "excluded" },
+          {
+            relationship: "direct",
+            analysisScope: ["keyword_gap"],
+            reviewStatus: "approved",
+          },
+          {
+            relationship: "indirect",
+            analysisScope: ["content"],
+            reviewStatus: "approved",
+          },
+          {
+            relationship: "direct",
+            analysisScope: ["keyword_gap"],
+            reviewStatus: "excluded",
+          },
+          {
+            relationship: "indirect",
+            analysisScope: ["content"],
+            reviewStatus: "candidate",
+          },
         ],
       },
     } as unknown as ConfirmedProductProfileRowDto;
@@ -383,8 +400,8 @@ describe("Overview customer projection", () => {
       primaryAudience: "B2B SaaS companies",
       buyerRoles: ["Customer Operations Lead"],
       jtbd: ["Standardize onboarding"],
-      approvedDirectCompetitors: 1,
-      approvedIndirectCompetitors: 1,
+      directCompetitors: 1,
+      indirectCompetitors: 2,
       sourceSiteId: SITE_ID,
       sourceSnapshotId: SNAPSHOT_ID,
     });

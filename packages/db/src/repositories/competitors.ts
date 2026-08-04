@@ -172,6 +172,19 @@ export interface CompetitorReviewInput {
   readonly analysisScope: readonly CompetitorAnalysisScope[];
 }
 
+/**
+ * System-owned Product Profile projection. Revision zero means the customer
+ * has not made a Competitor Library governance decision yet, so the first
+ * confirmed profile may seed the default state. Existing governance revisions
+ * remain authoritative and are never overwritten.
+ */
+export interface ProductProfileDefaultGovernanceInput {
+  readonly name: string;
+  readonly reviewStatus: CompetitorReviewStatus;
+  readonly relationship: "direct" | "indirect" | null;
+  readonly analysisScope: readonly CompetitorAnalysisScope[];
+}
+
 export interface CompetitorOriginBatchOptions {
   readonly limitPerEntity: number;
   readonly totalLimit: number;
@@ -558,6 +571,31 @@ function assertReviewInput(input: CompetitorReviewInput): void {
   }
 }
 
+function assertProductProfileDefaultGovernanceInput(
+  input: ProductProfileDefaultGovernanceInput,
+): void {
+  assertName(input.name);
+  if (!REVIEW_STATUSES.has(input.reviewStatus)) {
+    throw new RangeError("reviewStatus is unsupported");
+  }
+  if (
+    input.relationship !== null &&
+    !PROFILE_RELATIONSHIPS.has(input.relationship)
+  ) {
+    throw new RangeError("relationship is unsupported");
+  }
+  assertAnalysisScope(input.analysisScope);
+  if (
+    input.reviewStatus === "approved"
+      ? input.relationship === null || input.analysisScope.length === 0
+      : input.relationship !== null || input.analysisScope.length !== 0
+  ) {
+    throw new RangeError(
+      "Product Profile default governance must classify only approved competitors",
+    );
+  }
+}
+
 function parseUpsertResult(value: unknown): CompetitorOriginUpsertResult {
   const rows = (
     value as {
@@ -705,6 +743,51 @@ export class CompetitorsRepository extends Repository {
       )
     `);
     return parseUpsertResult(result);
+  }
+
+  /**
+   * Apply the confirmed Product Profile's opt-out default only while no
+   * Competitor Library revision exists. The governance trigger records this as
+   * revision 1 when a pre-existing candidate changes; newly inserted entities
+   * already carry the desired state and remain revision 0.
+   */
+  async applyProductProfileDefaultGovernance(
+    scope: ProjectScope,
+    competitorId: string,
+    input: ProductProfileDefaultGovernanceInput,
+  ): Promise<CompetitorEntityRow | null> {
+    assertUuid(competitorId, "competitorId");
+    assertProductProfileDefaultGovernanceInput(input);
+    const rows = (await this.exec
+      .update(competitorEntities)
+      .set({
+        name: input.name,
+        review_status: input.reviewStatus,
+        relationship: input.relationship,
+        analysis_scope: [...input.analysisScope],
+        revision: 1,
+      })
+      .where(
+        and(
+          projectPredicate(competitorEntities, scope),
+          eq(competitorEntities.id, competitorId),
+          eq(competitorEntities.revision, 0),
+          sql`(
+            ${competitorEntities.name},
+            ${competitorEntities.review_status},
+            ${competitorEntities.relationship},
+            ${competitorEntities.analysis_scope}
+          ) IS DISTINCT FROM (
+            ${input.name}::text,
+            ${input.reviewStatus}::text,
+            ${input.relationship}::text,
+            ${sql.param([...input.analysisScope])}::text[]
+          )`,
+          activeProjectPredicate(scope),
+        ),
+      )
+      .returning(competitorSelection)) as CompetitorEntityRow[];
+    return rows[0] ?? null;
   }
 
   async listByProject(

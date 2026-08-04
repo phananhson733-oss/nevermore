@@ -95,6 +95,7 @@ import {
   type DiagnosticExecutor,
 } from "./executor-version.ts";
 import { materializeAuditModules } from "../audit/run-full-audit.ts";
+import { parseCrawlPageExtract } from "../collection/materialize-crawl-pages.ts";
 
 /**
  * Diagnostic job runner (spec §8.2, §8.6). Loads the frozen manifest + its
@@ -1573,6 +1574,7 @@ async function loadObservationViews(
       }
     }
 
+    let crawlDepth: number | undefined;
     if (observation.metric_key === METRIC_CRAWL_PAGE) {
       const projection = crawlPageProjectionSchema.safeParse(
         observation.value_json,
@@ -1586,6 +1588,15 @@ async function loadObservationViews(
       ) {
         invalidObservationLineage();
       }
+      const extract = parseCrawlPageExtract(frozenPage.extract);
+      if (
+        extract.subjectUrl !== observation.subject_ref ||
+        extract.projection.fetchUrl !== frozenPage.normalized_url ||
+        !isDeepStrictEqual(extract.projection, projection.data)
+      ) {
+        invalidObservationLineage();
+      }
+      crawlDepth = extract.depth;
     }
 
     return {
@@ -1601,6 +1612,7 @@ async function loadObservationViews(
       availability: observation.availability,
       valueJson: observation.value_json,
       observedAt: observation.observed_at,
+      ...(crawlDepth === undefined ? {} : { crawlDepth }),
     } satisfies ObservationView;
   });
 }

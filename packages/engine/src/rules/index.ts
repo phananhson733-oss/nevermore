@@ -2,7 +2,10 @@ import type { DiagnosticRule } from "../rule.ts";
 import { RULE_SET_VERSION } from "../registry.ts";
 import { techHttpStatusRule } from "./tech-http-status.ts";
 import { techCanonicalRule } from "./tech-canonical.ts";
-import { techLinkgraphRule } from "./tech-linkgraph.ts";
+import {
+  createLegacyTechLinkgraphExecutor,
+  techLinkgraphRule,
+} from "./tech-linkgraph.ts";
 import { searchCtrRule } from "./search-ctr.ts";
 import { searchDecayRule } from "./search-decay.ts";
 import { contentCoverageRule } from "./content-coverage.ts";
@@ -36,6 +39,9 @@ export const ALL_RULES: readonly DiagnosticRule[] = [
  * also contains the governance-aware @2 path.
  */
 export const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
+export const GOVERNED_LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.2";
+
+const legacyTechLinkgraphRule = createLegacyTechLinkgraphExecutor();
 
 const legacyContentGapRule: DiagnosticRule = {
   ...contentGapRule,
@@ -51,7 +57,17 @@ const legacyContentGapRule: DiagnosticRule = {
 };
 
 export const LEGACY_ALL_RULES: readonly DiagnosticRule[] = ALL_RULES.map(
-  (rule) => (rule.id === "CONTENT-GAP-011" ? legacyContentGapRule : rule),
+  (rule) =>
+    rule.id === "CONTENT-GAP-011"
+      ? legacyContentGapRule
+      : rule.id === "TECH-LINKGRAPH-005"
+        ? legacyTechLinkgraphRule
+        : rule,
+);
+
+export const GOVERNED_LEGACY_ALL_RULES: readonly DiagnosticRule[] =
+  ALL_RULES.map((rule) =>
+    rule.id === "TECH-LINKGRAPH-005" ? legacyTechLinkgraphRule : rule,
 );
 
 /**
@@ -62,6 +78,9 @@ export function rulesForRuleSetVersion(
   ruleSetVersion: string,
 ): readonly DiagnosticRule[] | null {
   if (ruleSetVersion === RULE_SET_VERSION) return ALL_RULES;
+  if (ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION) {
+    return GOVERNED_LEGACY_ALL_RULES;
+  }
   if (ruleSetVersion === LEGACY_RULE_SET_VERSION) return LEGACY_ALL_RULES;
   return null;
 }

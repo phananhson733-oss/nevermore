@@ -138,7 +138,7 @@ describeDb(
       expect(byRule.has("TECH-LINKGRAPH-005")).toBe(true); // technical_seo
       expect(byRule.get("TECH-HTTP-001")?.ruleVersion).toBe(2);
       expect(byRule.get("TECH-CANONICAL-002")?.ruleVersion).toBe(2);
-      expect(byRule.get("TECH-LINKGRAPH-005")?.ruleVersion).toBe(2);
+      expect(byRule.get("TECH-LINKGRAPH-005")?.ruleVersion).toBe(3);
       expect(byRule.has("SEARCH-CTR-004")).toBe(true); // search_performance
       expect(byRule.has("CONTENT-COVERAGE-001")).toBe(true); // content_intent
       expect(byRule.has("CRO-LANDING-003")).toBe(true); // conversion_journey

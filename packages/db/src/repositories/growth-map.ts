@@ -80,6 +80,8 @@ export interface GrowthMapUrlInventoryOptions {
   readonly limit: number;
   readonly cursor: string | null;
   readonly search?: string;
+  /** Hide frozen inventory rows that have no active, non-ignored Opportunity. */
+  readonly opportunitiesOnly?: boolean;
 }
 
 export interface GrowthMapUrlInventoryPage {
@@ -107,6 +109,67 @@ type RawUrlInventoryRow = Omit<
   readonly site_page_created_at: string | Date;
   readonly page_snapshot_captured_at: string | Date | null;
 };
+
+interface GrowthMapOpportunityKeyset {
+  readonly coverageCount: number;
+  readonly priorityRank: number;
+  readonly findingCount: number;
+  readonly timestamp: string;
+  readonly id: string;
+}
+
+type RawOpportunityUrlInventoryRow = RawUrlInventoryRow & {
+  readonly opportunity_coverage_count: number;
+  readonly opportunity_priority_rank: number;
+  readonly opportunity_finding_count: number;
+};
+
+const CANONICAL_BASE64URL = /^[A-Za-z0-9_-]+$/u;
+
+function encodeGrowthMapUrlCursor(keyset: GrowthMapOpportunityKeyset): string {
+  return Buffer.from(JSON.stringify(keyset), "utf8").toString("base64url");
+}
+
+function decodeGrowthMapUrlCursor(
+  cursor: string,
+): GrowthMapOpportunityKeyset | null {
+  if (!cursor || !CANONICAL_BASE64URL.test(cursor)) return null;
+  try {
+    const bytes = Buffer.from(cursor, "base64url");
+    if (bytes.toString("base64url") !== cursor) return null;
+    const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    const value = parsed as Record<string, unknown>;
+    if (
+      Object.keys(value).sort().join(",") !==
+        "coverageCount,findingCount,id,priorityRank,timestamp" ||
+      !Number.isSafeInteger(value["coverageCount"]) ||
+      (value["coverageCount"] as number) < 0 ||
+      !Number.isSafeInteger(value["priorityRank"]) ||
+      (value["priorityRank"] as number) < 0 ||
+      (value["priorityRank"] as number) > 4 ||
+      !Number.isSafeInteger(value["findingCount"]) ||
+      (value["findingCount"] as number) < 0 ||
+      typeof value["timestamp"] !== "string" ||
+      typeof value["id"] !== "string" ||
+      decodeTimestampUuidCursor(
+        encodeTimestampUuidCursor(value["timestamp"], value["id"]),
+      ) === null
+    ) {
+      return null;
+    }
+    return value as unknown as GrowthMapOpportunityKeyset;
+  } catch {
+    return null;
+  }
+}
+
+/** Public service guard for the composite coverage/priority URL keyset. */
+export function isGrowthMapUrlCursorValid(cursor: string): boolean {
+  return decodeGrowthMapUrlCursor(cursor) !== null;
+}
 
 function asIsoTimestamp(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -533,42 +596,118 @@ export class GrowthMapReadRepository extends Repository {
     }
     const search = validateSearch(options.search);
     const cursor = options.cursor
-      ? decodeTimestampUuidCursor(options.cursor)
+      ? decodeGrowthMapUrlCursor(options.cursor)
       : null;
     if (options.cursor && !cursor) {
       throw new RangeError("cursor is not a canonical SitePage keyset");
     }
 
-    const result = await this.exec.execute<RawUrlInventoryRow>(sql`
+    const result = await this.exec.execute<RawOpportunityUrlInventoryRow>(sql`
       ${currentRunUrlInventoryCtes(scope, diagnosticRunId)}
-      select *
+      , finding_coverage as (
+        select
+          ${findingTargets.finding_id} as finding_id,
+          count(distinct ${findingTargets.site_page_id})::integer as coverage_count
+        from ${findingTargets}
+        inner join ${findings}
+          on ${findings.id} = ${findingTargets.finding_id}
+         and ${findings.workspace_id} = ${scope.workspaceId}
+         and ${findings.project_id} = ${scope.projectId}
+         and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
+         and ${findings.active}
+         and ${findings.review_state} <> 'ignored'
+        where ${findingTargets.workspace_id} = ${scope.workspaceId}
+          and ${findingTargets.project_id} = ${scope.projectId}
+          and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
+          and ${findingTargets.resolution_state} = 'resolved'
+          and ${findingTargets.site_page_id} is not null
+        group by ${findingTargets.finding_id}
+      ), opportunity_sort as (
+        select
+          ${findingTargets.site_page_id} as site_page_id,
+          max(finding_coverage.coverage_count)::integer as coverage_count,
+          min(
+            case ${findings.severity}
+              when 'critical' then 0
+              when 'high' then 1
+              when 'medium' then 2
+              when 'low' then 3
+              else 4
+            end
+          )::integer as priority_rank,
+          count(distinct ${findingTargets.finding_id})::integer as finding_count
+        from ${findingTargets}
+        inner join ${findings}
+          on ${findings.id} = ${findingTargets.finding_id}
+         and ${findings.workspace_id} = ${scope.workspaceId}
+         and ${findings.project_id} = ${scope.projectId}
+         and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
+         and ${findings.active}
+         and ${findings.review_state} <> 'ignored'
+        inner join finding_coverage
+          on finding_coverage.finding_id = ${findingTargets.finding_id}
+        where ${findingTargets.workspace_id} = ${scope.workspaceId}
+          and ${findingTargets.project_id} = ${scope.projectId}
+          and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
+          and ${findingTargets.resolution_state} = 'resolved'
+          and ${findingTargets.site_page_id} is not null
+        group by ${findingTargets.site_page_id}
+      )
+      select
+        inventory.*,
+        coalesce(opportunity_sort.coverage_count, 0)::integer as opportunity_coverage_count,
+        coalesce(opportunity_sort.priority_rank, 4)::integer as opportunity_priority_rank,
+        coalesce(opportunity_sort.finding_count, 0)::integer as opportunity_finding_count
       from inventory
+      left join opportunity_sort
+        on opportunity_sort.site_page_id = inventory.site_page_id
       where ${search === null ? sql`true` : sql`position(lower(${search}) in lower(normalized_url)) > 0`}
+        and ${options.opportunitiesOnly === false ? sql`true` : sql`coalesce(opportunity_sort.finding_count, 0) > 0`}
         and ${
           cursor === null
             ? sql`true`
             : sql`(
-                site_page_created_at > ${cursor.timestamp}
-                or (site_page_created_at = ${cursor.timestamp}
-                  and site_page_id > ${cursor.id}::uuid)
+                coalesce(opportunity_sort.coverage_count, 0) < ${cursor.coverageCount}
+                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+                  and coalesce(opportunity_sort.priority_rank, 4) > ${cursor.priorityRank})
+                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+                  and coalesce(opportunity_sort.finding_count, 0) < ${cursor.findingCount})
+                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+                  and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
+                  and inventory.site_page_created_at > ${cursor.timestamp})
+                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+                  and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
+                  and inventory.site_page_created_at = ${cursor.timestamp}
+                  and inventory.site_page_id > ${cursor.id}::uuid)
               )`
         }
-      order by site_page_created_at asc, site_page_id asc
+      order by
+        opportunity_coverage_count desc,
+        opportunity_priority_rank asc,
+        opportunity_finding_count desc,
+        inventory.site_page_created_at asc,
+        inventory.site_page_id asc
       limit ${options.limit + 1}
     `);
 
-    const normalized = result.rows.map(normalizeUrlInventoryRow);
-    const hasNext = normalized.length > options.limit;
-    const rows = hasNext ? normalized.slice(0, options.limit) : normalized;
-    const last = rows.at(-1);
+    const hasNext = result.rows.length > options.limit;
+    const rawRows = hasNext ? result.rows.slice(0, options.limit) : result.rows;
+    const rows = rawRows.map(normalizeUrlInventoryRow);
+    const last = rawRows.at(-1);
     return {
       rows,
       nextCursor:
         hasNext && last
-          ? encodeTimestampUuidCursor(
-              last.site_page_created_at,
-              last.site_page_id,
-            )
+          ? encodeGrowthMapUrlCursor({
+              coverageCount: last.opportunity_coverage_count ?? 0,
+              priorityRank: last.opportunity_priority_rank ?? 4,
+              findingCount: last.opportunity_finding_count ?? 0,
+              timestamp: asIsoTimestamp(last.site_page_created_at),
+              id: last.site_page_id,
+            })
           : null,
     };
   }

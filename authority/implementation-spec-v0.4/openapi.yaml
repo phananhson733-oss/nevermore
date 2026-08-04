@@ -2825,6 +2825,7 @@ components:
     ProductProfileCompetitorReviewStatus:
       type: string
       enum: [candidate, approved, excluded]
+      description: Classified generated competitors are approved and included by default; candidate is reserved for incomplete classification, and excluded is an explicit opt-out.
     ProductProfileCompetitorDomain:
       type: string
       minLength: 1
@@ -3055,6 +3056,7 @@ components:
         competitorCandidates:
           type: array
           maxItems: 100
+          description: Evidence-backed competitors with a complete direct/indirect relationship and analysis scope are included by default; customers may adjust or exclude them.
           items: { $ref: '#/components/schemas/ProductProfileCompetitorCandidate' }
         fieldProvenance:
           type: array
@@ -5233,7 +5235,7 @@ components:
       required: [ruleId, ruleVersion]
       properties:
         ruleId: { $ref: '#/components/schemas/OpportunityRuleId' }
-        ruleVersion: { type: integer, enum: [1, 2] }
+        ruleVersion: { type: integer, enum: [1, 2, 3] }
 
     OpportunityOwnedAsset:
       type: object
@@ -8070,7 +8072,7 @@ components:
       required: [ruleId, ruleVersion, priorStatus, currentStatus, state, disposition, label]
       properties:
         ruleId: { $ref: '#/components/schemas/OpportunityRuleId' }
-        ruleVersion: { type: integer, enum: [1, 2] }
+        ruleVersion: { type: integer, enum: [1, 2, 3] }
         priorStatus: { $ref: '#/components/schemas/RecheckRuleStatus' }
         currentStatus: { $ref: '#/components/schemas/RecheckRuleStatus' }
         state:
@@ -9430,7 +9432,7 @@ components:
       properties:
         id: { $ref: '#/components/schemas/Uuid' }
         ruleId: { type: string, pattern: '^(TECH|SEARCH|CONTENT|CRO|GEO)-[A-Z]+-[0-9]{3}$' }
-        ruleVersion: { type: integer, enum: [1, 2] }
+        ruleVersion: { type: integer, enum: [1, 2, 3] }
         domain: { $ref: '#/components/schemas/DiagnosticDomain' }
         titleKey: { type: string }
         titleArgs: { type: object, additionalProperties: true }

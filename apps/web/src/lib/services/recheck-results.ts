@@ -156,8 +156,8 @@ function assertRuleStatus(status: string): RecheckRuleStatus {
   corruptResults();
 }
 
-function assertRuleVersion(version: number): 1 | 2 {
-  if (version === 1 || version === 2) return version;
+function assertRuleVersion(version: number): 1 | 2 | 3 {
+  if (version === 1 || version === 2 || version === 3) return version;
   corruptResults();
 }
 
