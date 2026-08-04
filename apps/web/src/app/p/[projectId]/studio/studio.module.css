@@ -535,6 +535,21 @@
   border-color: var(--sf-cobalt);
   outline: none;
 }
+.pendingActionCard {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--sf-cobalt) 52%, var(--sf-border));
+}
+.pendingActionMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pendingActionHint {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-studio-readable-sm);
+  line-height: 1.42;
+}
 .artHead {
   display: flex;
   align-items: flex-start;

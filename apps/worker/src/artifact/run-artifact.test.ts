@@ -1088,7 +1088,7 @@ describe("runArtifact", () => {
     );
   });
 
-  it("fails closed when the finding moves beyond the diagnosis frozen at enqueue", async () => {
+  it("continues from the Action's frozen diagnosis after the finding projection advances", async () => {
     vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
       ...finding,
       summary: "A later diagnosis changed this finding",
@@ -1097,16 +1097,26 @@ describe("runArtifact", () => {
 
     await runArtifact(ctx, { runId: run.id, ...scope });
 
-    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
-    expect(IcpProfilesRepository.prototype.findById).not.toHaveBeenCalled();
-    expect(EvidenceRepository.prototype.listForFindings).not.toHaveBeenCalled();
-    expect(mocks.buildTemplateArtifact).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      request.sourceDiagnosticRunId,
+    );
+    expect(IcpProfilesRepository.prototype.findById).toHaveBeenCalledWith(
+      scope,
+      request.sourceIcpProfileId,
+    );
+    expect(EvidenceRepository.prototype.listForFindings).toHaveBeenCalledWith(
+      scope,
+      [finding.id],
+      {
+        diagnosticRunId: request.sourceDiagnosticRunId,
+        maxRows: MAX_ARTIFACT_EVIDENCE_ROWS + 1,
+      },
+    );
+    expect(mocks.buildTemplateArtifact).toHaveBeenCalled();
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
       attempt,
-      expect.objectContaining({
-        status: "failed",
-        lastErrorCode: "UNAVAILABLE",
-      }),
+      expect.objectContaining({ status: "completed" }),
     );
   });
 

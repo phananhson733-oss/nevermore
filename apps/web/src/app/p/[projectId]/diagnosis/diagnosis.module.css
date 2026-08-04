@@ -617,6 +617,11 @@
 
 .actionCreated {
   grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
   margin: 2px 0 0;
   padding: 8px 11px;
   color: var(--sf-fg);
@@ -626,6 +631,15 @@
   background: var(--sf-mint-soft);
   border: 1px solid var(--sf-mint);
   border-radius: var(--sf-radius-control);
+}
+.actionCreatedLink {
+  color: var(--sf-cobalt-text);
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.actionCreatedLink:hover {
+  color: var(--sf-fg);
 }
 
 .reviewBar {

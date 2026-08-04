@@ -135,6 +135,7 @@ import {
   shouldAutoFetchLinkedAction,
   type LinkedActionRailState,
 } from "./_action-override-view-model";
+import { actionsAwaitingArtifacts } from "./_pending-actions";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -651,6 +652,57 @@ function ArtifactCard({
             {generating ? t("generating") : t("regenerate")}
           </Button>
         ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function PendingActionCard({
+  action,
+  onGenerate,
+}: {
+  readonly action: ArtifactAction;
+  readonly onGenerate: () => void;
+}) {
+  const t = useTranslations("studio");
+  const tBand = useTranslations("priorityBand");
+  const tLane = useTranslations("lane");
+  const artifactType = expectedArtifactType(action);
+  if (artifactType === null) return null;
+  const TypeIcon = ARTIFACT_TYPE_ICON[artifactType];
+
+  return (
+    <Card
+      padding="sm"
+      className={cx(styles.artCard, styles.pendingActionCard)}
+      data-studio-pending-action-id={action.id}
+      data-studio-artifact-type={artifactType}
+    >
+      <div className={styles.artHead}>
+        <span className={styles.artTypeWrap}>
+          <span className={styles.artIcon}>
+            <TypeIcon aria-hidden="true" size={16} />
+          </span>
+          <span className={styles.artType}>
+            {t(`artifactType.${artifactType}`)}
+          </span>
+        </span>
+        <StatusPill tone="warning">{t("pendingGeneration")}</StatusPill>
+      </div>
+
+      <p className={styles.artAction}>{action.title}</p>
+
+      <div className={styles.pendingActionMeta}>
+        <Badge tone="accent">{tBand(action.priorityBand)}</Badge>
+        <Badge>{tLane(action.roadmapLane)}</Badge>
+      </div>
+
+      <p className={styles.pendingActionHint}>{t("pendingGenerationHint")}</p>
+
+      <div className={styles.artActions}>
+        <Button variant="primary" size="sm" onClick={onGenerate}>
+          {t("generateSubmit")}
+        </Button>
       </div>
     </Card>
   );
@@ -2142,6 +2194,16 @@ export function StudioClient({
     selected === null ? undefined : actionById.get(selected.actionId);
   const orderedArtifacts = orderByType(artifacts);
   const queuedArtifacts = artifactsForFilter(orderedArtifacts, typeFilter);
+  const pendingActions = actionsAwaitingArtifacts(
+    generationEligibleActions,
+    artifacts,
+  );
+  const queuedPendingActions = pendingActions.filter((action) => {
+    if (typeFilter === "all") return true;
+    return expectedArtifactType(action) === typeFilter;
+  });
+  const queueHasMore =
+    artifactsQuery.hasNextPage === true || actionsQuery.hasNextPage === true;
   const readyCount = artifacts.filter((a) => a.status === "ready").length;
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
   const selectedEditorDirty =
@@ -3293,9 +3355,10 @@ export function StudioClient({
               </h2>
             </div>
             <Badge>
-              {artifactsInitialLoading
+              {artifactsInitialLoading ||
+              (artifacts.length === 0 && actionsInitialLoading)
                 ? "—"
-                : `${queuedArtifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
+                : `${queuedPendingActions.length + queuedArtifacts.length}${queueHasMore ? "+" : ""}`}
             </Badge>
           </div>
           <div className={styles.queueScroll}>
@@ -3330,14 +3393,29 @@ export function StudioClient({
                   onRetry={() => void artifactsQuery.refetch()}
                 />
               </div>
-            ) : artifacts.length === 0 ? (
+            ) : artifacts.length === 0 && actionsInitialLoading ? (
+              <div className={styles.queueState}>
+                <Spinner size="lg" label={tCommon("loading")} />
+                <p className={styles.stateText}>{tCommon("loading")}</p>
+              </div>
+            ) : artifacts.length === 0 &&
+              pendingActions.length === 0 &&
+              actionsQuery.hasNextPage ? (
+              <div className={styles.queueState}>
+                <EmptyState
+                  title={t("morePendingTitle")}
+                  description={t("morePendingHint")}
+                />
+              </div>
+            ) : artifacts.length === 0 && pendingActions.length === 0 ? (
               <div className={styles.queueState}>
                 <EmptyState
                   title={t("emptyTitle")}
                   description={t("emptyHint")}
                 />
               </div>
-            ) : queuedArtifacts.length === 0 ? (
+            ) : queuedArtifacts.length === 0 &&
+              queuedPendingActions.length === 0 ? (
               <div className={styles.queueState}>
                 <EmptyState
                   title={t("filterEmptyTitle")}
@@ -3346,6 +3424,13 @@ export function StudioClient({
               </div>
             ) : (
               <div className={styles.queueList} data-studio-queue-list="">
+                {queuedPendingActions.map((action) => (
+                  <PendingActionCard
+                    key={action.id}
+                    action={action}
+                    onGenerate={() => openGenerate(action)}
+                  />
+                ))}
                 {queuedArtifacts.map((artifact) => {
                   const action = actionById.get(artifact.actionId);
                   const generationFenced = generationFenceKeys.has(
@@ -3388,9 +3473,13 @@ export function StudioClient({
               </div>
             )}
           </div>
-          {artifactsQuery.hasNextPage || artifactsQuery.isFetchNextPageError ? (
+          {artifactsQuery.hasNextPage ||
+          artifactsQuery.isFetchNextPageError ||
+          actionsQuery.hasNextPage ||
+          actionsQuery.isFetchNextPageError ? (
             <div className={styles.queueFooter}>
-              {artifactsQuery.isFetchNextPageError ? (
+              {artifactsQuery.isFetchNextPageError ||
+              actionsQuery.isFetchNextPageError ? (
                 <p className={styles.paginationError} role="alert">
                   {tCommon("loadMoreError")}
                 </p>
@@ -3398,12 +3487,30 @@ export function StudioClient({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => void artifactsQuery.fetchNextPage()}
-                disabled={artifactsQuery.isFetchingNextPage}
+                onClick={() => {
+                  if (
+                    artifactsQuery.hasNextPage ||
+                    artifactsQuery.isFetchNextPageError
+                  ) {
+                    void artifactsQuery.fetchNextPage();
+                  }
+                  if (
+                    actionsQuery.hasNextPage ||
+                    actionsQuery.isFetchNextPageError
+                  ) {
+                    void actionsQuery.fetchNextPage();
+                  }
+                }}
+                disabled={
+                  artifactsQuery.isFetchingNextPage ||
+                  actionsQuery.isFetchingNextPage
+                }
               >
-                {artifactsQuery.isFetchingNextPage
+                {artifactsQuery.isFetchingNextPage ||
+                actionsQuery.isFetchingNextPage
                   ? tCommon("loadingMore")
-                  : artifactsQuery.isFetchNextPageError
+                  : artifactsQuery.isFetchNextPageError ||
+                      actionsQuery.isFetchNextPageError
                     ? tCommon("retry")
                     : tCommon("loadMore")}
               </Button>
