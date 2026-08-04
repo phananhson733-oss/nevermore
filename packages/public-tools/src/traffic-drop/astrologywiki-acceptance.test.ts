@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildTrafficDropReport } from "./report.ts";
+import { RANKING_UPDATE_TABLE } from "./core-updates.ts";
 import type { ManualActionStatus } from "./manual-action.ts";
 import { ASTROLOGYWIKI_DAILY } from "./__tests__/astrologywiki-fixture.ts";
 
@@ -46,15 +47,47 @@ describe("astrologywiki, on every manual-action answer", () => {
     }
   });
 
-  it("refuses the timeline comparison rather than reporting our own staleness", () => {
-    // The event is in July 2026; the shipped table was last checked in 2025.
-    // "No update around your decline" here would be a false negative
-    // manufactured entirely by our maintenance schedule — and on this sample
-    // it would have been a false negative that happened to be right, which is
-    // the most dangerous kind.
-    expect(
-      report("user_reports_none").siteSignals.coreUpdateTimeline,
-    ).toMatchObject({
+  it("places the event on the timeline and finds nothing overlapping it", () => {
+    // The human investigation put the cause at two time-sensitive content
+    // pools expiring together, with no algorithm update involved. The table
+    // now reaches past this event, so the comparison actually runs — and it
+    // agrees: the nearest announced update ended 2026-06-26, three weeks
+    // before the window opens.
+    //
+    // An empty list is NOT evidence that nothing algorithmic happened; Google
+    // adjusts ranking continuously and announces only some of it, and the copy
+    // says so. What this pins is that the two states stay distinct — an empty
+    // comparison and a comparison that could not run are different facts, and
+    // only one of them is about the visitor's site.
+    const timeline = report("user_reports_none").siteSignals.coreUpdateTimeline;
+
+    expect(timeline.kind).toBe("compared");
+    if (timeline.kind !== "compared") return;
+    expect(timeline.eventWindow).toEqual({
+      startDate: "2026-07-15",
+      endDate: "2026-07-22",
+      dayCount: 8,
+    });
+    expect(timeline.overlapping).toEqual([]);
+  });
+
+  it("would still refuse rather than report our own staleness", () => {
+    // The guard matters more than the table's contents. The day someone stops
+    // maintaining it, "no update around your decline" becomes a false negative
+    // manufactured entirely by our maintenance schedule — and on a sample like
+    // this one it would be a false negative that happened to be right, which
+    // is the kind nobody catches.
+    const stale = buildTrafficDropReport({
+      daily: ASTROLOGYWIKI_DAILY,
+      completedAt: "2026-07-31T09:00:00.000Z",
+      manualAction: "user_reports_none",
+      rankingUpdateTable: {
+        ...RANKING_UPDATE_TABLE,
+        verifiedThrough: "2026-07-01",
+      },
+    }).result;
+
+    expect(stale.siteSignals.coreUpdateTimeline).toMatchObject({
       kind: "not_available",
       reason: "table_not_verified_through_event",
     });

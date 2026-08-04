@@ -89,12 +89,26 @@ export interface RankingUpdateTable {
  * - move `verifiedThrough` to the day you checked, not to the last entry's
  *   date — those are different facts;
  * - bump `version`.
+ *
+ * A note on precision. The dashboard publishes a rollout START and a DURATION
+ * ("16 days, 18 hours"), not an end date, so every `endDate` here is that start
+ * plus that duration, rounded to a calendar day. It can be a day out either way
+ * depending on the dashboard's timezone. That does not matter for what this
+ * table is for: the event it is compared against is a span of a week or more,
+ * and the comparison is context rather than evidence. It would matter the
+ * moment anyone tried to build a claim out of a same-day coincidence, which is
+ * why it is written down rather than left as implied precision.
+ *
+ * The derivation was checked against the one entry this table already held
+ * independently — June 2025 core update, start 2025-06-30, duration 16 days
+ * 18 hours, giving the 2025-07-17 that was already recorded — and the two 2026
+ * core updates were confirmed against Search Engine Land's completion reports.
  */
 export const RANKING_UPDATE_TABLE: RankingUpdateTable = {
-  version: "2025-07-17.v1",
+  version: "2026-08-04.v2",
   source:
     "https://status.search.google.com/products/rGHU1u87FJnkP6W2GwMi/history",
-  verifiedThrough: "2025-07-17",
+  verifiedThrough: "2026-08-04",
   updates: [
     {
       id: "core-2023-03",
@@ -179,6 +193,58 @@ export const RANKING_UPDATE_TABLE: RankingUpdateTable = {
       kind: "core",
       startDate: "2025-06-30",
       endDate: "2025-07-17",
+    },
+    {
+      id: "spam-2025-08",
+      name: "August 2025 spam update",
+      kind: "spam",
+      startDate: "2025-08-26",
+      endDate: "2025-09-22",
+    },
+    {
+      id: "core-2025-12",
+      name: "December 2025 core update",
+      kind: "core",
+      startDate: "2025-12-11",
+      endDate: "2025-12-29",
+    },
+    {
+      // Listed on the Ranking history page, so it belongs here — but it is a
+      // Discover update, and a visitor looking at Search performance should be
+      // able to see that from the name rather than have it silently filtered.
+      id: "other-2026-02",
+      name: "February 2026 Discover update",
+      kind: "other",
+      startDate: "2026-02-05",
+      endDate: "2026-02-27",
+    },
+    {
+      id: "spam-2026-03",
+      name: "March 2026 spam update",
+      kind: "spam",
+      startDate: "2026-03-24",
+      endDate: "2026-03-25",
+    },
+    {
+      id: "core-2026-03",
+      name: "March 2026 core update",
+      kind: "core",
+      startDate: "2026-03-27",
+      endDate: "2026-04-08",
+    },
+    {
+      id: "core-2026-05",
+      name: "May 2026 core update",
+      kind: "core",
+      startDate: "2026-05-21",
+      endDate: "2026-06-02",
+    },
+    {
+      id: "spam-2026-06",
+      name: "June 2026 spam update",
+      kind: "spam",
+      startDate: "2026-06-24",
+      endDate: "2026-06-26",
     },
   ],
 };
