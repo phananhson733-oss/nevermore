@@ -76,6 +76,78 @@ describe("GET /api/mvp/health/ready", () => {
     expect(logged).toContain('"waiting":0');
   });
 
+  it("names the dependency that failed instead of only saying something did", async () => {
+    // A redacted 503 costs an incident: on 2026-08-04 finding out *which* of the
+    // four checks was down needed elimination plus a direct production query.
+    // The 200 response already publishes these names, so naming the failed one
+    // discloses nothing new.
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    query
+      .mockReset()
+      .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [{ migration_version: "0005_stale" }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 });
+    checkWorkerReadiness.mockResolvedValueOnce(true);
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/mvp/health/ready"),
+    );
+    const body = (await response.json()) as { readonly detail: string };
+
+    expect(response.status).toBe(503);
+    expect(body.detail).toContain("migration");
+    // Only the failing check is named; the healthy ones stay out of it.
+    expect(body.detail).not.toContain("worker");
+    expect(body.detail).not.toContain("pgbossSchema");
+    // The stale version itself is schema detail and must not leak.
+    expect(body.detail).not.toContain("0005_stale");
+  });
+
+  it("names every failed dependency when more than one is down", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    query
+      .mockReset()
+      .mockResolvedValueOnce({ rows: [{ one: 1 }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [{ migration_version: "0005_stale" }],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/mvp/health/ready"),
+    );
+    const body = (await response.json()) as { readonly detail: string };
+
+    expect(response.status).toBe(503);
+    expect(body.detail).toContain("migration");
+    expect(body.detail).toContain("pgbossSchema");
+    // worker was never reached, so it is unknown rather than failed.
+    expect(body.detail).not.toContain("worker");
+    expect(checkWorkerReadiness).not.toHaveBeenCalled();
+  });
+
+  it("blames no dependency when the probe never reached one", async () => {
+    // The first query throws, so nothing was actually contacted. Reporting
+    // "database" as failed would be a guess; the honest answer is that the
+    // probe did not complete.
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    query.mockReset().mockRejectedValueOnce(new Error("connection refused"));
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/mvp/health/ready"),
+    );
+    const body = (await response.json()) as { readonly detail: string };
+
+    expect(response.status).toBe(503);
+    expect(body.detail).toContain("did not complete");
+    expect(body.detail).not.toContain("database");
+    expect(body.detail).not.toContain("connection refused");
+  });
+
   it("returns dependency unavailable when the queue exists but no worker is live", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     checkWorkerReadiness.mockResolvedValueOnce(false);
