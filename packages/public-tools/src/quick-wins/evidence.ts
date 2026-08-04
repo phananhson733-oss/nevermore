@@ -127,6 +127,9 @@ export function buildEvidenceTable(
         baselineCtr,
       ),
       baselineBandUnderOnePercent: baselineCtr < LOW_CTR_BAND_THRESHOLD,
+      // Provisional. `report.ts` narrows it once it knows which queries got a
+      // wording candidate; see `track.ts` for why that cannot be decided here.
+      track: "read_the_serp",
     });
   }
 

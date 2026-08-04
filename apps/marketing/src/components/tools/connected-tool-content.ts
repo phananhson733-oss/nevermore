@@ -67,8 +67,12 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         text: "What counts as a normal click-through rate on your site, at each position band, computed from your own non-brand queries over the last 28 complete days.",
       },
       {
-        name: "Review the gaps, largest first",
-        text: "Every search query whose click-through rate falls below what your own site earns at that position, ranked by the size of the shortfall. Sort any column, or take the whole table away as CSV.",
+        name: "Start with what to do next",
+        text: "Every run opens with a short list of moves. Each one is gated on a number in the same report and names the rows it came from \u2014 including the moves not to make. None of them predicts what a change would do.",
+      },
+      {
+        name: "Then read the gaps, largest first",
+        text: "Every search query whose click-through rate falls below what your own site earns at that position, ranked by the size of the shortfall. Each row says which checking path it is on, so you can filter to the handful worth a morning. Sort any column, or take the whole table away as CSV.",
       },
       {
         name: "Where we can, we show you a query's page next to one that does better",
@@ -89,6 +93,10 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         label: "The gap",
         body: "Expected clicks minus observed clicks. A measured difference between two observed numbers, not a forecast of what a change would recover.",
+      },
+      {
+        label: "What to do next",
+        body: "A short list of moves drawn from this run: which rows need a look at the search results page, which conclusions the evidence does not support, and where the picture is incomplete enough that you should go elsewhere for it. Every entry names what put it there.",
       },
       {
         label: "What we cannot explain",
@@ -141,6 +149,12 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
         answer:
           "From your own site. We look for a page in the same position band earning a clearly higher click-through rate, show you which page that is, and draft on the same pattern. If there is no comparable page there is no draft — we do not fall back to a generic template.",
         requiresDrafts: true,
+      },
+      {
+        question:
+          "It will not tell me why the CTR is low, so what do I actually do?",
+        answer:
+          "It tells you where to look, and in what order. A row short by more than a click sends you to the search results page for that query \u2014 an AI Overview or a featured snippet takes the click before your title is ever read, we do not observe those, and you can in about a minute. When a whole position band earns under 1%, the report says so and tells you not to rewrite a dozen titles over what is one fact. And when most of your queries are too small to measure at all, it points you at the Search Console report that does see them.",
       },
       {
         question: "How often should I check?",
@@ -300,8 +314,12 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         text: "用你自己的非品牌查询词，算出最近 28 个完整日里，你的网站在每个位置段上正常的点击率是多少。",
       },
       {
-        name: "从缺口最大的看起",
-        text: "所有点击率低于你自己网站在该位置表现的查询词，按缺口大小排序。任意一列都能排序，整张表也能导出成 CSV。",
+        name: "先看「接下来做什么」",
+        text: "每次运行都以一份很短的行动清单开头。每一条都挂在同一份报告里的某个数字上，并会点名它是从哪几行来的——包括不该做的那几件。它们都不预测「改了会怎样」。",
+      },
+      {
+        name: "再从缺口最大的看起",
+        text: "所有点击率低于你自己网站在该位置表现的查询词，按缺口大小排序。每一行会说明它属于哪条检查路径，你可以只筛出值得花一个上午的那几条。任意一列都能排序，整张表也能导出成 CSV。",
       },
       {
         name: "有对照页时，把它放在旁边给你看",
@@ -322,6 +340,10 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         label: "缺口",
         body: "预期点击减去实际点击。这是两个实测数字之间的差值，不是「改动之后能拿回多少」的预测。",
+      },
+      {
+        label: "接下来做什么",
+        body: "从这次运行里得出的一份短清单：哪些行需要你去看一眼搜索结果页，哪些结论是证据不支持的，以及在哪些地方这张表不完整到你该去别处看。每一条都会写明是什么把它放进来的。",
       },
       {
         label: "我们解释不了的部分",
@@ -374,6 +396,11 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
         answer:
           "来自你自己的网站。我们在同一个位置段里找点击率明显更高的页面，把是哪一个页面告诉你，再照同样的措辞模式起草。找不到合格对照页就不出草稿——我们不会退回到通用模板。",
         requiresDrafts: true,
+      },
+      {
+        question: "它不告诉我点击率为什么低，那我到底该做什么？",
+        answer:
+          "它告诉你去看哪里、按什么顺序看。缺口超过一次点击的行，会把你送去看那个词的搜索结果页——AI 概览或精选摘要会在有人读到你的标题之前就把点击拿走，这些我们不检测，而你一分钟就能看到。整个位置段点击率低于 1% 的情况，报告会直接说明，并告诉你不要为同一件事去改十几条标题。而当你大部分查询词小到根本测不了时，它会指给你那个真的能看见它们的报告。",
       },
       {
         question: "多久看一次合适？",

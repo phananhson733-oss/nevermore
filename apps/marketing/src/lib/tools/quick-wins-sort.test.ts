@@ -24,6 +24,7 @@ function row(
     clickGap: 5,
     tailProbability: 0.02,
     baselineBandUnderOnePercent: false,
+    track: "read_the_serp",
     ...overrides,
   };
 }

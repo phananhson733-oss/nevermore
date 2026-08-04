@@ -9,7 +9,9 @@ import type { GscWindow } from "../gsc-analytics/window.ts";
 import { buildSiteCtrCurve } from "../site-baseline/ctr-curve.ts";
 import { splitBrandQueries } from "../site-baseline/normalize.ts";
 import type { GscQueryRow } from "../site-baseline/types.ts";
+import { buildQuickWinActions } from "./actions.ts";
 import { buildEvidenceTable } from "./evidence.ts";
+import { withTracks } from "./track.ts";
 import type {
   QuickWinAnonymization,
   QuickWinLimitationCode,
@@ -17,7 +19,15 @@ import type {
   QuickWinsEnvelope,
 } from "./types.ts";
 
-export const QUICK_WINS_SCHEMA_VERSION = "seo_quick_wins.evidence.v1";
+/**
+ * Bumped from v1: every row gained a `track` and the result gained `actions`.
+ *
+ * The measured numbers are unchanged — a v1 and a v2 run over the same window
+ * produce identical rates and gaps. What changed is that the report now says
+ * which checking path each row belongs to and what to do with the table, so a
+ * consumer written against v1 would silently drop both.
+ */
+export const QUICK_WINS_SCHEMA_VERSION = "seo_quick_wins.evidence.v2";
 
 /**
  * Missing share above which the anonymization gap is raised as a limitation.
@@ -210,6 +220,13 @@ export function buildQuickWinsReport(input: QuickWinsInput): QuickWinsEnvelope {
     }
   }
 
+  // Tracks are assigned here rather than in `buildEvidenceTable` because one
+  // of them depends on whether a wording candidate exists, and candidates are
+  // produced from the finished table.
+  const drafts = input.drafts ?? [];
+  const draftedQueries = drafts.map((draft) => draft.query);
+  const rows = withTracks(table.rows, new Set(draftedQueries));
+
   return createPublicToolResult(
     {
       tool: "seo_quick_wins",
@@ -219,13 +236,22 @@ export function buildQuickWinsReport(input: QuickWinsInput): QuickWinsEnvelope {
     },
     {
       window: input.window,
-      rows: table.rows,
+      rows,
+      actions: buildQuickWinActions({
+        rows,
+        curve,
+        lowCtrBands: table.lowCtrBands,
+        excluded: table.excluded,
+        anonymization,
+        draftedQueries,
+        anonymizationGapThreshold: ANONYMIZATION_GAP_THRESHOLD,
+      }),
       curve,
       lowCtrBands: table.lowCtrBands,
       excluded: table.excluded,
       anonymization,
       limitations,
-      drafts: input.drafts ?? [],
+      drafts,
       draftsSkipped: input.draftsSkipped ?? {},
     },
   );

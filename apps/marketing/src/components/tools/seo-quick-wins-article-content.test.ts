@@ -86,8 +86,8 @@ describe("SEO Quick Wins page copy", () => {
 
     it(`keeps the full FAQ and every how-to step (${locale})`, () => {
       const content = getConnectedToolContent(locale, "seo-quick-wins");
-      expect(content.faq).toHaveLength(10);
-      expect(content.steps).toHaveLength(4);
+      expect(content.faq).toHaveLength(11);
+      expect(content.steps).toHaveLength(5);
       for (const step of content.steps) {
         expect(step.name.length).toBeGreaterThan(0);
         expect(step.text.length).toBeGreaterThan(0);

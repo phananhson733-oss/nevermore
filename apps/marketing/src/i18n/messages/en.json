@@ -1249,7 +1249,7 @@
       "rerun": "Run again",
       "window": "Measured over {startDate} to {endDate}, Pacific time.",
       "tableTitle": "Evidence table",
-      "tableIntro": "Every query with enough impressions to measure, compared against what your own site earns at the same position. Sorted by the size of the gap.",
+      "tableIntro": "Every query with enough impressions to measure, compared against what your own site earns at the same position. Sorted by the size of the gap. The last column says which checking path the row is on — that is a triage, not a verdict.",
       "columns": {
         "query": "Query",
         "position": "Position",
@@ -1259,7 +1259,8 @@
         "baselineCtr": "Your site here",
         "expectedClicks": "Expected",
         "clickGap": "Gap",
-        "tailProbability": "Tail probability"
+        "tailProbability": "Tail probability",
+        "track": "Next step"
       },
       "tableCaption": "Search queries with enough impressions to measure, each compared against what your own site earns at the same position.",
       "sortBy": "Sort by {column}",
@@ -1338,7 +1339,72 @@
         "unparseable": "the draft came back in an unusable form",
         "model_unavailable": "the drafting model was unavailable",
         "page_dimension_unavailable": "the page-level data needed for drafts was unavailable"
-      }
+      },
+      "actionsTitle": "What to do next",
+      "actionsIntro": "Every line here is gated on a number in this same report, and names the rows it came from. None of it predicts what a change would do — this tool does not model that, and the places where you would most want it to are exactly the places it says so.",
+      "actionKinds": {
+        "do": "Do now",
+        "external_data": "Go look",
+        "avoid": "Don’t"
+      },
+      "actionQueriesLabel": "Queries",
+      "actionQueriesMore": "+{count} more in the table",
+      "actions": {
+        "apply_wording_candidates": {
+          "title": "Compare each candidate against the page it copies",
+          "body": "For {candidateCount} of your queries we found a page on your own site, in the same position band, earning clearly more. The drafts further down rewrite the title and description in that page’s pattern. Open both before you apply anything: you are copying a pattern that demonstrably works on your site, which beats any template — but it is still a pattern, not an explanation of the gap."
+        },
+        "open_serps_for_top_gaps": {
+          "title": "Search these yourself and look at what sits above you",
+          "body": "{serpRowCount} rows fall short of your own curve by more than a single click and have no comparable page on your site to learn from. The missing piece is the results page itself: an AI Overview, a featured snippet, a video carousel or a People-Also-Ask block takes the click before your listing is read, and we observe none of them. Search each query in a private window and note what sits above position 1. If the page is plain and your listing is still skipped, then the title and description are the candidate. The largest shortfall here is {largestGapClicks} clicks."
+        },
+        "size_the_withheld_share": {
+          "title": "Find out how much never reached this table",
+          "body": "Search Console withholds queries below an undisclosed volume threshold — here that is {withheldImpressionShare} of impressions and {withheldClickShare} of clicks, where a dash means we could not size it, which is never the same as zero. Open the Performance report and compare its own totals against the query tab. The difference is the part no query-level tool can see, and on a small site most of the demand lives there."
+        },
+        "check_pages_report": {
+          "title": "Switch to the Pages report — most of your queries are too small to appear here",
+          "body": "{belowFloorCount} queries had fewer than 100 impressions in this window, against {measuredRowCount} that cleared the floor. One click either way would change their rate completely, so we leave them out rather than publish a rate we do not believe. Search Console’s Pages tab aggregates them: a pattern that is invisible query by query is often plain page by page."
+        },
+        "read_low_band_as_one_finding": {
+          "title": "Don’t rewrite a low band one query at a time",
+          "body": "Positions {bands} earn under 1% overall on your site, and {lowBandRowCount} of the rows above sit there. Every one of them is below baseline for the same structural reason, so they are one fact rather than {lowBandRowCount}. Published tables predict 3–7% at these positions; we tested that against a real site and measured a tenth of it. Whatever is happening applies to the band — start there, not with the individual titles."
+        },
+        "avoid_curve_as_law": {
+          "title": "Your curve does not fall the way rank tables say it should",
+          "body": "Positions {firstBand} earn {higherBandCtr} on your site, while {secondBand} — ranking lower — earn {lowerBandCtr}. That is not a measurement error, it is what your queries do: what people search for changes with the position you hold, and a lower band full of specific, high-intent queries can out-earn a higher band full of vague ones. It also means the baseline inside the higher band is weak evidence about any single row in it."
+        },
+        "avoid_gap_as_forecast": {
+          "title": "The gap column adds up to {totalGapClicks} clicks. Rewriting will not hand them to you.",
+          "body": "The gap is expected clicks minus observed clicks, where expected comes from your own site’s rate at that position. Both sides are measured and so is the difference. It is not a forecast: nothing here models the effect of a change, and the leading cause of gaps like these is a results page that answered the query so nobody needed to click. Read {totalGapClicks} as the size of the question, not the size of the prize."
+        }
+      },
+      "tracks": {
+        "compare_with_own_page": {
+          "label": "Has a control",
+          "hint": "A page on your own site, in the same position band, earns clearly more. That page is the comparison — there is a draft below modelled on it."
+        },
+        "read_the_serp": {
+          "label": "Check the SERP",
+          "hint": "Short by more than a click, with no comparable page on your site. The missing information is on the results page, which you can see and we cannot."
+        },
+        "band_is_the_story": {
+          "label": "Band-wide",
+          "hint": "The whole position band earns under 1%. These rows are below baseline for one shared reason, so rewriting them one at a time treats one fact as many."
+        },
+        "gap_within_noise": {
+          "label": "Under one click",
+          "hint": "The shortfall is smaller than a single click. Clicks are counted in whole numbers, so prediction and observation agree as closely as the unit allows."
+        },
+        "at_or_above_curve": {
+          "label": "At or above",
+          "hint": "At or better than what your site earns at this position. Kept in the table as context, not as work."
+        }
+      },
+      "trackFilterAll": "All",
+      "summaryRowsLabel": "Evidence rows",
+      "contextTitle": "What this is measured on, and what it leaves out",
+      "contextIntro": "Everything above rests on these. They are folded away rather than dropped, because a report that only shows its findings is claiming a completeness it does not have."
     },
     "semrush": "Semrush",
     "cms": "CMS",
