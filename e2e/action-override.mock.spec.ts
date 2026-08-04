@@ -1120,7 +1120,7 @@ test("the bounded page cap surfaces the search-limit state, not loading", async 
 
 // -------------------------------------------------- coverage honesty (D9) --
 
-test("an action without an artifact has no Execution entry; a dismissed one also leaves the picker", async ({
+test("a planned action without an artifact is ready to generate; a dismissed one stays absent", async ({
   page,
 }) => {
   const withArtifact = overrideActionFixture(1, {
@@ -1140,16 +1140,30 @@ test("an action without an artifact has no Execution entry; a dismissed one also
   });
   await openExecution(page);
 
-  // Only the artifact-backed action is reachable through the queue + rail.
+  // The artifact-backed action remains the only canonical artifact row.
   await expect(
     page.locator("[data-studio-queue] [data-studio-artifact-id]"),
   ).toHaveCount(1);
   await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
 
-  // The artifact-less action is visible in the picker (generate first), the
-  // dismissed artifact-less one is not visible anywhere on Execution.
+  // A confirmed/planned action no longer disappears just because generation
+  // has not happened yet: it is visible as a direct pending-generation card.
+  const queue = page.locator("[data-studio-queue]");
+  const pendingCard = queue.locator(
+    `[data-studio-pending-action-id="${noArtifact.id}"]`,
+  );
+  await expect(pendingCard).toHaveCount(1);
+  await expect(
+    pendingCard.getByText("Planned without artifact", { exact: true }),
+  ).toBeVisible();
+
+  // It is also selectable from the canonical generation picker. A dismissed
+  // artifact-less action remains absent from both surfaces.
   await page.getByRole("button", { name: "Generate artifact" }).click();
-  await expect(page.getByText("Planned without artifact")).toBeVisible();
+  const picker = page.getByLabel("Pick an action");
+  await expect(
+    picker.getByText("Planned without artifact", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Dismissed without artifact")).toHaveCount(0);
 });
 
