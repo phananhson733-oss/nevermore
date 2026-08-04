@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildContentDecayMonitor,
+  CONTENT_DECAY_LIMITATIONS,
   CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
   resolveContentDecayTimeZone,
   type ContentDecayMonitor,
@@ -147,7 +148,9 @@ describe("resolveContentDecayTimeZone", () => {
     expect(resolved.timeZone).toBe("UTC");
     expect(resolved.source).toBe("fallback");
     expect(resolved.limitations.join(" ")).toContain("UTC");
-    expect(resolved.limitations.join(" ")).toContain("未提供有效时区");
+    expect(resolved.limitations).toContain(
+      CONTENT_DECAY_LIMITATIONS.timeZoneFallback,
+    );
   });
 });
 
@@ -485,7 +488,9 @@ describe("buildContentDecayMonitor", () => {
 
     expect(result.alerts).toEqual([]);
     expect(result.status).toBe("partial");
-    expect(result.limitations.join(" ")).toContain("缺失、partial 或歧义");
+    expect(result.limitations).toContain(
+      CONTENT_DECAY_LIMITATIONS.neverBackfilled,
+    );
   });
 
   it("does not fall back to an older available snapshot when the canonical snapshot for that month is partial", () => {
@@ -702,6 +707,8 @@ describe("buildContentDecayMonitor", () => {
     expect(result.scheduleState).toBe("not_configured");
     expect(result.status).toBe("unavailable");
     expect(result.alerts).toEqual([]);
-    expect(result.limitations.join(" ")).toContain("尚未接入月度自动任务");
+    expect(result.limitations).toContain(
+      CONTENT_DECAY_LIMITATIONS.readTimeOnly,
+    );
   });
 });

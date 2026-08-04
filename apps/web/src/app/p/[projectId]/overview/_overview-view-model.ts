@@ -341,6 +341,57 @@ export function overviewGrowthMapHref(
 }
 
 /**
+ * The click floor below which a traffic decline is not called. Mirrors
+ * `CONTENT_DECAY_MIN_PREVIOUS_CLICKS` in @sf/engine, which cannot be imported
+ * here: this module reaches the browser bundle, and the engine barrel pulls
+ * @sf/sources -> undici -> node:assert with it. `_overview-view-model.test.ts`
+ * asserts the two stay equal, so the duplication cannot drift unnoticed.
+ */
+export const OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS = 100;
+
+export type ContentDecayLimitationKey =
+  | "checkpointWindow"
+  | "gscTopRows"
+  | "minimumSample"
+  | "neverBackfilled"
+  | "readTimeOnly"
+  | "timeZoneFallback";
+
+/**
+ * Engine limitation sentences, copied verbatim, following the same convention
+ * as the Growth Map's PLATFORM_LIMITATION_KEYS. The paired test walks the real
+ * engine export and fails if any sentence here stops matching.
+ */
+const CONTENT_DECAY_LIMITATION_KEYS: Readonly<
+  Record<string, ContentDecayLimitationKey>
+> = {
+  "Monthly checkpoints read the trailing 28-day metrics of that month's authoritative GSC snapshot, which is not a calendar-month total.":
+    "checkpointWindow",
+  "Search Console returns top rows by clicks, so low-click pages can be missing.":
+    "gscTopRows",
+  [`A traffic decline is only called when the previous checkpoint carries at least ${OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS} clicks; a percentage swing on a smaller sample is not decay evidence.`]:
+    "minimumSample",
+  "Any missing, partial, or ambiguous observation is treated as unavailable and never backfilled with zero.":
+    "neverBackfilled",
+  "This is a read-time projection for the Overview; no monthly job or push delivery is wired yet.":
+    "readTimeOnly",
+  "Neither the provider nor the project supplied a valid time zone, so monthly checkpoints are interpreted in UTC rather than guessed from market or language.":
+    "timeZoneFallback",
+};
+
+/**
+ * Translate only the platform limitations the Overview itself owns. Anything
+ * else — provider or source wording that may reach the customer verbatim —
+ * returns null and is rendered exactly as the engine produced it, because
+ * guessing a key would put words in a provider's mouth.
+ */
+export function overviewContentDecayLimitationKey(
+  limitation: string,
+): ContentDecayLimitationKey | null {
+  return CONTENT_DECAY_LIMITATION_KEYS[limitation] ?? null;
+}
+
+/**
  * Competitor candidates are reviewed in the Growth Map's competitor library.
  * That surface accepts `selectedCompetitorId` and a free-text query but no
  * review-status filter, so this entry targets the library itself instead of

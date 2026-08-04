@@ -21,6 +21,10 @@ import {
   type GrowthMapUrlPortfolioResponse,
 } from "../packages/contracts/src/index.ts";
 import {
+  CONTENT_DECAY_LIMITATIONS,
+  CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
+} from "../packages/engine/src/index.ts";
+import {
   E2E_PROJECT_ID,
   E2E_SITE_ID,
   E2E_SNAPSHOT_PROVENANCE,
@@ -920,7 +924,8 @@ test("content-decay advice stays in the existing priority queue and deep-links t
         timezoneSource: "provider",
         latestCheckpointMonth: "2026-06",
         limitations: [
-          "Monthly scheduling is not connected; this is a read-time projection.",
+          CONTENT_DECAY_LIMITATIONS.readTimeOnly,
+          CONTENT_DECAY_LIMITATIONS.minimumSample,
         ],
         alerts: [
           {
@@ -987,6 +992,22 @@ test("content-decay advice stays in the existing priority queue and deep-links t
   await expect(page.locator("[data-overview-page] section")).toHaveCount(4);
   await expect(page.getByText("自动执行内容复审", { exact: true })).toHaveCount(
     0,
+  );
+
+  // The click floor decides whether the customer is shown a warning at all, so
+  // it has to be readable — and readable in the customer's own language. The
+  // engine authors limitations in English; this is the assertion that proves
+  // the Overview translated them instead of leaking the raw sentence through.
+  const decayLimitations = priority.getByText("这些信号是怎么判定的", {
+    exact: true,
+  });
+  await expect(decayLimitations).toBeVisible();
+  await decayLimitations.click();
+  await expect(priority).toContainText(
+    `只有上一个检查点点击数不低于 ${CONTENT_DECAY_MIN_PREVIOUS_CLICKS} 时才判定流量下滑`,
+  );
+  await expect(priority).not.toContainText(
+    CONTENT_DECAY_LIMITATIONS.minimumSample,
   );
 });
 
@@ -1375,4 +1396,3 @@ test("printing Overview leaves the shell chrome out of the output", async ({
   await page.emulateMedia({ media: "screen" });
   await expect(sidebar).toBeVisible();
 });
-

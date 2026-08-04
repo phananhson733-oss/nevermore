@@ -116,9 +116,17 @@ export type {
 } from "./pipeline.ts";
 
 export { ctrBenchmark, ctrThreshold } from "./util/ctr-benchmark.ts";
-export { matchIntent, pageFieldBag, intentTokens } from "./util/intent-match.ts";
+export {
+  matchIntent,
+  pageFieldBag,
+  intentTokens,
+} from "./util/intent-match.ts";
 export { hasProofBlock, isProofBlock } from "./util/proof-block.ts";
-export { isCommercialUrl, isPriorityUrl, priorityUrlSet } from "./util/page-role.ts";
+export {
+  isCommercialUrl,
+  isPriorityUrl,
+  priorityUrlSet,
+} from "./util/page-role.ts";
 export {
   competitorEntityIdFromSubjectRef,
   competitorEntitySubjectRef,
@@ -127,6 +135,8 @@ export {
 export {
   buildContentDecayMonitor,
   compareContentDecayAlerts,
+  CONTENT_DECAY_LIMITATIONS,
+  CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
   CONTENT_DECAY_MONITOR_VERSION,
   CONTENT_DECAY_RANK_THRESHOLD,
   CONTENT_DECAY_TRAFFIC_THRESHOLD,

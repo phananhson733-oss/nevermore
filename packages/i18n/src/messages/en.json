@@ -814,7 +814,16 @@
         },
         "contentHealth": {
           "title": "Content health signals",
-          "note": "Observed signals — they do not take one of the three decision slots above."
+          "note": "Observed signals — they do not take one of the three decision slots above.",
+          "limitationsTitle": "How these signals are decided",
+          "limitations": {
+            "checkpointWindow": "Monthly checkpoints read the trailing 28-day metrics of that month's authoritative GSC snapshot, which is not a calendar-month total.",
+            "gscTopRows": "Search Console returns top rows by clicks, so low-click pages can be missing.",
+            "minimumSample": "A traffic decline is only called when the previous checkpoint carries at least {count} clicks; a percentage swing on a smaller sample is not decay evidence.",
+            "neverBackfilled": "Any missing, partial, or ambiguous observation is treated as unavailable and never backfilled with zero.",
+            "readTimeOnly": "This is a read-time projection for the Overview; no monthly job or push delivery is wired yet.",
+            "timeZoneFallback": "Neither the provider nor the project supplied a valid time zone, so monthly checkpoints are interpreted in UTC rather than guessed from market or language."
+          }
         },
         "loading": "Loading the current Opportunity…",
         "error": "The current Opportunity could not be loaded.",

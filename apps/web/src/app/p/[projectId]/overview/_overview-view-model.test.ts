@@ -4,6 +4,10 @@ import type {
   GrowthMapUrlPortfolioItem,
   GrowthMapUrlPortfolioResponse,
 } from "@sf/contracts";
+import {
+  CONTENT_DECAY_LIMITATIONS,
+  CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
+} from "@sf/engine";
 import { describe, expect, it } from "vitest";
 import type { OverviewAction } from "@/lib/api";
 import type { SourceConnection } from "@/lib/api/hooks-sources";
@@ -13,6 +17,8 @@ import {
   buildPortfolioSummary,
   buildVerifiedResultSummary,
   overviewCompetitorLibraryHref,
+  overviewContentDecayLimitationKey,
+  OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
   selectFirstReviewableFinding,
@@ -577,5 +583,41 @@ describe("Overview customer projection", () => {
     ).toBe(
       `/p/${PROJECT_ID}/growth-map?object=pages&selectedSitePageId=00000000-0000-4000-8000-000000000071&findingId=00000000-0000-4000-8000-000000000072`,
     );
+  });
+});
+
+describe("Overview content-decay limitations", () => {
+  it("maps every engine limitation to localized copy", () => {
+    for (const limitation of Object.values(CONTENT_DECAY_LIMITATIONS)) {
+      expect(overviewContentDecayLimitationKey(limitation)).not.toBeNull();
+    }
+  });
+
+  it("keeps unknown limitation wording verbatim instead of guessing a key", () => {
+    // Source/provider wording reaches the customer unchanged; only platform
+    // chrome the Overview actually owns may be replaced with localized copy.
+    expect(
+      overviewContentDecayLimitationKey("A limitation the Overview never wrote."),
+    ).toBeNull();
+  });
+
+  it("keeps the mirrored click floor equal to the engine's", () => {
+    // The browser bundle cannot import @sf/engine (its barrel drags in
+    // node:assert via @sf/sources), so the threshold is mirrored in the view
+    // model. This assertion is the only thing stopping the two from drifting.
+    expect(OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS).toBe(
+      CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
+    );
+  });
+
+  it("tracks the sample threshold through the exported constant", () => {
+    // Guards the one interpolated limitation: if the threshold changes and the
+    // constant is not the single source, the map would silently miss.
+    expect(CONTENT_DECAY_LIMITATIONS.minimumSample).toContain(
+      String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS),
+    );
+    expect(
+      overviewContentDecayLimitationKey(CONTENT_DECAY_LIMITATIONS.minimumSample),
+    ).toBe("minimumSample");
   });
 });

@@ -14,6 +14,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { getMessages } from "@sf/i18n";
 import { NextIntlClientProvider } from "next-intl";
+import {
+  CONTENT_DECAY_LIMITATIONS,
+  CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
+} from "@sf/engine";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/client";
 
@@ -68,6 +72,7 @@ const COPY = {
   lensError: "The project-wide opportunity mix could not be loaded.",
   lensNoData: "The current frozen audit has no Opportunity to classify.",
   toReview: "Customer decisions, one by one",
+  healthLimitationsTitle: "How these signals are decided",
 } as const;
 
 /* ------------------------------------------------------------------ stubs */
@@ -211,6 +216,7 @@ function workspace(
     readonly topActions?: readonly unknown[];
     readonly decisionReminders?: readonly unknown[];
     readonly contentDecayAlerts?: readonly unknown[];
+    readonly contentDecayLimitations?: readonly string[];
   } = {},
 ) {
   return {
@@ -218,7 +224,12 @@ function workspace(
     frozenDiagnosticRunId: RUN_ID,
     topActions: input.topActions ?? [],
     decisionReminders: input.decisionReminders ?? [],
-    contentDecayMonitor: { alerts: input.contentDecayAlerts ?? [] },
+    contentDecayMonitor: {
+      alerts: input.contentDecayAlerts ?? [],
+      // The DTO always carries limitations; an empty array is the honest
+      // default so a fixture never implies the engine disclosed nothing.
+      limitations: input.contentDecayLimitations ?? [],
+    },
   };
 }
 
@@ -617,5 +628,59 @@ describe("Overview review entry point", () => {
     expect(cell).toContain(COPY.toReview);
     expect(cell).not.toContain("<a");
     expect(cell).not.toContain("findingId=");
+  });
+});
+
+describe("Overview content-health limitations", () => {
+  it("discloses the click floor that decides whether a warning is shown", () => {
+    const html = priorityCard(
+      render({
+        workspaceQuery: settled({
+          data: workspace({
+            contentDecayAlerts: [decayAlert(0)],
+            contentDecayLimitations: [CONTENT_DECAY_LIMITATIONS.minimumSample],
+          }),
+        }),
+      }),
+    );
+
+    expect(html).toContain(COPY.healthLimitationsTitle);
+    // The threshold reaches the customer as a number, not as prose only the
+    // engine can see. English copy intentionally matches the engine wording,
+    // so the proof that this went through i18n rather than the raw sentence
+    // is the zh-CN assertion in e2e/overview-read-model.mock.spec.ts.
+    expect(html).toContain(String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS));
+    expect(html).toContain("</summary>");
+  });
+
+  it("renders limitation wording it does not own verbatim", () => {
+    const foreign = "A provider caveat the Overview never authored.";
+    const html = priorityCard(
+      render({
+        workspaceQuery: settled({
+          data: workspace({
+            contentDecayAlerts: [decayAlert(0)],
+            contentDecayLimitations: [foreign],
+          }),
+        }),
+      }),
+    );
+
+    expect(html).toContain(foreign);
+  });
+
+  it("renders no disclosure when the engine reported no limitation", () => {
+    const html = priorityCard(
+      render({
+        workspaceQuery: settled({
+          data: workspace({
+            contentDecayAlerts: [decayAlert(0)],
+            contentDecayLimitations: [],
+          }),
+        }),
+      }),
+    );
+
+    expect(html).not.toContain(COPY.healthLimitationsTitle);
   });
 });
