@@ -10,6 +10,8 @@ import {
 const MODEL = {
   apiKey: "sk-test",
   model: "test-model",
+  authScheme: "bearer",
+  temperature: 0.4,
   url: "https://model.test/v1/chat/completions",
 } as const;
 
@@ -168,6 +170,92 @@ describe("createDraftDependencies", () => {
     await expect(deps!.complete("the prompt")).resolves.toBe("reply");
     expect(seenUrl).toBe(MODEL.url);
     expect(seenBody["model"]).toBe(MODEL.model);
+  });
+
+  it("caps the reply with the field reasoning models accept", async () => {
+    // `max_tokens` is refused outright by reasoning models, which is most of
+    // what this gets pointed at. Dropping the cap instead would mean paying
+    // for a runaway reply the validator then discards.
+    let seenBody: Record<string, unknown> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: MODEL,
+      fetchImpl: async (_url, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenBody["max_completion_tokens"]).toBe(400);
+    expect(seenBody).not.toHaveProperty("max_tokens");
+  });
+
+  it("sends the configured temperature rather than a fixed one", async () => {
+    // The Azure gpt-5.6-luna deployment accepts exactly 1 and refuses the
+    // whole request otherwise.
+    let seenBody: Record<string, unknown> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: { ...MODEL, temperature: 1 },
+      fetchImpl: async (_url, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenBody["temperature"]).toBe(1);
+  });
+
+  it("uses the api-key header for Azure and never the bearer form", async () => {
+    // Azure OpenAI rejects `Authorization: Bearer` with an API key. Sending
+    // both would leak the credential into a header the endpoint ignores.
+    let seenHeaders: Record<string, string> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: { ...MODEL, authScheme: "api-key" },
+      fetchImpl: async (_url, init) => {
+        seenHeaders = init?.headers as Record<string, string>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenHeaders["api-key"]).toBe("sk-test");
+    expect(seenHeaders).not.toHaveProperty("authorization");
+  });
+
+  it("keeps the bearer header for everything that is not Azure", async () => {
+    let seenHeaders: Record<string, string> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: MODEL,
+      fetchImpl: async (_url, init) => {
+        seenHeaders = init?.headers as Record<string, string>;
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenHeaders["authorization"]).toBe("Bearer sk-test");
+    expect(seenHeaders).not.toHaveProperty("api-key");
   });
 
   it("throws on a model error so the row degrades rather than the run", async () => {

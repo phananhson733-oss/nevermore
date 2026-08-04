@@ -42,16 +42,23 @@ async function complete(
       method: "POST",
       signal: controller.signal,
       headers: {
-        authorization: `Bearer ${config.apiKey}`,
+        // Azure rejects the bearer form outright; see DraftAuthScheme.
+        ...(config.authScheme === "api-key"
+          ? { "api-key": config.apiKey }
+          : { authorization: `Bearer ${config.apiKey}` }),
         "content-type": "application/json",
       },
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: "user", content: prompt }],
-        // The validator rejects anything longer anyway; this stops a runaway
-        // reply from being paid for and then discarded.
-        max_tokens: 400,
-        temperature: 0.4,
+        // `max_completion_tokens`, not `max_tokens`: the older field is
+        // refused by reasoning models, which is most of what this would be
+        // pointed at now. The cap itself stays — the validator rejects
+        // anything longer anyway, and this stops a runaway reply from being
+        // paid for and then discarded. Reasoning tokens count against it, so
+        // it is generous relative to a title and a description.
+        max_completion_tokens: 400,
+        temperature: config.temperature,
       }),
     });
     if (!response.ok) {

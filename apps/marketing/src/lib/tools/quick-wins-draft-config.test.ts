@@ -54,6 +54,69 @@ describe("draftModelFromEnv", () => {
   });
 });
 
+describe("auth scheme", () => {
+  it("defaults to bearer", () => {
+    expect(draftModelFromEnv(FULL)?.authScheme).toBe("bearer");
+  });
+
+  it("switches to the Azure header when asked, case-insensitively", () => {
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_AUTH_SCHEME: "api-key" })
+        ?.authScheme,
+    ).toBe("api-key");
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_AUTH_SCHEME: " API-Key " })
+        ?.authScheme,
+    ).toBe("api-key");
+  });
+
+  it("falls back to bearer on anything it does not recognize", () => {
+    // A typo must not silently send the credential in a header the endpoint
+    // ignores; bearer is the shape the default endpoint expects.
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_AUTH_SCHEME: "apikey" })
+        ?.authScheme,
+    ).toBe("bearer");
+  });
+});
+
+describe("temperature", () => {
+  it("defaults low, because a wording candidate should not wander", () => {
+    expect(draftModelFromEnv(FULL)?.temperature).toBe(0.4);
+  });
+
+  it("takes the deployment's value", () => {
+    // The Azure gpt-5.6-luna deployment accepts exactly 1.
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: "1" })
+        ?.temperature,
+    ).toBe(1);
+  });
+
+  it("falls back rather than sending a value the model will refuse", () => {
+    // A refused temperature fails the whole request, so a typo in a dashboard
+    // would disable drafts entirely with no obvious cause.
+    for (const bad of ["", "  ", "hot", "-1", "3", "NaN"]) {
+      expect(
+        draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: bad })
+          ?.temperature,
+        bad,
+      ).toBe(0.4);
+    }
+  });
+
+  it("accepts the edges of the allowed range", () => {
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: "0" })
+        ?.temperature,
+    ).toBe(0);
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: "2" })
+        ?.temperature,
+    ).toBe(2);
+  });
+});
+
 describe("draftsEnabled", () => {
   it("answers the same question the API asks", () => {
     // The landing page describes drafts only when this is true. It has to
