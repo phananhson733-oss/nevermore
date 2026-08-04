@@ -4377,7 +4377,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0038_optional_source_onboarding' THEN
+  ) IS DISTINCT FROM '0039_product_profile_competitor_provenance' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

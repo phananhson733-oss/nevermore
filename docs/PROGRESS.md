@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0038_optional_source_onboarding.sql` (**38 ordered migrations**)
+  `0039_product_profile_competitor_provenance.sql` (**39 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
 
 The Artifact verification anchor above is the exact commit inspected before

@@ -47,8 +47,14 @@ security definer
 set search_path = public
 as $$
 begin
-  delete from public.public_tool_crawl_cache
-  where captured_at < now() - interval '7 days';
+  -- Every column reference here is table-qualified on purpose. RETURNS TABLE
+  -- declares OUT parameters named `payload` and `captured_at`, so an
+  -- unqualified `captured_at` in this sweep is ambiguous with the OUT
+  -- parameter and PL/pgSQL raises 42702 at run time. readCrawlCache swallows
+  -- store errors by design, so that failure is completely silent: the cache
+  -- fills up and is never read.
+  delete from public.public_tool_crawl_cache c
+  where c.captured_at < now() - interval '7 days';
 
   return query
   select c.payload, c.captured_at

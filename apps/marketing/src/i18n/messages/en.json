@@ -1261,11 +1261,17 @@
         "clickGap": "Gap",
         "tailProbability": "Tail probability"
       },
+      "tableCaption": "Search queries with enough impressions to measure, each compared against what your own site earns at the same position.",
+      "sortBy": "Sort by {column}",
+      "download": "Download CSV",
+      "downloadNote": "The file carries the same rows, the same measured window, and the same blanks — a value we could not compute stays empty rather than becoming a zero.",
+      "statusDone": "Done. {count} queries in the evidence table.",
       "gapNote": "The gap is expected clicks minus observed clicks, where expected comes from your own site’s rate at that position. It is a measured difference between two observed numbers, not a forecast of clicks you would recover by changing anything.",
       "tailNote": "Tail probability assumes every impression is an independent trial at a fixed rate. Neither holds for search, and both errors push the same way — it reads as more unusual than the evidence supports. It is published for you to weigh, not as a test we act on.",
       "bandWarning": "This band earns under 1% overall on your site. When a whole band is that low, the band is the finding — comparing queries inside it mostly re-describes it.",
       "curveTitle": "Your site’s CTR curve",
       "curveIntro": "What a normal click-through rate looks like on your site, at each position band, computed from your own non-brand queries. Published benchmarks say roughly 28% at position 1 and 2% at position 10; we tested those against a real site and found positions 4–10 earning a tenth of the published figure. Your own curve is the only one that describes your site.",
+      "curveCaption": "Click-through rate by position band, computed from your own non-brand queries.",
       "curveColumns": {
         "band": "Position",
         "queries": "Queries",
