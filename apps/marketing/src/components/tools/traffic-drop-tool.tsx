@@ -15,10 +15,10 @@ import { localePath } from "@/lib/locale-path";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
 import { TrafficDropResults } from "./traffic-drop-results";
 import {
-  EMPTY_SELF_CHECKS,
-  selfChecksComplete,
+  answersFor,
+  emptyDraft,
   TrafficDropSelfCheckGate,
-  type SelfCheckState,
+  type SelfCheckDraft,
 } from "./traffic-drop-self-check-gate";
 
 interface TrafficDropPayload {
@@ -80,8 +80,9 @@ export function TrafficDropTool({
    * path they select; deriving that in the browser would put the same rule in
    * two places, and the browser's copy is the one that would drift.
    */
-  const [selfChecks, setSelfChecks] =
-    useState<SelfCheckState>(EMPTY_SELF_CHECKS);
+  const [selfChecks, setSelfChecks] = useState<SelfCheckDraft>(() =>
+    emptyDraft(properties?.[0] ?? ""),
+  );
   /**
    * Set when an input changes after a report was rendered.
    *
@@ -118,6 +119,11 @@ export function TrafficDropTool({
   function selectProperty(next: string) {
     setProperty(next);
     invalidate();
+    // Answers are assertions about ONE site's Search Console pages. Carrying
+    // them across would let a visitor who cleared site A get an all-clear for
+    // site B without ever opening B's pages — the same reasoning as the brand
+    // list below, with more at stake.
+    setSelfChecks(emptyDraft(next));
     // A brand list belongs to one site. Carrying the previous property's terms
     // across would quietly classify the new site's queries by someone else's
     // brand, so the confirmation resets with them.
@@ -128,7 +134,10 @@ export function TrafficDropTool({
   async function run() {
     // Narrowed rather than asserted: the button is disabled without both
     // answers, but a disabled button is a UI convention, not an invariant.
-    if (!selfChecksComplete(selfChecks)) return;
+    // `answersFor` also refuses answers given for a different property, so the
+    // guard and the payload cannot disagree about which site was inspected.
+    const answers = answersFor(selfChecks, property);
+    if (answers === null) return;
 
     setLoading(true);
     setErrorCode(null);
@@ -140,7 +149,7 @@ export function TrafficDropTool({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           property,
-          selfChecks,
+          selfChecks: answers,
           brandTerms,
           brandTermsConfirmed: brandConfirmed,
         }),
@@ -320,16 +329,6 @@ export function TrafficDropTool({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          onClick={() => void run()}
-          disabled={loading || property === "" || !selfChecksComplete(selfChecks)}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
-        >
-          {/* "Run again" before anything has run is an instruction to repeat
-              something that never happened. */}
-          {loading ? t("running") : payload ? t("rerun") : t("run")}
-        </button>
       </div>
 
       {/*
@@ -391,6 +390,32 @@ export function TrafficDropTool({
           />
           <span>{t("brandTerms.confirm")}</span>
         </label>
+      </div>
+
+      {/*
+       * The run control, below everything it depends on. It used to sit beside
+       * the property dropdown, above the gate — a greyed-out primary button
+       * with the thing that unblocks it further down the page and no text
+       * connecting the two, which reads as broken rather than as a next step.
+       */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={
+            loading || property === "" || answersFor(selfChecks, property) === null
+          }
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
+        >
+          {/* "Run again" before anything has run is an instruction to repeat
+              something that never happened. */}
+          {loading ? t("running") : payload ? t("rerun") : t("run")}
+        </button>
+        {answersFor(selfChecks, property) === null && !loading ? (
+          <p className="text-[12.5px] text-text-dark-secondary">
+            {t("runBlockedBySelfChecks")}
+          </p>
+        ) : null}
       </div>
 
       {propertyTotal > properties.length ? (

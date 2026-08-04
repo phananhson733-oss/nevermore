@@ -47,33 +47,70 @@ const ANSWERS: readonly SelfCheckAnswer[] = [
   "uncertain",
 ];
 
+/**
+ * The state field for a check id.
+ *
+ * A `Record` rather than a ternary: the ternary's else-branch swallowed any id
+ * it did not recognise into `securityIssue`, so adding a third self-check would
+ * have silently written both answers into one slot. This form does not compile
+ * until the new id has a field.
+ */
+const STATE_FIELD: Record<SelfCheckId, keyof SelfCheckState> = {
+  manual_action: "manualAction",
+  security_issue: "securityIssue",
+};
+
 export interface SelfCheckState {
   readonly manualAction: SelfCheckAnswer | null;
   readonly securityIssue: SelfCheckAnswer | null;
 }
 
-export const EMPTY_SELF_CHECKS: SelfCheckState = {
-  manualAction: null,
-  securityIssue: null,
-};
+/**
+ * The answers, carrying the property they were given for.
+ *
+ * The property is part of the value rather than a sibling piece of state,
+ * because these answers are assertions about ONE site's Search Console pages
+ * and mean nothing about another's. Held loosely, the failure is silent and
+ * severe: answer "no issues" for site A, switch the dropdown to site B, and the
+ * run button stays enabled — B gets an all-clear built on A's inspection, with
+ * nothing on screen indicating it. The brand-term list already resets on the
+ * same reasoning; this one matters more, because it decides what the report is
+ * allowed to conclude.
+ *
+ * Binding them makes that state unrepresentable rather than merely discouraged:
+ * `answersFor` refuses to hand back answers for a property they were not given
+ * for, so forgetting to reset cannot produce a run.
+ */
+export interface SelfCheckDraft extends SelfCheckState {
+  readonly property: string;
+}
+
+export function emptyDraft(property: string): SelfCheckDraft {
+  return { property, manualAction: null, securityIssue: null };
+}
 
 /**
- * Whether both answers are in, which is the precondition for running.
+ * The two answers if they are complete AND belong to `property`, else null.
  *
- * `null` here means "not answered yet" — a UI state that deliberately has no
- * counterpart in the engine. A report can only be built once both are real
- * answers, so the unanswered case cannot reach the part of the system that
- * would have to hedge around it.
+ * One function behind both the run button's enabled state and the request
+ * body, so the check that guards the run and the value that is sent cannot
+ * disagree.
  */
-export function selfChecksComplete(
-  state: SelfCheckState,
-): state is { manualAction: SelfCheckAnswer; securityIssue: SelfCheckAnswer } {
-  return state.manualAction !== null && state.securityIssue !== null;
+export function answersFor(
+  draft: SelfCheckDraft,
+  property: string,
+): { manualAction: SelfCheckAnswer; securityIssue: SelfCheckAnswer } | null {
+  if (draft.property !== property) return null;
+  if (draft.manualAction === null || draft.securityIssue === null) return null;
+  return {
+    manualAction: draft.manualAction,
+    securityIssue: draft.securityIssue,
+  };
 }
 
 interface TrafficDropSelfCheckGateProps {
-  readonly value: SelfCheckState;
-  readonly onChange: (next: SelfCheckState) => void;
+  readonly value: SelfCheckDraft;
+  readonly onChange: (next: SelfCheckDraft) => void;
   readonly disabled: boolean;
 }
 
@@ -118,7 +155,8 @@ export function TrafficDropSelfCheckGate({
 
             <div className="mt-2.5 flex flex-wrap gap-2">
               {ANSWERS.map((answer) => {
-                const active = value[camel(check.id)] === answer;
+                const field = STATE_FIELD[check.id];
+                const active = value[field] === answer;
                 return (
                   <button
                     key={answer}
@@ -126,7 +164,7 @@ export function TrafficDropSelfCheckGate({
                     disabled={disabled}
                     aria-pressed={active}
                     onClick={() =>
-                      onChange({ ...value, [camel(check.id)]: answer })
+                      onChange({ ...value, [field]: answer })
                     }
                     className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition disabled:opacity-60 ${
                       active
@@ -151,9 +189,4 @@ export function TrafficDropSelfCheckGate({
       </p>
     </section>
   );
-}
-
-/** The state field for a check id. Kept explicit so a new id fails to compile. */
-function camel(id: SelfCheckId): keyof SelfCheckState {
-  return id === "manual_action" ? "manualAction" : "securityIssue";
 }

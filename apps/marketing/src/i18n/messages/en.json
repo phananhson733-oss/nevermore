@@ -1010,7 +1010,7 @@
         },
         "resolve_security_issue": {
           "title": "Work the security issue first — it outranks anything about rankings",
-          "body": "A Safe Browsing finding puts a warning on your results and an interstitial in the browser, which takes clicks to near zero while your rankings may not have moved at all — which is why it looks like a demotion and is not one. The process is to find the flagged pages or injected code, clean it, confirm the hole is closed, and then request a review from the Security Issues report. Until that is closed, rewriting titles and reworking internal links will not bring traffic back."
+          "body": "A Safe Browsing finding puts a warning on your results and an interstitial in the browser. That path suppresses clicks; it has nothing to do with rankings. Whether it is what caused your drop is not something we can establish, and it does not rule out something else changing at the same time — but it has a defined procedure, and nothing else in this report does. Find the flagged pages or injected code, clean it, confirm the hole is closed, and request a review from the Security Issues report. Until that is closed, rewriting titles and reworking internal links will not bring traffic back."
         },
         "check_security_issues": {
           "title": "Go back and settle the Security Issues page",
@@ -1161,7 +1161,7 @@
           "unconfirmedTitle": "One answer is missing, and it is the one that matters",
           "unconfirmedBody": "Until that page is settled, this report will not tell you that you have been penalised and will not tell you that you have not. Both would be claims about something we cannot see. The traffic observations below stand on their own — read them, but do not read a verdict into them.",
           "issueReportedTitle": "Work what you found first",
-          "issueReportedBody": "That is the finding. A manual action is applied by a reviewer and a security issue by Safe Browsing; both stay until you fix what the notice describes and submit it for review, and neither expires or lifts on its own. A security issue also puts a warning in the results and an interstitial in the browser, which takes clicks to near zero while rankings may not have moved at all. Read the entry for the specific type; Google's documentation for that type sets out what it expects. The traffic analysis below is still here, but it is not what to act on today.",
+          "issueReportedBody": "Going by your report, work this first. A manual action is applied by a reviewer and a security issue by Safe Browsing; whichever you reported stays until you fix what the notice describes and submit it for review, and it does not expire or lift on its own. Read the entry for the specific type; Google's documentation for that type sets out what it expects. Whether it is what caused your traffic to fall is not something we can establish — we put it first because it has a defined procedure, and the traffic analysis below does not.",
           "noIssueTitle": "These observations do not support a penalty",
           "noIssueBody": "One thing is settled: you checked, and there is neither a manual action nor a security issue. Whether Google's ranking systems adjusted something about your site is a separate question, and it is one no tool can answer — there is no public signal for it, so anyone claiming to detect it is inferring. We are not going to. What follows is what we actually measured, and what each observation would also be consistent with. If it points at a technical cause, start there; those are cheap to check and cheap to fix."
         },
@@ -1245,7 +1245,8 @@
           "reports_none": "It says “No issues detected”",
           "uncertain": "I could not tell"
         }
-      }
+      },
+      "runBlockedBySelfChecks": "Answer both questions above to run the report."
     },
     "quickWins": {
       "title": "SEO Quick Wins",

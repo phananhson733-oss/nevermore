@@ -155,19 +155,6 @@ export function observeSelfChecks(
 }
 
 /**
- * Whether the report may say anything at all about penalties in general.
- *
- * Both directions are gated. "We found no evidence of a penalty" is a claim
- * about a question we cannot answer without the visitor's half of it, and a
- * reader who has not settled it will take it as an all-clear.
- */
-export function mayDiscussPenalty(
-  observations: SelfCheckObservations,
-): boolean {
-  return observations.path !== "unconfirmed";
-}
-
-/**
  * Whether the report may state that there is no manual action specifically.
  *
  * Deliberately NOT derived from `path`. A visitor who reported a security

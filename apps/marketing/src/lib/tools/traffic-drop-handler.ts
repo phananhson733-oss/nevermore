@@ -19,7 +19,7 @@ import {
   type TrafficDropSession,
 } from "./traffic-drop-session.ts";
 
-/** Room for a property, a manual-action answer and a short brand list. */
+/** Room for a property, two self-check answers and a short brand list. */
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
 /** Matches the sibling tool, which shares the same brand-term form. */

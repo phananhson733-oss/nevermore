@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   isSelfCheckAnswer,
   manualActionRuledOutByVisitor,
-  mayDiscussPenalty,
   observeSelfChecks,
   SELF_CHECK_ANSWERS,
   type SelfCheckAnswer,
@@ -45,7 +44,6 @@ describe("the path the two answers select", () => {
     expect(observed.path).toBe("no_issue_reported");
     expect(observed.issues).toEqual([]);
     expect(observed.unresolved).toEqual([]);
-    expect(mayDiscussPenalty(observed)).toBe(true);
   });
 
   it("is `unconfirmed` whenever either page is unsettled", () => {
@@ -58,7 +56,7 @@ describe("the path the two answers select", () => {
       // The whole point of the path: while it holds, the report says nothing
       // about penalties in EITHER direction. "No evidence of a penalty" reads
       // as an all-clear to someone who never looked.
-      expect(mayDiscussPenalty(observed)).toBe(false);
+      expect(observed.unresolved.length).toBeGreaterThan(0);
     }
   });
 

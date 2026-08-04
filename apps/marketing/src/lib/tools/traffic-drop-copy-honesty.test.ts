@@ -44,6 +44,19 @@ describe("traffic drop copy never claims a demotion", () => {
             "site-level demotion",
             "consistent with the pattern of a site-level",
             "algorithmic penalty",
+            // The NEGATIVE direction, which is the same violation. Shipped in
+            // the security-issue advice as "which is why it looks like a
+            // demotion and is not one" — a claim about this visitor's drop
+            // that no measurement supports. A security issue suppresses
+            // clicks; it does not establish that nothing else moved.
+            // Scoped to demotion claims on purpose. A bare "is not one" also
+            // matches "This is not one decline, it is two", which is a
+            // finding title and entirely fine.
+            "is not a demotion",
+            "a demotion and is not one",
+            "like a demotion and is not",
+            "was not demoted",
+            "rules out a demotion",
           ]
         : [
             "你被降权",
@@ -52,6 +65,10 @@ describe("traffic drop copy never claims a demotion", () => {
             "与站点级排名下调的模式一致",
             "与站点级下调的模式一致",
             "算法惩罚",
+            "像降权但不是",
+            "不是降权",
+            "没有被降权",
+            "排除了降权",
           ];
 
     for (const phrase of forbidden) {
