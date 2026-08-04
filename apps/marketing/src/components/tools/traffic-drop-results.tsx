@@ -7,6 +7,7 @@
 
 import { useTranslations } from "next-intl";
 import type {
+  ManualActionStatus,
   TrafficAction,
   TrafficCheck,
   TrafficDailyPoint,
@@ -16,6 +17,7 @@ import type {
   TrafficWindow,
 } from "@sf/public-tools";
 import { TrafficDropChart } from "./traffic-drop-chart";
+import { TrafficDropSiteSignals } from "./traffic-drop-site-signals";
 
 const TIER_STYLE: Record<TrafficFinding["tier"], string> = {
   observed: "text-brand-series-2 bg-[rgba(79,134,200,0.14)]",
@@ -51,12 +53,17 @@ interface TrafficDropResultsProps {
   readonly result: TrafficDropResult;
   readonly series: readonly TrafficDailyPoint[];
   readonly locale: string;
+  /** Re-runs the report carrying the visitor's manual-action answer. */
+  readonly onManualActionAnswer: (status: ManualActionStatus) => void;
+  readonly busy: boolean;
 }
 
 export function TrafficDropResults({
   result,
   series,
   locale,
+  onManualActionAnswer,
+  busy,
 }: TrafficDropResultsProps) {
   const t = useTranslations("tools.trafficDrop");
   const numbers = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US");
@@ -69,7 +76,8 @@ export function TrafficDropResults({
       const percent = (measure.value * 100).toFixed(0);
       return measure.value > 0 ? `+${percent}%` : `${percent}%`;
     }
-    if (measure.key.endsWith("ctr")) return `${(measure.value * 100).toFixed(2)}%`;
+    if (measure.key.endsWith("ctr"))
+      return `${(measure.value * 100).toFixed(2)}%`;
     return numbers.format(measure.value);
   }
 
@@ -81,6 +89,19 @@ export function TrafficDropResults({
 
   return (
     <div className="space-y-4">
+      {/*
+       * Before the chart, deliberately. The manual-action question is the only
+       * thing in this report with a definite answer and a defined path back,
+       * and a visitor who has one open should not have to scroll past a
+       * change-point analysis to find that out.
+       */}
+      <TrafficDropSiteSignals
+        signals={result.siteSignals}
+        locale={locale}
+        onAnswer={onManualActionAnswer}
+        busy={busy}
+      />
+
       <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
         <h2 className="text-[16px] font-semibold text-text-dark-primary">
           {t("chartTitle")}
@@ -237,11 +258,22 @@ export function TrafficDropResults({
                   <p className="mt-1 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
                     {t(`actions.${action.id}.body`)}
                   </p>
+                  {/*
+                   * Two namespaces, because the two kinds of basis are two
+                   * different kinds of thing: a finding is something we
+                   * measured, a site signal is an observation whose lineage
+                   * may be the visitor's own. Merging them into one list of
+                   * ids would have this line guessing which namespace to
+                   * look in.
+                   */}
                   <p className="mt-1.5 text-[12px] text-text-dark-secondary/80">
                     {t("basisLabel")}:{" "}
-                    {action.basis
-                      .map((id) => t(`findings.${id}.title`))
-                      .join(" · ")}
+                    {[
+                      ...action.basis.map((id) => t(`findings.${id}.title`)),
+                      ...action.signalBasis.map((id) =>
+                        t(`siteSignals.${id}.label`),
+                      ),
+                    ].join(" · ")}
                   </p>
                 </div>
               </article>
@@ -254,7 +286,8 @@ export function TrafficDropResults({
         <summary className="cursor-pointer py-4 text-[13px] text-text-dark-secondary">
           {t("checksSummary", {
             total: result.checks.length,
-            hits: result.checks.filter((check) => check.status === "hit").length,
+            hits: result.checks.filter((check) => check.status === "hit")
+              .length,
           })}
         </summary>
         <ul className="list-none p-0 pb-4">

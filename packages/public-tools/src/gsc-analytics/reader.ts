@@ -58,13 +58,22 @@ export async function readQueryRows(
   client: GscQueryClient,
   window: GscWindow,
   budget?: ReadBudget,
+  /**
+   * Pages this read may fetch, when the caller needs a tighter cap.
+   *
+   * `GSC_MAX_PAGES` was chosen for a caller that reads ONE window. A caller
+   * reading two windows pays it twice, and the total is what the shared
+   * project quota sees. Clamped to the shared cap so this can only tighten.
+   */
+  maxPages: number = GSC_MAX_PAGES,
 ): Promise<QueryRowsRead> {
   const rows: GscQueryRow[] = [];
   let pagesFetched = 0;
   let truncated = false;
   let responseAggregationType: string | null = null;
+  const pageCap = Math.max(1, Math.min(GSC_MAX_PAGES, Math.trunc(maxPages)));
 
-  for (let page = 0; page < GSC_MAX_PAGES; page += 1) {
+  for (let page = 0; page < pageCap; page += 1) {
     // The first page is always fetched — a report with no rows at all is not
     // a cheaper report, it is a different (and false) answer. Later pages are
     // dropped when the budget is gone, and the result says it was truncated.
@@ -107,7 +116,7 @@ export async function readQueryRows(
 
     if (response.rows.length < GSC_ROW_LIMIT) break;
     // A full last page means there was more we did not ask for.
-    if (page === GSC_MAX_PAGES - 1) truncated = true;
+    if (page === pageCap - 1) truncated = true;
   }
 
   return {

@@ -1,4 +1,8 @@
 import type { PublicToolResultEnvelope } from "../contract.ts";
+import type { BrandSplitOutcome } from "./brand-split.ts";
+import type { CoreUpdateTimeline } from "./core-updates.ts";
+import type { ManualActionObservation } from "./manual-action.ts";
+import type { QueryCohortOutcome } from "./query-cohort.ts";
 
 /**
  * One day of Search Console totals for the whole property.
@@ -146,8 +150,47 @@ export type TrafficActionKind = "do" | "external_data" | "avoid";
 export interface TrafficAction {
   readonly id: string;
   readonly kind: TrafficActionKind;
-  /** Findings this action rests on. Never empty: no evidence, no action. */
+  /** Findings this action rests on. May be empty when `signalBasis` carries it. */
   readonly basis: readonly TrafficFindingId[];
+  /**
+   * Site-signal observations this action rests on.
+   *
+   * Kept separate from `basis` rather than merged into one list of strings:
+   * the two are rendered from different copy namespaces, and a merged list
+   * would have the UI guessing which namespace an id belongs to. Between the
+   * two, an action always rests on something — that invariant is enforced in
+   * `actions.ts`, not by the type.
+   */
+  readonly signalBasis: readonly TrafficSiteSignalId[];
+}
+
+/**
+ * The site-signal observations, as ids an action can point at.
+ *
+ * `manual_action` is the only one of these the tool can act on with any
+ * confidence, and it is the only one that arrives from the visitor rather than
+ * from Search Console.
+ */
+export type TrafficSiteSignalId =
+  | "manual_action"
+  | "core_update_timeline"
+  | "brand_non_brand_split"
+  | "query_cohort_migration";
+
+/**
+ * The site-signal group.
+ *
+ * Every member is a description or an explicit `not_available`, never a
+ * verdict. There is deliberately no field anywhere in this structure that
+ * answers "was this site demoted" — Google publishes no signal for it, so
+ * there is no honest way to compute one, and a field of that name would be
+ * filled in by someone eventually.
+ */
+export interface TrafficSiteSignals {
+  readonly manualAction: ManualActionObservation;
+  readonly coreUpdateTimeline: CoreUpdateTimeline;
+  readonly brandSplit: BrandSplitOutcome;
+  readonly queryCohort: QueryCohortOutcome;
 }
 
 /**
@@ -179,7 +222,58 @@ export type TrafficUnavailableReason =
    * status for a check that does not exist is `not_available`, never `clear` —
    * `clear` claims we looked.
    */
-  | "yoy_comparison_not_implemented";
+  | "yoy_comparison_not_implemented"
+  /**
+   * The visitor has not told us what their Manual Actions report says.
+   *
+   * Distinct from every other reason here: this one is answerable, by them, in
+   * about ten seconds. The copy for it is an instruction, not an apology.
+   */
+  | "manual_action_not_checked"
+  /** No peak/mid pair, so there is no event to place on a timeline. */
+  | "no_event_window"
+  /**
+   * The ranking-update table has not been checked past the event.
+   *
+   * Reported instead of "no update around your decline", which would be our
+   * own staleness dressed up as a fact about their site.
+   */
+  | "core_update_table_not_verified"
+  /** The query-dimension read did not run, so nothing derived from it exists. */
+  | "query_read_not_performed"
+  /** No confirmed brand list; a domain guess is a candidate, not evidence. */
+  | "brand_terms_not_confirmed"
+  /** Property totals were unreadable, so the withheld share is unknown, not zero. */
+  | "property_totals_unavailable"
+  /**
+   * The two reads were aggregated on different bases.
+   *
+   * Their totals are not comparable and one must never be divided by the
+   * other; a ratio across them measures the basis change, not the site.
+   */
+  | "aggregation_basis_mixed"
+  /** Too much of the property's clicks are withheld to describe a split. */
+  | "coverage_below_floor"
+  /** The two windows are not equally visible, so the comparison is not like-for-like. */
+  | "coverage_shift_too_large"
+  /** The brand side is too small for a percentage to mean anything. */
+  | "brand_sample_below_floor"
+  /** Too few queries cleared the impression floor to describe a migration. */
+  | "cohort_below_floor"
+  /**
+   * A window returned a prefix instead of all its rows.
+   *
+   * Rows arrive ordered by clicks descending, so a prefix is not a sample: it
+   * systematically omits the low-click tail. Reporting truncation beside a
+   * computed number still publishes the number, and a reader takes the number.
+   */
+  | "read_truncated"
+  /** A group had no clicks in the earlier window, so its change has no denominator. */
+  | "group_without_baseline"
+  /** The brand group cleared the floor before and is entirely absent after. */
+  | "brand_group_not_observable_after"
+  /** No cohort query started in the top ten, so there is no migration to describe. */
+  | "no_top_ten_queries";
 
 export interface TrafficCheck {
   readonly id: string;
@@ -203,6 +297,7 @@ export interface TrafficDropResult {
   readonly findings: readonly TrafficFinding[];
   readonly actions: readonly TrafficAction[];
   readonly checks: readonly TrafficCheck[];
+  readonly siteSignals: TrafficSiteSignals;
 }
 
 export type TrafficDropEnvelope = PublicToolResultEnvelope<

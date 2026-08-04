@@ -94,6 +94,13 @@ export async function openGscGate(
   );
 
   if (perIp.kind === "unavailable") {
+    // The reason is logged because this branch fails closed and looks
+    // identical from outside to every other cause of a 503. The sibling
+    // crawl gate carries the same line, and it is what turned a multi-day
+    // "the tools are down" into one look at the deploy log: the store was
+    // reachable, the URL was a Postgres pooler DSN, and the client's
+    // `fetch failed` never reached anywhere a human would see it.
+    console.error("[gsc-gate] quota store unavailable:", perIp.reason);
     return refuse(
       json(createPublicToolError("quota_unavailable"), 503, {
         "Retry-After": "60",

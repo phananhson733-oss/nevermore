@@ -987,6 +987,26 @@
         "avoid_rank_recovery": {
           "title": "不要因为平均位置上升就去做排名恢复",
           "body": "平均位置是按曝光加权的。高排名查询整体消失后，这个数字会自己上升，并不意味着你原有页面的排名下滑了。以它为目标去改页面，是在解决一个不存在的问题。同理，也不要按曝光量给这些工作排优先级。"
+        },
+        "resolve_manual_action": {
+          "title": "先处理人工处置——这里只有它有明确的恢复路径",
+          "body": "打开 Search Console →「安全和人工处置」→「人工处置」，看清楚是哪一类。人工处置不会自行失效：流程是按通知所述整改，然后提交重新审核。Google 针对该类型的官方文档写明了它的要求。这份报告里其余内容讲的是流量去哪了，在这件事关闭之前，那个问题不值得占用你的时间。"
+        },
+        "check_manual_actions": {
+          "title": "花十秒查一件我们替你查不到的事",
+          "body": "打开 Search Console →「安全和人工处置」→「人工处置」。Google 没有为这个页面开放接口，所以这份报告里没有任何东西能看到它。而它比我们能看到的一切都重要：人工处置有明确的恢复路径且不会自行解除，其余的都没有这条路径。注意「安全问题」是另一个页面——我们说的这个叫「人工处置」。"
+        },
+        "avoid_assuming_penalty": {
+          "title": "不要当成惩罚，然后开始删东西",
+          "body": "Google 自己对算法造成的排名变化用词是中性的：下降不代表你的页面有问题，更常见的情况是别的结果相对变好了。按一个没有确认过的惩罚去行动，正是人们删掉本来有效内容的方式，而且删了没有撤销。先把人工处置状态确认下来——十秒钟，而且这是这件事里唯一有确定答案的部分。"
+        },
+        "avoid_disavow": {
+          "title": "不要因为流量掉了就去清外链或提交 disavow",
+          "body": "你已经确认没有人工处置。Disavow 只对应一种情形——一个明确指向你外链的人工处置——而这不是那种情形。Google 多次说过绝大多数网站从不需要这个工具，常规性的「清理有毒外链」更多是一项被推销的服务而不是修复手段。在这里提交它既花钱，还可能让你失去本来有帮助的链接。"
+        },
+        "check_landing_page_indexability": {
+          "title": "在从这个分化里读出任何结论之前，先排除落地页的技术原因",
+          "body": "一组跌另一组稳，正是 robots 规则、误加的 noindex、指错地方的 canonical、或某个模板的渲染回归会产生的形态——它们打中落地页，而首页安然无恙。这也是这份清单上最便宜的检查项和最便宜的修复项。在你对内容下任何判断之前，先做它。"
         }
       },
       "checksSummary": "本次跑了 {total} 项检测，触发 {hits} 项 —— 展开看全部，包括没触发的和查不了的",
@@ -1004,7 +1024,9 @@
         "sitewide_visibility_zeroed": "站点级可见性归零",
         "single_page_dominated_decline": "单页面主导型下降",
         "seasonality_yoy": "同比季节性",
-        "index_status_at_event": "事件期间的索引状态"
+        "index_status_at_event": "事件期间的索引状态",
+        "brand_non_brand_split": "品牌词与非品牌词分化",
+        "query_cohort_migration": "查询位置迁移"
       },
       "checkOutcomes": {
         "sustained_decline": {
@@ -1051,19 +1073,44 @@
           "hit": "",
           "clear": "",
           "not_available": ""
+        },
+        "brand_non_brand_split": {
+          "hit": "两组的变化幅度存在实质差异",
+          "clear": "两组同向同幅，或都没有实质变化",
+          "not_available": ""
+        },
+        "query_cohort_migration": {
+          "hit": "原本在前十的查询里，有一部分已经不在了",
+          "clear": "原本在前十的查询仍然在前十",
+          "not_available": ""
         }
       },
       "unavailableReasons": {
         "history_below_twelve_weeks": "需要 12 周历史，该站点还不够",
         "history_below_thirteen_months": "需要 13 个月才有去年同期可比 —— 我们不做估算",
-        "query_data_not_supplied": "这个工具只读站点整体的日级数据，不读查询级。要看查询级拆分，去 Search Console 的「查询」标签页。",
+        "query_data_not_supplied": "本版本的集中度检测还没有接上查询读取，因此没有查询行可用。Search Console 的「查询」标签页有这份拆分。",
         "page_data_not_supplied": "这个工具只读站点整体的日级数据，不读页面级。要看页面级拆分，去 Search Console 的「网页」标签页。",
         "probe_data_not_supplied": "这个工具不抓取你的页面，所以无法判断受影响的页面现在是否还能正常响应。这一项去 Search Console 的「网址检查」确认。",
         "index_report_lag": "Search Console 的索引报告滞后于性能数据，无法覆盖事件当天 —— 在这里既不能确认也不能排除",
         "site_below_detection_floor": "该站点从未有过一周大到足以让检测器工作",
         "no_recent_days": "该站点没有返回最近的日期数据",
         "post_event_history_below_two_windows": "下降是真的，但事件之后的数据还不够长，无法判断它是否持续。",
-        "yoy_comparison_not_implemented": "这个工具不做同比比较。不是查了没发现，而是根本没查。"
+        "yoy_comparison_not_implemented": "这个工具不做同比比较。不是查了没发现，而是根本没查。",
+        "manual_action_not_checked": "你还没有告诉我们你的「人工处置」页面显示什么。Google 没有为它开放接口，所以这是这里唯一只有你能查到的东西。",
+        "no_event_window": "没有定位到下降事件，因此没有可以放到时间线上的东西",
+        "core_update_table_not_verified": "我们的 Google 更新清单还没有核对到你这次下降的日期之后。此时说「那段时间没有更新」，是把我们自己的滞后当成关于你站点的事实。",
+        "query_read_not_performed": "本次报告没有执行查询级读取，所以这一项算不出来。不是查了没发现问题——是没有查。",
+        "brand_terms_not_confirmed": "需要一份你确认过的品牌词清单。从域名去猜会在两个方向上都出错，而且是无声地出错。",
+        "property_totals_unavailable": "Search Console 没有返回两个窗口的资源总数，我们无法判断查询行占了你多少流量——也不会默认它就是全部。",
+        "aggregation_basis_mixed": "Search Console 对两次读取采用了不同的聚合口径，两者的总数不可比。跨口径相除测到的是口径变化，不是你的站点。",
+        "coverage_below_floor": "这个资源被从查询报表里隐去的流量太多，分组对比得不出有意义的结论。",
+        "coverage_shift_too_large": "两个窗口能看到的流量比例差得太多。仅这一点差异本身，就足以制造出这项检测要找的那个形态。",
+        "brand_sample_below_floor": "品牌词的查询数和点击数都太少，算出来的百分比只是噪声。",
+        "cohort_below_floor": "达到曝光下限的查询太少，描述不了迁移。",
+        "read_truncated": "其中一个窗口返回的查询多于我们读取的量。行是按点击从高到低返回的，所以没读到的正是长尾——而这项对比要看的就是那部分。用剩下的部分算出来的数字可能指向相反的结论，所以这里不给数字。",
+        "group_without_baseline": "两组中有一组在前一个窗口没有点击，它的变化没有分母。最常见的原因是品牌词把所有查询都匹配上了，另一组因此为空。",
+        "brand_group_not_observable_after": "品牌词之前有、现在没有了。这与「品牌流量归零」不是一回事：Search Console 会隐去低量查询，而那个阈值远高于零。这两种情况在这里看起来完全一样。",
+        "no_top_ten_queries": "这组查询里原本就没有进入前十的，因此不存在「跌出前十」这件事可描述。"
       },
       "limitations": {
         "history_below_twelve_weeks": "判定下降需要 12 周历史。不足时读到的是噪声，所以我们不给结论。",
@@ -1087,7 +1134,88 @@
       "run": "开始分析",
       "noPropertyTitle": "这个账号下没有已验证的站点",
       "noPropertyBody": "授权成功了，但这个 Google 账号不是任何 Search Console 站点属性的已验证所有者。请先在 Search Console 完成站点验证，再回来运行。",
-      "propertiesTruncated": "共 {total} 个站点，这里列出 {shown} 个。其余的放不进一个浏览器 cookie。"
+      "propertiesTruncated": "共 {total} 个站点，这里列出 {shown} 个。其余的放不进一个浏览器 cookie。",
+      "siteSignals": {
+        "sectionTitle": "关于「是不是惩罚」，我们能确定什么、不能确定什么",
+        "sectionIntro": "其中一项你自己十秒就能定下来。其余是带着各自边界的观察——没有任何一条能单独决定什么。",
+        "manual_action": {
+          "label": "人工处置状态"
+        },
+        "core_update_timeline": {
+          "label": "已公告更新时间线"
+        },
+        "brand_non_brand_split": {
+          "label": "品牌词与非品牌词分化"
+        },
+        "query_cohort_migration": {
+          "label": "查询位置迁移"
+        },
+        "manualAction": {
+          "cardTitle": "先确认一件只有你能查的事",
+          "cardBody": "我们读不到你的人工处置状态——Google 没有为它开放接口。你大约十秒就能看到，而它决定了这份报告的哪一半值得你花时间。",
+          "cardSteps": "Search Console →「安全和人工处置」→「人工处置」",
+          "cardWhy": "为什么重要：人工处置有明确的恢复路径——整改后提交重新审核——并且不会自行解除。这份报告里没有别的东西具备这一点。",
+          "optionManualAction": "上面列出了人工处置",
+          "optionNone": "显示「未检测到问题」",
+          "optionUncertain": "我没能确认",
+          "optionNotChecked": "我还没看",
+          "notice": "注意：「安全问题」是另一个页面，而且 Search Console 一次只显示一个资源。请确认你看的是「人工处置」，并且是这个资源。",
+          "recordedManualAction": "你报告：你的「人工处置」页面列出了条目。",
+          "recordedNone": "你确认过：你的「人工处置」页面没有条目。记为你的观察——不是我们读到的。",
+          "recordedUncertain": "你没能确认，因此这份报告在两个方向上都不会对惩罚下结论。",
+          "recordedNotChecked": "尚未核对。"
+        },
+        "paths": {
+          "manualActionTitle": "你有一个人工处置挂着",
+          "manualActionBody": "这就是结论。人工处置由审核人员施加，会一直存在，直到你按通知所述整改并提交重新审核——它不会到期，也不会自行解除。去看那条条目具体是哪一类；Google 针对该类型的文档写明了它的要求。下面的流量分析仍然保留，但今天该动手的不是它。",
+          "noManualActionTitle": "这些观察不支持惩罚的判断",
+          "noManualActionBody": "有一件事是确定的：你查过了，Search Console 没有人工处置。至于 Google 的排名系统是否对你的站点做了某种调整，那是另一个问题，而且是任何工具都答不了的——它没有公开信号，所以任何声称能检测它的做法都是在推断。我们不打算这么做。下面是我们实际测到的东西，以及每条观察还与哪些解释相容。如果它指向技术原因，就从那里开始：那类问题查起来便宜，修起来也便宜。",
+          "unconfirmedTitle": "缺一个答案，而且缺的正是最关键的那个",
+          "unconfirmedBody": "在你看过「人工处置」之前，这份报告不会告诉你你被惩罚了，也不会告诉你你没有。这两种说法都是在断言我们看不到的东西。下面的流量观察本身是成立的——去读它们，但不要从中读出一个判决。"
+        },
+        "coreUpdate": {
+          "label": "你这次下降落在 Google 公告时间线的什么位置",
+          "caveat": "仅供参考，不计入任何结论。检测器按整周工作，所以事件是一段区间而不是一个日期；公告的更新推出期同样跨越数周。在通常的年份里这些窗口覆盖了相当大一部分日历，因此「重叠」是巧合的可能性不比别的解释小。",
+          "eventWindow": "你的下降发生在 {startDate} – {endDate} 之间的某一天（共 {dayCount} 天）。",
+          "overlap": "这段区间与 {name}（{startDate} – {endDate}）重叠 {days} 天。",
+          "overlapOpenEnded": "这段区间接触到 {name} 的起始日（{startDate}）；Google 没有公告这次推出何时结束。",
+          "noOverlap": "这段区间没有与我们清单上的任何更新重叠。这不构成「没有发生算法层面变化」的证据——Google 持续调整排名，只有其中一部分会公告。",
+          "tableStamp": "更新清单版本 {version}，最后一次比对 Google 状态面板的日期为 {verifiedThrough}。"
+        },
+        "brandSplit": {
+          "label": "品牌词与非品牌词",
+          "coverage": "基于 Search Console 展示给我们的那部分查询计算：前一窗口覆盖 {beforeShare} 的点击，后一窗口 {afterShare}。其余出于隐私被隐去，且以长尾为主。",
+          "brandGroup": "品牌词：点击 {clickChange}（{queries} 个查询）",
+          "nonBrandGroup": "非品牌词：点击 {clickChange}（{queries} 个查询）",
+          "shape_non_brand_declined_more": "非品牌词比品牌词跌得更多。",
+          "shape_brand_declined_more": "品牌词比非品牌词跌得更多。",
+          "shape_both_declined": "两组跌幅相近。",
+          "shape_no_material_change": "两组都没有实质变化。",
+          "compatibleWith": "这个形态与下面几种情况都相容，而这里的数字无法在它们之间排序：",
+          "explanation_technical": "只影响落地页模板的技术故障——robots 规则、误加的 noindex、canonical、某个模板的渲染回归",
+          "explanation_freshness": "有时效的内容过了窗口期",
+          "explanation_demand": "这批查询的需求发生变化，季节性或其他原因",
+          "explanation_serp": "结果页形态改变——AI 概览等特性在排名未变的情况下吃掉点击",
+          "explanation_competition": "其他站点开始做同一批查询",
+          "explanation_quality": "Google 的排名系统重新评估了该站点的内容",
+          "explanation_uniform": "同时影响整个资源的因素——可用性、抓取或索引",
+          "truncated": "其中一个窗口返回的查询多于我们读取的量。没读到的是点击较低的那些。"
+        },
+        "cohort": {
+          "label": "一组固定的查询现在在什么位置",
+          "intro": "固定的是查询，不是页面。一个页面被报告的位置是它出现过的所有查询的平均值，所以查询构成一变它就会动，哪怕结果里什么都没变——这使得「跌出前 50 的页面」在那份数据上根本无法测量。下面两个窗口看的是同样这 {cohortSize} 个查询。",
+          "topTen": "{startedInTopTen} 个起初在前十：{heldTopTen} 个仍在，{slippedWithinFifty} 个下滑但仍在 50 以内，{fellBelowFifty} 个跌到 50 以外。",
+          "noLongerVisible": "{count} 个已经不在查询报表里了。这与「失去全部流量」不是一回事：Search Console 会隐去低量查询，而那个阈值远高于零。可能是排名掉了，也可能只是需求变少，这份数据分不出来。",
+          "coverage": "这些查询占了前一窗口我们可见点击的 {share}。",
+          "truncated": "其中一个窗口返回的查询多于我们读取的量，因此这组查询是从一个前缀里取的。"
+        }
+      },
+      "brandTerms": {
+        "label": "你的品牌词（选填）",
+        "help": "只用于一项观察：品牌搜索和非品牌搜索的变化是否不同。我们从域名猜了一个，但这经常猜错——单词域名匹配不到人们实际的输入方式，而把它缩短又会吞掉你领域里所有的通用词。用逗号分隔；如果有带空格的写法，请一并写上。",
+        "placeholder": "acme, acme co, acmeapp",
+        "confirm": "这些是我的品牌词。不勾选则跳过这项拆分，报告里会写明。"
+      }
     },
     "quickWins": {
       "title": "SEO Quick Wins",
