@@ -31,6 +31,8 @@
 export interface ArticleItem {
   readonly heading: string;
   readonly body: string;
+  /** Dropped when this deployment cannot produce Title/Meta drafts. */
+  readonly requiresDrafts?: boolean;
 }
 
 export interface ArticleSection {
@@ -99,6 +101,7 @@ const EN: QuickWinsArticle = {
         {
           heading: "A draft you can see the source of",
           body: "Where your own site has a comparable page earning a clearly higher click-through rate at a similar position, we name that page and draft a title on the same pattern. No comparable page, no draft — we do not fall back to a generic template. At most five drafts per run, on the largest gaps.",
+          requiresDrafts: true,
         },
         {
           heading: "The whole table, out of the tab",
@@ -167,7 +170,7 @@ const EN: QuickWinsArticle = {
         },
         {
           heading: "Which page a query belongs to",
-          body: "The report reads one dimension, queries, so a row is a search term rather than a URL. Grouping a query by page costs a second, less complete read that Google drops rows from, and we only make it for the handful of rows a draft is attempted on.",
+          body: "The report reads one dimension, queries, so a row is a search term rather than a URL. Grouping a query by page is a second, less complete read that Google drops rows from, so that split is not part of this table.",
         },
         {
           heading: "What happened after you changed something",
@@ -252,6 +255,7 @@ const ZH: QuickWinsArticle = {
         {
           heading: "看得见出处的草稿",
           body: "如果你自己的网站上有一个页面，在相近位置拿到明显更高的点击率，我们会把那个页面具名指出来，并照同样的措辞模式起草一个标题。找不到合格对照页就不出草稿——我们不会退回到通用模板。每次运行最多五条，只给缺口最大的那几条。",
+          requiresDrafts: true,
         },
         {
           heading: "整张表可以带出这个标签页",
@@ -320,7 +324,7 @@ const ZH: QuickWinsArticle = {
         },
         {
           heading: "某条查询词属于哪个页面",
-          body: "报告只读一个维度——查询词，所以每一行是搜索词而不是 URL。把查询词按页面分组要多花一次读取，而且那次读取本身会被 Google 丢行，所以我们只在尝试起草的那几行上做。",
+          body: "报告只读一个维度——查询词，所以每一行是搜索词而不是 URL。把查询词按页面分组是另一次读取，而且那次读取本身会被 Google 丢行，所以这个拆分不进这张表。",
         },
         {
           heading: "你改完之后发生了什么",
@@ -362,6 +366,29 @@ const ZH: QuickWinsArticle = {
   ],
 };
 
-export function getQuickWinsArticle(locale: string): QuickWinsArticle {
-  return locale === "zh" ? ZH : EN;
+/**
+ * The long-form copy, minus anything this deployment cannot deliver.
+ *
+ * Drafts need a model key. A deployment without one still runs the whole
+ * evidence table, so the page stays correct by dropping the paragraphs that
+ * describe drafts rather than by hiding the tool. Setting the key brings them
+ * back on the next render, with nothing to remember to re-enable.
+ */
+export function getQuickWinsArticle(
+  locale: string,
+  options: { readonly draftsEnabled?: boolean } = {},
+): QuickWinsArticle {
+  const article = locale === "zh" ? ZH : EN;
+  if (options.draftsEnabled !== false) return article;
+  return {
+    ...article,
+    sections: article.sections.map((section) =>
+      section.items === undefined
+        ? section
+        : {
+            ...section,
+            items: section.items.filter((i) => i.requiresDrafts !== true),
+          },
+    ),
+  };
 }

@@ -5,9 +5,15 @@
 
 import type { DraftRunDependencies, PageMeta } from "@sf/public-tools";
 import { parsePage } from "@sf/sources";
+// The switch itself lives in a module with no imports, so the landing page can
+// ask "are drafts on" without pulling the crawler in behind it.
+import {
+  draftModelFromEnv,
+  type DraftModelConfig,
+} from "./quick-wins-draft-config.ts";
 
-/** Chat completions endpoint. Overridable so a test never reaches the network. */
-const DEFAULT_MODEL_URL = "https://api.openai.com/v1/chat/completions";
+export { draftModelFromEnv, type DraftModelConfig };
+
 /** The model call is the last thing in a run; it does not get to be slow. */
 const MODEL_TIMEOUT_MS = 20_000;
 
@@ -15,28 +21,6 @@ const MODEL_TIMEOUT_MS = 20_000;
 const PAGE_FETCH_TIMEOUT_MS = 6_000;
 /** A page whose head we cannot read in this much HTML is not worth more. */
 const MAX_PAGE_BYTES = 512 * 1024;
-
-/**
- * Whether this deployment can produce drafts at all.
- *
- * Absent configuration is a supported state, not an error: the evidence table
- * is the product and it does not depend on a model. `runQuickWins` simply
- * receives no seams and skips the two extra Search Console reads entirely.
- */
-export interface DraftModelConfig {
-  readonly apiKey: string;
-  readonly model: string;
-  readonly url: string;
-}
-
-export function draftModelFromEnv(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): DraftModelConfig | null {
-  const apiKey = env["QUICK_WINS_DRAFT_API_KEY"];
-  const model = env["QUICK_WINS_DRAFT_MODEL"];
-  if (!apiKey || !model) return null;
-  return { apiKey, model, url: env["QUICK_WINS_DRAFT_URL"] ?? DEFAULT_MODEL_URL };
-}
 
 /**
  * One chat completion.

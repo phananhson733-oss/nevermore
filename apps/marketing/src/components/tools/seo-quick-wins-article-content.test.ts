@@ -15,9 +15,11 @@ const LOCALES = ["en", "zh"] as const;
 /** apps/marketing, from this file. */
 const APP_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 
-function allProse(locale: string): string {
-  const article = getQuickWinsArticle(locale);
-  const content = getConnectedToolContent(locale, "seo-quick-wins");
+function allProse(locale: string, draftsEnabled = true): string {
+  const article = getQuickWinsArticle(locale, { draftsEnabled });
+  const content = getConnectedToolContent(locale, "seo-quick-wins", {
+    draftsEnabled,
+  });
   return [
     article.exampleHeading,
     ...article.example.flatMap((i) => [i.heading, i.body]),
@@ -129,6 +131,56 @@ describe("SEO Quick Wins page copy", () => {
     };
 
     expect(shape("zh")).toEqual(shape("en"));
+  });
+
+  for (const locale of LOCALES) {
+    it(`says nothing about drafts when this deployment cannot make one (${locale})`, () => {
+      // Drafts need a model key. Production had none on the day this page
+      // shipped, and the page still carried a how-to step, a feature heading
+      // and an FAQ entry about them — three promises no visitor could have
+      // collected on, two of them also written into structured data.
+      const prose = allProse(locale, false).toLowerCase();
+      for (const forbidden of ["draft", "草稿", "对照页", "comparable page"]) {
+        expect(prose, forbidden).not.toContain(forbidden);
+      }
+    });
+
+    it(`says all of it again once a key is configured (${locale})`, () => {
+      // The gate is not a deletion. Setting the key has to bring the copy back
+      // on the next render, or someone pays for a model and quietly advertises
+      // nothing.
+      const prose = allProse(locale, true).toLowerCase();
+      expect(prose).toMatch(/draft|草稿/);
+    });
+
+    it(`drops the draft entries from the structured data too (${locale})`, () => {
+      // The HowTo and FAQPage blocks are generated from this same object. Copy
+      // hidden on the page but left in the schema is the version a search
+      // engine quotes back.
+      const off = getConnectedToolContent(locale, "seo-quick-wins", {
+        draftsEnabled: false,
+      });
+      const on = getConnectedToolContent(locale, "seo-quick-wins");
+
+      expect(off.steps).toHaveLength(on.steps.length - 1);
+      expect(off.faq).toHaveLength(on.faq.length - 1);
+      expect(
+        off.steps.every((step) => step.requiresDrafts !== true),
+      ).toBe(true);
+      expect(off.faq.every((entry) => entry.requiresDrafts !== true)).toBe(true);
+    });
+  }
+
+  it("leaves the other connected tools alone when drafts are off", () => {
+    // Only this page has copy that depends on a model key. The flag defaults
+    // to on so no other caller has to know the word "draft" exists.
+    const on = getConnectedToolContent("en", "traffic-drop-diagnosis");
+    const off = getConnectedToolContent("en", "traffic-drop-diagnosis", {
+      draftsEnabled: false,
+    });
+
+    expect(off.steps).toHaveLength(on.steps.length);
+    expect(off.faq).toHaveLength(on.faq.length);
   });
 
   it("carries the case-study figures the evaluation actually measured", () => {
