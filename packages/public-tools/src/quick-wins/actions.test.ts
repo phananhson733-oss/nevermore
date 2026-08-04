@@ -139,6 +139,30 @@ describe("buildQuickWinActions", () => {
     );
   });
 
+  it("names the largest shortfalls even when the rows arrive out of order", () => {
+    // "The top five" and "the largest shortfall here is N" are claims about
+    // ordering. Today the rows do arrive sorted, but an action that quietly
+    // means "the first five we were handed" is wrong the moment anything
+    // re-sorts upstream — and it would be wrong silently, in a worklist.
+    const rows = withTracks(
+      [
+        row({ query: "small", clickGap: 3 }),
+        row({ query: "huge", clickGap: 120 }),
+        row({ query: "middling", clickGap: 40 }),
+      ],
+      new Set(),
+    );
+    const serp = buildQuickWinActions(input({ rows })).find(
+      (action) => action.id === "open_serps_for_top_gaps",
+    );
+
+    expect(serp?.queries).toEqual(["huge", "middling", "small"]);
+    expect(serp?.measures).toContainEqual({
+      key: "largestGapClicks",
+      value: 120,
+    });
+  });
+
   it("names the queries rather than only counting them", () => {
     // "Open the SERPs" is a sentiment until it names which ones.
     const rows = withTracks(
@@ -334,6 +358,26 @@ describe("firstCurveInversion", () => {
         ]),
       ),
     ).toBeNull();
+  });
+
+  it("reports the highest-ranked band that anything below it beats", () => {
+    // The shape a real run produced: a gentle descent through the middle and
+    // then 11-16 earning four times what 8-11 does. Several pairs invert; the
+    // one worth naming is the strongest claim available — that even the
+    // best-ranked band we can measure is beaten from below. Pinned because
+    // which pair gets named is a choice, not an accident of iteration order.
+    const found = firstCurveInversion(
+      curveOf([
+        bucket({ bucketId: "3-4", ctr: 0.0125 }),
+        bucket({ bucketId: "4-6", ctr: 0.0079 }),
+        bucket({ bucketId: "6-8", ctr: 0.0056 }),
+        bucket({ bucketId: "8-11", ctr: 0.0048 }),
+        bucket({ bucketId: "11-16", ctr: 0.0193 }),
+      ]),
+    );
+
+    expect(found?.higher.bucketId).toBe("3-4");
+    expect(found?.lower.bucketId).toBe("11-16");
   });
 
   it("returns null for a curve that descends the way it should", () => {

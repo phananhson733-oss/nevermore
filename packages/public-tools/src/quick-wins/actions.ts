@@ -64,11 +64,23 @@ export interface QuickWinActionInput {
   readonly anonymizationGapThreshold: number;
 }
 
-function queriesOnTrack(
+/**
+ * The rows on one path, largest shortfall first.
+ *
+ * Sorted here rather than trusted from the caller. The rows do arrive in gap
+ * order today — `buildEvidenceTable` sorts them and `withTracks` preserves it —
+ * but "the top five" and "the largest shortfall here is N" are claims about
+ * ordering, and an action that quietly means "the first five we happened to be
+ * handed" is wrong the moment anything re-sorts upstream. Ties break on query
+ * so a re-run of the same window names the same five.
+ */
+function rowsOnTrack(
   rows: readonly QuickWinEvidenceRow[],
   track: QuickWinEvidenceRow["track"],
-): readonly string[] {
-  return rows.filter((row) => row.track === track).map((row) => row.query);
+): readonly QuickWinEvidenceRow[] {
+  return [...rows]
+    .filter((row) => row.track === track)
+    .sort((a, b) => b.clickGap - a.clickGap || a.query.localeCompare(b.query));
 }
 
 /**
@@ -139,19 +151,18 @@ export function buildQuickWinActions(
     });
   }
 
-  const serpQueries = queriesOnTrack(input.rows, "read_the_serp");
-  if (serpQueries.length > 0) {
+  const serpRows = rowsOnTrack(input.rows, "read_the_serp");
+  if (serpRows.length > 0) {
     // The largest shortfall among them, so the reader knows the size of what
-    // they are being sent to look at before they spend the time. Rows arrive
-    // sorted by gap descending, so the first one is the largest.
-    const largest = input.rows.find((row) => row.track === "read_the_serp");
+    // they are being sent to look at before they spend the time.
+    const largest = serpRows[0];
     actions.push({
       id: "open_serps_for_top_gaps",
       kind: "external_data",
-      queries: serpQueries.slice(0, ACTION_QUERY_CAP),
+      queries: serpRows.slice(0, ACTION_QUERY_CAP).map((row) => row.query),
       bands: [],
       measures: [
-        { key: "serpRowCount", value: serpQueries.length },
+        { key: "serpRowCount", value: serpRows.length },
         { key: "largestGapClicks", value: largest?.clickGap ?? null },
       ],
     });
