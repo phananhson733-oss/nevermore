@@ -19,7 +19,11 @@ const PROPERTY = "sc-domain:example.com";
  * nothing failed when the client never sent it.
  */
 const ANSWERED = {
-  selfChecks: { manualAction: "reports_none", securityIssue: "reports_none" },
+  selfChecks: {
+    property: PROPERTY,
+    manualAction: "reports_none",
+    securityIssue: "reports_none",
+  },
 } as const;
 
 function request(body: unknown): Request {
@@ -133,7 +137,14 @@ describe("handleTrafficDropRequest", () => {
   it("does not confirm whether an ungranted property exists", async () => {
     const readDailySeries = vi.fn();
     const response = await handleTrafficDropRequest(
-      request({ property: "sc-domain:someone-else.com", ...ANSWERED }),
+      request({
+        property: "sc-domain:someone-else.com",
+        selfChecks: {
+          property: "sc-domain:someone-else.com",
+          manualAction: "reports_none",
+          securityIssue: "reports_none",
+        },
+      }),
       deps({ readDailySeries }),
     );
 
@@ -286,8 +297,14 @@ describe("handleTrafficDropRequest", () => {
     for (const body of [
       { property: PROPERTY },
       { property: PROPERTY, selfChecks: {} },
-      { property: PROPERTY, selfChecks: { manualAction: "reports_none" } },
-      { property: PROPERTY, selfChecks: { securityIssue: "reports_none" } },
+      {
+        property: PROPERTY,
+        selfChecks: { property: PROPERTY, manualAction: "reports_none" },
+      },
+      {
+        property: PROPERTY,
+        selfChecks: { property: PROPERTY, securityIssue: "reports_none" },
+      },
       { property: PROPERTY, selfChecks: null },
     ]) {
       const response = await handleTrafficDropRequest(
@@ -302,17 +319,62 @@ describe("handleTrafficDropRequest", () => {
     expect(readDailySeries).not.toHaveBeenCalled();
   });
 
+  it("refuses answers that name a different property than the one being read", async () => {
+    // The bug this backstops shipped in this branch: the client reset the
+    // brand list on a property change and did not reset these, so site A's
+    // "no issues" could be attached to a report about site B. The browser now
+    // binds them structurally; this turns the next such regression into a 400
+    // rather than a false all-clear.
+    //
+    // It does NOT verify a human looked at that property — nothing can, which
+    // is why these answers come from the visitor at all. It verifies the
+    // client's two claims agree with each other.
+    const readDailySeries = vi.fn();
+    const response = await handleTrafficDropRequest(
+      request({
+        property: PROPERTY,
+        selfChecks: {
+          property: "sc-domain:someone-else.com",
+          manualAction: "reports_none",
+          securityIssue: "reports_none",
+        },
+      }),
+      deps({ readDailySeries }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(readDailySeries).not.toHaveBeenCalled();
+  });
+
+  it("refuses answers that name no property at all", async () => {
+    for (const selfChecks of [
+      { manualAction: "reports_none", securityIssue: "reports_none" },
+      {
+        property: null,
+        manualAction: "reports_none",
+        securityIssue: "reports_none",
+      },
+    ]) {
+      const response = await handleTrafficDropRequest(
+        request({ property: PROPERTY, selfChecks }),
+        deps(),
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
   it("rejects an answer it does not recognise rather than coercing it", async () => {
     // Coercing an unknown value to `uncertain` would be tolerable; coercing it
     // to "no issue" would hand out the one reassurance this tool has no
     // standing to give. Rejecting keeps that decision out of reach. The second
     // case is the previous design's vocabulary, which a stale client would
     // still be sending.
-    for (const selfChecks of [
+    for (const answers of [
       { manualAction: "no", securityIssue: "reports_none" },
       { manualAction: "user_reports_none", securityIssue: "reports_none" },
       { manualAction: "reports_none", securityIssue: "not_checked" },
     ]) {
+      const selfChecks = { property: PROPERTY, ...answers };
       const response = await handleTrafficDropRequest(
         request({ property: PROPERTY, selfChecks }),
         deps(),
@@ -329,6 +391,7 @@ describe("handleTrafficDropRequest", () => {
       request({
         property: PROPERTY,
         selfChecks: {
+          property: PROPERTY,
           manualAction: "uncertain",
           securityIssue: "reports_issue",
         },

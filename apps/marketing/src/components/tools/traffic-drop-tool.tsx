@@ -24,6 +24,16 @@ import {
 interface TrafficDropPayload {
   readonly result: TrafficDropResult;
   readonly series: readonly TrafficDailyPoint[];
+  /**
+   * The property this report is about.
+   *
+   * Carried on the payload rather than read from the selector, because the
+   * selector moves and the report does not. Switching sites after a run used
+   * to leave the dropdown saying B while the chart, the numbers and the
+   * recorded self-check answers below were all still A's, with nothing naming
+   * A anywhere on the page.
+   */
+  readonly property: string;
 }
 
 interface TrafficDropToolProps {
@@ -149,7 +159,7 @@ export function TrafficDropTool({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           property,
-          selfChecks: answers,
+          selfChecks: { property, ...answers },
           brandTerms,
           brandTermsConfirmed: brandConfirmed,
         }),
@@ -162,7 +172,7 @@ export function TrafficDropTool({
         setErrorCode(body.error?.code ?? "unknown");
         return;
       }
-      setPayload(body.data);
+      setPayload({ ...body.data, property });
     } catch {
       setErrorCode("unknown");
     } finally {
@@ -436,7 +446,17 @@ export function TrafficDropTool({
         </p>
       ) : null}
 
-      {payload && stale ? (
+      {payload && payload.property !== property ? (
+        <p
+          role="status"
+          className="rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
+        >
+          {t("reportIsForOtherProperty", {
+            reported: formatPropertyLabel(payload.property),
+            selected: formatPropertyLabel(property),
+          })}
+        </p>
+      ) : payload && stale ? (
         <p
           role="status"
           className="rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
@@ -450,6 +470,9 @@ export function TrafficDropTool({
           {/* Bounds are null when the property returned no rows; we say so
               rather than printing today's date as if it were data. */}
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-text-dark-secondary">
+            <span className="font-semibold text-text-dark-primary">
+              {formatPropertyLabel(payload.property)}
+            </span>
             <span>
               {payload.result.dataEndDate
                 ? t("dataThrough", { date: payload.result.dataEndDate })

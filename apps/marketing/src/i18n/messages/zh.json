@@ -1246,7 +1246,8 @@
           "uncertain": "我没能确认"
         }
       },
-      "runBlockedBySelfChecks": "先回答上面两个问题才能生成报告。"
+      "runBlockedBySelfChecks": "先回答上面两个问题才能生成报告。",
+      "reportIsForOtherProperty": "下面这份报告是 {reported} 的，你现在选中的是 {selected}。要看 {selected} 的，请重新回答两个自查问题再生成。"
     },
     "quickWins": {
       "title": "SEO Quick Wins",

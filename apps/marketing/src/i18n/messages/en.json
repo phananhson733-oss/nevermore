@@ -1246,7 +1246,8 @@
           "uncertain": "I could not tell"
         }
       },
-      "runBlockedBySelfChecks": "Answer both questions above to run the report."
+      "runBlockedBySelfChecks": "Answer both questions above to run the report.",
+      "reportIsForOtherProperty": "The report below is for {reported}; you now have {selected} selected. To see {selected}, answer the two self-checks again and run it."
     },
     "quickWins": {
       "title": "SEO Quick Wins",

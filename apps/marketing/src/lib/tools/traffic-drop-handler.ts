@@ -132,6 +132,22 @@ function parseInput(
   if (!isSelfCheckAnswer(rawManualAction)) return { ok: false };
   if (!isSelfCheckAnswer(rawSecurityIssue)) return { ok: false };
 
+  // The answers must name the property they were given for, and it must be the
+  // one being diagnosed.
+  //
+  // This does NOT verify that a human looked at that property — nothing can;
+  // Google publishes no API for either page, which is the entire reason these
+  // arrive from the visitor. What it does verify is that the CLIENT's own two
+  // claims agree. That is worth a field: a report where site A's "no issues"
+  // was attached to site B shipped in this very branch, produced by a client
+  // that reset the brand list on a property change and forgot to reset these.
+  // The browser now binds them structurally, and this is the backstop that
+  // turns the next such regression into a 400 instead of a false all-clear.
+  const checkedProperty = (rawChecks as { readonly property?: unknown })
+    .property;
+  if (typeof checkedProperty !== "string") return { ok: false };
+  if (checkedProperty.trim() !== property.trim()) return { ok: false };
+
   const rawTerms = (body as { readonly brandTerms?: unknown }).brandTerms;
   if (rawTerms !== undefined && !Array.isArray(rawTerms)) return { ok: false };
 
