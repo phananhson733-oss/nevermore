@@ -466,7 +466,8 @@ function confirmedProfileFixture(): ConfirmedProductProfileRowDto {
         relationship: "indirect",
         analysisScope: ["content"],
         similarity: 0.54,
-        reason: "Teams may assemble onboarding operations in a general workspace.",
+        reason:
+          "Teams may assemble onboarding operations in a general workspace.",
         reviewStatus: "approved",
         confidence: "medium",
       },
@@ -613,9 +614,7 @@ async function serveOverview(
   if (scenario.detail) {
     await page.route(DETAIL_ROUTE, (route) => fulfill(route, scenario.detail));
   }
-  await page.route(SOURCES_ROUTE, (route) =>
-    fulfill(route, scenario.sources),
-  );
+  await page.route(SOURCES_ROUTE, (route) => fulfill(route, scenario.sources));
   await page.route(PRODUCT_PROFILE_ROUTE, (route) =>
     fulfill(route, scenario.productProfile),
   );
@@ -652,10 +651,12 @@ async function openOverview(
     }),
   ).toBeVisible();
   await expect(
-    page.locator("#main-content").getByText(
-      "E2E Critical Flow's confirmed context, current frozen audit, and next customer decisions in one view.",
-      { exact: true },
-    ),
+    page
+      .locator("#main-content")
+      .getByText(
+        "E2E Critical Flow's confirmed context, current frozen audit, and next customer decisions in one view.",
+        { exact: true },
+      ),
   ).toBeVisible();
   for (const title of [
     "What to decide and do next",
@@ -689,7 +690,9 @@ async function visibleBox(locator: Locator) {
 
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const overflow = await page.evaluate(() => ({
-    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    document:
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
     body: document.body.scrollWidth - document.body.clientWidth,
   }));
   expect(overflow.document).toBeLessThanOrEqual(1);
@@ -800,7 +803,9 @@ test("ready Overview renders the four current customer modules", async ({
     metricByLabel(portfolio, "URLs with Opportunities"),
   ).toContainText("2");
   await expect(metricByLabel(portfolio, "Active Findings")).toContainText("2");
-  await expect(metricByLabel(portfolio, "Findings to review")).toContainText("1");
+  await expect(metricByLabel(portfolio, "Findings to review")).toContainText(
+    "1",
+  );
   await expect(portfolio).toContainText("Loaded page only");
   // The Findings-to-review description is the review entry point; the count
   // itself stays plain text so an empty queue can never be linked.
@@ -856,7 +861,9 @@ test("ready Overview renders the four current customer modules", async ({
   await expect(sources).not.toContainText("Site crawl");
   await expect(sources).not.toContainText("CSV upload");
   await expect(sources).not.toContainText("DataForSEO");
-  await gsc.getByText("Source record / original wording", { exact: true }).click();
+  await gsc
+    .getByText("Source record / original wording", { exact: true })
+    .click();
   await expect(gsc).toContainText(
     "GSC rows are limited to the connected Search Console property.",
   );
@@ -879,6 +886,16 @@ test("ready Overview renders the four current customer modules", async ({
   );
   await expect(metricByLabel(context, "Approved competitors")).toContainText(
     "1 direct · 1 indirect",
+  );
+  // PRD R5.11 requires the Overview to carry an explicit competitor-candidate
+  // review entry beside the profile editor, not only the approved counts.
+  const reviewCompetitors = context.getByRole("link", {
+    name: "Review competitor candidates",
+  });
+  await expect(reviewCompetitors).toBeVisible();
+  await expect(reviewCompetitors).toHaveAttribute(
+    "href",
+    `/p/${E2E_PROJECT_ID}/growth-map?object=competitors`,
   );
   await context.getByText("Version and provenance", { exact: true }).click();
   await expect(context).toContainText(
@@ -1136,7 +1153,10 @@ test("ready four-module Overview keeps desktop and mobile WCAG AA semantics", as
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
-    page.getByRole("heading", { level: 1, name: "Where growth should move next" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: "Where growth should move next",
+    }),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
   expect(await blockingAxeViolations(page)).toEqual([]);
@@ -1186,7 +1206,9 @@ test("Overview chrome localizes to zh-CN while canonical customer data stays int
     hasText: "Google Search Console",
   });
   await expect(gsc.getByText("可用", { exact: true })).toBeVisible();
-  await gsc.getByText("来源记录 / 原始说明（保留原文）", { exact: true }).click();
+  await gsc
+    .getByText("来源记录 / 原始说明（保留原文）", { exact: true })
+    .click();
   const originalWording = gsc.getByText(
     "GSC rows are limited to the connected Search Console property.",
     { exact: true },
@@ -1242,7 +1264,9 @@ test("Overview uses the two-column folio on wide screens and one ordered column 
 
   await page.setViewportSize({ width: 390, height: 844 });
   const mobileCards = await Promise.all(
-    [priority, portfolio, sources, context].map((section) => visibleBox(section)),
+    [priority, portfolio, sources, context].map((section) =>
+      visibleBox(section),
+    ),
   );
   for (let index = 1; index < mobileCards.length; index += 1) {
     const previous = mobileCards[index - 1]!;
@@ -1286,8 +1310,12 @@ for (const viewport of [
       ),
     );
     if (viewport.width > 1050) {
-      expect(Math.abs(cardBoxes[0]!.y - cardBoxes[1]!.y)).toBeLessThanOrEqual(1);
-      expect(Math.abs(cardBoxes[2]!.y - cardBoxes[3]!.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(cardBoxes[0]!.y - cardBoxes[1]!.y)).toBeLessThanOrEqual(
+        1,
+      );
+      expect(Math.abs(cardBoxes[2]!.y - cardBoxes[3]!.y)).toBeLessThanOrEqual(
+        1,
+      );
       expect(cardBoxes[0]!.x).toBeLessThan(cardBoxes[1]!.x);
       expect(cardBoxes[2]!.x).toBeLessThan(cardBoxes[3]!.x);
     } else {
@@ -1338,11 +1366,13 @@ test("printing Overview leaves the shell chrome out of the output", async ({
   // The page itself must still be there — a rule that hid everything would
   // satisfy the two assertions above and be worse than the defect.
   await expect(
-    page.getByRole("heading", { level: 1, name: "Where growth should move next" }),
+    page.getByRole("heading", {
+      level: 1,
+      name: "Where growth should move next",
+    }),
   ).toBeVisible();
 
   await page.emulateMedia({ media: "screen" });
   await expect(sidebar).toBeVisible();
 });
-
 

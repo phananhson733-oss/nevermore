@@ -48,6 +48,7 @@ import {
   buildOverviewSourceCards,
   buildPortfolioSummary,
   buildVerifiedResultSummary,
+  overviewCompetitorLibraryHref,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
   selectFirstReviewableFinding,
@@ -1146,6 +1147,19 @@ function ContextSection({
                   indirect: summary.approvedIndirectCompetitors,
                 })}
               </strong>
+              {/*
+                PRD R5.11 requires the Overview to expose an explicit
+                competitor-candidate review entry beside the profile editor.
+                The approved counts above describe the frozen profile; this
+                link is the way back into the governance surface itself.
+              */}
+              <Link
+                className={styles.detailLink}
+                href={overviewCompetitorLibraryHref(projectId)}
+              >
+                {t("context.reviewCompetitors")}
+                <ArrowRight aria-hidden="true" size={14} />
+              </Link>
             </div>
           </div>
           <details className={styles.provenanceDisclosure}>

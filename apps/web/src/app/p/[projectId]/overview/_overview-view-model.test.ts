@@ -12,6 +12,7 @@ import {
   buildOverviewSourceCards,
   buildPortfolioSummary,
   buildVerifiedResultSummary,
+  overviewCompetitorLibraryHref,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
   selectFirstReviewableFinding,
@@ -36,9 +37,9 @@ describe("authoritative Growth Map query data", () => {
     expect(
       selectAuthoritativeGrowthMapRead(previouslySuccessful, true),
     ).toBeUndefined();
-    expect(
-      selectAuthoritativeGrowthMapRead(previouslySuccessful, false),
-    ).toBe(previouslySuccessful);
+    expect(selectAuthoritativeGrowthMapRead(previouslySuccessful, false)).toBe(
+      previouslySuccessful,
+    );
   });
 });
 
@@ -48,7 +49,9 @@ function portfolioItem(
   reviewableCount: number,
 ): GrowthMapUrlPortfolioItem {
   const findingIds = Array.from(
-    { length: reviewableCount > 0 ? reviewableCount : priority === null ? 0 : 1 },
+    {
+      length: reviewableCount > 0 ? reviewableCount : priority === null ? 0 : 1,
+    },
     (_, index) => `${sitePageId.slice(0, -1)}${index + 1}`,
   );
   return {
@@ -181,7 +184,8 @@ function source(
     id: `source-${provider}`,
     projectId: PROJECT_ID,
     provider,
-    connectionType: provider === "gsc" || provider === "ga4" ? "oauth" : "public",
+    connectionType:
+      provider === "gsc" || provider === "ga4" ? "oauth" : "public",
     state,
     externalRef: null,
     scopes: [],
@@ -221,11 +225,7 @@ function source(
 
 describe("Overview customer projection", () => {
   it("selects the highest current-run URL deterministically", () => {
-    const low = portfolioItem(
-      "00000000-0000-4000-8000-000000000041",
-      "low",
-      3,
-    );
+    const low = portfolioItem("00000000-0000-4000-8000-000000000041", "low", 3);
     const criticalOne = portfolioItem(
       "00000000-0000-4000-8000-000000000042",
       "critical",
@@ -247,9 +247,7 @@ describe("Overview customer projection", () => {
     const current = detail();
     const top = selectTopOpportunityFinding(current);
 
-    expect(top?.findingId).toBe(
-      "00000000-0000-4000-8000-000000000012",
-    );
+    expect(top?.findingId).toBe("00000000-0000-4000-8000-000000000012");
     expect(top?.diagnosticRunId).toBe(RUN_ID);
     expect(
       selectTopOpportunityFinding(
@@ -313,7 +311,11 @@ describe("Overview customer projection", () => {
       source("dataforseo", "available"),
     ]);
 
-    expect(cards.map((card) => card.provider)).toEqual(["gsc", "ga4", "github"]);
+    expect(cards.map((card) => card.provider)).toEqual([
+      "gsc",
+      "ga4",
+      "github",
+    ]);
     expect(cards[0]).toMatchObject({
       state: "available",
       capturedAt: "2026-07-21T00:00:00.000Z",
@@ -548,15 +550,21 @@ describe("Overview customer projection", () => {
     expect(selectFirstReviewableFinding([])).toBeNull();
   });
 
+  it("opens competitor review on the canonical competitor library", () => {
+    // PRD R5.11 requires the Overview to expose a competitor-candidate review
+    // entry. The Growth Map accepts no status filter, so the honest target is
+    // the library itself rather than a queue the URL cannot actually select.
+    expect(overviewCompetitorLibraryHref(PROJECT_ID)).toBe(
+      `/p/${PROJECT_ID}/growth-map?object=competitors`,
+    );
+  });
+
   it("builds only canonical Growth Map and Execution links", () => {
     expect(overviewGrowthMapHref(PROJECT_ID, null)).toBe(
       `/p/${PROJECT_ID}/growth-map?object=pages`,
     );
     expect(
-      overviewGrowthMapHref(
-        PROJECT_ID,
-        "00000000-0000-4000-8000-000000000071",
-      ),
+      overviewGrowthMapHref(PROJECT_ID, "00000000-0000-4000-8000-000000000071"),
     ).toBe(
       `/p/${PROJECT_ID}/growth-map?object=pages&selectedSitePageId=00000000-0000-4000-8000-000000000071`,
     );

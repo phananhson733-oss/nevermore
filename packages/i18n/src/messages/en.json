@@ -913,6 +913,7 @@
         "primaryIcp": "Primary ICP",
         "approvedCompetitors": "Approved competitors",
         "competitorMix": "{direct} direct · {indirect} indirect",
+        "reviewCompetitors": "Review competitor candidates",
         "unavailableValue": "Unavailable",
         "provenance": "Version and provenance",
         "confirmedAt": "Confirmed at",
