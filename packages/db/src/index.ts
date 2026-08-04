@@ -195,6 +195,7 @@ export type {
 } from "./repositories/finding-targets.ts";
 export {
   GrowthMapReadRepository,
+  isGrowthMapUrlCursorValid,
   MAX_GROWTH_MAP_ENTITY_LOOKUP,
   MAX_GROWTH_MAP_SEARCH_LENGTH,
   MAX_GROWTH_MAP_SNAPSHOT_LOOKUP,

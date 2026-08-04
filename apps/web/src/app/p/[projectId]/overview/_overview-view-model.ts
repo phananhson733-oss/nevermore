@@ -1,10 +1,11 @@
-import type {
-  ConfirmedProductProfileRowDto,
-  GrowthMapCoverage,
-  GrowthMapUrlDetail,
-  GrowthMapUrlFinding,
-  GrowthMapUrlPortfolioItem,
-  GrowthMapUrlPortfolioResponse,
+import {
+  isProductProfileCompetitorIncludedByDefault,
+  type ConfirmedProductProfileRowDto,
+  type GrowthMapCoverage,
+  type GrowthMapUrlDetail,
+  type GrowthMapUrlFinding,
+  type GrowthMapUrlPortfolioItem,
+  type GrowthMapUrlPortfolioResponse,
 } from "@sf/contracts";
 import type { OverviewAction } from "@/lib/api";
 import type { SourceConnection } from "@/lib/api/hooks-sources";
@@ -214,8 +215,8 @@ export interface ConfirmedProfileSummary {
   readonly triggers: readonly string[];
   readonly pains: readonly string[];
   readonly jtbd: readonly string[];
-  readonly approvedDirectCompetitors: number;
-  readonly approvedIndirectCompetitors: number;
+  readonly directCompetitors: number;
+  readonly indirectCompetitors: number;
   readonly sourceSiteId: string;
   readonly sourceSnapshotId: string | null;
   readonly generatedAt: string | null;
@@ -234,8 +235,8 @@ export function buildConfirmedProfileSummary(
     (audience) => audience.reviewStatus === "primary",
   );
   if (!primaryMarket || !primaryAudience?.targetCompanyOrAudience) return null;
-  const approved = profile.competitorCandidates.filter(
-    (candidate) => candidate.reviewStatus === "approved",
+  const included = profile.competitorCandidates.filter(
+    isProductProfileCompetitorIncludedByDefault,
   );
   return {
     profileId: row.id,
@@ -255,10 +256,10 @@ export function buildConfirmedProfileSummary(
     triggers: primaryAudience.triggers,
     pains: primaryAudience.pains,
     jtbd: primaryAudience.jtbd,
-    approvedDirectCompetitors: approved.filter(
+    directCompetitors: included.filter(
       (candidate) => candidate.relationship === "direct",
     ).length,
-    approvedIndirectCompetitors: approved.filter(
+    indirectCompetitors: included.filter(
       (candidate) => candidate.relationship === "indirect",
     ).length,
     sourceSiteId: profile.sourceSiteId,

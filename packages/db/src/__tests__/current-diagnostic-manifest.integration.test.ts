@@ -302,7 +302,10 @@ describeDb("current diagnostic manifest snapshot selection", () => {
   async function insertDiagnostic(
     snapshots: readonly FrozenSnapshot[],
     options: {
-      readonly ruleSetVersion?: "mvp.rules.0.2.1" | "mvp.rules.0.2.2";
+      readonly ruleSetVersion?:
+        | "mvp.rules.0.2.1"
+        | "mvp.rules.0.2.2"
+        | "mvp.rules.0.2.3";
       readonly governance?: CanonicalValue;
     } = {},
   ) {
@@ -450,5 +453,43 @@ describeDb("current diagnostic manifest snapshot selection", () => {
         [diagnostic.id],
       ),
     ).resolves.toMatchObject({ rowCount: 3 });
+  });
+
+  it("requires governance for 0.2.3 and admits only TECH-LINKGRAPH-005@3", async () => {
+    const crawl = await insertSnapshot("crawl");
+    const governance = {
+      projectionVersion: "growth-governance.1.0.0",
+      keywordClusters: [],
+      competitors: [],
+    } as const satisfies CanonicalValue;
+
+    await expect(
+      insertDiagnostic([crawl], { ruleSetVersion: "mvp.rules.0.2.3" }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+
+    const diagnostic = await insertDiagnostic([crawl], {
+      ruleSetVersion: "mvp.rules.0.2.3",
+      governance,
+    });
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'TECH-LINKGRAPH-005', 2, 'technical_seo',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'TECH-LINKGRAPH-005', 3, 'technical_seo',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).resolves.toMatchObject({ rowCount: 1 });
   });
 });

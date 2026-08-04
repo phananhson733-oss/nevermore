@@ -1605,7 +1605,10 @@ export interface components {
         ProductProfileCompetitorRelationship: "direct" | "indirect";
         /** @enum {string} */
         ProductProfileCompetitorAnalysisScope: "positioning" | "product_capability" | "keyword_gap" | "content" | "serp_visibility";
-        /** @enum {string} */
+        /**
+         * @description Classified generated competitors are approved and included by default; candidate is reserved for incomplete classification, and excluded is an explicit opt-out.
+         * @enum {string}
+         */
         ProductProfileCompetitorReviewStatus: "candidate" | "approved" | "excluded";
         /** @description Normalized lowercase hostname without a scheme, port, or path. */
         ProductProfileCompetitorDomain: string;
@@ -1710,6 +1713,7 @@ export interface components {
             coreFeatures: string[];
             targetMarkets: components["schemas"]["ProductProfileTargetMarket"][];
             targetAudiences: components["schemas"]["ProductProfileTargetAudience"][];
+            /** @description Evidence-backed competitors with a complete direct/indirect relationship and analysis scope are included by default; customers may adjust or exclude them. */
             competitorCandidates: components["schemas"]["ProductProfileCompetitorCandidate"][];
             fieldProvenance: components["schemas"]["ProductProfileFieldProvenance"][];
             missingFields: string[];
@@ -2833,7 +2837,7 @@ export interface components {
         OpportunityRuleReference: {
             ruleId: components["schemas"]["OpportunityRuleId"];
             /** @enum {integer} */
-            ruleVersion: 1 | 2;
+            ruleVersion: 1 | 2 | 3;
         };
         OpportunityOwnedAsset: {
             sitePageId: components["schemas"]["Uuid"];
@@ -4385,7 +4389,7 @@ export interface components {
         ActionRecheckRuleComparison: {
             ruleId: components["schemas"]["OpportunityRuleId"];
             /** @enum {integer} */
-            ruleVersion: 1 | 2;
+            ruleVersion: 1 | 2 | 3;
             priorStatus: components["schemas"]["RecheckRuleStatus"];
             currentStatus: components["schemas"]["RecheckRuleStatus"];
             /** @enum {string} */
@@ -5147,7 +5151,7 @@ export interface components {
             id: components["schemas"]["Uuid"];
             ruleId: string;
             /** @enum {integer} */
-            ruleVersion: 1 | 2;
+            ruleVersion: 1 | 2 | 3;
             domain: components["schemas"]["DiagnosticDomain"];
             titleKey: string;
             titleArgs: {

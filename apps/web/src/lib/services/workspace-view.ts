@@ -439,6 +439,7 @@ async function loadLatestFrozenAuditMembership(
     const page = await repository.listCurrentRunUrls(projectScope, run.id, {
       limit: MAX_GROWTH_MAP_URL_PAGE_SIZE,
       cursor,
+      opportunitiesOnly: false,
     });
     pageCount += 1;
     const targets = await repository.listResolvedTargets(

@@ -285,7 +285,7 @@ describe("Growth Map URL read boundary", () => {
     expect(listUrls).toHaveBeenCalledWith(
       { workspaceId: scope.workspaceId, projectId },
       olderPublishedRunId,
-      { limit: 50, cursor: null },
+      { limit: 50, cursor: null, opportunitiesOnly: true },
     );
     expect(latestRun).not.toHaveBeenCalled();
   });

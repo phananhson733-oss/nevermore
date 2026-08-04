@@ -5,6 +5,7 @@ import {
   CreateProductProfileSynthesisRunRequest,
   ConfirmedProductProfile,
   createInitialProductProfileDraft,
+  isProductProfileCompetitorIncludedByDefault,
   PRODUCT_PROFILE_SCHEMA_VERSION,
   ProductProfileDraft,
   ProductProfileEditablePatch,
@@ -119,6 +120,37 @@ function completeProfile() {
 }
 
 describe("ProductProfileDraft", () => {
+  it("treats complete generated classifications as opt-out defaults", () => {
+    expect(
+      isProductProfileCompetitorIncludedByDefault({
+        reviewStatus: "candidate",
+        relationship: "direct",
+        analysisScope: ["keyword_gap"],
+      }),
+    ).toBe(true);
+    expect(
+      isProductProfileCompetitorIncludedByDefault({
+        reviewStatus: "approved",
+        relationship: "indirect",
+        analysisScope: ["content"],
+      }),
+    ).toBe(true);
+    expect(
+      isProductProfileCompetitorIncludedByDefault({
+        reviewStatus: "excluded",
+        relationship: "direct",
+        analysisScope: ["keyword_gap"],
+      }),
+    ).toBe(false);
+    expect(
+      isProductProfileCompetitorIncludedByDefault({
+        reviewStatus: "candidate",
+        relationship: null,
+        analysisScope: [],
+      }),
+    ).toBe(false);
+  });
+
   it("uses the exact version and permits an honest incomplete draft", () => {
     expect(ProductProfileSchemaVersion.parse(PRODUCT_PROFILE_SCHEMA_VERSION)).toBe(
       "product-profile.0.3.0",

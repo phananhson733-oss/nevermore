@@ -1,4 +1,5 @@
 import {
+  GOVERNED_LEGACY_RULE_SET_VERSION,
   LEGACY_RULE_SET_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -40,18 +41,34 @@ describe("diagnostic executor version resolution", () => {
     ).toBe(true);
   });
 
-  it("resolves the current 0.2.2 executor with mandatory governance", () => {
+  it("resolves the current 0.2.3 executor with mandatory governance", () => {
     const executor = resolveDiagnosticExecutor(
       storedExecutor(RULE_SET_VERSION),
     );
 
     expect(executor).toMatchObject({
-      ruleSetVersion: "mvp.rules.0.2.2",
+      ruleSetVersion: "mvp.rules.0.2.3",
       promptSetVersion: "mvp.prompts.0.2.0",
       governance: "required",
     });
     expect(
       executor?.rules.find((rule) => rule.id === "CONTENT-GAP-011"),
+    ).toMatchObject({ version: 2 });
+    expect(
+      executor?.rules.find((rule) => rule.id === "TECH-LINKGRAPH-005"),
+    ).toMatchObject({ version: 3 });
+  });
+
+  it("resolves governed 0.2.2 history with the exact @2 linkgraph rule", () => {
+    const executor = resolveDiagnosticExecutor(
+      storedExecutor(GOVERNED_LEGACY_RULE_SET_VERSION),
+    );
+    expect(executor).toMatchObject({
+      ruleSetVersion: "mvp.rules.0.2.2",
+      governance: "required",
+    });
+    expect(
+      executor?.rules.find((rule) => rule.id === "TECH-LINKGRAPH-005"),
     ).toMatchObject({ version: 2 });
   });
 

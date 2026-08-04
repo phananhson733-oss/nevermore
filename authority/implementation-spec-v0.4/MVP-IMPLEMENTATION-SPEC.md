@@ -4,7 +4,7 @@ authority_status: active
 normative: true
 product_version: 0.3.0
 contract_version: 2026-07-21
-rule_set_version: mvp.rules.0.2.2
+rule_set_version: mvp.rules.0.2.3
 prompt_set_version: mvp.prompts.0.2.0
 ---
 
@@ -42,9 +42,13 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
    可追溯、可编辑的 declared facts，不得冒充 Crawl、DFS 或 AI 观察结果。
 2. Crawl 生成 immutable Snapshot、PageSnapshot 与 Observation。
 3. Product Profile synthesis 只可引用冻结证据，输出可审核的产品类别、商业
-   模式、目标市场、ICP/JTBD、价值主张、转化目标和竞品候选。
+   模式、目标市场、ICP/JTBD、价值主张、转化目标和直接/间接竞品集合。关系与
+   analysis scope 完整的可追溯竞品默认纳入后续分析；客户可以修改关系或明确排除，
+   不要求逐项从 candidate 手工批准。
 4. AI 草稿是 draft；每个推断字段必须携带 provenance/limitation，用户可以
-   修改后生成新的 append-only ICP version。
+   修改后生成新的 append-only ICP version。历史 0.3.0 画像中已经具备关系与
+   analysis scope 的 candidate 按同一 opt-out 规则读取，但不得改写冻结画像 JSON；
+   竞品库只可回填从未发生客户治理的 revision-zero entity。
 5. 只有 complete profile 可成为诊断的冻结输入；确认画像不隐式启动分析。
 6. Production operator 必须来自 Supabase Auth 且已经存在对应
    `operator_profiles`；登录不能自动授予 workspace membership。
@@ -465,12 +469,12 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 11. 冻结规则
 
-规则集 `mvp.rules.0.2.2` 的 11 条规则与版本：
+规则集 `mvp.rules.0.2.3` 的 11 条规则与版本：
 
 <!-- RULES_BEGIN -->
 - `TECH-HTTP-001`: 2
 - `TECH-CANONICAL-002`: 2
-- `TECH-LINKGRAPH-005`: 2
+- `TECH-LINKGRAPH-005`: 3
 - `SEARCH-CTR-004`: 1
 - `SEARCH-DECAY-002`: 1
 - `CONTENT-COVERAGE-001`: 1

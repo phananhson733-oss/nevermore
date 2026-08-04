@@ -381,13 +381,24 @@ function discoveredCompetitorProvenance(
       },
     ],
     limitation:
-      "Candidate is ranked from a bounded DataForSEO organic search-landscape observation. Domain intersections and seed-based SERP ratings retain their distinct source semantics and are never presented as similarity percentages; relationship and scope remain reviewable draft classifications.",
+      "The competitor is ranked from a bounded DataForSEO organic search-landscape observation and included by default when its relationship and scope are complete. Domain intersections and seed-based SERP ratings retain their distinct source semantics and are never presented as similarity percentages; the customer can adjust or exclude the classification.",
     observedAt,
   };
 }
 
 function sortedUniqueStrings<T extends string>(values: readonly T[]): T[] {
   return [...values].sort(compareText);
+}
+
+function generatedCompetitorReviewStatus(
+  competitor: {
+    relationship: ProductProfileCompetitorCandidate["relationship"];
+    analysisScope: readonly ProductProfileCompetitorCandidate["analysisScope"][number][];
+  },
+): ProductProfileCompetitorCandidate["reviewStatus"] {
+  return competitor.relationship !== null && competitor.analysisScope.length > 0
+    ? "approved"
+    : "candidate";
 }
 
 function audienceValue(
@@ -677,7 +688,7 @@ export function buildProductProfileDraft(
       analysisScope: sortedUniqueStrings(candidate.analysisScope),
       similarity: candidate.similarity,
       reason: candidate.reason,
-      reviewStatus: "candidate",
+      reviewStatus: generatedCompetitorReviewStatus(candidate),
       confidence: candidate.confidence,
     });
     infer(`/competitorCandidates/${index}`, candidate);
@@ -703,7 +714,7 @@ export function buildProductProfileDraft(
       analysisScope: sortedUniqueStrings(candidate.analysisScope),
       similarity: null,
       reason: candidate.reason,
-      reviewStatus: "candidate",
+      reviewStatus: generatedCompetitorReviewStatus(candidate),
       confidence: candidate.confidence,
     });
     provenance.set(

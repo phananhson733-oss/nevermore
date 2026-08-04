@@ -40,22 +40,28 @@ export const OPPORTUNITY_RULE_IDS = [
 export const OpportunityRuleId = z.enum(OPPORTUNITY_RULE_IDS);
 export type OpportunityRuleId = z.infer<typeof OpportunityRuleId>;
 
-const EXACT_VARIANT_RULE_IDS = new Set<OpportunityRuleId>([
-  "TECH-HTTP-001",
-  "TECH-CANONICAL-002",
-  "TECH-LINKGRAPH-005",
-]);
+const OPPORTUNITY_RULE_VERSIONS = {
+  "TECH-HTTP-001": 2,
+  "TECH-CANONICAL-002": 2,
+  "TECH-LINKGRAPH-005": 3,
+  "SEARCH-CTR-004": 1,
+  "SEARCH-DECAY-002": 1,
+  "CONTENT-COVERAGE-001": 1,
+  "CONTENT-GAP-011": 2,
+  "CRO-PATH-001": 1,
+  "CRO-LANDING-003": 1,
+  "GEO-ENTITY-001": 1,
+  "GEO-CRAWLER-002": 1,
+} as const satisfies Readonly<Record<OpportunityRuleId, 1 | 2 | 3>>;
 
 export const OpportunityRuleReference = z
   .object({
     ruleId: OpportunityRuleId,
-    ruleVersion: z.union([z.literal(1), z.literal(2)]),
+    ruleVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   })
   .strict()
   .superRefine((reference, ctx) => {
-    const expectedVersion = EXACT_VARIANT_RULE_IDS.has(reference.ruleId)
-      ? 2
-      : 1;
+    const expectedVersion = OPPORTUNITY_RULE_VERSIONS[reference.ruleId];
     if (reference.ruleVersion !== expectedVersion) {
       ctx.addIssue({
         code: "custom",

@@ -330,11 +330,7 @@ const FIXTURES = {
   "TECH-LINKGRAPH-005": {
     pass: context({
       coverage: { crawl: "available" },
-      observations: [
-        crawlObs(`${SITE}/source-a`, { internalOutlinks: [link(PRICING)] }),
-        crawlObs(`${SITE}/source-b`, { internalOutlinks: [link(PRICING)] }),
-        crawlObs(PRICING),
-      ],
+      observations: [],
     }),
     candidate: context({
       coverage: { crawl: "available" },

@@ -48,4 +48,12 @@ describe("ACTION_TEMPLATES", () => {
     );
     expect(new Set(templateIds).size).toBe(templateIds.length);
   });
+
+  it("uses the broader v2 internal-link repair template", () => {
+    expect(ACTION_TEMPLATES["TECH-LINKGRAPH-005"]).toMatchObject({
+      templateId: "repair_internal_link_architecture.v2",
+      templateVersion: 2,
+      artifactType: "technical_ticket",
+    });
+  });
 });

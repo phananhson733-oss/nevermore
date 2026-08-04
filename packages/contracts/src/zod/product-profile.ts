@@ -157,6 +157,26 @@ export type ProductProfileCompetitorCandidate = z.infer<
   typeof ProductProfileCompetitorCandidate
 >;
 
+/**
+ * Product Profile discovery is opt-out: a traceable generated competitor with
+ * a complete direct/indirect classification is part of the working comparison
+ * set unless the customer excludes it. The `candidate` branch keeps historical
+ * 0.3.0 profiles useful without rewriting their immutable JSON; new synthesis
+ * writes the same classified rows as `approved` directly.
+ */
+export function isProductProfileCompetitorIncludedByDefault(
+  competitor: Pick<
+    ProductProfileCompetitorCandidate,
+    "reviewStatus" | "relationship" | "analysisScope"
+  >,
+): boolean {
+  return (
+    competitor.reviewStatus !== "excluded" &&
+    competitor.relationship !== null &&
+    competitor.analysisScope.length > 0
+  );
+}
+
 export const ProductProfileProvenanceDerivation = z.enum([
   "declared",
   "observed",

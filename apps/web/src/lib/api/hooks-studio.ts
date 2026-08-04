@@ -205,6 +205,7 @@ const TEMPLATE_ARTIFACT_TYPE: Readonly<Record<string, ArtifactType>> = {
   "fix_http_status.v1": "technical_ticket",
   "normalize_canonical.v1": "technical_ticket",
   "strengthen_internal_links.v1": "technical_ticket",
+  "repair_internal_link_architecture.v2": "technical_ticket",
   "rewrite_search_metadata.v1": "metadata_rewrite",
   "refresh_decaying_content.v1": "content_brief",
   "create_priority_content.v1": "content_brief",

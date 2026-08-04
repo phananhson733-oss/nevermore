@@ -169,8 +169,9 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.authorityVersion, "0.4.0");
   assert.equal(lock.authorityStatus, "active");
   assert.equal(lock.normative, true);
-  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.2");
+  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
+  assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
 
   assert.match(readme, /状态：\*\*active\*\*/);
   assert.match(readme, /规范性：\*\*normative\*\*/);

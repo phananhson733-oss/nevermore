@@ -162,7 +162,7 @@ const ruleSetVersion = registry.match(
 const promptSetVersion = registry.match(
   /PROMPT_SET_VERSION\s*=\s*"([^"]+)"/,
 )?.[1];
-assert.equal(ruleSetVersion, "mvp.rules.0.2.2");
+assert.equal(ruleSetVersion, "mvp.rules.0.2.3");
 assert.equal(promptSetVersion, "mvp.prompts.0.2.0");
 
 const openapi = read("openapi/mvp.yaml");
@@ -185,6 +185,7 @@ const ruleVersions = Object.fromEntries(
   ruleContracts.map(({ id, version }) => [id, version]),
 );
 assert.equal(ruleVersions["CONTENT-GAP-011"], 2);
+assert.equal(ruleVersions["TECH-LINKGRAPH-005"], 3);
 
 const lock = {
   lockFormat: 3,

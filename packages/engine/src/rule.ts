@@ -96,7 +96,7 @@ export type RuleResult =
 
 export interface DiagnosticRule {
   readonly id: RuleId;
-  readonly version: 1 | 2;
+  readonly version: 1 | 2 | 3;
   readonly domain: DiagnosticDomain;
   readonly requiredDatasets: readonly DatasetRequirement[];
   evaluate(ctx: DiagnosticContext): RuleResult | Promise<RuleResult>;

@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   synthesisAttemptExists: vi.fn(),
   updateMarkets: vi.fn(),
   competitorUpsert: vi.fn(),
+  competitorDefault: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -68,6 +69,7 @@ vi.mock("@sf/db", async (importOriginal) => {
     },
     CompetitorsRepository: class {
       upsertOrigin = mocks.competitorUpsert;
+      applyProductProfileDefaultGovernance = mocks.competitorDefault;
     },
   };
 });
@@ -205,6 +207,7 @@ beforeEach(() => {
     occurrenceId: "00000000-0000-4000-8000-000000000030",
     competitorId: "00000000-0000-4000-8000-000000000031",
   });
+  mocks.competitorDefault.mockResolvedValue(null);
 });
 
 describe("getProductProfileWorkspace", () => {
@@ -783,6 +786,7 @@ describe("confirmProductProfile", () => {
       result.id,
     );
     expect(mocks.competitorUpsert).not.toHaveBeenCalled();
+    expect(mocks.competitorDefault).not.toHaveBeenCalled();
     expect(mocks.updateMarkets).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
       ["US", "GB"],
@@ -985,6 +989,28 @@ describe("confirmProductProfile", () => {
         sourceRelationship: "indirect",
         sourceAnalysisScope: ["content"],
       }),
+    );
+    expect(mocks.competitorDefault).toHaveBeenNthCalledWith(
+      1,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      "00000000-0000-4000-8000-000000000031",
+      {
+        name: "Competitor one",
+        reviewStatus: "approved",
+        relationship: "direct",
+        analysisScope: ["positioning"],
+      },
+    );
+    expect(mocks.competitorDefault).toHaveBeenNthCalledWith(
+      2,
+      { workspaceId: ids.workspace, projectId: ids.project },
+      "00000000-0000-4000-8000-000000000031",
+      {
+        name: "Competitor two",
+        reviewStatus: "approved",
+        relationship: "indirect",
+        analysisScope: ["content"],
+      },
     );
     expect(mocks.setCurrent.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.competitorUpsert.mock.invocationCallOrder[0]!,

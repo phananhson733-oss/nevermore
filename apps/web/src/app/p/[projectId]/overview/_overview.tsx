@@ -1142,8 +1142,8 @@ function ContextSection({
               </span>
               <strong>
                 {t("context.competitorMix", {
-                  direct: summary.approvedDirectCompetitors,
-                  indirect: summary.approvedIndirectCompetitors,
+                  direct: summary.directCompetitors,
+                  indirect: summary.indirectCompetitors,
                 })}
               </strong>
             </div>

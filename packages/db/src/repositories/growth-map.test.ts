@@ -367,8 +367,14 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain("null::text as template_key");
     expect(query.sql).not.toContain('"app"."site_pages"."template_key"');
     expect(query.sql).not.toContain('"app"."site_pages"."updated_at"');
-    expect(query.sql).toContain("order by site_page_created_at asc");
+    expect(query.sql).toContain("opportunity_coverage_count desc");
+    expect(query.sql).toContain("opportunity_priority_rank asc");
+    expect(query.sql).toContain("opportunity_finding_count desc");
+    expect(query.sql).toContain("site_page_created_at asc");
     expect(query.sql).toContain("site_page_id asc");
+    expect(query.sql).toContain(
+      "coalesce(opportunity_sort.finding_count, 0) > 0",
+    );
     expect(query.params).toContain(runId);
     expect(query.params).toContain("Product_100%");
     // Every physical project-scoped table in the projection is scoped in SQL.
@@ -385,15 +391,21 @@ describe("GrowthMapReadRepository", () => {
     }
   });
 
-  it("uses a strict immutable SitePage created-at/id keyset and reads one overflow row", async () => {
+  it("uses the full coverage, priority, finding-count, and SitePage keyset across pages", async () => {
     const { db, repo } = repository();
     const first = {
       site_page_id: pageId,
       site_page_created_at: "2026-07-22T01:00:00.000Z",
+      opportunity_coverage_count: 17,
+      opportunity_priority_rank: 1,
+      opportunity_finding_count: 7,
     };
     const second = {
       site_page_id: secondPageId,
       site_page_created_at: "2026-07-22T02:00:00.000Z",
+      opportunity_coverage_count: 11,
+      opportunity_priority_rank: 2,
+      opportunity_finding_count: 3,
     };
     db.enqueue([first, second]);
 
@@ -410,11 +422,40 @@ describe("GrowthMapReadRepository", () => {
       cursor: page.nextCursor,
     });
     const query = db.lastSql();
+    expect(query.sql).toContain(
+      "coalesce(opportunity_sort.coverage_count, 0) < $",
+    );
+    expect(query.sql).toContain(
+      "coalesce(opportunity_sort.priority_rank, 4) > $",
+    );
+    expect(query.sql).toContain(
+      "coalesce(opportunity_sort.finding_count, 0) < $",
+    );
     expect(query.sql).toContain("site_page_created_at > $");
     expect(query.sql).toContain("site_page_id > $");
+    expect(query.params).toContain(first.opportunity_coverage_count);
+    expect(query.params).toContain(first.opportunity_priority_rank);
+    expect(query.params).toContain(first.opportunity_finding_count);
     expect(query.params).toContain(first.site_page_created_at);
     expect(query.params).toContain(first.site_page_id);
     expect(query.params.at(-1)).toBe(2);
+  });
+
+  it("can retain the full frozen URL inventory for non-Opportunity consumers", async () => {
+    const { db, repo } = repository();
+    db.enqueue([]);
+
+    await repo.listCurrentRunUrls(scope, runId, {
+      limit: 10,
+      cursor: null,
+      opportunitiesOnly: false,
+    });
+
+    const query = db.lastSql();
+    expect(query.sql).not.toContain(
+      "and coalesce(opportunity_sort.finding_count, 0) > 0",
+    );
+    expect(query.sql).toContain("and true");
   });
 
   it("rejects malformed cursors and unbounded URL options before issuing SQL", async () => {

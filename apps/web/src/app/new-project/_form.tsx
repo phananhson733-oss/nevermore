@@ -39,7 +39,7 @@ import styles from "./new-project.module.css";
 /**
  * The customer supplies only facts they already know. The server creates the
  * versioned Product Profile draft; the next screen collects website evidence
- * and builds the AI-assisted ICP and competitor candidates.
+ * and builds the AI-assisted ICP and default direct/indirect competitor set.
  */
 
 function SelectControl(props: SelectHTMLAttributes<HTMLSelectElement>) {

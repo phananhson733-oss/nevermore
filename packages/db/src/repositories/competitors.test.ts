@@ -559,6 +559,74 @@ describe("CompetitorsRepository", () => {
     expect(predicate.sql).toContain('"archived_at" is null');
   });
 
+  it("applies Product Profile defaults only to revision-zero governance", async () => {
+    const db = new FakeExecutor();
+    db.enqueue([
+      {
+        ...entity,
+        name: "Profile competitor",
+        review_status: "approved",
+        relationship: "direct",
+        analysis_scope: ["keyword_gap", "serp_visibility"],
+        revision: 1,
+      },
+    ]);
+    const repo = new CompetitorsRepository(db as never);
+
+    const result = await repo.applyProductProfileDefaultGovernance(
+      scope,
+      entity.id,
+      {
+        name: "Profile competitor",
+        reviewStatus: "approved",
+        relationship: "direct",
+        analysisScope: ["keyword_gap", "serp_visibility"],
+      },
+    );
+
+    expect(result).toMatchObject({
+      review_status: "approved",
+      relationship: "direct",
+      revision: 1,
+    });
+    expect(db.last("set").args[0]).toEqual({
+      name: "Profile competitor",
+      review_status: "approved",
+      relationship: "direct",
+      analysis_scope: ["keyword_gap", "serp_visibility"],
+      revision: 1,
+    });
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"revision" = $');
+    expect(predicate.params).toContain(0);
+    expect(predicate.sql).toContain('"archived_at" is null');
+  });
+
+  it("rejects incomplete Product Profile default classifications before SQL", async () => {
+    const db = new FakeExecutor();
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.applyProductProfileDefaultGovernance(scope, entity.id, {
+        name: "Profile competitor",
+        reviewStatus: "approved",
+        relationship: null,
+        analysisScope: [],
+      }),
+    ).rejects.toThrow(/default governance/iu);
+    await expect(
+      repo.applyProductProfileDefaultGovernance(scope, entity.id, {
+        name: "Profile competitor",
+        reviewStatus: "excluded",
+        relationship: "direct",
+        analysisScope: ["keyword_gap"],
+      }),
+    ).rejects.toThrow(/default governance/iu);
+    expect(db.calls).toEqual([]);
+  });
+
   it("allows only the final incrementable competitor CAS revision", async () => {
     const db = new FakeExecutor();
     db.enqueue([

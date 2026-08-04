@@ -833,7 +833,7 @@ describeDb("product-profile competitor projection integration", () => {
     });
   });
 
-  it("does not auto-promote existing csv-first candidate governance when a confirmed profile arrives later", async () => {
+  it("promotes an unreviewed csv-first candidate when the confirmed profile includes it by default", async () => {
     await inRolledBackFixture(handle, async (tx) => {
       const project = await createProject(tx);
       await createCsvCompetitorOrigin(tx, project, "one.example");
@@ -854,9 +854,10 @@ describeDb("product-profile competitor projection integration", () => {
       const page = await repository.listByProject(scope, { limit: 10, cursor: null });
       const exact = page.rows.find((row) => row.domain === "one.example");
       expect(exact).toMatchObject({
-        review_status: "candidate",
-        relationship: null,
-        analysis_scope: [],
+        review_status: "approved",
+        relationship: "direct",
+        analysis_scope: ["keyword_gap", "positioning"],
+        revision: 1,
         origin_count: 2,
       });
       const origins = await repository.listOrigins(scope, exact!.id, 10);

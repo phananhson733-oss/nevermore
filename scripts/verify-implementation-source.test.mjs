@@ -35,7 +35,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.asyncOperations.length, 10);
   assert.equal(lock.tables.length, 78);
   assert.equal(lock.rules.length, 11);
-  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.2");
+  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.doesNotMatch(verifier, /mvp\.rules\.0\.2\.1/);
 });

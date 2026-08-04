@@ -660,7 +660,11 @@ type FrozenPageIdentity = Awaited<
 function frozenPageIdentity(
   overrides: Partial<FrozenPageIdentity> = {},
 ): FrozenPageIdentity {
-  const normalizedUrl = `${SITE_ORIGIN}/fixture`;
+  const normalizedUrl = overrides.normalized_url ?? `${SITE_ORIGIN}/fixture`;
+  const projection = {
+    ...validProjectionFor(OBSERVATION_FIXTURES[0]),
+    fetchUrl: normalizedUrl,
+  };
   return {
     page_snapshot_id: CRAWL_PAGE_SNAPSHOT_ID,
     workspace_id: "workspace-1",
@@ -669,7 +673,12 @@ function frozenPageIdentity(
     data_snapshot_id: FROZEN_SNAPSHOT_ID,
     content_hash: contentHash({ page: normalizedUrl }),
     canonical_extract: "{}",
-    extract: {},
+    extract: {
+      schemaVersion: "crawl.page-extract.v1",
+      subjectUrl: `${SITE_ORIGIN}/fixture`,
+      depth: 2,
+      projection,
+    },
     captured_at: FROZEN_AT,
     created_at: FROZEN_AT,
     normalized_url: normalizedUrl,
@@ -1075,7 +1084,16 @@ async function runGovernedContentGapFixture(
   vi.spyOn(
     PageSnapshotsRepository.prototype,
     "listByDataSnapshotWithSitePageIdentity",
-  ).mockResolvedValue([frozenPageIdentity()]);
+  ).mockResolvedValue([
+    frozenPageIdentity({
+      extract: {
+        schemaVersion: "crawl.page-extract.v1",
+        subjectUrl: crawlObservation.subject_ref,
+        depth: 2,
+        projection: crawlObservation.value_json,
+      },
+    }),
+  ]);
   vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
 
   vi.spyOn(
@@ -1476,6 +1494,7 @@ describe("diagnostic frozen snapshot validation", () => {
             sitePageUrl: exactFetchUrl,
             pageSnapshotId: CRAWL_PAGE_SNAPSHOT_ID,
             subjectRef: `${SITE_ORIGIN}/fixture`,
+            crawlDepth: 2,
           }),
         ],
       }),
