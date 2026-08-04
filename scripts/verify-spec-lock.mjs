@@ -40,7 +40,7 @@ const requiredAuthorityFiles = [
 
 const requiredImplementationFiles = [
   "package.json",
-  "patches/brace-expansion@5.0.8.patch",
+  "patches/brace-expansion@5.0.9.patch",
   "authority/index.json",
   "openapi/mvp.yaml",
   "packages/contracts/src/generated/openapi.ts",

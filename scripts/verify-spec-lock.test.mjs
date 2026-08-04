@@ -45,7 +45,7 @@ const REQUIRED_AUTHORITY_FILES = [
 
 const REQUIRED_IMPLEMENTATION_FILES = [
   "package.json",
-  "patches/brace-expansion@5.0.8.patch",
+  "patches/brace-expansion@5.0.9.patch",
   "authority/index.json",
   "openapi/mvp.yaml",
   "packages/contracts/src/generated/openapi.ts",
@@ -515,28 +515,28 @@ test("rejects a dependency patch changed after lock review", (t) => {
   const fixture = makeFixture(t);
   write(
     fixture.root,
-    "patches/brace-expansion@5.0.8.patch",
+    "patches/brace-expansion@5.0.9.patch",
     "tampered dependency patch\n",
   );
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
   assert.notEqual(result.status, 0);
   assert.match(
     result.stderr,
-    /implementation file drifted.*patches\/brace-expansion@5\.0\.8\.patch/is,
+    /implementation file drifted.*patches\/brace-expansion@5\.0\.9\.patch/is,
   );
 });
 
 test("rejects a missing dependency patch", (t) => {
   const fixture = makeFixture(t);
   rmSync(
-    join(fixture.root, "patches/brace-expansion@5.0.8.patch"),
+    join(fixture.root, "patches/brace-expansion@5.0.9.patch"),
     { force: true },
   );
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
   assert.notEqual(result.status, 0);
   assert.match(
     result.stderr,
-    /implementation file is missing: patches\/brace-expansion@5\.0\.8\.patch/i,
+    /implementation file is missing: patches\/brace-expansion@5\.0\.9\.patch/i,
   );
 });
 
