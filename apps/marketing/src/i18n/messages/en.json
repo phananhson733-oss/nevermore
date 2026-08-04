@@ -993,8 +993,8 @@
           "body": "Open Search Console → Security & Manual Actions → Manual Actions and read which type it is. A manual action does not lapse on its own: the process is to fix what the notice describes and then submit a reconsideration request. Google's documentation for your specific type sets out what it expects. Everything else in this report is about where traffic went, and that question is not worth your time until this one is closed."
         },
         "check_manual_actions": {
-          "title": "Spend ten seconds on the one thing we cannot read for you",
-          "body": "Open Search Console → Security & Manual Actions → Manual Actions. The Search Console API has no endpoint for it, so nothing in this report can see it. It matters more than anything we can see: a manual action has a defined path back and does not resolve by itself, while everything else here has no such path. Note that Security Issues, in the same section, is a different page — the one we mean is called Manual Actions."
+          "title": "Go back and settle the Manual Actions page",
+          "body": "You said you could not tell. It is worth another ten seconds: the Search Console API has no endpoint for it, so nothing in this report can see it, and it is one of the few things here with a defined path back — fix, request reconsideration, and it does not clear on its own. Make sure you are on Manual Actions rather than Security Issues in the same section, and on the property you selected — Search Console shows one at a time."
         },
         "avoid_assuming_penalty": {
           "title": "Do not treat this as a penalty and start deleting things",
@@ -1144,7 +1144,7 @@
       "propertiesTruncated": "Showing {shown} of {total} properties. The rest did not fit in one browser cookie.",
       "siteSignals": {
         "sectionTitle": "What we can and cannot establish about a penalty",
-        "sectionIntro": "One of these you can settle yourself in ten seconds. The rest are observations with their limits attached — none of them decides anything on its own.",
+        "sectionIntro": "Each of these comes with its own limits attached. None of them decides anything on its own, and adding them up does not either.",
         "manual_action": {
           "label": "Manual action status"
         },
