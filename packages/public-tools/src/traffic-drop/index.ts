@@ -4,7 +4,7 @@ export * from "./changepoint.ts";
 export * from "./findings.ts";
 export * from "./actions.ts";
 export * from "./checks.ts";
-export * from "./manual-action.ts";
+export * from "./self-checks.ts";
 export * from "./core-updates.ts";
 export * from "./brand-candidates.ts";
 export * from "./brand-split.ts";

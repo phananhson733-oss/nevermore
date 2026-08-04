@@ -7,7 +7,6 @@
 
 import { useTranslations } from "next-intl";
 import type {
-  ManualActionStatus,
   TrafficAction,
   TrafficCheck,
   TrafficDailyPoint,
@@ -53,17 +52,12 @@ interface TrafficDropResultsProps {
   readonly result: TrafficDropResult;
   readonly series: readonly TrafficDailyPoint[];
   readonly locale: string;
-  /** Re-runs the report carrying the visitor's manual-action answer. */
-  readonly onManualActionAnswer: (status: ManualActionStatus) => void;
-  readonly busy: boolean;
 }
 
 export function TrafficDropResults({
   result,
   series,
   locale,
-  onManualActionAnswer,
-  busy,
 }: TrafficDropResultsProps) {
   const t = useTranslations("tools.trafficDrop");
   const numbers = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US");
@@ -90,17 +84,12 @@ export function TrafficDropResults({
   return (
     <div className="space-y-4">
       {/*
-       * Before the chart, deliberately. The manual-action question is the only
-       * thing in this report with a definite answer and a defined path back,
-       * and a visitor who has one open should not have to scroll past a
-       * change-point analysis to find that out.
+       * Before the chart, deliberately. A manual action or a security issue is
+       * the only thing in this report with a definite answer and a defined
+       * path back, and a visitor who has one open should not have to scroll
+       * past a change-point analysis to find that out.
        */}
-      <TrafficDropSiteSignals
-        signals={result.siteSignals}
-        locale={locale}
-        onAnswer={onManualActionAnswer}
-        busy={busy}
-      />
+      <TrafficDropSiteSignals signals={result.siteSignals} locale={locale} />
 
       <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
         <h2 className="text-[16px] font-semibold text-text-dark-primary">

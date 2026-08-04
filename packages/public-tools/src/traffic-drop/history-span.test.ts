@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildTrafficDropReport } from "./report.ts";
 import { firstVisibleDate, historySpanDays } from "./series.ts";
 import type { TrafficDailyPoint } from "./types.ts";
+import { BOTH_CLEAR } from "./__tests__/self-check-fixtures.ts";
 
 /**
  * One definition of "how much history is there".
@@ -67,6 +68,7 @@ describe("history span", () => {
     const report = buildTrafficDropReport({
       daily: series,
       completedAt: "2026-07-31T00:00:00.000Z",
+      selfChecks: BOTH_CLEAR,
     });
     expect(report.result.dataStartDate).toBeNull();
     expect(report.result.dayCount).toBe(0);
@@ -80,6 +82,7 @@ describe("history span", () => {
     const report = buildTrafficDropReport({
       daily: series,
       completedAt: "2026-07-31T00:00:00.000Z",
+      selfChecks: BOTH_CLEAR,
     });
 
     expect(series).toHaveLength(120);
@@ -95,6 +98,7 @@ describe("history span", () => {
     const report = buildTrafficDropReport({
       daily: series,
       completedAt: "2026-07-31T00:00:00.000Z",
+      selfChecks: BOTH_CLEAR,
     });
 
     expect(report.result.dayCount).toBe(120);
@@ -106,6 +110,7 @@ describe("history span", () => {
     const report = buildTrafficDropReport({
       daily: series,
       completedAt: "2026-07-31T00:00:00.000Z",
+      selfChecks: BOTH_CLEAR,
     });
 
     const seasonality = report.result.findings.find(

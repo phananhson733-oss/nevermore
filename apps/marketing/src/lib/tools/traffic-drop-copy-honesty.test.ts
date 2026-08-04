@@ -105,6 +105,51 @@ describe("traffic drop copy never claims a demotion", () => {
     },
   );
 
+  it.each(["en", "zh"] as const)(
+    "names the %s Search Console pages the way Search Console names them",
+    (locale) => {
+      // Shipped with the wrong menu path in both locales: "安全和人工处置 →
+      // 人工处置" against an actual sidebar reading "安全问题和人工处置措施 →
+      // 人工处置措施". Nothing caught it, because nothing had ever asserted
+      // anything about the navigation instructions — they were prose pointing
+      // at a UI the test suite has no access to.
+      //
+      // This cannot verify the labels against Google. What it does is make the
+      // strings a decision rather than a detail: changing them means changing
+      // a test, which means going and looking at the product first.
+      const text = BUNDLES[locale];
+      const required =
+        locale === "en"
+          ? ["Security & Manual Actions", "Manual Actions", "Security Issues"]
+          : ["安全问题和人工处置措施", "人工处置措施", "安全问题"];
+
+      for (const label of required) {
+        expect(text, `${locale} copy is missing: ${label}`).toContain(label);
+      }
+    },
+  );
+
+  it.each(["en", "zh"] as const)(
+    "never claims in %s that Search Console has no entry point for these",
+    (locale) => {
+      // The API has no endpoint; the UI very much has a page, and we send the
+      // visitor to it two paragraphs later. Wording that blurs the two reads
+      // as "there is nowhere to look", which contradicts the instruction it
+      // sits next to.
+      const text = BUNDLES[locale].toLowerCase();
+      const forbidden =
+        locale === "en"
+          ? ["google publishes no api for this page", "no interface for it"]
+          : ["没有为这个页面开放接口", "没有为它开放接口"];
+
+      for (const phrase of forbidden) {
+        expect(text, `${locale} copy contains: ${phrase}`).not.toContain(
+          phrase.toLowerCase(),
+        );
+      }
+    },
+  );
+
   it("keeps the ranking-update table honest about when it was last checked", () => {
     // The staleness guard is only as good as this field. A table whose
     // verifiedThrough silently tracked its newest entry would always claim to

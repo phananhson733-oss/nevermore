@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTrafficDropReport } from "./report.ts";
 import type { TrafficCheck, TrafficDailyPoint } from "./types.ts";
+import { BOTH_CLEAR } from "./__tests__/self-check-fixtures.ts";
 
 /**
  * The invariant at the top of `checks.ts`: `clear` means "we ran this check and
@@ -43,7 +44,11 @@ function checkFor(
   daily: readonly TrafficDailyPoint[],
   id: string,
 ): TrafficCheck {
-  const report = buildTrafficDropReport({ daily, completedAt: COMPLETED_AT });
+  const report = buildTrafficDropReport({
+    daily,
+    completedAt: COMPLETED_AT,
+    selfChecks: BOTH_CLEAR,
+  });
   const found = report.result.checks.find((entry) => entry.id === id);
   if (!found) throw new Error(`no check with id ${id}`);
   return found;
@@ -115,6 +120,7 @@ describe("check honesty", () => {
     const report = buildTrafficDropReport({
       daily: collapsed,
       completedAt: COMPLETED_AT,
+      selfChecks: BOTH_CLEAR,
     });
     const sustained = report.result.checks.find(
       (entry) => entry.id === "sustained_decline",

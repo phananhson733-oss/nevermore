@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTrafficDropReport,
+  SELF_CHECK_ANSWERS,
   TRAFFIC_CHECK_IDS,
+  type SelfCheckAnswers,
   type TrafficDailyPoint,
   type TrafficDropResult,
 } from "@sf/public-tools";
@@ -89,8 +91,47 @@ function scenarios(): readonly (readonly TrafficDailyPoint[])[] {
   return [twoStage, outage, tiny, short, flat, longHistory];
 }
 
+/**
+ * Every combination of the two self-check answers.
+ *
+ * Nine runs per series rather than one. The previous version passed a single
+ * (implicit) answer, so the copy for every other path existed only because
+ * someone remembered to write it — the branch that would have caught a missing
+ * string was never taken. `resolve_security_issue` and `check_security_issues`
+ * are reachable from exactly two of these nine.
+ */
+function selfCheckCombinations(): readonly SelfCheckAnswers[] {
+  return SELF_CHECK_ANSWERS.flatMap((manualAction) =>
+    SELF_CHECK_ANSWERS.map((securityIssue) => ({
+      manualAction,
+      securityIssue,
+    })),
+  );
+}
+
 function codesFrom(result: TrafficDropResult): readonly string[] {
+  const { selfChecks } = result.siteSignals;
   const paths: string[] = [
+    `siteSignals.paths.${
+      selfChecks.path === "issue_reported"
+        ? "issueReported"
+        : selfChecks.path === "no_issue_reported"
+          ? "noIssue"
+          : "unconfirmed"
+    }Title`,
+    `siteSignals.paths.${
+      selfChecks.path === "issue_reported"
+        ? "issueReported"
+        : selfChecks.path === "no_issue_reported"
+          ? "noIssue"
+          : "unconfirmed"
+    }Body`,
+    // The playback of the visitor's own answers, which is prose per answer per
+    // page and therefore six strings that only appear on their own branch.
+    ...[selfChecks.manualAction, selfChecks.securityIssue].flatMap((check) => [
+      `siteSignals.${check.id}.label`,
+      `siteSignals.recorded.${check.id}.${check.answer}`,
+    ]),
     `states.${result.changePoint.state}.summary`,
     ...result.changePoint.windows.flatMap((window) => [
       `windows.${window.id}.label`,
@@ -109,6 +150,7 @@ function codesFrom(result: TrafficDropResult): readonly string[] {
       `actions.${action.id}.body`,
       `actionKinds.${action.kind}`,
       ...action.basis.map((id) => `findings.${id}.title`),
+      ...action.signalBasis.map((id) => `siteSignals.${id}.label`),
     ]),
     ...result.checks.flatMap((check) => [
       `checks.${check.id}`,
@@ -134,18 +176,21 @@ describe("traffic drop copy", () => {
       const missing = new Set<string>();
 
       for (const daily of scenarios()) {
-        const { result } = buildTrafficDropReport({
-          daily,
-          completedAt: "2026-07-31T00:00:00.000Z",
-        });
-        for (const path of codesFrom(result)) {
-          const value = lookup(bundle, `tools.trafficDrop.${path}`);
-          // An empty string is a string. Accepting one let six copy slots ship
-          // blank — including `checkOutcomes.seasonality_yoy.clear`, which the
-          // report rendered as a check with a status, a name, and no
-          // explanation at all beside it.
-          if (typeof value !== "string" || value.trim() === "") {
-            missing.add(path);
+        for (const selfChecks of selfCheckCombinations()) {
+          const { result } = buildTrafficDropReport({
+            daily,
+            completedAt: "2026-07-31T00:00:00.000Z",
+            selfChecks,
+          });
+          for (const path of codesFrom(result)) {
+            const value = lookup(bundle, `tools.trafficDrop.${path}`);
+            // An empty string is a string. Accepting one let six copy slots
+            // ship blank — including `checkOutcomes.seasonality_yoy.clear`,
+            // which the report rendered as a check with a status, a name, and
+            // no explanation at all beside it.
+            if (typeof value !== "string" || value.trim() === "") {
+              missing.add(path);
+            }
           }
         }
       }

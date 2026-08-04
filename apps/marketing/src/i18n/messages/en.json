@@ -990,11 +990,11 @@
         },
         "resolve_manual_action": {
           "title": "Work the manual action first — it is the only thing here with a defined path back",
-          "body": "Open Search Console → Security and Manual Actions → Manual actions and read which type it is. A manual action does not lapse on its own: the process is to fix what the notice describes and then submit a reconsideration request. Google's documentation for your specific type sets out what it expects. Everything else in this report is about where traffic went, and that question is not worth your time until this one is closed."
+          "body": "Open Search Console → Security & Manual Actions → Manual Actions and read which type it is. A manual action does not lapse on its own: the process is to fix what the notice describes and then submit a reconsideration request. Google's documentation for your specific type sets out what it expects. Everything else in this report is about where traffic went, and that question is not worth your time until this one is closed."
         },
         "check_manual_actions": {
           "title": "Spend ten seconds on the one thing we cannot read for you",
-          "body": "Open Search Console → Security and Manual Actions → Manual actions. Google publishes no API for this page, so nothing in this report can see it. It matters more than anything we can see: a manual action has a defined path back and does not resolve by itself, while everything else here has no such path. Note that Security Issues is a different page — the one we mean is called Manual actions."
+          "body": "Open Search Console → Security & Manual Actions → Manual Actions. The Search Console API has no endpoint for it, so nothing in this report can see it. It matters more than anything we can see: a manual action has a defined path back and does not resolve by itself, while everything else here has no such path. Note that Security Issues, in the same section, is a different page — the one we mean is called Manual Actions."
         },
         "avoid_assuming_penalty": {
           "title": "Do not treat this as a penalty and start deleting things",
@@ -1007,6 +1007,14 @@
         "check_landing_page_indexability": {
           "title": "Rule out a technical cause on the landing pages before reading anything into the split",
           "body": "One group falling while the other holds is exactly what a robots rule, a stray noindex, a canonical pointing somewhere unintended, or a rendering regression on one template produces — they hit landing pages and leave the homepage alone. It is also the cheapest thing on this list to check and the cheapest to fix. Do it before you conclude anything about content."
+        },
+        "resolve_security_issue": {
+          "title": "Work the security issue first — it outranks anything about rankings",
+          "body": "A Safe Browsing finding puts a warning on your results and an interstitial in the browser, which takes clicks to near zero while your rankings may not have moved at all — which is why it looks like a demotion and is not one. The process is to find the flagged pages or injected code, clean it, confirm the hole is closed, and then request a review from the Security Issues report. Until that is closed, rewriting titles and reworking internal links will not bring traffic back."
+        },
+        "check_security_issues": {
+          "title": "Go back and settle the Security Issues page",
+          "body": "You said you could not tell. It is worth another ten seconds: the Search Console API has no endpoint for it, so nothing in this report can see it, and it is one of the few things here with a defined path back. Make sure you are on Security Issues rather than Manual Actions, and on the property you selected — Search Console shows one at a time."
         }
       },
       "checksSummary": "This run performed {total} checks and {hits} triggered — open to see all of them, including what came back clear and what could not be checked",
@@ -1096,7 +1104,6 @@
         "no_recent_days": "No recent days were returned for this property",
         "post_event_history_below_two_windows": "The drop is real, but there is not yet enough data after it to say whether it held.",
         "yoy_comparison_not_implemented": "This tool does not run a year-over-year comparison. It is not that nothing was found — it is that nothing was looked for.",
-        "manual_action_not_checked": "You have not told us what your Manual Actions page says. Google publishes no API for it, so this is the one thing here only you can look up.",
         "no_event_window": "No decline was located, so there is no event to place on a timeline",
         "core_update_table_not_verified": "Our list of announced Google updates has not been checked past the date of your decline. Saying “no update around then” would be reporting our own staleness as a fact about your site.",
         "query_read_not_performed": "The query-level read did not run for this report, so this could not be computed. It was not checked and found clear — it was not checked.",
@@ -1150,28 +1157,13 @@
         "query_cohort_migration": {
           "label": "Query position migration"
         },
-        "manualAction": {
-          "cardTitle": "First, one thing only you can check",
-          "cardBody": "We cannot read your manual action status — Google does not publish an interface for it. You can see it in about ten seconds, and it decides which half of this report is worth your attention.",
-          "cardSteps": "Search Console → Security and Manual Actions → Manual actions",
-          "cardWhy": "Why it matters: a manual action has a defined path back — fix, then request reconsideration — and it does not clear on its own. Nothing else in this report has that.",
-          "optionManualAction": "It lists a manual action",
-          "optionNone": "It says “No issues detected”",
-          "optionUncertain": "I could not tell",
-          "optionNotChecked": "I have not looked yet",
-          "notice": "Careful: “Security Issues” is a different page, and Search Console shows one property at a time. Make sure you are on Manual actions, for this property.",
-          "recordedManualAction": "You reported: your Manual actions page lists an entry.",
-          "recordedNone": "You confirmed: your Manual actions page shows no entry. Recorded as your observation — we did not read it.",
-          "recordedUncertain": "You were not able to confirm this either way, so this report says nothing about penalties in either direction.",
-          "recordedNotChecked": "Not checked yet."
-        },
         "paths": {
-          "manualActionTitle": "You have a manual action open",
-          "manualActionBody": "That is the finding. A manual action is applied by a reviewer and stays until you fix what the notice describes and submit a reconsideration request — it does not expire and it does not lift on its own. Read the entry for the specific type; Google's documentation for that type sets out what it expects. The traffic analysis below is still here, but it is not what to act on today.",
-          "noManualActionTitle": "These observations do not support a penalty",
-          "noManualActionBody": "One thing is settled: you checked, and Search Console shows no manual action. Whether Google's ranking systems adjusted something about your site is a separate question, and it is one no tool can answer — there is no public signal for it, so anyone claiming to detect it is inferring. We are not going to. What follows is what we actually measured, and what each observation would also be consistent with. If it points at a technical cause, start there; those are cheap to check and cheap to fix.",
           "unconfirmedTitle": "One answer is missing, and it is the one that matters",
-          "unconfirmedBody": "Until you have looked at Manual actions, this report will not tell you that you have been penalised and will not tell you that you have not. Both would be claims about something we cannot see. The traffic observations below stand on their own — read them, but do not read a verdict into them."
+          "unconfirmedBody": "Until that page is settled, this report will not tell you that you have been penalised and will not tell you that you have not. Both would be claims about something we cannot see. The traffic observations below stand on their own — read them, but do not read a verdict into them.",
+          "issueReportedTitle": "Work what you found first",
+          "issueReportedBody": "That is the finding. A manual action is applied by a reviewer and a security issue by Safe Browsing; both stay until you fix what the notice describes and submit it for review, and neither expires or lifts on its own. A security issue also puts a warning in the results and an interstitial in the browser, which takes clicks to near zero while rankings may not have moved at all. Read the entry for the specific type; Google's documentation for that type sets out what it expects. The traffic analysis below is still here, but it is not what to act on today.",
+          "noIssueTitle": "These observations do not support a penalty",
+          "noIssueBody": "One thing is settled: you checked, and there is neither a manual action nor a security issue. Whether Google's ranking systems adjusted something about your site is a separate question, and it is one no tool can answer — there is no public signal for it, so anyone claiming to detect it is inferring. We are not going to. What follows is what we actually measured, and what each observation would also be consistent with. If it points at a technical cause, start there; those are cheap to check and cheap to fix."
         },
         "coreUpdate": {
           "label": "Where your decline sits on Google's announced timeline",
@@ -1208,6 +1200,23 @@
           "noLongerVisible": "{count} are no longer in the query report at all. That is not the same as losing all their traffic: Search Console withholds low-volume queries, and the threshold sits well above zero. It could be lost ranking or it could be less demand, and this data cannot tell you which.",
           "coverage": "These queries carried {share} of the clicks we could see in the earlier window.",
           "truncated": "One of the windows returned more queries than we read, so the set is drawn from a prefix."
+        },
+        "security_issue": {
+          "label": "Security issue status"
+        },
+        "recorded": {
+          "title": "This report was built on your two answers",
+          "lineage": "Both are recorded as your observations, not as ours. Google publishes no interface for either page, so we have no way to verify them — which puts them on a different footing from the measured numbers below.",
+          "manual_action": {
+            "reports_issue": "You reported: it lists a manual action",
+            "reports_none": "You confirmed: no issues detected",
+            "uncertain": "You could not tell"
+          },
+          "security_issue": {
+            "reports_issue": "You reported: it lists a security issue",
+            "reports_none": "You confirmed: no issues detected",
+            "uncertain": "You could not tell"
+          }
         }
       },
       "brandTerms": {
@@ -1215,6 +1224,27 @@
         "help": "Used for one observation: whether branded and unbranded searches moved differently. We guessed from your domain, which gets it wrong often — a one-word domain never matches how people actually type the brand, and shortening it can swallow every generic query in your field. Separate with commas; include the spaced form if there is one.",
         "placeholder": "acme, acme co, acmeapp",
         "confirm": "These are my brand terms. Without this the split is skipped, and the report says so."
+      },
+      "staleAnswers": "You changed an answer or an option above, and the report below was built from the inputs as they were before. Run it again to use the new ones.",
+      "selfChecks": {
+        "title": "First, two things we cannot look up and you can",
+        "body": "The Search Console API exposes four things: Search Analytics, Sitemaps, Sites and URL Inspection. Neither Manual Actions nor Security Issues is among them — Google publishes no interface for either page, so no tool can read them, including this one. Both answers are required before the report runs: they decide what it is entitled to say.",
+        "notice": "Two cautions: Search Console shows one property at a time, so make sure you are looking at the one selected above; and these are two separate pages, so do not answer one from the other.",
+        "why": "Why this comes first: these are the only two things in this report with a defined path back — fix it, request a review, and it does not clear on its own. Nothing else here has that. A report built without the answers has to qualify every sentence, and the heavily qualified version is the one you would read first and remember.",
+        "manual_action": {
+          "where": "Sidebar → Security & Manual Actions → Manual Actions. With nothing against the site it reads “No issues detected”.",
+          "open": "Open the Manual Actions report",
+          "reports_issue": "It lists a manual action",
+          "reports_none": "It says “No issues detected”",
+          "uncertain": "I could not tell"
+        },
+        "security_issue": {
+          "where": "Sidebar → Security & Manual Actions → Security Issues. This is where Safe Browsing reports malware, deceptive pages and harmful downloads.",
+          "open": "Open the Security Issues report",
+          "reports_issue": "It lists a security issue",
+          "reports_none": "It says “No issues detected”",
+          "uncertain": "I could not tell"
+        }
       }
     },
     "quickWins": {

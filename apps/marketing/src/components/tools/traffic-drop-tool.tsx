@@ -9,15 +9,17 @@ import { useState } from "react";
 import { ArrowRight, LineChart, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import type {
-  ManualActionStatus,
-  TrafficDailyPoint,
-  TrafficDropResult,
-} from "@sf/public-tools";
+import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
 import { TrafficDropResults } from "./traffic-drop-results";
+import {
+  EMPTY_SELF_CHECKS,
+  selfChecksComplete,
+  TrafficDropSelfCheckGate,
+  type SelfCheckState,
+} from "./traffic-drop-self-check-gate";
 
 interface TrafficDropPayload {
   readonly result: TrafficDropResult;
@@ -71,16 +73,25 @@ export function TrafficDropTool({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [payload, setPayload] = useState<TrafficDropPayload | null>(null);
   /**
-   * What the visitor told us about their Manual Actions page.
+   * What the visitor found on the two Search Console pages we cannot read.
    *
-   * Held here rather than in the results component so a re-run for any other
-   * reason keeps the answer. It rides along with the request because the
-   * engine owns which output path the answer selects; deriving that in the
-   * browser would put the same rule in two places, and the browser's copy is
-   * the one that would drift.
+   * Collected BEFORE the run, and the run is blocked until both are in. The
+   * answers ride along with the request because the engine owns which output
+   * path they select; deriving that in the browser would put the same rule in
+   * two places, and the browser's copy is the one that would drift.
    */
-  const [manualAction, setManualAction] =
-    useState<ManualActionStatus>("not_checked");
+  const [selfChecks, setSelfChecks] =
+    useState<SelfCheckState>(EMPTY_SELF_CHECKS);
+  /**
+   * Set when an input changes after a report was rendered.
+   *
+   * The report stays on screen — it is still a true report of the answers it
+   * was built from, and blanking it would throw away work the visitor paid a
+   * Search Console call for. But it is no longer a report of what the form now
+   * says, and saying nothing about that is how a stale verdict gets read as a
+   * current one.
+   */
+  const [stale, setStale] = useState(false);
   /**
    * The brand list, as text the visitor can edit.
    *
@@ -99,8 +110,14 @@ export function TrafficDropTool({
     .map((term) => term.trim())
     .filter((term) => term !== "");
 
+  /** Any change to what the next run would send invalidates the rendered one. */
+  function invalidate() {
+    setStale(true);
+  }
+
   function selectProperty(next: string) {
     setProperty(next);
+    invalidate();
     // A brand list belongs to one site. Carrying the previous property's terms
     // across would quietly classify the new site's queries by someone else's
     // brand, so the confirmation resets with them.
@@ -108,17 +125,22 @@ export function TrafficDropTool({
     setBrandConfirmed(false);
   }
 
-  async function run(target: string, answer: ManualActionStatus) {
+  async function run() {
+    // Narrowed rather than asserted: the button is disabled without both
+    // answers, but a disabled button is a UI convention, not an invariant.
+    if (!selfChecksComplete(selfChecks)) return;
+
     setLoading(true);
     setErrorCode(null);
     setPayload(null);
+    setStale(false);
     try {
       const response = await fetch("/api/tools/traffic-drop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          property: target,
-          manualAction: answer,
+          property,
+          selfChecks,
           brandTerms,
           brandTermsConfirmed: brandConfirmed,
         }),
@@ -300,8 +322,8 @@ export function TrafficDropTool({
         </select>
         <button
           type="button"
-          onClick={() => void run(property, manualAction)}
-          disabled={loading || property === ""}
+          onClick={() => void run()}
+          disabled={loading || property === "" || !selfChecksComplete(selfChecks)}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
         >
           {/* "Run again" before anything has run is an instruction to repeat
@@ -309,6 +331,21 @@ export function TrafficDropTool({
           {loading ? t("running") : payload ? t("rerun") : t("run")}
         </button>
       </div>
+
+      {/*
+       * The gate. Both answers are required before anything runs: they decide
+       * what the report is allowed to say, and a report built without them has
+       * to hedge every sentence — which is the version the visitor reads first
+       * and remembers.
+       */}
+      <TrafficDropSelfCheckGate
+        value={selfChecks}
+        disabled={loading}
+        onChange={(next) => {
+          setSelfChecks(next);
+          invalidate();
+        }}
+      />
 
       {/*
        * The brand list. Optional — leaving it alone costs one observation and
@@ -336,6 +373,7 @@ export function TrafficDropTool({
             // the box, then changes the terms, and the run uses a list nobody
             // approved.
             setBrandConfirmed(false);
+            invalidate();
           }}
           placeholder={t("brandTerms.placeholder")}
           className="mt-2.5 min-h-11 w-full rounded-xl border border-brand-border bg-brand-bg px-3 text-[13px] text-text-dark-primary"
@@ -345,7 +383,10 @@ export function TrafficDropTool({
             type="checkbox"
             checked={brandConfirmed}
             disabled={brandTerms.length === 0}
-            onChange={(event) => setBrandConfirmed(event.target.checked)}
+            onChange={(event) => {
+              setBrandConfirmed(event.target.checked);
+              invalidate();
+            }}
             className="mt-0.5 size-4 shrink-0"
           />
           <span>{t("brandTerms.confirm")}</span>
@@ -367,6 +408,15 @@ export function TrafficDropTool({
           className="rounded-xl border border-brand-error/40 bg-[rgba(217,87,87,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
         >
           {t(`errors.${errorCode}`)}
+        </p>
+      ) : null}
+
+      {payload && stale ? (
+        <p
+          role="status"
+          className="rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
+        >
+          {t("staleAnswers")}
         </p>
       ) : null}
 
@@ -392,21 +442,6 @@ export function TrafficDropTool({
             result={payload.result}
             series={payload.series}
             locale={locale}
-            busy={loading}
-            onManualActionAnswer={(status) => {
-              // Answering costs a second run. The alternative was recomputing
-              // the affected output in the browser, which would put the rule
-              // that decides what the report may say about penalties in two
-              // places — and the browser's copy is the one that would drift.
-              //
-              // Re-selecting the current answer is a no-op. Without this, the
-              // four buttons are four re-run triggers that stay live after the
-              // report renders, and a visitor clicking around burns the hourly
-              // allowance on runs that cannot change anything.
-              if (status === manualAction) return;
-              setManualAction(status);
-              void run(property, status);
-            }}
           />
         </>
       ) : null}
