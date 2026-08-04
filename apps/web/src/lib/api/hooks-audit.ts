@@ -23,7 +23,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { useLocale } from "next-intl";
-import { apiGet, apiSend, type ApiError } from "./client";
+import { ApiError, apiGet, apiSend } from "./client";
 import type { DataEnvelope } from "./types";
 import type { AsyncRun, RunResourceRef } from "./hooks-diagnosis";
 
@@ -137,6 +137,17 @@ export function buildAuditModuleQueryOptions(
     queryFn: () => getProjectAuditModule(projectId, moduleId),
     enabled: projectId.length > 0 && Boolean(moduleId),
   };
+}
+
+/**
+ * A 404 from the audit projection means no Growth Audit has ever been run for
+ * the project, which is an honest `no_data` state for a read-only summary and
+ * not a failure. Callers that render a summary block use this to terminate on
+ * an empty state instead of a problem state; callers that own the audit screen
+ * itself keep treating it as the error it is for them.
+ */
+export function isGrowthAuditAbsent(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
 }
 
 export function useProjectGrowthAudit(

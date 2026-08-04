@@ -808,34 +808,37 @@
       "priority": {
         "eyebrow": "优先处理",
         "title": "接下来要决定、要完成什么",
-        "maxItems": "当前加载范围 1 个 Opportunity + 全项目最多 3 项工作",
+        "listScope": "加载范围 Finding + 全项目 Action · 至多 3 项",
+        "kinds": {
+          "evidenceReview": "证据审核"
+        },
+        "contentHealth": {
+          "title": "内容健康度观察",
+          "note": "观察信号，不占用上方 3 项决策名额。"
+        },
         "loading": "正在加载当前 Opportunity…",
         "error": "暂时无法加载当前 Opportunity。",
         "noOpportunity": "当前没有可处理的 Opportunity",
         "noOpportunityDescription": "当前已加载的 URL 组合中，最新冻结审计没有有效 Finding。",
         "detailRunMismatch": "所选 URL 的审计已更新",
         "detailRunMismatchDescription": "URL 组合与详情仍属于不同的冻结审计；为避免混合证据，暂不展示该 Opportunity。",
-        "evidenceCount": "{count} 条证据",
-        "oneFinding": "来自当前冻结审计",
         "levels": {
           "critical": "紧急",
           "high": "高优先级",
           "medium": "中优先级",
           "low": "低优先级"
         },
-        "queueTitle": "同一次冻结审计的全项目工作",
-        "queueCount": "{count} 项",
-        "queueEmpty": "当前冻结审计暂无全项目工作项。",
         "queueSyncing": "正在将工作队列与当前冻结审计对齐…",
         "queueRunMismatch": "页面加载期间审计已更新；两次读取对齐前不会展示工作卡。",
         "queueUnavailable": "尚未识别到冻结审计，工作队列暂不可用。",
+        "queueLoadFailed": "工作项这次没有读取到，可稍后重试。",
         "decisionDue": "待决策 · 已搁置 {days} 天",
         "decideOpportunityLabel": "决定是否推进：{summary}",
         "decay": {
           "detected": "{month} 月度衰减预警",
           "reviewSuggested": "建议内容复审",
           "rankSignal": "连续两个月平均位置分别下降 {first} / {second} 位",
-          "trafficSignal": "最近 28 天 clicks 环比下降 {percent}%",
+          "trafficSignalWithSample": "最近 28 天 clicks 由 {previous} 降至 {current}，环比下降 {percent}%",
           "openLabel": "在增长地图查看需要内容复审的页面：{page}"
         },
         "resultUnavailable": "暂无经过验证的审计前后结果",
@@ -861,6 +864,20 @@
         "toReview": "待审核 Finding",
         "oneByOne": "逐项完成客户决策",
         "auditIdentity": "审计身份",
+        "statsScope": "当前加载页",
+        "lensMixTitle": "全项目机会构成",
+        "lensMixScope": "统计全项目，不限于当前加载页",
+        "lensMixTotal": "共 {count} 个 Opportunity",
+        "lensMixTotalUnavailable": "有视角尚无覆盖，暂不给出全项目总计",
+        "lensMixLoading": "正在加载全项目机会构成…",
+        "lensMixError": "暂时无法加载全项目机会构成，可稍后重试。",
+        "lensMixNoData": "当前冻结审计没有可归类的 Opportunity。",
+        "lenses": {
+          "site_health": "站点健康",
+          "search_ai_visibility": "搜索与 AI 可见性",
+          "demand_competition": "需求与竞争"
+        },
+        "coverageLimitationsTitle": "本轮覆盖为什么不完整",
         "coverage": {
           "available": "覆盖可用",
           "partial": "部分覆盖",

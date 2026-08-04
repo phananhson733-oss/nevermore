@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildContentDecayMonitor,
+  CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
   resolveContentDecayTimeZone,
+  type ContentDecayMonitor,
   type ContentDecayObservationCandidate,
   type ContentDecayPage,
   type ContentDecaySnapshotCandidate,
@@ -73,6 +75,40 @@ function observation(input: {
       position: input.position,
     },
   };
+}
+
+/**
+ * Two consecutive exact checkpoints with a stable position, so only the click
+ * sample and the click delta decide whether a traffic alert is produced.
+ */
+function trafficMonitor(input: {
+  readonly seed: string;
+  readonly previousClicks: number;
+  readonly currentClicks: number;
+}): ContentDecayMonitor {
+  return buildContentDecayMonitor({
+    asOf: "2026-06-30T00:00:00.000Z",
+    timeZone: resolveContentDecayTimeZone({
+      providerTimeZone: "UTC",
+      projectTimeZone: null,
+    }),
+    pages: [PAGE],
+    snapshots: [MAY, JUNE],
+    observations: [
+      observation({
+        snapshot: MAY,
+        id: `00000000-0000-4000-8000-0000000004${input.seed}`,
+        clicks: input.previousClicks,
+        position: 8,
+      }),
+      observation({
+        snapshot: JUNE,
+        id: `00000000-0000-4000-8000-0000000005${input.seed}`,
+        clicks: input.currentClicks,
+        position: 8,
+      }),
+    ],
+  });
 }
 
 describe("resolveContentDecayTimeZone", () => {
@@ -333,6 +369,58 @@ describe("buildContentDecayMonitor", () => {
     expect(zeroDenominator.alerts).toEqual([]);
   });
 
+  it("keeps the minimum previous-click sample aligned with SEARCH-DECAY-002", () => {
+    expect(CONTENT_DECAY_MIN_PREVIOUS_CLICKS).toBe(100);
+  });
+
+  it("does not advise a review when the previous month never reached the minimum click sample", () => {
+    const tinySample = trafficMonitor({
+      seed: "37",
+      previousClicks: 5,
+      currentClicks: 3,
+    });
+    const justBelowFloor = trafficMonitor({
+      seed: "38",
+      previousClicks: CONTENT_DECAY_MIN_PREVIOUS_CLICKS - 1,
+      currentClicks: 1,
+    });
+
+    expect(tinySample.alerts).toEqual([]);
+    expect(justBelowFloor.alerts).toEqual([]);
+  });
+
+  it("still advises a review at the minimum click sample and reports both sample sizes", () => {
+    const result = trafficMonitor({
+      seed: "39",
+      previousClicks: CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
+      currentClicks: 79,
+    });
+
+    expect(result.alerts).toHaveLength(1);
+    expect(result.alerts[0]).toMatchObject({
+      triggers: ["traffic_decline"],
+      trafficTrend: {
+        previousMonth: "2026-05",
+        currentMonth: "2026-06",
+        previousClicks: 100,
+        currentClicks: 79,
+        changeRatio: -0.21,
+      },
+    });
+  });
+
+  it("discloses the minimum previous-click sample as a limitation", () => {
+    const result = trafficMonitor({
+      seed: "40",
+      previousClicks: 5,
+      currentClicks: 3,
+    });
+
+    expect(result.limitations.join(" ")).toContain(
+      `${CONTENT_DECAY_MIN_PREVIOUS_CLICKS}`,
+    );
+  });
+
   it("fails the whole page fact closed when impressions exist but average position is missing", () => {
     const result = buildContentDecayMonitor({
       asOf: "2026-06-30T00:00:00.000Z",
@@ -388,7 +476,10 @@ describe("buildContentDecayMonitor", () => {
           position: 8,
         }),
         duplicateJune,
-        { ...duplicateJune, observationId: "00000000-0000-4000-8000-000000000343" },
+        {
+          ...duplicateJune,
+          observationId: "00000000-0000-4000-8000-000000000343",
+        },
       ],
     });
 

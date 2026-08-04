@@ -7,11 +7,15 @@ import {
   type Route,
 } from "@playwright/test";
 import {
+  AuditModuleId as AuditModuleIdSchema,
   ConfirmedProductProfileRowDto as ConfirmedProductProfileRowSchema,
+  GrowthAuditResponse as GrowthAuditResponseSchema,
   GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseSchema,
   GrowthMapUrlPortfolioResponse as GrowthMapUrlPortfolioResponseSchema,
   ProductProfileDraft as ProductProfileDraftSchema,
+  type AuditLensSummary,
   type ConfirmedProductProfileRowDto,
+  type GrowthAuditResponse,
   type GrowthMapUrlDetailResponse,
   type GrowthMapUrlPortfolioItem,
   type GrowthMapUrlPortfolioResponse,
@@ -31,6 +35,11 @@ const PORTFOLIO_ROUTE = `**${BASE}/audit/urls?limit=100`;
 const DETAIL_ROUTE = `**${BASE}/audit/urls/*`;
 const SOURCES_ROUTE = `**${BASE}/sources`;
 const PRODUCT_PROFILE_ROUTE = `**${BASE}/product-profile`;
+/**
+ * The whole-project opportunity mix is a second, independent read. `**…/audit`
+ * cannot swallow `**…/audit/urls`, so this route never shadows the portfolio.
+ */
+const AUDIT_ROUTE = `**${BASE}/audit`;
 
 const NOW = "2026-07-21T08:00:00.000Z";
 const DIAGNOSTIC_RUN_ID = "00000000-0000-4000-8000-000000000701";
@@ -50,6 +59,7 @@ const PROFILE_ROW_ID = "00000000-0000-4000-8000-000000000730";
 const PRIMARY_AUDIENCE_ID = "00000000-0000-4000-8000-000000000731";
 const DIRECT_COMPETITOR_ID = "00000000-0000-4000-8000-000000000732";
 const INDIRECT_COMPETITOR_ID = "00000000-0000-4000-8000-000000000733";
+const AUDIT_RUN_ID = "00000000-0000-4000-8000-000000000750";
 
 const TOP_OPPORTUNITY_TITLE =
   "The product page points to the wrong canonical URL.";
@@ -70,6 +80,8 @@ interface OverviewScenario {
   readonly detail: GrowthMapUrlDetailResponse | null;
   readonly sources: readonly SourceFixture[];
   readonly productProfile: ProductProfileWorkspaceFixture;
+  /** `null` models a project that has never had a Growth Audit run (404). */
+  readonly audit: GrowthAuditResponse | null;
 }
 
 function unavailablePriority() {
@@ -249,6 +261,57 @@ function detailFixture(
         },
       ],
     },
+  });
+}
+
+function auditLens(
+  lensId: AuditLensSummary["lensId"],
+  findingCount: number,
+): AuditLensSummary {
+  return {
+    lensId,
+    coverageState: "available",
+    evidenceCount: findingCount + 5,
+    findingCount,
+    limitations: [],
+  };
+}
+
+/**
+ * `no_data` is missing coverage, so the contract forces its counts to the
+ * placeholder `0`. The screen must show a dash for it, never that zero.
+ */
+function uncoveredLens(lensId: AuditLensSummary["lensId"]): AuditLensSummary {
+  return {
+    lensId,
+    coverageState: "no_data",
+    evidenceCount: 0,
+    findingCount: 0,
+    limitations: ["No confirmed competitor set covers this lens yet."],
+  };
+}
+
+function auditFixture(
+  lenses: readonly AuditLensSummary[],
+): GrowthAuditResponse {
+  return GrowthAuditResponseSchema.parse({
+    auditRunId: AUDIT_RUN_ID,
+    projectId: E2E_PROJECT_ID,
+    siteId: E2E_SITE_ID,
+    status: "completed",
+    outputLocale: "en",
+    completedAt: NOW,
+    modules: AuditModuleIdSchema.options.map((moduleId) => ({
+      moduleId,
+      coverageState: "available",
+      evidenceCount: 2,
+      findingCount: 1,
+      sourceProviders: ["crawl"],
+      latestObservedAt: NOW,
+      limitations: [],
+    })),
+    lenses,
+    coverageAndLimitations: [],
   });
 }
 
@@ -456,6 +519,11 @@ function readyScenario(): OverviewScenario {
       activeSynthesisRun: null,
       activeCrawlRun: null,
     },
+    audit: auditFixture([
+      auditLens("site_health", 4),
+      auditLens("search_ai_visibility", 3),
+      auditLens("demand_competition", 1),
+    ]),
   };
 }
 
@@ -478,6 +546,8 @@ function emptyScenario(): OverviewScenario {
       activeSynthesisRun: null,
       activeCrawlRun: null,
     },
+    // Never audited: the mix must say so rather than show a failure or a zero.
+    audit: null,
   };
 }
 
@@ -514,6 +584,11 @@ function partialScenario(): OverviewScenario {
       activeSynthesisRun: null,
       activeCrawlRun: null,
     },
+    audit: auditFixture([
+      auditLens("site_health", 4),
+      auditLens("search_ai_visibility", 3),
+      uncoveredLens("demand_competition"),
+    ]),
   };
 }
 
@@ -544,6 +619,24 @@ async function serveOverview(
   await page.route(PRODUCT_PROFILE_ROUTE, (route) =>
     fulfill(route, scenario.productProfile),
   );
+  await page.route(AUDIT_ROUTE, async (route) => {
+    if (scenario.audit === null) {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({
+          type: "about:blank",
+          title: "Not found",
+          status: 404,
+          code: "NOT_FOUND",
+          detail: "No Growth Audit has been run for this project.",
+          requestId: "e2e-request",
+        }),
+      });
+      return;
+    }
+    await fulfill(route, scenario.audit);
+  });
 }
 
 async function openOverview(
@@ -667,24 +760,23 @@ test("ready Overview renders the four current customer modules", async ({
 
   const priority = sectionByHeading(page, "What to decide and do next");
   await expect(priority.getByText("PRIORITY", { exact: true })).toBeVisible();
+  await expect(priority).toContainText(
+    "Loaded-scope Findings + project-wide Actions · up to 3",
+  );
   await expect(
     priority.getByRole("heading", { level: 3, name: TOP_OPPORTUNITY_TITLE }),
   ).toBeVisible();
-  await expect(priority.getByText("High", { exact: true })).toBeVisible();
-  await expect(priority.getByText("Unreviewed", { exact: true })).toBeVisible();
-  await expect(priority).toContainText("TECH-CANONICAL-002");
-  await expect(priority).toContainText("1 evidence item");
-  await expect(priority).toContainText("Current frozen audit");
+  // Severity now rides the row's kind label; the rule id and the evidence count
+  // moved to the Growth Map detail this row links to (PRD :283).
+  await expect(priority).toContainText("Evidence review · High");
+  await expect(priority).not.toContainText("TECH-CANONICAL-002");
+  await expect(priority).not.toContainText("1 evidence item");
   await expect(
     priority.getByRole("link", { name: "Review Opportunity" }),
   ).toHaveAttribute(
     "href",
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${TOP_SITE_PAGE_ID}`,
   );
-  await expect(priority).toContainText(
-    "Project-wide work from the same frozen audit",
-  );
-  await expect(priority).toContainText("1 item");
   await expect(priority.getByText("Planned", { exact: true })).toBeVisible();
   await expect(priority).toContainText("Fix the failing product page");
   await expect(
@@ -695,6 +787,8 @@ test("ready Overview renders the four current customer modules", async ({
     "href",
     `/p/${E2E_PROJECT_ID}/execution?actionId=00000000-0000-4000-8000-000000000301`,
   );
+  // One Opportunity and one Action share the same bounded decision list.
+  await expect(priority.locator("[data-decision-kind]")).toHaveCount(2);
   await expect(priority).toContainText("No verified before/after result yet");
 
   const portfolio = sectionByHeading(
@@ -707,12 +801,35 @@ test("ready Overview renders the four current customer modules", async ({
   ).toContainText("2");
   await expect(metricByLabel(portfolio, "Active Findings")).toContainText("2");
   await expect(metricByLabel(portfolio, "Findings to review")).toContainText("1");
+  await expect(portfolio).toContainText("Loaded page only");
+  // The Findings-to-review description is the review entry point; the count
+  // itself stays plain text so an empty queue can never be linked.
   await expect(
-    portfolio.getByText("High", { exact: true }).locator("xpath=.."),
-  ).toContainText("1");
+    portfolio.getByRole("link", { name: "Customer decisions, one by one" }),
+  ).toHaveAttribute(
+    "href",
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${TOP_SITE_PAGE_ID}&findingId=${TOP_FINDING_ID}`,
+  );
+
+  // Whole-project mix: a second scope on the same card, labelled apart from the
+  // loaded-page stat cells above it.
+  await expect(portfolio).toContainText("Project-wide opportunity mix");
+  await expect(portfolio).toContainText(
+    "Counts the whole project, not only the loaded page",
+  );
+  await expect(portfolio.locator('[data-lens="site_health"]')).toContainText(
+    "Site Health",
+  );
   await expect(
-    portfolio.getByText("Medium", { exact: true }).locator("xpath=.."),
-  ).toContainText("1");
+    portfolio.locator('[data-lens="site_health"] strong'),
+  ).toHaveText("4");
+  await expect(
+    portfolio.locator('[data-lens="search_ai_visibility"] strong'),
+  ).toHaveText("3");
+  await expect(
+    portfolio.locator('[data-lens="demand_competition"] strong'),
+  ).toHaveText("1");
+  await expect(portfolio).toContainText("8 Opportunities in total");
   await expect(portfolio).toContainText("Audit identity");
   await expect(
     portfolio.locator(`code[title="${DIAGNOSTIC_RUN_ID}"]`),
@@ -829,9 +946,18 @@ test("content-decay advice stays in the existing priority queue and deep-links t
   const priority = sectionByHeading(page, "接下来要决定、要完成什么");
   const alert = priority.locator("[data-content-decay-alert]");
   await expect(alert).toHaveCount(1);
+  // The warning is an observation: it sits in its own block and never spends
+  // one of the three decision slots.
+  await expect(priority).toContainText("内容健康度观察");
+  await expect(priority).toContainText("观察信号，不占用上方 3 项决策名额。");
+  await expect(priority.locator("[data-decision-kind]")).toHaveCount(2);
   await expect(alert).toContainText("建议内容复审");
   await expect(alert).toContainText("连续两个月平均位置分别下降 5.1 / 5.1 位");
-  await expect(alert).toContainText("最近 28 天 clicks 环比下降 30%");
+  // The click sample travels with the percentage: 30% off 500 and 30% off 5 are
+  // not the same evidence.
+  await expect(alert).toContainText(
+    "最近 28 天 clicks 由 500 降至 350，环比下降 30%",
+  );
   await expect(alert).toContainText("/product");
   await expect(
     alert.getByRole("link", {
@@ -857,9 +983,8 @@ test("empty Overview keeps absence explicit across all four modules", async ({
   await expect(priority).toContainText(
     "The latest frozen audit has no active Finding for the loaded URL portfolio.",
   );
-  await expect(priority).toContainText(
-    "There are no project-wide work items for the current frozen audit.",
-  );
+  // Nothing to decide means an empty list, not a fabricated row.
+  await expect(priority.locator("[data-decision-kind]")).toHaveCount(0);
   await expect(priority).toContainText("No verified before/after result yet");
   await expect(
     priority.getByRole("link", { name: "Open Growth Map" }),
@@ -878,6 +1003,17 @@ test("empty Overview keeps absence explicit across all four modules", async ({
     await expect(metricByLabel(portfolio, label)).toContainText("0");
   }
   await expect(portfolio).toContainText("Coverage unavailable");
+  // A project that has never been audited is honest absence, not a failed read.
+  await expect(portfolio).toContainText(
+    "The current frozen audit has no Opportunity to classify.",
+  );
+  await expect(portfolio).not.toContainText(
+    "The project-wide opportunity mix could not be loaded.",
+  );
+  await expect(portfolio.locator("[data-lens]")).toHaveCount(0);
+  await expect(
+    portfolio.getByRole("link", { name: "Customer decisions, one by one" }),
+  ).toHaveCount(0);
 
   const sources = sectionByHeading(page, "Signals used for analysis");
   await expect(sources.locator("article")).toHaveCount(3);
@@ -922,6 +1058,24 @@ test("partial Overview preserves bounded audit and mixed connection truth", asyn
     "This page only · more URLs are available",
   );
   await expect(portfolio).toContainText("Partial coverage");
+  // A downgraded coverage badge without its reasons is a grade the customer
+  // cannot judge, so the contract's limitations must be on the screen.
+  await expect(portfolio).toContainText("Why this coverage is incomplete");
+  await expect(portfolio).toContainText(
+    "Additional URLs exist beyond this bounded page.",
+  );
+  // An uncovered lens reports missing coverage, never a measured zero — and
+  // without it the whole-project total stays unavailable rather than partial.
+  await expect(
+    portfolio.locator('[data-lens="demand_competition"]'),
+  ).toHaveAttribute("data-coverage", "no_data");
+  await expect(
+    portfolio.locator('[data-lens="demand_competition"] strong'),
+  ).toHaveText("—");
+  await expect(
+    portfolio.locator('[data-lens="site_health"] strong'),
+  ).toHaveText("4");
+  await expect(portfolio).not.toContainText("in total");
 
   const sources = sectionByHeading(page, "Signals used for analysis");
   const gsc = sources.locator("article").filter({
@@ -1012,8 +1166,7 @@ test("Overview chrome localizes to zh-CN while canonical customer data stays int
   const priority = sectionByHeading(page, "接下来要决定、要完成什么");
   await expect(priority).toContainText("优先处理");
   await expect(priority).toContainText(TOP_OPPORTUNITY_TITLE);
-  await expect(priority.getByText("高优先级", { exact: true })).toBeVisible();
-  await expect(priority.getByText("未审阅", { exact: true })).toBeVisible();
+  await expect(priority).toContainText("证据审核 · 高优先级");
   await expect(priority.getByText("已计划", { exact: true })).toBeVisible();
   await expect(priority).toContainText("Fix the failing product page");
   await expect(priority).toContainText("暂无经过验证的审计前后结果");
@@ -1021,6 +1174,10 @@ test("Overview chrome localizes to zh-CN while canonical customer data stays int
   const portfolio = sectionByHeading(page, "冻结审计中的机会分布");
   await expect(portfolio).toContainText("本页已加载 URL");
   await expect(portfolio).toContainText("有效 Finding");
+  await expect(portfolio).toContainText("当前加载页");
+  await expect(portfolio).toContainText("全项目机会构成");
+  await expect(portfolio).toContainText("统计全项目，不限于当前加载页");
+  await expect(portfolio).toContainText("共 8 个 Opportunity");
   await expect(portfolio).toContainText("审计身份");
   await expect(portfolio).toContainText("覆盖可用");
 
@@ -1187,3 +1344,5 @@ test("printing Overview leaves the shell chrome out of the output", async ({
   await page.emulateMedia({ media: "screen" });
   await expect(sidebar).toBeVisible();
 });
+
+

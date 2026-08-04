@@ -808,34 +808,37 @@
       "priority": {
         "eyebrow": "PRIORITY",
         "title": "What to decide and do next",
-        "maxItems": "1 loaded-scope Opportunity + up to 3 project-wide work items",
+        "listScope": "Loaded-scope Findings + project-wide Actions · up to 3",
+        "kinds": {
+          "evidenceReview": "Evidence review"
+        },
+        "contentHealth": {
+          "title": "Content health signals",
+          "note": "Observed signals — they do not take one of the three decision slots above."
+        },
         "loading": "Loading the current Opportunity…",
         "error": "The current Opportunity could not be loaded.",
         "noOpportunity": "No current Opportunity is available",
         "noOpportunityDescription": "The latest frozen audit has no active Finding for the loaded URL portfolio.",
         "detailRunMismatch": "The selected URL audit changed",
         "detailRunMismatchDescription": "The portfolio and URL detail still refer to different frozen audits, so this Opportunity remains hidden instead of mixing evidence.",
-        "evidenceCount": "{count, plural, =1 {# evidence item} other {# evidence items}}",
-        "oneFinding": "Current frozen audit",
         "levels": {
           "critical": "Critical",
           "high": "High",
           "medium": "Medium",
           "low": "Low"
         },
-        "queueTitle": "Project-wide work from the same frozen audit",
-        "queueCount": "{count, plural, =1 {# item} other {# items}}",
-        "queueEmpty": "There are no project-wide work items for the current frozen audit.",
         "queueSyncing": "Aligning the work queue with the current frozen audit…",
         "queueRunMismatch": "The audit changed while this page was loading. Work cards remain hidden until both reads match.",
         "queueUnavailable": "The work queue is unavailable until a frozen audit can be identified.",
+        "queueLoadFailed": "The work items could not be read this time. You can retry in a moment.",
         "decisionDue": "Decision due · untouched for {days} days",
         "decideOpportunityLabel": "Decide whether to proceed: {summary}",
         "decay": {
           "detected": "{month} monthly decay warning",
           "reviewSuggested": "Content review recommended",
           "rankSignal": "average position fell {first} / {second} places in two consecutive months",
-          "trafficSignal": "latest 28-day clicks fell {percent}% month over month",
+          "trafficSignalWithSample": "latest 28-day clicks fell from {previous} to {current}, down {percent}% month over month",
           "openLabel": "Open the page recommended for content review in Growth Map: {page}"
         },
         "resultUnavailable": "No verified before/after result yet",
@@ -861,6 +864,20 @@
         "toReview": "Findings to review",
         "oneByOne": "Customer decisions, one by one",
         "auditIdentity": "Audit identity",
+        "statsScope": "Loaded page only",
+        "lensMixTitle": "Project-wide opportunity mix",
+        "lensMixScope": "Counts the whole project, not only the loaded page",
+        "lensMixTotal": "{count, plural, =1 {# Opportunity in total} other {# Opportunities in total}}",
+        "lensMixTotalUnavailable": "No project total while a lens has no coverage",
+        "lensMixLoading": "Loading the project-wide opportunity mix…",
+        "lensMixError": "The project-wide opportunity mix could not be loaded. You can retry in a moment.",
+        "lensMixNoData": "The current frozen audit has no Opportunity to classify.",
+        "lenses": {
+          "site_health": "Site Health",
+          "search_ai_visibility": "Search & AI Visibility",
+          "demand_competition": "Demand & Competition"
+        },
+        "coverageLimitationsTitle": "Why this coverage is incomplete",
         "coverage": {
           "available": "Coverage available",
           "partial": "Partial coverage",

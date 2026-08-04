@@ -14,6 +14,7 @@ import {
   buildVerifiedResultSummary,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
+  selectFirstReviewableFinding,
   selectTopOpportunityFinding,
   selectTopPortfolioItem,
   selectProjectWorkItemsForFrozenRun,
@@ -509,6 +510,42 @@ describe("Overview customer projection", () => {
       beforePageSnapshotId: "00000000-0000-4000-8000-000000000085",
       currentPageSnapshotId: "00000000-0000-4000-8000-000000000086",
     });
+  });
+
+  it("opens the review queue on one deterministic reviewable Finding", () => {
+    const noneLeft = portfolioItem(
+      "00000000-0000-4000-8000-000000000091",
+      "critical",
+      0,
+    );
+    const reviewable = portfolioItem(
+      "00000000-0000-4000-8000-000000000092",
+      "high",
+      2,
+    );
+    const alsoReviewable = portfolioItem(
+      "00000000-0000-4000-8000-000000000093",
+      "low",
+      3,
+    );
+
+    expect(
+      selectFirstReviewableFinding([noneLeft, alsoReviewable, reviewable]),
+    ).toEqual({
+      sitePageId: reviewable.sitePageId,
+      findingId: reviewable.reviewableFindingIds[0],
+    });
+  });
+
+  it("refuses a review entry point when nothing is left to review", () => {
+    const noneLeft = portfolioItem(
+      "00000000-0000-4000-8000-000000000094",
+      "critical",
+      0,
+    );
+
+    expect(selectFirstReviewableFinding([noneLeft])).toBeNull();
+    expect(selectFirstReviewableFinding([])).toBeNull();
   });
 
   it("builds only canonical Growth Map and Execution links", () => {
