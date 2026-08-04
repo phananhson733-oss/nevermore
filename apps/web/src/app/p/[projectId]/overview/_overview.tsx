@@ -49,6 +49,8 @@ import {
   buildPortfolioSummary,
   buildVerifiedResultSummary,
   overviewCompetitorLibraryHref,
+  overviewContentDecayLimitationKey,
+  OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
   selectFirstReviewableFinding,
@@ -546,15 +548,52 @@ function DecisionList({
 }
 
 /**
+ * The rules behind these signals — the click floor above all — decide what the
+ * customer is shown, so PRD R5.8 puts them on the surface but inside a
+ * disclosure rather than in the reading line. Platform wording is localized by
+ * exact match; anything the Overview does not own is rendered verbatim.
+ */
+function ContentHealthLimitations({
+  limitations,
+}: {
+  readonly limitations: readonly string[];
+}) {
+  const t = useTranslations("overview.customer");
+  const tLimit = useTranslations(
+    "overview.customer.priority.contentHealth.limitations",
+  );
+  if (limitations.length === 0) return null;
+  return (
+    <details className={styles.provenanceDisclosure}>
+      <summary>{t("priority.contentHealth.limitationsTitle")}</summary>
+      <ul>
+        {limitations.map((limitation) => {
+          const key = overviewContentDecayLimitationKey(limitation);
+          return (
+            <li key={limitation}>
+              {key === null
+                ? limitation
+                : tLimit(key, { count: OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS })}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * Content decay is an observation, not a customer decision, so it sits below
  * the decision list in its own block and never spends one of the three slots.
  */
 function ContentHealthBlock({
   projectId,
   alerts,
+  limitations,
 }: {
   readonly projectId: string;
   readonly alerts: readonly OverviewContentDecayAlert[];
+  readonly limitations: readonly string[];
 }) {
   const t = useTranslations("overview.customer");
   if (alerts.length === 0) return null;
@@ -573,6 +612,7 @@ function ContentHealthBlock({
           />
         ))}
       </ul>
+      <ContentHealthLimitations limitations={limitations} />
     </div>
   );
 }
@@ -625,6 +665,7 @@ function PrioritySection({
   projectWork,
   decisionReminders,
   contentDecayAlerts,
+  contentDecayLimitations,
   workRunState,
   topPage,
   topFinding,
@@ -641,6 +682,7 @@ function PrioritySection({
   readonly projectWork: readonly OverviewAction[];
   readonly decisionReminders: readonly OverviewDecisionReminder[];
   readonly contentDecayAlerts: readonly OverviewContentDecayAlert[];
+  readonly contentDecayLimitations: readonly string[];
   readonly workRunState: WorkRunState;
   readonly topPage: GrowthMapUrlPortfolioItem | null;
   readonly topFinding: GrowthMapUrlFinding | null;
@@ -694,7 +736,11 @@ function PrioritySection({
         />
       )}
       <WorkRunNotice state={workRunState} onRetryRunPair={onRetryRunPair} />
-      <ContentHealthBlock projectId={projectId} alerts={contentDecayAlerts} />
+      <ContentHealthBlock
+        projectId={projectId}
+        alerts={contentDecayAlerts}
+        limitations={contentDecayLimitations}
+      />
       <ResultBoundary projectId={projectId} resultPage={resultPage} />
     </section>
   );
@@ -1413,6 +1459,7 @@ export function OverviewClient({
           projectWork={projectWork}
           decisionReminders={view.decisionReminders}
           contentDecayAlerts={view.contentDecayMonitor.alerts}
+          contentDecayLimitations={view.contentDecayMonitor.limitations}
           workRunState={workRunState}
           topPage={topPage}
           topFinding={topFinding}

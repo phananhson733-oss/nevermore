@@ -814,7 +814,16 @@
         },
         "contentHealth": {
           "title": "内容健康度观察",
-          "note": "观察信号，不占用上方 3 项决策名额。"
+          "note": "观察信号，不占用上方 3 项决策名额。",
+          "limitationsTitle": "这些信号是怎么判定的",
+          "limitations": {
+            "checkpointWindow": "月度检查点读取该月权威 GSC snapshot 的 trailing 28 天指标，不等同于自然月汇总。",
+            "gscTopRows": "Search Console 只返回按 clicks 排序的 top rows，低点击页面可能缺失。",
+            "minimumSample": "只有上一个检查点点击数不低于 {count} 时才判定流量下滑；样本更小的百分比波动不作为衰减证据。",
+            "neverBackfilled": "任何缺失、partial 或有歧义的 observation 一律按不可用处理，绝不补零。",
+            "readTimeOnly": "当前是概览读取时的只读投影，尚未接入月度任务或主动推送。",
+            "timeZoneFallback": "Provider 与 Project 都没有提供有效时区，月度检查点按 UTC 解释，不根据市场或语言猜测。"
+          }
         },
         "loading": "正在加载当前 Opportunity…",
         "error": "暂时无法加载当前 Opportunity。",

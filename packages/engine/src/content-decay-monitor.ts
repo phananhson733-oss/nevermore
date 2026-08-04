@@ -21,6 +21,27 @@ export const CONTENT_DECAY_RANK_THRESHOLD = 5;
  */
 export const CONTENT_DECAY_MIN_PREVIOUS_CLICKS = 100;
 
+/**
+ * Limitations are authored in English like every other engine limitation
+ * (see rules/search-decay.ts) so one customer-facing surface can map them to
+ * localized copy. They are exported as named constants rather than inline
+ * literals: the Overview matches on the exact value, and a wording change here
+ * must not silently fall back to untranslated English there.
+ */
+export const CONTENT_DECAY_LIMITATIONS = {
+  checkpointWindow:
+    "Monthly checkpoints read the trailing 28-day metrics of that month's authoritative GSC snapshot, which is not a calendar-month total.",
+  gscTopRows:
+    "Search Console returns top rows by clicks, so low-click pages can be missing.",
+  minimumSample: `A traffic decline is only called when the previous checkpoint carries at least ${CONTENT_DECAY_MIN_PREVIOUS_CLICKS} clicks; a percentage swing on a smaller sample is not decay evidence.`,
+  neverBackfilled:
+    "Any missing, partial, or ambiguous observation is treated as unavailable and never backfilled with zero.",
+  readTimeOnly:
+    "This is a read-time projection for the Overview; no monthly job or push delivery is wired yet.",
+  timeZoneFallback:
+    "Neither the provider nor the project supplied a valid time zone, so monthly checkpoints are interpreted in UTC rather than guessed from market or language.",
+} as const;
+
 const GSC_PROVIDER = "gsc";
 const GSC_DATASET = "gsc.page_query_daily.v1";
 const GSC_METHOD = "gsc.page_query_daily.v1";
@@ -28,10 +49,7 @@ const GSC_METRIC = "gsc.page.v1";
 const DAY_MS = 86_400_000;
 const EXPECTED_SOURCE_WINDOW_DAYS = 56;
 
-export type ContentDecayAvailability =
-  | "available"
-  | "partial"
-  | "unavailable";
+export type ContentDecayAvailability = "available" | "partial" | "unavailable";
 
 export interface ContentDecayTimeZoneResolution {
   readonly timeZone: string;
@@ -169,9 +187,7 @@ export function resolveContentDecayTimeZone(input: {
   return {
     timeZone: "UTC",
     source: "fallback",
-    limitations: [
-      "Provider 与 Project 均未提供有效时区；月度检查点按 UTC 解释，未根据市场或语言猜测时区。",
-    ],
+    limitations: [CONTENT_DECAY_LIMITATIONS.timeZoneFallback],
   };
 }
 
@@ -246,8 +262,7 @@ function compareSnapshotAuthority(
 ): number {
   const end = right.sourceWindow.end.localeCompare(left.sourceWindow.end);
   if (end !== 0) return end;
-  const captured =
-    Date.parse(right.capturedAt) - Date.parse(left.capturedAt);
+  const captured = Date.parse(right.capturedAt) - Date.parse(left.capturedAt);
   if (captured !== 0) return captured;
   return left.snapshotId.localeCompare(right.snapshotId);
 }
@@ -304,8 +319,7 @@ function selectCheckpoints(input: {
   const asOfMonth = monthOfDate(asOfDate);
   if (
     asOfMonth === null ||
-    (latestMonth !== asOfMonth &&
-      latestMonth !== previousMonth(asOfMonth))
+    (latestMonth !== asOfMonth && latestMonth !== previousMonth(asOfMonth))
   ) {
     return {
       checkpoints: [],
@@ -347,11 +361,7 @@ function sameInstant(left: string, right: string): boolean {
 }
 
 function nonnegativeInteger(value: number | null): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0
-  );
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function matchesCanonicalPageSubject(
@@ -424,8 +434,7 @@ export function compareContentDecayAlerts(
   const rightTraffic = right.trafficTrend?.changeRatio ?? 0;
   if (leftTraffic !== rightTraffic) return leftTraffic - rightTraffic;
   const leftRank =
-    (left.rankTrend?.firstDecline ?? 0) +
-    (left.rankTrend?.secondDecline ?? 0);
+    (left.rankTrend?.firstDecline ?? 0) + (left.rankTrend?.secondDecline ?? 0);
   const rightRank =
     (right.rankTrend?.firstDecline ?? 0) +
     (right.rankTrend?.secondDecline ?? 0);
@@ -464,22 +473,18 @@ export function buildContentDecayMonitor(input: {
   for (const page of input.pages) {
     const facts = new Map<string, CheckedObservation>();
     for (const checkpoint of checkpoints) {
-      const fact = checkedObservation(
-        checkpoint,
-        page,
-        input.observations,
-      );
+      const fact = checkedObservation(checkpoint, page, input.observations);
       if (fact) facts.set(checkpoint.snapshotId, fact);
       else incompletePageFacts = true;
     }
 
     const previous = checkpoints.at(-2) ?? null;
     const older = checkpoints.at(-3) ?? null;
-    const currentFact = latest ? facts.get(latest.snapshotId) ?? null : null;
+    const currentFact = latest ? (facts.get(latest.snapshotId) ?? null) : null;
     const previousFact = previous
-      ? facts.get(previous.snapshotId) ?? null
+      ? (facts.get(previous.snapshotId) ?? null)
       : null;
-    const olderFact = older ? facts.get(older.snapshotId) ?? null : null;
+    const olderFact = older ? (facts.get(older.snapshotId) ?? null) : null;
 
     let rankTrend: ContentDecayRankTrend | null = null;
     if (
@@ -493,9 +498,7 @@ export function buildContentDecayMonitor(input: {
       olderFact?.position !== null &&
       olderFact?.position !== undefined
     ) {
-      const firstDecline = rounded(
-        previousFact.position - olderFact.position,
-      );
+      const firstDecline = rounded(previousFact.position - olderFact.position);
       const secondDecline = rounded(
         currentFact.position - previousFact.position,
       );
@@ -526,8 +529,7 @@ export function buildContentDecayMonitor(input: {
       previousFact.clicks >= CONTENT_DECAY_MIN_PREVIOUS_CLICKS
     ) {
       const changeRatio = rounded(
-        (currentFact.clicks - previousFact.clicks) /
-          previousFact.clicks,
+        (currentFact.clicks - previousFact.clicks) / previousFact.clicks,
       );
       if (changeRatio < CONTENT_DECAY_TRAFFIC_THRESHOLD) {
         trafficTrend = {
@@ -578,11 +580,11 @@ export function buildContentDecayMonitor(input: {
     latestCheckpointMonth: checkpointSelection.latestAuthorityMonth,
     limitations: [
       ...input.timeZone.limitations,
-      "月度检查点使用该月权威 GSC snapshot 的 trailing 28-day 指标，不等同于自然月汇总。",
-      "GSC 只返回按 clicks 排序的 top rows，低点击页面可能缺失。",
-      `流量下滑仅在上一个检查点点击数不低于 ${CONTENT_DECAY_MIN_PREVIOUS_CLICKS} 时判定；样本更小的百分比波动不作为衰减证据。`,
-      "任何缺失、partial 或歧义 observation 均按不可用处理，不补零。",
-      "当前为概览读取时的只读投影，尚未接入月度自动任务或主动推送。",
+      CONTENT_DECAY_LIMITATIONS.checkpointWindow,
+      CONTENT_DECAY_LIMITATIONS.gscTopRows,
+      CONTENT_DECAY_LIMITATIONS.minimumSample,
+      CONTENT_DECAY_LIMITATIONS.neverBackfilled,
+      CONTENT_DECAY_LIMITATIONS.readTimeOnly,
     ],
     alerts: alerts.sort(compareContentDecayAlerts),
   };
