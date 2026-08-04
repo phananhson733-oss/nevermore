@@ -453,27 +453,33 @@ describe("createActionArtifact", () => {
     expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
   });
 
-  it("rejects artifact creation when the finding moved beyond the Action's frozen diagnosis", async () => {
+  it("queues artifact creation from the Action's frozen diagnosis after the finding projection advances", async () => {
     vi.mocked(FindingsRepository.prototype.findById).mockResolvedValueOnce({
       ...sourceFinding,
       last_seen_run_id: "diagnostic-2",
     } as never);
 
-    await expect(
-      createActionArtifact(
-        scope,
-        projectId,
-        actionId,
-        actorId,
-        idempotencyKey,
-        body,
-      ),
-    ).rejects.toMatchObject({
-      code: "VERSION_CONFLICT",
-      message: "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
-    });
-    expect(DiagnosticRunsRepository.prototype.findById).not.toHaveBeenCalled();
-    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+    const result = await createActionArtifact(
+      scope,
+      projectId,
+      actionId,
+      actorId,
+      idempotencyKey,
+      body,
+    );
+
+    expect(result.run.id).toBe(run.id);
+    expect(DiagnosticRunsRepository.prototype.findById).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: scope.workspaceId, projectId }),
+      sourceDiagnosticRun.id,
+    );
+    expect(AsyncRunsRepository.prototype.insertQueued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestPayload: expect.objectContaining({
+          sourceDiagnosticRunId: sourceDiagnosticRun.id,
+        }),
+      }),
+    );
   });
 
   it("regenerates a live artifact and preserves explicit operator instructions", async () => {

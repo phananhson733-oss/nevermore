@@ -335,9 +335,11 @@ export async function createActionArtifact(
       }
       assertArtifactTypeMatchesTemplate(currentAction, body.artifactType);
 
-      // An Artifact belongs to the exact diagnosis that produced its source
-      // Finding. The project's confirmed pointer may advance independently,
-      // so derive and freeze lineage from Finding -> DiagnosticRun instead.
+      // An Artifact belongs to the exact diagnosis frozen on its Action. The
+      // mutable Finding projection may advance after an operator confirms the
+      // Action; that must not invalidate already-approved work. Resolve the
+      // Finding only to prove the source identity still exists, then use the
+      // Action's immutable DiagnosticRun for every queued lineage field.
       const sourceFinding = await txFindings.findById(
         projectScope,
         currentAction.source_finding_id,
@@ -346,15 +348,6 @@ export async function createActionArtifact(
         throw new ProblemError(
           "DEPENDENCY_UNAVAILABLE",
           "Artifact source finding is unavailable.",
-        );
-      }
-      if (
-        sourceFinding.last_seen_run_id !==
-        currentAction.source_diagnostic_run_id
-      ) {
-        throw new ProblemError(
-          "VERSION_CONFLICT",
-          "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
         );
       }
       const sourceDiagnosticRun = await txDiagnosticRuns.findById(

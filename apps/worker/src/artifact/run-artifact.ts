@@ -602,10 +602,10 @@ export async function buildArtifactPromptInput(
     action.source_finding_id,
   );
   if (!finding) throw new Error("source finding missing");
-
-  if (finding.last_seen_run_id !== sourceDiagnosticRunId) {
-    throw new Error("source finding moved beyond the frozen diagnosis");
-  }
+  // Finding is a mutable projection and can be re-observed by a later audit.
+  // The operator-approved Action keeps the immutable generation lineage. Load
+  // the exact DiagnosticRun and Evidence rows below from that frozen source;
+  // never switch generation to the Finding's newer `last_seen_run_id`.
   const sourceDiagnosticRun = await new DiagnosticRunsRepository(
     ctx.db,
   ).findById(scope, sourceDiagnosticRunId);

@@ -2,6 +2,7 @@
 // out of a separate client entry allows the canonical refetch callback prop.
 
 import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Eye, Link2 } from "lucide-react";
 import {
@@ -67,6 +68,11 @@ function reviewStateTone(state: Finding["reviewState"]): StatusTone {
 
 type ReviewMode = "idle" | "ignore" | "needs_more_data";
 
+interface CreatedAction {
+  readonly id: string;
+  readonly title: string;
+}
+
 /**
  * One compact diagnostic row. Canonical finding and review fields stay in the
  * row; the denser provenance tree opens in the modal evidence drawer.
@@ -97,7 +103,7 @@ export function FindingCard({
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [problemError, setProblemError] = useState<unknown | null>(null);
-  const [createdAction, setCreatedAction] = useState<string | null>(null);
+  const [createdAction, setCreatedAction] = useState<CreatedAction | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
@@ -126,7 +132,9 @@ export function FindingCard({
       setText("");
       setCreatedAction(
         body.reviewState === "confirmed"
-          ? (result.action?.title ?? null)
+          ? result.action === null
+            ? null
+            : { id: result.action.id, title: result.action.title }
           : null,
       );
       onRefetch();
@@ -249,9 +257,15 @@ export function FindingCard({
           )}
 
           {createdAction !== null ? (
-            <p className={styles.actionCreated} role="status">
-              {`${t("actionCreated")} ${createdAction}`}
-            </p>
+            <div className={styles.actionCreated} role="status">
+              <span>{`${t("actionCreated")} ${createdAction.title}`}</span>
+              <Link
+                className={styles.actionCreatedLink}
+                href={`/p/${projectId}/execution?actionId=${createdAction.id}`}
+              >
+                {t("generateAction")}
+              </Link>
+            </div>
           ) : null}
 
           <div className={styles.reviewBar}>

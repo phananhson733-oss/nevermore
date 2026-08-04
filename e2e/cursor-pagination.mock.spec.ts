@@ -160,8 +160,9 @@ test.beforeEach(async ({ page }) => {
 // redirect to /execution (plan/page.tsx:16) and PlanClient (plan/_plan.tsx:1042)
 // is imported by nothing, so the Plan action list it paged through is gone.
 // Action cursor pagination itself is still proven on the canonical Execution
-// surface by "Studio exposes artifact and action next pages" below, which pages
-// the action picker and asserts the second page's action becomes selectable.
+// surface by "Studio exposes artifact and action next pages" below. The unified
+// queue's single pagination control advances both artifact and action cursors;
+// the test proves the second action is then present in both queue and picker.
 
 test("Studio exposes artifact and action next pages", async ({ page }) => {
   const firstAction = actionFixture(1, "First page studio action");
@@ -215,21 +216,20 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
   // the queue no longer has per-type sections. The proof now reads the ROW the
   // second page brought in, by its type — which is what the heading stood in
   // for, and it fails the same way if the second page never lands.
+  const secondArtifactCard = queue.locator(
+    `[data-studio-artifact-id="${secondArtifact.id}"][data-studio-artifact-type="content_brief"]`,
+  );
+  await expect(secondArtifactCard).toHaveCount(1);
   await expect(
-    queue.locator(
-      '[data-studio-artifact-id][data-studio-artifact-type="content_brief"]',
-    ),
-  ).toHaveCount(1);
+    secondArtifactCard.getByText(secondAction.title, { exact: true }),
+  ).toBeVisible();
 
   await hero.getByRole("button", { name: "Generate artifact" }).click();
   await expect(canvas.getByRole("heading", { name: "Pick an action" })).toBeVisible();
-  await canvas.getByRole("button", { name: "Load more" }).click();
-  await expect(
-    queue.getByText(secondAction.title, { exact: true }),
-  ).toBeVisible();
   await expect(
     canvas.getByText(secondAction.title, { exact: true }),
   ).toBeVisible();
+  await expect(canvas.getByRole("button", { name: "Load more" })).toHaveCount(0);
 });
 
 test("Studio guards hero generation and card regeneration while the editor is dirty", async ({

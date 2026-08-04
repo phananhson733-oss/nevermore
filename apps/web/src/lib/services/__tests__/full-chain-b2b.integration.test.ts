@@ -351,7 +351,7 @@ describeDb(
       );
     });
 
-    it("rejects Artifact creation after the confirmed Action's source Finding advances to a later diagnosis", async () => {
+    it("generates from the confirmed Action's frozen diagnosis after its Finding advances", async () => {
       const driftChain = await runCommonChain(
         handle,
         ctx,
@@ -492,30 +492,31 @@ describeDb(
       const artifactBefore = await new ExecutionArtifactsRepository(
         handle.db,
       ).findById(driftChain.scope, driftChain.artifactId);
-      let rejection: unknown;
-      try {
-        await createActionArtifact(
-          { workspaceId: driftChain.scope.workspaceId },
-          driftChain.scope.projectId,
-          driftChain.actionId,
-          driftChain.actor,
-          randomUUID(),
-          {
-            artifactType: "technical_ticket",
-            generationMode: "template",
-            outputLocale: "en",
-            operatorInstructions: null,
-          },
-        );
-      } catch (error) {
-        rejection = error;
-      }
-      expect(rejection).toBeInstanceOf(ProblemError);
-      expect(rejection).toMatchObject({
-        status: 409,
-        code: "VERSION_CONFLICT",
-        message:
-          "Finding changed after this Action was created; review the current opportunity before generating an artifact.",
+      const accepted = await createActionArtifact(
+        { workspaceId: driftChain.scope.workspaceId },
+        driftChain.scope.projectId,
+        driftChain.actionId,
+        driftChain.actor,
+        randomUUID(),
+        {
+          artifactType: "technical_ticket",
+          generationMode: "template",
+          outputLocale: "en",
+          operatorInstructions: null,
+        },
+      );
+      const queued = await asyncRuns.findById(
+        driftChain.scope,
+        accepted.run.id,
+      );
+      expect(queued?.request_payload).toMatchObject({
+        sourceDiagnosticRunId: sourceRun.id,
+        sourceIcpProfileId: sourceRun.icp_profile_id,
+      });
+      await runArtifact(ctx, {
+        runId: accepted.run.id,
+        workspaceId: driftChain.scope.workspaceId,
+        projectId: driftChain.scope.projectId,
       });
       await expect(
         new ExecutionArtifactsRepository(handle.db).findById(
@@ -523,9 +524,9 @@ describeDb(
           driftChain.artifactId,
         ),
       ).resolves.toMatchObject({
-        current_revision: artifactBefore?.current_revision,
-        latest_generation_run_id: artifactBefore?.latest_generation_run_id,
-        status: artifactBefore?.status,
+        current_revision: (artifactBefore?.current_revision ?? 0) + 1,
+        latest_generation_run_id: accepted.run.id,
+        status: "draft",
       });
     });
 
