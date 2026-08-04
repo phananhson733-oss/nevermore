@@ -1110,7 +1110,13 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     );
 
     const portfolio = await readPortfolio(request, projectId);
-    expect(portfolio.data).toHaveLength(3);
+    expect(portfolio.data).toHaveLength(2);
+    expect(
+      portfolio.data.some(
+        (item) => item.normalizedUrl === `${definition.siteUrl}/about`,
+      ),
+      "URLs without an Opportunity must stay out of the actionable portfolio",
+    ).toBe(false);
     const keywordLibrary = await readKeywordLibrary(request, projectId);
     const competitorLibrary = await readCompetitorLibrary(request, projectId);
     expect(keywordLibrary.data).toHaveLength(10);

@@ -877,7 +877,7 @@ test("ready Overview renders the four current customer modules", async ({
   await expect(metricByLabel(context, "JTBD")).toContainText(
     "Launch customers predictably",
   );
-  await expect(metricByLabel(context, "Approved competitors")).toContainText(
+  await expect(metricByLabel(context, "Default competitor set")).toContainText(
     "1 direct · 1 indirect",
   );
   await context.getByText("Version and provenance", { exact: true }).click();
@@ -1344,5 +1344,4 @@ test("printing Overview leaves the shell chrome out of the output", async ({
   await page.emulateMedia({ media: "screen" });
   await expect(sidebar).toBeVisible();
 });
-
 
