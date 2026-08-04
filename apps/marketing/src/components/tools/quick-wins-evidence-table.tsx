@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { QuickWinTrack, QuickWinsResult } from "@sf/public-tools";
@@ -203,9 +203,9 @@ export function QuickWinsEvidenceTable({
           <caption className="sr-only">{t("tableCaption")}</caption>
           <thead className="bg-brand-bg-alt/50 text-[12px] text-text-dark-secondary">
             <tr>
-              {COLUMNS.map((column) => (
+              {COLUMNS.map((column, index) => (
+                <Fragment key={column.key}>
                 <th
-                  key={column.key}
                   scope="col"
                   aria-sort={ariaSort(sort, column.key)}
                   className={`font-medium ${column.numeric ? "text-right" : ""}`}
@@ -233,10 +233,20 @@ export function QuickWinsEvidenceTable({
                     </span>
                   </button>
                 </th>
+                {/*
+                  Second, not last. It is the column that says what to do, and
+                  the table is 860px wide inside a horizontal scroller \u2014 last
+                  would put the answer nine columns off the right edge of a
+                  phone, which is a small rerun of the problem this column was
+                  added to solve.
+                */}
+                {index === 0 ? (
+                  <th scope="col" className="px-3 py-2.5 font-medium">
+                    {t("columns.track")}
+                  </th>
+                ) : null}
+                </Fragment>
               ))}
-              <th scope="col" className="px-3 py-2.5 font-medium">
-                {t("columns.track")}
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -255,6 +265,13 @@ export function QuickWinsEvidenceTable({
                       {row.bucketId}
                     </span>
                   ) : null}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span
+                    className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${TRACK_BADGE[row.track]}`}
+                  >
+                    {t(`tracks.${row.track}.label`)}
+                  </span>
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
                   {formatPosition(row.position, locale)}
@@ -276,13 +293,6 @@ export function QuickWinsEvidenceTable({
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
                   {formatTail(row.tailProbability, locale)}
-                </td>
-                <td className="px-3 py-2.5">
-                  <span
-                    className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${TRACK_BADGE[row.track]}`}
-                  >
-                    {t(`tracks.${row.track}.label`)}
-                  </span>
                 </td>
               </tr>
             ))}

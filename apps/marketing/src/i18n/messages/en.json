@@ -1249,7 +1249,7 @@
       "rerun": "Run again",
       "window": "Measured over {startDate} to {endDate}, Pacific time.",
       "tableTitle": "Evidence table",
-      "tableIntro": "Every query with enough impressions to measure, compared against what your own site earns at the same position. Sorted by the size of the gap. The last column says which checking path the row is on — that is a triage, not a verdict.",
+      "tableIntro": "Every query with enough impressions to measure, compared against what your own site earns at the same position. Sorted by the size of the gap. Each row is tagged with the checking path it is on — that is a triage, not a verdict.",
       "columns": {
         "query": "Query",
         "position": "Position",
