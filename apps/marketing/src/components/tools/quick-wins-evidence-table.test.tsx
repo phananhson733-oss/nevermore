@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
 import type { QuickWinEvidenceRow, QuickWinsResult } from "@sf/public-tools";
 
 import en from "../../i18n/messages/en.json";
-import { QuickWinsEvidenceTable } from "./quick-wins-evidence-table.tsx";
+import {
+  QuickWinsEvidenceTable,
+  activeTrack,
+} from "./quick-wins-evidence-table.tsx";
 
 function row(
   overrides: Partial<QuickWinEvidenceRow> = {},
@@ -152,6 +155,25 @@ describe("QuickWinsEvidenceTable", () => {
     // says there is nothing on that path, which is what is true here.
     expect(html).not.toContain("Band-wide");
     expect(html).not.toContain("Has a control");
+  });
+
+  it("drops a filter the next run has no rows for", () => {
+    // A second run replaces the rows without remounting the table, so a filter
+    // chosen against the previous result survives. Its chip does not — the
+    // list only renders paths with rows — so leaving it in force would show an
+    // empty table with no visible filter and no way to clear it.
+    const counts = {
+      compare_with_own_page: 0,
+      read_the_serp: 3,
+      band_is_the_story: 0,
+      gap_within_noise: 0,
+      at_or_above_curve: 1,
+    };
+
+    expect(activeTrack("compare_with_own_page", counts)).toBeNull();
+    // Still applies, so it survives the new result.
+    expect(activeTrack("read_the_serp", counts)).toBe("read_the_serp");
+    expect(activeTrack(null, counts)).toBeNull();
   });
 
   it("presses no filter until the reader presses one", () => {

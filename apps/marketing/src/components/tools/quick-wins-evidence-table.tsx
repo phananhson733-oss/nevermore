@@ -78,6 +78,25 @@ const TRACK_BADGE: Record<QuickWinTrack, string> = {
 };
 
 /**
+ * The filter that is actually in force, dropped when this run has no rows on it.
+ *
+ * A second run replaces the rows without remounting the table, so a filter
+ * chosen against the previous result survives into one where its path is
+ * empty. By then the chip for it is gone — the chip list only renders paths
+ * that have rows — which leaves an empty table, no visible filter, and no
+ * control to clear it. The visitor's last choice is kept in state so it comes
+ * back if a later run does have those rows; what is derived here is only
+ * whether it applies right now.
+ */
+export function activeTrack(
+  selected: QuickWinTrack | null,
+  counts: Readonly<Record<QuickWinTrack, number>>,
+): QuickWinTrack | null {
+  if (selected === null) return null;
+  return counts[selected] > 0 ? selected : null;
+}
+
+/**
  * Hand the visitor the file.
  *
  * The object URL is released on the next tick rather than immediately: Safari
@@ -105,9 +124,12 @@ export function QuickWinsEvidenceTable({
 }) {
   const t = useTranslations("tools.quickWins");
   const [sort, setSort] = useState<QuickWinsSort>(DEFAULT_SORT);
-  const [track, setTrack] = useState<QuickWinTrack | null>(null);
+  const [selected, setSelected] = useState<QuickWinTrack | null>(null);
 
   const counts = useMemo(() => trackCounts(result.rows), [result.rows]);
+
+  const track = activeTrack(selected, counts);
+
   const rows = useMemo(() => {
     const filtered =
       track === null
@@ -150,7 +172,7 @@ export function QuickWinsEvidenceTable({
           label={t("trackFilterAll")}
           count={formatCount(result.rows.length, locale)}
           active={track === null}
-          onClick={() => setTrack(null)}
+          onClick={() => setSelected(null)}
         />
         {TRACK_ORDER.filter((candidate) => counts[candidate] > 0).map(
           (candidate) => (
@@ -160,7 +182,7 @@ export function QuickWinsEvidenceTable({
               count={formatCount(counts[candidate], locale)}
               active={track === candidate}
               onClick={() =>
-                setTrack(track === candidate ? null : candidate)
+                setSelected(track === candidate ? null : candidate)
               }
             />
           ),
