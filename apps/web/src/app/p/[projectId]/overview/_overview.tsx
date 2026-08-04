@@ -7,7 +7,6 @@ import type {
 import {
   ArrowRight,
   BarChart3,
-  CheckCircle2,
   CircleAlert,
   Clock3,
   GitPullRequest,
@@ -21,7 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Spinner, StatusPill, type StatusTone } from "@/components/ui";
 import {
   useProductProfile,
@@ -34,7 +33,9 @@ import {
 import { ApiError } from "@/lib/api/client";
 import {
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+  isGrowthAuditAbsent,
   useCreateGrowthAuditRun,
+  useProjectGrowthAudit,
 } from "@/lib/api/hooks-audit";
 import {
   useGrowthMapUrlDetail,
@@ -49,22 +50,24 @@ import {
   buildVerifiedResultSummary,
   overviewGrowthMapHref,
   selectAuthoritativeGrowthMapRead,
+  selectFirstReviewableFinding,
   selectProjectWorkItemsForFrozenRun,
   shouldRefreshFrozenRunPair,
   selectTopOpportunityFinding,
   selectTopPortfolioItem,
   type OverviewSourceCard,
 } from "./_overview-view-model";
+import {
+  toProjectOpportunityMixResult,
+  type ProjectOpportunityMix,
+} from "./_project-opportunity-mix.ts";
 import styles from "./overview.module.css";
 
-const PRIORITY_TONE: Readonly<
-  Record<GrowthMapUrlFinding["severity"], StatusTone>
-> = {
-  critical: "danger",
-  high: "warning",
-  medium: "info",
-  low: "neutral",
-};
+/**
+ * The decision list is capped so the screen keeps stating what to do next
+ * instead of becoming a backlog. Row 01 is always the top Opportunity.
+ */
+const MAX_DECISION_ROWS = 3;
 
 const SOURCE_TONE: Partial<Record<SourceState | "unavailable", StatusTone>> = {
   available: "success",
@@ -165,158 +168,151 @@ function EmptyBlock({
   );
 }
 
-function TopOpportunity({
-  projectId,
-  topPage,
-  topFinding,
-  auditUnavailable,
-}: {
-  readonly projectId: string;
-  readonly topPage: GrowthMapUrlPortfolioItem | null;
-  readonly topFinding: GrowthMapUrlFinding | null;
-  readonly auditUnavailable: boolean;
-}) {
-  const t = useTranslations("overview.customer");
-  const tReview = useTranslations("reviewState");
-  const href = overviewGrowthMapHref(projectId, topPage?.sitePageId ?? null);
-
-  if (!topPage || !topFinding) {
-    return (
-      <EmptyBlock
-        title={
-          auditUnavailable
-            ? t("portfolio.unavailable")
-            : t("priority.noOpportunity")
-        }
-        description={
-          auditUnavailable
-            ? t("portfolio.unavailableDescription")
-            : t("priority.noOpportunityDescription")
-        }
-        href={href}
-        action={t("actions.openGrowthMap")}
-      />
-    );
-  }
-
-  return (
-    <article className={styles.topOpportunity}>
-      <div className={styles.opportunityTopline}>
-        <span className={styles.opportunityRank}>01</span>
-        <StatusPill tone={PRIORITY_TONE[topFinding.severity]}>
-          {t(`priority.levels.${topFinding.severity}`)}
-        </StatusPill>
-        <StatusPill
-          tone={topFinding.reviewState === "confirmed" ? "success" : "info"}
-        >
-          {tReview(topFinding.reviewState)}
-        </StatusPill>
-      </div>
-      <h3>{topFinding.title}</h3>
-      <p className={styles.opportunityPage}>
-        <Target aria-hidden="true" size={17} />
-        <span>{pageLabel(topPage)}</span>
-        <code>{new URL(topPage.normalizedUrl).pathname}</code>
-      </p>
-      <div className={styles.opportunityFacts}>
-        <span>{topFinding.ruleId}</span>
-        <span>
-          {t("priority.evidenceCount", {
-            count: topFinding.evidenceIds.length,
-          })}
-        </span>
-        <span>{t("priority.oneFinding")}</span>
-      </div>
-      <Link href={href} className={styles.primaryLink}>
-        {topFinding.reviewState === "confirmed"
-          ? t("actions.inspectOpportunity")
-          : t("actions.reviewOpportunity")}
-        <ArrowRight aria-hidden="true" size={17} />
-      </Link>
-    </article>
-  );
-}
-
-function ProjectWorkRow({
-  projectId,
-  action,
-}: {
-  readonly projectId: string;
-  readonly action: OverviewAction;
-}) {
-  const tActionStatus = useTranslations("actionStatus");
-  return (
-    <li className={styles.decisionRow}>
-      <span className={styles.decisionIcon} data-kind={action.status}>
-        {action.status === "blocked" ? (
-          <CircleAlert aria-hidden="true" size={18} />
-        ) : action.status === "in_progress" ? (
-          <Clock3 aria-hidden="true" size={18} />
-        ) : action.status === "done" ? (
-          <CheckCircle2 aria-hidden="true" size={18} />
-        ) : (
-          <Target aria-hidden="true" size={18} />
-        )}
-      </span>
-      <div>
-        <span className={styles.decisionKind}>
-          {tActionStatus(action.status)}
-        </span>
-        <strong>{action.title}</strong>
-      </div>
-      <Link
-        href={`/p/${projectId}/execution?actionId=${encodeURIComponent(action.id)}`}
-        aria-label={`${tActionStatus(action.status)}: ${action.title}`}
-      >
-        <ArrowRight aria-hidden="true" size={18} />
-      </Link>
-    </li>
-  );
-}
-
-function DecisionReminderRow({
-  projectId,
-  reminder,
-}: {
-  readonly projectId: string;
-  readonly reminder: OverviewDecisionReminder;
-}) {
-  const t = useTranslations("overview.customer");
-  const href = overviewGrowthMapHref(
-    projectId,
-    reminder.sitePageId,
-    reminder.findingId,
-  );
-  return (
-    <li className={styles.decisionRow} data-decision-reminder="">
-      <span className={styles.decisionIcon} data-kind="decision_due">
-        <CircleAlert aria-hidden="true" size={18} />
-      </span>
-      <div>
-        <span className={styles.decisionKind}>
-          {t("priority.decisionDue", { days: reminder.staleForDays })}
-        </span>
-        <strong lang={reminder.summaryLocale}>{reminder.summary}</strong>
-      </div>
-      <Link
-        href={href}
-        aria-label={t("priority.decideOpportunityLabel", {
-          summary: reminder.summary,
-        })}
-      >
-        <ArrowRight aria-hidden="true" size={18} />
-      </Link>
-    </li>
-  );
-}
-
-function alertPageLabel(normalizedUrl: string): string {
+function pathLabel(normalizedUrl: string): string {
   try {
     const parsed = new URL(normalizedUrl);
     return `${parsed.pathname}${parsed.search}` || "/";
   } catch {
     return normalizedUrl;
   }
+}
+
+function formatRank(position: number): string {
+  return String(position).padStart(2, "0");
+}
+
+/**
+ * One decision row. Every row repeats the same anatomy — rank, kind, the
+ * conclusion, the object it applies to, and exactly one next action that the
+ * whole row activates — so no entry can look more actionable than another.
+ * Rule ids, evidence counts and other audit provenance stay on the Growth Map
+ * detail this row links to (PRD: conclusion first, provenance in the drawer).
+ */
+function DecisionRow({
+  rank,
+  kind,
+  tone,
+  title,
+  meta,
+  href,
+  actionLabel,
+}: {
+  readonly rank: string;
+  readonly kind: string;
+  readonly tone: string;
+  readonly title: ReactNode;
+  readonly meta: ReactNode;
+  readonly href: string;
+  readonly actionLabel: string;
+}) {
+  return (
+    <li className={styles.decisionRow} data-decision-kind={tone}>
+      <span className={styles.decisionRank} data-kind={tone}>
+        {rank}
+      </span>
+      <div>
+        <span className={styles.decisionKind}>{kind}</span>
+        {title}
+        {meta}
+      </div>
+      <Link href={href} aria-label={actionLabel}>
+        <ArrowRight aria-hidden="true" size={18} />
+      </Link>
+    </li>
+  );
+}
+
+function TopOpportunityRow({
+  projectId,
+  rank,
+  page,
+  finding,
+}: {
+  readonly projectId: string;
+  readonly rank: string;
+  readonly page: GrowthMapUrlPortfolioItem;
+  readonly finding: GrowthMapUrlFinding;
+}) {
+  const t = useTranslations("overview.customer");
+  return (
+    <DecisionRow
+      rank={rank}
+      tone="opportunity"
+      kind={`${t("priority.kinds.evidenceReview")} · ${t(
+        `priority.levels.${finding.severity}`,
+      )}`}
+      title={<h3 className={styles.decisionTitle}>{finding.title}</h3>}
+      meta={
+        <span className={styles.decisionMeta}>
+          <span>{pageLabel(page)}</span>
+          {/* pageLabel already falls back to the path when there is no title. */}
+          {page.title ? <code>{pathLabel(page.normalizedUrl)}</code> : null}
+        </span>
+      }
+      href={overviewGrowthMapHref(projectId, page.sitePageId)}
+      actionLabel={
+        finding.reviewState === "confirmed"
+          ? t("actions.inspectOpportunity")
+          : t("actions.reviewOpportunity")
+      }
+    />
+  );
+}
+
+function ProjectWorkRow({
+  projectId,
+  rank,
+  action,
+}: {
+  readonly projectId: string;
+  readonly rank: string;
+  readonly action: OverviewAction;
+}) {
+  const tActionStatus = useTranslations("actionStatus");
+  return (
+    <DecisionRow
+      rank={rank}
+      tone={action.status}
+      kind={tActionStatus(action.status)}
+      title={<strong className={styles.decisionTitle}>{action.title}</strong>}
+      meta={null}
+      href={`/p/${projectId}/execution?actionId=${encodeURIComponent(action.id)}`}
+      actionLabel={`${tActionStatus(action.status)}: ${action.title}`}
+    />
+  );
+}
+
+function DecisionReminderRow({
+  projectId,
+  rank,
+  reminder,
+}: {
+  readonly projectId: string;
+  readonly rank: string;
+  readonly reminder: OverviewDecisionReminder;
+}) {
+  const t = useTranslations("overview.customer");
+  return (
+    <DecisionRow
+      rank={rank}
+      tone="decision_due"
+      kind={t("priority.decisionDue", { days: reminder.staleForDays })}
+      title={
+        <strong className={styles.decisionTitle} lang={reminder.summaryLocale}>
+          {reminder.summary}
+        </strong>
+      }
+      meta={null}
+      href={overviewGrowthMapHref(
+        projectId,
+        reminder.sitePageId,
+        reminder.findingId,
+      )}
+      actionLabel={t("priority.decideOpportunityLabel", {
+        summary: reminder.summary,
+      })}
+    />
+  );
 }
 
 function ContentDecayAlertRow({
@@ -328,28 +324,33 @@ function ContentDecayAlertRow({
 }) {
   const locale = useLocale();
   const t = useTranslations("overview.customer");
-  const page = alertPageLabel(alert.normalizedUrl);
+  const page = pathLabel(alert.normalizedUrl);
   const number = new Intl.NumberFormat(locale, {
     maximumFractionDigits: 1,
   });
-  const signals: string[] = [];
-  if (alert.rankTrend) {
-    signals.push(
-      t("priority.decay.rankSignal", {
-        first: number.format(alert.rankTrend.firstDecline),
-        second: number.format(alert.rankTrend.secondDecline),
-      }),
-    );
-  }
-  if (alert.trafficTrend) {
-    signals.push(
-      t("priority.decay.trafficSignal", {
-        percent: number.format(
-          Math.abs(alert.trafficTrend.changeRatio) * 100,
-        ),
-      }),
-    );
-  }
+  // The sample sizes travel with the signal: a percentage without the click
+  // counts behind it reads as far stronger evidence than it is.
+  const signals: readonly string[] = [
+    ...(alert.rankTrend
+      ? [
+          t("priority.decay.rankSignal", {
+            first: number.format(alert.rankTrend.firstDecline),
+            second: number.format(alert.rankTrend.secondDecline),
+          }),
+        ]
+      : []),
+    ...(alert.trafficTrend
+      ? [
+          t("priority.decay.trafficSignalWithSample", {
+            previous: number.format(alert.trafficTrend.previousClicks),
+            current: number.format(alert.trafficTrend.currentClicks),
+            percent: number.format(
+              Math.abs(alert.trafficTrend.changeRatio) * 100,
+            ),
+          }),
+        ]
+      : []),
+  ];
   const href = overviewGrowthMapHref(projectId, alert.sitePageId);
   return (
     <li className={styles.decisionRow} data-content-decay-alert="">
@@ -364,17 +365,259 @@ function ContentDecayAlertRow({
         <strong>{t("priority.decay.reviewSuggested")}</strong>
         <code className={styles.decayPage}>{page}</code>
       </div>
-      <Link
-        href={href}
-        aria-label={t("priority.decay.openLabel", { page })}
-      >
+      <Link href={href} aria-label={t("priority.decay.openLabel", { page })}>
         <ArrowRight aria-hidden="true" size={18} />
       </Link>
     </li>
   );
 }
 
-type WorkRunState = "loading" | "ready" | "mismatch" | "unavailable";
+/**
+ * `error` and `unavailable` are deliberately distinct. A failed read is
+ * retryable and says nothing about whether a frozen audit exists; only an
+ * audit-not-found answer may claim that no frozen audit was identified.
+ */
+type WorkRunState = "loading" | "ready" | "mismatch" | "unavailable" | "error";
+
+function WorkRunNotice({
+  state,
+  onRetryRunPair,
+}: {
+  readonly state: WorkRunState;
+  readonly onRetryRunPair: () => void;
+}) {
+  const t = useTranslations("overview.customer");
+  if (state === "ready") return null;
+  if (state === "loading") {
+    return (
+      <div className={styles.queueNotice} role="status">
+        <Spinner label={t("priority.queueSyncing")} size="sm" />
+        <span>{t("priority.queueSyncing")}</span>
+      </div>
+    );
+  }
+  if (state === "mismatch") {
+    return (
+      <div className={styles.queueNotice} role="status">
+        <CircleAlert aria-hidden="true" size={18} />
+        <span>{t("priority.queueRunMismatch")}</span>
+        <button type="button" onClick={onRetryRunPair}>
+          {t("actions.retryAuditPair")}
+        </button>
+      </div>
+    );
+  }
+  // `error` reuses the retry the card already shows above it, so the two never
+  // offer competing recoveries for one failed read.
+  return (
+    <p className={styles.secondaryEmpty}>
+      {state === "error"
+        ? t("priority.queueLoadFailed")
+        : t("priority.queueUnavailable")}
+    </p>
+  );
+}
+
+type DecisionEntry =
+  | {
+      readonly type: "opportunity";
+      readonly page: GrowthMapUrlPortfolioItem;
+      readonly finding: GrowthMapUrlFinding;
+    }
+  | { readonly type: "reminder"; readonly reminder: OverviewDecisionReminder }
+  | { readonly type: "action"; readonly action: OverviewAction };
+
+/**
+ * Build the bounded decision list. Row 01 is the top Opportunity whenever the
+ * frozen audit has one; the remaining slots go to decisions and work in the
+ * order their own selectors already established. A Finding that is both the top
+ * Opportunity and a stale decision is listed once, so a duplicate can never
+ * consume a slot.
+ */
+function buildDecisionEntries(
+  topPage: GrowthMapUrlPortfolioItem | null,
+  topFinding: GrowthMapUrlFinding | null,
+  decisionReminders: readonly OverviewDecisionReminder[],
+  projectWork: readonly OverviewAction[],
+): readonly DecisionEntry[] {
+  const opportunity: readonly DecisionEntry[] =
+    topPage !== null && topFinding !== null
+      ? [{ type: "opportunity", page: topPage, finding: topFinding }]
+      : [];
+  const slots = Math.max(0, MAX_DECISION_ROWS - opportunity.length);
+  const reminders: readonly DecisionEntry[] = decisionReminders
+    .filter((reminder) => reminder.findingId !== topFinding?.findingId)
+    .slice(0, slots)
+    .map((reminder) => ({ type: "reminder", reminder }));
+  const work: readonly DecisionEntry[] = projectWork
+    .slice(0, Math.max(0, slots - reminders.length))
+    .map((action) => ({ type: "action", action }));
+  return [...opportunity, ...reminders, ...work];
+}
+
+function DecisionEntryRow({
+  projectId,
+  entry,
+  rank,
+}: {
+  readonly projectId: string;
+  readonly entry: DecisionEntry;
+  readonly rank: string;
+}) {
+  if (entry.type === "opportunity") {
+    return (
+      <TopOpportunityRow
+        projectId={projectId}
+        rank={rank}
+        page={entry.page}
+        finding={entry.finding}
+      />
+    );
+  }
+  if (entry.type === "reminder") {
+    return (
+      <DecisionReminderRow
+        projectId={projectId}
+        rank={rank}
+        reminder={entry.reminder}
+      />
+    );
+  }
+  return (
+    <ProjectWorkRow projectId={projectId} rank={rank} action={entry.action} />
+  );
+}
+
+function decisionEntryKey(entry: DecisionEntry): string {
+  if (entry.type === "opportunity") {
+    return `opportunity:${entry.finding.findingId}`;
+  }
+  if (entry.type === "reminder") return `reminder:${entry.reminder.findingId}`;
+  return `action:${entry.action.id}`;
+}
+
+function DecisionList({
+  projectId,
+  entries,
+  hasTopOpportunity,
+  auditUnavailable,
+  topPage,
+}: {
+  readonly projectId: string;
+  readonly entries: readonly DecisionEntry[];
+  readonly hasTopOpportunity: boolean;
+  readonly auditUnavailable: boolean;
+  readonly topPage: GrowthMapUrlPortfolioItem | null;
+}) {
+  const t = useTranslations("overview.customer");
+  return (
+    <>
+      {hasTopOpportunity ? null : (
+        <EmptyBlock
+          title={
+            auditUnavailable
+              ? t("portfolio.unavailable")
+              : t("priority.noOpportunity")
+          }
+          description={
+            auditUnavailable
+              ? t("portfolio.unavailableDescription")
+              : t("priority.noOpportunityDescription")
+          }
+          href={overviewGrowthMapHref(projectId, topPage?.sitePageId ?? null)}
+          action={t("actions.openGrowthMap")}
+        />
+      )}
+      {entries.length === 0 ? null : (
+        <ol className={styles.decisionList}>
+          {entries.map((entry, index) => (
+            <DecisionEntryRow
+              key={decisionEntryKey(entry)}
+              projectId={projectId}
+              entry={entry}
+              rank={formatRank(index + 1)}
+            />
+          ))}
+        </ol>
+      )}
+    </>
+  );
+}
+
+/**
+ * Content decay is an observation, not a customer decision, so it sits below
+ * the decision list in its own block and never spends one of the three slots.
+ */
+function ContentHealthBlock({
+  projectId,
+  alerts,
+}: {
+  readonly projectId: string;
+  readonly alerts: readonly OverviewContentDecayAlert[];
+}) {
+  const t = useTranslations("overview.customer");
+  if (alerts.length === 0) return null;
+  return (
+    <div className={styles.contentHealth}>
+      <div className={styles.contentHealthHeading}>
+        <h3>{t("priority.contentHealth.title")}</h3>
+        <p>{t("priority.contentHealth.note")}</p>
+      </div>
+      <ul className={styles.decisionList}>
+        {alerts.map((alert) => (
+          <ContentDecayAlertRow
+            key={`${alert.sitePageId}:${alert.currentMonth}`}
+            projectId={projectId}
+            alert={alert}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ResultBoundary({
+  projectId,
+  resultPage,
+}: {
+  readonly projectId: string;
+  readonly resultPage: GrowthMapUrlPortfolioItem | null;
+}) {
+  const t = useTranslations("overview.customer");
+  const tDelta = useTranslations("growthMap.delta");
+  const verifiedResult = buildVerifiedResultSummary(resultPage);
+  return (
+    <div
+      className={styles.resultBoundary}
+      data-availability={verifiedResult ? "verified" : "unavailable"}
+    >
+      {verifiedResult ? (
+        <ShieldCheck aria-hidden="true" size={18} />
+      ) : (
+        <Clock3 aria-hidden="true" size={18} />
+      )}
+      <div>
+        <strong>
+          {verifiedResult
+            ? t("priority.resultVerified", {
+                state: tDelta(verifiedResult.value),
+              })
+            : t("priority.resultUnavailable")}
+        </strong>
+        <p>
+          {verifiedResult
+            ? t("priority.resultSummary", {
+                page:
+                  pageLabel(resultPage) ?? resultPage?.normalizedUrl ?? "URL",
+                summary: verifiedResult.summary,
+              })
+            : t("priority.resultUnavailableDescription")}
+        </p>
+      </div>
+      <Link href={`/p/${projectId}/results`}>{t("actions.openResults")}</Link>
+    </div>
+  );
+}
 
 function PrioritySection({
   projectId,
@@ -410,31 +653,20 @@ function PrioritySection({
   readonly onRetryRunPair: () => void;
 }) {
   const t = useTranslations("overview.customer");
-  const tDelta = useTranslations("growthMap.delta");
-  const verifiedResult = buildVerifiedResultSummary(resultPage);
-  const visibleDecayAlerts = contentDecayAlerts.slice(0, 3);
-  const visibleReminders = decisionReminders.slice(
-    0,
-    Math.max(0, 3 - visibleDecayAlerts.length),
+  const hasTopOpportunity = topPage !== null && topFinding !== null;
+  const entries = buildDecisionEntries(
+    topPage,
+    topFinding,
+    decisionReminders,
+    projectWork,
   );
-  const visibleProjectWork = projectWork.slice(
-    0,
-    Math.max(
-      0,
-      3 - visibleDecayAlerts.length - visibleReminders.length,
-    ),
-  );
-  const visibleQueueCount =
-    visibleDecayAlerts.length +
-    visibleReminders.length +
-    visibleProjectWork.length;
 
   return (
     <section className={`${styles.card} ${styles.priorityCard}`}>
       <SectionHeading
         eyebrow={t("priority.eyebrow")}
         title={t("priority.title")}
-        meta={t("priority.maxItems")}
+        meta={t("priority.listScope")}
       />
       {portfolioPending || (topPage !== null && detailPending) ? (
         <LoadingBlock label={t("priority.loading")} />
@@ -452,96 +684,138 @@ function PrioritySection({
           action={t("actions.openGrowthMap")}
         />
       ) : (
-        <TopOpportunity
+        <DecisionList
           projectId={projectId}
-          topPage={topPage}
-          topFinding={topFinding}
+          entries={entries}
+          hasTopOpportunity={hasTopOpportunity}
           auditUnavailable={auditUnavailable}
+          topPage={topPage}
         />
       )}
+      <WorkRunNotice state={workRunState} onRetryRunPair={onRetryRunPair} />
+      <ContentHealthBlock projectId={projectId} alerts={contentDecayAlerts} />
+      <ResultBoundary projectId={projectId} resultPage={resultPage} />
+    </section>
+  );
+}
 
-      <div className={styles.queueHeading}>
-        <strong>{t("priority.queueTitle")}</strong>
-        <span>
-          {workRunState === "ready"
-            ? t("priority.queueCount", { count: visibleQueueCount })
-            : "—"}
-        </span>
+/**
+ * Whole-project opportunity mix. It reads the Growth Audit projection, which is
+ * project-wide by definition, and is kept visually and textually apart from the
+ * loaded-page stat cells above it: two scopes on one card that are not labelled
+ * apart would be a dishonest comparison.
+ */
+function LensMixBlock({ projectId }: { readonly projectId: string }) {
+  const t = useTranslations("overview.customer");
+  const tCommon = useTranslations("common");
+  const auditQuery = useProjectGrowthAudit(projectId);
+  // A 404 means no audit has ever run: honest absence, not a failed read.
+  const result = auditQuery.isSuccess
+    ? toProjectOpportunityMixResult(auditQuery.data)
+    : isGrowthAuditAbsent(auditQuery.error)
+      ? ({ state: "no_data", reason: "no_audit_run" } as const)
+      : null;
+
+  return (
+    <div className={styles.lensMix}>
+      <div className={styles.lensMixHeading}>
+        <h3>{t("portfolio.lensMixTitle")}</h3>
+        <span className={styles.scopeLabel}>{t("portfolio.lensMixScope")}</span>
       </div>
-      {workRunState === "loading" ? (
-        <div className={styles.queueNotice} role="status">
-          <Spinner label={t("priority.queueSyncing")} size="sm" />
-          <span>{t("priority.queueSyncing")}</span>
+      {auditQuery.isPending ? (
+        <div className={styles.lensMixState} role="status">
+          <Spinner label={t("portfolio.lensMixLoading")} size="sm" />
+          <span>{t("portfolio.lensMixLoading")}</span>
         </div>
-      ) : workRunState === "mismatch" ? (
-        <div className={styles.queueNotice} role="status">
-          <CircleAlert aria-hidden="true" size={18} />
-          <span>{t("priority.queueRunMismatch")}</span>
-          <button type="button" onClick={onRetryRunPair}>
-            {t("actions.retryAuditPair")}
+      ) : result === null ? (
+        <div className={styles.lensMixState} role="alert">
+          <CircleAlert aria-hidden="true" size={17} />
+          <span>{t("portfolio.lensMixError")}</span>
+          <button type="button" onClick={() => void auditQuery.refetch()}>
+            {tCommon("retry")}
           </button>
         </div>
-      ) : workRunState === "unavailable" ? (
-        <p className={styles.secondaryEmpty}>
-          {t("priority.queueUnavailable")}
-        </p>
-      ) : visibleQueueCount === 0 ? (
-        <p className={styles.secondaryEmpty}>{t("priority.queueEmpty")}</p>
+      ) : result.state === "no_data" ? (
+        <p className={styles.lensMixState}>{t("portfolio.lensMixNoData")}</p>
       ) : (
-        <ol className={styles.decisionList}>
-          {visibleDecayAlerts.map((alert) => (
-            <ContentDecayAlertRow
-              key={`${alert.sitePageId}:${alert.currentMonth}`}
-              projectId={projectId}
-              alert={alert}
-            />
-          ))}
-          {visibleReminders.map((reminder) => (
-            <DecisionReminderRow
-              key={reminder.findingId}
-              projectId={projectId}
-              reminder={reminder}
-            />
-          ))}
-          {visibleProjectWork.map((action) => (
-            <ProjectWorkRow
-              key={action.id}
-              projectId={projectId}
-              action={action}
-            />
-          ))}
-        </ol>
+        <LensMixBars mix={result.mix} />
       )}
-      <div
-        className={styles.resultBoundary}
-        data-availability={verifiedResult ? "verified" : "unavailable"}
-      >
-        {verifiedResult ? (
-          <ShieldCheck aria-hidden="true" size={18} />
-        ) : (
-          <Clock3 aria-hidden="true" size={18} />
-        )}
-        <div>
-          <strong>
-            {verifiedResult
-              ? t("priority.resultVerified", {
-                  state: tDelta(verifiedResult.value),
-                })
-              : t("priority.resultUnavailable")}
-          </strong>
-          <p>
-            {verifiedResult
-              ? t("priority.resultSummary", {
-                  page:
-                    pageLabel(resultPage) ?? resultPage?.normalizedUrl ?? "URL",
-                  summary: verifiedResult.summary,
-                })
-              : t("priority.resultUnavailableDescription")}
-          </p>
-        </div>
-        <Link href={`/p/${projectId}/results`}>{t("actions.openResults")}</Link>
+    </div>
+  );
+}
+
+function LensMixBars({ mix }: { readonly mix: ProjectOpportunityMix }) {
+  const t = useTranslations("overview.customer");
+  const tCommon = useTranslations("common");
+  const known = mix.lenses.flatMap((lens) =>
+    lens.findingCount === null ? [] : [lens.findingCount],
+  );
+  const denominator = Math.max(1, ...known);
+
+  return (
+    <>
+      <div className={styles.lensRows}>
+        {mix.lenses.map((lens) => (
+          <div
+            key={lens.lensId}
+            className={styles.lensRow}
+            data-lens={lens.lensId}
+            data-coverage={lens.coverageState}
+          >
+            <span>{t(`portfolio.lenses.${lens.lensId}`)}</span>
+            <span className={styles.lensTrack} aria-hidden="true">
+              {lens.findingCount === null ? null : (
+                <span
+                  style={{
+                    width: `${
+                      lens.findingCount === 0
+                        ? 0
+                        : Math.max(3, (lens.findingCount / denominator) * 100)
+                    }%`,
+                  }}
+                />
+              )}
+            </span>
+            {lens.findingCount === null ? (
+              <strong title={tCommon("unavailable")}>—</strong>
+            ) : (
+              <strong>{lens.findingCount}</strong>
+            )}
+          </div>
+        ))}
       </div>
-    </section>
+      <p className={styles.lensMixTotal}>
+        {mix.total === null
+          ? t("portfolio.lensMixTotalUnavailable")
+          : t("portfolio.lensMixTotal", { count: mix.total })}
+      </p>
+    </>
+  );
+}
+
+/**
+ * The contract always carries the limitations behind a degraded coverage grade,
+ * so the badge alone would hide the reason the customer needs to judge it.
+ */
+function CoverageLimitations({
+  limitations,
+}: {
+  readonly limitations: readonly string[];
+}) {
+  const t = useTranslations("overview.customer");
+  if (limitations.length === 0) return null;
+  return (
+    <div className={styles.coverageLimitations}>
+      <strong>
+        <CircleAlert aria-hidden="true" size={16} />
+        {t("portfolio.coverageLimitationsTitle")}
+      </strong>
+      <ul>
+        {limitations.map((limitation) => (
+          <li key={limitation}>{limitation}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -562,15 +836,7 @@ function PortfolioSection({
 }) {
   const t = useTranslations("overview.customer");
   const summary = response ? buildPortfolioSummary(response) : null;
-  const priorityCounts = response?.data.reduce(
-    (counts, item) => {
-      if (item.priority.availability === "available") {
-        counts[item.priority.value] += 1;
-      }
-      return counts;
-    },
-    { critical: 0, high: 0, medium: 0, low: 0 },
-  );
+  const reviewTarget = selectFirstReviewableFinding(response?.data ?? []);
 
   return (
     <section className={`${styles.card} ${styles.portfolioCard}`}>
@@ -596,6 +862,7 @@ function PortfolioSection({
         />
       ) : (
         <>
+          <p className={styles.scopeLabel}>{t("portfolio.statsScope")}</p>
           <dl className={styles.portfolioMetrics}>
             <div>
               <dt>{t("portfolio.loadedUrls")}</dt>
@@ -634,31 +901,32 @@ function PortfolioSection({
                 <span className={styles.portfolioMetricValue}>
                   {summary.reviewableFindingCount}
                 </span>
-                <small>{t("portfolio.oneByOne")}</small>
+                {/*
+                  The description carries the review entry point, never the
+                  count: with nothing left to review the link would open an
+                  empty queue, so it is simply absent instead.
+                */}
+                <small>
+                  {reviewTarget === null ? (
+                    t("portfolio.oneByOne")
+                  ) : (
+                    <Link
+                      className={styles.metricLink}
+                      href={overviewGrowthMapHref(
+                        projectId,
+                        reviewTarget.sitePageId,
+                        reviewTarget.findingId,
+                      )}
+                    >
+                      {t("portfolio.oneByOne")}
+                      <ArrowRight aria-hidden="true" size={14} />
+                    </Link>
+                  )}
+                </small>
               </dd>
             </div>
           </dl>
-          <div className={styles.priorityMix}>
-            {(["critical", "high", "medium", "low"] as const).map(
-              (priority) => {
-                const count = priorityCounts?.[priority] ?? 0;
-                const denominator = Math.max(1, summary.loadedUrlCount);
-                return (
-                  <div key={priority} className={styles.priorityRow}>
-                    <span>{t(`priority.levels.${priority}`)}</span>
-                    <span className={styles.priorityTrack} aria-hidden="true">
-                      <span
-                        style={{
-                          width: `${count === 0 ? 0 : Math.max(3, (count / denominator) * 100)}%`,
-                        }}
-                      />
-                    </span>
-                    <strong>{count}</strong>
-                  </div>
-                );
-              },
-            )}
-          </div>
+          <LensMixBlock projectId={projectId} />
           <div className={styles.auditIdentity}>
             <ShieldCheck aria-hidden="true" size={18} />
             <span>
@@ -677,6 +945,7 @@ function PortfolioSection({
               {t(`portfolio.coverage.${summary.coverage.availability}`)}
             </StatusPill>
           </div>
+          <CoverageLimitations limitations={summary.coverage.limitations} />
           <Link
             className={styles.textLink}
             href={overviewGrowthMapHref(projectId, topPage?.sitePageId ?? null)}
@@ -1083,15 +1352,22 @@ export function OverviewClient({
     view.frozenDiagnosticRunId,
     portfolioRunId,
   );
+  // Only an audit-not-found answer proves there is no frozen audit. Any other
+  // failed read is a transport problem, and claiming absence from it would
+  // contradict the retryable error the same card already shows.
   const workRunState: WorkRunState = portfolioQuery.isPending
     ? "loading"
-    : portfolioQuery.isError || portfolioRunId === null
-      ? "unavailable"
-      : runPairMismatch
-        ? workspaceQuery.isFetching
-          ? "loading"
-          : "mismatch"
-        : "ready";
+    : portfolioQuery.isError
+      ? auditUnavailable
+        ? "unavailable"
+        : "error"
+      : portfolioRunId === null
+        ? "unavailable"
+        : runPairMismatch
+          ? workspaceQuery.isFetching
+            ? "loading"
+            : "mismatch"
+          : "ready";
   return (
     <div className={styles.page} data-overview-page="">
       <header className={styles.hero}>

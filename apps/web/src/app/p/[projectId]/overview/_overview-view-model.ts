@@ -64,6 +64,28 @@ export function selectTopPortfolioItem(
   );
 }
 
+export interface ReviewableFindingTarget {
+  readonly sitePageId: string;
+  readonly findingId: string;
+}
+
+/**
+ * The one Finding a "start reviewing" entry point should open, chosen with the
+ * same deterministic portfolio ordering the rest of the screen uses. Returns
+ * `null` when the loaded page has nothing left to review, so the caller renders
+ * plain text instead of a link into an empty queue.
+ */
+export function selectFirstReviewableFinding(
+  items: readonly GrowthMapUrlPortfolioItem[],
+): ReviewableFindingTarget | null {
+  const item = selectTopPortfolioItem(
+    items.filter((candidate) => candidate.reviewableFindingIds.length > 0),
+  );
+  const findingId = item?.reviewableFindingIds[0];
+  if (!item || findingId === undefined) return null;
+  return { sitePageId: item.sitePageId, findingId };
+}
+
 function compareFindings(
   left: GrowthMapUrlFinding,
   right: GrowthMapUrlFinding,

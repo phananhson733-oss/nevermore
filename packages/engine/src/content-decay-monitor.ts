@@ -12,6 +12,14 @@ import { canonicalizeUrl } from "@sf/sources";
 export const CONTENT_DECAY_MONITOR_VERSION = "content-decay-monitor.v1";
 export const CONTENT_DECAY_TRAFFIC_THRESHOLD = -0.2;
 export const CONTENT_DECAY_RANK_THRESHOLD = 5;
+/**
+ * Minimum previous-checkpoint clicks before a percentage decline is treated as
+ * evidence. Deliberately the same floor as SEARCH-DECAY-002 so the Overview
+ * projection and the diagnostic rule cannot disagree about what counts as an
+ * established click base. Below it a swing such as 5 -> 3 clicks is noise, and
+ * advising a content review on it would be a fabricated finding.
+ */
+export const CONTENT_DECAY_MIN_PREVIOUS_CLICKS = 100;
 
 const GSC_PROVIDER = "gsc";
 const GSC_DATASET = "gsc.page_query_daily.v1";
@@ -432,7 +440,9 @@ export function compareContentDecayAlerts(
  * snapshot's trailing 28-day GSC window, not a fabricated natural-month sum.
  * Ranking requires three consecutive checkpoints and both adjacent deltas to
  * be strictly worse by more than five positions. Traffic requires two
- * consecutive checkpoints and a latest decline strictly greater than 20%.
+ * consecutive checkpoints, a previous click base of at least
+ * CONTENT_DECAY_MIN_PREVIOUS_CLICKS, and a latest decline strictly greater
+ * than 20%.
  */
 export function buildContentDecayMonitor(input: {
   readonly asOf: string;
@@ -512,7 +522,8 @@ export function buildContentDecayMonitor(input: {
       previous &&
       currentFact &&
       previousFact &&
-      previousFact.clicks > 0
+      // Also guarantees a non-zero denominator, since the floor is above zero.
+      previousFact.clicks >= CONTENT_DECAY_MIN_PREVIOUS_CLICKS
     ) {
       const changeRatio = rounded(
         (currentFact.clicks - previousFact.clicks) /
@@ -569,6 +580,7 @@ export function buildContentDecayMonitor(input: {
       ...input.timeZone.limitations,
       "月度检查点使用该月权威 GSC snapshot 的 trailing 28-day 指标，不等同于自然月汇总。",
       "GSC 只返回按 clicks 排序的 top rows，低点击页面可能缺失。",
+      `流量下滑仅在上一个检查点点击数不低于 ${CONTENT_DECAY_MIN_PREVIOUS_CLICKS} 时判定；样本更小的百分比波动不作为衰减证据。`,
       "任何缺失、partial 或歧义 observation 均按不可用处理，不补零。",
       "当前为概览读取时的只读投影，尚未接入月度自动任务或主动推送。",
     ],
