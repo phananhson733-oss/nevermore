@@ -321,6 +321,12 @@ interface GuardedFetchDeps {
   readonly ctxSignal: AbortSignal | undefined;
   readonly nowMs: () => number;
   readonly startMs: number;
+  /**
+   * Called when a request's timer expired with the run's wall clock as the
+   * binding constraint — i.e. the run is out of time, as a fact rather than as
+   * something to re-measure.
+   */
+  readonly onRunDeadline: () => void;
   readonly wantBody: (contentType: string | null) => boolean;
   readonly decodedByteBudget: DecodedByteBudget;
   readonly reserveRequest: () => boolean;
@@ -354,17 +360,39 @@ type GuardedFetch =
   | { readonly kind: "aborted" }
   | { readonly kind: "error" };
 
+/**
+ * A request-scoped abort signal.
+ *
+ * `onRunDeadline` fires when this signal's own timer expired AND the run's
+ * remaining wall clock — not the per-request cap — was the binding constraint.
+ * That distinction is the whole point: when the run's clock is what armed the
+ * timer, the timer FIRING is the run running out of time, established by
+ * construction.
+ *
+ * Callers used to re-derive it instead, by reading `Date.now()` again after the
+ * abort came back and asking whether the deadline had passed. `Date.now()` has
+ * millisecond resolution and is not monotonic, so a timer armed for the
+ * deadline could fire while a fresh reading still sat a fraction below it. The
+ * run then reported `robots_unreachable` — a claim about the site — for a crawl
+ * that had simply run out of time. It reproduced roughly one CI run in ten and
+ * never once locally.
+ */
 function makeRequestSignal(
   remainingMs: number,
   ctxSignal: AbortSignal | undefined,
+  onRunDeadline?: () => void,
 ): {
   readonly signal: AbortSignal;
   readonly abort: () => void;
   readonly clear: () => void;
 } {
   const controller = new AbortController();
+  const runClockBinds = remainingMs <= PER_REQUEST_TIMEOUT_MS;
   const timer = setTimeout(
-    () => controller.abort(),
+    () => {
+      if (runClockBinds) onRunDeadline?.();
+      controller.abort();
+    },
     Math.max(1, Math.min(remainingMs, PER_REQUEST_TIMEOUT_MS)),
   );
   const onAbort = () => controller.abort();
@@ -531,7 +559,11 @@ async function guardedFetch(
       return { kind: "blocked" };
     }
     const guardRemaining = deps.maxWallClockMs - (deps.nowMs() - deps.startMs);
-    const guardScope = makeRequestSignal(guardRemaining, deps.ctxSignal);
+    const guardScope = makeRequestSignal(
+      guardRemaining,
+      deps.ctxSignal,
+      deps.onRunDeadline,
+    );
     const guardResult = await raceWithSignal(
       Promise.resolve().then(() => deps.guard(current)),
       guardScope.signal,
@@ -572,6 +604,7 @@ async function guardedFetch(
     const { signal, abort, clear } = makeRequestSignal(
       remaining,
       deps.ctxSignal,
+      deps.onRunDeadline,
     );
     let budgetCancelled = deps.decodedByteBudget.exhausted();
     let cancelBody: (() => void) | null = null;
@@ -780,7 +813,20 @@ export async function crawlSite(
     return true;
   };
   let hitDepthLimit = false;
-  const deadlineHit = (): boolean => nowMs() - startMs >= budget.maxWallClockMs;
+  /**
+   * Set when a request's wall-clock timer fired with the run's remaining time
+   * as the binding constraint. Latched, never cleared.
+   *
+   * The clock reading below stays as the primary test — it is what catches a
+   * run that overran between requests, and it is what an injected clock drives
+   * in tests. The flag only ever makes the answer MORE true, and it closes the
+   * one gap the reading cannot: the timer that enforced the deadline has
+   * already fired, but `Date.now()` (millisecond resolution, not monotonic)
+   * has not yet crossed it.
+   */
+  let runDeadlineFired = false;
+  const deadlineHit = (): boolean =>
+    runDeadlineFired || nowMs() - startMs >= budget.maxWallClockMs;
   const markOperationStop = (): boolean => {
     if (ctx.signal?.aborted) {
       stopReason ??= STOP_ABORTED;
@@ -847,6 +893,9 @@ export async function crawlSite(
     ctxSignal: ctx.signal,
     nowMs,
     startMs,
+    onRunDeadline: () => {
+      runDeadlineFired = true;
+    },
     wantBody,
     decodedByteBudget,
     reserveRequest,

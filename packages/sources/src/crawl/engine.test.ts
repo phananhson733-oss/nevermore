@@ -2137,6 +2137,56 @@ describe("crawlSite", () => {
     expect(cancelAttempts).toBe(1);
   });
 
+  it("blames the clock, not the site, when the deadline timer beats the clock reading", async () => {
+    /**
+     * The deterministic form of the flake above.
+     *
+     * That test asks a real 50ms timer to race a real `Date.now()`, and on this
+     * machine the clock always wins, so it passed locally every time while
+     * failing roughly one CI run in ten with
+     * `expected 'robots_unreachable' to be 'max_duration'`.
+     *
+     * The losing interleaving is not exotic: `Date.now()` has millisecond
+     * resolution and is not monotonic, so the timer armed FOR the deadline can
+     * fire while a fresh reading still sits a fraction below it. Here the clock
+     * is pinned one millisecond short of the deadline forever, which is that
+     * interleaving held open rather than hoped for. The request timer still
+     * fires on real time.
+     *
+     * What must not happen is the run reporting `robots_unreachable` — a claim
+     * about the visitor's site, and the one that sends them to check a file
+     * that was never the problem — because OUR clock was coarse.
+     */
+    const FROZEN = 1_000_000;
+    let readings = 0;
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        stalledBodyResponse(() => new Promise<void>(() => undefined)),
+    });
+
+    const outcome = await settleWithin(
+      crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+        guard: GUARD,
+        budget: {
+          ...FAST_BUDGET,
+          maxWallClockMs: 50,
+          perHostConcurrency: 1,
+        },
+        // First reading is the run's start stamp; every later one reports 49ms
+        // elapsed against a 50ms budget, so the deadline is never observed to
+        // have passed no matter how long the run actually takes.
+        now: () => (readings++ === 0 ? FROZEN : FROZEN + 49),
+      }),
+      2_000,
+    );
+
+    expect(outcome.kind).toBe("settled");
+    if (outcome.kind !== "settled") return;
+    expect(outcome.value.stopReason).toBe("max_duration");
+    expect(outcome.value.stopReason).not.toBe("robots_unreachable");
+    expect(outcome.value.availability).toBe("partial");
+  });
+
   it("converges on external abort while text() remains permanently pending", async () => {
     const controller = new AbortController();
     const response = new Response(null, {
