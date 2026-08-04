@@ -9,6 +9,7 @@ import { FaqPageJsonLd } from "@/components/seo/json-ld/faq-page-json-ld";
 import { HowToJsonLd } from "@/components/seo/json-ld/how-to-json-ld";
 import { ToolSoftwareApplicationJsonLd } from "@/components/seo/json-ld/tool-software-application-json-ld";
 import { readTrafficDropSession } from "@/lib/tools/traffic-drop-session";
+import { draftsEnabled } from "@/lib/tools/quick-wins-draft-config";
 import { localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
@@ -18,7 +19,9 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const content = getConnectedToolContent(locale, "seo-quick-wins");
+  const content = getConnectedToolContent(locale, "seo-quick-wins", {
+    draftsEnabled: draftsEnabled(),
+  });
   return generatePageMetadata({
     title: content.title,
     description: content.description,
@@ -39,7 +42,15 @@ export default async function SeoQuickWinsPage({
     readTrafficDropSession(),
     getMessages(),
   ]);
-  const content = getConnectedToolContent(locale, "seo-quick-wins");
+  // Drafts are configuration, not code: a deployment without a model key runs
+  // the whole evidence table and cannot produce a single draft. The page reads
+  // the same switch the API does, so it never advertises a capability this
+  // deployment does not have — and starts advertising it again the moment the
+  // key is set, with nothing to remember.
+  const drafts = draftsEnabled();
+  const content = getConnectedToolContent(locale, "seo-quick-wins", {
+    draftsEnabled: drafts,
+  });
   const canonical = localeUrl(locale, content.path);
 
   return (
@@ -78,7 +89,7 @@ export default async function SeoQuickWinsPage({
         locale={locale}
         content={content}
         connected={session.properties !== null}
-        article={<SeoQuickWinsArticle locale={locale} />}
+        article={<SeoQuickWinsArticle locale={locale} draftsEnabled={drafts} />}
       >
         {/* Only this tool's namespace crosses the client boundary, matching the shell's deliberately small provider. */}
         <NextIntlClientProvider
