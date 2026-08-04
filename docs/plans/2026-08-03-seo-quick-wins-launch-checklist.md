@@ -64,15 +64,37 @@
 
 不配这两个变量，工具照常工作，只是不出草稿区。**这是受支持的状态，不是降级**——代码里有测试断言未配置时连 `page` 和 `query,page` 两个 Search Console 维度都不会去请求，一分钱不多花。
 
-| 变量 | 说明 |
-|---|---|
-| `QUICK_WINS_DRAFT_API_KEY` | 模型 API key |
-| `QUICK_WINS_DRAFT_MODEL` | 模型名 |
-| `QUICK_WINS_DRAFT_URL` | 可选，默认 OpenAI chat completions 端点 |
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `QUICK_WINS_DRAFT_API_KEY` | ✅ | 模型 API key |
+| `QUICK_WINS_DRAFT_MODEL` | ✅ | 模型名。Azure 填**部署名** |
+| `QUICK_WINS_DRAFT_URL` | | 默认 OpenAI chat completions 端点 |
+| `QUICK_WINS_DRAFT_AUTH_SCHEME` | | `bearer`（默认）或 `api-key`。**Azure 必须是 `api-key`** |
+| `QUICK_WINS_DRAFT_TEMPERATURE` | | 默认 0.4。取值超出 [0,2] 或无法解析时回落到默认值 |
 
-读取处：`apps/marketing/src/lib/tools/quick-wins-drafts.ts` 的 `draftModelFromEnv()`。
+读取处：`apps/marketing/src/lib/tools/quick-wins-draft-config.ts` 的 `draftModelFromEnv()`。
 
-**成本边界**：单次运行最多为 5 行生成草稿（`MAX_DRAFT_ROWS`），爬取范围硬性锁在授权的 property 内，每页 6 秒超时、512KB 上限，模型调用 20 秒超时、400 tokens 上限。
+### 接 Azure OpenAI
+
+Azure 不是「换个 URL」就能接的，协议有两处不同，两处都会让整个请求失败而不是降级：
+
+- 认证头是 `api-key`，不是 `Authorization: Bearer` → 必须设 `QUICK_WINS_DRAFT_AUTH_SCHEME=api-key`
+- 推理类部署往往只接受一个 temperature 值 → 按你的部署设 `QUICK_WINS_DRAFT_TEMPERATURE`
+
+URL 要写完整的部署路径，含 `api-version` query：
+
+```
+QUICK_WINS_DRAFT_URL=https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<version>
+QUICK_WINS_DRAFT_MODEL=<deployment>
+QUICK_WINS_DRAFT_AUTH_SCHEME=api-key
+QUICK_WINS_DRAFT_TEMPERATURE=1
+```
+
+同样的四个值在 Railway 的 worker 上是 `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_DEPLOYMENT` / `OPENAI_API_VERSION` / `OPENAI_TEMPERATURE`，URL 的拼法见 `apps/worker/src/env.ts` 的 `resolveLlmClientConfig`。
+
+**密钥不要和 worker 共用同一把。** Azure OpenAI 资源有 key1/key2 两把，给这个公开工具用第二把，出事时可以单独轮换而不影响产品。
+
+**成本边界**：单次运行最多为 5 行生成草稿（`MAX_DRAFT_ROWS`），爬取范围硬性锁在授权的 property 内，每页 6 秒超时、512KB 上限，模型调用 20 秒超时、`max_completion_tokens` 400。推理 token 算进这 400 里。
 
 ---
 
@@ -110,7 +132,8 @@
 | 报 `rate_limited` | per-IP 每小时 10 次上限（`GSC_IP_MAX`）。配额按 GCP project 计，这是保护其他访客 |
 | 报 `quota_unavailable` | 配额存储不可用，闸门 fail-closed。检查 Supabase 连接与 `consume_public_tool_quota` 迁移是否已应用 |
 | 报 `scan_in_progress` | 同一 IP 已有一次 Search Console 读取在跑，与 traffic-drop 共用这个闸 |
-| 草稿区一条都没有 | 先确认两个 `QUICK_WINS_DRAFT_*` 变量已配；再看每行给出的跳过原因 |
+| 草稿区一条都没有 | 先确认 `QUICK_WINS_DRAFT_API_KEY` 和 `_MODEL` 都已配；再看每行给出的跳过原因 |
+| 每行都是 `model_unavailable` | 模型调用被拒。Azure 的话先查 `_AUTH_SCHEME` 是不是 `api-key`、temperature 对不对。Vercel AI Gateway 的话在其 Logs 里看真实状态码 |
 
 ---
 
