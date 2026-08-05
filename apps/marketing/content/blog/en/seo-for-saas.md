@@ -107,7 +107,7 @@ There is no fixed count. The page structure matters once you have any commercial
 
 ## Take Action
 
-Run your full URL list through a page-type inventory using GenGrowth's workflow to label every blog, feature, pricing, comparison, and trial page in one pass. You will get a clear map of which high-intent pages are thin or missing, so you can fix the page structure instead of adding more posts. That map is the difference between an SEO program that compounds into revenue and one that just grows traffic that never converts. [Start your free GenGrowth trial](https://gengrowth.ai/app) to build your page-type map.
+Run your full URL list through a page-type inventory using GenGrowth's workflow to label every blog, feature, pricing, comparison, and trial page in one pass. You will get a clear map of which high-intent pages are thin or missing, so you can fix the page structure instead of adding more posts. That map is the difference between an SEO program that compounds into revenue and one that just grows traffic that never converts. [Start your free GenGrowth trial](https://app.gengrowth.ai/) to build your page-type map.
 
 ## Sources
 

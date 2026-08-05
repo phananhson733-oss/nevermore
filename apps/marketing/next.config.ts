@@ -5,6 +5,43 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const monorepoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
+export function getMarketingRedirects() {
+  return [
+    {
+      source: "/app",
+      destination: "https://app.gengrowth.ai/",
+      statusCode: 301 as const,
+    },
+    {
+      source: "/blog/whitelabel-seo-tool",
+      destination: "/blog/best-white-label-seo-tool",
+      statusCode: 301 as const,
+    },
+    {
+      source: "/en/blog/whitelabel-seo-tool",
+      destination: "/blog/best-white-label-seo-tool",
+      statusCode: 301 as const,
+    },
+    ...[
+      ["free-seo-consultation", "free-seo-company"],
+      ["free-white-label-seo", "best-white-label-seo-tool"],
+      ["marketing-attribution-for-saas", "marketing-attribution-models"],
+      ["serankings", "serankings-alternative"],
+    ].flatMap(([source, destination]) => [
+      {
+        source: `/blog/${source}`,
+        destination: `/blog/${destination}`,
+        statusCode: 301 as const,
+      },
+      {
+        source: `/en/blog/${source}`,
+        destination: `/blog/${destination}`,
+        statusCode: 301 as const,
+      },
+    ]),
+  ];
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -19,18 +56,9 @@ const nextConfig: NextConfig = {
     // already ranks stops the two from splitting the same intent.
     // The /en/ variant is listed explicitly so it redirects in one hop instead
     // of bouncing through next-intl's prefix strip first.
-    return [
-      {
-        source: "/blog/whitelabel-seo-tool",
-        destination: "/blog/best-white-label-seo-tool",
-        statusCode: 301,
-      },
-      {
-        source: "/en/blog/whitelabel-seo-tool",
-        destination: "/blog/best-white-label-seo-tool",
-        statusCode: 301,
-      },
-    ];
+    // Product onboarding moved to its own subdomain. Keep /app as a permanent
+    // compatibility route for old articles, bookmarks, and third-party links.
+    return getMarketingRedirects();
   },
   async rewrites() {
     // proxy.ts skips paths containing a dot, so the unprefixed default-locale

@@ -271,9 +271,13 @@ function collectInternalOutlinks(
   >();
   for (const match of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)) {
     const openingTag = `<a${match[1] ?? ""}>`;
+    // HTML parsers expose decoded attribute values. This dependency-free
+    // extractor has to do that step explicitly before URL canonicalisation;
+    // otherwise the standard `&amp;` query separator becomes a literal
+    // `amp;` parameter name in the crawl graph.
     const href = attr(openingTag, "href");
     if (!href) continue;
-    const pair = canonicalizeUrl(href, pageUrl);
+    const pair = canonicalizeUrl(decodeHtml(href), pageUrl);
     if (!pair) continue;
     let targetOrigin: string;
     try {
@@ -382,7 +386,7 @@ export function parsePage(html: string, pageUrl: string): ParsedPage {
   );
   const canonicalHref = attr(canonicalTag, "href");
   const canonicalPair = canonicalHref
-    ? canonicalizeUrl(canonicalHref, pageUrl)
+    ? canonicalizeUrl(decodeHtml(canonicalHref), pageUrl)
     : null;
   const canonicalTarget =
     canonicalPair !== null &&

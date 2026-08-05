@@ -110,7 +110,7 @@ Report in their language: influenced pipeline, cost per MQL, and qualified accou
 
 ## Take Action
 
-Map your own B2B jobs — attribution, long-cycle tracking, ABM targeting, stakeholder reporting — to the hours and pipeline they cost, then run one of them through GenGrowth before you commission anything else. You will see which work a B2B SEO tool can actually return to your revenue team and which still needs a person. [Start your free GenGrowth trial](https://gengrowth.ai/app) and connect one organic keyword to pipeline this quarter.
+Map your own B2B jobs — attribution, long-cycle tracking, ABM targeting, stakeholder reporting — to the hours and pipeline they cost, then run one of them through GenGrowth before you commission anything else. You will see which work a B2B SEO tool can actually return to your revenue team and which still needs a person. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and connect one organic keyword to pipeline this quarter.
 
 ## Sources
 

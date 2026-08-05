@@ -103,7 +103,7 @@ Because auditable, earned work takes more skilled labor than shortcuts do. You a
 
 ## Take Action
 
-If you are trying to tell principled ethical SEO services apart from vendors reusing the label, gengrowth.ai is happy to pressure-test a proposal with you. [Book a free GenGrowth consultation](https://gengrowth.ai/app) and we will help you check the citability, auditability, and transparency of any provider you are considering — no pressure, just a clear read on whether the "ethical" claim holds up.
+If you are trying to tell principled ethical SEO services apart from vendors reusing the label, gengrowth.ai is happy to pressure-test a proposal with you. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will help you check the citability, auditability, and transparency of any provider you are considering — no pressure, just a clear read on whether the "ethical" claim holds up.
 
 ## Sources
 

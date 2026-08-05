@@ -54,6 +54,27 @@ export function coverageSummary(
     : `Collected ${report.pagesCrawled} page(s) before this online run reached a processing boundary. You can review the available evidence, but it does not represent complete site coverage.`;
 }
 
+export function actionSummary(
+  report: AuditReport,
+  locale: InternalLinkAuditLocale,
+): string {
+  const { fourPlusClicks, unreachable } = report.clickDepthDistribution;
+  if (report.actionablePages === 0) {
+    return locale === "zh"
+      ? "本次已观测页面中，没有发现需要优先处理的可索引内链结构问题。"
+      : "No indexable internal-link structure issue needs priority action in the pages observed by this run.";
+  }
+  const coverageLimit =
+    report.availability === "partial"
+      ? locale === "zh"
+        ? "本次覆盖不完整，因此不可达和孤岛结论仍需复核。"
+        : "Coverage was partial, so unreachable and orphan conclusions still need verification."
+      : "";
+  return locale === "zh"
+    ? `有 ${report.actionablePages} 个可索引页面需要关注，其中 ${fourPlusClicks} 个从首页至少需要 4 次点击，${unreachable} 个在已观测 HTML 链接图中无法从首页到达。${coverageLimit}`
+    : `${report.actionablePages} indexable page(s) need attention: ${fourPlusClicks} require at least four clicks from the homepage and ${unreachable} are not reachable from it in the observed HTML-link graph. ${coverageLimit}`.trim();
+}
+
 export function retryAfterMessage(
   retryAfterHeader: string | null,
   locale: InternalLinkAuditLocale,

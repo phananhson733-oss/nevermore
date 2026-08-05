@@ -1,10 +1,10 @@
-// @input  — generatePageMetadata, OrganizationJsonLd, SoftwareApplicationJsonLd, HomePageClient
-// @output — 营销官网首页（server component + generateMetadata + JSON-LD）
+// @input  — URL locale, localized messages, homepage JSON-LD and client view
+// @output — statically rendered localized marketing homepage
 // @pos    — [locale] 下的免费工具与产品工作流入口
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { generatePageMetadata } from "@/lib/seo";
 import { NextIntlClientProvider } from "next-intl";
-import { getMessages } from "next-intl/server";
+import { getMessages, setRequestLocale } from "next-intl/server";
 import {
   OrganizationJsonLd,
   SoftwareApplicationJsonLd,
@@ -31,7 +31,13 @@ export async function generateMetadata({
   });
 }
 
-export default async function Home() {
+export default async function Home({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
   const messages = await getMessages();
   return (
     <>

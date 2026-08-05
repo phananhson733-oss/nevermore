@@ -6,13 +6,13 @@ category: methodology
 pillar: experiment_driven
 status: published
 publishedAt: 2026-02-01
-updatedAt: 2026-02-20
+updatedAt: 2026-08-05
 heroImage: /images/blog/growth-experiment-playbook.jpg
 heroImageAlt: Flat-vector illustration: an open ring binder lying flat with five tabbed dividers fanned out and a row of five small blank step tiles laid out beside it
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>Why Most Growth Experiments Fail</h2>
 <p>According to data from Reforge and GrowthHackers, roughly 70-80% of growth experiments fail to produce statistically significant results. That number sounds discouraging, but it is actually expected -- the goal is not to win every experiment, but to run enough experiments that the winners compound. The problem is that most teams do not run enough experiments, and the experiments they do run are poorly designed.</p>
 <p>The three most common failure modes are:</p>
@@ -57,7 +57,7 @@ localeExclusive: false
 </ul>
 
 <h2>Step 5: Execute with Tracking</h2>
-<p>Every experiment needs clean attribution. Use unique UTM parameters for each treatment. GenGrowth automates this through its <a href="/features">execution pipeline</a>.</p>
+<p>Every experiment needs clean attribution. Use a consistent UTM naming convention for each treatment, record the exact values in the experiment plan, and preserve the comparison window so another reviewer can reproduce the result.</p>
 
 <h2>Step 6: Measure and Analyze</h2>
 <p>When the experiment reaches its planned duration, analyze results using this checklist:</p>

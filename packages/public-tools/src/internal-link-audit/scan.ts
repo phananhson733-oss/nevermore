@@ -2,6 +2,7 @@ import {
   crawlPublicSitePreview,
   type CrawlRaw,
 } from "@sf/sources/crawl-public-preview";
+import { subjectUrlOf } from "@sf/sources/canonical-url";
 import { createPublicToolResult } from "../contract.ts";
 import type {
   InternalLinkAuditEdge,
@@ -43,15 +44,6 @@ function nodeId(index: number): string {
   return `page-${String(index + 1).padStart(2, "0")}`;
 }
 
-function pagePath(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.pathname}${parsed.search}` || "/";
-  } catch {
-    return url;
-  }
-}
-
 function isHome(url: string, origin: string): boolean {
   try {
     const parsed = new URL(url);
@@ -61,6 +53,83 @@ function isHome(url: string, origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+interface ClickPaths {
+  readonly depthByUrl: ReadonlyMap<string, number>;
+  readonly parentByUrl: ReadonlyMap<string, string>;
+}
+
+/**
+ * Compute reachability after collection so sitemap seeds improve coverage
+ * without pretending to be HTML links from the homepage. Traversal uses every
+ * observed outlink; the bounded public edge projection is display-only.
+ */
+function buildClickPaths(
+  pages: CrawlRaw["pages"],
+  origin: string,
+): ClickPaths {
+  const pageByUrl = new Map(pages.map((page) => [page.subjectUrl, page]));
+  const homeUrl = pages.find((page) => isHome(page.subjectUrl, origin))?.subjectUrl;
+  if (!homeUrl) {
+    return { depthByUrl: new Map(), parentByUrl: new Map() };
+  }
+
+  const depthByUrl = new Map<string, number>([[homeUrl, 0]]);
+  const parentByUrl = new Map<string, string>();
+  const queue = [homeUrl];
+  for (let index = 0; index < queue.length; index += 1) {
+    const sourceUrl = queue[index];
+    if (!sourceUrl) continue;
+    const source = pageByUrl.get(sourceUrl);
+    const sourceDepth = depthByUrl.get(sourceUrl);
+    if (!source || sourceDepth === undefined) continue;
+    for (const link of source.projection.internalOutlinks) {
+      const targetUrl = link.targetSubjectUrl;
+      if (!pageByUrl.has(targetUrl) || depthByUrl.has(targetUrl)) continue;
+      depthByUrl.set(targetUrl, sourceDepth + 1);
+      parentByUrl.set(targetUrl, sourceUrl);
+      queue.push(targetUrl);
+    }
+  }
+  return { depthByUrl, parentByUrl };
+}
+
+function isActionableIndexPage(node: InternalLinkAuditNode): boolean {
+  return (
+    node.robotsIndexable &&
+    (node.canonicalTarget === null ||
+      subjectUrlOf(node.canonicalTarget) === node.url)
+  );
+}
+
+/**
+ * Exact projected-content fingerprint. The raw response body is deliberately
+ * not retained, so this combines the bounded body facts that survive the
+ * crawl. Requiring substantial text or link evidence avoids grouping thin
+ * template-only pages on an empty signature.
+ */
+function contentFingerprint(page: CrawlRaw["pages"][number]): string | null {
+  const projection = page.projection;
+  if (
+    (projection.wordCount ?? 0) < 50 &&
+    projection.paragraphs.length < 2 &&
+    projection.internalOutlinks.length < 5
+  ) {
+    return null;
+  }
+  return JSON.stringify([
+    projection.title,
+    projection.metaDescription,
+    projection.h1,
+    projection.headings,
+    projection.wordCount,
+    projection.bodyExcerpt,
+    projection.paragraphs,
+    projection.internalOutlinks
+      .map((link) => link.targetSubjectUrl)
+      .sort(),
+  ]);
 }
 
 export function buildInternalLinkAuditPayload(
@@ -80,6 +149,7 @@ export function buildInternalLinkAuditPayload(
     { readonly source: string; readonly anchorText: string | null }
   >();
   const edges: InternalLinkAuditEdge[] = [];
+  const clickPaths = buildClickPaths(pages, raw.origin);
 
   for (const page of pages) {
     for (const link of page.projection.internalOutlinks) {
@@ -123,125 +193,219 @@ export function buildInternalLinkAuditPayload(
 
   const nodes: InternalLinkAuditNode[] = pages.map((page, index) => {
     const inboundLinks = inbound.get(page.subjectUrl) ?? 0;
+    const clickDepth = clickPaths.depthByUrl.get(page.subjectUrl) ?? null;
+    const parentUrl = clickPaths.parentByUrl.get(page.subjectUrl);
+    const canonicalTarget = page.projection.canonicalTarget;
+    const indexableCanonical =
+      page.projection.robotsIndexable &&
+      (canonicalTarget === null ||
+        subjectUrlOf(canonicalTarget) === page.subjectUrl);
     const kind = isHome(page.subjectUrl, raw.origin)
       ? "home"
-      : page.projection.sitemapMember && inboundLinks === 0
+      : indexableCanonical && page.projection.sitemapMember && inboundLinks === 0
         ? orphanKind
-        : page.depth >= 3
-          ? "deep"
-          : "page";
+        : indexableCanonical && clickDepth === null
+          ? "unreachable"
+          : indexableCanonical && clickDepth !== null && clickDepth >= 4
+            ? "deep"
+            : "page";
     return {
       id: nodeId(index),
       url: page.subjectUrl,
       title: page.projection.title,
-      depth: page.depth,
+      crawlDepth: page.depth,
+      clickDepth,
+      primaryParentId: parentUrl ? (idByUrl.get(parentUrl) ?? null) : null,
       inboundLinks,
       outboundLinks: page.projection.internalOutlinks.length,
       statusCode: page.projection.finalStatus,
       sitemapMember: page.projection.sitemapMember,
+      robotsIndexable: page.projection.robotsIndexable,
+      canonicalTarget,
       kind,
     };
   });
 
   const findings: InternalLinkAuditFinding[] = [];
-  for (const node of nodes) {
-    const inboundSource = firstInbound.get(node.url);
-    const common = {
-      nodeId: node.id,
+  const eligibleNodes = nodes.filter(
+    (node) => node.kind !== "home" && isActionableIndexPage(node),
+  );
+  const orphanNodes = eligibleNodes.filter(
+    (node) =>
+      node.kind === "orphan_candidate" || node.kind === "orphan_undetermined",
+  );
+  const unreachableNodes = eligibleNodes.filter(
+    (node) => node.kind === "unreachable",
+  );
+  const deepNodes = eligibleNodes.filter((node) => node.kind === "deep");
+  const eligibleNodeByUrl = new Map(
+    eligibleNodes.map((node) => [node.url, node]),
+  );
+  const nodesByFingerprint = new Map<string, InternalLinkAuditNode[]>();
+  for (const page of pages) {
+    const node = eligibleNodeByUrl.get(page.subjectUrl);
+    const fingerprint = node ? contentFingerprint(page) : null;
+    if (!node || !fingerprint) continue;
+    const group = nodesByFingerprint.get(fingerprint) ?? [];
+    group.push(node);
+    nodesByFingerprint.set(fingerprint, group);
+  }
+  const duplicateGroups = [...nodesByFingerprint.values()].filter(
+    (group) => group.length > 1,
+  );
+  const duplicateNodes = duplicateGroups.flat();
+  const claimedNodeIds = new Set(
+    [...orphanNodes, ...unreachableNodes, ...deepNodes, ...duplicateNodes].map(
+      (node) => node.id,
+    ),
+  );
+  const lowInboundNodes = eligibleNodes.filter(
+    (node) => !claimedNodeIds.has(node.id) && node.inboundLinks <= 1,
+  );
+
+  function commonFor(group: readonly InternalLinkAuditNode[]) {
+    const first = group[0];
+    if (!first) return null;
+    const inboundSource = firstInbound.get(first.url);
+    return {
+      nodeId: first.id,
+      nodeIds: group.map((node) => node.id),
+      affectedUrls: group.map((node) => node.url),
       suggestedSourceUrl: inboundSource?.source ?? null,
       observedAnchorText: inboundSource?.anchorText ?? null,
     };
-    if (
-      node.kind === "orphan_candidate" ||
-      node.kind === "orphan_undetermined"
-    ) {
-      /**
-       * A truncated crawl cannot support an orphan claim at all.
-       *
-       * "No crawled page links here" and "we ran out of budget before reaching
-       * the pages that link here" produce identical evidence, and the crawler
-       * stops at roughly 950 pages on every site — 240s of wall clock at the
-       * 250ms host pacer — so any site larger than that truncates by default.
-       *
-       * This used to keep priority P1 and the assertive title, changing only
-       * the `limitation` string, which the UI hides until the card is opened.
-       * The reader saw a confident P1 orphan finding that the run could not
-       * support. Title and detail are the always-visible fields, so the honest
-       * answer has to live there.
-       */
-      const undetermined = raw.availability !== "available";
-      findings.push(
-        undetermined
-          ? {
-              id: `orphan-${node.id}`,
-              priority: "P2",
-              kind: "orphan_undetermined",
-              title: `${pagePath(node.url)} could not be checked for inbound links`,
-              detail:
-                "The page is in the observed sitemap and no crawled page linked to it, but this crawl stopped early — the pages that link here may simply not have been reached. This is not evidence of an orphan.",
-              evidence: `0 inbound HTML links among the ${pages.length} page(s) actually crawled; sitemap member: yes; crawl depth: ${node.depth}. Crawl stopped: ${raw.stopReason ?? "coverage incomplete"}.`,
-              limitation:
-                "Re-run against a smaller section of the site, or check this URL's inbound links directly, before treating it as an orphan.",
-              ...common,
-            }
-          : {
-              id: `orphan-${node.id}`,
-              priority: "P1",
-              kind: "orphan_candidate",
-              title: `${pagePath(node.url)} is a sitemap-only orphan candidate`,
-              detail:
-                "The page was listed in the observed sitemap but no crawled HTML page linked to it.",
-              evidence: `0 observed inbound HTML links; sitemap member: yes; crawl depth: ${node.depth}.`,
-              limitation:
-                "JavaScript-rendered links and links outside this synchronous crawl are not evaluated.",
-              ...common,
-            },
-      );
-    } else if (node.inboundLinks <= 1 && node.kind !== "home") {
-      findings.push({
-        id: `inbound-${node.id}`,
-        priority: "P2",
-        kind: "low_inbound",
-        title: `${pagePath(node.url)} has limited observed internal support`,
-        detail:
-          "The page has one or fewer observed inbound HTML links in this synchronous crawl.",
-        evidence: `${node.inboundLinks} observed inbound HTML link(s); depth: ${node.depth}.`,
-        limitation:
-          "Navigation, JavaScript-rendered links, and uncrawled pages can change this count.",
-        ...common,
-      });
-    } else if (node.depth >= 3) {
-      findings.push({
-        id: `depth-${node.id}`,
-        priority: "P2",
-        kind: "deep_page",
-        title: `${pagePath(node.url)} is at observed crawl depth ${node.depth}`,
-        detail:
-          "The synchronous crawler reached this page after at least three crawl traversals from an allowed seed.",
-        evidence: `Observed crawl depth: ${node.depth}; inbound HTML links: ${node.inboundLinks}.`,
-        limitation:
-          "Sitemap entries can be crawl seeds, so this is not asserted as a homepage click count or ranking prediction.",
-        ...common,
-      });
-    }
   }
-  for (const [target, source] of unresolved) {
-    const sourceId = idByUrl.get(source.source);
-    if (!sourceId) continue;
+
+  const orphanCommon = commonFor(orphanNodes);
+  if (orphanCommon) {
+    const undetermined = raw.availability !== "available";
     findings.push({
-      id: `unresolved-${findings.length + 1}`,
-      priority: "P2",
-      kind: "unresolved_target",
-      nodeId: sourceId,
-      title: `${pagePath(source.source)} links to an unverified target`,
-      detail: `The target ${pagePath(target)} was not collected in this synchronous crawl.`,
-      evidence: `Observed source: ${pagePath(source.source)}; anchor: ${source.anchorText ?? "not provided"}.`,
-      limitation:
-        "This is not called a broken link: the target may be outside the collected static-HTML coverage, excluded by robots, or unavailable within this run's resource boundaries.",
-      suggestedSourceUrl: source.source,
-      observedAnchorText: source.anchorText,
+      id: "orphan-pages",
+      priority: undetermined ? "P2" : "P1",
+      confidence: undetermined ? "low" : "high",
+      impact: "high",
+      kind: undetermined ? "orphan_undetermined" : "orphan_candidate",
+      title: undetermined
+        ? `${orphanNodes.length} sitemap page(s) could not be checked for inbound links`
+        : `${orphanNodes.length} sitemap-only orphan candidate(s) need review`,
+      detail: undetermined
+        ? "No crawled page linked to these sitemap pages, but this crawl stopped early. This is not evidence of an orphan."
+        : "These pages were listed in the observed sitemap but no collected HTML page linked to them.",
+      evidence: `0 observed inbound HTML links for ${orphanNodes.length} sitemap page(s) among ${pages.length} collected page(s).${undetermined ? ` Crawl stopped: ${raw.stopReason ?? "coverage incomplete"}.` : ""}`,
+      limitation: undetermined
+        ? "Complete the crawl or inspect inbound links directly before treating these pages as orphans."
+        : "JavaScript-rendered links and links outside this static-HTML crawl are not evaluated.",
+      ...orphanCommon,
     });
   }
+
+  const unreachableCommon = commonFor(unreachableNodes);
+  if (unreachableCommon) {
+    findings.push({
+      id: "unreachable-pages",
+      priority: raw.availability === "available" ? "P1" : "P2",
+      confidence: raw.availability === "available" ? "high" : "low",
+      impact: "high",
+      kind: "unreachable_page",
+      title: `${unreachableNodes.length} indexable page(s) are not reachable from the homepage`,
+      detail:
+        "These pages were collected through coverage seeds, but no observed HTML-link path from the homepage reaches them.",
+      evidence: `${unreachableNodes.length} page(s) have homepage click depth unavailable despite being collected.`,
+      limitation:
+        raw.availability === "available"
+          ? "JavaScript-rendered links are outside this static-HTML graph."
+          : "The crawl stopped early, so an uncollected page may still link to these URLs.",
+      ...unreachableCommon,
+    });
+  }
+
+  const deepCommon = commonFor(deepNodes);
+  if (deepCommon) {
+    findings.push({
+      id: "deep-pages",
+      priority: "P1",
+      confidence: raw.availability === "available" ? "high" : "medium",
+      impact: "high",
+      kind: "deep_page",
+      title: `${deepNodes.length} indexable page(s) need four or more clicks from the homepage`,
+      detail:
+        "These pages sit beyond three observed HTML-link hops, where readers and crawlers have a weaker path to reach them.",
+      evidence: `${deepNodes.length} page(s) have observed homepage click depth of 4 or more.`,
+      limitation:
+        "Click depth describes observed static HTML links; it is not a ranking prediction.",
+      ...deepCommon,
+    });
+  }
+
+  const duplicateCommon = commonFor(duplicateNodes);
+  if (duplicateCommon) {
+    findings.push({
+      id: "duplicate-content-pages",
+      priority: "P1",
+      confidence: "high",
+      impact: "medium",
+      kind: "duplicate_content",
+      title: `${duplicateNodes.length} indexable URL(s) share an exact projected-content fingerprint`,
+      detail: `${duplicateGroups.length} duplicate group(s) have the same observed title, headings, body projection, and internal-link targets.`,
+      evidence: `Matched ${duplicateNodes.length} URL(s) across ${duplicateGroups.length} exact projected-content group(s).`,
+      limitation:
+        "The fingerprint uses bounded static-HTML projections rather than rendered page pixels; review each group before changing canonicals or content.",
+      ...duplicateCommon,
+    });
+  }
+
+  const lowInboundCommon = commonFor(lowInboundNodes);
+  if (lowInboundCommon) {
+    findings.push({
+      id: "low-inbound-pages",
+      priority: "P2",
+      confidence: raw.availability === "available" ? "high" : "medium",
+      impact: "medium",
+      kind: "low_inbound",
+      title: `${lowInboundNodes.length} indexable page(s) have limited observed internal support`,
+      detail:
+        "Each page has one or fewer observed inbound HTML links in this crawl.",
+      evidence: `${lowInboundNodes.length} page(s) have at most one observed inbound HTML link.`,
+      limitation:
+        "Navigation rendered only by JavaScript and uncrawled pages can change inbound counts.",
+      ...lowInboundCommon,
+    });
+  }
+
+  const unresolvedEntries = [...unresolved.entries()].flatMap(
+    ([target, source]) => {
+      const sourceId = idByUrl.get(source.source);
+      return sourceId ? [{ target, source, sourceId }] : [];
+    },
+  );
+  const firstUnresolved = unresolvedEntries[0];
+  if (firstUnresolved) {
+    findings.push({
+      id: "unresolved-targets",
+      priority: "P2",
+      confidence: "low",
+      impact: "medium",
+      kind: "unresolved_target",
+      nodeId: firstUnresolved.sourceId,
+      nodeIds: [...new Set(unresolvedEntries.map((entry) => entry.sourceId))],
+      affectedUrls: unresolvedEntries.map((entry) => entry.target),
+      title: `${unresolvedEntries.length} internal target(s) could not be verified`,
+      detail:
+        "The targets were linked from collected pages but were not collected in this synchronous crawl.",
+      evidence: `Observed ${unresolvedEntries.length} uncollected target(s) from ${new Set(unresolvedEntries.map((entry) => entry.sourceId)).size} source page(s).`,
+      limitation:
+        "These are not called broken links: a target may be outside collected static-HTML coverage, excluded by robots, or unavailable within this run's resource boundaries.",
+      suggestedSourceUrl: firstUnresolved.source.source,
+      observedAnchorText: firstUnresolved.source.anchorText,
+    });
+  }
+
+  const actionableNodeIds = new Set(
+    findings
+      .filter((finding) => finding.kind !== "unresolved_target")
+      .flatMap((finding) => finding.nodeIds),
+  );
+  const nonHomeNodes = nodes.filter((node) => node.kind !== "home");
 
   const report: InternalLinkAuditReport = {
     targetUrl: `${raw.origin}/`,
@@ -255,6 +419,16 @@ export function buildInternalLinkAuditPayload(
     ),
     sitemapFetched: raw.sitemap.fetched,
     sitemapUrlsObserved: raw.sitemap.urlCount,
+    actionablePages: actionableNodeIds.size,
+    clickDepthDistribution: {
+      oneClick: nonHomeNodes.filter((node) => node.clickDepth === 1).length,
+      twoClicks: nonHomeNodes.filter((node) => node.clickDepth === 2).length,
+      threeClicks: nonHomeNodes.filter((node) => node.clickDepth === 3).length,
+      fourPlusClicks: nonHomeNodes.filter(
+        (node) => node.clickDepth !== null && node.clickDepth >= 4,
+      ).length,
+      unreachable: nonHomeNodes.filter((node) => node.clickDepth === null).length,
+    },
     nodes,
     edges,
     findings: findings.slice(0, MAX_FINDINGS),
@@ -262,7 +436,7 @@ export function buildInternalLinkAuditPayload(
   return createPublicToolResult(
     {
       tool: "internal_link_audit",
-      schemaVersion: "internal_link_audit.v2",
+      schemaVersion: "internal_link_audit.v3",
       scope: "bounded_same_origin_static_html_crawl",
       completedAt: raw.capturedAt,
     },

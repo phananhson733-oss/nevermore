@@ -7,6 +7,10 @@ export const siteConfig = {
   url: "https://gengrowth.ai",
   appUrl: "https://app.gengrowth.ai",
   contactEmail: "hello@gengrowth.ai",
+  analytics: {
+    ga4MeasurementId:
+      process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? "G-71TET2Y97Q",
+  },
   social: {
     x: "https://x.com/gengrowth",
     linkedin: "https://linkedin.com/company/gengrowth",

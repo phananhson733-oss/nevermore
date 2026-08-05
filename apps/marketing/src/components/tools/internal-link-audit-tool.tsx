@@ -1,5 +1,5 @@
-// @input  -- locale and a visitor's public website URL
-// @output -- transient, synchronous real crawl report; no fixed result fixture
+// @input  -- locale, visitor URL, public crawl API, consent-gated event tracker
+// @output -- real crawl report plus tool_start/tool_complete analytics
 // @pos    -- primary client surface for /[locale]/tools/internal-link-audit
 
 "use client";
@@ -16,7 +16,6 @@ import {
   GitBranch,
   Link2,
   Network,
-  Route,
   ScanLine,
   Search,
   Waypoints,
@@ -31,6 +30,7 @@ import {
 } from "react";
 import { type InternalLinkAuditLocale } from "./internal-link-audit-content";
 import {
+  actionSummary,
   coverageSummary,
   retryAfterMessage,
   stopReasonLabel,
@@ -39,9 +39,10 @@ import {
   buildInternalLinkAuditTree,
   type InternalLinkAuditTreeModel,
 } from "./internal-link-audit-tree";
+import { trackMarketingEvent } from "@/components/layout/google-analytics";
 
 type Phase = "idle" | "running" | "result" | "error";
-type TreeFilter = "all" | InternalLinkAuditNode["kind"];
+type TreeFilter = "all" | "attention" | InternalLinkAuditNode["kind"];
 const MAX_VISUAL_TREE_LEVEL = 5;
 
 interface InternalLinkAuditToolProps {
@@ -54,8 +55,8 @@ const COPY = {
     placeholder: "yourdomain.com",
     start: "Run internal link audit",
     running: "Crawling public static HTML…",
-    help: "We start from the submitted public URL, follow same-origin static HTML links, respect robots.txt, and do not store your URL or page content.",
-    scope: "No normal-use scan quota · collects as much as this online run can safely process · no login required",
+    help: "We start from the submitted public URL, follow same-origin static HTML links, and respect robots.txt. To avoid repeatedly hitting the same site, public crawl facts may be temporarily shared from a server-side cache; no submitter identity or page body is stored.",
+    scope: "No login required · roughly 950 pages per run · four-minute processing boundary",
     progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
     result: "Internal link structure report",
     partial: "Report ready · partial coverage",
@@ -68,15 +69,23 @@ const COPY = {
     mapped: "Pages collected",
     links: "HTML links observed",
     sitemap: "Sitemap URLs observed",
+    sitemapGap: "collected page(s) were not listed in the observed sitemap.",
     fixes: "Prioritized findings",
+    attention: "Pages needing attention",
+    depthDistribution: "Homepage click depth",
+    oneClick: "1 click",
+    twoClicks: "2 clicks",
+    threeClicks: "3 clicks",
+    fourPlusClicks: "4+ clicks",
+    unreachableCount: "Unreachable",
     tree: "Site page hierarchy",
-    treeBody: "Indentation follows the collected URL path where possible. When a path parent was not collected, the row is explicitly labeled as grouped under an observed shallower inbound page. Cross-links remain visible in the mapped-inbound badge and link counts.",
+    treeBody: "Indentation follows one shortest observed HTML-link path from the homepage. Sitemap discovery does not shorten click depth; cross-links remain visible in the mapped-inbound badge and link counts.",
     treeSearch: "Find a page in this crawl",
     treeSearchPlaceholder: "Search URL or page title",
     clearSearch: "Clear tree search",
     connectedBranch: "Page hierarchy",
     unlinkedBranch: "Outside the main hierarchy",
-    unlinkedBody: "Each branch starts with a page that has no eligible collected URL-path or shallower link parent. Descendants may still have observed inbound links, shown on each row.",
+    unlinkedBody: "Each branch starts with a page that the observed static HTML graph cannot reach from the homepage. It may still have inbound links from another unreachable page.",
     treeMatches: "pages match",
     noTreeMatches: "No collected page matches this filter and search.",
     expandAll: "Expand all",
@@ -84,14 +93,14 @@ const COPY = {
     expandBranch: "Expand branch",
     collapseBranch: "Collapse branch",
     pageColumn: "Page",
-    depthColumn: "Crawl depth",
+    depthColumn: "Homepage clicks",
     additionalInbound: "other mapped inbound link(s)",
-    pathGrouped: "URL path",
     linkGrouped: "Observed link",
     all: "All pages",
     home: "Homepage",
     orphan_candidate: "Orphan candidates",
     orphan_undetermined: "Inbound links unchecked",
+    unreachable: "Unreachable from homepage",
     deep: "Deep pages",
     page: "Other pages",
     unresolved_target: "Unresolved targets",
@@ -100,7 +109,11 @@ const COPY = {
     pageContext: "Collected source-page context",
     inbound: "Inbound",
     outbound: "Outbound",
-    depthLabel: "Crawl depth",
+    depthLabel: "Homepage clicks",
+    crawlDepthLabel: "Collection depth",
+    notReachable: "not reachable",
+    robotsLabel: "Indexable",
+    canonicalLabel: "Canonical",
     sitemapLabel: "Sitemap",
     yes: "yes",
     no: "no",
@@ -110,6 +123,12 @@ const COPY = {
     anchor: "Observed anchor text",
     findings: "Prioritized review list",
     findingsBody: "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
+    affectedPages: "affected pages",
+    confidence: "confidence",
+    impact: "impact",
+    high: "high",
+    medium: "medium",
+    low: "low",
     noFindings: "No prioritized structural candidates were found in the pages collected by this run.",
     errorInvalid: "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
     errorRate: "This network has run several crawls recently. Each one fetches hundreds of pages from the target site, so there is an hourly ceiling.",
@@ -122,15 +141,15 @@ const COPY = {
     errorGeneric: "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
     sourceUnavailable: "No observed source page",
     anchorUnavailable: "No anchor text recorded",
-    actualScope: "Static HTML · same origin · transient request · no stored report",
+    actualScope: "Static HTML · same origin · temporary shared crawl cache · no submitter identity",
   },
   zh: {
     label: "网站 URL",
     placeholder: "yourdomain.com",
     start: "开始内链审计",
     running: "正在抓取公开静态 HTML…",
-    help: "工具从提交的公开 URL 开始，跟随同源静态 HTML 链接、遵守 robots.txt，不保存 URL 或页面内容。",
-    scope: "不设置日常检测次数配额 · 在单次在线处理能力内尽可能采集 · 无需登录",
+    help: "工具从提交的公开 URL 开始，跟随同源静态 HTML 链接并遵守 robots.txt。为避免短时间内重复抓取同一站点，公开抓取事实可能由服务端临时缓存并共享；不保存提交者身份或页面正文。",
+    scope: "无需登录 · 单次约覆盖 950 页 · 四分钟处理边界",
     progress: ["检查 robots 与 Sitemap", "跟随同源 HTML 链接", "生成页面层级"],
     result: "内链结构报告",
     partial: "报告已生成 · 部分覆盖",
@@ -143,15 +162,23 @@ const COPY = {
     mapped: "已采集页面",
     links: "已观测 HTML 内链",
     sitemap: "已观测 Sitemap URL",
+    sitemapGap: "个已采集页面不在本次观测到的 Sitemap 中。",
     fixes: "优先发现",
+    attention: "需要关注的页面",
+    depthDistribution: "首页点击深度",
+    oneClick: "1 次点击",
+    twoClicks: "2 次点击",
+    threeClicks: "3 次点击",
+    fourPlusClicks: "4 次以上",
+    unreachableCount: "无法到达",
     tree: "网站页面层级树",
-    treeBody: "缩进优先表示本次采集到的 URL 路径层级；路径父页未被采集时，会明确标记为归入已观测到的浅层内链父页。交叉内链仍显示在已映射入链标记和链接计数中。",
+    treeBody: "缩进表示从首页出发的一条最短已观测 HTML 链接路径。Sitemap 只补充发现范围，不会缩短点击深度；交叉内链仍显示在已映射入链标记和链接计数中。",
     treeSearch: "在本次抓取中查找页面",
     treeSearchPlaceholder: "搜索 URL 或页面标题",
     clearSearch: "清空树状视图搜索",
     connectedBranch: "页面主层级",
     unlinkedBranch: "主层级之外",
-    unlinkedBody: "每个分支的起点都没有符合条件的已采集 URL 路径父页或浅层内链父页；其后代页面仍可能有已观测入链，并显示在各自行中。",
+    unlinkedBody: "每个分支的起点都无法通过已观测静态 HTML 链接从首页到达；它仍可能收到另一个不可达页面的入链。",
     treeMatches: "个页面匹配",
     noTreeMatches: "没有页面同时符合当前筛选和搜索条件。",
     expandAll: "全部展开",
@@ -159,14 +186,14 @@ const COPY = {
     expandBranch: "展开分支",
     collapseBranch: "收起分支",
     pageColumn: "页面",
-    depthColumn: "抓取深度",
+    depthColumn: "首页点击次数",
     additionalInbound: "条其他已映射入链",
-    pathGrouped: "URL 层级",
     linkGrouped: "内链父页",
     all: "全部页面",
     home: "首页",
     orphan_candidate: "候选孤岛",
     orphan_undetermined: "入链未验证",
+    unreachable: "首页无法到达",
     deep: "深层页面",
     page: "其他页面",
     unresolved_target: "未验证目标",
@@ -175,7 +202,11 @@ const COPY = {
     pageContext: "已采集来源页上下文",
     inbound: "入链",
     outbound: "出链",
-    depthLabel: "抓取深度",
+    depthLabel: "首页点击次数",
+    crawlDepthLabel: "采集深度",
+    notReachable: "无法到达",
+    robotsLabel: "可索引",
+    canonicalLabel: "Canonical",
     sitemapLabel: "Sitemap",
     yes: "是",
     no: "否",
@@ -185,6 +216,12 @@ const COPY = {
     anchor: "观测到的锚文本",
     findings: "优先复核清单",
     findingsBody: "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
+    affectedPages: "个受影响页面",
+    confidence: "置信度",
+    impact: "影响",
+    high: "高",
+    medium: "中",
+    low: "低",
     noFindings: "本次已采集页面中未发现需要优先处理的结构候选项。",
     errorInvalid: "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
     errorRate: "该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。",
@@ -197,7 +234,7 @@ const COPY = {
     errorGeneric: "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
     sourceUnavailable: "没有观测到来源页面",
     anchorUnavailable: "未记录锚文本",
-    actualScope: "静态 HTML · 同源 · 请求瞬时处理 · 不保存报告",
+    actualScope: "静态 HTML · 同源 · 临时共享抓取缓存 · 不保存提交者身份",
   },
 } as const;
 
@@ -207,6 +244,7 @@ const STYLE: Record<InternalLinkAuditNode["kind"], { fill: string; ring: string 
   home: { fill: "#F0EDE8", ring: "#F0EDE8" },
   page: { fill: "#6F9C8B", ring: "#8FC8B2" },
   deep: { fill: "#D4A843", ring: "#F0C761" },
+  unreachable: { fill: "#D95757", ring: "#F27A7A" },
   orphan_candidate: { fill: "#D95757", ring: "#F27A7A" },
   // Deliberately not the orphan red: the crawl stopped early, so this node is
   // a question, not a finding.
@@ -233,6 +271,16 @@ function displayPathSegment(url: string): string {
   } catch {
     return url;
   }
+}
+
+function displayClickDepth(node: InternalLinkAuditNode, copy: ToolCopy): string {
+  return node.clickDepth === null ? copy.notReachable : String(node.clickDepth);
+}
+
+function inboundTone(inboundLinks: number): string {
+  if (inboundLinks === 0) return "text-red-300";
+  if (inboundLinks <= 2) return "text-brand-warning";
+  return "text-text-dark-secondary";
 }
 
 function errorMessage(
@@ -411,9 +459,9 @@ function TreeNodeRow({
                 </span>
               ) : null}
               <span className="mt-1 flex items-center gap-3 text-[10px] leading-4 text-text-dark-secondary sm:hidden">
-                <span>{copy.inbound} {node.inboundLinks}</span>
+                <span className={inboundTone(node.inboundLinks)}>{copy.inbound} {node.inboundLinks}</span>
                 <span>{copy.outbound} {node.outboundLinks}</span>
-                <span>{copy.depthLabel} {node.depth}</span>
+                <span>{copy.depthLabel} {displayClickDepth(node, copy)}</span>
               </span>
             </span>
             {hasChildren ? (
@@ -425,7 +473,7 @@ function TreeNodeRow({
               </span>
             ) : null}
           </span>
-          <span className="hidden text-center font-mono text-[11px] text-text-dark-secondary sm:block">
+          <span className={`hidden text-center font-mono text-[11px] sm:block ${inboundTone(node.inboundLinks)}`}>
             <span className="sr-only">{copy.inbound} </span>
             {node.inboundLinks}
           </span>
@@ -435,13 +483,8 @@ function TreeNodeRow({
           </span>
           <span className="hidden text-center font-mono text-[11px] text-text-dark-secondary sm:block">
             <span className="sr-only">{copy.depthLabel} </span>
-            {node.depth}
+            {displayClickDepth(node, copy)}
           </span>
-          {parentRelation === "url_path" ? (
-            <span className="sr-only">
-              {copy.pathGrouped}
-            </span>
-          ) : null}
         </button>
       </div>
       {hasChildren && expanded ? (
@@ -488,7 +531,9 @@ function LinkTree({
   readonly selectedNodeId: string;
   readonly onSelect: (nodeId: string) => void;
 }) {
-  const [filter, setFilter] = useState<TreeFilter>("all");
+  const [filter, setFilter] = useState<TreeFilter>(() =>
+    report.findings.length > 0 ? "attention" : "all",
+  );
   const [query, setQuery] = useState("");
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
     () => new Set(),
@@ -499,11 +544,21 @@ function LinkTree({
     [report.nodes],
   );
   const normalizedQuery = query.trim().toLocaleLowerCase();
+  const attentionIds = useMemo(
+    () => new Set(report.findings.flatMap((finding) => finding.nodeIds)),
+    [report.findings],
+  );
   const matchIds = useMemo(
     () =>
       new Set(
         report.nodes
-          .filter((node) => filter === "all" || node.kind === filter)
+          .filter(
+            (node) =>
+              filter === "all" ||
+              (filter === "attention"
+                ? attentionIds.has(node.id)
+                : node.kind === filter),
+          )
           .filter((node) => {
             if (!normalizedQuery) return true;
             return `${displayPath(node.url)} ${node.title ?? ""}`
@@ -512,7 +567,7 @@ function LinkTree({
           })
           .map((node) => node.id),
       ),
-    [filter, normalizedQuery, report.nodes],
+    [attentionIds, filter, normalizedQuery, report.nodes],
   );
   const visibleIds = useMemo(() => {
     if (filter === "all" && !normalizedQuery) {
@@ -529,10 +584,12 @@ function LinkTree({
     return visible;
   }, [filter, matchIds, normalizedQuery, report.nodes, tree.parentById]);
   const filters: readonly [TreeFilter, string][] = [
+    ["attention", copy.attention],
     ["all", copy.all],
     ["home", copy.home],
     ["orphan_candidate", copy.orphan_candidate],
     ["orphan_undetermined", copy.orphan_undetermined],
+    ["unreachable", copy.unreachable],
     ["deep", copy.deep],
     ["page", copy.page],
   ];
@@ -772,8 +829,11 @@ function NodeDetail({
       <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-brand-border/60 pt-5 text-[13px]">
         <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.inbound}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.inboundLinks}</dd></div>
         <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.outbound}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.outboundLinks}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.depthLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.depth}</dd></div>
+        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.depthLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{displayClickDepth(node, copy)}</dd></div>
+        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.crawlDepthLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.crawlDepth}</dd></div>
         <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.sitemapLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.sitemapMember ? copy.yes : copy.no}</dd></div>
+        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.robotsLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.robotsIndexable ? copy.yes : copy.no}</dd></div>
+        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.canonicalLabel}</dt><dd className="mt-1 break-all font-mono text-text-dark-primary">{node.canonicalTarget ?? copy.no}</dd></div>
       </dl>
       {finding ? (
         <div className="mt-5 space-y-4 border-t border-brand-border/60 pt-5 text-[13px] leading-5">
@@ -784,6 +844,69 @@ function NodeDetail({
         </div>
       ) : null}
     </aside>
+  );
+}
+
+function FindingsList({
+  copy,
+  findings,
+  selectedFindingId,
+  onSelect,
+}: {
+  readonly copy: ToolCopy;
+  readonly findings: InternalLinkAuditPayload["result"]["findings"];
+  readonly selectedFindingId: string | null;
+  readonly onSelect: (
+    finding: InternalLinkAuditPayload["result"]["findings"][number],
+  ) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-brand-border/70 bg-[#171718] p-5">
+      <h3 className="text-[17px] font-semibold text-text-dark-primary">{copy.findings}</h3>
+      <p className="mt-1 text-[13px] leading-5 text-text-dark-secondary">{copy.findingsBody}</p>
+      {findings.length === 0 ? (
+        <p className="mt-5 text-[13px] text-text-dark-secondary">{copy.noFindings}</p>
+      ) : (
+        <div className="mt-5 grid gap-2 lg:grid-cols-2">
+          {findings.map((finding) => {
+            const selected = selectedFindingId === finding.id;
+            return (
+              <button
+                key={finding.id}
+                type="button"
+                onClick={() => onSelect(finding)}
+                aria-pressed={selected}
+                data-testid={`internal-link-finding-${finding.id}`}
+                className={`min-h-16 rounded-xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
+                  selected
+                    ? "border-brand-accent/60 bg-brand-accent/10"
+                    : "border-brand-border/60 bg-black/10 hover:border-brand-border"
+                }`}
+              >
+                <span className="flex gap-3">
+                  <span className="h-fit rounded bg-brand-warning/10 px-2 py-1 font-mono text-[11px] text-brand-warning">
+                    {finding.priority}
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block text-[13px] font-medium leading-5 text-text-dark-primary">
+                      {finding.title}
+                    </strong>
+                    <small className="mt-1 block text-[12px] leading-5 text-text-dark-secondary">
+                      {finding.detail}
+                    </small>
+                    <small className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-text-dark-secondary">
+                      <span>{finding.affectedUrls.length} {copy.affectedPages}</span>
+                      <span>{copy.confidence}: {copy[finding.confidence]}</span>
+                      <span>{copy.impact}: {copy[finding.impact]}</span>
+                    </small>
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -805,7 +928,13 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
   const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId) ?? null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(null); setPayload(null); setSelectedFindingId(null); setPhase("running"); setStage(0);
+    event.preventDefault();
+    trackMarketingEvent("tool_start", { tool_name: "internal_link_audit" });
+    setError(null);
+    setPayload(null);
+    setSelectedFindingId(null);
+    setPhase("running");
+    setStage(0);
     try {
       const response = await fetch("/api/tools/internal-link-audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
       const body = (await response.json().catch(() => null)) as { data?: InternalLinkAuditPayload; error?: { code?: string } } | null;
@@ -825,12 +954,15 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
       setPayload(body.data);
       setSelectedNodeId(initialNodeId);
       setSelectedFindingId(
-        body.data.result.findings.find((finding) => finding.nodeId === initialNodeId)?.id ?? null,
+        body.data.result.findings.find((finding) =>
+          initialNodeId ? finding.nodeIds.includes(initialNodeId) : false,
+        )?.id ?? null,
       );
       setPhase("result");
+      trackMarketingEvent("tool_complete", { tool_name: "internal_link_audit" });
     } catch { setError(copy.errorGeneric); setPhase("error"); }
   }
-  const metricItems = report ? [[copy.mapped, String(report.pagesCrawled), Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network], [copy.fixes, String(report.findings.length), Route]] as const : [];
+  const metricItems = report ? [[copy.mapped, String(report.pagesCrawled), Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network]] as const : [];
 
   return (
     <section
@@ -924,7 +1056,10 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 >
                   {report.availability === "partial" ? copy.partial : copy.available}
                 </h2>
-                <p className="mt-3 text-[14px] leading-6 text-text-dark-secondary">
+                <p className="mt-3 text-[16px] font-medium leading-6 text-text-dark-primary">
+                  {actionSummary(report, locale)}
+                </p>
+                <p className="mt-2 text-[13px] leading-5 text-text-dark-secondary">
                   {coverageSummary(report, locale)}
                 </p>
               </div>
@@ -946,7 +1081,30 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 </p>
               </div>
             </div>
-            <dl className="grid grid-cols-2 gap-px bg-brand-border/60 lg:grid-cols-4">
+            <div className="grid gap-px bg-brand-border/60 md:grid-cols-[0.8fr_1.2fr]">
+              <div className="bg-[#151516] p-5 md:p-6">
+                <p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.attention}</p>
+                <p className="mt-3 font-mono text-[38px] leading-none text-text-dark-primary">{report.actionablePages}</p>
+              </div>
+              <div className="bg-[#151516] p-5 md:p-6">
+                <p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.depthDistribution}</p>
+                <dl className="mt-3 grid grid-cols-5 gap-2">
+                  {[
+                    [copy.oneClick, report.clickDepthDistribution.oneClick],
+                    [copy.twoClicks, report.clickDepthDistribution.twoClicks],
+                    [copy.threeClicks, report.clickDepthDistribution.threeClicks],
+                    [copy.fourPlusClicks, report.clickDepthDistribution.fourPlusClicks],
+                    [copy.unreachableCount, report.clickDepthDistribution.unreachable],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-[10px] leading-4 text-text-dark-secondary">{label}</dt>
+                      <dd className="mt-1 font-mono text-[20px] text-text-dark-primary">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </div>
+            <dl className="grid grid-cols-1 gap-px bg-brand-border/60 sm:grid-cols-3">
               {metricItems.map(([label, value, Icon]) => (
                 <div key={label} className="bg-[#151516] p-4 md:p-5">
                   <dt className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">
@@ -966,7 +1124,20 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 </div>
               ))}
             </dl>
+            <p className="border-t border-brand-border/60 bg-[#151516] px-5 py-3 text-[11px] leading-5 text-text-dark-secondary">
+              {report.nodes.filter((node) => !node.sitemapMember).length} {copy.sitemapGap}
+            </p>
           </div>
+
+          <FindingsList
+            copy={copy}
+            findings={report.findings}
+            selectedFindingId={selectedFindingId}
+            onSelect={(finding) => {
+              setSelectedNodeId(finding.nodeId);
+              setSelectedFindingId(finding.id);
+            }}
+          />
 
           <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <LinkTree
@@ -976,7 +1147,7 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
               onSelect={(nodeId) => {
                 setSelectedNodeId(nodeId);
                 setSelectedFindingId(
-                  report.findings.find((finding) => finding.nodeId === nodeId)?.id ?? null,
+                  report.findings.find((finding) => finding.nodeIds.includes(nodeId))?.id ?? null,
                 );
               }}
             />
@@ -985,50 +1156,6 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
             ) : null}
           </div>
 
-          <section className="rounded-2xl border border-brand-border/70 bg-[#171718] p-5">
-            <h3 className="text-[17px] font-semibold text-text-dark-primary">{copy.findings}</h3>
-            <p className="mt-1 text-[13px] leading-5 text-text-dark-secondary">{copy.findingsBody}</p>
-            {report.findings.length === 0 ? (
-              <p className="mt-5 text-[13px] text-text-dark-secondary">{copy.noFindings}</p>
-            ) : (
-              <div className="mt-5 grid gap-2 lg:grid-cols-2">
-                {report.findings.map((finding) => {
-                  const selected = selectedFindingId === finding.id;
-                  return (
-                    <button
-                      key={finding.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedNodeId(finding.nodeId);
-                        setSelectedFindingId(finding.id);
-                      }}
-                      aria-pressed={selected}
-                      data-testid={`internal-link-finding-${finding.id}`}
-                      className={`min-h-16 rounded-xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
-                        selected
-                          ? "border-brand-accent/60 bg-brand-accent/10"
-                          : "border-brand-border/60 bg-black/10 hover:border-brand-border"
-                      }`}
-                    >
-                      <span className="flex gap-3">
-                        <span className="h-fit rounded bg-brand-warning/10 px-2 py-1 font-mono text-[11px] text-brand-warning">
-                          {finding.priority}
-                        </span>
-                        <span>
-                          <strong className="block text-[13px] font-medium leading-5 text-text-dark-primary">
-                            {finding.title}
-                          </strong>
-                          <small className="mt-1 block text-[12px] leading-5 text-text-dark-secondary">
-                            {finding.detail}
-                          </small>
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
         </div>
       ) : null}
     </section>

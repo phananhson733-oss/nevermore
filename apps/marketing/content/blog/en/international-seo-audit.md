@@ -109,7 +109,7 @@ Only partly. A hreflang checker that maps the bidirectional pair mesh covers the
 
 ## Take Action
 
-Map your locale cluster into a pair matrix and run one audit against the rendered hreflang the crawler actually sees — not the CMS dashboard — before you commission any new translations. You will find the broken return pairs that a checklist audit reports as green. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one cluster this week.
+Map your locale cluster into a pair matrix and run one audit against the rendered hreflang the crawler actually sees — not the CMS dashboard — before you commission any new translations. You will find the broken return pairs that a checklist audit reports as green. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one cluster this week.
 
 ## Sources
 

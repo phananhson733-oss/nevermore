@@ -561,7 +561,7 @@
       "title": "Free site-wide SEO audit",
       "description": "Crawl public same-origin pages and inspect response, indexability, metadata, structure, link, and JSON-LD facts.",
       "metaTitle": "Free Site-wide SEO Audit",
-      "metaDescription": "Run a free, anonymous SEO audit across public same-origin pages. Inspect crawl coverage, page responses, index directives, metadata, structure, links, and JSON-LD evidence.",
+      "metaDescription": "Run a free, anonymous SEO audit across public same-origin pages. Inspect crawlability, index directives, metadata, links, and JSON-LD evidence.",
       "pageTitle": "Free site-wide SEO audit",
       "pageSubtitle": "Enter a public URL to inspect the same-origin pages this synchronous run can collect. The result contains crawl coverage, neutral audit records, measured values, evidence, and the inspected-page inventory.",
       "eyebrow": "Free site-wide SEO audit",

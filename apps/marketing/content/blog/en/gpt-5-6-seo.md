@@ -105,7 +105,7 @@ No. The workflow speeds specific steps, but a strategist still owns intent, edit
 
 ## Take Action
 
-Map your current SEO fulfillment against the four scenarios in the reference table above, then run one client's briefs and reports through a reviewed, rebrandable workflow. You'll come away with a rebranded deliverable and a pitch you can defend under questioning — which is the real decision here: reselling wins on a repeatable, honest workflow, not on whichever model version is trending this quarter. [Start your free GenGrowth trial](https://gengrowth.ai/app) and pressure-test it on a single account before you roll it out wider.
+Map your current SEO fulfillment against the four scenarios in the reference table above, then run one client's briefs and reports through a reviewed, rebrandable workflow. You'll come away with a rebranded deliverable and a pitch you can defend under questioning — which is the real decision here: reselling wins on a repeatable, honest workflow, not on whichever model version is trending this quarter. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and pressure-test it on a single account before you roll it out wider.
 
 ## Sources
 

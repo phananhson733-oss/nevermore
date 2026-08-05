@@ -112,7 +112,7 @@ Treat the site-structure map and the audit-to-fix flow as living documents tied 
 
 ## Take Action
 
-Pick one of the four diagrams — the workflow loop is the easiest — and redraw it against your own site this week, then route a real decision through it. Inside GenGrowth you can pull the live data each frame depends on: the audit rows for the audit-to-fix flow, the internal links for the site-structure map, and the rank movement for the workflow loop, so the diagrams reflect your actual pages instead of a generic template. [Start your free GenGrowth trial](https://gengrowth.ai/app) and turn the first frame into a decision before you commission the next batch of content.
+Pick one of the four diagrams — the workflow loop is the easiest — and redraw it against your own site this week, then route a real decision through it. Inside GenGrowth you can pull the live data each frame depends on: the audit rows for the audit-to-fix flow, the internal links for the site-structure map, and the rank movement for the workflow loop, so the diagrams reflect your actual pages instead of a generic template. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and turn the first frame into a decision before you commission the next batch of content.
 
 ## Sources
 

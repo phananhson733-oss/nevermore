@@ -2,14 +2,15 @@ import { expect, test } from "@playwright/test";
 
 const auditResponse = {
   data: {
-    run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v2", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
+    run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v3", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
     result: {
-      targetUrl: "https://acme.com/", availability: "partial", stopReason: "max_requests", limitation: "Coverage is partial after an online processing boundary.", pagesCrawled: 4, linksObserved: 3, sitemapFetched: true, sitemapUrlsObserved: 32,
+      targetUrl: "https://acme.com/", availability: "partial", stopReason: "max_requests", limitation: "Coverage is partial after an online processing boundary.", pagesCrawled: 4, linksObserved: 3, sitemapFetched: true, sitemapUrlsObserved: 32, actionablePages: 1,
+      clickDepthDistribution: { oneClick: 2, twoClicks: 0, threeClicks: 0, fourPlusClicks: 0, unreachable: 1 },
       nodes: [
-        { id: "page-01", url: "https://acme.com/", title: "Acme", depth: 0, inboundLinks: 0, outboundLinks: 2, statusCode: 200, sitemapMember: true, kind: "home" },
-        { id: "page-02", url: "https://acme.com/guide", title: "Guide", depth: 1, inboundLinks: 1, outboundLinks: 1, statusCode: 200, sitemapMember: true, kind: "page" },
-        { id: "page-03", url: "https://acme.com/guide/article", title: "Article", depth: 2, inboundLinks: 2, outboundLinks: 0, statusCode: 200, sitemapMember: true, kind: "page" },
-        { id: "page-04", url: "https://acme.com/orphan", title: "Orphan", depth: 1, inboundLinks: 0, outboundLinks: 0, statusCode: 200, sitemapMember: true, kind: "orphan_candidate" },
+        { id: "page-01", url: "https://acme.com/", title: "Acme", crawlDepth: 0, clickDepth: 0, primaryParentId: null, inboundLinks: 0, outboundLinks: 2, statusCode: 200, sitemapMember: true, robotsIndexable: true, canonicalTarget: null, kind: "home" },
+        { id: "page-02", url: "https://acme.com/guide", title: "Guide", crawlDepth: 1, clickDepth: 1, primaryParentId: "page-01", inboundLinks: 1, outboundLinks: 1, statusCode: 200, sitemapMember: true, robotsIndexable: true, canonicalTarget: null, kind: "page" },
+        { id: "page-03", url: "https://acme.com/guide/article", title: "Article", crawlDepth: 2, clickDepth: 1, primaryParentId: "page-01", inboundLinks: 2, outboundLinks: 0, statusCode: 200, sitemapMember: true, robotsIndexable: true, canonicalTarget: null, kind: "page" },
+        { id: "page-04", url: "https://acme.com/orphan", title: "Orphan", crawlDepth: 1, clickDepth: null, primaryParentId: null, inboundLinks: 0, outboundLinks: 0, statusCode: 200, sitemapMember: true, robotsIndexable: true, canonicalTarget: null, kind: "orphan_undetermined" },
       ],
       edges: [
         { from: "page-01", to: "page-02", anchorText: "Guide" },
@@ -17,9 +18,8 @@ const auditResponse = {
         { from: "page-01", to: "page-03", anchorText: "Featured article" },
       ],
       findings: [
-        { id: "orphan-page-04", priority: "P1", kind: "orphan_candidate", nodeId: "page-04", title: "/orphan is a sitemap-only orphan candidate", detail: "No crawled HTML page linked to it.", evidence: "0 observed inbound HTML links.", limitation: "Coverage is partial, so this is a candidate rather than a definitive orphan.", suggestedSourceUrl: null, observedAnchorText: null },
-        { id: "unresolved-pricing", priority: "P2", kind: "unresolved_target", nodeId: "page-01", title: "/ links to an unverified target", detail: "The target /pricing was not collected in this bounded crawl.", evidence: "Observed source: /; anchor: Pricing.", limitation: "The target may be outside the crawl budget.", suggestedSourceUrl: "https://acme.com/", observedAnchorText: "Pricing" },
-        { id: "unresolved-terms", priority: "P2", kind: "unresolved_target", nodeId: "page-01", title: "/ links to an unverified target", detail: "The target /terms was not collected in this bounded crawl.", evidence: "Observed source: /; anchor: Terms.", limitation: "The target may be outside the crawl budget.", suggestedSourceUrl: "https://acme.com/", observedAnchorText: "Terms" },
+        { id: "orphan-pages", priority: "P2", confidence: "low", impact: "high", kind: "orphan_undetermined", nodeId: "page-04", nodeIds: ["page-04"], affectedUrls: ["https://acme.com/orphan"], title: "1 sitemap page could not be checked for inbound links", detail: "No collected HTML page linked to it, but this crawl stopped early.", evidence: "0 observed inbound HTML links.", limitation: "Complete the crawl before treating it as an orphan.", suggestedSourceUrl: null, observedAnchorText: null },
+        { id: "unresolved-targets", priority: "P2", confidence: "low", impact: "medium", kind: "unresolved_target", nodeId: "page-01", nodeIds: ["page-01"], affectedUrls: ["https://acme.com/pricing", "https://acme.com/terms"], title: "2 internal targets could not be verified", detail: "The targets /pricing and /terms were not collected in this bounded crawl.", evidence: "Observed source: /; anchors: Pricing and Terms.", limitation: "The targets may be outside the crawl budget.", suggestedSourceUrl: "https://acme.com/", observedAnchorText: "Pricing" },
       ],
     },
   },
@@ -32,6 +32,8 @@ const deepAuditResponse = {
       ...auditResponse.data.result,
       pagesCrawled: 31,
       linksObserved: 30,
+      actionablePages: 0,
+      clickDepthDistribution: { oneClick: 1, twoClicks: 1, threeClicks: 1, fourPlusClicks: 27, unreachable: 0 },
       nodes: Array.from({ length: 31 }, (_, index) => ({
         id: `deep-${index}`,
         url:
@@ -42,11 +44,15 @@ const deepAuditResponse = {
                 (__, segment) => `level-${segment + 1}`,
               ).join("/")}`,
         title: index === 0 ? "Acme" : `Level ${index}`,
-        depth: index,
+        crawlDepth: index,
+        clickDepth: index,
+        primaryParentId: index === 0 ? null : `deep-${index - 1}`,
         inboundLinks: index === 0 ? 0 : 1,
         outboundLinks: index === 30 ? 0 : 1,
         statusCode: 200,
         sitemapMember: true,
+        robotsIndexable: true,
+        canonicalTarget: null,
         kind: index === 0 ? "home" : "page",
       })),
       edges: Array.from({ length: 30 }, (_, index) => ({
@@ -70,7 +76,7 @@ test("submits the audit request and renders a synchronous API response", async (
   await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
   await page.getByLabel("Website URL").fill("acme.com");
   await page.getByRole("button", { name: "Run internal link audit" }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "Partial coverage" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Report ready · partial coverage" })).toBeVisible();
   expect(requestedBody).toEqual({ url: "acme.com" });
   await expect(
     page.getByText(
@@ -90,24 +96,25 @@ test("submits the audit request and renders a synchronous API response", async (
   const tree = page.getByTestId("internal-link-tree");
   const treeRows = tree.locator('button[data-testid^="internal-link-node-"]');
   await expect(tree).toBeVisible();
+  await page.getByRole("button", { name: "All pages", exact: true }).click();
   await expect(treeRows).toHaveCount(4);
   await expect(page.getByText("Outside the main hierarchy", { exact: true })).toBeVisible();
   await expect(page.getByTestId("internal-link-node-page-03")).toHaveAccessibleName(
-    /\/guide\/article.*1 other mapped inbound link.*Inbound 2.*Outbound 0.*Crawl depth 2.*URL path/,
+    /\/guide\/article.*1 other mapped inbound link.*Inbound 2.*Outbound 0.*Homepage clicks 1/,
   );
   const detail = page.getByTestId("internal-link-node-detail");
   await expect(
-    detail.getByText("The target /pricing was not collected in this bounded crawl.", {
+    detail.getByText("The targets /pricing and /terms were not collected in this bounded crawl.", {
       exact: true,
     }),
   ).toBeVisible();
 
   const treeSearch = page.getByRole("searchbox", { name: "Find a page in this crawl" });
   await treeSearch.fill("article");
-  await expect(treeRows).toHaveCount(3);
+  await expect(treeRows).toHaveCount(2);
   await expect(page.getByText("1/4 pages match", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Collapse branch: /guide" }),
+    page.getByRole("button", { name: "Collapse branch: /" }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Expand all", exact: true }),
@@ -118,21 +125,19 @@ test("submits the audit request and renders a synchronous API response", async (
   await page.getByRole("button", { name: "Clear tree search" }).click();
   await expect(treeRows).toHaveCount(4);
 
-  await page.getByRole("button", { name: "Collapse branch: /guide" }).click();
-  await expect(treeRows).toHaveCount(3);
-  await page.getByRole("button", { name: "Expand branch: /guide" }).click();
+  await page.getByRole("button", { name: "Collapse branch: /" }).click();
+  await expect(treeRows).toHaveCount(2);
+  await page.getByRole("button", { name: "Expand branch: /" }).click();
   await expect(treeRows).toHaveCount(4);
 
   await page.getByTestId("internal-link-node-page-04").click();
   await expect(detail.getByText("/orphan", { exact: true })).toBeVisible();
   await expect(detail.getByText("0 observed inbound HTML links.", { exact: true })).toBeVisible();
 
-  const pricingFinding = page.getByTestId("internal-link-finding-unresolved-pricing");
-  const termsFinding = page.getByTestId("internal-link-finding-unresolved-terms");
-  await pricingFinding.click();
-  await expect(pricingFinding).toHaveAttribute("aria-pressed", "true");
-  await expect(termsFinding).toHaveAttribute("aria-pressed", "false");
-  await expect(detail.getByText("The target /pricing was not collected in this bounded crawl.", { exact: true })).toBeVisible();
+  const unresolvedFinding = page.getByTestId("internal-link-finding-unresolved-targets");
+  await unresolvedFinding.click();
+  await expect(unresolvedFinding).toHaveAttribute("aria-pressed", "true");
+  await expect(detail.getByText("The targets /pricing and /terms were not collected in this bounded crawl.", { exact: true })).toBeVisible();
 });
 
 test("renders API failures and a responsive localized tool without horizontal overflow", async ({ page }) => {
@@ -149,7 +154,7 @@ test("renders API failures and a responsive localized tool without horizontal ov
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
   await expect(
-    page.getByText("检测到短时间内异常高的请求量。 请在 42 秒后重试。", {
+    page.getByText("该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。 请在 42 秒后重试。", {
       exact: true,
     }),
   ).toBeVisible();
@@ -167,6 +172,7 @@ test("renders a touch-friendly crawl tree on mobile without horizontal overflow"
   await page.goto("/zh/tools/internal-link-audit");
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
+  await page.getByRole("button", { name: "全部页面", exact: true }).click();
 
   const tree = page.getByTestId("internal-link-tree");
   await expect(tree).toBeVisible();

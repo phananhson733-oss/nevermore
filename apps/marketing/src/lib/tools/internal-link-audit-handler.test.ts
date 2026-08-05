@@ -45,7 +45,7 @@ function request(body: unknown, contentType = "application/json"): Request {
 
 const raw = { availability: "partial", stopReason: "max_urls" } as InternalLinkAuditRaw;
 const payload = {
-  run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v2", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
+  run: { tool: "internal_link_audit", schemaVersion: "internal_link_audit.v3", mode: "public_preview", scope: "bounded_same_origin_static_html_crawl", persistence: "none", completedAt: "2026-07-30T09:00:00.000Z" },
   result: { availability: "partial", pagesCrawled: 25 },
 } as unknown as InternalLinkAuditPayload;
 

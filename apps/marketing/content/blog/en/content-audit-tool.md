@@ -114,7 +114,7 @@ No, it sequences with it. The audit tells you what you already have and whether 
 
 ## Take Action
 
-List your published URLs, attach traffic and freshness to each, and run one keep / update / merge / remove pass before you commission another new page. You will see which pages a content audit tool can save and which are dead weight. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one content cluster this week.
+List your published URLs, attach traffic and freshness to each, and run one keep / update / merge / remove pass before you commission another new page. You will see which pages a content audit tool can save and which are dead weight. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one content cluster this week.
 
 ## Sources
 

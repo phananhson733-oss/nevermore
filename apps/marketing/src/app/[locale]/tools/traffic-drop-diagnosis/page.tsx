@@ -4,8 +4,19 @@ import { brandTermCandidates } from "@sf/public-tools";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
 import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
 import { TrafficDropTool } from "@/components/tools/traffic-drop-tool";
+import {
+  BreadcrumbJsonLd,
+  FaqPageJsonLd,
+  HowToJsonLd,
+  ToolSoftwareApplicationJsonLd,
+} from "@/components/seo/json-ld";
 import { readTrafficDropSession } from "@/lib/tools/traffic-drop-session";
+import { localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
+
+// This route renders the visitor's cookie-backed GSC connection state. Keep it
+// request-bound even though the surrounding locale tree is statically built.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -23,8 +34,14 @@ export async function generateMetadata({
   // the root layout's title template adds it for `<title>`, so `content.title`
   // must not carry it either.
   return generatePageMetadata({
-    title: content.title,
-    description: content.description,
+    title:
+      locale === "en"
+        ? "SEO Traffic Drop Diagnosis"
+        : "SEO 流量下降诊断",
+    description:
+      locale === "en"
+        ? "Use your Search Console history to verify whether organic traffic dropped, locate the change point, and review evidence-backed causes."
+        : "使用 Search Console 历史数据确认自然流量是否下降、定位变化时点，并审阅有证据支持的原因。",
     locale,
     path: content.path,
   });
@@ -40,43 +57,70 @@ export default async function TrafficDropDiagnosisPage({
     readTrafficDropSession(),
     getMessages(),
   ]);
+  const content = getConnectedToolContent(locale, "traffic-drop-diagnosis");
+  const canonical = localeUrl(locale, content.path);
 
   return (
-    <ConnectedToolPage
-      locale={locale}
-      content={getConnectedToolContent(locale, "traffic-drop-diagnosis")}
-      connected={session.properties !== null}
-    >
-      {/* Only this tool's namespace crosses the client boundary, matching the shell's deliberately small provider. */}
-      <NextIntlClientProvider
-        messages={{ tools: { trafficDrop: messages.tools.trafficDrop } }}
+    <>
+      <ToolSoftwareApplicationJsonLd
+        name={content.title}
+        description={content.description}
+        url={canonical}
+        featureList={content.outputs.map((output) => output.label)}
+      />
+      <HowToJsonLd name={content.workflowTitle} steps={content.steps} />
+      <FaqPageJsonLd
+        faqs={content.faq.map((item) => ({
+          q: item.question,
+          a: item.answer,
+        }))}
+      />
+      <BreadcrumbJsonLd
+        items={[
+          { name: locale === "zh" ? "首页" : "Home", url: localeUrl(locale) },
+          {
+            name: locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools",
+            url: localeUrl(locale, "/tools"),
+          },
+          { name: content.title, url: canonical },
+        ]}
+      />
+      <ConnectedToolPage
+        locale={locale}
+        content={content}
+        connected={session.properties !== null}
       >
-        <TrafficDropTool
-          locale={locale}
-          properties={session.properties}
-          propertyTotal={session.propertyTotal}
-          connectEnabled={session.connectEnabled}
-          consentNotice={session.consentNotice}
-          {...(session.properties
-            ? {
-                /*
-                 * Derived here rather than in the browser: `@sf/public-tools`
-                 * reaches `node:net` through its own index, so a client
-                 * component can only take TYPES from it. These are candidates
-                 * for a form the visitor edits — never a brand list on their
-                 * behalf; the domain gets it wrong in both directions and
-                 * silently. See brand-candidates.ts.
-                 */
-                brandCandidates: Object.fromEntries(
-                  session.properties.map((property) => [
-                    property,
-                    brandTermCandidates(property),
-                  ]),
-                ),
-              }
-            : {})}
-        />
-      </NextIntlClientProvider>
-    </ConnectedToolPage>
+        {/* Only this tool's namespace crosses the client boundary, matching the shell's deliberately small provider. */}
+        <NextIntlClientProvider
+          messages={{ tools: { trafficDrop: messages.tools.trafficDrop } }}
+        >
+          <TrafficDropTool
+            locale={locale}
+            properties={session.properties}
+            propertyTotal={session.propertyTotal}
+            connectEnabled={session.connectEnabled}
+            consentNotice={session.consentNotice}
+            {...(session.properties
+              ? {
+                  /*
+                   * Derived here rather than in the browser: `@sf/public-tools`
+                   * reaches `node:net` through its own index, so a client
+                   * component can only take TYPES from it. These are candidates
+                   * for a form the visitor edits — never a brand list on their
+                   * behalf; the domain gets it wrong in both directions and
+                   * silently. See brand-candidates.ts.
+                   */
+                  brandCandidates: Object.fromEntries(
+                    session.properties.map((property) => [
+                      property,
+                      brandTermCandidates(property),
+                    ]),
+                  ),
+                }
+              : {})}
+          />
+        </NextIntlClientProvider>
+      </ConnectedToolPage>
+    </>
   );
 }
