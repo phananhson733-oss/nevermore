@@ -48,7 +48,7 @@ Teams routinely misjudge what white-label support actually covers, and shallow c
 
 1. **"White-label means everything is branded."** Reality: most tools brand only the PDF export at the entry level; the dashboard, login, and emails often still carry the vendor's name until you pay for a higher tier.
 2. **"More SEO features make a better resale tool."** Reality: feature depth and resale depth are separate axes; a tool can run deep [white-label keyword research](/blog/white-label-keyword-research) and still expose its own brand the moment a client logs in.
-3. **"Free white-label tools resell the same as paid ones."** Reality: a [free white label seo report generator](/blog/free-white-label-seo) usually caps branding at reports and watermarks the rest, so it fits Level 1 testing but rarely survives a Level 2 client portal.
+3. **"Free white-label tools resell the same as paid ones."** Reality: a free white-label SEO report generator usually caps branding at reports and watermarks the rest, so it fits Level 1 testing but rarely survives a Level 2 client portal.
 4. **"Switching tiers later is trivial."** Reality: moving from report-only to full platform resale often means re-onboarding clients into a new portal, which is friction your clients feel directly.
 
 ## White-Label SEO Tools at a Glance — Quick Reference

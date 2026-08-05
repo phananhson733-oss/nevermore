@@ -74,7 +74,7 @@ Once you have chosen a coordinated partner, a working integrated SEO strategy fo
 4. **Feed proven pages into outreach.** Let the pages that demonstrably rank become the concrete targets for link building, rather than guessing.
 5. **Run a recurring review of the loop.** Meet on a fixed cadence to move the bottleneck, not to report three separate statuses — this is where integration becomes durable.
 
-For teams standardizing this across many clients, the coordination discipline behind [free white label SEO](/blog/free-white-label-seo) offerings shows how the same loop can be operated at agency scale.
+For teams standardizing this across many clients, the coordination discipline behind [free white label SEO](/blog/best-white-label-seo-tool) offerings shows how the same loop can be operated at agency scale.
 
 ## Frequently Asked Questions About Integrated SEO
 
@@ -98,7 +98,7 @@ Yes. Integration is procedural before it is technological. Even a three-person t
 
 - [SEO automation](/blog/seo-automation) — how automated workflows sustain the coordination that integrated SEO depends on.
 - [All-in-one SEO](/blog/all-in-one-seo) — how a unified platform compares against a genuinely integrated operating model.
-- [Free white label SEO](/blog/free-white-label-seo) — operating the same coordinated loop at agency scale.
+- [Free white label SEO](/blog/best-white-label-seo-tool) — operating the same coordinated loop at agency scale.
 - [White label keyword research](/blog/white-label-keyword-research) — feeding a shared, prioritized backlog that keeps the lanes aligned.
 
 ## Take Action

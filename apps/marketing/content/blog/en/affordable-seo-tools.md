@@ -51,7 +51,7 @@ A startup needs the audit it cannot afford a consultant to run, and it needs it 
 Most disappointment with affordable SEO tools traces back to a few predictable misreads:
 
 1. **"Lowest monthly price means most affordable."** A tool that automates one job and leaves four manual costs more per recovered hour than a pricier tool that covers the workflow. Affordability is a ratio, not a sticker.
-2. **"Free tiers are always the cheapest path."** A free tool that caps audits at ten pages or pulls rankings once a week forces manual workarounds that cost more in time than a paid plan would in dollars. Count the friction, then a [free SEO consultation](/blog/free-seo-consultation) can tell you which limits actually bite.
+2. **"Free tiers are always the cheapest path."** A free tool that caps audits at ten pages or pulls rankings once a week forces manual workarounds that cost more in time than a paid plan would in dollars. Count the friction, then a [free SEO consultation](/blog/free-seo-company) can tell you which limits actually bite.
 3. **"Stacking cheap point tools beats one platform."** Five $15 tools is $75 plus the time to stitch their data together. The honest comparison is total cost — fees plus integration toil — not the lowest single line item.
 4. **"The SERP's cheapest-tools lists are buyer guides."** Most stop at features and price; few compute cost per job for you. Read them for the price column and do that division yourself.
 

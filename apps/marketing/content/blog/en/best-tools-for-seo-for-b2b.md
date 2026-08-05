@@ -28,7 +28,7 @@ The cost of the generic framing is invisible until the quarter closes. A team pi
 
 That bias is structural, not accidental. Walk the SERP for the term and the pattern repeats: the lists are written for SEO in general, then retitled for B2B. They score tools on the Ahrefs-style criteria of keyword database size, crawl depth, and backlink index freshness — the same yardsticks you would use for an e-commerce blog. The B2B-specific jobs are almost entirely absent: there is rarely a column for MQL attribution, account-based keyword targeting, long-cycle tracking, or whether the reporting reads cleanly to a CFO who has never seen a SERP.
 
-The hours a B2B SEO tool should give back are rarely the keyword-research hours. Finding terms is visible, so it gets tested; the silent work is connecting a six-month buying cycle back to the query that started it. A tool that automates only keyword discovery leaves the compounding B2B work — the [marketing attribution for SaaS](/blog/marketing-attribution-for-saas) of tying organic touches to closed revenue — exactly as manual as before. You pay for an SEO tool and keep rebuilding the pipeline story in a spreadsheet.
+The hours a B2B SEO tool should give back are rarely the keyword-research hours. Finding terms is visible, so it gets tested; the silent work is connecting a six-month buying cycle back to the query that started it. A tool that automates only keyword discovery leaves the compounding B2B work — the [marketing attribution for SaaS](/blog/marketing-attribution-models) of tying organic touches to closed revenue — exactly as manual as before. You pay for an SEO tool and keep rebuilding the pipeline story in a spreadsheet.
 
 ## How B2B SEO Tools Work / Play Out in Real Agency-SaaS Scenarios
 
@@ -105,7 +105,7 @@ Report in their language: influenced pipeline, cost per MQL, and qualified accou
 ## Related Reading
 
 - [SEO for SaaS](/blog/seo-for-saas) — how the channel compounds across a real B2B funnel
-- [Marketing attribution for SaaS](/blog/marketing-attribution-for-saas) — the attribution job a B2B SEO tool must support
+- [Marketing attribution for SaaS](/blog/marketing-attribution-models) — the attribution job a B2B SEO tool must support
 - [SaaS SEO platform](/blog/saas-seo-platform) — the platform context any B2B tool plugs into
 
 ## Take Action

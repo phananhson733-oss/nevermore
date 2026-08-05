@@ -71,7 +71,7 @@ Once you have chosen a provider, implement the engagement deliberately so the fr
 3. Vet every recommended tactic against white-hat criteria before you act on it; discard anything that relies on manipulation.
 4. Implement the highest-impact fixes first, and log a baseline of your current rankings and traffic so you can attribute change later.
 5. Re-measure after enough time has passed for search engines to recrawl, and judge results by durable movement rather than any initial spike.
-6. Decide on the paid path only after the free work has proven the provider compounds value. A free [free-seo-consultation](/blog/free-seo-consultation) is a low-risk way to test that fit before committing budget.
+6. Decide on the paid path only after the free work has proven the provider compounds value. A free consultation is a low-risk way to test that fit before committing budget.
 
 ## Frequently Asked Questions About Free SEO Company
 
@@ -96,7 +96,6 @@ The biggest risk is short-term tactics that produce a ranking spike and then col
 - [ethical seo](/blog/ethical-seo) — the white-hat standard a trustworthy free provider should meet.
 - [organic seo services](/blog/organic-seo-services) — how compounding content and authority actually build rankings.
 - [cost-effective seo services](/blog/cost-effective-seo-services) — benchmarking "free" against paid options that earn their keep.
-- [free seo consultation](/blog/free-seo-consultation) — a low-risk way to test provider fit before spending.
 
 ## Take Action
 
