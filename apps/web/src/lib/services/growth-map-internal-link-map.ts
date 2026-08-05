@@ -31,6 +31,12 @@ import {
   type SiteRow,
   type WorkspaceScope,
 } from "@sf/db";
+import {
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  RULE_SET_VERSION,
+  parseGovernanceProjectionV1,
+} from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
   CRAWL_BUDGET,
@@ -45,7 +51,7 @@ const MAX_FROZEN_SNAPSHOTS = 20;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SHA_256 = /^[0-9a-f]{64}$/u;
-const MANIFEST_KEYS = [
+const LEGACY_MANIFEST_KEYS = [
   "deliveryLocale",
   "icp",
   "projectId",
@@ -54,6 +60,7 @@ const MANIFEST_KEYS = [
   "siteId",
   "snapshots",
 ] as const;
+const CURRENT_MANIFEST_KEYS = [...LEGACY_MANIFEST_KEYS, "governance"] as const;
 const ICP_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_KEYS = [
   "availability",
@@ -76,10 +83,8 @@ const NO_READABLE_DIAGNOSTIC = "当前项目没有可读取的已完成诊断。
 const NO_FROZEN_CRAWL = "本次诊断未冻结 Crawl 数据快照。";
 const UNRESOLVED_LINK_TARGET =
   "部分冻结内链指向本次 Crawl 未收录目标页，因此未用于孤立页判断。";
-const TRUNCATED_EDGES =
-  "内链边超过读取上限；当前仅返回稳定排序后的前一部分。";
-const NO_CONFIRMED_TOPIC =
-  "尚无已确认的 Topic Model，无法生成内链推荐。";
+const TRUNCATED_EDGES = "内链边超过读取上限；当前仅返回稳定排序后的前一部分。";
+const NO_CONFIRMED_TOPIC = "尚无已确认的 Topic Model，无法生成内链推荐。";
 const NO_SELECTED_TOPIC =
   "目标页没有已确认的 Topic/Keyword 映射，无法生成内链推荐。";
 const PARTIAL_RECOMMENDATIONS =
@@ -107,17 +112,11 @@ const CrawlPageProjectionSchema: z.ZodType<CrawlPageProjection> = z
     fetchUrl: BoundedUrl,
     status: HttpStatus,
     finalStatus: HttpStatus,
-    redirectChain: z
-      .array(BoundedUrl)
-      .max(CRAWL_BUDGET.maxRedirects + 1),
+    redirectChain: z.array(BoundedUrl).max(CRAWL_BUDGET.maxRedirects + 1),
     canonicalTarget: BoundedUrl.nullable(),
     robotsIndexable: z.boolean(),
     robotsDirectives: z
-      .array(
-        z
-          .string()
-          .max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars),
-      )
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectiveChars))
       .max(CRAWL_PROJECTION_LIMITS.maxRobotsDirectives),
     title: BoundedNullableString(CRAWL_PROJECTION_LIMITS.maxTitleChars),
     metaDescription: BoundedNullableString(
@@ -150,9 +149,7 @@ const CrawlPageProjectionSchema: z.ZodType<CrawlPageProjection> = z
     jsonLd: z
       .object({
         types: z
-          .array(
-            z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars),
-          )
+          .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypeChars))
           .max(CRAWL_PROJECTION_LIMITS.maxJsonLdTypes),
         errorCount: z.number().int().nonnegative().max(100_000),
       })
@@ -162,9 +159,7 @@ const CrawlPageProjectionSchema: z.ZodType<CrawlPageProjection> = z
       CRAWL_PROJECTION_LIMITS.maxBodyExcerptChars,
     ),
     paragraphs: z
-      .array(
-        z.string().max(CRAWL_PROJECTION_LIMITS.maxParagraphChars),
-      )
+      .array(z.string().max(CRAWL_PROJECTION_LIMITS.maxParagraphChars))
       .max(CRAWL_PROJECTION_LIMITS.maxParagraphs),
     responseMs: z.number().nonnegative().finite().nullable(),
     contentType: BoundedNullableString(
@@ -252,10 +247,7 @@ function hasExactKeys(
   );
 }
 
-function requiredString(
-  record: Record<string, unknown>,
-  key: string,
-): string {
+function requiredString(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   if (
     typeof value !== "string" ||
@@ -265,6 +257,33 @@ function requiredString(
     return integrityFailure();
   }
   return value;
+}
+
+/**
+ * Frozen manifests gained a `governance` key when Keyword/Topic governance
+ * shipped: governed rule sets (mvp.rules.0.2.2+) must carry it, the legacy
+ * rule set (mvp.rules.0.2.1) must not. Mirrors growth-map-projection.
+ */
+function manifestShapeValid(
+  manifest: Record<string, unknown>,
+  ruleSetVersion: string,
+): boolean {
+  if (
+    ruleSetVersion === RULE_SET_VERSION ||
+    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION
+  ) {
+    if (!hasExactKeys(manifest, CURRENT_MANIFEST_KEYS)) return false;
+    try {
+      parseGovernanceProjectionV1(manifest["governance"]);
+    } catch {
+      return false;
+    }
+    return true;
+  }
+  return (
+    ruleSetVersion === LEGACY_RULE_SET_VERSION &&
+    hasExactKeys(manifest, LEGACY_MANIFEST_KEYS)
+  );
 }
 
 function sameCanonicalValue(left: unknown, right: unknown): boolean {
@@ -295,9 +314,7 @@ function compareAscii(left: string, right: string): number {
 
 function uniqueLimitations(values: readonly string[]): string[] {
   return uniqueSorted(
-    values
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0),
+    values.map((value) => value.trim()).filter((value) => value.length > 0),
   ).slice(0, 100);
 }
 
@@ -317,7 +334,7 @@ function readFrozenManifest(
     run.run_completed_at === null ||
     !isTimestamptzInstant(run.run_completed_at) ||
     !isRecord(manifest) ||
-    !hasExactKeys(manifest, MANIFEST_KEYS) ||
+    !manifestShapeValid(manifest, run.rule_set_version) ||
     !SHA_256.test(run.input_hash) ||
     contentHash(manifest as CanonicalValue) !== run.input_hash ||
     manifest["projectId"] !== run.project_id ||
@@ -468,9 +485,9 @@ async function frozenRunAuthority(
   exec: Executor,
   scope: ProjectScope,
 ): Promise<ValidatedFrozenRun | null> {
-  const run = await new GrowthMapReadRepository(
-    exec,
-  ).findLatestReadableRun(scope);
+  const run = await new GrowthMapReadRepository(exec).findLatestReadableRun(
+    scope,
+  );
   if (run === null) return null;
   const frozen = readFrozenManifest(run, scope);
   const snapshots = await new DataSnapshotsRepository(exec).findByIds(
@@ -492,12 +509,10 @@ function unavailableResponse(
   projectId: string,
   generatedAt: string,
   limitation: string,
-  authority:
-    | {
-        readonly diagnosticRunId: string;
-        readonly crawlSnapshot: DataSnapshotRow;
-      }
-    | null,
+  authority: {
+    readonly diagnosticRunId: string;
+    readonly crawlSnapshot: DataSnapshotRow;
+  } | null,
 ): GrowthMapInternalLinkMap {
   return parseResponse({
     projectId,
@@ -531,9 +546,7 @@ function unavailableResponse(
 function normalizeTitle(title: string | null): string | null {
   if (title === null) return null;
   const normalized = title.trim();
-  return normalized.length > 0 && normalized.length <= 500
-    ? normalized
-    : null;
+  return normalized.length > 0 && normalized.length <= 500 ? normalized : null;
 }
 
 function validateObservation(
@@ -624,10 +637,7 @@ function validateObservation(
     if (row.normalized_url !== null) return integrityFailure();
     return null;
   }
-  if (
-    row.normalized_url === null ||
-    seenSitePageIds.has(row.site_page_id)
-  ) {
+  if (row.normalized_url === null || seenSitePageIds.has(row.site_page_id)) {
     return integrityFailure();
   }
   assertUuid(row.site_page_id);
@@ -682,8 +692,7 @@ function buildWorkingNodes(
 
   const variantsBySubject = new Map<string, ExactPageObservation[]>();
   for (const observation of validated) {
-    const variants =
-      variantsBySubject.get(observation.row.subject_ref) ?? [];
+    const variants = variantsBySubject.get(observation.row.subject_ref) ?? [];
     variants.push(observation);
     variantsBySubject.set(observation.row.subject_ref, variants);
   }
@@ -692,14 +701,8 @@ function buildWorkingNodes(
   for (const [canonicalUrl, variants] of variantsBySubject) {
     variants.sort(
       (left, right) =>
-        compareAscii(
-          left.row.normalized_url,
-          right.row.normalized_url,
-        ) ||
-        compareAscii(
-          left.row.observation_id,
-          right.row.observation_id,
-        ),
+        compareAscii(left.row.normalized_url, right.row.normalized_url) ||
+        compareAscii(left.row.observation_id, right.row.observation_id),
     );
     if (variants.length > 2) return integrityFailure();
     const title =
@@ -723,14 +726,12 @@ function buildWorkingNodes(
     observationsPartial:
       unlineagedCount > 0 ||
       validated.some((observation) => observation.projection === null),
-    observationLimitations: uniqueLimitations(
-      [
-        ...(unlineagedCount > 0 ? [MISSING_SITE_PAGE_LINEAGE] : []),
-        ...validated
-          .filter((observation) => observation.projection === null)
-          .map((observation) => observation.row.limitation),
-      ],
-    ),
+    observationLimitations: uniqueLimitations([
+      ...(unlineagedCount > 0 ? [MISSING_SITE_PAGE_LINEAGE] : []),
+      ...validated
+        .filter((observation) => observation.projection === null)
+        .map((observation) => observation.row.limitation),
+    ]),
   };
 }
 
@@ -747,13 +748,8 @@ function buildEdges(nodes: readonly WorkingNode[]): {
   readonly edges: readonly InternalLinkMapEdge[];
   readonly unresolvedTargetCount: number;
 } {
-  const nodeByUrl = new Map(
-    nodes.map((node) => [node.canonicalUrl, node]),
-  );
-  const factsByEdge = new Map<
-    string,
-    InternalLinkMapEdge["facts"][number][]
-  >();
+  const nodeByUrl = new Map(nodes.map((node) => [node.canonicalUrl, node]));
+  const factsByEdge = new Map<string, InternalLinkMapEdge["facts"][number][]>();
   const unresolvedTargets = new Set<string>();
   for (const source of nodes) {
     for (const variant of source.variants) {
@@ -788,9 +784,7 @@ function buildEdges(nodes: readonly WorkingNode[]): {
     if (!source || !target) return integrityFailure();
     const facts = factsByEdge.get(key);
     if (!facts) return integrityFailure();
-    facts.sort((left, right) =>
-      factKey(left) < factKey(right) ? -1 : 1,
-    );
+    facts.sort((left, right) => (factKey(left) < factKey(right) ? -1 : 1));
     if (facts.length < 1 || facts.length > 2) return integrityFailure();
     return {
       sourceCanonicalUrl,
@@ -807,9 +801,7 @@ function buildEdges(nodes: readonly WorkingNode[]): {
 }
 
 function executionRefsByPage(
-  rows: Awaited<
-    ReturnType<InternalLinkMapRepository["listExecutionRefs"]>
-  >,
+  rows: Awaited<ReturnType<InternalLinkMapRepository["listExecutionRefs"]>>,
   sitePageIds: ReadonlySet<string>,
 ): ReadonlyMap<string, readonly InternalLinkMapExecutionRef[]> {
   const refs = new Map<string, InternalLinkMapExecutionRef[]>();
@@ -826,10 +818,7 @@ function executionRefsByPage(
   }
   for (const [sitePageId, pageRefs] of refs) {
     const unique = new Map(
-      pageRefs.map((ref) => [
-        `${ref.findingId}:${ref.actionId ?? ""}`,
-        ref,
-      ]),
+      pageRefs.map((ref) => [`${ref.findingId}:${ref.actionId ?? ""}`, ref]),
     );
     const sorted = [...unique.entries()]
       .sort(([left], [right]) => (left < right ? -1 : 1))
@@ -854,10 +843,7 @@ function nodeStatus(
 function projectNodes(
   workingNodes: readonly WorkingNode[],
   edges: readonly InternalLinkMapEdge[],
-  refsByPage: ReadonlyMap<
-    string,
-    readonly InternalLinkMapExecutionRef[]
-  >,
+  refsByPage: ReadonlyMap<string, readonly InternalLinkMapExecutionRef[]>,
   complete: boolean,
 ): InternalLinkMapNode[] {
   return workingNodes.map((node) => {
@@ -867,16 +853,10 @@ function projectNodes(
     const outboundCount = edges.filter(
       (edge) => edge.sourceCanonicalUrl === node.canonicalUrl,
     ).length;
-    const executionRefs = new Map<
-      string,
-      InternalLinkMapExecutionRef
-    >();
+    const executionRefs = new Map<string, InternalLinkMapExecutionRef>();
     for (const pageId of node.sitePageIds) {
       for (const ref of refsByPage.get(pageId) ?? []) {
-        executionRefs.set(
-          `${ref.findingId}:${ref.actionId ?? ""}`,
-          ref,
-        );
+        executionRefs.set(`${ref.findingId}:${ref.actionId ?? ""}`, ref);
       }
     }
     const sortedRefs = [...executionRefs.entries()]
@@ -976,9 +956,7 @@ function selectedPageProjection(
   const topicsByNode = topicSetsByNode(topicAuthority, nodes);
   const selectedTopicIds = new Set(
     topicAuthority.mappings
-      .filter(
-        (mapping) => mapping.sitePageId === selectedSitePageId,
-      )
+      .filter((mapping) => mapping.sitePageId === selectedSitePageId)
       .map((mapping) => mapping.topicNodeId),
   );
   if (selectedTopicIds.size === 0) {
@@ -998,8 +976,7 @@ function selectedPageProjection(
 
   const existingEdges = new Set(
     edges.map(
-      (edge) =>
-        `${edge.sourceCanonicalUrl}\u0000${edge.targetCanonicalUrl}`,
+      (edge) => `${edge.sourceCanonicalUrl}\u0000${edge.targetCanonicalUrl}`,
     ),
   );
   const recommendations: InternalLinkRecommendation[] = [];
@@ -1056,8 +1033,7 @@ function selectedPageProjection(
         },
     recommendations: projected,
     totalRecommendationCount: recommendations.length,
-    recommendationsTruncated:
-      recommendations.length > projected.length,
+    recommendationsTruncated: recommendations.length > projected.length,
   };
 }
 
@@ -1068,10 +1044,7 @@ async function internalLinkMapInSnapshot(
   selectedSitePageId: string | null,
   generatedAt: string,
 ): Promise<GrowthMapInternalLinkMap> {
-  const project = await new ProjectsRepository(exec).findById(
-    scope,
-    projectId,
-  );
+  const project = await new ProjectsRepository(exec).findById(scope, projectId);
   if (
     !project ||
     project.id !== projectId ||
@@ -1092,12 +1065,7 @@ async function internalLinkMapInSnapshot(
   }
   const crawlSnapshot = authority.crawlSnapshot;
   if (crawlSnapshot === null) {
-    return unavailableResponse(
-      projectId,
-      generatedAt,
-      NO_FROZEN_CRAWL,
-      null,
-    );
+    return unavailableResponse(projectId, generatedAt, NO_FROZEN_CRAWL, null);
   }
   if (crawlSnapshot.availability === "unavailable") {
     if (crawlSnapshot.limitation.trim().length === 0) {
@@ -1112,18 +1080,17 @@ async function internalLinkMapInSnapshot(
   }
 
   const repository = new InternalLinkMapRepository(exec);
-  const observationRows =
-    await repository.listFrozenCrawlObservations(projectScope, {
+  const observationRows = await repository.listFrozenCrawlObservations(
+    projectScope,
+    {
       diagnosticRunId: authority.run.id,
       crawlSnapshotId: crawlSnapshot.id,
-    });
+    },
+  );
   const working = buildWorkingNodes(observationRows, authority);
   const builtEdges = buildEdges(working.nodes);
   const totalEdgeCount = builtEdges.edges.length;
-  const projectedEdges = builtEdges.edges.slice(
-    0,
-    MAX_INTERNAL_LINK_MAP_EDGES,
-  );
+  const projectedEdges = builtEdges.edges.slice(0, MAX_INTERNAL_LINK_MAP_EDGES);
   const edgesTruncated = totalEdgeCount > projectedEdges.length;
 
   const limitations = uniqueLimitations([
@@ -1132,9 +1099,7 @@ async function internalLinkMapInSnapshot(
       ? [crawlSnapshot.limitation]
       : []),
     ...working.observationLimitations,
-    ...(builtEdges.unresolvedTargetCount > 0
-      ? [UNRESOLVED_LINK_TARGET]
-      : []),
+    ...(builtEdges.unresolvedTargetCount > 0 ? [UNRESOLVED_LINK_TARGET] : []),
     ...(edgesTruncated ? [TRUNCATED_EDGES] : []),
   ]);
   const graphComplete =
