@@ -112,7 +112,7 @@ That depends on which task you automate first and how much manual time it remove
 
 ## Take Action
 
-Start by mapping your sales workflow and flagging every task a person repeats more than ten times a week. [Explore GenGrowth Features](https://gengrowth.ai/en/features) to see which of those tasks an agent can own end to end and where it should hand the deal back to a rep. The teams that draw that line first tend to scale pipeline without watching their margin quietly slip away.
+Start by mapping your sales workflow and flagging every task a person repeats more than ten times a week. [Explore GenGrowth Features](https://gengrowth.ai/pricing) to see which of those tasks an agent can own end to end and where it should hand the deal back to a rep. The teams that draw that line first tend to scale pipeline without watching their margin quietly slip away.
 
 ## Sources
 

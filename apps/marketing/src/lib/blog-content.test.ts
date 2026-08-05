@@ -145,4 +145,23 @@ describe("repository-backed blog content", () => {
     // Newest-first ordering: the most recent backfilled article dates to 07-31.
     expect(posts[0]?.published_at).toBe("2026-07-31T00:00:00.000Z");
   });
+
+  it("keeps every published product CTA on the product subdomain", async () => {
+    const englishPosts = await getLocalBlogPosts("en");
+    const combinedContent = englishPosts.map((post) => post.content).join("\n");
+
+    expect(combinedContent).not.toContain("https://gengrowth.ai/app");
+    expect(combinedContent).not.toContain("https://gengrowth.ai/en/features");
+    expect(combinedContent).not.toContain("https://gengrowth.ai/en/pricing");
+    expect(combinedContent).toContain("https://app.gengrowth.ai/");
+  });
+
+  it("does not link published articles through retired marketing routes", async () => {
+    const posts = await getLocalBlogPosts();
+    const combinedContent = posts.map((post) => post.content).join("\n");
+
+    for (const retiredPath of ["/features", "/templates", "/glossary"]) {
+      expect(combinedContent).not.toContain(`href="${retiredPath}"`);
+    }
+  });
 });

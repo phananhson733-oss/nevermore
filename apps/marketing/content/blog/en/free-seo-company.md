@@ -1,12 +1,12 @@
 ---
-title: Free SEO Company Explained: How to Vet Providers Who Actually Compound
-excerpt: This kind of provider offers search optimization work — audits, technical fixes, content guidance, or link outreach — at no upfront charge, usually as a lead-in to a paid engagement or bundled inside a broader platform subscription.
+title: Free SEO Company: How to Vet No-Cost SEO Offers
+excerpt: Learn what a free SEO company may include, how the offer is funded, which warning signs matter, and how to judge whether the work can compound.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-01
-updatedAt: 2026-07-01
+updatedAt: 2026-08-05
 heroImage: /images/blog/free-seo-company.jpg
 heroImageAlt: Flat-vector illustration: a gift box with its lid lifted and tilted, revealing a cluster of gears packed inside
 localeExclusive: true
@@ -99,7 +99,7 @@ The biggest risk is short-term tactics that produce a ranking spike and then col
 
 ## Take Action
 
-If you are weighing a free SEO offer and want a second opinion on whether it compounds or resets, gengrowth.ai is happy to help. [Book a free GenGrowth consultation](https://gengrowth.ai/app) and we will walk through your current SEO posture, flag any short-term tactics worth avoiding, and outline the durable, white-hat path that fits your team — no pressure to sign anything.
+If you are weighing a free SEO offer and want a second opinion on whether it compounds or resets, gengrowth.ai is happy to help. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will walk through your current SEO posture, flag any short-term tactics worth avoiding, and outline the durable, white-hat path that fits your team — no pressure to sign anything.
 
 ## Sources
 

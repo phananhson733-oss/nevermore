@@ -100,7 +100,7 @@ Not directly — it measures crawlability and on-page hygiene, not demand or con
 
 ## Take Action
 
-Run a crawl on your worst-performing client site and pull its category breakdown, not just the total. Within minutes you'll see which bucket — crawl, on-page, or authority — is dragging the number down, and whether any of it maps to traffic you've actually lost. That single view is what turns a vanity metric into a priced work order your team can defend. [Start your free GenGrowth trial](https://gengrowth.ai/app) and build the audit workflow around decisions, not dashboards.
+Run a crawl on your worst-performing client site and pull its category breakdown, not just the total. Within minutes you'll see which bucket — crawl, on-page, or authority — is dragging the number down, and whether any of it maps to traffic you've actually lost. That single view is what turns a vanity metric into a priced work order your team can defend. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and build the audit workflow around decisions, not dashboards.
 
 ## Sources
 

@@ -111,7 +111,7 @@ Not necessarily. Price often reflects workflow coverage and seat count more than
 
 ## Take Action
 
-Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you buy on price. You will see your real cost per recovered hour and which "cheap" tool would have quietly cost the most. [Start your free GenGrowth trial](https://gengrowth.ai/app) and baseline one workflow this week.
+Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you buy on price. You will see your real cost per recovered hour and which "cheap" tool would have quietly cost the most. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and baseline one workflow this week.
 
 ## Sources
 

@@ -111,7 +111,7 @@ Yes. Google's own guidance says there are no special optimisations or markup nee
 
 ## Take Action
 
-Run one cost-effective SEO audit cycle inside GenGrowth on the smallest cluster you most want to own this year. You'll see which pages would compound, which ones a future update would likely clip, and where a refresh would outperform a fresh page — all before committing the rest of the budget to new production. [Start your free GenGrowth trial](https://gengrowth.ai/app) and run the audit before you scope the engagement.
+Run one cost-effective SEO audit cycle inside GenGrowth on the smallest cluster you most want to own this year. You'll see which pages would compound, which ones a future update would likely clip, and where a refresh would outperform a fresh page — all before committing the rest of the budget to new production. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run the audit before you scope the engagement.
 
 ## Sources
 

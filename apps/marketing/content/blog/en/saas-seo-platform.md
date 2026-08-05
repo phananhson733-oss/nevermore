@@ -1,12 +1,12 @@
 ---
-title: What a SaaS SEO Platform Should Actually Do for Your Funnel
-excerpt: A saas seo platform is software built to optimize the specific pages a SaaS company ranks and converts on — trial, pricing, integration, and comparison pages — rather than generic blog content.
+title: SaaS SEO Platform: What It Should Do for Your Funnel
+excerpt: See how a SaaS SEO platform should connect trial, pricing, integration, comparison, and content pages to measurable funnel outcomes.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-06-16
-updatedAt: 2026-06-16
+updatedAt: 2026-08-05
 heroImage: /images/blog/saas-seo-platform.jpg
 heroImageAlt: Flat-vector illustration: four page cards laid out in a two-by-two grid, each card carrying a different simple icon: a tag, a switch, a plug, and two side-by-side columns
 localeExclusive: true
@@ -108,7 +108,7 @@ There's no fixed number; the limit is whether each page answers a distinct query
 
 ## Take Action
 
-Run a free audit of your trial and pricing pages inside GenGrowth, and you'll get a prioritized list of the funnel-page fixes that move trial starts — not another dashboard of vanity metrics. Seeing which product pages leak organic intent is usually the moment teams realize their SEO budget has been pointed at the wrong work. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit your funnel pages first.
+Run a free audit of your trial and pricing pages inside GenGrowth, and you'll get a prioritized list of the funnel-page fixes that move trial starts — not another dashboard of vanity metrics. Seeing which product pages leak organic intent is usually the moment teams realize their SEO budget has been pointed at the wrong work. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit your funnel pages first.
 
 ## Sources
 

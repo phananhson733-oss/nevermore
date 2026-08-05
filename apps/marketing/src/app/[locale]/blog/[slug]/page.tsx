@@ -71,7 +71,7 @@ export async function generateMetadata({
       languages: {
         [locale]: canonical,
         ...(alternatePost ? { [alternateLocale]: alternate } : {}),
-        "x-default": canonical,
+        "x-default": localeUrl("en", `/blog/${slug}`),
       },
     },
   };

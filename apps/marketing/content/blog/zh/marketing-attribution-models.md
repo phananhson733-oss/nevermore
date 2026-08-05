@@ -6,13 +6,13 @@ category: methodology
 pillar: attribution
 status: published
 publishedAt: 2026-02-10
-updatedAt: 2026-03-01
+updatedAt: 2026-08-05
 heroImage: /images/blog/marketing-attribution-models.jpg
 heroImageAlt: 扁平矢量插图：四条粗细不同的路径从左侧汇聚到右侧的一只奖杯
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>归因到底意味着什么</h2>
 <p>营销归因是将转化的功劳分配给影响它的营销触点的过程。当用户注册你的产品时，他们在过去 30 天内与你品牌的 7 次互动中，到底哪些真正起了作用？答案取决于你使用哪种归因模型。</p>
 <p>归因之所以重要，因为它决定了你的预算分配。</p>
@@ -44,7 +44,7 @@ localeExclusive: false
 <p><strong>适用：</strong>流量和转化量大的产品。</p>
 
 <h2>渠道隔离：被遗漏的关键</h2>
-<p>渠道隔离测试暂时停止一个渠道的活动，衡量对转化的影响。GenGrowth 使用 <a href="/features">UTM 指纹追踪</a>实现轻量渠道隔离。</p>
+<p>渠道隔离测试会暂时停止一个渠道的活动，并衡量转化变化。测试前应先定义干预方式、护栏指标、对比窗口和 UTM 规则，否则季节性或追踪漂移可能被误判成因果影响。</p>
 
 <h2>UTM 参数：基础中的基础</h2>
 <ul>

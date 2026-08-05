@@ -111,7 +111,7 @@ Sometimes, when one person on the team has real search-craft and the cadence is 
 
 ## Take Action
 
-Run one organic-SEO audit cycle inside GenGrowth on the cluster you most want to own this quarter. You'll see which pages would compound, which ones a future update would likely clip, and where the brief template is silently costing AI search visibility — all before signing a retainer or commissioning a single new page. [Start your free GenGrowth trial](https://gengrowth.ai/app) and run the audit before you scope the engagement.
+Run one organic-SEO audit cycle inside GenGrowth on the cluster you most want to own this quarter. You'll see which pages would compound, which ones a future update would likely clip, and where the brief template is silently costing AI search visibility — all before signing a retainer or commissioning a single new page. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run the audit before you scope the engagement.
 
 ## Sources
 

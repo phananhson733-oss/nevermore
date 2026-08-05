@@ -110,7 +110,7 @@ interface InternalLinkAuditContent {
 }
 
 const EN: InternalLinkAuditContent = {
-  metaTitle: "Free Internal Link Audit — Find Orphan Candidates & Weak Internal Links",
+  metaTitle: "Free Internal Link Audit: Find Orphan and Weak Pages",
   metaDescription:
     "Audit your internal link structure in one live online crawl. Find orphan candidates, weakly linked pages, deep pages, and unresolved targets. Free, no sign-up.",
   schemaDescription:

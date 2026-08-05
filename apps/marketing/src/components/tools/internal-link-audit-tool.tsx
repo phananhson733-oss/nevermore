@@ -1,5 +1,5 @@
-// @input  -- locale and a visitor's public website URL
-// @output -- transient, synchronous real crawl report; no fixed result fixture
+// @input  -- locale, visitor URL, public crawl API, consent-gated event tracker
+// @output -- transient real crawl report plus tool_start/tool_complete analytics
 // @pos    -- primary client surface for /[locale]/tools/internal-link-audit
 
 "use client";
@@ -39,6 +39,7 @@ import {
   buildInternalLinkAuditTree,
   type InternalLinkAuditTreeModel,
 } from "./internal-link-audit-tree";
+import { trackMarketingEvent } from "@/components/layout/google-analytics";
 
 type Phase = "idle" | "running" | "result" | "error";
 type TreeFilter = "all" | InternalLinkAuditNode["kind"];
@@ -805,7 +806,13 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
   const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId) ?? null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(null); setPayload(null); setSelectedFindingId(null); setPhase("running"); setStage(0);
+    event.preventDefault();
+    trackMarketingEvent("tool_start", { tool_name: "internal_link_audit" });
+    setError(null);
+    setPayload(null);
+    setSelectedFindingId(null);
+    setPhase("running");
+    setStage(0);
     try {
       const response = await fetch("/api/tools/internal-link-audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
       const body = (await response.json().catch(() => null)) as { data?: InternalLinkAuditPayload; error?: { code?: string } } | null;
@@ -828,6 +835,7 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
         body.data.result.findings.find((finding) => finding.nodeId === initialNodeId)?.id ?? null,
       );
       setPhase("result");
+      trackMarketingEvent("tool_complete", { tool_name: "internal_link_audit" });
     } catch { setError(copy.errorGeneric); setPhase("error"); }
   }
   const metricItems = report ? [[copy.mapped, String(report.pagesCrawled), Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network], [copy.fixes, String(report.findings.length), Route]] as const : [];

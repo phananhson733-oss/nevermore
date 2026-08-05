@@ -1,9 +1,9 @@
-// @input  — i18n/routing, next-intl, Google Fonts (DM Sans, Space Grotesk, Noto Sans SC), PageShell
-// @output — <html>/<body> + shell-scoped NextIntlClientProvider + font CSS variables
+// @input  — URL locale routing, next-intl messages, Google Fonts, PageShell
+// @output — statically enumerable locale shell + scoped client translations
 // @pos    — 国际化布局层，渲染 HTML 外壳并注入翻译上下文和全局组件
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { NextIntlClientProvider } from "next-intl";
-import { getMessages } from "next-intl/server";
+import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { Space_Grotesk, DM_Sans, Noto_Sans_SC } from "next/font/google";
 import { routing } from "@/i18n/routing";
@@ -37,6 +37,10 @@ const fontVars = [
   notoSansSC.variable,
 ].join(" ");
 
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
+
 export default async function LocaleLayout({
   children,
   params,
@@ -48,6 +52,10 @@ export default async function LocaleLayout({
   if (!routing.locales.includes(locale as "en" | "zh")) {
     notFound();
   }
+  // next-intl otherwise resolves the locale from request headers and opts the
+  // entire marketing tree into dynamic rendering. The URL segment is already
+  // the sole locale authority, so bind it before reading messages.
+  setRequestLocale(locale);
   const messages = await getMessages();
   // Keep the global client boundary deliberately small. Route-level client
   // surfaces provide their own namespace below this shell, so legacy content

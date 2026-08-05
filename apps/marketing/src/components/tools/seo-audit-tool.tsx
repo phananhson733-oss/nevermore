@@ -1,5 +1,5 @@
-// @input  -- current locale and public /api/tools/seo-audit response
-// @output -- interactive URL form and synchronous site-wide audit states
+// @input  -- locale, public SEO-audit API, and consent-gated event tracker
+// @output -- interactive audit states plus tool_start/tool_complete analytics
 // @pos    -- primary client surface for /[locale]/tools/seo-audit
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -12,6 +12,7 @@ import type {
   SeoAuditPayload,
   SeoAuditReport,
 } from "@sf/public-tools";
+import { trackMarketingEvent } from "@/components/layout/google-analytics";
 import { SeoAuditResults } from "./seo-audit-results";
 
 interface SeoAuditToolProps {
@@ -27,6 +28,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    trackMarketingEvent("tool_start", { tool_name: "seo_audit" });
     setLoading(true);
     setErrorCode(null);
     setReport(null);
@@ -45,6 +47,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
         return;
       }
       setReport(payload.data.result);
+      trackMarketingEvent("tool_complete", { tool_name: "seo_audit" });
     } catch {
       setErrorCode("unknown");
     } finally {

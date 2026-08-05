@@ -103,7 +103,7 @@ White hat describes methods search engines explicitly permit. For this kind of e
 
 ## Take Action
 
-If you are weighing whether an organic SEO service fits your growth plan, gengrowth.ai is happy to talk it through. [Book a free GenGrowth consultation](https://gengrowth.ai/app) and we will help you map the boundaries, methods, and realistic horizon for your specific situation — no pressure, just a clear read on whether an organic approach is the right investment for you.
+If you are weighing whether an organic SEO service fits your growth plan, gengrowth.ai is happy to talk it through. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will help you map the boundaries, methods, and realistic horizon for your specific situation — no pressure, just a clear read on whether an organic approach is the right investment for you.
 
 ## Sources
 

@@ -110,7 +110,7 @@ A starter tier is a fixed entry-level bundle for first-time buyers with a narrow
 
 ## Take Action
 
-Before you compare one starter package against another on price, write down the single 90-day ranking milestone you actually need, then ask each vendor to commit to it. Run that milestone through GenGrowth to set your baseline first, so you can tell a package that ranks from one that only stays busy. [Start your free GenGrowth trial](https://gengrowth.ai/app) and baseline your milestone keywords this week.
+Before you compare one starter package against another on price, write down the single 90-day ranking milestone you actually need, then ask each vendor to commit to it. Run that milestone through GenGrowth to set your baseline first, so you can tell a package that ranks from one that only stays busy. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and baseline your milestone keywords this week.
 
 ## Sources
 

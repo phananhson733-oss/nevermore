@@ -103,7 +103,7 @@ Yes. Integration is procedural before it is technological. Even a three-person t
 
 ## Take Action
 
-If you are trying to tell whether your SEO is genuinely integrated or just bundled, gengrowth.ai can help you map the feedback loop your program is missing. [Start a free GenGrowth trial](https://gengrowth.ai/app) and we will show you how a single coordinated system across technical, content, and off-page work turns scattered effort into compounding results.
+If you are trying to tell whether your SEO is genuinely integrated or just bundled, gengrowth.ai can help you map the feedback loop your program is missing. [Start a free GenGrowth trial](https://app.gengrowth.ai/) and we will show you how a single coordinated system across technical, content, and off-page work turns scattered effort into compounding results.
 
 ## Sources
 

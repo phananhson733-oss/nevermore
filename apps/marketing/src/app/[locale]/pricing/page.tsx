@@ -20,11 +20,13 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "pricing.hero" });
   const tNav = await getTranslations({ locale, namespace: "nav" });
   return generatePageMetadata({
     title: tNav("pricing"),
-    description: t("subtitle"),
+    description:
+      locale === "en"
+        ? "Use GenGrowth's free SEO diagnostics, then move into a connected workflow for research, structure, internal links, authority, and measurement."
+        : "先使用 GenGrowth 的免费 SEO 诊断，再进入串联研究、网站结构、内链、权威建设与衡量的完整工作流。",
     locale,
     path: "/pricing",
   });

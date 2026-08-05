@@ -1,5 +1,5 @@
-// @input  -- Header, Footer, CookieBanner(lazy), siteConfig, TrialProvider
-// @output -- PageShell client wrapper (manages product handoff and Cookie modal state)
+// @input  -- layout chrome, consent UI, consent-gated GA4, product handoff config
+// @output -- global marketing client shell and privacy-aware analytics runtime
 // @pos    -- Global layout client layer, used by [locale]/layout.tsx
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
@@ -10,6 +10,7 @@ import { Header } from "./header";
 import { Footer } from "./footer";
 import { TrialProvider } from "./waitlist-context";
 import { siteConfig } from "@/config/site";
+import { GoogleAnalytics } from "./google-analytics";
 
 const CookieBanner = dynamic(
   () =>
@@ -32,6 +33,7 @@ export function PageShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TrialProvider value={ctxValue}>
+      <GoogleAnalytics />
       <Header />
       <main className="pt-16">{children}</main>
       <Footer onOpenCookiePreferences={() => setCookiePrefsOpen(true)} />

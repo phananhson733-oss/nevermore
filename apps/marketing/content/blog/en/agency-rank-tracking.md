@@ -110,7 +110,7 @@ Not if reports are fully white-labeled. Unbranded exports, your logo, and a sing
 
 ## Take Action
 
-Connect a few client portfolios and run one automated reporting cycle inside GenGrowth to see the export side by side with your current manual process. You'll get a branded, multi-client report plus AI search visibility data in a fraction of the usual hours — and a concrete read on how much margin your manual reporting is silently costing. [Start your free GenGrowth trial](https://gengrowth.ai/app) and measure the time savings against your own baseline before you commit.
+Connect a few client portfolios and run one automated reporting cycle inside GenGrowth to see the export side by side with your current manual process. You'll get a branded, multi-client report plus AI search visibility data in a fraction of the usual hours — and a concrete read on how much margin your manual reporting is silently costing. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and measure the time savings against your own baseline before you commit.
 
 ## Sources
 

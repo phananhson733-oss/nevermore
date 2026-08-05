@@ -104,7 +104,7 @@ It can if the content is thin and unreviewed, because a global event floods the 
 
 ## Take Action
 
-Map your tournament calendar and lane every planned page before the pressure hits — if **world cup 2026 content marketing ai** is the operating model you want to test, gengrowth.ai is happy to help you pressure-test the workflow. [Start your free GenGrowth trial](https://gengrowth.ai/app) and you will leave with a stage-by-stage plan that shows exactly which pages AI can draft and which need an editor, so the real decision — where your margin comes from during a short, crowded spike — is made on evidence instead of gut feel.
+Map your tournament calendar and lane every planned page before the pressure hits — if **world cup 2026 content marketing ai** is the operating model you want to test, gengrowth.ai is happy to help you pressure-test the workflow. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and you will leave with a stage-by-stage plan that shows exactly which pages AI can draft and which need an editor, so the real decision — where your margin comes from during a short, crowded spike — is made on evidence instead of gut feel.
 
 ## Sources
 

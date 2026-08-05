@@ -13,18 +13,6 @@ import { localeUrl } from "@/lib/locale-path";
 // standalone trace; after the bridge is removed this may become static/ISR.
 export const dynamic = "force-dynamic";
 
-// Per-instance stable timestamp for STATIC routes. Previously every static entry
-// emitted `lastModified: new Date()` (the crawl time), so Google saw every URL
-// "modified" on every crawl, which trains it to distrust our lastmod signal.
-// BUILD_DATE is evaluated once at module load, i.e. per serverless cold start:
-// NOT per request (the real win), but also NOT strictly per deploy. A scale-to-
-// zero cold start hours later restamps it, and concurrent instances can differ.
-// That is far better than per-request churn, but it is not a single content-
-// signed date. For true per-deploy/content stability, inject a build-time
-// timestamp or port oracle's content-hash lastmod manifest
-// (seo-lastmod-manifest.json). Blog posts already use real post.updated_at below.
-const BUILD_DATE = new Date();
-
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = ["en", "zh"];
   const staticPages = ["", "/tools", "/blog", "/pricing"];
@@ -47,7 +35,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
       entries.push({
         url: localeUrl(locale, page),
-        lastModified: BUILD_DATE,
         changeFrequency,
         priority,
       });
@@ -103,7 +90,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     for (const tool of tools) {
       entries.push({
         url: localeUrl(locale, `/tools/${tool}`),
-        lastModified: BUILD_DATE,
         changeFrequency: "monthly",
         priority: 0.7,
       });

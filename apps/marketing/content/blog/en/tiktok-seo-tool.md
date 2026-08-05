@@ -110,7 +110,7 @@ Usually because the target query never appears in the signals TikTok indexes —
 
 ## Take Action
 
-List the ten queries your audience types into TikTok search, then run one video through the full signal checklist — spoken keyword, on-screen text, caption, topic tag — before you commission another batch. You will see which clips were invisible to search all along and how much durable traffic that left on the table. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one TikTok video for search this week.
+List the ten queries your audience types into TikTok search, then run one video through the full signal checklist — spoken keyword, on-screen text, caption, topic tag — before you commission another batch. You will see which clips were invisible to search all along and how much durable traffic that left on the table. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one TikTok video for search this week.
 
 ## Sources
 
