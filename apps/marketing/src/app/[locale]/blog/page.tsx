@@ -2,6 +2,8 @@
 // @output — 博客列表页（话题筛选 + 工具续接 + SEO metadata + BreadcrumbList JSON-LD）
 // @pos    — 营销官网内容获客入口
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, getTranslations } from "next-intl/server";
 import { getAllBlogPosts, getBlogPosts, getTotalPages } from "@/lib/blog";
@@ -35,20 +37,48 @@ const COMPARISON_QUESTION_KEYS = {
   ahrefs: "ahrefs",
 } as const;
 
+/**
+ * `?page=` is operator- and crawler-supplied, so a non-numeric or negative
+ * value must collapse to the first page rather than reach the slice maths as
+ * NaN — `Math.max(1, NaN)` is NaN, which silently served page one under a
+ * URL that claims to be something else.
+ */
+function parsePageParam(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "1", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
-}) {
+  searchParams: Promise<{ page?: string; category?: string; pillar?: string }>;
+}): Promise<Metadata> {
   const { locale } = await params;
+  const { page: pageParam, category, pillar } = await searchParams;
+  const page = parsePageParam(pageParam);
+  // Paginated listings must self-canonicalise. Pointing page 2+ back at /blog
+  // told Google they were duplicates of the first page, so the 51 posts that
+  // only appear on deeper pages lost their listing-side discovery path.
+  // Filtered views stay canonicalised to /blog: they are slices of the same
+  // set, and we do not want every category × page combination indexed.
+  const isFiltered = Boolean(category) || Boolean(pillar);
+  const path = page > 1 && !isFiltered ? `/blog?page=${page}` : "/blog";
+  const pageSuffix =
+    page > 1 && !isFiltered
+      ? locale === "en"
+        ? ` — Page ${page}`
+        : ` — 第 ${page} 页`
+      : "";
   return generatePageMetadata({
-    title: locale === "en" ? "Blog" : "博客",
+    title: (locale === "en" ? "Blog" : "博客") + pageSuffix,
     description:
       locale === "en"
         ? "Evidence-led SEO methods, public-tool guides, and practical decision frameworks from the GenGrowth team."
         : "来自 GenGrowth 团队的证据优先 SEO 方法、公开工具指南与可执行决策框架。",
     locale,
-    path: "/blog",
+    path,
   });
 }
 
@@ -61,7 +91,7 @@ export default async function BlogPage({
 }) {
   const { locale } = await params;
   const { page: pageParam, category, pillar } = await searchParams;
-  const page = Math.max(1, parseInt(pageParam || "1", 10));
+  const page = parsePageParam(pageParam);
   const t = await getTranslations({ locale, namespace: "blog" });
   const messages = await getMessages();
   const allPublishedPosts = await getAllBlogPosts({ locale });
@@ -99,6 +129,12 @@ export default async function BlogPage({
     pillar: validPillar,
   });
   const totalPages = getTotalPages(total);
+  // Out-of-range pages used to render as a 200 with an empty list, so every
+  // `?page=<any number>` minted another indexable soft 404. Page one stays
+  // reachable — an empty result there has a real empty state to show.
+  if (page > 1 && page > totalPages) {
+    notFound();
+  }
   const comparisons = await Promise.all(
     COMPARISON_SLUGS.map(async (slug) => {
       const comparison = await getTranslations({
@@ -128,14 +164,19 @@ export default async function BlogPage({
         />
         <VisibleBreadcrumb
           items={[
-            { label: locale === "en" ? "Home" : "首页", href: localePath(locale) },
+            {
+              label: locale === "en" ? "Home" : "首页",
+              href: localePath(locale),
+            },
             { label: locale === "en" ? "Blog" : "博客" },
           ]}
         />
 
         <header className="mb-12 border-b border-brand-border/60 pb-12 pt-7 md:pb-16 md:pt-12">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">
-            {locale === "en" ? "Methods, decisions, and practical next steps" : "方法、决策与可执行的下一步"}
+            {locale === "en"
+              ? "Methods, decisions, and practical next steps"
+              : "方法、决策与可执行的下一步"}
           </p>
           <h1 className="mt-4 text-[38px] font-bold leading-[1.02] tracking-[-0.04em] text-text-dark-primary md:text-[54px]">
             {t("title")}
@@ -296,10 +337,14 @@ export default async function BlogPage({
         <section className="mt-20 grid gap-5 rounded-3xl border border-brand-border/70 bg-brand-bg-alt/50 p-6 md:grid-cols-[1fr_auto] md:items-end md:p-8">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
-              {locale === "en" ? "Ready to apply a lesson?" : "准备把一个方法用起来？"}
+              {locale === "en"
+                ? "Ready to apply a lesson?"
+                : "准备把一个方法用起来？"}
             </p>
             <h2 className="mt-3 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
-              {locale === "en" ? "Start with an evidence-led site diagnostic." : "先从基于证据的网站诊断开始。"}
+              {locale === "en"
+                ? "Start with an evidence-led site diagnostic."
+                : "先从基于证据的网站诊断开始。"}
             </h2>
             <p className="mt-3 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
               {locale === "en"

@@ -22,7 +22,7 @@ An SEO outreach agency is **a service that earns links to your site by pitching 
 
 When an agency leads with a links-per-month figure and goes quiet on where those links land, you are looking at a volume play. The relevance frame is the same one that drives durable [SEO for SaaS](/blog/seo-for-saas): links compound when they sit on pages search engines and buyers both trust.
 
-## Why It Matters for Your Workflow
+## How Link Volume Hides the Risk You're Buying
 
 Link volume is a vanity metric that hides risk. A high monthly count can quietly come from link schemes — private networks, paid-without-disclosure placements, sitewide footer links — the exact patterns Google Search Essentials names as link spam and discounts or penalizes. You inherit that risk the moment those links point at your domain, and unwinding it is slower and costlier than the campaign ever was.
 

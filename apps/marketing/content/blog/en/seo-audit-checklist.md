@@ -22,7 +22,7 @@ An SEO audit checklist is **a structured list of the technical, on-page, and off
 
 A practitioner who works a 50-item list top to bottom spends the same effort on a 0.1% item as on a 15% one. The fix is not a longer SEO audit checklist — it is one ordered so the highest-impact work happens first.
 
-## Why It Matters for Your Workflow
+## How a Category-Ordered Checklist Wastes Your Time
 
 Time is the constraint a category-organized checklist quietly wastes. When items sit under "Technical," "On-Page," and "Off-Page" headers, you process them in reading order, and reading order has nothing to do with ranking impact. You can burn an hour normalizing trailing-slash redirects while a noindex tag on your money page goes unspotted until item 38.
 
@@ -46,7 +46,7 @@ A lone marketer running a technical SEO checklist needs to know what to fix befo
 
 A team taking over an old site faces a backlog of hundreds of flagged issues. Ordered by category, the backlog looks infinite. Ordered by ranking impact, it collapses into a short list: fix indexation, then the handful of pages losing the most traffic, then everything else as capacity allows. The full SEO audit checklist still exists — it is just sequenced so the first day's work is the work that pays.
 
-## Common Implementation Misreadings
+## Why a Longer Checklist Makes You Slower
 
 Most wasted audit effort traces back to a few predictable misreads:
 

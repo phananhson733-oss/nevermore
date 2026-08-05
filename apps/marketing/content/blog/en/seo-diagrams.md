@@ -20,7 +20,7 @@ SEO diagrams are **visual mental models — the workflow loop, the site-structur
 - Described in words so you can redraw each one, not handed to you as a static image to admire
 - Judged by whether they change a decision — what to do next — not by how polished they look in a slide
 
-## Why It Matters for Your Workflow
+## Why a Flat Task List Keeps You Treating Symptoms
 
 SEO diagrams matter because organic search is a system with feedback loops, and a team that can only see the system as a flat task list keeps treating symptoms one at a time. When a ranking drops, the writer wants to add words, the developer wants to check page speed, and the manager wants a report — three reasonable instincts that pull in three directions because nobody is holding the same picture of how the parts connect. A shared diagram replaces that scramble with a single reference everyone can point at.
 

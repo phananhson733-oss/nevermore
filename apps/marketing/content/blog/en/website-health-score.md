@@ -20,7 +20,7 @@ A website health score is **a single number that rolls up crawl, on-page, and au
 - Stays bounded to what automated crawlers and link indexes can measure, not business outcomes
 - Works as a triage pointer to a problem area, not a diagnosis of the cause behind it
 
-## Why It Matters for Your Workflow
+## How One Number Decides Your Team's Next Hour
 
 The score matters because it quietly sets how your team spends its next hour. A red rating triggers work; a green one ends the conversation — and both calls get made on a number most people never open up. Across the white-label rollouts we've audited, the pattern repeats: teams react to the headline total instead of the signal underneath it, then burn a sprint fixing low-impact warnings while a real indexation problem sits untouched. For an agency reselling audits or a SaaS team watching its own site, the cost of that mismatch shows up three ways:
 
@@ -37,7 +37,7 @@ A website health score is assembled, not measured. The tool crawls your pages, s
 3. **Reseller reporting.** A white-label partner ships a monthly figure to the end client, treating the trend line — not the absolute value — as proof the retainer earns its keep.
 4. **Triage under pressure.** When a site throws 400 warnings, the category breakdown decides which bucket — crawl, on-page, or authority — a limited budget touches first.
 
-## Common Implementation Misreadings
+## Why a Higher Score Is Not Always a Better Site
 
 Most confusion comes from treating the number as more precise than it is. These are the misreadings we see stall audits before real work begins:
 

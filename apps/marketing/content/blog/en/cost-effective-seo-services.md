@@ -20,7 +20,7 @@ Cost effective SEO services are **an engagement that produces durable organic vi
 - Skips tactics whose returns die inside a quarter — link networks, scaled programmatic, AI-only drafts
 - Keeps measurement honest by reporting on pages that survived the last update, not just pages that ranked before it
 
-## Why It Matters for Your Workflow
+## What a Small Budget Without Discipline Reliably Produces
 
 Cost effective SEO services matter because a small budget without discipline reliably produces the worst SEO outcome: enough pages to look busy, not enough quality to rank, and a portfolio that needs to be rebuilt every time the guidelines tighten. The deciding factor in most small-budget engagements is rarely whether the team knew the right tactic; it is whether the retainer was scoped to fewer things that compound, or more things that erode.
 
@@ -41,7 +41,7 @@ The point where this intervenes is in scoping: the moment a generic retainer wou
 
 Two more scenarios surface once a small engagement matures. First, the team starts seeing returns on a small set of pages that keep ranking, so the conversation with the CFO shifts from "is SEO working" to "which of these pages should we double down on." Second, refreshes become cheaper over time because the original briefs were specific, so updating a page is a surgical edit instead of a rewrite. In engagements we've watched succeed on small budgets, the wasted effort was almost never in the writing itself; it was in the volume the original retainer locked in.
 
-## Common Implementation Misreadings
+## Cheapest Per Page Is the Most Expensive Per Year
 
 Most shallow comparison content treats cost effective SEO services as a discount line item, which leads buyers to misread what actually drives return. A few misreadings recur:
 
