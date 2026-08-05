@@ -14,7 +14,10 @@ import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import Link from "next/link";
 import { COMPARISON_SLUGS } from "@/lib/mock/compare-content";
 import { localePath, localeUrl } from "@/lib/locale-path";
-import { resolveBlogListFilters } from "@/lib/blog-list-filters";
+import {
+  parseBlogPageParam,
+  resolveBlogListFilters,
+} from "@/lib/blog-list-filters";
 
 const COMPARISON_QUESTION_KEYS = {
   "manual-growth": "manualGrowth",
@@ -22,17 +25,6 @@ const COMPARISON_QUESTION_KEYS = {
   babylovegrowth: "babylovegrowth",
   ahrefs: "ahrefs",
 } as const;
-
-/**
- * `?page=` is operator- and crawler-supplied, so a non-numeric or negative
- * value must collapse to the first page rather than reach the slice maths as
- * NaN — `Math.max(1, NaN)` is NaN, which silently served page one under a
- * URL that claims to be something else.
- */
-function parsePageParam(raw: string | undefined): number {
-  const parsed = Number.parseInt(raw ?? "1", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-}
 
 export async function generateMetadata({
   params,
@@ -43,13 +35,16 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale } = await params;
   const { page: pageParam, category, pillar } = await searchParams;
-  const page = parsePageParam(pageParam);
+  const parsedPage = parseBlogPageParam(pageParam);
+  if (!parsedPage.ok) notFound();
+  const page = parsedPage.page;
   const allPublishedPosts = await getAllBlogPosts({ locale });
-  const { validCategory, validPillar } = resolveBlogListFilters(
+  const { invalid, validCategory, validPillar } = resolveBlogListFilters(
     allPublishedPosts,
     category,
     pillar,
   );
+  if (invalid) notFound();
   // Paginated listings must self-canonicalise. Pointing page 2+ back at /blog
   // told Google they were duplicates of the first page, so the 51 posts that
   // only appear on deeper pages lost their listing-side discovery path.
@@ -83,7 +78,9 @@ export default async function BlogPage({
 }) {
   const { locale } = await params;
   const { page: pageParam, category, pillar } = await searchParams;
-  const page = parsePageParam(pageParam);
+  const parsedPage = parseBlogPageParam(pageParam);
+  if (!parsedPage.ok) notFound();
+  const page = parsedPage.page;
   const t = await getTranslations({ locale, namespace: "blog" });
   const messages = await getMessages();
   const allPublishedPosts = await getAllBlogPosts({ locale });
@@ -94,9 +91,11 @@ export default async function BlogPage({
   const {
     availableCategories,
     availablePillars,
+    invalid,
     validCategory,
     validPillar,
   } = resolveBlogListFilters(allPublishedPosts, category, pillar);
+  if (invalid) notFound();
   const { posts, total } = await getBlogPosts({
     locale,
     page,

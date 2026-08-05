@@ -21,7 +21,9 @@ import {
   targetHostOf,
 } from "./crawl-cache.ts";
 
-const TOOL_NAME = "internal_link_audit";
+// Keep cached payloads isolated by response contract. Otherwise a v2 result
+// can survive a deploy and reach the v3 UI for up to the cache TTL.
+const CACHE_NAMESPACE = "internal_link_audit.v3";
 
 const REQUEST_BODY_LIMIT_BYTES = 4_096;
 
@@ -61,11 +63,11 @@ const DEFAULT_DEPENDENCIES: InternalLinkAuditHandlerDependencies = {
       clientIp,
       normalizedUrl,
       DEFAULT_CRAWL_GATE_DEPENDENCIES,
-      (host) => readCrawlCache(TOOL_NAME, host),
+      (host) => readCrawlCache(CACHE_NAMESPACE, host),
     ),
   cachePayload: async (normalizedUrl, payload) => {
     const host = targetHostOf(normalizedUrl);
-    if (host) await writeCrawlCache(TOOL_NAME, host, payload);
+    if (host) await writeCrawlCache(CACHE_NAMESPACE, host, payload);
   },
 };
 

@@ -4,7 +4,7 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { MetadataRoute } from "next";
-import { siteConfig } from "@/config/site";
+import { siteConfig } from "../config/site";
 
 /**
  * 非内容路径。每个具名 user-agent 组都要重复声明一次：robots.txt 里
@@ -14,7 +14,12 @@ import { siteConfig } from "@/config/site";
  * 不含 `/_next/`：Google 明确要求不要屏蔽渲染所需的 CSS/JS，屏蔽它会
  * 影响渲染判定；静态资源本身不构成可索引内容，无需 disallow。
  */
-const NON_CONTENT_PATHS = ["/api/", "/app/"];
+const NON_CONTENT_PATHS = [
+  "/api/",
+  "/app/",
+  "/*?*category=",
+  "/*?*pillar=",
+];
 
 export default function robots(): MetadataRoute.Robots {
   return {

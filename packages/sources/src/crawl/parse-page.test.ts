@@ -92,6 +92,44 @@ describe("parsePage", () => {
     expect(about?.anchorText).toBe("About");
   });
 
+  it("decodes HTML entities in URL-valued attributes exactly once", () => {
+    const page = parsePage(
+      `<html><head>
+        <link rel="canonical" href="/listing?category=case_study&amp;pillar=attribution">
+      </head><body>
+        <a href="/listing?category=case_study&amp;pillar=attribution">Named</a>
+        <a href="/listing?category=case_study&#38;pillar=attribution">Decimal</a>
+        <a href="/listing?category=case_study&#x26;pillar=attribution">Hex</a>
+        <a href="/literal?value=%26amp%3B">Encoded literal</a>
+      </body></html>`,
+      BASE,
+    );
+
+    expect(page.canonicalTarget).toBe(
+      "https://example.com/listing?category=case_study&pillar=attribution",
+    );
+    expect(page.internalOutlinks.map((link) => link.targetSubjectUrl)).toEqual([
+      "https://example.com/listing?category=case_study&pillar=attribution",
+      "https://example.com/literal?value=%26amp%3B",
+    ]);
+  });
+
+  it("keeps subdomains outside the exact same-origin crawl graph", () => {
+    const page = parsePage(
+      `<body>
+        <a href="https://example.com/app">Same-origin path</a>
+        <a href="https://app.example.com/">Application subdomain</a>
+        <a href="http://example.com/insecure">Different scheme</a>
+        <a href="https://example.com:8443/admin">Different port</a>
+      </body>`,
+      BASE,
+    );
+
+    expect(page.internalOutlinks.map((link) => link.targetSubjectUrl)).toEqual([
+      "https://example.com/app",
+    ]);
+  });
+
   it("keeps exact fetch targets privately while persisted links remain aggregation identities", () => {
     const page = parsePage(
       `<body>

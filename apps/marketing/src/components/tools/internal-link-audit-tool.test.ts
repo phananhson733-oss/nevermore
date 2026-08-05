@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { InternalLinkAuditPayload } from "@sf/public-tools";
 
 import {
+  actionSummary,
   coverageSummary,
   retryAfterMessage,
   stopReasonLabel,
@@ -22,6 +23,14 @@ function report(
     linksObserved: 3,
     sitemapFetched: true,
     sitemapUrlsObserved: 10,
+    actionablePages: 3,
+    clickDepthDistribution: {
+      oneClick: 1,
+      twoClicks: 1,
+      threeClicks: 0,
+      fourPlusClicks: 2,
+      unreachable: 1,
+    },
     nodes: [],
     edges: [],
     findings: [],
@@ -70,6 +79,22 @@ describe("internal link audit result copy", () => {
     expect(coverageSummary(completed, "zh")).toBe(
       "本次在线扫描已采集 7 个可访问的静态 HTML 页面。",
     );
+  });
+
+  it("puts the actionable click-depth conclusion ahead of crawl process facts", () => {
+    expect(actionSummary(report(), "en")).toContain(
+      "3 indexable page(s) need attention",
+    );
+    expect(actionSummary(report(), "en")).toContain("Coverage was partial");
+    expect(actionSummary(report(), "zh")).toContain(
+      "有 3 个可索引页面需要关注",
+    );
+  });
+
+  it("does not invent a problem when no actionable page was found", () => {
+    expect(
+      actionSummary(report({ actionablePages: 0 }), "en"),
+    ).toContain("No indexable internal-link structure issue");
   });
 
   it("formats a trusted Retry-After value without inventing a wait time", () => {

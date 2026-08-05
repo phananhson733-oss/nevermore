@@ -114,13 +114,13 @@ const EN: InternalLinkAuditContent = {
   metaDescription:
     "Audit your internal link structure in one live online crawl. Find orphan candidates, weakly linked pages, deep pages, and unresolved targets. Free, no sign-up.",
   schemaDescription:
-    "A live public internal link audit that crawls static same-origin HTML, respects robots.txt, and does not store the submitted URL or report.",
+    "A live public internal link audit that crawls static same-origin HTML, respects robots.txt, and may temporarily share cached public crawl facts to avoid repeatedly hitting the same site.",
   schemaFeatures: [
     "Real same-origin static-HTML crawl",
     "No account and no sign-up; a generous hourly ceiling keeps the crawler from overloading the sites it audits",
     "Observed orphan candidates, deep pages, and unresolved targets",
     "Robots.txt and sitemap-aware collection",
-    "No Search Console connection or persistent data storage",
+    "No Search Console connection, submitter identity, or stored page body",
   ],
   breadcrumb: "Internal Link Audit",
   eyebrow: "Free internal link audit · live public crawl",
@@ -130,7 +130,7 @@ const EN: InternalLinkAuditContent = {
   primaryCta: "Run my internal link audit free",
   trustLine: "Free · No sign-up · No software to install · Any public website",
   demoBanner:
-    "This public tool performs a transient crawl of static same-origin HTML. It respects robots.txt, stores no report, and never changes your website.",
+    "This public tool crawls static same-origin HTML, respects robots.txt, and never changes your website. Public crawl facts may be temporarily shared from a server-side cache; no submitter identity or page body is stored.",
   formLabel: "Website URL",
   placeholder: "yourdomain.com",
   startCrawl: "Run internal link audit",
@@ -159,7 +159,7 @@ const EN: InternalLinkAuditContent = {
     priorityFixes: "Ready-to-review fixes",
     graphTitle: "Site page hierarchy",
     graphBody:
-      "This view groups pages with observed inbound support under their nearest collected URL-path parent, then falls back to an observed shallower link. Inbound and outbound counts still include every observed same-origin HTML link.",
+      "Indentation follows one shortest observed HTML-link path from the homepage. Sitemap discovery does not shorten click depth; cross-links remain in the inbound and outbound counts.",
     filterAll: "All nodes",
     filterPillars: "Pillars",
     filterOrphans: "Orphans",
@@ -176,7 +176,7 @@ const EN: InternalLinkAuditContent = {
     selectPrompt: "Choose a node or finding to inspect its evidence.",
     sampleLabel: "Crawl scope",
     fixedData:
-      "Real online crawl · static HTML · same origin · no stored report",
+      "Real online crawl · static HTML · same origin · temporary shared crawl cache",
     fourPartTitle: "From finding to a fix you can review",
     observation: "Observation",
     observationBody:
@@ -190,12 +190,12 @@ const EN: InternalLinkAuditContent = {
     artifact: "Artifact",
     artifactBody:
       "A review-ready link brief with source URL, target URL, insertion context, anchor suggestion, evidence limit, and a re-crawl check.",
-    exportPreview: "This online tool is a transient visual report; CSV export is not included.",
+    exportPreview: "This online tool provides a visual report; CSV export is not included.",
   },
   howEyebrow: "How it works",
   howTitle: "Four steps from a domain to a repair list",
   howIntro:
-    "Enter a public website and receive a transient report based on the static same-origin HTML collected for this request.",
+    "Enter a public website and receive a report based on observed static same-origin HTML.",
   howSteps: [
     {
       title: "1. Enter your domain",
@@ -207,7 +207,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "3. Review what the structure exposes",
-      body: "Candidate orphans, pages with low observed inbound support, observed crawl depth, and unresolved targets are shown with their evidence limits.",
+      body: "Candidate orphans, pages with low observed inbound support, homepage click depth, and unresolved targets are shown with their evidence limits.",
     },
     {
       title: "4. Carry reviewed fixes into your plan",
@@ -244,8 +244,8 @@ const EN: InternalLinkAuditContent = {
       body: "For an observed relationship, the report can show the source page and recorded anchor text to support a manual review.",
     },
     {
-      title: "Observed crawl depth",
-      body: "Pages reached at depth three or more are highlighted. Sitemap entries can be seeds, so this is not presented as homepage-click depth.",
+      title: "Observed homepage click depth",
+      body: "The report computes the shortest observed static-HTML link path from the homepage. Indexable pages at four or more clicks are highlighted; sitemap seeds improve coverage but never shorten this path.",
     },
     {
       title: "Review-ready findings",
@@ -253,7 +253,7 @@ const EN: InternalLinkAuditContent = {
     },
     {
       title: "A scannable page hierarchy",
-      body: "URL-path branches, candidate islands, and deep pages are easier to review in a hierarchy, while observed cross-link counts remain available as evidence.",
+      body: "One shortest observed homepage path organizes each reachable page; unreachable groups and additional inbound links remain visible as separate evidence.",
     },
   ],
   methodEyebrow: "Method transparency",
@@ -308,7 +308,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "What is an internal link audit?",
       answer:
-        "It crawls static same-origin HTML connections and reports candidate orphans, low observed inbound support, observed crawl depth, and unresolved targets with clear limits.",
+        "It crawls static same-origin HTML connections and reports candidate orphans, low observed inbound support, homepage click depth, and unresolved targets with clear limits.",
     },
     {
       question: "How is this different from an internal link checker?",
@@ -318,7 +318,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Do I need Search Console or site verification?",
       answer:
-        "No. The online audit reads public pages and does not require OAuth, a verification file, or ownership. It makes a transient request only after you submit a URL.",
+        "No. The online audit reads public pages and does not require OAuth, a verification file, or ownership. It starts only after you submit a URL; public crawl facts may be served from a temporary shared cache to avoid repeated traffic to the same site.",
     },
     {
       question: "Does this find orphan pages?",
@@ -353,7 +353,7 @@ const EN: InternalLinkAuditContent = {
     {
       question: "Can I export the results?",
       answer:
-        "Not in this online tool. It shows a transient visual report only and does not claim to create or store a CSV export.",
+        "Not in this online tool. It shows a visual report only and does not create a CSV export.",
     },
   ],
   relatedEyebrow: "Continue exploring",
@@ -380,15 +380,15 @@ const EN: InternalLinkAuditContent = {
 const ZH: InternalLinkAuditContent = {
   metaTitle: "免费内链审计：发现候选孤岛、低入链页面与结构缺口",
   metaDescription:
-    "通过一次实时在线内链审计发现候选孤岛、低入链页面、观测抓取深度和待验证目标；免费使用，无需登录或安装软件。",
+    "通过一次实时在线内链审计发现候选孤岛、低入链页面、首页点击深度和待验证目标；免费使用，无需登录或安装软件。",
   schemaDescription:
-    "GenGrowth 内链审计会在线抓取同源静态 HTML、遵守 robots.txt，并且不保存提交的 URL 或报告。",
+    "GenGrowth 内链审计会在线抓取同源静态 HTML、遵守 robots.txt，并可能临时共享已缓存的公开抓取事实，以避免短时间内重复访问同一站点。",
   schemaFeatures: [
     "真实的同源静态 HTML 抓取",
     "无需账号、无需注册；设有宽松的每小时上限，以免爬虫给被审计的站点造成压力",
     "候选孤岛、深层页面与未验证目标",
     "感知 robots.txt 与 Sitemap 的采集",
-    "不连接 Search Console、不持久化保存数据",
+    "不连接 Search Console、不保存提交者身份或页面正文",
   ],
   breadcrumb: "内链审计",
   eyebrow: "免费内链审计 · 实时公开抓取",
@@ -402,7 +402,7 @@ const ZH: InternalLinkAuditContent = {
   primaryCta: "免费运行内链审计",
   trustLine: "免费 · 无需登录 · 无需安装 · 适用于公开网站",
   demoBanner:
-    "本免费公开工具会临时同步抓取同源静态 HTML、遵守 robots.txt，不保存报告，也不会修改你的网站。",
+    "本免费公开工具会抓取同源静态 HTML、遵守 robots.txt，也不会修改你的网站。公开抓取事实可能由服务端临时缓存并共享；不保存提交者身份或页面正文。",
   formLabel: "网站 URL",
   placeholder: "yourdomain.com",
   startCrawl: "开始内链审计",
@@ -427,7 +427,7 @@ const ZH: InternalLinkAuditContent = {
     priorityFixes: "可审核修复项",
     graphTitle: "网站页面层级树",
     graphBody:
-      "有已观测入链支持的页面优先归入最近的已采集 URL 路径父页，没有路径父页时再使用浅层内链父页；入链与出链数量仍包含全部已观测到的同源 HTML 内链。",
+      "缩进表示从首页出发的一条最短已观测 HTML 链接路径；Sitemap 发现不会缩短点击深度，交叉内链仍保留在入链与出链计数中。",
     filterAll: "全部节点",
     filterPillars: "Pillar",
     filterOrphans: "孤岛",
@@ -444,7 +444,7 @@ const ZH: InternalLinkAuditContent = {
     selectPrompt: "请选择一个节点或问题，查看对应证据。",
     sampleLabel: "抓取范围",
     fixedData:
-      "真实在线抓取 · 静态 HTML · 同源 · 不保存报告",
+      "真实在线抓取 · 静态 HTML · 同源 · 临时共享抓取缓存",
     fourPartTitle: "从发现问题到可审核的修复动作",
     observation: "Observation",
     observationBody:
@@ -475,7 +475,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "3. 查看结构暴露的问题",
-      body: "把候选孤岛、低观测入链页面、观测抓取深度和未验证目标转换成带证据边界的发现。",
+      body: "把候选孤岛、低观测入链页面、首页点击深度和未验证目标转换成带证据边界的发现。",
     },
     {
       title: "4. 将审核后的修复推进计划",
@@ -511,8 +511,8 @@ const ZH: InternalLinkAuditContent = {
       body: "对于已观测关系，报告可展示来源页及记录到的锚文本，便于人工复核。",
     },
     {
-      title: "观测到的抓取深度",
-      body: "深度达到三层或以上的页面会被标出。Sitemap 条目可能作为种子，因此不把它表述为首页点击深度。",
+      title: "观测到的首页点击深度",
+      body: "报告会计算从首页出发的最短已观测静态 HTML 链接路径；可索引页面需要至少 4 次点击时会被标出，Sitemap 种子只补充覆盖范围，不会缩短这条路径。",
     },
     {
       title: "可复核的问题清单",
@@ -520,7 +520,7 @@ const ZH: InternalLinkAuditContent = {
     },
     {
       title: "清晰可读的页面层级",
-      body: "相比一张扁平 URL 表，页面树更容易查看 URL 路径分支、候选孤岛和深层内容；已观测交叉入链仍保留在页面计数与证据中。",
+      body: "每个可达页面按一条最短首页路径组织；不可达分组和其他已观测入链仍作为独立证据保留。",
     },
   ],
   methodEyebrow: "方法透明",
@@ -575,7 +575,7 @@ const ZH: InternalLinkAuditContent = {
     {
       question: "什么是内链审计？",
       answer:
-        "它抓取同一网站的静态同源 HTML 连接，报告候选孤岛、低观测入链、观测抓取深度和未验证目标，并清楚说明边界。",
+        "它抓取同一网站的静态同源 HTML 连接，报告候选孤岛、低观测入链、首页点击深度和未验证目标，并清楚说明边界。",
     },
     {
       question: "它和普通内链检查器有什么不同？",
