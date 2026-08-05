@@ -36,6 +36,7 @@ import {
   LEGACY_RULE_SET_VERSION,
   RULE_SET_VERSION,
   parseGovernanceProjectionV1,
+  rulesForRuleSetVersion,
 } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
@@ -284,6 +285,20 @@ function manifestShapeValid(
     ruleSetVersion === LEGACY_RULE_SET_VERSION &&
     hasExactKeys(manifest, LEGACY_MANIFEST_KEYS)
   );
+}
+
+/**
+ * The TECH-LINKGRAPH-005 version the frozen run actually executed (@2 for
+ * mvp.rules.0.2.1/0.2.2, @3 for 0.2.3). Execution refs must filter on this
+ * exact version or a newer rule set silently reads zero refs. Fail closed on
+ * rule sets the shipped registry cannot replay.
+ */
+function linkgraphRuleVersion(ruleSetVersion: string): number {
+  const version = rulesForRuleSetVersion(ruleSetVersion)?.find(
+    (rule) => rule.id === "TECH-LINKGRAPH-005",
+  )?.version;
+  if (version === undefined) return integrityFailure();
+  return version;
 }
 
 function sameCanonicalValue(left: unknown, right: unknown): boolean {
@@ -1114,6 +1129,7 @@ async function internalLinkMapInSnapshot(
   const executionRows = await repository.listExecutionRefs(
     projectScope,
     authority.run.id,
+    linkgraphRuleVersion(authority.run.rule_set_version),
     allSitePageIds,
   );
   const refsByPage = executionRefsByPage(

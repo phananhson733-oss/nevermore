@@ -391,6 +391,10 @@ describe("Growth Map Internal Link Map read service", () => {
       now,
     );
 
+    expect(
+      InternalLinkMapRepository.prototype.listExecutionRefs,
+    ).toHaveBeenCalledWith(expect.anything(), ids.run, 2, expect.anything());
+
     expect(result).toMatchObject({
       projectId: ids.project,
       diagnosticRunId: ids.run,
@@ -849,6 +853,14 @@ describe("Growth Map Internal Link Map read service", () => {
         },
       });
       expect(result.graph.nodes).toHaveLength(4);
+      expect(
+        InternalLinkMapRepository.prototype.listExecutionRefs,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        ids.run,
+        ruleSetVersion === "mvp.rules.0.2.3" ? 3 : 2,
+        expect.anything(),
+      );
     },
   );
 
