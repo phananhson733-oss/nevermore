@@ -34,7 +34,7 @@ Across the white-label rollouts we've audited, the deciding factor is rarely the
 
 ## How an SEO Reporting Tool Works in Real Agency Rollouts
 
-In practice a seo reporting tool for seo companies sits at the handoff point between fulfillment and client communication, and it earns its keep by replacing manual assembly. It pairs naturally with [working out which whitelabel SEO tool tier your agency actually needs](/blog/whitelabel-seo-tool) to cover the rest of the unbranded stack. Here is how it typically plays out:
+In practice a seo reporting tool for seo companies sits at the handoff point between fulfillment and client communication, and it earns its keep by replacing manual assembly. It pairs naturally with [working out which white-label SEO tool tier your agency actually needs](/blog/best-white-label-seo-tool) to cover the rest of the unbranded stack. Here is how it typically plays out:
 
 1. **Data pull.** The tool connects to Search Console, an analytics property, and a rank tracker, then syncs the latest numbers without a manual export.
 2. **Branding layer.** The agency applies its own logo, colors, and sending domain once, so every report ships under the agency brand by default.
