@@ -11,6 +11,27 @@ const nextConfig: NextConfig = {
   output: "standalone",
   turbopack: { root: monorepoRoot },
   outputFileTracingRoot: monorepoRoot,
+  async redirects() {
+    // /blog/whitelabel-seo-tool and /blog/best-white-label-seo-tool argued the
+    // same Level 1/2/3 resale framework for the same queries. Google resolved
+    // the overlap itself: across 90 days one page took 723 impressions and the
+    // other took none. Folding the shadowed duplicate into the page that
+    // already ranks stops the two from splitting the same intent.
+    // The /en/ variant is listed explicitly so it redirects in one hop instead
+    // of bouncing through next-intl's prefix strip first.
+    return [
+      {
+        source: "/blog/whitelabel-seo-tool",
+        destination: "/blog/best-white-label-seo-tool",
+        statusCode: 301,
+      },
+      {
+        source: "/en/blog/whitelabel-seo-tool",
+        destination: "/blog/best-white-label-seo-tool",
+        statusCode: 301,
+      },
+    ];
+  },
   async rewrites() {
     // proxy.ts skips paths containing a dot, so the unprefixed default-locale
     // feed never reaches next-intl's rewrite and would 404. Map it onto the

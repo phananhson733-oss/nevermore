@@ -22,7 +22,7 @@ Startup SEO is **the practice of building organic search traffic from a true zer
 
 A founder searching for a startup SEO plan finds moat-building strategy and budget guides written for teams that already cleared the zero line. This guide is for the team still standing on it.
 
-## Why It Matters for Your Workflow
+## Three Months Lost to Advice Built for Bigger Sites
 
 The cost of borrowing established-company SEO advice is invisible until you have already spent three months on it. A founder reads a respected guide, sets up a tool stack, commits to two posts a week, and then misses week three because a customer call ran long — and the whole plan, which depended on cadence the founder never had, quietly collapses. The advice was not wrong. It was written for a different starting position.
 
@@ -46,7 +46,7 @@ With domain authority at zero, ranking for the head term is months away, so chas
 
 At some point the founder weighs doing it alone against bringing in outside help. The honest startup SEO answer is sequencing: prove the channel can rank a handful of pages first, then hand a working motion to a [SaaS SEO consultant](/blog/saas-seo-consultant) rather than paying someone to discover whether SEO works for the product at all. Hiring before there is any signal converts a five-hour-a-week experiment into a recurring cost with no evidence behind it.
 
-## Common Implementation Misreadings
+## Why Zero-Domain SEO Is Not Just Early-Stage SEO
 
 Most wasted startup SEO effort traces back to a few predictable misreads:
 

@@ -20,7 +20,7 @@ Most explanations of this offering blur three separate things — the tasks a hu
 - **Scope boundary:** it covers on-page judgment, manual link building, and technical fixes a person verifies, but excludes the bulk generation and mass reporting that tools handle better.
 - **Complement boundary:** it does not reject automation; it draws a line where human judgment adds value and lets software do the rest.
 
-## Why It Matters for Your Workflow
+## Paying Human Rates for Work a Tool Does Faster
 
 For a B2B SaaS team or an agency reselling the work, the cost of misreading this boundary is paying premium human rates for tasks a tool would do faster, or paying tool prices for judgment a person should own. When a vendor sells a "manual SEO service" but quietly runs the same automated link blasts everyone else does, you inherit the downside — spammy backlinks, thin AI-spun pages, and a cleanup bill — while paying for craft you never received. Buyers who cannot separate the human work from the tooling end up comparing retainers on headcount claims alone, which rewards the vendor best at sounding hands-on.
 
@@ -64,7 +64,7 @@ Evaluating a manual SEO service is mostly an exercise in verifying where the hum
 
 Next, probe the reporting and the tooling honestly. A trustworthy partner is candid that software compiles the numbers — you want to see how transparent reporting works before you sign, so review the standards behind a good [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies). Finally, weigh the manual premium against scope: paying human rates only makes sense on the tasks where a person changes the outcome, so map which deliverables truly need hands-on manual SEO work and which are better handed to automation.
 
-## How to Implement It Step by Step
+## Drawing the Automation Line Before Work Starts
 
 Once you have chosen a partner, a sound engagement follows a recognizable sequence. Implement it in this order:
 

@@ -20,7 +20,7 @@ Generative engine optimization is **the practice of structuring content so AI an
 - It shares most fundamentals with SEO — crawlability, clarity, authority — rather than replacing them
 - A handful of moves apply only to LLM answer engines: extractable phrasing, self-contained claims, and clean entity signals
 
-## Why It Matters for Your Workflow
+## What Changes About a Good Client Report
 
 For an agency, GEO quietly changes what a good client report even means — and that reshapes cost and risk. Across the white-label rollouts we've audited, the teams that get burned track only classic positions while their prospects read a synthesized answer and never click. The cost shows up in a few ways:
 
@@ -38,7 +38,7 @@ In practice, generative engine optimization shows up at specific points in a del
 4. **Monitoring citations over time.** Rank tracking widens to include mention tracking, so a monthly report shows both position changes and whether the client is quoted in generated answers.
 5. **Feeding findings back into SEO.** Because the fundamentals overlap, most fixes — clearer headings, tighter internal links — tend to lift both classic rankings and AI citations at the same time.
 
-## Common Implementation Misreadings
+## Four Reasons GEO Does Not Replace SEO
 
 Because the topic is new, generative engine optimization collects more myths than most SEO subjects. The most common misreadings, corrected:
 

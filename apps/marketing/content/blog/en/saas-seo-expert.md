@@ -20,7 +20,7 @@ The title gets attached to almost anyone who has ranked a blog post, which is ex
 - **Funnel boundary:** it targets keywords tied to signup and expansion, deliberately excluding vanity traffic that never touches the trial.
 - **Accountability boundary:** it owns pipeline influence and product-qualified signups, not a rankings screenshot detached from revenue.
 
-## Why It Matters for Your Workflow
+## A Year of Content That Never Converts
 
 For a B2B SaaS team, the cost of hiring the wrong person here is not a bad month of rankings — it is a year of content that never converts. A generalist can lift traffic to a blog while your trial-start rate stays flat, because the pages they built answer questions your buyers ask before they would ever consider paying. When that happens you have spent the budget and still cannot tell whether SEO is a viable channel, which is the most expensive outcome of all: not failure, but ambiguity. A true specialist closes that gap by tying every content decision back to an activation event you can measure.
 
@@ -64,7 +64,7 @@ Evaluating a SaaS SEO expert is mostly a test of whether the candidate thinks in
 
 Then probe how they connect to the wider program. A genuine expert positions their work inside a strategy, not as an isolated content queue, so ask how they would coordinate with your broader plan — the funnel framework in [SEO for SaaS](/blog/seo-for-saas) is a fair reference point to test against. If you are still deciding between an individual hire and an outside partner, comparing the trade-offs of a [SaaS SEO consultant](/blog/saas-seo-consultant) engagement against an in-house role clarifies which structure fits your stage.
 
-## How to Implement It Step by Step
+## Auditing the Funnel Before You Touch Keywords
 
 Once you have chosen a practitioner, a SaaS SEO expert engagement follows a recognizable sequence. Run it in this order:
 

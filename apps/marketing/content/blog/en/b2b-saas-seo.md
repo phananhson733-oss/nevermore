@@ -20,7 +20,7 @@ Most SEO advice is written for e-commerce or local business, then loosely applie
 - **Content-pattern boundary:** each stage maps to a distinct content pattern (explainer, comparison, use-case, integration page), not a single blog format.
 - **Outcome boundary:** success is measured in activated trials and pipeline influence, not raw sessions or vanity rankings.
 
-## Why It Matters for Your Workflow
+## How a Funnel Leaks Silently When Content Ignores Stage
 
 For a B2B SaaS team, the cost of getting SEO for B2B SaaS wrong is not a smaller blog — it is a funnel that leaks silently. When content ignores funnel stage, you attract readers who were never going to try the product and miss the high-intent searchers comparing you against a named competitor. That mismatch quietly inflates traffic while flattening signups, and by the time the disconnect shows up in a board deck, two quarters of writing budget are already spent on the wrong intent.
 
@@ -64,7 +64,7 @@ Evaluating a B2B SaaS SEO approach is mostly a test of whether it respects the f
 
 Next, probe the measurement and the fit to your stage. A trustworthy approach reports activation and pipeline influence, not just rankings, and it adapts to whether you are pre-seed or scaling — the priorities differ sharply, which is why [SEO for SaaS startups](/blog/seo-for-saas-startups) treats early-stage focus as its own discipline. When you need the work executed rather than just planned, a specialized [SaaS SEO consultant](/blog/saas-seo-consultant) is who translates this funnel-stage mapping into a running program.
 
-## How to Implement It Step by Step
+## Mapping the Funnel Before You Pick a Single Keyword
 
 Once you have committed to the funnel-first model, a sound B2B SaaS SEO strategy follows a recognizable sequence. Implement it in this order:
 

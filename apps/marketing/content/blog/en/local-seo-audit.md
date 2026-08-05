@@ -20,7 +20,7 @@ A local SEO audit is **a structured review of the signals that decide local sear
 - It separately weighs on-page content, technical health, and backlinks as organic ranking inputs
 - It produces a prioritized fix list rather than a flat inventory of every possible issue
 
-## Why It Matters for Your Workflow
+## Why Conflating Site and Local Pack Audits Wastes Hours
 
 A local SEO audit matters because most consultants conflate a site audit with a local pack audit, and that confusion shows up as wasted hours and a frustrated client. When someone ranks on page one organically but never appears in the three-pack, a general on-page review will not explain the gap, because the two outcomes run on different ranking systems. This connects to the larger job most agencies are chasing here: tracking client rankings and producing professional reports at scale without re-diagnosing the same problem every month. Across the rollouts we've audited, the deciding factor isn't how many tools you run, it's whether the diagnosis tells you which lever actually controls local pack inclusion. The cost of getting it wrong shows up in a few concrete ways:
 
@@ -41,7 +41,7 @@ A local SEO audit usually runs in a few recurring scenarios, and naming them kee
 
 In each scenario the value comes from intervening at the right step rather than restating every possible issue, and that discipline is what keeps the work profitable when client count climbs.
 
-## Common Implementation Misreadings
+## Why GBP and On-Page Are Not the Same Lever
 
 Teams stumble on a few predictable points when they treat the audit as one undifferentiated list:
 
