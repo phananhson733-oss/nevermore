@@ -9,7 +9,11 @@
  */
 
 import type { DiagnosticContext } from "../context.ts";
-import type { DiagnosticRule, EvidenceDraft, FindingCandidate } from "../rule.ts";
+import type {
+  DiagnosticRule,
+  EvidenceDraft,
+  FindingCandidate,
+} from "../rule.ts";
 import { findingTarget } from "../target.ts";
 import { matchIntent, pageFieldBag } from "../util/intent-match.ts";
 
@@ -108,16 +112,26 @@ function buildPageBags(ctx: DiagnosticContext): ReadonlySet<string>[] {
 function collectTargets(ctx: DiagnosticContext): CoverageTarget[] {
   return [
     ...ctx.icp.offers.map((text): CoverageTarget => ({ text, kind: "offer" })),
-    ...ctx.icp.useCases.map((text): CoverageTarget => ({ text, kind: "use_case" })),
+    ...ctx.icp.useCases.map(
+      (text): CoverageTarget => ({ text, kind: "use_case" }),
+    ),
   ];
 }
+
+/**
+ * The exact shape `findingTarget` enforces for an empty page-set targetRef
+ * slug (target.ts §validateConstructionShape). Mixed-language text can
+ * slugify to a leading hyphen (e.g. "占星 astrocartography 工具" →
+ * "-astrocartography-"), which must degrade to inconclusive, not throw.
+ */
+const STABLE_PAGE_SET_SLUG = /^[a-z0-9][a-z0-9-]*$/;
 
 function buildCandidate(
   ctx: DiagnosticContext,
   target: CoverageTarget,
 ): FindingCandidate | null {
   const slug = slugify(target.text);
-  if (slug.length === 0) return null;
+  if (!STABLE_PAGE_SET_SLUG.test(slug)) return null;
   const targetRef = `${target.kind}:${slug}`;
   const subjectRef = `page_set:${targetRef}`;
   const evidence: EvidenceDraft = {
@@ -131,7 +145,8 @@ function buildCandidate(
     subjectRefs: [subjectRef],
     claim: `No indexable page covers the core intent tokens of "${target.text}".`,
     observedAt: ctx.observedAt("crawl"),
-    limitation: "Intent match is an English-only heuristic over URL/title/H1 tokens.",
+    limitation:
+      "Intent match is an English-only heuristic over URL/title/H1 tokens.",
   };
   return {
     subjectRefs: [subjectRef],
