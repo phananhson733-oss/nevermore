@@ -47,8 +47,7 @@ import { loadPublishedGrowthMapGeneration } from "./growth-map-generation";
 import { buildExecutionPreview } from "./execution-preview";
 import { isStale } from "./source-mappers";
 
-export const MAX_GROWTH_MAP_SEARCH_LENGTH =
-  DB_MAX_GROWTH_MAP_SEARCH_LENGTH;
+export const MAX_GROWTH_MAP_SEARCH_LENGTH = DB_MAX_GROWTH_MAP_SEARCH_LENGTH;
 
 const REQUIRED_URL_METRIC_PROVIDERS = ["crawl", "gsc", "ga4"] as const;
 const SEVERITY_ORDER = {
@@ -163,10 +162,7 @@ async function loadReadContext(
     projectScope,
     diagnosticRunId,
   );
-  if (
-    diagnosticRunId !== null &&
-    generation.run.id !== diagnosticRunId
-  ) {
+  if (diagnosticRunId !== null && generation.run.id !== diagnosticRunId) {
     return corruptGrowthMap();
   }
   // The selected published run is authoritative. The request UI locale
@@ -232,10 +228,7 @@ function validateObservationForUrl(
     observation.project_id !== inventory.project_id ||
     observation.site_page_id !== inventory.site_page_id ||
     snapshot.provider !== observation.provider ||
-    !sameTimestamptzInstant(
-      observation.observed_at,
-      snapshot.captured_at,
-    ) ||
+    !sameTimestamptzInstant(observation.observed_at, snapshot.captured_at) ||
     !supportedUrlObservation(observation)
   ) {
     corruptGrowthMap();
@@ -296,7 +289,9 @@ function observationsBySitePage(
   observations: readonly ObservationRow[],
   frozen: FrozenGrowthMapRun,
 ): Map<string, ObservationRow[]> {
-  const inventoryById = new Map(inventory.map((row) => [row.site_page_id, row]));
+  const inventoryById = new Map(
+    inventory.map((row) => [row.site_page_id, row]),
+  );
   const grouped = new Map<string, ObservationRow[]>();
   const tupleKeys = new Set<string>();
   for (const observation of observations) {
@@ -331,7 +326,9 @@ function targetsBySitePage(
   observations: readonly ObservationRow[],
   context: GrowthMapReadContext,
 ): Map<string, FindingTargetRow[]> {
-  const inventoryById = new Map(inventory.map((row) => [row.site_page_id, row]));
+  const inventoryById = new Map(
+    inventory.map((row) => [row.site_page_id, row]),
+  );
   const observationById = new Map(observations.map((row) => [row.id, row]));
   const grouped = new Map<string, FindingTargetRow[]>();
   const membershipKeys = new Set<string>();
@@ -405,7 +402,10 @@ async function loadFindings(
   findingIds: readonly string[],
 ): Promise<FindingRow[]> {
   const rows: FindingRow[] = [];
-  for (const batch of batches(unique(findingIds).sort(), MAX_GROWTH_MAP_ENTITY_LOOKUP)) {
+  for (const batch of batches(
+    unique(findingIds).sort(),
+    MAX_GROWTH_MAP_ENTITY_LOOKUP,
+  )) {
     rows.push(...(await repo.listFindings(scope, runId, batch)));
   }
   if (rows.length !== unique(findingIds).length) corruptGrowthMap();
@@ -441,6 +441,22 @@ async function loadProjectionRows(
   return { inventory, observations, targets, findings };
 }
 
+/**
+ * The engine records why a run ended partial in diagnostic_runs.coverage
+ * (e.g. which dataset was never provided). Those sentences follow the run's
+ * delivery locale, like frozen snapshot limitations, and are surfaced
+ * verbatim so "partial" never stands unexplained.
+ */
+function storedRunLimitations(coverage: Record<string, unknown>): string[] {
+  const raw = coverage["limitations"];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && value.length <= 2000)
+    .slice(0, 20);
+}
+
 function sourceCoverage(
   context: GrowthMapReadContext,
   now: Date,
@@ -450,6 +466,7 @@ function sourceCoverage(
   const stale: string[] = [];
   if (context.run.run_status === "partial") {
     partial.push(copy.partialRun);
+    partial.push(...storedRunLimitations(context.run.coverage));
   }
   for (const provider of REQUIRED_URL_METRIC_PROVIDERS) {
     const snapshot = context.frozen.snapshotsByProvider.get(provider);
@@ -495,10 +512,14 @@ function urlCoverage(
       analyticsAvailability[provider] = observation.availability;
     }
   }
-  return projectGrowthMapUrlCoverage(base, {
-    hasPageSnapshot: inventory.page_snapshot_id !== null,
-    analyticsAvailability,
-  }, uiLocale);
+  return projectGrowthMapUrlCoverage(
+    base,
+    {
+      hasPageSnapshot: inventory.page_snapshot_id !== null,
+      analyticsAvailability,
+    },
+    uiLocale,
+  );
 }
 
 function findingById(
@@ -532,7 +553,9 @@ function findingById(
   return result;
 }
 
-function derivedTemplateKey(targets: readonly FindingTargetRow[]): string | null {
+function derivedTemplateKey(
+  targets: readonly FindingTargetRow[],
+): string | null {
   const refs = unique(
     targets
       .filter((target) => target.relation === "affected_by_template")
@@ -552,8 +575,7 @@ function priorityForUrl(
     return {
       availability: "unavailable",
       value: null,
-      limitation: growthMapProjectionCopy(context.uiLocale)
-        .priorityUnavailable,
+      limitation: growthMapProjectionCopy(context.uiLocale).priorityUnavailable,
     };
   }
   let selected: keyof typeof SEVERITY_ORDER | null = null;
@@ -561,7 +583,10 @@ function priorityForUrl(
     const finding = findings.get(findingId);
     if (!finding) corruptGrowthMap();
     const severity = finding.severity as keyof typeof SEVERITY_ORDER;
-    if (selected === null || SEVERITY_ORDER[severity] > SEVERITY_ORDER[selected]) {
+    if (
+      selected === null ||
+      SEVERITY_ORDER[severity] > SEVERITY_ORDER[selected]
+    ) {
       selected = severity;
     }
   }
@@ -734,8 +759,7 @@ function portfolioItems(
       delta: {
         availability: "unavailable",
         value: null,
-        limitation:
-          growthMapProjectionCopy(context.uiLocale).deltaUnavailable,
+        limitation: growthMapProjectionCopy(context.uiLocale).deltaUnavailable,
       },
     } satisfies GrowthMapUrlPortfolioItem;
   });
@@ -830,12 +854,7 @@ export async function listProjectAuditUrls(
   }
   return getDb().db.transaction(
     (tx) =>
-      listProjectAuditUrlsInSnapshot(
-        tx,
-        scope,
-        projectId,
-        normalizedOptions,
-      ),
+      listProjectAuditUrlsInSnapshot(tx, scope, projectId, normalizedOptions),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
 }
@@ -947,9 +966,7 @@ async function findingDetails(
         finding.rule_id,
         context.projectDeliveryLocale,
       ),
-      executionRef: action
-        ? { actionId: action.id, artifactIds }
-        : null,
+      executionRef: action ? { actionId: action.id, artifactIds } : null,
     } satisfies GrowthMapUrlFinding;
   });
 }
