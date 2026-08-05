@@ -104,11 +104,24 @@ export default async function BlogPage({
   const requestedPillar = PILLARS.includes(pillar as (typeof PILLARS)[number])
     ? pillar
     : undefined;
+  // Each dimension's options must be computed against the other dimension's
+  // current selection. Counting both across the whole corpus let the UI offer
+  // combinations that land on nothing: the site has case_study posts and it
+  // has attribution posts, but no post is both, so picking one tab then the
+  // other produced a bare "no posts" page with no way back out.
   const availableCategories = CATEGORIES.filter((candidate) =>
-    allPublishedPosts.some((post) => post.category === candidate),
+    allPublishedPosts.some(
+      (post) =>
+        post.category === candidate &&
+        (!requestedPillar || post.pillar_slug === requestedPillar),
+    ),
   );
   const availablePillars = PILLARS.filter((candidate) =>
-    allPublishedPosts.some((post) => post.pillar_slug === candidate),
+    allPublishedPosts.some(
+      (post) =>
+        post.pillar_slug === candidate &&
+        (!requestedCategory || post.category === requestedCategory),
+    ),
   );
   // Old or hand-authored filter URLs should lead to useful published content,
   // not an empty state merely because this topic has no current article.
