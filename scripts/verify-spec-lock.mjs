@@ -142,7 +142,7 @@ function diagnosticRules(repoRoot) {
   const directory = resolve(repoRoot, "packages/engine/src/rules");
   const exportPattern =
     /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*Rule)\s*=\s*\{([\s\S]*?)\}\s+satisfies\s+DiagnosticRule\s*;/g;
-  const rules = [];
+  const rulesByIdentifier = new Map();
   for (const name of readdirSync(directory).sort()) {
     if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
     const source = readFileSync(join(directory, name), "utf8");
@@ -158,11 +158,44 @@ function diagnosticRules(repoRoot) {
         Number.isInteger(version) && version > 0,
         `${id} is missing a positive numeric version`,
       );
-      rules.push({ id, version });
+      assert.ok(
+        !rulesByIdentifier.has(match[1]),
+        `duplicate diagnostic rule export: ${match[1]}`,
+      );
+      rulesByIdentifier.set(match[1], { id, version });
     }
   }
-  assert.ok(rules.length > 0, "at least one diagnostic rule is required");
-  return rules;
+
+  const registrySource = readFileSync(join(directory, "index.ts"), "utf8");
+  const currentRegistryName = registrySource.match(
+    /export\s+const\s+ALL_RULES\s*:[^=]+=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/,
+  )?.[1];
+  assert.equal(
+    currentRegistryName,
+    "CONTEXTUAL_ALL_RULES",
+    "ALL_RULES must alias the reviewed contextual registry",
+  );
+  const registryBody = registrySource.match(
+    new RegExp(
+      `export\\s+const\\s+${currentRegistryName}\\s*:[^=]+=\\s*\\[([\\s\\S]*?)\\]\\s*;`,
+    ),
+  )?.[1];
+  assert.ok(registryBody, `${currentRegistryName} registry order is missing`);
+  const identifiers = registryBody
+    .split(",")
+    .map((identifier) => identifier.trim())
+    .filter(Boolean);
+  assert.equal(
+    new Set(identifiers).size,
+    identifiers.length,
+    `${currentRegistryName} contains duplicate rule exports`,
+  );
+  assert.deepEqual(
+    new Set(identifiers),
+    new Set(rulesByIdentifier.keys()),
+    `${currentRegistryName} must enumerate every and only shipped diagnostic rule`,
+  );
+  return identifiers.map((identifier) => rulesByIdentifier.get(identifier));
 }
 
 function operationBlock(openapi, operationId) {
@@ -233,8 +266,12 @@ assert.equal(
   lock.productVersion,
   "package version drifted from the active lock",
 );
-assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
+assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
 assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
+assert.equal(
+  lock.migrationHead,
+  "0042_contextual_indexability_opportunities",
+);
 
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
 const operations = extractOpenApiOperations(openapi);
@@ -269,6 +306,7 @@ const migrations = listOrderedMigrationSources({
   migrationDirectory: lock.migrationDirectory,
   migrationFilePattern: lock.migrationFilePattern,
 });
+assert.equal(migrations.length, 42, "v0.4 must freeze 42 migrations");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
   lock.migrationHead,
@@ -287,6 +325,7 @@ assert.ok(
 );
 exactSet(Object.keys(lock.ruleVersions), lock.rules, "rule version keys");
 const rules = diagnosticRules(repoRoot);
+assert.equal(rules.length, 12, "v0.4 must freeze 12 diagnostic rules");
 exactSet(
   rules.map(({ id }) => id),
   lock.rules,
@@ -300,6 +339,8 @@ for (const { id, version } of rules) {
   );
 }
 assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
+assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
+assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
 
 assertRequiredHashes(
   lock.authorityFiles,

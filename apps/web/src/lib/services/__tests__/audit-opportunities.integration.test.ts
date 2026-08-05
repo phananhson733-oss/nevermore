@@ -5,6 +5,7 @@ import {
   AuditRunsRepository,
   CapabilityRunsRepository,
   DiagnosticRunsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   contentHash,
   type ProjectScope,
 } from "@sf/db";
@@ -100,7 +101,7 @@ describeDb("growth audit + opportunity decision surfaces", () => {
       capabilityRunId: chain.diagRunId,
       scopeKind: "site",
       scopeKey: diagnosticRun.site_id,
-      projectionVersion: "growth-audit.0.3.0",
+      projectionVersion: GROWTH_AUDIT_PROJECTION_VERSION,
     });
     auditRunId = auditRun.id;
 
@@ -180,6 +181,13 @@ describeDb("growth audit + opportunity decision surfaces", () => {
   });
 
   it("projects a confirmed opportunity over the Finding-owned Action", async () => {
+    const beforeRead = await handle.pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+         FROM app.actions
+        WHERE project_id = $1
+          AND source_finding_id = $2`,
+      [chain.scope.projectId, chain.httpFindingId],
+    );
     const page = await listProjectOpportunities(
       READ_SCOPE(chain.scope),
       chain.scope.projectId,
@@ -199,12 +207,33 @@ describeDb("growth audit + opportunity decision surfaces", () => {
       expect(confirmed.action.artifactType).toBe(
         RULE_OPPORTUNITY_PROJECTION[confirmed.primaryRule.ruleId].artifactType,
       );
+      expect(confirmed.executionPreview).toMatchObject({
+        artifactType: confirmed.action.artifactType,
+        contentLocale: "en",
+      });
+      expect(confirmed.executionPreview).not.toHaveProperty("actionId");
     }
 
     // At least one other Finding is still reviewable (never shares the Action).
-    expect(
-      page.data.some((opportunity) => opportunity.readiness === "reviewable"),
-    ).toBe(true);
+    const reviewable = page.data.find(
+      (opportunity) => opportunity.readiness === "reviewable",
+    );
+    expect(reviewable).toBeDefined();
+    if (reviewable?.readiness === "reviewable") {
+      expect(reviewable.executionPreview).not.toBeNull();
+      expect(reviewable).not.toHaveProperty("actionId");
+      expect(reviewable).not.toHaveProperty("action");
+    }
+
+    const afterRead = await handle.pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+         FROM app.actions
+        WHERE project_id = $1
+          AND source_finding_id = $2`,
+      [chain.scope.projectId, chain.httpFindingId],
+    );
+    expect(beforeRead.rows[0]?.count).toBe(1);
+    expect(afterRead.rows[0]?.count).toBe(beforeRead.rows[0]?.count);
   });
 
   it("resolves one opportunity keyed by its primary Finding id", async () => {
@@ -217,6 +246,11 @@ describeDb("growth audit + opportunity decision surfaces", () => {
     expect(detail.data.readiness).toBe("confirmed");
     if (detail.data.readiness === "confirmed") {
       expect(detail.data.primaryFindingId).toBe(chain.httpFindingId);
+      expect(detail.data.executionPreview).toMatchObject({
+        artifactType: detail.data.action.artifactType,
+        contentLocale: "en",
+      });
+      expect(detail.data.executionPreview).not.toHaveProperty("actionId");
     }
     expect(detail.projectId).toBe(chain.scope.projectId);
   });

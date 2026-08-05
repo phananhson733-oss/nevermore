@@ -64,6 +64,7 @@ import {
   getContentShadowRun,
   listContentShadowRuns,
 } from "@/lib/services/content-shadow";
+import { buildDiagnosticFrozenInput } from "@/lib/services/diagnostics";
 import { reviewContentShadowRevision } from "@/lib/services/content-shadow-review";
 import { updateProjectArtifact } from "@/lib/services/artifact-update";
 import { listProjectArtifacts } from "@/lib/services/artifacts";
@@ -136,8 +137,10 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
   const icpProfileId = randomUUID();
   const icpProfile = {
     productName: "Shadow service fixture",
+    oneLineDescription: "Content Shadow integration fixture",
     siteLanguageCodes: ["en"],
   };
+  const siteLanguageCodes = ["en"] as const;
   const icpContentHash = contentHash(icpProfile);
   const scope: ProjectScope = { workspaceId, projectId };
   const capturedAt = new Date().toISOString();
@@ -161,7 +164,7 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
     origin: `https://${projectId}.example.test`,
     host: `${projectId}.example.test`,
     market_codes: ["US"],
-    language_codes: ["en"],
+    language_codes: [...siteLanguageCodes],
   });
   const crawlSource = await new SourceConnectionsRepository(
     db,
@@ -236,32 +239,24 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
     started_at: capturedAt,
     completed_at: capturedAt,
   });
-  const inputManifest = {
+  const frozen = buildDiagnosticFrozenInput({
     projectId,
     siteId,
-    ruleSetVersion: RULE_SET_VERSION,
-    promptSetVersion: PROMPT_SET_VERSION,
+    icp: {
+      id: icpProfileId,
+      version: 1,
+      contentHash: icpContentHash,
+      profile: icpProfile,
+    },
+    siteLanguageCodes,
+    snapshots: [snapshot],
     deliveryLocale: "en",
     governance: {
       projectionVersion: GOVERNANCE_PROJECTION_VERSION,
       keywordClusters: [],
       competitors: [],
     },
-    icp: { id: icpProfileId, version: 1, contentHash: icpContentHash },
-    snapshots: [
-      {
-        snapshotId: snapshot.id,
-        provider: "crawl",
-        datasetKey: snapshot.dataset_key,
-        schemaVersion: snapshot.schema_version,
-        methodVersion: snapshot.method_version,
-        checksum: snapshot.checksum,
-        availability: snapshot.availability,
-        sourceWindow,
-        capturedAt: snapshot.captured_at,
-      },
-    ],
-  };
+  });
   await new DiagnosticRunsRepository(db).insert({
     runId: diagnosticRunId,
     workspaceId,
@@ -272,8 +267,8 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
-    inputManifest,
-    inputHash: contentHash(inputManifest),
+    inputManifest: frozen.manifest,
+    inputHash: frozen.inputHash,
   });
 
   const finding = await new FindingsRepository(db).insert({

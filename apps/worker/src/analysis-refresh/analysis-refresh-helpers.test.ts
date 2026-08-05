@@ -47,6 +47,22 @@ const PAYLOAD = {
     maxCompetitors: 40,
   },
 } as const;
+const legacyProfile = {
+  productName: "Acme",
+  oneLineDescription: "Ship faster",
+  productType: "saas",
+  businessModels: ["subscription"],
+  marketCodes: ["US"],
+  segments: ["Growth teams"],
+  primaryConversion: {
+    label: "Book a demo",
+    type: "contact",
+    targetUrl: "https://example.test/demo",
+  },
+  priorityUrls: ["https://example.test/pricing"],
+  technicalConstraints: ["Legacy CMS"],
+  resourceConstraints: ["One engineer"],
+} as const;
 
 describe("Analysis Refresh frozen helpers", () => {
   it("accepts only the strict, secret-free nested parent payload", () => {
@@ -281,14 +297,16 @@ describe("Analysis Refresh frozen helpers", () => {
       collectionRunId: "00000000-0000-4000-8000-000000000022",
     });
 
-    const frozen = buildAnalysisRefreshDiagnosticFrozenInput({
+    const baseInput = {
       projectId: IDS.project,
       siteId: IDS.site,
-      icp: PAYLOAD.icpProfile,
+      icp: { ...PAYLOAD.icpProfile, profile: legacyProfile },
+      siteLanguageCodes: ["fr-CA"],
       snapshots: [first, second],
       outputLocale: PAYLOAD.outputLocale,
       governance,
-    });
+    } as const;
+    const frozen = buildAnalysisRefreshDiagnosticFrozenInput(baseInput);
 
     expect(frozen.manifest).toMatchObject({
       projectId: IDS.project,
@@ -298,7 +316,26 @@ describe("Analysis Refresh frozen helpers", () => {
       promptSetVersion: PROMPT_SET_VERSION,
       deliveryLocale: "en-US",
       governance,
+      contextProjection: {
+        profileGeneration: "legacy-icp.v1",
+        siteLanguage: {
+          sourceKind: "site",
+          state: "declared_non_empty",
+          languageCodes: ["fr-CA"],
+        },
+      },
     });
+    expect(Object.keys(frozen.manifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
     expect(
       (frozen.manifest["snapshots"] as Array<Record<string, unknown>>).map(
         (entry) => entry["snapshotId"],
@@ -310,6 +347,66 @@ describe("Analysis Refresh frozen helpers", () => {
       ],
     ).toBe("2026-07-29T00:30:00.000Z");
     expect(frozen.inputHash).toBe(contentHash(frozen.manifest as never));
+
+    const repeated = buildAnalysisRefreshDiagnosticFrozenInput(baseInput);
+    expect(repeated).toEqual(frozen);
+    const deliveryLocaleChanged = buildAnalysisRefreshDiagnosticFrozenInput({
+      ...baseInput,
+      outputLocale: "zh-CN",
+    });
+    expect(deliveryLocaleChanged.manifest["contextProjection"]).toEqual(
+      frozen.manifest["contextProjection"],
+    );
+
+    const contextChanges = [
+      buildAnalysisRefreshDiagnosticFrozenInput({
+        ...baseInput,
+        siteLanguageCodes: ["en-US"],
+      }),
+      buildAnalysisRefreshDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: { ...legacyProfile, productName: "Acme Next" },
+        },
+      }),
+      buildAnalysisRefreshDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            primaryConversion: {
+              ...legacyProfile.primaryConversion,
+              targetUrl: "https://example.test/signup",
+            },
+          },
+        },
+      }),
+      buildAnalysisRefreshDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            priorityUrls: ["https://example.test/enterprise"],
+          },
+        },
+      }),
+      buildAnalysisRefreshDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            resourceConstraints: ["No writer access"],
+          },
+        },
+      }),
+    ];
+    for (const changed of contextChanges) {
+      expect(changed.inputHash).not.toBe(frozen.inputHash);
+    }
   });
 
   it("keeps capability snapshot addressing in server-owned plan order", () => {

@@ -25,6 +25,7 @@ import {
   type DbTx,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -164,6 +165,17 @@ async function seedCanonicalCompetitor(
   ];
   const profile = {
     profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Competitor research fixture",
+    oneLiner: "Deterministic competitor research for growth planning",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [
+      {
+        reviewStatus: "primary",
+        targetCompanyOrAudience: "Growth teams",
+      },
+    ],
     sourceSiteId: project.siteId,
     sourcePageUrl: `https://${project.host}/`,
     sourceSnapshotId: null,
@@ -393,6 +405,17 @@ async function confirmNextProfileOrigin(
   ];
   const profile = {
     profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Competitor research fixture",
+    oneLiner: "Deterministic competitor research for growth planning",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [
+      {
+        reviewStatus: "primary",
+        targetCompanyOrAudience: "Growth teams",
+      },
+    ],
     sourceSiteId: project.siteId,
     sourcePageUrl: `https://${project.host}/`,
     sourceSnapshotId: null,
@@ -772,6 +795,28 @@ async function seedPublishedCompetitorGeneration(
     version: competitor.profileVersion,
     contentHash: competitor.profileContentHash,
   };
+  const [profileSource] = await tx
+    .select({
+      profile: icpProfiles.profile,
+      contentHash: icpProfiles.content_hash,
+    })
+    .from(icpProfiles)
+    .where(eq(icpProfiles.id, profile.id));
+  if (!profileSource || profileSource.contentHash !== profile.contentHash) {
+    throw new Error("Published generation fixture Profile lineage is invalid");
+  }
+  const [siteSource] = await tx
+    .select({ languageCodes: sites.language_codes })
+    .from(sites)
+    .where(eq(sites.id, project.siteId));
+  if (!siteSource) {
+    throw new Error("Published generation fixture Site is missing");
+  }
+  const contextProjection = buildContextProjectionV1({
+    profile: profileSource.profile,
+    profileContentHash: profileSource.contentHash,
+    siteLanguageCodes: siteSource.languageCodes,
+  });
   const manifest = {
     projectId: project.projectId,
     siteId: project.siteId,
@@ -837,6 +882,7 @@ async function seedPublishedCompetitorGeneration(
         },
       ],
     },
+    contextProjection,
   };
   const manifestHash = contentHash(
     manifest as unknown as CanonicalValue,

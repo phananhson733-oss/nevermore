@@ -8,7 +8,10 @@ import {
   type CanonicalValue,
 } from "../hash.ts";
 import { runMigrations } from "../migrate.ts";
-import { AuditRunsRepository } from "../repositories/audit-runs.ts";
+import {
+  AuditRunsRepository,
+  LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
+} from "../repositories/audit-runs.ts";
 import { CapabilityRunsRepository } from "../repositories/capability-runs.ts";
 import { PageSnapshotsRepository } from "../repositories/page-snapshots.ts";
 import { SourceConnectionsRepository } from "../repositories/source-connections.ts";
@@ -36,6 +39,10 @@ const DATABASE_URL = process.env["DATABASE_URL"];
 const describeDb = DATABASE_URL ? describe : describe.skip;
 const CRAWL_METHOD_VERSION = "crawl.site_graph.v2";
 const CRAWL_DATASET_KEY = "crawl.site_graph.v1";
+// These repository invariants deliberately retain the DB-accepted historical
+// diagnostic residue and its known legacy read-model generation. Current
+// 0.2.4/0.3.1 writer coverage lives in the web and worker vertical fixtures.
+const PERSISTENCE_FIXTURE_RULE_SET_VERSION = "mvp.rules.0.2.0";
 
 function crawlPageExtract(
   fetchUrl: string,
@@ -167,7 +174,7 @@ async function createCanonicalFixture(db: Db): Promise<CanonicalFixture> {
     site_id: siteId,
     icp_profile_id: icpProfileId,
     icp_profile_version: 1,
-    rule_set_version: "mvp.rules.0.2.0",
+    rule_set_version: PERSISTENCE_FIXTURE_RULE_SET_VERSION,
     prompt_set_version: "mvp.prompts.0.2.0",
     output_locale: "en",
     input_manifest: { fixtureId: randomUUID() },
@@ -258,7 +265,7 @@ async function createAuditProjection(
     capabilityRunId: capability.async_run_id,
     scopeKind: "site",
     scopeKey: fixture.siteId,
-    projectionVersion: "growth-audit.0.3.0",
+    projectionVersion: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
   });
   await auditRunsRepository.insertModuleResults(
     {
@@ -409,7 +416,7 @@ describeDb("growth audit persistence boundary", () => {
         capability_run_id: fixture.diagnosticRunId,
         scope_kind: "site",
         scope_key: fixture.siteId,
-        projection_version: "growth-audit.0.3.0",
+        projection_version: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
       }),
       "23505",
     );
@@ -832,7 +839,7 @@ describeDb("growth audit persistence boundary", () => {
         capability_run_id: fixture.diagnosticRunId,
         scope_kind: "site",
         scope_key: fixture.siteId,
-        projection_version: "growth-audit.0.3.0",
+        projection_version: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
       }),
       "23514",
     );
@@ -844,7 +851,7 @@ describeDb("growth audit persistence boundary", () => {
         capability_run_id: unrelatedAsyncRunId,
         scope_kind: "site",
         scope_key: fixture.siteId,
-        projection_version: "growth-audit.0.3.0",
+        projection_version: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
       }),
       "23514",
     );
@@ -911,7 +918,7 @@ describeDb("growth audit persistence boundary", () => {
       capabilityRunId: capability.async_run_id,
       scopeKind: "site" as const,
       scopeKey: fixture.siteId,
-      projectionVersion: "growth-audit.0.3.0",
+      projectionVersion: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
     };
     const audit = await auditRunsRepository.create(auditValues);
     await expect(auditRunsRepository.create(auditValues)).resolves.toEqual(
@@ -1037,7 +1044,7 @@ describeDb("growth audit persistence boundary", () => {
           capabilityRunId: capability.async_run_id,
           scopeKind: "site" as const,
           scopeKey: fixture.siteId,
-          projectionVersion: "growth-audit.0.3.0",
+          projectionVersion: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
         };
         const audit = await auditRunsRepository.create(auditValues);
         await auditRunsRepository.create(auditValues);

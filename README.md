@@ -14,7 +14,11 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+
+Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
+The ordered migration head is
+`0042_contextual_indexability_opportunities.sql` (**42 migrations**).
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and
@@ -110,6 +114,31 @@ candidate libraries; URL reads remain latest-generation. Only Keyword and
 Competitor detail GETs accept `view=review` for current governance, and that view
 is mutually exclusive with the generation pin. Keyword and Competitor PATCH
 commands reject every query parameter.
+
+Current authenticated diagnostics freeze an exact-key, hash-covered
+`contextProjection.v1` from the immutable confirmed Product Profile/legacy ICP
+generation and the exact Site language declaration. Profile generations do not
+borrow fields from one another. Site language values are RFC 5646 validated and
+frozen in their declared order and spelling; an empty list means unknown and
+never falls back to the Project delivery locale. Provider availability,
+permissions/modes, workflow state, mutable prioritization, and inferred/model
+facts remain outside this projection.
+
+`TECH-INDEXABILITY-006@1` is the twelfth deterministic rule. It reports only an
+exact Crawl fetch with a 2xx `page.status`, sitemap membership, a page-level
+non-indexable signal, and unambiguous exact lineage. Redirect sources and
+non-2xx fetches are excluded. The nullable `executionPreview` shown with
+reviewable/confirmed Opportunities and URL Findings is current-view, read-only
+copy from the ActionTemplate registry and Project delivery locale; it is not
+replay, identity, Action, workflow, publication, or measurement authority.
+
+The current Growth Audit read-model projection is `growth-audit.0.3.1`; latest
+reads select only that generation. An exact pin may still read known
+`growth-audit.0.3.0` history under its own validator. The Growth Audit capability
+version remains `0.3.0`; its request/addressing contract and
+`capabilityContractVersion` literal remain `growth-audit.0.3.0`.
+Anonymous Public Tools retain their existing facts-only, quota, no-Profile, and
+no-canonical-persistence boundary.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change

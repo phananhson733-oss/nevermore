@@ -1,8 +1,12 @@
 import { canonicalize, contentHash, sha256Hex, type CanonicalValue } from "@sf/db";
 import {
+  buildContextProjectionV1,
+  CONTEXTUAL_RULE_SET_VERSION,
   GOVERNANCE_PROJECTION_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
   LEGACY_RULE_SET_VERSION,
-  RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
 } from "@sf/engine";
 import { describe, expect, it } from "vitest";
 import {
@@ -29,6 +33,30 @@ const ids = {
 
 const capturedAt = "2026-07-21T08:00:00.000Z";
 
+const governance = {
+  projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+  keywordClusters: [],
+  competitors: [],
+} as const;
+
+const contextProjection = buildContextProjectionV1({
+  profileContentHash: "c".repeat(64),
+  profile: {
+    profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Acme",
+    oneLiner: "Ship faster",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [],
+  },
+  siteLanguageCodes: ["zh-CN", "en"],
+});
+
+function manifestHash(value: unknown): string {
+  return contentHash(value as CanonicalValue);
+}
+
 function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     id: ids.crawl,
@@ -54,8 +82,7 @@ function snapshot(overrides: Record<string, unknown> = {}) {
 }
 
 function runAndSnapshots(
-  ruleSetVersion: typeof RULE_SET_VERSION | typeof LEGACY_RULE_SET_VERSION =
-    RULE_SET_VERSION,
+  ruleSetVersion: string = CONTEXTUAL_RULE_SET_VERSION,
 ) {
   const crawl = snapshot();
   const gsc = snapshot({
@@ -82,16 +109,15 @@ function runAndSnapshots(
       availability: row.availability,
     })),
     ruleSetVersion,
-    promptSetVersion: "prompts.v1",
+    promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "zh-CN",
-    ...(ruleSetVersion === RULE_SET_VERSION
-      ? {
-          governance: {
-            projectionVersion: GOVERNANCE_PROJECTION_VERSION,
-            keywordClusters: [],
-            competitors: [],
-          },
-        }
+    ...(ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === LINKGRAPH_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === CONTEXTUAL_RULE_SET_VERSION
+      ? { governance }
+      : {}),
+    ...(ruleSetVersion === CONTEXTUAL_RULE_SET_VERSION
+      ? { contextProjection }
       : {}),
   };
   return {
@@ -104,10 +130,10 @@ function runAndSnapshots(
       icp_profile_id: ids.icp,
       icp_profile_version: 2,
       rule_set_version: ruleSetVersion,
-      prompt_set_version: "prompts.v1",
+      prompt_set_version: PROMPT_SET_VERSION,
       output_locale: "zh-CN",
       input_manifest: manifest,
-      input_hash: contentHash(manifest as CanonicalValue),
+      input_hash: manifestHash(manifest),
       coverage: {},
       created_at: capturedAt,
       run_status: "completed",
@@ -154,7 +180,7 @@ describe("Growth Map frozen read boundary", () => {
       ...fixture.run,
       run_completed_at: databaseInstant,
       input_manifest: manifest,
-      input_hash: contentHash(manifest as CanonicalValue),
+      input_hash: manifestHash(manifest),
     };
 
     expect(
@@ -165,21 +191,67 @@ describe("Growth Map frozen read boundary", () => {
     ).toBe(ids.crawl);
   });
 
-  it("retains the exact legacy 0.2.1 manifest replay boundary", () => {
-    const fixture = runAndSnapshots(LEGACY_RULE_SET_VERSION);
-
-    expect(
-      validateGrowthMapFrozenRun(
+  it.each([
+    [
+      "pre-governance 0.2.1",
+      LEGACY_RULE_SET_VERSION,
+      false,
+      false,
+    ],
+    [
+      "governed 0.2.2",
+      GOVERNED_LEGACY_RULE_SET_VERSION,
+      true,
+      false,
+    ],
+    [
+      "linkgraph 0.2.3",
+      LINKGRAPH_LEGACY_RULE_SET_VERSION,
+      true,
+      false,
+    ],
+    [
+      "contextual 0.2.4",
+      CONTEXTUAL_RULE_SET_VERSION,
+      true,
+      true,
+    ],
+  ])(
+    "retains the exact %s frozen manifest generation",
+    (_label, ruleSetVersion, hasGovernance, hasContextProjection) => {
+      const fixture = runAndSnapshots(ruleSetVersion);
+      const frozen = validateGrowthMapFrozenRun(
         fixture.run,
         fixture.snapshots,
         { workspaceId: ids.workspace, projectId: ids.project },
-      ).crawlSnapshotId,
-    ).toBe(ids.crawl);
-    expect(fixture.run.input_manifest).not.toHaveProperty("governance");
-  });
+      );
 
-  it("requires a canonical governance projection for the current rule set", () => {
-    const fixture = runAndSnapshots();
+      expect(frozen.crawlSnapshotId).toBe(ids.crawl);
+      expect(Object.hasOwn(fixture.run.input_manifest, "governance")).toBe(
+        hasGovernance,
+      );
+      expect(
+        Object.hasOwn(fixture.run.input_manifest, "contextProjection"),
+      ).toBe(hasContextProjection);
+      expect(Object.hasOwn(frozen, "governance")).toBe(hasGovernance);
+      expect(Object.hasOwn(frozen, "contextProjection")).toBe(
+        hasContextProjection,
+      );
+      expect(frozen.governance).toEqual(
+        hasGovernance ? governance : undefined,
+      );
+      expect(frozen.contextProjection).toEqual(
+        hasContextProjection ? contextProjection : undefined,
+      );
+    },
+  );
+
+  it.each([
+    GOVERNED_LEGACY_RULE_SET_VERSION,
+    LINKGRAPH_LEGACY_RULE_SET_VERSION,
+    CONTEXTUAL_RULE_SET_VERSION,
+  ])("requires canonical governance for %s", (ruleSetVersion) => {
+    const fixture = runAndSnapshots(ruleSetVersion);
     const { governance: _governance, ...missingGovernance } =
       fixture.run.input_manifest;
     const malformedGovernanceManifests = [
@@ -216,7 +288,7 @@ describe("Growth Map frozen read boundary", () => {
           {
             ...fixture.run,
             input_manifest: manifest,
-            input_hash: contentHash(manifest as CanonicalValue),
+            input_hash: manifestHash(manifest),
           },
           fixture.snapshots,
           { workspaceId: ids.workspace, projectId: ids.project },
@@ -225,42 +297,125 @@ describe("Growth Map frozen read boundary", () => {
     }
   });
 
-  it("rejects governance on the legacy manifest and rejects unknown rule sets", () => {
+  it("forbids governance and context on 0.2.1 and context on 0.2.2/0.2.3", () => {
     const legacyFixture = runAndSnapshots(LEGACY_RULE_SET_VERSION);
-    const legacyWithGovernance = {
-      ...legacyFixture.run.input_manifest,
-      governance: {
-        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
-        keywordClusters: [],
-        competitors: [],
+    const governedFixture = runAndSnapshots(
+      GOVERNED_LEGACY_RULE_SET_VERSION,
+    );
+    const linkgraphFixture = runAndSnapshots(
+      LINKGRAPH_LEGACY_RULE_SET_VERSION,
+    );
+    const invalidManifests = [
+      {
+        fixture: legacyFixture,
+        manifest: {
+          ...legacyFixture.run.input_manifest,
+          governance,
+        },
       },
-    };
-    expect(() =>
-      validateGrowthMapFrozenRun(
-        {
-          ...legacyFixture.run,
-          input_manifest: legacyWithGovernance,
-          input_hash: contentHash(legacyWithGovernance as CanonicalValue),
+      {
+        fixture: legacyFixture,
+        manifest: {
+          ...legacyFixture.run.input_manifest,
+          contextProjection,
         },
-        legacyFixture.snapshots,
-        { workspaceId: ids.workspace, projectId: ids.project },
-      ),
-    ).toThrow(/frozen Growth Map/i);
+      },
+      {
+        fixture: governedFixture,
+        manifest: {
+          ...governedFixture.run.input_manifest,
+          contextProjection,
+        },
+      },
+      {
+        fixture: linkgraphFixture,
+        manifest: {
+          ...linkgraphFixture.run.input_manifest,
+          contextProjection,
+        },
+      },
+    ];
 
-    const currentFixture = runAndSnapshots();
-    const unknownRuleSetManifest = {
-      ...currentFixture.run.input_manifest,
-      ruleSetVersion: "mvp.rules.999.0.0",
+    for (const { fixture, manifest } of invalidManifests) {
+      expect(() =>
+        validateGrowthMapFrozenRun(
+          {
+            ...fixture.run,
+            input_manifest: manifest,
+            input_hash: manifestHash(manifest),
+          },
+          fixture.snapshots,
+          { workspaceId: ids.workspace, projectId: ids.project },
+        ),
+      ).toThrow(/frozen Growth Map/i);
+    }
+  });
+
+  it("requires a strict current context projection and forbids preview authority", () => {
+    const fixture = runAndSnapshots();
+    const { contextProjection: _contextProjection, ...missingContext } =
+      fixture.run.input_manifest;
+    const invalidManifests = [
+      missingContext,
+      {
+        ...fixture.run.input_manifest,
+        contextProjection: {
+          ...contextProjection,
+          schemaVersion: "context-projection.v999",
+        },
+      },
+      {
+        ...fixture.run.input_manifest,
+        contextProjection: {
+          ...contextProjection,
+          unexpected: true,
+        },
+      },
+      {
+        ...fixture.run.input_manifest,
+        executionPreview: { title: "non-authoritative" },
+      },
+    ];
+
+    for (const manifest of invalidManifests) {
+      expect(() =>
+        validateGrowthMapFrozenRun(
+          {
+            ...fixture.run,
+            input_manifest: manifest,
+            input_hash: manifestHash(manifest),
+          },
+          fixture.snapshots,
+          { workspaceId: ids.workspace, projectId: ids.project },
+        ),
+      ).toThrow(/frozen Growth Map/i);
+    }
+  });
+
+  it.each([
+    ["unshipped 0.2.0", "mvp.rules.0.2.0", PROMPT_SET_VERSION],
+    ["unknown rule set", "mvp.rules.999.0.0", PROMPT_SET_VERSION],
+    [
+      "unknown prompt set",
+      CONTEXTUAL_RULE_SET_VERSION,
+      "mvp.prompts.999.0.0",
+    ],
+  ])("rejects an exact manifest with %s", (_label, ruleSetVersion, promptSetVersion) => {
+    const fixture = runAndSnapshots(ruleSetVersion);
+    const manifest = {
+      ...fixture.run.input_manifest,
+      promptSetVersion,
     };
+
     expect(() =>
       validateGrowthMapFrozenRun(
         {
-          ...currentFixture.run,
-          rule_set_version: "mvp.rules.999.0.0",
-          input_manifest: unknownRuleSetManifest,
-          input_hash: contentHash(unknownRuleSetManifest as CanonicalValue),
+          ...fixture.run,
+          prompt_set_version: promptSetVersion,
+          input_manifest: manifest,
+          input_hash: manifestHash(manifest),
         },
-        currentFixture.snapshots,
+        fixture.snapshots,
         { workspaceId: ids.workspace, projectId: ids.project },
       ),
     ).toThrow(/frozen Growth Map/i);
@@ -291,7 +446,7 @@ describe("Growth Map frozen read boundary", () => {
       ...fixture.run,
       run_completed_at: databaseInstant,
       input_manifest: manifest,
-      input_hash: contentHash(manifest as CanonicalValue),
+      input_hash: manifestHash(manifest),
     };
 
     expect(
@@ -354,7 +509,7 @@ describe("Growth Map frozen read boundary", () => {
           return {
             ...fixture.run,
             input_manifest: manifest,
-            input_hash: contentHash(manifest as CanonicalValue),
+            input_hash: manifestHash(manifest),
           };
         })(),
         snapshots: fixture.snapshots,
@@ -374,9 +529,7 @@ describe("Growth Map frozen read boundary", () => {
         run: {
           ...fixture.run,
           input_manifest: invalidAvailabilityManifest,
-          input_hash: contentHash(
-            invalidAvailabilityManifest as CanonicalValue,
-          ),
+          input_hash: manifestHash(invalidAvailabilityManifest),
         },
         snapshots: invalidAvailabilitySnapshots,
       },

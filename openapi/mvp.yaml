@@ -4330,7 +4330,7 @@ components:
     GrowthMapUrlFinding:
       type: object
       additionalProperties: false
-      required: [projectId, siteId, findingId, diagnosticRunId, ruleId, ruleVersion, title, severity, reviewState, reviewRevision, active, regressed, evidenceIds, targetRelation, executionRef]
+      required: [projectId, siteId, findingId, diagnosticRunId, ruleId, ruleVersion, title, severity, reviewState, reviewRevision, active, regressed, evidenceIds, targetRelation, executionPreview, executionRef]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
         siteId: { $ref: '#/components/schemas/Uuid' }
@@ -4351,6 +4351,10 @@ components:
           uniqueItems: true
           items: { $ref: '#/components/schemas/Uuid' }
         targetRelation: { $ref: '#/components/schemas/GrowthMapFindingTargetRelation' }
+        executionPreview:
+          oneOf:
+            - $ref: '#/components/schemas/ExecutionPreview'
+            - type: 'null'
         executionRef:
           oneOf:
             - $ref: '#/components/schemas/GrowthMapExecutionRef'
@@ -5202,6 +5206,25 @@ components:
       properties:
         data: { $ref: '#/components/schemas/AuditModuleSummary' }
 
+    ExecutionPreview:
+      type: object
+      additionalProperties: false
+      description: |
+        Presentational current-view copy derived from the static ActionTemplate
+        registry. This is not an Action, workflow state, publication command,
+        Artifact, or measurement record.
+      required: [templateId, templateVersion, artifactType, effort, risk, contentLocale, title, description, expectedOutcome]
+      properties:
+        templateId: { type: string, minLength: 1, maxLength: 200 }
+        templateVersion: { type: integer, enum: [1, 2] }
+        artifactType: { $ref: '#/components/schemas/ArtifactType' }
+        effort: { type: string, enum: [small, medium, large] }
+        risk: { type: string, enum: [low, medium, high] }
+        contentLocale: { type: string, enum: [en, zh-CN] }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, minLength: 1, maxLength: 4000 }
+        expectedOutcome: { type: string, minLength: 1, maxLength: 4000 }
+
     WorkShape:
       type: string
       enum: [fix, improve, create]
@@ -5219,6 +5242,7 @@ components:
       enum:
         - TECH-HTTP-001
         - TECH-CANONICAL-002
+        - TECH-INDEXABILITY-006
         - TECH-LINKGRAPH-005
         - SEARCH-CTR-004
         - SEARCH-DECAY-002
@@ -5236,6 +5260,15 @@ components:
       properties:
         ruleId: { $ref: '#/components/schemas/OpportunityRuleId' }
         ruleVersion: { type: integer, enum: [1, 2, 3] }
+      allOf:
+        - if:
+            properties:
+              ruleId: { const: TECH-INDEXABILITY-006 }
+            required: [ruleId]
+          then:
+            properties:
+              ruleVersion: { const: 1 }
+      x-signalframe-runtime-refinement: canonicalOpportunityRuleVersion
 
     OpportunityOwnedAsset:
       type: object
@@ -5291,15 +5324,8 @@ components:
         claim: { type: string, minLength: 1, maxLength: 4000 }
         limitation: { type: string, minLength: 1, maxLength: 2000 }
 
-    GrowthOpportunity:
+    GrowthOpportunityBase:
       type: object
-      additionalProperties: false
-      description: |
-        A traceable Growth Opportunity. `readiness` discriminates the variant:
-        candidate has no primary Finding or Action; reviewable carries a primary
-        Finding and rule; confirmed additionally projects the Finding-owned
-        Action. Runtime validation uses the typed Opportunity contract, and
-        confirmation flows only through the Finding review mutation.
       required:
         - opportunityKey
         - title
@@ -5356,10 +5382,66 @@ components:
           maxItems: 200
           items: { type: string, minLength: 1, maxLength: 2000 }
         readiness: { $ref: '#/components/schemas/OpportunityReadiness' }
-        primaryFindingId: { $ref: '#/components/schemas/Uuid' }
-        primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
-        actionId: { $ref: '#/components/schemas/Uuid' }
-        action: { $ref: '#/components/schemas/OpportunityActionSummary' }
+
+    CandidateGrowthOpportunity:
+      allOf:
+        - $ref: '#/components/schemas/GrowthOpportunityBase'
+        - type: object
+          required: [readiness]
+          properties:
+            readiness: { type: string, const: candidate }
+      unevaluatedProperties: false
+
+    ReviewableGrowthOpportunity:
+      allOf:
+        - $ref: '#/components/schemas/GrowthOpportunityBase'
+        - type: object
+          required: [readiness, primaryFindingId, primaryRule, executionPreview]
+          properties:
+            readiness: { type: string, const: reviewable }
+            primaryFindingId: { $ref: '#/components/schemas/Uuid' }
+            primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+            executionPreview:
+              oneOf:
+                - $ref: '#/components/schemas/ExecutionPreview'
+                - type: 'null'
+      unevaluatedProperties: false
+
+    ConfirmedGrowthOpportunity:
+      allOf:
+        - $ref: '#/components/schemas/GrowthOpportunityBase'
+        - type: object
+          required: [readiness, primaryFindingId, primaryRule, executionPreview, actionId, action]
+          properties:
+            readiness: { type: string, const: confirmed }
+            primaryFindingId: { $ref: '#/components/schemas/Uuid' }
+            primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+            executionPreview:
+              oneOf:
+                - $ref: '#/components/schemas/ExecutionPreview'
+                - type: 'null'
+            actionId: { $ref: '#/components/schemas/Uuid' }
+            action: { $ref: '#/components/schemas/OpportunityActionSummary' }
+      unevaluatedProperties: false
+
+    GrowthOpportunity:
+      description: |
+        A traceable Growth Opportunity. `readiness` discriminates the variant:
+        candidate has no primary Finding, Action, or execution preview;
+        reviewable carries a primary Finding, rule, and required nullable preview;
+        confirmed additionally projects the Finding-owned Action. Runtime
+        validation uses the typed Opportunity contract, and confirmation flows
+        only through the Finding review mutation.
+      oneOf:
+        - $ref: '#/components/schemas/CandidateGrowthOpportunity'
+        - $ref: '#/components/schemas/ReviewableGrowthOpportunity'
+        - $ref: '#/components/schemas/ConfirmedGrowthOpportunity'
+      discriminator:
+        propertyName: readiness
+        mapping:
+          candidate: '#/components/schemas/CandidateGrowthOpportunity'
+          reviewable: '#/components/schemas/ReviewableGrowthOpportunity'
+          confirmed: '#/components/schemas/ConfirmedGrowthOpportunity'
 
     ProjectOpportunityListMeta:
       type: object

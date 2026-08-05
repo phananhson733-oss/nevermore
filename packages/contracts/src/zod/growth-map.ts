@@ -8,6 +8,7 @@ import {
 } from "./common.ts";
 import { PriorityBand } from "./diagnostics.ts";
 import { SourceFreshness } from "./audit.ts";
+import { ExecutionPreview } from "./execution-preview.ts";
 import {
   ProductProfileCompetitorAnalysisScope,
   ProductProfileCompetitorDomain,
@@ -485,6 +486,7 @@ export const GrowthMapUrlFinding = z
     regressed: z.boolean(),
     evidenceIds: uniqueUuidArray(200).min(1),
     targetRelation: GrowthMapFindingTargetRelation,
+    executionPreview: ExecutionPreview.nullable(),
     executionRef: GrowthMapExecutionRef.nullable(),
   })
   .strict();

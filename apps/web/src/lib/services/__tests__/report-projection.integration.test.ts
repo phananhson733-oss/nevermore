@@ -68,7 +68,16 @@ async function seedIcp(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Acme", siteLanguageCodes: ["en"], defaultDeliveryLocale: "en" },
+      profile: {
+        productName: "Acme",
+        oneLineDescription: "Analytics for growth teams",
+        productType: "saas",
+        businessModels: ["subscription"],
+        marketCodes: ["US"],
+        segments: ["Growth teams"],
+        siteLanguageCodes: ["en"],
+        defaultDeliveryLocale: "en",
+      },
       content_hash: icpContentHash,
       created_by: actor,
     })

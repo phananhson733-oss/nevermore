@@ -95,7 +95,8 @@ import { runExport } from "../../../../../worker/src/export/run-export.ts";
  * — a reproducible, offline vertical E2E (browser responsive/a11y is covered
  * separately by Playwright and is intentionally untouched here).
  *
- * The golden snapshot is engineered so the 11-rule pipeline (spec §8.4) trips
+ * The golden snapshot is engineered so the current deterministic pipeline
+ * (spec §8.4) trips
  * findings across multiple domains with ZERO randomness:
  *  - a 404 page                       → TECH-HTTP-001   (technical_seo, spec §8.3)
  *  - a page canonicalizing to an

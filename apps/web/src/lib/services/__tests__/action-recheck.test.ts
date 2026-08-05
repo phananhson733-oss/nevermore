@@ -5,6 +5,7 @@ import {
   AuditRunsRepository,
   CapabilityRunsRepository,
   CompetitorsRepository,
+  contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   FindingsRepository,
@@ -60,6 +61,22 @@ const priorDiagnosticRunId = "00000000-0000-4000-8000-00000000001a";
 const actionId = "00000000-0000-4000-8000-00000000001b";
 const findingId = "00000000-0000-4000-8000-00000000001c";
 const idempotencyKey = "recheck-key";
+const legacyProfile = {
+  productName: "Acme",
+  oneLineDescription: "Ship faster",
+  productType: "saas",
+  businessModels: ["subscription"],
+  marketCodes: ["US"],
+  segments: ["Growth teams"],
+  primaryConversion: {
+    label: "Book a demo",
+    type: "contact",
+    targetUrl: "https://example.test/demo",
+  },
+  priorityUrls: ["https://example.test/pricing"],
+  technicalConstraints: ["Legacy CMS"],
+  resourceConstraints: ["One engineer"],
+} as const;
 
 const body: CreateActionRecheckRequest = {
   actionId,
@@ -187,9 +204,11 @@ function mockHappyPathInputs() {
     version: 4,
     content_hash: "b".repeat(64),
     status: "complete",
+    profile: legacyProfile,
   } as never);
   vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
     id: siteId,
+    language_codes: ["fr-CA"],
   } as never);
   vi.spyOn(
     DataSnapshotsRepository.prototype,
@@ -286,9 +305,11 @@ describe("createActionRecheck transaction", () => {
     const diagnosticInsert = vi
       .spyOn(DiagnosticRunsRepository.prototype, "insert")
       .mockResolvedValue(undefined as never);
-    vi.spyOn(CapabilityRunsRepository.prototype, "create").mockResolvedValue({
-      async_run_id: runId,
-    } as never);
+    const capabilityCreate = vi
+      .spyOn(CapabilityRunsRepository.prototype, "create")
+      .mockResolvedValue({
+        async_run_id: runId,
+      } as never);
     const auditCreate = vi
       .spyOn(AuditRunsRepository.prototype, "create")
       .mockResolvedValue({ id: auditRunId } as never);
@@ -321,14 +342,56 @@ describe("createActionRecheck transaction", () => {
       targetScope: { kind: "http_status", ref: "404" },
       selectedSnapshotIds: [snapshotId],
     });
-    expect(diagnosticInsert.mock.calls[0]?.[0]).toMatchObject({
-      inputManifest: {
-        governance: {
-          projectionVersion: "growth-governance.1.0.0",
-          keywordClusters: [],
-          competitors: [],
+    const inputManifest = diagnosticInsert.mock.calls[0]?.[0]
+      .inputManifest as Record<string, unknown>;
+    expect(Object.keys(inputManifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
+    expect(inputManifest).toMatchObject({
+      governance: {
+        projectionVersion: "growth-governance.1.0.0",
+        keywordClusters: [],
+        competitors: [],
+      },
+      contextProjection: {
+        profileGeneration: "legacy-icp.v1",
+        siteLanguage: {
+          sourceKind: "site",
+          state: "declared_non_empty",
+          languageCodes: ["fr-CA"],
         },
       },
+    });
+    expect(capabilityCreate).toHaveBeenCalledWith({
+      workspaceId,
+      projectId,
+      asyncRunId: runId,
+      capabilityId: "growth-audit",
+      capabilityVersion: "0.3.0",
+      inputManifestHash: contentHash({
+        capabilityId: "growth-audit",
+        capabilityVersion: "0.3.0",
+        capabilityContractVersion: "growth-audit.0.3.0",
+        operation: "growth_audit_recheck",
+        projectId,
+        siteId,
+        icpProfileId,
+        actionId,
+        priorRunId,
+        targetScope: { kind: "http_status", ref: "404" },
+        selectedSnapshotIds: [snapshotId],
+        outputLocale: "en",
+      }),
+      mode: "production",
+      sideEffectClass: "read_only",
     });
     expect(auditCreate.mock.calls[0]?.[0]).toMatchObject({
       diagnosticRunId: runId,
@@ -344,6 +407,49 @@ describe("createActionRecheck transaction", () => {
       expect.objectContaining({ runId }),
     );
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("replays the accepted run without reading later mutable Profile or Site state", async () => {
+    mockContext();
+    vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue({
+      request_hash: contentHash({
+        projectId,
+        actionId,
+        priorRunId,
+        targetScope: { kind: "http_status", ref: "404" },
+        outputLocale: "en",
+      }),
+      status: "completed",
+      resource_id: auditRunId,
+      response_body: {
+        run: { id: runId },
+        statusUrl: `/api/mvp/projects/${projectId}/runs/${runId}`,
+        resourceRef: { type: "audit_run", id: auditRunId },
+      },
+    } as never);
+    const projectRead = vi.spyOn(ProjectsRepository.prototype, "findById");
+    const profileRead = vi.spyOn(IcpProfilesRepository.prototype, "findById");
+    const siteRead = vi.spyOn(SitesRepository.prototype, "findById");
+
+    await expect(
+      createActionRecheck(
+        { workspaceId },
+        projectId,
+        actorId,
+        idempotencyKey,
+        body,
+      ),
+    ).resolves.toMatchObject({
+      status: 202,
+      replayed: true,
+      resourceRef: { type: "audit_run", id: auditRunId },
+    });
+
+    expect(projectRead).not.toHaveBeenCalled();
+    expect(profileRead).not.toHaveBeenCalled();
+    expect(siteRead).not.toHaveBeenCalled();
+    expect(mocks.db.transaction).not.toHaveBeenCalled();
+    expect(mocks.enqueueRunInTx).not.toHaveBeenCalled();
   });
 
   it("returns RUN_ALREADY_ACTIVE when a recheck for the action is active", async () => {

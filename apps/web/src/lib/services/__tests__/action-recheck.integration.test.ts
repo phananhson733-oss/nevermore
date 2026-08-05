@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AuditRunsRepository } from "@sf/db";
+import {
+  AuditRunsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
+} from "@sf/db";
 import { createActionRecheck } from "@/lib/services/action-recheck";
 import { getProjectResults } from "@/lib/services/recheck-results";
 import { getProjectAudit } from "@/lib/services/audit-projection";
@@ -111,7 +114,9 @@ describeDb("createActionRecheck → runDiagnostic → getProjectResults", () => 
       chain.scope,
       chain.auditRunId,
     );
-    expect(priorRun?.projection_version).toBe("growth-audit.0.3.0");
+    expect(priorRun?.projection_version).toBe(
+      GROWTH_AUDIT_PROJECTION_VERSION,
+    );
   });
 
   /**

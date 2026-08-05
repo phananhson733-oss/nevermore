@@ -7,7 +7,7 @@ import type { DiagnosticDomain, RuleId } from "./rule.ts";
  * Changing any of these requires bumping `RULE_SET_VERSION` and the rule version.
  */
 
-export const RULE_SET_VERSION = "mvp.rules.0.2.3";
+export const RULE_SET_VERSION = "mvp.rules.0.2.4";
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
 export interface FindingMeta {
@@ -29,6 +29,12 @@ export const FINDING_REGISTRY: Record<RuleId, FindingMeta> = {
     intent: "normalize_canonical",
     domain: "technical_seo",
     titleKey: "finding.canonical",
+  },
+  "TECH-INDEXABILITY-006": {
+    ruleFamily: "sitemap-indexability",
+    intent: "resolve_sitemap_indexability_conflict",
+    domain: "technical_seo",
+    titleKey: "finding.indexability",
   },
   "TECH-LINKGRAPH-005": {
     ruleFamily: "internal-link-equity",

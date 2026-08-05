@@ -261,6 +261,11 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
         status: "complete",
         profile: {
           productName: "RelayOps",
+          oneLineDescription: "Reliable release operations",
+          productType: "saas",
+          businessModels: ["subscription"],
+          marketCodes: ["US"],
+          segments: ["Platform teams"],
           siteLanguageCodes: ["en"],
           primaryMarket: "US",
         },
@@ -561,7 +566,9 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
         id: icp!.id,
         version: icp!.version,
         contentHash: icp!.content_hash,
+        profile: icp!.profile,
       },
+      siteLanguageCodes: ["en"],
       snapshots: [crawlSnapshot, gscSnapshot, ga4Snapshot],
       deliveryLocale: "en-US",
       governance: {
@@ -1384,7 +1391,9 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
         id: profile.id,
         version: profile.version,
         contentHash: profile.content_hash,
+        profile: profile.profile,
       },
+      siteLanguageCodes: ["en"],
       snapshots: corruptSnapshots,
       deliveryLocale: source.output_locale,
       governance: {

@@ -14,6 +14,7 @@ type Args = Record<string, string | number>;
 export const SUMMARY_ARG_KEYS = {
   "TECH-HTTP-001": ["count", "status"],
   "TECH-CANONICAL-002": ["subtype", "count"],
+  "TECH-INDEXABILITY-006": ["url"],
   "TECH-LINKGRAPH-005": ["affectedCount"],
   "SEARCH-CTR-004": ["ctr", "position"],
   "SEARCH-DECAY-002": ["delta"],
@@ -78,6 +79,12 @@ const TEMPLATES: Record<RuleId, Record<SummaryLocale, (a: Args) => string>> = {
   "TECH-CANONICAL-002": {
     en: (a) => `Canonical conflicts detected (${s(a, "subtype")}) affecting ${n(a, "count")} page(s).`,
     "zh-CN": (a) => `检测到 canonical 冲突（${s(a, "subtype")}），影响 ${n(a, "count")} 个页面。`,
+  },
+  "TECH-INDEXABILITY-006": {
+    en: (a) =>
+      `${s(a, "url")} is listed in the sitemap but was observed with a page-level non-indexable signal.`,
+    "zh-CN": (a) =>
+      `${s(a, "url")} 已列入 Sitemap，但观测到页面级不可索引信号。`,
   },
   "TECH-LINKGRAPH-005": {
     en: (a) => linkgraphSummary(a, "en"),

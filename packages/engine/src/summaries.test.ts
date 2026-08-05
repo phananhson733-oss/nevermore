@@ -39,4 +39,22 @@ describe("buildSummary", () => {
       ).summary,
     ).toBe("某有历史需求的页面点击量较前 28 天下降 50.0%。");
   });
+
+  it("describes the observed sitemap/indexability contradiction without prescribing the fix", () => {
+    const url = "https://example.com/noindex";
+
+    expect(buildSummary("TECH-INDEXABILITY-006", { url }, "en")).toEqual({
+      summary:
+        "https://example.com/noindex is listed in the sitemap but was observed with a page-level non-indexable signal.",
+      summaryLocale: "en",
+    });
+    expect(buildSummary("TECH-INDEXABILITY-006", { url }, "zh-CN")).toEqual({
+      summary:
+        "https://example.com/noindex 已列入 Sitemap，但观测到页面级不可索引信号。",
+      summaryLocale: "zh-CN",
+    });
+    expect(() => buildSummary("TECH-INDEXABILITY-006", {}, "en")).toThrow(
+      /TECH-INDEXABILITY-006.*url/,
+    );
+  });
 });

@@ -413,7 +413,7 @@ describe("workspace complete pagination and snapshot reads", () => {
     ]);
   });
 
-  it("returns a null frozen run and no legacy work cards when no readable audit exists", async () => {
+  it("returns no current work cards during a legacy-only projection rollout window", async () => {
     vi.mocked(
       GrowthMapReadRepository.prototype.findLatestReadableRun,
     ).mockResolvedValue(null);
@@ -429,6 +429,9 @@ describe("workspace complete pagination and snapshot reads", () => {
     if (view.view !== "overview") throw new Error("expected Overview view");
     expect(view.frozenDiagnosticRunId).toBeNull();
     expect(view.topActions).toEqual([]);
+    expect(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).toHaveBeenCalledWith(SCOPE);
     expect(
       GrowthMapReadRepository.prototype.listCurrentRunUrls,
     ).not.toHaveBeenCalled();

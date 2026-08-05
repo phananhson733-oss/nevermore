@@ -8,6 +8,7 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   enqueueRunInTx,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   IcpProfilesRepository,
   IdempotencyRepository,
   ProjectsRepository,
@@ -50,8 +51,8 @@ import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
  * versioned full Growth Audit. Route A: the audit reuses the canonical diagnostic
  * queue — it is a `kind: "diagnostic"` async run under its own `growth_audit`
  * active key, distinguished from a pure diagnosis only by its `audit_runs`
- * projection. The worker runs the exact 11-rule diagnostic pipeline and then
- * materializes the eight audit modules.
+ * projection. The worker runs the exact current 12-rule, context-aware
+ * diagnostic pipeline and then materializes the eight audit modules.
  *
  * Hard gates mirror diagnosis: a confirmed COMPLETE Product Profile is required
  * (422 CONTEXT_INCOMPLETE) and at least one usable crawl snapshot must exist for
@@ -63,7 +64,6 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const GROWTH_AUDIT_ACTIVE_KEY = "growth_audit";
 const CAPABILITY_ID = "growth-audit";
 const CAPABILITY_VERSION = "0.3.0";
-const PROJECTION_VERSION = "growth-audit.0.3.0";
 const AUDIT_SNAPSHOT_SELECTORS = [
   {
     provider: "crawl",
@@ -139,8 +139,10 @@ export interface GrowthAuditInputs {
     readonly id: string;
     readonly version: number;
     readonly contentHash: string;
+    readonly profile: unknown;
   };
   readonly siteId: string;
+  readonly siteLanguageCodes: readonly string[];
   /** Compatibility pointer retained for the separately governed recheck path. */
   readonly crawlSnapshot: DataSnapshotRow;
   readonly snapshots: readonly DataSnapshotRow[];
@@ -371,8 +373,14 @@ export async function loadGrowthAuditInputs(
   );
 
   return {
-    icp: { id: icp.id, version: icp.version, contentHash: icp.content_hash },
+    icp: {
+      id: icp.id,
+      version: icp.version,
+      contentHash: icp.content_hash,
+      profile: icp.profile,
+    },
     siteId: site.id,
+    siteLanguageCodes: site.language_codes,
     crawlSnapshot,
     snapshots: orderedSnapshots,
   };
@@ -518,6 +526,7 @@ export async function createGrowthAuditRun(
         projectId,
         siteId: inputs.siteId,
         icp: inputs.icp,
+        siteLanguageCodes: inputs.siteLanguageCodes,
         snapshots: inputs.snapshots,
         deliveryLocale: body.outputLocale,
         governance,
@@ -582,7 +591,7 @@ export async function createGrowthAuditRun(
         capabilityRunId: run.id,
         scopeKind: body.scope.kind,
         scopeKey: deriveScopeKey(body.scope, inputs.siteId),
-        projectionVersion: PROJECTION_VERSION,
+        projectionVersion: GROWTH_AUDIT_PROJECTION_VERSION,
       });
       await enqueueRunInTx(boss, tx, "diagnose", {
         runId: run.id,

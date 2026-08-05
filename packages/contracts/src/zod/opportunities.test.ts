@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_RULES } from "../../../engine/src/rules/index.ts";
+import { CONTEXTUAL_ALL_RULES } from "../../../engine/src/rules/index.ts";
 import {
   CandidateOpportunity,
   ConfirmedOpportunity,
@@ -12,10 +12,23 @@ import {
   resolveRuleOpportunityWorkShape,
   WorkShape,
 } from "./opportunities.ts";
+import { ExecutionPreview } from "./execution-preview.ts";
 
 const findingId = "30000000-0000-4000-8000-000000000001";
 const supportingFindingId = "30000000-0000-4000-8000-000000000002";
 const actionId = "30000000-0000-4000-8000-000000000003";
+
+const contentBriefPreview = {
+  templateId: "improve_content_coverage.v1",
+  templateVersion: 1,
+  artifactType: "content_brief",
+  effort: "medium",
+  risk: "low",
+  contentLocale: "zh-CN",
+  title: "完善内容覆盖",
+  description: "补充缺失的主题和答案结构。",
+  expectedOutcome: "验证目标：页面更完整地满足目标搜索意图。",
+} as const;
 
 const baseOpportunity = {
   opportunityKey: "url:/customer-onboarding/:CONTENT-COVERAGE-001",
@@ -83,6 +96,20 @@ describe("Growth Opportunity projection contracts", () => {
         primaryFindingId: findingId,
       }),
     ).toThrow();
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        executionPreview: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      CandidateOpportunity.safeParse({
+        ...baseOpportunity,
+        readiness: "candidate",
+        executionPreview: undefined,
+      }).success,
+    ).toBe(false);
 
     expect(
       CandidateOpportunity.safeParse({
@@ -105,12 +132,23 @@ describe("Growth Opportunity projection contracts", () => {
     ).toBe(false);
   });
 
+  it("keeps preview template versions aligned with the ActionTemplate registry", () => {
+    expect(ExecutionPreview.safeParse(contentBriefPreview).success).toBe(true);
+    expect(
+      ExecutionPreview.safeParse({
+        ...contentBriefPreview,
+        templateVersion: 3,
+      }).success,
+    ).toBe(false);
+  });
+
   it("requires exactly one primary Finding for a reviewable Opportunity", () => {
     expect(() =>
       ReviewableOpportunity.parse({
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingId: undefined,
+        executionPreview: null,
       }),
     ).toThrow();
 
@@ -125,6 +163,7 @@ describe("Growth Opportunity projection contracts", () => {
         },
         supportingFindingIds: [supportingFindingId],
         actionId: undefined,
+        executionPreview: contentBriefPreview,
       }),
     ).toBeTruthy();
 
@@ -138,6 +177,7 @@ describe("Growth Opportunity projection contracts", () => {
           ruleVersion: 1,
         },
         supportingFindingIds: [findingId],
+        executionPreview: null,
       }).success,
     ).toBe(false);
     expect(
@@ -154,6 +194,7 @@ describe("Growth Opportunity projection contracts", () => {
           suitableForIntent: false,
         },
         workShape: "create",
+        executionPreview: null,
       }).success,
     ).toBe(true);
   });
@@ -165,6 +206,7 @@ describe("Growth Opportunity projection contracts", () => {
         readiness: "reviewable",
         primaryFindingId: findingId,
         primaryRule: { ruleId: "TECH-FOO-999", ruleVersion: 1 },
+        executionPreview: null,
       }).success,
     ).toBe(false);
     expect(
@@ -174,6 +216,7 @@ describe("Growth Opportunity projection contracts", () => {
         primaryFindingId: findingId,
         primaryRule: { ruleId: "GEO-CRAWLER-002", ruleVersion: 1 },
         workShape: "create",
+        executionPreview: null,
       }).success,
     ).toBe(false);
     expect(
@@ -186,6 +229,7 @@ describe("Growth Opportunity projection contracts", () => {
           ruleVersion: 1,
         },
         lenses: ["site_health"],
+        executionPreview: null,
       }).success,
     ).toBe(false);
   });
@@ -215,6 +259,18 @@ describe("Growth Opportunity projection contracts", () => {
         ruleVersion: 2,
       }).success,
     ).toBe(false);
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "TECH-INDEXABILITY-006",
+        ruleVersion: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      OpportunityRuleReference.safeParse({
+        ruleId: "TECH-INDEXABILITY-006",
+        ruleVersion: 2,
+      }).success,
+    ).toBe(false);
   });
 
   it("requires a confirmed Action to belong to the primary Finding", () => {
@@ -233,6 +289,7 @@ describe("Growth Opportunity projection contracts", () => {
         status: "planned",
         artifactType: "content_brief",
       },
+      executionPreview: contentBriefPreview,
     } as const;
 
     expect(ConfirmedOpportunity.safeParse(confirmed).success).toBe(true);
@@ -285,6 +342,7 @@ describe("Growth Opportunity projection contracts", () => {
           status: "planned",
           artifactType: "content_brief",
         },
+        executionPreview: null,
       }).success,
     ).toBe(true);
     expect(
@@ -303,8 +361,91 @@ describe("Growth Opportunity projection contracts", () => {
           status: "planned",
           artifactType: ["content_brief", "metadata_rewrite"],
         },
+        executionPreview: null,
       }).success,
     ).toBe(false);
+  });
+
+  it("requires a nullable preview key for reviewable and confirmed Opportunities", () => {
+    const reviewable = {
+      ...baseOpportunity,
+      readiness: "reviewable",
+      primaryFindingId: findingId,
+      primaryRule: {
+        ruleId: "CONTENT-COVERAGE-001",
+        ruleVersion: 1,
+      },
+    } as const;
+
+    expect(ReviewableOpportunity.safeParse(reviewable).success).toBe(false);
+    expect(
+      ReviewableOpportunity.safeParse({
+        ...reviewable,
+        executionPreview: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      ReviewableOpportunity.safeParse({
+        ...reviewable,
+        executionPreview: contentBriefPreview,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      ConfirmedOpportunity.safeParse({
+        ...reviewable,
+        readiness: "confirmed",
+        actionId,
+        action: {
+          actionId,
+          findingId,
+          status: "planned",
+          artifactType: "content_brief",
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps previews presentational, strict, and fixed to the primary Rule Artifact type", () => {
+    const reviewable = {
+      ...baseOpportunity,
+      readiness: "reviewable",
+      primaryFindingId: findingId,
+      primaryRule: {
+        ruleId: "CONTENT-COVERAGE-001",
+        ruleVersion: 1,
+      },
+    } as const;
+
+    expect(ExecutionPreview.parse(contentBriefPreview)).toEqual(
+      contentBriefPreview,
+    );
+    expect(
+      ReviewableOpportunity.safeParse({
+        ...reviewable,
+        executionPreview: {
+          ...contentBriefPreview,
+          artifactType: "technical_ticket",
+        },
+      }).success,
+    ).toBe(false);
+
+    for (const forbidden of [
+      "actionId",
+      "status",
+      "revision",
+      "baseRevision",
+      "queued",
+      "artifactId",
+      "measurementId",
+    ] as const) {
+      expect(
+        ExecutionPreview.safeParse({
+          ...contentBriefPreview,
+          [forbidden]: forbidden === "queued" ? true : "not-presentational",
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("requires a canonical evidence or observation trace with supporting provenance", () => {
@@ -405,12 +546,12 @@ describe("Growth Opportunity projection contracts", () => {
     ).toBe(false);
   });
 
-  it("maps every executable rule exactly once", () => {
+  it("maps every contextual executor rule exactly once", () => {
     expect(OpportunityRuleId.options).toEqual(
-      ALL_RULES.map((rule) => rule.id),
+      CONTEXTUAL_ALL_RULES.map((rule) => rule.id),
     );
     expect(Object.keys(RULE_OPPORTUNITY_PROJECTION)).toEqual(
-      ALL_RULES.map((rule) => rule.id),
+      CONTEXTUAL_ALL_RULES.map((rule) => rule.id),
     );
   });
 

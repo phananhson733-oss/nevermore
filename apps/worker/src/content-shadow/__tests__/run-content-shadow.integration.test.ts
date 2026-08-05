@@ -62,6 +62,7 @@ import {
   LLMError,
 } from "@sf/artifacts";
 import {
+  buildContextProjectionV1,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -195,9 +196,11 @@ async function seedProject(db: Db): Promise<ProjectSeed> {
   const projectId = randomUUID();
   const siteId = randomUUID();
   const icpProfileId = randomUUID();
+  const siteLanguageCodes = ["en"] as const;
   const icpProfile = {
     productName: "Shadow fixture",
-    siteLanguageCodes: ["en"],
+    oneLineDescription: "Content Shadow integration fixture.",
+    siteLanguageCodes,
     brandConstraints: ["Use precise operational language."],
     complianceConstraints: ["Do not promise guaranteed time savings."],
     prohibitedTerms: ["best-in-class"],
@@ -223,7 +226,7 @@ async function seedProject(db: Db): Promise<ProjectSeed> {
     origin: `https://${projectId}.example.test`,
     host: `${projectId}.example.test`,
     market_codes: ["US"],
-    language_codes: ["en"],
+    language_codes: [...siteLanguageCodes],
   });
   const crawlSource = await new SourceConnectionsRepository(
     db,
@@ -244,7 +247,9 @@ async function seedProject(db: Db): Promise<ProjectSeed> {
     actorId,
     siteId,
     icpProfileId,
+    icpProfile,
     icpContentHash,
+    siteLanguageCodes,
     crawlSourceConnectionId: crawlSource.id,
   };
 }
@@ -254,7 +259,9 @@ interface ProjectSeed {
   readonly actorId: string;
   readonly siteId: string;
   readonly icpProfileId: string;
+  readonly icpProfile: Record<string, unknown>;
   readonly icpContentHash: string;
+  readonly siteLanguageCodes: readonly string[];
   readonly crawlSourceConnectionId: string;
 }
 
@@ -344,6 +351,11 @@ async function seedDiagnosticRun(
       keywordClusters: [],
       competitors: [],
     },
+    contextProjection: buildContextProjectionV1({
+      profile: base.icpProfile,
+      profileContentHash: base.icpContentHash,
+      siteLanguageCodes: base.siteLanguageCodes,
+    }),
     icp: {
       id: base.icpProfileId,
       version: 1,
@@ -374,7 +386,7 @@ async function seedDiagnosticRun(
     promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
     inputManifest,
-    inputHash: contentHash(inputManifest),
+    inputHash: contentHash(inputManifest as unknown as CanonicalValue),
   });
   return {
     runId,

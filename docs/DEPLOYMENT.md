@@ -6,7 +6,7 @@ customer-facing brand, and its approved production origin is
 contract `2026-07-21`, backed by
 `authority/implementation-spec-v0.4/`.
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
@@ -27,12 +27,29 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0041_product_profile_default_competitors.sql` (**41 ordered migrations**)
+Migration range: `0001_init.sql` through `0042_contextual_indexability_opportunities.sql` (**42 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0041` are hosted; every release must back up,
+v0.4 migrations through `0042` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
+
+The current deterministic executor is `mvp.rules.0.2.4` (12 rules), with
+`mvp.prompts.0.2.0` unchanged. Its `contextProjection.v1` is frozen from the
+run's immutable Profile and exact Site language; it introduces no provider
+credential, feature flag, mutable workflow input, or new environment variable.
+Site language is RFC 5646 validated and preserved exactly; an empty declaration
+is unknown and does not use the delivery locale. `TECH-INDEXABILITY-006@1`
+requires exact Crawl lineage and an exact 2xx sitemap/non-indexable conflict;
+redirect sources and non-2xx fetches are excluded.
+
+Current latest reads select Growth Audit projection `growth-audit.0.3.1`, while
+exact pins may read known `growth-audit.0.3.0` with its historical validator.
+The capability version remains `0.3.0`; the request/addressing contract and
+`capabilityContractVersion` literal remain `growth-audit.0.3.0`. The nullable
+`executionPreview` is read-only current-view copy, not an Action, replay or
+release authority. Public Tools deployment, quotas and no-Profile boundary are
+unchanged by this migration.
 
 ## Approved production topology (Owner decision, 2026-07-20)
 

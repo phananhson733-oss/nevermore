@@ -1,6 +1,7 @@
 import {
   GOVERNED_LEGACY_RULE_SET_VERSION,
   LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
 } from "@sf/engine";
@@ -30,6 +31,7 @@ describe("diagnostic executor version resolution", () => {
       ruleSetVersion: "mvp.rules.0.2.1",
       promptSetVersion: "mvp.prompts.0.2.0",
       governance: "forbidden",
+      contextProjection: "forbidden",
     });
     expect(
       executor?.rules.find((rule) => rule.id === "CONTENT-GAP-011"),
@@ -41,22 +43,27 @@ describe("diagnostic executor version resolution", () => {
     ).toBe(true);
   });
 
-  it("resolves the current 0.2.3 executor with mandatory governance", () => {
+  it("resolves the current 0.2.4 executor with both mandatory envelopes", () => {
     const executor = resolveDiagnosticExecutor(
       storedExecutor(RULE_SET_VERSION),
     );
 
     expect(executor).toMatchObject({
-      ruleSetVersion: "mvp.rules.0.2.3",
+      ruleSetVersion: "mvp.rules.0.2.4",
       promptSetVersion: "mvp.prompts.0.2.0",
       governance: "required",
+      contextProjection: "required",
     });
+    expect(executor?.rules).toHaveLength(12);
     expect(
       executor?.rules.find((rule) => rule.id === "CONTENT-GAP-011"),
     ).toMatchObject({ version: 2 });
     expect(
       executor?.rules.find((rule) => rule.id === "TECH-LINKGRAPH-005"),
     ).toMatchObject({ version: 3 });
+    expect(
+      executor?.rules.find((rule) => rule.id === "TECH-INDEXABILITY-006"),
+    ).toMatchObject({ version: 1 });
   });
 
   it("resolves governed 0.2.2 history with the exact @2 linkgraph rule", () => {
@@ -66,10 +73,33 @@ describe("diagnostic executor version resolution", () => {
     expect(executor).toMatchObject({
       ruleSetVersion: "mvp.rules.0.2.2",
       governance: "required",
+      contextProjection: "forbidden",
     });
     expect(
       executor?.rules.find((rule) => rule.id === "TECH-LINKGRAPH-005"),
     ).toMatchObject({ version: 2 });
+    expect(executor?.rules).toHaveLength(11);
+    expect(
+      executor?.rules.some((rule) => rule.id === "TECH-INDEXABILITY-006"),
+    ).toBe(false);
+  });
+
+  it("resolves governed 0.2.3 history without the context envelope", () => {
+    const executor = resolveDiagnosticExecutor(
+      storedExecutor(LINKGRAPH_LEGACY_RULE_SET_VERSION),
+    );
+    expect(executor).toMatchObject({
+      ruleSetVersion: "mvp.rules.0.2.3",
+      governance: "required",
+      contextProjection: "forbidden",
+    });
+    expect(executor?.rules).toHaveLength(11);
+    expect(
+      executor?.rules.find((rule) => rule.id === "TECH-LINKGRAPH-005"),
+    ).toMatchObject({ version: 3 });
+    expect(
+      executor?.rules.some((rule) => rule.id === "TECH-INDEXABILITY-006"),
+    ).toBe(false);
   });
 
   it.each([

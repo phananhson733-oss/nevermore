@@ -8,6 +8,8 @@ import {
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
 } from "@sf/contracts";
 import {
+  buildContextProjectionV1,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -17,8 +19,6 @@ import {
 export const GROWTH_AUDIT_ACTIVE_KEY = "growth_audit" as const;
 export const GROWTH_AUDIT_CAPABILITY_ID = "growth-audit" as const;
 export const GROWTH_AUDIT_CAPABILITY_VERSION = "0.3.0" as const;
-export const GROWTH_AUDIT_PROJECTION_VERSION =
-  "growth-audit.0.3.0" as const;
 
 function snapshotManifestEntry(snapshot: DataSnapshotRow) {
   return {
@@ -46,7 +46,9 @@ export function buildAnalysisRefreshDiagnosticFrozenInput(input: {
     readonly id: string;
     readonly version: number;
     readonly contentHash: string;
+    readonly profile: unknown;
   };
+  readonly siteLanguageCodes: readonly string[];
   readonly snapshots: readonly DataSnapshotRow[];
   readonly outputLocale: string;
   readonly governance: GovernanceProjectionV1;
@@ -58,6 +60,13 @@ export function buildAnalysisRefreshDiagnosticFrozenInput(input: {
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   );
   const governance = parseGovernanceProjectionV1(input.governance);
+  const contextProjection = parseContextProjectionV1(
+    buildContextProjectionV1({
+      profile: input.icp.profile,
+      profileContentHash: input.icp.contentHash,
+      siteLanguageCodes: input.siteLanguageCodes,
+    }),
+  );
   const manifest = {
     projectId: input.projectId,
     siteId: input.siteId,
@@ -71,6 +80,7 @@ export function buildAnalysisRefreshDiagnosticFrozenInput(input: {
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: input.outputLocale,
     governance,
+    contextProjection,
   };
   return {
     manifest,
@@ -103,4 +113,3 @@ export function growthAuditCapabilityManifestHash(input: {
     outputLocale: input.outputLocale,
   });
 }
-

@@ -93,7 +93,15 @@ async function seedFinding(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Override", siteLanguageCodes: ["en"] },
+      profile: {
+        productName: "Override",
+        oneLineDescription: "Action override fixture",
+        productType: "services",
+        businessModels: ["project"],
+        marketCodes: ["US"],
+        segments: ["Operators"],
+        siteLanguageCodes: ["en"],
+      },
       content_hash: icpContentHash,
       created_by: actor,
     })

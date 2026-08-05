@@ -137,6 +137,11 @@ async function seedDataForSeoKeyword(
       status: "complete",
       profile: {
         productName: `${input.label} product`,
+        oneLineDescription: `${input.label} keyword research product`,
+        productType: "saas",
+        businessModels: ["subscription"],
+        marketCodes: ["US"],
+        segments: ["Growth teams"],
         primaryMarket: "US",
         siteLanguageCodes: ["en-US"],
       },
@@ -342,7 +347,9 @@ async function seedDataForSeoKeyword(
       id: icp!.id,
       version: icp!.version,
       contentHash: icp!.content_hash,
+      profile: icp!.profile,
     },
+    siteLanguageCodes: ["en-US"],
     snapshots: [crawlSnapshot, dataForSeoSnapshot],
     deliveryLocale: "en-US",
     governance: {

@@ -250,6 +250,7 @@ describe("buildOpportunity", () => {
       targets: [ownedUrlTarget()],
       evidence: [crawlEvidence()],
       action: null,
+      deliveryLocale: "zh-CN",
       diagnosticRunId: ids.run,
       now: NOW,
     });
@@ -260,6 +261,11 @@ describe("buildOpportunity", () => {
       workShape: "improve",
       primaryFindingId: ids.finding,
       lenses: ["demand_competition"],
+      executionPreview: {
+        contentLocale: "zh-CN",
+        title: "为未覆盖的优先意图创建内容",
+        artifactType: "content_brief",
+      },
     });
   });
 
@@ -280,6 +286,7 @@ describe("buildOpportunity", () => {
         crawlEvidence({ sourceProvider: "dataforseo" }),
       ].map((dto) => ({ ...dto })),
       action: null,
+      deliveryLocale: "en",
       diagnosticRunId: ids.run,
       now: NOW,
     });
@@ -298,6 +305,7 @@ describe("buildOpportunity", () => {
       targets: [ownedUrlTarget()],
       evidence: [crawlEvidence()],
       action: { id: ids.action, sourceFindingId: ids.finding, status: "planned" },
+      deliveryLocale: "zh-CN",
       diagnosticRunId: ids.run,
       now: NOW,
     });
@@ -305,6 +313,10 @@ describe("buildOpportunity", () => {
       readiness: "confirmed",
       actionId: ids.action,
       action: { artifactType: "content_brief", findingId: ids.finding },
+      executionPreview: {
+        contentLocale: "zh-CN",
+        artifactType: "content_brief",
+      },
     });
     expect(GrowthOpportunity.parse(opportunity)).toEqual(opportunity);
   });
@@ -316,6 +328,7 @@ describe("buildOpportunity", () => {
         targets: [ownedUrlTarget()],
         evidence: [crawlEvidence()],
         action: null,
+        deliveryLocale: "en",
         diagnosticRunId: ids.run,
         now: NOW,
       }),
@@ -326,6 +339,7 @@ describe("buildOpportunity", () => {
         targets: [ownedUrlTarget()],
         evidence: [crawlEvidence({ support: "context" })],
         action: null,
+        deliveryLocale: "en",
         diagnosticRunId: ids.run,
         now: NOW,
       }),
@@ -352,6 +366,7 @@ describe("buildOpportunity", () => {
       ],
       evidence: [crawlEvidence()],
       action: null,
+      deliveryLocale: "en",
       diagnosticRunId: ids.run,
       now: NOW,
     });
@@ -359,6 +374,41 @@ describe("buildOpportunity", () => {
       workShape: "fix",
       primaryRule: { ruleId: "TECH-HTTP-001", ruleVersion: 2 },
       lenses: ["site_health"],
+      executionPreview: {
+        artifactType: "technical_ticket",
+        contentLocale: "en",
+      },
+    });
+    expect(GrowthOpportunity.parse(opportunity)).toEqual(opportunity);
+  });
+
+  it("projects the exact indexability Rule through the technical-ticket mapping", () => {
+    const opportunity = buildOpportunity({
+      finding: {
+        id: ids.finding,
+        ruleId: "TECH-INDEXABILITY-006",
+        reviewState: "unreviewed",
+        active: true,
+        title: "Resolve the sitemap and noindex contradiction",
+      },
+      targets: [ownedUrlTarget()],
+      evidence: [crawlEvidence()],
+      action: null,
+      deliveryLocale: "en",
+      diagnosticRunId: ids.run,
+      now: NOW,
+    });
+
+    expect(opportunity).toMatchObject({
+      readiness: "reviewable",
+      workShape: "fix",
+      primaryRule: { ruleId: "TECH-INDEXABILITY-006", ruleVersion: 1 },
+      lenses: ["site_health"],
+      executionPreview: {
+        artifactType: "technical_ticket",
+        effort: "medium",
+        risk: "high",
+      },
     });
     expect(GrowthOpportunity.parse(opportunity)).toEqual(opportunity);
   });
@@ -631,6 +681,7 @@ describe("governed keyword and competitor relations", () => {
         ),
       ],
       action: null,
+      deliveryLocale: "en",
       projectId: ids.project,
       siteId: ids.site,
       diagnosticRunId: ids.run,
@@ -836,6 +887,7 @@ describe("supportingFindingIds (decision F: the content cluster only)", () => {
       targets: [clusterTarget()],
       evidence: [crawlEvidence({ sourceProvider: "dataforseo" })],
       action: null,
+      deliveryLocale: "en",
       diagnosticRunId: ids.run,
       now: NOW,
       topicClusterRows: clusterRows([
@@ -866,6 +918,7 @@ describe("supportingFindingIds (decision F: the content cluster only)", () => {
       targets: [clusterTarget()],
       evidence: [crawlEvidence({ sourceProvider: "dataforseo" })],
       action: null,
+      deliveryLocale: "en",
       diagnosticRunId: ids.run,
       now: NOW,
       topicClusterRows: clusterRows([]),
@@ -882,6 +935,7 @@ describe("supportingFindingIds (decision F: the content cluster only)", () => {
       targets: [ownedUrlTarget()],
       evidence: [crawlEvidence()],
       action: null,
+      deliveryLocale: "en",
       diagnosticRunId: ids.run,
       now: NOW,
       // A URL Opportunity is handed the same read model and must ignore it.

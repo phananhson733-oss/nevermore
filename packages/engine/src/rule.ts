@@ -19,6 +19,7 @@ export type DiagnosticDomain =
 export type RuleId =
   | "TECH-HTTP-001"
   | "TECH-CANONICAL-002"
+  | "TECH-INDEXABILITY-006"
   | "TECH-LINKGRAPH-005"
   | "SEARCH-CTR-004"
   | "SEARCH-DECAY-002"

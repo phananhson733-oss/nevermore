@@ -64,6 +64,22 @@ const snapshotId = "00000000-0000-4000-8000-000000000016";
 const runId = "00000000-0000-4000-8000-000000000017";
 const auditRunId = "00000000-0000-4000-8000-000000000018";
 const idempotencyKey = "growth-audit-key";
+const legacyProfile = {
+  productName: "Acme",
+  oneLineDescription: "Ship faster",
+  productType: "saas",
+  businessModels: ["subscription"],
+  marketCodes: ["US"],
+  segments: ["Growth teams"],
+  primaryConversion: {
+    label: "Book a demo",
+    type: "contact",
+    targetUrl: "https://example.test/demo",
+  },
+  priorityUrls: ["https://example.test/pricing"],
+  technicalConstraints: ["Legacy CMS"],
+  resourceConstraints: ["One engineer"],
+} as const;
 
 const body: CreateGrowthAuditRunRequest = {
   siteId,
@@ -218,9 +234,11 @@ function mockHappyPathInputs() {
     version: 4,
     content_hash: "b".repeat(64),
     status: "complete",
+    profile: legacyProfile,
   } as never);
   vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
     id: siteId,
+    language_codes: ["fr-CA"],
   } as never);
   vi.spyOn(
     DataSnapshotsRepository.prototype,
@@ -311,9 +329,11 @@ describe("createGrowthAuditRun hard gates", () => {
       version: 4,
       content_hash: "b".repeat(64),
       status: "complete",
+      profile: legacyProfile,
     } as never);
     vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
       id: siteId,
+      language_codes: ["fr-CA"],
     } as never);
     vi.spyOn(
       DataSnapshotsRepository.prototype,
@@ -342,9 +362,11 @@ describe("loadGrowthAuditInputs DataForSEO selection", () => {
       version: 4,
       content_hash: "b".repeat(64),
       status: "complete",
+      profile: legacyProfile,
     } as never);
     vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
       id: siteId,
+      language_codes: ["fr-CA"],
     } as never);
     vi.spyOn(
       DataSnapshotsRepository.prototype,
@@ -378,6 +400,13 @@ describe("loadGrowthAuditInputs DataForSEO selection", () => {
         (snapshot) => snapshot.provider === "dataforseo",
       ),
     ).toEqual([newerLegacySnapshot]);
+    expect(inputs.icp).toEqual({
+      id: icpProfileId,
+      version: 4,
+      contentHash: "b".repeat(64),
+      profile: legacyProfile,
+    });
+    expect(inputs.siteLanguageCodes).toEqual(["fr-CA"]);
   });
 
   it("fails closed when a search-landscape snapshot points to a legacy collection operation", async () => {
@@ -386,9 +415,11 @@ describe("loadGrowthAuditInputs DataForSEO selection", () => {
       version: 4,
       content_hash: "b".repeat(64),
       status: "complete",
+      profile: legacyProfile,
     } as never);
     vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
       id: siteId,
+      language_codes: ["fr-CA"],
     } as never);
     vi.spyOn(
       DataSnapshotsRepository.prototype,
@@ -490,12 +521,34 @@ describe("createGrowthAuditRun contract", () => {
       activeKey: "growth_audit",
     });
     expect(diagnosticInsert).toHaveBeenCalledTimes(1);
-    expect(diagnosticInsert.mock.calls[0]?.[0]).toMatchObject({
-      inputManifest: {
-        governance: {
-          projectionVersion: "growth-governance.1.0.0",
-          keywordClusters: [],
-          competitors: [],
+    const diagnosticValues = diagnosticInsert.mock.calls[0]?.[0];
+    const inputManifest = diagnosticValues?.inputManifest as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(inputManifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
+    expect(inputManifest).toMatchObject({
+      governance: {
+        projectionVersion: "growth-governance.1.0.0",
+        keywordClusters: [],
+        competitors: [],
+      },
+      contextProjection: {
+        profileGeneration: "legacy-icp.v1",
+        siteLanguage: {
+          sourceKind: "site",
+          state: "declared_non_empty",
+          languageCodes: ["fr-CA"],
         },
       },
     });
@@ -503,6 +556,17 @@ describe("createGrowthAuditRun contract", () => {
     expect(capabilityCreate.mock.calls[0]?.[0]).toMatchObject({
       capabilityId: "growth-audit",
       capabilityVersion: "0.3.0",
+      inputManifestHash: contentHash({
+        capabilityId: "growth-audit",
+        capabilityVersion: "0.3.0",
+        capabilityContractVersion: GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+        projectId,
+        siteId,
+        icpProfileId,
+        scope: { kind: "site" },
+        selectedSnapshotIds: [snapshotId],
+        outputLocale: "en",
+      }),
       sideEffectClass: "read_only",
       mode: "production",
     });
@@ -512,7 +576,7 @@ describe("createGrowthAuditRun contract", () => {
       capabilityRunId: runId,
       scopeKind: "site",
       scopeKey: siteId,
-      projectionVersion: "growth-audit.0.3.0",
+      projectionVersion: "growth-audit.0.3.1",
     });
     expect(mocks.enqueueRunInTx).toHaveBeenCalledTimes(1);
     expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
@@ -718,6 +782,9 @@ describe("createGrowthAuditRun contract", () => {
       },
     } as never);
     const begin = vi.spyOn(IdempotencyRepository.prototype, "begin");
+    const projectRead = vi.spyOn(ProjectsRepository.prototype, "findById");
+    const profileRead = vi.spyOn(IcpProfilesRepository.prototype, "findById");
+    const siteRead = vi.spyOn(SitesRepository.prototype, "findById");
 
     const result = await createGrowthAuditRun(
       { workspaceId },
@@ -733,6 +800,9 @@ describe("createGrowthAuditRun contract", () => {
     });
     expect(mocks.db.transaction).not.toHaveBeenCalled();
     expect(begin).not.toHaveBeenCalled();
+    expect(projectRead).not.toHaveBeenCalled();
+    expect(profileRead).not.toHaveBeenCalled();
+    expect(siteRead).not.toHaveBeenCalled();
     expect(mocks.enqueueRunInTx).not.toHaveBeenCalled();
   });
 

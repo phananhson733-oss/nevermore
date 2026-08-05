@@ -122,6 +122,8 @@ const INTERNAL_LINK_TOPIC =
   "00000000-0000-4000-8000-000000000044";
 const COMPETITOR_MONITOR_SIGNAL =
   "00000000-0000-4000-8000-000000000045";
+const URL_FINDING = "00000000-0000-4000-8000-000000000046";
+const URL_EVIDENCE = "00000000-0000-4000-8000-000000000047";
 const OBSERVED_AT = "2026-07-21T00:00:00.000Z";
 const UI_LOCALE = "en" as const;
 
@@ -203,6 +205,68 @@ function detailResponse(sitePageId: string) {
         limitation: "Two immutable recheck anchors are not available.",
       },
       findings: [],
+    },
+  } as const;
+}
+
+function detailResponseWithExecutionPreview(sitePageId: string) {
+  const response = detailResponse(sitePageId);
+  const finding = {
+    projectId: PROJECT_ID,
+    siteId: SITE_ID,
+    findingId: URL_FINDING,
+    diagnosticRunId: DIAGNOSTIC_RUN_ID,
+    ruleId: "TECH-HTTP-001",
+    ruleVersion: 2,
+    title: "Fix the non-200 response",
+    severity: "high",
+    reviewState: "unreviewed",
+    reviewRevision: 0,
+    active: true,
+    regressed: false,
+    evidenceIds: [URL_EVIDENCE],
+    targetRelation: {
+      relation: "direct_url",
+      targetKind: "url",
+      targetRef: response.data.normalizedUrl,
+      sitePageId,
+      pageSnapshotId: null,
+    },
+    executionPreview: {
+      templateId: "fix_http_status.v1",
+      templateVersion: 1,
+      artifactType: "technical_ticket",
+      effort: "medium",
+      risk: "medium",
+      contentLocale: "en",
+      title: "Fix non-200 indexable URLs",
+      description:
+        "Repair or redirect indexable URLs that return error statuses.",
+      expectedOutcome:
+        "Priority URLs return an intentional indexable or redirect status.",
+    },
+    executionRef: null,
+  } as const;
+  return {
+    ...response,
+    data: {
+      ...response.data,
+      findingIds: [URL_FINDING],
+      reviewableFindingIds: [URL_FINDING],
+      priority: {
+        availability: "available",
+        value: "high",
+        basis: {
+          derivationVersion: "max_finding_severity.v1",
+          projectId: PROJECT_ID,
+          siteId: SITE_ID,
+          diagnosticRunId: DIAGNOSTIC_RUN_ID,
+          sitePageId,
+          findingIds: [URL_FINDING],
+        },
+        limitation: null,
+      },
+      findings: [finding],
     },
   } as const;
 }
@@ -954,6 +1018,29 @@ describe("Growth Map browser API boundary", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       `/api/mvp/projects/${PROJECT_ID}/audit/urls/${SITE_PAGE_A}?diagnosticRunId=${DIAGNOSTIC_RUN_ID}`,
+      expect.any(Object),
+    );
+  });
+
+  it("re-validates a presentational execution preview independently from canonical execution state", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(ok(detailResponseWithExecutionPreview(SITE_PAGE_A)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getGrowthMapUrlDetail(PROJECT_ID, SITE_PAGE_A);
+
+    expect(result.data.findings[0]).toMatchObject({
+      findingId: URL_FINDING,
+      executionPreview: {
+        contentLocale: "en",
+        title: "Fix non-200 indexable URLs",
+        artifactType: "technical_ticket",
+      },
+      executionRef: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/urls/${SITE_PAGE_A}`,
       expect.any(Object),
     );
   });

@@ -514,7 +514,7 @@ describe("assembleBundle — manifest & checksum", () => {
     expect(manifest.schemaVersion).toBe("signalframe.service-bundle.0.3.0");
     expect(manifest.productVersion).toBe("0.3.0");
     expect(manifest.contractVersion).toBe("2026-07-21");
-    expect(manifest.ruleSetVersion).toBe("mvp.rules.0.2.3");
+    expect(manifest.ruleSetVersion).toBe("mvp.rules.0.2.4");
     expect(manifest.exportId).toBe(EXPORT_ID);
     expect(manifest.projectId).toBe(PROJECT_ID);
     expect(manifest.sourceSnapshotIds).toEqual([SNAPSHOT_A, SNAPSHOT_B]);

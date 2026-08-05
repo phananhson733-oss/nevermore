@@ -17,6 +17,20 @@ const COLLECTION_ID = "00000000-0000-4000-8000-000000000007";
 const SITE_PAGE_ID = "00000000-0000-4000-8000-000000000008";
 const PAGE_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000009";
 
+const executionPreview = {
+  templateId: "improve_content_coverage.v1",
+  templateVersion: 1,
+  artifactType: "content_brief",
+  effort: "medium",
+  risk: "low",
+  contentLocale: "en",
+  title: "Improve content coverage for priority intent",
+  description:
+    "Expand an existing page to cover missing questions and decision criteria.",
+  expectedOutcome:
+    "The page more completely satisfies the priority search intent.",
+} as const;
+
 function ok(data: unknown): Response {
   return new Response(JSON.stringify({ data }), {
     status: 200,
@@ -63,6 +77,7 @@ function reviewableOpportunity() {
     readiness: "reviewable",
     primaryFindingId: FINDING_ID,
     primaryRule: { ruleId: "CONTENT-COVERAGE-001", ruleVersion: 1 },
+    executionPreview,
   };
 }
 
@@ -115,6 +130,7 @@ describe("opportunity fetchers", () => {
     expect(result.data[0]).toMatchObject({
       readiness: "reviewable",
       primaryFindingId: FINDING_ID,
+      executionPreview,
     });
     const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
     expect(requestedUrl).toContain(
@@ -136,6 +152,10 @@ describe("opportunity fetchers", () => {
 
     const result = await getProjectOpportunityDetail(PROJECT_ID, FINDING_ID);
     expect(result.data.readiness).toBe("reviewable");
+    if (result.data.readiness !== "reviewable") {
+      throw new Error("fixture requires a reviewable Opportunity");
+    }
+    expect(result.data.executionPreview).toEqual(executionPreview);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
       "/opportunities/" + FINDING_ID,
     );

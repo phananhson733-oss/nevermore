@@ -15,7 +15,10 @@ import {
   sitePages,
 } from "../schema.ts";
 import type { ActionRow } from "./actions.ts";
-import { GROWTH_AUDIT_PROJECTION_VERSION } from "./audit-runs.ts";
+import {
+  GROWTH_AUDIT_PROJECTION_VERSION,
+  LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
+} from "./audit-runs.ts";
 import { Repository, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -532,7 +535,11 @@ function publishedGrowthAuditRuns(
       on ${auditRuns.diagnostic_run_id} = ${diagnosticRuns.id}
      and ${auditRuns.workspace_id} = ${scope.workspaceId}
      and ${auditRuns.project_id} = ${scope.projectId}
-     and ${auditRuns.projection_version} = ${GROWTH_AUDIT_PROJECTION_VERSION}
+     and ${
+       diagnosticRunId === null
+         ? sql`${auditRuns.projection_version} = ${GROWTH_AUDIT_PROJECTION_VERSION}`
+         : sql`${auditRuns.projection_version} in (${GROWTH_AUDIT_PROJECTION_VERSION}, ${LEGACY_GROWTH_AUDIT_PROJECTION_VERSION})`
+     }
      and ${auditRuns.scope_kind} = 'site'
      and ${auditRuns.scope_key} = ${diagnosticRuns.site_id}::text
     where ${diagnosticRuns.workspace_id} = ${scope.workspaceId}

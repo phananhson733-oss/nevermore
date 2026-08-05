@@ -26,7 +26,13 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import {
+  CONTEXTUAL_RULE_SET_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
+  PROMPT_SET_VERSION,
   type GovernanceKeywordFactV1,
   type GovernanceProjectionV1,
 } from "@sf/engine";
@@ -78,6 +84,24 @@ const CONTENT_GAP_COMPETITOR_SCOPES = new Set([
   "content",
   "serp_visibility",
 ]);
+const LEGACY_MANIFEST_KEYS = [
+  "deliveryLocale",
+  "icp",
+  "projectId",
+  "promptSetVersion",
+  "ruleSetVersion",
+  "siteId",
+  "snapshots",
+] as const;
+const GOVERNED_MANIFEST_KEYS = [
+  ...LEGACY_MANIFEST_KEYS,
+  "governance",
+] as const;
+const CURRENT_CONTEXT_MANIFEST_KEYS = [
+  ...GOVERNED_MANIFEST_KEYS,
+  "contextProjection",
+] as const;
+const ICP_MANIFEST_KEYS = ["contentHash", "id", "version"] as const;
 
 interface FrozenRelationSnapshot {
   readonly snapshotId: string;
@@ -179,6 +203,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  return (
+    actual.length === wanted.length &&
+    actual.every((key, index) => key === wanted[index])
+  );
+}
+
 function readFrozenGrowthRelationAuthority(
   projectId: string,
   run: GrowthMapReadableRunRow,
@@ -197,14 +233,47 @@ function readFrozenGrowthRelationAuthority(
   if (
     manifest["projectId"] !== projectId ||
     manifest["siteId"] !== run.site_id ||
+    manifest["ruleSetVersion"] !== run.rule_set_version ||
+    manifest["promptSetVersion"] !== run.prompt_set_version ||
+    manifest["deliveryLocale"] !== run.output_locale ||
+    run.prompt_set_version !== PROMPT_SET_VERSION ||
     !Array.isArray(manifest["snapshots"])
+  ) {
+    return null;
+  }
+
+  const rawIcp = manifest["icp"];
+  if (
+    !isRecord(rawIcp) ||
+    !hasExactKeys(rawIcp, ICP_MANIFEST_KEYS) ||
+    rawIcp["id"] !== run.icp_profile_id ||
+    rawIcp["version"] !== run.icp_profile_version ||
+    typeof rawIcp["contentHash"] !== "string" ||
+    !SHA_256.test(rawIcp["contentHash"])
   ) {
     return null;
   }
 
   let governance: GovernanceProjectionV1;
   try {
-    governance = parseGovernanceProjectionV1(manifest["governance"]);
+    if (run.rule_set_version === CONTEXTUAL_RULE_SET_VERSION) {
+      if (!hasExactKeys(manifest, CURRENT_CONTEXT_MANIFEST_KEYS)) return null;
+      governance = parseGovernanceProjectionV1(manifest["governance"]);
+      parseContextProjectionV1(manifest["contextProjection"]);
+    } else if (
+      run.rule_set_version === GOVERNED_LEGACY_RULE_SET_VERSION ||
+      run.rule_set_version === LINKGRAPH_LEGACY_RULE_SET_VERSION
+    ) {
+      if (!hasExactKeys(manifest, GOVERNED_MANIFEST_KEYS)) return null;
+      governance = parseGovernanceProjectionV1(manifest["governance"]);
+    } else if (run.rule_set_version === LEGACY_RULE_SET_VERSION) {
+      // This generation predates governance, so it has no authority from which
+      // Opportunity query/competitor relations could be projected.
+      if (!hasExactKeys(manifest, LEGACY_MANIFEST_KEYS)) return null;
+      return null;
+    } else {
+      return null;
+    }
   } catch {
     return null;
   }
@@ -700,7 +769,11 @@ async function loadReadableRun(
   exec: Executor,
   scope: WorkspaceScope,
   projectId: string,
-): Promise<{ projectScope: ProjectScope; run: GrowthMapReadableRunRow }> {
+): Promise<{
+  projectScope: ProjectScope;
+  projectDeliveryLocale: string;
+  run: GrowthMapReadableRunRow;
+}> {
   const projectScope = { workspaceId: scope.workspaceId, projectId };
   const project = await new ProjectsRepository(exec).findById(scope, projectId);
   if (!project) throw new ProblemError("NOT_FOUND", "Project not found.");
@@ -708,7 +781,11 @@ async function loadReadableRun(
     projectScope,
   );
   if (!run) noReadableRun();
-  return { projectScope, run };
+  return {
+    projectScope,
+    projectDeliveryLocale: project.default_delivery_locale,
+    run,
+  };
 }
 
 async function listOpportunitiesInSnapshot(
@@ -718,7 +795,11 @@ async function listOpportunitiesInSnapshot(
   opts: OpportunityListOptions,
 ): Promise<ProjectOpportunityListResult> {
   const now = validNow(opts.now ?? new Date());
-  const { projectScope, run } = await loadReadableRun(exec, scope, projectId);
+  const { projectScope, projectDeliveryLocale, run } = await loadReadableRun(
+    exec,
+    scope,
+    projectId,
+  );
 
   const page = await new FindingsRepository(exec).list(projectScope, {
     limit: opts.limit,
@@ -788,6 +869,7 @@ async function listOpportunitiesInSnapshot(
       targets: targetInputsByFinding.get(finding.id) ?? [],
       evidence: evidenceByFinding.get(finding.id) ?? [],
       action: action ? toActionInput(action) : null,
+      deliveryLocale: projectDeliveryLocale,
       projectId,
       siteId: run.site_id,
       diagnosticRunId: run.id,
@@ -843,7 +925,11 @@ async function getOpportunityInSnapshot(
   opportunityId: string,
   now: number,
 ): Promise<ProjectOpportunityDetailResult> {
-  const { projectScope, run } = await loadReadableRun(exec, scope, projectId);
+  const { projectScope, projectDeliveryLocale, run } = await loadReadableRun(
+    exec,
+    scope,
+    projectId,
+  );
 
   const finding = await new FindingsRepository(exec).findById(
     projectScope,
@@ -902,6 +988,7 @@ async function getOpportunityInSnapshot(
     targets: targetInputs,
     evidence: evidenceByFinding.get(finding.id) ?? [],
     action: action ? toActionInput(action) : null,
+    deliveryLocale: projectDeliveryLocale,
     projectId,
     siteId: run.site_id,
     diagnosticRunId: run.id,

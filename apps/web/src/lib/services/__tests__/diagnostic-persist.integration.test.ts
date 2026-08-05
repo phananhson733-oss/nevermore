@@ -31,11 +31,12 @@ import {
 } from "@sf/db";
 import {
   ALL_RULES,
+  buildContextProjectionV1,
   DiagnosticContext,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
-  parseIcp,
+  parseIcpForContextProjectionV1,
   runPipeline,
   type ObservationView,
 } from "@sf/engine";
@@ -82,7 +83,7 @@ function page404(url: string): CrawlPageProjection {
 
 /**
  * End-to-end DIAGNOSTIC persistence: seed a crawl snapshot with a 404 page,
- * run the real 11-rule pipeline, and persist findings + evidence exactly the way
+ * run the real current 12-rule pipeline, and persist findings + evidence exactly the way
  * the worker does — asserting the schema CHECK constraints (finding_observations
  * role, append-only) hold and the finding is queryable. Regression guard for the
  * evidence-role and confidence fixes.
@@ -261,13 +262,19 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         observedAt: o.observed_at,
       };
     });
+    const frozenIcp = await seedIcp(handle, scope, actor);
+    const contextProjection = buildContextProjectionV1({
+      profile: frozenIcp.profile,
+      profileContentHash: frozenIcp.contentHash,
+      siteLanguageCodes: ["en"],
+    });
     const ctx = DiagnosticContext.build({
-      icp: parseIcp({
-        siteLanguageCodes: ["en"],
-        defaultDeliveryLocale: "en",
-        priorityUrls: [],
-      }),
+      icp: parseIcpForContextProjectionV1(
+        frozenIcp.profile,
+        contextProjection,
+      ),
       deliveryLocale: "en",
+      contextProjection,
       observations,
       coverage: {
         crawl: "available",
@@ -307,11 +314,14 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         completed_at: capturedAt,
       })
       .returning();
-    const frozenIcp = await seedIcp(handle, scope, actor);
     const inputManifest = {
       projectId: scope.projectId,
       siteId,
-      icp: frozenIcp,
+      icp: {
+        id: frozenIcp.id,
+        version: frozenIcp.version,
+        contentHash: frozenIcp.contentHash,
+      },
       snapshots: [
         {
           snapshotId: snapshot.id,
@@ -330,6 +340,7 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
         keywordClusters: [],
         competitors: [],
       },
+      contextProjection,
       ruleSetVersion: RULE_SET_VERSION,
       promptSetVersion: PROMPT_SET_VERSION,
       deliveryLocale: "en",
@@ -346,7 +357,7 @@ describeDb("diagnostic pipeline → persistence (spec §8)", () => {
       outputLocale: "en",
       inputManifest,
       inputHash: contentHash(
-        inputManifest as Parameters<typeof contentHash>[0],
+        inputManifest as unknown as Parameters<typeof contentHash>[0],
       ),
     });
 
@@ -431,8 +442,20 @@ async function seedIcp(
   handle: DbHandle,
   scope: ProjectScope,
   actor: string,
-): Promise<{ id: string; version: number; contentHash: string }> {
+): Promise<{
+  id: string;
+  version: number;
+  contentHash: string;
+  profile: Record<string, unknown>;
+}> {
   const mod = await import("@sf/db/schema");
+  const profile = {
+    productName: "x",
+    oneLineDescription: "Disposable diagnostic persistence fixture.",
+    siteLanguageCodes: ["en"],
+    defaultDeliveryLocale: "en",
+    priorityUrls: [],
+  };
   const [icp] = await handle.db
     .insert(mod.icpProfiles)
     .values({
@@ -440,7 +463,7 @@ async function seedIcp(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "x", siteLanguageCodes: ["en"] },
+      profile,
       content_hash: contentHash({ icp: randomUUID() })
         .padEnd(64, "0")
         .slice(0, 64),
@@ -451,5 +474,6 @@ async function seedIcp(
     id: icp!.id,
     version: icp!.version,
     contentHash: icp!.content_hash,
+    profile,
   };
 }

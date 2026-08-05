@@ -1,21 +1,60 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AuditLensSummary,
   AuditModuleId,
   AuditModuleSummary,
   FrontstageLensId,
 } from "@sf/contracts";
-import type { AuditModuleResultRow } from "@sf/db";
+import {
+  AuditRunsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
+  ProjectsRepository,
+  type AuditModuleResultRow,
+  type Executor,
+} from "@sf/db";
 import {
   auditModulesFromRows,
   auditProjectionCopy,
   deriveAuditLenses,
+  getProjectAudit,
   noDataModule,
   parseAuditModuleSummary,
   type AuditLensFindingInput,
 } from "./audit-projection";
 
 const auditRunId = "20000000-0000-4000-8000-000000000001";
+const workspaceId = "20000000-0000-4000-8000-000000000002";
+const projectId = "20000000-0000-4000-8000-000000000003";
+const readExecutor = { kind: "audit-projection-test" } as unknown as Executor;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("current audit projection selection", () => {
+  it("does not fall back to a legacy audit when no current projection exists", async () => {
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+      id: projectId,
+    } as never);
+    const latestRead = vi
+      .spyOn(AuditRunsRepository.prototype, "findLatestByProjectionVersion")
+      .mockResolvedValue(null);
+
+    await expect(
+      getProjectAudit(
+        { workspaceId, uiLocale: "en" },
+        projectId,
+        readExecutor,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    expect(GROWTH_AUDIT_PROJECTION_VERSION).toBe("growth-audit.0.3.1");
+    expect(latestRead).toHaveBeenCalledWith(
+      { workspaceId, projectId },
+      GROWTH_AUDIT_PROJECTION_VERSION,
+    );
+  });
+});
 
 function observedSummary(
   moduleId: (typeof AuditModuleId.options)[number],

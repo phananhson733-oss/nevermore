@@ -59,7 +59,7 @@ function repository() {
 }
 
 describe("GrowthMapReadRepository", () => {
-  it("selects only a published Growth Audit through its exact Analysis Refresh lineage", async () => {
+  it("selects only the current 0.3.1 publication for latest Growth Audit reads", async () => {
     const { db, repo } = repository();
     const row = {
       id: runId,
@@ -116,6 +116,12 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain('inner join "app"."audit_runs"');
     expect(query.sql).toContain(
       'publishable_analysis_refreshes.id = "app"."analysis_refresh_runs"."id"',
+    );
+    expect(query.sql).toContain(
+      '"app"."audit_runs"."projection_version" = $',
+    );
+    expect(query.sql).not.toMatch(
+      /"app"\."audit_runs"\."projection_version" in \(\$\d+, \$\d+\)/u,
     );
     expect(query.sql).toContain(
       '"app"."analysis_refresh_steps"."child_async_run_id" = "app"."diagnostic_runs"."id"',
@@ -194,7 +200,8 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).not.toContain(
       'order by "app"."diagnostic_runs"."created_at" desc',
     );
-    expect(query.params).toContain("growth-audit.0.3.0");
+    expect(query.params).toContain("growth-audit.0.3.1");
+    expect(query.params).not.toContain("growth-audit.0.3.0");
     expect(query.params).not.toContain("growth-audit-recheck.0.3.0");
   });
 
@@ -204,7 +211,7 @@ describe("GrowthMapReadRepository", () => {
     await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
   });
 
-  it("selects an exact published diagnostic through the same lineage without latest ordering", async () => {
+  it("admits only known current or legacy projections for an exact diagnostic pin", async () => {
     const { db, repo } = repository();
     const row = {
       id: runId,
@@ -249,10 +256,16 @@ describe("GrowthMapReadRepository", () => {
       '"app"."audit_runs"."diagnostic_run_id" = "app"."diagnostic_runs"."id"',
     );
     expect(query.sql).toContain('"app"."audit_runs"."projection_version"');
+    expect(query.sql).toMatch(
+      /"app"\."audit_runs"\."projection_version" in \(\$\d+, \$\d+\)/u,
+    );
     expect(query.sql).toContain('"app"."diagnostic_runs"."id" = $');
     expect(query.sql).not.toContain("order by");
     expect(query.sql).toContain("limit 1");
+    expect(query.params).toContain("growth-audit.0.3.1");
     expect(query.params).toContain("growth-audit.0.3.0");
+    expect(query.params).not.toContain("growth-audit.0.2.9");
+    expect(query.params).not.toContain("growth-audit-recheck.0.3.0");
     expect(query.params.at(-1)).toBe(runId);
 
     await expect(

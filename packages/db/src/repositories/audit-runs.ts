@@ -3,12 +3,17 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { auditModuleResults, auditRuns } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 
+/** Known historical read-model generation retained only for explicit pins. */
+export const LEGACY_GROWTH_AUDIT_PROJECTION_VERSION =
+  "growth-audit.0.3.0" as const;
+
 /**
- * The frozen projection version of a deliberate full Growth Audit. Frontstage
- * decision surfaces (Overview, Opportunities, Growth Map) read only this
- * projection so a targeted recheck never hijacks the primary audit.
+ * The current frozen projection version of a deliberate full Growth Audit.
+ * Latest frontstage reads use only this generation so historical audits are
+ * never reinterpreted under current rules.
  */
-export const GROWTH_AUDIT_PROJECTION_VERSION = "growth-audit.0.3.0";
+export const GROWTH_AUDIT_PROJECTION_VERSION =
+  "growth-audit.0.3.1" as const;
 
 /**
  * The frozen projection version of a targeted Action recheck. A recheck creates

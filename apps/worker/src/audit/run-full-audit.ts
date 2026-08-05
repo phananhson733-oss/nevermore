@@ -29,6 +29,7 @@ export type AuditCoverageState = AuditModuleResultInsert["coverageState"];
 const RULE_MODULE: Readonly<Record<RuleId, AuditModuleIdType>> = {
   "TECH-HTTP-001": "technical_search",
   "TECH-CANONICAL-002": "technical_search",
+  "TECH-INDEXABILITY-006": "technical_search",
   "SEARCH-CTR-004": "technical_search",
   "SEARCH-DECAY-002": "content_intent",
   "CONTENT-COVERAGE-001": "content_intent",

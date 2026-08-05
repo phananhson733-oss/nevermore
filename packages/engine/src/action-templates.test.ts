@@ -14,8 +14,8 @@ import { ACTION_TEMPLATES } from "./action-templates.ts";
  * template.
  */
 describe("ACTION_TEMPLATES", () => {
-  it("registers exactly the eleven executed MVP rules", () => {
-    expect(Object.keys(ACTION_TEMPLATES)).toHaveLength(11);
+  it("registers exactly the twelve shipped deterministic rules", () => {
+    expect(Object.keys(ACTION_TEMPLATES)).toHaveLength(12);
   });
 
   it("binds content_brief to exactly the four content rules", () => {
@@ -54,6 +54,32 @@ describe("ACTION_TEMPLATES", () => {
       templateId: "repair_internal_link_architecture.v2",
       templateVersion: 2,
       artifactType: "technical_ticket",
+    });
+  });
+
+  it("keeps sitemap/indexability resolution human-reviewed and high-risk", () => {
+    expect(ACTION_TEMPLATES["TECH-INDEXABILITY-006"]).toEqual({
+      templateId: "resolve_sitemap_indexability_conflict.v1",
+      artifactType: "technical_ticket",
+      templateVersion: 1,
+      effort: "medium",
+      risk: "high",
+      copy: {
+        en: {
+          title: "Resolve a sitemap and indexability conflict",
+          description:
+            "Confirm the intended index state, then align the sitemap entry and page-level indexability signal without changing the canonical URL unintentionally.",
+          expectedOutcome:
+            "The URL no longer has contradictory sitemap membership and indexability signals, while the intended canonical URL remains verifiable.",
+        },
+        "zh-CN": {
+          title: "解决 Sitemap 与可索引性冲突",
+          description:
+            "先确认页面预期的收录状态，再协调 Sitemap 条目与页面级索引信号，避免误改 canonical URL。",
+          expectedOutcome:
+            "该 URL 的 Sitemap 成员关系与可索引性信号不再冲突，同时预期 canonical URL 仍可验证。",
+        },
+      },
     });
   });
 });

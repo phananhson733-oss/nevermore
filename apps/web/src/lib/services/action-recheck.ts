@@ -387,6 +387,7 @@ async function persistRecheckRun(
     projectId,
     siteId: inputs.siteId,
     icp: inputs.icp,
+    siteLanguageCodes: inputs.siteLanguageCodes,
     snapshots: [inputs.crawlSnapshot],
     deliveryLocale: context.outputLocale,
     governance,

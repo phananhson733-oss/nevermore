@@ -59,6 +59,22 @@ const runId = "00000000-0000-4000-8000-000000000014";
 const firstSnapshotId = "00000000-0000-4000-8000-000000000015";
 const secondSnapshotId = "00000000-0000-4000-8000-000000000016";
 const idempotencyKey = "diagnostic-wire-body";
+const legacyProfile = {
+  productName: "Acme",
+  oneLineDescription: "Ship faster",
+  productType: "saas",
+  businessModels: ["subscription"],
+  marketCodes: ["US"],
+  segments: ["Growth teams"],
+  primaryConversion: {
+    label: "Book a demo",
+    type: "contact",
+    targetUrl: "https://example.test/demo",
+  },
+  priorityUrls: ["https://example.test/pricing"],
+  technicalConstraints: ["Legacy CMS"],
+  resourceConstraints: ["One engineer"],
+} as const;
 
 const run = {
   id: runId,
@@ -247,14 +263,16 @@ describe("diagnostic snapshot selection", () => {
       created_at: "2026-07-21T01:02:04.000Z",
     } satisfies DataSnapshotRow;
 
-    const frozen = buildDiagnosticFrozenInput({
+    const baseInput = {
       projectId,
       siteId: snapshot.site_id,
       icp: {
         id: "00000000-0000-4000-8000-000000000023",
         version: 4,
         contentHash: "b".repeat(64),
+        profile: legacyProfile,
       },
+      siteLanguageCodes: ["fr-CA"],
       snapshots: [snapshot],
       deliveryLocale: "en-US",
       governance: {
@@ -262,7 +280,8 @@ describe("diagnostic snapshot selection", () => {
         keywordClusters: [],
         competitors: [],
       },
-    });
+    } as const;
+    const frozen = buildDiagnosticFrozenInput(baseInput);
 
     const expectedManifest = {
       projectId,
@@ -293,9 +312,117 @@ describe("diagnostic snapshot selection", () => {
         keywordClusters: [],
         competitors: [],
       },
+      contextProjection: {
+        schemaVersion: "context-projection.v1",
+        compilerVersion: "context-projection.compiler.1.0.0",
+        profileGeneration: "legacy-icp.v1",
+        productRouting: {
+          sourceKind: "legacy_icp",
+          productName: "Acme",
+          oneLiner: "Ship faster",
+          productType: "saas",
+          businessModels: ["subscription"],
+          primaryMarket: "US",
+          primaryAudience: "Growth teams",
+        },
+        siteLanguage: {
+          sourceKind: "site",
+          state: "declared_non_empty",
+          languageCodes: ["fr-CA"],
+        },
+        primaryConversion: {
+          state: "available",
+          sourceKind: "legacy_icp",
+          value: legacyProfile.primaryConversion,
+        },
+        priorityUrlSubjects: {
+          state: "available",
+          sourceKind: "legacy_icp",
+          sourceHash: "b".repeat(64),
+          normalizedRefs: ["https://example.test/pricing"],
+        },
+        declaredExecutionConstraints: {
+          state: "available",
+          sourceKind: "legacy_icp",
+          technical: ["Legacy CMS"],
+          resource: ["One engineer"],
+        },
+      },
     };
     expect(frozen.manifest).toEqual(expectedManifest);
+    expect(Object.keys(frozen.manifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
     expect(frozen.inputHash).toBe(contentHash(expectedManifest));
+
+    const repeated = buildDiagnosticFrozenInput(baseInput);
+    expect(repeated).toEqual(frozen);
+
+    const deliveryLocaleChanged = buildDiagnosticFrozenInput({
+      ...baseInput,
+      deliveryLocale: "zh-CN",
+    });
+    expect(deliveryLocaleChanged.manifest["contextProjection"]).toEqual(
+      frozen.manifest["contextProjection"],
+    );
+
+    const changedInputs = [
+      buildDiagnosticFrozenInput({
+        ...baseInput,
+        siteLanguageCodes: ["en-US"],
+      }),
+      buildDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: { ...legacyProfile, productName: "Acme Next" },
+        },
+      }),
+      buildDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            primaryConversion: {
+              ...legacyProfile.primaryConversion,
+              targetUrl: "https://example.test/signup",
+            },
+          },
+        },
+      }),
+      buildDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            priorityUrls: ["https://example.test/enterprise"],
+          },
+        },
+      }),
+      buildDiagnosticFrozenInput({
+        ...baseInput,
+        icp: {
+          ...baseInput.icp,
+          profile: {
+            ...legacyProfile,
+            technicalConstraints: ["No plugin access"],
+          },
+        },
+      }),
+    ];
+    for (const changed of changedInputs) {
+      expect(changed.inputHash).not.toBe(frozen.inputHash);
+    }
   });
 
   it("includes a canonical governance projection for the current rule set", () => {
@@ -327,7 +454,9 @@ describe("diagnostic snapshot selection", () => {
         id: "00000000-0000-4000-8000-000000000023",
         version: 4,
         contentHash: "b".repeat(64),
+        profile: legacyProfile,
       },
+      siteLanguageCodes: ["fr-CA"],
       snapshots: [snapshot],
       deliveryLocale: "en-US",
     };
@@ -373,7 +502,9 @@ describe("diagnostic snapshot selection", () => {
         id: "00000000-0000-4000-8000-000000000023",
         version: 4,
         contentHash: "b".repeat(64),
+        profile: legacyProfile,
       },
+      siteLanguageCodes: ["fr-CA"],
       snapshots: [snapshot],
       deliveryLocale: "en-US",
     };
@@ -512,12 +643,14 @@ describe("createDiagnosticRun transaction", () => {
       version: 4,
       content_hash: "b".repeat(64),
       status: "complete",
+      profile: legacyProfile,
     } as never);
     vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
       snapshot,
     ]);
     vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue({
       id: snapshot.site_id,
+      language_codes: ["fr-CA"],
     } as never);
     vi.spyOn(
       AsyncRunsRepository.prototype,
@@ -526,9 +659,9 @@ describe("createDiagnosticRun transaction", () => {
     vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue(
       queuedRun,
     );
-    vi.spyOn(DiagnosticRunsRepository.prototype, "insert").mockResolvedValue(
-      undefined as never,
-    );
+    const diagnosticInsert = vi
+      .spyOn(DiagnosticRunsRepository.prototype, "insert")
+      .mockResolvedValue(undefined as never);
     vi.spyOn(
       KeywordsRepository.prototype,
       "listDiagnosticEligible",
@@ -548,6 +681,27 @@ describe("createDiagnosticRun transaction", () => {
 
     expect(mocks.db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
+    });
+    const inputManifest = diagnosticInsert.mock.calls[0]?.[0]
+      .inputManifest as Record<string, unknown>;
+    expect(Object.keys(inputManifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
+    expect(inputManifest["contextProjection"]).toMatchObject({
+      profileGeneration: "legacy-icp.v1",
+      siteLanguage: {
+        sourceKind: "site",
+        state: "declared_non_empty",
+        languageCodes: ["fr-CA"],
+      },
     });
     expect(mocks.enqueueRunInTx).toHaveBeenCalledWith(
       expect.anything(),

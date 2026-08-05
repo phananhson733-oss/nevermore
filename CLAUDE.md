@@ -26,11 +26,13 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0038_optional_source_onboarding.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0042_contextual_indexability_opportunities.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+
+当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0042_contextual_indexability_opportunities.sql`（42 个 migration）。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
 
 任何冲突都是合同缺陷：先保护规格的安全边界与证据诚实性，再回改机器合同并让 `pnpm verify:spec` 通过，**不得在业务代码里暗藏兼容猜测**。旧 PRD / draft specs / mock Artifact 只作背景与视觉参考。
 
@@ -55,7 +57,7 @@ packages/db              Drizzle schema、repositories（双 scope）、migratio
 packages/observability   logger（JSON 行 + 深度 redact）、request-id、problem+json、redact
 packages/i18n            en / zh-CN 消息目录 + locale 工具（key parity CI 检查）
 packages/sources         [WP2] adapter interface + crawl/gsc/ga4/csv/DataForSEO
-packages/engine          [WP3] observations、11 条规则、finding merge、priority
+packages/engine          [WP3] observations、12 条规则、finding merge、priority
 packages/artifacts       [WP4] 三类模板、LLM envelope、validators
 packages/flow-shadow     [Slice 2] 冻结 research pack、draft input 与确定性 QA gate
 apps/web                 Next.js UI + same-origin /api/mvp（含 health/live|ready|version）
@@ -69,9 +71,9 @@ docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm verify:docs           # 文档版本、authority、79/10/78/11、四路由与发布边界一致性
+pnpm verify:docs           # 文档版本、authority、79/10/78/12、四路由与发布边界一致性
 pnpm verify:authority      # repository-owned active v0.4 authority 自校验
-pnpm verify:spec           # v0.4 lock：79 operationId / 10 shared async / 78 表 / 11 规则 + 哈希一致性
+pnpm verify:spec           # v0.4 lock：79 operationId / 10 shared async / 78 表 / 12 规则 + 哈希一致性
 pnpm implementation:check # 实现 surface 与 v0.4 machine authority 一致
 pnpm openapi:lint          # AC-002：Redocly lint openapi/mvp.yaml
 pnpm contracts:generate    # 从 openapi/mvp.yaml 重新生成 packages/contracts/src/generated/openapi.ts
@@ -87,7 +89,7 @@ pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证�
                            # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
-pnpm db:migrate            # 按序应用 0001–0038（幂等，第二次为 no-op）
+pnpm db:migrate            # 按序应用 0001–0042（幂等，第二次为 no-op）
 pnpm db:migrate:check      # 断言 78 张 app 表 + 必需索引与 append-only trigger
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
@@ -106,6 +108,9 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 - **原子 enqueue（AC-006）**：每个异步 POST 在同一 PostgreSQL 事务内校验 idempotency/硬门 → 插 AsyncRun + domain resource → 用 pg-boss 的 Drizzle adapter（`enqueueRunInTx`，`fromDrizzle(tx, sql)`）在**同一连接**入队 → 存 idempotency response → commit 后返 202。绝不先 commit 再入队或反之。
 - **Analysis Refresh / DFS**：`createAnalysisRefreshRun` 冻结五步服务端计划；DataForSEO Search Landscape（DFS）v2 从冻结 Site/market/language 与服务端 row cap 查询 positions 1–100，并仅在 domain overlap 为空时使用带来源的 GSC/Crawl/Product Profile 种子追加一次 SERP Competitors fallback，原子写一个 Snapshot。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS scope、limit 或凭据。
 - **Growth Map generation read**：URL/Keyword/Competitor list/detail GET 可用 canonical `diagnosticRunId` 固定一个已发布 generation；Keyword/Competitor list 省略 pin 时读取当前资料库，URL 默认 latest generation。只有 Keyword/Competitor detail GET 允许互斥的 `view=review` 读取当前 governance。Keyword/Competitor PATCH 拒绝全部 query。
+- **Contextual diagnostic boundary**：当前 `mvp.rules.0.2.4` run 的 exact-key、hash-covered manifest 必须冻结 `contextProjection.v1`。它只从 immutable confirmed Profile 与创建时 exact Site 语言编译显式事实；Product Profile 0.3.0 与 legacy ICP generation 不相互借字段；provider/mode/permission、workflow、mutable priority/risk/ROI/cadence 与模型推断禁止进入。Site language 逐项按 RFC 5646 验证并原样、按序冻结；`[]` 是 unknown，不回退 delivery locale。
+- **Indexability + preview boundary**：`TECH-INDEXABILITY-006@1` 仅对 exact Crawl lineage 中 `page.status` exact 2xx、`sitemapMember=true`、`robotsIndexable=false` 产出；redirect source、non-2xx 与 lineage 缺失/歧义不得误报。nullable `executionPreview` 只由当前 ActionTemplate + Project delivery locale 投影只读文案，不是 replay、identity、Action、状态、发布或 measurement authority。
+- **Growth Audit generation boundary**：latest 只选择 `growth-audit.0.3.1`；精确 pin 可由自己的 validator 读取已知 `growth-audit.0.3.0`，不得回填或重解释。Capability version 保持 `0.3.0`；request/addressing contract 与 `capabilityContractVersion` literal 保持 `growth-audit.0.3.0`。Public Tools 继续 facts-only、无 Profile、原 quota 且不写 canonical 产品表。
 - **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。78 张 app 表不含任何 pg-boss 表。
 - **active-run 唯一**：`async_runs_one_active_key_idx` partial unique index 保证每项目/activeKey 只有一个 queued/running；冲突 409 `RUN_ALREADY_ACTIVE`。
 

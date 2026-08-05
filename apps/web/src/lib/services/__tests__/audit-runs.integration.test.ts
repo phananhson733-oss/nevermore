@@ -123,7 +123,14 @@ async function createAuditFixture(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Audit fixture" },
+      profile: {
+        productName: "Audit fixture",
+        oneLineDescription: "Growth Audit integration fixture",
+        productType: "saas",
+        businessModels: ["subscription"],
+        marketCodes: ["US"],
+        segments: ["Growth teams"],
+      },
       content_hash: contentHash({ fixture: suffix }),
       created_by: actor,
     })
@@ -489,6 +496,25 @@ describeDb("createGrowthAuditRun canonical projection", () => {
       .select({ inputManifest: diagnosticRuns.input_manifest })
       .from(diagnosticRuns)
       .where(eq(diagnosticRuns.id, accepted.run.id));
+    expect(Object.keys(diagnosticRow[0]!.inputManifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
+    expect(diagnosticRow[0]!.inputManifest["contextProjection"]).toMatchObject({
+      profileGeneration: "legacy-icp.v1",
+      siteLanguage: {
+        sourceKind: "site",
+        state: "declared_non_empty",
+        languageCodes: ["en"],
+      },
+    });
     const frozenSnapshots = (
       diagnosticRow[0]!.inputManifest["snapshots"] as readonly {
         readonly snapshotId: string;

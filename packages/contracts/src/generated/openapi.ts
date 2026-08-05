@@ -2463,6 +2463,7 @@ export interface components {
             regressed: boolean;
             evidenceIds: components["schemas"]["Uuid"][];
             targetRelation: components["schemas"]["GrowthMapFindingTargetRelation"];
+            executionPreview: components["schemas"]["ExecutionPreview"] | null;
             executionRef: components["schemas"]["GrowthMapExecutionRef"] | null;
         };
         /** @description One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot; page type, cluster, and owner remain null unless persisted. */
@@ -2826,6 +2827,26 @@ export interface components {
         AuditModuleHttpResponse: {
             data: components["schemas"]["AuditModuleSummary"];
         };
+        /**
+         * @description Presentational current-view copy derived from the static ActionTemplate
+         *     registry. This is not an Action, workflow state, publication command,
+         *     Artifact, or measurement record.
+         */
+        ExecutionPreview: {
+            templateId: string;
+            /** @enum {integer} */
+            templateVersion: 1 | 2;
+            artifactType: components["schemas"]["ArtifactType"];
+            /** @enum {string} */
+            effort: "small" | "medium" | "large";
+            /** @enum {string} */
+            risk: "low" | "medium" | "high";
+            /** @enum {string} */
+            contentLocale: "en" | "zh-CN";
+            title: string;
+            description: string;
+            expectedOutcome: string;
+        };
         /** @enum {string} */
         WorkShape: "fix" | "improve" | "create";
         /** @enum {string} */
@@ -2833,12 +2854,12 @@ export interface components {
         /** @enum {string} */
         OpportunityReadiness: "candidate" | "reviewable" | "confirmed";
         /** @enum {string} */
-        OpportunityRuleId: "TECH-HTTP-001" | "TECH-CANONICAL-002" | "TECH-LINKGRAPH-005" | "SEARCH-CTR-004" | "SEARCH-DECAY-002" | "CONTENT-COVERAGE-001" | "CONTENT-GAP-011" | "CRO-PATH-001" | "CRO-LANDING-003" | "GEO-ENTITY-001" | "GEO-CRAWLER-002";
+        OpportunityRuleId: "TECH-HTTP-001" | "TECH-CANONICAL-002" | "TECH-INDEXABILITY-006" | "TECH-LINKGRAPH-005" | "SEARCH-CTR-004" | "SEARCH-DECAY-002" | "CONTENT-COVERAGE-001" | "CONTENT-GAP-011" | "CRO-PATH-001" | "CRO-LANDING-003" | "GEO-ENTITY-001" | "GEO-CRAWLER-002";
         OpportunityRuleReference: {
             ruleId: components["schemas"]["OpportunityRuleId"];
             /** @enum {integer} */
             ruleVersion: 1 | 2 | 3;
-        };
+        } & unknown;
         OpportunityOwnedAsset: {
             sitePageId: components["schemas"]["Uuid"];
             snapshotId: components["schemas"]["Uuid"];
@@ -2881,14 +2902,7 @@ export interface components {
             claim: string;
             limitation: string;
         };
-        /**
-         * @description A traceable Growth Opportunity. `readiness` discriminates the variant:
-         *     candidate has no primary Finding or Action; reviewable carries a primary
-         *     Finding and rule; confirmed additionally projects the Finding-owned
-         *     Action. Runtime validation uses the typed Opportunity contract, and
-         *     confirmation flows only through the Finding review mutation.
-         */
-        GrowthOpportunity: {
+        GrowthOpportunityBase: {
             opportunityKey: string;
             title: string;
             workShape: components["schemas"]["WorkShape"];
@@ -2907,11 +2921,54 @@ export interface components {
             lenses: components["schemas"]["FrontstageLensId"][];
             coverageAndLimitations: string[];
             readiness: components["schemas"]["OpportunityReadiness"];
-            primaryFindingId?: components["schemas"]["Uuid"];
-            primaryRule?: components["schemas"]["OpportunityRuleReference"];
-            actionId?: components["schemas"]["Uuid"];
-            action?: components["schemas"]["OpportunityActionSummary"];
         };
+        CandidateGrowthOpportunity: components["schemas"]["GrowthOpportunityBase"] & {
+            /** @constant */
+            readiness: "candidate";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readiness: "candidate";
+        };
+        ReviewableGrowthOpportunity: components["schemas"]["GrowthOpportunityBase"] & {
+            /** @constant */
+            readiness: "reviewable";
+            primaryFindingId: components["schemas"]["Uuid"];
+            primaryRule: components["schemas"]["OpportunityRuleReference"];
+            executionPreview: components["schemas"]["ExecutionPreview"] | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readiness: "reviewable";
+        };
+        ConfirmedGrowthOpportunity: components["schemas"]["GrowthOpportunityBase"] & {
+            /** @constant */
+            readiness: "confirmed";
+            primaryFindingId: components["schemas"]["Uuid"];
+            primaryRule: components["schemas"]["OpportunityRuleReference"];
+            executionPreview: components["schemas"]["ExecutionPreview"] | null;
+            actionId: components["schemas"]["Uuid"];
+            action: components["schemas"]["OpportunityActionSummary"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readiness: "confirmed";
+        };
+        /**
+         * @description A traceable Growth Opportunity. `readiness` discriminates the variant:
+         *     candidate has no primary Finding, Action, or execution preview;
+         *     reviewable carries a primary Finding, rule, and required nullable preview;
+         *     confirmed additionally projects the Finding-owned Action. Runtime
+         *     validation uses the typed Opportunity contract, and confirmation flows
+         *     only through the Finding review mutation.
+         */
+        GrowthOpportunity: components["schemas"]["CandidateGrowthOpportunity"] | components["schemas"]["ReviewableGrowthOpportunity"] | components["schemas"]["ConfirmedGrowthOpportunity"];
         ProjectOpportunityListMeta: {
             limit: number;
             nextCursor: string | null;

@@ -1032,6 +1032,7 @@ function onboardingFinding(
       sitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
       pageSnapshotId: E2E_ONBOARDING_PAGE_SNAPSHOT_ID,
     },
+    executionPreview: null,
     executionRef: null,
   };
 }

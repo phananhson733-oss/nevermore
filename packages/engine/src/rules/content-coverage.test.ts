@@ -5,7 +5,15 @@ import {
   type CoverageInput,
   type ObservationView,
 } from "../context.ts";
-import { parseIcp, type EngineIcp } from "../icp.ts";
+import {
+  buildContextProjectionV1,
+  type ContextProjectionV1,
+} from "../context-projection.ts";
+import {
+  parseIcp,
+  parseIcpForContextProjectionV1,
+  type EngineIcp,
+} from "../icp.ts";
 import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentCoverageRule } from "./content-coverage.ts";
 
@@ -71,6 +79,7 @@ function buildContext(input: {
   readonly icp: EngineIcp;
   readonly observations: readonly ObservationView[];
   readonly coverage?: Partial<CoverageInput>;
+  readonly contextProjection?: ContextProjectionV1;
 }): DiagnosticContext {
   return DiagnosticContext.build({
     icp: input.icp,
@@ -84,10 +93,54 @@ function buildContext(input: {
       ...input.coverage,
     },
     capturedAt: { crawl: OBSERVED_AT },
+    ...(input.contextProjection === undefined
+      ? {}
+      : { contextProjection: input.contextProjection }),
   });
 }
 
 describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
+  it("treats an empty frozen Site language list as unknown without delivery-locale fallback", () => {
+    const profile = {
+      profileSchemaVersion: "product-profile.0.3.0",
+      productName: "Acme",
+      oneLiner: "A collaboration workspace",
+      category: "Collaboration",
+      productType: "saas",
+      businessModels: ["subscription"],
+      coreFeatures: ["team collaboration"],
+      valueProposition: "Coordinate work",
+      targetMarkets: [{ marketCode: "US", priority: "primary" }],
+      targetAudiences: [],
+      competitorCandidates: [],
+    };
+    const contextProjection = buildContextProjectionV1({
+      profileContentHash: "a".repeat(64),
+      profile,
+      siteLanguageCodes: [],
+    });
+    const ctx = buildContext({
+      icp: parseIcpForContextProjectionV1(profile, contextProjection),
+      contextProjection,
+      observations: [
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing Plans",
+          }),
+        ),
+      ],
+    });
+
+    expect(ctx.deliveryLocale).toBe("en");
+    expect(ctx.isEnglish()).toBe(false);
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "unsupported_language",
+    });
+  });
+
   it("emits one candidate per uncovered offer / use case", () => {
     const ctx = buildContext({
       icp: icpOf({

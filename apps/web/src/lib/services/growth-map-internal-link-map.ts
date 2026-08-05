@@ -34,7 +34,10 @@ import {
 import {
   GOVERNED_LEGACY_RULE_SET_VERSION,
   LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
   RULE_SET_VERSION,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
   rulesForRuleSetVersion,
 } from "@sf/engine";
@@ -61,7 +64,14 @@ const LEGACY_MANIFEST_KEYS = [
   "siteId",
   "snapshots",
 ] as const;
-const CURRENT_MANIFEST_KEYS = [...LEGACY_MANIFEST_KEYS, "governance"] as const;
+const GOVERNED_MANIFEST_KEYS = [
+  ...LEGACY_MANIFEST_KEYS,
+  "governance",
+] as const;
+const CURRENT_CONTEXT_MANIFEST_KEYS = [
+  ...GOVERNED_MANIFEST_KEYS,
+  "contextProjection",
+] as const;
 const ICP_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_KEYS = [
   "availability",
@@ -261,19 +271,28 @@ function requiredString(record: Record<string, unknown>, key: string): string {
 }
 
 /**
- * Frozen manifests gained a `governance` key when Keyword/Topic governance
- * shipped: governed rule sets (mvp.rules.0.2.2+) must carry it, the legacy
- * rule set (mvp.rules.0.2.1) must not. Mirrors growth-map-projection.
+ * Preserve the exact authority envelope for every shipped executor generation.
+ * Historical generations are never repaired with current context.
  */
 function manifestShapeValid(
   manifest: Record<string, unknown>,
   ruleSetVersion: string,
 ): boolean {
+  if (ruleSetVersion === RULE_SET_VERSION) {
+    if (!hasExactKeys(manifest, CURRENT_CONTEXT_MANIFEST_KEYS)) return false;
+    try {
+      parseGovernanceProjectionV1(manifest["governance"]);
+      parseContextProjectionV1(manifest["contextProjection"]);
+    } catch {
+      return false;
+    }
+    return true;
+  }
   if (
-    ruleSetVersion === RULE_SET_VERSION ||
-    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION
+    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === LINKGRAPH_LEGACY_RULE_SET_VERSION
   ) {
-    if (!hasExactKeys(manifest, CURRENT_MANIFEST_KEYS)) return false;
+    if (!hasExactKeys(manifest, GOVERNED_MANIFEST_KEYS)) return false;
     try {
       parseGovernanceProjectionV1(manifest["governance"]);
     } catch {
@@ -348,6 +367,7 @@ function readFrozenManifest(
     (run.run_status !== "completed" && run.run_status !== "partial") ||
     run.run_completed_at === null ||
     !isTimestamptzInstant(run.run_completed_at) ||
+    run.prompt_set_version !== PROMPT_SET_VERSION ||
     !isRecord(manifest) ||
     !manifestShapeValid(manifest, run.rule_set_version) ||
     !SHA_256.test(run.input_hash) ||

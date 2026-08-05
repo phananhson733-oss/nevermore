@@ -47,6 +47,7 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   FINDING_REGISTRY,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
@@ -90,7 +91,7 @@ import { runDiagnostic } from "../run-diagnostic.ts";
  *    MERGES new evidence into an existing non-dismissed Action.
  *
  * The runner hard-codes `ALL_RULES`, so a `completed` run is produced from a
- * fully-clean, full-coverage fixture where all 11 rules pass; a `partial` run is
+ * fully-clean, full-coverage fixture where all current 12 rules pass; a `partial` run is
  * produced by a crawl-only manifest (search/GA4/CSV rules are `skipped`).
  */
 
@@ -125,7 +126,7 @@ interface SeededSnapshot {
   readonly id: string;
   readonly collectionRunId: string;
   readonly provider: SourceProvider;
-  readonly availability: "available";
+  readonly availability: "available" | "partial";
   readonly capturedAt: string;
   readonly datasetKey: string;
   readonly schemaVersion: string;
@@ -136,6 +137,7 @@ interface SeededSnapshot {
 
 interface SeedSnapshotOptions {
   readonly analyticsLineage?: "subject" | "slash" | "ambiguous";
+  readonly availability?: "available" | "partial";
 }
 
 describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
@@ -278,6 +280,327 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
         analysis_invocation_id: null,
       })),
     );
+  });
+
+  it("persists TECH-INDEXABILITY-006@1 from a partial exact Crawl page with one immutable direct-URL lineage", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const fetchUrl = `${seed.origin}/pricing`;
+    const crawlSnapshot = await seedSnapshot(
+      handle,
+      seed,
+      [
+        crawlPage(
+          su(fetchUrl),
+          mkPage({
+            fetchUrl,
+            robotsIndexable: false,
+            sitemapMember: true,
+            title: "Pricing",
+          }),
+        ),
+      ],
+      "crawl",
+      { availability: "partial" },
+    );
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([crawlSnapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    expect(await runStatusOf(handle, seed.scope, runId)).toBe("partial");
+    const rule = (
+      await new DiagnosticRunsRepository(handle.db).listRuleResults(runId)
+    ).find((row) => row.rule_id === "TECH-INDEXABILITY-006");
+    expect(rule).toMatchObject({
+      rule_version: 1,
+      status: "candidate",
+      reason: null,
+    });
+
+    const finding = await new FindingsRepository(handle.db).findByKey(
+      seed.scope,
+      findingKey(seed.scope.projectId, "TECH-INDEXABILITY-006", [fetchUrl]),
+    );
+    expect(finding).toMatchObject({
+      rule_id: "TECH-INDEXABILITY-006",
+      rule_version: 1,
+      subject_refs: [fetchUrl],
+      severity: "high",
+      review_state: "unreviewed",
+    });
+
+    const observations = await new ObservationsRepository(
+      handle.db,
+    ).listBySnapshotIds(seed.scope, [crawlSnapshot.id]);
+    const observation = observations.find(
+      (row) =>
+        row.metric_key === METRIC_CRAWL_PAGE && row.subject_ref === fetchUrl,
+    );
+    const frozenPages = await new PageSnapshotsRepository(
+      handle.db,
+    ).listByDataSnapshotWithSitePageIdentity(seed.scope, crawlSnapshot.id);
+    const frozenPage = frozenPages.find(
+      (row) => row.site_page_id === observation?.site_page_id,
+    );
+    expect(observation).toBeDefined();
+    expect(frozenPage).toBeDefined();
+
+    const targets = await new FindingTargetsRepository(
+      handle.db,
+    ).listForFindings(seed.scope, runId, [finding!.id]);
+    expect(targets).toEqual([
+      expect.objectContaining({
+        relation: "direct_url",
+        target_kind: "url",
+        target_ref: fetchUrl,
+        resolution_state: "resolved",
+        basis_kind: "crawl_exact_fetch",
+        site_page_id: observation!.site_page_id,
+        page_snapshot_id: frozenPage!.page_snapshot_id,
+        source_observation_id: observation!.id,
+        member_ref: fetchUrl,
+        limitation: null,
+      }),
+    ]);
+
+    const evidenceRepository = new EvidenceRepository(handle.db);
+    const links = await evidenceRepository.listForFindings(
+      seed.scope,
+      [finding!.id],
+      { diagnosticRunId: runId },
+    );
+    expect(links).toEqual([
+      expect.objectContaining({ finding_id: finding!.id, role: "primary" }),
+    ]);
+    const evidence = await evidenceRepository.findByIds(
+      seed.scope,
+      links.map((link) => link.evidence_id),
+    );
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        source_provider: "crawl",
+        snapshot_id: crawlSnapshot.id,
+        collection_run_id: crawlSnapshot.collectionRunId,
+        availability: "partial",
+        subject_refs: [fetchUrl],
+      }),
+    ]);
+  });
+
+  it("leaves redirect-source noindex to its destination and sitemap 404 to TECH-HTTP-001", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const redirectUrl = `${seed.origin}/redirect-source`;
+    const missingUrl = `${seed.origin}/missing-from-sitemap`;
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(redirectUrl),
+        mkPage({
+          fetchUrl: redirectUrl,
+          status: 301,
+          finalStatus: 200,
+          redirectChain: [`${seed.origin}/destination`],
+          robotsIndexable: false,
+          sitemapMember: true,
+        }),
+      ),
+      crawlPage(
+        su(missingUrl),
+        mkPage({
+          fetchUrl: missingUrl,
+          status: 404,
+          finalStatus: 404,
+          robotsIndexable: false,
+          sitemapMember: true,
+        }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const rules = await new DiagnosticRunsRepository(
+      handle.db,
+    ).listRuleResults(runId);
+    expect(
+      rules.find((row) => row.rule_id === "TECH-INDEXABILITY-006"),
+    ).toMatchObject({ status: "pass", metrics: { conflictCount: 0 } });
+    expect(
+      rules.find((row) => row.rule_id === "TECH-HTTP-001"),
+    ).toMatchObject({ status: "candidate" });
+    await expect(
+      new FindingsRepository(handle.db).findByKey(
+        seed.scope,
+        findingKey(seed.scope.projectId, "TECH-INDEXABILITY-006", [
+          redirectUrl,
+        ]),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      new FindingsRepository(handle.db).findByKey(
+        seed.scope,
+        findingKey(seed.scope.projectId, "TECH-INDEXABILITY-006", [
+          missingUrl,
+        ]),
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      new FindingsRepository(handle.db).findByKey(
+        seed.scope,
+        findingKey(seed.scope.projectId, "TECH-HTTP-001", [
+          "http_status:404",
+        ]),
+      ),
+    ).resolves.toMatchObject({ rule_id: "TECH-HTTP-001" });
+  });
+
+  it("records ambiguous exact Crawl lineage as inconclusive and persists no indexability finding", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const fetchUrl = `${seed.origin}/ambiguous-pricing`;
+    const duplicate = crawlPage(
+      su(fetchUrl),
+      mkPage({
+        fetchUrl,
+        robotsIndexable: false,
+        sitemapMember: true,
+      }),
+    );
+    const snapshot = await seedSnapshot(handle, seed, [duplicate, duplicate]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const rule = (
+      await new DiagnosticRunsRepository(handle.db).listRuleResults(runId)
+    ).find((row) => row.rule_id === "TECH-INDEXABILITY-006");
+    expect(rule).toMatchObject({
+      status: "inconclusive",
+      reason: "missing_observation_lineage",
+    });
+    await expect(
+      new FindingsRepository(handle.db).findByKey(
+        seed.scope,
+        findingKey(seed.scope.projectId, "TECH-INDEXABILITY-006", [fetchUrl]),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps TECH-INDEXABILITY-006 absent from the historical 0.2.3 executor", async () => {
+    const seed = await seedProject(handle);
+    const icpId = await seedIcp(handle, seed, minimalProfile());
+    const fetchUrl = `${seed.origin}/historical-pricing`;
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(fetchUrl),
+        mkPage({
+          fetchUrl,
+          robotsIndexable: false,
+          sitemapMember: true,
+        }),
+      ),
+    ]);
+    const governance = parseGovernanceProjectionV1({
+      projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+      keywordClusters: [],
+      competitors: [],
+    });
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+      governance,
+      { ruleSetVersion: "mvp.rules.0.2.3" },
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const rules = await new DiagnosticRunsRepository(
+      handle.db,
+    ).listRuleResults(runId);
+    expect(rules.some((row) => row.rule_id === "TECH-INDEXABILITY-006")).toBe(
+      false,
+    );
+    await expect(
+      new FindingsRepository(handle.db).findByKey(
+        seed.scope,
+        findingKey(seed.scope.projectId, "TECH-INDEXABILITY-006", [fetchUrl]),
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("does not treat an empty frozen Site language as English via deliveryLocale", async () => {
+    const seed = await seedProject(handle, {
+      languageCodes: [],
+      defaultDeliveryLocale: "en",
+    });
+    const icpId = await seedIcp(handle, seed, {
+      ...minimalProfile(),
+      offers: ["Enterprise revenue analytics"],
+    });
+    const snapshot = await seedSnapshot(handle, seed, [
+      crawlPage(
+        su(`${seed.origin}/pricing`),
+        mkPage({ fetchUrl: `${seed.origin}/pricing`, title: "Pricing" }),
+      ),
+    ]);
+    const runId = await seedDiagnosticRun(
+      handle,
+      seed,
+      icpId,
+      manifestOf([snapshot]),
+      "queued",
+    );
+
+    await runDiagnostic(ctx, {
+      runId,
+      workspaceId: seed.scope.workspaceId,
+      projectId: seed.scope.projectId,
+    });
+
+    const contentCoverage = (
+      await new DiagnosticRunsRepository(handle.db).listRuleResults(runId)
+    ).find((row) => row.rule_id === "CONTENT-COVERAGE-001");
+    expect(contentCoverage).toMatchObject({
+      status: "inconclusive",
+      reason: "unsupported_language",
+    });
   });
 
   it("persists one exact target-ledger member for every URL in a multi-page technical finding", async () => {
@@ -1366,7 +1689,13 @@ describeDb("diagnostic runner cross-run resolution (spec §8.6, §9.2)", () => {
 
 // --- seeding helpers --------------------------------------------------------
 
-async function seedProject(handle: DbHandle): Promise<Seed> {
+async function seedProject(
+  handle: DbHandle,
+  options: {
+    readonly languageCodes?: readonly string[];
+    readonly defaultDeliveryLocale?: string;
+  } = {},
+): Promise<Seed> {
   const actor = randomUUID();
   const [ws] = await handle.db
     .insert(workspaces)
@@ -1377,7 +1706,7 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
     workspaceId,
     clientName: "Diag",
     projectName: "Diag",
-    defaultDeliveryLocale: "en",
+    defaultDeliveryLocale: options.defaultDeliveryLocale ?? "en",
     createdBy: actor,
   });
   const host = `diag-${randomUUID().slice(0, 8)}.example`;
@@ -1388,7 +1717,7 @@ async function seedProject(handle: DbHandle): Promise<Seed> {
     origin,
     host,
     marketCodes: ["US"],
-    languageCodes: ["en"],
+    languageCodes: [...(options.languageCodes ?? ["en"])],
   });
   return {
     scope: { workspaceId, projectId: project.id },
@@ -1560,7 +1889,7 @@ async function seedSnapshot(
     methodVersion: config.methodVersion,
     capturedAt: OBSERVED_AT,
     sourceWindow: { start: null, end: null },
-    availability: "available",
+    availability: options.availability ?? "available",
     limitation: `test ${provider} snapshot`,
     rawObjectKey: null,
     rowCount: observations.length,
@@ -1585,7 +1914,7 @@ async function seedSnapshot(
     id: snapshot.id,
     collectionRunId,
     provider,
-    availability: "available",
+    availability: options.availability ?? "available",
     capturedAt: snapshot.captured_at,
     datasetKey: snapshot.dataset_key,
     schemaVersion: snapshot.schema_version,
@@ -1606,6 +1935,7 @@ async function attachExactSitePageLineage(
 ): Promise<readonly ObservationInsert[]> {
   const sitePages = new SitePagesRepository(handle.db);
   const pageSnapshots = new PageSnapshotsRepository(handle.db);
+  const snapshottedCrawlSitePageIds = new Set<string>();
   const bound: ObservationInsert[] = [];
   for (const observation of observations) {
     let exactUrl: string | null = null;
@@ -1669,15 +1999,18 @@ async function attachExactSitePageLineage(
         depth: 0,
         projection: observation.valueJson,
       };
-      await pageSnapshots.create({
-        workspaceId: seed.scope.workspaceId,
-        projectId: seed.scope.projectId,
-        sitePageId: sitePage.id,
-        dataSnapshotId,
-        contentHash: contentHash(extract as CanonicalValue),
-        extract,
-        capturedAt,
-      });
+      if (!snapshottedCrawlSitePageIds.has(sitePage.id)) {
+        await pageSnapshots.create({
+          workspaceId: seed.scope.workspaceId,
+          projectId: seed.scope.projectId,
+          sitePageId: sitePage.id,
+          dataSnapshotId,
+          contentHash: contentHash(extract as CanonicalValue),
+          extract,
+          capturedAt,
+        });
+        snapshottedCrawlSitePageIds.add(sitePage.id);
+      }
     }
     bound.push({ ...observation, sitePageId: sitePage.id });
   }
@@ -1695,13 +2028,32 @@ async function seedDiagnosticRun(
     keywordClusters: [],
     competitors: [],
   }),
+  options: {
+    readonly ruleSetVersion?:
+      | typeof RULE_SET_VERSION
+      | "mvp.rules.0.2.3";
+  } = {},
 ): Promise<string> {
   const runId = randomUUID();
+  const ruleSetVersion = options.ruleSetVersion ?? RULE_SET_VERSION;
   const icp = await new IcpProfilesRepository(handle.db).findById(
     seed.scope,
     icpProfileId,
   );
   if (!icp) throw new Error("diagnostic test ICP missing");
+  const site = await new SitesRepository(handle.db).findById(
+    seed.scope,
+    seed.siteId,
+  );
+  if (!site) throw new Error("diagnostic test Site missing");
+  const contextProjection =
+    ruleSetVersion === RULE_SET_VERSION
+      ? buildContextProjectionV1({
+          profile: icp.profile,
+          profileContentHash: icp.content_hash,
+          siteLanguageCodes: site.language_codes,
+        })
+      : undefined;
   const frozenManifest = {
     projectId: seed.scope.projectId,
     siteId: seed.siteId,
@@ -1711,10 +2063,11 @@ async function seedDiagnosticRun(
       contentHash: icp.content_hash,
     },
     snapshots: inputManifest["snapshots"],
-    ruleSetVersion: RULE_SET_VERSION,
+    ruleSetVersion,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
     governance,
+    ...(contextProjection === undefined ? {} : { contextProjection }),
   };
   await handle.db.insert(asyncRuns).values({
     id: runId,
@@ -1734,7 +2087,7 @@ async function seedDiagnosticRun(
     siteId: seed.siteId,
     icpProfileId,
     icpProfileVersion: 1,
-    ruleSetVersion: RULE_SET_VERSION,
+    ruleSetVersion,
     promptSetVersion: PROMPT_SET_VERSION,
     outputLocale: "en",
     inputManifest: frozenManifest,
@@ -1927,7 +2280,7 @@ function minimalProfile(): Record<string, unknown> {
  * A fully-clean, full-coverage crawl fixture: a healthy commercial page (the
  * conversion target) with structured entity + proof coverage, two non-commercial
  * pages that give it 2 internal inlinks, and one GA4 landing row with a usable
- * baseline. Every one of the 11 rules passes → the run is `completed`.
+ * baseline. Every one of the current 12 rules passes → the run is `completed`.
  */
 function cleanObservations(origin: string): ObservationInsert[] {
   const pricing = su(`${origin}/pricing`);
@@ -2004,7 +2357,9 @@ function mkPage(o: {
   fetchUrl: string;
   status?: number;
   finalStatus?: number;
+  redirectChain?: readonly string[];
   robotsIndexable?: boolean;
+  sitemapMember?: boolean;
   title?: string;
   h1?: readonly string[];
   jsonLdTypes?: readonly string[];
@@ -2015,7 +2370,7 @@ function mkPage(o: {
     fetchUrl: o.fetchUrl,
     status: o.status ?? 200,
     finalStatus: o.finalStatus ?? 200,
-    redirectChain: [],
+    redirectChain: o.redirectChain ?? [],
     canonicalTarget: null,
     robotsIndexable: o.robotsIndexable ?? true,
     robotsDirectives: o.robotsIndexable === false ? ["noindex"] : [],
@@ -2026,7 +2381,7 @@ function mkPage(o: {
     wordCount: 100,
     internalOutlinks: o.internalOutlinks ?? [],
     jsonLd: { types: o.jsonLdTypes ?? [], errorCount: 0 },
-    sitemapMember: false,
+    sitemapMember: o.sitemapMember ?? false,
     bodyExcerpt: null,
     paragraphs: o.paragraphs ?? [],
     responseMs: 10,

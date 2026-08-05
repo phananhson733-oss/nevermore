@@ -80,6 +80,7 @@ const ASYNC_OPERATIONS = [
 const RULES = [
   ["TECH-HTTP-001", 2],
   ["TECH-CANONICAL-002", 2],
+  ["TECH-INDEXABILITY-006", 1],
   ["TECH-LINKGRAPH-005", 3],
   ["SEARCH-CTR-004", 1],
   ["SEARCH-DECAY-002", 1],
@@ -144,7 +145,7 @@ function fixtureOpenApi() {
   ].join("\n");
 }
 
-function fixtureMigration(tables) {
+function fixtureMigration(migrationVersion, tables = []) {
   return [
     "BEGIN;",
     "CREATE SCHEMA IF NOT EXISTS app;",
@@ -154,7 +155,7 @@ function fixtureMigration(tables) {
         : `CREATE TABLE app.${table} (id uuid PRIMARY KEY);`,
     ),
     "CREATE OR REPLACE VIEW app.schema_migration_version AS",
-    "  SELECT '0001_fixture'::text AS migration_version;",
+    `  SELECT '${migrationVersion}'::text AS migration_version;`,
     "COMMIT;",
     "",
   ].join("\n");
@@ -207,7 +208,20 @@ function makeFixture(t, options = {}) {
   write(
     root,
     "packages/db/migrations/0001_fixture.sql",
-    fixtureMigration(tables),
+    fixtureMigration("0001_fixture", tables),
+  );
+  for (let ordinal = 2; ordinal <= 41; ordinal += 1) {
+    const migrationVersion = `${String(ordinal).padStart(4, "0")}_fixture`;
+    write(
+      root,
+      `packages/db/migrations/${migrationVersion}.sql`,
+      fixtureMigration(migrationVersion),
+    );
+  }
+  write(
+    root,
+    "packages/db/migrations/0042_contextual_indexability_opportunities.sql",
+    fixtureMigration("0042_contextual_indexability_opportunities"),
   );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
@@ -224,6 +238,17 @@ function makeFixture(t, options = {}) {
       ].join("\n"),
     );
   }
+  write(
+    root,
+    "packages/engine/src/rules/index.ts",
+    [
+      "export const CONTEXTUAL_ALL_RULES: readonly DiagnosticRule[] = [",
+      ...RULES.map((_, index) => `  fixture${index}Rule,`),
+      "];",
+      "export const ALL_RULES: readonly DiagnosticRule[] = CONTEXTUAL_ALL_RULES;",
+      "",
+    ].join("\n"),
+  );
 
   const index = {
     schemaVersion: 1,
@@ -265,13 +290,13 @@ function makeFixture(t, options = {}) {
     normative: true,
     productVersion: "0.3.0",
     contractVersion: "2026-07-21",
-    ruleSetVersion: "mvp.rules.0.2.3",
+    ruleSetVersion: "mvp.rules.0.2.4",
     promptSetVersion: "mvp.prompts.0.2.0",
     authorityRoot,
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0001_fixture",
+    migrationHead: "0042_contextual_indexability_opportunities",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -305,10 +330,15 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.apiOperations.length, 79);
   assert.equal(activeLock.asyncOperations.length, 10);
   assert.equal(activeLock.tables.length, 78);
-  assert.equal(activeLock.rules.length, 11);
-  assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.3");
+  assert.equal(activeLock.rules.length, 12);
+  assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
+  assert.equal(
+    activeLock.migrationHead,
+    "0042_contextual_indexability_opportunities",
+  );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
+  assert.equal(activeLock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   for (const operationId of [
     "getProjectAuditBacklinks",
     "listProjectAuditKeywordRelations",
@@ -485,16 +515,35 @@ test("rejects CONTENT-GAP rule version drift", (t) => {
   const fixture = makeFixture(t);
   const path = join(
     fixture.root,
-    "packages/engine/src/rules/rule-6.ts",
+    "packages/engine/src/rules/rule-7.ts",
   );
   write(
     fixture.root,
-    "packages/engine/src/rules/rule-6.ts",
+    "packages/engine/src/rules/rule-7.ts",
     readFileSync(path, "utf8").replace("version: 2", "version: 999"),
   );
   const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /CONTENT-GAP-011 rule version drifted from 2/i);
+});
+
+test("rejects TECH-INDEXABILITY rule version drift", (t) => {
+  const fixture = makeFixture(t);
+  const path = join(
+    fixture.root,
+    "packages/engine/src/rules/rule-2.ts",
+  );
+  write(
+    fixture.root,
+    "packages/engine/src/rules/rule-2.ts",
+    readFileSync(path, "utf8").replace("version: 1", "version: 999"),
+  );
+  const result = runVerifier(fixture, ["--lock", fixture.lockPath]);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    /TECH-INDEXABILITY-006 rule version drifted from 1/i,
+  );
 });
 
 test("rejects a tampered implementation verifier before executing it", (t) => {

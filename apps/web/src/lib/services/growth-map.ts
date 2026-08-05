@@ -44,6 +44,7 @@ import {
   type FrozenGrowthMapRun,
 } from "./growth-map-projection";
 import { loadPublishedGrowthMapGeneration } from "./growth-map-generation";
+import { buildExecutionPreview } from "./execution-preview";
 import { isStale } from "./source-mappers";
 
 export const MAX_GROWTH_MAP_SEARCH_LENGTH =
@@ -94,6 +95,8 @@ interface GrowthMapReadContext {
   readonly projectScope: ProjectScope;
   /** Request-scoped chrome locale; never used to reinterpret persisted content. */
   readonly uiLocale: UiLocale;
+  /** Authoritative Project setting for presentational ActionTemplate copy. */
+  readonly projectDeliveryLocale: string;
   readonly run: GrowthMapReadableRunRow;
   readonly frozen: FrozenGrowthMapRun;
 }
@@ -173,6 +176,7 @@ async function loadReadContext(
   return {
     projectScope,
     uiLocale: scope.uiLocale,
+    projectDeliveryLocale: project.default_delivery_locale,
     run: generation.run,
     frozen: generation.frozen,
   };
@@ -939,6 +943,10 @@ async function findingDetails(
       regressed: finding.regressed,
       evidenceIds,
       targetRelation: findingTargetRelation(target),
+      executionPreview: buildExecutionPreview(
+        finding.rule_id,
+        context.projectDeliveryLocale,
+      ),
       executionRef: action
         ? { actionId: action.id, artifactIds }
         : null,

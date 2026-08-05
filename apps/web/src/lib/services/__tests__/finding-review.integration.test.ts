@@ -56,6 +56,10 @@ async function seedFinding(
       profile: {
         productName: "Acme",
         oneLineDescription: "x",
+        productType: "saas",
+        businessModels: ["subscription"],
+        marketCodes: ["US"],
+        segments: ["Growth teams"],
         siteLanguageCodes: ["en"],
         defaultDeliveryLocale: "en",
       },
