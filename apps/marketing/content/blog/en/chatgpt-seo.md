@@ -106,7 +106,7 @@ Yes, both disciplines resell cleanly if reports stay unbranded and the work is p
 
 ## Take Action
 
-Map your own split before you spend a dollar: list your target queries, then check how ChatGPT answers them today. [Explore GenGrowth Features](https://gengrowth.ai/en/features) to run that diagnostic and see which client pages already earn citations and which ones still need restructuring. The teams that route each account to the right playbook first tend to protect margin far better than the ones that buy a tool and reverse-engineer the goal afterward.
+Map your own split before you spend a dollar: list your target queries, then check how ChatGPT answers them today. [Explore GenGrowth Features](https://gengrowth.ai/pricing) to run that diagnostic and see which client pages already earn citations and which ones still need restructuring. The teams that route each account to the right playbook first tend to protect margin far better than the ones that buy a tool and reverse-engineer the goal afterward.
 
 ## Sources
 

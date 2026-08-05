@@ -110,7 +110,7 @@ Often more easily than a large one. Small libraries can be audited end-to-end in
 
 ## Take Action
 
-Run one ethical-SEO audit cycle inside GenGrowth on a handful of pages already in your library. You'll see which pages would defend themselves against a critical reader, which ones a future update would likely clip, and where citation hygiene is silently costing AI search visibility — all without writing a single new page first. [Start your free GenGrowth trial](https://gengrowth.ai/app) and run the audit before you commission the next batch.
+Run one ethical-SEO audit cycle inside GenGrowth on a handful of pages already in your library. You'll see which pages would defend themselves against a critical reader, which ones a future update would likely clip, and where citation hygiene is silently costing AI search visibility — all without writing a single new page first. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run the audit before you commission the next batch.
 
 ## Sources
 

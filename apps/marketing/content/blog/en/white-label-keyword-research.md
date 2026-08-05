@@ -1,12 +1,12 @@
 ---
-title: How White-Label Keyword Research Reaches Clients Under Your Own Brand
-excerpt: A white-label keyword research tool is software that runs the keyword discovery, volume, and difficulty analysis for an agency
+title: White-Label Keyword Research: A Practical Agency Guide
+excerpt: Learn how agencies deliver keyword discovery, volume, difficulty, and prioritization under their own brand without exposing the underlying vendor.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-06-16
-updatedAt: 2026-06-16
+updatedAt: 2026-08-05
 heroImage: /images/blog/white-label-keyword-research.jpg
 heroImageAlt: Flat-vector illustration: a blank pennant flag being raised up a mast, a neat stack of plain index cards at the mast's base
 localeExclusive: true
@@ -111,7 +111,7 @@ localeExclusive: true
 <li>A content gap analysis explainer — for turning raw keyword data into client-facing strategy</li>
 </ul>
 <h2>Take Action</h2>
-<p>Map your own delivery workflow against a real branded export before you sign any vendor contract, and you'll surface the vendor-leakage gaps that comparison posts never mention. To see how clean, client-ready research output comes together end to end, <a href="https://gengrowth.ai/app">start a free GenGrowth trial</a> and run a real branded export through the workflow yourself. The agencies that win resale margin are the ones that treat delivery format, not database size, as the product.</p>
+<p>Map your own delivery workflow against a real branded export before you sign any vendor contract, and you'll surface the vendor-leakage gaps that comparison posts never mention. To see how clean, client-ready research output comes together end to end, <a href="https://app.gengrowth.ai/">start a free GenGrowth trial</a> and run a real branded export through the workflow yourself. The agencies that win resale margin are the ones that treat delivery format, not database size, as the product.</p>
 <h2>Sources</h2>
 <ul>
 <li>Based on patterns GenGrowth has observed across white-label SEO rollouts; no third-party study is cited</li>

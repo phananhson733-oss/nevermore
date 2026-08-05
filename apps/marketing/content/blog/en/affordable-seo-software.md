@@ -91,7 +91,7 @@ No — the best fit depends on which core functions your team consumes most. A t
 
 ## Take Action
 
-If you are weighing capability against budget, the fastest way to see where an affordable tier reaches parity is to run your own domain through it. [Start your free GenGrowth trial](https://gengrowth.ai/app) and test rank tracking, site auditing, and keyword research against work you already understand — then decide, with evidence, where premium depth is worth paying for.
+If you are weighing capability against budget, the fastest way to see where an affordable tier reaches parity is to run your own domain through it. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and test rank tracking, site auditing, and keyword research against work you already understand — then decide, with evidence, where premium depth is worth paying for.
 
 ## Sources
 

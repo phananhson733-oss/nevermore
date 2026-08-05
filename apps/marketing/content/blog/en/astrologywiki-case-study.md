@@ -6,13 +6,13 @@ category: case_study
 pillar: customer_stories
 status: published
 publishedAt: 2026-02-20
-updatedAt: 2026-03-05
+updatedAt: 2026-08-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
 heroImageAlt: Flat-vector illustration: three potted plants in a row, ascending left to right on a common baseline: a tiny sprout in a small pot, a leafy young plant in a medium pot, a tall thriving plant in a large pot
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>The Starting Point</h2>
 <p>In January 2026, astrologywiki.com was a blank canvas. The domain had been registered for two years but had zero indexed pages, zero backlinks, and zero organic traffic. The founder had deep domain expertise but no growth team, no content pipeline, and no marketing budget beyond the GenGrowth subscription.</p>
 <p>The goal: reach 5,000 monthly active users within 90 days, entirely through organic channels.</p>
@@ -23,7 +23,7 @@ localeExclusive: false
 <li><strong>Content gap:</strong> Top 5 competitors averaged 340 indexed pages. astrologywiki.com had zero.</li>
 <li><strong>Social signals:</strong> Reddit r/astrology had 1.2 million members. X averaged 45,000 astrology posts/day.</li>
 </ul>
-<p>The Discovery Engine scored 186 opportunity items and surfaced the top 30 by composite priority score.</p>
+<p>The research produced 186 candidate opportunities. The team reviewed their evidence, relevance, and implementation constraints, then selected 30 for the first planning cycle.</p>
 
 <h2>Phase 2: Strategy (Week 3)</h2>
 <h3>Content Cluster Strategy</h3>
@@ -63,4 +63,4 @@ localeExclusive: false
 <li>Human review is non-negotiable for niche content.</li>
 </ol>
 
-<p>To start your own growth journey, explore <a href="/features">GenGrowth's features</a> or read our <a href="/blog/what-is-growth-automation">complete guide to growth automation</a>.</p>
+<p>To plan your own evidence-led SEO workflow, see <a href="/pricing">how GenGrowth works</a> or read our <a href="/blog/what-is-growth-automation">complete guide to growth automation</a>.</p>

@@ -1,12 +1,12 @@
 ---
-title: What a Manual SEO Service Actually Covers — A Scope-Bounded Definition for B2B Buyers
-excerpt: Most explanations of this offering blur three separate things — the tasks a human actually performs, the tasks a tool performs, and the tasks an adjacent agency retainer bundles in.
+title: Manual SEO Service: Scope, Costs, and Buyer Checklist
+excerpt: Separate hands-on SEO work from software and adjacent retainers, then use a practical checklist to define scope, ownership, and expected evidence.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-02
-updatedAt: 2026-07-02
+updatedAt: 2026-08-05
 heroImage: /images/blog/manual-seo-service.jpg
 heroImageAlt: Flat-vector illustration: a simple hand silhouette holding a pencil on the left and a large gear turning on the right, both at equal size
 localeExclusive: true
@@ -103,7 +103,7 @@ Ask for outreach logs, named prospect lists, and the reasoning behind each quali
 
 ## Take Action
 
-If you are weighing whether a manual SEO service fits your growth plan — or where the human work should stop and automation should take over — gengrowth.ai is happy to talk it through. [Start a free GenGrowth trial](https://gengrowth.ai/app) and we will help you map which deliverables truly need hands-on work and which are better handed to software, so you pay the manual premium only where it changes the outcome.
+If you are weighing whether a manual SEO service fits your growth plan — or where the human work should stop and automation should take over — gengrowth.ai is happy to talk it through. [Start a free GenGrowth trial](https://app.gengrowth.ai/) and we will help you map which deliverables truly need hands-on work and which are better handed to software, so you pay the manual premium only where it changes the outcome.
 
 ## Sources
 

@@ -110,7 +110,7 @@ Usually two or three with clear, non-overlapping jobs — one for audit and moni
 
 ## Take Action
 
-Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you commission anything else. You will see which hours an AI SEO tool can actually return and which still need a person. [Start your free GenGrowth trial](https://gengrowth.ai/app) and baseline one workflow this week.
+Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you commission anything else. You will see which hours an AI SEO tool can actually return and which still need a person. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and baseline one workflow this week.
 
 ## Sources
 

@@ -6,13 +6,13 @@ category: methodology
 pillar: attribution
 status: published
 publishedAt: 2026-02-10
-updatedAt: 2026-03-01
+updatedAt: 2026-08-05
 heroImage: /images/blog/marketing-attribution-models.jpg
 heroImageAlt: Flat-vector illustration: four paths of different widths converging from the left edge into a single trophy cup standing at the right
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>What Attribution Really Means</h2>
 <p>Marketing attribution is the process of assigning credit for a conversion to the marketing touchpoints that influenced it. When a user signs up for your product, which of the 7 interactions they had with your brand over the past 30 days actually mattered? The answer depends on which attribution model you use.</p>
 <p>Attribution matters because it determines where you spend money. If your last-click model says paid search drives 80% of conversions, you will invest heavily in paid search. But if those users first discovered you through a blog post, then saw a social thread, then clicked a retargeting ad -- the real driver was organic content.</p>
@@ -44,7 +44,7 @@ localeExclusive: false
 <p><strong>Best for:</strong> Products with high traffic and conversion volume.</p>
 
 <h2>Channel Isolation: The Missing Piece</h2>
-<p>A channel isolation test temporarily pauses one channel and measures impact on conversions. GenGrowth uses <a href="/features">UTM fingerprinting</a> to enable lightweight channel isolation.</p>
+<p>A channel isolation test temporarily pauses one channel and measures the change in conversions. Define the intervention, guardrails, comparison window, and UTM convention before the test; otherwise seasonality or tracking drift can look like causal impact.</p>
 
 <h2>UTM Parameters: The Foundation</h2>
 <ul>

@@ -101,7 +101,7 @@ A sustainable solo cadence is roughly three to five hours weekly, split between 
 
 ## Take Action
 
-Start by mapping your first buyer-intent cluster and auditing whether your product pages are ready to convert search traffic, then build the supporting pages with a workflow that fits a five-hour week. You can [start your free GenGrowth trial](https://gengrowth.ai/app) to turn that audit into a prioritized, decision-first content plan instead of a generic keyword dump. The earlier you treat search as a weekly habit rather than a someday project, the sooner a zero-DA domain starts compounding into qualified signups.
+Start by mapping your first buyer-intent cluster and auditing whether your product pages are ready to convert search traffic, then build the supporting pages with a workflow that fits a five-hour week. You can [start your free GenGrowth trial](https://app.gengrowth.ai/) to turn that audit into a prioritized, decision-first content plan instead of a generic keyword dump. The earlier you treat search as a weekly habit rather than a someday project, the sooner a zero-DA domain starts compounding into qualified signups.
 
 ## Sources
 

@@ -115,7 +115,7 @@ Start with work that is repetitive, reversible, and easy to inspect, such as col
 
 ## Take Action
 
-Map one repetitive marketing task, its inputs, its approval owner, and the actions that must stop for review, then [Explore GenGrowth Features](https://gengrowth.ai/en/features).
+Map one repetitive marketing task, its inputs, its approval owner, and the actions that must stop for review, then [Explore GenGrowth Features](https://gengrowth.ai/pricing).
 
 You will leave with a clearer view of where an agent can prepare, coordinate, and check work without creating another layer of manual supervision.
 

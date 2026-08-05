@@ -6,13 +6,13 @@ category: methodology
 pillar: experiment_driven
 status: published
 publishedAt: 2026-02-01
-updatedAt: 2026-02-20
+updatedAt: 2026-08-05
 heroImage: /images/blog/growth-experiment-playbook.jpg
 heroImageAlt: 扁平矢量插图：摊开的活页夹展开五个分隔标签，旁边排着五块空白步骤卡
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>为什么大多数增长实验会失败</h2>
 <p>根据 Reforge 和 GrowthHackers 的数据，大约 70-80% 的增长实验未能产生统计显著的结果。这个数字听起来令人沮丧，但其实是预期内的 -- 目标不是赢得每个实验，而是运行足够多的实验让赢家复利。问题在于大多数团队运行的实验不够多，而且实验设计不够严谨。</p>
 <p>三个最常见的失败模式：</p>
@@ -41,7 +41,7 @@ localeExclusive: false
 <p>保持实验尽可能简单。一次测试一个变量。</p>
 
 <h2>第 5 步：带追踪执行</h2>
-<p>每个实验都需要干净的归因。GenGrowth 通过<a href="/features">执行流水线</a>自动化这些。</p>
+<p>每个实验都需要干净的归因。为各个实验组使用一致的 UTM 命名规则，在实验计划中记录具体参数，并保留对比时间窗口，确保其他审阅者能够复现结论。</p>
 
 <h2>第 6 步：衡量与分析</h2>
 <ol>

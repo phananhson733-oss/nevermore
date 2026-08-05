@@ -118,7 +118,7 @@ The partner should return a source-aware draft, a list of assumptions, and an ed
 
 ## Take Action
 
-Audit one high-intent page that currently depends on a social post, sales conversation, or product release for its proof, then compare the handoff with [Explore GenGrowth Plans](https://gengrowth.ai/en/pricing).
+Audit one high-intent page that currently depends on a social post, sales conversation, or product release for its proof, then compare the handoff with [Explore GenGrowth Plans](https://gengrowth.ai/pricing).
 
 The exercise produces a visible map of the claim, its support, its owner, and the page a buyer can inspect without extra context.
 
