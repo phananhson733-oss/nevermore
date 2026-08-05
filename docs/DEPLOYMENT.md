@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0042_contextual_indexability_opportunities.sql` (**42 ordered migrations**)
+Migration range: `0001_init.sql` through `0043_validate_contextual_diagnostic_rule_set.sql` (**43 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0042` are hosted; every release must back up,
+v0.4 migrations through `0043` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 

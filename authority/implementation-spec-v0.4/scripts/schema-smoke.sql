@@ -4673,6 +4673,7 @@ BEGIN
     WHERE connamespace = 'app'::regnamespace
       AND conrelid = 'app.diagnostic_runs'::regclass
       AND conname = 'diagnostic_runs_rule_set_version_check'
+      AND convalidated
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.0%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.1%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.2%'
@@ -4913,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0042_contextual_indexability_opportunities' THEN
+  ) IS DISTINCT FROM '0043_validate_contextual_diagnostic_rule_set' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

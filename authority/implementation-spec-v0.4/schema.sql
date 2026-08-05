@@ -20439,24 +20439,6 @@ COMMIT;
 -- BEGIN EXACT ORDERED MIGRATION 0042_contextual_indexability_opportunities.sql
 BEGIN;
 
--- mvp.rules.0.2.4 adds the context-projection.v1 routing envelope and the
--- exact-crawl TECH-INDEXABILITY-006 rule. Every prior deterministic rule set
--- remains accepted with its own frozen manifest and rule-version contract.
-ALTER TABLE app.diagnostic_runs
-  DROP CONSTRAINT IF EXISTS diagnostic_runs_rule_set_version_check;
-
-ALTER TABLE app.diagnostic_runs
-  ADD CONSTRAINT diagnostic_runs_rule_set_version_check
-  CHECK (
-    rule_set_version IN (
-      'mvp.rules.0.2.0',
-      'mvp.rules.0.2.1',
-      'mvp.rules.0.2.2',
-      'mvp.rules.0.2.3',
-      'mvp.rules.0.2.4'
-    )
-  );
-
 CREATE OR REPLACE FUNCTION app.enforce_current_diagnostic_manifest()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -21627,9 +21609,48 @@ BEGIN
 END;
 $$;
 
+-- Keep the ACCESS EXCLUSIVE lock window to metadata only. Adding the widened
+-- check as NOT VALID still enforces it for every new or updated row, while the
+-- follow-up 0043 migration validates historical rows under PostgreSQL's lower
+-- SHARE UPDATE EXCLUSIVE lock. A short lock timeout fails the complete 0042
+-- transaction instead of queuing behind live traffic indefinitely.
+SET LOCAL lock_timeout = '5s';
+
+ALTER TABLE app.diagnostic_runs
+  DROP CONSTRAINT IF EXISTS diagnostic_runs_rule_set_version_check,
+  ADD CONSTRAINT diagnostic_runs_rule_set_version_check
+  CHECK (
+    rule_set_version IN (
+      'mvp.rules.0.2.0',
+      'mvp.rules.0.2.1',
+      'mvp.rules.0.2.2',
+      'mvp.rules.0.2.3',
+      'mvp.rules.0.2.4'
+    )
+  ) NOT VALID;
 
 CREATE OR REPLACE VIEW app.schema_migration_version AS
   SELECT '0042_contextual_indexability_opportunities'::text AS migration_version;
 
 COMMIT;
 -- END EXACT ORDERED MIGRATION 0042_contextual_indexability_opportunities.sql
+
+-- BEGIN EXACT ORDERED MIGRATION 0043_validate_contextual_diagnostic_rule_set.sql
+BEGIN;
+
+-- 0042 installs the widened rule-set check with NOT VALID so its
+-- ACCESS EXCLUSIVE lock is held only for a short metadata transaction. This
+-- separate migration scans historical rows under SHARE UPDATE EXCLUSIVE,
+-- which permits ordinary SELECT/INSERT/UPDATE/DELETE traffic to continue.
+-- The timeout fails closed if another schema operation already owns a
+-- conflicting lock; the forward-only runner can safely retry this file.
+SET LOCAL lock_timeout = '5s';
+
+ALTER TABLE app.diagnostic_runs
+  VALIDATE CONSTRAINT diagnostic_runs_rule_set_version_check;
+
+CREATE OR REPLACE VIEW app.schema_migration_version AS
+  SELECT '0043_validate_contextual_diagnostic_rule_set'::text AS migration_version;
+
+COMMIT;
+-- END EXACT ORDERED MIGRATION 0043_validate_contextual_diagnostic_rule_set.sql

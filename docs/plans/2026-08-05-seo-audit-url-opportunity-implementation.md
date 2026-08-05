@@ -42,7 +42,7 @@ The frozen version decisions for implementation are:
 | Growth Audit projection | `growth-audit.0.3.1` | latest reads use `0.3.1`; exact pinned historical reads may admit known `0.3.0` |
 | Growth Audit capability | unchanged `0.3.0` | public request/addressing contract unchanged |
 | capability contract | unchanged `growth-audit.0.3.0` | request shape unchanged |
-| migration head | `0042_contextual_indexability_opportunities` | migrations remain append-only |
+| migration head | `0043_validate_contextual_diagnostic_rule_set` | `0042` installs the widened check `NOT VALID`; `0043` validates historical rows under a lower lock |
 | operation / async / table counts | `79 / 10 / 78` | no new endpoint or table |
 | rule count | `12` | historical runs still see 11 |
 
@@ -864,11 +864,12 @@ git add apps/web/src/lib/services apps/web/src/lib/api 'apps/web/src/app/api/mvp
 git commit -m "feat(growth-map): show deterministic execution previews"
 ```
 
-## Task 7: Add append-only SQL guards in migration `0042`
+## Task 7: Add append-only SQL guards in migrations `0042` and `0043`
 
 **Files:**
 
 - Create: `packages/db/migrations/0042_contextual_indexability_opportunities.sql`
+- Create: `packages/db/migrations/0043_validate_contextual_diagnostic_rule_set.sql`
 - Modify: `packages/db/src/migration-version.ts`
 - Modify: `packages/db/src/migration-version.test.ts`
 - Modify: `packages/db/src/__tests__/current-diagnostic-manifest.integration.test.ts`
@@ -891,7 +892,10 @@ Extend `packages/db/src/migration-version.test.ts` to require the new file to co
 - `CREATE OR REPLACE FUNCTION app.enforce_finding_target_lineage()`;
 - `TECH-INDEXABILITY-006 -> direct_url`;
 - the new rule in the `resolved + crawl_exact_fetch` whitelist;
-- migration view head `0042_contextual_indexability_opportunities`.
+- migration `0042` installs the widened rule-set check as `NOT VALID` at the
+  end of its transaction with a short lock timeout;
+- migration `0043` validates the constraint in a separate transaction and
+  advances the view head to `0043_validate_contextual_diagnostic_rule_set`.
 
 Run and expect failure:
 
@@ -972,7 +976,7 @@ Do **not** run `pnpm db:migrate:check`, `pnpm db:smoke`, or DB integration tests
 **Conditional commit checkpoint:**
 
 ```bash
-git add packages/db/migrations/0042_contextual_indexability_opportunities.sql packages/db/migrations/schema-smoke.sql packages/db/src/migration-version.ts packages/db/src/migration-version.test.ts packages/db/src/__tests__
+git add packages/db/migrations/0042_contextual_indexability_opportunities.sql packages/db/migrations/0043_validate_contextual_diagnostic_rule_set.sql packages/db/migrations/schema-smoke.sql packages/db/src/migration-version.ts packages/db/src/migration-version.test.ts packages/db/src/__tests__
 git commit -m "feat(db): guard contextual indexability diagnostics"
 ```
 
@@ -1056,7 +1060,8 @@ Update every exact assertion:
 
 - rule set `0.2.3 -> 0.2.4`;
 - rules `11 -> 12`;
-- migration head `0041 -> 0042`;
+- migration head `0041 -> 0043` (`0042` feature guards, then `0043` low-lock
+  historical-row validation);
 - Growth Audit projection `0.3.0 -> 0.3.1` where current-read semantics are described;
 - operations remain 79;
 - shared async operations remain 10;

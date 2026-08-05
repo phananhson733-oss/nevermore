@@ -8,7 +8,7 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("guards contextual indexability diagnostics in one append-only migration", () => {
+  it("guards contextual indexability diagnostics before a low-lock validation migration", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
@@ -19,8 +19,18 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
+    const validationMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0043_validate_contextual_diagnostic_rule_set.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
     expect(LATEST_APP_MIGRATION).toBe(
-      "0042_contextual_indexability_opportunities",
+      "0043_validate_contextual_diagnostic_rule_set",
     );
     expect(migration).toMatch(
       /CHECK\s*\(\s*rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*,\s*'mvp\.rules\.0\.2\.2'\s*,\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)\s*\)/iu,
@@ -98,10 +108,21 @@ describe("readMigrationVersion", () => {
       /NEW\.target_ref\s+IS\s+DISTINCT\s+FROM\s+page_normalized_url[\s\S]*?observation_metric_key\s*<>\s*'crawl\.page\.v1'[\s\S]*?NEW\.member_ref\s+IS\s+DISTINCT\s+FROM\s+observation_fetch_url[\s\S]*?page_snapshot\.id\s*=\s*NEW\.page_snapshot_id[\s\S]*?page_snapshot\.data_snapshot_id\s*=\s*observation_snapshot_id/iu,
     );
     expect(migration).toMatch(
-      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_finding_target_lineage\(\)[\s\S]*?RETURN\s+NEW;\s*END;\s*\$\$;\s*CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version/iu,
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_finding_target_lineage\(\)[\s\S]*?RETURN\s+NEW;\s*END;\s*\$\$;[\s\S]*?SET\s+LOCAL\s+lock_timeout[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs[\s\S]*?CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version/iu,
     );
     expect(migration).toMatch(
       /SELECT\s+'0042_contextual_indexability_opportunities'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+    expect(migration).toMatch(
+      /SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs[\s\S]*?DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+diagnostic_runs_rule_set_version_check\s*,[\s\S]*?ADD\s+CONSTRAINT\s+diagnostic_runs_rule_set_version_check[\s\S]*?NOT\s+VALID/iu,
+    );
+    expect(migration.indexOf("SET LOCAL lock_timeout = '5s';")).toBeGreaterThan(
+      migration.indexOf(
+        "CREATE OR REPLACE FUNCTION app.enforce_finding_target_lineage()",
+      ),
+    );
+    expect(validationMigration).toMatch(
+      /BEGIN;[\s\S]*?SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs\s+VALIDATE\s+CONSTRAINT\s+diagnostic_runs_rule_set_version_check[\s\S]*?SELECT\s+'0043_validate_contextual_diagnostic_rule_set'::text\s+AS\s+migration_version;[\s\S]*?COMMIT;/iu,
     );
   });
 

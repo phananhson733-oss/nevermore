@@ -1253,7 +1253,7 @@ describe("0017 Finding target ledger upgrade", () => {
         for (const migrationFile of listMigrationFiles().filter(
           (file) =>
             file > "0017_finding_target_ledger.sql" &&
-            file <= "0042_contextual_indexability_opportunities.sql",
+            file <= "0043_validate_contextual_diagnostic_rule_set.sql",
         )) {
           await applyMigration(targetClient, migrationFile);
         }
@@ -1430,7 +1430,7 @@ describe("0017 Finding target ledger upgrade", () => {
         expect(contextualVersion.rows).toEqual([
           {
             migration_version:
-              "0042_contextual_indexability_opportunities",
+              "0043_validate_contextual_diagnostic_rule_set",
           },
         ]);
       } finally {

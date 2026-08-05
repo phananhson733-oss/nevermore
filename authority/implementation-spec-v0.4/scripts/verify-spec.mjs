@@ -175,7 +175,7 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.equal(
     lock.migrationHead,
-    "0042_contextual_indexability_opportunities",
+    "0043_validate_contextual_diagnostic_rule_set",
   );
 
   assert.match(readme, /状态：\*\*active\*\*/);
@@ -209,7 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
-  assert.equal(migrations.length, 42, "v0.4 must freeze 42 migrations");
+  assert.equal(migrations.length, 43, "v0.4 must freeze 43 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),

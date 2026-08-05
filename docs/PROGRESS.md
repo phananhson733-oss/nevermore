@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0042_contextual_indexability_opportunities.sql` (**42 ordered migrations**)
+  `0043_validate_contextual_diagnostic_rule_set.sql` (**43 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
@@ -205,12 +205,12 @@ performed.
 | --- | --- |
 | Unit tests | `pnpm test` passed: **589 files / 7,161 tests**. |
 | PostgreSQL integration | `pnpm test:integration` passed from a fresh PostgreSQL 16.12 loopback disposable database: **84 files / 598 tests**. The safety gate accepted only the exact `127.0.0.1` disposable URL. |
-| Migration structure | `pnpm db:migrate:check` passed at migration head `0042`: **78 app tables / 17 authority hash columns / 105 indexes / 148 triggers / 67 routines**. |
+| Migration structure | `pnpm db:migrate:check` passed at migration head `0043`: **78 app tables / 17 authority hash columns / 105 indexes / 148 triggers / 67 routines**. |
 | Constraint smoke | `pnpm db:smoke` completed all fixtures and ended with `ROLLBACK`. |
 | Disposable cleanup | All three task-owned diagnostic/final disposable databases were deleted; the final exact-name and test-derived-prefix residual counts were both **0**. |
 | Typecheck / lint / build | `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed across the workspace. |
 | Contracts / OpenAPI / secrets | `pnpm contracts:check` and `pnpm openapi:lint` passed; `pnpm secrets:scan` found no secret values and its **4 files / 75 tests** passed. |
-| Authority / lock | `pnpm verify:docs`, `pnpm verify:authority`, `pnpm verify:spec`, `pnpm verify:spec:test`, and `pnpm implementation:check` passed at **79 operations / 10 async operations / 78 tables / 12 rules / 42 migrations**; verifier tests passed **51/51**. |
+| Authority / lock | `pnpm verify:docs`, `pnpm verify:authority`, `pnpm verify:spec`, `pnpm verify:spec:test`, and `pnpm implementation:check` passed at **79 operations / 10 async operations / 78 tables / 12 rules / 43 migrations**; verifier tests passed **51/51**. |
 
 Database execution during implementation exposed two real PostgreSQL
 parser/precedence defects in migration `0042`; the controlled authorized run
@@ -280,7 +280,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0042`; historical proof through `0021` does not prove
+   migrations through `0043`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

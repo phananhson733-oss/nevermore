@@ -13,7 +13,7 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
-shared async operation**，**42 个 ordered migrations** 精确声明 **78 张应用表**，引擎
+shared async operation**，**43 个 ordered migrations** 精确声明 **78 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -423,7 +423,7 @@ reconciliation、route/OpenAPI 与测试。
 ## 10. 冻结数据库 inventory
 
 以下 78 张应用表来自 `0001_init.sql` 至
-`0042_contextual_indexability_opportunities.sql` 的 42 个 ordered migrations 与
+`0043_validate_contextual_diagnostic_rule_set.sql` 的 43 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->

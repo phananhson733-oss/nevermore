@@ -18,7 +18,7 @@ Contract inventory: **79 API operations / 10 async operations / 78 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0042_contextual_indexability_opportunities.sql` (**42 migrations**).
+`0043_validate_contextual_diagnostic_rule_set.sql` (**43 migrations**).
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

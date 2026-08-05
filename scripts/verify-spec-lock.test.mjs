@@ -223,6 +223,11 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/0042_contextual_indexability_opportunities.sql",
     fixtureMigration("0042_contextual_indexability_opportunities"),
   );
+  write(
+    root,
+    "packages/db/migrations/0043_validate_contextual_diagnostic_rule_set.sql",
+    fixtureMigration("0043_validate_contextual_diagnostic_rule_set"),
+  );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
     write(
@@ -296,7 +301,7 @@ function makeFixture(t, options = {}) {
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0042_contextual_indexability_opportunities",
+    migrationHead: "0043_validate_contextual_diagnostic_rule_set",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -334,7 +339,7 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     activeLock.migrationHead,
-    "0042_contextual_indexability_opportunities",
+    "0043_validate_contextual_diagnostic_rule_set",
   );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
