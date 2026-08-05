@@ -11,8 +11,8 @@ import {
   getStoredConsent,
   type ConsentState,
 } from "./cookie-consent-state";
+import { createGtag, type Gtag } from "./google-analytics-queue";
 
-type Gtag = (...args: unknown[]) => void;
 type AnalyticsWindow = Window & {
   dataLayer?: unknown[];
   gtag?: Gtag;
@@ -34,9 +34,7 @@ function setCollectionDisabled(disabled: boolean) {
 function ensureGtag(): Gtag {
   const target = analyticsWindow();
   target.dataLayer ??= [];
-  target.gtag ??= (...args: unknown[]) => {
-    target.dataLayer?.push(args);
-  };
+  target.gtag ??= createGtag(target.dataLayer);
   return target.gtag;
 }
 
