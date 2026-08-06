@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/growth-experiment-playbook.jpg
-heroImageAlt: Flat-vector illustration: an open ring binder lying flat with five tabbed dividers fanned out and a row of five small blank step tiles laid out beside it
+heroImageAlt: Technical line illustration: an open ring binder lying flat with five tabbed dividers fanned out and a row of five small blank step tiles laid out beside it
 localeExclusive: false
 ---
 

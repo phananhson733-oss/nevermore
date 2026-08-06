@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/cost-effective-seo-services.jpg
-heroImageAlt: Flat-vector illustration: a large clock face with one wedge slice cut out and lifted away from it, a short stack of coins standing beside the clock
+heroImageAlt: Technical line illustration: a large clock face with one wedge slice cut out and lifted away from it, a short stack of coins standing beside the clock
 localeExclusive: true
 ---
 

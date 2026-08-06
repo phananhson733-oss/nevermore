@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/public-seo-audit-boundaries.jpg
-heroImageAlt: Flat-vector illustration: a tall solid fence across the frame with one small open viewing window cut into it, simple building silhouettes visible through the window and nothing else
+heroImageAlt: Technical line illustration: a tall solid fence across the frame with one small open viewing window cut into it, simple building silhouettes visible through the window and nothing else
 localeExclusive: false
 ---
 

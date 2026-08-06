@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-10
 updatedAt: 2026-08-05
 heroImage: /images/blog/marketing-attribution-models.jpg
-heroImageAlt: 扁平矢量插图：四条粗细不同的路径从左侧汇聚到右侧的一只奖杯
+heroImageAlt: 技术线稿插图：四条粗细不同的路径从左侧汇聚到右侧的一只奖杯
 localeExclusive: false
 ---
 

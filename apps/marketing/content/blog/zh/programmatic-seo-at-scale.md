@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/programmatic-seo-at-scale.jpg
-heroImageAlt: 扁平矢量插图：手压印章落下，右侧扇形铺开一长叠一模一样的页面
+heroImageAlt: 技术线稿插图：手压印章落下，右侧扇形铺开一长叠一模一样的页面
 localeExclusive: false
 ---
 

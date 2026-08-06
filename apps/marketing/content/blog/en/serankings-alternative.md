@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-08-05
 heroImage: /images/blog/serankings-alternative.jpg
-heroImageAlt: Flat-vector illustration: a three-step podium with one round marker on the top step, and four separate loose tokens of different shapes lying on the ground beside the podium
+heroImageAlt: Technical line illustration: a three-step podium with one round marker on the top step, and four separate loose tokens of different shapes lying on the ground beside the podium
 localeExclusive: true
 ---
 

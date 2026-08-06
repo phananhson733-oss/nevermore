@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/all-in-one-seo.jpg
-heroImageAlt: Flat-vector illustration: a single power strip with five different appliance plugs all plugged into it, their cables fanning outward
+heroImageAlt: Technical line illustration: a single power strip with five different appliance plugs all plugged into it, their cables fanning outward
 localeExclusive: true
 ---
 

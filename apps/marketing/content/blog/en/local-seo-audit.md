@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/local-seo-audit.jpg
-heroImageAlt: Flat-vector illustration: a folded paper map with a large pin planted in it on the left, and a separate stack of horizontal list bars standing on the right
+heroImageAlt: Technical line illustration: a folded paper map with a large pin planted in it on the left, and a separate stack of horizontal list bars standing on the right
 localeExclusive: true
 ---
 

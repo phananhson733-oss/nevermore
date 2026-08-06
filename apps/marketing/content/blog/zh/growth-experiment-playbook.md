@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/growth-experiment-playbook.jpg
-heroImageAlt: 扁平矢量插图：摊开的活页夹展开五个分隔标签，旁边排着五块空白步骤卡
+heroImageAlt: 技术线稿插图：摊开的活页夹展开五个分隔标签，旁边排着五块空白步骤卡
 localeExclusive: false
 ---
 

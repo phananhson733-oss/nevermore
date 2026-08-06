@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/tiktok-seo-tool.jpg
-heroImageAlt: Flat-vector illustration: an upright vertical video card with a large play triangle at its centre, three curved signal waves radiating from its upper corner
+heroImageAlt: Technical line illustration: a hand-held phone standing upright in portrait orientation on a small stand, a large play triangle centred on its blank screen, three curved signal waves radiating from its upper right corner
 localeExclusive: true
 ---
 

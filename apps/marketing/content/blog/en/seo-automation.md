@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-automation.jpg
-heroImageAlt: Flat-vector illustration: a large clock face on the left with gears meshing behind it, and a stream of small round tokens pouring from the clock into an open jar on the right
+heroImageAlt: Technical line illustration: a large clock face on the left with gears meshing behind it, and a stream of small round tokens pouring from the clock into an open jar on the right
 localeExclusive: true
 ---
 

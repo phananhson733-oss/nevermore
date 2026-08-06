@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-05
 updatedAt: 2026-07-05
 heroImage: /images/blog/taylor-swift-wedding-brand-economics-2026.jpg
-heroImageAlt: Flat-vector illustration: two interlocking rings resting on a still water surface, wide concentric ripples spreading outward from them across the frame
+heroImageAlt: Technical line illustration: two interlocking rings resting on a still water surface, wide concentric ripples spreading outward from them across the frame
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
 heroImage: /images/blog/ai-search-visibility.jpg
-heroImageAlt: Flat-vector illustration: a large rounded speech bubble with a small pennant flag planted upright inside it, a narrow spotlight beam falling on the flag
+heroImageAlt: Technical line illustration: a large rounded speech bubble with a small pennant flag planted upright inside it, a narrow spotlight beam falling on the flag
 localeExclusive: true
 ---
 

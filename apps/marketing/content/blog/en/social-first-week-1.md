@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-10
 updatedAt: 2026-03-10
 heroImage: /images/blog/social-first-week-1.jpg
-heroImageAlt: Flat-vector illustration: six small speech bubbles on the left, all funnelling by thin lines into one large single document standing on the right
+heroImageAlt: Technical line illustration: six small speech bubbles on the left, all funnelling by thin lines into one large single document standing on the right
 localeExclusive: false
 ---
 

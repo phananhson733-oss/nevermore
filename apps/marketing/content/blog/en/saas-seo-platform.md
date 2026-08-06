@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-08-05
 heroImage: /images/blog/saas-seo-platform.jpg
-heroImageAlt: Flat-vector illustration: four page cards laid out in a two-by-two grid, each card carrying a different simple icon: a tag, a switch, a plug, and two side-by-side columns
+heroImageAlt: Technical line illustration: four page cards laid out in a two-by-two grid, each card carrying a different simple icon: a tag, a switch, a plug, and two side-by-side columns
 localeExclusive: true
 ---
 

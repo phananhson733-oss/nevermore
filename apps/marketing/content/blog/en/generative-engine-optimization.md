@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
 heroImage: /images/blog/generative-engine-optimization.jpg
-heroImageAlt: Flat-vector illustration: two arched doorways standing side by side sharing one common threshold; a speech bubble floats through the left arch, a stack of list bars through the right arch
+heroImageAlt: Technical line illustration: two arched doorways standing side by side sharing one common threshold; a speech bubble floats through the left arch, a stack of list bars through the right arch
 localeExclusive: true
 ---
 

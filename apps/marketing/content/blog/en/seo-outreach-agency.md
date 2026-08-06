@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-outreach-agency.jpg
-heroImageAlt: Flat-vector illustration: a row of five closed doors, a single envelope flying into the one door that stands slightly open
+heroImageAlt: Technical line illustration: a row of five closed doors, a single envelope flying into the one door that stands slightly open
 localeExclusive: true
 ---
 

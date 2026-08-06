@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/startup-seo.jpg
-heroImageAlt: Flat-vector illustration: a tall empty shelving unit of five bare shelves, with one single small block placed on the very bottom shelf
+heroImageAlt: Technical line illustration: a tall empty shelving unit of five bare shelves, with one single small block placed on the very bottom shelf
 localeExclusive: true
 ---
 

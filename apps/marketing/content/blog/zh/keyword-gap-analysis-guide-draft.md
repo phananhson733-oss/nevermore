@@ -8,7 +8,7 @@ status: draft
 publishedAt: 2026-02-10
 updatedAt: 2026-02-10
 heroImage: /images/blog/keyword-gap-analysis-guide-draft.jpg
-heroImageAlt: 扁平矢量插图：一面由积木砌成的墙中间缺了一格，一块正好吻合的积木悬在缺口上方
+heroImageAlt: 技术线稿插图：一面由积木砌成的墙中间缺了一格，一块正好吻合的积木悬在缺口上方
 localeExclusive: false
 ---
 
