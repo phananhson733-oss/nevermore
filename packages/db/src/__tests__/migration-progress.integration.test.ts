@@ -48,13 +48,8 @@ async function withMaintenanceClient(
 const DATABASE_NAME = `signalframe_ci_migration_progress_${randomBytes(6).toString("hex")}`;
 const DATABASE_URL = disposableDatabaseUrl(DATABASE_NAME);
 
-async function applyMigration(
-  client: pg.Client,
-  file: string,
-): Promise<void> {
-  await client.query(
-    readFileSync(`${MIGRATIONS_DIRECTORY}/${file}`, "utf8"),
-  );
+async function applyMigration(client: pg.Client, file: string): Promise<void> {
+  await client.query(readFileSync(`${MIGRATIONS_DIRECTORY}/${file}`, "utf8"));
 }
 
 async function readProjectedVersion(client: pg.Client): Promise<string> {
@@ -87,15 +82,15 @@ describe("ordered migration progress", () => {
 
   afterAll(async () => {
     await withMaintenanceClient(async (client) => {
-      await client.query(`DROP DATABASE IF EXISTS "${DATABASE_NAME}" WITH (FORCE)`);
+      await client.query(
+        `DROP DATABASE IF EXISTS "${DATABASE_NAME}" WITH (FORCE)`,
+      );
     });
   });
 
   it("reports the last committed file across an interruption and resume", async () => {
     const files = listMigrationFiles();
-    expect(files.at(-1)?.replace(/\.sql$/u, "")).toBe(
-      LATEST_APP_MIGRATION,
-    );
+    expect(files.at(-1)?.replace(/\.sql$/u, "")).toBe(LATEST_APP_MIGRATION);
 
     let client = new pg.Client({ connectionString: DATABASE_URL });
     await client.connect();
@@ -123,14 +118,14 @@ describe("ordered migration progress", () => {
           file.replace(/\.sql$/u, ""),
         );
         if (file === "0042_contextual_indexability_opportunities.sql") {
-          await expect(
-            readRuleSetConstraintValidated(client),
-          ).resolves.toBe(false);
+          await expect(readRuleSetConstraintValidated(client)).resolves.toBe(
+            false,
+          );
         }
         if (file === "0043_validate_contextual_diagnostic_rule_set.sql") {
-          await expect(
-            readRuleSetConstraintValidated(client),
-          ).resolves.toBe(true);
+          await expect(readRuleSetConstraintValidated(client)).resolves.toBe(
+            true,
+          );
         }
       }
       await expect(readProjectedVersion(client)).resolves.toBe(
@@ -148,13 +143,12 @@ describe("ordered migration progress", () => {
       `);
       await expect(runMigrations(DATABASE_URL)).resolves.toEqual([
         "0043_validate_contextual_diagnostic_rule_set.sql",
+        "0044_keyword_identity_nfkc.sql",
       ]);
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,
       );
-      await expect(
-        readRuleSetConstraintValidated(client),
-      ).resolves.toBe(true);
+      await expect(readRuleSetConstraintValidated(client)).resolves.toBe(true);
     } finally {
       await client.end();
     }

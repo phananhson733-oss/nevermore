@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0043_validate_contextual_diagnostic_rule_set" as const;
+  "0044_keyword_identity_nfkc" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 
