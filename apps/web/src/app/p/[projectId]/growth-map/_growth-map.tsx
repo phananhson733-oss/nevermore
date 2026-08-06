@@ -84,6 +84,7 @@ import {
   Button,
   EmptyState,
   Field,
+  LimitationHint,
   Spinner,
   TextArea,
   TextInput,
@@ -378,16 +379,17 @@ function MetricValue({
 
   if (presentation.state !== "observed") {
     const labelKey = metricValueLabelKey(presentation);
+    const limitation =
+      "limitation" in presentation ? presentation.limitation : null;
     return (
-      <span
-        className={styles.missingValue}
-        title={
-          "limitation" in presentation
-            ? (presentation.limitation ?? undefined)
-            : undefined
-        }
-      >
+      <span className={styles.missingValue}>
         {t(labelKey)}
+        {limitation === null ? null : (
+          <LimitationHint
+            label={t("limitations")}
+            limitations={[limitation]}
+          />
+        )}
       </span>
     );
   }
@@ -406,8 +408,12 @@ function PriorityPill({ item }: { readonly item: GrowthMapUrlPortfolioItem }) {
   const tPriority = useTranslations("priorityBand");
   if (item.priority.availability === "unavailable") {
     return (
-      <span className={styles.priorityUnavailable} title={item.priority.limitation}>
+      <span className={styles.priorityUnavailable}>
         {t("priorityUnavailable")}
+        <LimitationHint
+          label={t("limitations")}
+          limitations={[item.priority.limitation]}
+        />
       </span>
     );
   }
@@ -449,12 +455,17 @@ function PortfolioRow({
 
   return (
     <li className={styles.portfolioRow}>
-      <button
-        type="button"
-        className={cx(styles.rowButton, selected && styles.rowSelected)}
-        aria-pressed={selected}
-        onClick={() => onSelect(item.sitePageId)}
-      >
+      <div className={cx(styles.rowButton, selected && styles.rowSelected)}>
+        <button
+          type="button"
+          className={styles.rowSelectButton}
+          aria-pressed={selected}
+          onClick={() => onSelect(item.sitePageId)}
+        >
+          <span className={styles.rowSelectLabel}>
+            {url.path} — {item.title ?? t("titleNotCollected")}
+          </span>
+        </button>
         <span className={styles.urlCell}>
           <strong title={item.normalizedUrl}>{url.path}</strong>
           <span>{item.title ?? t("titleNotCollected")}</span>
@@ -483,7 +494,7 @@ function PortfolioRow({
           <PriorityPill item={item} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
-      </button>
+      </div>
     </li>
   );
 }
@@ -524,36 +535,28 @@ function PortfolioList({
 
 function LimitationList({
   limitations,
+  label,
+  className,
 }: {
   readonly limitations: readonly string[];
+  readonly label?: string;
+  readonly className?: string | undefined;
 }) {
   const t = useTranslations("growthMap");
+  const tPlatform = useTranslations("growthMap.platformLimitations");
   if (limitations.length === 0) return null;
+  const displayLimitations = limitations.map((limitation) => {
+    const key = growthMapPlatformLimitationKey(limitation);
+    return key === null ? limitation : tPlatform(key);
+  });
   return (
-    <div className={styles.limitations}>
-      <strong>
-        <CircleAlert aria-hidden="true" size={17} />
-        {t("limitations")}
-      </strong>
-      <ul>
-        {limitations.map((limitation) => (
-          <li key={limitation}>
-            <PlatformLimitationText limitation={limitation} />
-          </li>
-        ))}
-      </ul>
+    <div className={cx(styles.limitations, className)}>
+      <LimitationHint
+        label={label ?? t("limitations")}
+        limitations={displayLimitations}
+      />
     </div>
   );
-}
-
-function PlatformLimitationText({
-  limitation,
-}: {
-  readonly limitation: string;
-}) {
-  const t = useTranslations("growthMap.platformLimitations");
-  const key = growthMapPlatformLimitationKey(limitation);
-  return key === null ? limitation : t(key);
 }
 
 function LibraryCursorPageEmpty({
@@ -632,10 +635,11 @@ function MetricLedger({
               </div>
             </dl>
             {observation.limitation === null ? null : (
-              <p className={styles.recordLimitation}>
-                <span>{t("sourceOriginalLimitation")}</span>
-                {observation.limitation}
-              </p>
+              <LimitationList
+                className={styles.recordLimitation}
+                label={t("sourceOriginalLimitation")}
+                limitations={[observation.limitation]}
+              />
             )}
             <p className={styles.traceId} title={observation.observationId}>
               {t("ids.observation")} · {truncateId(observation.observationId)}
@@ -1754,10 +1758,10 @@ function UrlDetailPanel({
 
       <LimitationList limitations={detail.coverage.limitations} />
       {detail.priority.limitation === null ? null : (
-        <p className={styles.projectionNote}>
-          <CircleAlert aria-hidden="true" size={16} />
-          {detail.priority.limitation}
-        </p>
+        <LimitationList
+          className={styles.projectionNote}
+          limitations={[detail.priority.limitation]}
+        />
       )}
 
       <div
@@ -1836,11 +1840,11 @@ function UrlDetailPanel({
                 <strong>{t("delta.unavailable")}</strong>
               )}
             </div>
-            <p>
-              {detail.delta.availability === "available"
-                ? detail.delta.summary
-                : detail.delta.limitation}
-            </p>
+            {detail.delta.availability === "available" ? (
+              <p>{detail.delta.summary}</p>
+            ) : (
+              <LimitationList limitations={[detail.delta.limitation]} />
+            )}
           </section>
 
           <IdentityLedger detail={detail} />
@@ -3866,12 +3870,14 @@ function TopicMapDialog({
                       </button>
                     </div>
                     {isSelectedRoot || selectedHasActiveChildren ? (
-                      <p className={styles.topicActionLimitation}>
-                        <CircleAlert aria-hidden="true" size={15} />
-                        {isSelectedRoot
-                          ? t("retireRootBlocked")
-                          : t("retireChildrenBlocked")}
-                      </p>
+                      <LimitationList
+                        className={styles.topicActionLimitation}
+                        limitations={[
+                          isSelectedRoot
+                            ? t("retireRootBlocked")
+                            : t("retireChildrenBlocked"),
+                        ]}
+                      />
                     ) : null}
                   </>
                 ) : null}
@@ -3941,10 +3947,10 @@ function TopicNodeReadView({
           <CircleAlert aria-hidden="true" size={18} />
           <div>
             <strong>{t("insightUnavailableTitle")}</strong>
-            <p>
-              {insightsCoverage?.limitations[0] ??
-                t("insightUnavailableDescription")}
-            </p>
+            <p>{t("insightUnavailableDescription")}</p>
+            <LimitationList
+              limitations={insightsCoverage?.limitations ?? []}
+            />
           </div>
         </div>
       ) : (
@@ -3985,10 +3991,10 @@ function TopicNodeReadView({
             </span>
           </div>
           {insight.limitation === null ? null : (
-            <p className={styles.topicInsightLimitation}>
-              <CircleAlert aria-hidden="true" size={16} />
-              {insight.limitation}
-            </p>
+            <LimitationList
+              className={styles.topicInsightLimitation}
+              limitations={[insight.limitation]}
+            />
           )}
         </>
       )}
@@ -4412,7 +4418,9 @@ function KeywordClassificationField({
         {identity === undefined ? null : (
           <code title={identity}>{truncateId(identity)}</code>
         )}
-        {limitation === null ? null : <small>{limitation}</small>}
+        {limitation === null ? null : (
+          <LimitationHint label={label} limitations={[limitation]} />
+        )}
       </dd>
     </div>
   );
@@ -4529,10 +4537,10 @@ function KeywordMetricCard({
         </>
       )}
       {presentation.limitation === null ? null : (
-        <p className={styles.keywordMetricLimitation}>
-          <CircleAlert aria-hidden="true" size={15} />
-          {presentation.limitation}
-        </p>
+        <LimitationList
+          className={styles.keywordMetricLimitation}
+          limitations={[presentation.limitation]}
+        />
       )}
     </article>
   );
@@ -4694,16 +4702,18 @@ function KeywordSourceOccurrenceCard({
         </dl>
       </details>
       {occurrence.scopeLimitation === null ? null : (
-        <p className={styles.keywordSourceNote}>
-          <strong>{t("scopeLimitation")}</strong>
-          {occurrence.scopeLimitation}
-        </p>
+        <LimitationList
+          className={styles.keywordSourceNote}
+          label={t("scopeLimitation")}
+          limitations={[occurrence.scopeLimitation]}
+        />
       )}
       {occurrence.limitation === null ? null : (
-        <p className={styles.keywordSourceNote}>
-          <strong>{t("sourceLimitation")}</strong>
-          {occurrence.limitation}
-        </p>
+        <LimitationList
+          className={styles.keywordSourceNote}
+          label={t("sourceLimitation")}
+          limitations={[occurrence.limitation]}
+        />
       )}
     </article>
   );
@@ -5038,7 +5048,9 @@ function KeywordRankHistorySection({
                     </td>
                     <td>{formatNumber(locale, point.value)}</td>
                     <td>{point.grade}</td>
-                    <td>{point.limitation}</td>
+                    <td>
+                      <LimitationList limitations={[point.limitation]} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -5486,7 +5498,7 @@ function KeywordReviewDialog({
                 </div>
               </dl>
               {selectedTopic.limitation === null ? null : (
-                <p>{selectedTopic.limitation}</p>
+                <LimitationList limitations={[selectedTopic.limitation]} />
               )}
             </article>
           )}
@@ -6777,10 +6789,10 @@ function CompetitorInsightCard({
         </span>
       </header>
       {insight.availability === "unavailable" ? (
-        <p className={styles.competitorInsightLimitation}>
-          <CircleAlert aria-hidden="true" size={15} />
-          <PlatformLimitationText limitation={insight.limitation} />
-        </p>
+        <LimitationList
+          className={styles.competitorInsightLimitation}
+          limitations={[insight.limitation]}
+        />
       ) : (
         <>
           <div className={styles.competitorInsightValue}>
@@ -6812,10 +6824,10 @@ function CompetitorInsightCard({
             </dl>
           </details>
           {insight.limitation === null ? null : (
-            <p className={styles.competitorInsightLimitation}>
-              <CircleAlert aria-hidden="true" size={15} />
-              <PlatformLimitationText limitation={insight.limitation} />
-            </p>
+            <LimitationList
+              className={styles.competitorInsightLimitation}
+              limitations={[insight.limitation]}
+            />
           )}
         </>
       )}
@@ -6970,10 +6982,10 @@ function CompetitorMonitorSignalCard({
           />
         </dl>
         {signal.limitation === null ? null : (
-          <p className={styles.competitorMonitorLimitation}>
-            <CircleAlert aria-hidden="true" size={15} />
-            <span>{signal.limitation}</span>
-          </p>
+          <LimitationList
+            className={styles.competitorMonitorLimitation}
+            limitations={[signal.limitation]}
+          />
         )}
       </details>
       <footer className={styles.competitorMonitorSignalAction}>
@@ -7198,10 +7210,10 @@ function CompetitorMonitorSection({
       </dl>
 
       {limitation === null ? null : (
-        <p className={styles.competitorMonitorLimitation}>
-          <CircleAlert aria-hidden="true" size={16} />
-          <span>{limitation}</span>
-        </p>
+        <LimitationList
+          className={styles.competitorMonitorLimitation}
+          limitations={[limitation]}
+        />
       )}
 
       {signals.length > 0 ? (

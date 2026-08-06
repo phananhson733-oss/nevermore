@@ -371,9 +371,18 @@ test("shows every declared research limitation as a semantic list", async ({
   await openExecution(page);
 
   const rail = page.locator("[data-qa-rail]");
-  const list = rail.locator("[data-research-limitations]");
-  const items = list.getByRole("listitem");
-  await expect(list).toHaveCount(1);
+  const disclosure = rail.getByRole("button", {
+    name: `完整限制 (${RESEARCH_LIMITATIONS.length})`,
+  });
+  await expect(disclosure).toBeVisible();
+  for (const limitation of RESEARCH_LIMITATIONS) {
+    await expect(rail).not.toContainText(limitation);
+  }
+
+  await disclosure.hover();
+  const tooltip = page.getByRole("tooltip");
+  const items = tooltip.getByRole("listitem");
+  await expect(tooltip).toBeVisible();
   await expect(items).toHaveCount(RESEARCH_LIMITATIONS.length);
   for (const [index, limitation] of RESEARCH_LIMITATIONS.entries()) {
     await expect(items.nth(index)).toHaveText(limitation);
@@ -513,7 +522,16 @@ test("research sources lead with customer-readable status and keep technical evi
   await expect(drawer).toContainText("正文已截断");
   await expect(drawer).toContainText("摘要为截断预览");
   await expect(drawer).toContainText("retrieval:external-forrester");
-  await expect(drawer).toContainText("Benchmark context is usable only");
+  await expect(drawer).not.toContainText("Benchmark context is usable only");
+  const limitationDisclosure = drawer
+    .getByRole("listitem")
+    .filter({ hasText: "Forrester onboarding" })
+    .getByRole("button", { name: "完整限制 (1)" });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Benchmark context is usable only",
+  );
   const drawerText = await drawer.innerText();
   expect(drawerText).not.toContain("content-shadow.qa.");
   expect(drawerText).not.toMatch(/\brl\d+|\bsc\d+b?\b/u);

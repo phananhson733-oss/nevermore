@@ -15,6 +15,7 @@ import { useTranslations } from "next-intl";
 import {
   Badge,
   EmptyState,
+  LimitationHint,
   Panel,
   Spinner,
   StatusPill,
@@ -129,14 +130,12 @@ function ResultsComparison({
         </ul>
       )}
       {results.limitations.length > 0 && (
-        <section className={styles.limitations}>
-          <h3>{t("limitationsTitle")}</h3>
-          <ul>
-            {results.limitations.map((limitation) => (
-              <li key={limitation}>{limitation}</li>
-            ))}
-          </ul>
-        </section>
+        <div className={styles.limitations}>
+          <LimitationHint
+            label={t("limitationsTitle")}
+            limitations={results.limitations}
+          />
+        </div>
       )}
     </div>
   );

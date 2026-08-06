@@ -17,6 +17,7 @@ import { useState, type ReactNode } from "react";
 
 import {
   EmptyState,
+  LimitationHint,
   Panel,
   Spinner,
   StatusPill,
@@ -99,6 +100,7 @@ function MetricTable({
   readonly dimension: MeasurementDimensionView;
 }) {
   const t = useTranslations("results.measurement");
+  const tCommon = useTranslations("common");
   const sample =
     dimension.sampleBaseline === null && dimension.sampleOutcome === null
       ? t("sampleUnavailable")
@@ -150,10 +152,12 @@ function MetricTable({
         <span>{t(`sampleCoverage.${dimension.sampleCoverage}`)}</span>
       </div>
       {dimension.limitation ? (
-        <p className={styles.inlineLimitation}>
-          <CircleAlert aria-hidden="true" size={16} />
-          {dimension.limitation}
-        </p>
+        <div className={styles.inlineLimitation}>
+          <LimitationHint
+            label={tCommon("limitations")}
+            limitations={[dimension.limitation]}
+          />
+        </div>
       ) : null}
     </section>
   );
@@ -246,6 +250,7 @@ function MeasurementDetail({
   readonly measurement: MeasurementWindowView;
 }) {
   const t = useTranslations("results.measurement");
+  const tCommon = useTranslations("common");
   return (
     <article className={styles.measurementDetail}>
       <header className={styles.measurementDetailHeader}>
@@ -352,18 +357,10 @@ function MeasurementDetail({
           </div>
         ) : null}
         {measurement.limitations.length > 0 ? (
-          <details>
-            <summary>
-              {t("limitations", {
-                count: measurement.limitations.length,
-              })}
-            </summary>
-            <ul>
-              {measurement.limitations.map((limitation) => (
-                <li key={limitation}>{limitation}</li>
-              ))}
-            </ul>
-          </details>
+          <LimitationHint
+            label={tCommon("limitations")}
+            limitations={measurement.limitations}
+          />
         ) : null}
       </footer>
     </article>

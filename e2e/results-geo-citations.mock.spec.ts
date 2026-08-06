@@ -63,7 +63,16 @@ test("效果追踪切换 URL 时同步切换真实 GEO 引用证据", async ({
   await expect(onboardingQuery).toContainText(
     "被引用页面使用了明确的产品定义、分步骤流程和可定位的证据段落",
   );
-  await expect(onboardingQuery).toContainText(
+  await expect(onboardingQuery).not.toContainText("不证明该结构导致了引用");
+  const inference = onboardingQuery
+    .getByText("受限推断", { exact: true })
+    .locator("xpath=ancestor::li[1]");
+  const limitationDisclosure = inference.getByRole("button", {
+    name: "限制说明 (1)",
+  });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
     "不证明该结构导致了引用",
   );
 

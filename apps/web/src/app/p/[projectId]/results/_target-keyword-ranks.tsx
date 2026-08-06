@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 
 import {
+  LimitationHint,
   Spinner,
   StatusPill,
   type StatusTone,
@@ -99,6 +100,7 @@ export function TargetKeywordRanks({
   readonly measurementWindowId: string;
 }) {
   const t = useTranslations("results.measurement.targetKeywordRanks");
+  const tCommon = useTranslations("common");
   const locale = useLocale();
   const query = useMeasurementTargetKeywordRanks(
     projectId,
@@ -223,24 +225,14 @@ export function TargetKeywordRanks({
       )}
 
       {query.data && query.data.coverage.limitations.length > 0 ? (
-        <details className={styles.targetRanksLimitations}>
-          <summary>
-            {t("limitations", {
-              count: query.data.coverage.limitations.length,
-            })}
-          </summary>
-          <ul>
-            {query.data.coverage.limitations.map((limitation) => (
-              <li key={limitation}>
-                {t(
-                  `limitation.${targetKeywordRankLimitationKey(
-                    limitation,
-                  )}`,
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className={styles.targetRanksLimitations}>
+          <LimitationHint
+            label={tCommon("limitations")}
+            limitations={query.data.coverage.limitations.map((limitation) =>
+              t(`limitation.${targetKeywordRankLimitationKey(limitation)}`),
+            )}
+          />
+        </div>
       ) : null}
 
       <p className={styles.targetRanksNote}>{t("nonCausal")}</p>

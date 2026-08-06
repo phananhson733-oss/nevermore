@@ -1,5 +1,5 @@
-// @input  -- locale and a visitor's public website URL
-// @output -- transient, synchronous real crawl report; no fixed result fixture
+// @input  -- locale, a visitor's URL, and the shared limitation disclosure
+// @output -- transient crawl report with compact, on-demand evidence boundaries
 // @pos    -- primary client surface for /[locale]/tools/internal-link-audit
 
 "use client";
@@ -29,6 +29,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { LimitationHint } from "../ui/limitation-hint";
 import { type InternalLinkAuditLocale } from "./internal-link-audit-content";
 import {
   coverageSummary,
@@ -778,7 +779,10 @@ function NodeDetail({
       {finding ? (
         <div className="mt-5 space-y-4 border-t border-brand-border/60 pt-5 text-[13px] leading-5">
           <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.evidence}</p><p className="mt-1 text-text-dark-primary">{finding.evidence}</p></div>
-          <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.limitation}</p><p className="mt-1 text-text-dark-primary">{finding.limitation}</p></div>
+          <LimitationHint
+            label={copy.limitation}
+            limitations={[finding.limitation]}
+          />
           <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.source}</p><p className="mt-1 break-all font-mono text-text-dark-primary">{finding.suggestedSourceUrl ?? copy.sourceUnavailable}</p></div>
           <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.anchor}</p><p className="mt-1 text-text-dark-primary">{finding.observedAnchorText ?? copy.anchorUnavailable}</p></div>
         </div>

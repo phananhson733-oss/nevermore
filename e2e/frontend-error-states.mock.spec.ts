@@ -376,7 +376,15 @@ test("AC-046: Sources exposes customer permission and partial states", async ({
   await expect(
     gsc.getByText("Permission denied", { exact: true }),
   ).toBeVisible();
-  await expect(gsc).toContainText(
+  await expect(gsc).not.toContainText(
+    "Disconnect and reconnect a property you can access.",
+  );
+  const limitationDisclosure = gsc.getByRole("button", {
+    name: "Limitation (1)",
+  });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
     "Disconnect and reconnect a property you can access.",
   );
   await expect(
@@ -386,7 +394,15 @@ test("AC-046: Sources exposes customer permission and partial states", async ({
 
   const ga4 = page.getByRole("region", { name: "Google Analytics 4" });
   await expect(ga4.getByText("Partial", { exact: true })).toHaveCount(2);
-  await expect(ga4).toContainText("session rows remain available");
+  await expect(ga4).not.toContainText("session rows remain available");
+  const ga4LimitationDisclosure = ga4.getByRole("button", {
+    name: "Limitation (1)",
+  });
+  await expect(ga4LimitationDisclosure).toBeVisible();
+  await ga4LimitationDisclosure.hover();
+  await expect(
+    page.getByRole("tooltip").filter({ hasText: "session rows remain available" }),
+  ).toBeVisible();
   await expect(
     ga4.getByRole("button", { name: "Retry collection" }),
   ).toBeVisible();

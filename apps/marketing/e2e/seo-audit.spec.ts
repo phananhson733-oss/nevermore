@@ -173,7 +173,7 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   ).toBeVisible();
   await expect(
     page.getByText(
-      "No account or normal-use run-count limit, and no fixed page product quota. The synchronous crawler collects as many public same-origin static pages as the current run can safely cover and respects robots.txt.",
+      "No account and no sign-up. One run collects up to about 950 public same-origin static pages — the crawler paces itself to at least 250 ms between requests and stops at four minutes — and fewer if your robots.txt asks for a slower rate. Larger sites return partial coverage, labelled as such.",
     ),
   ).toBeVisible();
   await expect(
@@ -261,6 +261,22 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   await expect(
     duplicateRecord.getByText("https://acme.com/about", { exact: true }),
   ).toBeVisible();
+  await expect(
+    duplicateRecord.getByText(
+      "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  await duplicateRecord
+    .getByRole("button", { name: "Evidence boundary (1)" })
+    .click();
+  await expect(
+    page.getByRole("tooltip").getByText(
+      "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(
     page.getByRole("heading", {
       level: 3,

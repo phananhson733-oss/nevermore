@@ -440,7 +440,7 @@ describe("Overview coverage limitations", () => {
     "GA4 has no canonical snapshot for this URL.",
   ] as const;
 
-  it("names every reason behind a degraded coverage grade", () => {
+  it("keeps every reason behind a degraded grade available on demand", () => {
     const html = portfolioCard(
       render({
         portfolioQuery: settled({
@@ -451,7 +451,9 @@ describe("Overview coverage limitations", () => {
 
     expect(html).toContain("Partial coverage");
     expect(html).toContain(COPY.limitationsTitle);
-    for (const limitation of LIMITATIONS) expect(html).toContain(limitation);
+    expect(html).toContain('data-limitation-count="2"');
+    expect(html).toContain('aria-expanded="false"');
+    for (const limitation of LIMITATIONS) expect(html).not.toContain(limitation);
   });
 
   it("keeps the reasons outside the four-metric definition list", () => {
@@ -632,7 +634,7 @@ describe("Overview review entry point", () => {
 });
 
 describe("Overview content-health limitations", () => {
-  it("discloses the click floor that decides whether a warning is shown", () => {
+  it("offers the click-floor rules through a compact disclosure", () => {
     const html = priorityCard(
       render({
         workspaceQuery: settled({
@@ -645,15 +647,15 @@ describe("Overview content-health limitations", () => {
     );
 
     expect(html).toContain(COPY.healthLimitationsTitle);
-    // The threshold reaches the customer as a number, not as prose only the
-    // engine can see. English copy intentionally matches the engine wording,
-    // so the proof that this went through i18n rather than the raw sentence
-    // is the zh-CN assertion in e2e/overview-read-model.mock.spec.ts.
-    expect(html).toContain(String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS));
-    expect(html).toContain("</summary>");
+    expect(html).toContain('data-limitation-count="1"');
+    expect(html).toContain('aria-expanded="false"');
+    // The initial reading line is deliberately compact. The localized
+    // threshold is verified after interaction in overview-read-model.mock.
+    expect(html).not.toContain(String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS));
+    expect(html).not.toContain("</summary>");
   });
 
-  it("renders limitation wording it does not own verbatim", () => {
+  it("does not expand foreign provider wording into the reading line", () => {
     const foreign = "A provider caveat the Overview never authored.";
     const html = priorityCard(
       render({
@@ -666,7 +668,9 @@ describe("Overview content-health limitations", () => {
       }),
     );
 
-    expect(html).toContain(foreign);
+    expect(html).toContain(COPY.healthLimitationsTitle);
+    expect(html).toContain('data-limitation-count="1"');
+    expect(html).not.toContain(foreign);
   });
 
   it("renders no disclosure when the engine reported no limitation", () => {

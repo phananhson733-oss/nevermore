@@ -1,5 +1,5 @@
-// @input  -- language-neutral synchronous site-wide SeoAuditReport DTO
-// @output -- crawl coverage, neutral audit records, evidence, and lazy collapsible page inventory
+// @input  -- language-neutral site-wide report plus compact limitation disclosure
+// @output -- crawl coverage, audit evidence, on-demand boundaries, and lazy page inventory
 // @pos    -- audit-only result surface for the public SEO Audit tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -19,6 +19,7 @@ import type {
   SeoAuditRecordState,
   SeoAuditReport,
 } from "@sf/public-tools";
+import { LimitationHint } from "../ui/limitation-hint";
 
 const STATE_STYLES: Record<SeoAuditRecordState, string> = {
   observed: "border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text",
@@ -125,12 +126,11 @@ function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
           </p>
         )}
         {record.limitation ? (
-          <p className="mt-4 border-l border-brand-warning/50 pl-3 text-[10px] leading-relaxed text-text-dark-secondary">
-            <span className="mr-1 text-text-dark-primary">
-              {t("limitationLabel")}:
-            </span>
-            {t(`limitations.${record.limitation}`)}
-          </p>
+          <LimitationHint
+            className="mt-4"
+            label={t("limitationLabel")}
+            limitations={[t(`limitations.${record.limitation}`)]}
+          />
         ) : null}
       </div>
     </details>

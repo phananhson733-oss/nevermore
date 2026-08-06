@@ -68,14 +68,17 @@ test("效果追踪按 URL 独立切换真实改前改后与 UTM 记录", async (
     }),
   ).toContainText("7");
   await expect(targetRanks.getByText("提升 5 位")).toBeVisible();
-  await targetRanks
-    .getByText("1 条排名数据限制")
-    .click();
-  await expect(
-    targetRanks.getByText(
-      "DataForSEO 未提供独立的数据时点，因此这里按实际采集观测时间比较绝对排名。",
-    ),
-  ).toBeVisible();
+  await expect(targetRanks).not.toContainText(
+    "DataForSEO 未提供独立的数据时点，因此这里按实际采集观测时间比较绝对排名。",
+  );
+  const limitationDisclosure = targetRanks.getByRole("button", {
+    name: "限制说明 (1)",
+  });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.click();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "DataForSEO 未提供独立的数据时点，因此这里按实际采集观测时间比较绝对排名。",
+  );
   await expect(
     targetRanks.getByText(
       /DataForSEO absolute rank is compared by collection observation time/,
