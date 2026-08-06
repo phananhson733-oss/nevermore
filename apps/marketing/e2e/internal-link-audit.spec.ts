@@ -109,14 +109,14 @@ test("submits the audit request and renders a synchronous API response", async (
     }),
   ).toBeVisible();
   await expect(
-    detail.getByText("The target may be outside the crawl budget.", {
+    detail.getByText("The targets may be outside the crawl budget.", {
       exact: true,
     }),
   ).toHaveCount(0);
   await detail.getByRole("button", { name: "Interpretation limit (1)" }).click();
   await expect(
     page.getByRole("tooltip").getByText(
-      "The target may be outside the crawl budget.",
+      "The targets may be outside the crawl budget.",
       { exact: true },
     ),
   ).toBeVisible();
