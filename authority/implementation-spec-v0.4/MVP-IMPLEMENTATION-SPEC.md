@@ -50,8 +50,13 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
    analysis scope 的 candidate 按同一 opt-out 规则读取，但不得改写冻结画像 JSON；
    竞品库只可回填从未发生客户治理的 revision-zero entity。
 5. 只有 complete profile 可成为诊断的冻结输入；确认画像不隐式启动分析。
-6. Production operator 必须来自 Supabase Auth 且已经存在对应
-   `operator_profiles`；登录不能自动授予 workspace membership。
+6. Production operator 必须来自 Supabase Auth。首次登录的账号自助注册：为其
+   创建**新建**的 workspace 与对应 `operator_profiles`。供给必须新建 workspace，
+   不得让新账号落入任何既有 workspace——隔离全靠应用层的 workspace 作用域，
+   没有 RLS 兜底，所以「登录不授予对既有 workspace 的访问」仍是硬边界，只是
+   membership 的来源从「事先预置」扩展为「本人注册」。加入他人 workspace 只能
+   通过显式邀请，登录本身永不构成加入。新注册 workspace 为 `free` 档，受
+   `plan_tier` 对应的项目数上限约束。
 7. 客户可在项目设置中删除产品；该命令必须以 workspace 与 project
    双重作用域将 Project 软删除为 archived。已归档产品立即从 active list
    消失，且后续 collection、diagnosis 与 delivery 写入继续受 archive fence

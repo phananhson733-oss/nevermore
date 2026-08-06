@@ -1697,16 +1697,48 @@ async function checkWebProxyImplementation() {
     /async\s+function\s+findOperator\s*\([^)]*userId[^)]*\)[\s\S]*?\.from\s*\(\s*operatorProfiles\s*\)[\s\S]*?\.where\s*\(\s*eq\s*\(\s*operatorProfiles\.user_id\s*,\s*userId\s*\)\s*\)/s.test(
       session,
     ),
-    "production operator resolution must require a pre-provisioned operator profile",
+    "operator resolution must look membership up by the authenticated user id",
   );
   invariant(
-    /const\s+userId\s*=\s*await\s+getAuthUserId\s*\(\s*\)[\s\S]*?if\s*\(\s*!userId\s*\)\s*return\s+null\s*;[\s\S]*?return\s+findOperator\s*\(\s*userId\s*\)/s.test(
+    /const\s+user\s*=\s*await\s+getAuthUser\s*\(\s*\)[\s\S]*?if\s*\(\s*!user\s*\)\s*return\s+null\s*;/s.test(
       session,
     ),
-    "non-development sessions must fail closed before resolving pre-provisioned membership",
+    "non-development sessions must fail closed before any membership resolution",
   );
 
-  return "web boundary: Supabase session refresh + pre-provisioned operator membership + nonce CSP, with dev auth fail-closed outside exact loopback development";
+  // Spec §1.6 opened self-serve signup, which replaced "an unknown account gets
+  // nothing" with "an unknown account gets a workspace". The dangerous way to
+  // implement that is to hand it an EXISTING workspace — isolation is
+  // application-level `workspace_id` scoping with no RLS beneath it, so joining
+  // one workspace to another account is a full read of that customer's data.
+  // The dev bootstrap legitimately does `select … from workspaces limit 1`
+  // because local dev is a single-workspace world, and it sits in this same
+  // file. So the invariant is scoped to the signup function: it must INSERT a
+  // workspace, and must never SELECT one.
+  const signupFunction =
+    /async\s+function\s+provisionSelfServeOperator\s*\([\s\S]*?\n}/s.exec(
+      session,
+    )?.[0] ?? "";
+  invariant(
+    signupFunction !== "",
+    "self-serve signup must live in provisionSelfServeOperator so its isolation can be verified",
+  );
+  invariant(
+    /\.insert\s*\(\s*workspaces\s*\)/s.test(signupFunction),
+    "self-serve signup must create the workspace it admits an account into",
+  );
+  invariant(
+    !/\.from\s*\(\s*workspaces\s*\)/s.test(signupFunction),
+    "self-serve signup must never select an existing workspace to join",
+  );
+  invariant(
+    /pg_advisory_xact_lock\s*\(\s*hashtext\s*\(\s*\$\{`sf_signup:\$\{user\.id\}`\}/s.test(
+      signupFunction,
+    ),
+    "self-serve signup must serialize per user so a concurrent first request cannot orphan a workspace",
+  );
+
+  return "web boundary: Supabase session refresh + self-serve signup into a newly created workspace + nonce CSP, with dev auth fail-closed outside exact loopback development";
 }
 
 function stripCodeComments(source) {

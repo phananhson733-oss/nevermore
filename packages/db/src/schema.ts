@@ -51,6 +51,9 @@ const app = pgSchema("app");
 export const workspaces = app.table("workspaces", {
   id: uuid().primaryKey().defaultRandom(),
   name: text().notNull(),
+  // 'free' (self-serve signup, project-count bounded) or 'internal'
+  // (hand-provisioned, unbounded). CHECK lives in 0044.
+  plan_tier: text().notNull().default("free"),
   created_at: tz().notNull().defaultNow(),
   updated_at: tz().notNull().defaultNow(),
 });
@@ -335,9 +338,7 @@ export const analysisRefreshSteps = app.table("analysis_refresh_steps", {
   required: boolean().notNull(),
   state: text().notNull().default("pending"),
   child_async_run_id: uuid().references(() => asyncRuns.id),
-  result_snapshot_id: uuid().references(
-    (): AnyPgColumn => dataSnapshots.id,
-  ),
+  result_snapshot_id: uuid().references((): AnyPgColumn => dataSnapshots.id),
   skip_reason: text(),
   error: jsonb().$type<JsonObject>(),
   started_at: tz(),
@@ -1541,9 +1542,7 @@ export const publicationAttempts = app.table("publication_attempts", {
     () => artifactApprovalEvents.id,
   ),
   publication_approval_event_kind: text(),
-  source_approval_event_id: uuid().references(
-    () => artifactApprovalEvents.id,
-  ),
+  source_approval_event_id: uuid().references(() => artifactApprovalEvents.id),
   source_approval_event_kind: text(),
   side_effect_class: text().notNull(),
   authorization_grant_id: uuid()
@@ -1647,9 +1646,7 @@ export const measurementWindows = app.table("measurement_windows", {
   verified_change_receipt_id: uuid()
     .notNull()
     .references(() => publicationReceipts.id),
-  timeline_delivery_receipt_id: uuid().references(
-    () => publicationReceipts.id,
-  ),
+  timeline_delivery_receipt_id: uuid().references(() => publicationReceipts.id),
   before_start_at: tz().notNull(),
   before_end_at: tz().notNull(),
   after_start_at: tz().notNull(),
@@ -1679,18 +1676,14 @@ export const measurementGscDimensions = app.table(
     project_id: uuid().notNull(),
     state: text().notNull(),
     baseline_source_ref: uuid(),
-    baseline_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    baseline_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    baseline_snapshot_id: uuid().references(() => dataSnapshots.id),
+    baseline_observation_id: uuid().references(() => normalizedObservations.id),
     baseline_covered_window: jsonb().$type<JsonObject>(),
     baseline_observed_at: tz(),
     baseline_freshness: text(),
     outcome_source_ref: uuid(),
-    outcome_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    outcome_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    outcome_snapshot_id: uuid().references(() => dataSnapshots.id),
+    outcome_observation_id: uuid().references(() => normalizedObservations.id),
     outcome_covered_window: jsonb().$type<JsonObject>(),
     outcome_observed_at: tz(),
     outcome_freshness: text(),
@@ -1724,18 +1717,14 @@ export const measurementGa4Dimensions = app.table(
     project_id: uuid().notNull(),
     state: text().notNull(),
     baseline_source_ref: uuid(),
-    baseline_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    baseline_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    baseline_snapshot_id: uuid().references(() => dataSnapshots.id),
+    baseline_observation_id: uuid().references(() => normalizedObservations.id),
     baseline_covered_window: jsonb().$type<JsonObject>(),
     baseline_observed_at: tz(),
     baseline_freshness: text(),
     outcome_source_ref: uuid(),
-    outcome_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    outcome_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    outcome_snapshot_id: uuid().references(() => dataSnapshots.id),
+    outcome_observation_id: uuid().references(() => normalizedObservations.id),
     outcome_covered_window: jsonb().$type<JsonObject>(),
     outcome_observed_at: tz(),
     outcome_freshness: text(),
@@ -1779,18 +1768,14 @@ export const measurementGeoDimensions = app.table(
     project_id: uuid().notNull(),
     state: text().notNull(),
     baseline_source_ref: uuid(),
-    baseline_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    baseline_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    baseline_snapshot_id: uuid().references(() => dataSnapshots.id),
+    baseline_observation_id: uuid().references(() => normalizedObservations.id),
     baseline_covered_window: jsonb().$type<JsonObject>(),
     baseline_observed_at: tz(),
     baseline_freshness: text(),
     outcome_source_ref: uuid(),
-    outcome_snapshot_id: uuid()
-      .references(() => dataSnapshots.id),
-    outcome_observation_id: uuid()
-      .references(() => normalizedObservations.id),
+    outcome_snapshot_id: uuid().references(() => dataSnapshots.id),
+    outcome_observation_id: uuid().references(() => normalizedObservations.id),
     outcome_covered_window: jsonb().$type<JsonObject>(),
     outcome_observed_at: tz(),
     outcome_freshness: text(),
@@ -2067,9 +2052,7 @@ export const keywordRelationCandidates = app.table(
     keyword_a_display_keyword: text().notNull(),
     keyword_a_normalized_keyword: text().notNull(),
     keyword_a_governance_revision: integer().notNull(),
-    keyword_a_topic_node_id: uuid().references(
-      () => topicNodeIdentities.id,
-    ),
+    keyword_a_topic_node_id: uuid().references(() => topicNodeIdentities.id),
     keyword_a_topic_model_revision: integer(),
     keyword_b_id: uuid()
       .notNull()
@@ -2077,9 +2060,7 @@ export const keywordRelationCandidates = app.table(
     keyword_b_display_keyword: text().notNull(),
     keyword_b_normalized_keyword: text().notNull(),
     keyword_b_governance_revision: integer().notNull(),
-    keyword_b_topic_node_id: uuid().references(
-      () => topicNodeIdentities.id,
-    ),
+    keyword_b_topic_node_id: uuid().references(() => topicNodeIdentities.id),
     keyword_b_topic_model_revision: integer(),
     mapped_site_page_id: uuid()
       .notNull()
@@ -2129,9 +2110,7 @@ export const keywordRelationDecisions = app.table(
     relation_revision: integer().notNull(),
     decision_kind: text().notNull(),
     primary_keyword_id: uuid().references(() => keywordEntities.id),
-    supporting_keyword_id: uuid().references(
-      () => keywordEntities.id,
-    ),
+    supporting_keyword_id: uuid().references(() => keywordEntities.id),
     reason: text().notNull(),
     decided_by: uuid().notNull(),
     decided_at: tz().notNull(),
@@ -2158,9 +2137,7 @@ export const actionExecutionStepDefinitions = app.table(
     artifact_id: uuid().references(() => executionArtifacts.id),
     definition_key: text().notNull(),
     definition_version: integer().notNull(),
-    steps: jsonb()
-      .$type<Array<{ key: string; label: string }>>()
-      .notNull(),
+    steps: jsonb().$type<Array<{ key: string; label: string }>>().notNull(),
     step_count: integer().notNull(),
     definition_hash: text().notNull(),
     idempotency_key: text().notNull(),
@@ -2239,35 +2216,32 @@ export const competitorMonitorSettings = app.table(
 // ---------------------------------------------------------------------------
 // 69. competitor_monitor_runs  (typed DataForSEO CollectionRun lineage)
 // ---------------------------------------------------------------------------
-export const competitorMonitorRuns = app.table(
-  "competitor_monitor_runs",
-  {
-    id: uuid()
-      .primaryKey()
-      .references(() => collectionRuns.id),
-    workspace_id: uuid()
-      .notNull()
-      .references(() => workspaces.id),
-    project_id: uuid()
-      .notNull()
-      .references(() => clientProjects.id),
-    competitor_id: uuid()
-      .notNull()
-      .references(() => competitorEntities.id),
-    analysis_scopes: text().array().notNull(),
-    settings_revision: integer().notNull(),
-    topic_model_revision: integer().notNull(),
-    target_domain: text().notNull(),
-    market: text().notNull(),
-    language_tag: text().notNull(),
-    scheduled_for: tz().notNull(),
-    previous_monitor_run_id: uuid().references(
-      (): AnyPgColumn => competitorMonitorRuns.id,
-    ),
-    previous_snapshot_id: uuid().references(() => dataSnapshots.id),
-    created_at: tz().notNull().defaultNow(),
-  },
-);
+export const competitorMonitorRuns = app.table("competitor_monitor_runs", {
+  id: uuid()
+    .primaryKey()
+    .references(() => collectionRuns.id),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  competitor_id: uuid()
+    .notNull()
+    .references(() => competitorEntities.id),
+  analysis_scopes: text().array().notNull(),
+  settings_revision: integer().notNull(),
+  topic_model_revision: integer().notNull(),
+  target_domain: text().notNull(),
+  market: text().notNull(),
+  language_tag: text().notNull(),
+  scheduled_for: tz().notNull(),
+  previous_monitor_run_id: uuid().references(
+    (): AnyPgColumn => competitorMonitorRuns.id,
+  ),
+  previous_snapshot_id: uuid().references(() => dataSnapshots.id),
+  created_at: tz().notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // 70. competitor_monitor_evaluations  (one immutable evaluation per run)
@@ -2345,94 +2319,88 @@ export const competitorMonitorSignals = app.table(
 // ---------------------------------------------------------------------------
 // 72. geo_query_observations  (immutable per-query GEO answer evidence)
 // ---------------------------------------------------------------------------
-export const geoQueryObservations = app.table(
-  "geo_query_observations",
-  {
-    id: uuid().primaryKey().defaultRandom(),
-    workspace_id: uuid()
-      .notNull()
-      .references(() => workspaces.id),
-    project_id: uuid()
-      .notNull()
-      .references(() => clientProjects.id),
-    site_id: uuid()
-      .notNull()
-      .references(() => sites.id),
-    snapshot_id: uuid()
-      .notNull()
-      .references(() => dataSnapshots.id),
-    normalized_observation_id: uuid()
-      .notNull()
-      .references(() => normalizedObservations.id),
-    site_page_id: uuid()
-      .notNull()
-      .references(() => sitePages.id),
-    canonical_url: text().notNull(),
-    market_code: text().notNull(),
-    language_tag: text().notNull(),
-    query_text: text().notNull(),
-    query_hash: text().notNull(),
-    platform_kind: text().notNull(),
-    platform_key: text().notNull(),
-    model: text().notNull(),
-    collector_kind: text().notNull(),
-    collector_provider_key: text().notNull(),
-    collector_version: text().notNull(),
-    collected_at: tz().notNull(),
-    citation_state: text().notNull(),
-    answer_evidence_excerpt: text(),
-    answer_content_hash: text(),
-    answer_selector: text(),
-    evidence_statements: jsonb()
-      .$type<JsonArray>()
-      .notNull()
-      .default(sql`'[]'::jsonb`),
-    limitation: text(),
-    created_at: tz().notNull().defaultNow(),
-  },
-);
+export const geoQueryObservations = app.table("geo_query_observations", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  snapshot_id: uuid()
+    .notNull()
+    .references(() => dataSnapshots.id),
+  normalized_observation_id: uuid()
+    .notNull()
+    .references(() => normalizedObservations.id),
+  site_page_id: uuid()
+    .notNull()
+    .references(() => sitePages.id),
+  canonical_url: text().notNull(),
+  market_code: text().notNull(),
+  language_tag: text().notNull(),
+  query_text: text().notNull(),
+  query_hash: text().notNull(),
+  platform_kind: text().notNull(),
+  platform_key: text().notNull(),
+  model: text().notNull(),
+  collector_kind: text().notNull(),
+  collector_provider_key: text().notNull(),
+  collector_version: text().notNull(),
+  collected_at: tz().notNull(),
+  citation_state: text().notNull(),
+  answer_evidence_excerpt: text(),
+  answer_content_hash: text(),
+  answer_selector: text(),
+  evidence_statements: jsonb()
+    .$type<JsonArray>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  limitation: text(),
+  created_at: tz().notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // 73. geo_citation_occurrences  (direct citation and cited-paragraph facts)
 // ---------------------------------------------------------------------------
-export const geoCitationOccurrences = app.table(
-  "geo_citation_occurrences",
-  {
-    id: uuid().primaryKey().defaultRandom(),
-    workspace_id: uuid()
-      .notNull()
-      .references(() => workspaces.id),
-    project_id: uuid()
-      .notNull()
-      .references(() => clientProjects.id),
-    site_id: uuid()
-      .notNull()
-      .references(() => sites.id),
-    snapshot_id: uuid()
-      .notNull()
-      .references(() => dataSnapshots.id),
-    normalized_observation_id: uuid()
-      .notNull()
-      .references(() => normalizedObservations.id),
-    query_observation_id: uuid()
-      .notNull()
-      .references(() => geoQueryObservations.id),
-    site_page_id: uuid()
-      .notNull()
-      .references(() => sitePages.id),
-    canonical_url: text().notNull(),
-    citation_url: text().notNull(),
-    citation_ordinal: integer().notNull(),
-    answer_evidence_excerpt: text().notNull(),
-    cited_page_excerpt: text().notNull(),
-    cited_page_content_hash: text().notNull(),
-    cited_paragraph_hash: text().notNull(),
-    cited_paragraph_selector: text().notNull(),
-    cited_paragraph_index: integer(),
-    evidence_classification: text().notNull(),
-    created_at: tz().notNull().defaultNow(),
-  },
-);
+export const geoCitationOccurrences = app.table("geo_citation_occurrences", {
+  id: uuid().primaryKey().defaultRandom(),
+  workspace_id: uuid()
+    .notNull()
+    .references(() => workspaces.id),
+  project_id: uuid()
+    .notNull()
+    .references(() => clientProjects.id),
+  site_id: uuid()
+    .notNull()
+    .references(() => sites.id),
+  snapshot_id: uuid()
+    .notNull()
+    .references(() => dataSnapshots.id),
+  normalized_observation_id: uuid()
+    .notNull()
+    .references(() => normalizedObservations.id),
+  query_observation_id: uuid()
+    .notNull()
+    .references(() => geoQueryObservations.id),
+  site_page_id: uuid()
+    .notNull()
+    .references(() => sitePages.id),
+  canonical_url: text().notNull(),
+  citation_url: text().notNull(),
+  citation_ordinal: integer().notNull(),
+  answer_evidence_excerpt: text().notNull(),
+  cited_page_excerpt: text().notNull(),
+  cited_page_content_hash: text().notNull(),
+  cited_paragraph_hash: text().notNull(),
+  cited_paragraph_selector: text().notNull(),
+  cited_paragraph_index: integer(),
+  evidence_classification: text().notNull(),
+  created_at: tz().notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // 74. backlink_authority_snapshots  (immutable Growth Map source authority)
