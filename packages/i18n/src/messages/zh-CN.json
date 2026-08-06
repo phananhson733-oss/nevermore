@@ -3229,7 +3229,7 @@
   },
   "results": {
     "pageTitle": "效果追踪",
-    "pageLead": "按 URL 查看发布前后的 GSC、GA4 与 UTM 表现；每个数值都保留来源窗口，不把相关变化写成因果结论。",
+    "pageLead": "改前、改后与归因边界。按 URL 核对固定窗口的 GSC、GA4、UTM、目标词与 AI 引用，并把技术复查、动作回执和效果观察分开呈现。",
     "title": "技术复查记录",
     "lead": "这里仅复核已确认 Action 的技术条件；流量、排名与转化变化以上方固定窗口的真实观测为准。",
     "emptyTitle": "尚未复查",
@@ -3266,6 +3266,54 @@
       "selectorLabel": "选择要查看的 URL 效果记录",
       "selectorTitle": "已追踪 URL",
       "selectorLead": "选择不同 URL，右侧会切换到该页面自己的来源、时间窗口和指标。",
+      "tabs": {
+        "label": "效果追踪视图",
+        "summary": "结果摘要",
+        "pages": "页面改前 / 改后",
+        "campaigns": "Campaign / UTM"
+      },
+      "kpi": {
+        "label": "当前 URL 的固定窗口指标",
+        "eyebrow": "固定窗口摘要",
+        "scope": "仅统计当前 URL：{url}",
+        "organicClicks": "自然搜索点击",
+        "directConversions": "直接转化",
+        "aiCitations": "AI 引用",
+        "utmDirectConversions": "已列 UTM Campaign 直接转化"
+      },
+      "summary": {
+        "technicalEyebrow": "项目最近一次复查 · 独立证据",
+        "boundaryEyebrow": "结论边界",
+        "boundaryTitle": "这组结果能说明什么",
+        "boundary": {
+          "verified": {
+            "title": "已验证",
+            "body": "只用于说明可复查的技术条件；当前合同不把项目最近一次复查强行关联到所选 URL。"
+          },
+          "observed": {
+            "title": "已观察",
+            "body": "只表示固定窗口记录到指标变化，不把变化归因给单一文章、修复或发布。"
+          },
+          "insufficient": {
+            "title": "数据不足 / 不可用",
+            "body": "样本不足时保留限制；来源不可用时保持“不可用”，只有真实观测为零才显示 0。"
+          },
+          "receipt": {
+            "title": "回执不等于效果",
+            "body": "Delivery Receipt 或 Change Receipt 只证明动作或线上变更已记录；效果仍需独立复查或固定窗口观察。"
+          }
+        },
+        "timelineEyebrow": "证据时间线",
+        "timelineTitle": "动作发生与效果观察分开核验",
+        "timelineLead": "左侧证明线上变更被验证；右侧只记录当前 URL 的固定窗口观察。",
+        "actionTimelineTitle": "动作回执 · 证明动作发生",
+        "resultTimelineTitle": "效果结果 · 独立观察",
+        "actionReceiptBody": "已验证的 Change Receipt 启动结果窗口，但本身不证明任何指标效果。",
+        "windowComparisonTitle": "审计前 / 审计后固定窗口",
+        "windowComparisonBody": "两个窗口由服务端冻结，不能由浏览器改写或跨 URL 合并。",
+        "observationRecordedTitle": "效果观察已记录",
+        "observationRecordedBody": "记录时间表示该窗口结果已持久化，不代表单一交付物造成全部变化。"
+      },
       "detailEyebrow": "当前 URL",
       "beforeWindow": "审计前窗口",
       "afterWindow": "审计后窗口",
@@ -3331,10 +3379,15 @@
       },
       "campaign": {
         "title": "UTM Campaign 改前 / 改后",
-        "lead": "每个 UTM identity 单独核验 Sessions、直接转化和助攻转化，不把不同 Campaign 混成一个总增长数字。",
+        "lead": "仅当当前 URL 的所有已列 Campaign 在对应阶段都有真实值时，顶部才汇总；表格继续保留每个 UTM identity，不把汇总写成项目总增长或单一 Campaign 因果结论。",
         "count": "{count} 个 Campaign",
         "empty": "当前窗口没有可核验的 UTM Campaign 记录；不会用全站流量代替。",
-        "identity": "Campaign / 来源"
+        "identity": "Campaign / 来源",
+        "summary": {
+          "sessions": "已列 Campaign Sessions",
+          "directConversions": "已列 Campaign 直接转化",
+          "assistedConversions": "已列 Campaign 助攻转化"
+        }
       },
       "targetKeywordRanks": {
         "title": "目标关键词排名",

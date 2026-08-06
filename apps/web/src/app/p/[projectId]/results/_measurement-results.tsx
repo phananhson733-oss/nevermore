@@ -13,7 +13,12 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useState, type ReactNode } from "react";
+import {
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import {
   EmptyState,
@@ -38,8 +43,12 @@ import {
   type MeasurementWindowView,
 } from "./_measurement-view-model.ts";
 import { GeoCitationEvidence } from "./_geo-citation-evidence";
+import { ResultsSummary } from "./_results-summary";
 import { TargetKeywordRanks } from "./_target-keyword-ranks";
 import styles from "./results.module.css";
+
+const RESULT_TABS = ["summary", "pages", "campaigns"] as const;
+type ResultTab = (typeof RESULT_TABS)[number];
 
 const WINDOW_STATE_TONE: Readonly<Record<MeasurementState, StatusTone>> = {
   technical_verified: "success",
@@ -85,6 +94,70 @@ function MetricDelta({ metric }: { readonly metric: MeasurementMetricView }) {
       {trendIcon(metric.trend)}
       {metric.delta}
     </span>
+  );
+}
+
+function ResultKpi({
+  label,
+  metric,
+  testId,
+}: {
+  readonly label: string;
+  readonly metric: MeasurementMetricView;
+  readonly testId?: string;
+}) {
+  const t = useTranslations("results.measurement");
+  return (
+    <div className={styles.resultKpi} data-testid={testId}>
+      <dt>{label}</dt>
+      <dd>
+        <strong>{metric.outcome ?? t("notAvailable")}</strong>
+        <span>
+          {metric.baseline ?? t("notAvailable")}
+          <ArrowRight aria-hidden="true" size={14} />
+          {metric.outcome ?? t("notAvailable")}
+        </span>
+        <MetricDelta metric={metric} />
+      </dd>
+    </div>
+  );
+}
+
+function ResultKpis({
+  measurement,
+}: {
+  readonly measurement: MeasurementWindowView;
+}) {
+  const t = useTranslations("results.measurement.kpi");
+  return (
+    <section className={styles.resultKpiSection} aria-label={t("label")}>
+      <header>
+        <span>{t("eyebrow")}</span>
+        <p>{t("scope", { url: urlLabel(measurement.canonicalUrl) })}</p>
+      </header>
+      <dl className={styles.resultKpis} data-results-kpis="">
+        <ResultKpi
+          label={t("organicClicks")}
+          metric={measurement.summary.organicClicks}
+          testId="result-kpi-organic-clicks"
+        />
+        <ResultKpi
+          label={t("directConversions")}
+          metric={measurement.summary.directConversions}
+          testId="result-kpi-direct-conversions"
+        />
+        <ResultKpi
+          label={t("aiCitations")}
+          metric={measurement.summary.aiCitations}
+          testId="result-kpi-ai-citations"
+        />
+        <ResultKpi
+          label={t("utmDirectConversions")}
+          metric={measurement.summary.utmDirectConversions}
+          testId="result-kpi-utm-direct-conversions"
+        />
+      </dl>
+    </section>
   );
 }
 
@@ -197,6 +270,20 @@ function CampaignAudit({
         <span>{t("campaign.count", { count: measurement.campaigns.length })}</span>
       </header>
       <p className={styles.campaignLead}>{t("campaign.lead")}</p>
+      <dl className={styles.campaignSummary}>
+        <ResultKpi
+          label={t("campaign.summary.sessions")}
+          metric={measurement.summary.utmSessions}
+        />
+        <ResultKpi
+          label={t("campaign.summary.directConversions")}
+          metric={measurement.summary.utmDirectConversions}
+        />
+        <ResultKpi
+          label={t("campaign.summary.assistedConversions")}
+          metric={measurement.summary.utmAssistedConversions}
+        />
+      </dl>
       {measurement.campaigns.length === 0 ? (
         <div className={styles.campaignEmpty}>
           <CircleAlert aria-hidden="true" size={18} />
@@ -334,8 +421,6 @@ function MeasurementDetail({
         measurementWindowId={measurement.id}
       />
 
-      <CampaignAudit measurement={measurement} />
-
       <GeoCitationEvidence
         projectId={projectId}
         measurementWindowId={measurement.id}
@@ -367,6 +452,132 @@ function MeasurementDetail({
   );
 }
 
+function ResultTabs({
+  projectId,
+  measurement,
+  renderMeasurementFallback,
+}: {
+  readonly projectId: string;
+  readonly measurement: MeasurementWindowView | null;
+  readonly renderMeasurementFallback: () => ReactNode;
+}) {
+  const t = useTranslations("results.measurement.tabs");
+  const tMeasurement = useTranslations("results.measurement");
+  const [activeTab, setActiveTab] = useState<ResultTab>("summary");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const selectTab = (index: number) => {
+    const tab = RESULT_TABS[index];
+    if (!tab) return;
+    setActiveTab(tab);
+    tabRefs.current[index]?.focus();
+  };
+
+  const handleTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (index + 1) % RESULT_TABS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (index - 1 + RESULT_TABS.length) % RESULT_TABS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = RESULT_TABS.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    selectTab(nextIndex);
+  };
+
+  return (
+    <div className={styles.resultsTabsWorkspace}>
+      <div
+        className={styles.resultsTabs}
+        role="tablist"
+        aria-label={t("label")}
+        data-results-tabs=""
+      >
+        {RESULT_TABS.map((tab, index) => {
+          const active = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={`tab-results-${tab}`}
+              type="button"
+              role="tab"
+              aria-controls={`panel-results-${tab}`}
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              data-results-tab={tab}
+              onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, index)}
+            >
+              {t(tab)}
+            </button>
+          );
+        })}
+      </div>
+
+      <section
+        id="panel-results-summary"
+        className={styles.resultsTabPanel}
+        role="tabpanel"
+        aria-labelledby="tab-results-summary"
+        hidden={activeTab !== "summary"}
+        data-results-panel="summary"
+      >
+        <ResultsSummary
+          projectId={projectId}
+          measurement={measurement}
+          renderMeasurementFallback={renderMeasurementFallback}
+        />
+      </section>
+      <section
+        id="panel-results-pages"
+        className={styles.resultsTabPanel}
+        role="tabpanel"
+        aria-labelledby="tab-results-pages"
+        hidden={activeTab !== "pages"}
+        data-results-panel="pages"
+      >
+        {measurement ? (
+          <MeasurementDetail projectId={projectId} measurement={measurement} />
+        ) : (
+          renderMeasurementFallback()
+        )}
+      </section>
+      <section
+        id="panel-results-campaigns"
+        className={styles.resultsTabPanel}
+        role="tabpanel"
+        aria-labelledby="tab-results-campaigns"
+        hidden={activeTab !== "campaigns"}
+        data-results-panel="campaigns"
+      >
+        {measurement ? (
+          <div className={styles.campaignWorkspace}>
+            <header>
+              <span className={styles.measurementEyebrow}>
+                {tMeasurement("detailEyebrow")}
+              </span>
+              <strong>{urlLabel(measurement.canonicalUrl)}</strong>
+            </header>
+            <CampaignAudit measurement={measurement} />
+          </div>
+        ) : (
+          renderMeasurementFallback()
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function MeasurementResultsSection({
   projectId,
 }: {
@@ -381,6 +592,31 @@ export function MeasurementResultsSection({
   const selectedView = selected
     ? measurementWindowView(selected, locale)
     : null;
+  const renderMeasurementFallback = () => {
+    if (query.isPending) {
+      return (
+        <div className={styles.measurementState} role="status">
+          <Spinner label={t("loading")} size="md" />
+          <span>{t("loading")}</span>
+        </div>
+      );
+    }
+    if (query.isError) {
+      return (
+        <div className={styles.measurementState} role="alert">
+          <CircleAlert aria-hidden="true" size={22} />
+          <div>
+            <strong>{t("errorTitle")}</strong>
+            <p>{t("errorBody")}</p>
+          </div>
+          <button type="button" onClick={() => void query.refetch()}>
+            {t("retry")}
+          </button>
+        </div>
+      );
+    }
+    return <EmptyState title={t("emptyTitle")} description={t("emptyBody")} />;
+  };
 
   return (
     <Panel
@@ -401,29 +637,8 @@ export function MeasurementResultsSection({
         ) : null}
       </header>
 
-      {query.isPending ? (
-        <div className={styles.measurementState} role="status">
-          <Spinner label={t("loading")} size="md" />
-          <span>{t("loading")}</span>
-        </div>
-      ) : query.isError ? (
-        <div className={styles.measurementState} role="alert">
-          <CircleAlert aria-hidden="true" size={22} />
-          <div>
-            <strong>{t("errorTitle")}</strong>
-            <p>{t("errorBody")}</p>
-          </div>
-          <button type="button" onClick={() => void query.refetch()}>
-            {t("retry")}
-          </button>
-        </div>
-      ) : selectedView === null ? (
-        <EmptyState
-          title={t("emptyTitle")}
-          description={t("emptyBody")}
-        />
-      ) : (
-        <div className={styles.measurementWorkspace}>
+      <div className={styles.measurementWorkspace}>
+        {selectedView ? (
           <aside
             className={styles.measurementSelector}
             aria-label={t("selectorLabel")}
@@ -456,12 +671,14 @@ export function MeasurementResultsSection({
               })}
             </div>
           </aside>
-          <MeasurementDetail
-            projectId={projectId}
-            measurement={selectedView}
-          />
-        </div>
-      )}
+        ) : null}
+        {selectedView ? <ResultKpis measurement={selectedView} /> : null}
+        <ResultTabs
+          projectId={projectId}
+          measurement={selectedView}
+          renderMeasurementFallback={renderMeasurementFallback}
+        />
+      </div>
     </Panel>
   );
 }

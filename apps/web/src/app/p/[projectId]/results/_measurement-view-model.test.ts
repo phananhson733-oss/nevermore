@@ -284,6 +284,179 @@ describe("Measurement results view model", () => {
       "该结果为固定窗口观察，不代表单一交付物造成了指标变化。",
       "尚未接入可验证的 GEO 引用观测来源。",
     ]);
+    expect(view.summary.organicClicks).toMatchObject({
+      baseline: "410",
+      outcome: "574",
+      delta: "+164",
+      trend: "improved",
+    });
+    expect(view.summary.directConversions).toMatchObject({
+      baseline: "18",
+      outcome: "27",
+      delta: "+9",
+      trend: "improved",
+    });
+    expect(view.summary.aiCitations).toMatchObject({
+      baseline: null,
+      outcome: null,
+      delta: null,
+      trend: "unavailable",
+    });
+    expect(view.summary.utmDirectConversions).toMatchObject({
+      baseline: "7",
+      outcome: "12",
+      delta: "+5",
+      trend: "improved",
+    });
+  });
+
+  it("keeps an incomplete Campaign total unavailable instead of filling the missing phase with zero", () => {
+    const window = measurementWindow();
+    const firstCampaign = window.dimensions.ga4.campaigns[0];
+    if (!firstCampaign) throw new Error("fixture Campaign is required");
+
+    const view = measurementWindowView(
+      {
+        ...window,
+        dimensions: {
+          ...window.dimensions,
+          ga4: {
+            ...window.dimensions.ga4,
+            campaigns: [
+              firstCampaign,
+              {
+                ...firstCampaign,
+                identity: {
+                  ...firstCampaign.identity,
+                  utmIdentityId:
+                    "10000000-0000-4000-8000-000000000020",
+                  campaign: "pricing-intent",
+                },
+                metrics: {
+                  sessions: { baseline: 20, outcome: 30 },
+                  directConversions: { baseline: 2, outcome: null },
+                  assistedConversions: { baseline: 1, outcome: 3 },
+                },
+              },
+            ],
+          },
+        },
+      },
+      "zh-CN",
+    );
+
+    expect(view.summary.utmDirectConversions).toEqual({
+      key: "ga4DirectConversions",
+      baseline: "9",
+      outcome: null,
+      delta: null,
+      trend: "unavailable",
+    });
+  });
+
+  it("fails closed when a Campaign total would exceed JavaScript safe integers", () => {
+    const window = measurementWindow();
+    const firstCampaign = window.dimensions.ga4.campaigns[0];
+    if (!firstCampaign) throw new Error("fixture Campaign is required");
+
+    const overflowingCampaign = {
+      ...firstCampaign,
+      identity: {
+        ...firstCampaign.identity,
+        utmIdentityId: "10000000-0000-4000-8000-000000000020",
+      },
+      metrics: {
+        ...firstCampaign.metrics,
+        directConversions: {
+          baseline: Number.MAX_SAFE_INTEGER,
+          outcome: Number.MAX_SAFE_INTEGER,
+        },
+      },
+    };
+    const view = measurementWindowView(
+      {
+        ...window,
+        dimensions: {
+          ...window.dimensions,
+          ga4: {
+            ...window.dimensions.ga4,
+            campaigns: [overflowingCampaign, firstCampaign],
+          },
+        },
+      },
+      "en",
+    );
+
+    expect(view.summary.utmDirectConversions).toEqual({
+      key: "ga4DirectConversions",
+      baseline: null,
+      outcome: null,
+      delta: null,
+      trend: "unavailable",
+    });
+  });
+
+  it("preserves a real zero across Campaign phases", () => {
+    const window = measurementWindow();
+    const firstCampaign = window.dimensions.ga4.campaigns[0];
+    if (!firstCampaign) throw new Error("fixture Campaign is required");
+
+    const view = measurementWindowView(
+      {
+        ...window,
+        dimensions: {
+          ...window.dimensions,
+          ga4: {
+            ...window.dimensions.ga4,
+            campaigns: [
+              {
+                ...firstCampaign,
+                metrics: {
+                  ...firstCampaign.metrics,
+                  directConversions: { baseline: 0, outcome: 0 },
+                },
+              },
+            ],
+          },
+        },
+      },
+      "en",
+    );
+
+    expect(view.summary.utmDirectConversions).toEqual({
+      key: "ga4DirectConversions",
+      baseline: "0",
+      outcome: "0",
+      delta: "0",
+      trend: "unchanged",
+    });
+  });
+
+  it("keeps an empty Campaign set unavailable instead of presenting a real zero", () => {
+    const window = measurementWindow();
+    const view = measurementWindowView(
+      {
+        ...window,
+        dimensions: {
+          ...window.dimensions,
+          ga4: { ...window.dimensions.ga4, campaigns: [] },
+        },
+      },
+      "en",
+    );
+
+    expect(view.summary.utmSessions).toMatchObject({
+      baseline: null,
+      outcome: null,
+      delta: null,
+      trend: "unavailable",
+    });
+    expect(view.summary.utmDirectConversions).toMatchObject({
+      baseline: null,
+      outcome: null,
+      delta: null,
+      trend: "unavailable",
+    });
   });
 
   it("keeps the current selection when it exists and otherwise chooses the newest window", () => {
