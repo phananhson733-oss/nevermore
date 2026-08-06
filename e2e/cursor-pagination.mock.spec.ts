@@ -260,6 +260,13 @@ test("Studio guards hero generation and card regeneration while the editor is di
   });
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const editMarkdown = page.getByRole("tab", {
+    name: "Edit Markdown",
+    exact: true,
+  });
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   const content = page.getByRole("textbox", { name: "Content" });
   const note = page.getByRole("textbox", { name: "Revision note" });
   const heroGenerate = page
@@ -306,6 +313,9 @@ test("Studio guards hero generation and card regeneration while the editor is di
   await transitionPromise;
   await expect(page.getByRole("heading", { name: "Pick an action" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await expect(content).toHaveValue("Artifact page 1");
   await expect(note).toHaveValue("");
 
@@ -361,6 +371,13 @@ test("Studio protects unsaved content and notes from editor transitions", async 
     .locator("..")
     .getByRole("button", { name: "Open", exact: true });
   await firstOpen.click();
+  const editMarkdown = page.getByRole("tab", {
+    name: "Edit Markdown",
+    exact: true,
+  });
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   const content = page.getByRole("textbox", { name: "Content" });
   const note = page.getByRole("textbox", { name: "Revision note" });
   await content.fill("Locally edited first artifact");
@@ -406,6 +423,9 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await expect(content).toHaveValue("Artifact page 2");
   await expect(page.getByText("All changes saved", { exact: true })).toBeVisible();
 
@@ -416,6 +436,9 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await dialog.dismiss();
   await transitionPromise;
   await expect(page).toHaveURL(onProjectScreen("execution"));
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await expect(content).toHaveValue("Dirty before link navigation");
 
   dialogPromise = page.waitForEvent("dialog");
@@ -441,6 +464,9 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await content.fill("Dirty before browser back");
   await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
   dialogPromise = page.waitForEvent("dialog");
@@ -448,6 +474,9 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   dialog = await dialogPromise;
   await dialog.dismiss();
   await expect(page).toHaveURL(onProjectScreen("execution"));
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await expect(content).toHaveValue("Dirty before browser back");
 
   dialogPromise = page.waitForEvent("dialog");
@@ -459,12 +488,18 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
   await expect(content).toHaveValue("Artifact page 1");
   await page.getByRole("link", { name: "Overview" }).click();
   await expect(page).toHaveURL(onProjectScreen("overview"));
   await page.goBack();
   await expect(page).toHaveURL(onProjectScreen("execution"));
   await firstOpen.click();
+  if ((await editMarkdown.count()) > 0) {
+    await editMarkdown.click();
+  }
 
   await content.fill("Dirty before browser forward");
   await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();

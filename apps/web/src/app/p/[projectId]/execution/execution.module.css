@@ -34,6 +34,49 @@
   line-height: 1.6;
 }
 
+.shadow :where(.docPanel) {
+  margin: 0;
+}
+
+.shadowModeBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 12px;
+}
+
+.shadowModeTabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shadowModeHint {
+  flex: 1 1 280px;
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-sm);
+  line-height: 1.45;
+  text-align: right;
+}
+
+.shadowFallback {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .shadowModeHint {
+    text-align: left;
+  }
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);

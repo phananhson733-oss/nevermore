@@ -15,7 +15,7 @@
       "brace-expansion@5.0.7": "5.0.9",
       "sharp@<0.35.3": "0.35.3",
       "postcss@<8.5.23": "8.5.23",
-      "js-yaml@<4.3.0": "4.3.0",
+      "js-yaml@<4.3.1": "4.3.1",
       "undici@<7.29.0": "7.29.0"
     },
     "patchedDependencies": {

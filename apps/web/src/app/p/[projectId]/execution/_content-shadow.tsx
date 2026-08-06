@@ -27,11 +27,13 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import {
   Badge,
+  Button,
   EmptyState,
   LimitationHint,
   Panel,
@@ -1176,6 +1178,14 @@ function runTitle(
   return actionById.get(summary.source.actionId)?.title ?? null;
 }
 
+function latestRunForAction(
+  runs: readonly ContentShadowRunSummary[],
+  actionId: string | null,
+): ContentShadowRunSummary | null {
+  if (actionId === null) return null;
+  return runs.find((run) => run.source.actionId === actionId) ?? null;
+}
+
 export function ContentShadowSection({
   projectId,
 }: {
@@ -1330,6 +1340,213 @@ export function ContentShadowSection({
           />
         )}
       </div>
+    </section>
+  );
+}
+
+export function ContentShadowArtifactPanel({
+  projectId,
+  artifact,
+  action,
+  renderEditor = () => null,
+  editorDirty = false,
+}: {
+  readonly projectId: string;
+  readonly artifact: Artifact;
+  readonly action?: ArtifactAction | undefined;
+  readonly renderEditor?: (options: {
+    readonly allowReadyStatusChange: boolean;
+  }) => ReactNode;
+  readonly editorDirty?: boolean;
+}) {
+  const t = useTranslations("studio.shadow");
+  const runsQuery = useContentShadowRuns(projectId);
+  const sourcesQuery = useProjectSources(projectId);
+  const runs = shadowRunItems(runsQuery.data);
+  const [compareMode, setCompareMode] = useState<CompareMode>("draft");
+  const [surfaceMode, setSurfaceMode] = useState<"review" | "edit">(
+    artifact.validationState === "invalid" ? "edit" : "review",
+  );
+  const selectedRun = latestRunForAction(runs, artifact.actionId);
+  const detailQuery = useContentShadowRun(
+    projectId,
+    selectedRun?.flowShadowRunId ?? null,
+  );
+  const detail = detailQuery.data ?? null;
+  const connectedProviders =
+    sourcesQuery.data === undefined
+      ? null
+      : connectedSourceProviders(sourcesQuery.data);
+  const detailArtifactMatches =
+    detail !== null &&
+    detail.draft !== null &&
+    detail.draft.artifactId === artifact.id;
+
+  if (artifact.artifactType !== "english_blog_draft") {
+    return <>{renderEditor({ allowReadyStatusChange: true })}</>;
+  }
+
+  // Invalid drafts must open on the repair surface immediately. Their source
+  // Markdown is editable without waiting for the secondary Content Shadow
+  // review query; review becomes relevant again after a valid revision exists.
+  if (artifact.validationState === "invalid") {
+    return <>{renderEditor({ allowReadyStatusChange: true })}</>;
+  }
+
+  function onSurfaceModeKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        "[role='tab']:not(:disabled)",
+      ),
+    );
+    const activeIndex = Math.max(
+      0,
+      tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true"),
+    );
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (activeIndex + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (activeIndex - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = tabs.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    if (nextTab === undefined) return;
+    const nextMode = nextTab.dataset.surfaceMode;
+    if (nextMode !== "review" && nextMode !== "edit") return;
+    setSurfaceMode(nextMode);
+    nextTab.focus();
+  }
+
+  const reviewTabId = `sf-shadow-${artifact.id}-review-tab`;
+  const editTabId = `sf-shadow-${artifact.id}-edit-tab`;
+  const reviewPanelId = `sf-shadow-${artifact.id}-review-panel`;
+  const editPanelId = `sf-shadow-${artifact.id}-edit-panel`;
+
+  return (
+    <section
+      className={styles.shadow}
+      aria-labelledby="sf-shadow-title"
+      data-content-shadow=""
+    >
+      <header className={styles.shadowHead}>
+        <span className="sf-eyebrow">{t("eyebrow")}</span>
+        <h2 id="sf-shadow-title" className={styles.shadowTitle}>
+          {t("title")}
+        </h2>
+        <p className={styles.shadowLead}>{t("lead")}</p>
+      </header>
+
+      {runsQuery.isError ? (
+        <div className={styles.shadowFallback}>
+          <ProblemNotice
+            error={runsQuery.error ?? new Error("unknown")}
+            message={t("loadError")}
+            onRetry={() => void runsQuery.refetch()}
+            compact
+          />
+          {renderEditor({ allowReadyStatusChange: true })}
+        </div>
+      ) : selectedRun === null ? (
+        <>{renderEditor({ allowReadyStatusChange: true })}</>
+      ) : detailQuery.isError ? (
+        <div className={styles.shadowFallback}>
+          <ProblemNotice
+            error={detailQuery.error ?? new Error("unknown")}
+            message={t("loadError")}
+            onRetry={() => void detailQuery.refetch()}
+            compact
+          />
+          {renderEditor({ allowReadyStatusChange: true })}
+        </div>
+      ) : detail === null ? (
+        <Panel padding="lg" className={styles.docPanel}>
+          <EmptyState title={t("loading")} />
+        </Panel>
+      ) : !detailArtifactMatches ? (
+        <>{renderEditor({ allowReadyStatusChange: true })}</>
+      ) : (
+        <>
+          <div className={styles.shadowModeBar}>
+            <div
+              className={styles.shadowModeTabs}
+              role="tablist"
+              aria-label={t("modeLabel")}
+              onKeyDown={onSurfaceModeKeyDown}
+            >
+              <Button
+                variant={surfaceMode === "review" ? "primary" : "secondary"}
+                size="sm"
+                role="tab"
+                id={reviewTabId}
+                aria-controls={reviewPanelId}
+                aria-selected={surfaceMode === "review"}
+                tabIndex={surfaceMode === "review" ? 0 : -1}
+                data-surface-mode="review"
+                onClick={() => setSurfaceMode("review")}
+                disabled={editorDirty}
+              >
+                {t("reviewDocument")}
+              </Button>
+              <Button
+                variant={surfaceMode === "edit" ? "primary" : "secondary"}
+                size="sm"
+                role="tab"
+                id={editTabId}
+                aria-controls={editPanelId}
+                aria-selected={surfaceMode === "edit"}
+                tabIndex={surfaceMode === "edit" ? 0 : -1}
+                data-surface-mode="edit"
+                onClick={() => setSurfaceMode("edit")}
+              >
+                {t("editMarkdown")}
+              </Button>
+            </div>
+            <p className={styles.shadowModeHint} aria-live="polite">
+              {editorDirty ? t("unsavedEditHint") : t("modeHelp")}
+            </p>
+          </div>
+          <div
+            id={reviewPanelId}
+            role="tabpanel"
+            aria-labelledby={reviewTabId}
+            hidden={surfaceMode !== "review"}
+          >
+            <DocPanel
+              projectId={projectId}
+              run={detail}
+              actionTitle={action?.title ?? null}
+              generationMode={artifact.generationMode}
+              connectedProviders={connectedProviders}
+              liveArtifact={artifact}
+              revisionHistory={artifactRevisionHistory(
+                detail.draft,
+                detail.qa?.evaluatedRevision ?? null,
+                artifact.currentRevision ??
+                  detail.draft?.currentRevision ??
+                  null,
+              )}
+              compareMode={compareMode}
+              onCompareMode={setCompareMode}
+            />
+          </div>
+          <div
+            id={editPanelId}
+            role="tabpanel"
+            aria-labelledby={editTabId}
+            hidden={surfaceMode !== "edit"}
+          >
+            {renderEditor({ allowReadyStatusChange: false })}
+          </div>
+        </>
+      )}
     </section>
   );
 }

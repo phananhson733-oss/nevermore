@@ -14,6 +14,7 @@ import {
   BRIEF_REVISION,
   CONTENT_ACTION_TITLE,
   CONTENT_HASH,
+  DRAFT_ARTIFACT_ID,
   installContentVerticalApi,
   NAV_LABEL,
   opportunityReviewPanel,
@@ -194,15 +195,19 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   ).toBeVisible();
 
   // ================= 5. Flow Shadow research / draft / QA ===================
+  // Content Shadow is no longer a second queue. Selecting the English draft
+  // from the one deliverable queue opens that draft's QA/review surface in the
+  // same workbench.
+  const draftRow = studioQueue.locator(
+    `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
+  );
+  await expect(draftRow).toHaveCount(1);
+  await draftRow.getByRole("button", { name: "Open", exact: true }).click();
+
   const shadow = page.locator("[data-content-shadow]");
   await expect(shadow).toBeVisible();
-  // Exactly one shadow run consumed that brief; no second content lifecycle.
-  const queueItems = shadow.locator("[aria-current]");
-  await expect(queueItems).toHaveCount(1);
-  await expect(queueItems.first()).toContainText(CONTENT_ACTION_TITLE);
-  await expect(queueItems.first()).toContainText(
-    `From content brief revision ${BRIEF_REVISION}`,
-  );
+  await expect(shadow.locator("[aria-current]")).toHaveCount(0);
+  await expect(shadow.locator("[data-shadow-doc]")).toBeVisible();
 
   const rail = page.locator("[data-qa-rail]");
 
@@ -406,7 +411,6 @@ test("one measured content Finding yields exactly one Action and exactly one con
   await expect(review.getByRole("button", { name: "Confirm" })).toHaveCount(2);
 
   await page.goto(`/p/${E2E_PROJECT_ID}/execution`);
-  await expect(page.locator("[data-content-shadow]")).toBeVisible();
 
   // Exactly one content_brief exists in the whole queue, and exactly one
   // English draft — the Flow Shadow output, not a second brief.
@@ -427,14 +431,19 @@ test("one measured content Finding yields exactly one Action and exactly one con
     page.locator('[data-studio-filter-bar] [data-studio-filter]'),
   ).toHaveCount(5);
 
-  // And the shadow run consumed THAT brief revision, rather than opening a
-  // parallel content lifecycle of its own.
-  await expect(
-    page.locator("[data-content-shadow] [aria-current]"),
-  ).toHaveCount(1);
-  await expect(
-    page.locator("[data-content-shadow] [aria-current]"),
-  ).toContainText(`From content brief revision ${BRIEF_REVISION}`);
+  // Selecting the one English draft opens the run that consumed this brief;
+  // Content Shadow contributes QA/review, not a parallel selectable queue.
+  const draft = queue.locator(
+    `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
+  );
+  await draft.getByRole("button", { name: "Open", exact: true }).click();
+  const shadow = page.locator("[data-content-shadow]");
+  await expect(shadow).toBeVisible();
+  await expect(shadow.locator("[aria-current]")).toHaveCount(0);
+  await shadow.locator("[data-view-switch='compare']").click();
+  await expect(shadow.locator("[data-compare-brief]:visible")).toContainText(
+    `Content brief · revision ${BRIEF_REVISION} (frozen)`,
+  );
 
   // Reading Execution wrote nothing beyond the single confirmation.
   expect(apiWrites(api)).toEqual([

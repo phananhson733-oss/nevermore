@@ -74,6 +74,9 @@ interface Scenario {
   /** The live deliverable, which an edit moves independently of the run. */
   artifactRevision: number;
   artifactStatus: "draft" | "ready";
+  readonly validationState: "valid" | "invalid";
+  /** A legacy or incomplete projection may have the draft but no matching run. */
+  readonly shadowRunAvailable?: boolean;
   /** When set, the review endpoint refuses with this conflict instead. */
   readonly reviewConflict?: { readonly currentRevision: number };
 }
@@ -103,7 +106,7 @@ function draftArtifact(scenario: Scenario) {
     generationMode: "structured_llm",
     outputLocale: "en",
     currentRevision: scenario.artifactRevision,
-    validationState: "valid",
+    validationState: scenario.validationState,
     current: {
       id: "00000000-0000-4000-8000-000000000910",
       revision: scenario.artifactRevision,
@@ -111,7 +114,10 @@ function draftArtifact(scenario: Scenario) {
       contentFormat: "markdown",
       content: DRAFT_BODY,
       contentHash: CONTENT_HASH,
-      validationErrors: [],
+      validationErrors:
+        scenario.validationState === "invalid"
+          ? ["missing required section: ## Evidence"]
+          : [],
       note: null,
       createdAt: NOW,
     },
@@ -283,23 +289,6 @@ async function fulfill(route: Route, body: unknown, status = 200) {
   });
 }
 
-/**
- * Resolve a CSS colour expression the way the page would, so a design token and
- * a computed style can be compared as the same bytes. Comparing a computed
- * `rgb(...)` against a raw token value can only ever be "not equal", which
- * makes a colour assertion pass without checking anything.
- */
-async function resolveColor(page: Page, expression: string): Promise<string> {
-  return page.evaluate((value) => {
-    const probe = document.createElement("span");
-    probe.style.color = value;
-    document.body.append(probe);
-    const resolved = getComputedStyle(probe).color;
-    probe.remove();
-    return resolved;
-  }, expression);
-}
-
 /** Layer the review fixtures over the shared in-browser API. */
 async function openExecution(
   page: Page,
@@ -373,7 +362,7 @@ async function openExecution(
           createdAt: projection.createdAt,
           source: projection.source,
         },
-      ],
+      ].filter(() => scenario.shadowRunAvailable !== false),
       meta: { nextCursor: null, hasNext: false, limit: 100 },
     });
   });
@@ -401,6 +390,14 @@ async function openExecution(
         await fulfill(route, { data: draftArtifact(scenario) });
         return;
       }
+      const body = route.request().postDataJSON() as {
+        readonly status?: string;
+      };
+      if (body.status === "ready") {
+        scenario.artifactStatus = "ready";
+        await fulfill(route, { data: draftArtifact(scenario) });
+        return;
+      }
       // An edit: a new immutable revision, and the deliverable returns to draft.
       scenario.artifactRevision += 1;
       scenario.artifactStatus = "draft";
@@ -408,8 +405,23 @@ async function openExecution(
     },
   );
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/execution`);
-  await expect(page.locator("[data-content-shadow]")).toBeVisible();
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/execution?actionId=${E2E_CANONICAL_ACTION_ID}&artifactId=${DRAFT_ARTIFACT_ID}`,
+  );
+  if (scenario.validationState === "invalid") {
+    await expect(page.locator("[data-content-shadow]")).toHaveCount(0);
+    await expect(page.getByLabel("内容", { exact: true })).toBeVisible();
+  } else {
+    await expect(page.locator("[data-content-shadow]")).toBeVisible();
+  }
+  await expect(
+    page.locator(
+      `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-content-shadow] [aria-current]"),
+  ).toHaveCount(0);
   return { writes };
 }
 
@@ -431,6 +443,7 @@ function scenario(overrides: Partial<Scenario> = {}): Scenario {
     claims: REVIEW_PASSING_CLAIMS,
     artifactRevision: 1,
     artifactStatus: "draft",
+    validationState: "valid",
     ...overrides,
   };
 }
@@ -522,19 +535,7 @@ test("a blocked verdict disables passing and says why, right next to the control
   ).toHaveCount(1);
 });
 
-/**
- * The OTHER door into `ready`, and the reason this test exists at all.
- *
- * The server already refuses a blocked draft through the generic artifact
- * status PATCH — that was the correctness fix. What it did not do was tell the
- * control: the artifacts list carried no verdict, so the Studio editor rendered
- * an enabled "Mark ready" and an operator discovered the refusal by being
- * refused. The list now carries the server's own answer, and this test asserts
- * the two doors reach the SAME conclusion about the same deliverable rather
- * than asserting each one separately — separate assertions stay green while the
- * two answers drift apart, which is the failure worth catching.
- */
-test("both doors into ready refuse the same blocked draft, and both say so before they are used", async ({
+test("the unified English-draft review refuses a blocked draft before any write", async ({
   page,
 }) => {
   const { writes } = await openExecution(
@@ -542,93 +543,118 @@ test("both doors into ready refuse the same blocked draft, and both say so befor
     scenario({ claims: REVIEW_BLOCKING_CLAIMS }),
   );
 
-  // Door one: the review control on the reading surface.
+  // English drafts have one canonical readiness decision in the unified
+  // Content Shadow surface. The generic artifact editor/status door must not
+  // be duplicated beside it.
   const pass = page.locator("[data-review-pass]");
   await expect(pass).toBeDisabled();
-
-  // Door two: the workspace editor's own status control, one screen below.
-  await page
-    .locator(`[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"]`)
-    .getByRole("button", { name: "打开", exact: true })
-    .click();
-  const editor = page.locator("[data-studio-editor]");
-  const markReady = editor.getByRole("button", {
-    name: "标记为就绪",
-    exact: true,
-  });
-  await expect(markReady).toBeDisabled();
-
-  // The reason is a sibling element the control points at — never a tooltip,
-  // and never only in the rail above.
-  const reason = editor.locator("[data-studio-ready-blocked]");
-  await expect(reason).toBeVisible();
-  expect(await markReady.getAttribute("aria-describedby")).toBe(
-    await reason.getAttribute("id"),
-  );
-  expect(await markReady.getAttribute("title")).toBeNull();
-
-  // It is the Execution blocked block's OWN sentence, not a paraphrase of it:
-  // "cannot be verified here", and explicitly not a run failure.
-  await expect(reason).toContainText("无法在本轮冻结的研究记录中核实");
-  await expect(reason).toContainText("这不是运行失败");
-  await expect(reason).toContainText("下一步：");
-  const reasonText = (await reason.innerText()).trim();
-  expect(reasonText).not.toContain("错误");
-  expect(reasonText).not.toContain("重试");
-
-  // Both causes are named, and each carries the state word, because a claim
-  // label names a PROPERTY: `sc9b` reads as the property when SATISFIED, so a
-  // bare label would sit under the refusal reading like a pass.
-  const causes = reason.locator("[data-studio-ready-blocked-cause]");
-  await expect(causes).toHaveCount(2);
-  await expect(causes.filter({ hasText: "断言缺少可核实出处" })).toHaveCount(1);
   await expect(
-    causes.filter({ hasText: "列出的来源与冻结记录一致 · 未通过" }),
-  ).toHaveCount(1);
-
-  // Never the danger family. A `blocked` verdict is the gate working, and the
-  // Task 7/8 ruling is that it is never painted red wherever it is stated.
-  const coralText = await resolveColor(page, "var(--sf-coral-text)");
-  const mutedText = await resolveColor(page, "var(--sf-muted)");
-  // Guard the comparison: if the two tokens resolved alike, "is not coral"
-  // would pass for free.
-  expect(mutedText).not.toBe(coralText);
-  const painted = await reason.evaluate(
-    (element) => getComputedStyle(element).color,
-  );
-  expect(painted).not.toBe(coralText);
-  expect(painted).toBe(mutedText);
+    page.getByRole("button", { name: "标记为就绪", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("[data-studio-ready-blocked]:visible"),
+  ).toHaveCount(0);
 
   // Natively disabled: a forced click reaches no handler, so nothing is
   // written and the operator never learns the refusal from a response.
   const before = writes.length;
-  await markReady.evaluate((element: HTMLButtonElement) => element.click());
+  await pass.evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.locator("[data-review-confirm]")).toHaveCount(0);
   expect(writes.length).toBe(before);
 });
 
-/**
- * The other side of the same judgement.
- *
- * A control that disabled itself on every draft would satisfy the test above
- * and take away a path the server would have accepted. Both doors have to open
- * on a deliverable the gate did not block, and they are asserted together for
- * the same reason they are asserted together above.
- */
-test("both doors open on a draft the gate did not block", async ({ page }) => {
+test("the unified English-draft review opens when the gate does not block", async ({
+  page,
+}) => {
   await openExecution(page, scenario());
 
   await expect(page.locator("[data-review-pass]")).toBeEnabled();
-
-  await page
-    .locator(`[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"]`)
-    .getByRole("button", { name: "打开", exact: true })
-    .click();
-  const editor = page.locator("[data-studio-editor]");
   await expect(
-    editor.getByRole("button", { name: "标记为就绪", exact: true }),
-  ).toBeEnabled();
-  await expect(editor.locator("[data-studio-ready-blocked]")).toHaveCount(0);
+    page.getByRole("button", { name: "标记为就绪", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("[data-studio-ready-blocked]:visible"),
+  ).toHaveCount(0);
+
+  const shadow = page.locator("[data-content-shadow]");
+  const reviewTab = shadow.getByRole("tab", {
+    name: "审阅文档",
+    exact: true,
+  });
+  const editTab = shadow.getByRole("tab", {
+    name: "编辑 Markdown",
+    exact: true,
+  });
+  await editTab.click();
+  const content = page.getByLabel("内容", { exact: true });
+  await expect(content).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "标记为就绪", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("[aria-labelledby^='sf-markdown-']"),
+  ).toHaveCount(0);
+
+  await content.fill(`${DRAFT_BODY}\n\nUnsaved keyboard guard.`);
+  await editTab.focus();
+  await editTab.press("ArrowLeft");
+  await expect(editTab).toHaveAttribute("aria-selected", "true");
+  await expect(reviewTab).toBeDisabled();
+  await expect(content).toBeVisible();
+});
+
+test("a valid English draft without a matching Shadow run keeps the generic ready path", async ({
+  page,
+}) => {
+  const { writes } = await openExecution(
+    page,
+    scenario({ shadowRunAvailable: false }),
+  );
+
+  const ready = page.getByRole("button", {
+    name: "标记为就绪",
+    exact: true,
+  });
+  await expect(ready).toBeVisible();
+  await expect(ready).toBeEnabled();
+
+  const readyRequest = page.waitForRequest((request) => {
+    if (
+      request.method() !== "PATCH" ||
+      new URL(request.url()).pathname !==
+        `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`
+    ) {
+      return false;
+    }
+    return (
+      request.postDataJSON() as { readonly status?: string } | null
+    )?.status === "ready";
+  });
+  await ready.click();
+  expect((await readyRequest).postDataJSON()).toEqual({
+    baseRevision: 1,
+    status: "ready",
+  });
+  await expect(page.locator("[data-studio-ready-path]")).toBeVisible();
+  await expect(ready).toHaveCount(0);
+  expect(
+    writes.filter(
+      (write) =>
+        write.method === "PATCH" &&
+        new URL(write.url).pathname ===
+          `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`,
+    ),
+  ).toHaveLength(1);
+});
+
+test("an invalid English draft opens the Markdown repair editor without waiting for review detail", async ({
+  page,
+}) => {
+  await openExecution(page, scenario({ validationState: "invalid" }));
+
+  await expect(page.getByLabel("内容", { exact: true })).toBeVisible();
+  await expect(page.getByText("校验错误", { exact: true })).toBeVisible();
+  await expect(page.getByText("加载中", { exact: true })).toHaveCount(0);
 });
 
 test("a verdict for an older revision is marked stale and refuses to carry a review", async ({
@@ -741,7 +767,7 @@ test("an edit invalidates the earlier review: four things move together", async 
   page,
 }) => {
   const live = scenario();
-  await openExecution(page, live);
+  const { writes } = await openExecution(page, live);
 
   // Start from a reviewed revision 1.
   await page.locator("[data-review-pass]").click();
@@ -758,17 +784,41 @@ test("an edit invalidates the earlier review: four things move together", async 
   await expect(page.locator("[data-qa-human-review='passed']")).toBeVisible();
   await expect(page.locator("[data-review-stale]")).toHaveCount(0);
 
-  // Now an edit lands, through the product's own edit path: the workspace
-  // editor below appends a new immutable revision on the same deliverable.
-  await page
-    .locator(`[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"]`)
-    .getByRole("button", { name: "打开", exact: true })
+  // Edit the same deliverable through the unified workbench. The outer tab
+  // reveals the canonical Artifact editor, whose save appends revision 2.
+  const shadow = page.locator("[data-content-shadow]");
+  await shadow
+    .getByRole("tab", { name: "编辑 Markdown", exact: true })
     .click();
-  const editor = page.locator("[data-studio-editor]");
-  await editor
-    .locator("#sf-artifact-content")
-    .fill("# Edited\n\nA reviewer changed the body.");
-  await editor.getByRole("button", { name: "保存版本", exact: true }).click();
+  const content = page.getByLabel("内容", { exact: true });
+  await expect(content).toBeVisible();
+  await content.fill(`${DRAFT_BODY}\n\nA reviewer changed the body.`);
+
+  const patchResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      new URL(response.url()).pathname ===
+        `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`,
+  );
+  await page
+    .getByRole("button", { name: "保存版本", exact: true })
+    .click();
+  expect((await patchResponse).status()).toBe(200);
+  await expect
+    .poll(
+      () =>
+        writes.filter(
+          (write) =>
+            write.method === "PATCH" &&
+            new URL(write.url).pathname ===
+              `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`,
+        ).length,
+    )
+    .toBe(1);
+
+  // A refresh re-enters the review surface from canonical server projections.
+  await page.reload();
+  await expect(page.locator("[data-content-shadow]")).toBeVisible();
 
   // ALL FOUR, in one assertion block. Wiring any one of them on its own — the
   // revision number, the status, the human-review row, the banner — still

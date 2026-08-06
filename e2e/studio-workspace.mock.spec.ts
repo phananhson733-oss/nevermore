@@ -16,9 +16,9 @@ async function openStudio(page: Page): Promise<void> {
   await expect(
     page
       .locator("[data-studio-page-hero]")
-      .getByRole("heading", { name: "Turn actions into client-ready work." }),
+      .getByRole("heading", { name: "Execution center", level: 1 }),
   ).toBeVisible();
-  await expect(page.locator("[data-studio-editor]" )).toBeVisible();
+  await expect(page.locator("[data-studio-editor]")).toBeVisible();
   // Exactly one `main` landmark — the shell's (`layout.tsx:187`). No axe scan
   // here can report a duplicate: the scans select WCAG tags and keep only
   // critical/serious, while `landmark-no-duplicate-main` is best-practice at
@@ -46,14 +46,17 @@ async function expectDesktopWorkspace(
   const queue = page.locator("[data-studio-queue]");
   const editor = page.locator("[data-studio-editor-column]");
   const rail = page.locator("[data-studio-evidence-rail]");
-  const content = page.locator("#sf-artifact-content");
+  const markdownPreview = page.locator("[data-studio-markdown-preview]");
+  const contentSurface = markdownPreview.or(
+    page.locator("#sf-artifact-content"),
+  );
   const [workspaceBox, queueBox, editorBox, railBox, contentBox] =
     await Promise.all([
       workspace.boundingBox(),
       queue.boundingBox(),
       editor.boundingBox(),
       rail.boundingBox(),
-      content.boundingBox(),
+      contentSurface.boundingBox(),
     ]);
 
   expect(workspaceBox).not.toBeNull();
@@ -61,65 +64,66 @@ async function expectDesktopWorkspace(
   expect(editorBox).not.toBeNull();
   expect(railBox).not.toBeNull();
   expect(contentBox).not.toBeNull();
-  expect(Math.abs(queueBox!.width - 238)).toBeLessThanOrEqual(1);
-  expect(Math.abs(railBox!.width - 238)).toBeLessThanOrEqual(1);
-  expect(Math.abs(editorBox!.x - (queueBox!.x + queueBox!.width) - 14)).toBeLessThanOrEqual(1);
-  expect(Math.abs(railBox!.x - (editorBox!.x + editorBox!.width) - 14)).toBeLessThanOrEqual(1);
+  const queueRange =
+    viewport.width <= 1280
+      ? { min: 250, max: 288 }
+      : { min: 272, max: 316 };
+  expect(queueBox!.width).toBeGreaterThanOrEqual(queueRange.min);
+  expect(queueBox!.width).toBeLessThanOrEqual(queueRange.max);
+  expect(editorBox!.x).toBeGreaterThan(queueBox!.x + queueBox!.width);
+
+  const [editorPlacement, railPlacement] = await Promise.all(
+    [editor, rail].map((locator) =>
+      locator.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          column: style.gridColumnStart,
+          row: style.gridRowStart,
+        };
+      }),
+    ),
+  );
+  expect(editorPlacement).toEqual({ column: "2", row: "1" });
+  expect(railPlacement).toEqual(editorPlacement);
+  expect(Math.abs(railBox!.y - editorBox!.y)).toBeLessThanOrEqual(1);
+  expect(railBox!.x).toBeGreaterThanOrEqual(editorBox!.x);
+  expect(railBox!.x + railBox!.width).toBeLessThanOrEqual(
+    editorBox!.x + editorBox!.width + 1,
+  );
   expect(editorBox!.height).toBeGreaterThanOrEqual(660);
   expect(contentBox!.height).toBeGreaterThanOrEqual(480);
-  await expect(content).toHaveCSS("font-size", "14px");
+  await expect(contentSurface).toHaveCSS(
+    "font-size",
+    (await markdownPreview.count()) > 0 ? "17px" : "14px",
+  );
   await expect(queue).toHaveCSS("position", "sticky");
   await expect(rail).toHaveCSS("position", "sticky");
   await expectNoPageOverflow(page);
 }
 
-test("1920px keeps the 238 / canvas / 238 execution workspace and readable editor", async ({
+test("1920px keeps the two-column execution workspace and overlay rail readable", async ({
   page,
 }) => {
   await expectDesktopWorkspace(page, { width: 1920, height: 1080 });
 });
 
-test("1440px keeps the canonical three-column execution workspace and readable editor", async ({
+test("1440px keeps the two-column execution workspace and overlay rail readable", async ({
   page,
 }) => {
   await expectDesktopWorkspace(page, { width: 1440, height: 1000 });
 });
 
-test("1200px keeps queue and canvas together while the evidence rail spans below", async ({
+test("1200px keeps the compact two-column workspace and overlay rail readable", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1200, height: 1000 });
-  await openStudio(page);
-
-  const workspace = page.locator("[data-studio-workspace]");
-  const queue = page.locator("[data-studio-queue]");
-  const editor = page.locator("[data-studio-editor-column]");
-  const rail = page.locator("[data-studio-evidence-rail]");
-  const [workspaceBox, queueBox, editorBox, railBox] = await Promise.all([
-    workspace.boundingBox(),
-    queue.boundingBox(),
-    editor.boundingBox(),
-    rail.boundingBox(),
-  ]);
-
-  expect(workspaceBox).not.toBeNull();
-  expect(queueBox).not.toBeNull();
-  expect(editorBox).not.toBeNull();
-  expect(railBox).not.toBeNull();
-  expect(queueBox!.x).toBeLessThan(editorBox!.x);
-  expect(railBox!.y).toBeGreaterThanOrEqual(
-    Math.max(queueBox!.y + queueBox!.height, editorBox!.y + editorBox!.height) + 13,
-  );
-  expect(Math.abs(railBox!.x - workspaceBox!.x)).toBeLessThanOrEqual(1);
-  expect(Math.abs(railBox!.width - workspaceBox!.width)).toBeLessThanOrEqual(1);
-  await expect(rail).toHaveCSS("position", "static");
-  await expectNoPageOverflow(page);
+  await expectDesktopWorkspace(page, { width: 1200, height: 1000 });
 });
 
-test("390px stacks queue, editor, and evidence rail without horizontal overflow", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+async function expectSingleColumnWorkspace(
+  page: Page,
+  viewport: { readonly width: number; readonly height: number },
+): Promise<void> {
+  await page.setViewportSize(viewport);
   await openStudio(page);
 
   const workspace = page.locator("[data-studio-workspace]");
@@ -146,4 +150,16 @@ test("390px stacks queue, editor, and evidence rail without horizontal overflow"
   await expect(queue).toHaveCSS("position", "static");
   await expect(rail).toHaveCSS("position", "static");
   await expectNoPageOverflow(page);
+}
+
+test("1024px switches to one column with a static evidence rail", async ({
+  page,
+}) => {
+  await expectSingleColumnWorkspace(page, { width: 1024, height: 1000 });
+});
+
+test("390px stacks queue, editor, and evidence rail without horizontal overflow", async ({
+  page,
+}) => {
+  await expectSingleColumnWorkspace(page, { width: 390, height: 844 });
 });

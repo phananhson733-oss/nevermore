@@ -6,10 +6,11 @@
  * run, then edit an immutable revision chain and promote a validated draft to
  * `ready`. TanStack Query owns server-state (spec §3.2).
  *
- * Safety: model output is untrusted and is ALWAYS rendered as text (a `<pre>` or
- * an editable `<textarea>`) — never injected as HTML. `status` is conveyed by a
- * text label, never color alone (spec §4.4). Concurrency rides on `baseRevision`
- * (409 `STALE_REVISION` → refetch + inform); `ready` needs an empty
+ * Safety: model output is untrusted. Editable source remains plain text; the
+ * Markdown reading view renders only a separately allow-listed, sanitized HTML
+ * subset with embedded resources disabled. `status` is conveyed by a text label,
+ * never color alone (spec §4.4). Concurrency rides on `baseRevision` (409
+ * `STALE_REVISION` → refetch + inform); `ready` needs an empty
  * `validationErrors` set (422 `ARTIFACT_VALIDATION_FAILED` → surface the errors).
  */
 
@@ -18,10 +19,10 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -92,6 +93,7 @@ import type {
   ValidationState,
 } from "@/lib/api/hooks-studio";
 import { ProblemNotice, ProblemState } from "../_problem-display";
+import { ContentShadowArtifactPanel } from "../execution/_content-shadow.tsx";
 import { studioRunQueryOutcome } from "../_frontend-error-state.ts";
 import { useUnsavedNavigationGuard } from "../_unsaved-navigation-guard.ts";
 import {
@@ -136,6 +138,7 @@ import {
   type LinkedActionRailState,
 } from "./_action-override-view-model";
 import { actionsAwaitingArtifacts } from "./_pending-actions";
+import { renderStudioMarkdown } from "./_markdown-preview";
 import styles from "./studio.module.css";
 
 // ----------------------------------------------------------- Tone helpers ----
@@ -701,7 +704,7 @@ function PendingActionCard({
 
       <div className={styles.artActions}>
         <Button variant="primary" size="sm" onClick={onGenerate}>
-          {t("generateSubmit")}
+          {t("viewGeneration")}
         </Button>
       </div>
     </Card>
@@ -716,6 +719,9 @@ interface ArtifactEditorProps {
   readonly onClose: () => void;
   readonly onDirtyChange: (artifactId: string, dirty: boolean) => void;
   readonly onRegenerate: (() => void) | undefined;
+  readonly initialMarkdownMode?: MarkdownEditorMode;
+  readonly showMarkdownModeTabs?: boolean;
+  readonly allowReadyStatusChange?: boolean;
 }
 
 interface EditorFeedback {
@@ -724,6 +730,7 @@ interface EditorFeedback {
 }
 
 const NO_FEEDBACK: EditorFeedback = { top: null, errors: [] };
+type MarkdownEditorMode = "preview" | "edit";
 
 /**
  * Detail + editor for one artifact. It remains mounted across revision
@@ -735,6 +742,9 @@ function ArtifactEditor({
   onClose,
   onDirtyChange,
   onRegenerate,
+  initialMarkdownMode = "preview",
+  showMarkdownModeTabs = true,
+  allowReadyStatusChange = true,
 }: ArtifactEditorProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -751,6 +761,9 @@ function ArtifactEditor({
   );
   const [feedback, setFeedback] = useState<EditorFeedback>(NO_FEEDBACK);
   const [feedbackProblem, setFeedbackProblem] = useState<unknown | null>(null);
+  const [markdownMode, setMarkdownMode] =
+    useState<MarkdownEditorMode>(initialMarkdownMode);
+  const markdownTabsRef = useRef<HTMLDivElement>(null);
   const awaitingRevision = useRef<number | null>(null);
 
   const busy = update.isPending;
@@ -779,6 +792,17 @@ function ArtifactEditor({
           ? "sf-ready-blocked-hint"
           : undefined;
   const isJson = current?.contentFormat === "json";
+  const isMarkdown = current?.contentFormat === "markdown";
+  const renderedMarkdown = useMemo(
+    () => (isMarkdown ? renderStudioMarkdown(draft) : ""),
+    [draft, isMarkdown],
+  );
+
+  useEffect(() => {
+    setMarkdownMode(
+      current?.contentFormat === "markdown" ? initialMarkdownMode : "edit",
+    );
+  }, [artifact.id, current?.contentFormat, initialMarkdownMode]);
 
   const discardLocalChanges = useCallback((): void => {
     setDraft(savedDraft);
@@ -905,6 +929,30 @@ function ArtifactEditor({
     }
   }
 
+  function onMarkdownModeKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='tab']"),
+    );
+    const activeIndex = markdownMode === "preview" ? 0 : 1;
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (activeIndex + 1) % tabs.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex = (activeIndex - 1 + tabs.length) % tabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = tabs.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextMode: MarkdownEditorMode = nextIndex === 0 ? "preview" : "edit";
+    setMarkdownMode(nextMode);
+    tabs[nextIndex]?.focus();
+  }
+
   return (
     <Panel
       padding="lg"
@@ -965,16 +1013,28 @@ function ArtifactEditor({
           <p className={styles.errorsRepairHint}>
             {t("validationRepairHint")}
           </p>
-          {onRegenerate !== undefined ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onRegenerate}
-              disabled={busy}
-            >
-              {t("regenerate")}
-            </Button>
-          ) : null}
+          <div className={styles.editorActions}>
+            {isMarkdown && showMarkdownModeTabs ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setMarkdownMode("edit")}
+                disabled={busy}
+              >
+                {t("markdownEdit")}
+              </Button>
+            ) : null}
+            {onRegenerate !== undefined ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onRegenerate}
+                disabled={busy}
+              >
+                {t("regenerate")}
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -998,22 +1058,99 @@ function ArtifactEditor({
             </dl>
           ) : null}
 
-          <Field
-            label={t("editContent")}
-            help={t("editContentHelp")}
-            htmlFor="sf-artifact-content"
-          >
-            <TextArea
-              id="sf-artifact-content"
-              className={styles.contentArea}
-              rows={isJson ? 12 : 16}
-              maxLength={MAX_ARTIFACT_CONTENT_CHARS}
-              spellCheck={false}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              disabled={busy}
-            />
-          </Field>
+          {isMarkdown && showMarkdownModeTabs ? (
+            <div className={styles.markdownModeBar}>
+              <div
+                ref={markdownTabsRef}
+                className={styles.markdownModeTabs}
+                role="tablist"
+                aria-label={t("markdownModeLabel")}
+                onKeyDown={onMarkdownModeKeyDown}
+              >
+                {(["preview", "edit"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    id={`sf-markdown-${artifact.id}-${mode}-tab`}
+                    aria-controls={`sf-markdown-${artifact.id}-panel`}
+                    aria-selected={markdownMode === mode}
+                    tabIndex={markdownMode === mode ? 0 : -1}
+                    className={cx(
+                      styles.markdownModeTab,
+                      markdownMode === mode && styles.markdownModeTabActive,
+                    )}
+                    onClick={() => setMarkdownMode(mode)}
+                  >
+                    {mode === "preview"
+                      ? t("markdownPreview")
+                      : t("markdownEdit")}
+                  </button>
+                ))}
+              </div>
+              <p className={styles.markdownModeHelp}>
+                {t("markdownModeHelp")}
+              </p>
+            </div>
+          ) : null}
+
+          {isMarkdown ? (
+            <div
+              role={showMarkdownModeTabs ? "tabpanel" : undefined}
+              id={`sf-markdown-${artifact.id}-panel`}
+              aria-labelledby={
+                showMarkdownModeTabs
+                  ? `sf-markdown-${artifact.id}-${markdownMode}-tab`
+                  : undefined
+              }
+              tabIndex={showMarkdownModeTabs ? 0 : undefined}
+            >
+              {markdownMode === "preview" ? (
+                <section
+                  className={styles.markdownPreview}
+                  aria-label={t("markdownPreviewLabel")}
+                  data-studio-markdown-preview=""
+                  // `renderStudioMarkdown` removes raw HTML, embedded resources,
+                  // event handlers, and unsafe URL schemes before this HTML sink.
+                  dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
+                />
+              ) : (
+                <Field
+                  label={t("editContent")}
+                  help={t("markdownEditHelp")}
+                  htmlFor="sf-artifact-content"
+                >
+                  <TextArea
+                    id="sf-artifact-content"
+                    className={styles.contentArea}
+                    rows={16}
+                    maxLength={MAX_ARTIFACT_CONTENT_CHARS}
+                    spellCheck={false}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    disabled={busy}
+                  />
+                </Field>
+              )}
+            </div>
+          ) : (
+            <Field
+              label={t("editContent")}
+              help={t("editContentHelp")}
+              htmlFor="sf-artifact-content"
+            >
+              <TextArea
+                id="sf-artifact-content"
+                className={styles.contentArea}
+                rows={isJson ? 12 : 16}
+                maxLength={MAX_ARTIFACT_CONTENT_CHARS}
+                spellCheck={false}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                disabled={busy}
+              />
+            </Field>
+          )}
 
           <Field label={t("editorNote")} htmlFor="sf-artifact-note">
             <TextArea
@@ -1044,7 +1181,7 @@ function ArtifactEditor({
               back is the editor above — saving a revision always returns the
               deliverable to `draft` — and the hint below says so.
             */}
-            {artifact.status === "ready" ? null : (
+            {!allowReadyStatusChange || artifact.status === "ready" ? null : (
               <Button
                 variant="primary"
                 onClick={() => void onSetStatus("ready")}
@@ -1080,7 +1217,7 @@ function ArtifactEditor({
             <p id="sf-status-dirty-hint" className={styles.readyHint}>
               {t("saveBeforeStatusChange")}
             </p>
-          ) : artifact.status === "ready" ? (
+          ) : allowReadyStatusChange && artifact.status === "ready" ? (
             /* `ready` is not a dead end. The forward path exists, it is just
                not a status button: editing appends a new immutable revision
                and the service sends the deliverable back to `draft`. Say it,
@@ -1088,11 +1225,11 @@ function ArtifactEditor({
             <p data-studio-ready-path="" className={styles.readyHint}>
               {t("readyEditPath")}
             </p>
-          ) : readyBlock === "validation" ? (
+          ) : allowReadyStatusChange && readyBlock === "validation" ? (
             <p id="sf-ready-hint" className={styles.readyHint}>
               {t("markReadyHint")}
             </p>
-          ) : readyBlock === "adoption_blocked" ? (
+          ) : allowReadyStatusChange && readyBlock === "adoption_blocked" ? (
             <AdoptionBlockedHint
               claimIds={artifact.adoption?.blockingClaimIds ?? []}
             />
@@ -1620,6 +1757,8 @@ function GenerateForm({
 }: GenerateFormProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
+  const tBand = useTranslations("priorityBand");
+  const tLane = useTranslations("lane");
   const create = useCreateArtifact(projectId, action.id);
   // Project metadata is needed only after the operator chooses an action. Keep
   // it out of Studio's first-paint request set; the action locale remains a
@@ -1751,6 +1890,41 @@ function GenerateForm({
           </p>
         )
       ) : null}
+
+      <section
+        className={styles.generateContext}
+        aria-labelledby="sf-generation-context-title"
+      >
+        <div className={styles.generateContextHead}>
+          <div>
+            <span className="sf-eyebrow">
+              {t("generationRecommendation")}
+            </span>
+            <h3
+              id="sf-generation-context-title"
+              className={styles.generateContextTitle}
+            >
+              {action.title}
+            </h3>
+          </div>
+          <div className={styles.pendingActionMeta}>
+            <Badge tone="accent">{tBand(action.priorityBand)}</Badge>
+            <Badge>{tLane(action.roadmapLane)}</Badge>
+          </div>
+        </div>
+        <p className={styles.generateContextCopy}>{action.description}</p>
+        <dl className={styles.generateFacts}>
+          <div>
+            <dt>{t("expectedOutcomeLabel")}</dt>
+            <dd>{action.expectedOutcome}</dd>
+          </div>
+          <div>
+            <dt>{t("generationDefaultsLabel")}</dt>
+            <dd>{t("generationRecommendationHint")}</dd>
+          </div>
+        </dl>
+        <p className={styles.generationBoundary}>{t("generationBoundary")}</p>
+      </section>
 
       <div className={styles.formGrid}>
         {expected === null ? (
@@ -1969,24 +2143,9 @@ function ActionPicker({
 export function StudioClient({
   projectId,
   initialDeepLink,
-  afterHero,
 }: {
   readonly projectId: string;
   readonly initialDeepLink: ExecutionDeepLink;
-  /**
-   * Rendered between the page heading and the delivery workspace: the
-   * deliverable's own body, so the first thing after the heading is the work
-   * rather than a queue of links to it.
-   *
-   * Required, and the docstring said otherwise until 2026-07-26 — "Studio
-   * passes nothing and is unchanged" described `/p/{id}/studio`, which has been
-   * a `redirect()` to `/execution` since Slice 1. `execution/_execution.tsx:29`
-   * is the only caller this component has, and it always passes a body, so the
-   * optional branch had no caller and no design. Making it required means a
-   * future route cannot quietly render the queue-only variant that nothing
-   * specifies; it has to decide what goes here.
-   */
-  readonly afterHero: ReactNode;
 }) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -2261,7 +2420,6 @@ export function StudioClient({
   });
   const queueHasMore =
     artifactsQuery.hasNextPage === true || actionsQuery.hasNextPage === true;
-  const readyCount = artifacts.filter((a) => a.status === "ready").length;
   const draftCount = artifacts.filter((a) => a.status === "draft").length;
   const selectedEditorDirty =
     selectedId !== null && dirtyArtifactId === selectedId;
@@ -3190,6 +3348,16 @@ export function StudioClient({
     void artifactsQuery.refetch();
   }
 
+  const selectedArtifactRegenerate =
+    selected !== null &&
+    selectedAction !== undefined &&
+    selectedAction.status !== "dismissed" &&
+    !generationFenceKeys.has(
+      artifactGenerationKey(selected.actionId, selected.artifactType),
+    )
+      ? () => openGenerate(selectedAction, selected.outputLocale)
+      : undefined;
+
   return (
     <div className={styles.page}>
       <header className={styles.hero} data-studio-page-hero="">
@@ -3236,35 +3404,7 @@ export function StudioClient({
           </div>
         </div>
 
-        <section className={styles.statStrip} aria-label={t("summaryTitle")}>
-          <article className={styles.statCard}>
-            <span className={styles.statMetric}>
-              {artifactsInitialLoading
-                ? "—"
-                : `${artifacts.length}${artifactsQuery.hasNextPage ? "+" : ""}`}
-            </span>
-            <span className={styles.statLabel}>{t("statOutputs")}</span>
-          </article>
-          <article className={styles.statCard}>
-            <span className={styles.statMetric}>
-              {artifactsInitialLoading
-                ? "—"
-                : `${readyCount}${artifactsQuery.hasNextPage ? "+" : ""}`}
-            </span>
-            <span className={styles.statLabel}>{t("statReady")}</span>
-          </article>
-          <article className={styles.statCard}>
-            <span className={styles.statMetric}>
-              {artifactsInitialLoading
-                ? "—"
-                : `${draftCount}${artifactsQuery.hasNextPage ? "+" : ""}`}
-            </span>
-            <span className={styles.statLabel}>{t("statDrafts")}</span>
-          </article>
-        </section>
       </header>
-
-      {afterHero}
 
       {actionsInitialError ? (
         <ProblemNotice
@@ -3581,7 +3721,11 @@ export function StudioClient({
         </Panel>
 
         <section
-          className={styles.editorColumn}
+          className={cx(
+            styles.editorColumn,
+            selected?.artifactType === "english_blog_draft" &&
+              styles.editorColumnWide,
+          )}
           data-studio-editor-column=""
           aria-label={t("editorCanvas")}
         >
@@ -3619,25 +3763,40 @@ export function StudioClient({
               onCancel={() => setPickerOpen(false)}
             />
           ) : selected !== null ? (
-            <ArtifactEditor
-              key={selected.id}
-              projectId={projectId}
-              artifact={selected}
-              onClose={closeEditor}
-              onDirtyChange={onEditorDirtyChange}
-              onRegenerate={
-                selectedAction !== undefined &&
-                selectedAction.status !== "dismissed" &&
-                !generationFenceKeys.has(
-                  artifactGenerationKey(
-                    selected.actionId,
-                    selected.artifactType,
-                  ),
-                )
-                  ? () => openGenerate(selectedAction, selected.outputLocale)
-                  : undefined
-              }
-            />
+            selected.artifactType === "english_blog_draft" ? (
+              <ContentShadowArtifactPanel
+                key={selected.id}
+                projectId={projectId}
+                artifact={selected}
+                action={selectedAction}
+                renderEditor={({ allowReadyStatusChange }) => (
+                  <ArtifactEditor
+                    key={selected.id}
+                    projectId={projectId}
+                    artifact={selected}
+                    onClose={closeEditor}
+                    onDirtyChange={onEditorDirtyChange}
+                    onRegenerate={selectedArtifactRegenerate}
+                    initialMarkdownMode="edit"
+                    showMarkdownModeTabs={false}
+                    allowReadyStatusChange={allowReadyStatusChange}
+                  />
+                )}
+                editorDirty={selectedEditorDirty}
+              />
+            ) : (
+              <ArtifactEditor
+                key={selected.id}
+                projectId={projectId}
+                artifact={selected}
+                onClose={closeEditor}
+                onDirtyChange={onEditorDirtyChange}
+                onRegenerate={selectedArtifactRegenerate}
+                initialMarkdownMode={
+                  selected.validationState === "invalid" ? "edit" : "preview"
+                }
+              />
+            )
           ) : (
             <EditorPlaceholder
               generationUnavailable={generationUnavailable}
@@ -3649,14 +3808,16 @@ export function StudioClient({
           )}
         </section>
 
-        <EvidenceRail
-          projectId={projectId}
-          artifact={selected}
-          action={selectedAction}
-          linkedActionState={linkedActionState}
-          editorDirty={selectedEditorDirty}
-          onLinkedActionRetry={retryLinkedAction}
-        />
+        {selected?.artifactType === "english_blog_draft" ? null : (
+          <EvidenceRail
+            projectId={projectId}
+            artifact={selected}
+            action={selectedAction}
+            linkedActionState={linkedActionState}
+            editorDirty={selectedEditorDirty}
+            onLinkedActionRetry={retryLinkedAction}
+          />
+        )}
       </div>
     </div>
   );
