@@ -22,7 +22,7 @@ An affordable SEO tool is **software whose price, measured against the recurring
 
 A buyer searching for affordable tools finds price-sorted lists and almost nothing on how much manual work each tool leaves behind. So this piece compares affordable SEO tools the way an operator buys them — by workflow coverage per dollar.
 
-## Why It Matters for Your Workflow
+## Why the Sticker Price Misleads You for Six Weeks
 
 The cost of the sticker-price framing is invisible until after you have bought. A team picks the tool with the lowest monthly fee, then discovers six weeks later that it tracks rankings but does nothing for audits, reporting, or keyword research — so the cheapest tool quietly became the most expensive, paid for in the hours it never gave back.
 
@@ -51,7 +51,7 @@ A startup needs the audit it cannot afford a consultant to run, and it needs it 
 Most disappointment with affordable SEO tools traces back to a few predictable misreads:
 
 1. **"Lowest monthly price means most affordable."** A tool that automates one job and leaves four manual costs more per recovered hour than a pricier tool that covers the workflow. Affordability is a ratio, not a sticker.
-2. **"Free tiers are always the cheapest path."** A free tool that caps audits at ten pages or pulls rankings once a week forces manual workarounds that cost more in time than a paid plan would in dollars. Count the friction, then a [free SEO consultation](/blog/free-seo-consultation) can tell you which limits actually bite.
+2. **"Free tiers are always the cheapest path."** A free tool that caps audits at ten pages or pulls rankings once a week forces manual workarounds that cost more in time than a paid plan would in dollars. Count the friction, then a [free SEO consultation](/blog/free-seo-company) can tell you which limits actually bite.
 3. **"Stacking cheap point tools beats one platform."** Five $15 tools is $75 plus the time to stitch their data together. The honest comparison is total cost — fees plus integration toil — not the lowest single line item.
 4. **"The SERP's cheapest-tools lists are buyer guides."** Most stop at features and price; few compute cost per job for you. Read them for the price column and do that division yourself.
 
@@ -111,7 +111,7 @@ Not necessarily. Price often reflects workflow coverage and seat count more than
 
 ## Take Action
 
-Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you buy on price. You will see your real cost per recovered hour and which "cheap" tool would have quietly cost the most. [Start your free GenGrowth trial](https://gengrowth.ai/app) and baseline one workflow this week.
+Map your own five SEO jobs to hours, then run one workflow — your biggest time sink — through GenGrowth before you buy on price. You will see your real cost per recovered hour and which "cheap" tool would have quietly cost the most. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and baseline one workflow this week.
 
 ## Sources
 

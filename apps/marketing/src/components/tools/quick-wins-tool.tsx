@@ -1,5 +1,5 @@
-// @input  -- locale, Search Console connection state, public /api/tools/quick-wins response
-// @output -- connect prompt, run state, and the rendered evidence table
+// @input  -- locale, GSC state, quick-wins API, consent-gated event tracker
+// @output -- connect/run/evidence states plus tool_start/tool_complete analytics
 // @pos    -- primary client surface for /[locale]/tools/seo-quick-wins
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -11,6 +11,7 @@ import { useTranslations } from "next-intl";
 import type { QuickWinsResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
+import { trackMarketingEvent } from "@/components/layout/google-analytics";
 import { GscConnectPanel } from "./gsc-connect-panel";
 import { QuickWinsResults } from "./quick-wins-results";
 
@@ -55,6 +56,7 @@ export function QuickWinsTool({
   const [result, setResult] = useState<QuickWinsResult | null>(null);
 
   async function run(target: string) {
+    trackMarketingEvent("tool_start", { tool_name: "seo_quick_wins" });
     setLoading(true);
     setErrorCode(null);
     setResult(null);
@@ -76,6 +78,7 @@ export function QuickWinsTool({
         return;
       }
       setResult(body.data.result);
+      trackMarketingEvent("tool_complete", { tool_name: "seo_quick_wins" });
     } catch {
       setErrorCode("unknown");
     } finally {

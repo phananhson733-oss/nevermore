@@ -36,6 +36,18 @@ export type {
 } from "./context.ts";
 
 export {
+  buildContextProjectionV1,
+  parseContextProjectionV1,
+  CONTEXT_PROJECTION_SCHEMA_VERSION,
+  CONTEXT_PROJECTION_COMPILER_VERSION,
+} from "./context-projection.ts";
+export type {
+  BuildContextProjectionV1Input,
+  ContextProjectionProfileGeneration,
+  ContextProjectionV1,
+} from "./context-projection.ts";
+
+export {
   GOVERNANCE_PROJECTION_VERSION,
   parseGovernanceProjectionV1,
 } from "./governance.ts";
@@ -57,7 +69,11 @@ export type {
   GovernanceCompetitorOriginKind,
 } from "./governance.ts";
 
-export { parseIcp, isEnglishProject } from "./icp.ts";
+export {
+  parseIcp,
+  parseIcpForContextProjectionV1,
+  isEnglishProject,
+} from "./icp.ts";
 export type {
   EngineIcp,
   EngineConversion,
@@ -155,12 +171,16 @@ export type {
   ContentDecayTrigger,
 } from "./content-decay-monitor.ts";
 
-// The 11-rule registry (`ALL_RULES`) is assembled in ./rules/index.ts once the
-// rule modules land; re-exported here.
+// Rule-set generations are assembled in ./rules/index.ts and re-exported here
+// so manifest writers and executors never retype version literals.
 export {
   ALL_RULES,
+  CONTEXTUAL_ALL_RULES,
+  CONTEXTUAL_RULE_SET_VERSION,
   LEGACY_ALL_RULES,
   LEGACY_RULE_SET_VERSION,
   GOVERNED_LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_ALL_RULES,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
   rulesForRuleSetVersion,
 } from "./rules/index.ts";

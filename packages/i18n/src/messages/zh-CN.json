@@ -1239,6 +1239,30 @@
     "runStatusReadError": "运行状态暂时不可用。在确认其状态前，本次运行将保持锁定。",
     "runStatusLabel": "诊断运行状态",
     "objectNavLabel": "增长地图对象",
+    "executionPreview": {
+      "eyebrow": "执行预览",
+      "validationTarget": "验证目标",
+      "artifactType": "交付物",
+      "effort": "投入成本",
+      "risk": "风险",
+      "notAvailable": "该 Finding 暂无可确定生成的执行预览。",
+      "artifactTypes": {
+        "content_brief": "内容简报",
+        "metadata_rewrite": "元数据改写",
+        "technical_ticket": "技术工单",
+        "english_blog_draft": "English 博客草稿"
+      },
+      "efforts": {
+        "small": "小",
+        "medium": "中",
+        "large": "大"
+      },
+      "risks": {
+        "low": "低",
+        "medium": "中",
+        "high": "高"
+      }
+    },
     "modes": {
       "pages": {
         "label": "页面与机会",

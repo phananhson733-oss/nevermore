@@ -26,6 +26,7 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   FINDING_REGISTRY,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
@@ -290,6 +291,10 @@ async function seedExport(handle: DbHandle): Promise<{
     siteId: site.id,
     createdBy: actorId,
   });
+  const icpProfile = {
+    productName: "Snapshot",
+    oneLineDescription: "Export integration fixture.",
+  };
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -297,8 +302,8 @@ async function seedExport(handle: DbHandle): Promise<{
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Snapshot" },
-      content_hash: contentHash({ fixture: randomUUID() }),
+      profile: icpProfile,
+      content_hash: contentHash(icpProfile),
       created_by: actorId,
     })
     .returning();
@@ -326,6 +331,7 @@ async function seedExport(handle: DbHandle): Promise<{
     site.id,
     icp!,
     snapshot,
+    site.language_codes,
   );
   await new DiagnosticRunsRepository(handle.db).insert({
     runId: diagnosticRunId,
@@ -488,8 +494,14 @@ async function seedExport(handle: DbHandle): Promise<{
 function exportDiagnosticManifest(
   projectId: string,
   siteId: string,
-  icp: { readonly id: string; readonly version: number; readonly content_hash: string },
+  icp: {
+    readonly id: string;
+    readonly version: number;
+    readonly content_hash: string;
+    readonly profile: unknown;
+  },
   snapshot: DataSnapshotRow,
+  siteLanguageCodes: readonly string[],
 ): Record<string, unknown> {
   return {
     projectId,
@@ -517,6 +529,11 @@ function exportDiagnosticManifest(
       keywordClusters: [],
       competitors: [],
     },
+    contextProjection: buildContextProjectionV1({
+      profile: icp.profile,
+      profileContentHash: icp.content_hash,
+      siteLanguageCodes,
+    }),
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",

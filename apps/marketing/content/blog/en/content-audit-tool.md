@@ -22,7 +22,7 @@ A content audit tool is **software that evaluates every existing page against it
 
 A content manager searching for one wants a verdict on each page. The SERP hands back a technical scanner instead. This guide compares the two so you buy the one that matches the job.
 
-## Why It Matters for Your Workflow
+## Why You Only Notice the Mismatch After the Purchase
 
 The mismatch is expensive because you only notice it after the purchase. A team types the query into Google, installs the top result — usually a site crawler — and gets a 2,000-row export of missing meta descriptions and redirect chains. Useful for a developer. Useless for the question that started the search: of everything we have already published, what should we touch next?
 
@@ -46,7 +46,7 @@ A SaaS marketer with a target keyword faces one choice a crawler never surfaces:
 
 A startup with 40 early posts and no SEO hire needs to know which 10 to invest in and which 30 to retire so crawl budget and internal links concentrate on pages that can rank. The right software here automates the first read of the whole library — the kind of structured pass a [local SEO audit](/blog/local-seo-audit) formalizes — so a non-specialist sees the keep/update/remove split before writing anything new.
 
-## Common Implementation Misreadings
+## Why a Site Crawler Is Not the Same Thing
 
 Most disappointment with this category traces back to a handful of predictable misreads:
 
@@ -114,7 +114,7 @@ No, it sequences with it. The audit tells you what you already have and whether 
 
 ## Take Action
 
-List your published URLs, attach traffic and freshness to each, and run one keep / update / merge / remove pass before you commission another new page. You will see which pages a content audit tool can save and which are dead weight. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one content cluster this week.
+List your published URLs, attach traffic and freshness to each, and run one keep / update / merge / remove pass before you commission another new page. You will see which pages a content audit tool can save and which are dead weight. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one content cluster this week.
 
 ## Sources
 

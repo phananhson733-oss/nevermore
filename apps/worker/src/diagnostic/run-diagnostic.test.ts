@@ -32,8 +32,12 @@ import {
   type SiteRow,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   DiagnosticContext,
   GOVERNANCE_PROJECTION_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
   type FindingTargetDraft,
@@ -59,7 +63,7 @@ import {
   warnOnSlowRules,
 } from "./run-diagnostic.ts";
 
-const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
+const ICP_CONTENT_HASH = "c".repeat(64);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -451,20 +455,25 @@ function diagnosticFixture(inputManifest: Record<string, unknown>): {
   const frozenManifest = {
     projectId: scope.projectId,
     siteId: "site-1",
-    icp: { id: "icp-1", version: 1, contentHash: "icp-hash" },
+    icp: { id: "icp-1", version: 1, contentHash: ICP_CONTENT_HASH },
     snapshots: [],
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
-    ...(requestedRuleSetVersion === LEGACY_RULE_SET_VERSION
-      ? {}
-      : {
+    ...(requestedRuleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION ||
+    requestedRuleSetVersion === LINKGRAPH_LEGACY_RULE_SET_VERSION ||
+    requestedRuleSetVersion === RULE_SET_VERSION
+      ? {
           governance: {
             projectionVersion: GOVERNANCE_PROJECTION_VERSION,
             keywordClusters: [],
             competitors: [],
           },
-        }),
+        }
+      : {}),
+    ...(requestedRuleSetVersion === RULE_SET_VERSION
+      ? { contextProjection: currentContextProjection() }
+      : {}),
     ...inputManifest,
   };
   const ruleSetVersion = String(frozenManifest.ruleSetVersion);
@@ -483,7 +492,7 @@ function diagnosticFixture(inputManifest: Record<string, unknown>): {
       prompt_set_version: promptSetVersion,
       output_locale: "en",
       input_manifest: frozenManifest,
-      input_hash: contentHash(frozenManifest),
+      input_hash: contentHash(frozenManifest as unknown as CanonicalValue),
       coverage: {},
       created_at: FROZEN_AT,
     } satisfies DiagnosticRunRow,
@@ -717,6 +726,8 @@ async function runObservationValidationFixture(
     readonly frozenPages?: readonly FrozenPageIdentity[];
     readonly sitePages?: readonly SitePageIdentity[];
     readonly governance?: unknown;
+    readonly contextProjection?: unknown;
+    readonly ruleSetVersion?: string;
     readonly source?: {
       readonly datasetKey: string;
       readonly schemaVersion?: string;
@@ -748,9 +759,15 @@ async function runObservationValidationFixture(
       : [crawl.snapshot, source.snapshot];
   const fixture = diagnosticFixture({
     snapshots: manifests,
+    ...(lineage.ruleSetVersion === undefined
+      ? {}
+      : { ruleSetVersion: lineage.ruleSetVersion }),
     ...(lineage.governance === undefined
       ? {}
       : { governance: lineage.governance }),
+    ...(lineage.contextProjection === undefined
+      ? {}
+      : { contextProjection: lineage.contextProjection }),
   });
   const transaction = vi.fn();
   const ctx = unitContext(transaction);
@@ -874,10 +891,20 @@ function validIcpRow(): IcpProfileRow {
       defaultDeliveryLocale: "en",
       marketCodes: ["US"],
     },
-    content_hash: "icp-hash",
+    content_hash: ICP_CONTENT_HASH,
     created_by: "actor-1",
     created_at: FROZEN_AT,
   };
+}
+
+function currentContextProjection(
+  siteLanguageCodes: readonly string[] = ["en"],
+) {
+  return buildContextProjectionV1({
+    profile: validIcpRow().profile,
+    profileContentHash: ICP_CONTENT_HASH,
+    siteLanguageCodes,
+  });
 }
 
 function unitContext(transaction = vi.fn()): WorkerContext {
@@ -1257,6 +1284,26 @@ describe("diagnostic frozen snapshot validation", () => {
     expect(result.terminal).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["0.2.2", GOVERNED_LEGACY_RULE_SET_VERSION],
+    ["0.2.3", LINKGRAPH_LEGACY_RULE_SET_VERSION],
+  ] as const)(
+    "replays the governed %s manifest without synthesizing a context projection",
+    async (_generation, ruleSetVersion) => {
+      const result = await runObservationValidationFixture(
+        "crawl",
+        availableObservationRow(OBSERVATION_FIXTURES[0]),
+        { ruleSetVersion },
+      );
+
+      const contextInput = result.contextBuild.mock.calls[0]?.[0];
+      expect(contextInput).not.toHaveProperty("contextProjection");
+      expect(contextInput).toHaveProperty("governance");
+      expect(result.transaction).toHaveBeenCalledOnce();
+      expect(result.terminal).not.toHaveBeenCalled();
+    },
+  );
+
   it("persists CONTENT-GAP-011@2 from frozen approved governance with keyword-cluster target and competitor context", async () => {
     const result = await runGovernedContentGapFixture({
       status: "approved",
@@ -1371,7 +1418,7 @@ describe("diagnostic frozen snapshot validation", () => {
     });
   });
 
-  it("rejects a current 0.2.2 manifest that omits mandatory governance", async () => {
+  it("rejects a current 0.2.4 manifest that omits mandatory governance", async () => {
     const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
     const { governance: _governance, ...manifestWithoutGovernance } =
       fixture.diagnostic.input_manifest;
@@ -1403,6 +1450,242 @@ describe("diagnostic frozen snapshot validation", () => {
         lastErrorCode: "UNAVAILABLE",
       }),
     );
+  });
+
+  it("rejects a current 0.2.4 manifest that omits its mandatory context projection", async () => {
+    const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
+    const { contextProjection: _contextProjection, ...manifestWithoutContext } =
+      fixture.diagnostic.input_manifest;
+    const diagnostic = {
+      ...fixture.diagnostic,
+      input_manifest: manifestWithoutContext,
+      input_hash: contentHash(
+        manifestWithoutContext as unknown as CanonicalValue,
+      ),
+    } satisfies DiagnosticRunRow;
+    const transaction = vi.fn();
+    const ctx = unitContext(transaction);
+    const terminal = mockClaimedDiagnostic(fixture.run, diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(contextBuild).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it.each([
+    {
+      corruption: "extra root field",
+      contextProjection: {
+        ...currentContextProjection(),
+        unexpected: true,
+      },
+    },
+    {
+      corruption: "schema version drift",
+      contextProjection: {
+        ...currentContextProjection(),
+        schemaVersion: "context-projection.v999",
+      },
+    },
+    {
+      corruption: "compiler version drift",
+      contextProjection: {
+        ...currentContextProjection(),
+        compilerVersion: "context-projection.compiler.999",
+      },
+    },
+  ])(
+    "rejects current context projection $corruption before loading snapshots",
+    async ({ contextProjection }) => {
+      const fixture = diagnosticFixture({
+        snapshots: [manifestEntry()],
+        contextProjection,
+      });
+      const ctx = unitContext();
+      const terminal = mockClaimedDiagnostic(
+        fixture.run,
+        fixture.diagnostic,
+      );
+      const snapshots = vi.spyOn(
+        DataSnapshotsRepository.prototype,
+        "findByIds",
+      );
+      const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+      await runDiagnostic(ctx, {
+        runId: fixture.run.id,
+        ...fixture.scope,
+      });
+
+      expect(snapshots).not.toHaveBeenCalled();
+      expect(contextBuild).not.toHaveBeenCalled();
+      expect(terminal).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          status: "failed",
+          lastErrorCode: "UNAVAILABLE",
+        }),
+      );
+    },
+  );
+
+  it("rejects a 0.2.3 manifest that carries a context projection it never authorized", async () => {
+    const fixture = diagnosticFixture({
+      snapshots: [manifestEntry()],
+      ruleSetVersion: LINKGRAPH_LEGACY_RULE_SET_VERSION,
+      contextProjection: currentContextProjection(),
+    });
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("rejects a changed current context projection when the frozen input hash was not updated", async () => {
+    const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
+    const diagnostic = {
+      ...fixture.diagnostic,
+      input_manifest: {
+        ...fixture.diagnostic.input_manifest,
+        contextProjection: currentContextProjection([]),
+      },
+    } satisfies DiagnosticRunRow;
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, diagnostic);
+    const snapshots = vi.spyOn(
+      DataSnapshotsRepository.prototype,
+      "findByIds",
+    );
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(snapshots).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "UNAVAILABLE",
+      }),
+    );
+  });
+
+  it("rejects a self-consistent context whose profile-derived facts no longer match the frozen ICP source", async () => {
+    const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      snapshotRow(),
+    ]);
+    vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
+      ...validIcpRow(),
+      profile: {
+        ...validIcpRow().profile,
+        productName: "Mutated after the run was frozen",
+      },
+    });
+    const observations = vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    );
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(observations).not.toHaveBeenCalled();
+    expect(contextBuild).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(toRunAttempt(fixture.run), {
+      status: "failed",
+      lastErrorCode: "UNAVAILABLE",
+      lastErrorSummary: "diagnostic failed",
+    });
+  });
+
+  it("rejects a current context whose frozen profile generation no longer matches its ICP source", async () => {
+    const fixture = diagnosticFixture({ snapshots: [manifestEntry()] });
+    const ctx = unitContext();
+    const terminal = mockClaimedDiagnostic(fixture.run, fixture.diagnostic);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      snapshotRow(),
+    ]);
+    vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
+      ...validIcpRow(),
+      profile: {
+        profileSchemaVersion: "product-profile.0.3.0",
+        productName: "Acme",
+        oneLiner: "Widgets.",
+        productType: "software",
+        businessModels: [],
+        targetMarkets: [],
+        targetAudiences: [],
+      },
+    });
+    const observations = vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    );
+    const contextBuild = vi.spyOn(DiagnosticContext, "build");
+
+    await runDiagnostic(ctx, { runId: fixture.run.id, ...fixture.scope });
+
+    expect(observations).not.toHaveBeenCalled();
+    expect(contextBuild).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(toRunAttempt(fixture.run), {
+      status: "failed",
+      lastErrorCode: "UNAVAILABLE",
+      lastErrorSummary: "diagnostic failed",
+    });
+  });
+
+  it("replays the frozen empty Site-language state without mutable Site or delivery-locale fallback", async () => {
+    const contextProjection = currentContextProjection([]);
+    const result = await runObservationValidationFixture(
+      "crawl",
+      availableObservationRow(OBSERVATION_FIXTURES[0]),
+      { contextProjection },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextProjection,
+        deliveryLocale: "en",
+        icp: expect.objectContaining({
+          siteLanguageCodes: [],
+          defaultDeliveryLocale: "",
+        }),
+      }),
+    );
+    const context = result.contextBuild.mock.results[0]?.value;
+    expect(context).toBeInstanceOf(DiagnosticContext);
+    expect(context?.isEnglish()).toBe(false);
+    expect(result.transaction).toHaveBeenCalledOnce();
+    expect(result.terminal).not.toHaveBeenCalled();
   });
 
   it("rejects a 0.2.1 manifest that carries governance it never authorized", async () => {

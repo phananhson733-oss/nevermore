@@ -11,6 +11,14 @@ import {
   type CanonicalValue,
   type Executor,
 } from "@sf/db";
+import {
+  buildContextProjectionV1,
+  CONTEXTUAL_RULE_SET_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
+} from "@sf/engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getProjectOpportunity,
@@ -37,10 +45,12 @@ const ids = {
   competitorBOrigin: "40000000-0000-4000-8000-000000000017",
   foreignCompetitor: "40000000-0000-4000-8000-000000000018",
   nonOwnedEvidence: "40000000-0000-4000-8000-000000000019",
+  icp: "40000000-0000-4000-8000-000000000020",
 } as const;
 
 const CAPTURED_AT = "2026-07-21T08:00:00.000Z";
 const CLUSTER = "customer-onboarding";
+const ICP_HASH = "a".repeat(64);
 const exec = { kind: "repeatable-read-test" } as unknown as Executor;
 const readScope = {
   workspaceId: ids.workspace,
@@ -123,10 +133,27 @@ function governance() {
   };
 }
 
-function frozenManifest() {
+const contextProjection = buildContextProjectionV1({
+  profileContentHash: ICP_HASH,
+  profile: {
+    profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Acme",
+    oneLiner: "Ship faster",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [],
+  },
+  siteLanguageCodes: ["en-US"],
+});
+
+function frozenManifest(
+  ruleSetVersion: string = CONTEXTUAL_RULE_SET_VERSION,
+) {
   return {
     projectId: ids.project,
     siteId: ids.site,
+    icp: { id: ids.icp, version: 3, contentHash: ICP_HASH },
     snapshots: [
       {
         snapshotId: ids.snapshot,
@@ -140,22 +167,36 @@ function frozenManifest() {
         availability: "available",
       },
     ],
-    governance: governance(),
+    ruleSetVersion,
+    promptSetVersion: PROMPT_SET_VERSION,
+    deliveryLocale: "en-US",
+    ...(ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === LINKGRAPH_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === CONTEXTUAL_RULE_SET_VERSION
+      ? { governance: governance() }
+      : {}),
+    ...(ruleSetVersion === CONTEXTUAL_RULE_SET_VERSION
+      ? { contextProjection }
+      : {}),
   };
 }
 
-const INPUT_HASH = contentHash(
-  frozenManifest() as unknown as CanonicalValue,
-);
-
-function readableRun() {
+function readableRun(
+  ruleSetVersion: string = CONTEXTUAL_RULE_SET_VERSION,
+  inputManifest: Record<string, unknown> = frozenManifest(ruleSetVersion),
+) {
   return {
     id: ids.run,
     workspace_id: ids.workspace,
     project_id: ids.project,
     site_id: ids.site,
-    input_hash: INPUT_HASH,
-    input_manifest: frozenManifest(),
+    icp_profile_id: ids.icp,
+    icp_profile_version: 3,
+    rule_set_version: ruleSetVersion,
+    prompt_set_version: PROMPT_SET_VERSION,
+    output_locale: "en-US",
+    input_hash: contentHash(inputManifest as unknown as CanonicalValue),
+    input_manifest: inputManifest,
   };
 }
 
@@ -244,6 +285,7 @@ function normalizedObservation() {
 function installRepositoryFixtures() {
   vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
     id: ids.project,
+    default_delivery_locale: "zh-CN",
   } as never);
   const runRead = vi.spyOn(
     GrowthMapReadRepository.prototype,
@@ -344,12 +386,14 @@ function installRepositoryFixtures() {
   vi.spyOn(ActionsRepository.prototype, "findActiveByFinding").mockResolvedValue(
     null,
   );
+  const actionInsert = vi.spyOn(ActionsRepository.prototype, "insert");
   vi.spyOn(
     GrowthMapReadRepository.prototype,
     "listActiveActions",
   ).mockResolvedValue([]);
 
   return {
+    actionInsert,
     evidenceLinks,
     evidenceRead,
     finding,
@@ -364,6 +408,59 @@ afterEach(() => {
 });
 
 describe("Opportunity governed relation read wiring", () => {
+  it.each([
+    {
+      name: "detail",
+      read: async () =>
+        (
+          await getProjectOpportunity(
+            readScope,
+            ids.project,
+            ids.finding,
+            exec,
+          )
+        ).data,
+    },
+    {
+      name: "list",
+      read: async () =>
+        (
+          await listProjectOpportunities(
+            readScope,
+            ids.project,
+            { limit: 50, cursor: null, now: new Date(CAPTURED_AT) },
+            exec,
+          )
+        ).data[0]!,
+    },
+  ])(
+    "projects the $name execution preview from the Project delivery locale without creating an Action",
+    async ({ read }) => {
+      const { actionInsert } = installRepositoryFixtures();
+
+      const opportunity = await read();
+
+      expect(opportunity).toMatchObject({
+        readiness: "reviewable",
+        primaryFindingId: ids.finding,
+        executionPreview: {
+          templateId: "create_gap_content.v1",
+          templateVersion: 1,
+          artifactType: "content_brief",
+          effort: "large",
+          risk: "low",
+          contentLocale: "zh-CN",
+          title: "为未覆盖的关键词簇创建内容",
+          description: "为无匹配可收录页面的高需求关键词簇创建决策阶段内容。",
+          expectedOutcome: "该关键词簇获得针对性页面以承接既有需求。",
+        },
+      });
+      expect("actionId" in opportunity).toBe(false);
+      expect("action" in opportunity).toBe(false);
+      expect(actionInsert).not.toHaveBeenCalled();
+    },
+  );
+
   it("asks the repository for a run-and-rule filtered page before cursoring", async () => {
     const { finding, findingList } = installRepositoryFixtures();
     findingList.mockImplementationOnce(async (_scope, options) => {
@@ -468,6 +565,148 @@ describe("Opportunity governed relation read wiring", () => {
       ]);
     },
   );
+
+  it.each([
+    ["governed 0.2.2", GOVERNED_LEGACY_RULE_SET_VERSION],
+    ["linkgraph 0.2.3", LINKGRAPH_LEGACY_RULE_SET_VERSION],
+  ])(
+    "admits relations from an exact historical %s envelope without synthesizing context",
+    async (_label, ruleSetVersion) => {
+      const { observationRead, runRead } = installRepositoryFixtures();
+      runRead.mockResolvedValueOnce(readableRun(ruleSetVersion) as never);
+
+      const detail = await getProjectOpportunity(
+        readScope,
+        ids.project,
+        ids.finding,
+        exec,
+      );
+
+      expect(detail.data.searchQueries).toHaveLength(1);
+      expect(detail.data.competitorRefs).toEqual([ids.competitor]);
+      expect(observationRead).toHaveBeenCalledOnce();
+      expect(
+        Object.hasOwn(
+          readableRun(ruleSetVersion).input_manifest,
+          "contextProjection",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("keeps an exact pre-governance 0.2.1 envelope readable without inventing relation authority", async () => {
+    const { observationRead, runRead } = installRepositoryFixtures();
+    runRead.mockResolvedValueOnce(
+      readableRun(LEGACY_RULE_SET_VERSION) as never,
+    );
+
+    const detail = await getProjectOpportunity(
+      readScope,
+      ids.project,
+      ids.finding,
+      exec,
+    );
+
+    expect(detail.data).toMatchObject({
+      searchQueries: [],
+      generativeQueries: [],
+      competitorRefs: [],
+    });
+    expect(observationRead).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "a current envelope missing context",
+      ruleSetVersion: CONTEXTUAL_RULE_SET_VERSION,
+      manifest: () => {
+        const { contextProjection: _context, ...manifest } = frozenManifest();
+        return manifest;
+      },
+    },
+    {
+      name: "a current envelope with context schema drift",
+      ruleSetVersion: CONTEXTUAL_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(),
+        contextProjection: {
+          ...contextProjection,
+          schemaVersion: "context-projection.v999",
+        },
+      }),
+    },
+    {
+      name: "a current envelope with context compiler drift",
+      ruleSetVersion: CONTEXTUAL_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(),
+        contextProjection: {
+          ...contextProjection,
+          compilerVersion: "context-projection.compiler.999.0.0",
+        },
+      }),
+    },
+    {
+      name: "a current envelope with an extra context key",
+      ruleSetVersion: CONTEXTUAL_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(),
+        contextProjection: {
+          ...contextProjection,
+          surprise: true,
+        },
+      }),
+    },
+    {
+      name: "a current envelope with an extra preview authority",
+      ruleSetVersion: CONTEXTUAL_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(),
+        executionPreview: { title: "must remain current-view only" },
+      }),
+    },
+    {
+      name: "a 0.2.3 envelope carrying current context",
+      ruleSetVersion: LINKGRAPH_LEGACY_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(LINKGRAPH_LEGACY_RULE_SET_VERSION),
+        contextProjection,
+      }),
+    },
+    {
+      name: "a 0.2.1 envelope carrying governance",
+      ruleSetVersion: LEGACY_RULE_SET_VERSION,
+      manifest: () => ({
+        ...frozenManifest(LEGACY_RULE_SET_VERSION),
+        governance: governance(),
+      }),
+    },
+    {
+      name: "a manifest rule generation that disagrees with its run",
+      ruleSetVersion: GOVERNED_LEGACY_RULE_SET_VERSION,
+      manifest: () => frozenManifest(LINKGRAPH_LEGACY_RULE_SET_VERSION),
+    },
+  ])("fails relation authority closed for $name", async (fixture) => {
+    const { observationRead, runRead } = installRepositoryFixtures();
+    const manifest = fixture.manifest();
+    runRead.mockResolvedValueOnce(
+      readableRun(fixture.ruleSetVersion, manifest) as never,
+    );
+
+    const detail = await getProjectOpportunity(
+      readScope,
+      ids.project,
+      ids.finding,
+      exec,
+    );
+
+    expect(detail.data).toMatchObject({
+      searchQueries: [],
+      generativeQueries: [],
+      competitorRefs: [],
+    });
+    expect(observationRead).not.toHaveBeenCalled();
+  });
 
   it("does not fan one explicitly bound competitor out to every approved competitor", async () => {
     installRepositoryFixtures();

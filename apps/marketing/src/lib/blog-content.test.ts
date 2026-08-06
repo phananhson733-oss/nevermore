@@ -127,12 +127,16 @@ describe("repository-backed blog content", () => {
       "/zh/blog/public-seo-audit-boundaries",
     ];
 
-    // 63 English posts = the 12 originally authored here, plus the 49 restored
+    // 62 English posts = the 12 originally authored here, plus the 49 restored
     // from the legacy corpus the Supabase publish path never shipped, plus the
-    // 2 that had no staging source. Chinese stays at 9: the backfill was
-    // English-only. Keep both counts exact so an accidental content deletion or
-    // an unreviewed bulk import fails this gate instead of shipping silently.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(63);
+    // 2 that had no staging source, minus whitelabel-seo-tool. That one was a
+    // second write-up of the same Level 1/2/3 resale framework already covered
+    // by best-white-label-seo-tool, for the same queries; over 90 days Google
+    // gave one page 723 impressions and the other none, so it now 301s into
+    // the page that ranks. Chinese stays at 9: the backfill was English-only.
+    // Keep both counts exact so an accidental content deletion or an
+    // unreviewed bulk import fails this gate instead of shipping silently.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(62);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
@@ -140,5 +144,24 @@ describe("repository-backed blog content", () => {
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
     // Newest-first ordering: the most recent backfilled article dates to 07-31.
     expect(posts[0]?.published_at).toBe("2026-07-31T00:00:00.000Z");
+  });
+
+  it("keeps every published product CTA on the product subdomain", async () => {
+    const englishPosts = await getLocalBlogPosts("en");
+    const combinedContent = englishPosts.map((post) => post.content).join("\n");
+
+    expect(combinedContent).not.toContain("https://gengrowth.ai/app");
+    expect(combinedContent).not.toContain("https://gengrowth.ai/en/features");
+    expect(combinedContent).not.toContain("https://gengrowth.ai/en/pricing");
+    expect(combinedContent).toContain("https://app.gengrowth.ai/");
+  });
+
+  it("does not link published articles through retired marketing routes", async () => {
+    const posts = await getLocalBlogPosts();
+    const combinedContent = posts.map((post) => post.content).join("\n");
+
+    for (const retiredPath of ["/features", "/templates", "/glossary"]) {
+      expect(combinedContent).not.toContain(`href="${retiredPath}"`);
+    }
   });
 });

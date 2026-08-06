@@ -29,6 +29,7 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   FindingsRepository,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   ObservationsRepository,
   PageSnapshotsRepository,
   ProjectsRepository,
@@ -41,6 +42,7 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   findingKey,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
@@ -276,6 +278,11 @@ async function seedAuditRun(handle: DbHandle): Promise<AuditSeed> {
       keywordClusters: [],
       competitors: [],
     },
+    contextProjection: buildContextProjectionV1({
+      profileContentHash: icp!.content_hash,
+      profile: icp!.profile,
+      siteLanguageCodes: site.language_codes,
+    }),
   };
   const runId = randomUUID();
   await handle.db.insert(asyncRuns).values({
@@ -319,7 +326,7 @@ async function seedAuditRun(handle: DbHandle): Promise<AuditSeed> {
     capabilityRunId: runId,
     scopeKind: "site",
     scopeKey: site.id,
-    projectionVersion: "growth-audit.0.3.0",
+    projectionVersion: GROWTH_AUDIT_PROJECTION_VERSION,
   });
 
   return {

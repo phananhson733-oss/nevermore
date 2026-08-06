@@ -10,7 +10,12 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   GOVERNANCE_PROJECTION_VERSION,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
   RULE_SET_VERSION,
 } from "@sf/engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +39,20 @@ const scope: ProjectScope = {
   projectId: ids.project,
 };
 const exec = { kind: "growth-map-generation-test" } as unknown as Executor;
+
+const contextProjection = buildContextProjectionV1({
+  profileContentHash: "c".repeat(64),
+  profile: {
+    profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Acme",
+    oneLiner: "Ship faster",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [],
+  },
+  siteLanguageCodes: ["zh-CN", "en"],
+});
 
 function snapshot(
   overrides: Partial<DataSnapshotRow> = {},
@@ -81,26 +100,39 @@ function snapshotManifestEntry(
 function fixture(options: {
   readonly snapshotEntries?: readonly Record<string, unknown>[];
   readonly governance?: unknown;
+  readonly contextProjection?: unknown;
+  readonly ruleSetVersion?: string;
 } = {}): {
   readonly run: GrowthMapReadableRunRow;
   readonly snapshots: readonly DataSnapshotRow[];
 } {
   const crawl = snapshot();
+  const ruleSetVersion = options.ruleSetVersion ?? RULE_SET_VERSION;
   const manifest: Record<string, unknown> = {
     projectId: ids.project,
     siteId: ids.site,
     icp: { id: ids.icp, version: 2, contentHash: "c".repeat(64) },
     snapshots: options.snapshotEntries ?? [snapshotManifestEntry(crawl)],
-    ruleSetVersion: RULE_SET_VERSION,
-    promptSetVersion: "prompts.v1",
+    ruleSetVersion,
+    promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "zh-CN",
-    governance:
-      options.governance ??
-      {
-        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
-        keywordClusters: [],
-        competitors: [],
-      },
+    ...(ruleSetVersion === LEGACY_RULE_SET_VERSION
+      ? {}
+      : {
+          governance:
+            options.governance ??
+            {
+              projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+              keywordClusters: [],
+              competitors: [],
+            },
+        }),
+    ...(ruleSetVersion === RULE_SET_VERSION
+      ? {
+          contextProjection:
+            options.contextProjection ?? contextProjection,
+        }
+      : {}),
   };
   return {
     snapshots: [crawl],
@@ -111,8 +143,8 @@ function fixture(options: {
       site_id: ids.site,
       icp_profile_id: ids.icp,
       icp_profile_version: 2,
-      rule_set_version: RULE_SET_VERSION,
-      prompt_set_version: "prompts.v1",
+      rule_set_version: ruleSetVersion,
+      prompt_set_version: PROMPT_SET_VERSION,
       output_locale: "zh-CN",
       input_manifest: manifest,
       input_hash: contentHash(manifest as CanonicalValue),
@@ -169,6 +201,10 @@ describe("loadPublishedGrowthMapGeneration", () => {
       keywordClusters: [],
       competitors: [],
     });
+    expect(result.run.input_manifest["contextProjection"]).toEqual(
+      contextProjection,
+    );
+    expect(result.frozen.contextProjection).toEqual(contextProjection);
   });
 
   it("loads one exact published generation without falling back to latest", async () => {
@@ -194,6 +230,30 @@ describe("loadPublishedGrowthMapGeneration", () => {
     expect(loadSnapshots).toHaveBeenCalledWith(scope, [ids.snapshot]);
     expect(result.run.id).toBe(ids.run);
   });
+
+  it.each([
+    GOVERNED_LEGACY_RULE_SET_VERSION,
+    LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  ])(
+    "loads governed historical generation %s without synthesizing current context",
+    async (ruleSetVersion) => {
+      const historical = fixture({ ruleSetVersion });
+      arrange(historical.run, historical.snapshots);
+
+      const result = await loadPublishedGrowthMapGeneration(exec, scope);
+
+      expect(result.governance).toEqual({
+        projectionVersion: GOVERNANCE_PROJECTION_VERSION,
+        keywordClusters: [],
+        competitors: [],
+      });
+      expect(result.frozen.governance).toEqual(result.governance);
+      expect(result.frozen).not.toHaveProperty("contextProjection");
+      expect(result.run.input_manifest).not.toHaveProperty(
+        "contextProjection",
+      );
+    },
+  );
 
   it("does not fall back to latest when the requested generation is not publishable", async () => {
     const selectLatest = vi
@@ -327,6 +387,45 @@ describe("loadPublishedGrowthMapGeneration", () => {
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       status: 503,
+    });
+    expect(loadSnapshots).toHaveBeenCalledWith(scope, [ids.snapshot]);
+  });
+
+  it("fails closed when the current frozen context projection is invalid", async () => {
+    const current = fixture({
+      contextProjection: {
+        ...contextProjection,
+        unexpected: true,
+      },
+    });
+    const { loadSnapshots } = arrange(current.run, current.snapshots);
+
+    await expect(
+      loadPublishedGrowthMapGeneration(exec, scope),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+    expect(loadSnapshots).toHaveBeenCalledWith(scope, [ids.snapshot]);
+  });
+
+  it("rejects exact 0.2.1 at the governance-dependent generation boundary without synthesizing authority", async () => {
+    const legacy = fixture({
+      ruleSetVersion: LEGACY_RULE_SET_VERSION,
+    });
+    const { loadSnapshots } = arrange(legacy.run, legacy.snapshots);
+
+    expect(legacy.run.input_manifest).not.toHaveProperty("governance");
+    expect(legacy.run.input_manifest).not.toHaveProperty(
+      "contextProjection",
+    );
+    await expect(
+      loadPublishedGrowthMapGeneration(exec, scope),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+      message:
+        "The published Growth Map generation failed its provenance checks.",
     });
     expect(loadSnapshots).toHaveBeenCalledWith(scope, [ids.snapshot]);
   });

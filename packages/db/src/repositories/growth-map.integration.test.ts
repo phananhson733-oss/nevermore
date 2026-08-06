@@ -16,6 +16,7 @@ import { AnalysisRefreshRunsRepository } from "./analysis-refresh-runs.ts";
 import {
   AuditRunsRepository,
   GROWTH_AUDIT_PROJECTION_VERSION,
+  LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
 } from "./audit-runs.ts";
 import { CapabilityRunsRepository } from "./capability-runs.ts";
 import { CollectionRunsRepository } from "./collection-runs.ts";
@@ -139,6 +140,7 @@ async function createDiagnostic(
     readonly createdAt: string;
     readonly publishAudit: boolean;
     readonly auditScopeKey?: string;
+    readonly auditProjectionVersion?: string;
   },
 ): Promise<string> {
   const id = randomUUID();
@@ -192,7 +194,8 @@ async function createDiagnostic(
       capabilityRunId: id,
       scopeKind: "site",
       scopeKey: input.auditScopeKey ?? fixture.siteId,
-      projectionVersion: GROWTH_AUDIT_PROJECTION_VERSION,
+      projectionVersion:
+        input.auditProjectionVersion ?? GROWTH_AUDIT_PROJECTION_VERSION,
     });
   }
 
@@ -499,6 +502,20 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       childDiagnosticRunId: newerChildEarlierPublication,
     });
 
+    // A known 0.3.0 publication remains addressable by exact DiagnosticRun id,
+    // but even a later parent publication must not enter the 0.3.1 latest read.
+    const pinnedLegacyProjection = await createDiagnostic(handle.db, fixture, {
+      createdAt: timestamp(8),
+      publishAudit: true,
+      auditProjectionVersion: LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
+    });
+    await createRefreshParent(handle.db, fixture, {
+      status: "completed",
+      createdAt: timestamp(7),
+      completedAt: timestamp(60),
+      childDiagnosticRunId: pinnedLegacyProjection,
+    });
+
     // A projected legacy diagnosis has no Analysis Refresh parent or step.
     const legacy = await createDiagnostic(handle.db, fixture, {
       createdAt: timestamp(10),
@@ -671,6 +688,14 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       repository.findReadableRunById(projectScope, latestPublication),
     ).resolves.toMatchObject({
       id: latestPublication,
+      project_id: fixture.projectId,
+      site_id: fixture.siteId,
+      run_status: "completed",
+    });
+    await expect(
+      repository.findReadableRunById(projectScope, pinnedLegacyProjection),
+    ).resolves.toMatchObject({
+      id: pinnedLegacyProjection,
       project_id: fixture.projectId,
       site_id: fixture.siteId,
       run_status: "completed",

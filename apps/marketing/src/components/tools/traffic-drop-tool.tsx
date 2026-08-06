@@ -1,5 +1,5 @@
-// @input  -- locale, Search Console connection state, public /api/tools/traffic-drop response
-// @output -- connect prompt, run state, and the rendered diagnosis
+// @input  -- locale, GSC state, traffic-drop API, consent-gated event tracker
+// @output -- connect/run/diagnosis states plus tool_start/tool_complete analytics
 // @pos    -- primary client surface for /[locale]/tools/traffic-drop-diagnosis
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -13,6 +13,7 @@ import type { TrafficDailyPoint, TrafficDropResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
+import { trackMarketingEvent } from "@/components/layout/google-analytics";
 import { TrafficDropResults } from "./traffic-drop-results";
 import {
   answersFor,
@@ -148,6 +149,7 @@ export function TrafficDropTool({
     // guard and the payload cannot disagree about which site was inspected.
     const answers = answersFor(selfChecks, property);
     if (answers === null) return;
+    trackMarketingEvent("tool_start", { tool_name: "traffic_drop_diagnosis" });
 
     setLoading(true);
     setErrorCode(null);
@@ -173,6 +175,9 @@ export function TrafficDropTool({
         return;
       }
       setPayload({ ...body.data, property });
+      trackMarketingEvent("tool_complete", {
+        tool_name: "traffic_drop_diagnosis",
+      });
     } catch {
       setErrorCode("unknown");
     } finally {

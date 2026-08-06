@@ -24,11 +24,29 @@ const cursor = Buffer.from(
   "2026-07-21T00:00:00.000Z 00000000-0000-4000-8000-000000000004",
 ).toString("base64url");
 
-function invoke(query = "") {
+const executionPreview = {
+  templateId: "create_gap_content.v1",
+  templateVersion: 1,
+  artifactType: "content_brief",
+  effort: "large",
+  risk: "low",
+  contentLocale: "en",
+  title: "Create content for an uncovered keyword cluster",
+  description:
+    "Create decision-stage content for a high-volume keyword cluster with no matching indexable page.",
+  expectedOutcome:
+    "The cluster gains a targeted page that captures existing demand.",
+} as const;
+
+function invoke(query = "", uiLocaleCookie?: string) {
+  const headers = new Headers({ "X-Request-Id": "request-opportunities" });
+  if (uiLocaleCookie !== undefined) {
+    headers.set("cookie", `sf_ui_locale=${uiLocaleCookie}`);
+  }
   return GET(
     new NextRequest(
       `http://localhost/api/mvp/projects/${projectId}/opportunities${query}`,
-      { headers: new Headers({ "X-Request-Id": "request-opportunities" }) },
+      { headers },
     ),
     { params: Promise.resolve({ projectId }) },
   );
@@ -40,7 +58,7 @@ beforeEach(() => {
     projectId,
     siteId: "00000000-0000-4000-8000-000000000005",
     diagnosticRunId: "00000000-0000-4000-8000-000000000006",
-    data: [],
+    data: [{ readiness: "reviewable", executionPreview }],
     meta: { limit: 50, nextCursor: null, hasNext: false },
   });
 });
@@ -55,7 +73,36 @@ describe("GET project opportunities", () => {
       { limit: 25, cursor },
     );
     await expect(response.json()).resolves.toEqual({
-      data: expect.objectContaining({ projectId, data: [] }),
+      data: expect.objectContaining({
+        projectId,
+        data: [{ readiness: "reviewable", executionPreview }],
+      }),
+    });
+  });
+
+  it("keeps Project-delivery English preview copy when the UI locale is Chinese", async () => {
+    const response = await invoke("", "zh-CN");
+
+    expect(response.status).toBe(200);
+    expect(mocks.listProjectOpportunities).toHaveBeenCalledWith(
+      {
+        workspaceId: "00000000-0000-4000-8000-000000000002",
+        uiLocale: "zh-CN",
+      },
+      projectId,
+      { limit: 50, cursor: null },
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        data: [
+          {
+            executionPreview: {
+              contentLocale: "en",
+              title: "Create content for an uncovered keyword cluster",
+            },
+          },
+        ],
+      },
     });
   });
 

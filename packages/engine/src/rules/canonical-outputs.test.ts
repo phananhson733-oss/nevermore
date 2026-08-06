@@ -20,7 +20,11 @@ import {
 import { parseIcp } from "../icp.ts";
 import type { RuleId, RuleResult } from "../rule.ts";
 import { testObservationLineage } from "../test-observation-lineage.ts";
-import { ALL_RULES } from "./index.ts";
+import {
+  ALL_RULES,
+  CONTEXTUAL_ALL_RULES,
+  LINKGRAPH_LEGACY_ALL_RULES,
+} from "./index.ts";
 
 /**
  * AC-021 behavior snapshots. These fixtures execute every real rule; registry
@@ -327,6 +331,41 @@ const FIXTURES = {
       ],
     }),
   },
+  "TECH-INDEXABILITY-006": {
+    pass: context({
+      coverage: { crawl: "available" },
+      observations: [
+        crawlObs(`${SITE}/indexable`, {
+          sitemapMember: true,
+          robotsIndexable: true,
+        }),
+      ],
+    }),
+    candidate: context({
+      coverage: { crawl: "available" },
+      observations: [
+        crawlObs(`${SITE}/noindex`, {
+          sitemapMember: true,
+          robotsIndexable: false,
+          robotsDirectives: ["noindex"],
+        }),
+      ],
+    }),
+    missing: context({ coverage: { crawl: "unavailable" } }),
+    edge: context({
+      coverage: { crawl: "available" },
+      observations: [
+        crawlObs(`${SITE}/redirect`, {
+          status: 301,
+          finalStatus: 200,
+          redirectChain: [`${SITE}/destination`],
+          sitemapMember: true,
+          robotsIndexable: false,
+          robotsDirectives: ["noindex"],
+        }),
+      ],
+    }),
+  },
   "TECH-LINKGRAPH-005": {
     pass: context({
       coverage: { crawl: "available" },
@@ -624,13 +663,20 @@ function stableOutput(value: unknown): unknown {
   );
 }
 
+// Keep this historical suite label stable because it is part of the 11 frozen
+// pre-context snapshot keys. Current-only rules are asserted separately below.
 describe("AC-021 canonical outputs for all 11 deterministic rules", () => {
   it("defines a complete fixture matrix in frozen rule order", () => {
-    expect(Object.keys(FIXTURES)).toEqual(ALL_RULES.map((rule) => rule.id));
-    expect(ALL_RULES).toHaveLength(11);
+    expect(Object.keys(FIXTURES)).toEqual(
+      CONTEXTUAL_ALL_RULES.map((rule) => rule.id),
+    );
+    expect(CONTEXTUAL_ALL_RULES).toHaveLength(12);
+    expect(ALL_RULES).toBe(CONTEXTUAL_ALL_RULES);
+    expect(ALL_RULES).toHaveLength(12);
+    expect(LINKGRAPH_LEGACY_ALL_RULES).toHaveLength(11);
   });
 
-  for (const rule of ALL_RULES) {
+  for (const rule of LINKGRAPH_LEGACY_ALL_RULES) {
     it(`${rule.id} snapshots actual pass/candidate/missing/edge RuleResult output`, async () => {
       const raw = {} as Record<Scenario, RuleResult>;
       for (const scenario of SCENARIOS) {
@@ -651,10 +697,50 @@ describe("AC-021 canonical outputs for all 11 deterministic rules", () => {
     });
   }
 
+  it("checks the current TECH-INDEXABILITY-006 canonical output", async () => {
+    const rule = CONTEXTUAL_ALL_RULES.find(
+      (candidate) => candidate.id === "TECH-INDEXABILITY-006",
+    );
+    if (!rule) throw new Error("missing TECH-INDEXABILITY-006 executor");
+
+    const pass = await rule.evaluate(FIXTURES[rule.id].pass);
+    const candidate = await rule.evaluate(FIXTURES[rule.id].candidate);
+    const missing = await rule.evaluate(FIXTURES[rule.id].missing);
+    const edge = await rule.evaluate(FIXTURES[rule.id].edge);
+
+    expect(pass).toEqual({
+      status: "pass",
+      metrics: { conflictCount: 0 },
+    });
+    expect(candidate).toMatchObject({
+      status: "candidate",
+      candidates: [
+        {
+          subjectRefs: [`${SITE}/noindex`],
+          severity: "high",
+          titleArgs: { url: `${SITE}/noindex` },
+          target: {
+            relation: "direct_url",
+            targetKind: "url",
+            targetRef: `${SITE}/noindex`,
+          },
+        },
+      ],
+    });
+    expect(missing).toEqual({
+      status: "skipped",
+      reason: "missing_dataset",
+    });
+    expect(edge).toEqual({
+      status: "pass",
+      metrics: { conflictCount: 0 },
+    });
+  });
+
   it("maps every candidate-producing rule to an explicit FindingTargetDraft v1", async () => {
     const actual = Object.fromEntries(
       await Promise.all(
-        ALL_RULES.map(async (rule) => {
+        CONTEXTUAL_ALL_RULES.map(async (rule) => {
           const result = await rule.evaluate(FIXTURES[rule.id].candidate);
           if (result.status !== "candidate") return [rule.id, []] as const;
           return [
@@ -690,6 +776,14 @@ describe("AC-021 canonical outputs for all 11 deterministic rules", () => {
           relation: "affected_by_canonical_issue",
           targetKind: "canonical_issue",
           targetRef: "reciprocal",
+        },
+      ],
+      "TECH-INDEXABILITY-006": [
+        {
+          version: 1,
+          relation: "direct_url",
+          targetKind: "url",
+          targetRef: `${SITE}/noindex`,
         },
       ],
       "TECH-LINKGRAPH-005": [

@@ -14,6 +14,7 @@ import {
   DiagnosticRunsRepository,
   enqueueAnalysisRefreshContinuationInTx,
   enqueueRunInTx,
+  GROWTH_AUDIT_PROJECTION_VERSION,
   IcpProfilesRepository,
   ObservationsRepository,
   ProjectsRepository,
@@ -62,7 +63,6 @@ import {
   GROWTH_AUDIT_ACTIVE_KEY,
   GROWTH_AUDIT_CAPABILITY_ID,
   GROWTH_AUDIT_CAPABILITY_VERSION,
-  GROWTH_AUDIT_PROJECTION_VERSION,
   growthAuditCapabilityManifestHash,
 } from "./frozen-input.ts";
 import { freezeDiagnosticGovernance } from "./governance.ts";
@@ -1051,15 +1051,28 @@ async function startGrowthAuditStep(
     return;
   }
 
-  const profile = await new IcpProfilesRepository(tx).findById(
-    parent.scope,
-    parent.payload.icpProfile.id,
-  );
+  const [profile, site] = await Promise.all([
+    new IcpProfilesRepository(tx).findById(
+      parent.scope,
+      parent.payload.icpProfile.id,
+    ),
+    new SitesRepository(tx).findById(
+      parent.scope,
+      parent.payload.siteId,
+    ),
+  ]);
   if (
     !profile ||
+    profile.id !== parent.payload.icpProfile.id ||
+    profile.workspace_id !== parent.scope.workspaceId ||
+    profile.project_id !== parent.scope.projectId ||
     profile.status !== "complete" ||
     profile.version !== parent.payload.icpProfile.version ||
-    profile.content_hash !== parent.payload.icpProfile.contentHash
+    profile.content_hash !== parent.payload.icpProfile.contentHash ||
+    !site ||
+    site.id !== parent.payload.siteId ||
+    site.workspace_id !== parent.scope.workspaceId ||
+    site.project_id !== parent.scope.projectId
   ) {
     await failStepInTx(
       ctx,
@@ -1076,7 +1089,11 @@ async function startGrowthAuditStep(
   const frozen = buildAnalysisRefreshDiagnosticFrozenInput({
     projectId: parent.scope.projectId,
     siteId: parent.payload.siteId,
-    icp: parent.payload.icpProfile,
+    icp: {
+      ...parent.payload.icpProfile,
+      profile: profile.profile,
+    },
+    siteLanguageCodes: site.language_codes,
     snapshots,
     outputLocale: parent.payload.outputLocale,
     governance,

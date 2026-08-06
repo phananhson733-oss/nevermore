@@ -22,7 +22,7 @@ Agentic AI marketing automation is **software that plans, acts, checks results, 
 
 The useful distinction is not whether a product uses AI. It is whether it can carry a defined operating task from signal to action to review without someone manually moving each item forward. This sits beneath the broader *pillar guide to agency SEO fulfillment*, where delivery ownership, handoffs, and client accountability are mapped before any software choice.
 
-## Why It Matters for Your Workflow
+## The Senior Attention Repetitive Work Quietly Eats
 
 Agentic AI marketing automation matters because repetitive SEO and content work can consume the same senior attention needed for positioning, client decisions, and revenue planning. The aim is not to automate every marketing choice; it is to remove the handoffs that slow a repeatable process while keeping people responsible for high-consequence calls.
 
@@ -44,7 +44,7 @@ With agentic AI marketing automation, the agent works inside a defined loop: it 
 
 The important boundary is that the agent may organize evidence and carry out approved work, but it should not independently promise outcomes, alter pricing, publish sensitive claims, or decide what a client relationship is worth.
 
-## Common Implementation Misreadings
+## Where Agents Stop Being Workflow Automation
 
 1. **“It is just a smarter workflow automation.”** Rules-based automation follows a preset path; an agent can select among allowed next steps based on the information it finds. That flexibility also makes clear stop conditions more important.
 
@@ -115,7 +115,7 @@ Start with work that is repetitive, reversible, and easy to inspect, such as col
 
 ## Take Action
 
-Map one repetitive marketing task, its inputs, its approval owner, and the actions that must stop for review, then [Explore GenGrowth Features](https://gengrowth.ai/en/features).
+Map one repetitive marketing task, its inputs, its approval owner, and the actions that must stop for review, then [Explore GenGrowth Features](https://gengrowth.ai/pricing).
 
 You will leave with a clearer view of where an agent can prepare, coordinate, and check work without creating another layer of manual supervision.
 

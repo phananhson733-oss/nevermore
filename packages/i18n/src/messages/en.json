@@ -1239,6 +1239,30 @@
     "runStatusReadError": "Run status is temporarily unavailable. This run stays locked until its status can be checked.",
     "runStatusLabel": "Diagnostic run status",
     "objectNavLabel": "Growth Map objects",
+    "executionPreview": {
+      "eyebrow": "Execution preview",
+      "validationTarget": "Validation target",
+      "artifactType": "Artifact",
+      "effort": "Effort",
+      "risk": "Risk",
+      "notAvailable": "No deterministic execution preview is available for this Finding.",
+      "artifactTypes": {
+        "content_brief": "Content brief",
+        "metadata_rewrite": "Metadata rewrite",
+        "technical_ticket": "Technical ticket",
+        "english_blog_draft": "English blog draft"
+      },
+      "efforts": {
+        "small": "Small",
+        "medium": "Medium",
+        "large": "Large"
+      },
+      "risks": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      }
+    },
     "modes": {
       "pages": {
         "label": "Pages & opportunities",

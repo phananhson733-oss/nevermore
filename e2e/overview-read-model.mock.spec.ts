@@ -261,6 +261,7 @@ function detailFixture(
             sitePageId: item.sitePageId,
             pageSnapshotId: item.pageSnapshotId,
           },
+          executionPreview: null,
           executionRef: null,
         },
       ],

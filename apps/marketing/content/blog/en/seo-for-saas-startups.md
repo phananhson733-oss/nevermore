@@ -22,7 +22,7 @@ SaaS startup SEO is **the practice of earning search traffic for a software prod
 
 This sits inside the broader pillar guide to SaaS SEO strategy, which maps how each stage of growth shifts the priorities below.
 
-## Why It Matters for Your Workflow
+## When the Playbook Assumes Resources You Don't Have
 
 Pre-revenue founders skip SEO for a rational reason: most startup guides assume an existing domain, a publishing cadence, and a writer on payroll. When the playbook you find online quietly requires a content team you do not have, the sensible move looks like ignoring search entirely until later. That delay is expensive, because the trust signals a domain accumulates are slow and cumulative, and starting at month one beats starting at month twelve.
 
@@ -38,7 +38,7 @@ seo for saas startups works differently from agency or content-site SEO because 
 
 The cadence matters as much as the content. In most early rollouts, one focused page per two weeks plus light technical hygiene moves the needle more than a daily posting habit nobody can sustain solo.
 
-## Common Implementation Misreadings
+## Why Volume Does Not Come Before Revenue
 
 Most founders trip on the same few assumptions, all of them inherited from guides written for sites that already rank. The corrections below map directly to where seo for saas startups diverges from generic advice:
 
@@ -101,7 +101,7 @@ A sustainable solo cadence is roughly three to five hours weekly, split between 
 
 ## Take Action
 
-Start by mapping your first buyer-intent cluster and auditing whether your product pages are ready to convert search traffic, then build the supporting pages with a workflow that fits a five-hour week. You can [start your free GenGrowth trial](https://gengrowth.ai/app) to turn that audit into a prioritized, decision-first content plan instead of a generic keyword dump. The earlier you treat search as a weekly habit rather than a someday project, the sooner a zero-DA domain starts compounding into qualified signups.
+Start by mapping your first buyer-intent cluster and auditing whether your product pages are ready to convert search traffic, then build the supporting pages with a workflow that fits a five-hour week. You can [start your free GenGrowth trial](https://app.gengrowth.ai/) to turn that audit into a prioritized, decision-first content plan instead of a generic keyword dump. The earlier you treat search as a weekly habit rather than a someday project, the sooner a zero-DA domain starts compounding into qualified signups.
 
 ## Sources
 

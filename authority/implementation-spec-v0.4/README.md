@@ -14,11 +14,12 @@ Authority 版本：**0.4.0**
 `authority/index.json` 指向本目录与 `scripts/spec-v0.4-lock.json`；v0.3
 保留为历史快照，不再约束当前实现。
 
-当前机器面精确包含 **79 个 operation、10 个 shared async operation、78 张应用表、11 条规则**。
+当前机器面精确包含 **79 个 operation、10 个 shared async operation、78 张应用表、12 条规则**。
 第十一个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
 `MeasurementWindowAcceptedHttpResponse`，不冒充共享 `AsyncAccepted`；verifier
-会同时冻结这条例外。规则集为 `mvp.rules.0.2.3`，其中
-`CONTENT-GAP-011` 为 version 2，`TECH-LINKGRAPH-005` 为 version 3。
+会同时冻结这条例外。规则集为 `mvp.rules.0.2.4`，其中
+`CONTENT-GAP-011` 为 version 2，`TECH-LINKGRAPH-005` 为 version 3，
+`TECH-INDEXABILITY-006` 为 version 1；prompt set 仍为 `mvp.prompts.0.2.0`。
 
 ## 权威文件
 
@@ -26,7 +27,7 @@ Authority 版本：**0.4.0**
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
 2. [openapi.yaml](openapi.yaml)：当前 79 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 40 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+3. [schema.sql](schema.sql)：由 43 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -39,7 +40,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0041_product_profile_default_competitors.sql`，验证每个 migration 的事务框架与
+`0043_validate_contextual_diagnostic_rule_set.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -95,6 +96,24 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
   LLM 生成内容不能伪装 observed evidence。
 - Product Profile/ICP 从客户提交的核心 URL 与基础业务信息开始，系统可以基于
   冻结 Crawl 证据形成可审核草稿；用户确认前不得把推断当最终画像。
+- 当前 `mvp.rules.0.2.4` run 在 exact-key、hash-covered manifest 中冻结
+  `contextProjection.v1`。它只编译 immutable confirmed Profile 与创建时 exact
+  Site 语言的显式事实，不收纳 provider/mode/permission、workflow、mutable
+  priority/risk/ROI/cadence 或模型推断。Product Profile 与 legacy ICP 按各自
+  generation 解析，不相互借值；Site 语言逐项验证 RFC 5646，并按原始值与顺序
+  冻结，空数组是 unknown，绝不回退 Project delivery locale。
+- `TECH-INDEXABILITY-006@1` 只对 exact Crawl fetch 的 2xx 页面识别
+  `sitemapMember=true` 与 `robotsIndexable=false`；redirect source 和 non-2xx
+  exact fetch 不归入该规则，lineage 缺失或歧义时保持 inconclusive。
+- 当前 Growth Audit projection 为 `growth-audit.0.3.1`，latest 只读该 generation；
+  显式 pin 可按自己的 validator 读取已知 `growth-audit.0.3.0`，不得重解释。
+  Growth Audit capability version 仍为 `0.3.0`，request/addressing contract 与
+  `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
+- Opportunity/URL Finding 的 nullable `executionPreview` 只从当前
+  `ActionTemplate` 与 Project delivery locale 生成 read-only 展示文案；它不是
+  replay input、Finding/Opportunity identity、Action、状态、发布或测量权威。
+- Public Tools 的 facts-only、匿名 quota、无 Profile/无 canonical persistence
+  合同保持不变，不消费 authenticated workbench 的上下文投影。
 
 ## 执行、授权、发布和 Results 边界
 

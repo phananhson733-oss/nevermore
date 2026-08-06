@@ -1,6 +1,6 @@
 # Nevermore / GenGrowth Progress
 
-Updated: **2026-08-04**
+Updated: **2026-08-05**
 
 This is the current authority and verification handoff for the Nevermore
 repository and its customer-facing GenGrowth product. It replaces the retired
@@ -24,8 +24,12 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0041_product_profile_default_competitors.sql` (**41 ordered migrations**)
-- Contract inventory: **79 API operations / 10 async operations / 78 app tables / 11 frozen rules**
+  `0043_validate_contextual_diagnostic_rule_set.sql` (**43 ordered migrations**)
+- Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+- Current deterministic versions: `mvp.rules.0.2.4` /
+  `mvp.prompts.0.2.0`; current Growth Audit projection:
+  `growth-audit.0.3.1` (capability version remains `0.3.0`; request/addressing
+  contract remains `growth-audit.0.3.0`).
 
 The Artifact verification anchor above is the exact commit inspected before
 this progress-only change. A tracked file cannot contain the hash of the commit
@@ -125,6 +129,29 @@ four-module surface:
   libraries. `view=review` exists only on Keyword/Competitor detail GETs, is
   mutually exclusive with the pin, and PATCH rejects every query parameter.
 
+The contextual URL-opportunity slice is part of the authenticated workbench:
+
+- Current diagnostics freeze exact-key, hash-covered `contextProjection.v1`
+  from the selected immutable confirmed Profile and exact Site language.
+  Product Profile 0.3.0 and legacy ICP fields are parsed generation-by-generation
+  without borrowing. Provider/mode/permission, workflow, mutable priority/risk/
+  ROI/cadence, and model inference remain outside the projection. Site language
+  is RFC 5646 validated and frozen with its original values/order; `[]` means
+  unknown and never falls back to the Project delivery locale.
+- `TECH-INDEXABILITY-006@1` is the twelfth rule. It requires unambiguous exact
+  Crawl lineage, exact `page.status` 2xx, `sitemapMember=true`, and
+  `robotsIndexable=false`; redirect sources and non-2xx fetches are excluded.
+- Latest Growth Map/Growth Audit reads select only `growth-audit.0.3.1`.
+  Explicit pins may read known `growth-audit.0.3.0` through its own validator,
+  without backfill or reinterpretation. Capability version remains `0.3.0`;
+  request/addressing and `capabilityContractVersion` remain
+  `growth-audit.0.3.0`.
+- Nullable `executionPreview` is current-view, read-only copy from the existing
+  ActionTemplate registry plus Project delivery locale. It is not replay,
+  identity, Action/workflow, publication, or measurement authority.
+- Public Tools remain facts-only, anonymous/quota-bounded, Profile-independent,
+  and outside canonical workbench persistence.
+
 Next reviewed slice: **authorized provider external writes**
 
 v0.4 is now active/normative. Its pre-promotion publication candidate is
@@ -163,6 +190,35 @@ restore backup. Production operator creation remains an Owner-controlled
 provisioning step: a Supabase Auth user also needs the intended
 `app.operator_profiles` membership before authenticated four-module smoke can
 be completed.
+
+## Fresh local verification for contextual URL opportunities
+
+The contextual URL-opportunity implementation was freshly verified on
+2026-08-05 in the uncommitted
+`codex/seo-audit-opportunity-logic-v1` worktree based on
+`1bc2a5c6de76a5dfcce1bdd675dedcd77bbb2da9`. This is local implementation
+evidence only: no Supabase, shared, staging, or production database was
+connected or migrated, and no commit, push, PR, deploy, or provider write was
+performed.
+
+| Gate | Fresh local result |
+| --- | --- |
+| Unit tests | `pnpm test` passed: **589 files / 7,161 tests**. |
+| PostgreSQL integration | `pnpm test:integration` passed from a fresh PostgreSQL 16.12 loopback disposable database: **84 files / 598 tests**. The safety gate accepted only the exact `127.0.0.1` disposable URL. |
+| Migration structure | `pnpm db:migrate:check` passed at migration head `0043`: **78 app tables / 17 authority hash columns / 105 indexes / 148 triggers / 67 routines**. |
+| Constraint smoke | `pnpm db:smoke` completed all fixtures and ended with `ROLLBACK`. |
+| Disposable cleanup | All three task-owned diagnostic/final disposable databases were deleted; the final exact-name and test-derived-prefix residual counts were both **0**. |
+| Typecheck / lint / build | `pnpm typecheck`, `pnpm lint`, and `pnpm build` passed across the workspace. |
+| Contracts / OpenAPI / secrets | `pnpm contracts:check` and `pnpm openapi:lint` passed; `pnpm secrets:scan` found no secret values and its **4 files / 75 tests** passed. |
+| Authority / lock | `pnpm verify:docs`, `pnpm verify:authority`, `pnpm verify:spec`, `pnpm verify:spec:test`, and `pnpm implementation:check` passed at **79 operations / 10 async operations / 78 tables / 12 rules / 43 migrations**; verifier tests passed **51/51**. |
+
+Database execution during implementation exposed two real PostgreSQL
+parser/precedence defects in migration `0042`; the controlled authorized run
+also exposed one incomplete legacy ICP fixture and one stale
+`growth-audit.0.3.0` test expectation. The migration, fixtures, generated
+schema, and lock were corrected before the clean final run above. The task did
+not rerun browser E2E or any deployed-origin/provider gate; those remain
+separate release evidence and do not change the local integration result.
 
 ## Historical verification on the final v0.3 candidate
 
@@ -224,7 +280,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0036`; historical proof through `0021` does not prove
+   migrations through `0043`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

@@ -157,6 +157,7 @@ export {
   AuditRunsRepository,
   GROWTH_AUDIT_PROJECTION_VERSION,
   GROWTH_AUDIT_RECHECK_PROJECTION_VERSION,
+  LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
 } from "./repositories/audit-runs.ts";
 export type {
   AuditRunRow,

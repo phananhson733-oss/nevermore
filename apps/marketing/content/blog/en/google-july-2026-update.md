@@ -1,12 +1,12 @@
 ---
-title: What the Google July 2026 Update Actually Changes for Your Content Workflow
-excerpt: The Google July 2026 Update is a July 2026 ranking change that adjusts how Google weighs content quality signals.
+title: Google July 2026 Update: What Content Teams Should Do
+excerpt: Use a measured workflow to assess ranking changes, separate affected page groups, and prioritize evidence-backed content updates after Google's July change.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-09
-updatedAt: 2026-07-09
+updatedAt: 2026-08-05
 heroImage: /images/blog/google-july-2026-update.jpg
 heroImageAlt: Flat-vector illustration: a two-pan balance scale, a hand-free weight descending onto the left pan tipping the beam, the right pan rising
 localeExclusive: true
@@ -20,7 +20,7 @@ The Google July 2026 Update is **a July 2026 ranking change that adjusts how Goo
 - Its effect is uneven — some content formats shift far more than others
 - What it targets is best inferred from ranking movement, since Google publishes only broad guidance
 
-## Why It Matters for Your Workflow
+## Where Your Content Budget Should Move Now
 
 Understanding the Google July 2026 Update matters because it quietly resets where your content budget should go, and most teams find out only after a client's traffic dips. Across the white-label rollouts we've audited, the pattern repeats: the update rarely punishes a whole site, it hits specific page types, so a blanket "refresh everything" response burns hours on pages that were never at risk. The real cost shows up in three places:
 
@@ -38,7 +38,7 @@ The Google July 2026 Update rarely shows up as a sitewide swing; it tends to lan
 
 Reading which bucket a page falls into is the whole game; the update is far more legible when you segment by page type before you touch anything.
 
-## Common Implementation Misreadings
+## 'It Hit My Whole Site' and Other Panic Reads
 
 The confusion around this update comes almost entirely from treating it as broader than it is, or blending it with adjacent topics it never touched.
 
@@ -103,7 +103,7 @@ A spam update targets manipulative tactics like cloaking or link schemes, while 
 
 ## Take Action
 
-[Start your free GenGrowth trial](https://gengrowth.ai/app) and run your top pages through the update-impact workflow. You'll get a page-by-page read on which content is actually at risk, sorted by business value instead of raw ranking loss. That triage list is the difference between a same-day targeted fix and a month of guesswork — it turns an update from a fire drill into a routine content decision.
+[Start your free GenGrowth trial](https://app.gengrowth.ai/) and run your top pages through the update-impact workflow. You'll get a page-by-page read on which content is actually at risk, sorted by business value instead of raw ranking loss. That triage list is the difference between a same-day targeted fix and a month of guesswork — it turns an update from a fire drill into a routine content decision.
 
 ## Sources
 

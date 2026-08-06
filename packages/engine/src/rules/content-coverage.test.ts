@@ -5,7 +5,15 @@ import {
   type CoverageInput,
   type ObservationView,
 } from "../context.ts";
-import { parseIcp, type EngineIcp } from "../icp.ts";
+import {
+  buildContextProjectionV1,
+  type ContextProjectionV1,
+} from "../context-projection.ts";
+import {
+  parseIcp,
+  parseIcpForContextProjectionV1,
+  type EngineIcp,
+} from "../icp.ts";
 import { testObservationLineage } from "../test-observation-lineage.ts";
 import { contentCoverageRule } from "./content-coverage.ts";
 
@@ -48,7 +56,10 @@ function makePage(
   };
 }
 
-function crawlObs(subjectUrl: string, page: CrawlPageProjection): ObservationView {
+function crawlObs(
+  subjectUrl: string,
+  page: CrawlPageProjection,
+): ObservationView {
   return {
     ...testObservationLineage(`crawl:${page.fetchUrl}`, {
       sitePageUrl: page.fetchUrl,
@@ -68,6 +79,7 @@ function buildContext(input: {
   readonly icp: EngineIcp;
   readonly observations: readonly ObservationView[];
   readonly coverage?: Partial<CoverageInput>;
+  readonly contextProjection?: ContextProjectionV1;
 }): DiagnosticContext {
   return DiagnosticContext.build({
     icp: input.icp,
@@ -81,30 +93,89 @@ function buildContext(input: {
       ...input.coverage,
     },
     capturedAt: { crawl: OBSERVED_AT },
+    ...(input.contextProjection === undefined
+      ? {}
+      : { contextProjection: input.contextProjection }),
   });
 }
 
 describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
-  it("emits one candidate per uncovered offer / use case", () => {
+  it("treats an empty frozen Site language list as unknown without delivery-locale fallback", () => {
+    const profile = {
+      profileSchemaVersion: "product-profile.0.3.0",
+      productName: "Acme",
+      oneLiner: "A collaboration workspace",
+      category: "Collaboration",
+      productType: "saas",
+      businessModels: ["subscription"],
+      coreFeatures: ["team collaboration"],
+      valueProposition: "Coordinate work",
+      targetMarkets: [{ marketCode: "US", priority: "primary" }],
+      targetAudiences: [],
+      competitorCandidates: [],
+    };
+    const contextProjection = buildContextProjectionV1({
+      profileContentHash: "a".repeat(64),
+      profile,
+      siteLanguageCodes: [],
+    });
     const ctx = buildContext({
-      icp: icpOf({ offers: ["team collaboration"], useCases: ["remote onboarding"] }),
+      icp: parseIcpForContextProjectionV1(profile, contextProjection),
+      contextProjection,
       observations: [
         crawlObs(
           "https://example.com/pricing",
-          makePage({ fetchUrl: "https://example.com/pricing", title: "Pricing Plans", h1: ["Our Pricing"] }),
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing Plans",
+          }),
+        ),
+      ],
+    });
+
+    expect(ctx.deliveryLocale).toBe("en");
+    expect(ctx.isEnglish()).toBe(false);
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "unsupported_language",
+    });
+  });
+
+  it("emits one candidate per uncovered offer / use case", () => {
+    const ctx = buildContext({
+      icp: icpOf({
+        offers: ["team collaboration"],
+        useCases: ["remote onboarding"],
+      }),
+      observations: [
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing Plans",
+            h1: ["Our Pricing"],
+          }),
         ),
       ],
     });
 
     const result = contentCoverageRule.evaluate(ctx);
-    if (result.status !== "candidate") throw new Error(`expected candidate, got ${result.status}`);
+    if (result.status !== "candidate")
+      throw new Error(`expected candidate, got ${result.status}`);
     expect(result.candidates).toHaveLength(2);
 
     const [offerCandidate, useCaseCandidate] = result.candidates;
-    expect(offerCandidate!.subjectRefs).toEqual(["page_set:offer:team-collaboration"]);
+    expect(offerCandidate!.subjectRefs).toEqual([
+      "page_set:offer:team-collaboration",
+    ]);
     expect(offerCandidate!.severity).toBe("high");
-    expect(offerCandidate!.metrics).toEqual({ target: "team collaboration", kind: "offer" });
-    expect(useCaseCandidate!.subjectRefs).toEqual(["page_set:use_case:remote-onboarding"]);
+    expect(offerCandidate!.metrics).toEqual({
+      target: "team collaboration",
+      kind: "offer",
+    });
+    expect(useCaseCandidate!.subjectRefs).toEqual([
+      "page_set:use_case:remote-onboarding",
+    ]);
     expect(useCaseCandidate!.metrics.kind).toBe("use_case");
 
     const evidence = offerCandidate!.evidence[0]!;
@@ -184,7 +255,11 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
       observations: [
         crawlObs(
           "https://example.com/pricing",
-          makePage({ fetchUrl: "https://example.com/pricing", title: null, h1: [] }),
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: null,
+            h1: [],
+          }),
         ),
       ],
     });
@@ -237,13 +312,48 @@ describe("contentCoverageRule (CONTENT-COVERAGE-001)", () => {
     });
   });
 
-  it("is inconclusive for non-English projects", () => {
+  it("is inconclusive when a mixed-language intent slugifies to a leading hyphen", () => {
+    // Production regression (run f53ab013, 2026-08-03): Chinese copy with an
+    // embedded Latin word slugifies to "-astrocartography-", which fails the
+    // finding-target shape rule and previously escaped as a thrown error.
     const ctx = buildContext({
-      icp: icpOf({ offers: ["team collaboration"], siteLanguageCodes: ["zh-CN"] }),
+      icp: icpOf({
+        offers: [
+          "基于出生信息生成世界地图上的四类行星角线的 astrocartography 工具。",
+        ],
+      }),
       observations: [
         crawlObs(
           "https://example.com/pricing",
-          makePage({ fetchUrl: "https://example.com/pricing", title: "Pricing", h1: ["Pricing"] }),
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
+        ),
+      ],
+    });
+
+    expect(contentCoverageRule.evaluate(ctx)).toEqual({
+      status: "inconclusive",
+      reason: "intent_match_unavailable",
+    });
+  });
+
+  it("is inconclusive for non-English projects", () => {
+    const ctx = buildContext({
+      icp: icpOf({
+        offers: ["team collaboration"],
+        siteLanguageCodes: ["zh-CN"],
+      }),
+      observations: [
+        crawlObs(
+          "https://example.com/pricing",
+          makePage({
+            fetchUrl: "https://example.com/pricing",
+            title: "Pricing",
+            h1: ["Pricing"],
+          }),
         ),
       ],
     });

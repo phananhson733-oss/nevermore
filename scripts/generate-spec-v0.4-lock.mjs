@@ -127,10 +127,20 @@ function diagnosticRules() {
     join(ruleDirectory, "index.ts"),
     "utf8",
   );
-  const registryBody = registrySource.match(
-    /export\s+const\s+ALL_RULES\s*:[^=]+=\s*\[([\s\S]*?)\]\s*;/,
+  const currentRegistryName = registrySource.match(
+    /export\s+const\s+ALL_RULES\s*:[^=]+=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;/,
   )?.[1];
-  assert.ok(registryBody, "ALL_RULES registry order is missing");
+  assert.equal(
+    currentRegistryName,
+    "CONTEXTUAL_ALL_RULES",
+    "ALL_RULES must alias the reviewed contextual registry",
+  );
+  const registryBody = registrySource.match(
+    new RegExp(
+      `export\\s+const\\s+${currentRegistryName}\\s*:[^=]+=\\s*\\[([\\s\\S]*?)\\]\\s*;`,
+    ),
+  )?.[1];
+  assert.ok(registryBody, `${currentRegistryName} registry order is missing`);
   const identifiers = registryBody
     .split(",")
     .map((identifier) => identifier.trim())
@@ -162,7 +172,7 @@ const ruleSetVersion = registry.match(
 const promptSetVersion = registry.match(
   /PROMPT_SET_VERSION\s*=\s*"([^"]+)"/,
 )?.[1];
-assert.equal(ruleSetVersion, "mvp.rules.0.2.3");
+assert.equal(ruleSetVersion, "mvp.rules.0.2.4");
 assert.equal(promptSetVersion, "mvp.prompts.0.2.0");
 
 const openapi = read("openapi/mvp.yaml");
@@ -177,15 +187,22 @@ for (const operationId of asyncOperations) {
 
 const migrations = listOrderedMigrationSources({ root: repositoryRoot });
 const tables = migrationTableInventory(migrations);
+assert.equal(migrations.length, 43, "reviewed v0.4 migration count drift");
+assert.equal(
+  migrations.at(-1)?.migrationVersion,
+  "0043_validate_contextual_diagnostic_rule_set",
+  "reviewed v0.4 migration head drift",
+);
 assert.equal(tables.length, 78, "reviewed v0.4 table count drift");
 
 const ruleContracts = diagnosticRules();
-assert.equal(ruleContracts.length, 11, "reviewed v0.4 rule count drift");
+assert.equal(ruleContracts.length, 12, "reviewed v0.4 rule count drift");
 const ruleVersions = Object.fromEntries(
   ruleContracts.map(({ id, version }) => [id, version]),
 );
 assert.equal(ruleVersions["CONTENT-GAP-011"], 2);
 assert.equal(ruleVersions["TECH-LINKGRAPH-005"], 3);
+assert.equal(ruleVersions["TECH-INDEXABILITY-006"], 1);
 
 const lock = {
   lockFormat: 3,

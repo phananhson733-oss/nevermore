@@ -2185,8 +2185,8 @@ function checkRuleContract() {
   invariant(Array.isArray(rules), "ALL_RULES must be an array");
   const ruleIds = rules.map((rule) => rule.id);
   invariant(
-    ruleIds.length === 11,
-    `expected 11 executable rules, found ${ruleIds.length}`,
+    ruleIds.length === EXPECTED_RULES.length,
+    `expected ${EXPECTED_RULES.length} executable rules, found ${ruleIds.length}`,
   );
   assertExactOrder(ruleIds, EXPECTED_RULES, "executable frozen rules");
   for (const rule of rules) {
@@ -2200,7 +2200,7 @@ function checkRuleContract() {
       `${rule.id} domain differs between ALL_RULES and FINDING_REGISTRY`,
     );
   }
-  return "diagnostics: 11 executable frozen rules in canonical order";
+  return `diagnostics: ${EXPECTED_RULES.length} executable frozen rules in canonical order`;
 }
 
 async function checkVersions() {

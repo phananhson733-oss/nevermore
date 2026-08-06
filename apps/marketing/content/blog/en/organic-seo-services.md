@@ -20,7 +20,7 @@ Organic SEO services are **an external engagement that grows a site's earned vis
 - Compounds: a page that earns its rank tends to keep ranking long after the engagement ends
 - Increasingly includes AI search visibility — getting cited inside AI Overviews and chatbots
 
-## Why It Matters for Your Workflow
+## The Pipeline Share That Survives a Budget Pause
 
 Organic SEO services matter because the share of pipeline that comes from search is the share that does not zero out the day budgets pause. Paid channels can be turned on and off like a tap; organic compounds over months and quarters, then keeps producing after the team's attention has moved elsewhere. The deciding factor in most retainers is rarely whether the agency knows the latest tactic; it is whether the team has the capacity and craft to ship substance at the cadence the category demands.
 
@@ -41,7 +41,7 @@ The point where this intervenes is at the brief: the moment an internal team wou
 
 Two more scenarios surface once an engagement matures. First, the site starts showing up inside AI Overviews and chatbot answers — a surface most in-house programs cannot influence on their own because they lack the citation hygiene the AI systems are weighting. Second, older pages become easier to refresh because the original briefs were written against a researched topic map, so updates are surgical instead of full rewrites. In engagements we've watched succeed, the wasted effort was rarely in the writing itself; it was in the small steps clustered around the brief that an external team handles by default.
 
-## Common Implementation Misreadings
+## 'Organic Means Free' — the Channel Is Not the Cost
 
 Most shallow comparison content treats organic SEO services as a content-volume metric, which leads buyers to misread what actually drives return. A few misreadings recur:
 
@@ -111,7 +111,7 @@ Sometimes, when one person on the team has real search-craft and the cadence is 
 
 ## Take Action
 
-Run one organic-SEO audit cycle inside GenGrowth on the cluster you most want to own this quarter. You'll see which pages would compound, which ones a future update would likely clip, and where the brief template is silently costing AI search visibility — all before signing a retainer or commissioning a single new page. [Start your free GenGrowth trial](https://gengrowth.ai/app) and run the audit before you scope the engagement.
+Run one organic-SEO audit cycle inside GenGrowth on the cluster you most want to own this quarter. You'll see which pages would compound, which ones a future update would likely clip, and where the brief template is silently costing AI search visibility — all before signing a retainer or commissioning a single new page. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run the audit before you scope the engagement.
 
 ## Sources
 

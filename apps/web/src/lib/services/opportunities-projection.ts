@@ -20,6 +20,7 @@ import {
   type GovernanceProjectionV1,
 } from "@sf/engine";
 import type { EvidenceDto } from "./diagnostic-mappers";
+import { buildExecutionPreview } from "./execution-preview";
 import { isStale } from "./source-mappers";
 import {
   resolveTopicClusterSupport,
@@ -72,6 +73,7 @@ export function opportunityRuleVersion(ruleId: OpportunityRuleId): 1 | 2 | 3 {
   ) {
     return 2;
   }
+  if (ruleId === "TECH-INDEXABILITY-006") return 1;
   return 1;
 }
 
@@ -607,6 +609,8 @@ export function buildOpportunity(input: {
   readonly targets: readonly OpportunityTargetInput[];
   readonly evidence: readonly EvidenceDto[];
   readonly action: OpportunityActionInput | null;
+  /** Project delivery locale; independent of the current operator UI locale. */
+  readonly deliveryLocale: string;
   /** Current read scope; required before any growth relation can be admitted. */
   readonly projectId?: string;
   readonly siteId?: string;
@@ -628,6 +632,10 @@ export function buildOpportunity(input: {
 }): GrowthOpportunityDto | null {
   if (!isOpportunityRule(input.finding.ruleId)) return null;
   const ruleId = input.finding.ruleId as OpportunityRuleId;
+  const executionPreview = buildExecutionPreview(
+    ruleId,
+    input.deliveryLocale,
+  );
 
   const readiness = resolveReadiness({
     finding: input.finding,
@@ -709,6 +717,7 @@ export function buildOpportunity(input: {
       readiness: "confirmed",
       primaryFindingId: input.finding.id,
       primaryRule,
+      executionPreview,
       actionId: input.action.id,
       action: buildActionSummary(input.action, ruleId),
     };
@@ -718,6 +727,7 @@ export function buildOpportunity(input: {
       readiness: "reviewable",
       primaryFindingId: input.finding.id,
       primaryRule,
+      executionPreview,
     };
   }
 

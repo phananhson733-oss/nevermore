@@ -8,6 +8,124 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("guards contextual indexability diagnostics before a low-lock validation migration", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0042_contextual_indexability_opportunities.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    const validationMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0043_validate_contextual_diagnostic_rule_set.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe(
+      "0043_validate_contextual_diagnostic_rule_set",
+    );
+    expect(migration).toMatch(
+      /CHECK\s*\(\s*rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*,\s*'mvp\.rules\.0\.2\.2'\s*,\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_current_diagnostic_manifest/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.rule_set_version\s*=\s*'mvp\.rules\.0\.2\.4'[\s\S]*?manifest_keys\s*:=\s*ARRAY\[[\s\S]*?'governance'[\s\S]*?'contextProjection'/iu,
+    );
+    expect(migration).toMatch(
+      /NOT\s*\(\s*NEW\.input_manifest\s*\?&\s*manifest_keys\s*\)[\s\S]*?NEW\.input_manifest\s*-\s*manifest_keys[\s\S]*?IS\s+DISTINCT\s+FROM\s+'\{\}'::jsonb/iu,
+    );
+    expect(migration).toMatch(
+      /context_projection\s*-\s*ARRAY\[[\s\S]*?'schemaVersion'[\s\S]*?'compilerVersion'[\s\S]*?'profileGeneration'[\s\S]*?'productRouting'[\s\S]*?'siteLanguage'[\s\S]*?'primaryConversion'[\s\S]*?'priorityUrlSubjects'[\s\S]*?'declaredExecutionConstraints'[\s\S]*?\][\s\S]*?IS\s+DISTINCT\s+FROM\s+'\{\}'::jsonb/iu,
+    );
+    expect(migration).toMatch(
+      /product_routing\s*-\s*ARRAY\[[\s\S]*?'sourceKind'[\s\S]*?'productName'[\s\S]*?'oneLiner'[\s\S]*?'productType'[\s\S]*?'businessModels'[\s\S]*?'primaryMarket'[\s\S]*?'primaryAudience'/iu,
+    );
+    expect(migration).toMatch(
+      /site_language\s*-\s*ARRAY\[\s*'sourceKind'\s*,\s*'state'\s*,\s*'languageCodes'\s*\][\s\S]*?to_jsonb\(site_language_codes\)/iu,
+    );
+    expect(migration).toMatch(
+      /product_routing\s*->>\s*'sourceKind'\s+IS\s+DISTINCT\s+FROM\s*\(\s*CASE\s+profile_generation[\s\S]*?WHEN\s+'product-profile\.0\.3\.0'\s+THEN\s+'product_profile'[\s\S]*?ELSE\s+'legacy_icp'[\s\S]*?END\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /site_language\s*->>\s*'state'\s+IS\s+DISTINCT\s+FROM\s*\(\s*CASE[\s\S]*?WHEN\s+cardinality\(site_language_codes\)\s*=\s*0\s+THEN\s+'declared_empty'[\s\S]*?ELSE\s+'declared_non_empty'[\s\S]*?END\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /primary_conversion\s*->>\s*'sourceKind'\s+IS\s+DISTINCT\s+FROM\s*\(\s*CASE\s+profile_generation[\s\S]*?WHEN\s+'product-profile\.0\.3\.0'[\s\S]*?THEN\s+'not_declared_for_generation'[\s\S]*?ELSE\s+'legacy_icp'[\s\S]*?END\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /priority_url_subjects\s*->>\s*'sourceKind'\s+IS\s+DISTINCT\s+FROM\s*\(\s*CASE\s+profile_generation[\s\S]*?WHEN\s+'product-profile\.0\.3\.0'[\s\S]*?THEN\s+'not_declared_for_generation'[\s\S]*?ELSE\s+'legacy_icp'[\s\S]*?END\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /declared_execution_constraints\s*->>\s*'sourceKind'\s+IS\s+DISTINCT\s+FROM\s*\(\s*CASE\s+profile_generation[\s\S]*?WHEN\s+'product-profile\.0\.3\.0'[\s\S]*?THEN\s+'not_declared_for_generation'[\s\S]*?ELSE\s+'legacy_icp'[\s\S]*?END\s*\)/iu,
+    );
+    expect(migration).toMatch(
+      /profile_generation[\s\S]*?icp_profile\s*\?\s*'profileSchemaVersion'[\s\S]*?product-profile\.0\.3\.0[\s\S]*?legacy-icp\.v1/iu,
+    );
+    expect(migration).toMatch(
+      /priority_url_subjects\s*->>\s*'sourceHash'\s+IS\s+DISTINCT\s+FROM\s+icp_content_hash/iu,
+    );
+    expect(migration).toMatch(
+      /primary_conversion[\s\S]*?priority_url_subjects[\s\S]*?declared_execution_constraints[\s\S]*?not_declared_for_generation/iu,
+    );
+    expect(migration).toMatch(
+      /primary_conversion\s*-\s*ARRAY\['state',\s*'sourceKind',\s*'value'\][\s\S]*?priority_url_subjects\s*-\s*ARRAY\[[\s\S]*?'sourceHash'[\s\S]*?'normalizedRefs'[\s\S]*?declared_execution_constraints\s*-\s*ARRAY\[[\s\S]*?'technical'[\s\S]*?'resource'/iu,
+    );
+    expect(migration).toMatch(
+      /\(primary_conversion\s*->\s*'value'\)\s*-\s*ARRAY\['label',\s*'type',\s*'targetUrl'\]::text\[\]/iu,
+    );
+    expect(migration).not.toMatch(
+      /primary_conversion\s*->\s*'value'\s*-\s*ARRAY\['label',\s*'type',\s*'targetUrl'\]/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.expected_diagnostic_rule_version/iu,
+    );
+    expect(migration).toMatch(
+      /selected_rule_id\s*=\s*'TECH-INDEXABILITY-006'[\s\S]*?selected_rule_set\s*=\s*'mvp\.rules\.0\.2\.4'[\s\S]*?THEN\s+1[\s\S]*?ELSE\s+NULL/iu,
+    );
+    expect(migration).toMatch(
+      /selected_rule_set\s+IN\s*\(\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)[\s\S]*?selected_rule_id\s*=\s*'TECH-LINKGRAPH-005'\s+THEN\s+3[\s\S]*?selected_rule_set\s+IN\s*\([\s\S]*?'mvp\.rules\.0\.2\.2'[\s\S]*?'mvp\.rules\.0\.2\.3'[\s\S]*?'mvp\.rules\.0\.2\.4'[\s\S]*?selected_rule_id\s*=\s*'CONTENT-GAP-011'\s+THEN\s+2/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_finding_target_lineage/iu,
+    );
+    expect(migration).toMatch(
+      /WHEN\s+'TECH-INDEXABILITY-006'\s+THEN\s+'direct_url'/iu,
+    );
+    expect(migration).toMatch(
+      /finding_rule_id\s+IN\s*\([\s\S]*?'TECH-INDEXABILITY-006'[\s\S]*?\)[\s\S]*?NEW\.resolution_state\s*=\s*'resolved'[\s\S]*?NEW\.basis_kind\s*=\s*'crawl_exact_fetch'/iu,
+    );
+    expect(migration).toMatch(
+      /NEW\.target_ref\s+IS\s+DISTINCT\s+FROM\s+page_normalized_url[\s\S]*?observation_metric_key\s*<>\s*'crawl\.page\.v1'[\s\S]*?NEW\.member_ref\s+IS\s+DISTINCT\s+FROM\s+observation_fetch_url[\s\S]*?page_snapshot\.id\s*=\s*NEW\.page_snapshot_id[\s\S]*?page_snapshot\.data_snapshot_id\s*=\s*observation_snapshot_id/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_finding_target_lineage\(\)[\s\S]*?RETURN\s+NEW;\s*END;\s*\$\$;[\s\S]*?SET\s+LOCAL\s+lock_timeout[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs[\s\S]*?CREATE\s+OR\s+REPLACE\s+VIEW\s+app\.schema_migration_version/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0042_contextual_indexability_opportunities'::text[\s\S]*?AS\s+migration_version/iu,
+    );
+    expect(migration).toMatch(
+      /SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs[\s\S]*?DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+diagnostic_runs_rule_set_version_check\s*,[\s\S]*?ADD\s+CONSTRAINT\s+diagnostic_runs_rule_set_version_check[\s\S]*?NOT\s+VALID/iu,
+    );
+    expect(migration.indexOf("SET LOCAL lock_timeout = '5s';")).toBeGreaterThan(
+      migration.indexOf(
+        "CREATE OR REPLACE FUNCTION app.enforce_finding_target_lineage()",
+      ),
+    );
+    expect(validationMigration).toMatch(
+      /BEGIN;[\s\S]*?SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs\s+VALIDATE\s+CONSTRAINT\s+diagnostic_runs_rule_set_version_check[\s\S]*?SELECT\s+'0043_validate_contextual_diagnostic_rule_set'::text\s+AS\s+migration_version;[\s\S]*?COMMIT;/iu,
+    );
+  });
+
   it("tracks opt-out Product Profile competitor defaults", () => {
     const migration = readFileSync(
       fileURLToPath(
@@ -19,9 +137,6 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe(
-      "0041_product_profile_default_competitors",
-    );
     expect(migration).toMatch(
       /origin\.source_review_status\s*=\s*'candidate'[\s\S]*?origin\.source_relationship\s+IN\s*\(\s*'direct'\s*,\s*'indirect'\s*\)[\s\S]*?cardinality\(origin\.source_analysis_scope\)\s+BETWEEN\s+1\s+AND\s+5/iu,
     );

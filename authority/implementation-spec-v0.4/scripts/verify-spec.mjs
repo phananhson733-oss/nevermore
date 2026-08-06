@@ -169,9 +169,14 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.authorityVersion, "0.4.0");
   assert.equal(lock.authorityStatus, "active");
   assert.equal(lock.normative, true);
-  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
+  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
+  assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
+  assert.equal(
+    lock.migrationHead,
+    "0043_validate_contextual_diagnostic_rule_set",
+  );
 
   assert.match(readme, /状态：\*\*active\*\*/);
   assert.match(readme, /规范性：\*\*normative\*\*/);
@@ -204,6 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
+  assert.equal(migrations.length, 43, "v0.4 must freeze 43 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),
@@ -436,7 +442,7 @@ export function verifyAuthoritySourceSet({
     ["operations", 79, [/79 个 operation/g]],
     ["shared async operations", 10, [/10 个 shared async operation/g]],
     ["tables", 78, [/78 张应用表/g]],
-    ["rules", 11, [/11 条规则/g]],
+    ["rules", 12, [/12 条规则/g]],
   ]) {
     const count = patterns.reduce(
       (total, pattern) =>

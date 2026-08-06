@@ -44,11 +44,16 @@ interface FrozenSnapshot {
 }
 
 interface Fixture {
+  readonly actorId: string;
   readonly workspaceId: string;
   readonly projectId: string;
   readonly foreignProjectId: string;
   readonly siteId: string;
   readonly otherSiteId: string;
+  readonly icpProfileId: string;
+  readonly icpContentHash: string;
+  readonly crawlSnapshot: FrozenSnapshot;
+  readonly gscSnapshot: FrozenSnapshot;
   readonly currentRunId: string;
   readonly otherRunId: string;
   readonly directFindingId: string;
@@ -616,11 +621,16 @@ async function seedFixture(client: pg.Client): Promise<Fixture> {
   }
 
   return {
+    actorId,
     workspaceId,
     projectId,
     foreignProjectId,
     siteId,
     otherSiteId,
+    icpProfileId,
+    icpContentHash,
+    crawlSnapshot: snapshots.crawl!,
+    gscSnapshot: snapshots.gsc!,
     currentRunId,
     otherRunId,
     directFindingId,
@@ -1239,6 +1249,190 @@ describe("0017 Finding target ledger upgrade", () => {
           ),
           "55000",
         );
+
+        for (const migrationFile of listMigrationFiles().filter(
+          (file) =>
+            file > "0017_finding_target_ledger.sql" &&
+            file <= "0043_validate_contextual_diagnostic_rule_set.sql",
+        )) {
+          await applyMigration(targetClient, migrationFile);
+        }
+
+        const contextualRunId = randomUUID();
+        const contextualFindingId = randomUUID();
+        const contextualManifest = {
+          projectId: fixture.projectId,
+          siteId: fixture.siteId,
+          ruleSetVersion: "mvp.rules.0.2.4",
+          promptSetVersion: "mvp.prompts.0.2.0",
+          deliveryLocale: "en-US",
+          icp: {
+            id: fixture.icpProfileId,
+            version: 1,
+            contentHash: fixture.icpContentHash,
+          },
+          snapshots: [
+            snapshotManifestEntry(fixture.crawlSnapshot),
+            snapshotManifestEntry(fixture.gscSnapshot),
+          ],
+          governance: {
+            projectionVersion: "growth-governance.1.0.0",
+            keywordClusters: [],
+            competitors: [],
+          },
+          contextProjection: {
+            schemaVersion: "context-projection.v1",
+            compilerVersion: "context-projection.compiler.1.0.0",
+            profileGeneration: "legacy-icp.v1",
+            productRouting: {
+              sourceKind: "legacy_icp",
+              productName: "Finding target ledger fixture",
+              oneLiner: "A disposable legacy ICP fixture.",
+              productType: "",
+              businessModels: [],
+              primaryMarket: null,
+              primaryAudience: null,
+            },
+            siteLanguage: {
+              sourceKind: "site",
+              state: "declared_non_empty",
+              languageCodes: ["en"],
+            },
+            primaryConversion: {
+              state: "missing",
+              sourceKind: "legacy_icp",
+            },
+            priorityUrlSubjects: {
+              state: "missing",
+              sourceKind: "legacy_icp",
+            },
+            declaredExecutionConstraints: {
+              state: "missing",
+              sourceKind: "legacy_icp",
+            },
+          },
+        } as const satisfies CanonicalValue;
+        await targetClient.query(
+          `INSERT INTO app.async_runs (
+             id, workspace_id, project_id, kind, status,
+             initiated_by, started_at
+           ) VALUES ($1,$2,$3,'diagnostic','running',$4,$5)`,
+          [
+            contextualRunId,
+            fixture.workspaceId,
+            fixture.projectId,
+            fixture.actorId,
+            CAPTURED_AT,
+          ],
+        );
+        await targetClient.query(
+          `INSERT INTO app.diagnostic_runs (
+             id, workspace_id, project_id, site_id, icp_profile_id,
+             icp_profile_version, rule_set_version, prompt_set_version,
+             output_locale, input_manifest, input_hash
+           ) VALUES (
+             $1,$2,$3,$4,$5,1,'mvp.rules.0.2.4','mvp.prompts.0.2.0',
+             'en-US',$6,$7
+           )`,
+          [
+            contextualRunId,
+            fixture.workspaceId,
+            fixture.projectId,
+            fixture.siteId,
+            fixture.icpProfileId,
+            contextualManifest,
+            contentHash(contextualManifest),
+          ],
+        );
+        await targetClient.query(
+          `INSERT INTO app.diagnostic_run_rules (
+             diagnostic_run_id, rule_id, rule_version, domain,
+             status, reason, metrics, duration_ms
+           ) VALUES (
+             $1,'TECH-INDEXABILITY-006',1,'technical_seo',
+             'candidate',NULL,'{}'::jsonb,1
+           )`,
+          [contextualRunId],
+        );
+        await targetClient.query(
+          `INSERT INTO app.findings (
+             id, workspace_id, project_id, finding_key, rule_id, rule_version,
+             rule_family, intent, domain, title_key, subject_refs,
+             summary, summary_locale, severity, confidence,
+             first_seen_run_id, last_seen_run_id, first_seen_at, last_seen_at
+           ) VALUES (
+             $1,$2,$3,$4,'TECH-INDEXABILITY-006',1,
+             'indexability','investigate','technical_seo','fixture.title',$5,
+             'Contextual indexability fixture.','en-US','high','high',
+             $6,$6,$7,$7
+           )`,
+          [
+            contextualFindingId,
+            fixture.workspaceId,
+            fixture.projectId,
+            sha256Hex(contextualFindingId),
+            JSON.stringify([fixture.urls.crawlOne]),
+            contextualRunId,
+            CAPTURED_AT,
+          ],
+        );
+
+        const contextualTarget: FindingTargetInsert = {
+          siteId: fixture.siteId,
+          findingId: contextualFindingId,
+          diagnosticRunId: contextualRunId,
+          relation: "direct_url",
+          targetKind: "url",
+          targetRef: fixture.urls.crawlOne!,
+          resolutionState: "resolved",
+          basisKind: "crawl_exact_fetch",
+          sitePageId: fixture.pageIds.crawlOne!,
+          pageSnapshotId: fixture.pageSnapshotIds.crawlOne!,
+          sourceObservationId: fixture.observationIds.crawlOne!,
+          memberRef: fixture.urls.crawlOne!,
+          limitation: null,
+        };
+        await expectCheckViolation(
+          insertRawTarget(targetClient, scope, {
+            ...contextualTarget,
+            relation: "affected_by_page_set",
+            targetKind: "page_set",
+            targetRef: "indexability-pages",
+          }),
+        );
+        await expectCheckViolation(
+          insertRawTarget(targetClient, scope, {
+            ...contextualTarget,
+            resolutionState: "unresolved",
+            basisKind: "unresolved_observation",
+            sitePageId: null,
+            pageSnapshotId: null,
+            limitation: "An exact-crawl rule cannot emit unresolved members.",
+          }),
+        );
+        await expectCheckViolation(
+          insertRawTarget(targetClient, scope, {
+            ...contextualTarget,
+            targetRef: fixture.urls.gscWithSnapshot!,
+            sitePageId: fixture.pageIds.gscWithSnapshot!,
+            pageSnapshotId: fixture.pageSnapshotIds.gscWithSnapshot!,
+            sourceObservationId: fixture.observationIds.gscWithSnapshot!,
+            memberRef: fixture.urls.gscWithSnapshot!.replace(/\/$/u, ""),
+          }),
+        );
+        await expect(
+          insertRawTarget(targetClient, scope, contextualTarget),
+        ).resolves.toBeUndefined();
+
+        const contextualVersion = await targetClient.query<{
+          migration_version: string;
+        }>("SELECT migration_version FROM app.schema_migration_version");
+        expect(contextualVersion.rows).toEqual([
+          {
+            migration_version:
+              "0043_validate_contextual_diagnostic_rule_set",
+          },
+        ]);
       } finally {
         await handle?.end();
         await targetClient?.end();

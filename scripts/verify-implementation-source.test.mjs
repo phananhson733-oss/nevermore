@@ -30,13 +30,33 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   ]) {
     assert.match(verifier, new RegExp(binding.replaceAll(".", "\\.")));
   }
+  assert.match(verifier, /ruleIds\.length === EXPECTED_RULES\.length/);
+  assert.match(
+    verifier,
+    /expected \$\{EXPECTED_RULES\.length\} executable rules, found \$\{ruleIds\.length\}/,
+  );
+  assert.match(
+    verifier,
+    /diagnostics: \$\{EXPECTED_RULES\.length\} executable frozen rules in canonical order/,
+  );
+  assert.doesNotMatch(verifier, /expected 11 executable rules/);
+  assert.doesNotMatch(
+    verifier,
+    /diagnostics: 11 executable frozen rules in canonical order/,
+  );
   assert.equal(lock.authorityVersion, "0.4.0");
   assert.equal(lock.apiOperations.length, 79);
   assert.equal(lock.asyncOperations.length, 10);
   assert.equal(lock.tables.length, 78);
-  assert.equal(lock.rules.length, 11);
-  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.3");
+  assert.equal(lock.rules.length, 12);
+  assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
+  assert.equal(
+    lock.migrationHead,
+    "0043_validate_contextual_diagnostic_rule_set",
+  );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
+  assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
+  assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.doesNotMatch(verifier, /mvp\.rules\.0\.2\.1/);
 });
 

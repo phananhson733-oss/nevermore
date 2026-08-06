@@ -21,6 +21,18 @@ const { GET } = await import("./route");
 const projectId = "00000000-0000-4000-8000-000000000003";
 const sitePageId = "00000000-0000-4000-8000-000000000004";
 const diagnosticRunId = "a0000000-0000-7000-8000-000000000006";
+const executionPreview = {
+  templateId: "fix_http_status.v1",
+  templateVersion: 1,
+  artifactType: "technical_ticket",
+  effort: "medium",
+  risk: "medium",
+  contentLocale: "en",
+  title: "Fix non-200 indexable URLs",
+  description: "Repair or redirect indexable URLs that return error statuses.",
+  expectedOutcome:
+    "Priority URLs return an intentional indexable or redirect status.",
+} as const;
 
 function invoke(
   selectedSitePageId = sitePageId,
@@ -49,7 +61,16 @@ beforeEach(() => {
     siteId: "00000000-0000-4000-8000-000000000005",
     diagnosticRunId,
     crawlSnapshotId: "00000000-0000-4000-8000-000000000007",
-    data: { sitePageId },
+    data: {
+      sitePageId,
+      findings: [
+        {
+          findingId: "00000000-0000-4000-8000-000000000008",
+          executionPreview,
+          executionRef: null,
+        },
+      ],
+    },
   });
 });
 
@@ -68,7 +89,19 @@ describe("GET selected Growth Map URL", () => {
       { diagnosticRunId: null },
     );
     await expect(response.json()).resolves.toEqual({
-      data: expect.objectContaining({ projectId, data: { sitePageId } }),
+      data: expect.objectContaining({
+        projectId,
+        data: {
+          sitePageId,
+          findings: [
+            {
+              findingId: "00000000-0000-4000-8000-000000000008",
+              executionPreview,
+              executionRef: null,
+            },
+          ],
+        },
+      }),
     });
   });
 
@@ -85,6 +118,21 @@ describe("GET selected Growth Map URL", () => {
       sitePageId,
       { diagnosticRunId: null },
     );
+    await expect(response.json()).resolves.toMatchObject({
+      data: {
+        data: {
+          findings: [
+            {
+              executionPreview: {
+                contentLocale: "en",
+                title: "Fix non-200 indexable URLs",
+              },
+              executionRef: null,
+            },
+          ],
+        },
+      },
+    });
   });
 
   it("passes an exact canonical UUIDv7 published-generation pin to the detail service", async () => {

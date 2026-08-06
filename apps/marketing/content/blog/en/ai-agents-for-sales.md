@@ -20,7 +20,7 @@ AI agents for sales is **software that plans and executes sales tasks end to end
 - Chooses and calls its own tools (CRM, email, enrichment) within limits you set
 - Hands the deal back to a person the moment strategy or nuance takes over
 
-## Why It Matters for Your Workflow
+## How This Changes Your Team's Unit Economics
 
 AI agents for sales matter because they change the unit economics of a team: you can add pipeline capacity without adding headcount in lockstep. Across the sales-automation rollouts we've audited, the deciding factor is rarely the length of a vendor's feature list — it's whether the agent owns a whole task or just nudges a rep who still does the work. Getting that call wrong is expensive, and the cost lands in a few concrete places:
 
@@ -40,7 +40,7 @@ AI agents for sales differ from plain automation because they decide the order o
 
 In each case the agent works the repetitive middle of the funnel, while a rep still sets strategy at the top and closes at the bottom. A SaaS team might let an agent run all of stage one and two, then require a human sign-off before anything reaches a named enterprise account. That split — autonomy on volume, oversight on value — is what separates a workflow that scales cleanly from one that quietly creates cleanup work later.
 
-## Common Implementation Misreadings
+## A Copilot Is Not an Agent, and Four More Mix-Ups
 
 Public references like Wikipedia's entry on AI agents describe them as systems that pursue goals and call tools on their own, which is a useful baseline. Most confusion comes from blending agents with the tools that sit right next to them, and three misreadings cause the most wasted budget:
 
@@ -112,7 +112,7 @@ That depends on which task you automate first and how much manual time it remove
 
 ## Take Action
 
-Start by mapping your sales workflow and flagging every task a person repeats more than ten times a week. [Explore GenGrowth Features](https://gengrowth.ai/en/features) to see which of those tasks an agent can own end to end and where it should hand the deal back to a rep. The teams that draw that line first tend to scale pipeline without watching their margin quietly slip away.
+Start by mapping your sales workflow and flagging every task a person repeats more than ten times a week. [Explore GenGrowth Features](https://gengrowth.ai/pricing) to see which of those tasks an agent can own end to end and where it should hand the deal back to a rep. The teams that draw that line first tend to scale pipeline without watching their margin quietly slip away.
 
 ## Sources
 

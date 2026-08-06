@@ -1,12 +1,12 @@
 ---
-title: What a Manual SEO Service Actually Covers — A Scope-Bounded Definition for B2B Buyers
-excerpt: Most explanations of this offering blur three separate things — the tasks a human actually performs, the tasks a tool performs, and the tasks an adjacent agency retainer bundles in.
+title: Manual SEO Service: Scope, Costs, and Buyer Checklist
+excerpt: Separate hands-on SEO work from software and adjacent retainers, then use a practical checklist to define scope, ownership, and expected evidence.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-02
-updatedAt: 2026-07-02
+updatedAt: 2026-08-05
 heroImage: /images/blog/manual-seo-service.jpg
 heroImageAlt: Flat-vector illustration: a simple hand silhouette holding a pencil on the left and a large gear turning on the right, both at equal size
 localeExclusive: true
@@ -20,7 +20,7 @@ Most explanations of this offering blur three separate things — the tasks a hu
 - **Scope boundary:** it covers on-page judgment, manual link building, and technical fixes a person verifies, but excludes the bulk generation and mass reporting that tools handle better.
 - **Complement boundary:** it does not reject automation; it draws a line where human judgment adds value and lets software do the rest.
 
-## Why It Matters for Your Workflow
+## Paying Human Rates for Work a Tool Does Faster
 
 For a B2B SaaS team or an agency reselling the work, the cost of misreading this boundary is paying premium human rates for tasks a tool would do faster, or paying tool prices for judgment a person should own. When a vendor sells a "manual SEO service" but quietly runs the same automated link blasts everyone else does, you inherit the downside — spammy backlinks, thin AI-spun pages, and a cleanup bill — while paying for craft you never received. Buyers who cannot separate the human work from the tooling end up comparing retainers on headcount claims alone, which rewards the vendor best at sounding hands-on.
 
@@ -64,7 +64,7 @@ Evaluating a manual SEO service is mostly an exercise in verifying where the hum
 
 Next, probe the reporting and the tooling honestly. A trustworthy partner is candid that software compiles the numbers — you want to see how transparent reporting works before you sign, so review the standards behind a good [SEO reporting tool for SEO companies](/blog/seo-reporting-tool-for-seo-companies). Finally, weigh the manual premium against scope: paying human rates only makes sense on the tasks where a person changes the outcome, so map which deliverables truly need hands-on manual SEO work and which are better handed to automation.
 
-## How to Implement It Step by Step
+## Drawing the Automation Line Before Work Starts
 
 Once you have chosen a partner, a sound engagement follows a recognizable sequence. Implement it in this order:
 
@@ -103,7 +103,7 @@ Ask for outreach logs, named prospect lists, and the reasoning behind each quali
 
 ## Take Action
 
-If you are weighing whether a manual SEO service fits your growth plan — or where the human work should stop and automation should take over — gengrowth.ai is happy to talk it through. [Start a free GenGrowth trial](https://gengrowth.ai/app) and we will help you map which deliverables truly need hands-on work and which are better handed to software, so you pay the manual premium only where it changes the outcome.
+If you are weighing whether a manual SEO service fits your growth plan — or where the human work should stop and automation should take over — gengrowth.ai is happy to talk it through. [Start a free GenGrowth trial](https://app.gengrowth.ai/) and we will help you map which deliverables truly need hands-on work and which are better handed to software, so you pay the manual premium only where it changes the outcome.
 
 ## Sources
 

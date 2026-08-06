@@ -6,13 +6,13 @@ category: case_study
 pillar: customer_stories
 status: published
 publishedAt: 2026-02-20
-updatedAt: 2026-03-05
+updatedAt: 2026-08-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
 heroImageAlt: 扁平矢量插图：三盆植物由小到大依次排开，从幼苗长成枝叶繁茂的大株
 localeExclusive: false
 ---
 
-<!-- Migrated losslessly from the legacy Supabase HTML body. New articles should use GFM Markdown. -->
+<!-- Migrated from the legacy Supabase HTML body and subsequently editorially reviewed. -->
 <h2>起点</h2>
 <p>2026 年 1 月，astrologywiki.com 是一块白纸。域名注册了两年，但零索引页面、零反向链接、零自然流量。创始人拥有深厚的领域专业知识，但没有增长团队、内容流水线和营销预算。</p>
 <p>目标：90 天内达到 5,000 月活用户，完全通过自然渠道。</p>
@@ -23,7 +23,7 @@ localeExclusive: false
 <li><strong>内容差距：</strong>前 5 名竞争对手平均各有 340 个索引页面。astrologywiki.com 有零个。</li>
 <li><strong>社交信号：</strong>Reddit r/astrology 有 120 万成员。X 上日均 45,000 条相关讨论。</li>
 </ul>
-<p>发现引擎对 186 个机会项目评分，表面化前 30 个。</p>
+<p>研究阶段形成了 186 个候选机会。团队审阅其证据、相关性和实施约束后，选择了 30 个进入第一轮计划。</p>
 
 <h2>第二阶段：策略（第 3 周）</h2>
 <h3>内容集群策略</h3>
@@ -63,4 +63,4 @@ localeExclusive: false
 <li>垂直内容的人工审核不可缺少。</li>
 </ol>
 
-<p>开始你的增长之旅，探索 <a href="/features">GenGrowth 的功能</a>或阅读<a href="/zh/blog/what-is-growth-automation">增长自动化完整指南</a>。</p>
+<p>要规划自己的证据驱动 SEO 工作流，可以先了解 <a href="/zh/pricing">GenGrowth 如何运作</a>，或阅读<a href="/zh/blog/what-is-growth-automation">增长自动化完整指南</a>。</p>

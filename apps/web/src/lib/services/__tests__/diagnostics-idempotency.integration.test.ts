@@ -34,6 +34,7 @@ import {
   workspaces,
 } from "@sf/db/schema";
 import {
+  buildContextProjectionV1,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -56,6 +57,17 @@ const safeGuard: UrlGuard = async (url) => ({
   pinnedIp: "93.184.216.34",
   reason: null,
 });
+
+function diagnosticProfile(productName = "Diagnostic fixture") {
+  return {
+    productName,
+    oneLineDescription: "Direct Diagnostic integration fixture",
+    productType: "saas",
+    businessModels: ["subscription"],
+    marketCodes: ["US"],
+    segments: ["Growth teams"],
+  } as const;
+}
 
 async function createDiagnosticFixture(
   handle: DbHandle,
@@ -127,7 +139,7 @@ async function createDiagnosticFixture(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Diagnostic fixture" },
+      profile: diagnosticProfile(),
       content_hash: confirmedProfileHash,
       created_by: actor,
     })
@@ -453,7 +465,24 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
         keywordClusters: [],
         competitors: [],
       },
+      contextProjection: buildContextProjectionV1({
+        profile: diagnosticProfile(),
+        profileContentHash: fixture.confirmedProfileHash,
+        siteLanguageCodes: ["en"],
+      }),
     };
+
+    expect(Object.keys(persisted!.input_manifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
 
     expect(persisted).toMatchObject({
       site_id: fixture.siteId,
@@ -462,7 +491,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       output_locale: "en-US",
       input_manifest: expectedManifest,
       input_hash: contentHash(
-        expectedManifest as Parameters<typeof contentHash>[0],
+        expectedManifest as unknown as Parameters<typeof contentHash>[0],
       ),
     });
     expect(persisted!.input_hash).toBe(
@@ -472,7 +501,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
     );
   });
 
-  it("replays the original 202 after archive and ICP pointer changes", async () => {
+  it("replays the original 202 after later mutable Site and Profile changes", async () => {
     queueFixture.send.mockClear();
     const fixture = await createDiagnosticFixture(handle, workspaceId, randomUUID());
     const key = randomUUID();
@@ -488,10 +517,30 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
       body,
     );
 
+    const [laterProfile] = await handle.db
+      .insert(icpProfiles)
+      .values({
+        workspace_id: workspaceId,
+        project_id: fixture.scope.projectId,
+        version: 2,
+        status: "complete",
+        profile: diagnosticProfile("Later confirmed profile"),
+        content_hash: contentHash({ laterProfile: fixture.scope.projectId }),
+        created_by: actor,
+      })
+      .returning();
     await handle.db
       .update(clientProjects)
-      .set({ archived_at: sql`now()`, current_icp_profile_id: null })
+      .set({
+        archived_at: sql`now()`,
+        current_icp_profile_id: laterProfile!.id,
+        confirmed_icp_profile_id: laterProfile!.id,
+      })
       .where(eq(clientProjects.id, fixture.scope.projectId));
+    await handle.db
+      .update(sites)
+      .set({ language_codes: ["fr"] })
+      .where(eq(sites.id, fixture.siteId));
 
     const replay = await createDiagnosticRun(
       { workspaceId },

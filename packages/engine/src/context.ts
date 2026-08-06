@@ -23,6 +23,10 @@ import {
   type GovernanceKeywordFactV1,
   type GovernanceProjectionV1,
 } from "./governance.ts";
+import {
+  parseContextProjectionV1,
+  type ContextProjectionV1,
+} from "./context-projection.ts";
 import { isEnglishProject, type EngineIcp } from "./icp.ts";
 import type { Dataset } from "./rule.ts";
 import {
@@ -88,6 +92,11 @@ export interface DiagnosticContextInput {
   readonly observations: readonly ObservationView[];
   readonly coverage: CoverageInput;
   /**
+   * Run-local current-generation business context. Historical rule-set
+   * manifests omit this field and preserve their original language routing.
+   */
+  readonly contextProjection?: ContextProjectionV1;
+  /**
    * Optional frozen Keyword/Competitor Library facts. Historical manifests omit
    * this field and therefore retain the exact pre-governance replay behavior.
    */
@@ -137,6 +146,7 @@ export class DiagnosticContext {
   readonly deliveryLocale: string;
   readonly coverage: CoverageInput;
   readonly capturedAt: Readonly<Record<string, string>>;
+  readonly contextProjection: ContextProjectionV1 | null;
   readonly governance: GovernanceProjectionV1 | null;
   /** Stable ASCII-ordered lookup over the frozen Keyword Library clusters. */
   readonly governedKeywordClusters: ReadonlyMap<
@@ -217,6 +227,10 @@ export class DiagnosticContext {
     this.deliveryLocale = input.deliveryLocale;
     this.coverage = input.coverage;
     this.capturedAt = input.capturedAt;
+    this.contextProjection =
+      input.contextProjection === undefined
+        ? null
+        : parseContextProjectionV1(input.contextProjection);
     this.governance =
       input.governance === undefined
         ? null
@@ -548,6 +562,11 @@ export class DiagnosticContext {
   // --- helpers ------------------------------------------------------------
 
   isEnglish(): boolean {
+    if (this.contextProjection !== null) {
+      const primary =
+        this.contextProjection.siteLanguage.languageCodes[0] ?? null;
+      return primary !== null && primary.toLowerCase().startsWith("en");
+    }
     return isEnglishProject(this.icp);
   }
 

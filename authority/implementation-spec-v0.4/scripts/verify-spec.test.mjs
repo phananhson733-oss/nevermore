@@ -75,9 +75,9 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
       operations: 79,
       async: 10,
       tables: 78,
-      rules: 11,
-      migrations: 41,
-      head: "0041_product_profile_default_competitors",
+      rules: 12,
+      migrations: 43,
+      head: "0043_validate_contextual_diagnostic_rule_set",
     },
   );
 });
@@ -107,7 +107,7 @@ test("rejects hand-edited generated authority SQL", () => {
 
 test("generated schema is the exact ordered migration chain", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
-  assert.equal(migrations.length, 41);
+  assert.equal(migrations.length, 43);
   assert.equal(
     readAuthority("schema.sql"),
     renderAuthoritySchema(migrations),

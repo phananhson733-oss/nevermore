@@ -4,6 +4,7 @@ import {
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
+  IcpProfilesRepository,
   ObservationsRepository,
   SitePagesRepository,
   SitesRepository,
@@ -64,6 +65,19 @@ export async function seedCurrentCrawlDiagnostic(
     input.siteId,
   );
   if (!site) throw new Error("fixture Site is missing");
+  const profile = await new IcpProfilesRepository(handle.db).findById(
+    input.scope,
+    input.icp.id,
+  );
+  if (
+    !profile ||
+    profile.id !== input.icp.id ||
+    profile.status !== "complete" ||
+    profile.version !== input.icp.version ||
+    profile.content_hash !== input.icp.contentHash
+  ) {
+    throw new Error("fixture Product Profile lineage is invalid");
+  }
 
   const capturedAt = new Date().toISOString();
   const collectionRunId = randomUUID();
@@ -192,7 +206,8 @@ export async function seedCurrentCrawlDiagnostic(
   const frozen = buildDiagnosticFrozenInput({
     projectId: input.scope.projectId,
     siteId: input.siteId,
-    icp: input.icp,
+    icp: { ...input.icp, profile: profile.profile },
+    siteLanguageCodes: site.language_codes,
     snapshots: [snapshot],
     deliveryLocale: input.outputLocale ?? "en",
     governance: {

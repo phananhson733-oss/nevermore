@@ -22,7 +22,7 @@ An international SEO audit is **a structured review of how a multi-language or m
 
 A team running this audit from a generic checklist will confirm hreflang "exists" on every page and still lose rankings, because the annotations on the pairs that fail to reciprocate can be ignored. Per Google Search Central, when pages do not both point to each other "those annotations may be ignored or not interpreted correctly" — so every unclosed pair is at risk of dropping out of the calculation while the reciprocated pairs are still processed. Most international-SEO checklists list hreflang as a single presence item, and some even flag missing return links as a common error — yet they rarely walk through the pair-level validation that error demands. This guide audits the way the search engine actually reads the markup.
 
-## Why It Matters for Your Workflow
+## The Secondary-Market Drop You Won't See Coming
 
 The cost of a shallow audit is invisible until traffic in a secondary market drops without warning. A team confirms hreflang is present, marks the line item green, and moves on — then watches the German and French versions cannibalize each other in their own SERPs because the return-tag pairs never closed.
 
@@ -46,7 +46,7 @@ A SaaS team adds a Spanish version to an existing English, German, and French si
 
 A CMS promises automatic hreflang, which the in-house marketer trusts. The audit finds the generator emits self-referential tags and forward links but silently drops the return link whenever a translation is marked draft. The tags exist, the CMS reports success, and any pair whose return link the generator dropped is at risk of being ignored. The audit's job here is to test the output the crawler sees, not the dashboard the CMS shows — a distinction a strong [saas seo platform](/blog/saas-seo-platform) is built to enforce.
 
-## Common Implementation Misreadings
+## Present Is Not Valid: Where Hreflang Checks Stop Short
 
 Most disappointment with a hreflang audit traces back to a few predictable misreads:
 
@@ -109,7 +109,7 @@ Only partly. A hreflang checker that maps the bidirectional pair mesh covers the
 
 ## Take Action
 
-Map your locale cluster into a pair matrix and run one audit against the rendered hreflang the crawler actually sees — not the CMS dashboard — before you commission any new translations. You will find the broken return pairs that a checklist audit reports as green. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one cluster this week.
+Map your locale cluster into a pair matrix and run one audit against the rendered hreflang the crawler actually sees — not the CMS dashboard — before you commission any new translations. You will find the broken return pairs that a checklist audit reports as green. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one cluster this week.
 
 ## Sources
 

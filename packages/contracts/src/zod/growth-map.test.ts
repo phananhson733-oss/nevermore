@@ -5,9 +5,11 @@ import {
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
   GrowthMapUrlDetailResponse,
+  GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
   GrowthMapUrlPortfolioResponse,
 } from "./growth-map.ts";
+import { ExecutionPreview } from "./execution-preview.ts";
 
 const ids = {
   project: "10000000-0000-4000-8000-000000000001",
@@ -280,6 +282,17 @@ function findings() {
         sitePageId: ids.sitePage,
         pageSnapshotId: ids.currentPageSnapshot,
       },
+      executionPreview: {
+        templateId: "normalize_canonical.v1",
+        templateVersion: 1,
+        artifactType: "technical_ticket",
+        effort: "medium",
+        risk: "high",
+        contentLocale: "en",
+        title: "Normalize conflicting canonical tags",
+        description: "Resolve conflicting canonical signals.",
+        expectedOutcome: "Validate that each page has one canonical URL.",
+      },
       executionRef: {
         actionId: ids.action,
         artifactIds: [ids.artifact],
@@ -304,6 +317,7 @@ function findings() {
         targetKind: "template",
         targetRef: "product-detail",
       },
+      executionPreview: null,
       executionRef: null,
     },
   ];
@@ -588,6 +602,7 @@ describe("Growth Map URL contracts", () => {
                 regressed: false,
                 evidenceIds: [ids.aggregateEvidence],
                 targetRelation,
+                executionPreview: null,
                 executionRef: null,
               },
             ],
@@ -726,6 +741,33 @@ describe("Growth Map URL contracts", () => {
       actionId: ids.action,
       artifactIds: [ids.artifact],
     });
+  });
+
+  it("uses the shared nullable ExecutionPreview without changing canonical execution state", () => {
+    const preview = findings()[0]!.executionPreview;
+    expect(ExecutionPreview.parse(preview)).toEqual(preview);
+
+    const unconfirmed = GrowthMapUrlFinding.parse({
+      ...findings()[0],
+      reviewState: "unreviewed",
+      executionRef: null,
+    });
+    expect(unconfirmed.executionPreview).toEqual(preview);
+    expect(unconfirmed.reviewState).toBe("unreviewed");
+    expect(unconfirmed.executionRef).toBeNull();
+
+    expect(
+      GrowthMapUrlFinding.safeParse({
+        ...findings()[0],
+        executionPreview: { ...preview, actionId: ids.action },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapUrlFinding.safeParse({
+        ...findings()[0],
+        executionPreview: undefined,
+      }).success,
+    ).toBe(false);
   });
 
   it("requires strict bounded cursor metadata without copied project totals", () => {

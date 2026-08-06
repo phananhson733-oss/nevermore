@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ArtifactType } from "./artifacts.ts";
 import { IsoDateTime, Uuid } from "./common.ts";
 import { ActionStatus } from "./diagnostics.ts";
+import { ExecutionPreview } from "./execution-preview.ts";
 import {
   AuditModuleId,
   FrontstageLensId,
@@ -27,6 +28,7 @@ export type PrimaryOpportunityTarget = z.infer<
 export const OPPORTUNITY_RULE_IDS = [
   "TECH-HTTP-001",
   "TECH-CANONICAL-002",
+  "TECH-INDEXABILITY-006",
   "TECH-LINKGRAPH-005",
   "SEARCH-CTR-004",
   "SEARCH-DECAY-002",
@@ -43,6 +45,7 @@ export type OpportunityRuleId = z.infer<typeof OpportunityRuleId>;
 const OPPORTUNITY_RULE_VERSIONS = {
   "TECH-HTTP-001": 2,
   "TECH-CANONICAL-002": 2,
+  "TECH-INDEXABILITY-006": 1,
   "TECH-LINKGRAPH-005": 3,
   "SEARCH-CTR-004": 1,
   "SEARCH-DECAY-002": 1,
@@ -249,6 +252,7 @@ const ReviewableOpportunityObject = OpportunityBase.extend({
   readiness: z.literal("reviewable"),
   primaryFindingId: Uuid,
   primaryRule: OpportunityRuleReference,
+  executionPreview: ExecutionPreview.nullable(),
   actionId: z.undefined().optional(),
   action: z.undefined().optional(),
 }).strict();
@@ -273,8 +277,12 @@ function validateFindingRoles(
 function validateRuleProjection(
   value: Pick<
     ReviewableOpportunityValue,
-    "primaryRule" | "workShape" | "lenses" | "currentOwnedAsset"
-  > & { readonly artifactType?: z.infer<typeof ArtifactType> },
+    | "primaryRule"
+    | "workShape"
+    | "lenses"
+    | "currentOwnedAsset"
+    | "executionPreview"
+  > & { readonly actionArtifactType?: z.infer<typeof ArtifactType> },
   ctx: z.RefinementCtx,
 ): void {
   const projection: RuleOpportunityProjection =
@@ -300,8 +308,18 @@ function validateRuleProjection(
     });
   }
   if (
-    value.artifactType !== undefined &&
-    value.artifactType !== projection.artifactType
+    value.executionPreview !== null &&
+    value.executionPreview.artifactType !== projection.artifactType
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["executionPreview", "artifactType"],
+      message: `Rule ${value.primaryRule.ruleId} fixes Artifact type ${projection.artifactType}`,
+    });
+  }
+  if (
+    value.actionArtifactType !== undefined &&
+    value.actionArtifactType !== projection.artifactType
   ) {
     ctx.addIssue({
       code: "custom",
@@ -323,6 +341,7 @@ const ConfirmedOpportunityObject = OpportunityBase.extend({
   readiness: z.literal("confirmed"),
   primaryFindingId: Uuid,
   primaryRule: OpportunityRuleReference,
+  executionPreview: ExecutionPreview.nullable(),
   actionId: Uuid,
   action: OpportunityActionSummary,
 }).strict();
@@ -335,7 +354,7 @@ function validateConfirmedAction(
 ): void {
   validateFindingRoles(value, ctx);
   validateRuleProjection(
-    { ...value, artifactType: value.action.artifactType },
+    { ...value, actionArtifactType: value.action.artifactType },
     ctx,
   );
   if (value.action.findingId !== value.primaryFindingId) {
@@ -397,7 +416,7 @@ type RuleOpportunityProjection =
   | ExistingPageFirstProjection;
 
 /**
- * Frozen Slice 1 mapping from the executable 11-rule registry. This is a
+ * Frozen Slice 1 mapping from the executable 12-rule registry. This is a
  * deterministic read-model policy, not another Rule or Action registry.
  */
 export const RULE_OPPORTUNITY_PROJECTION = {
@@ -409,6 +428,13 @@ export const RULE_OPPORTUNITY_PROJECTION = {
     artifactType: "technical_ticket",
   },
   "TECH-CANONICAL-002": {
+    auditModule: "technical_search",
+    lens: "site_health",
+    workShapePolicy: "fixed",
+    workShape: "fix",
+    artifactType: "technical_ticket",
+  },
+  "TECH-INDEXABILITY-006": {
     auditModule: "technical_search",
     lens: "site_health",
     workShapePolicy: "fixed",

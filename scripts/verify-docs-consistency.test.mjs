@@ -101,7 +101,7 @@ test("package, active lock and current docs agree on machine versions", () => {
   assert.equal(packageJson.version, specLock.productVersion);
   assert.equal(specLock.authorityVersion, "0.4.0");
   assert.equal(specLock.contractVersion, "2026-07-21");
-  assert.equal(specLock.ruleSetVersion, "mvp.rules.0.2.3");
+  assert.equal(specLock.ruleSetVersion, "mvp.rules.0.2.4");
   for (const [path, source] of sources) {
     assert.match(
       source,
@@ -130,7 +130,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
     specLock.tables.length,
     specLock.rules.length,
   ];
-  assert.deepEqual(expected, [79, 10, 78, 11]);
+  assert.deepEqual(expected, [79, 10, 78, 12]);
   for (const path of [
     "README.md",
     "CLAUDE.md",
@@ -146,7 +146,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 41);
+  assert.equal(migrationFiles.length, 43);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );

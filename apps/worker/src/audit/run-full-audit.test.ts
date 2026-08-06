@@ -121,6 +121,26 @@ describe("projectAuditModuleResults", () => {
     expect(byId.get("content_intent")).toBe("available");
   });
 
+  it("routes sitemap indexability conflicts to technical search", () => {
+    const results = projectAuditModuleResults({
+      findings: [
+        {
+          ruleId: "TECH-INDEXABILITY-006",
+          evidence: [evidence("2026-07-24T00:00:00.000Z")],
+        },
+      ],
+      coverage: { domains: ALL_AVAILABLE },
+    });
+
+    const technicalSearch = results.find(
+      (result) => result.moduleId === "technical_search",
+    );
+    expect(technicalSearch?.coverageState).toBe("available");
+    expect(
+      AuditModuleSummary.parse(technicalSearch?.summary).findingCount,
+    ).toBe(1);
+  });
+
   it("emits contract-valid summaries for every module", () => {
     const results = projectAuditModuleResults({
       findings: [

@@ -4,7 +4,7 @@ authority_status: active
 normative: true
 product_version: 0.3.0
 contract_version: 2026-07-21
-rule_set_version: mvp.rules.0.2.3
+rule_set_version: mvp.rules.0.2.4
 prompt_set_version: mvp.prompts.0.2.0
 ---
 
@@ -13,8 +13,8 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
-shared async operation**，ordered migrations 精确声明 **78 张应用表**，引擎
-精确注册 **11 条规则**。`createProjectMeasurementWindow` 是额外的 typed
+shared async operation**，**43 个 ordered migrations** 精确声明 **78 张应用表**，引擎
+精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
 
@@ -57,6 +57,19 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
    消失，且后续 collection、diagnosis 与 delivery 写入继续受 archive fence
    拦截；历史 Snapshot、Evidence、Finding、Action 与 Artifact 不级联硬删除，
    并保留只读审计谱系。客户界面必须二次确认并告知该保留边界。
+8. 当前 `mvp.rules.0.2.4` 诊断必须在 hash-covered、exact-key
+   `DiagnosticRun.input_manifest` 中冻结 `contextProjection.v1`。它只从该 run
+   选定的 immutable confirmed Profile 与创建时 exact Site 语言编译产品路由、
+   转化/重点 URL/执行约束的显式声明状态；provider availability、权限或 mode、
+   workflow state、实时优先级/风险/ROI/cadence 以及模型推断都不得进入该投影。
+9. Profile 解析必须 generation-aware：`product-profile.0.3.0` 只读取该 generation
+   自己声明的字段，不借用 legacy 转化、重点 URL 或约束；`legacy-icp.v1` 只读取
+   legacy 中显式存在的值。缺少声明必须冻结为 typed missing state，不能从当前
+   Project、provider 或历史 generation 补值。
+10. `contextProjection.v1.siteLanguage.languageCodes` 对每项做 RFC 5646/BCP 47
+    验证，并按 Site 的原始值与顺序逐字冻结，不进行大小写 canonicalization 或
+    delivery-locale 回填。非空数组参与语言路由；空数组表示 unknown，使依赖语言
+    的当前规则 inconclusive，而不是假定英语或项目交付语言。
 
 ## 2. 数据来源
 
@@ -85,6 +98,11 @@ Observation 的数据。缺数据必须成为 skipped/inconclusive/no_data/unava
 GitHub 预留为未来代码交付连接；它不是当前分析数据来源。Sitemap、内部 Crawl、
 keyword relation、topic model、competitor monitor、GEO citation 和 backlink
 projection 是内置能力，不要求客户另行连接。
+
+上述 authenticated workbench 的上下文投影与规则升级不改变 Public Tools。
+公开工具继续是无 Profile 依赖、facts-only、匿名且受原有 quota/无 canonical
+产品或报告持久化边界约束的独立 surface；不得复用 `contextProjection.v1` 推断
+业务或执行上下文。
 
 `createCollectionRun` 只允许客户触发 Crawl、已连接 GSC 或已连接 GA4；
 CSV 继续使用专用 import command。DataForSEO 是 Analysis Refresh worker 的
@@ -163,6 +181,12 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
   validation problem，不能任选一个继续。
 - Keyword/Competitor PATCH 是 mutation command，拒绝全部 query 参数；review
   语义只来自 strict governed request body。
+- 当前 Growth Audit read-model projection 是 `growth-audit.0.3.1`；未指定 pin 的
+  latest 读取只选择 `0.3.1`。显式 `diagnosticRunId` 可以读取已知
+  `growth-audit.0.3.0` 历史 generation，但必须用其自身 validator，不得回填
+  `contextProjection.v1` 或按当前规则重新解释。Growth Audit capability version
+  保持 `0.3.0`；request/addressing shape 及其 `capabilityContractVersion` literal
+  保持 `growth-audit.0.3.0`。
 
 ### 4.1 URL portfolio
 
@@ -205,12 +229,27 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
 
 ### 4.4 Technical / Content / GEO / CRO
 
-- 11 条确定性规则覆盖 Technical SEO、Search、Content、CRO、GEO。
+- 12 条确定性规则覆盖 Technical SEO、Search、Content、CRO、GEO。
+- `TECH-INDEXABILITY-006@1` 只在冻结 Crawl 中、对拥有唯一 exact-fetch lineage
+  的 URL 判断 `page.status` 为 exact 2xx、`sitemapMember=true` 且
+  `robotsIndexable=false` 的矛盾。redirect source 即使 terminal document 为 2xx
+  也不触发；exact fetch 非 2xx 交给 HTTP/redirect 规则。本规则不能从 final
+  response 猜测源 URL，缺失或歧义 lineage 必须 inconclusive。
 - Topic Model、internal link map、backlink authority 与 GEO citation 都复用
   canonical URL/keyword/topic identity。
 - Finding 默认 unreviewed；只有显式 review 才能形成或更新一个 primary Action。
 - Opportunity 是 canonical facts 的只读 projection，不创建第二套 Opportunity
   table。
+
+### 4.5 Opportunity execution preview
+
+`executionPreview` 是 server-side pure projector 从当前 `ActionTemplate` 与 Project
+`default_delivery_locale` 形成的 current-view 展示文案。reviewable/confirmed
+Opportunity 与 Growth Map URL Finding 的该字段为 nullable；无可解析 template
+时返回 `null`，不能合成内容。它不是 run replay input、Finding/Opportunity
+identity、Action、Artifact、workflow state、approval/publication authority 或
+Measurement lineage，也不得创建任何状态；历史 generation 不能因当前 template
+变化而被写回。
 
 ## 5. 执行中心
 
@@ -383,8 +422,9 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 10. 冻结数据库 inventory
 
-以下 78 张应用表来自 ordered migrations 与 static schema catalog；pg-boss 自有表
-不计入。
+以下 78 张应用表来自 `0001_init.sql` 至
+`0043_validate_contextual_diagnostic_rule_set.sql` 的 43 个 ordered migrations 与
+static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->
 - `workspaces`
@@ -469,11 +509,12 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 11. 冻结规则
 
-规则集 `mvp.rules.0.2.3` 的 11 条规则与版本：
+规则集 `mvp.rules.0.2.4` 的 12 条规则与版本：
 
 <!-- RULES_BEGIN -->
 - `TECH-HTTP-001`: 2
 - `TECH-CANONICAL-002`: 2
+- `TECH-INDEXABILITY-006`: 1
 - `TECH-LINKGRAPH-005`: 3
 - `SEARCH-CTR-004`: 1
 - `SEARCH-DECAY-002`: 1

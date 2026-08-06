@@ -20,7 +20,7 @@ An agency rank tracking tool is **software that monitors keyword positions for m
 - Generates white-label reports without manual copy-paste each cycle
 - Increasingly monitors AI search surfaces, not just classic blue-link results
 
-## Why It Matters for Your Workflow
+## The Manual Hours You Never Priced
 
 Agency rank tracking matters because the time spent pulling positions by hand is invisible until you price it. Most managers evaluate trackers on accuracy and location settings, then never count the recurring hours each client costs every month. Across the white-label rollouts we've audited, the pattern repeats: the deciding factor isn't tracking precision, it's how many billable hours the team quietly burns on reporting that no client sees as value.
 
@@ -41,7 +41,7 @@ The point where this intervenes is the handoff: the moment raw position data wou
 
 Two more scenarios show up once a roster grows. First, onboarding a new client becomes a five-minute keyword import rather than a recurring reporting chore that the team has to remember forever. Second, when a client churns, their tracking simply pauses instead of leaving an orphaned spreadsheet that someone keeps updating out of habit. In agency rollouts we've watched fail, the wasted effort was rarely in the tracking itself; it was in the dozens of small manual steps clustered around it. Folding those steps into a scheduled, templated process is what frees senior time for the analysis clients actually pay for.
 
-## Common Implementation Misreadings
+## Why Accuracy Is Table Stakes, Not the Lever
 
 Most shallow comparison content treats agency rank tracking as a feature checklist, which leads teams to misread what actually drives return. A few misreadings recur:
 
@@ -110,7 +110,7 @@ Not if reports are fully white-labeled. Unbranded exports, your logo, and a sing
 
 ## Take Action
 
-Connect a few client portfolios and run one automated reporting cycle inside GenGrowth to see the export side by side with your current manual process. You'll get a branded, multi-client report plus AI search visibility data in a fraction of the usual hours — and a concrete read on how much margin your manual reporting is silently costing. [Start your free GenGrowth trial](https://gengrowth.ai/app) and measure the time savings against your own baseline before you commit.
+Connect a few client portfolios and run one automated reporting cycle inside GenGrowth to see the export side by side with your current manual process. You'll get a branded, multi-client report plus AI search visibility data in a fraction of the usual hours — and a concrete read on how much margin your manual reporting is silently costing. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and measure the time savings against your own baseline before you commit.
 
 ## Sources
 

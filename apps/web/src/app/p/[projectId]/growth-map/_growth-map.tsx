@@ -1038,6 +1038,7 @@ function FindingCard({
           ))}
         </ul>
       </EvidenceRefsDisclosure>
+      <ExecutionPreviewPanel preview={finding.executionPreview} />
       {!reviewEnabled ? (
         <p className={styles.reviewUnavailable}>{t("evidenceReadOnly")}</p>
       ) : reviewable ? (
@@ -1078,6 +1079,68 @@ function FindingCard({
         </div>
       )}
     </article>
+  );
+}
+
+function ExecutionPreviewPanel({
+  preview,
+}: {
+  readonly preview: GrowthMapUrlFinding["executionPreview"];
+}) {
+  const t = useTranslations("growthMap.executionPreview");
+
+  return (
+    <section
+      className={styles.executionPreview}
+      aria-label={t("eyebrow")}
+    >
+      <span className={styles.executionPreviewEyebrow}>{t("eyebrow")}</span>
+      {preview === null ? (
+        <p className={styles.executionPreviewUnavailable}>
+          {t("notAvailable")}
+        </p>
+      ) : (
+        <>
+          <h5 lang={preview.contentLocale}>{preview.title}</h5>
+          <p
+            className={styles.executionPreviewDescription}
+            lang={preview.contentLocale}
+          >
+            {preview.description}
+          </p>
+          <dl className={styles.executionPreviewFacts}>
+            <div>
+              <dt>{t("artifactType")}</dt>
+              <dd>
+                <span className={styles.executionPreviewChip}>
+                  {t(`artifactTypes.${preview.artifactType}`)}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t("effort")}</dt>
+              <dd>
+                <span className={styles.executionPreviewChip}>
+                  {t(`efforts.${preview.effort}`)}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t("risk")}</dt>
+              <dd>
+                <span className={styles.executionPreviewChip}>
+                  {t(`risks.${preview.risk}`)}
+                </span>
+              </dd>
+            </div>
+          </dl>
+          <div className={styles.executionPreviewOutcome}>
+            <span>{t("validationTarget")}</span>
+            <p lang={preview.contentLocale}>{preview.expectedOutcome}</p>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

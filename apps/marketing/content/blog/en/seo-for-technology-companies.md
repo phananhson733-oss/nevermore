@@ -20,7 +20,7 @@ Technology company SEO is **the practice of growing organic traffic for a softwa
 - Judged by whether high-intent technical queries find a tech company's own pages, not by blog traffic alone
 - Sits inside a larger growth motion, which is why it should connect to how [SEO for SaaS](/blog/seo-for-saas) actually compounds
 
-## Why It Matters for Your Workflow
+## The Pages That Convert Developers Aren't Your Blog
 
 SEO for technology companies matters because the pages that convert a developer or a technical buyer are almost never the marketing blog — and the standard playbook never optimizes them. A developer searching "how to authenticate with the Stripe API" or "Twilio webhook retry behavior" lands on documentation, not a top-of-funnel article. When that documentation is invisible to search, the company hands the query to a third-party tutorial site, a Stack Overflow thread, or a competitor whose docs were indexed first.
 
@@ -114,7 +114,7 @@ No — it raises the value of well-structured docs and reference. Clear, well-st
 
 ## Take Action
 
-Run one tech-company SEO audit cycle inside GenGrowth across your existing surfaces — blog, docs, API reference, and integration directory — before commissioning any new content. You'll see which engineering-owned pages are already ranking, which high-intent queries are leaking to competitors because a surface is uncrawlable, and where unique titling alone would open up traffic that is sitting unclaimed today. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit every surface before you write a single new post.
+Run one tech-company SEO audit cycle inside GenGrowth across your existing surfaces — blog, docs, API reference, and integration directory — before commissioning any new content. You'll see which engineering-owned pages are already ranking, which high-intent queries are leaking to competitors because a surface is uncrawlable, and where unique titling alone would open up traffic that is sitting unclaimed today. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit every surface before you write a single new post.
 
 ## Sources
 

@@ -748,8 +748,11 @@ async function seedProject(
       status: "complete",
       profile: {
         productName: "Real Vertical Platform",
-        productCategory: "B2B SaaS",
-        targetAudience: "SEO leaders at mid-market companies",
+        oneLineDescription:
+          "Deterministic SEO analysis for mid-market growth teams.",
+        category: "B2B SaaS",
+        marketCodes: ["US"],
+        segments: ["SEO leaders at mid-market companies"],
       },
       content_hash: profileHash,
       created_by: actorId,

@@ -12,10 +12,15 @@ import type {
   GrowthMapUrlMetricObservation,
 } from "@sf/contracts";
 import {
-  LEGACY_RULE_SET_VERSION,
+  CONTEXTUAL_RULE_SET_VERSION,
   GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
-  RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
+  type ContextProjectionV1,
+  type GovernanceProjectionV1,
 } from "@sf/engine";
 import { isStale } from "./source-mappers";
 
@@ -28,9 +33,13 @@ const LEGACY_MANIFEST_KEYS = [
   "siteId",
   "snapshots",
 ] as const;
-const CURRENT_MANIFEST_KEYS = [
+const GOVERNED_MANIFEST_KEYS = [
   ...LEGACY_MANIFEST_KEYS,
   "governance",
+] as const;
+const CURRENT_CONTEXT_MANIFEST_KEYS = [
+  ...GOVERNED_MANIFEST_KEYS,
+  "contextProjection",
 ] as const;
 const ICP_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_KEYS = [
@@ -90,6 +99,13 @@ export interface FrozenGrowthMapRun {
   readonly snapshotIds: readonly string[];
   readonly snapshotsById: ReadonlyMap<string, GrowthMapSnapshotLike>;
   readonly snapshotsByProvider: ReadonlyMap<string, GrowthMapSnapshotLike>;
+  readonly governance?: GovernanceProjectionV1;
+  readonly contextProjection?: ContextProjectionV1;
+}
+
+interface FrozenGrowthMapAuthority {
+  readonly governance?: GovernanceProjectionV1;
+  readonly contextProjection?: ContextProjectionV1;
 }
 
 export interface GrowthMapObservationLike {
@@ -236,27 +252,46 @@ function hasExactKeys(
 function validateManifestAuthority(
   manifest: Record<string, unknown>,
   ruleSetVersion: string,
-): void {
-  if (
-    ruleSetVersion === RULE_SET_VERSION ||
-    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION
-  ) {
-    if (!hasExactKeys(manifest, CURRENT_MANIFEST_KEYS)) {
+): FrozenGrowthMapAuthority {
+  if (ruleSetVersion === CONTEXTUAL_RULE_SET_VERSION) {
+    if (!hasExactKeys(manifest, CURRENT_CONTEXT_MANIFEST_KEYS)) {
       invalidFrozenRun();
     }
     try {
-      parseGovernanceProjectionV1(manifest["governance"]);
+      return {
+        governance: parseGovernanceProjectionV1(manifest["governance"]),
+        contextProjection: parseContextProjectionV1(
+          manifest["contextProjection"],
+        ),
+      };
     } catch {
+      return invalidFrozenRun();
+    }
+  }
+
+  if (
+    ruleSetVersion === GOVERNED_LEGACY_RULE_SET_VERSION ||
+    ruleSetVersion === LINKGRAPH_LEGACY_RULE_SET_VERSION
+  ) {
+    if (!hasExactKeys(manifest, GOVERNED_MANIFEST_KEYS)) {
       invalidFrozenRun();
     }
-    return;
+    try {
+      return {
+        governance: parseGovernanceProjectionV1(manifest["governance"]),
+      };
+    } catch {
+      return invalidFrozenRun();
+    }
   }
+
   if (
     ruleSetVersion !== LEGACY_RULE_SET_VERSION ||
     !hasExactKeys(manifest, LEGACY_MANIFEST_KEYS)
   ) {
     invalidFrozenRun();
   }
+  return {};
 }
 
 function requiredString(
@@ -305,7 +340,10 @@ export function validateGrowthMapFrozenRun(
   scope: { readonly workspaceId: string; readonly projectId: string },
 ): FrozenGrowthMapRun {
   const manifest = run.input_manifest;
-  validateManifestAuthority(manifest, run.rule_set_version);
+  const authority = validateManifestAuthority(
+    manifest,
+    run.rule_set_version,
+  );
   if (
     run.workspace_id !== scope.workspaceId ||
     run.project_id !== scope.projectId ||
@@ -316,6 +354,7 @@ export function validateGrowthMapFrozenRun(
     manifest["projectId"] !== run.project_id ||
     manifest["siteId"] !== run.site_id ||
     manifest["ruleSetVersion"] !== run.rule_set_version ||
+    run.prompt_set_version !== PROMPT_SET_VERSION ||
     manifest["promptSetVersion"] !== run.prompt_set_version ||
     manifest["deliveryLocale"] !== run.output_locale
   ) {
@@ -396,6 +435,7 @@ export function validateGrowthMapFrozenRun(
     snapshotIds,
     snapshotsById: actualById,
     snapshotsByProvider,
+    ...authority,
   };
 }
 

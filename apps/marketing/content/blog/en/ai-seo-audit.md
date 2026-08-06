@@ -20,7 +20,7 @@ An AI SEO audit is **an automated scan that checks a site's technical and on-pag
 - Returns a prioritized issue list, where the ranking reflects rule severity rather than your business goals
 - Covers what is reliably measurable and stays silent on judgment calls like search intent and brand fit
 
-## Why It Matters for Your Workflow
+## Deciding Which Checks Still Cost a Person's Attention
 
 An AI SEO audit matters because it decides which repetitive checks you can hand to software and which ones still cost a person's attention — and that split quietly sets how far a small team can scale content before quality slips. This work sits inside the broader *pillar guide to scaling SEO delivery without added headcount*, which maps every task worth automating. Across the agency and SaaS rollouts we've audited, we've found the deciding factor isn't the tool's feature list — it's whether the team knows which findings to act on directly and which to route to a human.
 
@@ -35,7 +35,7 @@ An AI SEO audit differs from manual review because it runs the same checks the s
 3. **Log-parsing pass.** It reads server logs to show which pages bots actually crawl, surfacing crawl-budget waste that no on-page check would ever catch.
 4. **Schema and metadata QA.** It validates structured data against the Schema.org spec and the *explainer on structured data for SEO* rules, so every product or article page carries the right markup at scale.
 
-## Common Implementation Misreadings
+## What an Audit Checks and What It Never Judges
 
 The trouble starts when teams read an AI SEO audit as more than it is. A few misreadings show up again and again:
 
@@ -98,7 +98,7 @@ No. A clean report removes blockers, but rankings still depend on content depth,
 
 ## Take Action
 
-Run one site through GenGrowth and let it sort your issues into machine-owned fixes and human calls in a single pass — [Start your free GenGrowth trial](https://gengrowth.ai/app) to get that split for your own pages. You will walk away with a prioritized issue list plus a clear line marking where automation stops and your strategist takes over. That boundary is the real payoff: it is what lets a small team scale content and technical hygiene without adding a head for every new client.
+Run one site through GenGrowth and let it sort your issues into machine-owned fixes and human calls in a single pass — [Start your free GenGrowth trial](https://app.gengrowth.ai/) to get that split for your own pages. You will walk away with a prioritized issue list plus a clear line marking where automation stops and your strategist takes over. That boundary is the real payoff: it is what lets a small team scale content and technical hygiene without adding a head for every new client.
 
 ## Sources
 

@@ -14,10 +14,7 @@ import {
   topicModelRevisions,
   topicNodeRevisions,
 } from "../schema.ts";
-import {
-  Repository,
-  type ProjectScope,
-} from "./base.ts";
+import { Repository, type ProjectScope } from "./base.ts";
 
 export const MAX_INTERNAL_LINK_MAP_OBSERVATIONS = 2_000;
 export const MAX_INTERNAL_LINK_MAP_PAGE_LOOKUP = 2_000;
@@ -45,8 +42,10 @@ export class InternalLinkMapIntegrityError extends Error {
   }
 }
 
-export interface InternalLinkCrawlObservationRow
-  extends Record<string, unknown> {
+export interface InternalLinkCrawlObservationRow extends Record<
+  string,
+  unknown
+> {
   readonly observation_id: string;
   readonly workspace_id: string;
   readonly project_id: string;
@@ -77,8 +76,7 @@ type RawInternalLinkCrawlObservationRow = Omit<
   readonly observed_at: string | Date;
 };
 
-export interface InternalLinkExecutionRefRow
-  extends Record<string, unknown> {
+export interface InternalLinkExecutionRefRow extends Record<string, unknown> {
   readonly site_page_id: string;
   readonly finding_id: string;
   readonly action_id: string | null;
@@ -129,10 +127,13 @@ function assertScope(scope: ProjectScope): void {
   assertUuid("projectId", scope.projectId);
 }
 
-function uniqueBoundedIds(
-  label: string,
-  values: readonly string[],
-): string[] {
+function assertRuleVersion(value: number): void {
+  if (!Number.isInteger(value) || value < 1 || value > 1000) {
+    throw new RangeError("ruleVersion must be a positive integer");
+  }
+}
+
+function uniqueBoundedIds(label: string, values: readonly string[]): string[] {
   const unique = [...new Set(values)].sort();
   if (unique.length > MAX_INTERNAL_LINK_MAP_PAGE_LOOKUP) {
     throw new RangeError(
@@ -157,9 +158,7 @@ function checkedCount(value: unknown): number {
     value < 0 ||
     value > MAX_POSTGRES_INTEGER
   ) {
-    throw new InternalLinkMapIntegrityError(
-      "TOPIC_AUTHORITY_RESULT_INVALID",
-    );
+    throw new InternalLinkMapIntegrityError("TOPIC_AUTHORITY_RESULT_INVALID");
   }
   return value;
 }
@@ -167,9 +166,7 @@ function checkedCount(value: unknown): number {
 function checkedRevision(value: unknown): number {
   const revision = checkedCount(value);
   if (revision < 1) {
-    throw new InternalLinkMapIntegrityError(
-      "TOPIC_AUTHORITY_RESULT_INVALID",
-    );
+    throw new InternalLinkMapIntegrityError("TOPIC_AUTHORITY_RESULT_INVALID");
   }
   return revision;
 }
@@ -203,8 +200,8 @@ export class InternalLinkMapRepository extends Repository {
     assertUuid("diagnosticRunId", input.diagnosticRunId);
     assertUuid("crawlSnapshotId", input.crawlSnapshotId);
 
-    const result =
-      await this.exec.execute<RawInternalLinkCrawlObservationRow>(sql`
+    const result = await this.exec
+      .execute<RawInternalLinkCrawlObservationRow>(sql`
         with frozen_crawl as materialized (
           select
             ${dataSnapshots.id} as snapshot_id,
@@ -292,21 +289,25 @@ export class InternalLinkMapRepository extends Repository {
     return result.rows.map(normalizedObservation);
   }
 
+  /**
+   * `ruleVersion` must be the TECH-LINKGRAPH-005 version the frozen run
+   * actually executed (@2 for mvp.rules.0.2.1/0.2.2, @3 for 0.2.3) — the
+   * caller derives it from the run's rule set; a constant here silently
+   * empties refs whenever the rule set advances.
+   */
   async listExecutionRefs(
     scope: ProjectScope,
     diagnosticRunId: string,
+    ruleVersion: number,
     sitePageIdsInput: readonly string[],
   ): Promise<InternalLinkExecutionRefRow[]> {
     assertScope(scope);
     assertUuid("diagnosticRunId", diagnosticRunId);
-    const sitePageIds = uniqueBoundedIds(
-      "sitePageIds",
-      sitePageIdsInput,
-    );
+    assertRuleVersion(ruleVersion);
+    const sitePageIds = uniqueBoundedIds("sitePageIds", sitePageIdsInput);
     if (sitePageIds.length === 0) return [];
 
-    const result =
-      await this.exec.execute<InternalLinkExecutionRefRow>(sql`
+    const result = await this.exec.execute<InternalLinkExecutionRefRow>(sql`
         select
           ${findingTargets.site_page_id} as site_page_id,
           ${findings.id} as finding_id,
@@ -319,7 +320,7 @@ export class InternalLinkMapRepository extends Repository {
          and ${findings.last_seen_run_id} =
             ${diagnosticRunId}::uuid
          and ${findings.rule_id} = 'TECH-LINKGRAPH-005'
-         and ${findings.rule_version} = 2
+         and ${findings.rule_version} = ${ruleVersion}
          and ${findings.active} = true
         left join ${actions}
           on ${actions.source_finding_id} = ${findings.id}
@@ -346,9 +347,7 @@ export class InternalLinkMapRepository extends Repository {
         limit ${MAX_INTERNAL_LINK_MAP_EXECUTION_ROWS + 1}
       `);
     if (result.rows.length > MAX_INTERNAL_LINK_MAP_EXECUTION_ROWS) {
-      throw new InternalLinkMapIntegrityError(
-        "EXECUTION_REF_LIMIT_EXCEEDED",
-      );
+      throw new InternalLinkMapIntegrityError("EXECUTION_REF_LIMIT_EXCEEDED");
     }
     return result.rows;
   }
@@ -358,16 +357,12 @@ export class InternalLinkMapRepository extends Repository {
     sitePageIdsInput: readonly string[],
   ): Promise<InternalLinkPageTopicAuthority> {
     assertScope(scope);
-    const sitePageIds = uniqueBoundedIds(
-      "sitePageIds",
-      sitePageIdsInput,
-    );
+    const sitePageIds = uniqueBoundedIds("sitePageIds", sitePageIdsInput);
     if (sitePageIds.length === 0) {
       return { state: "not_requested", projectId: scope.projectId };
     }
 
-    const result =
-      await this.exec.execute<TopicAuthorityQueryRow>(sql`
+    const result = await this.exec.execute<TopicAuthorityQueryRow>(sql`
         with
         active_project as materialized (
           select
@@ -563,15 +558,11 @@ export class InternalLinkMapRepository extends Repository {
 
     const rows = result.rows;
     if (rows.length > MAX_INTERNAL_LINK_MAP_TOPIC_MAPPINGS) {
-      throw new InternalLinkMapIntegrityError(
-        "TOPIC_MAPPING_LIMIT_EXCEEDED",
-      );
+      throw new InternalLinkMapIntegrityError("TOPIC_MAPPING_LIMIT_EXCEEDED");
     }
     const first = rows[0];
     if (!first || first.project_exists !== true) {
-      throw new InternalLinkMapIntegrityError(
-        "TOPIC_AUTHORITY_RESULT_INVALID",
-      );
+      throw new InternalLinkMapIntegrityError("TOPIC_AUTHORITY_RESULT_INVALID");
     }
     for (const row of rows) {
       if (
@@ -594,9 +585,7 @@ export class InternalLinkMapRepository extends Repository {
       first.mirror_divergence_count !== 0 ||
       first.invalid_decision_count !== 0
     ) {
-      throw new InternalLinkMapIntegrityError(
-        "KEYWORD_AUTHORITY_DIVERGED",
-      );
+      throw new InternalLinkMapIntegrityError("KEYWORD_AUTHORITY_DIVERGED");
     }
     if (first.topic_model_revision === null) {
       if (
@@ -621,11 +610,7 @@ export class InternalLinkMapRepository extends Repository {
     const mappings: InternalLinkPageTopicMapping[] = [];
     let previousKey: string | null = null;
     for (const row of rows) {
-      const fields = [
-        row.site_page_id,
-        row.topic_node_id,
-        row.topic_label,
-      ];
+      const fields = [row.site_page_id, row.topic_node_id, row.topic_label];
       if (fields.every((value) => value === null)) continue;
       if (
         typeof row.site_page_id !== "string" ||

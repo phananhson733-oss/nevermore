@@ -1,8 +1,13 @@
+import {
+  parseContextProjectionV1,
+  type ContextProjectionV1,
+} from "./context-projection.ts";
+
 /**
- * The engine's read model of a complete ICP profile (spec §6.2). The diagnostic
- * run freezes the profile jsonb; this parser projects the fields the 11 rules
- * consume. It reads defensively (the profile was already validated on save) and
- * never throws — missing arrays become empty.
+ * The engine's read model of a complete ICP profile (spec §6.2). Historical
+ * executors retain this defensive parser so frozen runs preserve their original
+ * semantics; the contextual current executor uses the generation-aware adapter
+ * below. Missing arrays become empty and this legacy parser never throws.
  */
 
 export type CustomerModel = "b2b" | "b2c" | "hybrid";
@@ -191,6 +196,99 @@ export function parseIcp(profile: unknown): EngineIcp {
     ),
     disqualifiers: strArray(primaryAudience?.["disqualifiers"]),
   };
+}
+
+/**
+ * Adapt an immutable profile for the current context-projection executor.
+ *
+ * This is deliberately separate from `parseIcp`: historical 0.2.1–0.2.3
+ * replay retains the hybrid compatibility parser above, while current runs use
+ * one explicit profile generation and the run-frozen Site/conversion/URL facts.
+ */
+export function parseIcpForContextProjectionV1(
+  profile: unknown,
+  projectionValue: ContextProjectionV1,
+): EngineIcp {
+  const projection = parseContextProjectionV1(projectionValue);
+  if (
+    typeof profile !== "object" ||
+    profile === null ||
+    Array.isArray(profile)
+  ) {
+    throw new TypeError(
+      "Invalid ContextProjectionV1 ICP adapter: profile must be a JSON object",
+    );
+  }
+  const p = profile as Record<string, unknown>;
+  const generation = Object.hasOwn(p, "profileSchemaVersion")
+    ? p["profileSchemaVersion"] === "product-profile.0.3.0"
+      ? "product-profile.0.3.0"
+      : "unsupported"
+    : "legacy-icp.v1";
+  if (generation !== projection.profileGeneration) {
+    throw new TypeError(
+      `Invalid ContextProjectionV1 ICP adapter: profile generation ${String(generation)} does not match projection generation ${projection.profileGeneration}`,
+    );
+  }
+
+  const frozenPrimaryConversion =
+    projection.primaryConversion.state === "available"
+      ? projection.primaryConversion.value
+      : null;
+  const frozenPriorityUrls =
+    projection.priorityUrlSubjects.state === "available"
+      ? projection.priorityUrlSubjects.normalizedRefs
+      : [];
+  const frozenFacts = {
+    siteLanguageCodes: projection.siteLanguage.languageCodes,
+    // Current contexts never consult this field for language routing. Keeping
+    // it empty also prevents accidental delivery-locale fallback by a caller
+    // that uses this adapter without the accompanying DiagnosticContext field.
+    defaultDeliveryLocale: "",
+    primaryConversion: frozenPrimaryConversion,
+    priorityUrls: frozenPriorityUrls,
+  };
+
+  if (generation === "product-profile.0.3.0") {
+    return parseIcp({
+      profileSchemaVersion: p["profileSchemaVersion"],
+      productName: p["productName"],
+      oneLiner: p["oneLiner"],
+      category: p["category"],
+      productType: p["productType"],
+      businessModels: p["businessModels"],
+      customerModel: p["customerModel"],
+      growthObjectives: p["growthObjectives"],
+      valueProposition: p["valueProposition"],
+      coreFeatures: p["coreFeatures"],
+      targetMarkets: p["targetMarkets"],
+      targetAudiences: p["targetAudiences"],
+      competitorCandidates: p["competitorCandidates"],
+      ...frozenFacts,
+    });
+  }
+
+  // Explicit allow-list: new-generation aliases such as oneLiner,
+  // targetMarkets, targetAudiences, coreFeatures, and valueProposition cannot
+  // leak into a discriminator-less legacy profile.
+  return parseIcp({
+    productName: p["productName"],
+    oneLineDescription: p["oneLineDescription"],
+    category: p["category"],
+    productType: p["productType"],
+    businessModels: p["businessModels"],
+    customerModel: p["customerModel"],
+    businessProfile: p["businessProfile"],
+    marketCodes: p["marketCodes"],
+    segments: p["segments"],
+    useCases: p["useCases"],
+    offers: p["offers"],
+    differentiators: p["differentiators"],
+    priorityProductsOrServices: p["priorityProductsOrServices"],
+    competitors: p["competitors"],
+    growthObjectives: p["growthObjectives"],
+    ...frozenFacts,
+  });
 }
 
 /**

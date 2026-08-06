@@ -9,6 +9,14 @@ import {
   type CanonicalValue,
   type InternalLinkCrawlObservationRow,
 } from "@sf/db";
+import {
+  buildContextProjectionV1,
+  GOVERNED_LEGACY_RULE_SET_VERSION,
+  LEGACY_RULE_SET_VERSION,
+  LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  PROMPT_SET_VERSION,
+  RULE_SET_VERSION,
+} from "@sf/engine";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -17,9 +25,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 
-const { getProjectAuditInternalLinkMap } = await import(
-  "./growth-map-internal-link-map"
-);
+const { getProjectAuditInternalLinkMap } =
+  await import("./growth-map-internal-link-map");
 
 const ids = {
   workspace: "93000000-0000-4000-8000-000000000001",
@@ -94,9 +101,33 @@ function snapshot(
   };
 }
 
+const VALID_GOVERNANCE = {
+  projectionVersion: "growth-governance.1.0.0",
+  keywordClusters: [],
+  competitors: [],
+};
+
+const VALID_CONTEXT_PROJECTION = buildContextProjectionV1({
+  profileContentHash: "b".repeat(64),
+  profile: {
+    productName: "Acme",
+    oneLineDescription: "Ship faster.",
+    marketCodes: ["US"],
+  },
+  siteLanguageCodes: ["zh-CN"],
+});
+
 function readableRun(
   crawlAvailability: "available" | "partial" | "unavailable" = "available",
+  authority: {
+    ruleSetVersion?: string;
+    promptSetVersion?: string;
+    governance?: unknown;
+    contextProjection?: unknown;
+  } = {},
 ) {
+  const ruleSetVersion = authority.ruleSetVersion ?? LEGACY_RULE_SET_VERSION;
+  const promptSetVersion = authority.promptSetVersion ?? PROMPT_SET_VERSION;
   const frozenSnapshot = snapshot(crawlAvailability);
   const inputManifest = {
     projectId: ids.project,
@@ -106,8 +137,8 @@ function readableRun(
       version: 2,
       contentHash: "b".repeat(64),
     },
-    ruleSetVersion: "2026-07-27",
-    promptSetVersion: "2026-07-27",
+    ruleSetVersion,
+    promptSetVersion,
     deliveryLocale: "zh-CN",
     snapshots: [
       {
@@ -122,6 +153,12 @@ function readableRun(
         checksum: frozenSnapshot.checksum,
       },
     ],
+    ...(authority.governance === undefined
+      ? {}
+      : { governance: authority.governance }),
+    ...(authority.contextProjection === undefined
+      ? {}
+      : { contextProjection: authority.contextProjection }),
   };
   return {
     id: ids.run,
@@ -130,8 +167,8 @@ function readableRun(
     site_id: ids.site,
     icp_profile_id: ids.icp,
     icp_profile_version: 2,
-    rule_set_version: "2026-07-27",
-    prompt_set_version: "2026-07-27",
+    rule_set_version: ruleSetVersion,
+    prompt_set_version: promptSetVersion,
     output_locale: "zh-CN",
     input_manifest: inputManifest,
     input_hash: contentHash(inputManifest as CanonicalValue),
@@ -184,21 +221,19 @@ function pageProjection(
   };
 }
 
-function observation(
-  input: {
-    observationId: string;
-    sitePageId: string;
-    subjectRef: string;
-    fetchUrl: string;
-    title: string;
-    internalOutlinks?: readonly {
-      targetSubjectUrl: string;
-      rel: string | null;
-      anchorText: string | null;
-    }[];
-    availability?: "available" | "partial" | "unavailable";
-  },
-): InternalLinkCrawlObservationRow {
+function observation(input: {
+  observationId: string;
+  sitePageId: string;
+  subjectRef: string;
+  fetchUrl: string;
+  title: string;
+  internalOutlinks?: readonly {
+    targetSubjectUrl: string;
+    rel: string | null;
+    anchorText: string | null;
+  }[];
+  availability?: "available" | "partial" | "unavailable";
+}): InternalLinkCrawlObservationRow {
   const availability = input.availability ?? "available";
   return {
     observation_id: input.observationId,
@@ -216,11 +251,7 @@ function observation(
     value_text: null,
     value_json:
       availability === "available"
-        ? pageProjection(
-            input.fetchUrl,
-            input.title,
-            input.internalOutlinks,
-          )
+        ? pageProjection(input.fetchUrl, input.title, input.internalOutlinks)
         : null,
     unit: null,
     origin: "direct_public",
@@ -309,9 +340,9 @@ function installDefaults(): void {
     GrowthMapReadRepository.prototype,
     "findLatestReadableRun",
   ).mockResolvedValue(readableRun());
-  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue(
-    [snapshot()] as never,
-  );
+  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+    snapshot(),
+  ] as never);
   vi.spyOn(SitesRepository.prototype, "findById").mockResolvedValue(
     site() as never,
   );
@@ -384,6 +415,10 @@ describe("Growth Map Internal Link Map read service", () => {
       now,
     );
 
+    expect(
+      InternalLinkMapRepository.prototype.listExecutionRefs,
+    ).toHaveBeenCalledWith(expect.anything(), ids.run, 2, expect.anything());
+
     expect(result).toMatchObject({
       projectId: ids.project,
       diagnosticRunId: ids.run,
@@ -440,9 +475,7 @@ describe("Growth Map Internal Link Map read service", () => {
         inboundCount: 0,
         outboundCount: 0,
         status: "orphan",
-        executionRefs: [
-          { findingId: ids.finding, actionId: ids.action },
-        ],
+        executionRefs: [{ findingId: ids.finding, actionId: ids.action }],
       },
     ]);
     expect(result.graph.edges).toEqual([
@@ -787,19 +820,11 @@ describe("Growth Map Internal Link Map read service", () => {
     vi.mocked(
       InternalLinkMapRepository.prototype.listFrozenCrawlObservations,
     ).mockRejectedValueOnce(
-      new InternalLinkMapIntegrityError(
-        "CRAWL_OBSERVATION_LIMIT_EXCEEDED",
-      ),
+      new InternalLinkMapIntegrityError("CRAWL_OBSERVATION_LIMIT_EXCEEDED"),
     );
 
     await expect(
-      getProjectAuditInternalLinkMap(
-        scope,
-        ids.project,
-        null,
-        exec,
-        now,
-      ),
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       status: 503,
@@ -812,13 +837,196 @@ describe("Growth Map Internal Link Map read service", () => {
       input_hash: "c".repeat(64),
     });
     await expect(
-      getProjectAuditInternalLinkMap(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it.each([
+    GOVERNED_LEGACY_RULE_SET_VERSION,
+    LINKGRAPH_LEGACY_RULE_SET_VERSION,
+  ])(
+    "reads a governed %s run whose manifest carries the governance projection",
+    async (ruleSetVersion) => {
+      vi.mocked(
+        GrowthMapReadRepository.prototype.findLatestReadableRun,
+      ).mockResolvedValue(
+        readableRun("available", {
+          ruleSetVersion,
+          governance: VALID_GOVERNANCE,
+        }),
+      );
+
+      const result = await getProjectAuditInternalLinkMap(
         scope,
         ids.project,
         null,
         exec,
         now,
-      ),
+      );
+
+      expect(result).toMatchObject({
+        diagnosticRunId: ids.run,
+        coverage: {
+          availability: "available",
+          crawlCompleteness: "complete",
+          limitations: [],
+        },
+        graph: {
+          totalEdgeCount: 3,
+          edgesTruncated: false,
+        },
+      });
+      expect(result.graph.nodes).toHaveLength(4);
+      expect(
+        InternalLinkMapRepository.prototype.listExecutionRefs,
+      ).toHaveBeenCalledWith(
+        expect.anything(),
+        ids.run,
+        ruleSetVersion === "mvp.rules.0.2.3" ? 3 : 2,
+        expect.anything(),
+      );
+    },
+  );
+
+  it("reads a current 0.2.4 run only with both exact authority envelopes", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        ruleSetVersion: RULE_SET_VERSION,
+        governance: VALID_GOVERNANCE,
+        contextProjection: VALID_CONTEXT_PROJECTION,
+      }),
+    );
+
+    const result = await getProjectAuditInternalLinkMap(
+      scope,
+      ids.project,
+      null,
+      exec,
+      now,
+    );
+
+    expect(result.diagnosticRunId).toBe(ids.run);
+    expect(result.graph.nodes).toHaveLength(4);
+  });
+
+  it("rejects a current 0.2.4 run that lost its context envelope", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        ruleSetVersion: RULE_SET_VERSION,
+        governance: VALID_GOVERNANCE,
+      }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects historical runs that carry the current context envelope", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        ruleSetVersion: LINKGRAPH_LEGACY_RULE_SET_VERSION,
+        governance: VALID_GOVERNANCE,
+        contextProjection: VALID_CONTEXT_PROJECTION,
+      }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects a mvp.rules.0.2.0 run whose manifest shape is unknown to this reader", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", { ruleSetVersion: "mvp.rules.0.2.0" }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects a self-consistent run with an unshipped prompt set", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        promptSetVersion: "mvp.prompts.999.0.0",
+      }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects a governed run whose manifest lost its governance key", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        ruleSetVersion: GOVERNED_LEGACY_RULE_SET_VERSION,
+      }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects a legacy run carrying an unexpected governance key", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", { governance: VALID_GOVERNANCE }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("rejects a governed run whose governance projection fails validation", async () => {
+    vi.mocked(
+      GrowthMapReadRepository.prototype.findLatestReadableRun,
+    ).mockResolvedValue(
+      readableRun("available", {
+        ruleSetVersion: GOVERNED_LEGACY_RULE_SET_VERSION,
+        governance: { projectionVersion: "growth-governance.1.0.0" },
+      }),
+    );
+
+    await expect(
+      getProjectAuditInternalLinkMap(scope, ids.project, null, exec, now),
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       status: 503,
@@ -843,13 +1051,7 @@ describe("Growth Map Internal Link Map read service", () => {
     mocks.getDb.mockReturnValue({ db: { transaction } });
 
     await expect(
-      getProjectAuditInternalLinkMap(
-        scope,
-        ids.project,
-        null,
-        undefined,
-        now,
-      ),
+      getProjectAuditInternalLinkMap(scope, ids.project, null, undefined, now),
     ).rejects.toBe(sentinel);
     expect(transaction).toHaveBeenCalledTimes(1);
   });

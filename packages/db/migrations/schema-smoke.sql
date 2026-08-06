@@ -1278,6 +1278,343 @@ VALUES (
   1
 );
 
+-- The contextual generation freezes exactly nine manifest keys. Creation-time
+-- Site language and immutable ICP generation/hash checks make replay independent
+-- from later mutable Site or profile-pointer state.
+DO $contextual_diagnostic_manifest$
+DECLARE
+  base_manifest jsonb := jsonb_build_object(
+    'projectId', '00000000-0000-4000-8000-000000000201',
+    'siteId', '00000000-0000-4000-8000-000000000301',
+    'ruleSetVersion', 'mvp.rules.0.2.4',
+    'promptSetVersion', 'mvp.prompts.0.2.0',
+    'deliveryLocale', 'en',
+    'icp', jsonb_build_object(
+      'id', '00000000-0000-4000-8000-000000000401',
+      'version', 1,
+      'contentHash', repeat('1', 64)
+    ),
+    'snapshots', jsonb_build_array(
+      jsonb_build_object(
+        'snapshotId', '00000000-0000-4000-8000-000000000701',
+        'provider', 'crawl',
+        'datasetKey', 'crawl.site_graph.v1',
+        'schemaVersion', 'crawl.site_graph.v2',
+        'methodVersion', 'crawl.site_graph.v2',
+        'checksum', repeat('3', 64),
+        'availability', 'available',
+        'sourceWindow', '{"start":null,"end":null}'::jsonb,
+        'capturedAt', now()
+      )
+    ),
+    'governance', jsonb_build_object(
+      'projectionVersion', 'growth-governance.1.0.0',
+      'keywordClusters', '[]'::jsonb,
+      'competitors', '[]'::jsonb
+    ),
+    'contextProjection', jsonb_build_object(
+      'schemaVersion', 'context-projection.v1',
+      'compilerVersion', 'context-projection.compiler.1.0.0',
+      'profileGeneration', 'legacy-icp.v1',
+      'productRouting', jsonb_build_object(
+        'sourceKind', 'legacy_icp',
+        'productName', 'Spec product v1',
+        'oneLiner', 'A frozen legacy ICP smoke fixture.',
+        'productType', '',
+        'businessModels', '[]'::jsonb,
+        'primaryMarket', NULL,
+        'primaryAudience', NULL
+      ),
+      'siteLanguage', jsonb_build_object(
+        'sourceKind', 'site',
+        'state', 'declared_empty',
+        'languageCodes', '[]'::jsonb
+      ),
+      'primaryConversion', jsonb_build_object(
+        'state', 'missing',
+        'sourceKind', 'legacy_icp'
+      ),
+      'priorityUrlSubjects', jsonb_build_object(
+        'state', 'missing',
+        'sourceKind', 'legacy_icp'
+      ),
+      'declaredExecutionConstraints', jsonb_build_object(
+        'state', 'missing',
+        'sourceKind', 'legacy_icp'
+      )
+    )
+  );
+  old_shape_rejected boolean := false;
+  historical_context_rejected boolean := false;
+  extra_context_key_rejected boolean := false;
+  profile_generation_rejected boolean := false;
+  site_language_rejected boolean := false;
+  source_hash_rejected boolean := false;
+  version_two_rejected boolean := false;
+  historical_rule_rejected boolean := false;
+BEGIN
+  INSERT INTO app.async_runs (
+    id, workspace_id, project_id, kind, status, active_key, initiated_by,
+    started_at, completed_at
+  )
+  VALUES
+    (
+      '00000000-0000-4000-8000-000000000620',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-valid',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000621',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-old-shape',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000622',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:historical-context',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000623',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-extra-key',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000624',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-profile-mismatch',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000625',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-language-mismatch',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    ),
+    (
+      '00000000-0000-4000-8000-000000000626',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      'diagnostic', 'completed', 'diagnostic:contextual-hash-mismatch',
+      '00000000-0000-4000-8000-000000000101', now(), now()
+    );
+
+  INSERT INTO app.diagnostic_runs (
+    id, workspace_id, project_id, site_id, icp_profile_id,
+    icp_profile_version, rule_set_version, prompt_set_version,
+    output_locale, input_manifest, input_hash, coverage
+  ) VALUES (
+    '00000000-0000-4000-8000-000000000620',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000000401',
+    1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+    base_manifest, repeat('a', 64), '{}'::jsonb
+  );
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000621',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+      base_manifest - 'contextProjection', repeat('b', 64), '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    old_shape_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000622',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.3', 'mvp.prompts.0.2.0', 'en',
+      jsonb_set(
+        base_manifest,
+        '{ruleSetVersion}',
+        '"mvp.rules.0.2.3"'::jsonb
+      ),
+      repeat('c', 64),
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    historical_context_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000623',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+      jsonb_set(
+        base_manifest,
+        '{contextProjection,workflowState}',
+        '"queued"'::jsonb
+      ),
+      repeat('d', 64),
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    extra_context_key_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000624',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+      jsonb_set(
+        base_manifest,
+        '{contextProjection,profileGeneration}',
+        '"product-profile.0.3.0"'::jsonb
+      ),
+      repeat('e', 64),
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    profile_generation_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000625',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+      jsonb_set(
+        base_manifest,
+        '{contextProjection,siteLanguage}',
+        '{"sourceKind":"site","state":"declared_non_empty","languageCodes":["en"]}'::jsonb
+      ),
+      repeat('f', 64),
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    site_language_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_runs (
+      id, workspace_id, project_id, site_id, icp_profile_id,
+      icp_profile_version, rule_set_version, prompt_set_version,
+      output_locale, input_manifest, input_hash, coverage
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000626',
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000401',
+      1, 'mvp.rules.0.2.4', 'mvp.prompts.0.2.0', 'en',
+      jsonb_set(
+        base_manifest,
+        '{contextProjection,priorityUrlSubjects}',
+        jsonb_build_object(
+          'state', 'available',
+          'sourceKind', 'legacy_icp',
+          'sourceHash', repeat('f', 64),
+          'normalizedRefs', jsonb_build_array(
+            'https://example.com/customer-onboarding'
+          )
+        )
+      ),
+      repeat('1', 64),
+      '{}'::jsonb
+    );
+  EXCEPTION WHEN check_violation THEN
+    source_hash_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_run_rules (
+      diagnostic_run_id, rule_id, rule_version, domain,
+      status, reason, metrics, duration_ms
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000620',
+      'TECH-INDEXABILITY-006', 2, 'technical_seo',
+      'candidate', NULL, '{}'::jsonb, 1
+    );
+  EXCEPTION WHEN check_violation THEN
+    version_two_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.diagnostic_run_rules (
+      diagnostic_run_id, rule_id, rule_version, domain,
+      status, reason, metrics, duration_ms
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000602',
+      'TECH-INDEXABILITY-006', 1, 'technical_seo',
+      'candidate', NULL, '{}'::jsonb, 1
+    );
+  EXCEPTION WHEN check_violation THEN
+    historical_rule_rejected := true;
+  END;
+
+  INSERT INTO app.diagnostic_run_rules (
+    diagnostic_run_id, rule_id, rule_version, domain,
+    status, reason, metrics, duration_ms
+  ) VALUES (
+    '00000000-0000-4000-8000-000000000620',
+    'TECH-INDEXABILITY-006', 1, 'technical_seo',
+    'candidate', NULL, '{}'::jsonb, 1
+  );
+
+  IF NOT old_shape_rejected
+     OR NOT historical_context_rejected
+     OR NOT extra_context_key_rejected
+     OR NOT profile_generation_rejected
+     OR NOT site_language_rejected
+     OR NOT source_hash_rejected
+     OR NOT version_two_rejected
+     OR NOT historical_rule_rejected THEN
+    RAISE EXCEPTION 'contextual diagnostic manifest or rule guards are incomplete';
+  END IF;
+END;
+$contextual_diagnostic_manifest$;
+
 -- Model-generated evidence must reference an immutable AnalysisInvocation.
 DO $$
 DECLARE
@@ -3698,6 +4035,203 @@ BEGIN
 END;
 $$;
 
+-- TECH-INDEXABILITY-006 carries one direct URL root backed only by exact Crawl
+-- fetch lineage. The two PageSnapshots below are contextual bytes for already
+-- proven SitePages; neither is fabricated by the Observation lineage guard.
+INSERT INTO app.page_snapshots (
+  id, workspace_id, project_id, site_page_id, data_snapshot_id,
+  content_hash, canonical_extract, extract, captured_at
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000003101',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001801',
+    '00000000-0000-4000-8000-000000000701',
+    encode(
+      digest(
+        convert_to(
+          '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-crawl"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-crawl"}',
+          'UTF8'
+        ),
+        'sha256'
+      ),
+      'hex'
+    ),
+    '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-crawl"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-crawl"}',
+    '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-crawl"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-crawl"}'::jsonb,
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000000701')
+  ),
+  (
+    '00000000-0000-4000-8000-000000003102',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000001802',
+    '00000000-0000-4000-8000-000000000701',
+    encode(
+      digest(
+        convert_to(
+          '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-unique/"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-unique"}',
+          'UTF8'
+        ),
+        'sha256'
+      ),
+      'hex'
+    ),
+    '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-unique/"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-unique"}',
+    '{"depth":0,"projection":{"fetchUrl":"https://example.com/lineage-unique/"},"schemaVersion":"crawl.page-extract.v1","subjectUrl":"https://example.com/lineage-unique"}'::jsonb,
+    (SELECT captured_at FROM app.data_snapshots
+      WHERE id = '00000000-0000-4000-8000-000000000701')
+  );
+
+INSERT INTO app.findings (
+  id, workspace_id, project_id, finding_key, rule_id, rule_version,
+  rule_family, intent, domain, title_key, summary, summary_locale,
+  subject_refs, severity, confidence, first_seen_run_id, last_seen_run_id,
+  first_seen_at, last_seen_at
+)
+VALUES (
+  '00000000-0000-4000-8000-000000003103',
+  '00000000-0000-4000-8000-000000000001',
+  '00000000-0000-4000-8000-000000000201',
+  encode(
+    digest(
+      convert_to('contextual-indexability-smoke', 'UTF8'),
+      'sha256'
+    ),
+    'hex'
+  ),
+  'TECH-INDEXABILITY-006',
+  1,
+  'indexability',
+  'investigate',
+  'technical_seo',
+  'finding.tech.indexability.title',
+  'A sitemap URL has an exact observed non-indexable signal.',
+  'en',
+  '[{"type":"url","value":"https://example.com/lineage-crawl"}]'::jsonb,
+  'high',
+  'high',
+  '00000000-0000-4000-8000-000000000620',
+  '00000000-0000-4000-8000-000000000620',
+  now(),
+  now()
+);
+
+DO $contextual_finding_target$
+DECLARE
+  wrong_relation_rejected boolean := false;
+  unresolved_rejected boolean := false;
+  non_crawl_rejected boolean := false;
+BEGIN
+  BEGIN
+    INSERT INTO app.finding_targets (
+      workspace_id, project_id, site_id, finding_id, diagnostic_run_id,
+      relation, target_kind, target_ref, resolution_state, basis_kind,
+      site_page_id, page_snapshot_id, source_observation_id, member_ref
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000003103',
+      '00000000-0000-4000-8000-000000000620',
+      'affected_by_page_set',
+      'page_set',
+      'indexability-pages',
+      'resolved',
+      'crawl_exact_fetch',
+      '00000000-0000-4000-8000-000000001801',
+      '00000000-0000-4000-8000-000000003101',
+      '00000000-0000-4000-8000-000000001901',
+      'https://example.com/lineage-crawl'
+    );
+  EXCEPTION WHEN check_violation THEN
+    wrong_relation_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.finding_targets (
+      workspace_id, project_id, site_id, finding_id, diagnostic_run_id,
+      relation, target_kind, target_ref, resolution_state, basis_kind,
+      site_page_id, page_snapshot_id, source_observation_id, member_ref,
+      limitation
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000003103',
+      '00000000-0000-4000-8000-000000000620',
+      'direct_url',
+      'url',
+      'https://example.com/lineage-crawl',
+      'unresolved',
+      'unresolved_observation',
+      NULL,
+      NULL,
+      '00000000-0000-4000-8000-000000001901',
+      'https://example.com/lineage-crawl',
+      'Exact Crawl rules cannot emit unresolved target members.'
+    );
+  EXCEPTION WHEN check_violation THEN
+    unresolved_rejected := true;
+  END;
+
+  BEGIN
+    INSERT INTO app.finding_targets (
+      workspace_id, project_id, site_id, finding_id, diagnostic_run_id,
+      relation, target_kind, target_ref, resolution_state, basis_kind,
+      site_page_id, page_snapshot_id, source_observation_id, member_ref
+    ) VALUES (
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000201',
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000003103',
+      '00000000-0000-4000-8000-000000000620',
+      'direct_url',
+      'url',
+      'https://example.com/lineage-unique/',
+      'resolved',
+      'crawl_exact_fetch',
+      '00000000-0000-4000-8000-000000001802',
+      '00000000-0000-4000-8000-000000003102',
+      '00000000-0000-4000-8000-000000001905',
+      'https://example.com/lineage-unique'
+    );
+  EXCEPTION WHEN check_violation THEN
+    non_crawl_rejected := true;
+  END;
+
+  INSERT INTO app.finding_targets (
+    workspace_id, project_id, site_id, finding_id, diagnostic_run_id,
+    relation, target_kind, target_ref, resolution_state, basis_kind,
+    site_page_id, page_snapshot_id, source_observation_id, member_ref
+  ) VALUES (
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000201',
+    '00000000-0000-4000-8000-000000000301',
+    '00000000-0000-4000-8000-000000003103',
+    '00000000-0000-4000-8000-000000000620',
+    'direct_url',
+    'url',
+    'https://example.com/lineage-crawl',
+    'resolved',
+    'crawl_exact_fetch',
+    '00000000-0000-4000-8000-000000001801',
+    '00000000-0000-4000-8000-000000003101',
+    '00000000-0000-4000-8000-000000001901',
+    'https://example.com/lineage-crawl'
+  );
+
+  IF NOT wrong_relation_rejected
+     OR NOT unresolved_rejected
+     OR NOT non_crawl_rejected THEN
+    RAISE EXCEPTION 'contextual indexability Finding target guards are incomplete';
+  END IF;
+END;
+$contextual_finding_target$;
+
 INSERT INTO app.async_runs (
   id,
   workspace_id,
@@ -4139,10 +4673,12 @@ BEGIN
     WHERE connamespace = 'app'::regnamespace
       AND conrelid = 'app.diagnostic_runs'::regclass
       AND conname = 'diagnostic_runs_rule_set_version_check'
+      AND convalidated
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.0%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.1%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.2%'
       AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.3%'
+      AND pg_get_constraintdef(oid) LIKE '%mvp.rules.0.2.4%'
   ) THEN
     RAISE EXCEPTION 'diagnostic rule-set compatibility is stale';
   END IF;
@@ -4378,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0041_product_profile_default_competitors' THEN
+  ) IS DISTINCT FROM '0043_validate_contextual_diagnostic_rule_set' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

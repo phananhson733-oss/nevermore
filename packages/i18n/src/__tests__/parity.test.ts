@@ -125,6 +125,63 @@ describe("i18n message key parity", () => {
     );
   });
 
+  it("labels execution previews as presentational validation targets in both locales", () => {
+    expect(en.growthMap.executionPreview).toEqual({
+      eyebrow: "Execution preview",
+      validationTarget: "Validation target",
+      artifactType: "Artifact",
+      effort: "Effort",
+      risk: "Risk",
+      notAvailable:
+        "No deterministic execution preview is available for this Finding.",
+      artifactTypes: {
+        content_brief: "Content brief",
+        metadata_rewrite: "Metadata rewrite",
+        technical_ticket: "Technical ticket",
+        english_blog_draft: "English blog draft",
+      },
+      efforts: {
+        small: "Small",
+        medium: "Medium",
+        large: "Large",
+      },
+      risks: {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+      },
+    });
+    expect(zhCN.growthMap.executionPreview).toEqual({
+      eyebrow: "执行预览",
+      validationTarget: "验证目标",
+      artifactType: "交付物",
+      effort: "投入成本",
+      risk: "风险",
+      notAvailable: "该 Finding 暂无可确定生成的执行预览。",
+      artifactTypes: {
+        content_brief: "内容简报",
+        metadata_rewrite: "元数据改写",
+        technical_ticket: "技术工单",
+        english_blog_draft: "English 博客草稿",
+      },
+      efforts: {
+        small: "小",
+        medium: "中",
+        large: "大",
+      },
+      risks: {
+        low: "低",
+        medium: "中",
+        high: "高",
+      },
+    });
+    expect(en.growthMap.executionPreview).not.toHaveProperty("apply");
+    expect(en.growthMap.executionPreview).not.toHaveProperty("publish");
+    expect(en.growthMap.executionPreview).not.toHaveProperty("deploy");
+    expect(zhCN.growthMap.executionPreview).not.toHaveProperty("status");
+    expect(zhCN.growthMap.executionPreview).not.toHaveProperty("progress");
+  });
+
   it("keeps the libraries Chinese-first, customer-readable, and free of unsupported actions", () => {
     expect(zhCN.growthMap.keywordLibrary).toMatchObject({
       libraryScopeTitle: "已入库关键词及其来源",

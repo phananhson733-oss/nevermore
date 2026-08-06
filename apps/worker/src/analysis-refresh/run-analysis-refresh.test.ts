@@ -79,6 +79,22 @@ const REQUEST_PAYLOAD = {
     maxCompetitors: 100,
   },
 } as const;
+const LEGACY_PROFILE = {
+  productName: "Acme",
+  oneLineDescription: "Ship faster",
+  productType: "saas",
+  businessModels: ["subscription"],
+  marketCodes: ["US"],
+  segments: ["Growth teams"],
+  primaryConversion: {
+    label: "Book a demo",
+    type: "contact",
+    targetUrl: "https://example.test/demo",
+  },
+  priorityUrls: ["https://example.test/pricing"],
+  technicalConstraints: ["Legacy CMS"],
+  resourceConstraints: ["One engineer"],
+} as const;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -495,10 +511,17 @@ describe("runAnalysisRefresh", () => {
   it("creates the Growth Audit child with the exact Snapshot manifest and governance projection", async () => {
     const harness = createHarness();
     installCompletedCollectionPlan(harness);
+    const exactSite = { ...siteRow(), language_codes: ["fr-CA"] };
+    const siteRead = vi.mocked(SitesRepository.prototype.findById);
+    siteRead.mockResolvedValue(exactSite);
+    const profileRead = vi.mocked(IcpProfilesRepository.prototype.findById);
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
 
-    expect(DiagnosticRunsRepository.prototype.insert).toHaveBeenCalledWith(
+    const diagnosticInsert = vi.mocked(
+      DiagnosticRunsRepository.prototype.insert,
+    );
+    expect(diagnosticInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceId: IDS.workspace,
         projectId: IDS.project,
@@ -506,26 +529,57 @@ describe("runAnalysisRefresh", () => {
         icpProfileId: IDS.profile,
         icpProfileVersion: 3,
         outputLocale: "en-US",
-        inputManifest: expect.objectContaining({
-          projectId: IDS.project,
-          siteId: IDS.site,
-          icp: REQUEST_PAYLOAD.icpProfile,
-          snapshots: [
-            expect.objectContaining({
-              snapshotId: IDS.crawlSnapshot,
-              provider: "crawl",
-              availability: "available",
-            }),
-          ],
-          governance: {
-            projectionVersion: "growth-governance.1.0.0",
-            keywordClusters: [],
-            competitors: [],
-          },
-        }),
         inputHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       }),
     );
+    const inputManifest = diagnosticInsert.mock.calls[0]?.[0]
+      .inputManifest as Record<string, unknown>;
+    expect(Object.keys(inputManifest).sort()).toEqual([
+      "contextProjection",
+      "deliveryLocale",
+      "governance",
+      "icp",
+      "projectId",
+      "promptSetVersion",
+      "ruleSetVersion",
+      "siteId",
+      "snapshots",
+    ]);
+    expect(inputManifest).toMatchObject({
+      projectId: IDS.project,
+      siteId: IDS.site,
+      icp: REQUEST_PAYLOAD.icpProfile,
+      snapshots: [
+        expect.objectContaining({
+          snapshotId: IDS.crawlSnapshot,
+          provider: "crawl",
+          availability: "available",
+        }),
+      ],
+      governance: {
+        projectionVersion: "growth-governance.1.0.0",
+        keywordClusters: [],
+        competitors: [],
+      },
+      contextProjection: {
+        profileGeneration: "legacy-icp.v1",
+        siteLanguage: {
+          sourceKind: "site",
+          state: "declared_non_empty",
+          languageCodes: ["fr-CA"],
+        },
+      },
+    });
+    expect(profileRead).toHaveBeenCalledWith(
+      { workspaceId: IDS.workspace, projectId: IDS.project },
+      IDS.profile,
+    );
+    expect(siteRead).toHaveBeenCalledWith(
+      { workspaceId: IDS.workspace, projectId: IDS.project },
+      IDS.site,
+    );
+    expect(profileRead).toHaveBeenCalledBefore(diagnosticInsert);
+    expect(siteRead).toHaveBeenCalledBefore(diagnosticInsert);
     expect(CapabilityRunsRepository.prototype.create).toHaveBeenCalledWith(
       expect.objectContaining({
         asyncRunId: expect.any(String),
@@ -541,7 +595,7 @@ describe("runAnalysisRefresh", () => {
         capabilityRunId: expect.any(String),
         scopeKind: "site",
         scopeKey: IDS.site,
-        projectionVersion: "growth-audit.0.3.0",
+        projectionVersion: "growth-audit.0.3.1",
       }),
     );
     expect(harness.send).toHaveBeenCalledWith(
@@ -556,6 +610,39 @@ describe("runAnalysisRefresh", () => {
       state: "running",
       child_async_run_id: expect.any(String),
     });
+  });
+
+  it("fails closed when the exact pinned Profile id no longer matches the parent payload", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    vi.mocked(IcpProfilesRepository.prototype.findById).mockResolvedValue(
+      profileRow({ id: IDS.external }),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[4]).toMatchObject({
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE" },
+    });
+    expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
+  });
+
+  it("fails closed instead of substituting another Site for the pinned Site", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    vi.mocked(SitesRepository.prototype.findById).mockResolvedValue({
+      ...siteRow(),
+      id: IDS.external,
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[4]).toMatchObject({
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE" },
+    });
+    expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
   });
 
   it("refuses a completed step whose frozen Snapshot belongs to another collection child", async () => {
@@ -610,7 +697,7 @@ describe("runAnalysisRefresh", () => {
       capability_run_id: IDS.auditChild,
       scope_kind: "site",
       scope_key: IDS.site,
-      projection_version: "growth-audit.0.3.0",
+      projection_version: "growth-audit.0.3.1",
       created_at: NOW.toISOString(),
     });
 
@@ -831,17 +918,9 @@ function createHarness(options: {
     SourceConnectionsRepository.prototype,
     "insertConnection",
   ).mockResolvedValue(sourceConnection("dataforseo"));
-  vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue({
-    id: IDS.profile,
-    workspace_id: IDS.workspace,
-    project_id: IDS.project,
-    version: 3,
-    status: "complete",
-    profile: { legacyIcpVersion: "0.2" },
-    content_hash: "a".repeat(64),
-    created_by: IDS.actor,
-    created_at: NOW.toISOString(),
-  });
+  vi.spyOn(IcpProfilesRepository.prototype, "findById").mockResolvedValue(
+    profileRow(),
+  );
   vi.spyOn(
     SitePagesRepository.prototype,
     "findExactNormalizedUrl",
@@ -1176,6 +1255,21 @@ function projectRow(): ProjectRow {
     created_at: NOW.toISOString(),
     updated_at: NOW.toISOString(),
   };
+}
+
+function profileRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: IDS.profile,
+    workspace_id: IDS.workspace,
+    project_id: IDS.project,
+    version: 3,
+    status: "complete",
+    profile: LEGACY_PROFILE,
+    content_hash: "a".repeat(64),
+    created_by: IDS.actor,
+    created_at: NOW.toISOString(),
+    ...overrides,
+  } as never;
 }
 
 function siteRow(): SiteRow {

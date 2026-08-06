@@ -13,6 +13,10 @@ import { draftsEnabled } from "@/lib/tools/quick-wins-draft-config";
 import { localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 
+// This route renders the visitor's cookie-backed GSC connection state. Keep it
+// request-bound even though the surrounding locale tree is statically built.
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({
   params,
 }: {
@@ -23,8 +27,14 @@ export async function generateMetadata({
     draftsEnabled: draftsEnabled(),
   });
   return generatePageMetadata({
-    title: content.title,
-    description: content.description,
+    title:
+      locale === "en"
+        ? "SEO Quick Wins from Search Console"
+        : "用 Search Console 找出 SEO 快速机会",
+    description:
+      locale === "en"
+        ? "Connect Search Console read-only to find measurable query and page opportunities, with evidence, limits, and an ordered next step."
+        : "以只读方式连接 Search Console，找出可衡量的查询词与页面机会，并查看证据、限制和下一步顺序。",
     locale,
     path: content.path,
   });

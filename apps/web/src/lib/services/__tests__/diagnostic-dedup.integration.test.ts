@@ -47,6 +47,7 @@ import {
   type CrawlPageProjection,
 } from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildDiagnosticFrozenInput } from "@/lib/services/diagnostics";
 import { createProject, type UrlGuard } from "@/lib/services/projects";
 
 /**
@@ -61,6 +62,12 @@ import { createProject, type UrlGuard } from "@/lib/services/projects";
 
 const DATABASE_URL = process.env["DATABASE_URL"]!;
 const describeDb = process.env["DATABASE_URL"] ? describe : describe.skip;
+const SITE_LANGUAGE_CODES = ["en"] as const;
+const ICP_PROFILE = {
+  productName: "Dedup",
+  oneLineDescription: "Diagnostic deduplication integration fixture",
+  siteLanguageCodes: SITE_LANGUAGE_CODES,
+} as const;
 
 const safeGuard: UrlGuard = async (url) => ({
   safe: true,
@@ -171,7 +178,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         projectName: "Dedup",
         siteUrl: "https://dedup.example",
         marketCodes: ["US"],
-        siteLanguageCodes: ["en"],
+        siteLanguageCodes: [...SITE_LANGUAGE_CODES],
         defaultDeliveryLocale: "en",
       },
       safeGuard,
@@ -179,7 +186,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     scope = { workspaceId, projectId: created.project.id };
     siteId = created.project.site.id;
 
-    icpContentHash = contentHash({ icp: randomUUID() });
+    icpContentHash = contentHash(ICP_PROFILE);
     const [icp] = await handle.db
       .insert(icpProfiles)
       .values({
@@ -187,7 +194,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         project_id: scope.projectId,
         version: 1,
         status: "complete",
-        profile: { productName: "Dedup", siteLanguageCodes: ["en"] },
+        profile: ICP_PROFILE,
         content_hash: icpContentHash,
         created_by: actor,
       })
@@ -199,7 +206,7 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
     await handle?.end();
   });
 
-  /** Run the real 11-rule pipeline over the seeded 404-page snapshot. */
+  /** Run the real current 12-rule pipeline over the seeded 404-page snapshot. */
   async function runOnce(snapshotId: string, observations: ObservationView[]) {
     void snapshotId;
     const capturedAt = new Date().toISOString();
@@ -242,36 +249,24 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
         completed_at: nowTs,
       })
       .returning();
-    const inputManifest = {
+    const frozen = buildDiagnosticFrozenInput({
       projectId: scope.projectId,
       siteId,
       icp: {
         id: icpProfileId,
         version: 1,
         contentHash: icpContentHash,
+        profile: ICP_PROFILE,
       },
-      snapshots: [
-        {
-          snapshotId: snapshot.id,
-          provider: snapshot.provider,
-          datasetKey: snapshot.dataset_key,
-          schemaVersion: snapshot.schema_version,
-          methodVersion: snapshot.method_version,
-          checksum: snapshot.checksum,
-          capturedAt: snapshot.captured_at,
-          sourceWindow: snapshot.source_window,
-          availability: snapshot.availability,
-        },
-      ],
+      siteLanguageCodes: SITE_LANGUAGE_CODES,
+      snapshots: [snapshot],
+      deliveryLocale: "en",
       governance: {
         projectionVersion: GOVERNANCE_PROJECTION_VERSION,
         keywordClusters: [],
         competitors: [],
       },
-      ruleSetVersion: RULE_SET_VERSION,
-      promptSetVersion: PROMPT_SET_VERSION,
-      deliveryLocale: "en",
-    };
+    });
     await new DiagnosticRunsRepository(handle.db).insert({
       runId: run!.id,
       workspaceId: scope.workspaceId,
@@ -282,10 +277,8 @@ describeDb("diagnostic cross-run finding dedup (AC-025, spec §8.6)", () => {
       ruleSetVersion: RULE_SET_VERSION,
       promptSetVersion: PROMPT_SET_VERSION,
       outputLocale: "en",
-      inputManifest,
-      inputHash: contentHash(
-        inputManifest as Parameters<typeof contentHash>[0],
-      ),
+      inputManifest: frozen.manifest,
+      inputHash: frozen.inputHash,
     });
     return run!.id;
   }

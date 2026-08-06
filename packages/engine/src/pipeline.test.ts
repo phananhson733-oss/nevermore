@@ -9,7 +9,11 @@ import type {
   EvidenceDraft,
   FindingCandidate,
 } from "./rule.ts";
-import { ALL_RULES } from "./rules/index.ts";
+import {
+  ALL_RULES,
+  CONTEXTUAL_ALL_RULES,
+  CONTEXTUAL_RULE_SET_VERSION,
+} from "./rules/index.ts";
 
 function emptyContext(): DiagnosticContext {
   return DiagnosticContext.build({
@@ -62,12 +66,13 @@ function candidate(
 }
 
 describe("runPipeline async rule contract (spec §8.3)", () => {
-  it("exposes the exact mixed rule-version registry for rule set 0.2.3", () => {
-    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.3");
+  it("exposes the exact mixed rule-version registry for current rule set 0.2.4", () => {
+    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.4");
     expect(Object.fromEntries(ALL_RULES.map((rule) => [rule.id, rule.version])))
       .toEqual({
         "TECH-HTTP-001": 2,
         "TECH-CANONICAL-002": 2,
+        "TECH-INDEXABILITY-006": 1,
         "TECH-LINKGRAPH-005": 3,
         "SEARCH-CTR-004": 1,
         "SEARCH-DECAY-002": 1,
@@ -78,6 +83,31 @@ describe("runPipeline async rule contract (spec §8.3)", () => {
         "GEO-ENTITY-001": 1,
         "GEO-CRAWLER-002": 1,
       });
+  });
+
+  it("keeps the current alias identical to the exact 0.2.4 registry", () => {
+    expect(RULE_SET_VERSION).toBe("mvp.rules.0.2.4");
+    expect(ALL_RULES).toBe(CONTEXTUAL_ALL_RULES);
+    expect(ALL_RULES).toHaveLength(12);
+    expect(CONTEXTUAL_RULE_SET_VERSION).toBe("mvp.rules.0.2.4");
+    expect(
+      Object.fromEntries(
+        CONTEXTUAL_ALL_RULES.map((rule) => [rule.id, rule.version]),
+      ),
+    ).toEqual({
+      "TECH-HTTP-001": 2,
+      "TECH-CANONICAL-002": 2,
+      "TECH-INDEXABILITY-006": 1,
+      "TECH-LINKGRAPH-005": 3,
+      "SEARCH-CTR-004": 1,
+      "SEARCH-DECAY-002": 1,
+      "CONTENT-COVERAGE-001": 1,
+      "CONTENT-GAP-011": 2,
+      "CRO-PATH-001": 1,
+      "CRO-LANDING-003": 1,
+      "GEO-ENTITY-001": 1,
+      "GEO-CRAWLER-002": 1,
+    });
   });
 
   it("persists each candidate-producing rule's declared version", async () => {

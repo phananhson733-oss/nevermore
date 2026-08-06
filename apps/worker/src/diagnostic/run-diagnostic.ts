@@ -5,6 +5,7 @@ import {
   AsyncRunsRepository,
   AuditRunsRepository,
   CollectionRunsRepository,
+  canonicalize,
   contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
@@ -45,10 +46,14 @@ import {
   type FindingSummaryClientOptions,
 } from "@sf/artifacts";
 import {
+  buildContextProjectionV1,
   DiagnosticContext,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
   parseIcp,
+  parseIcpForContextProjectionV1,
   runPipeline,
+  type ContextProjectionV1,
   type CoverageInput,
   type DatasetAvailability,
   type FindingSummaryGenerator,
@@ -99,7 +104,7 @@ import { parseCrawlPageExtract } from "../collection/materialize-crawl-pages.ts"
 
 /**
  * Diagnostic job runner (spec §8.2, §8.6). Loads the frozen manifest + its
- * snapshots' observations, builds the pure `DiagnosticContext`, runs the 11-rule
+ * snapshots' observations, builds the pure `DiagnosticContext`, runs the frozen
  * pipeline, then persists rule results + findings + evidence and resolves stale
  * findings — all in one transaction. Cross-run identity uses the pipeline's
  * `findingKey`; a re-hit preserves the human review state and flips `regressed`.
@@ -369,6 +374,7 @@ interface FrozenDiagnosticManifest {
   readonly icp: ManifestIcp;
   readonly snapshots: readonly ManifestSnapshot[];
   readonly governance?: GovernanceProjectionV1;
+  readonly contextProjection?: ContextProjectionV1;
 }
 
 export interface EvidenceLineage {
@@ -831,6 +837,10 @@ const MANIFEST_KEYS = [
   "snapshots",
 ] as const;
 const GOVERNANCE_MANIFEST_KEYS = [...MANIFEST_KEYS, "governance"] as const;
+const CONTEXT_MANIFEST_KEYS = [
+  ...GOVERNANCE_MANIFEST_KEYS,
+  "contextProjection",
+] as const;
 const ICP_MANIFEST_KEYS = ["contentHash", "id", "version"] as const;
 const SNAPSHOT_MANIFEST_KEYS = [
   "availability",
@@ -946,16 +956,23 @@ function readFrozenDiagnosticManifest(
 ): FrozenDiagnosticManifest {
   const manifest = diagnostic.input_manifest;
   const hasGovernance = Object.hasOwn(manifest, "governance");
+  const hasContextProjection = Object.hasOwn(manifest, "contextProjection");
   const governanceShapeMatches =
     executor.governance === "required" ? hasGovernance : !hasGovernance;
+  const contextProjectionShapeMatches =
+    executor.contextProjection === "required"
+      ? hasContextProjection
+      : !hasContextProjection;
+  const expectedManifestKeys =
+    executor.contextProjection === "required"
+      ? CONTEXT_MANIFEST_KEYS
+      : executor.governance === "required"
+        ? GOVERNANCE_MANIFEST_KEYS
+        : MANIFEST_KEYS;
   if (
     !governanceShapeMatches ||
-    !hasExactKeys(
-      manifest,
-      executor.governance === "required"
-        ? GOVERNANCE_MANIFEST_KEYS
-        : MANIFEST_KEYS,
-    ) ||
+    !contextProjectionShapeMatches ||
+    !hasExactKeys(manifest, expectedManifestKeys) ||
     contentHash(manifest as unknown as CanonicalValue) !==
       diagnostic.input_hash ||
     manifest["projectId"] !== diagnostic.project_id ||
@@ -990,10 +1007,15 @@ function readFrozenDiagnosticManifest(
   const governance = executor.governance === "required"
     ? parseGovernanceProjectionV1(manifest["governance"])
     : undefined;
+  const contextProjection =
+    executor.contextProjection === "required"
+      ? parseContextProjectionV1(manifest["contextProjection"])
+      : undefined;
   return {
     icp,
     snapshots: readManifestSnapshots(manifest),
     ...(governance === undefined ? {} : { governance }),
+    ...(contextProjection === undefined ? {} : { contextProjection }),
   };
 }
 
@@ -1791,7 +1813,31 @@ async function computeAndPersist(
   ) {
     throw new Error("frozen ICP profile does not match its manifest");
   }
-  const icp = parseIcp(icpRow.profile);
+  const recompiledContext =
+    frozenManifest.contextProjection === undefined
+      ? undefined
+      : buildContextProjectionV1({
+          profile: icpRow.profile,
+          profileContentHash: icpRow.content_hash,
+          siteLanguageCodes:
+            frozenManifest.contextProjection.siteLanguage.languageCodes,
+        });
+  if (
+    recompiledContext !== undefined &&
+    canonicalize(recompiledContext as unknown as CanonicalValue) !==
+      canonicalize(
+        frozenManifest.contextProjection as unknown as CanonicalValue,
+      )
+  ) {
+    throw new Error("frozen context projection does not match its ICP source");
+  }
+  const icp =
+    frozenManifest.contextProjection === undefined
+      ? parseIcp(icpRow.profile)
+      : parseIcpForContextProjectionV1(
+          icpRow.profile,
+          frozenManifest.contextProjection,
+        );
 
   const observationRows = await new ObservationsRepository(
     ctx.db,
@@ -1828,6 +1874,9 @@ async function computeAndPersist(
     ...(frozenManifest.governance === undefined
       ? {}
       : { governance: frozenManifest.governance }),
+    ...(frozenManifest.contextProjection === undefined
+      ? {}
+      : { contextProjection: frozenManifest.contextProjection }),
     availabilityByProvider,
     capturedAt,
   });

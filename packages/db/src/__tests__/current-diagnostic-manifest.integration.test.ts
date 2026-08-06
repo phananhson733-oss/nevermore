@@ -305,8 +305,10 @@ describeDb("current diagnostic manifest snapshot selection", () => {
       readonly ruleSetVersion?:
         | "mvp.rules.0.2.1"
         | "mvp.rules.0.2.2"
-        | "mvp.rules.0.2.3";
+        | "mvp.rules.0.2.3"
+        | "mvp.rules.0.2.4";
       readonly governance?: CanonicalValue;
+      readonly contextProjection?: CanonicalValue;
     } = {},
   ) {
     const ruleSetVersion =
@@ -347,6 +349,9 @@ describeDb("current diagnostic manifest snapshot selection", () => {
       ...(options.governance === undefined
         ? {}
         : { governance: options.governance }),
+      ...(options.contextProjection === undefined
+        ? {}
+        : { contextProjection: options.contextProjection }),
     };
     return new DiagnosticRunsRepository(handle.db).insert({
       runId: run.id,
@@ -491,5 +496,190 @@ describeDb("current diagnostic manifest snapshot selection", () => {
         [diagnostic.id],
       ),
     ).resolves.toMatchObject({ rowCount: 1 });
+  });
+
+  it("requires the exact contextual 0.2.4 manifest and admits TECH-INDEXABILITY-006@1 only there", async () => {
+    const crawl = await insertSnapshot("crawl");
+    const governance = {
+      projectionVersion: "growth-governance.1.0.0",
+      keywordClusters: [],
+      competitors: [],
+    } as const satisfies CanonicalValue;
+    const contextProjection = {
+      schemaVersion: "context-projection.v1",
+      compilerVersion: "context-projection.compiler.1.0.0",
+      profileGeneration: "legacy-icp.v1",
+      productRouting: {
+        sourceKind: "legacy_icp",
+        productName: "Current manifest fixture",
+        oneLiner: "A disposable legacy ICP fixture.",
+        productType: "",
+        businessModels: [],
+        primaryMarket: null,
+        primaryAudience: null,
+      },
+      siteLanguage: {
+        sourceKind: "site",
+        state: "declared_non_empty",
+        languageCodes: ["en"],
+      },
+      primaryConversion: {
+        state: "missing",
+        sourceKind: "legacy_icp",
+      },
+      priorityUrlSubjects: {
+        state: "missing",
+        sourceKind: "legacy_icp",
+      },
+      declaredExecutionConstraints: {
+        state: "missing",
+        sourceKind: "legacy_icp",
+      },
+    } as const satisfies CanonicalValue;
+
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.3",
+        governance,
+        contextProjection,
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: {
+          ...contextProjection,
+          providerAvailability: {},
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: {
+          ...contextProjection,
+          profileGeneration: "product-profile.0.3.0",
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: {
+          ...contextProjection,
+          siteLanguage: {
+            sourceKind: "site",
+            state: "declared_non_empty",
+            languageCodes: ["fr"],
+          },
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: {
+          ...contextProjection,
+          priorityUrlSubjects: {
+            state: "available",
+            sourceKind: "legacy_icp",
+            sourceHash: "f".repeat(64),
+            normalizedRefs: ["https://current-manifest.example/priority/"],
+          },
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+
+    const diagnostic = await insertDiagnostic([crawl], {
+      ruleSetVersion: "mvp.rules.0.2.4",
+      governance,
+      contextProjection,
+    });
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'TECH-INDEXABILITY-006', 2, 'technical_seo',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'TECH-INDEXABILITY-006', 1, 'technical_seo',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [diagnostic.id],
+      ),
+    ).resolves.toMatchObject({ rowCount: 1 });
+
+    const historicalDiagnostic = await insertDiagnostic([crawl], {
+      ruleSetVersion: "mvp.rules.0.2.3",
+      governance,
+    });
+    await expect(
+      handle.pool.query(
+        `INSERT INTO app.diagnostic_run_rules (
+           diagnostic_run_id, rule_id, rule_version, domain,
+           status, reason, metrics, duration_ms
+         ) VALUES ($1, 'TECH-INDEXABILITY-006', 1, 'technical_seo',
+                   'candidate', NULL, '{}'::jsonb, 1)`,
+        [historicalDiagnostic.id],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+
+    // Site language is frozen source authority, not an Intl-normalized view.
+    // A valid raw BCP-47 spelling must round-trip byte-for-byte; changing only
+    // its case in the manifest is still a source-lineage drift.
+    await new SitesRepository(handle.db).updatePrimaryProjections(
+      {
+        workspaceId: fixture.workspaceId,
+        projectId: fixture.projectId,
+      },
+      { marketCodes: ["US"], languageCodes: ["en-us"] },
+    );
+    const rawLanguageContext = {
+      ...contextProjection,
+      siteLanguage: {
+        sourceKind: "site",
+        state: "declared_non_empty",
+        languageCodes: ["en-us"],
+      },
+    } as const satisfies CanonicalValue;
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: rawLanguageContext,
+      }),
+    ).resolves.toMatchObject({
+      input_manifest: { contextProjection: rawLanguageContext },
+    });
+    await expect(
+      insertDiagnostic([crawl], {
+        ruleSetVersion: "mvp.rules.0.2.4",
+        governance,
+        contextProjection: {
+          ...rawLanguageContext,
+          siteLanguage: {
+            ...rawLanguageContext.siteLanguage,
+            languageCodes: ["en-US"],
+          },
+        },
+      }),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
   });
 });

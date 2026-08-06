@@ -20,7 +20,7 @@ Ethical SEO is **the practice of growing organic traffic with methods a search e
 - Disclosures, factual sourcing, and author identity stay legible to humans and AI search
 - Treats search visibility as a portfolio, where unethical shortcuts are bad-priced risk
 
-## Why It Matters for Your Workflow
+## Why Every Shortcut Compounds Twice
 
 Ethical SEO matters because every shortcut on the ranking side compounds twice — once on the way up, again on the way down. The pages that survive a full year of algorithm updates are almost always the ones built without tricks, and the time spent rebuilding pages that an update flattened is the hidden cost that never makes it into the original brief. Across rollouts we've watched, the deciding factor is rarely whether the team knew the latest tactic; it is whether their backlog gets reset to zero every time the guidelines tighten.
 
@@ -41,7 +41,7 @@ The point where this intervenes is at the brief: the moment a writer would other
 
 Two more scenarios show up once a content program matures. First, an older page becomes easier to update because its claims are tied to citations rather than a generic structure, so refreshes are surgical instead of full rewrites. Second, when a competitor publishes the same topic, the ethical version tends to hold because its links and citations point somewhere a reader can verify, while the shortcut version cannot easily defend itself. In programs we've watched, the wasted effort was almost never in the writing itself; it was in the round of remediation that arrived a quarter after the page went live.
 
-## Common Implementation Misreadings
+## Why 'Ethical Means Slow' Borrows Speed From the Future
 
 Most shallow comparison content treats ethical SEO as a constraint that slows things down, which leads teams to misread what actually drives return. A few misreadings recur:
 
@@ -110,7 +110,7 @@ Often more easily than a large one. Small libraries can be audited end-to-end in
 
 ## Take Action
 
-Run one ethical-SEO audit cycle inside GenGrowth on a handful of pages already in your library. You'll see which pages would defend themselves against a critical reader, which ones a future update would likely clip, and where citation hygiene is silently costing AI search visibility — all without writing a single new page first. [Start your free GenGrowth trial](https://gengrowth.ai/app) and run the audit before you commission the next batch.
+Run one ethical-SEO audit cycle inside GenGrowth on a handful of pages already in your library. You'll see which pages would defend themselves against a critical reader, which ones a future update would likely clip, and where citation hygiene is silently costing AI search visibility — all without writing a single new page first. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run the audit before you commission the next batch.
 
 ## Sources
 

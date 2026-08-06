@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { listMigrationFiles } from "../migrate.ts";
+import { listMigrationFiles, runMigrations } from "../migrate.ts";
 import { LATEST_APP_MIGRATION } from "../migration-version.ts";
 import { requireSafeTestDatabaseUrl } from "../test-database-safety.ts";
 
@@ -65,6 +65,19 @@ async function readProjectedVersion(client: pg.Client): Promise<string> {
   return result.rows[0]!.migration_version;
 }
 
+async function readRuleSetConstraintValidated(
+  client: pg.Client,
+): Promise<boolean> {
+  const result = await client.query<{ convalidated: boolean }>(
+    `SELECT convalidated
+       FROM pg_constraint
+      WHERE conrelid = 'app.diagnostic_runs'::regclass
+        AND conname = 'diagnostic_runs_rule_set_version_check'`,
+  );
+  expect(result.rows).toHaveLength(1);
+  return result.rows[0]!.convalidated;
+}
+
 describe("ordered migration progress", () => {
   beforeAll(async () => {
     await withMaintenanceClient(async (client) => {
@@ -109,10 +122,39 @@ describe("ordered migration progress", () => {
         await expect(readProjectedVersion(client)).resolves.toBe(
           file.replace(/\.sql$/u, ""),
         );
+        if (file === "0042_contextual_indexability_opportunities.sql") {
+          await expect(
+            readRuleSetConstraintValidated(client),
+          ).resolves.toBe(false);
+        }
+        if (file === "0043_validate_contextual_diagnostic_rule_set.sql") {
+          await expect(
+            readRuleSetConstraintValidated(client),
+          ).resolves.toBe(true);
+        }
       }
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,
       );
+
+      // Simulate a database that already received the original, immediately
+      // validated 0042 before this release split. The forward-only runner must
+      // skip the edited 0042 body, safely replay only 0043, and retain a fully
+      // validated compatibility check.
+      await client.query(`
+        CREATE OR REPLACE VIEW app.schema_migration_version AS
+          SELECT '0042_contextual_indexability_opportunities'::text
+            AS migration_version
+      `);
+      await expect(runMigrations(DATABASE_URL)).resolves.toEqual([
+        "0043_validate_contextual_diagnostic_rule_set.sql",
+      ]);
+      await expect(readProjectedVersion(client)).resolves.toBe(
+        LATEST_APP_MIGRATION,
+      );
+      await expect(
+        readRuleSetConstraintValidated(client),
+      ).resolves.toBe(true);
     } finally {
       await client.end();
     }

@@ -22,7 +22,7 @@ A TikTok SEO tool is **software that helps a video get found through TikTok's ow
 
 A marketer searching for a way to optimize TikTok finds shelves of "viral hashtag" generators and almost nothing on the search-engine behavior that now drives a large share of discovery. So this piece evaluates a TikTok SEO tool the way an operator buys one — by what it does for searchability.
 
-## Why It Matters for Your Workflow
+## When an Audience Starts Typing Queries Into TikTok
 
 TikTok stopped being only a recommendation feed and became a place people type queries into. Younger audiences now open the app and search the way an earlier cohort opened Google. Google Senior Vice President Prabhakar Raghavan said in 2022 that the company's own research found almost 40% of young users, when looking for somewhere to eat lunch, go to TikTok or Instagram instead of Google Search or Maps. When a platform turns into a search engine, the optimization job changes from "go viral once" to "get found repeatedly," and most tools never caught up.
 
@@ -110,7 +110,7 @@ Usually because the target query never appears in the signals TikTok indexes —
 
 ## Take Action
 
-List the ten queries your audience types into TikTok search, then run one video through the full signal checklist — spoken keyword, on-screen text, caption, topic tag — before you commission another batch. You will see which clips were invisible to search all along and how much durable traffic that left on the table. [Start your free GenGrowth trial](https://gengrowth.ai/app) and audit one TikTok video for search this week.
+List the ten queries your audience types into TikTok search, then run one video through the full signal checklist — spoken keyword, on-screen text, caption, topic tag — before you commission another batch. You will see which clips were invisible to search all along and how much durable traffic that left on the table. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit one TikTok video for search this week.
 
 ## Sources
 

@@ -6,10 +6,7 @@ import {
   type GrowthMapReadableRunRow,
   type ProjectScope,
 } from "@sf/db";
-import {
-  parseGovernanceProjectionV1,
-  type GovernanceProjectionV1,
-} from "@sf/engine";
+import type { GovernanceProjectionV1 } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import {
   validateGrowthMapFrozenRun,
@@ -97,15 +94,17 @@ export async function loadPublishedGrowthMapGeneration(
     scope,
     snapshotIds,
   );
+  let frozen: FrozenGrowthMapRun;
   try {
-    return {
-      run,
-      frozen: validateGrowthMapFrozenRun(run, snapshots, scope),
-      governance: parseGovernanceProjectionV1(
-        run.input_manifest["governance"],
-      ),
-    };
+    frozen = validateGrowthMapFrozenRun(run, snapshots, scope);
   } catch {
     return corruptPublishedGeneration();
   }
+  const governance = frozen.governance;
+  if (governance === undefined) return corruptPublishedGeneration();
+  return {
+    run,
+    frozen,
+    governance,
+  };
 }

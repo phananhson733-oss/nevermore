@@ -22,7 +22,7 @@ An all-in-one SEO platform is **a single integrated tool that runs rank tracking
 
 A buyer typing "all in one seo" wants one platform for the four recurring jobs. What the results hand them is a WordPress plugin. So this comparison frames the term the way an operator means it — integrated coverage across sites, not a CMS extension.
 
-## Why It Matters for Your Workflow
+## The Cost of Landing on the Wrong Tool First
 
 The cost of the WordPress-plugin framing is hidden until you are already three tabs deep into the wrong tool. A team searching for an integrated SEO platform reads AIOSEO's homepage, its WordPress.org listing with millions of active installs, and its reviews, and concludes that "all in one seo" means a meta-tag and sitemap plugin for one site. For a single blog that is fine. For an agency tracking forty clients or a SaaS company with twelve product pages across three subdomains, it solves none of the actual problem.
 
@@ -46,7 +46,7 @@ A SaaS marketer running a marketing site, a docs subdomain, and an app landing p
 
 A team comparing a standalone tracker, a standalone crawler, a standalone keyword tool, and two reporting add-ons is really asking whether one integrated platform beats five subscriptions. The honest test is overlap and handoff cost — the kind of efficiency math behind [cost-effective SEO services](/blog/cost-effective-seo-services). Five tools that do not share data quietly cost more in reconciliation time than their combined invoice suggests.
 
-## Common Implementation Misreadings
+## The Brand-vs-Category Confusion, and What Follows From It
 
 Most disappointment with the "all in one seo" search traces back to a few predictable misreads:
 
@@ -110,7 +110,7 @@ Check whether the tool requires a CMS install or simply a domain entry, and whet
 
 ## Take Action
 
-Inventory the point tools you run today, then move your biggest handoff — usually multi-client reporting — into one platform before you renew the rest. You will see fast whether an all in one seo platform returns the coordination hours a WordPress plugin never could. [Start your free GenGrowth trial](https://gengrowth.ai/app) and consolidate one workflow this week.
+Inventory the point tools you run today, then move your biggest handoff — usually multi-client reporting — into one platform before you renew the rest. You will see fast whether an all in one seo platform returns the coordination hours a WordPress plugin never could. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and consolidate one workflow this week.
 
 ## Sources
 

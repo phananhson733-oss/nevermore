@@ -1,18 +1,23 @@
 import {
   contentHash,
   DataSnapshotsRepository,
+  EvidenceRepository,
   GrowthMapReadRepository,
   ProjectsRepository,
+  sha256Hex,
   type CanonicalValue,
   type DataSnapshotRow,
   type GrowthMapReadableRunRow,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   GOVERNANCE_PROJECTION_VERSION,
+  PROMPT_SET_VERSION,
   RULE_SET_VERSION,
 } from "@sf/engine";
 import { ProblemError } from "@sf/observability";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildExecutionPreview } from "./execution-preview.ts";
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
@@ -39,7 +44,28 @@ const siteId = "00000000-0000-4000-8000-000000000009";
 const icpProfileId = "00000000-0000-4000-8000-000000000010";
 const collectionRunId = "00000000-0000-4000-8000-000000000011";
 const sourceConnectionId = "00000000-0000-4000-8000-000000000012";
+const findingId = "00000000-0000-4000-8000-000000000013";
+const findingTargetId = "00000000-0000-4000-8000-000000000014";
+const observationId = "00000000-0000-4000-8000-000000000015";
+const evidenceId = "00000000-0000-4000-8000-000000000016";
+const actionId = "00000000-0000-4000-8000-000000000017";
+const artifactId = "00000000-0000-4000-8000-000000000018";
 const capturedAt = "2026-07-21T08:00:00.000Z";
+const normalizedUrl = "https://example.test/customer-onboarding/";
+const profileContentHash = "c".repeat(64);
+const contextProjection = buildContextProjectionV1({
+  profileContentHash,
+  profile: {
+    profileSchemaVersion: "product-profile.0.3.0",
+    productName: "Acme",
+    oneLiner: "Ship faster",
+    productType: "saas",
+    businessModels: ["subscription"],
+    targetMarkets: [{ marketCode: "US", priority: "primary" }],
+    targetAudiences: [],
+  },
+  siteLanguageCodes: ["en"],
+});
 
 type GrowthMapReadKind = "portfolio" | "detail";
 
@@ -98,7 +124,7 @@ function publishedGenerationFixture(
     icp: {
       id: icpProfileId,
       version: 2,
-      contentHash: "c".repeat(64),
+      contentHash: profileContentHash,
     },
     snapshots: [
       {
@@ -114,13 +140,14 @@ function publishedGenerationFixture(
       },
     ],
     ruleSetVersion: RULE_SET_VERSION,
-    promptSetVersion: "prompts.v1",
+    promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en-US",
     governance: {
       projectionVersion: GOVERNANCE_PROJECTION_VERSION,
       keywordClusters: [],
       competitors: [],
     },
+    contextProjection,
   };
   return {
     snapshot,
@@ -132,7 +159,7 @@ function publishedGenerationFixture(
       icp_profile_id: icpProfileId,
       icp_profile_version: 2,
       rule_set_version: RULE_SET_VERSION,
-      prompt_set_version: "prompts.v1",
+      prompt_set_version: PROMPT_SET_VERSION,
       output_locale: "en-US",
       input_manifest: manifest,
       input_hash: contentHash(manifest as CanonicalValue),
@@ -144,6 +171,172 @@ function publishedGenerationFixture(
   };
 }
 
+function installUrlDetailFixtures(options: {
+  readonly ruleId: string;
+  readonly reviewState: "unreviewed" | "confirmed";
+  readonly withExecution: boolean;
+}) {
+  const generation = publishedGenerationFixture();
+  const pageExtract = {
+    schemaVersion: "crawl.page-extract.v1",
+    depth: 0,
+    subjectUrl: normalizedUrl,
+    projection: {
+      fetchUrl: normalizedUrl,
+      title: "Customer onboarding",
+    },
+  };
+  const inventory = {
+    workspace_id: scope.workspaceId,
+    project_id: projectId,
+    site_page_id: sitePageId,
+    site_id: siteId,
+    normalized_url: normalizedUrl,
+    normalized_url_hash: sha256Hex(normalizedUrl),
+    template_key: null,
+    site_page_created_at: capturedAt,
+    page_snapshot_id: "00000000-0000-4000-8000-000000000019",
+    crawl_snapshot_id: snapshotId,
+    page_snapshot_content_hash: contentHash(
+      pageExtract as unknown as CanonicalValue,
+    ),
+    page_snapshot_canonical_extract: null,
+    page_snapshot_extract: pageExtract,
+    page_snapshot_captured_at: capturedAt,
+  };
+  const observation = {
+    id: observationId,
+    workspace_id: scope.workspaceId,
+    project_id: projectId,
+    snapshot_id: snapshotId,
+    site_page_id: sitePageId,
+    provider: "crawl",
+    metric_key: "crawl.page.v1",
+    subject_type: "url",
+    subject_ref: normalizedUrl,
+    observed_at: capturedAt,
+    availability: "available",
+    value_numeric: null,
+    value_text: null,
+    value_json: {
+      fetchUrl: normalizedUrl,
+      status: 200,
+      finalStatus: 200,
+      wordCount: 1200,
+      responseMs: 100,
+    },
+    unit: null,
+    origin: "source_observation",
+    method: "observed",
+    grade: "A",
+    support: "supports",
+    limitation: "Bounded public crawl.",
+  };
+  const target = {
+    id: findingTargetId,
+    workspace_id: scope.workspaceId,
+    project_id: projectId,
+    site_id: siteId,
+    finding_id: findingId,
+    diagnostic_run_id: olderPublishedRunId,
+    relation: "direct_url",
+    target_kind: "url",
+    target_ref: normalizedUrl,
+    resolution_state: "resolved",
+    basis_kind: "crawl_exact_fetch",
+    site_page_id: sitePageId,
+    page_snapshot_id: inventory.page_snapshot_id,
+    source_observation_id: observationId,
+    member_ref: normalizedUrl,
+    limitation: null,
+    relation_key: "direct-url",
+    created_at: capturedAt,
+  };
+  const finding = {
+    id: findingId,
+    workspace_id: scope.workspaceId,
+    project_id: projectId,
+    finding_key: `${normalizedUrl}:${options.ruleId}`,
+    rule_id: options.ruleId,
+    rule_version: options.ruleId === "TECH-HTTP-001" ? 2 : 1,
+    rule_family: "technical",
+    intent: "fix",
+    domain: "technical_search",
+    title_key: "finding.technical",
+    title_args: {},
+    summary: "Fix the selected URL.",
+    summary_locale: "en",
+    summary_invocation_id: null,
+    subject_refs: [normalizedUrl],
+    severity: "high",
+    confidence: "high",
+    review_state: options.reviewState,
+    review_revision: options.reviewState === "confirmed" ? 1 : 0,
+    review_reason: null,
+    review_note: null,
+    active: true,
+    regressed: false,
+    first_seen_run_id: olderPublishedRunId,
+    last_seen_run_id: olderPublishedRunId,
+    first_seen_at: capturedAt,
+    last_seen_at: capturedAt,
+    resolved_at: null,
+    created_at: capturedAt,
+    updated_at: capturedAt,
+  };
+
+  vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+    id: projectId,
+    default_delivery_locale: "en",
+  } as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "findReadableRunById",
+  ).mockResolvedValue(generation.run);
+  vi.spyOn(
+    DataSnapshotsRepository.prototype,
+    "findByIds",
+  ).mockResolvedValue([generation.snapshot]);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "findCurrentRunUrl",
+  ).mockResolvedValue(inventory as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listObservations",
+  ).mockResolvedValue([observation] as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listResolvedTargets",
+  ).mockResolvedValue([target] as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listFindings",
+  ).mockResolvedValue([finding] as never);
+  vi.spyOn(
+    EvidenceRepository.prototype,
+    "listForFindings",
+  ).mockResolvedValue([
+    { finding_id: findingId, evidence_id: evidenceId, role: "primary" },
+  ] as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listActiveActions",
+  ).mockResolvedValue(
+    options.withExecution
+      ? ([{ id: actionId, source_finding_id: findingId }] as never)
+      : [],
+  );
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listArtifacts",
+  ).mockResolvedValue(
+    options.withExecution
+      ? ([{ id: artifactId, action_id: actionId }] as never)
+      : [],
+  );
+}
+
 describe("Growth Map URL read boundary", () => {
   beforeEach(() => {
     mocks.getDb.mockReset();
@@ -152,6 +345,66 @@ describe("Growth Map URL read boundary", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
+
+  it.each([
+    {
+      name: "reviewable Finding",
+      ruleId: "TECH-HTTP-001",
+      reviewState: "unreviewed" as const,
+      withExecution: false,
+      expectedPreview: buildExecutionPreview("TECH-HTTP-001", "en"),
+      expectedExecutionRef: null,
+    },
+    {
+      name: "confirmed Finding",
+      ruleId: "TECH-HTTP-001",
+      reviewState: "confirmed" as const,
+      withExecution: true,
+      expectedPreview: buildExecutionPreview("TECH-HTTP-001", "en"),
+      expectedExecutionRef: { actionId, artifactIds: [artifactId] },
+    },
+    {
+      name: "unknown runtime template",
+      ruleId: "TECH-UNKNOWN-999",
+      reviewState: "unreviewed" as const,
+      withExecution: false,
+      expectedPreview: null,
+      expectedExecutionRef: null,
+    },
+  ])(
+    "keeps evidence readable and preview identity separate for a $name",
+    async ({
+      ruleId,
+      reviewState,
+      withExecution,
+      expectedPreview,
+      expectedExecutionRef,
+    }) => {
+      installUrlDetailFixtures({ ruleId, reviewState, withExecution });
+
+      const result = await getProjectAuditUrl(
+        scope,
+        projectId,
+        sitePageId,
+        { diagnosticRunId: olderPublishedRunId },
+        {} as never,
+      );
+
+      expect(result.data.findings).toHaveLength(1);
+      const projectedFinding = result.data.findings[0];
+      expect(projectedFinding).toMatchObject({
+        findingId,
+        ruleId,
+        reviewState,
+        evidenceIds: [evidenceId],
+      });
+      expect(projectedFinding?.executionPreview).toEqual(expectedPreview);
+      expect(projectedFinding?.executionRef).toEqual(expectedExecutionRef);
+      expect(result.data.coverage.limitations).toContain(
+        "本次诊断未冻结 GSC 数据快照。",
+      );
+    },
+  );
 
   it.each(["portfolio", "detail"] as const)(
     "keeps the latest frozen run for an unpinned %s read when its output locale differs from the workbench locale",

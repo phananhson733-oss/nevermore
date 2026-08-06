@@ -14,6 +14,8 @@ import {
   type WorkspaceScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
+  parseContextProjectionV1,
   parseGovernanceProjectionV1,
   PROMPT_SET_VERSION,
   RULE_SET_VERSION,
@@ -74,7 +76,9 @@ export function buildDiagnosticFrozenInput(input: {
     readonly id: string;
     readonly version: number;
     readonly contentHash: string;
+    readonly profile: unknown;
   };
+  readonly siteLanguageCodes: readonly string[];
   readonly snapshots: readonly DataSnapshotRow[];
   readonly deliveryLocale: string;
   readonly governance: GovernanceProjectionV1;
@@ -86,6 +90,13 @@ export function buildDiagnosticFrozenInput(input: {
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   );
   const governance = parseGovernanceProjectionV1(input.governance);
+  const contextProjection = parseContextProjectionV1(
+    buildContextProjectionV1({
+      profile: input.icp.profile,
+      profileContentHash: input.icp.contentHash,
+      siteLanguageCodes: input.siteLanguageCodes,
+    }),
+  );
   const manifest = {
     projectId: input.projectId,
     siteId: input.siteId,
@@ -99,6 +110,7 @@ export function buildDiagnosticFrozenInput(input: {
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: input.deliveryLocale,
     governance,
+    contextProjection,
   };
   return {
     manifest,
@@ -405,7 +417,9 @@ export async function createDiagnosticRun(
           id: confirmedIcp.id,
           version: confirmedIcp.version,
           contentHash: confirmedIcp.content_hash,
+          profile: confirmedIcp.profile,
         },
+        siteLanguageCodes: currentSite.language_codes,
         snapshots: currentSnapshots,
         deliveryLocale: body.outputLocale,
         governance,

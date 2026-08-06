@@ -46,6 +46,7 @@ import {
   type ProjectScope,
 } from "@sf/db";
 import {
+  buildContextProjectionV1,
   FINDING_REGISTRY,
   GOVERNANCE_PROJECTION_VERSION,
   PROMPT_SET_VERSION,
@@ -112,6 +113,7 @@ interface IcpSeed {
   readonly id: string;
   readonly version: number;
   readonly contentHash: string;
+  readonly profile: Record<string, unknown>;
 }
 
 interface DiagnosticSeedContext {
@@ -1074,6 +1076,7 @@ async function seedArtifact(
       handle,
       scope,
       site.id,
+      site.language_codes,
       actor,
       icp,
       snapshots,
@@ -1255,6 +1258,11 @@ async function seedIcp(
   scope: ProjectScope,
   actor: string,
 ): Promise<IcpSeed> {
+  const profile = {
+    productName: "Acme",
+    oneLineDescription: "Artifact integration fixture.",
+    siteLanguageCodes: ["en"],
+  };
   const [icp] = await handle.db
     .insert(icpProfiles)
     .values({
@@ -1262,8 +1270,8 @@ async function seedIcp(
       project_id: scope.projectId,
       version: 1,
       status: "complete",
-      profile: { productName: "Acme", siteLanguageCodes: ["en"] },
-      content_hash: contentHash({ icp: randomUUID() }),
+      profile,
+      content_hash: contentHash(profile),
       created_by: actor,
     })
     .returning();
@@ -1271,6 +1279,7 @@ async function seedIcp(
     id: icp!.id,
     version: icp!.version,
     contentHash: icp!.content_hash,
+    profile: icp!.profile,
   };
 }
 
@@ -1278,6 +1287,7 @@ async function seedDiagnosticRun(
   handle: DbHandle,
   scope: ProjectScope,
   siteId: string,
+  siteLanguageCodes: readonly string[],
   actor: string,
   icp: IcpSeed,
   snapshots: readonly DataSnapshotRow[],
@@ -1299,6 +1309,7 @@ async function seedDiagnosticRun(
     siteId,
     icp,
     snapshots,
+    siteLanguageCodes,
   );
   await new DiagnosticRunsRepository(handle.db).insert({
     runId,
@@ -1395,6 +1406,7 @@ function diagnosticManifest(
   siteId: string,
   icp: IcpSeed,
   snapshots: readonly DataSnapshotRow[],
+  siteLanguageCodes: readonly string[],
 ): Record<string, unknown> {
   const orderedSnapshots = [...snapshots].sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
@@ -1413,6 +1425,11 @@ function diagnosticManifest(
       keywordClusters: [],
       competitors: [],
     },
+    contextProjection: buildContextProjectionV1({
+      profile: icp.profile,
+      profileContentHash: icp.contentHash,
+      siteLanguageCodes,
+    }),
     ruleSetVersion: RULE_SET_VERSION,
     promptSetVersion: PROMPT_SET_VERSION,
     deliveryLocale: "en",
