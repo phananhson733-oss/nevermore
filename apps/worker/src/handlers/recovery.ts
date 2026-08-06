@@ -605,7 +605,35 @@ async function reconcileOne(
   const { jobs } = lookup;
   if (jobs.some((job) => isLiveQueueState(job.state))) return;
 
-  if (jobs.some((job) => job.state === "failed")) {
+  // An Analysis Refresh parent deliberately emits a fresh random-id job for
+  // every durable continuation. Historical terminal jobs are therefore not
+  // current execution authority: classify only the newest scoped job. A
+  // failed continuation is a recoverable transport failure while the
+  // canonical parent remains queued, so redrive that exact pg-boss job instead
+  // of failing the durable plan and its running child step.
+  const currentAnalysisRefreshJob =
+    run.kind === "analysis_refresh" ? latestCanonicalJob(jobs) : null;
+  const currentJobs = currentAnalysisRefreshJob
+    ? [currentAnalysisRefreshJob]
+    : run.kind === "analysis_refresh"
+      ? []
+      : jobs;
+
+  if (
+    run.kind === "analysis_refresh" &&
+    run.status === "queued" &&
+    currentAnalysisRefreshJob?.state === "failed"
+  ) {
+    await ctx.boss.retry(queue, currentAnalysisRefreshJob.id);
+    throwIfRecoveryAborted(signal);
+    ctx.logger.warn("run_recovery_retried", {
+      code: "ANALYSIS_REFRESH_CONTINUATION_RETRY",
+      runId: run.id,
+    });
+    return;
+  }
+
+  if (currentJobs.some((job) => job.state === "failed")) {
     const terminalFailure = terminalFailureWithCanonicalCause(
       run,
       "QUEUE_JOB_FAILED",
@@ -624,7 +652,7 @@ async function reconcileOne(
     );
     return;
   }
-  if (jobs.some((job) => job.state === "cancelled")) {
+  if (currentJobs.some((job) => job.state === "cancelled")) {
     await terminalize(
       ctx,
       run,
@@ -638,7 +666,7 @@ async function reconcileOne(
     );
     return;
   }
-  if (jobs.some((job) => job.state === "completed")) {
+  if (currentJobs.some((job) => job.state === "completed")) {
     await terminalize(
       ctx,
       run,
@@ -768,6 +796,27 @@ function stableUniqueJobs(
     seen.add(job.id);
     return true;
   });
+}
+
+function latestCanonicalJob<T extends CanonicalJobPayload>(
+  jobs: readonly JobWithMetadata<T>[],
+): JobWithMetadata<T> | null {
+  let latest: JobWithMetadata<T> | null = null;
+  for (const candidate of jobs) {
+    if (latest === null) {
+      latest = candidate;
+      continue;
+    }
+    const candidateTime = candidate.createdOn.getTime();
+    const latestTime = latest.createdOn.getTime();
+    if (
+      candidateTime > latestTime ||
+      (candidateTime === latestTime && candidate.id.localeCompare(latest.id) > 0)
+    ) {
+      latest = candidate;
+    }
+  }
+  return latest;
 }
 
 function isRecord(value: unknown): value is CanonicalJobPayload {
