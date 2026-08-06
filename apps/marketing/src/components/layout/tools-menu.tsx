@@ -59,16 +59,16 @@ function ToolLink({
     <Link
       href={localePath(locale, `/tools/${slug}`)}
       onClick={onNavigate}
-      className="group flex items-start gap-3 rounded-lg p-3 transition-colors hover:bg-brand-bg-alt focus-visible:bg-brand-bg-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/60"
+      className="group flex items-start gap-3 rounded-row p-3 transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
     >
-      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-brand-border bg-brand-bg-alt text-brand-accent-text transition-colors group-hover:border-brand-accent/40">
-        <Icon aria-hidden="true" className="size-4" />
+      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel text-brand-accent-text transition-colors group-hover:border-brand-accent/40">
+        <Icon aria-hidden="true" className="size-[18px]" />
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-text-dark-primary">
+        <span className="block text-[13.5px] leading-snug font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
           {label}
         </span>
-        <span className="mt-0.5 block text-xs leading-relaxed text-text-dark-secondary">
+        <span className="mt-1 block text-[12px] leading-[1.6] text-text-dark-secondary">
           {description}
         </span>
       </span>
@@ -93,7 +93,7 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
     <NavigationMenu.Root delayDuration={100} className="relative">
       <NavigationMenu.List className="flex list-none items-center">
         <NavigationMenu.Item>
-          <NavigationMenu.Trigger className="group flex items-center gap-1 text-sm text-text-dark-secondary transition-colors hover:text-text-dark-primary focus-visible:text-text-dark-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg data-[state=open]:text-text-dark-primary">
+          <NavigationMenu.Trigger className="group flex items-center gap-1 text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary focus-visible:text-text-dark-primary focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg focus-visible:outline-none data-[state=open]:text-text-dark-primary">
             {triggerLabel}
             <ChevronDown
               aria-hidden="true"
@@ -101,10 +101,14 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
             />
           </NavigationMenu.Trigger>
 
-          <NavigationMenu.Content className="absolute left-1/2 top-full z-50 mt-3 w-[560px] -translate-x-1/2 rounded-xl border border-brand-border bg-brand-bg p-3 shadow-2xl shadow-black/40">
+          {/* A raised panel, not the page surface: this floats above the header
+              and needs to read as a layer. Signal Console allows a shadow here
+              (Design Spec 05) — it is the panel shadow, not a glow. */}
+          <NavigationMenu.Content className="absolute top-full left-1/2 z-50 mt-3 w-[560px] -translate-x-1/2 rounded-card border border-brand-border-card bg-brand-panel-raised p-3 shadow-panel">
             {groups.map((group) => (
               <div key={group.labelKey} className="mb-1 last:mb-0">
-                <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-dark-secondary">
+                {/* mono + uppercase: the eyebrow/label role, per Design Spec 02 */}
+                <p className="px-3 pt-2 pb-1.5 font-mono text-[10.5px] tracking-[0.14em] text-text-dark-secondary uppercase">
                   {t(group.labelKey)}
                 </p>
                 <ul className="grid list-none grid-cols-2 gap-1">
@@ -129,10 +133,15 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
               <NavigationMenu.Link asChild>
                 <Link
                   href={localePath(locale, "/tools")}
-                  className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-brand-accent-text transition-colors hover:bg-brand-bg-alt focus-visible:bg-brand-bg-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/60"
+                  className="group flex items-center justify-between rounded-row px-3 py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
                 >
                   {t("nav.toolsMenu.viewAll")}
-                  <span aria-hidden="true">→</span>
+                  <span
+                    aria-hidden="true"
+                    className="transition-transform duration-200 group-hover:translate-x-0.5"
+                  >
+                    &rarr;
+                  </span>
                 </Link>
               </NavigationMenu.Link>
             </div>
@@ -162,14 +171,14 @@ export function ToolsMenuMobile({
       <Link
         href={localePath(locale, "/tools")}
         onClick={onNavigate}
-        className="text-text-dark-secondary hover:text-text-dark-primary text-lg transition-colors"
+        className="text-lg text-text-dark-secondary transition-colors hover:text-text-dark-primary"
       >
         {triggerLabel}
       </Link>
 
       {groups.map((group) => (
         <div key={group.labelKey} className="mt-3">
-          <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-dark-secondary">
+          <p className="px-1 font-mono text-[10.5px] tracking-[0.14em] text-text-dark-secondary uppercase">
             {t(group.labelKey)}
           </p>
           <ul className="mt-1 list-none space-y-0.5">
