@@ -811,6 +811,118 @@ describe("reconcileActiveRuns", () => {
     expect(terminal).not.toHaveBeenCalled();
   });
 
+  it("redrives the newest failed continuation for a queued Analysis Refresh parent", async () => {
+    const row = {
+      ...run("analysis_refresh", {}),
+      status: "queued",
+      started_at: null,
+      attempt_count: 43,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const failStep = vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "failStep",
+    );
+    const direct = {
+      ...jobFor(row, "completed"),
+      createdOn: new Date("2026-07-18T00:00:00.000Z"),
+    };
+    const failedContinuation = {
+      ...jobFor(
+        row,
+        "failed",
+        "00000000-0000-4000-8000-000000000099",
+      ),
+      retryCount: 2,
+      retryLimit: 2,
+      createdOn: new Date("2026-07-18T00:03:00.000Z"),
+    };
+    const retry = vi.fn(async () => ({
+      jobs: [failedContinuation.id],
+      requested: 1,
+      affected: 1,
+    }));
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => direct),
+        findJobs: vi.fn(async () => [direct, failedContinuation]),
+        retry,
+      }),
+    );
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(retry).toHaveBeenCalledWith(
+      "refresh.analysis",
+      failedContinuation.id,
+    );
+    expect(terminal).not.toHaveBeenCalled();
+    expect(failStep).not.toHaveBeenCalled();
+  });
+
+  it("classifies only the newest Analysis Refresh continuation terminal state", async () => {
+    const row = {
+      ...run("analysis_refresh", {}),
+      status: "queued",
+      started_at: null,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const retry = vi.fn();
+    const direct = {
+      ...jobFor(row, "completed"),
+      createdOn: new Date("2026-07-18T00:00:00.000Z"),
+    };
+    const olderFailed = {
+      ...jobFor(
+        row,
+        "failed",
+        "00000000-0000-4000-8000-000000000098",
+      ),
+      createdOn: new Date("2026-07-18T00:01:00.000Z"),
+    };
+    const newestCompleted = {
+      ...jobFor(
+        row,
+        "completed",
+        "00000000-0000-4000-8000-000000000099",
+      ),
+      createdOn: new Date("2026-07-18T00:02:00.000Z"),
+    };
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => direct),
+        findJobs: vi.fn(async () => [
+          newestCompleted,
+          olderFailed,
+          direct,
+        ]),
+        retry,
+      }),
+    );
+
+    expect(retry).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(scopeFor(row), row.id, {
+      status: "failed",
+      lastErrorCode: "QUEUE_JOB_COMPLETED_WITHOUT_CANONICAL_RESULT",
+      lastErrorSummary:
+        "The queue job completed without recording a canonical run result.",
+    });
+  });
+
   it("fails the exact running Analysis Refresh step when recovery terminalizes its parent", async () => {
     const row = run("analysis_refresh", {});
     vi.spyOn(
