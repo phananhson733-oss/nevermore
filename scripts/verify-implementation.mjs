@@ -1536,11 +1536,18 @@ async function checkWebProxyImplementation() {
     "src/proxy.ts must refresh and verify the Supabase session at the production boundary",
   );
   invariant(
-    /const\s+PUBLIC_PAGES\s*=\s*\[\s*["']\/login["']\s*\]/.test(proxy) &&
+    // `/auth/callback` joined the list with self-serve Google sign-in (spec
+    // §1.6). It is the leg of the OAuth flow that CREATES the session, so it
+    // necessarily arrives without one — gating it would bounce every sign-in
+    // back to /login before the code could be exchanged. The list stays
+    // exhaustive and exact so a third entry cannot be added without a decision.
+    /const\s+PUBLIC_PAGES\s*=\s*\[\s*["']\/login["']\s*,\s*["']\/auth\/callback["']\s*\]/.test(
+      proxy,
+    ) &&
       /const\s+PUBLIC_API_PREFIXES\s*=\s*\[\s*["']\/api\/mvp\/health["']\s*\]/.test(
         proxy,
       ),
-    "only login and health may bypass the authenticated page boundary",
+    "only login, the OAuth callback, and health may bypass the authenticated page boundary",
   );
   invariant(
     /import\s*\{\s*buildContentSecurityPolicy\s*\}\s*from\s*["']\.\.\/security-headers\.ts["'];?/.test(

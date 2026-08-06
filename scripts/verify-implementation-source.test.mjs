@@ -110,7 +110,7 @@ test("freezes ten shared async operations and the dedicated measurement 202", ()
 test("gates the current Supabase production authentication boundary", () => {
   for (const invariant of [
     "refresh and verify the Supabase session at the production boundary",
-    "only login and health may bypass the authenticated page boundary",
+    "only login, the OAuth callback, and health may bypass the authenticated page boundary",
     "production requests must derive page authentication from refreshed Supabase user state",
     "unauthenticated pages must redirect to login with a sanitized return target",
     "operator resolution must verify the authenticated user with Supabase Auth",

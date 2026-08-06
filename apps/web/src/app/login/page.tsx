@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { Card, LocaleSwitch } from "@/components/ui";
 import { safePostLoginPath } from "@/lib/auth/redirect";
 import { LoginForm } from "./_form.tsx";
+import { oauthErrorMessageKey } from "./_oauth-error.ts";
 import styles from "./login.module.css";
 
 /**
@@ -14,11 +15,12 @@ import styles from "./login.module.css";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const t = await getTranslations("auth");
   const tShell = await getTranslations("appShell");
+  const oauthErrorKey = oauthErrorMessageKey(error);
 
   return (
     <main className={styles.page}>
@@ -35,6 +37,12 @@ export default async function LoginPage({
         <p className="sf-eyebrow">GenGrowth</p>
         <h1 className={styles.title}>{t("title")}</h1>
         <p className={styles.subtitle}>{t("subtitle")}</p>
+
+        {oauthErrorKey ? (
+          <p className={styles.error} role="alert">
+            {t(oauthErrorKey)}
+          </p>
+        ) : null}
 
         <LoginForm next={safePostLoginPath(next)} />
       </Card>

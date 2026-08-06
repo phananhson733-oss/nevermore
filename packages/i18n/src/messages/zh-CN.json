@@ -141,7 +141,11 @@
     "signInButton": "登录",
     "signingIn": "登录中…",
     "signInError": "登录失败。请检查邮箱和密码后重试。",
-    "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。"
+    "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。",
+    "continueWithGoogle": "使用 Google 账号继续",
+    "oauthError": "Google 登录未完成，请重试。",
+    "oauthDenied": "已取消 Google 登录。",
+    "orDivider": "或"
   },
   "newProject": {
     "eyebrow": "产品与 ICP",

@@ -141,7 +141,11 @@
     "signInButton": "Sign in",
     "signingIn": "Signing in…",
     "signInError": "We couldn't sign you in. Check your email and password and try again.",
-    "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link."
+    "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link.",
+    "continueWithGoogle": "Continue with Google",
+    "oauthError": "Google sign-in didn't complete. Please try again.",
+    "oauthDenied": "Google sign-in was cancelled.",
+    "orDivider": "or"
   },
   "newProject": {
     "eyebrow": "PRODUCT · ICP",
