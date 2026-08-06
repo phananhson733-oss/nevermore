@@ -33,6 +33,7 @@ import { useLocale, useTranslations } from "next-intl";
 import {
   Badge,
   EmptyState,
+  LimitationHint,
   Panel,
   Spinner,
   StatusPill,
@@ -553,7 +554,16 @@ function AllSourcesDrawer({
                     </div>
                     <div>
                       <dt>{t("research.fields.limitation")}</dt>
-                      <dd>{source.limitation ?? t("research.unavailable")}</dd>
+                      <dd>
+                        {source.limitation === null ? (
+                          t("research.unavailable")
+                        ) : (
+                          <LimitationHint
+                            label={t("research.fields.limitation")}
+                            limitations={[source.limitation]}
+                          />
+                        )}
+                      </dd>
                     </div>
                   </dl>
                 </li>
@@ -804,11 +814,12 @@ function QaRail({
           <AllSourcesDrawer sources={researchSources} />
         ) : null}
         {researchLimitations.length > 0 ? (
-          <ul className={styles.qaNote} data-research-limitations="">
-            {researchLimitations.map((limitation, index) => (
-              <li key={`${index}:${limitation}`}>{limitation}</li>
-            ))}
-          </ul>
+          <div className={styles.qaNote} data-research-limitations="">
+            <LimitationHint
+              label={t("research.fields.limitation")}
+              limitations={researchLimitations}
+            />
+          </div>
         ) : null}
       </section>
 

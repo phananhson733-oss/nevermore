@@ -1121,6 +1121,53 @@ describe("contentBriefOutline prompt contract and injection surface", () => {
   });
 });
 
+describe("technical ticket Markdown section contract", () => {
+  it.each([
+    [
+      "en",
+      [
+        "## Problem",
+        "## Affected Scope",
+        "## Evidence",
+        "## Implementation Steps",
+        "## Acceptance Tests",
+        "## Risk",
+        "## Validation",
+        "## Rollback",
+      ],
+    ],
+    [
+      "zh-CN",
+      [
+        "## 问题",
+        "## 影响范围",
+        "## 证据",
+        "## 实施步骤",
+        "## 验收测试",
+        "## 风险",
+        "## 验证",
+        "## 回滚",
+      ],
+    ],
+  ] as const)(
+    "pins every validator heading in order for %s output",
+    (outputLocale, requiredHeadings) => {
+      const { user } = buildMessages(
+        makeInput({ artifactType: "technical_ticket", outputLocale }),
+      );
+
+      let previousIndex = -1;
+      for (const heading of requiredHeadings) {
+        const index = user.indexOf(heading);
+        expect(index, `${heading} is present`).toBeGreaterThan(previousIndex);
+        previousIndex = index;
+      }
+      expect(user).toMatch(/do not translate, rename, merge, reorder, or omit/i);
+      expect(user).toMatch(/non-empty body/i);
+    },
+  );
+});
+
 describe("Task 6 governed research prompt context", () => {
   it("allows frozen research excerpts and content policy only into the English Blog prompt", () => {
     const blog = dynamicContext(
@@ -1457,25 +1504,26 @@ describe("safePromptText normalizes before redacting (credential trust boundary)
  * Normalizing before redaction is a SANITIZER fix, not a prompt-template change:
  * the normalization step is a no-op on text whose only `\p{Cc}`/`\p{Cf}`
  * characters are ordinary whitespace, so a well-formed prompt keeps its exact
- * bytes and no prompt-set version has to move — neither the global
- * `PROMPT_SET_VERSION` pinned by the `diagnostic_runs` CHECK nor the scoped
- * `CONTENT_SHADOW_PROMPT_SET_VERSION`.
+ * bytes and no prompt-set version has to move. The technical-ticket hashes in
+ * this block intentionally moved later with its validator-aligned section
+ * contract and are pinned by `TECHNICAL_TICKET_PROMPT_SET_VERSION`; the global
+ * and Content Shadow prompt versions remain unaffected.
  *
  * The digests were captured from the implementation BEFORE the fix and are
  * hardcoded rather than derived, so the assertion cannot re-learn whatever the
  * builder just started emitting.
  */
-describe("well-formed prompts stay byte-identical (no prompt-set version change)", () => {
-  const PRE_FIX_ENRICHED_SHA256: Readonly<Record<ArtifactType, string>> = {
+describe("well-formed prompt bytes stay pinned to their recorded versions", () => {
+  const PINNED_ENRICHED_SHA256: Readonly<Record<ArtifactType, string>> = {
     content_brief: "d89f32d0216fb22b7d5d44230a3fedfbd62f8144f1237a1310dda3e8fc2299ee",
-    technical_ticket: "df4016eafc727e74ecfc0b06a5e06735743c0cb3bda5069ff1eeab96771bd6b4",
+    technical_ticket: "33a9842c9cb60420c839bb23e02a6c2de7ef5dff4b90cc0be481ba291ff56c20",
     metadata_rewrite: "897066080c35946727f1b6eaa7aba13c2af18d6fa6a7a84a477bf458e98ca93f",
     english_blog_draft: "df4f3a56b22202c4f567ae83041f3b6adde1af4dccd193bdd82d612bf6e02973",
   };
 
-  const PRE_FIX_SHARED_SHA256: Readonly<Record<ArtifactType, string>> = {
+  const PINNED_SHARED_SHA256: Readonly<Record<ArtifactType, string>> = {
     content_brief: "d2417fef8d917bd295ba3f123a7eea582de9414fe038e1ac202ade10e3cb0891",
-    technical_ticket: "4aef6d851dd76c92be691f6f52281f4c701713f50c338e0a305a67ca23357857",
+    technical_ticket: "af715ba2852b3886356571ef688a4303a562ad3e4e70dc798ffeda1f3b71d25d",
     metadata_rewrite: "804ebf7e55decc97020fe87fe24044f0d832e18a7702131a0c589b0cac6bf196",
     english_blog_draft: "1866c3761db1d8ab3a58cb5fbd6c451c5e7da35e7f381061428483dafa239f5b",
   };
@@ -1514,8 +1562,8 @@ describe("well-formed prompts stay byte-identical (no prompt-set version change)
     "technical_ticket",
     "metadata_rewrite",
     "english_blog_draft",
-  ])("emits the pre-fix bytes for an enriched well-formed %s prompt", (type) => {
-    expect(digest(enriched(type))).toBe(PRE_FIX_ENRICHED_SHA256[type]);
+  ])("emits the pinned bytes for an enriched well-formed %s prompt", (type) => {
+    expect(digest(enriched(type))).toBe(PINNED_ENRICHED_SHA256[type]);
   });
 
   it.each<ArtifactType>([
@@ -1523,9 +1571,9 @@ describe("well-formed prompts stay byte-identical (no prompt-set version change)
     "technical_ticket",
     "metadata_rewrite",
     "english_blog_draft",
-  ])("emits the pre-fix bytes for the shared %s fixture", (type) => {
+  ])("emits the pinned bytes for the shared %s fixture", (type) => {
     expect(
       digest(makeInput({ artifactType: type, contentBriefOutline: OUTLINE })),
-    ).toBe(PRE_FIX_SHARED_SHA256[type]);
+    ).toBe(PINNED_SHARED_SHA256[type]);
   });
 });

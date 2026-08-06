@@ -4,6 +4,7 @@ import {
   E2E_CANONICAL_ACTION_ID,
   E2E_PROJECT_ID,
   installCriticalFlowApi,
+  overrideArtifactFixture,
   recheckResultsFixture,
   type CriticalFlowApiState,
 } from "./mock-api.ts";
@@ -332,18 +333,28 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   ).toBeVisible();
 
   await hero.getByRole("button", { name: "生成执行物" }).click();
-  await expect(
-    canvas.getByRole("heading", { name: "选择一个行动" }),
-  ).toBeVisible();
+  const pickerHeading = canvas.getByRole("heading", { name: "选择一个行动" });
+  await expect(pickerHeading).toBeVisible();
+  await expect(pickerHeading).toBeFocused();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
     .getByRole("button", { name: /生成|重新生成/ })
     .click();
   await expect(page.getByLabel("输出语言")).toHaveValue("en");
-  await expect(
-    canvas.getByRole("heading", { name: "Fix the failing product page" }),
-  ).toBeVisible();
+  await expect(page.getByLabel("生成方式")).toHaveValue("structured_llm");
+  const generateHeading = canvas.getByRole("heading", {
+    name: "Fix the failing product page",
+  });
+  await expect(generateHeading).toBeVisible();
+  await expect(generateHeading).toBeFocused();
+  await canvas.getByRole("button", { name: "生成", exact: true }).click();
+  await expect.poll(() => api.artifactCreateRequests.length).toBe(1);
+  expect(api.artifactCreateRequests[0]).toMatchObject({
+    artifactType: "technical_ticket",
+    generationMode: "structured_llm",
+    outputLocale: "en",
+  });
 });
 
 test("Studio requires structured LLM for template-unsupported output locales", async ({
@@ -360,22 +371,24 @@ test("Studio requires structured LLM for template-unsupported output locales", a
     .click();
 
   const locale = page.getByLabel("Output language");
+  const mode = page.getByLabel("Generation mode");
   const generate = page.getByRole("button", { name: "Generate", exact: true });
   await expect(generate).toBeEnabled();
+  await mode.selectOption("template");
   await locale.fill("zh-CN");
   await expect(generate).toBeEnabled();
   await locale.fill("fr-FR");
 
   await expect(
     page.getByText(
-      "Template generation supports only en and zh-CN. Select Structured LLM for other languages.",
+      "The deterministic template supports only en and zh-CN. Select AI generation for other languages.",
       { exact: true },
     ),
   ).toBeVisible();
   await expect(generate).toBeDisabled();
   expect(api.artifactCreateRequests).toHaveLength(0);
 
-  await page.getByLabel("Generation mode").selectOption("structured_llm");
+  await mode.selectOption("structured_llm");
   await expect(generate).toBeEnabled();
   await generate.click();
 
@@ -385,6 +398,75 @@ test("Studio requires structured LLM for template-unsupported output locales", a
     generationMode: "structured_llm",
     outputLocale: "fr-FR",
   });
+});
+
+test("Studio offers an in-place AI repair path for an invalid artifact", async ({
+  page,
+}) => {
+  const baseArtifact = overrideArtifactFixture(7, E2E_CANONICAL_ACTION_ID);
+  const invalidArtifact = {
+    ...baseArtifact,
+    generationMode: "structured_llm",
+    outputLocale: "fr-FR",
+    validationState: "invalid",
+    current: {
+      ...baseArtifact.current,
+      validationErrors: [
+        "missing required section: ## Affected Scope",
+        "missing required section: ## Evidence",
+      ],
+    },
+  };
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (
+        route.request().method() !== "GET" ||
+        url.pathname !== `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: [invalidArtifact],
+          meta: { nextCursor: null, hasNext: false, limit: 100 },
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const canvas = page.locator("[data-studio-editor-column]");
+  const card = page.locator(
+    `[data-studio-artifact-id="${invalidArtifact.id}"]`,
+  );
+  await card.getByRole("button", { name: "Regenerate" }).click();
+  await expect(page.getByLabel("Generation mode")).toHaveValue(
+    "structured_llm",
+  );
+  await expect(page.getByLabel("Output language")).toHaveValue("fr-FR");
+  await canvas
+    .getByRole("button", { name: "Cancel", exact: true })
+    .last()
+    .click();
+
+  await card.getByRole("button", { name: "Open" }).click();
+  const errorBox = page.getByText("Validation errors", { exact: true }).locator("..");
+  await expect(errorBox).toContainText("## Affected Scope");
+
+  await errorBox.getByRole("button", { name: "Regenerate" }).click();
+
+  await expect(page.getByLabel("Generation mode")).toHaveValue(
+    "structured_llm",
+  );
+  await expect(page.getByLabel("Output language")).toHaveValue("fr-FR");
+  await expect(
+    canvas.getByRole("heading", { name: "Fix the failing product page" }),
+  ).toBeFocused();
 });
 
 // Revived (R3 blueprint D8): the two cases the 2026-07 hardening round
@@ -674,6 +756,33 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
   await expect(
     main.getByRole("heading", { name: "Export", level: 2 }),
   ).toBeVisible();
+
+  const coverageLimitations = document.getByText("GSC unavailable", {
+    exact: true,
+  });
+  await expect(coverageLimitations).toHaveCount(1);
+  await expect(coverageLimitations).toBeHidden();
+  const limitationControls = document.getByRole("button", {
+    name: "Limitations (1)",
+  });
+  await expect(limitationControls).toHaveCount(1);
+  await limitationControls.click();
+  await expect(
+    page.getByRole("tooltip").getByText("GSC unavailable", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const evidenceLimitation = document.getByText("One captured response.", {
+    exact: true,
+  });
+  await expect(evidenceLimitation).toBeHidden();
+  await document.getByRole("button", { name: "Limitation (1)" }).click();
+  await expect(
+    page
+      .getByRole("tooltip")
+      .getByText("One captured response.", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 
 /**
@@ -737,5 +846,14 @@ test("print media keeps the report document and hides the Results screen chrome 
   ).toBeVisible();
   await expect(
     document.getByRole("heading", { name: "Methodology" }),
+  ).toBeVisible();
+  await expect(
+    document.getByText("GSC unavailable", { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    document.getByText("GSC unavailable", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    document.getByText("One captured response.", { exact: true }),
   ).toBeVisible();
 });

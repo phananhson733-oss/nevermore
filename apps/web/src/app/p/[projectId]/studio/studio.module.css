@@ -874,6 +874,13 @@
   line-height: 1.4;
 }
 
+.errorsRepairHint {
+  margin: 4px 0 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-studio-readable-sm);
+  line-height: 1.4;
+}
+
 /* -------------------------------------------------------- Generate form --- */
 .formGrid {
   display: grid;

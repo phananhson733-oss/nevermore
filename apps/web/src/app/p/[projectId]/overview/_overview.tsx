@@ -21,7 +21,12 @@ import {
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useRef, type ReactNode } from "react";
-import { Spinner, StatusPill, type StatusTone } from "@/components/ui";
+import {
+  LimitationHint,
+  Spinner,
+  StatusPill,
+  type StatusTone,
+} from "@/components/ui";
 import {
   useProductProfile,
   useWorkspaceView,
@@ -563,22 +568,17 @@ function ContentHealthLimitations({
     "overview.customer.priority.contentHealth.limitations",
   );
   if (limitations.length === 0) return null;
+  const displayLimitations = limitations.map((limitation) => {
+    const key = overviewContentDecayLimitationKey(limitation);
+    return key === null
+      ? limitation
+      : tLimit(key, { count: OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS });
+  });
   return (
-    <details className={styles.provenanceDisclosure}>
-      <summary>{t("priority.contentHealth.limitationsTitle")}</summary>
-      <ul>
-        {limitations.map((limitation) => {
-          const key = overviewContentDecayLimitationKey(limitation);
-          return (
-            <li key={limitation}>
-              {key === null
-                ? limitation
-                : tLimit(key, { count: OVERVIEW_CONTENT_DECAY_MIN_PREVIOUS_CLICKS })}
-            </li>
-          );
-        })}
-      </ul>
-    </details>
+    <LimitationHint
+      label={t("priority.contentHealth.limitationsTitle")}
+      limitations={displayLimitations}
+    />
   );
 }
 
@@ -853,15 +853,10 @@ function CoverageLimitations({
   if (limitations.length === 0) return null;
   return (
     <div className={styles.coverageLimitations}>
-      <strong>
-        <CircleAlert aria-hidden="true" size={16} />
-        {t("portfolio.coverageLimitationsTitle")}
-      </strong>
-      <ul>
-        {limitations.map((limitation) => (
-          <li key={limitation}>{limitation}</li>
-        ))}
-      </ul>
+      <LimitationHint
+        label={t("portfolio.coverageLimitationsTitle")}
+        limitations={limitations}
+      />
     </div>
   );
 }
@@ -1073,12 +1068,13 @@ function SourcesSection({
                         : t("sources.noSnapshot")}
                   </p>
                   {card.rawLimitation ? (
-                    <details className={styles.sourceRecord}>
-                      <summary>{t("sources.originalRecord")}</summary>
-                      <p lang={locale.startsWith("zh") ? "en" : undefined}>
-                        {card.rawLimitation}
-                      </p>
-                    </details>
+                    <div className={styles.sourceRecord}>
+                      <LimitationHint
+                        label={t("sources.originalRecord")}
+                        limitations={[card.rawLimitation]}
+                        contentLanguage={locale.startsWith("zh") ? "en" : undefined}
+                      />
+                    </div>
                   ) : null}
                 </div>
               </article>

@@ -27,6 +27,7 @@ import { MAX_ARTIFACT_CONTENT_CHARS } from "@sf/contracts";
 import {
   CONTENT_SHADOW_PROMPT_SET_VERSION,
   PROMPT_SET_VERSION,
+  TECHNICAL_TICKET_PROMPT_SET_VERSION,
 } from "../types.ts";
 import {
   buildMessages,
@@ -517,15 +518,20 @@ function safetyErrors(envelope: LlmArtifactEnvelope): readonly string[] {
 
 /**
  * The prompt set an invocation belongs to. `english_blog_draft` carries the
- * extra `contentBriefOutline` field and its own contract paragraph, so it
- * records its own scoped version; the other three prompt bodies are unchanged
- * and keep the global one. Recording one shared name for four differently
- * shaped prompts would make the invocation ledger lie.
+ * extra `contentBriefOutline` field and its own contract paragraph, while the
+ * technical ticket pins validator-aligned headings. Each changed prompt records
+ * its own scoped version; content briefs and metadata rewrites keep the global
+ * version. Recording one shared name for differently shaped prompts would make
+ * the invocation ledger lie.
  */
 function promptSetVersionFor(artifactType: ArtifactType): string {
-  return artifactType === "english_blog_draft"
-    ? CONTENT_SHADOW_PROMPT_SET_VERSION
-    : PROMPT_SET_VERSION;
+  if (artifactType === "english_blog_draft") {
+    return CONTENT_SHADOW_PROMPT_SET_VERSION;
+  }
+  if (artifactType === "technical_ticket") {
+    return TECHNICAL_TICKET_PROMPT_SET_VERSION;
+  }
+  return PROMPT_SET_VERSION;
 }
 
 function buildInvocation(params: {

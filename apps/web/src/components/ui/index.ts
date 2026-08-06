@@ -40,3 +40,12 @@ export type { SpinnerProps, SpinnerSize } from "./Spinner.tsx";
 
 export { LocaleSwitch } from "./LocaleSwitch.tsx";
 export type { LocaleSwitchProps } from "./LocaleSwitch.tsx";
+
+export {
+  LimitationHint,
+  limitationPopoverPosition,
+} from "./LimitationHint.tsx";
+export type {
+  LimitationHintProps,
+  LimitationPopoverPosition,
+} from "./LimitationHint.tsx";

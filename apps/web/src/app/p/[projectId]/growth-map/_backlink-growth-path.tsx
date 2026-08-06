@@ -12,11 +12,10 @@ import {
   Database,
   Link2,
   Radar,
-  ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { Spinner } from "@/components/ui";
+import { LimitationHint, Spinner } from "@/components/ui";
 import { useGrowthMapBacklinks } from "@/lib/api/hooks-growth-map-backlinks";
 import { ProblemState } from "../_problem-display.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
@@ -154,7 +153,10 @@ export function BacklinkGrowthPath({
         <div>
           <span>{t("eyebrow")}</span>
           <h2>{t("unavailableTitle")}</h2>
-          <p>{model.coverage.limitations.join(" ")}</p>
+          <LimitationHint
+            label={t("dataBoundary")}
+            limitations={model.coverage.limitations}
+          />
           <small>{t("unavailableBoundary")}</small>
         </div>
       </section>
@@ -203,15 +205,10 @@ export function BacklinkGrowthPath({
 
       {model.coverage.limitations.length === 0 ? null : (
         <section className={styles.boundary} aria-label={t("dataBoundary")}>
-          <ShieldCheck aria-hidden="true" size={20} />
-          <div>
-            <strong>{t("dataBoundary")}</strong>
-            <ul>
-              {model.coverage.limitations.map((limitation) => (
-                <li key={limitation}>{limitation}</li>
-              ))}
-            </ul>
-          </div>
+          <LimitationHint
+            label={t("dataBoundary")}
+            limitations={model.coverage.limitations}
+          />
         </section>
       )}
 
@@ -330,10 +327,16 @@ export function BacklinkGrowthPath({
               })}
             </p>
           ) : (
-            <p className={styles.comparisonLimited}>
-              <CircleAlert aria-hidden="true" size={17} />
-              {model.comparison.limitation}
-            </p>
+            <div className={styles.comparisonLimited}>
+              <LimitationHint
+                label={t("dataBoundary")}
+                limitations={
+                  model.comparison.limitation === null
+                    ? []
+                    : [model.comparison.limitation]
+                }
+              />
+            </div>
           )}
           <ul className={styles.competitorList}>
             {model.approvedCompetitors.map((competitor) => (

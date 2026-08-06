@@ -184,8 +184,8 @@ const ARTIFACT_FILTERS = ["all", ...ARTIFACT_TYPE_ORDER] as const;
 type ArtifactFilter = (typeof ARTIFACT_FILTERS)[number];
 
 const GENERATION_MODES: readonly GenerationMode[] = [
-  "template",
   "structured_llm",
+  "template",
 ];
 
 function artifactGenerationKey(
@@ -715,6 +715,7 @@ interface ArtifactEditorProps {
   readonly artifact: Artifact;
   readonly onClose: () => void;
   readonly onDirtyChange: (artifactId: string, dirty: boolean) => void;
+  readonly onRegenerate: (() => void) | undefined;
 }
 
 interface EditorFeedback {
@@ -733,6 +734,7 @@ function ArtifactEditor({
   artifact,
   onClose,
   onDirtyChange,
+  onRegenerate,
 }: ArtifactEditorProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -960,6 +962,19 @@ function ArtifactEditor({
               <li key={`${index}:${message}`}>{message}</li>
             ))}
           </ul>
+          <p className={styles.errorsRepairHint}>
+            {t("validationRepairHint")}
+          </p>
+          {onRegenerate !== undefined ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRegenerate}
+              disabled={busy}
+            >
+              {t("regenerate")}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1554,6 +1569,7 @@ function EvidenceRail({
 interface GenerateFormProps {
   readonly projectId: string;
   readonly action: ArtifactAction;
+  readonly initialOutputLocale?: string | undefined;
   readonly onQueued: (
     run: AsyncRun,
     artifactId: string | null,
@@ -1566,9 +1582,11 @@ interface GenerateFormProps {
 function localeOptions(
   project: Project | undefined,
   actionLocale: string,
+  initialOutputLocale: string | undefined,
 ): readonly string[] {
   const set = new Set<string>();
   set.add(actionLocale);
+  if (initialOutputLocale !== undefined) set.add(initialOutputLocale);
   if (project) {
     set.add(project.defaultDeliveryLocale);
     for (const code of project.site.languageCodes) set.add(code);
@@ -1595,6 +1613,7 @@ function normalizeTemplateOutputLocale(value: string): "en" | "zh-CN" | null {
 function GenerateForm({
   projectId,
   action,
+  initialOutputLocale,
   onQueued,
   onAlreadyActive,
   onCancel,
@@ -1609,15 +1628,22 @@ function GenerateForm({
   const project = projectQuery.data;
 
   const expected = expectedArtifactType(action);
-  const locales = localeOptions(project, action.contentLocale);
+  const locales = localeOptions(
+    project,
+    action.contentLocale,
+    initialOutputLocale,
+  );
   const [artifactType, setArtifactType] = useState<ArtifactType>(
     expected ?? "content_brief",
   );
-  const [mode, setMode] = useState<GenerationMode>("template");
+  const [mode, setMode] = useState<GenerationMode>("structured_llm");
   const [locale, setLocale] = useState<string>(
-    project?.defaultDeliveryLocale ?? action.contentLocale,
+    initialOutputLocale ??
+      project?.defaultDeliveryLocale ??
+      action.contentLocale,
   );
   const localeEdited = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [instructions, setInstructions] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [problemError, setProblemError] = useState<unknown | null>(null);
@@ -1639,10 +1665,21 @@ function GenerateForm({
     mode === "template" ? templateLocale : normalizedLocale;
 
   useEffect(() => {
-    if (project !== undefined && !localeEdited.current) {
+    if (
+      initialOutputLocale === undefined &&
+      project !== undefined &&
+      !localeEdited.current
+    ) {
       setLocale(project.defaultDeliveryLocale);
     }
-  }, [project]);
+  }, [initialOutputLocale, project]);
+
+  useEffect(() => {
+    const heading = headingRef.current;
+    if (heading === null) return;
+    heading.scrollIntoView({ block: "center", inline: "nearest" });
+    heading.focus({ preventScroll: true });
+  }, []);
 
   async function onSubmit(): Promise<void> {
     setError(null);
@@ -1686,7 +1723,12 @@ function GenerateForm({
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
           <span className="sf-eyebrow">{t("generateHeading")}</span>
-          <h2 id="sf-generate-title" className={styles.editorTitle}>
+          <h2
+            ref={headingRef}
+            id="sf-generate-title"
+            className={styles.editorTitle}
+            tabIndex={-1}
+          >
             {action.title}
           </h2>
         </div>
@@ -1827,6 +1869,14 @@ function ActionPicker({
   const tCommon = useTranslations("common");
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    const heading = headingRef.current;
+    if (heading === null) return;
+    heading.scrollIntoView({ block: "center", inline: "nearest" });
+    heading.focus({ preventScroll: true });
+  }, []);
 
   return (
     <Panel
@@ -1836,7 +1886,12 @@ function ActionPicker({
     >
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
-          <h2 id="sf-picker-title" className={styles.editorTitle}>
+          <h2
+            ref={headingRef}
+            id="sf-picker-title"
+            className={styles.editorTitle}
+            tabIndex={-1}
+          >
             {t("pickAction")}
           </h2>
           <p className={styles.pickerHint}>{t("pickActionHelp")}</p>
@@ -1971,6 +2026,8 @@ export function StudioClient({
   const [generateAction, setGenerateAction] = useState<ArtifactAction | null>(
     null,
   );
+  const [generateInitialOutputLocale, setGenerateInitialOutputLocale] =
+    useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [trackedRunIds, setTrackedRunIds] = useState<readonly string[]>([]);
   const [runQueryFailureIds, setRunQueryFailureIds] = useState<
@@ -2616,6 +2673,7 @@ export function StudioClient({
         setDirtyArtifactId(null);
         setSelectedId(null);
         setPickerOpen(false);
+        setGenerateInitialOutputLocale(undefined);
         setGenerateAction(action);
         return;
       }
@@ -2870,7 +2928,10 @@ export function StudioClient({
     });
   }
 
-  function openGenerate(action: ArtifactAction): void {
+  function openGenerate(
+    action: ArtifactAction,
+    initialOutputLocale?: string,
+  ): void {
     if (
       queuedActionBlocksGeneration(artifactProjectionSettlements, action.id) ||
       activeGenerationRecoveries.some(
@@ -2880,6 +2941,7 @@ export function StudioClient({
       return;
     }
     if (!confirmEditorDiscard()) return;
+    setGenerateInitialOutputLocale(initialOutputLocale);
     setGenerateAction(action);
     setPickerOpen(false);
     replaceExecutionTarget(action.id, null);
@@ -3464,7 +3526,7 @@ export function StudioClient({
                         action !== undefined &&
                         action.status !== "dismissed" &&
                         !generationFenced
-                          ? () => openGenerate(action)
+                          ? () => openGenerate(action, artifact.outputLocale)
                           : undefined
                       }
                     />
@@ -3532,8 +3594,10 @@ export function StudioClient({
             />
           ) : generateAction !== null ? (
             <GenerateForm
+              key={`${generateAction.id}:${generateInitialOutputLocale ?? ""}`}
               projectId={projectId}
               action={generateAction}
+              initialOutputLocale={generateInitialOutputLocale}
               onQueued={(run, artifactId, artifactType) =>
                 onQueued(run, artifactId, generateAction.id, artifactType)
               }
@@ -3561,6 +3625,18 @@ export function StudioClient({
               artifact={selected}
               onClose={closeEditor}
               onDirtyChange={onEditorDirtyChange}
+              onRegenerate={
+                selectedAction !== undefined &&
+                selectedAction.status !== "dismissed" &&
+                !generationFenceKeys.has(
+                  artifactGenerationKey(
+                    selected.actionId,
+                    selected.artifactType,
+                  ),
+                )
+                  ? () => openGenerate(selectedAction, selected.outputLocale)
+                  : undefined
+              }
             />
           ) : (
             <EditorPlaceholder

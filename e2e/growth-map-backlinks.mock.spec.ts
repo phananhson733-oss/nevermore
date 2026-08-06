@@ -405,7 +405,15 @@ for (const sourceKind of ["manual_csv", "search_derived"] as const) {
       path.getByText("仅真实 Provider 数据显示"),
     ).toBeVisible();
     await expect(path.getByText("未提供 DR / DA")).toBeVisible();
-    await expect(path.getByText(/不代表完整外链索引/).first()).toBeVisible();
+    await expect(path).not.toContainText("不代表完整外链索引");
+    const limitationDisclosure = path
+      .getByRole("button", { name: "数据范围说明 (1)" })
+      .first();
+    await expect(limitationDisclosure).toBeVisible();
+    await limitationDisclosure.hover();
+    await expect(
+      page.getByRole("tooltip").filter({ hasText: "不代表完整外链索引" }),
+    ).toBeVisible();
   });
 }
 
@@ -417,7 +425,15 @@ test("缺失快照明确显示不可用，绝不补成零", async ({ page }) => 
   await expect(
     path.getByRole("heading", { name: "还没有可读取的外链证据" }),
   ).toBeVisible();
-  await expect(path.getByText("尚无可读取的外链数据快照。")).toBeVisible();
+  await expect(path).not.toContainText("尚无可读取的外链数据快照。");
+  const limitationDisclosure = path.getByRole("button", {
+    name: "数据范围说明 (1)",
+  });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "尚无可读取的外链数据快照。",
+  );
   await expect(path.getByText("0", { exact: true })).toHaveCount(0);
   await expect(path.getByText("Provider 索引总量")).toHaveCount(0);
 });

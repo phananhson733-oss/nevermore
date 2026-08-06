@@ -108,6 +108,20 @@ test("submits the audit request and renders a synchronous API response", async (
       exact: true,
     }),
   ).toBeVisible();
+  await expect(
+    detail.getByText("The targets may be outside the crawl budget.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await detail.getByRole("button", { name: "Interpretation limit (1)" }).click();
+  await expect(
+    page.getByRole("tooltip").getByText(
+      "The targets may be outside the crawl budget.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
 
   const treeSearch = page.getByRole("searchbox", { name: "Find a page in this crawl" });
   await treeSearch.fill("article");
@@ -154,9 +168,10 @@ test("renders API failures and a responsive localized tool without horizontal ov
   await page.getByLabel("网站 URL").fill("acme.com");
   await page.getByRole("button", { name: "开始内链审计" }).click();
   await expect(
-    page.getByText("该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。 请在 42 秒后重试。", {
-      exact: true,
-    }),
+    page.getByText(
+      "该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。 请在 42 秒后重试。",
+      { exact: true },
+    ),
   ).toBeVisible();
   await expect(page.getByText("MOCK DATA.", { exact: true })).toHaveCount(0);
   await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(4);

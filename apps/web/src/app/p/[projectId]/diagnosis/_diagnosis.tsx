@@ -21,6 +21,7 @@ import { AlertTriangle, Check, CircleDashed, ShieldCheck } from "lucide-react";
 import {
   Button,
   EmptyState,
+  LimitationHint,
   Panel,
   Spinner,
   StatusPill,
@@ -487,26 +488,14 @@ function AuditRail({
         </div>
       )}
 
-      <section className={styles.auditSection}>
-        <h3>{t("auditRail.limitations")}</h3>
-        {coverage === null ? (
-          <p className={styles.railEmpty}>
-            {t(
-              presentationState === "not-run"
-                ? "auditRail.limitationsNotRun"
-                : "auditRail.limitationsUnavailable",
-            )}
-          </p>
-        ) : limitations.length > 0 ? (
-          <ul className={styles.railLimitationList}>
-            {limitations.map((text, index) => (
-              <li key={`${index}:${text}`}>{text}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className={styles.railEmpty}>{t("auditRail.noLimitations")}</p>
-        )}
-      </section>
+      {coverage !== null && limitations.length > 0 ? (
+        <section className={styles.auditSection}>
+          <LimitationHint
+            label={t("auditRail.limitations")}
+            limitations={limitations}
+          />
+        </section>
+      ) : null}
 
       <section className={styles.auditSection}>
         <h3>{t("auditRail.ruleOutcomes")}</h3>

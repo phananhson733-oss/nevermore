@@ -162,6 +162,15 @@ test("Sources derives customer readiness and exposes connector provenance", asyn
   await expect(gsc).toContainText("42");
   await expect(gsc).toContainText("0123456789ab…89abcdef");
   await expect(gsc).not.toContainText(LONG_CHECKSUM);
+  const gscLimitation = gsc.getByRole("button", {
+    name: "Limitation (1)",
+  });
+  await expect(gscLimitation).toBeVisible();
+  await expect(gsc).not.toContainText("Canonical fixture limitation.");
+  await gscLimitation.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Canonical fixture limitation.",
+  );
 
   const ga4 = page.getByRole("region", { name: "Google Analytics 4" });
   await expect(ga4).toContainText("No snapshot yet");
@@ -281,11 +290,71 @@ test("Sources shows business metrics and keeps a connected empty GA4 source out 
   await expect(gscCard).toContainText("4 次点击 · 63 个落地页");
   await expect(gscCard).toContainText("原始供应商记录");
   await expect(gscCard).toContainText("1,874");
+  const gscLimitation = gscCard.getByRole("button", {
+    name: "限制说明 (1)",
+  });
+  await expect(gscLimitation).toBeVisible();
+  await expect(gscCard).not.toContainText("Canonical fixture limitation.");
+  await gscLimitation.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Canonical fixture limitation.",
+  );
 
   const ga4Card = page.getByRole("region", { name: "Google Analytics 4" });
   await expect(ga4Card).toContainText("已连接 · 未检测到数据");
-  await expect(ga4Card).toContainText("请检查网站 GA 标签或 Measurement ID");
+  await expect(ga4Card).not.toContainText("请检查网站 GA 标签或 Measurement ID");
+  const ga4Limitation = ga4Card.getByRole("button", {
+    name: "限制说明 (1)",
+  });
+  await expect(ga4Limitation).toBeVisible();
+  await ga4Limitation.hover();
+  await expect(
+    page
+      .getByRole("tooltip")
+      .filter({ hasText: "请检查网站 GA 标签或 Measurement ID" }),
+  ).toBeVisible();
   await expect(ga4Card).not.toContainText("0 次会话");
+});
+
+test("Sources keeps compact limitation disclosures inside a 390px viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/sources`);
+
+  const gsc = page.getByRole("region", { name: "Search Console" });
+  await expect(gsc).toBeVisible();
+  await expect(gsc).not.toContainText("Canonical fixture limitation.");
+
+  const trigger = gsc.getByRole("button", { name: "Limitation (1)" });
+  await trigger.click();
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toContainText("Canonical fixture limitation.");
+  await expect(tooltip).toHaveCSS("opacity", "1");
+  await expect(tooltip).toHaveCSS(
+    "transform",
+    "matrix(1, 0, 0, 1, 0, 0)",
+  );
+
+  const box = await tooltip.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box?.x ?? -1).toBeGreaterThanOrEqual(12);
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(378);
+  expect(box?.y ?? -1).toBeGreaterThanOrEqual(12);
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(832);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await trigger.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(tooltip).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 });
 
 /**

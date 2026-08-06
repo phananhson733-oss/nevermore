@@ -287,26 +287,9 @@
 }
 
 .limitations {
-  padding: 12px 14px;
-  color: var(--sf-amber-text);
-  background: var(--sf-amber-soft);
-  border-radius: 10px;
-}
-
-.limitations strong {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 14px;
-}
-
-.limitations ul {
-  display: grid;
-  gap: 4px;
-  margin: 7px 0 0 22px;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1.5;
+  min-height: 28px;
 }
 
 .searchBar {
@@ -431,6 +414,45 @@
   transition: background-color 140ms ease;
 }
 
+.rowSelectButton {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.rowSelectButton:focus-visible {
+  outline: 0;
+  box-shadow: inset var(--sf-focus-ring);
+}
+
+.rowSelectLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.rowButton > *:not(.rowSelectButton) {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.rowButton [data-limitation-hint] {
+  pointer-events: auto;
+}
+
 .rowButton::before {
   position: absolute;
   inset: 0 auto 0 0;
@@ -547,6 +569,13 @@
   color: var(--sf-muted);
   font-size: 14px;
   font-weight: 650;
+}
+
+.missingValue,
+.priorityUnavailable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .priorityPill,
@@ -1333,7 +1362,6 @@
   font-size: 13px;
 }
 
-.recordLimitation,
 .traceId {
   grid-column: 1 / -1;
   margin: 0;
@@ -1342,17 +1370,8 @@
 }
 
 .recordLimitation {
-  display: grid;
-  gap: 3px;
-  color: var(--sf-amber-text);
-}
-
-.recordLimitation span {
-  color: var(--sf-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .traceId {
@@ -1775,19 +1794,9 @@
 }
 
 .projectionNote {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
+  display: inline-flex;
+  align-items: center;
   margin: 11px 20px 0;
-  color: var(--sf-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.projectionNote svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--sf-amber-text);
 }
 
 .comparisonStrip > div {
@@ -3310,21 +3319,9 @@
 }
 
 .keywordMetricLimitation {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
   margin: 10px 0 0;
-  padding: 8px 9px;
-  color: var(--sf-amber-text);
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--sf-amber-soft);
-  border-radius: 7px;
-}
-
-.keywordMetricLimitation svg {
-  flex: none;
-  margin-top: 2px;
 }
 
 .rankHistorySection > .keywordSectionDescription {
@@ -3840,17 +3837,9 @@
 }
 
 .keywordSourceNote {
-  display: grid;
-  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
-  gap: 8px;
+  display: inline-flex;
+  align-items: center;
   margin: 9px 0 0;
-  color: var(--sf-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.keywordSourceNote strong {
-  color: var(--sf-amber-text);
 }
 
 .keywordDetailFooter {
@@ -4360,21 +4349,9 @@
 }
 
 .competitorMonitorLimitation {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
+  display: inline-flex;
+  align-items: center;
   margin: 12px 0 0;
-  padding: 10px 11px;
-  color: var(--sf-amber-text);
-  font-size: 13px;
-  line-height: 1.55;
-  background: var(--sf-amber-soft);
-  border-radius: 8px;
-}
-
-.competitorMonitorLimitation svg {
-  flex: none;
-  margin-top: 2px;
 }
 
 .competitorMonitorSignals {
@@ -4670,21 +4647,9 @@ a.competitorMonitorContentUrl:hover {
 }
 
 .competitorInsightLimitation {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
   margin: 10px 0 0;
-  padding: 9px;
-  color: var(--sf-amber-text);
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--sf-amber-soft);
-  border-radius: 7px;
-}
-
-.competitorInsightLimitation svg {
-  flex: none;
-  margin-top: 2px;
 }
 
 .competitorObservedState {
@@ -6049,18 +6014,9 @@ a.competitorMonitorContentUrl:hover {
 }
 
 .topicActionLimitation {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  display: inline-flex;
+  align-items: center;
   margin: 9px 0 0;
-  color: var(--sf-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.topicActionLimitation svg {
-  flex: none;
-  margin-top: 1px;
 }
 
 .topicNodeReadView {
@@ -6152,17 +6108,9 @@ a.competitorMonitorContentUrl:hover {
 }
 
 .topicInsightLimitation {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  display: inline-flex;
+  align-items: center;
   margin: 0;
-  color: var(--sf-amber-text);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.topicInsightLimitation svg {
-  flex: none;
 }
 
 .topicNodeFacts {

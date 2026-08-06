@@ -397,7 +397,19 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
   await expect(monitor).toContainText(
     "https://atlasflow.com/guides/customer-onboarding-playbook",
   );
-  await expect(monitor).toContainText("这不是发布日期证明");
+  await expect(monitor).not.toContainText("这不是发布日期证明");
+  const contentSignal = monitor.getByTestId(
+    `competitor-monitor-signal-${CONTENT_SIGNAL_ID}`,
+  );
+  await contentSignal.locator("summary").click();
+  const contentLimitation = contentSignal.getByRole("button", {
+    name: "限制说明 (1)",
+  });
+  await expect(contentLimitation).toBeVisible();
+  await contentLimitation.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "这不是发布日期证明",
+  );
   const rankSignal = monitor.getByTestId(
     `competitor-monitor-signal-${RANK_SIGNAL_ID}`,
   );

@@ -37,6 +37,7 @@ import { uniqueCursorItems } from "@/lib/api/cursor-pages";
 import {
   Button,
   Field,
+  LimitationHint,
   Panel,
   Spinner,
   StatusPill,
@@ -1567,15 +1568,17 @@ function SourceCard({
           snapshotHistoryComplete={snapshotHistoryComplete}
         />
 
-        <p className={styles.limitation}>
-          <span className={styles.metaLabel}>{t("limitationLabel")}</span>
-          <span>
-            {connectedNoData &&
-            (source.provider === "gsc" || source.provider === "ga4")
-              ? copy.noDataGuidance[source.provider]
-              : sourceLimitationForDisplay(source)}
-          </span>
-        </p>
+        <div className={styles.limitation}>
+          <LimitationHint
+            label={t("limitationLabel")}
+            limitations={[
+              connectedNoData &&
+              (source.provider === "gsc" || source.provider === "ga4")
+                ? copy.noDataGuidance[source.provider]
+                : sourceLimitationForDisplay(source),
+            ]}
+          />
+        </div>
 
         {hintKey !== null ? (
           <p className={styles.controlHint}>{t(hintKey)}</p>

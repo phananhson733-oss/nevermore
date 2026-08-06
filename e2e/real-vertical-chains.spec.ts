@@ -723,6 +723,10 @@ async function generateReadyArtifact(
     '[aria-labelledby="sf-generate-title"]',
   );
   await expect(generationForm.locator("#sf-generate-title")).toBeVisible();
+  // This vertical deliberately proves the deterministic offline provider seam.
+  // Product UX defaults to AI, so the test must opt into the template instead
+  // of accidentally reaching a live LLM from the isolated CI environment.
+  await generationForm.getByLabel("Generation mode").selectOption("template");
   await generationForm
     .getByRole("button", { name: "Generate", exact: true })
     .click();

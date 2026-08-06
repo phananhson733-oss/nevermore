@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import { LimitationHint } from "@/components/ui";
 import type { Evidence } from "@/lib/api/hooks-diagnosis";
 import styles from "./diagnosis.module.css";
 
@@ -330,21 +331,17 @@ export function EvidenceDrawer({
               </dl>
             </section>
 
-            <section className={styles.limitationSection}>
-              <header className={styles.drawerSectionHeader}>
-                <p>{t("evidence.limitationsEyebrow")}</p>
-                <h3>{t("evidence.limitationsTitle")}</h3>
-              </header>
-              <div className={styles.limitationCallout}>
-                <FileSearch aria-hidden="true" size={20} />
-                <div>
-                  <strong>{t("evidence.limitation")}</strong>
-                  <p>
-                    {activeEvidence.limitation || t("evidence.noLimitation")}
-                  </p>
-                </div>
-              </div>
-            </section>
+            {activeEvidence.limitation ? (
+              <section
+                className={styles.limitationSection}
+                aria-label={t("evidence.limitationsEyebrow")}
+              >
+                <LimitationHint
+                  label={t("evidence.limitationsTitle")}
+                  limitations={[activeEvidence.limitation]}
+                />
+              </section>
+            ) : null}
 
             <section className={styles.dimensionSection}>
               <header className={styles.drawerSectionHeader}>

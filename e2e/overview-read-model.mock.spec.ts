@@ -866,10 +866,15 @@ test("ready Overview renders the four current customer modules", async ({
   await expect(sources).not.toContainText("Site crawl");
   await expect(sources).not.toContainText("CSV upload");
   await expect(sources).not.toContainText("DataForSEO");
-  await gsc
-    .getByText("Source record / original wording", { exact: true })
-    .click();
-  await expect(gsc).toContainText(
+  const sourceBoundary = gsc.getByRole("button", {
+    name: "Source record / original wording (1)",
+  });
+  await expect(sourceBoundary).toBeVisible();
+  await expect(gsc).not.toContainText(
+    "GSC rows are limited to the connected Search Console property.",
+  );
+  await sourceBoundary.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
     "GSC rows are limited to the connected Search Console property.",
   );
 
@@ -999,15 +1004,15 @@ test("content-decay advice stays in the existing priority queue and deep-links t
   // it has to be readable — and readable in the customer's own language. The
   // engine authors limitations in English; this is the assertion that proves
   // the Overview translated them instead of leaking the raw sentence through.
-  const decayLimitations = priority.getByText("这些信号是怎么判定的", {
-    exact: true,
+  const decayLimitations = priority.getByRole("button", {
+    name: "这些信号是怎么判定的 (2)",
   });
   await expect(decayLimitations).toBeVisible();
   await decayLimitations.click();
-  await expect(priority).toContainText(
+  await expect(page.getByRole("tooltip")).toContainText(
     `只有上一个检查点点击数不低于 ${CONTENT_DECAY_MIN_PREVIOUS_CLICKS} 时才判定流量下滑`,
   );
-  await expect(priority).not.toContainText(
+  await expect(page.locator("body")).not.toContainText(
     CONTENT_DECAY_LIMITATIONS.minimumSample,
   );
 });
@@ -1097,10 +1102,16 @@ test("partial Overview preserves bounded audit and mixed connection truth", asyn
     "This page only · more URLs are available",
   );
   await expect(portfolio).toContainText("Partial coverage");
-  // A downgraded coverage badge without its reasons is a grade the customer
-  // cannot judge, so the contract's limitations must be on the screen.
-  await expect(portfolio).toContainText("Why this coverage is incomplete");
-  await expect(portfolio).toContainText(
+  // The reason remains inspectable without taking over the reading line.
+  const coverageBoundary = portfolio.getByRole("button", {
+    name: "Why this coverage is incomplete (1)",
+  });
+  await expect(coverageBoundary).toBeVisible();
+  await expect(portfolio).not.toContainText(
+    "Additional URLs exist beyond this bounded page.",
+  );
+  await coverageBoundary.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
     "Additional URLs exist beyond this bounded page.",
   );
   // An uncovered lens reports missing coverage, never a measured zero — and
@@ -1165,7 +1176,9 @@ test("ready four-module Overview keeps desktop and mobile WCAG AA semantics", as
   await sources
     .locator("article")
     .filter({ hasText: "Google Search Console" })
-    .getByText("Source record / original wording", { exact: true })
+    .getByRole("button", {
+      name: "Source record / original wording (1)",
+    })
     .click();
   await sectionByHeading(page, "Product, market, and ICP")
     .getByText("Version and provenance", { exact: true })
@@ -1229,9 +1242,9 @@ test("Overview chrome localizes to zh-CN while canonical customer data stays int
   });
   await expect(gsc.getByText("可用", { exact: true })).toBeVisible();
   await gsc
-    .getByText("来源记录 / 原始说明（保留原文）", { exact: true })
+    .getByRole("button", { name: "来源记录 / 原始说明（保留原文） (1)" })
     .click();
-  const originalWording = gsc.getByText(
+  const originalWording = page.getByRole("tooltip").getByText(
     "GSC rows are limited to the connected Search Console property.",
     { exact: true },
   );

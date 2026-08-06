@@ -1,5 +1,5 @@
-// @input  -- TrafficDropResult from @sf/public-tools and the daily series it was built from
-// @output -- fixed comparison windows, layered findings, evidence-backed actions, full check list
+// @input  -- TrafficDropResult, its daily series, and the shared limitation disclosure
+// @output -- fixed windows, layered findings, actions, checks, and compact evidence boundaries
 // @pos    -- report surface of /[locale]/tools/traffic-drop-diagnosis
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -17,6 +17,7 @@ import type {
 } from "@sf/public-tools";
 import { TrafficDropChart } from "./traffic-drop-chart";
 import { TrafficDropSiteSignals } from "./traffic-drop-site-signals";
+import { LimitationHint } from "../ui/limitation-hint";
 
 const TIER_STYLE: Record<TrafficFinding["tier"], string> = {
   observed: "text-brand-series-2 bg-[rgba(79,134,200,0.14)]",
@@ -128,12 +129,11 @@ export function TrafficDropResults({
         ) : null}
 
         {result.changePoint.limitation ? (
-          <p className="mt-4 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-3 text-[12.5px] leading-relaxed text-text-dark-secondary">
-            <span className="font-semibold text-text-dark-primary">
-              {t("limitationLabel")}:
-            </span>{" "}
-            {t(`limitations.${result.changePoint.limitation}`)}
-          </p>
+          <LimitationHint
+            className="mt-4"
+            label={t("limitationLabel")}
+            limitations={[t(`limitations.${result.changePoint.limitation}`)]}
+          />
         ) : null}
       </section>
 
@@ -209,9 +209,11 @@ export function TrafficDropResults({
                   ) : null}
 
                   {finding.limitation ? (
-                    <p className="mt-2 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary/85">
-                      {t(`limitations.${finding.limitation}`)}
-                    </p>
+                    <LimitationHint
+                      className="mt-2"
+                      label={t("limitationLabel")}
+                      limitations={[t(`limitations.${finding.limitation}`)]}
+                    />
                   ) : null}
                 </div>
               </article>

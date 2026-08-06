@@ -12,6 +12,7 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 
 import {
+  LimitationHint,
   Spinner,
   StatusPill,
   type StatusTone,
@@ -49,6 +50,7 @@ function PhaseEvidence({
   readonly value: GeoCitationEvidencePhase | null;
 }) {
   const t = useTranslations("results.measurement");
+  const tCommon = useTranslations("common");
   const locale = useLocale();
   if (value === null) {
     return (
@@ -237,7 +239,10 @@ function PhaseEvidence({
                           </code>
                         </blockquote>
                         {statement.limitation === null ? null : (
-                          <small>{statement.limitation}</small>
+                          <LimitationHint
+                            label={tCommon("limitations")}
+                            limitations={[statement.limitation]}
+                          />
                         )}
                       </li>
                     ),
@@ -247,10 +252,12 @@ function PhaseEvidence({
             ) : null}
 
             {query.limitation ? (
-              <p className={styles.geoQueryLimitation}>
-                <CircleAlert aria-hidden="true" size={15} />
-                {query.limitation}
-              </p>
+              <div className={styles.geoQueryLimitation}>
+                <LimitationHint
+                  label={tCommon("limitations")}
+                  limitations={[query.limitation]}
+                />
+              </div>
             ) : null}
           </details>
         ))}
@@ -269,10 +276,12 @@ export function GeoCitationEvidence({
   readonly dimension: MeasurementDimensionView;
 }) {
   const t = useTranslations("results.measurement");
+  const tCommon = useTranslations("common");
   const query = useMeasurementGeoCitations(
     projectId,
     measurementWindowId,
   );
+  const evidenceLimitation = query.data?.limitation ?? dimension.limitation;
 
   return (
     <section
@@ -345,11 +354,13 @@ export function GeoCitationEvidence({
         </div>
       )}
 
-      {query.data?.limitation ?? dimension.limitation ? (
-        <p className={styles.geoEvidenceLimitation}>
-          <CircleAlert aria-hidden="true" size={16} />
-          {query.data?.limitation ?? dimension.limitation}
-        </p>
+      {evidenceLimitation ? (
+        <div className={styles.geoEvidenceLimitation}>
+          <LimitationHint
+            label={tCommon("limitations")}
+            limitations={[evidenceLimitation]}
+          />
+        </div>
       ) : null}
       <p className={styles.geoEvidenceNonCausal}>
         {t("geoEvidence.nonCausal")}

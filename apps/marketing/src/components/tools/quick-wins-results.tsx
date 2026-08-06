@@ -1,5 +1,5 @@
-// @input  -- one QuickWinsResult from /api/tools/quick-wins
-// @output -- what to do next, the evidence behind it, and everything it rests on
+// @input  -- one QuickWinsResult plus the shared compact limitation disclosure
+// @output -- actions, evidence, and secondary context without expanded caveat walls
 // @pos    -- presentation only; every judgement it could make was left to the reader
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -16,6 +16,7 @@ import { trackCounts } from "@sf/public-tools/quick-wins/track";
 import { formatCount, formatPercent } from "../../lib/tools/quick-wins-format";
 import { QuickWinsActions } from "./quick-wins-actions";
 import { QuickWinsEvidenceTable } from "./quick-wins-evidence-table";
+import { LimitationHint } from "../ui/limitation-hint";
 
 /** The order the summary tiles read in: most actionable first. */
 const TILE_ORDER: readonly QuickWinTrack[] = [
@@ -453,21 +454,12 @@ function ContextSection({
           </section>
         ) : null}
 
-        <section>
-          <h4 className="text-[13px] font-semibold text-text-dark-primary">
-            {t("limitationsTitle")}
-          </h4>
-          <ul className="mt-1.5 space-y-2.5">
-            {result.limitations.map((code) => (
-              <li
-                key={code}
-                className="max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary"
-              >
-                {t(`limitations.${code}`)}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <LimitationHint
+          label={t("limitationsTitle")}
+          limitations={result.limitations.map((code) =>
+            t(`limitations.${code}`),
+          )}
+        />
 
         <p className="max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary">
           {t("storageNote")}

@@ -216,7 +216,15 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
     "3 additional identity or metric records remain traceable",
   );
   await expect(rail).not.toContainText("SignalFrame");
-  await expect(rail).toContainText(
+  await expect(rail).not.toContainText(
+    "no external source was retrieved or graded",
+  );
+  const limitationDisclosure = rail.getByRole("button", {
+    name: "Full limitation (1)",
+  });
+  await expect(limitationDisclosure).toBeVisible();
+  await limitationDisclosure.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
     "no external source was retrieved or graded",
   );
   await expect(rail).toContainText(CONTENT_HASH.slice(0, 12));

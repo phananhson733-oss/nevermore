@@ -37,6 +37,7 @@ import {
   MAX_ARTIFACT_COLLECTION_ITEMS,
   MAX_ARTIFACT_EVIDENCE_ROWS,
 } from "../types.ts";
+import { TECHNICAL_TICKET_SECTIONS } from "../validators/sections.ts";
 import {
   MAX_BRIEF_OUTLINE_KEYWORDS,
   MAX_BRIEF_OUTLINE_KEYWORD_CHARS,
@@ -606,6 +607,31 @@ function markdownOutputContract(artifactType: ArtifactType): string {
   ].join("\n");
 }
 
+/**
+ * Exact headings shared with the technical-ticket validator and deterministic
+ * template. Models otherwise translate or paraphrase headings (for example,
+ * "实施要求" instead of "实施步骤"), producing a readable draft that the
+ * validator must reject. Keeping the contract derived from the canonical
+ * section definitions prevents that prompt/validator drift from recurring.
+ */
+function technicalTicketSectionContract(
+  input: ArtifactPromptInput,
+): readonly string[] {
+  if (input.artifactType !== "technical_ticket") return [];
+  const useChinese = input.outputLocale.toLowerCase().startsWith("zh");
+  const headings = TECHNICAL_TICKET_SECTIONS.map(
+    (section) => `  ## ${useChinese ? section.zh : section.en}`,
+  );
+  return [
+    "",
+    "TECHNICAL TICKET MARKDOWN CONTRACT (validator-aligned; mandatory):",
+    "- The `markdown` string MUST use every exact level-2 heading below, exactly once and in this order:",
+    ...headings,
+    "- Do not translate, rename, merge, reorder, or omit these headings.",
+    "- Write a non-empty body under every heading. If evidence is unavailable, use `unknown` or `待确认` instead of omitting the section or inventing facts.",
+  ];
+}
+
 function renderEvidence(evidence: ArtifactPromptInput["evidence"]): string {
   if (evidence.length === 0) {
     return `${UNTRUSTED_OPEN}\n(no evidence excerpts were provided)\n${UNTRUSTED_CLOSE}`;
@@ -800,6 +826,7 @@ export function buildMessages(input: ArtifactPromptInput): {
     `OUTPUT LOCALE: ${safePromptText(input.outputLocale)}`,
     "",
     markdownOutputContract(input.artifactType),
+    ...technicalTicketSectionContract(input),
     ...briefOutlineContract(input),
     ...researchContextContract(input),
     "",
