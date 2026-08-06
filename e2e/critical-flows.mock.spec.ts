@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   E2E_ARTIFACT_ID,
   E2E_CANONICAL_ACTION_ID,
@@ -25,6 +25,33 @@ test.beforeEach(async ({ page }) => {
     ]);
   api = await installCriticalFlowApi(page);
 });
+
+async function overrideStudioArtifacts(
+  page: Page,
+  artifacts: readonly unknown[],
+): Promise<void> {
+  await page.route(
+    `**/api/mvp/projects/${E2E_PROJECT_ID}/artifacts**`,
+    async (route) => {
+      const url = new URL(route.request().url());
+      if (
+        route.request().method() !== "GET" ||
+        url.pathname !== `/api/mvp/projects/${E2E_PROJECT_ID}/artifacts`
+      ) {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: artifacts,
+          meta: { nextCursor: null, hasNext: false, limit: 100 },
+        }),
+      });
+    },
+  );
+}
 
 test("execution-state mock accepts only the canonical Action and Artifact stream", async ({
   page,
@@ -288,9 +315,53 @@ test("internal crawl service remains available without distorting customer readi
 test("artifact edit surfaces a stale-revision conflict without overwriting", async ({
   page,
 }) => {
+  const markdownContent = [
+    "## Repair plan",
+    "",
+    "Use **verified evidence** before changing the page.",
+    "",
+    "- Keep the canonical source",
+    "- Preserve the regression test",
+  ].join("\n");
+  const baseMarkdownArtifact = overrideArtifactFixture(
+    1,
+    E2E_CANONICAL_ACTION_ID,
+  );
+  const markdownArtifact = {
+    ...baseMarkdownArtifact,
+    id: E2E_ARTIFACT_ID,
+    current: {
+      ...baseMarkdownArtifact.current,
+      content: markdownContent,
+    },
+  };
+  await overrideStudioArtifacts(page, [markdownArtifact]);
+
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   await page.getByRole("button", { name: "Open", exact: true }).click();
-  await page.getByLabel("Content").fill("Edited operator draft");
+  const canvas = page.locator("[data-studio-editor-column]");
+  await expect(
+    canvas.getByRole("heading", { name: "Repair plan", level: 2 }),
+  ).toBeVisible();
+  await expect(canvas.locator("strong")).toHaveText("verified evidence");
+  const renderedList = canvas
+    .getByRole("list")
+    .filter({ hasText: "Keep the canonical source" });
+  await expect(renderedList).toBeVisible();
+  await expect(
+    renderedList.getByText("Keep the canonical source", { exact: true }),
+  ).toBeVisible();
+  await expect(canvas).not.toContainText("## Repair plan");
+  await expect(page.getByLabel("Content")).toHaveCount(0);
+
+  await canvas.getByRole("tab", { name: "Edit Markdown" }).click();
+  const content = page.getByLabel("Content");
+  await expect(content).toHaveValue(markdownContent);
+  const editedMarkdown = markdownContent.replace(
+    "verified evidence",
+    "reviewed evidence",
+  );
+  await content.fill(editedMarkdown);
   await page.getByRole("button", { name: "Save revision" }).click();
 
   await expect(
@@ -300,8 +371,53 @@ test("artifact edit surfaces a stale-revision conflict without overwriting", asy
   expect(api.artifactPatchRequests[0]).toMatchObject({
     baseRevision: 2,
     contentFormat: "markdown",
-    content: "Edited operator draft",
+    content: editedMarkdown,
   });
+});
+
+test("pending Studio actions use View to open the real generation form", async ({
+  page,
+}) => {
+  await overrideStudioArtifacts(page, []);
+
+  const pendingSelector =
+    `[data-studio-pending-action-id="${E2E_CANONICAL_ACTION_ID}"]`;
+  const canvas = page.locator("[data-studio-editor-column]");
+
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const pending = page.locator(pendingSelector);
+  await expect(
+    pending.getByRole("button", { name: "View", exact: true }),
+  ).toBeVisible();
+  await expect(
+    pending.getByRole("button", { name: "Generate", exact: true }),
+  ).toHaveCount(0);
+  await pending.getByRole("button", { name: "View", exact: true }).click();
+  await expect(page.getByLabel("Generation mode")).toBeVisible();
+  await expect(
+    canvas.getByRole("button", { name: "Generate", exact: true }),
+  ).toBeVisible();
+
+  await page.context().addCookies([
+    {
+      name: "sf_ui_locale",
+      value: "zh-CN",
+      domain: "localhost",
+      path: "/",
+    },
+  ]);
+  await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
+  const localizedPending = page.locator(pendingSelector);
+  await expect(
+    localizedPending.getByRole("button", { name: "查看", exact: true }),
+  ).toBeVisible();
+  await localizedPending
+    .getByRole("button", { name: "查看", exact: true })
+    .click();
+  await expect(page.getByLabel("生成方式")).toBeVisible();
+  await expect(
+    canvas.getByRole("button", { name: "生成", exact: true }),
+  ).toBeVisible();
 });
 
 test("Studio chrome localizes to zh-CN without translating action content", async ({
@@ -327,7 +443,9 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   const queue = page.locator("[data-studio-queue]");
   const canvas = page.locator("[data-studio-editor-column]");
   await expect(hero.getByRole("button", { name: "生成执行物" })).toBeVisible();
-  await expect(page.getByText("可交付", { exact: true })).toBeVisible();
+  await expect(
+    queue.getByRole("heading", { name: "交付文件", level: 2 }),
+  ).toBeVisible();
   await expect(
     queue.getByText("Fix the failing product page", { exact: true }),
   ).toBeVisible();
@@ -345,6 +463,7 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   await expect(page.getByLabel("生成方式")).toHaveValue("structured_llm");
   const generateHeading = canvas.getByRole("heading", {
     name: "Fix the failing product page",
+    level: 2,
   });
   await expect(generateHeading).toBeVisible();
   await expect(generateHeading).toBeFocused();
@@ -465,7 +584,10 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
   );
   await expect(page.getByLabel("Output language")).toHaveValue("fr-FR");
   await expect(
-    canvas.getByRole("heading", { name: "Fix the failing product page" }),
+    canvas.getByRole("heading", {
+      name: "Fix the failing product page",
+      level: 2,
+    }),
   ).toBeFocused();
 });
 

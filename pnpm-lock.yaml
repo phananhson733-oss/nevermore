@@ -278,6 +278,9 @@ importers:
       lucide-react:
         specifier: ^1.25.0
         version: 1.25.0(react@19.2.7)
+      marked:
+        specifier: ^17.0.4
+        version: 17.0.6
       next:
         specifier: 'catalog:'
         version: 16.2.11(@babel/core@7.29.7)(@playwright/test@1.61.1)(@types/node@24.13.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -290,6 +293,9 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
+      sanitize-html:
+        specifier: ^2.17.1
+        version: 2.17.6
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -303,6 +309,9 @@ importers:
       '@types/react-dom':
         specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.17)
+      '@types/sanitize-html':
+        specifier: ^2.16.0
+        version: 2.16.1
       eslint:
         specifier: 'catalog:'
         version: 9.39.5(jiti@2.7.0)

@@ -1,21 +1,12 @@
 "use client";
 
 /**
- * The Execution destination.
- *
- * It used to open with a "delivery chain" summary that restated, as three
- * badges, what the workspace below already showed in full — and it did so under
- * an `<h2>` that came BEFORE the page's `<h1>`, which is a heading-order defect
- * a screen reader user pays for. That summary is gone.
- *
- * What replaces it is the thing this screen was missing: the deliverable
- * itself. The Content Shadow surface renders the English draft body, what the
- * quality gate found, what it could not judge, and what this stage does not do
- * — directly under the page heading, where a reviewer reads first.
+ * The Execution destination. Studio owns the single deliverable queue and
+ * working canvas; Content Shadow is opened inside that canvas for the selected
+ * English draft instead of rendering a second, competing workspace.
  */
 
 import { StudioClient } from "../studio/_studio.tsx";
-import { ContentShadowSection } from "./_content-shadow.tsx";
 import type { ExecutionDeepLink } from "./_execution-deep-link.ts";
 
 export function ExecutionClient({
@@ -29,7 +20,6 @@ export function ExecutionClient({
     <StudioClient
       projectId={projectId}
       initialDeepLink={initialDeepLink}
-      afterHero={<ContentShadowSection projectId={projectId} />}
     />
   );
 }

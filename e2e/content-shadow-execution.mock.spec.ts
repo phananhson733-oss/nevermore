@@ -227,6 +227,34 @@ function runProjection() {
   };
 }
 
+function draftArtifactFixture() {
+  return {
+    id: DRAFT_ARTIFACT_ID,
+    actionId: E2E_CANONICAL_ACTION_ID,
+    artifactType: "english_blog_draft",
+    status: "draft",
+    generationMode: "structured_llm",
+    outputLocale: "en",
+    currentRevision: 1,
+    validationState: "valid",
+    current: {
+      id: "00000000-0000-4000-8000-000000000910",
+      revision: 1,
+      outputLocale: "en",
+      contentFormat: "markdown",
+      content: DRAFT_BODY,
+      contentHash: CONTENT_HASH,
+      validationErrors: [],
+      note: null,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    activeRun: null,
+    adoption: null,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    updatedAt: "2026-07-25T00:00:00.000Z",
+  };
+}
+
 /** Layer the Content Shadow reads over the shared in-browser API. */
 async function openExecution(
   page: Page,
@@ -271,8 +299,29 @@ async function openExecution(
     });
   });
 
-  await page.goto(`/p/${E2E_PROJECT_ID}/execution`);
+  await page.route(`**${BASE}/artifacts?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: [draftArtifactFixture()],
+        meta: { nextCursor: null, hasNext: false, limit: 100 },
+      }),
+    });
+  });
+
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/execution?actionId=${E2E_CANONICAL_ACTION_ID}&artifactId=${DRAFT_ARTIFACT_ID}`,
+  );
   await expect(page.locator("[data-content-shadow]")).toBeVisible();
+  await expect(
+    page.locator(
+      `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-content-shadow] [aria-current]"),
+  ).toHaveCount(0);
 }
 
 /**
@@ -470,10 +519,14 @@ test("a blocked verdict reads as a held-back citation, never as a failure", asyn
   expect(failedStates.length).toBeGreaterThan(0);
   for (const state of failedStates) expect(state.color).toBe(coralText);
 
-  // 6. The deliverable is still listed; a blocked draft is not hidden away.
+  // 6. The deliverable stays in the one Studio queue; Content Shadow adds the
+  // QA surface without introducing a second selectable list.
   await expect(
-    page.locator("[data-content-shadow] [aria-current='true']"),
+    page.locator(
+      `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
+    ),
   ).toBeVisible();
+  await expect(screen.locator("[aria-current]")).toHaveCount(0);
 });
 
 test("the quality rail counts three states and never rounds one up", async ({

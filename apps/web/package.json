@@ -24,16 +24,19 @@
     "@tanstack/react-query": "catalog:",
     "drizzle-orm": "catalog:",
     "lucide-react": "^1.25.0",
+    "marked": "^17.0.4",
     "next": "catalog:",
     "next-intl": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "sanitize-html": "^2.17.1",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@types/sanitize-html": "^2.16.0",
     "eslint": "catalog:",
     "eslint-config-next": "catalog:",
     "typescript": "catalog:"
