@@ -7,6 +7,7 @@ import {
   parseQueryLimit,
   parseQueryValue,
   parseUuidParam,
+  requestHasBodyBytes,
 } from "@/lib/http/validate";
 import {
   listProjectAuditKeywordRelations,
@@ -120,7 +121,7 @@ export const POST = operatorRoute<{ projectId: string }>(
     const { projectId } = await routeCtx.params;
     const id = parseUuidParam(projectId);
     if (new URL(request.url).searchParams.size > 0) rejectQuery();
-    if (request.body !== null) rejectBody();
+    if (await requestHasBodyBytes(request)) rejectBody();
     await assertWorkspaceAttemptRateLimit(
       ctx.operator.workspaceId,
       mutationPolicy(id),
