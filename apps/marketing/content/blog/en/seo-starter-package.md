@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-starter-package.jpg
-heroImageAlt: Flat-vector illustration: a wrapped parcel with a ribbon sitting at the start of a path, a single milestone flag planted further along the path ahead of it
+heroImageAlt: Technical line illustration: a wrapped parcel with a ribbon sitting at the start of a path, a single milestone flag planted further along the path ahead of it
 localeExclusive: true
 ---
 

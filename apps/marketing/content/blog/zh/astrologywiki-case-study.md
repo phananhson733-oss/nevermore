@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-08-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
-heroImageAlt: 扁平矢量插图：三盆植物由小到大依次排开，从幼苗长成枝叶繁茂的大株
+heroImageAlt: 技术线稿插图：三盆植物由小到大依次排开，从幼苗长成枝叶繁茂的大株
 localeExclusive: false
 ---
 

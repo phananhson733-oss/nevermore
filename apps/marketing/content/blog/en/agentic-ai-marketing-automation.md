@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-31
 updatedAt: 2026-07-31
 heroImage: /images/blog/agentic-ai-marketing-automation.jpg
-heroImageAlt: Flat-vector illustration: a jointed robotic arm gripping a wrench and turning a large gear on the left; a ship's steering wheel stands separately on the right, untouched
+heroImageAlt: Technical line illustration: a jointed robotic arm gripping a wrench and turning a large gear on the left; a ship's steering wheel stands separately on the right, untouched
 localeExclusive: true
 ---
 

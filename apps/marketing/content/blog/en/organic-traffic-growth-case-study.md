@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-03-01
 heroImage: /images/blog/organic-traffic-growth-case-study.jpg
-heroImageAlt: Flat-vector illustration: a hot-air balloon rising steadily, with three sandbags dropping away below it, trailing downward
+heroImageAlt: Technical line illustration: a hot-air balloon rising steadily, with three sandbags dropping away below it, trailing downward
 localeExclusive: false
 ---
 

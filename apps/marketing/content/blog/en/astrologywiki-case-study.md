@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-02-20
 updatedAt: 2026-08-05
 heroImage: /images/blog/astrologywiki-case-study.jpg
-heroImageAlt: Flat-vector illustration: three potted plants in a row, ascending left to right on a common baseline: a tiny sprout in a small pot, a leafy young plant in a medium pot, a tall thriving plant in a large pot
+heroImageAlt: Technical line illustration: three potted plants in a row, ascending left to right on a common baseline: a tiny sprout in a small pot, a leafy young plant in a medium pot, a tall thriving plant in a large pot
 localeExclusive: false
 ---
 

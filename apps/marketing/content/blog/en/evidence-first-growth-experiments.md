@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/evidence-first-growth-experiments.jpg
-heroImageAlt: Flat-vector illustration: a laboratory flask standing on a narrow platform, with a guard rail running along each side of the platform
+heroImageAlt: Technical line illustration: a laboratory flask standing on a narrow platform, with a guard rail running along each side of the platform
 localeExclusive: false
 ---
 

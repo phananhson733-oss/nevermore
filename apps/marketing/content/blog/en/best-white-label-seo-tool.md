@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/best-white-label-seo-tool.jpg
-heroImageAlt: Flat-vector illustration: a set of three plain unpainted matryoshka nesting dolls standing open in a row, the smallest one lifted out and held apart
+heroImageAlt: Technical line illustration: a set of three plain unpainted matryoshka nesting dolls standing open in a row, the smallest one lifted out and held apart
 localeExclusive: true
 ---
 

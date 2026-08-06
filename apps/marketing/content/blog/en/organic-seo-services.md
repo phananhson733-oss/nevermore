@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/organic-seo-services.jpg
-heroImageAlt: Flat-vector illustration: two pipes descending into one bucket: the left pipe has a coin slot on it, the right pipe is plain, both pouring into the same bucket
+heroImageAlt: Technical line illustration: two pipes descending into one bucket: the left pipe has a coin slot on it, the right pipe is plain, both pouring into the same bucket
 localeExclusive: true
 ---
 

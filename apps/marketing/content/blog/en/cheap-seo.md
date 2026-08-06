@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-07-01
 heroImage: /images/blog/cheap-seo.jpg
-heroImageAlt: Flat-vector illustration: two brick towers side by side: the left tower stands tall and intact with neatly mortared courses, the right tower has crumbled into a scattered heap of loose bricks
+heroImageAlt: Technical line illustration: two brick towers side by side: the left tower stands tall and intact with neatly mortared courses, the right tower has crumbled into a scattered heap of loose bricks
 localeExclusive: true
 ---
 

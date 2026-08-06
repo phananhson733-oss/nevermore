@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-08
 updatedAt: 2026-07-08
 heroImage: /images/blog/gpt-5-6-seo.jpg
-heroImageAlt: Flat-vector illustration: a signpost with four blank arrow boards pointing in four different directions
+heroImageAlt: Technical line illustration: a signpost with four blank arrow boards pointing in four different directions
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-03
 updatedAt: 2026-03-03
 heroImage: /images/blog/social-first-probe-week-1.jpg
-heroImageAlt: Flat-vector illustration: a satellite dish on a tripod aimed up and to the right at a loose cluster of small speech bubbles
+heroImageAlt: Technical line illustration: a satellite dish on a tripod aimed up and to the right at a loose cluster of small speech bubbles
 localeExclusive: false
 ---
 

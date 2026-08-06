@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/international-seo-audit.jpg
-heroImageAlt: Flat-vector illustration: a globe at the centre with two small pennant flags on opposite sides, joined by a double-headed arrow that arcs over the top
+heroImageAlt: Technical line illustration: a globe at the centre with two small pennant flags on opposite sides, joined by a double-headed arrow that arcs over the top
 localeExclusive: true
 ---
 

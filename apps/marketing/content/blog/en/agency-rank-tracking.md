@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/agency-rank-tracking.jpg
-heroImageAlt: Flat-vector illustration: a desktop filing tray holding a fan of upright report folders, each folder topped with a small marker at a different height
+heroImageAlt: Technical line illustration: a desktop filing tray holding a fan of upright report folders, each folder topped with a small marker at a different height
 localeExclusive: true
 ---
 
