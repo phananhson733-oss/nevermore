@@ -25,9 +25,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 
-const { getProjectAuditUrl, listProjectAuditUrls } = await import(
-  "./growth-map.ts"
-);
+const { getProjectAuditUrl, listProjectAuditUrls } =
+  await import("./growth-map.ts");
 
 const scope = {
   workspaceId: "00000000-0000-4000-8000-000000000001",
@@ -90,9 +89,7 @@ function readWithPin(
       );
 }
 
-function publishedGenerationFixture(
-  runId = olderPublishedRunId,
-): {
+function publishedGenerationFixture(runId = olderPublishedRunId): {
   readonly run: GrowthMapReadableRunRow;
   readonly snapshot: DataSnapshotRow;
 } {
@@ -293,10 +290,9 @@ function installUrlDetailFixtures(options: {
     GrowthMapReadRepository.prototype,
     "findReadableRunById",
   ).mockResolvedValue(generation.run);
-  vi.spyOn(
-    DataSnapshotsRepository.prototype,
-    "findByIds",
-  ).mockResolvedValue([generation.snapshot]);
+  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+    generation.snapshot,
+  ]);
   vi.spyOn(
     GrowthMapReadRepository.prototype,
     "findCurrentRunUrl",
@@ -309,14 +305,10 @@ function installUrlDetailFixtures(options: {
     GrowthMapReadRepository.prototype,
     "listResolvedTargets",
   ).mockResolvedValue([target] as never);
-  vi.spyOn(
-    GrowthMapReadRepository.prototype,
-    "listFindings",
-  ).mockResolvedValue([finding] as never);
-  vi.spyOn(
-    EvidenceRepository.prototype,
-    "listForFindings",
-  ).mockResolvedValue([
+  vi.spyOn(GrowthMapReadRepository.prototype, "listFindings").mockResolvedValue(
+    [finding] as never,
+  );
+  vi.spyOn(EvidenceRepository.prototype, "listForFindings").mockResolvedValue([
     { finding_id: findingId, evidence_id: evidenceId, role: "primary" },
   ] as never);
   vi.spyOn(
@@ -426,10 +418,9 @@ describe("Growth Map URL read boundary", () => {
         "findReadableRunById",
       );
       const sentinel = new Error("reached frozen snapshot lookup");
-      const snapshots = vi.spyOn(
-        DataSnapshotsRepository.prototype,
-        "findByIds",
-      ).mockRejectedValue(sentinel);
+      const snapshots = vi
+        .spyOn(DataSnapshotsRepository.prototype, "findByIds")
+        .mockRejectedValue(sentinel);
       const exec = {} as never;
 
       await expect(
@@ -473,14 +464,13 @@ describe("Growth Map URL read boundary", () => {
           },
         } as never);
       const sentinel = new Error("reached exact frozen snapshot lookup");
-      const snapshots = vi.spyOn(
-        DataSnapshotsRepository.prototype,
-        "findByIds",
-      ).mockRejectedValue(sentinel);
+      const snapshots = vi
+        .spyOn(DataSnapshotsRepository.prototype, "findByIds")
+        .mockRejectedValue(sentinel);
 
-      await expect(
-        readWithPin(kind, olderPublishedRunId, {}),
-      ).rejects.toBe(sentinel);
+      await expect(readWithPin(kind, olderPublishedRunId, {})).rejects.toBe(
+        sentinel,
+      );
       expect(exactRun).toHaveBeenCalledWith(
         { workspaceId: scope.workspaceId, projectId },
         olderPublishedRunId,
@@ -507,10 +497,9 @@ describe("Growth Map URL read boundary", () => {
       GrowthMapReadRepository.prototype,
       "findReadableRunById",
     ).mockResolvedValue(current.run);
-    vi.spyOn(
-      DataSnapshotsRepository.prototype,
-      "findByIds",
-    ).mockResolvedValue([current.snapshot]);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      current.snapshot,
+    ]);
     const listUrls = vi
       .spyOn(GrowthMapReadRepository.prototype, "listCurrentRunUrls")
       .mockResolvedValue({ rows: [], nextCursor: null });
@@ -541,6 +530,55 @@ describe("Growth Map URL read boundary", () => {
       { limit: 50, cursor: null, opportunitiesOnly: true },
     );
     expect(latestRun).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the run's stored coverage limitations behind the generic partial sentence", async () => {
+    const current = publishedGenerationFixture();
+    const storedLimitation =
+      "未提供关键词差距 CSV 或 DataForSEO 快照；内容差距规则已跳过。";
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+      id: projectId,
+    } as never);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "findLatestReadableRun",
+    ).mockResolvedValue({
+      ...current.run,
+      run_status: "partial",
+      coverage: {
+        overall: "partial",
+        domains: { content_intent: "partial" },
+        limitations: [storedLimitation, "   ", 42],
+      },
+    } as never);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      current.snapshot,
+    ]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listCurrentRunUrls",
+    ).mockResolvedValue({ rows: [], nextCursor: null });
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listObservations",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listResolvedTargets",
+    ).mockResolvedValue([]);
+
+    const result = await listProjectAuditUrls(
+      scope,
+      projectId,
+      { limit: 50, cursor: null },
+      {} as never,
+    );
+
+    expect(result.meta.coverage.availability).toBe("partial");
+    expect(result.meta.coverage.limitations.slice(0, 2)).toEqual([
+      "最新一次已完成的诊断仅覆盖了部分数据。",
+      storedLimitation,
+    ]);
   });
 
   it.each(["portfolio", "detail"] as const)(
