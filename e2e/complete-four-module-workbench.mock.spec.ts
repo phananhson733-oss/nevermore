@@ -1687,6 +1687,12 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       name: "URL 效果与 UTM 审计",
     });
     await expect(panel).toBeVisible();
+    await expect(panel.getByRole("tab")).toHaveCount(3);
+    await expect(
+      panel.getByRole("tabpanel", { name: "结果摘要" }),
+    ).toContainText("回执不等于效果");
+    await capture(page, "11-results-summary");
+    await panel.getByRole("tab", { name: "页面改前 / 改后" }).click();
     const selector = panel.getByRole("complementary", {
       name: "选择要查看的 URL 效果记录",
     });

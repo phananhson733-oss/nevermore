@@ -1384,6 +1384,8 @@ function measurementWindowFixture({
   recordedAt,
   clicks,
   sessions,
+  directConversions = [18, 27],
+  campaignDirectConversions = [7, 12],
   campaign,
 }: {
   readonly offset: number;
@@ -1391,6 +1393,8 @@ function measurementWindowFixture({
   readonly recordedAt: string;
   readonly clicks: readonly [number, number];
   readonly sessions: readonly [number, number];
+  readonly directConversions?: readonly [number, number];
+  readonly campaignDirectConversions?: readonly [number, number];
   readonly campaign: string;
 }): MeasurementWindow {
   const beforeWindow = {
@@ -1530,7 +1534,10 @@ function measurementWindowFixture({
         metrics: {
           sessions: { baseline: sessions[0], outcome: sessions[1] },
           engagedSessions: { baseline: 214, outcome: 302 },
-          directConversions: { baseline: 18, outcome: 27 },
+          directConversions: {
+            baseline: directConversions[0],
+            outcome: directConversions[1],
+          },
           assistedConversions: { baseline: 11, outcome: 19 },
         },
         campaigns: [
@@ -1544,7 +1551,10 @@ function measurementWindowFixture({
             },
             metrics: {
               sessions: { baseline: 118, outcome: 171 },
-              directConversions: { baseline: 7, outcome: 12 },
+              directConversions: {
+                baseline: campaignDirectConversions[0],
+                outcome: campaignDirectConversions[1],
+              },
               assistedConversions: { baseline: 3, outcome: 7 },
             },
           },
@@ -1628,6 +1638,8 @@ export function recentMeasurementWindowsFixture(): MeasurementWindowRecentRespon
         recordedAt: "2026-07-21T13:00:00.000Z",
         clicks: [721, 982],
         sessions: [505, 688],
+        directConversions: [9, 14],
+        campaignDirectConversions: [2, 6],
         campaign: "pricing-intent",
       }),
     ],

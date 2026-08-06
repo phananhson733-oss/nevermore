@@ -14,6 +14,7 @@ test("效果追踪切换 URL 时同步切换真实 GEO 引用证据", async ({
   const panel = page.getByRole("region", {
     name: "URL 效果与 UTM 审计",
   });
+  await panel.getByRole("tab", { name: "页面改前 / 改后" }).click();
   const selector = panel.getByRole("complementary", {
     name: "选择要查看的 URL 效果记录",
   });

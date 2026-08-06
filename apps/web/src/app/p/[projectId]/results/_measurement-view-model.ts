@@ -59,6 +59,15 @@ export interface MeasurementDimensionView {
   readonly sampleCoverage: "complete" | "partial" | "none";
 }
 
+export interface MeasurementSummaryView {
+  readonly organicClicks: MeasurementMetricView;
+  readonly directConversions: MeasurementMetricView;
+  readonly aiCitations: MeasurementMetricView;
+  readonly utmSessions: MeasurementMetricView;
+  readonly utmDirectConversions: MeasurementMetricView;
+  readonly utmAssistedConversions: MeasurementMetricView;
+}
+
 export interface MeasurementWindowView {
   readonly id: string;
   readonly canonicalUrl: string;
@@ -74,6 +83,7 @@ export interface MeasurementWindowView {
   readonly ga4: MeasurementDimensionView;
   readonly geo: MeasurementDimensionView;
   readonly campaigns: readonly MeasurementCampaignView[];
+  readonly summary: MeasurementSummaryView;
   readonly limitations: readonly string[];
 }
 
@@ -196,6 +206,41 @@ function campaignView(
   };
 }
 
+function campaignMetricTotal(
+  campaigns: readonly Ga4CampaignMeasurement[],
+  metric: keyof Ga4CampaignMeasurement["metrics"],
+): MetricPair {
+  if (campaigns.length === 0) {
+    return { baseline: null, outcome: null };
+  }
+
+  const sumPhase = (
+    phase: keyof MetricPair,
+  ): { readonly value: number | null; readonly overflowed: boolean } => {
+    let total = 0;
+    for (const campaign of campaigns) {
+      const value = campaign.metrics[metric][phase];
+      if (value === null) return { value: null, overflowed: false };
+      if (!Number.isSafeInteger(total + value)) {
+        return { value: null, overflowed: true };
+      }
+      total += value;
+    }
+    return { value: total, overflowed: false };
+  };
+
+  const baseline = sumPhase("baseline");
+  const outcome = sumPhase("outcome");
+  if (baseline.overflowed || outcome.overflowed) {
+    return { baseline: null, outcome: null };
+  }
+
+  return {
+    baseline: baseline.value,
+    outcome: outcome.value,
+  };
+}
+
 function uniqueLimitations(
   window: MeasurementWindow,
 ): readonly string[] {
@@ -215,6 +260,15 @@ export function measurementWindowView(
   locale: string,
 ): MeasurementWindowView {
   const { gsc, ga4, geo } = window.dimensions;
+  const utmSessions = campaignMetricTotal(ga4.campaigns, "sessions");
+  const utmDirectConversions = campaignMetricTotal(
+    ga4.campaigns,
+    "directConversions",
+  );
+  const utmAssistedConversions = campaignMetricTotal(
+    ga4.campaigns,
+    "assistedConversions",
+  );
   return {
     id: window.measurementWindowId,
     canonicalUrl: window.canonicalUrl,
@@ -332,6 +386,44 @@ export function measurementWindowView(
     campaigns: ga4.campaigns.map((campaign) =>
       campaignView(campaign, locale),
     ),
+    summary: {
+      organicClicks: measurementMetricView(
+        "gscClicks",
+        gsc.metrics.clicks,
+        "count",
+        locale,
+      ),
+      directConversions: measurementMetricView(
+        "ga4DirectConversions",
+        ga4.metrics.directConversions,
+        "count",
+        locale,
+      ),
+      aiCitations: measurementMetricView(
+        "geoCitations",
+        geo.metrics.citations,
+        "count",
+        locale,
+      ),
+      utmSessions: measurementMetricView(
+        "ga4Sessions",
+        utmSessions,
+        "count",
+        locale,
+      ),
+      utmDirectConversions: measurementMetricView(
+        "ga4DirectConversions",
+        utmDirectConversions,
+        "count",
+        locale,
+      ),
+      utmAssistedConversions: measurementMetricView(
+        "ga4AssistedConversions",
+        utmAssistedConversions,
+        "count",
+        locale,
+      ),
+    },
     limitations: uniqueLimitations(window),
   };
 }

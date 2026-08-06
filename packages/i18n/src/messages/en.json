@@ -3087,7 +3087,7 @@
   },
   "results": {
     "pageTitle": "Results",
-    "pageLead": "Review GSC, GA4, and UTM performance before and after publication for each URL. Every value keeps its source window, and observed movement is not presented as causation.",
+    "pageLead": "Before, after, and attribution boundaries. Review fixed-window GSC, GA4, UTM, target Keyword, and AI-citation evidence by URL while keeping technical rechecks, action receipts, and outcome observations separate.",
     "title": "Technical recheck record",
     "lead": "This section verifies the confirmed Action's technical condition only. Traffic, rank, and conversion movement comes from the fixed-window observations above.",
     "emptyTitle": "No recheck yet",
@@ -3124,6 +3124,54 @@
       "selectorLabel": "Choose a URL results record",
       "selectorTitle": "Tracked URLs",
       "selectorLead": "Choose a URL to switch the evidence, time windows, and metrics shown on the right.",
+      "tabs": {
+        "label": "Results views",
+        "summary": "Results summary",
+        "pages": "Page before / after",
+        "campaigns": "Campaign / UTM"
+      },
+      "kpi": {
+        "label": "Fixed-window metrics for the current URL",
+        "eyebrow": "Fixed-window summary",
+        "scope": "Current URL only: {url}",
+        "organicClicks": "Organic clicks",
+        "directConversions": "Direct conversions",
+        "aiCitations": "AI citations",
+        "utmDirectConversions": "Listed UTM Campaign direct conversions"
+      },
+      "summary": {
+        "technicalEyebrow": "Latest project recheck · independent evidence",
+        "boundaryEyebrow": "Conclusion boundary",
+        "boundaryTitle": "What these results can show",
+        "boundary": {
+          "verified": {
+            "title": "Verified",
+            "body": "Used only for a reproducible technical condition. The current contract does not force the latest project recheck onto the selected URL."
+          },
+          "observed": {
+            "title": "Observed",
+            "body": "Shows movement recorded in fixed windows without attributing it to one article, fix, or publication."
+          },
+          "insufficient": {
+            "title": "Insufficient / unavailable",
+            "body": "Limitations remain visible when coverage is insufficient. Unavailable stays unavailable; only a real observed zero is shown as 0."
+          },
+          "receipt": {
+            "title": "A receipt is not an outcome",
+            "body": "A Delivery Receipt or Change Receipt records an action or verified live change. Outcomes still require an independent recheck or fixed-window observation."
+          }
+        },
+        "timelineEyebrow": "Evidence timeline",
+        "timelineTitle": "Verify the action and outcome on separate evidence lines",
+        "timelineLead": "The left side verifies the live change. The right side records fixed-window observations for the current URL only.",
+        "actionTimelineTitle": "Action receipt · proves the action occurred",
+        "resultTimelineTitle": "Outcome result · independent observation",
+        "actionReceiptBody": "A verified Change Receipt starts the result window but does not prove any metric outcome by itself.",
+        "windowComparisonTitle": "Fixed before / after windows",
+        "windowComparisonBody": "The server freezes both windows; the browser cannot rewrite them or combine different URLs.",
+        "observationRecordedTitle": "Outcome observation recorded",
+        "observationRecordedBody": "The recorded time means the window result was persisted, not that one deliverable caused all movement."
+      },
       "detailEyebrow": "Current URL",
       "beforeWindow": "Before window",
       "afterWindow": "After window",
@@ -3189,10 +3237,15 @@
       },
       "campaign": {
         "title": "UTM Campaign before / after",
-        "lead": "Each UTM identity keeps its Sessions, direct conversions, and assisted conversions separate rather than blending Campaigns into one growth number.",
+        "lead": "A phase is totaled only when every listed Campaign for the current URL has a real value in that phase. The table keeps each UTM identity separate and never presents the total as project-wide growth or single-Campaign causation.",
         "count": "{count, plural, =1 {# Campaign} other {# Campaigns}}",
         "empty": "No verifiable UTM Campaign record exists for this window; sitewide traffic is not substituted.",
-        "identity": "Campaign / source"
+        "identity": "Campaign / source",
+        "summary": {
+          "sessions": "Listed Campaign Sessions",
+          "directConversions": "Listed Campaign direct conversions",
+          "assistedConversions": "Listed Campaign assisted conversions"
+        }
       },
       "targetKeywordRanks": {
         "title": "Target Keyword ranks",
