@@ -60,8 +60,9 @@ export default async function InternalLinkAuditPage({
   }));
 
   return (
-    <div className="min-h-screen bg-brand-bg pb-24 pt-20 md:pt-28">
-      <div className="mx-auto max-w-[1120px] px-5 sm:px-6">
+    /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
+    <div className="min-h-screen bg-brand-bg pt-9 pb-24">
+      <div className="max-w-report mx-auto px-6 md:px-8">
         <BreadcrumbJsonLd
           items={[
             { name: home, url: localeUrl(locale) },
@@ -95,7 +96,12 @@ export default async function InternalLinkAuditPage({
           ]}
         />
 
-        <header className="relative mt-3 overflow-hidden border-b border-brand-border/60 pb-12 pt-7 md:pb-16 md:pt-12">
+        <header className="relative overflow-hidden border-b border-brand-border pt-7 pb-12 md:pb-14">
+          {/* GLOW_01 — 页级 hero 才允许的网格底 */}
+          <div
+            aria-hidden="true"
+            className="bg-signal-grid absolute inset-0 opacity-40"
+          />
           <div
             aria-hidden="true"
             className="absolute inset-y-0 right-0 hidden w-[46%] md:block"
@@ -105,11 +111,7 @@ export default async function InternalLinkAuditPage({
               className="h-full w-full opacity-75"
               preserveAspectRatio="xMidYMid meet"
             >
-              <g
-                fill="none"
-                stroke="rgba(217,119,87,.28)"
-                strokeWidth="1.2"
-              >
+              <g fill="none" stroke="#24303E" strokeWidth="1.2">
                 <path d="M250 165 C190 104 122 90 67 58" />
                 <path d="M250 165 C176 165 122 185 58 218" />
                 <path d="M250 165 C316 114 363 88 430 62" />
@@ -117,18 +119,20 @@ export default async function InternalLinkAuditPage({
                 <path d="M67 58 C96 130 85 170 58 218" />
                 <path d="M430 62 C392 128 398 188 448 245" />
               </g>
-              <g fill="#D97757">
-                <circle cx="250" cy="165" r="33" />
-                <circle cx="67" cy="58" r="18" opacity=".65" />
-                <circle cx="430" cy="62" r="22" opacity=".82" />
+              {/* GLOW_03 — 每屏最多一处数据高亮：主枢纽节点 */}
+              <circle cx="250" cy="165" r="46" fill="#3DDC97" opacity=".1" />
+              <g fill="#3DDC97">
+                <circle cx="250" cy="165" r="24" />
+                <circle cx="67" cy="58" r="13" opacity=".6" />
+                <circle cx="430" cy="62" r="16" opacity=".75" />
               </g>
-              <g fill="#F0EDE8">
-                <circle cx="58" cy="218" r="13" opacity=".55" />
-                <circle cx="448" cy="245" r="16" opacity=".45" />
+              <g fill="#4CC3FA">
+                <circle cx="58" cy="218" r="11" opacity=".5" />
+                <circle cx="448" cy="245" r="13" opacity=".42" />
               </g>
               <g
                 fill="none"
-                stroke="#D95757"
+                stroke="#F09090"
                 strokeDasharray="5 6"
                 strokeWidth="1.5"
               >
@@ -139,24 +143,26 @@ export default async function InternalLinkAuditPage({
           </div>
 
           <div className="relative z-10 max-w-[720px]">
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-brand-accent-text">
+            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {content.eyebrow}
             </p>
-            <h1 className="mt-5 max-w-3xl text-[42px] font-bold leading-[0.98] tracking-[-0.05em] text-text-dark-primary sm:text-[54px] md:text-[68px]">
+            <h1 className="text-page-title mt-4 max-w-3xl text-text-dark-primary">
               {content.title}
             </h1>
-            <p className="mt-6 max-w-[650px] text-[15px] leading-[1.75] text-text-dark-secondary md:text-[17px]">
+            <p className="mt-5 max-w-[650px] text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]">
               {content.subtitle}
             </p>
             <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+              {/* 次按钮：真正的主 CTA 是下方工具面板里的那颗渐变提交按钮，
+                  一屏只允许一个渐变，所以这颗锚点按钮走描边。 */}
               <a
                 href="#internal-link-audit-tool"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 py-3 text-[12px] font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                className="inline-flex h-11.5 w-fit items-center justify-center gap-2 rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 {content.primaryCta}
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                <ArrowRight aria-hidden="true" className="size-4" />
               </a>
-              <p className="text-[10px] leading-relaxed text-text-dark-secondary">
+              <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
                 {content.trustLine}
               </p>
             </div>
@@ -164,37 +170,38 @@ export default async function InternalLinkAuditPage({
         </header>
 
         <main>
-          <section className="pt-8 md:pt-10">
+          <section className="pt-9">
             <InternalLinkAuditTool locale={locale} />
           </section>
 
-          <section className="mt-24 border-t border-brand-border/60 pt-14">
+          <section className="mt-18 border-t border-brand-border pt-14">
             <div className="grid gap-9 md:grid-cols-[0.72fr_1.28fr]">
               <div className="md:sticky md:top-24 md:self-start">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+                <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                   {content.howEyebrow}
                 </p>
-                <h2 className="mt-3 max-w-sm text-[28px] font-semibold leading-tight tracking-[-0.035em] text-text-dark-primary">
+                <h2 className="mt-2 max-w-sm text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                   {content.howTitle}
                 </h2>
-                <p className="mt-4 max-w-sm text-[12px] leading-relaxed text-text-dark-secondary">
+                <p className="mt-3 max-w-sm text-[13px] leading-[1.6] text-text-dark-secondary">
                   {content.howIntro}
                 </p>
               </div>
-              <ol className="grid gap-px overflow-hidden rounded-2xl border border-brand-border/60 bg-brand-border/60">
+              {/* 伪表格：这几步是一条有序链路，共享外框 + 1px 分隔线 */}
+              <ol className="grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card">
                 {content.howSteps.map((step, index) => (
                   <li
                     key={step.title}
-                    className="grid gap-4 bg-[#171718] p-5 sm:grid-cols-[48px_1fr] sm:p-6"
+                    className="grid gap-4 bg-brand-panel-sunken p-5 sm:grid-cols-[48px_1fr] sm:p-6"
                   >
-                    <span className="font-mono text-[11px] text-brand-accent-text">
+                    <span className="font-mono text-[10.5px] tracking-[0.08em] text-brand-accent-text">
                       0{index + 1}
                     </span>
                     <article>
-                      <h3 className="text-[14px] font-semibold text-text-dark-primary">
+                      <h3 className="text-[15.5px] font-semibold text-text-dark-primary">
                         {step.title}
                       </h3>
-                      <p className="mt-2 text-[11px] leading-relaxed text-text-dark-secondary">
+                      <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                         {step.body}
                       </p>
                     </article>
@@ -204,49 +211,54 @@ export default async function InternalLinkAuditPage({
             </div>
           </section>
 
-          <section className="mt-24">
+          <section className="mt-18">
             <div className="max-w-2xl">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {content.findsEyebrow}
               </p>
-              <h2 className="mt-3 text-[28px] font-semibold leading-tight tracking-[-0.035em] text-text-dark-primary">
+              <h2 className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.findsTitle}
               </h2>
-              <p className="mt-4 text-[12px] leading-relaxed text-text-dark-secondary">
+              <p className="mt-3 text-[13px] leading-[1.6] text-text-dark-secondary">
                 {content.findsIntro}
               </p>
             </div>
-            <div className="mt-8 grid gap-px overflow-hidden rounded-2xl border border-brand-border/60 bg-brand-border/60 md:grid-cols-2 lg:grid-cols-3">
+            {/*
+             * 九条发现进两列会余一格，而伪表格的底色就是分隔线颜色，空格子会变成
+             * 一块比单元格更亮的实心矩形。两列时让末格跨满，三列时 9 恰好整除，
+             * 必须显式跨回一格，否则 lg 下会多占一列。
+             */}
+            <div className="mt-7 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 md:[&>*:last-child]:col-span-2 lg:grid-cols-3 lg:[&>*:last-child]:col-span-1">
               {content.findings.map((finding, index) => (
                 <article
                   key={finding.title}
-                  className="min-h-[180px] bg-[#171718] p-5"
+                  className="min-h-[180px] bg-brand-panel-sunken p-[22px]"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9px] text-brand-accent-text">
+                    <span className="font-mono text-[10px] tracking-[0.12em] text-text-dark-faint uppercase">
                       {String(index + 1).padStart(2, "0")}
                     </span>
                     {index % 3 === 0 ? (
                       <CircleSlash2
                         aria-hidden="true"
-                        className="h-4 w-4 text-brand-accent-text/70"
+                        className="size-4 text-brand-accent-text/70"
                       />
                     ) : index % 3 === 1 ? (
                       <Network
                         aria-hidden="true"
-                        className="h-4 w-4 text-brand-accent-text/70"
+                        className="size-4 text-brand-accent-text/70"
                       />
                     ) : (
                       <Route
                         aria-hidden="true"
-                        className="h-4 w-4 text-brand-accent-text/70"
+                        className="size-4 text-brand-accent-text/70"
                       />
                     )}
                   </div>
-                  <h3 className="mt-7 text-[14px] font-semibold leading-snug text-text-dark-primary">
+                  <h3 className="mt-6 text-[15.5px] leading-snug font-semibold text-text-dark-primary">
                     {finding.title}
                   </h3>
-                  <p className="mt-3 text-[10px] leading-relaxed text-text-dark-secondary">
+                  <p className="mt-2.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                     {finding.body}
                   </p>
                 </article>
@@ -254,21 +266,21 @@ export default async function InternalLinkAuditPage({
             </div>
           </section>
 
-          <section className="mt-24 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-brand-accent/25 bg-brand-accent/[0.045] p-6 md:p-7">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+          <section className="mt-18 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97]">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {content.methodEyebrow}
               </p>
-              <h2 className="mt-3 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              <h2 className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.methodTitle}
               </h2>
-              <div className="mt-7 divide-y divide-brand-border/60">
+              <div className="mt-6 divide-y divide-brand-border-faint">
                 {content.methods.map((method) => (
-                  <article key={method.title} className="py-5 first:pt-0">
-                    <h3 className="text-[13px] font-semibold text-text-dark-primary">
+                  <article key={method.title} className="py-4 first:pt-0">
+                    <h3 className="text-[13.5px] font-semibold text-text-dark-primary">
                       {method.title}
                     </h3>
-                    <p className="mt-2 text-[10px] leading-relaxed text-text-dark-secondary">
+                    <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                       {method.body}
                     </p>
                   </article>
@@ -276,24 +288,24 @@ export default async function InternalLinkAuditPage({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-brand-border/70 bg-[#171718] p-6 md:p-7">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-warning">
+            <div className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-warning uppercase">
                 {content.limitsEyebrow}
               </p>
-              <h2 className="mt-3 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              <h2 className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.limitsTitle}
               </h2>
-              <div className="mt-7 divide-y divide-brand-border/60">
+              <div className="mt-6 divide-y divide-brand-border-faint">
                 {content.limitations.map((limitation) => (
-                  <article key={limitation.title} className="py-5 first:pt-0">
-                    <h3 className="flex items-start gap-2 text-[13px] font-semibold text-text-dark-primary">
+                  <article key={limitation.title} className="py-4 first:pt-0">
+                    <h3 className="flex items-start gap-2 text-[13.5px] font-semibold text-text-dark-primary">
                       <FileQuestion
                         aria-hidden="true"
-                        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-warning"
+                        className="mt-0.5 size-3.5 shrink-0 text-brand-warning"
                       />
                       {limitation.title}
                     </h3>
-                    <p className="mt-2 text-[10px] leading-relaxed text-text-dark-secondary">
+                    <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                       {limitation.body}
                     </p>
                   </article>
@@ -302,29 +314,29 @@ export default async function InternalLinkAuditPage({
             </div>
           </section>
 
-          <section className="mt-24 border-y border-brand-border/60 py-14">
+          <section className="mt-18 border-y border-brand-border py-14">
             <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr]">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+                <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                   {content.audienceEyebrow}
                 </p>
-                <h2 className="mt-3 text-[28px] font-semibold leading-tight tracking-[-0.035em] text-text-dark-primary">
+                <h2 className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                   {content.audienceTitle}
                 </h2>
-                <p className="mt-4 text-[12px] leading-relaxed text-text-dark-secondary">
+                <p className="mt-3 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {content.audienceBody}
                 </p>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-3.5 sm:grid-cols-2">
                 {content.fitSignals.map((signal) => (
                   <article
                     key={signal.title}
-                    className="rounded-2xl border border-brand-border/70 bg-[#171718] p-5"
+                    className="rounded-card border border-brand-border-card bg-brand-panel p-[22px] transition-colors hover:border-brand-accent/40"
                   >
-                    <h3 className="text-[14px] font-semibold text-text-dark-primary">
+                    <h3 className="text-[15.5px] font-semibold text-text-dark-primary">
                       {signal.title}
                     </h3>
-                    <p className="mt-3 text-[10px] leading-relaxed text-text-dark-secondary">
+                    <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                       {signal.body}
                     </p>
                   </article>
@@ -333,21 +345,21 @@ export default async function InternalLinkAuditPage({
             </div>
           </section>
 
-          <section className="mt-24">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+          <section className="mt-18">
+            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {content.faqEyebrow}
             </p>
-            <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.035em] text-text-dark-primary">
+            <h2 className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
               {content.faqTitle}
             </h2>
-            <div className="mt-7 divide-y divide-brand-border/60 border-y border-brand-border/60">
+            <div className="mt-6 divide-y divide-brand-border-faint border-y border-brand-border">
               {content.faqs.map((faq, index) => (
                 <details key={faq.question} className="group">
                   <summary className="flex cursor-pointer list-none items-start gap-4 py-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent">
-                    <span className="mt-0.5 font-mono text-[9px] text-brand-accent-text">
+                    <span className="mt-0.5 font-mono text-[10px] tracking-[0.08em] text-text-dark-faint">
                       {String(index + 1).padStart(2, "0")}
                     </span>
-                    <h3 className="min-w-0 flex-1 text-[13px] font-medium text-text-dark-primary">
+                    <h3 className="min-w-0 flex-1 text-[13.5px] font-medium text-text-dark-primary">
                       {faq.question}
                     </h3>
                     <span
@@ -357,7 +369,7 @@ export default async function InternalLinkAuditPage({
                       +
                     </span>
                   </summary>
-                  <p className="max-w-3xl pb-6 pl-10 text-[11px] leading-relaxed text-text-dark-secondary">
+                  <p className="max-w-3xl pb-6 pl-10 text-[12.5px] leading-[1.65] text-text-dark-secondary">
                     {faq.answer}
                   </p>
                 </details>
@@ -365,92 +377,92 @@ export default async function InternalLinkAuditPage({
             </div>
           </section>
 
-          <section className="mt-24 grid gap-5 lg:grid-cols-2">
-            <article className="rounded-2xl border border-brand-border/70 bg-[#171718] p-6">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+          <section className="mt-18 grid gap-4 lg:grid-cols-2">
+            <article className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {content.relatedEyebrow}
               </p>
-              <h2 className="mt-3 text-[22px] font-semibold text-text-dark-primary">
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.relatedTitle}
               </h2>
               <Link
                 href={localePath(locale, "/tools/seo-audit")}
-                className="mt-6 block rounded-xl border border-brand-border/70 bg-black/10 p-5 transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                className="mt-5 block rounded-row border border-brand-border bg-brand-panel-raised p-[18px] transition-colors hover:border-brand-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
-                <span className="flex items-center gap-2 text-[13px] font-semibold text-text-dark-primary">
+                <span className="flex items-center gap-2 text-[13.5px] font-semibold text-text-dark-primary">
                   <Link2
                     aria-hidden="true"
-                    className="h-4 w-4 text-brand-accent-text"
+                    className="size-4 text-brand-accent-text"
                   />
                   {content.relatedAudit}
                 </span>
-                <span className="mt-2 block text-[10px] leading-relaxed text-text-dark-secondary">
+                <span className="mt-2 block text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {content.relatedAuditBody}
                 </span>
               </Link>
               <Link
                 href={localePath(locale, "/tools")}
-                className="mt-4 inline-flex items-center gap-2 text-[11px] font-medium text-brand-accent-text"
+                className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
               >
                 {content.relatedTools}
-                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                <span aria-hidden="true">&rarr;</span>
               </Link>
             </article>
 
-            <article className="rounded-2xl border border-brand-border/70 bg-[#171718] p-6">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+            <article className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {content.readingEyebrow}
               </p>
-              <h2 className="mt-3 text-[22px] font-semibold text-text-dark-primary">
+              <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.readingTitle}
               </h2>
-              <ul className="mt-6 divide-y divide-brand-border/60">
+              <ul className="mt-5 divide-y divide-brand-border-faint">
                 {content.readingItems.map((item) => (
                   <li
                     key={item}
-                    className="flex items-start gap-3 py-4 text-[11px] leading-relaxed text-text-dark-secondary first:pt-0"
+                    className="flex items-start gap-3 py-3.5 text-[12.5px] leading-[1.6] text-text-dark-strong first:pt-0"
                   >
                     <span
                       aria-hidden="true"
-                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-accent"
+                      className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-accent"
                     />
                     {item}
                   </li>
                 ))}
               </ul>
               <Link
-                href={localePath(locale, "/blog/evidence-first-growth-experiments")}
-                className="mt-5 inline-flex items-center gap-2 text-[11px] font-semibold text-brand-accent-text hover:text-brand-accent-hover"
+                href={localePath(
+                  locale,
+                  "/blog/evidence-first-growth-experiments",
+                )}
+                className="mt-5 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
               >
                 {content.readingCta}
-                <ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />
+                <span aria-hidden="true">&rarr;</span>
               </Link>
             </article>
           </section>
 
-          <section className="relative mt-24 overflow-hidden rounded-3xl border border-brand-accent/25 bg-brand-accent/[0.07] p-7 md:p-10">
-            <div
-              aria-hidden="true"
-              className="absolute -right-14 -top-24 h-64 w-64 rounded-full border border-brand-accent/20"
-            />
-            <div className="relative grid gap-7 md:grid-cols-[1fr_auto] md:items-end">
+          {/* 「下一步」容器走虚线 + 微渐变底，与实线的内容卡片区分开 */}
+          <section className="mt-18 rounded-[16px] border border-dashed border-brand-border-dashed bg-[linear-gradient(135deg,rgba(61,220,151,0.04),rgba(76,195,250,0.05))] p-7 md:p-10">
+            <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.18em] text-brand-accent-text">
+                <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                   {content.ctaEyebrow}
                 </p>
-                <h2 className="mt-3 max-w-2xl text-[28px] font-semibold leading-tight tracking-[-0.035em] text-text-dark-primary">
+                <h2 className="mt-3 max-w-2xl text-[27px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                   {content.ctaTitle}
                 </h2>
-                <p className="mt-4 max-w-2xl text-[11px] leading-relaxed text-text-dark-secondary">
+                <p className="mt-3 max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
                   {content.ctaBody}
                 </p>
               </div>
               <Link
                 href={siteConfig.appUrl}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 py-3 text-[12px] font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                className="inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
               >
                 {content.ctaButton}
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
             </div>
           </section>

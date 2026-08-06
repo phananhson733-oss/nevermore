@@ -89,7 +89,9 @@ export function LimitationHint({
   align = "start",
   className,
 }: LimitationHintProps) {
-  const items = [...new Set(limitations.map((item) => item.trim()).filter(Boolean))];
+  const items = [
+    ...new Set(limitations.map((item) => item.trim()).filter(Boolean)),
+  ];
   const tooltipId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -219,7 +221,8 @@ export function LimitationHint({
       <button
         ref={triggerRef}
         type="button"
-        className="inline-grid h-7 w-7 cursor-help place-items-center rounded-full border border-brand-warning/55 bg-brand-warning/10 p-0 text-brand-warning shadow-[0_4px_12px_rgba(212,168,67,0.12)] transition duration-150 hover:-translate-y-px hover:border-brand-warning hover:bg-brand-warning/15 hover:text-text-dark-primary hover:shadow-[0_7px_18px_rgba(212,168,67,0.18)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent aria-expanded:-translate-y-px aria-expanded:border-brand-warning aria-expanded:bg-brand-warning/15 aria-expanded:text-text-dark-primary"
+        /* Signal Console：层级靠描边和底色，不靠投影和位移 */
+        className="inline-grid h-7 w-7 cursor-help place-items-center rounded-full border border-brand-warning/55 bg-brand-warning/10 p-0 text-brand-warning transition-colors duration-150 hover:border-brand-warning hover:bg-brand-warning/15 hover:text-text-dark-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent aria-expanded:border-brand-warning aria-expanded:bg-brand-warning/15 aria-expanded:text-text-dark-primary"
         aria-label={triggerLabel}
         aria-expanded={open}
         aria-controls={tooltipId}
@@ -255,7 +258,8 @@ export function LimitationHint({
               data-side={position?.side ?? "bottom"}
               data-positioned={position !== null ? "true" : "false"}
               style={tooltipStyle}
-              className="fixed z-[1400] max-h-[min(360px,calc(100vh-24px))] w-[min(380px,calc(100vw-28px))] overflow-auto overscroll-contain rounded-xl border border-brand-warning/55 bg-[#171718] p-3.5 text-text-dark-primary opacity-0 shadow-2xl transition duration-150 data-[positioned=true]:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none"
+              /* 浮层是规范允许用投影的少数场合之一（它要脱离页面平面） */
+              className="fixed z-[1400] max-h-[min(360px,calc(100vh-24px))] w-[min(380px,calc(100vw-28px))] overflow-auto overscroll-contain rounded-card border border-brand-warning/55 bg-brand-panel p-3.5 text-text-dark-primary opacity-0 shadow-panel transition duration-150 data-[positioned=true]:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none"
               onFocus={clearCloseTimer}
               onBlur={scheduleClose}
               onMouseEnter={clearCloseTimer}
@@ -269,13 +273,17 @@ export function LimitationHint({
                 <strong className="min-w-0 flex-1 text-[13px] font-semibold leading-5 text-text-dark-primary">
                   {label}
                 </strong>
-                <span className="inline-grid h-[22px] min-w-[22px] place-items-center rounded-full bg-brand-warning/10 px-1.5 text-[11px] font-bold tabular-nums text-brand-warning">
+                <span className="inline-grid h-[22px] min-w-[22px] place-items-center rounded-full bg-brand-warning/10 px-1.5 font-mono text-[11px] font-semibold tabular-nums text-brand-warning">
                   {items.length}
                 </span>
               </header>
               <ul className="mt-2.5 grid list-disc gap-2 pl-[18px] text-[12.5px] leading-relaxed text-text-dark-secondary marker:text-brand-warning">
                 {items.map((item) => (
-                  <li key={item} lang={contentLanguage} className="break-words pl-0.5">
+                  <li
+                    key={item}
+                    lang={contentLanguage}
+                    className="break-words pl-0.5"
+                  >
                     {item}
                   </li>
                 ))}

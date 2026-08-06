@@ -122,32 +122,34 @@ export function TrafficDropSelfCheckGate({
   const t = useTranslations("tools.trafficDrop");
 
   return (
-    <section className="rounded-2xl border border-brand-accent/30 bg-brand-accent/[0.06] p-5 md:p-6">
-      <h2 className="text-[16px] font-semibold text-text-dark-primary">
+    /* The gate is the one card on this page that blocks the run, so it carries
+       the accent rail rather than another shade of panel. */
+    <section className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-[inset_2px_0_0_#3DDC97] md:p-[26px]">
+      <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("selfChecks.title")}
       </h2>
-      <p className="mt-2 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-2 max-w-[52em] text-[13px] leading-[1.65] text-text-dark-secondary">
         {t("selfChecks.body")}
       </p>
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-5 space-y-3.5">
         {CHECKS.map((check) => (
           <fieldset
             key={check.id}
-            className="rounded-xl border border-brand-border bg-brand-bg p-4"
+            className="rounded-[10px] border border-brand-border bg-brand-panel-sunken p-[18px]"
           >
-            <legend className="px-1 text-[13px] font-semibold text-text-dark-primary">
+            <legend className="px-1 text-[13.5px] font-semibold text-text-dark-primary">
               {t(`siteSignals.${check.id}.label`)}
             </legend>
 
-            <p className="text-[12.5px] leading-relaxed text-text-dark-secondary">
+            <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
               {t(`selfChecks.${check.id}.where`)}
             </p>
             <a
               href={check.href}
               target="_blank"
               rel="noreferrer"
-              className="mt-1.5 inline-flex min-h-9 items-center gap-1.5 text-[12.5px] font-semibold text-brand-accent-text hover:underline"
+              className="mt-2 inline-flex min-h-9 items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
             >
               {t(`selfChecks.${check.id}.open`)}
               <ExternalLink aria-hidden="true" className="size-3.5" />
@@ -163,13 +165,11 @@ export function TrafficDropSelfCheckGate({
                     type="button"
                     disabled={disabled}
                     aria-pressed={active}
-                    onClick={() =>
-                      onChange({ ...value, [field]: answer })
-                    }
-                    className={`rounded-lg border px-3 py-1.5 text-[12.5px] transition disabled:opacity-60 ${
+                    onClick={() => onChange({ ...value, [field]: answer })}
+                    className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-[10px] tracking-[0.06em] uppercase transition-colors disabled:opacity-60 ${
                       active
-                        ? "border-brand-accent bg-brand-accent text-white"
-                        : "border-brand-border bg-brand-bg-alt text-text-dark-secondary hover:border-brand-accent/50"
+                        ? "border-brand-accent/50 bg-brand-accent/12 text-brand-accent-text"
+                        : "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/50 hover:text-text-dark-primary"
                     }`}
                   >
                     {t(`selfChecks.${check.id}.${answer}`)}
@@ -181,10 +181,10 @@ export function TrafficDropSelfCheckGate({
         ))}
       </div>
 
-      <p className="mt-3 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary/85">
+      <p className="mt-4 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("selfChecks.notice")}
       </p>
-      <p className="mt-2 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-2 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("selfChecks.why")}
       </p>
     </section>

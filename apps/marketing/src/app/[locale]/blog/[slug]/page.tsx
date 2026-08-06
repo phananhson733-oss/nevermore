@@ -155,23 +155,24 @@ export default async function BlogPostPage({
   };
 
   return (
-    <div className="bg-brand-bg min-h-screen py-20 md:py-28">
-      <div className="max-w-[960px] mx-auto px-6">
-        {/* Breadcrumb */}
+    /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
+    <div className="min-h-screen bg-brand-bg pt-9 pb-24">
+      <div className="mx-auto max-w-[960px] px-6 md:px-8">
+        {/* Breadcrumb — 与共享 VisibleBreadcrumb 保持同一套排印 */}
         <nav
           aria-label="Breadcrumb"
-          className="text-text-dark-secondary text-[13px] mb-12"
+          className="mb-8 font-mono text-[12px] tracking-[0.06em] text-text-dark-secondary uppercase"
         >
           <Link
             href={localePath(locale)}
-            className="hover:text-text-dark-primary transition-colors"
+            className="transition-colors hover:text-text-dark-primary"
           >
             {locale === "zh" ? "首页" : "Home"}
           </Link>
-          <span className="mx-2 opacity-40">/</span>
+          <span className="mx-2 text-text-dark-faint">/</span>
           <Link
             href={localePath(locale, "/blog")}
-            className="hover:text-text-dark-primary transition-colors"
+            className="transition-colors hover:text-text-dark-primary"
           >
             {t("title")}
           </Link>

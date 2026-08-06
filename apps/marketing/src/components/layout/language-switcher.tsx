@@ -21,12 +21,16 @@ export function LanguageSwitcher() {
   };
 
   return (
+    // 设计稿的语言位是 12px 的「中文」/「EN」。字体栈刻意写死 system-ui：这两个汉字
+    // 是英文页面上仅有的中文，走站点字体栈会为它们拉一份 ~75KB 的 Noto Sans SC 分片。
+    // system-ui 在所有目标系统上都有完整中文字形，且英文页上没有别的中文可供对比，
+    // 换字体看不出来。min-h-9/min-w-9 是触摸目标：原来的裸字形只有 13x18px。
     <button
       onClick={switchLocale}
-      className="text-text-dark-secondary hover:text-text-dark-primary transition-colors text-sm font-medium"
+      className="inline-flex min-h-9 min-w-9 items-center justify-center text-[12px] tracking-[0.08em] text-text-dark-secondary transition-colors [font-family:system-ui,sans-serif] hover:text-brand-accent-text"
       aria-label={locale === "en" ? "切换到中文" : "Switch to English"}
     >
-      {locale === "en" ? "中" : "EN"}
+      {locale === "en" ? "中文" : "EN"}
     </button>
   );
 }

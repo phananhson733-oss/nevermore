@@ -17,18 +17,24 @@ export default function ContactPageClient() {
   return (
     <>
       {/* Hero */}
-      <section className="bg-brand-bg py-16 md:py-24">
-        <div className="max-w-content mx-auto px-4 text-center">
-          <motion.h1
-            {...fadeInUp}
-            className="text-text-dark-primary font-semibold mb-4"
-          >
+      <section className="bg-brand-bg relative overflow-hidden pt-16 pb-16 md:pt-21 md:pb-20">
+        {/* GLOW_01 — 页级 hero 才允许的网格 + 氛围光 */}
+        <div
+          aria-hidden="true"
+          className="bg-signal-grid absolute inset-0 opacity-40"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -top-30 right-[6%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
+        />
+        <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
+          <motion.h1 {...fadeInUp} className="text-text-dark-primary">
             {t("hero.title")}
           </motion.h1>
           <motion.p
             {...fadeInUp}
             transition={{ ...fadeInUp.transition, delay: 0.15 }}
-            className="text-text-dark-secondary text-lg max-w-2xl mx-auto"
+            className="text-text-dark-secondary mx-auto mt-5 max-w-2xl text-[17.5px] leading-[1.65]"
           >
             {t("hero.subtitle")}
           </motion.p>
@@ -36,26 +42,28 @@ export default function ContactPageClient() {
       </section>
 
       {/* Direct contact */}
-      <section className="bg-brand-bg py-16">
-        <div className="max-w-content mx-auto px-4">
-          <div className="max-w-2xl mx-auto">
+      <section className="bg-brand-bg border-brand-border border-t py-16 md:py-22">
+        <div className="max-w-content mx-auto px-6 md:px-8">
+          <div className="mx-auto max-w-2xl">
             <motion.div
               {...fadeInUp}
               transition={{ ...fadeInUp.transition, delay: 0.3 }}
-              className="text-center rounded-card border border-brand-border bg-brand-bg-alt p-8"
+              className="border-brand-border-card bg-brand-panel rounded-card border p-[26px] text-center"
             >
-              <div className="flex items-center justify-center gap-2 text-text-dark-secondary">
-                <Mail className="size-5" aria-hidden="true" />
+              <div className="text-text-dark-secondary flex items-center justify-center gap-2.5">
+                <Mail className="text-brand-accent size-[15px]" aria-hidden="true" />
+                {/* 邮箱是标识而不是正文，走 mono */}
                 <a
                   href={`mailto:${siteConfig.contactEmail}`}
-                  className="text-brand-accent-text hover:brightness-110 transition-all"
+                  className="text-brand-accent-text hover:text-brand-accent-hover font-mono text-[14px] transition-colors"
                 >
                   {siteConfig.contactEmail}
                 </a>
               </div>
+              {/* GLOW_02 — 本屏唯一的渐变主 CTA */}
               <Button
                 asChild
-                className="mt-6 bg-brand-accent hover:bg-brand-accent-hover text-white"
+                className="bg-brand-gradient text-brand-on-accent shadow-cta hover:shadow-cta-hover mt-6 h-12 rounded-[10px] px-[26px] text-[14.5px] font-semibold"
               >
                 <a href={`mailto:${siteConfig.contactEmail}`}>Email GenGrowth</a>
               </Button>

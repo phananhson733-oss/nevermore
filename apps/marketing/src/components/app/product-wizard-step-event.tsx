@@ -72,30 +72,33 @@ export function WizardStepEvent({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <Label className={isBrand ? "text-text-dark-primary" : "text-zinc-900"}>
+        <Label
+          className={
+            "text-[14px] font-semibold " +
+            (isBrand ? "text-text-dark-primary" : "text-text-dark-strong")
+          }
+        >
           {t("conversionEvent")}
         </Label>
-        <p
-          className={`mt-0.5 text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-        >
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("conversionEventDesc")}
         </p>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {CONVERSION_EVENTS.map((evt) => (
           <label
             key={evt.value}
             className={
-              "flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-colors " +
+              "flex cursor-pointer items-center gap-3 rounded-[10px] border p-3.5 text-[13px] transition-colors " +
               (conversionEvent === evt.value
                 ? isBrand
-                  ? "border-brand-accent bg-brand-accent/10 text-text-dark-primary"
-                  : "border-zinc-400 bg-zinc-100 text-zinc-900"
+                  ? "border-brand-accent/50 bg-brand-accent/[0.08] text-text-dark-primary"
+                  : "border-brand-border-strong bg-brand-panel-raised text-text-dark-primary"
                 : isBrand
-                  ? "border-brand-border text-text-dark-secondary hover:border-brand-accent/40"
-                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300")
+                  ? "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/40"
+                  : "border-brand-border text-text-dark-secondary hover:border-brand-border-strong")
             }
           >
             <input
@@ -103,7 +106,9 @@ export function WizardStepEvent({
               name="conversion_event"
               checked={conversionEvent === evt.value}
               onChange={() => onConversionEventChange(evt.value)}
-              className={isBrand ? "accent-amber-600" : "accent-zinc-900"}
+              className={
+                isBrand ? "accent-brand-accent" : "accent-brand-accent-2"
+              }
             />
             {eventLabels[evt.value]}
           </label>
@@ -117,10 +122,10 @@ export function WizardStepEvent({
             type="button"
             onClick={onToggleAdvanced}
             className={
-              "flex items-center gap-1 text-xs transition-colors " +
+              "flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.12em] uppercase transition-colors " +
               (isBrand
-                ? "text-text-dark-secondary hover:text-text-dark-primary"
-                : "text-zinc-500 hover:text-zinc-900")
+                ? "text-text-dark-secondary hover:text-brand-accent-text"
+                : "text-text-dark-secondary hover:text-text-dark-primary")
             }
           >
             {showAdvanced ? (
@@ -134,17 +139,15 @@ export function WizardStepEvent({
           {showAdvanced && (
             <div
               className={
-                "space-y-4 rounded-md border p-3 " +
+                "space-y-5 rounded-[12px] border p-4 " +
                 (isBrand
-                  ? "border-brand-border bg-brand-bg"
-                  : "border-zinc-200 bg-zinc-50")
+                  ? "border-brand-border bg-brand-panel-sunken"
+                  : "border-brand-border bg-brand-panel-sunken")
               }
             >
               {/* Language override */}
               <div>
-                <Label
-                  className={`text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-                >
+                <Label className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                   {t("languageOverride")}
                 </Label>
                 <Input
@@ -152,25 +155,16 @@ export function WizardStepEvent({
                   placeholder={t("langPlaceholder")}
                   value={languageOverride ?? ""}
                   onChange={(e) => onLanguageOverrideChange?.(e.target.value)}
-                  className={
-                    "mt-1 " +
-                    (isBrand
-                      ? "border-brand-border bg-brand-bg-alt text-text-dark-primary placeholder:text-text-dark-secondary/50"
-                      : "border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400")
-                  }
+                  className="mt-2"
                 />
               </div>
 
               {/* Production cap with description and recommendation */}
               <div>
-                <Label
-                  className={`text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-                >
+                <Label className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                   {t("productionCap")}
                 </Label>
-                <p
-                  className={`mt-0.5 text-[11px] ${isBrand ? "text-text-dark-secondary/70" : "text-zinc-400"}`}
-                >
+                <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {t("capDesc")}
                 </p>
                 <Input
@@ -180,49 +174,38 @@ export function WizardStepEvent({
                   onChange={(e) =>
                     onProductionCapOverrideChange?.(e.target.value)
                   }
-                  className={
-                    "mt-1 " +
-                    (isBrand
-                      ? "border-brand-border bg-brand-bg-alt text-text-dark-primary placeholder:text-text-dark-secondary/50"
-                      : "border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400")
-                  }
+                  className="mt-2 font-mono"
                 />
-                <p
-                  className={`mt-1 text-[10px] ${isBrand ? "text-text-dark-secondary/50" : "text-zinc-300"}`}
-                >
+                <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {t("capRecommendation")}
                 </p>
               </div>
 
               {/* Brand safety / content compliance with presets */}
               <div>
-                <Label
-                  className={`text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-                >
+                <Label className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                   {t("brandSafetyPolicy")}
                 </Label>
-                <p
-                  className={`mt-0.5 text-[11px] ${isBrand ? "text-text-dark-secondary/70" : "text-zinc-400"}`}
-                >
+                <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {t("brandSafetyDesc")}
                 </p>
 
                 {/* Preset toggles */}
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-3 flex flex-wrap gap-2">
                   {BRAND_SAFETY_PRESETS.map((preset) => (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => togglePreset(preset)}
                       className={
-                        "rounded-full border px-2.5 py-1 text-[11px] transition-colors " +
+                        "rounded-full border px-3 py-1.5 text-[12.5px] transition-colors " +
                         (isPresetActive(preset)
                           ? isBrand
-                            ? "border-brand-accent bg-brand-accent/15 text-text-dark-primary"
-                            : "border-zinc-400 bg-zinc-100 text-zinc-900"
+                            ? "border-brand-accent/50 bg-brand-accent/12 text-brand-accent-text"
+                            : "border-brand-border-strong bg-brand-panel-raised text-text-dark-primary"
                           : isBrand
-                            ? "border-brand-border text-text-dark-secondary hover:border-brand-accent/40"
-                            : "border-zinc-200 text-zinc-500 hover:border-zinc-300")
+                            ? "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/40"
+                            : "border-brand-border text-text-dark-secondary hover:border-brand-border-strong")
                       }
                     >
                       {t(preset as Parameters<typeof t>[0])}
@@ -231,9 +214,7 @@ export function WizardStepEvent({
                 </div>
 
                 {/* Custom rules textarea */}
-                <Label
-                  className={`mt-3 block text-[11px] ${isBrand ? "text-text-dark-secondary/70" : "text-zinc-400"}`}
-                >
+                <Label className="mt-4 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                   {t("brandSafetyCustomLabel")}
                 </Label>
                 <textarea
@@ -241,12 +222,7 @@ export function WizardStepEvent({
                   value={brandSafetyPolicy ?? ""}
                   onChange={(e) => onBrandSafetyPolicyChange?.(e.target.value)}
                   rows={3}
-                  className={
-                    "mt-1 w-full rounded-md border px-3 py-2 text-sm " +
-                    (isBrand
-                      ? "border-brand-border bg-brand-bg-alt text-text-dark-primary placeholder:text-text-dark-secondary/50"
-                      : "border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400")
-                  }
+                  className="mt-2 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-3 text-[13px] leading-[1.6] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
                 />
               </div>
             </div>

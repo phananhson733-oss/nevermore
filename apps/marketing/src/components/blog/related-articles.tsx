@@ -86,29 +86,29 @@ export function RelatedArticles({ posts, locale }: RelatedArticlesProps) {
 
   return (
     <section aria-labelledby="related-articles-heading" className="mt-16">
-      <div className="border-t border-brand-border/50 pt-10">
+      <div className="border-t border-brand-border pt-10">
         <h2
           id="related-articles-heading"
-          className="text-text-dark-primary text-[18px] font-semibold mb-6"
+          className="mb-6 text-[16.5px] font-semibold text-text-dark-primary"
         >
           {title}
         </h2>
 
-        <ul className="space-y-4">
+        <ul className="space-y-3">
           {posts.map((post) => (
             <li key={post.slug}>
               <Link
                 href={localePath(locale, `/blog/${post.slug}`)}
-                className="group flex flex-col gap-1 rounded-lg border border-brand-border/40 bg-brand-bg-alt/20 p-4 transition-all hover:border-brand-accent/40 hover:bg-brand-bg-alt/40"
+                className="group flex flex-col gap-1.5 rounded-card border border-brand-border-card bg-brand-panel p-[18px] transition-colors hover:border-brand-accent/40"
               >
-                <span className="text-brand-accent-text text-[11px] font-medium tracking-wider uppercase">
+                <span className="font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
                   {post.category.replace(/_/g, " ")}
                 </span>
-                <span className="text-text-dark-primary text-[15px] font-medium leading-snug line-clamp-2 group-hover:text-brand-accent-text transition-colors">
+                <span className="line-clamp-2 text-[14.5px] leading-snug font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
                   {post.title}
                 </span>
                 {post.excerpt && (
-                  <span className="text-text-dark-secondary text-[13px] leading-relaxed line-clamp-2">
+                  <span className="line-clamp-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                     {post.excerpt}
                   </span>
                 )}

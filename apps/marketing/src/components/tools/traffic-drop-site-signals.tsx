@@ -38,6 +38,9 @@ const SHAPE_EXPLANATIONS: Record<string, readonly string[]> = {
   no_material_change: [],
 };
 
+const CARD =
+  "rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+
 interface TrafficDropSiteSignalsProps {
   readonly signals: TrafficSiteSignals;
   readonly locale: string;
@@ -64,14 +67,18 @@ export function TrafficDropSiteSignals({
     <div className="space-y-4">
       <RecordedSelfChecks signals={signals} t={t} />
 
+      {/*
+        The reported-issue variant is the one state on this page with a
+        definite answer, so it carries an inset rail rather than a louder fill.
+      */}
       <section
-        className={`rounded-2xl border p-5 md:p-6 ${
+        className={`rounded-card border p-[22px] md:p-[26px] ${
           path === "issue_reported"
-            ? "border-brand-error/40 bg-[rgba(197,84,72,0.07)]"
-            : "border-brand-border/70 bg-brand-bg-alt/35"
+            ? "border-brand-error/40 bg-brand-error/[0.07] shadow-[inset_2px_0_0_#F09090]"
+            : "border-brand-border-card bg-brand-panel"
         }`}
       >
-        <h2 className="text-[16px] font-semibold text-text-dark-primary">
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t(
             path === "issue_reported"
               ? "siteSignals.paths.issueReportedTitle"
@@ -80,7 +87,7 @@ export function TrafficDropSiteSignals({
                 : "siteSignals.paths.unconfirmedTitle",
           )}
         </h2>
-        <p className="mt-2 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-2 max-w-[52em] text-[13px] leading-[1.65] text-text-dark-secondary">
           {t(
             path === "issue_reported"
               ? "siteSignals.paths.issueReportedBody"
@@ -91,15 +98,15 @@ export function TrafficDropSiteSignals({
         </p>
       </section>
 
-      <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-        <h2 className="text-[16px] font-semibold text-text-dark-primary">
+      <section className={CARD}>
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t("siteSignals.sectionTitle")}
         </h2>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("siteSignals.sectionIntro")}
         </p>
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-5 space-y-4">
           <CoreUpdateBlock timeline={signals.coreUpdateTimeline} t={t} />
           <BrandSplitBlock
             outcome={signals.brandSplit}
@@ -107,11 +114,7 @@ export function TrafficDropSiteSignals({
             signed={signed}
             t={t}
           />
-          <CohortBlock
-            outcome={signals.queryCohort}
-            percent={percent}
-            t={t}
-          />
+          <CohortBlock outcome={signals.queryCohort} percent={percent} t={t} />
         </div>
       </section>
     </div>
@@ -142,15 +145,16 @@ function RecordedSelfChecks({
   readonly t: Translate;
 }) {
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/25 p-5 md:p-6">
-      <h2 className="text-[16px] font-semibold text-text-dark-primary">
+    <section className={CARD}>
+      <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("siteSignals.recorded.title")}
       </h2>
-      <dl className="mt-3 space-y-2">
+      {/* 1px gap over the divider colour — the answers read as a record. */}
+      <dl className="mt-4 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card sm:grid-cols-2">
         <RecordedAnswer check={signals.selfChecks.manualAction} t={t} />
         <RecordedAnswer check={signals.selfChecks.securityIssue} t={t} />
       </dl>
-      <p className="mt-3 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-4 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("siteSignals.recorded.lineage")}
       </p>
     </section>
@@ -170,9 +174,11 @@ function RecordedAnswer({
       : "siteSignals.security_issue.label";
 
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
-      <dt className="text-text-dark-secondary">{t(label)}</dt>
-      <dd className="font-semibold text-text-dark-primary">
+    <div className="bg-brand-panel-sunken px-5 py-4">
+      <dt className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+        {t(label)}
+      </dt>
+      <dd className="mt-2 text-[14px] font-semibold text-text-dark-primary">
         {t(`siteSignals.recorded.${check.id}.${check.answer}`)}
       </dd>
     </div>
@@ -187,11 +193,11 @@ function Block({
   readonly children: React.ReactNode;
 }) {
   return (
-    <article className="border-t border-brand-border/40 pt-4 first:border-t-0 first:pt-0">
-      <h3 className="text-[13.5px] font-semibold text-text-dark-primary">
+    <article className="border-t border-brand-border-faint pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-[14px] font-semibold text-text-dark-primary">
         {label}
       </h3>
-      <div className="mt-1.5 max-w-[52em] space-y-1.5 text-[12.5px] leading-relaxed text-text-dark-secondary">
+      <div className="mt-2 max-w-[52em] space-y-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {children}
       </div>
     </article>
@@ -207,7 +213,7 @@ function CoreUpdateBlock({
 }) {
   return (
     <Block label={t("siteSignals.coreUpdate.label")}>
-      <p className="text-text-dark-secondary/85">
+      <p className="text-text-dark-secondary">
         {t("siteSignals.coreUpdate.caveat")}
       </p>
       {timeline.kind === "not_available" ? (
@@ -252,7 +258,7 @@ function CoreUpdateBlock({
           )}
         </>
       )}
-      <p className="text-text-dark-secondary/70">
+      <p className="font-mono text-[10px] tracking-[0.08em] text-text-dark-secondary">
         {t("siteSignals.coreUpdate.tableStamp", {
           version: timeline.tableVersion,
           verifiedThrough: timeline.verifiedThrough,
@@ -290,7 +296,7 @@ function BrandSplitBlock({
               afterShare: share(outcome.coverage.after.clickShare),
             })}
           </p>
-          <p className="font-semibold tabular-nums text-text-dark-primary">
+          <p className="rounded-[10px] border border-brand-border bg-brand-panel-sunken px-4 py-3 font-medium tabular-nums text-text-dark-primary">
             {t("siteSignals.brandSplit.brandGroup", {
               clickChange: change(outcome.brand.clickChangeRatio),
               queries: outcome.brand.queries,
@@ -342,7 +348,7 @@ function CohortBlock({
           <p>
             {t("siteSignals.cohort.intro", { cohortSize: outcome.cohortSize })}
           </p>
-          <p className="font-semibold tabular-nums text-text-dark-primary">
+          <p className="rounded-[10px] border border-brand-border bg-brand-panel-sunken px-4 py-3 font-medium tabular-nums text-text-dark-primary">
             {t("siteSignals.cohort.topTen", {
               startedInTopTen: outcome.topTen.startedInTopTen,
               heldTopTen: outcome.topTen.heldTopTen,
@@ -364,7 +370,8 @@ function CohortBlock({
               })}
             </p>
           ) : null}
-          {outcome.coverage.beforeTruncated || outcome.coverage.afterTruncated ? (
+          {outcome.coverage.beforeTruncated ||
+          outcome.coverage.afterTruncated ? (
             <p>{t("siteSignals.cohort.truncated")}</p>
           ) : null}
         </>

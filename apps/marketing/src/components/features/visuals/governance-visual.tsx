@@ -37,22 +37,30 @@ export function GovernanceVisual({ isDark }: VisualProps) {
           style={{ backgroundColor: t.card, border: `1px solid ${t.border}` }}
         >
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[8px] font-mono" style={{ color: t.textDim }}>
+            <span
+              className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+              style={{ color: t.textDim }}
+            >
               {o.date}
             </span>
             <span
-              className="text-[8px] px-1.5 py-0.5 rounded-full"
+              className="rounded px-1.5 py-[2px] font-mono text-[8.5px] tracking-[0.08em] uppercase"
               style={{ backgroundColor: `${C.accent}15`, color: C.accent }}
             >
               {o.who}
             </span>
-            <span className="text-[8px]" style={{ color: t.textDim }}>
+            <span
+              className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+              style={{ color: t.textDim }}
+            >
               {o.target}
             </span>
           </div>
 
-          <div className="text-[9px]" style={{ color: t.text }}>{o.action}</div>
-          <div className="text-[8px] font-mono mt-0.5" style={{ color: t.textDim }}>
+          <div className="text-[9.5px] leading-[1.5]" style={{ color: t.text }}>
+            {o.action}
+          </div>
+          <div className="mt-1 font-mono text-[8.5px]" style={{ color: t.textDim }}>
             {o.what}
           </div>
 
@@ -62,18 +70,20 @@ export function GovernanceVisual({ isDark }: VisualProps) {
               style={{ borderTop: `1px solid ${t.border}` }}
             >
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold" style={{ color: t.text }}>
+                <span className="font-mono text-[13px]" style={{ color: t.text }}>
                   {o.scoreBefore}
                 </span>
-                <span style={{ color: C.emerald }}>-&gt;</span>
-                <span className="text-sm font-bold" style={{ color: t.text }}>
+                <span className="font-mono text-[10px]" style={{ color: C.emerald }}>
+                  -&gt;
+                </span>
+                <span className="font-mono text-[13px]" style={{ color: t.text }}>
                   {o.scoreAfter}
                 </span>
-                <span className="text-[9px] font-medium" style={{ color: C.emerald }}>
+                <span className="font-mono text-[9px]" style={{ color: C.emerald }}>
                   +{(o.scoreAfter ?? 0) - (o.scoreBefore ?? 0)}
                 </span>
               </div>
-              <div className="flex gap-2 ml-auto text-[8px]">
+              <div className="flex gap-2 ml-auto font-mono text-[8.5px]">
                 <span style={{ color: t.textDim }}>
                   7d: <span style={{ color: C.emerald }}>{o.effect7d}</span>
                 </span>
@@ -92,12 +102,15 @@ export function GovernanceVisual({ isDark }: VisualProps) {
         className="rounded-md p-2 flex items-center justify-between"
         style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
       >
-        <div className="text-[8px]" style={{ color: t.textDim }}>
+        <div
+          className="font-mono text-[8.5px] tracking-[0.1em] uppercase"
+          style={{ color: t.textDim }}
+        >
           Policy Snapshot
         </div>
-        <div className="flex items-center gap-2 text-[8px]">
+        <div className="flex items-center gap-2 text-[9.5px]">
           <span
-            className="px-1.5 py-0.5 rounded font-mono"
+            className="rounded px-1.5 py-[2px] font-mono text-[8.5px] tracking-[0.08em] uppercase"
             style={{ backgroundColor: `${C.accent}15`, color: C.accent }}
           >
             v2

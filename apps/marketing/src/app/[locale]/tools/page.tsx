@@ -67,10 +67,7 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: "tools" });
 
   return generatePageMetadata({
-    title:
-      locale === "en"
-        ? "Free SEO & Growth Tools"
-        : "免费 SEO 与增长工具",
+    title: locale === "en" ? "Free SEO & Growth Tools" : "免费 SEO 与增长工具",
     description: t("subtitle"),
     locale,
     path: "/tools",
@@ -85,37 +82,36 @@ export default async function ToolsPage({
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "tools" });
   const home = locale === "en" ? "Home" : "首页";
-  const tools = locale === "en" ? "Free SEO & Growth Tools" : "免费 SEO 与增长工具";
+  const tools =
+    locale === "en" ? "Free SEO & Growth Tools" : "免费 SEO 与增长工具";
 
   return (
-    <div className="min-h-screen bg-brand-bg pb-24 pt-20 md:pt-28">
-      <div className="mx-auto max-w-[1080px] px-5 sm:px-6">
+    /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
+    <div className="min-h-screen bg-brand-bg pt-9 pb-24">
+      <div className="max-w-report mx-auto px-6 md:px-8">
         <BreadcrumbJsonLd
-          items={[
-            { name: home, url: localeUrl(locale) },
-            { name: tools },
-          ]}
+          items={[{ name: home, url: localeUrl(locale) }, { name: tools }]}
         />
         <VisibleBreadcrumb
-          items={[
-            { label: home, href: localePath(locale) },
-            { label: tools },
-          ]}
+          items={[{ label: home, href: localePath(locale) }, { label: tools }]}
         />
 
-        <header className="relative mb-16 overflow-hidden border-b border-brand-border/60 pb-12 pt-7 md:pb-16 md:pt-12">
+        <header className="relative mb-14 overflow-hidden border-b border-brand-border pt-7 pb-12 md:pb-14">
+          {/* GLOW_01 — 页级 hero 才允许的网格 + 氛围光 */}
           <div
             aria-hidden="true"
-            className="absolute -right-12 top-6 hidden size-72 rounded-full border border-brand-accent/20 bg-brand-accent/[0.035] md:block"
+            className="bg-signal-grid absolute inset-0 opacity-40"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute -top-30 right-[4%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
           />
           <div className="relative max-w-3xl">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-accent-text">
+            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {t("eyebrow")}
             </p>
-            <h1 className="mt-4 text-[38px] font-bold leading-[1.02] tracking-[-0.04em] text-text-dark-primary md:text-[54px]">
-              {t("title")}
-            </h1>
-            <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-text-dark-secondary md:text-[17px]">
+            <h1 className="mt-4 text-text-dark-primary">{t("title")}</h1>
+            <p className="mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]">
               {t("subtitle")}
             </p>
           </div>
@@ -123,14 +119,17 @@ export default async function ToolsPage({
 
         <section aria-labelledby="site-diagnosis-tools">
           <div className="mb-7 grid gap-5 md:grid-cols-[auto_1fr] md:items-end">
-            <div className="flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
-              <ScanSearch aria-hidden="true" className="size-5" />
+            <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+              <ScanSearch aria-hidden="true" className="size-[18px]" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-brand-accent-text">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {t("diagnoseEyebrow")}
               </p>
-              <h2 id="site-diagnosis-tools" className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              <h2
+                id="site-diagnosis-tools"
+                className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary"
+              >
                 {t("diagnoseTitle")}
               </h2>
               <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
@@ -138,31 +137,47 @@ export default async function ToolsPage({
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {DIAGNOSIS_TOOLS.map((tool) => (
               <ToolCard
                 key={tool.slug}
                 slug={tool.slug}
-                title={"title" in tool ? tool.title[locale as "en" | "zh"] : t(tool.titleKey)}
-                description={"description" in tool ? tool.description[locale as "en" | "zh"] : t(tool.descKey)}
+                title={
+                  "title" in tool
+                    ? tool.title[locale as "en" | "zh"]
+                    : t(tool.titleKey)
+                }
+                description={
+                  "description" in tool
+                    ? tool.description[locale as "en" | "zh"]
+                    : t(tool.descKey)
+                }
                 category={tool.category}
                 locale={locale}
-                ctaLabel={"cta" in tool ? tool.cta[locale as "en" | "zh"] : undefined}
+                ctaLabel={
+                  "cta" in tool ? tool.cta[locale as "en" | "zh"] : undefined
+                }
               />
             ))}
           </div>
         </section>
 
-        <section aria-labelledby="planning-tools" className="mt-20 border-t border-brand-border/60 pt-14">
+        <section
+          aria-labelledby="planning-tools"
+          className="mt-18 border-t border-brand-border pt-14"
+        >
           <div className="mb-7 grid gap-5 md:grid-cols-[auto_1fr] md:items-end">
-            <div className="flex size-11 items-center justify-center rounded-xl border border-brand-border bg-brand-bg-alt text-text-dark-secondary">
-              <Compass aria-hidden="true" className="size-5" />
+            <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel text-text-dark-secondary">
+              <Compass aria-hidden="true" className="size-[18px]" />
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-brand-accent-text">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {t("planEyebrow")}
               </p>
-              <h2 id="planning-tools" className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              <h2
+                id="planning-tools"
+                className="mt-2 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary"
+              >
                 {t("planTitle")}
               </h2>
               <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
@@ -170,7 +185,7 @@ export default async function ToolsPage({
               </p>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {PLANNING_TOOLS.map((tool) => (
               <ToolCard
                 key={tool.slug}
@@ -185,23 +200,23 @@ export default async function ToolsPage({
           </div>
         </section>
 
-        <section className="relative mt-20 overflow-hidden rounded-3xl border border-brand-accent/25 bg-brand-accent/[0.06] p-7 md:p-10">
-          <div aria-hidden="true" className="absolute -right-16 -top-20 size-64 rounded-full border border-brand-accent/20" />
-          <div className="relative grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+        {/* 「下一步」容器走虚线 + 微渐变底，与实线的工具卡片区分开 */}
+        <section className="mt-18 rounded-[16px] border border-dashed border-brand-border-dashed bg-[linear-gradient(135deg,rgba(61,220,151,0.04),rgba(76,195,250,0.05))] p-7 md:p-10">
+          <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {t("productCtaEyebrow")}
               </p>
-              <h2 className="mt-3 text-[27px] font-semibold tracking-[-0.035em] text-text-dark-primary">
+              <h2 className="mt-3 text-[27px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {t("productCtaTitle")}
               </h2>
-              <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-text-dark-secondary">
+              <p className="mt-3 max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
                 {t("productCtaBody")}
               </p>
             </div>
             <a
               href={siteConfig.appUrl}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+              className="inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {t("productCta")}
               <ArrowRight aria-hidden="true" className="size-4" />

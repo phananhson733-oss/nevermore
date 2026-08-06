@@ -23,18 +23,18 @@ export function ComparisonTable({
 }: ComparisonTableProps) {
   return (
     <>
-      {/* Desktop table */}
-      <div className="hidden md:block overflow-x-auto rounded-xl border border-brand-border/60">
+      {/* Desktop table：表头走 sunken 底 + mono 小标签，行分隔用最淡的一级描边 */}
+      <div className="hidden overflow-x-auto rounded-card border border-brand-border-card bg-brand-panel md:block">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-brand-border/40 bg-brand-bg-alt/40">
-              <th className="px-5 py-3 text-text-dark-secondary text-[13px] font-medium">
+            <tr className="border-b border-brand-border bg-brand-panel-sunken">
+              <th className="px-5 py-3 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                 Dimension
               </th>
-              <th className="px-5 py-3 text-brand-accent text-[13px] font-medium">
+              <th className="px-5 py-3 font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
                 {genGrowthLabel}
               </th>
-              <th className="px-5 py-3 text-text-dark-secondary text-[13px] font-medium">
+              <th className="px-5 py-3 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                 {competitorLabel}
               </th>
             </tr>
@@ -43,15 +43,15 @@ export function ComparisonTable({
             {rows.map((row) => (
               <tr
                 key={row.dimension}
-                className="border-b border-brand-border/20 last:border-b-0"
+                className="border-b border-brand-border-faint last:border-b-0"
               >
-                <td className="px-5 py-4 text-text-dark-primary text-[14px] font-medium">
+                <td className="px-5 py-4 text-[13.5px] leading-[1.6] font-medium text-text-dark-primary">
                   {row.dimension}
                 </td>
-                <td className="px-5 py-4 text-brand-accent-text text-[14px]">
+                <td className="px-5 py-4 text-[13.5px] leading-[1.6] text-brand-accent-text">
                   {row.genGrowth}
                 </td>
-                <td className="px-5 py-4 text-text-dark-secondary text-[14px]">
+                <td className="px-5 py-4 text-[13.5px] leading-[1.6] text-text-dark-secondary">
                   {row.competitor}
                 </td>
               </tr>
@@ -60,30 +60,30 @@ export function ComparisonTable({
         </table>
       </div>
 
-      {/* Mobile stacked cards */}
-      <div className="md:hidden space-y-4">
+      {/* Mobile stacked cards：窄屏换成标准卡片，标签上移成 mono 小标签 */}
+      <div className="space-y-3.5 md:hidden">
         {rows.map((row) => (
           <div
             key={row.dimension}
-            className="rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-4"
+            className="rounded-card border border-brand-border-card bg-brand-panel p-[22px]"
           >
-            <p className="text-text-dark-primary text-[14px] font-medium mb-3">
+            <p className="text-[13.5px] font-medium text-text-dark-primary">
               {row.dimension}
             </p>
-            <div className="space-y-2">
-              <div className="flex items-start gap-2">
-                <span className="text-brand-accent text-[12px] font-medium shrink-0 mt-0.5">
+            <div className="mt-4 space-y-3">
+              <div>
+                <span className="block font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
                   {genGrowthLabel}
                 </span>
-                <span className="text-brand-accent-text text-[13px]">
+                <span className="mt-1 block text-[13px] leading-[1.6] text-brand-accent-text">
                   {row.genGrowth}
                 </span>
               </div>
-              <div className="flex items-start gap-2">
-                <span className="text-text-dark-secondary text-[12px] font-medium shrink-0 mt-0.5">
+              <div>
+                <span className="block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                   {competitorLabel}
                 </span>
-                <span className="text-text-dark-secondary text-[13px]">
+                <span className="mt-1 block text-[13px] leading-[1.6] text-text-dark-secondary">
                   {row.competitor}
                 </span>
               </div>

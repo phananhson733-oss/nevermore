@@ -48,37 +48,44 @@ export function ROIResultsGrid({ result }: ROIResultsGridProps) {
     },
     {
       label: t("payback"),
-      value: result.paybackPeriodMonths > 0
-        ? result.paybackPeriodMonths.toFixed(1)
-        : "--",
+      value:
+        result.paybackPeriodMonths > 0
+          ? result.paybackPeriodMonths.toFixed(1)
+          : "--",
       suffix: t("months"),
     },
   ];
 
   return (
     <div>
-      <h2 className="text-text-dark-primary font-semibold text-[20px] mb-4">
+      <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("results")}
       </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/*
+       * 六个数字属于同一份读数，用 1px gap + 分隔色底拼成伪表格，比六张带间距的
+       * 卡片更像一张表；卡片间距会把它们读成六个可独立选择的东西。
+       */}
+      <div className="mt-4 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => (
           <div
             key={card.label}
-            className="rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-5"
+            className={`bg-brand-panel-sunken px-5 py-4 ${
+              card.highlight ? "shadow-[inset_2px_0_0_#3DDC97]" : ""
+            }`}
           >
-            <p className="text-text-dark-secondary text-[12px] mb-1">
+            <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
               {card.label}
             </p>
             <p
-              className={`font-bold text-[24px] ${
+              className={`mt-2 font-mono text-[22px] ${
                 card.highlight
-                  ? "text-brand-accent"
+                  ? "text-brand-accent-text"
                   : "text-text-dark-primary"
               }`}
             >
               {card.value}
               {card.suffix && (
-                <span className="text-text-dark-secondary text-[13px] font-normal ml-1">
+                <span className="ml-1.5 font-mono text-[11px] text-text-dark-secondary">
                   {card.suffix}
                 </span>
               )}

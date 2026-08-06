@@ -43,81 +43,98 @@ export function LegalPageTemplate({
   const htmlContent = marked.parse(stripped, { async: false }) as string;
 
   return (
-    <div className="bg-brand-bg min-h-screen py-16 md:py-24">
-      <div className="max-w-3xl mx-auto px-4">
+    /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
+    <div className="bg-brand-bg min-h-screen pt-9 pb-24">
+      <div className="mx-auto max-w-3xl px-6 md:px-8">
         <VisibleBreadcrumb
           items={[
-            { label: locale === "en" ? "Home" : "首页", href: localePath(locale) },
+            {
+              label: locale === "en" ? "Home" : "首页",
+              href: localePath(locale),
+            },
             { label: breadcrumbLabel },
           ]}
         />
 
         {/* Header */}
-        <header className="mb-12">
-          <h1 className="text-text-dark-primary font-semibold mb-4">{title}</h1>
-          <p className="text-text-dark-secondary text-sm">
-            {locale === "zh" ? "生效日期" : "Effective date"}: {formattedDate}
-            <span className="mx-2">|</span>
-            {locale === "zh" ? "版本" : "Version"}: {version}
+        <header className="border-brand-border mb-12 border-b pt-7 pb-10">
+          <h1 className="text-page-title text-text-dark-primary">{title}</h1>
+          {/* 生效日期与版本号是元数据，走 mono 小标签而不是正文 */}
+          <p className="text-text-dark-secondary mt-5 font-mono text-[10px] tracking-[0.12em] uppercase">
+            {locale === "zh" ? "生效日期" : "Effective date"}:{" "}
+            <span className="text-text-dark-secondary">{formattedDate}</span>
+            <span className="mx-2.5 opacity-50">|</span>
+            {locale === "zh" ? "版本" : "Version"}:{" "}
+            <span className="text-text-dark-secondary">{version}</span>
           </p>
         </header>
 
-        {/* Content */}
+        {/* Content —— 正文一律 sans，mono 只留给行内代码；标题靠字号+分隔线分层 */}
         <div
           className={[
-            "prose prose-invert max-w-none",
-            /* Headings */
-            "[&_h2]:text-text-dark-primary [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:mt-10 [&_h2]:mb-4 [&_h2]:border-b [&_h2]:border-brand-border/40 [&_h2]:pb-3",
-            "[&_h3]:text-text-dark-primary [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mt-6 [&_h3]:mb-3",
-            /* Body text */
-            "[&_p]:text-text-dark-secondary [&_p]:leading-7 [&_p]:mb-4",
-            /* Lists */
-            "[&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-4 [&_ul]:space-y-2",
-            "[&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-4 [&_ol]:space-y-2",
-            "[&_li]:text-text-dark-secondary [&_li]:leading-7",
-            "[&_li_strong]:text-text-dark-primary",
+            "max-w-none",
+            /* Headings — 全局已给 h1/h2/h3 600 字重，这里只定字号与节奏；
+               scroll-mt 给文档内锚点跳转留出 fixed 导航的高度 */
+            "[&_h2]:text-text-dark-primary [&_h2]:mt-12 [&_h2]:mb-4 [&_h2]:scroll-mt-24 [&_h2]:text-[21px] [&_h2]:tracking-[-0.02em]",
+            "[&_h2]:border-brand-border [&_h2]:border-b [&_h2]:pb-3",
+            "[&_h3]:text-text-dark-primary [&_h3]:mt-8 [&_h3]:mb-2.5 [&_h3]:scroll-mt-24 [&_h3]:text-[16.5px]",
+            "[&_h4]:text-text-dark-primary [&_h4]:mt-6 [&_h4]:mb-2 [&_h4]:text-[14px] [&_h4]:font-semibold",
+            /* Body text — 行高交给 globals.css 的 p 规则（en 1.65 / zh 1.75） */
+            "[&_p]:text-text-dark-strong [&_p]:mb-4 [&_p]:text-[15px]",
+            "[&_strong]:text-text-dark-primary [&_strong]:font-semibold",
+            /* Lists — li 不是 p，行高要显式给到中文的 1.75 */
+            "[&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5",
+            "[&_ol]:my-4 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5",
+            "[&_li]:text-text-dark-strong [&_li]:text-[15px] [&_li]:leading-[1.75]",
+            "[&_li::marker]:text-text-dark-faint",
+            /* Quotes + rules */
+            "[&_blockquote]:border-brand-accent/60 [&_blockquote]:text-text-dark-secondary [&_blockquote]:my-6 [&_blockquote]:border-l-2 [&_blockquote]:pl-5",
+            "[&_hr]:border-brand-border [&_hr]:my-10",
             /* Links */
             "[&_a]:text-brand-accent-text [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-brand-accent-hover",
             /* Code */
-            "[&_code]:bg-brand-bg-alt [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_code]:text-text-dark-primary",
-            /* Tables */
-            "[&_table]:w-full [&_table]:my-6 [&_table]:text-sm [&_table]:border-collapse",
-            "[&_thead]:border-b [&_thead]:border-brand-border",
-            "[&_th]:text-left [&_th]:text-text-dark-secondary [&_th]:font-medium [&_th]:py-3 [&_th]:px-4",
-            "[&_td]:text-text-dark-secondary [&_td]:py-3 [&_td]:px-4 [&_td]:border-b [&_td]:border-brand-border/30",
-            "[&_tr:hover_td]:bg-brand-bg-alt/30",
+            "[&_code]:bg-brand-panel [&_code]:border-brand-border [&_code]:text-text-dark-primary [&_code]:rounded [&_code]:border [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[12.5px]",
+            /* Tables — 表头是标签走 mono，行分隔用最弱的一档描边 */
+            "[&_table]:my-6 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px]",
+            "[&_thead]:border-brand-border [&_thead]:border-b",
+            "[&_th]:text-text-dark-secondary [&_th]:px-4 [&_th]:py-2.5 [&_th]:text-left [&_th]:font-mono [&_th]:text-[10px] [&_th]:font-normal [&_th]:tracking-[0.12em] [&_th]:uppercase",
+            "[&_td]:text-text-dark-strong [&_td]:border-brand-border-faint [&_td]:border-b [&_td]:px-4 [&_td]:py-3",
           ].join(" ")}
           dangerouslySetInnerHTML={{ __html: htmlContent }}
         />
 
         {/* Version History */}
         {versions.length > 0 && (
-          <section className="mt-16 border-t border-brand-border pt-8">
-            <h2 className="text-text-dark-primary font-semibold text-lg mb-4">
+          <section className="border-brand-border mt-16 border-t pt-10">
+            <h2 className="text-text-dark-primary mb-5 text-[21px] tracking-[-0.02em]">
               {locale === "zh" ? "版本历史" : "Version History"}
             </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="border-brand-border-card bg-brand-panel rounded-card overflow-x-auto border">
+              <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="border-b border-brand-border">
-                    <th className="text-left text-text-dark-secondary py-2 pr-4 font-medium">
+                  <tr className="border-brand-border border-b">
+                    <th className="text-text-dark-secondary px-5 py-3 text-left font-mono text-[10px] font-normal tracking-[0.12em] uppercase">
                       {locale === "zh" ? "版本" : "Version"}
                     </th>
-                    <th className="text-left text-text-dark-secondary py-2 pr-4 font-medium">
+                    <th className="text-text-dark-secondary px-5 py-3 text-left font-mono text-[10px] font-normal tracking-[0.12em] uppercase">
                       {locale === "zh" ? "生效日期" : "Effective Date"}
                     </th>
-                    <th className="text-left text-text-dark-secondary py-2 font-medium">
+                    <th className="text-text-dark-secondary px-5 py-3 text-left font-mono text-[10px] font-normal tracking-[0.12em] uppercase">
                       {locale === "zh" ? "变更摘要" : "Changes"}
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {versions.map((v) => (
-                    <tr key={v.id} className="border-b border-brand-border/50">
-                      <td className="text-text-dark-primary py-3 pr-4">
+                    <tr
+                      key={v.id}
+                      className="border-brand-border-faint border-b last:border-b-0"
+                    >
+                      {/* 版本号与日期是数字/标识，走 mono */}
+                      <td className="text-text-dark-primary px-5 py-3 font-mono text-[12px]">
                         {v.version}
                       </td>
-                      <td className="text-text-dark-secondary py-3 pr-4">
+                      <td className="text-text-dark-secondary px-5 py-3 font-mono text-[12px] whitespace-nowrap">
                         {new Date(v.effective_date).toLocaleDateString(
                           locale === "zh" ? "zh-CN" : "en-US",
                           {
@@ -127,7 +144,7 @@ export function LegalPageTemplate({
                           },
                         )}
                       </td>
-                      <td className="text-text-dark-secondary py-3">
+                      <td className="text-text-dark-strong px-5 py-3 leading-[1.6]">
                         {v.change_summary}
                       </td>
                     </tr>

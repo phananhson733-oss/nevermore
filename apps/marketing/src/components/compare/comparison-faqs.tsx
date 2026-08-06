@@ -16,17 +16,18 @@ interface ComparisonFaqsProps {
 
 export function ComparisonFaqs({ faqs, heading }: ComparisonFaqsProps) {
   return (
-    <div className="mt-16">
-      <h2 className="text-text-dark-primary font-semibold text-[22px] mb-6">
+    <div className="mt-16 border-t border-brand-border pt-14">
+      <h2 className="mb-7 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
         {heading}
       </h2>
-      <div className="space-y-6">
+      {/* 每条 FAQ 之间用最淡的一级描边分隔，而不是靠大间距 */}
+      <div className="divide-y divide-brand-border-faint">
         {faqs.map((faq) => (
-          <div key={faq.question}>
-            <h3 className="text-text-dark-primary font-medium text-[15px] mb-1">
+          <div key={faq.question} className="py-5 first:pt-0 last:pb-0">
+            <h3 className="text-[15.5px] font-semibold text-text-dark-primary">
               {faq.question}
             </h3>
-            <p className="text-text-dark-secondary text-[13px] leading-relaxed">
+            <p className="mt-2 max-w-3xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {faq.answer}
             </p>
           </div>

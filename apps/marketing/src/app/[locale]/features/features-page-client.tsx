@@ -77,18 +77,24 @@ export default function FeaturesPageClient() {
   return (
     <>
       {/* Hero */}
-      <section className="bg-brand-bg py-16 md:py-24">
-        <div className="max-w-content mx-auto px-4 text-center">
-          <motion.h1
-            {...fadeInUp}
-            className="text-text-dark-primary font-semibold mb-4"
-          >
+      <section className="relative overflow-hidden bg-brand-bg pt-16 pb-16 md:pt-21 md:pb-22">
+        {/* GLOW_01 — 页级 hero 才允许的 48px 网格 + 单个氛围光 */}
+        <div
+          aria-hidden="true"
+          className="bg-signal-grid absolute inset-0 opacity-40"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -top-30 right-[4%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
+        />
+        <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
+          <motion.h1 {...fadeInUp} className="text-text-dark-primary">
             {t("title")}
           </motion.h1>
           <motion.p
             {...fadeInUp}
             transition={{ ...fadeInUp.transition, delay: 0.15 }}
-            className="text-text-dark-secondary text-lg max-w-2xl mx-auto"
+            className="mx-auto mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]"
           >
             {t("subtitle")}
           </motion.p>

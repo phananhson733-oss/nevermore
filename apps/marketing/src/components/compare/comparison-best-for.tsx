@@ -20,37 +20,37 @@ export function ComparisonBestFor({
   heading,
 }: ComparisonBestForProps) {
   return (
-    <div className="mt-12">
-      <h2 className="text-text-dark-primary font-semibold text-[22px] mb-6">
+    <div className="mt-16 border-t border-brand-border pt-14">
+      <h2 className="mb-7 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
         {heading}
       </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* GenGrowth */}
-        <div className="rounded-xl border border-brand-accent/30 bg-brand-accent/[0.05] p-5">
-          <h3 className="text-brand-accent-text font-semibold text-[15px] mb-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* GenGrowth —— 走强调卡片配方（左侧 inset 高亮条） */}
+        <div className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97]">
+          <h3 className="mb-4 text-[15.5px] font-semibold text-brand-accent-text">
             {gengrowthLabel}
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {gengrowthItems.map((item) => (
               <li
                 key={item}
-                className="text-text-dark-secondary text-[13px] leading-relaxed pl-4 relative before:content-[''] before:absolute before:left-0 before:top-[7px] before:w-1.5 before:h-1.5 before:rounded-full before:bg-brand-accent/60"
+                className="relative pl-4 text-[13px] leading-[1.6] text-text-dark-strong before:absolute before:top-[8px] before:left-0 before:h-1 before:w-1 before:rounded-full before:bg-brand-accent before:content-['']"
               >
                 {item}
               </li>
             ))}
           </ul>
         </div>
-        {/* Competitor */}
-        <div className="rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-5">
-          <h3 className="text-text-dark-primary font-semibold text-[15px] mb-3">
+        {/* Competitor —— 标准卡片 */}
+        <div className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+          <h3 className="mb-4 text-[15.5px] font-semibold text-text-dark-primary">
             {competitorLabel}
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {competitorItems.map((item) => (
               <li
                 key={item}
-                className="text-text-dark-secondary text-[13px] leading-relaxed pl-4 relative before:content-[''] before:absolute before:left-0 before:top-[7px] before:w-1.5 before:h-1.5 before:rounded-full before:bg-text-dark-secondary/40"
+                className="relative pl-4 text-[13px] leading-[1.6] text-text-dark-secondary before:absolute before:top-[8px] before:left-0 before:h-1 before:w-1 before:rounded-full before:bg-text-dark-faint before:content-['']"
               >
                 {item}
               </li>

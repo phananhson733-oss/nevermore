@@ -7,29 +7,31 @@
 import { motion } from "framer-motion";
 import { type VisualProps, C, themeColors, fadeItem } from "./shared";
 
+// 批次左侧色条走规范的状态色梯度（error → warning → info → 中性），
+// 不再自带独立的红/橙/黄色板。
 const batches = [
   {
-    label: "Batch-0", borderColor: "#EF4444",
+    label: "Batch-0", borderColor: C.red,
     tasks: [{
       title: "Create pillar page: Growth Automation Guide",
       type: "seo", typeColor: C.blue, status: "completed", statusColor: C.emerald,
     }],
   },
   {
-    label: "Batch-1", borderColor: "#F97316",
+    label: "Batch-1", borderColor: C.amber.text,
     tasks: [{
       title: "Seed Reddit r/SaaS with value post",
       type: "social", typeColor: C.purple, status: "running", statusColor: C.accent,
     }],
   },
   {
-    label: "Batch-2", borderColor: "#FBBF24",
+    label: "Batch-2", borderColor: C.blue.text,
     tasks: [{
       title: "Acquire TechCrunch backlink",
-      type: "link", typeColor: C.green, status: "pending", statusColor: "#71717A",
+      type: "link", typeColor: C.green, status: "pending", statusColor: C.textSecondary,
     }],
   },
-  { label: "Batch-3", borderColor: "#71717A", tasks: [] },
+  { label: "Batch-3", borderColor: C.textSecondary, tasks: [] },
 ];
 
 export function ExecutionVisual({ isDark }: VisualProps) {
@@ -53,11 +55,14 @@ export function ExecutionVisual({ isDark }: VisualProps) {
               className="flex items-center justify-between px-2 py-1.5"
               style={{ borderBottom: `1px solid ${t.border}` }}
             >
-              <span className="text-[8px] font-medium" style={{ color: t.text }}>
+              <span
+                className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+                style={{ color: t.text }}
+              >
                 {batch.label}
               </span>
               <span
-                className="rounded-full px-1.5 py-0.5 text-[7px]"
+                className="rounded px-1.5 py-[1px] font-mono text-[8.5px]"
                 style={{ backgroundColor: t.pillBg, color: t.textDim }}
               >
                 {batch.tasks.length}
@@ -66,7 +71,10 @@ export function ExecutionVisual({ isDark }: VisualProps) {
 
             <div className="p-1.5 space-y-1 min-h-[60px]">
               {batch.tasks.length === 0 ? (
-                <div className="text-[8px] text-center py-4" style={{ color: t.textDim }}>
+                <div
+                  className="py-4 text-center font-mono text-[8.5px] tracking-[0.08em] uppercase"
+                  style={{ color: t.textDim }}
+                >
                   No tasks
                 </div>
               ) : (
@@ -76,14 +84,14 @@ export function ExecutionVisual({ isDark }: VisualProps) {
                     style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
                   >
                     <div
-                      className="text-[8px] leading-tight line-clamp-2"
+                      className="text-[9px] leading-tight line-clamp-2"
                       style={{ color: t.text }}
                     >
                       {task.title}
                     </div>
-                    <div className="flex items-center gap-1 mt-1">
+                    <div className="flex items-center gap-1 mt-1.5">
                       <span
-                        className="text-[7px] px-1 py-0.5 rounded-full"
+                        className="rounded px-1 py-[1px] font-mono text-[8.5px] tracking-[0.08em] uppercase"
                         style={{ backgroundColor: task.typeColor.bg, color: task.typeColor.text }}
                       >
                         {task.type}
@@ -92,7 +100,10 @@ export function ExecutionVisual({ isDark }: VisualProps) {
                         className="w-1 h-1 rounded-full ml-auto"
                         style={{ backgroundColor: task.statusColor }}
                       />
-                      <span className="text-[7px]" style={{ color: task.statusColor }}>
+                      <span
+                        className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+                        style={{ color: task.statusColor }}
+                      >
                         {task.status}
                       </span>
                     </div>

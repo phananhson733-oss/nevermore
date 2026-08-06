@@ -22,7 +22,7 @@ const strategies = [
 
 function scoreColor(s: number) {
   if (s >= 75) return C.emerald;
-  if (s >= 50) return "#FBBF24";
+  if (s >= 50) return C.amber.text;
   return C.red;
 }
 
@@ -43,14 +43,17 @@ export function StrategyVisual({ isDark }: VisualProps) {
         >
           <div className="flex items-start justify-between gap-2 mb-2">
             <div>
-              <div className="text-[9px]" style={{ color: t.textDim }}>
+              <div
+                className="font-mono text-[8.5px] tracking-[0.1em] uppercase"
+                style={{ color: t.textDim }}
+              >
                 Strategy #{i + 1}
               </div>
-              <div className="text-xs font-semibold" style={{ color: t.text }}>
+              <div className="mt-0.5 text-[11.5px] font-semibold" style={{ color: t.text }}>
                 {s.name}
               </div>
             </div>
-            <div className="text-lg font-bold" style={{ color: scoreColor(s.score) }}>
+            <div className="font-mono text-[17px]" style={{ color: scoreColor(s.score) }}>
               {s.score}
             </div>
           </div>
@@ -69,7 +72,12 @@ export function StrategyVisual({ isDark }: VisualProps) {
                     transition={{ duration: 0.6, delay: 0.3 + i * 0.1 }}
                   />
                 </div>
-                <div className="text-[7px] mt-0.5" style={{ color: t.textDim }}>{k}</div>
+                <div
+                  className="mt-1 font-mono text-[8.5px] tracking-[0.08em] uppercase"
+                  style={{ color: t.textDim }}
+                >
+                  {k}
+                </div>
               </div>
             ))}
           </div>
@@ -80,8 +88,13 @@ export function StrategyVisual({ isDark }: VisualProps) {
               className="flex-1 rounded-md p-1.5"
               style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
             >
-              <div className="text-[8px]" style={{ color: t.textDim }}>Monthly ROI</div>
-              <div className="text-xs font-bold" style={{ color: C.emerald }}>
+              <div
+                className="font-mono text-[8.5px] tracking-[0.1em] uppercase"
+                style={{ color: t.textDim }}
+              >
+                Monthly ROI
+              </div>
+              <div className="mt-0.5 font-mono text-[12px]" style={{ color: C.emerald }}>
                 ${s.roi.toLocaleString()}
               </div>
             </div>
@@ -89,15 +102,20 @@ export function StrategyVisual({ isDark }: VisualProps) {
               className="flex-1 rounded-md p-1.5"
               style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
             >
-              <div className="text-[8px]" style={{ color: t.textDim }}>Confidence</div>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div
+                className="font-mono text-[8.5px] tracking-[0.1em] uppercase"
+                style={{ color: t.textDim }}
+              >
+                Confidence
+              </div>
+              <div className="flex items-center gap-1 mt-1">
                 <div className="h-1 flex-1 rounded-full" style={{ backgroundColor: t.barTrack }}>
                   <div
                     className="h-full rounded-full"
                     style={{ width: `${s.confidence * 100}%`, backgroundColor: C.accent }}
                   />
                 </div>
-                <span className="text-[8px]" style={{ color: t.textDim }}>
+                <span className="font-mono text-[8.5px]" style={{ color: t.textDim }}>
                   {Math.round(s.confidence * 100)}%
                 </span>
               </div>
@@ -108,7 +126,8 @@ export function StrategyVisual({ isDark }: VisualProps) {
           <div className="flex gap-1 mt-1.5">
             {s.impact.map((tag) => (
               <span
-                key={tag} className="text-[7px] px-1.5 py-0.5 rounded-full"
+                key={tag}
+                className="rounded px-1.5 py-[2px] font-mono text-[8.5px] tracking-[0.08em] uppercase"
                 style={{ backgroundColor: `${C.accent}15`, color: C.accent }}
               >
                 {tag.replace(/_/g, " ")}

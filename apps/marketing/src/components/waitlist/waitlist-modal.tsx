@@ -15,7 +15,7 @@ interface WaitlistModalProps {
 export function WaitlistModal({ open, onOpenChange }: WaitlistModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-brand-bg-alt border-brand-border sm:max-w-md">
+      <DialogContent className="border-brand-border-card bg-brand-panel sm:max-w-md">
         <DialogTitle className="sr-only">Subscribe</DialogTitle>
         <WaitlistForm onSuccess={() => {}} />
       </DialogContent>

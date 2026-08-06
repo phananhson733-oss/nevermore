@@ -22,21 +22,21 @@ export function RelatedTerms({ terms, locale }: RelatedTermsProps) {
   }
 
   return (
-    <section className="mt-16">
-      <h2 className="text-xl font-semibold text-text-dark-primary mb-6">
+    <section className="mt-16 border-t border-brand-border pt-14">
+      <h2 className="mb-7 text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
         {t("relatedTerms")}
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {terms.map((term) => (
           <Link
             key={term.slug}
             href={localePath(locale, `/glossary/${term.slug}`)}
-            className="group block rounded-lg border border-white/[0.06] bg-brand-bg-secondary p-4 transition-colors hover:border-brand-accent/40"
+            className="group block rounded-card border border-brand-border-card bg-brand-panel p-[22px] transition-colors hover:border-brand-accent/40"
           >
-            <span className="text-sm font-medium text-text-dark-primary group-hover:text-brand-accent transition-colors">
+            <span className="text-[15.5px] font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
               {term.term}
             </span>
-            <p className="mt-1 text-xs text-text-dark-secondary line-clamp-2">
+            <p className="mt-2 line-clamp-2 text-[13px] leading-[1.6] text-text-dark-secondary">
               {term.definition}
             </p>
           </Link>

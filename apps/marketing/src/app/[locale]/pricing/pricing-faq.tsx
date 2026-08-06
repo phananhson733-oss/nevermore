@@ -20,7 +20,7 @@ export function PricingFaq() {
         whileInView="animate"
         initial="initial"
         viewport={{ once: true }}
-        className="text-text-dark-primary font-semibold text-center mb-12"
+        className="mb-9 text-center text-text-dark-primary"
       >
         {tFaq("title")}
       </motion.h2>
@@ -30,21 +30,21 @@ export function PricingFaq() {
         initial="initial"
         whileInView="animate"
         viewport={{ once: true }}
-        className="max-w-3xl mx-auto space-y-6"
+        className="mx-auto max-w-3xl space-y-3"
       >
         {FAQ_KEYS.map((key) => (
           <motion.details
             key={key}
             {...staggerItem}
-            className="group border border-white/10 rounded-card"
+            className="group rounded-[10px] border border-brand-border-card bg-brand-panel transition-colors open:border-brand-accent/40 hover:border-brand-border-strong"
           >
-            <summary className="cursor-pointer px-6 py-4 text-text-dark-primary font-medium list-none flex items-center justify-between">
+            <summary className="flex list-none cursor-pointer items-center justify-between px-5 py-3.5 text-[14.5px] font-medium text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
               {tFaq(`${key}.question`)}
-              <span className="text-text-dark-secondary ml-4 shrink-0 transition-transform group-open:rotate-45">
+              <span className="ml-4 shrink-0 font-mono text-[15px] text-text-dark-faint transition-transform group-open:rotate-45">
                 +
               </span>
             </summary>
-            <div className="px-6 pb-4 text-text-dark-secondary text-sm leading-relaxed">
+            <div className="px-5 pb-4 text-[13px] leading-[1.65] text-text-dark-secondary">
               {tFaq(`${key}.answer`)}
             </div>
           </motion.details>
