@@ -1335,7 +1335,13 @@ export function InternalLinkAuditTool({
                 </dl>
               </div>
             </div>
-            <dl className="grid grid-cols-1 gap-px bg-brand-border-card sm:grid-cols-3">
+            {/*
+             * 这是指标表的第二行，和上一行是两个独立的 grid（列结构不同：0.8/1.2 对
+             * 三等分），所以 gap-px 画不出它们之间的横线——两个 grid 是紧挨着的，中间
+             * 没有 1px 缝隙可以透出底色。显式补一条，用卡片内横线那一档，和下方脚注
+             * 的上边线同色。
+             */}
+            <dl className="grid grid-cols-1 gap-px border-t border-brand-border bg-brand-border-card sm:grid-cols-3">
               {metricItems.map(([label, value, Icon]) => (
                 <div key={label} className="bg-brand-panel-sunken p-4 md:p-5">
                   <dt className="flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
