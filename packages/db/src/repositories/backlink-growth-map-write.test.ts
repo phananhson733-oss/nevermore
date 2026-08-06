@@ -231,8 +231,8 @@ function projectionInput() {
           sourceRank: 71,
           linkKind: "dofollow",
           anchorText: "RelayOps guide",
-          firstSeenAt: "2026-07-01T00:00:00.000Z",
-          lastSeenAt: "2026-07-28T00:00:00.000Z",
+          firstSeenAt: "2026-07-01 00:00:00+00:00",
+          lastSeenAt: "2026-07-28 00:00:00+00:00",
           isNew: true,
           isLost: false,
           verification: {
