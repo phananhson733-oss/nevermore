@@ -4,6 +4,7 @@ import {
   runtimeHttpUrlIssue,
   type RuntimeHttpUrlPolicy,
 } from "@sf/contracts/runtime-url";
+import { MAX_DATAFORSEO_SOURCE_VERIFICATIONS } from "@sf/sources";
 
 /**
  * Server env contract for the web service (spec §3.4). Fail-fast at first import
@@ -56,6 +57,9 @@ export function createWebEnvSchema(environment: string | undefined) {
     // Web only needs the public feature state and collection-size policy. The
     // provider credentials remain worker-only and never enter a Vercel runtime.
     DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
+    DATAFORSEO_BACKLINKS_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
     DATAFORSEO_MAX_KEYWORDS: z.coerce
       .number()
       .int()
@@ -68,6 +72,30 @@ export function createWebEnvSchema(environment: string | undefined) {
       .min(1)
       .max(1000)
       .default(100),
+    DATAFORSEO_MAX_BACKLINKS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(500),
+    DATAFORSEO_MAX_REFERRING_DOMAINS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(100),
+    DATAFORSEO_MAX_BACKLINK_PAGES: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(500),
+    DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_DATAFORSEO_SOURCE_VERIFICATIONS)
+      .default(20),
     RAW_IMPORT_BUCKET: z.string().min(1),
     EXPORT_BUCKET: z.string().min(1),
     // Production is always Supabase. Local/test may opt into Supabase, otherwise

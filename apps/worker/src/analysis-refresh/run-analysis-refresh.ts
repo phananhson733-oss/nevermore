@@ -16,6 +16,7 @@ import {
   enqueueRunInTx,
   GROWTH_AUDIT_PROJECTION_VERSION,
   IcpProfilesRepository,
+  legacyAnalysisRefreshPlanManifest,
   ObservationsRepository,
   ProjectsRepository,
   SitePagesRepository,
@@ -46,12 +47,19 @@ import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import {
   CRAWL_DATASET_KEY,
   CRAWL_METHOD_VERSION,
+  DATAFORSEO_BACKLINKS_DATASET_KEY,
+  DATAFORSEO_BACKLINKS_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
   ANALYSIS_REFRESH_COLLECTION_CONFIG,
+  dataForSeoBacklinksConnectionConfig,
+  dataForSeoBacklinksLimitation,
+  dataForSeoBacklinksScopeForSite,
   dataForSeoSearchLandscapeScopeForSite,
   dataForSeoConnectionConfig,
   dataForSeoLimitation,
@@ -90,8 +98,17 @@ const COLLECTION_STEP_KEYS = [
   "gsc",
   "ga4",
   "dataforseo",
+  "dataforseo_backlinks",
 ] as const;
 type CollectionStepKey = (typeof COLLECTION_STEP_KEYS)[number];
+const AUDIT_COLLECTION_STEP_KEYS = [
+  "crawl",
+  "gsc",
+  "ga4",
+  "dataforseo",
+] as const;
+type AuditCollectionStepKey = (typeof AUDIT_COLLECTION_STEP_KEYS)[number];
+type CollectionProvider = "crawl" | "gsc" | "ga4" | "dataforseo";
 type OptionalStepKey = Exclude<
   AnalysisRefreshStepKey,
   "crawl" | "growth_audit"
@@ -99,24 +116,76 @@ type OptionalStepKey = Exclude<
 
 const TERMINAL_STEP_STATES = new Set(["completed", "skipped", "failed"]);
 const SUCCESSFUL_CHILD_STATES = new Set(["completed", "partial"]);
+interface CollectionIdentity {
+  readonly provider: CollectionProvider;
+  readonly datasetKey: string;
+  readonly schemaVersion: string | null;
+  readonly methodVersion: string;
+}
+
 const COLLECTION_IDENTITY = {
   crawl: {
+    provider: "crawl",
     datasetKey: CRAWL_DATASET_KEY,
+    schemaVersion: null,
     methodVersion: CRAWL_METHOD_VERSION,
   },
   gsc: {
+    provider: "gsc",
     datasetKey: "gsc.page_query_daily.v1",
+    schemaVersion: null,
     methodVersion: "gsc.page_query_daily.v1",
   },
   ga4: {
+    provider: "ga4",
     datasetKey: "ga4.organic_landing_daily.v1",
+    schemaVersion: null,
     methodVersion: "ga4.organic_landing_daily.v1",
   },
   dataforseo: {
+    provider: "dataforseo",
     datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+    schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
     methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   },
-} as const;
+  dataforseo_backlinks: {
+    provider: "dataforseo",
+    datasetKey: DATAFORSEO_BACKLINKS_DATASET_KEY,
+    schemaVersion: DATAFORSEO_BACKLINKS_METHOD_VERSION,
+    methodVersion: DATAFORSEO_BACKLINKS_METHOD_VERSION,
+  },
+} as const satisfies Record<CollectionStepKey, CollectionIdentity>;
+
+const LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_IDENTITY = {
+  provider: "dataforseo",
+  datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
+  schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+  methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
+} as const satisfies CollectionIdentity;
+
+function collectionIdentitiesForStep(
+  stepKey: CollectionStepKey,
+): readonly CollectionIdentity[] {
+  return stepKey === "dataforseo"
+    ? [
+        LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_IDENTITY,
+        COLLECTION_IDENTITY.dataforseo,
+      ]
+    : [COLLECTION_IDENTITY[stepKey]];
+}
+
+function snapshotMatchesIdentity(
+  snapshot: DataSnapshotRow,
+  identity: CollectionIdentity,
+): boolean {
+  return (
+    snapshot.provider === identity.provider &&
+    snapshot.dataset_key === identity.datasetKey &&
+    snapshot.method_version === identity.methodVersion &&
+    (identity.schemaVersion === null ||
+      snapshot.schema_version === identity.schemaVersion)
+  );
+}
 
 const SAFE_FAILURES = {
   payloadInvalid: {
@@ -168,7 +237,7 @@ interface ParentContext {
 
 interface CollectionChildInput {
   readonly stepKey: CollectionStepKey;
-  readonly provider: CollectionStepKey;
+  readonly provider: CollectionProvider;
   readonly operation: string;
   readonly queue: QueueName;
   readonly methodVersion: string;
@@ -205,7 +274,7 @@ function progress(
   return {
     phase: "analysis_refresh",
     current: terminalStepCount(steps),
-    total: 5,
+    total: steps.length,
     messageKey,
   };
 }
@@ -216,9 +285,22 @@ function assertDurablePlan(
   steps: readonly AnalysisRefreshStepRow[],
   payload: AnalysisRefreshRequestPayload,
 ): asserts parent is AnalysisRefreshRunRow {
-  const expectedManifest = analysisRefreshPlanManifest();
+  const currentManifest = analysisRefreshPlanManifest();
+  const legacyManifest = legacyAnalysisRefreshPlanManifest();
+  const currentMatches =
+    parent?.plan_hash === analysisRefreshPlanHash(currentManifest) &&
+    isDeepStrictEqual(parent.plan_manifest, currentManifest);
+  const legacyMatches =
+    parent?.plan_hash === analysisRefreshPlanHash(legacyManifest) &&
+    isDeepStrictEqual(parent.plan_manifest, legacyManifest);
+  const expectedManifest = currentMatches
+    ? currentManifest
+    : legacyMatches
+      ? legacyManifest
+      : null;
   if (
     !parent ||
+    !expectedManifest ||
     claimed.kind !== "analysis_refresh" ||
     claimed.result_type !== "analysis_refresh_run" ||
     claimed.result_id !== claimed.id ||
@@ -227,9 +309,8 @@ function assertDurablePlan(
     parent.project_id !== claimed.project_id ||
     parent.site_id !== payload.siteId ||
     parent.icp_profile_id !== payload.icpProfile.id ||
-    parent.plan_hash !== analysisRefreshPlanHash(expectedManifest) ||
-    !isDeepStrictEqual(parent.plan_manifest, expectedManifest) ||
-    steps.length !== expectedManifest.steps.length
+    steps.length !== expectedManifest.steps.length ||
+    (currentMatches && payload.dataForSeoBacklinks === undefined)
   ) {
     throw new Error("Analysis Refresh parent projection is invalid");
   }
@@ -389,7 +470,7 @@ function nextUnfinishedStep(
 function sourceMatches(
   source: SourceConnectionRow | null,
   parent: ParentContext,
-  provider: CollectionStepKey,
+  provider: CollectionProvider,
 ): source is SourceConnectionRow {
   return (
     source !== null &&
@@ -800,6 +881,36 @@ function dataForSeoRuntimeAvailable(
   );
 }
 
+function dataForSeoBacklinksRuntimeAvailable(
+  ctx: WorkerContext,
+  payload: AnalysisRefreshRequestPayload,
+): boolean {
+  const runtime = ctx.dataForSeo;
+  const frozen = payload.dataForSeoBacklinks;
+  return (
+    payload.dataForSeo.enabled &&
+    frozen?.enabled === true &&
+    runtime?.enabled === true &&
+    runtime.backlinksEnabled === true &&
+    typeof runtime.login === "string" &&
+    runtime.login.length > 0 &&
+    typeof runtime.password === "string" &&
+    runtime.password.length > 0 &&
+    typeof runtime.maxBacklinks === "number" &&
+    Number.isSafeInteger(runtime.maxBacklinks) &&
+    frozen.maxBacklinks <= runtime.maxBacklinks &&
+    typeof runtime.maxReferringDomains === "number" &&
+    Number.isSafeInteger(runtime.maxReferringDomains) &&
+    frozen.maxReferringDomains <= runtime.maxReferringDomains &&
+    typeof runtime.maxBacklinkPages === "number" &&
+    Number.isSafeInteger(runtime.maxBacklinkPages) &&
+    frozen.maxBacklinkPages <= runtime.maxBacklinkPages &&
+    typeof runtime.maxSourceVerifications === "number" &&
+    Number.isSafeInteger(runtime.maxSourceVerifications) &&
+    frozen.maxSourceVerifications <= runtime.maxSourceVerifications
+  );
+}
+
 async function startDataForSeoStep(
   ctx: WorkerContext,
   tx: DbTx,
@@ -947,6 +1058,136 @@ async function startDataForSeoStep(
   );
 }
 
+async function startDataForSeoBacklinksStep(
+  ctx: WorkerContext,
+  tx: DbTx,
+  parent: ParentContext,
+  steps: readonly AnalysisRefreshStepRow[],
+  runtime: AnalysisRefreshRuntime,
+): Promise<void> {
+  const frozen = parent.payload.dataForSeoBacklinks;
+  if (!dataForSeoBacklinksRuntimeAvailable(ctx, parent.payload)) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "dataforseo_backlinks",
+      parent.payload.dataForSeo.enabled && frozen?.enabled
+        ? "worker_credentials_unavailable"
+        : "feature_disabled",
+      runtime,
+    );
+    return;
+  }
+  if (!frozen) {
+    throw new Error("Analysis Refresh v2 backlink policy disappeared");
+  }
+
+  const site = await new SitesRepository(tx).findById(
+    parent.scope,
+    parent.payload.siteId,
+  );
+  const collectionScope =
+    site?.is_primary
+      ? dataForSeoBacklinksScopeForSite(
+          site,
+          frozen.maxBacklinks,
+          frozen.maxReferringDomains,
+          frozen.maxBacklinkPages,
+          frozen.maxSourceVerifications,
+        )
+      : null;
+  if (!site || !collectionScope) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "dataforseo_backlinks",
+      "context_incomplete",
+      runtime,
+    );
+    return;
+  }
+
+  const config = ANALYSIS_REFRESH_COLLECTION_CONFIG.dataforseo_backlinks;
+  const activeKey = `collect:dataforseo:${config.operation}`;
+  if (await new AsyncRunsRepository(tx).findActive(parent.scope, activeKey)) {
+    await scheduleContinuationInTx(
+      ctx,
+      tx,
+      parent,
+      steps,
+      "analysisRefresh.dataforseo_backlinks.waitingForActiveRun",
+      runtime,
+    );
+    return;
+  }
+
+  const sources = new SourceConnectionsRepository(tx);
+  let source = await sources.findConnectedByProviderForUpdate(
+    parent.scope,
+    "dataforseo",
+  );
+  if (source && !sourceMatches(source, parent, "dataforseo")) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "dataforseo_backlinks",
+      "connection_scope_mismatch",
+      runtime,
+    );
+    return;
+  }
+  if (!source) {
+    const connectionConfig =
+      dataForSeoBacklinksConnectionConfig(collectionScope);
+    source = await sources.insertConnection({
+      workspaceId: parent.scope.workspaceId,
+      projectId: parent.scope.projectId,
+      siteId: site.id,
+      provider: "dataforseo",
+      connectionType: "api_key_stub",
+      state: "connected",
+      externalRef: connectionConfig.target,
+      config: { ...connectionConfig },
+      limitation: dataForSeoBacklinksLimitation(connectionConfig),
+      connectedAt: true,
+      createdBy: parent.claimed.initiated_by,
+    });
+  }
+
+  await createCollectionChildInTx(
+    ctx,
+    tx,
+    parent,
+    steps,
+    {
+      stepKey: "dataforseo_backlinks",
+      provider: "dataforseo",
+      operation: config.operation,
+      queue: config.queue,
+      methodVersion: DATAFORSEO_BACKLINKS_METHOD_VERSION,
+      connection: source,
+      requestPayload: {
+        provider: "dataforseo",
+        operation: config.operation,
+        sourceConnectionId: source.id,
+        collectionScope,
+      },
+      parametersHash: contentHash({
+        provider: "dataforseo",
+        operation: config.operation,
+        siteId: site.id,
+        collectionScope: collectionScope as unknown as CanonicalValue,
+      }),
+      crawlSeedSitePageId: null,
+      crawlSeedUrl: null,
+    },
+    runtime,
+  );
+}
+
 function validateExactAuditSnapshots(
   parent: ParentContext,
   steps: readonly AnalysisRefreshStepRow[],
@@ -956,10 +1197,12 @@ function validateExactAuditSnapshots(
     (
       step,
     ): step is AnalysisRefreshStepRow & {
-      step_key: CollectionStepKey;
+      step_key: AuditCollectionStepKey;
       result_snapshot_id: string;
     } =>
-      COLLECTION_STEP_KEYS.includes(step.step_key as CollectionStepKey) &&
+      AUDIT_COLLECTION_STEP_KEYS.includes(
+        step.step_key as AuditCollectionStepKey,
+      ) &&
       step.state === "completed" &&
       step.result_snapshot_id !== null,
   );
@@ -973,7 +1216,6 @@ function validateExactAuditSnapshots(
 
   const ordered = completedCollectionSteps.map((step) => {
     const snapshot = byId.get(step.result_snapshot_id);
-    const identity = COLLECTION_IDENTITY[step.step_key];
     if (
       !snapshot ||
       snapshot.workspace_id !== parent.scope.workspaceId ||
@@ -981,9 +1223,9 @@ function validateExactAuditSnapshots(
       snapshot.site_id !== parent.payload.siteId ||
       step.child_async_run_id === null ||
       snapshot.collection_run_id !== step.child_async_run_id ||
-      snapshot.provider !== step.step_key ||
-      snapshot.dataset_key !== identity.datasetKey ||
-      snapshot.method_version !== identity.methodVersion
+      !collectionIdentitiesForStep(step.step_key).some((identity) =>
+        snapshotMatchesIdentity(snapshot, identity),
+      )
     ) {
       throw new Error("Analysis Refresh exact Snapshot lineage is invalid");
     }
@@ -1026,7 +1268,9 @@ async function startGrowthAuditStep(
   }
 
   const snapshotIds = steps.flatMap((candidate) =>
-    COLLECTION_STEP_KEYS.includes(candidate.step_key as CollectionStepKey) &&
+    AUDIT_COLLECTION_STEP_KEYS.includes(
+      candidate.step_key as AuditCollectionStepKey,
+    ) &&
     candidate.state === "completed" &&
     candidate.result_snapshot_id !== null
       ? [candidate.result_snapshot_id]
@@ -1235,6 +1479,15 @@ async function advancePendingStep(
       case "dataforseo":
         await startDataForSeoStep(ctx, tx, parent, steps, runtime);
         return;
+      case "dataforseo_backlinks":
+        await startDataForSeoBacklinksStep(
+          ctx,
+          tx,
+          parent,
+          steps,
+          runtime,
+        );
+        return;
       case "growth_audit":
         await startGrowthAuditStep(ctx, tx, parent, steps, step, runtime);
         return;
@@ -1253,7 +1506,6 @@ function collectionSnapshotValid(
     return false;
   }
   const stepKey = step.step_key as CollectionStepKey;
-  const identity = COLLECTION_IDENTITY[stepKey];
   const config = ANALYSIS_REFRESH_COLLECTION_CONFIG[stepKey];
   return (
     collection !== null &&
@@ -1261,18 +1513,19 @@ function collectionSnapshotValid(
     collection.workspace_id === parent.scope.workspaceId &&
     collection.project_id === parent.scope.projectId &&
     collection.site_id === parent.payload.siteId &&
-    collection.provider === stepKey &&
     collection.operation === config.operation &&
-    collection.method_version === identity.methodVersion &&
     snapshot !== null &&
     snapshot.workspace_id === parent.scope.workspaceId &&
     snapshot.project_id === parent.scope.projectId &&
     snapshot.site_id === parent.payload.siteId &&
     snapshot.collection_run_id === child.id &&
     snapshot.source_connection_id === collection.source_connection_id &&
-    snapshot.provider === stepKey &&
-    snapshot.dataset_key === identity.datasetKey &&
-    snapshot.method_version === identity.methodVersion
+    collectionIdentitiesForStep(stepKey).some(
+      (identity) =>
+        collection.provider === identity.provider &&
+        collection.method_version === identity.methodVersion &&
+        snapshotMatchesIdentity(snapshot, identity),
+    )
   );
 }
 

@@ -13,7 +13,8 @@ export type CollectionOperation =
   | "search_analytics"
   | "organic_landing"
   | "keyword_gap_import"
-  | "search_landscape";
+  | "search_landscape"
+  | "backlinks";
 
 export type DatasetKey =
   | "crawl.site_graph.v1"
@@ -22,7 +23,8 @@ export type DatasetKey =
   | "csv.keyword_gap.v1"
   | "dataforseo.ranked_keywords.v1"
   | "dataforseo.search_landscape.v1"
-  | "dataforseo.search_landscape.v2";
+  | "dataforseo.search_landscape.v2"
+  | "dataforseo.backlinks.v1";
 
 export type Availability = "available" | "partial" | "unavailable";
 

@@ -216,12 +216,15 @@ const REQUIRED_TRIGGERS = [
   "analysis_refresh_steps_mutation_guard",
   "collection_runs_provenance_guard",
   "collection_runs_dataforseo_provenance_guard",
+  "collection_runs_dataforseo_backlinks_provenance_guard",
   "collection_runs_voc_provenance_guard",
   "data_snapshots_provenance_guard",
   "data_snapshots_dataforseo_provenance_guard",
+  "data_snapshots_dataforseo_backlinks_provenance_guard",
   "data_snapshots_voc_provenance_guard",
   "normalized_observations_provenance_guard",
   "normalized_observations_dataforseo_provenance_guard",
+  "normalized_observations_dataforseo_backlinks_provenance_guard",
   "normalized_observations_voc_provenance_guard",
   "normalized_observations_site_page_guard",
   "diagnostic_runs_frozen_input_guard",
@@ -373,6 +376,9 @@ const REQUIRED_ROUTINES = [
   "enforce_dataforseo_collection_run_provenance",
   "enforce_dataforseo_data_snapshot_provenance",
   "enforce_dataforseo_observation_provenance",
+  "enforce_dataforseo_backlinks_collection_run_provenance",
+  "enforce_dataforseo_backlinks_data_snapshot_provenance",
+  "enforce_dataforseo_backlinks_observation_provenance",
   "enforce_serp_overlap_competitor_origin_lineage",
   "upsert_serp_overlap_competitor_origin",
   "enforce_flow_shadow_run_provenance",
@@ -438,6 +444,7 @@ const REQUIRED_COLUMNS = [
   ["backlink_authority_snapshots", "source_ref"],
   ["backlink_authority_snapshots", "checksum"],
   ["backlink_facts", "source_ref"],
+  ["backlink_facts", "verification_status"],
 ] as const;
 
 const REQUIRED_DIGEST_SIGNATURES = [

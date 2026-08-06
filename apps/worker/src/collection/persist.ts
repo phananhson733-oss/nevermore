@@ -4,6 +4,7 @@ import {
   CollectionRunsRepository,
   DataSnapshotsRepository,
   ObservationsRepository,
+  projectDataForSeoBacklinkSnapshot,
   ProjectsRepository,
   ProviderDiscrepanciesRepository,
   SitesRepository,
@@ -15,6 +16,9 @@ import {
   type RunAttempt,
 } from "@sf/db";
 import {
+  DATAFORSEO_BACKLINKS_DATASET_KEY,
+  DATAFORSEO_BACKLINKS_METHOD_VERSION,
+  DATAFORSEO_BACKLINKS_OPERATION,
   objectKey,
   parseCrawlSiteLanguageSnapshotSummary,
   SourceError,
@@ -268,7 +272,38 @@ export async function persistCollectionResult(
         run.id,
         snapshot.id,
       );
-      if (projectionsMutable && !monitorProjection.isCompetitorMonitor) {
+      const isDataForSeoBacklinksSnapshot =
+        run.provider === "dataforseo" &&
+        run.operation === DATAFORSEO_BACKLINKS_OPERATION &&
+        run.method_version === DATAFORSEO_BACKLINKS_METHOD_VERSION &&
+        input.datasetKey === DATAFORSEO_BACKLINKS_DATASET_KEY &&
+        input.schemaVersion === DATAFORSEO_BACKLINKS_METHOD_VERSION;
+      if (
+        projectionsMutable &&
+        !monitorProjection.isCompetitorMonitor &&
+        isDataForSeoBacklinksSnapshot
+      ) {
+        await projectDataForSeoBacklinkSnapshot(tx, {
+          scope,
+          siteId: run.site_id,
+          dataSnapshot: {
+            id: snapshot.id,
+            provider: run.provider,
+            datasetKey: input.datasetKey,
+            methodVersion: run.method_version,
+            capturedAt: outcome.capturedAt,
+            availability: outcome.availability,
+            checksum: uploaded.sha256,
+            rowCount: outcome.rowCount,
+          },
+          observations: observationsWithPageLineage,
+        });
+      }
+      if (
+        projectionsMutable &&
+        !monitorProjection.isCompetitorMonitor &&
+        !isDataForSeoBacklinksSnapshot
+      ) {
         await projectCollectionSnapshotKeywords(tx, scope, snapshot);
         await projectCollectionSnapshotCompetitors(tx, scope, snapshot);
       }

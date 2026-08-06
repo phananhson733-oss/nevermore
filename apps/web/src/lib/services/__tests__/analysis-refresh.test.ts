@@ -38,8 +38,13 @@ const mocks = vi.hoisted(() => {
     getBoss: vi.fn(async () => ({ name: "boss" })),
     getEnv: vi.fn(() => ({
       DATAFORSEO_ENABLED: "true" as "true" | "false",
+      DATAFORSEO_BACKLINKS_ENABLED: "true" as "true" | "false",
       DATAFORSEO_MAX_KEYWORDS: 350,
       DATAFORSEO_MAX_COMPETITORS: 75,
+      DATAFORSEO_MAX_BACKLINKS: 500,
+      DATAFORSEO_MAX_REFERRING_DOMAINS: 100,
+      DATAFORSEO_MAX_BACKLINK_PAGES: 500,
+      DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 20,
     })),
   };
 });
@@ -185,8 +190,13 @@ beforeEach(() => {
   );
   mocks.getEnv.mockReturnValue({
     DATAFORSEO_ENABLED: "true",
+    DATAFORSEO_BACKLINKS_ENABLED: "true",
     DATAFORSEO_MAX_KEYWORDS: 350,
     DATAFORSEO_MAX_COMPETITORS: 75,
+    DATAFORSEO_MAX_BACKLINKS: 500,
+    DATAFORSEO_MAX_REFERRING_DOMAINS: 100,
+    DATAFORSEO_MAX_BACKLINK_PAGES: 500,
+    DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 20,
   });
 });
 
@@ -261,6 +271,13 @@ describe("createAnalysisRefreshRun", () => {
           maxKeywords: 350,
           maxCompetitors: 75,
         },
+        dataForSeoBacklinks: {
+          enabled: true,
+          maxBacklinks: 500,
+          maxReferringDomains: 100,
+          maxBacklinkPages: 500,
+          maxSourceVerifications: 20,
+        },
       },
     });
     expect(createPlan).toHaveBeenCalledWith({
@@ -307,11 +324,16 @@ describe("createAnalysisRefreshRun", () => {
     );
   });
 
-  it("skips only unavailable optional sources and disabled DataForSEO", async () => {
+  it("skips unavailable optional sources and both DataForSEO steps when the global feature is disabled", async () => {
     mocks.getEnv.mockReturnValue({
       DATAFORSEO_ENABLED: "false",
+      DATAFORSEO_BACKLINKS_ENABLED: "true",
       DATAFORSEO_MAX_KEYWORDS: 200,
       DATAFORSEO_MAX_COMPETITORS: 100,
+      DATAFORSEO_MAX_BACKLINKS: 300,
+      DATAFORSEO_MAX_REFERRING_DOMAINS: 80,
+      DATAFORSEO_MAX_BACKLINK_PAGES: 250,
+      DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 12,
     });
     mockHappyPath({ crawl: connections.crawl, gsc: null, ga4: null });
     const insertQueued = vi.spyOn(
@@ -342,11 +364,63 @@ describe("createAnalysisRefreshRun", () => {
         maxKeywords: 200,
         maxCompetitors: 100,
       },
+      dataForSeoBacklinks: {
+        enabled: false,
+        maxBacklinks: 300,
+        maxReferringDomains: 80,
+        maxBacklinkPages: 250,
+        maxSourceVerifications: 12,
+      },
     });
     expect(skipStep.mock.calls.map((call) => call.slice(2))).toEqual([
       ["gsc", "source_not_connected"],
       ["ga4", "source_not_connected"],
       ["dataforseo", "feature_disabled"],
+      ["dataforseo_backlinks", "feature_disabled"],
+    ]);
+  });
+
+  it("freezes and pre-skips only the backlink step when its independent rollout flag is disabled", async () => {
+    mocks.getEnv.mockReturnValue({
+      DATAFORSEO_ENABLED: "true",
+      DATAFORSEO_BACKLINKS_ENABLED: "false",
+      DATAFORSEO_MAX_KEYWORDS: 200,
+      DATAFORSEO_MAX_COMPETITORS: 100,
+      DATAFORSEO_MAX_BACKLINKS: 300,
+      DATAFORSEO_MAX_REFERRING_DOMAINS: 80,
+      DATAFORSEO_MAX_BACKLINK_PAGES: 250,
+      DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 12,
+    });
+    mockHappyPath();
+    const insertQueued = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "insertQueued",
+    );
+    const skipStep = vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "skipStep",
+    );
+
+    await createAnalysisRefreshRun(
+      { workspaceId: ids.workspace },
+      ids.project,
+      ids.actor,
+      "refresh-backlinks-disabled",
+      {},
+    );
+
+    expect(insertQueued.mock.calls[0]?.[0].requestPayload).toMatchObject({
+      dataForSeo: { enabled: true },
+      dataForSeoBacklinks: {
+        enabled: false,
+        maxBacklinks: 300,
+        maxReferringDomains: 80,
+        maxBacklinkPages: 250,
+        maxSourceVerifications: 12,
+      },
+    });
+    expect(skipStep.mock.calls.map((call) => call.slice(2))).toEqual([
+      ["dataforseo_backlinks", "feature_disabled"],
     ]);
   });
 
@@ -700,10 +774,35 @@ describe("parseAnalysisRefreshRequestPayload", () => {
       maxKeywords: 200,
       maxCompetitors: 100,
     },
+    dataForSeoBacklinks: {
+      enabled: false,
+      maxBacklinks: 500,
+      maxReferringDomains: 100,
+      maxBacklinkPages: 500,
+      maxSourceVerifications: 20,
+    },
   };
 
   it("accepts the exact secret-free frozen payload", () => {
     expect(parseAnalysisRefreshRequestPayload(payload)).toEqual(payload);
+  });
+
+  it("requires the v2 backlink policy to be frozen by the web producer", () => {
+    const { dataForSeoBacklinks: _missing, ...legacyPayload } = payload;
+
+    expect(() => parseAnalysisRefreshRequestPayload(legacyPayload)).toThrow();
+  });
+
+  it("rejects a frozen source-page verification cap above the collector ceiling", () => {
+    expect(() =>
+      parseAnalysisRefreshRequestPayload({
+        ...payload,
+        dataForSeoBacklinks: {
+          ...payload.dataForSeoBacklinks,
+          maxSourceVerifications: 21,
+        },
+      }),
+    ).toThrow();
   });
 
   it("rejects unknown fields so provider secrets cannot be smuggled in", () => {

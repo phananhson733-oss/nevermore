@@ -104,6 +104,88 @@ describe("GrowthMapBacklinkReadModel", () => {
     expect(GrowthMapBacklinkReadModel.parse(validModel())).toBeTruthy();
   });
 
+  it("accepts DataForSEO provider-index totals only with DataForSEO Rank semantics", () => {
+    const model = validModel();
+    const primary = {
+      ...model.primarySite,
+      provider: "dataforseo",
+      authorityMetric: {
+        kind: "dataforseo_rank",
+        value: 54,
+      },
+      trace: {
+        ...model.primarySite.trace,
+        sourceRef: `dfs-${PRIMARY_SNAPSHOT_ID}`,
+      },
+    };
+    const competitor = {
+      ...model.approvedCompetitors[0],
+      provider: "dataforseo",
+      authorityMetric: {
+        kind: "dataforseo_rank",
+        value: 72,
+      },
+      trace: {
+        ...model.approvedCompetitors[0]!.trace,
+        sourceRef: `dfs-${COMPETITOR_SNAPSHOT_ID}`,
+      },
+    };
+
+    expect(
+      GrowthMapBacklinkReadModel.parse({
+        ...model,
+        sources: [primary, competitor],
+        primarySite: primary,
+        approvedCompetitors: [competitor],
+        comparison: {
+          ...model.comparison,
+          provider: "dataforseo",
+        },
+        referringDomains: [
+          {
+            ...model.referringDomains[0],
+            authorityMetric: {
+              kind: "dataforseo_rank",
+              value: 61,
+            },
+          },
+        ],
+      }),
+    ).toBeTruthy();
+  });
+
+  it("rejects presenting DataForSEO Rank as Ahrefs DR or Moz DA", () => {
+    const model = validModel();
+    const invalidPrimary = {
+      ...model.primarySite,
+      provider: "dataforseo",
+      authorityMetric: {
+        kind: "domain_rating",
+        value: 54,
+      },
+      trace: {
+        ...model.primarySite.trace,
+        sourceRef: `dfs-${PRIMARY_SNAPSHOT_ID}`,
+      },
+    };
+
+    expect(() =>
+      GrowthMapBacklinkReadModel.parse({
+        ...model,
+        sources: [invalidPrimary],
+        primarySite: invalidPrimary,
+        approvedCompetitors: [],
+        comparison: {
+          state: "insufficient",
+          provider: null,
+          primarySiteSnapshotId: null,
+          competitorSnapshotIds: [],
+          limitation: "No aligned competitor snapshot is available.",
+        },
+      }),
+    ).toThrow(/DataForSEO.*dataforseo_rank/u);
+  });
+
   it("rejects DR on search-derived observations", () => {
     const model = validModel();
     const searchSource = {

@@ -11,6 +11,10 @@ const ANALYTICS_PAGE_METRIC = {
   gsc: "gsc.page.v1",
   ga4: "ga4.landing.v1",
 } as const;
+const DATAFORSEO_BACKLINK_PAGE_METRICS = new Set([
+  "dataforseo.backlink.v1",
+  "dataforseo.backlink_page.v1",
+]);
 
 /**
  * Derive the complete exact-fetch set represented by canonical_url.v1.
@@ -123,11 +127,13 @@ export async function resolveObservationSitePageLineage(
     });
   }
 
-  const analyticsMetric =
+  const pageMetrics =
     input.provider === "gsc" || input.provider === "ga4"
-      ? ANALYTICS_PAGE_METRIC[input.provider]
-      : null;
-  if (analyticsMetric === null) {
+      ? new Set([ANALYTICS_PAGE_METRIC[input.provider]])
+      : input.provider === "dataforseo"
+        ? DATAFORSEO_BACKLINK_PAGE_METRICS
+        : null;
+  if (pageMetrics === null) {
     return input.observations.map((observation) => ({
       ...observation,
       sitePageId: null,
@@ -137,7 +143,7 @@ export async function resolveObservationSitePageLineage(
   const candidatesBySubject = new Map<string, readonly string[]>();
   for (const observation of input.observations) {
     if (
-      observation.metricKey !== analyticsMetric ||
+      !pageMetrics.has(observation.metricKey) ||
       observation.subjectType !== "url"
     ) {
       continue;
@@ -170,7 +176,7 @@ export async function resolveObservationSitePageLineage(
 
   return input.observations.map((observation) => {
     if (
-      observation.metricKey !== analyticsMetric ||
+      !pageMetrics.has(observation.metricKey) ||
       observation.subjectType !== "url" ||
       !candidatesBySubject.has(observation.subjectRef)
     ) {

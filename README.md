@@ -18,7 +18,7 @@ Contract inventory: **79 API operations / 10 async operations / 78 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0043_validate_contextual_diagnostic_rule_set.sql` (**43 migrations**).
+`0044_dataforseo_backlinks.sql` (**44 migrations**).
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and
@@ -92,13 +92,24 @@ lineage, and immutable measurement windows. It does not yet include an external
 publication-attempt HTTP operation or a GitHub/WordPress provider write.
 
 `createAnalysisRefreshRun` is the server-owned full refresh command. Its fixed
-plan runs required Crawl, optional connected GSC, optional connected GA4,
-optional DataForSEO Search Landscape (DFS), then required Growth Audit. Public
+`analysis-refresh.plan.v2` runs required Crawl, optional connected GSC, optional
+connected GA4, optional DataForSEO Search Landscape (DFS), optional
+`dataforseo_backlinks`, then required Growth Audit. Historical five-step
+`analysis-refresh.plan.v1` parents remain readable and resumable under their
+exact manifest; new parents use v2. Public
 `createCollectionRun` remains limited to `crawl`, `gsc`, and `ga4`; customers
-cannot submit DFS target, market, language, limits, credentials, or provider
-queries. DFS v2 queries organic positions 1–100 and, only when domain overlap
+cannot submit DFS/Backlinks targets, market, language, limits, credentials, or
+provider queries. DFS v2 queries organic positions 1–100 and, only when domain overlap
 is empty, may use frozen GSC/Crawl/Product Profile seeds for one paid SERP
 Competitors fallback while preserving each seed's real source.
+
+DataForSEO Backlinks is a separate default-off rollout
+(`DATAFORSEO_BACKLINKS_ENABLED=false`) on top of the global DataForSEO gate. Its
+server-frozen defaults/hard limits are 500/1000 backlink rows, 100/1000
+referring domains, 500/1000 target pages, and 20/20 selective SSRF-safe source
+page verifications. The provider authority metric is `dataforseo_rank`, never
+Ahrefs DR or Moz DA; crawler verification remains evidence separate from the
+provider index fact.
 
 New-product onboarding offers an explicit optional GSC/GA4 step after the
 durable Product Profile draft is created and before the profile screen starts

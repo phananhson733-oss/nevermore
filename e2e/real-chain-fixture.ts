@@ -818,13 +818,9 @@ export async function publishDiagnosticThroughAnalysisRefresh(
       "Growth Map fixture requires one exact offline Crawl Snapshot",
     );
   }
-  const optionalStepSkipped = collectionStepKeys
-    .filter((stepKey) => stepKey !== "crawl")
-    .some((stepKey) => !snapshotByProvider.has(stepKey));
-  const parentStatus =
-    diagnostic.diagnostic_status === "partial" || optionalStepSkipped
-      ? "partial"
-      : "completed";
+  // The offline diagnostic manifest intentionally excludes backlink evidence,
+  // so the current six-step Analysis Refresh is always partial in this fixture.
+  const parentStatus = "partial";
 
   await db.db.transaction(async (tx) => {
     const completedAt = new Date().toISOString();
@@ -921,6 +917,18 @@ export async function publishDiagnosticThroughAnalysisRefresh(
           `Growth Map fixture could not complete ${stepKey} step`,
         );
       }
+    }
+    if (
+      !(await plans.skipStep(
+        scope,
+        analysisRefreshRunId,
+        "dataforseo_backlinks",
+        "provider_not_collected_by_offline_fixture",
+      ))
+    ) {
+      throw new Error(
+        "Growth Map fixture could not record skipped dataforseo_backlinks step",
+      );
     }
     if (
       !(await plans.startStep(

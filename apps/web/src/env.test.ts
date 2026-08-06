@@ -104,6 +104,21 @@ describe("web production URL environment policy", () => {
     ).toBe(false);
   });
 
+  it("uses the same 20-page verification ceiling as the Backlinks scope", () => {
+    expect(
+      production.parse({
+        ...BASE,
+        DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: "20",
+      }).DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS,
+    ).toBe(20);
+    expect(
+      production.safeParse({
+        ...BASE,
+        DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: "21",
+      }).success,
+    ).toBe(false);
+  });
+
   it.each([
     ["APP_ORIGIN", "http://app.example.com"],
     ["APP_ORIGIN", "http://localhost:3000"],

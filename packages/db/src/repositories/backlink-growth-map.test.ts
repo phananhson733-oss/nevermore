@@ -125,6 +125,42 @@ describe("BacklinkGrowthMapRepository", () => {
     expect(db.query().sql).not.toMatch(/availability\s*=\s*'available'/u);
   });
 
+  it("reads DataForSEO as provider-index authority without relabelling its rank as DR or DA", async () => {
+    const db = fakeExecutor();
+    db.enqueue([
+      authorityRow({
+        provider: "dataforseo",
+        total_backlinks: "1240",
+        total_referring_domains: "87",
+        observed_backlinks: null,
+        observed_referring_domains: null,
+        authority_metric_kind: "dataforseo_rank",
+        authority_metric_value: "54",
+        source_ref: `dfs-${ids.snapshot}`,
+        row_count: 7,
+      }),
+    ]);
+
+    await expect(
+      new BacklinkGrowthMapRepository(
+        db.executor,
+      ).listLatestAuthoritySnapshots(scope),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        provider: "dataforseo",
+        availability: "available",
+        index_scope: "provider_index",
+        total_backlinks: 1240,
+        total_referring_domains: 87,
+        observed_backlinks: null,
+        observed_referring_domains: null,
+        authority_metric_kind: "dataforseo_rank",
+        authority_metric_value: 54,
+        source_ref: `dfs-${ids.snapshot}`,
+      }),
+    ]);
+  });
+
   it("reads page counts only when explicitly persisted by the exact snapshot", async () => {
     const db = fakeExecutor();
     db.enqueue([
@@ -169,6 +205,16 @@ describe("BacklinkGrowthMapRepository", () => {
         target_site_page_id: ids.page,
         source_authority_metric_kind: null,
         source_authority_metric_value: null,
+        anchor_text: null,
+        first_seen_at: null,
+        last_seen_at: null,
+        is_new: false,
+        is_lost: false,
+        verification_status: "not_checked",
+        verified_at: null,
+        verification_final_url: null,
+        verification_http_status: null,
+        verification_limitation: null,
       },
     ]);
 
@@ -180,6 +226,58 @@ describe("BacklinkGrowthMapRepository", () => {
     const query = db.query();
     expect(query.sql).toContain("competitor.review_status = 'approved'");
     expect(query.params).toContain(ids.snapshot);
+  });
+
+  it("preserves DataForSEO fact rank and bounded crawler verification metadata", async () => {
+    const db = fakeExecutor();
+    db.enqueue([
+      {
+        id: ids.fact,
+        snapshot_id: ids.snapshot,
+        workspace_id: ids.workspace,
+        project_id: ids.project,
+        referring_domain: "publisher.example",
+        source_url: "https://publisher.example/review",
+        target_url: "https://relayops.example/guide",
+        target_site_page_id: ids.page,
+        source_authority_metric_kind: "dataforseo_rank",
+        source_authority_metric_value: "71",
+        anchor_text: "RelayOps guide",
+        first_seen_at: new Date("2026-07-01T00:00:00.000Z"),
+        last_seen_at: new Date("2026-07-28T00:00:00.000Z"),
+        is_new: true,
+        is_lost: false,
+        verification_status: "verified",
+        verified_at: new Date("2026-07-28T00:05:00.000Z"),
+        verification_final_url: "https://publisher.example/review",
+        verification_http_status: 200,
+        verification_limitation: null,
+      },
+    ]);
+
+    const rows = await new BacklinkGrowthMapRepository(
+      db.executor,
+    ).listFacts(scope, [ids.snapshot]);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        source_authority_metric_kind: "dataforseo_rank",
+        source_authority_metric_value: 71,
+        anchor_text: "RelayOps guide",
+        first_seen_at: "2026-07-01T00:00:00.000Z",
+        last_seen_at: "2026-07-28T00:00:00.000Z",
+        is_new: true,
+        is_lost: false,
+        verification_status: "verified",
+        verified_at: "2026-07-28T00:05:00.000Z",
+        verification_final_url: "https://publisher.example/review",
+        verification_http_status: 200,
+        verification_limitation: null,
+      }),
+    ]);
+    const query = db.query();
+    expect(query.sql).toContain("fact.verification_status");
+    expect(query.sql).toContain("fact.verification_http_status");
   });
 
   it("fails closed instead of truncating authority entities", async () => {

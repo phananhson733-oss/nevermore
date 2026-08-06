@@ -5,6 +5,7 @@ import {
   analysisRefreshSteps,
   asyncRuns,
   auditRuns,
+  collectionRuns,
   dataSnapshots,
   diagnosticRuns,
   executionArtifacts,
@@ -379,22 +380,93 @@ function publishedGrowthAuditRuns(
        and collection_child.result_type = 'collection_run'
        and collection_child.result_id = collection_child.id
        and collection_child.completed_at is not null
+      inner join ${collectionRuns} as collection_run
+        on collection_run.id = collection_child.id
+       and collection_run.workspace_id = ${scope.workspaceId}
+       and collection_run.project_id = ${scope.projectId}
+       and collection_run.provider = case collection_step.step_key
+         when 'dataforseo_backlinks' then 'dataforseo'
+         else collection_step.step_key
+       end
       inner join ${dataSnapshots} as result_snapshot
         on result_snapshot.id = collection_step.result_snapshot_id
        and result_snapshot.workspace_id = ${scope.workspaceId}
        and result_snapshot.project_id = ${scope.projectId}
        and result_snapshot.collection_run_id = collection_child.id
-       and result_snapshot.provider = collection_step.step_key
+       and result_snapshot.source_connection_id = collection_run.source_connection_id
+       and result_snapshot.provider = case collection_step.step_key
+         when 'dataforseo_backlinks' then 'dataforseo'
+         else collection_step.step_key
+       end
        and result_snapshot.availability in ('available', 'partial')
       where collection_step.workspace_id = ${scope.workspaceId}
         and collection_step.project_id = ${scope.projectId}
-        and collection_step.step_key in ('crawl', 'gsc', 'ga4', 'dataforseo')
+        and collection_step.step_key in (
+          'crawl',
+          'gsc',
+          'ga4',
+          'dataforseo',
+          'dataforseo_backlinks'
+        )
         and collection_step.state = 'completed'
+        and (
+          (
+            collection_step.step_key = 'crawl'
+            and collection_run.operation = 'site_graph'
+            and collection_run.method_version = 'crawl.site_graph.v2'
+            and result_snapshot.dataset_key = 'crawl.site_graph.v1'
+            and result_snapshot.method_version = 'crawl.site_graph.v2'
+          )
+          or (
+            collection_step.step_key = 'gsc'
+            and collection_run.operation = 'search_analytics'
+            and collection_run.method_version = 'gsc.page_query_daily.v1'
+            and result_snapshot.dataset_key = 'gsc.page_query_daily.v1'
+            and result_snapshot.method_version = 'gsc.page_query_daily.v1'
+          )
+          or (
+            collection_step.step_key = 'ga4'
+            and collection_run.operation = 'organic_landing'
+            and collection_run.method_version = 'ga4.organic_landing_daily.v1'
+            and result_snapshot.dataset_key = 'ga4.organic_landing_daily.v1'
+            and result_snapshot.method_version = 'ga4.organic_landing_daily.v1'
+          )
+          or (
+            collection_step.step_key = 'dataforseo'
+            and collection_run.operation = 'search_landscape'
+            and (
+              (
+                collection_run.method_version = 'dataforseo.search_landscape.v1'
+                and result_snapshot.dataset_key = 'dataforseo.search_landscape.v1'
+                and result_snapshot.schema_version = 'dataforseo.search_landscape.v1'
+                and result_snapshot.method_version = 'dataforseo.search_landscape.v1'
+              )
+              or (
+                collection_run.method_version = 'dataforseo.search_landscape.v2'
+                and result_snapshot.dataset_key = 'dataforseo.search_landscape.v2'
+                and result_snapshot.schema_version = 'dataforseo.search_landscape.v2'
+                and result_snapshot.method_version = 'dataforseo.search_landscape.v2'
+              )
+            )
+          )
+          or (
+            collection_step.step_key = 'dataforseo_backlinks'
+            and collection_run.operation = 'backlinks'
+            and collection_run.method_version = 'dataforseo.backlinks.v1'
+            and result_snapshot.dataset_key = 'dataforseo.backlinks.v1'
+            and result_snapshot.schema_version = 'dataforseo.backlinks.v1'
+            and result_snapshot.method_version = 'dataforseo.backlinks.v1'
+          )
+        )
     ), publishable_analysis_refreshes as (
       select
         ${asyncRuns.id} as id,
         ${asyncRuns.completed_at} as completed_at
       from ${asyncRuns}
+      inner join ${analysisRefreshRuns} as publication_plan
+        on publication_plan.id = ${asyncRuns.id}
+       and publication_plan.workspace_id = ${scope.workspaceId}
+       and publication_plan.project_id = ${scope.projectId}
       where ${asyncRuns.workspace_id} = ${scope.workspaceId}
         and ${asyncRuns.project_id} = ${scope.projectId}
         and ${asyncRuns.kind} = 'analysis_refresh'
@@ -479,16 +551,55 @@ function publishedGrowthAuditRuns(
               )
             )
         )
-        and exists (
-          select 1
-          from ${analysisRefreshSteps}
-          where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
-            and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
-            and ${analysisRefreshSteps.project_id} = ${scope.projectId}
-            and ${analysisRefreshSteps.ordinal} = 5
-            and ${analysisRefreshSteps.step_key} = 'growth_audit'
-            and ${analysisRefreshSteps.required}
-            and ${analysisRefreshSteps.state} = 'completed'
+        and (
+          (
+            publication_plan.plan_manifest ->> 'version' = 'analysis-refresh.plan.v1'
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 5
+                and ${analysisRefreshSteps.step_key} = 'growth_audit'
+                and ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} = 'completed'
+            )
+          )
+          or (
+            publication_plan.plan_manifest ->> 'version' = 'analysis-refresh.plan.v2'
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 5
+                and ${analysisRefreshSteps.step_key} = 'dataforseo_backlinks'
+                and not ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+                and (
+                  ${analysisRefreshSteps.state} <> 'completed'
+                  or exists (
+                    select 1
+                    from canonical_completed_collection_steps
+                    where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                      and canonical_completed_collection_steps.step_key = 'dataforseo_backlinks'
+                  )
+                )
+            )
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 6
+                and ${analysisRefreshSteps.step_key} = 'growth_audit'
+                and ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} = 'completed'
+            )
+          )
         )
     )
     select

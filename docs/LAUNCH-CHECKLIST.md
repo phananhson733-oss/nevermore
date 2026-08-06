@@ -108,7 +108,10 @@ Deploy the worker before the web promotion gate.
   `DB_POOL_MAX=2`, shared Supabase/OAuth/encryption values,
   `SF_BLOB_BACKEND=supabase`, the two bucket names, and the selected worker-only
   LLM configuration. Set `DATAFORSEO_ENABLED=true`, the reviewed row cap, and
-  `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` only in Railway **[Owner]**
+  `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` only in Railway. Keep
+  `DATAFORSEO_BACKLINKS_ENABLED=false` until its separate rollout is approved;
+  set the bounded Backlinks defaults to 500 backlink rows, 100 referring
+  domains, 500 target pages, and 20 source-page verifications **[Owner]**
 - [ ] Leave `APP_BUILD_SHA` unset so `RAILWAY_GIT_COMMIT_SHA` reports the actual
   source, or set it only to exact `<release SHA>` **[Owner]**
 - [ ] Deploy `<release SHA>` and retain sanitized Railway evidence that startup
@@ -130,7 +133,8 @@ probe.
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
   `DB_POOL_MAX=1`, the same Supabase/OAuth/encryption/bucket settings,
   `SUPABASE_ANON_KEY`, `SF_BLOB_BACKEND=supabase`, `DATAFORSEO_ENABLED=true`,
-  and the same non-secret DataForSEO row cap **[Owner]**
+  `DATAFORSEO_BACKLINKS_ENABLED=false`, and the same non-secret DataForSEO and
+  Backlinks caps as the Worker **[Owner]**
 - [ ] Leave `NEXT_PUBLIC_BASE_PATH` unset. Do not set `/app`; this release serves
   the root of `app.gengrowth.ai` **[Owner]**
 - [ ] Do not set `SF_DEV_AUTH`, `SF_BLOB_DIR`, worker-only LLM values, or
@@ -195,6 +199,13 @@ verification in progress,” not as pilot-ready.
   verify the terminal run, immutable snapshot and `vendor_observation / B`
   evidence, and retain sanitized Railway logs proving no Authorization,
   credentials or provider response body was emitted **[Owner/me]**
+- [ ] After separate Backlinks rollout approval, enable
+  `DATAFORSEO_BACKLINKS_ENABLED=true` on Web and Worker together, run one
+  bounded Analysis Refresh v2 Backlinks step, and verify its immutable
+  `dataforseo.backlinks.v1` Snapshot, `dataforseo_rank` semantics, cap/stop
+  reason, and selective source-page verification evidence. Retain no provider
+  body, fetched HTML, credentials, or Authorization data; return the flag to
+  `false` if the rollout is not continuing **[Owner/me]**
 - [ ] Generate a production structured-LLM Artifact with the selected worker
   provider configuration **[Owner]**
 - [ ] Verify a signed export download works, expires in 900 seconds and never

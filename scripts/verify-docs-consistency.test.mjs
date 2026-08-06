@@ -146,7 +146,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 43);
+  assert.equal(migrationFiles.length, 44);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
@@ -184,6 +184,43 @@ test("current docs freeze server-owned DFS and published-generation reads", () =
     assert.match(
       source,
       /(?:crawl|Crawl)[\s\S]{0,100}(?:gsc|GSC)[\s\S]{0,100}(?:ga4|GA4)/,
+    );
+  }
+});
+
+test("current docs freeze bounded DataForSEO Backlinks and Analysis Refresh compatibility", () => {
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /analysis-refresh\.plan\.v2/);
+    assert.match(source, /dataforseo_backlinks/);
+    assert.match(source, /analysis-refresh\.plan\.v1/);
+    assert.match(source, /dataforseo_rank/);
+    assert.match(source, /DATAFORSEO_BACKLINKS_ENABLED/);
+    assert.match(source, /default-off|默认.*关闭|默认都为\s*`false`/s);
+  }
+
+  for (const [path, upperBound] of [
+    ["README.md", /20\/20[\s\S]{0,40}source\s+page verifications/],
+    ["CLAUDE.md", /硬上限为 1000\/1000\/1000\/20/],
+    [
+      "authority/implementation-spec-v0.4/README.md",
+      /source verifications 20\/20/,
+    ],
+    [
+      "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+      /硬上限分别\s*为 1000、1000、1000 与 20/,
+    ],
+    ["docs/DEPLOYMENT.md", /hard caps 1000\/1000\/1000\/20/],
+  ]) {
+    assert.match(
+      sources.get(path),
+      upperBound,
+      `${path} must freeze source-page verification at the shared hard cap of 20`,
     );
   }
 });

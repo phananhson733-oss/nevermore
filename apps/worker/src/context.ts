@@ -37,6 +37,11 @@ export interface WorkerContext {
     readonly password: string | null;
     readonly maxKeywords: number;
     readonly maxCompetitors: number;
+    readonly backlinksEnabled?: boolean;
+    readonly maxBacklinks?: number;
+    readonly maxReferringDomains?: number;
+    readonly maxBacklinkPages?: number;
+    readonly maxSourceVerifications?: number;
     /** Offline provider seam used only by collection fixtures. */
     readonly fetch?: typeof globalThis.fetch;
   };
@@ -125,6 +130,14 @@ export function buildWorkerContext(input: {
       password: input.env.DATAFORSEO_PASSWORD ?? null,
       maxKeywords: input.env.DATAFORSEO_MAX_KEYWORDS,
       maxCompetitors: input.env.DATAFORSEO_MAX_COMPETITORS,
+      backlinksEnabled:
+        input.env.DATAFORSEO_ENABLED === "true" &&
+        input.env.DATAFORSEO_BACKLINKS_ENABLED === "true",
+      maxBacklinks: input.env.DATAFORSEO_MAX_BACKLINKS,
+      maxReferringDomains: input.env.DATAFORSEO_MAX_REFERRING_DOMAINS,
+      maxBacklinkPages: input.env.DATAFORSEO_MAX_BACKLINK_PAGES,
+      maxSourceVerifications:
+        input.env.DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS,
     },
     openai: resolveLlmClientConfig(input.env),
     findingSummariesEnabled:

@@ -11,14 +11,26 @@ import {
 } from "./base.ts";
 
 export const ANALYSIS_REFRESH_PLAN_VERSION =
+  "analysis-refresh.plan.v2" as const;
+
+export const ANALYSIS_REFRESH_LEGACY_PLAN_VERSION =
   "analysis-refresh.plan.v1" as const;
+
+export const ANALYSIS_REFRESH_LEGACY_PLAN_STEPS = [
+  { ordinal: 1, stepKey: "crawl", required: true },
+  { ordinal: 2, stepKey: "gsc", required: false },
+  { ordinal: 3, stepKey: "ga4", required: false },
+  { ordinal: 4, stepKey: "dataforseo", required: false },
+  { ordinal: 5, stepKey: "growth_audit", required: true },
+] as const;
 
 export const ANALYSIS_REFRESH_PLAN_STEPS = [
   { ordinal: 1, stepKey: "crawl", required: true },
   { ordinal: 2, stepKey: "gsc", required: false },
   { ordinal: 3, stepKey: "ga4", required: false },
   { ordinal: 4, stepKey: "dataforseo", required: false },
-  { ordinal: 5, stepKey: "growth_audit", required: true },
+  { ordinal: 5, stepKey: "dataforseo_backlinks", required: false },
+  { ordinal: 6, stepKey: "growth_audit", required: true },
 ] as const;
 
 export type AnalysisRefreshStepKey =
@@ -31,7 +43,9 @@ export type AnalysisRefreshStepState =
   | "failed";
 
 export interface AnalysisRefreshPlanManifest {
-  readonly version: typeof ANALYSIS_REFRESH_PLAN_VERSION;
+  readonly version:
+    | typeof ANALYSIS_REFRESH_PLAN_VERSION
+    | typeof ANALYSIS_REFRESH_LEGACY_PLAN_VERSION;
   readonly steps: readonly {
     readonly ordinal: number;
     readonly stepKey: AnalysisRefreshStepKey;
@@ -89,6 +103,17 @@ export function analysisRefreshPlanManifest(): AnalysisRefreshPlanManifest {
   };
 }
 
+/**
+ * Rebuild the only historical plan that a durable parent may still resume.
+ * New parents never use this manifest; it exists solely for exact recovery.
+ */
+export function legacyAnalysisRefreshPlanManifest(): AnalysisRefreshPlanManifest {
+  return {
+    version: ANALYSIS_REFRESH_LEGACY_PLAN_VERSION,
+    steps: ANALYSIS_REFRESH_LEGACY_PLAN_STEPS.map((step) => ({ ...step })),
+  };
+}
+
 export function analysisRefreshPlanHash(
   manifest: AnalysisRefreshPlanManifest,
 ): string {
@@ -126,11 +151,11 @@ function assertSkipReason(skipReason: string): void {
 
 /**
  * Durable Analysis Refresh plan storage. Parent plan identity is append-only in
- * SQL; only the five step execution rows may advance through their state graph.
+ * SQL; only the six step execution rows may advance through their state graph.
  */
 export class AnalysisRefreshRunsRepository extends Repository {
   /**
-   * Insert the immutable parent and all five pending steps in the caller's
+   * Insert the immutable parent and all six pending steps in the caller's
    * atomic enqueue transaction.
    */
   async create(values: {

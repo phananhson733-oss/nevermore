@@ -17,10 +17,130 @@ export const DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL =
 /** Official Google Labs endpoint for seed-keyword SERP competitor discovery. */
 export const DATAFORSEO_SERP_COMPETITORS_LIVE_URL =
   "https://api.dataforseo.com/v3/dataforseo_labs/google/serp_competitors/live";
+/** Official Backlinks API endpoints used by the backlink-growth source. */
+export const DATAFORSEO_BACKLINK_SUMMARY_LIVE_URL =
+  "https://api.dataforseo.com/v3/backlinks/summary/live";
+export const DATAFORSEO_BACKLINKS_LIVE_URL =
+  "https://api.dataforseo.com/v3/backlinks/backlinks/live";
+export const DATAFORSEO_REFERRING_DOMAINS_LIVE_URL =
+  "https://api.dataforseo.com/v3/backlinks/referring_domains/live";
+export const DATAFORSEO_DOMAIN_PAGES_LIVE_URL =
+  "https://api.dataforseo.com/v3/backlinks/domain_pages/live";
 
 export const DEFAULT_DATAFORSEO_LIMIT = 200;
 export const DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT = 100;
 export const MAX_DATAFORSEO_LIMIT = 1_000;
+
+export interface DataForSeoBacklinkSummaryRequest {
+  readonly target: string;
+}
+
+export interface DataForSeoBacklinkListRequest {
+  readonly target: string;
+  readonly limit: number;
+}
+
+interface DataForSeoBacklinksResponseMeta {
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+}
+
+export interface DataForSeoBacklinkSummary {
+  readonly target: string;
+  readonly firstSeen: string | null;
+  readonly lostDate: string | null;
+  readonly rank: number;
+  readonly backlinks: number;
+  readonly referringDomains: number;
+  readonly referringMainDomains: number;
+}
+
+export interface DataForSeoBacklinkSummaryResponse
+  extends DataForSeoBacklinksResponseMeta {
+  readonly summary: DataForSeoBacklinkSummary;
+}
+
+export interface DataForSeoBacklinkRow {
+  readonly sourceDomain: string;
+  readonly sourceUrl: string;
+  readonly targetDomain: string;
+  readonly targetUrl: string;
+  readonly isNew: boolean;
+  readonly isLost: boolean;
+  readonly spamScore: number;
+  readonly rank: number;
+  readonly pageRank: number;
+  readonly domainRank: number;
+  readonly sourceStatusCode: number;
+  readonly firstSeen: string | null;
+  readonly previousSeen: string | null;
+  readonly lastSeen: string | null;
+  readonly attributes: readonly string[];
+  readonly dofollow: boolean;
+  readonly anchor: string | null;
+  readonly linksCount: number;
+  readonly isBroken: boolean;
+  readonly targetStatusCode: number | null;
+}
+
+export interface DataForSeoBacklinksResponse
+  extends DataForSeoBacklinksResponseMeta {
+  readonly rows: readonly DataForSeoBacklinkRow[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+}
+
+export interface DataForSeoReferringDomainRow {
+  readonly domain: string;
+  readonly rank: number;
+  readonly backlinks: number;
+  readonly firstSeen: string | null;
+  readonly lostDate: string | null;
+  readonly spamScore: number;
+}
+
+export interface DataForSeoReferringDomainsResponse
+  extends DataForSeoBacklinksResponseMeta {
+  readonly rows: readonly DataForSeoReferringDomainRow[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+}
+
+export interface DataForSeoDomainPageRow {
+  readonly pageUrl: string;
+  readonly title: string | null;
+  readonly statusCode: number | null;
+  readonly rank: number;
+  readonly backlinks: number;
+  readonly referringDomains: number;
+}
+
+export interface DataForSeoDomainPagesResponse
+  extends DataForSeoBacklinksResponseMeta {
+  readonly rows: readonly DataForSeoDomainPageRow[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+}
+
+export interface DataForSeoBacklinksClient {
+  backlinkSummary(
+    request: DataForSeoBacklinkSummaryRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoBacklinkSummaryResponse>;
+  backlinks(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoBacklinksResponse>;
+  referringDomains(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoReferringDomainsResponse>;
+  domainPages(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoDomainPagesResponse>;
+}
 
 /** A safe, credential-free request. Authentication is owned by the HTTP client. */
 export interface DataForSeoRankedKeywordsRequest {
@@ -313,7 +433,14 @@ function httpErrorCode(status: number): SourceErrorCode {
 
 function transportError(
   error: unknown,
-  operation: "ranked-keywords" | "competitors-domain" | "serp-competitors",
+  operation:
+    | "ranked-keywords"
+    | "competitors-domain"
+    | "serp-competitors"
+    | "backlink-summary"
+    | "backlinks"
+    | "referring-domains"
+    | "domain-pages",
 ): SourceError {
   if (error instanceof SourceError) return error;
   if (isAbortLike(error)) {
@@ -1025,6 +1152,552 @@ function parseSerpCompetitorsResponse(
   };
 }
 
+interface ParsedBacklinksTask {
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+  readonly costUsd: number;
+  readonly results: readonly unknown[];
+}
+
+function parseBacklinksTask(
+  payload: unknown,
+  label: string,
+): ParsedBacklinksTask {
+  const envelope = asRecord(payload, "DataForSEO response");
+  const providerStatusCode = asStatusCode(
+    envelope.status_code,
+    "DataForSEO response",
+  );
+  if (
+    providerStatusCode !== SUCCESS_STATUS &&
+    providerStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(providerStatusCode, "request");
+  }
+  const envelopeCost = asNonNegativeNumber(
+    envelope.cost,
+    "DataForSEO response cost",
+  );
+  if (providerStatusCode === EMPTY_RESULT_STATUS) {
+    return {
+      providerStatusCode,
+      taskStatusCode: EMPTY_RESULT_STATUS,
+      costUsd: envelopeCost,
+      results: [],
+    };
+  }
+  if (!Array.isArray(envelope.tasks) || envelope.tasks.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO response did not contain exactly one task.",
+    );
+  }
+  const task = asRecord(envelope.tasks[0], "DataForSEO task");
+  const taskStatusCode = asStatusCode(task.status_code, "DataForSEO task");
+  if (
+    taskStatusCode !== SUCCESS_STATUS &&
+    taskStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(taskStatusCode, "task");
+  }
+  const costUsd = asNonNegativeNumber(task.cost, "DataForSEO task cost");
+  if (taskStatusCode === EMPTY_RESULT_STATUS) {
+    return { providerStatusCode, taskStatusCode, costUsd, results: [] };
+  }
+  if (task.result === null || task.result === undefined) {
+    if (task.result_count === 0) {
+      return { providerStatusCode, taskStatusCode, costUsd, results: [] };
+    }
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO task omitted its ${label} result.`,
+    );
+  }
+  if (!Array.isArray(task.result)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO ${label} task result was not an array.`,
+    );
+  }
+  const resultCount =
+    task.result_count === null || task.result_count === undefined
+      ? task.result.length
+      : asNonNegativeInteger(
+          task.result_count,
+          `DataForSEO ${label} task result_count`,
+        );
+  if (resultCount !== task.result.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO ${label} task result_count did not match its results.`,
+    );
+  }
+  return {
+    providerStatusCode,
+    taskStatusCode,
+    costUsd,
+    results: task.result,
+  };
+}
+
+function requiredString(value: unknown, context: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a non-empty string.`,
+    );
+  }
+  return value.trim();
+}
+
+function requiredBoolean(value: unknown, context: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a boolean.`,
+    );
+  }
+  return value;
+}
+
+function nullableNonNegativeInteger(
+  value: unknown,
+  context: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  return asNonNegativeInteger(value, context);
+}
+
+function stringArray(value: unknown, context: string): readonly string[] {
+  if (value === undefined || value === null) return [];
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string")
+  ) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a string array.`,
+    );
+  }
+  return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function emptyBacklinkSummary(
+  target: string,
+  task: ParsedBacklinksTask,
+): DataForSeoBacklinkSummaryResponse {
+  return {
+    summary: {
+      target,
+      firstSeen: null,
+      lostDate: null,
+      rank: 0,
+      backlinks: 0,
+      referringDomains: 0,
+      referringMainDomains: 0,
+    },
+    costUsd: task.costUsd,
+    providerStatusCode: task.providerStatusCode,
+    taskStatusCode: task.taskStatusCode,
+  };
+}
+
+function parseBacklinkSummaryResponse(
+  payload: unknown,
+  target: string,
+): DataForSeoBacklinkSummaryResponse {
+  const task = parseBacklinksTask(payload, "backlink-summary");
+  if (task.results.length === 0) return emptyBacklinkSummary(target, task);
+  if (task.results.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO backlink-summary task did not contain exactly one result.",
+    );
+  }
+  const result = asRecord(task.results[0], "DataForSEO backlink-summary result");
+  return {
+    summary: {
+      target: canonicalProviderDomain(
+        result.target,
+        "DataForSEO backlink-summary target",
+      ),
+      firstSeen: nullableString(
+        result.first_seen,
+        "DataForSEO backlink-summary first_seen",
+      ),
+      lostDate: nullableString(
+        result.lost_date,
+        "DataForSEO backlink-summary lost_date",
+      ),
+      rank: asNonNegativeNumber(
+        result.rank,
+        "DataForSEO backlink-summary rank",
+      ),
+      backlinks: asNonNegativeInteger(
+        result.backlinks,
+        "DataForSEO backlink-summary backlinks",
+      ),
+      referringDomains: asNonNegativeInteger(
+        result.referring_domains,
+        "DataForSEO backlink-summary referring_domains",
+      ),
+      referringMainDomains: asNonNegativeInteger(
+        result.referring_main_domains,
+        "DataForSEO backlink-summary referring_main_domains",
+      ),
+    },
+    costUsd: task.costUsd,
+    providerStatusCode: task.providerStatusCode,
+    taskStatusCode: task.taskStatusCode,
+  };
+}
+
+function parseBacklinkRow(value: unknown, index: number): DataForSeoBacklinkRow {
+  const item = asRecord(value, `DataForSEO backlink item ${index}`);
+  return {
+    sourceDomain: canonicalProviderDomain(
+      item.domain_from,
+      `DataForSEO backlink item ${index}.domain_from`,
+    ),
+    sourceUrl: requiredString(
+      item.url_from,
+      `DataForSEO backlink item ${index}.url_from`,
+    ),
+    targetDomain: canonicalProviderDomain(
+      item.domain_to,
+      `DataForSEO backlink item ${index}.domain_to`,
+    ),
+    targetUrl: requiredString(
+      item.url_to,
+      `DataForSEO backlink item ${index}.url_to`,
+    ),
+    isNew: requiredBoolean(
+      item.is_new,
+      `DataForSEO backlink item ${index}.is_new`,
+    ),
+    isLost: requiredBoolean(
+      item.is_lost,
+      `DataForSEO backlink item ${index}.is_lost`,
+    ),
+    spamScore: asNonNegativeNumber(
+      item.backlink_spam_score,
+      `DataForSEO backlink item ${index}.backlink_spam_score`,
+    ),
+    rank: asNonNegativeNumber(
+      item.rank,
+      `DataForSEO backlink item ${index}.rank`,
+    ),
+    pageRank: asNonNegativeNumber(
+      item.page_from_rank,
+      `DataForSEO backlink item ${index}.page_from_rank`,
+    ),
+    domainRank: asNonNegativeNumber(
+      item.domain_from_rank,
+      `DataForSEO backlink item ${index}.domain_from_rank`,
+    ),
+    sourceStatusCode: asNonNegativeInteger(
+      item.page_from_status_code,
+      `DataForSEO backlink item ${index}.page_from_status_code`,
+    ),
+    firstSeen: nullableString(
+      item.first_seen,
+      `DataForSEO backlink item ${index}.first_seen`,
+    ),
+    previousSeen: nullableString(
+      item.prev_seen,
+      `DataForSEO backlink item ${index}.prev_seen`,
+    ),
+    lastSeen: nullableString(
+      item.last_seen,
+      `DataForSEO backlink item ${index}.last_seen`,
+    ),
+    attributes: stringArray(
+      item.attributes,
+      `DataForSEO backlink item ${index}.attributes`,
+    ),
+    dofollow: requiredBoolean(
+      item.dofollow,
+      `DataForSEO backlink item ${index}.dofollow`,
+    ),
+    anchor: nullableString(
+      item.anchor,
+      `DataForSEO backlink item ${index}.anchor`,
+    ),
+    linksCount: asNonNegativeInteger(
+      item.links_count,
+      `DataForSEO backlink item ${index}.links_count`,
+    ),
+    isBroken: requiredBoolean(
+      item.is_broken,
+      `DataForSEO backlink item ${index}.is_broken`,
+    ),
+    targetStatusCode: nullableNonNegativeInteger(
+      item.url_to_status_code,
+      `DataForSEO backlink item ${index}.url_to_status_code`,
+    ),
+  };
+}
+
+function parseReferringDomainRow(
+  value: unknown,
+  index: number,
+): DataForSeoReferringDomainRow {
+  const item = asRecord(value, `DataForSEO referring-domain item ${index}`);
+  return {
+    domain: canonicalProviderDomain(
+      item.domain,
+      `DataForSEO referring-domain item ${index}.domain`,
+    ),
+    rank: asNonNegativeNumber(
+      item.rank,
+      `DataForSEO referring-domain item ${index}.rank`,
+    ),
+    backlinks: asNonNegativeInteger(
+      item.backlinks,
+      `DataForSEO referring-domain item ${index}.backlinks`,
+    ),
+    firstSeen: nullableString(
+      item.first_seen,
+      `DataForSEO referring-domain item ${index}.first_seen`,
+    ),
+    lostDate: nullableString(
+      item.lost_date,
+      `DataForSEO referring-domain item ${index}.lost_date`,
+    ),
+    spamScore: asNonNegativeNumber(
+      item.backlinks_spam_score,
+      `DataForSEO referring-domain item ${index}.backlinks_spam_score`,
+    ),
+  };
+}
+
+function parseDomainPageRow(
+  value: unknown,
+  index: number,
+): DataForSeoDomainPageRow {
+  const item = asRecord(value, `DataForSEO domain-page item ${index}`);
+  const meta = asRecord(
+    item.meta,
+    `DataForSEO domain-page item ${index}.meta`,
+  );
+  const summary = asRecord(
+    item.page_summary,
+    `DataForSEO domain-page item ${index}.page_summary`,
+  );
+  return {
+    pageUrl: requiredString(
+      item.page,
+      `DataForSEO domain-page item ${index}.page`,
+    ),
+    title: nullableString(
+      meta.title,
+      `DataForSEO domain-page item ${index}.meta.title`,
+    ),
+    statusCode: nullableNonNegativeInteger(
+      item.status_code,
+      `DataForSEO domain-page item ${index}.status_code`,
+    ),
+    rank: asNonNegativeNumber(
+      summary.rank,
+      `DataForSEO domain-page item ${index}.page_summary.rank`,
+    ),
+    backlinks: asNonNegativeInteger(
+      summary.backlinks,
+      `DataForSEO domain-page item ${index}.page_summary.backlinks`,
+    ),
+    referringDomains: asNonNegativeInteger(
+      summary.referring_domains,
+      `DataForSEO domain-page item ${index}.page_summary.referring_domains`,
+    ),
+  };
+}
+
+function parseBacklinksListResult<Row>(
+  payload: unknown,
+  label: string,
+  parseRowValue: (value: unknown, index: number) => Row,
+): {
+  readonly rows: readonly Row[];
+  readonly totalCount: number;
+  readonly itemsCount: number;
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+} {
+  const task = parseBacklinksTask(payload, label);
+  if (task.results.length === 0) {
+    return {
+      rows: [],
+      totalCount: 0,
+      itemsCount: 0,
+      costUsd: task.costUsd,
+      providerStatusCode: task.providerStatusCode,
+      taskStatusCode: task.taskStatusCode,
+    };
+  }
+  if (task.results.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO ${label} task did not contain exactly one result.`,
+    );
+  }
+  const result = asRecord(task.results[0], `DataForSEO ${label} result`);
+  const rawItems = result.items;
+  if (rawItems !== null && rawItems !== undefined && !Array.isArray(rawItems)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO ${label} result items was not an array.`,
+    );
+  }
+  const rows = (rawItems ?? []).map(parseRowValue);
+  const itemsCount =
+    result.items_count === null || result.items_count === undefined
+      ? rows.length
+      : asNonNegativeInteger(
+          result.items_count,
+          `DataForSEO ${label} result items_count`,
+        );
+  const totalCount =
+    result.total_count === null || result.total_count === undefined
+      ? rows.length === 0
+        ? 0
+        : asNonNegativeInteger(
+            result.total_count,
+            `DataForSEO ${label} result total_count`,
+          )
+      : asNonNegativeInteger(
+          result.total_count,
+          `DataForSEO ${label} result total_count`,
+        );
+  if (itemsCount !== rows.length || totalCount < rows.length) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `DataForSEO ${label} result contained contradictory row counts.`,
+    );
+  }
+  return {
+    rows,
+    totalCount,
+    itemsCount,
+    costUsd: task.costUsd,
+    providerStatusCode: task.providerStatusCode,
+    taskStatusCode: task.taskStatusCode,
+  };
+}
+
+function normalizeBacklinksTarget(value: unknown, label: string): string {
+  try {
+    return canonicalProviderDomain(value, label);
+  } catch {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `${label} must be a valid public hostname.`,
+    );
+  }
+}
+
+function normalizeBacklinkListRequest(
+  value: DataForSeoBacklinkListRequest,
+  label: string,
+): DataForSeoBacklinkListRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `${label} request must be an object.`,
+    );
+  }
+  if (
+    !Number.isSafeInteger(value.limit) ||
+    value.limit < 1 ||
+    value.limit > MAX_DATAFORSEO_LIMIT
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      `${label} limit must be an integer from 1 to ${MAX_DATAFORSEO_LIMIT}.`,
+    );
+  }
+  return {
+    target: normalizeBacklinksTarget(value.target, `${label} target`),
+    limit: value.limit,
+  };
+}
+
+function backlinksCommonTask(target: string): JsonRecord {
+  return {
+    target,
+    include_subdomains: true,
+    exclude_internal_backlinks: true,
+    backlinks_status_type: "live",
+    rank_scale: "one_hundred",
+  };
+}
+
+function toBacklinkSummaryProviderTask(
+  request: DataForSeoBacklinkSummaryRequest,
+): JsonRecord {
+  if (typeof request !== "object" || request === null || Array.isArray(request)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO backlink-summary request must be an object.",
+    );
+  }
+  const target = normalizeBacklinksTarget(
+    request.target,
+    "DataForSEO backlink-summary target",
+  );
+  return {
+    ...backlinksCommonTask(target),
+    include_indirect_links: true,
+  };
+}
+
+function toBacklinksProviderTask(
+  request: DataForSeoBacklinkListRequest,
+): JsonRecord {
+  const normalized = normalizeBacklinkListRequest(
+    request,
+    "DataForSEO backlinks",
+  );
+  return {
+    target: normalized.target,
+    mode: "as_is",
+    limit: normalized.limit,
+    include_subdomains: true,
+    exclude_internal_backlinks: true,
+    backlinks_status_type: "live",
+    rank_scale: "one_hundred",
+  };
+}
+
+function toReferringDomainsProviderTask(
+  request: DataForSeoBacklinkListRequest,
+): JsonRecord {
+  const normalized = normalizeBacklinkListRequest(
+    request,
+    "DataForSEO referring-domains",
+  );
+  return {
+    ...backlinksCommonTask(normalized.target),
+    limit: normalized.limit,
+    offset: 0,
+    include_indirect_links: true,
+  };
+}
+
+function toDomainPagesProviderTask(
+  request: DataForSeoBacklinkListRequest,
+): JsonRecord {
+  const normalized = normalizeBacklinkListRequest(
+    request,
+    "DataForSEO domain-pages",
+  );
+  return {
+    ...backlinksCommonTask(normalized.target),
+    limit: normalized.limit,
+    offset: 0,
+  };
+}
+
 function toProviderTask(request: DataForSeoRankedKeywordsRequest): JsonRecord {
   const minimumRankGroup = request.minimumRankGroup ?? 4;
   const maximumRankGroup = request.maximumRankGroup ?? 20;
@@ -1150,7 +1823,8 @@ export class HttpDataForSeoClient
   implements
     DataForSeoClient,
     DataForSeoCompetitorsDomainClient,
-    DataForSeoSerpCompetitorsClient
+    DataForSeoSerpCompetitorsClient,
+    DataForSeoBacklinksClient
 {
   private readonly authorization: string;
   private readonly fetchImpl: DataForSeoFetch;
@@ -1304,5 +1978,111 @@ export class HttpDataForSeoClient
     } finally {
       abortScope.cleanup();
     }
+  }
+
+  private async backlinksLiveRequest<T>(
+    url: string,
+    task: JsonRecord,
+    operation:
+      | "backlink-summary"
+      | "backlinks"
+      | "referring-domains"
+      | "domain-pages",
+    parse: (payload: unknown) => T,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [
+      this.signal,
+      signal,
+    ]);
+    try {
+      const response = await this.fetchImpl(url, {
+        method: "POST",
+        headers: {
+          Authorization: this.authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify([task]),
+        redirect: "error",
+        signal: abortScope.signal,
+      });
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          httpErrorCode(response.status),
+          `DataForSEO ${operation} request failed with HTTP ${response.status}.`,
+        );
+      }
+      const payload = await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        `DataForSEO ${operation} response`,
+        abortScope.signal,
+      );
+      return parse(payload);
+    } catch (error) {
+      throw transportError(error, operation);
+    } finally {
+      abortScope.cleanup();
+    }
+  }
+
+  async backlinkSummary(
+    request: DataForSeoBacklinkSummaryRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoBacklinkSummaryResponse> {
+    const task = toBacklinkSummaryProviderTask(request);
+    return await this.backlinksLiveRequest(
+      DATAFORSEO_BACKLINK_SUMMARY_LIVE_URL,
+      task,
+      "backlink-summary",
+      (payload) => parseBacklinkSummaryResponse(payload, task.target as string),
+      signal,
+    );
+  }
+
+  async backlinks(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoBacklinksResponse> {
+    return await this.backlinksLiveRequest(
+      DATAFORSEO_BACKLINKS_LIVE_URL,
+      toBacklinksProviderTask(request),
+      "backlinks",
+      (payload) => parseBacklinksListResult(payload, "backlinks", parseBacklinkRow),
+      signal,
+    );
+  }
+
+  async referringDomains(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoReferringDomainsResponse> {
+    return await this.backlinksLiveRequest(
+      DATAFORSEO_REFERRING_DOMAINS_LIVE_URL,
+      toReferringDomainsProviderTask(request),
+      "referring-domains",
+      (payload) =>
+        parseBacklinksListResult(
+          payload,
+          "referring-domains",
+          parseReferringDomainRow,
+        ),
+      signal,
+    );
+  }
+
+  async domainPages(
+    request: DataForSeoBacklinkListRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoDomainPagesResponse> {
+    return await this.backlinksLiveRequest(
+      DATAFORSEO_DOMAIN_PAGES_LIVE_URL,
+      toDomainPagesProviderTask(request),
+      "domain-pages",
+      (payload) =>
+        parseBacklinksListResult(payload, "domain-pages", parseDomainPageRow),
+      signal,
+    );
   }
 }

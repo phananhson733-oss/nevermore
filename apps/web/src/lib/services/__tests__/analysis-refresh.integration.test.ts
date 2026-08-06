@@ -10,6 +10,11 @@ process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??= "secret";
 process.env["DATAFORSEO_ENABLED"] ??= "false";
 process.env["DATAFORSEO_MAX_KEYWORDS"] ??= "200";
 process.env["DATAFORSEO_MAX_COMPETITORS"] ??= "100";
+process.env["DATAFORSEO_BACKLINKS_ENABLED"] ??= "false";
+process.env["DATAFORSEO_MAX_BACKLINKS"] ??= "500";
+process.env["DATAFORSEO_MAX_REFERRING_DOMAINS"] ??= "100";
+process.env["DATAFORSEO_MAX_BACKLINK_PAGES"] ??= "500";
+process.env["DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS"] ??= "20";
 process.env["RAW_IMPORT_BUCKET"] ??= "raw-imports";
 process.env["EXPORT_BUCKET"] ??= "exports";
 process.env["LOG_LEVEL"] ??= "error";
@@ -205,6 +210,24 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
             process.env["DATAFORSEO_MAX_COMPETITORS"] ?? "100",
           ),
         },
+        dataForSeoBacklinks: {
+          enabled:
+            process.env["DATAFORSEO_BACKLINKS_ENABLED"] === "true",
+          maxBacklinks: Number(
+            process.env["DATAFORSEO_MAX_BACKLINKS"] ?? "500",
+          ),
+          maxReferringDomains: Number(
+            process.env["DATAFORSEO_MAX_REFERRING_DOMAINS"] ?? "100",
+          ),
+          maxBacklinkPages: Number(
+            process.env["DATAFORSEO_MAX_BACKLINK_PAGES"] ?? "500",
+          ),
+          maxSourceVerifications: Number(
+            process.env[
+              "DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS"
+            ] ?? "20",
+          ),
+        },
       },
     });
 
@@ -245,6 +268,11 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
           process.env["DATAFORSEO_ENABLED"] === "true"
             ? null
             : "feature_disabled",
+      },
+      {
+        stepKey: "dataforseo_backlinks",
+        state: "skipped",
+        skipReason: "feature_disabled",
       },
       { stepKey: "growth_audit", state: "pending", skipReason: null },
     ]);

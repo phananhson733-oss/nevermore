@@ -2505,6 +2505,16 @@ export const backlinkFacts = app.table("backlink_facts", {
   }),
   link_kind: text().notNull().default("unknown"),
   source_ref: text().notNull(),
+  anchor_text: text(),
+  first_seen_at: tz(),
+  last_seen_at: tz(),
+  is_new: boolean().notNull().default(false),
+  is_lost: boolean().notNull().default(false),
+  verification_status: text().notNull().default("not_checked"),
+  verified_at: tz(),
+  verification_final_url: text(),
+  verification_http_status: integer(),
+  verification_limitation: text(),
   created_at: tz().notNull().defaultNow(),
 });
 

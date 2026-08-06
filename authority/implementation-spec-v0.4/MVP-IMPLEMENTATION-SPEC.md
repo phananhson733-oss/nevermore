@@ -13,7 +13,7 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
-shared async operation**，**43 个 ordered migrations** 精确声明 **78 张应用表**，引擎
+shared async operation**，**44 个 ordered migrations** 精确声明 **78 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -78,7 +78,8 @@ Model 均属于增长地图的增长路径与判断依据。它们不创建额�
 - Crawl：站点 URL inventory、HTTP、canonical、页面抽取、链接结构与技术事实。
 - GSC：query/page clicks、impressions、CTR、position 与时间窗口。
 - GA4：landing page、session、conversion 与 UTM/campaign 观察。
-- DataForSEO：关键词 demand/rank/competitor SERP observations。
+- DataForSEO：关键词 demand/rank/competitor SERP observations，以及受限的
+  Backlinks provider index/明细 observations。
 - 客户明确上传的 CSV 或 manual entry：必须保留 origin、actor、时间和限制。
 
 OAuth connected、credential present 或 provider enabled 都不等于数据 available。
@@ -105,8 +106,9 @@ projection 是内置能力，不要求客户另行连接。
 业务或执行上下文。
 
 `createCollectionRun` 只允许客户触发 Crawl、已连接 GSC 或已连接 GA4；
-CSV 继续使用专用 import command。DataForSEO 是 Analysis Refresh worker 的
-内置 provider，客户不能通过 collection request 选择、配置或提供凭据/API key。
+CSV 继续使用专用 import command。DataForSEO Search Landscape 与 Backlinks 都是
+Analysis Refresh worker 的内置 provider 步骤，客户不能通过 collection request
+选择、配置或提供 target、limit、凭据/API key。
 该写边界不移除 DataForSEO 的 canonical Source/Snapshot/Observation/Evidence
 lineage，也不阻止 server-owned Analysis Refresh 运行其成本受限的可选步骤。
 
@@ -124,6 +126,25 @@ DFS 自动把 ranked Keyword occurrence 与两类有区别的 competitor origin
 （domain overlap / seed SERP）投影进当前资料库，不创建第五模块，也不接受客户
 提交 target、location、language、limit 或 provider credential。
 
+DataForSEO Backlinks 的 server-owned identity 为 `dataforseo.backlinks.v1`。服务端
+只从冻结 primary Site host 与部署策略形成 exact scope，并分别冻结 live backlink、
+referring-domain、target-page 与 source-page verification cap。该能力有独立的
+`DATAFORSEO_BACKLINKS_ENABLED` rollout gate；它与全局 `DATAFORSEO_ENABLED` 默认都为
+`false`，只有两者显式开启时才可运行。默认 cap 为 500 条 backlink、100 个
+referring domain、500 个 target page 与 20 个 source-page verification；硬上限分别
+为 1000、1000、1000 与 20，且 verification cap 不得超过 backlink cap。缺少开关、
+凭据或 exact frozen scope 时该 optional step 必须明确 skipped/fail closed，不得改为
+无界请求或由客户端覆盖。
+
+同一个 collection 原子形成 `dataforseo.backlinks.v1` Snapshot 与规范化 summary、
+backlink、referring-domain、target-page observations。provider summary 的 authority
+scale 只能公开为 `dataforseo_rank`，绝不能重标为 Ahrefs DR 或 Moz DA；provider
+index totals 与明细抽样的数量语义必须保留。系统只对 cap 内选中的 provider-discovered
+source page 使用复用 SSRF 防护、DNS/IP pin、逐跳重验、timeout、redirect 与 body-size
+上限的公共 HTML fetch 做二次验链。`verified/absent/blocked/inconclusive` 是独立的
+crawler verification evidence；它不能改写 provider fact、把不完整 body 当作 absent，
+也不能把未验证或不可用值合成为 0。
+
 ### 2.1 Durable Analysis Refresh
 
 `createAnalysisRefreshRun` 是唯一 server-owned 的完整分析刷新 command。客户端
@@ -132,21 +153,29 @@ required step。command transaction 创建 `analysis_refresh` async run，并以
 `analysis_refresh_run` resource identity 冻结 primary Site、confirmed ICP、
 完整 plan manifest 与 plan hash；queue 名为 `refresh.analysis`。
 
-计划固定为五步，且每个父 run 都持久化全部五行：
+新建父 run 固定冻结 `analysis-refresh.plan.v2` 六步，并持久化全部六行：
 
 1. Crawl（required）；
 2. connected GSC（optional；未连接时明确 skipped）；
 3. connected GA4（optional；未连接时明确 skipped）；
 4. built-in DataForSEO Search Landscape（DFS，optional；
    disabled/unavailable 时明确 skipped）；
-5. Growth Audit（required）。
+5. built-in DataForSEO Backlinks（`dataforseo_backlinks`，optional；独立 rollout
+   disabled/unavailable 时明确 skipped）；
+6. Growth Audit（required）。
+
+历史 `analysis-refresh.plan.v1` 的 exact 五步 manifest 与 hash 继续只读、可恢复；
+它只能按原有 Crawl/GSC/GA4/DFS/Growth Audit 顺序继续，不能在恢复时插入 Backlinks
+或升级为 v2。新 run 不得再创建 v1 manifest。
 
 父 lifecycle 只来自 `async_runs`。step execution state 只能是
 pending/running/completed/skipped/failed；optional failure/skip 不得伪装成功，
 required failure 必须使父 run failed。父行与 step identity append-only，worker
 只可推进 step execution state，并保留 child async run、result Snapshot、
-skip reason 或 bounded error。最终 Growth Audit 必须消费本次 refresh 产生并
-冻结的 exact Snapshot ids，不得在末步重新选择“当时最新”数据。
+skip reason 或 bounded error。最终 Growth Audit 必须消费本次 refresh 的
+Crawl/GSC/GA4/DFS steps 产生并冻结的 exact Snapshot ids，不得在末步重新选择
+“当时最新”数据。Backlinks Snapshot 独立投影进 Growth Map，不进入当前 12-rule
+Growth Audit input，也不改变 operation/async/table/rule inventory。
 
 详细 step read model 后续另行加入；当前客户端只通过既有
 `getProjectRun` 的 progress/status 轮询，不新增 GET operation。
@@ -237,6 +266,10 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
   response 猜测源 URL，缺失或歧义 lineage 必须 inconclusive。
 - Topic Model、internal link map、backlink authority 与 GEO citation 都复用
   canonical URL/keyword/topic identity。
+- DataForSEO Backlinks 是 `provider_import` authority；其 `dataforseo_rank` 与
+  Ahrefs `domain_rating`、Moz `domain_authority` 是不可互换的 typed scale。
+  cap 内 source-page 二次验链只补充独立 verification evidence，不改变 provider
+  index total、coverage 或 Snapshot identity。
 - Finding 默认 unreviewed；只有显式 review 才能形成或更新一个 primary Action。
 - Opportunity 是 canonical facts 的只读 projection，不创建第二套 Opportunity
   table。
@@ -316,8 +349,9 @@ reconciliation、route/OpenAPI 与测试。
   production/staging/test 均 fail closed。
 - 所有异步 canonical command 在同一 DB transaction 写 run/domain/idempotency/
   pg-boss job；active key 与 idempotency 防重复副作用。
-- Crawl/provider 网络遵守 SSRF、防私网、DNS/IP pin、redirect 重验、timeout 与
-  credential redaction。
+- Crawl/provider 网络及 Backlinks source-page verification 遵守 SSRF、防私网、
+  DNS/IP pin、redirect 逐跳重验、timeout/body cap 与 credential redaction；只有完整
+  2xx HTML 无匹配时才可记录 `absent`。
 
 ## 9. 冻结 API inventory
 
@@ -423,7 +457,7 @@ reconciliation、route/OpenAPI 与测试。
 ## 10. 冻结数据库 inventory
 
 以下 78 张应用表来自 `0001_init.sql` 至
-`0043_validate_contextual_diagnostic_rule_set.sql` 的 43 个 ordered migrations 与
+`0044_dataforseo_backlinks.sql` 的 44 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->

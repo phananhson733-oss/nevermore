@@ -113,7 +113,7 @@ function fixture(): {
 }
 
 describe("AnalysisRefreshRunsRepository", () => {
-  it("freezes the exact server-owned five-step plan and stable hash", () => {
+  it("freezes the exact server-owned six-step plan and stable hash", () => {
     const first = analysisRefreshPlanManifest();
     const second = analysisRefreshPlanManifest();
 
@@ -124,12 +124,17 @@ describe("AnalysisRefreshRunsRepository", () => {
         { ordinal: 2, stepKey: "gsc", required: false },
         { ordinal: 3, stepKey: "ga4", required: false },
         { ordinal: 4, stepKey: "dataforseo", required: false },
-        { ordinal: 5, stepKey: "growth_audit", required: true },
+        {
+          ordinal: 5,
+          stepKey: "dataforseo_backlinks",
+          required: false,
+        },
+        { ordinal: 6, stepKey: "growth_audit", required: true },
       ],
     });
     expect(first.steps).toEqual(ANALYSIS_REFRESH_PLAN_STEPS);
     expect(analysisRefreshPlanHash(first)).toBe(
-      "d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af",
+      "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65",
     );
     expect(analysisRefreshPlanHash(first)).toBe(
       analysisRefreshPlanHash(second),
@@ -138,7 +143,7 @@ describe("AnalysisRefreshRunsRepository", () => {
     expect(first.steps).not.toBe(second.steps);
   });
 
-  it("inserts one immutable parent and all five pending steps", async () => {
+  it("inserts one immutable parent and all six pending steps", async () => {
     const { db, repo } = fixture();
     const manifest = analysisRefreshPlanManifest();
     const parent = {

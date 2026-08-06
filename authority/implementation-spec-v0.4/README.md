@@ -27,7 +27,7 @@ Authority 版本：**0.4.0**
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
 2. [openapi.yaml](openapi.yaml)：当前 79 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 43 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+3. [schema.sql](schema.sql)：由 44 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -40,7 +40,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0043_validate_contextual_diagnostic_rule_set.sql`，验证每个 migration 的事务框架与
+`0044_dataforseo_backlinks.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -82,7 +82,22 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
   覆盖 1–100；仅在 domain overlap 为空时，使用保留 GSC/Crawl/Product Profile
   来源的冻结种子追加一次 SERP Competitors fallback，并原子写入一个
   `dataforseo.search_landscape.v2` Snapshot。公共 `createCollectionRun` 只接受
-  Crawl/GSC/GA4，且不接受 DFS scope、limit、凭据或 API key。
+  Crawl/GSC/GA4，且不接受 DFS/Backlinks scope、limit、凭据或 API key。
+- 新 Analysis Refresh 父 run 冻结六步 `analysis-refresh.plan.v2`：required Crawl、
+  optional connected GSC、optional connected GA4、optional DFS、optional
+  `dataforseo_backlinks`、required Growth Audit。历史五步
+  `analysis-refresh.plan.v1` 只按自己的 exact manifest/hash 读取和恢复，不会被
+  就地升级或补插 Backlinks step。
+- DataForSEO Backlinks 使用 `dataforseo.backlinks.v1` immutable Snapshot，并作为
+  `provider_import` 投影到现有 Backlink Growth Map。其 authority scale 只能是
+  `dataforseo_rank`，不得冒充 Ahrefs DR 或 Moz DA。cap 内选中的 provider-discovered
+  source page 可使用 SSRF-safe、DNS/IP-pinned、逐跳重验且有 timeout/body 上限的
+  crawler verification；该 evidence 与 provider fact 分离，不能改写 index total
+  或把 unavailable 当 0。
+- `DATAFORSEO_BACKLINKS_ENABLED=false` 是独立且默认关闭的 rollout gate，并且仍要求
+  `DATAFORSEO_ENABLED=true`。默认/硬上限分别为 backlinks 500/1000、referring
+  domains 100/1000、target pages 500/1000、source verifications 20/20；最后一项
+  也不得超过 backlink cap。Web 与 Worker 必须冻结并匹配同一组非秘密 caps。
 - URL、Keyword、Competitor 的 list/detail GET 都可用 canonical
   `diagnosticRunId` 固定一个已发布 Growth Map generation。Keyword/Competitor
   list 省略 pin 时直接读取当前资料库并展示全部已投影 candidate；URL 省略时读取

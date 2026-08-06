@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AnalysisRefreshRunsRepository,
-  analysisRefreshPlanHash,
-  analysisRefreshPlanManifest,
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
@@ -51,6 +49,7 @@ const IDS = {
   gscChild: "00000000-0000-4000-8000-000000000013",
   gscSnapshot: "00000000-0000-4000-8000-000000000014",
   dataForSeoSnapshot: "00000000-0000-4000-8000-000000000015",
+  dataForSeoBacklinksSnapshot: "00000000-0000-4000-8000-000000000016",
 } as const;
 
 const NOW = new Date("2026-07-29T04:00:00.000Z");
@@ -78,7 +77,50 @@ const REQUEST_PAYLOAD = {
     maxKeywords: 100,
     maxCompetitors: 100,
   },
+  dataForSeoBacklinks: {
+    enabled: false,
+    maxBacklinks: 500,
+    maxReferringDomains: 100,
+    maxBacklinkPages: 500,
+    maxSourceVerifications: 20,
+  },
 } as const;
+const LEGACY_REQUEST_PAYLOAD = {
+  siteId: REQUEST_PAYLOAD.siteId,
+  icpProfile: REQUEST_PAYLOAD.icpProfile,
+  outputLocale: REQUEST_PAYLOAD.outputLocale,
+  sourceConnectionIds: REQUEST_PAYLOAD.sourceConnectionIds,
+  dataForSeo: REQUEST_PAYLOAD.dataForSeo,
+} as const;
+const LEGACY_PLAN_MANIFEST = {
+  version: "analysis-refresh.plan.v1",
+  steps: [
+    { ordinal: 1, stepKey: "crawl", required: true },
+    { ordinal: 2, stepKey: "gsc", required: false },
+    { ordinal: 3, stepKey: "ga4", required: false },
+    { ordinal: 4, stepKey: "dataforseo", required: false },
+    { ordinal: 5, stepKey: "growth_audit", required: true },
+  ],
+} as const;
+const LEGACY_PLAN_HASH =
+  "d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af";
+const CURRENT_PLAN_MANIFEST = {
+  version: "analysis-refresh.plan.v2",
+  steps: [
+    { ordinal: 1, stepKey: "crawl", required: true },
+    { ordinal: 2, stepKey: "gsc", required: false },
+    { ordinal: 3, stepKey: "ga4", required: false },
+    { ordinal: 4, stepKey: "dataforseo", required: false },
+    {
+      ordinal: 5,
+      stepKey: "dataforseo_backlinks",
+      required: false,
+    },
+    { ordinal: 6, stepKey: "growth_audit", required: true },
+  ],
+} as const;
+const CURRENT_PLAN_HASH =
+  "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65";
 const LEGACY_PROFILE = {
   productName: "Acme",
   oneLineDescription: "Ship faster",
@@ -101,6 +143,44 @@ afterEach(() => {
 });
 
 describe("runAnalysisRefresh", () => {
+  it("continues an existing five-step v1 parent whose frozen payload predates backlink policy", async () => {
+    const harness = createHarness({ legacyPlan: true });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(
+      CollectionRunsRepository.prototype.insertPlaceholder,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "crawl",
+        operation: "site_graph",
+      }),
+    );
+    expect(harness.state.steps).toHaveLength(5);
+    expect(harness.state.steps[0]).toMatchObject({
+      step_key: "crawl",
+      state: "running",
+    });
+    expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a six-step v2 parent omits its frozen backlink policy", async () => {
+    const harness = createHarness({ requestPayload: LEGACY_REQUEST_PAYLOAD });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(
+      CollectionRunsRepository.prototype.insertPlaceholder,
+    ).not.toHaveBeenCalled();
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: IDS.parent }),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "ANALYSIS_REFRESH_PROJECTION_INVALID",
+      }),
+    );
+  });
+
   it("starts a legacy-profile Crawl without a deep seed and never duplicates the child on a continuation", async () => {
     const harness = createHarness();
 
@@ -257,6 +337,11 @@ describe("runAnalysisRefresh", () => {
         password: "provider-password",
         maxKeywords: 200,
         maxCompetitors: 100,
+        backlinksEnabled: true,
+        maxBacklinks: 500,
+        maxReferringDomains: 100,
+        maxBacklinkPages: 500,
+        maxSourceVerifications: 20,
       },
     });
     prepareDataForSeoStep(harness);
@@ -362,6 +447,250 @@ describe("runAnalysisRefresh", () => {
     ).toHaveLength(1);
   });
 
+  it("resumes an exact historical DataForSEO Search Landscape v1 collection child", async () => {
+    const harness = createHarness({ legacyPlan: true });
+    const connection = sourceConnection("dataforseo");
+    harness.state.steps = [
+      step("crawl", 1, true, {
+        state: "completed",
+        childId: IDS.collectionChild,
+        snapshotId: IDS.crawlSnapshot,
+      }),
+      step("gsc", 2, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("ga4", 3, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("dataforseo", 4, false, {
+        state: "running",
+        childId: IDS.gscChild,
+      }),
+      step("growth_audit", 5, true),
+    ];
+    harness.state.children.set(
+      IDS.gscChild,
+      asyncRun({
+        id: IDS.gscChild,
+        kind: "collection",
+        activeKey: "collect:dataforseo:search_landscape",
+        status: "completed",
+        resultType: "collection_run",
+        resultId: IDS.gscChild,
+      }),
+    );
+    harness.state.collections.set(
+      IDS.gscChild,
+      dataForSeoCollectionRun(
+        IDS.gscChild,
+        connection.id,
+        "dataforseo.search_landscape.v1",
+      ),
+    );
+    harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
+    harness.state.snapshots.set(
+      IDS.dataForSeoSnapshot,
+      dataForSeoSnapshot(
+        IDS.gscChild,
+        connection.id,
+        "dataforseo.search_landscape.v1",
+      ),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[3]).toMatchObject({
+      step_key: "dataforseo",
+      state: "completed",
+      child_async_run_id: IDS.gscChild,
+      result_snapshot_id: IDS.dataForSeoSnapshot,
+    });
+    expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
+
+  it("rejects a mixed DataForSEO Search Landscape identity while resuming a child", async () => {
+    const harness = createHarness({ legacyPlan: true });
+    const connection = sourceConnection("dataforseo");
+    harness.state.steps = [
+      step("crawl", 1, true, {
+        state: "completed",
+        childId: IDS.collectionChild,
+        snapshotId: IDS.crawlSnapshot,
+      }),
+      step("gsc", 2, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("ga4", 3, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("dataforseo", 4, false, {
+        state: "running",
+        childId: IDS.gscChild,
+      }),
+      step("growth_audit", 5, true),
+    ];
+    harness.state.children.set(
+      IDS.gscChild,
+      asyncRun({
+        id: IDS.gscChild,
+        kind: "collection",
+        activeKey: "collect:dataforseo:search_landscape",
+        status: "completed",
+        resultType: "collection_run",
+        resultId: IDS.gscChild,
+      }),
+    );
+    harness.state.collections.set(
+      IDS.gscChild,
+      dataForSeoCollectionRun(
+        IDS.gscChild,
+        connection.id,
+        "dataforseo.search_landscape.v2",
+      ),
+    );
+    harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
+    harness.state.snapshots.set(IDS.dataForSeoSnapshot, {
+      ...dataForSeoSnapshot(
+        IDS.gscChild,
+        connection.id,
+        "dataforseo.search_landscape.v2",
+      ),
+      schema_version: "dataforseo.search_landscape.v1",
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[3]).toMatchObject({
+      step_key: "dataforseo",
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_SNAPSHOT_INVALID" },
+    });
+  });
+
+  it("starts and completes the optional DataForSEO backlink collection with exact provider lineage", async () => {
+    const requestPayload = {
+      ...REQUEST_PAYLOAD,
+      dataForSeo: {
+        enabled: true,
+        maxKeywords: 87,
+        maxCompetitors: 31,
+      },
+      dataForSeoBacklinks: {
+        enabled: true,
+        maxBacklinks: 321,
+        maxReferringDomains: 67,
+        maxBacklinkPages: 234,
+        maxSourceVerifications: 9,
+      },
+    };
+    const harness = createHarness({
+      requestPayload,
+      dataForSeo: {
+        enabled: true,
+        login: "provider-login",
+        password: "provider-password",
+        maxKeywords: 200,
+        maxCompetitors: 100,
+        backlinksEnabled: true,
+        maxBacklinks: 500,
+        maxReferringDomains: 100,
+        maxBacklinkPages: 500,
+        maxSourceVerifications: 20,
+      },
+    });
+    const connection = sourceConnection("dataforseo");
+    vi.mocked(
+      SourceConnectionsRepository.prototype.findConnectedByProviderForUpdate,
+    ).mockResolvedValue(connection);
+    prepareDataForSeoBacklinksStep(harness);
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    const collectionChildren = [...harness.state.children.values()].filter(
+      (child) => child.kind === "collection",
+    );
+    expect(collectionChildren).toHaveLength(1);
+    expect(
+      CollectionRunsRepository.prototype.insertPlaceholder,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "dataforseo",
+        operation: "backlinks",
+        methodVersion: "dataforseo.backlinks.v1",
+        sourceConnectionId: connection.id,
+      }),
+    );
+    expect(collectionChildren[0]?.request_payload).toEqual({
+      provider: "dataforseo",
+      operation: "backlinks",
+      sourceConnectionId: connection.id,
+      collectionScope: {
+        schemaVersion: "dataforseo.backlinks-scope.v1",
+        queryKind: "backlinks",
+        target: "example.test",
+        includeSubdomains: true,
+        indirectLinksPolicy: {
+          summary: "included",
+          backlinks: "not_configurable",
+          referringDomains: "included",
+          domainPages: "not_configurable",
+        },
+        excludeInternalBacklinks: true,
+        backlinksStatusType: "live",
+        rankScale: "one_hundred",
+        maxBacklinks: 321,
+        maxReferringDomains: 67,
+        maxBacklinkPages: 234,
+        maxSourceVerifications: 9,
+      },
+    });
+    expect(
+      harness.send.mock.calls.filter(
+        ([queue]) => queue === "collect.dataforseo",
+      ),
+    ).toHaveLength(1);
+    expect(
+      SourceConnectionsRepository.prototype.insertConnection,
+    ).not.toHaveBeenCalled();
+    expect(harness.state.steps[4]).toMatchObject({
+      step_key: "dataforseo_backlinks",
+      state: "running",
+      child_async_run_id: collectionChildren[0]?.id,
+    });
+
+    const child = collectionChildren[0]!;
+    harness.state.children.set(child.id, {
+      ...child,
+      status: "completed",
+      result_type: "collection_run",
+      result_id: child.id,
+      completed_at: NOW.toISOString(),
+    });
+    harness.state.snapshots.set(
+      IDS.dataForSeoBacklinksSnapshot,
+      dataForSeoBacklinksSnapshot(child.id, connection.id),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[4]).toMatchObject({
+      step_key: "dataforseo_backlinks",
+      state: "completed",
+      child_async_run_id: child.id,
+      result_snapshot_id: IDS.dataForSeoBacklinksSnapshot,
+    });
+    expect(
+      CollectionRunsRepository.prototype.insertPlaceholder,
+    ).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     {
       name: "ranked-keyword cap",
@@ -391,6 +720,11 @@ describe("runAnalysisRefresh", () => {
           password: "provider-password",
           maxKeywords: 200,
           maxCompetitors: 100,
+          backlinksEnabled: true,
+          maxBacklinks: 500,
+          maxReferringDomains: 100,
+          maxBacklinkPages: 500,
+          maxSourceVerifications: 20,
         },
       });
       prepareDataForSeoStep(harness);
@@ -456,7 +790,8 @@ describe("runAnalysisRefresh", () => {
       }),
       step("ga4", 3, false),
       step("dataforseo", 4, false),
-      step("growth_audit", 5, true),
+      step("dataforseo_backlinks", 5, false),
+      step("growth_audit", 6, true),
     ];
     harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
     harness.state.children.set(
@@ -499,7 +834,7 @@ describe("runAnalysisRefresh", () => {
         code: "ANALYSIS_REFRESH_SOURCE_UNAVAILABLE",
       },
     });
-    expect(harness.state.steps[4]?.state).toBe("pending");
+    expect(harness.state.steps[5]?.state).toBe("pending");
     expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
     expect(harness.send).toHaveBeenCalledWith(
       "refresh.analysis",
@@ -606,10 +941,92 @@ describe("runAnalysisRefresh", () => {
       }),
       expect.objectContaining({ id: expect.any(String) }),
     );
-    expect(harness.state.steps[4]).toMatchObject({
+    expect(harness.state.steps[5]).toMatchObject({
       state: "running",
       child_async_run_id: expect.any(String),
     });
+  });
+
+  it("resumes a completed historical DataForSEO Search Landscape v1 step into Growth Audit", async () => {
+    const harness = createHarness({ legacyPlan: true });
+    const connection = sourceConnection("dataforseo");
+    harness.state.steps = [
+      step("crawl", 1, true, {
+        state: "completed",
+        childId: IDS.collectionChild,
+        snapshotId: IDS.crawlSnapshot,
+      }),
+      step("gsc", 2, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("ga4", 3, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("dataforseo", 4, false, {
+        state: "completed",
+        childId: IDS.gscChild,
+        snapshotId: IDS.dataForSeoSnapshot,
+      }),
+      step("growth_audit", 5, true),
+    ];
+    harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
+    harness.state.snapshots.set(
+      IDS.dataForSeoSnapshot,
+      dataForSeoSnapshot(
+        IDS.gscChild,
+        connection.id,
+        "dataforseo.search_landscape.v1",
+      ),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    const diagnosticInsert = vi.mocked(
+      DiagnosticRunsRepository.prototype.insert,
+    );
+    expect(diagnosticInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputManifest: expect.objectContaining({
+          snapshots: [
+            expect.objectContaining({ snapshotId: IDS.crawlSnapshot }),
+            expect.objectContaining({ snapshotId: IDS.dataForSeoSnapshot }),
+          ],
+        }),
+      }),
+    );
+    expect(harness.state.steps[4]).toMatchObject({
+      step_key: "growth_audit",
+      state: "running",
+      child_async_run_id: expect.any(String),
+    });
+  });
+
+  it("keeps the dedicated backlink Snapshot out of the Growth Audit diagnostic input", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    const backlinkConnection = sourceConnection("dataforseo");
+    harness.state.steps[4] = step("dataforseo_backlinks", 5, false, {
+      state: "completed",
+      childId: IDS.external,
+      snapshotId: IDS.dataForSeoBacklinksSnapshot,
+    });
+    harness.state.snapshots.set(
+      IDS.dataForSeoBacklinksSnapshot,
+      dataForSeoBacklinksSnapshot(IDS.external, backlinkConnection.id),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    const diagnosticInsert = vi.mocked(
+      DiagnosticRunsRepository.prototype.insert,
+    );
+    const inputManifest = diagnosticInsert.mock.calls[0]?.[0]
+      .inputManifest as { readonly snapshots?: readonly { readonly snapshotId: string }[] };
+    expect(inputManifest.snapshots).toEqual([
+      expect.objectContaining({ snapshotId: IDS.crawlSnapshot }),
+    ]);
   });
 
   it("fails closed when the exact pinned Profile id no longer matches the parent payload", async () => {
@@ -621,7 +1038,7 @@ describe("runAnalysisRefresh", () => {
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
 
-    expect(harness.state.steps[4]).toMatchObject({
+    expect(harness.state.steps[5]).toMatchObject({
       state: "failed",
       error: { code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE" },
     });
@@ -638,7 +1055,7 @@ describe("runAnalysisRefresh", () => {
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
 
-    expect(harness.state.steps[4]).toMatchObject({
+    expect(harness.state.steps[5]).toMatchObject({
       state: "failed",
       error: { code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE" },
     });
@@ -655,7 +1072,7 @@ describe("runAnalysisRefresh", () => {
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
 
-    expect(harness.state.steps[4]).toMatchObject({
+    expect(harness.state.steps[5]).toMatchObject({
       state: "failed",
       error: {
         code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE",
@@ -674,7 +1091,7 @@ describe("runAnalysisRefresh", () => {
   it("terminalizes partial when the required audit succeeds partially and optional inputs were skipped", async () => {
     const harness = createHarness();
     installCompletedCollectionPlan(harness);
-    harness.state.steps[4] = step("growth_audit", 5, true, {
+    harness.state.steps[5] = step("growth_audit", 6, true, {
       state: "running",
       childId: IDS.auditChild,
     });
@@ -703,7 +1120,7 @@ describe("runAnalysisRefresh", () => {
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
 
-    expect(harness.state.steps[4]?.state).toBe("completed");
+    expect(harness.state.steps[5]?.state).toBe("completed");
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
       expect.objectContaining({ runId: IDS.parent }),
       expect.objectContaining({
@@ -739,15 +1156,25 @@ function createHarness(options: {
   readonly failFirstContinuation?: boolean;
   readonly requestPayload?: Record<string, unknown>;
   readonly dataForSeo?: NonNullable<WorkerContext["dataForSeo"]>;
+  readonly legacyPlan?: boolean;
 } = {}): Harness {
   const state: HarnessState = {
-    steps: [
-      step("crawl", 1, true),
-      step("gsc", 2, false),
-      step("ga4", 3, false),
-      step("dataforseo", 4, false),
-      step("growth_audit", 5, true),
-    ],
+    steps: options.legacyPlan
+      ? [
+          step("crawl", 1, true),
+          step("gsc", 2, false),
+          step("ga4", 3, false),
+          step("dataforseo", 4, false),
+          step("growth_audit", 5, true),
+        ]
+      : [
+          step("crawl", 1, true),
+          step("gsc", 2, false),
+          step("ga4", 3, false),
+          step("dataforseo", 4, false),
+          step("dataforseo_backlinks", 5, false),
+          step("growth_audit", 6, true),
+        ],
     children: new Map(),
     collections: new Map(),
     snapshots: new Map(),
@@ -759,7 +1186,9 @@ function createHarness(options: {
     kind: "analysis_refresh",
     activeKey: "analysis_refresh",
     status: "running",
-    requestPayload: options.requestPayload ?? REQUEST_PAYLOAD,
+    requestPayload:
+      options.requestPayload ??
+      (options.legacyPlan ? LEGACY_REQUEST_PAYLOAD : REQUEST_PAYLOAD),
     resultType: "analysis_refresh_run",
     resultId: IDS.parent,
   });
@@ -769,8 +1198,10 @@ function createHarness(options: {
     project_id: IDS.project,
     site_id: IDS.site,
     icp_profile_id: IDS.profile,
-    plan_manifest: analysisRefreshPlanManifest(),
-    plan_hash: analysisRefreshPlanHash(analysisRefreshPlanManifest()),
+    plan_manifest: options.legacyPlan
+      ? LEGACY_PLAN_MANIFEST
+      : CURRENT_PLAN_MANIFEST,
+    plan_hash: options.legacyPlan ? LEGACY_PLAN_HASH : CURRENT_PLAN_HASH,
     created_at: NOW.toISOString(),
   };
   const site = siteRow();
@@ -1087,7 +1518,33 @@ function prepareDataForSeoStep(harness: Harness): void {
       skipReason: "source_not_connected",
     }),
     step("dataforseo", 4, false),
-    step("growth_audit", 5, true),
+    step("dataforseo_backlinks", 5, false),
+    step("growth_audit", 6, true),
+  ];
+  harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
+}
+
+function prepareDataForSeoBacklinksStep(harness: Harness): void {
+  harness.state.steps = [
+    step("crawl", 1, true, {
+      state: "completed",
+      childId: IDS.collectionChild,
+      snapshotId: IDS.crawlSnapshot,
+    }),
+    step("gsc", 2, false, {
+      state: "skipped",
+      skipReason: "source_not_connected",
+    }),
+    step("ga4", 3, false, {
+      state: "skipped",
+      skipReason: "source_not_connected",
+    }),
+    step("dataforseo", 4, false, {
+      state: "skipped",
+      skipReason: "feature_disabled",
+    }),
+    step("dataforseo_backlinks", 5, false),
+    step("growth_audit", 6, true),
   ];
   harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
 }
@@ -1131,7 +1588,11 @@ function installCompletedCollectionPlan(harness: Harness): void {
       state: "skipped",
       skipReason: "feature_disabled",
     }),
-    step("growth_audit", 5, true),
+    step("dataforseo_backlinks", 5, false, {
+      state: "skipped",
+      skipReason: "feature_disabled",
+    }),
+    step("growth_audit", 6, true),
   ];
   harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
 }
@@ -1359,6 +1820,7 @@ function crawlSnapshot(): DataSnapshotRow {
 function dataForSeoSnapshot(
   collectionRunId: string,
   sourceConnectionId: string,
+  version = "dataforseo.search_landscape.v2",
 ): DataSnapshotRow {
   return {
     ...crawlSnapshot(),
@@ -1366,12 +1828,45 @@ function dataForSeoSnapshot(
     collection_run_id: collectionRunId,
     source_connection_id: sourceConnectionId,
     provider: "dataforseo",
-    dataset_key: "dataforseo.search_landscape.v2",
-    schema_version: "dataforseo.search_landscape.v2",
-    method_version: "dataforseo.search_landscape.v2",
+    dataset_key: version,
+    schema_version: version,
+    method_version: version,
     row_count: 118,
     limitation:
       "Weekly competitor refresh; exact dataset timestamps are unavailable.",
+  };
+}
+
+function dataForSeoCollectionRun(
+  id: string,
+  sourceConnectionId: string,
+  methodVersion: string,
+): CollectionRunRow {
+  return {
+    ...collectionRun(id),
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    operation: "search_landscape",
+    method_version: methodVersion,
+  };
+}
+
+function dataForSeoBacklinksSnapshot(
+  collectionRunId: string,
+  sourceConnectionId: string,
+): DataSnapshotRow {
+  return {
+    ...crawlSnapshot(),
+    id: IDS.dataForSeoBacklinksSnapshot,
+    collection_run_id: collectionRunId,
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    dataset_key: "dataforseo.backlinks.v1",
+    schema_version: "dataforseo.backlinks.v1",
+    method_version: "dataforseo.backlinks.v1",
+    row_count: 42,
+    limitation:
+      "DataForSEO live backlink index with bounded source-page verification.",
   };
 }
 

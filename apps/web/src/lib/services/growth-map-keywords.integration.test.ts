@@ -20,6 +20,7 @@ import {
   contentHash,
   createDbHandle,
   normalizeKeywordIdentity,
+  type CanonicalValue,
   type DbHandle,
   type DbTx,
 } from "@sf/db";
@@ -40,7 +41,7 @@ import {
 } from "@sf/engine";
 import {
   CRAWL_METHOD_VERSION,
-  createDataForSeoCollectionScope,
+  createDataForSeoSearchLandscapeV2Scope,
 } from "@sf/sources";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildDiagnosticFrozenInput } from "./diagnostics.ts";
@@ -102,12 +103,15 @@ async function seedDataForSeoKeyword(
   const privateTaskId = `private-task-${randomUUID()}`;
   const privateObservationPayload = `private-observation-${randomUUID()}`;
   const privateRawObjectKey = `private/dataforseo/${randomUUID()}.json`;
-  const collectionScope = createDataForSeoCollectionScope({
+  const collectionScope = createDataForSeoSearchLandscapeV2Scope({
     target,
     marketCode: "US",
     languageTag: "en-US",
     locationCode: 2840,
-    limit: 200,
+    rankedKeywordsLimit: 200,
+    competitorsDomainLimit: 100,
+    serpCompetitorsLimit: 100,
+    seeds: [],
   });
 
   await tx.insert(clientProjects).values({
@@ -212,9 +216,12 @@ async function seedDataForSeoKeyword(
     site_id: siteId,
     source_connection_id: sourceConnectionId,
     provider: "dataforseo",
-    operation: "keyword_gap_import",
-    method_version: "dataforseo.ranked_keywords.v1",
-    parameters_hash: contentHash({ projectId, collectionScope }),
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v2",
+    parameters_hash: contentHash({
+      projectId,
+      collectionScope: collectionScope as unknown as CanonicalValue,
+    }),
   });
   const dataForSeoSnapshot = await new DataSnapshotsRepository(tx).insert({
     workspaceId: input.workspaceId,
@@ -223,9 +230,9 @@ async function seedDataForSeoKeyword(
     collectionRunId,
     sourceConnectionId,
     provider: "dataforseo",
-    datasetKey: "dataforseo.ranked_keywords.v1",
-    schemaVersion: "dataforseo.ranked_keywords.v1",
-    methodVersion: "dataforseo.ranked_keywords.v1",
+    datasetKey: "dataforseo.search_landscape.v2",
+    schemaVersion: "dataforseo.search_landscape.v2",
+    methodVersion: "dataforseo.search_landscape.v2",
     capturedAt: CAPTURED_AT,
     sourceWindow: { start: null, end: null },
     availability: "available",
@@ -500,7 +507,7 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
             limitation: expect.stringMatching(/bounded.*collection scope/i),
             scopeBasis: "provider_collection_scope",
             scopeLimitation: expect.stringMatching(
-              /market US.*language en-US.*location code 2840.*200 rows/is,
+              /market US.*language en-US.*location code 2840.*200 ranked-keyword rows/is,
             ),
             marketCode: "US",
             languageTag: "en-US",

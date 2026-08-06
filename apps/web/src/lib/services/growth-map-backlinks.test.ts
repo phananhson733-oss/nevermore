@@ -108,8 +108,18 @@ describe("getProjectAuditBacklinks", () => {
         target_site_page_id: null,
         source_authority_metric_kind: "domain_rating",
         source_authority_metric_value: 63,
+        anchor_text: null,
+        first_seen_at: null,
+        last_seen_at: null,
+        is_new: false,
+        is_lost: false,
+        verification_status: "not_checked",
+        verified_at: null,
+        verification_final_url: null,
+        verification_http_status: null,
+        verification_limitation: null,
       },
-    ]);
+    ] as never);
 
     const result = await getProjectAuditBacklinks(
       scope,
@@ -143,6 +153,87 @@ describe("getProjectAuditBacklinks", () => {
       kind: "domain_rating",
       value: 63,
     });
+  });
+
+  it("projects DataForSEO totals and rank under their own provider semantics", async () => {
+    vi.spyOn(
+      BacklinkGrowthMapRepository.prototype,
+      "listLatestAuthoritySnapshots",
+    ).mockResolvedValue([
+      snapshot("primary_site", {
+        provider: "dataforseo",
+        total_backlinks: 1240,
+        total_referring_domains: 87,
+        authority_metric_kind: "dataforseo_rank",
+        authority_metric_value: 54,
+        source_ref: `dfs-${ids.primarySnapshot}`,
+      }),
+      snapshot("approved_competitor", {
+        provider: "dataforseo",
+        total_backlinks: 2900,
+        total_referring_domains: 170,
+        authority_metric_kind: "dataforseo_rank",
+        authority_metric_value: 72,
+        source_ref: `dfs-${ids.competitorSnapshot}`,
+      }),
+    ]);
+    vi.spyOn(
+      BacklinkGrowthMapRepository.prototype,
+      "listPageMetrics",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      BacklinkGrowthMapRepository.prototype,
+      "listFacts",
+    ).mockResolvedValue([
+      {
+        id: ids.fact,
+        snapshot_id: ids.primarySnapshot,
+        workspace_id: ids.workspace,
+        project_id: ids.project,
+        referring_domain: "publisher.example",
+        source_url: "https://publisher.example/relayops-review",
+        target_url: "https://relayops.example/guide",
+        target_site_page_id: ids.page,
+        source_authority_metric_kind: "dataforseo_rank",
+        source_authority_metric_value: 71,
+        anchor_text: "RelayOps guide",
+        first_seen_at: "2026-07-01T00:00:00.000Z",
+        last_seen_at: "2026-07-28T00:00:00.000Z",
+        is_new: true,
+        is_lost: false,
+        verification_status: "verified",
+        verified_at: "2026-07-28T00:05:00.000Z",
+        verification_final_url: "https://publisher.example/relayops-review",
+        verification_http_status: 200,
+        verification_limitation: null,
+      },
+    ] as never);
+
+    const result = await getProjectAuditBacklinks(
+      englishScope,
+      ids.project,
+      {} as never,
+      now,
+    );
+
+    expect(result.primarySite).toMatchObject({
+      provider: "dataforseo",
+      backlinks: { semantics: "provider_index_total", value: 1240 },
+      referringDomains: {
+        semantics: "provider_index_total",
+        value: 87,
+      },
+      authorityMetric: { kind: "dataforseo_rank", value: 54 },
+    });
+    expect(result.comparison).toMatchObject({
+      state: "comparable",
+      provider: "dataforseo",
+    });
+    expect(result.referringDomains[0]?.authorityMetric).toEqual({
+      kind: "dataforseo_rank",
+      value: 71,
+    });
+    expect(result.opportunities[0]?.summary).toContain("DataForSEO");
   });
 
   it("labels search-derived rows as an observed subset without totals or DR", async () => {
@@ -506,8 +597,18 @@ describe("getProjectAuditBacklinks", () => {
         target_site_page_id: null,
         source_authority_metric_kind: "domain_rating",
         source_authority_metric_value: 63,
+        anchor_text: null,
+        first_seen_at: null,
+        last_seen_at: null,
+        is_new: false,
+        is_lost: false,
+        verification_status: "not_checked",
+        verified_at: null,
+        verification_final_url: null,
+        verification_http_status: null,
+        verification_limitation: null,
       },
-    ]);
+    ] as never);
 
     await expect(
       getProjectAuditBacklinks(

@@ -270,7 +270,7 @@ assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
 assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 assert.equal(
   lock.migrationHead,
-  "0043_validate_contextual_diagnostic_rule_set",
+  "0044_dataforseo_backlinks",
 );
 
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
@@ -306,7 +306,7 @@ const migrations = listOrderedMigrationSources({
   migrationDirectory: lock.migrationDirectory,
   migrationFilePattern: lock.migrationFilePattern,
 });
-assert.equal(migrations.length, 43, "v0.4 must freeze 43 migrations");
+assert.equal(migrations.length, 44, "v0.4 must freeze 44 migrations");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
   lock.migrationHead,
