@@ -307,7 +307,13 @@ export async function persistCollectionResult(
         await projectCollectionSnapshotKeywords(tx, scope, snapshot);
         await projectCollectionSnapshotCompetitors(tx, scope, snapshot);
       }
-      if (!monitorProjection.isCompetitorMonitor) {
+      // Backlinks are a live, bounded multi-row index. Many distinct links
+      // intentionally share one target subject, so scalar equal-window
+      // comparison would turn repeat snapshots into a Cartesian conflict set.
+      if (
+        !monitorProjection.isCompetitorMonitor &&
+        !isDataForSeoBacklinksSnapshot
+      ) {
         await discrepancies.detectForSnapshot(scope, snapshot.id);
       }
 
