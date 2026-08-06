@@ -156,6 +156,30 @@
     line-height: 1.7;
   }
 
+  /*
+   * Autofill — Chrome paints :-webkit-autofill with its own opaque #E8F0FE and
+   * marks it !important, so a remembered URL rendered as a white slab across a
+   * dark card. No background-color declaration can win that; delaying the
+   * transition indefinitely is what leaves the element's own background in
+   * place. That also makes the rule surface-agnostic, which matters because
+   * these inputs sit on at least three different backdrops (#131314 tool
+   * fields, bg-input/30 shadcn fields, transparent wizard fields) and a single
+   * hard-coded fill colour would be wrong on two of them.
+   *
+   * Text and caret have to be restated separately: the UA rule forces `color`,
+   * and only -webkit-text-fill-color outranks it when painting glyphs.
+   */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    transition: background-color 600000s 0s;
+    -webkit-text-fill-color: var(--foreground);
+    caret-color: var(--color-brand-accent);
+  }
+
   /* Scrollbar — Dashboard */
   ::-webkit-scrollbar {
     width: 6px;

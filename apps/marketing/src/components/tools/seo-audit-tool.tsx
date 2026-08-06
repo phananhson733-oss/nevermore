@@ -101,7 +101,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={t("placeholder")}
-                className="min-w-0 flex-1 bg-transparent text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary/60"
+                className="min-w-0 flex-1 bg-transparent text-[14px] font-medium tracking-[0.01em] text-text-dark-primary outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-text-dark-secondary/60"
               />
             </span>
           </label>
