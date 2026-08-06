@@ -3769,7 +3769,7 @@ export function StudioClient({
                 projectId={projectId}
                 artifact={selected}
                 action={selectedAction}
-                fallback={
+                renderEditor={({ allowReadyStatusChange }) => (
                   <ArtifactEditor
                     key={selected.id}
                     projectId={projectId}
@@ -3779,9 +3779,9 @@ export function StudioClient({
                     onRegenerate={selectedArtifactRegenerate}
                     initialMarkdownMode="edit"
                     showMarkdownModeTabs={false}
-                    allowReadyStatusChange={false}
+                    allowReadyStatusChange={allowReadyStatusChange}
                   />
-                }
+                )}
                 editorDirty={selectedEditorDirty}
               />
             ) : (

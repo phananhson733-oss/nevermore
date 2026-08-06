@@ -2765,7 +2765,7 @@
     "noActions": "No actions are ready to execute yet.",
     "moreActionsHint": "More actions are available on the next page.",
     "pendingGeneration": "Awaiting generation",
-    "pendingGenerationHint": "This action is confirmed and has no deliverable yet. Generate it directly from this queue.",
+    "pendingGenerationHint": "This action is confirmed and has no deliverable yet. Open it to generate the deliverable inside this workspace.",
     "morePendingTitle": "More confirmed actions are available",
     "morePendingHint": "Load more plan actions to view and generate their deliverables here.",
     "emptyTitle": "No artifacts yet",

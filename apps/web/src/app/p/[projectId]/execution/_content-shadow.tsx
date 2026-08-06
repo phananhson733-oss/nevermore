@@ -1348,13 +1348,15 @@ export function ContentShadowArtifactPanel({
   projectId,
   artifact,
   action,
-  fallback = null,
+  renderEditor = () => null,
   editorDirty = false,
 }: {
   readonly projectId: string;
   readonly artifact: Artifact;
   readonly action?: ArtifactAction | undefined;
-  readonly fallback?: ReactNode;
+  readonly renderEditor?: (options: {
+    readonly allowReadyStatusChange: boolean;
+  }) => ReactNode;
   readonly editorDirty?: boolean;
 }) {
   const t = useTranslations("studio.shadow");
@@ -1380,12 +1382,16 @@ export function ContentShadowArtifactPanel({
     detail.draft !== null &&
     detail.draft.artifactId === artifact.id;
 
-  if (artifact.artifactType !== "english_blog_draft") return <>{fallback}</>;
+  if (artifact.artifactType !== "english_blog_draft") {
+    return <>{renderEditor({ allowReadyStatusChange: true })}</>;
+  }
 
   // Invalid drafts must open on the repair surface immediately. Their source
   // Markdown is editable without waiting for the secondary Content Shadow
   // review query; review becomes relevant again after a valid revision exists.
-  if (artifact.validationState === "invalid") return <>{fallback}</>;
+  if (artifact.validationState === "invalid") {
+    return <>{renderEditor({ allowReadyStatusChange: true })}</>;
+  }
 
   function onSurfaceModeKeyDown(
     event: ReactKeyboardEvent<HTMLDivElement>,
@@ -1446,10 +1452,10 @@ export function ContentShadowArtifactPanel({
             onRetry={() => void runsQuery.refetch()}
             compact
           />
-          {fallback}
+          {renderEditor({ allowReadyStatusChange: true })}
         </div>
       ) : selectedRun === null ? (
-        <>{fallback}</>
+        <>{renderEditor({ allowReadyStatusChange: true })}</>
       ) : detailQuery.isError ? (
         <div className={styles.shadowFallback}>
           <ProblemNotice
@@ -1458,14 +1464,14 @@ export function ContentShadowArtifactPanel({
             onRetry={() => void detailQuery.refetch()}
             compact
           />
-          {fallback}
+          {renderEditor({ allowReadyStatusChange: true })}
         </div>
       ) : detail === null ? (
         <Panel padding="lg" className={styles.docPanel}>
           <EmptyState title={t("loading")} />
         </Panel>
       ) : !detailArtifactMatches ? (
-        <>{fallback}</>
+        <>{renderEditor({ allowReadyStatusChange: true })}</>
       ) : (
         <>
           <div className={styles.shadowModeBar}>
@@ -1537,7 +1543,7 @@ export function ContentShadowArtifactPanel({
             aria-labelledby={editTabId}
             hidden={surfaceMode !== "edit"}
           >
-            {fallback}
+            {renderEditor({ allowReadyStatusChange: false })}
           </div>
         </>
       )}

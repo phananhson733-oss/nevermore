@@ -75,6 +75,8 @@ interface Scenario {
   artifactRevision: number;
   artifactStatus: "draft" | "ready";
   readonly validationState: "valid" | "invalid";
+  /** A legacy or incomplete projection may have the draft but no matching run. */
+  readonly shadowRunAvailable?: boolean;
   /** When set, the review endpoint refuses with this conflict instead. */
   readonly reviewConflict?: { readonly currentRevision: number };
 }
@@ -360,7 +362,7 @@ async function openExecution(
           createdAt: projection.createdAt,
           source: projection.source,
         },
-      ],
+      ].filter(() => scenario.shadowRunAvailable !== false),
       meta: { nextCursor: null, hasNext: false, limit: 100 },
     });
   });
@@ -385,6 +387,14 @@ async function openExecution(
     `**${BASE}/artifacts/${DRAFT_ARTIFACT_ID}**`,
     async (route) => {
       if (route.request().method() !== "PATCH") {
+        await fulfill(route, { data: draftArtifact(scenario) });
+        return;
+      }
+      const body = route.request().postDataJSON() as {
+        readonly status?: string;
+      };
+      if (body.status === "ready") {
+        scenario.artifactStatus = "ready";
         await fulfill(route, { data: draftArtifact(scenario) });
         return;
       }
@@ -591,6 +601,50 @@ test("the unified English-draft review opens when the gate does not block", asyn
   await expect(editTab).toHaveAttribute("aria-selected", "true");
   await expect(reviewTab).toBeDisabled();
   await expect(content).toBeVisible();
+});
+
+test("a valid English draft without a matching Shadow run keeps the generic ready path", async ({
+  page,
+}) => {
+  const { writes } = await openExecution(
+    page,
+    scenario({ shadowRunAvailable: false }),
+  );
+
+  const ready = page.getByRole("button", {
+    name: "标记为就绪",
+    exact: true,
+  });
+  await expect(ready).toBeVisible();
+  await expect(ready).toBeEnabled();
+
+  const readyRequest = page.waitForRequest((request) => {
+    if (
+      request.method() !== "PATCH" ||
+      new URL(request.url()).pathname !==
+        `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`
+    ) {
+      return false;
+    }
+    return (
+      request.postDataJSON() as { readonly status?: string } | null
+    )?.status === "ready";
+  });
+  await ready.click();
+  expect((await readyRequest).postDataJSON()).toEqual({
+    baseRevision: 1,
+    status: "ready",
+  });
+  await expect(page.locator("[data-studio-ready-path]")).toBeVisible();
+  await expect(ready).toHaveCount(0);
+  expect(
+    writes.filter(
+      (write) =>
+        write.method === "PATCH" &&
+        new URL(write.url).pathname ===
+          `${BASE}/artifacts/${DRAFT_ARTIFACT_ID}`,
+    ),
+  ).toHaveLength(1);
 });
 
 test("an invalid English draft opens the Markdown repair editor without waiting for review detail", async ({

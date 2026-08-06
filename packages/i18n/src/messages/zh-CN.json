@@ -2765,7 +2765,7 @@
     "noActions": "暂无可执行的行动。",
     "moreActionsHint": "下一页还有更多可执行行动。",
     "pendingGeneration": "待生成",
-    "pendingGenerationHint": "该行动已确认，尚未生成交付文件。可直接从这里开始生成。",
+    "pendingGenerationHint": "该行动已确认，尚未生成交付文件。打开后可在此工作区内生成。",
     "morePendingTitle": "还有更多已确认行动",
     "morePendingHint": "继续加载计划，即可在此查看并生成对应交付文件。",
     "emptyTitle": "尚无执行物",
