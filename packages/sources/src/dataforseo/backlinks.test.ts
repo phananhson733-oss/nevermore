@@ -313,6 +313,27 @@ class SharedSourceBacklinksClient extends FixtureBacklinksClient {
   }
 }
 
+class CanonicalTargetCollisionBacklinksClient extends FixtureBacklinksClient {
+  override backlinks(request: unknown) {
+    this.backlinkRequests.push(request);
+    const response = backlinksResponse();
+    const first = response.rows[0]!;
+    return Promise.resolve({
+      ...response,
+      rows: [
+        first,
+        {
+          ...first,
+          targetUrl: "https://example.com/guide?utm_campaign=alternate",
+          anchor: "Alternate canonical link",
+        },
+      ],
+      totalCount: 2,
+      itemsCount: 2,
+    });
+  }
+}
+
 class InvalidTimestampBacklinksClient extends FixtureBacklinksClient {
   constructor(private readonly invalidTimestamp: string) {
     super();
@@ -633,6 +654,45 @@ describe("DataForSEO Backlinks adapter", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps distinct provider link identities when raw targets share one canonical subject", async () => {
+    const api = await requireBacklinksModule();
+    const adapter = api.createDataForSeoBacklinksAdapter(
+      new CanonicalTargetCollisionBacklinksClient(),
+      {
+        now: () => new Date("2026-08-06T01:00:00.000Z"),
+        sourcePageVerifier: async () => ({
+          status: "inconclusive",
+          checkedAt: "2026-08-06T00:59:00.000Z",
+          finalUrl: null,
+          httpStatus: null,
+          anchorText: null,
+          rel: null,
+          limitation: "Fixture verification was not attempted.",
+        }),
+      },
+    );
+
+    const result = await adapter.collect(createScope(api), collectionContext);
+    const backlinks = (await observationsFor(adapter, result.raw)).filter(
+      (observation) =>
+        observation.metricKey === api.METRIC_DATAFORSEO_BACKLINK,
+    );
+
+    expect(backlinks).toHaveLength(2);
+    expect(backlinks.map((backlink) => backlink.subjectRef)).toEqual([
+      "https://example.com/guide",
+      "https://example.com/guide",
+    ]);
+    expect(
+      new Set(
+        backlinks.map(
+          (backlink) =>
+            (backlink.valueJson as { readonly sourceRef: string }).sourceRef,
+        ),
+      ).size,
+    ).toBe(2);
   });
 
   it.each([

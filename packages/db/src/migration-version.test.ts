@@ -30,7 +30,7 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0044_dataforseo_backlinks",
+      "0045_dataforseo_backlink_target_lineage",
     );
     expect(migration).toMatch(
       /CHECK\s*\(\s*rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*,\s*'mvp\.rules\.0\.2\.2'\s*,\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)\s*\)/iu,
@@ -149,6 +149,31 @@ describe("readMigrationVersion", () => {
     );
     expect(migration).toMatch(
       /SELECT\s+'0044_dataforseo_backlinks'::text\s+AS\s+migration_version/iu,
+    );
+  });
+
+  it("keeps DataForSEO backlink facts inside their exact summary domain family", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0045_dataforseo_backlink_target_lineage.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /snapshot\.provider = 'dataforseo'[\s\S]*?dataforseo\.backlink_summary\.v1/iu,
+    );
+    expect(migration).toMatch(
+      /primary_site\.host[\s\S]*?dataforseo_target_domain[\s\S]*?target_hostname[\s\S]*?dataforseo_target_domain/iu,
+    );
+    expect(migration).toMatch(
+      /position\('@' IN target_authority\)[\s\S]*?position\(':' IN target_authority\)/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0045_dataforseo_backlink_target_lineage'::text[\s\S]*?AS\s+migration_version/iu,
     );
   });
 
