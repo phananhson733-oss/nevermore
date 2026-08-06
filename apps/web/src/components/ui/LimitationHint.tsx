@@ -221,8 +221,15 @@ export function LimitationHint({
         aria-expanded={open}
         aria-controls={tooltipId}
         aria-describedby={open ? tooltipId : undefined}
+        aria-keyshortcuts="ArrowDown"
         onFocus={handleFocus}
         onBlur={scheduleClose}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" || !open) return;
+          event.preventDefault();
+          clearCloseTimer();
+          tooltipRef.current?.focus();
+        }}
         onClick={() => {
           if (pinnedRef.current) {
             close();
@@ -241,9 +248,12 @@ export function LimitationHint({
               ref={tooltipRef}
               id={tooltipId}
               role="tooltip"
+              tabIndex={0}
               className={cx(styles.popover, position !== null && styles.positioned)}
               data-side={position?.side ?? "bottom"}
               style={tooltipStyle}
+              onFocus={clearCloseTimer}
+              onBlur={scheduleClose}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleClose}
             >

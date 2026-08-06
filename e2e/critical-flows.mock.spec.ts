@@ -407,6 +407,7 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
   const invalidArtifact = {
     ...baseArtifact,
     generationMode: "structured_llm",
+    outputLocale: "fr-FR",
     validationState: "invalid",
     current: {
       ...baseArtifact.current,
@@ -452,6 +453,7 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
   await expect(page.getByLabel("Generation mode")).toHaveValue(
     "structured_llm",
   );
+  await expect(page.getByLabel("Output language")).toHaveValue("fr-FR");
   await expect(
     canvas.getByRole("heading", { name: "Fix the failing product page" }),
   ).toBeFocused();
@@ -744,6 +746,33 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
   await expect(
     main.getByRole("heading", { name: "Export", level: 2 }),
   ).toBeVisible();
+
+  const coverageLimitations = document.getByText("GSC unavailable", {
+    exact: true,
+  });
+  await expect(coverageLimitations).toHaveCount(1);
+  await expect(coverageLimitations).toBeHidden();
+  const limitationControls = document.getByRole("button", {
+    name: "Limitations (1)",
+  });
+  await expect(limitationControls).toHaveCount(1);
+  await limitationControls.click();
+  await expect(
+    page.getByRole("tooltip").getByText("GSC unavailable", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const evidenceLimitation = document.getByText("One captured response.", {
+    exact: true,
+  });
+  await expect(evidenceLimitation).toBeHidden();
+  await document.getByRole("button", { name: "Limitation (1)" }).click();
+  await expect(
+    page
+      .getByRole("tooltip")
+      .getByText("One captured response.", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 
 /**
@@ -807,5 +836,14 @@ test("print media keeps the report document and hides the Results screen chrome 
   ).toBeVisible();
   await expect(
     document.getByRole("heading", { name: "Methodology" }),
+  ).toBeVisible();
+  await expect(
+    document.getByText("GSC unavailable", { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    document.getByText("GSC unavailable", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    document.getByText("One captured response.", { exact: true }),
   ).toBeVisible();
 });

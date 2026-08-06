@@ -25,6 +25,7 @@ import {
 import {
   Badge,
   EmptyState,
+  LimitationHint,
   Panel,
   StatusPill,
   cx,
@@ -91,6 +92,44 @@ function overallMeta(overall: Coverage["overall"]): CoverageMeta {
     default:
       return { tone: "neutral", labelKey: "missing" };
   }
+}
+
+function ReportLimitationDisclosure({
+  contentLanguage,
+  label,
+  limitations,
+}: {
+  readonly contentLanguage: string;
+  readonly label: string;
+  readonly limitations: readonly string[];
+}) {
+  const items = uniqueStrings(limitations);
+  if (items.length === 0) return null;
+  return (
+    <>
+      <span className={styles.reportLimitationInteractive}>
+        <LimitationHint
+          label={label}
+          limitations={items}
+          contentLanguage={contentLanguage}
+        />
+      </span>
+      <div
+        className={styles.reportLimitationPrint}
+        aria-hidden="true"
+        data-report-print-limitations=""
+      >
+        <p className={styles.limitationsLabel}>{label}</p>
+        <ul className={styles.bulletList}>
+          {items.map((text, index) => (
+            <li key={`${index}:${text}`} className={styles.bulletItem}>
+              {text}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
+  );
 }
 
 /** Severity / priority band → pill tone (shared 4-level scale). */
@@ -274,7 +313,13 @@ function ClientContextSection({ report }: { readonly report: Report }) {
 
 // ----------------------------------------------------------- Coverage --------
 
-function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
+function CoverageSection({
+  contentLanguage,
+  coverage,
+}: {
+  readonly contentLanguage: string;
+  readonly coverage: Coverage;
+}) {
   const t = useTranslations("report");
   const tCoverage = useTranslations("coverage");
   const tDomain = useTranslations("domain");
@@ -310,14 +355,11 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
       </ul>
       {coverage.limitations.length > 0 ? (
         <div className={styles.limitations}>
-          <p className={styles.limitationsLabel}>{t("limitations")}</p>
-          <ul className={styles.bulletList}>
-            {uniqueStrings(coverage.limitations).map((text, index) => (
-              <li key={`${index}:${text}`} className={styles.bulletItem}>
-                {text}
-              </li>
-            ))}
-          </ul>
+          <ReportLimitationDisclosure
+            label={t("limitations")}
+            limitations={coverage.limitations}
+            contentLanguage={contentLanguage}
+          />
         </div>
       ) : null}
     </Panel>
@@ -328,10 +370,12 @@ function CoverageSection({ coverage }: { readonly coverage: Coverage }) {
 
 function EvidenceRow({
   claim,
+  contentLanguage,
   grade,
   limitation,
 }: {
   readonly claim: string;
+  readonly contentLanguage: string;
   readonly grade: EvidenceGrade;
   readonly limitation: string;
 }) {
@@ -343,18 +387,24 @@ function EvidenceRow({
         <span className={styles.evidenceClaim}>{claim}</span>
       </div>
       {limitation.length > 0 ? (
-        <p className={styles.evidenceLimitation}>
-          {t("limitation")}: {limitation}
-        </p>
+        <div className={styles.evidenceLimitation}>
+          <ReportLimitationDisclosure
+            label={t("limitation")}
+            limitations={[limitation]}
+            contentLanguage={contentLanguage}
+          />
+        </div>
       ) : null}
     </li>
   );
 }
 
 function FindingCard({
+  contentLanguage,
   finding,
   index,
 }: {
+  readonly contentLanguage: string;
   readonly finding: Finding;
   readonly index: number;
 }) {
@@ -394,6 +444,7 @@ function FindingCard({
                 <EvidenceRow
                   key={item.id}
                   claim={item.claim}
+                  contentLanguage={contentLanguage}
                   grade={item.grade}
                   limitation={item.limitation}
                 />
@@ -407,8 +458,10 @@ function FindingCard({
 }
 
 function FindingsSection({
+  contentLanguage,
   findings,
 }: {
+  readonly contentLanguage: string;
   readonly findings: readonly Finding[];
 }) {
   const t = useTranslations("report");
@@ -427,7 +480,12 @@ function FindingsSection({
       <p className={styles.panelNote}>{t("findingsNote")}</p>
       <div className={styles.cardList} data-report-findings-list="">
         {findings.map((finding, index) => (
-          <FindingCard key={finding.id} finding={finding} index={index} />
+          <FindingCard
+            key={finding.id}
+            finding={finding}
+            index={index}
+            contentLanguage={contentLanguage}
+          />
         ))}
       </div>
     </Panel>
@@ -628,14 +686,11 @@ function MethodologySection({ report }: { readonly report: Report }) {
       ))}
       {footerLimitations.length > 0 ? (
         <div className={styles.limitations}>
-          <p className={styles.limitationsLabel}>{t("limitations")}</p>
-          <ul className={styles.bulletList}>
-            {footerLimitations.map((text, index) => (
-              <li key={`${index}:${text}`} className={styles.bulletItem}>
-                {text}
-              </li>
-            ))}
-          </ul>
+          <ReportLimitationDisclosure
+            label={t("limitations")}
+            limitations={footerLimitations}
+            contentLanguage={report.outputLocale}
+          />
         </div>
       ) : null}
       <div className={styles.nextStep}>
@@ -719,7 +774,10 @@ export function ReportDocument({ report }: { readonly report: Report }) {
       <div className={styles.documentSections} data-report-document-sections="">
         <ExecutiveSummarySection report={report} />
         <ClientContextSection report={report} />
-        <CoverageSection coverage={report.coverage} />
+        <CoverageSection
+          coverage={report.coverage}
+          contentLanguage={report.outputLocale}
+        />
         {isEmpty ? (
           <Panel className={styles.emptyPanel} padding="lg">
             <EmptyState title={t("emptyTitle")} description={t("emptyHint")} />
@@ -727,7 +785,10 @@ export function ReportDocument({ report }: { readonly report: Report }) {
         ) : (
           <>
             {report.findings.length > 0 ? (
-              <FindingsSection findings={report.findings} />
+              <FindingsSection
+                findings={report.findings}
+                contentLanguage={report.outputLocale}
+              />
             ) : null}
             {report.actions.length > 0 ? (
               <PlanSection actions={report.actions} />

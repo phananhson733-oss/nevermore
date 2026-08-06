@@ -348,6 +348,10 @@ test("Sources keeps compact limitation disclosures inside a 390px viewport", asy
     ),
   ).toBe(true);
 
+  await trigger.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(tooltip).toBeFocused();
+
   await page.keyboard.press("Escape");
   await expect(tooltip).toHaveCount(0);
   await expect(trigger).toBeFocused();

@@ -418,6 +418,13 @@
   border: 1px solid color-mix(in srgb, var(--sf-amber) 48%, var(--sf-border));
   border-radius: var(--sf-radius-control);
 }
+.reportLimitationInteractive {
+  display: inline-flex;
+  width: max-content;
+}
+.reportLimitationPrint {
+  display: none;
+}
 .documentSections > .panel > .limitations {
   margin-left: 46px;
 }
@@ -1220,6 +1227,14 @@
 @media print {
   .noPrint {
     display: none !important;
+  }
+  .reportLimitationInteractive {
+    display: none !important;
+  }
+  .reportLimitationPrint {
+    display: flex !important;
+    flex-direction: column;
+    gap: 8px;
   }
 
   :global(body):has(.page) :global(div:has(> [data-app-shell-sidebar])) {

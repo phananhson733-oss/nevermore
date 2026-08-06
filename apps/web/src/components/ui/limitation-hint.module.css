@@ -56,6 +56,10 @@
     opacity 0.14s ease,
     transform 0.14s ease;
 }
+.popover:focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
+}
 
 .popover[data-side="top"] {
   transform: translateY(4px) scale(0.985);

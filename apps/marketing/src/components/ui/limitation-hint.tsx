@@ -220,8 +220,15 @@ export function LimitationHint({
         aria-expanded={open}
         aria-controls={tooltipId}
         aria-describedby={open ? tooltipId : undefined}
+        aria-keyshortcuts="ArrowDown"
         onFocus={handleFocus}
         onBlur={scheduleClose}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" || !open) return;
+          event.preventDefault();
+          clearCloseTimer();
+          tooltipRef.current?.focus();
+        }}
         onClick={() => {
           if (pinnedRef.current) {
             close();
@@ -240,10 +247,13 @@ export function LimitationHint({
               ref={tooltipRef}
               id={tooltipId}
               role="tooltip"
+              tabIndex={0}
               data-side={position?.side ?? "bottom"}
               data-positioned={position !== null ? "true" : "false"}
               style={tooltipStyle}
-              className="fixed z-[1400] max-h-[min(360px,calc(100vh-24px))] w-[min(380px,calc(100vw-28px))] overflow-auto overscroll-contain rounded-xl border border-brand-warning/55 bg-[#171718] p-3.5 text-text-dark-primary opacity-0 shadow-2xl transition duration-150 data-[positioned=true]:opacity-100 motion-reduce:transition-none"
+              className="fixed z-[1400] max-h-[min(360px,calc(100vh-24px))] w-[min(380px,calc(100vw-28px))] overflow-auto overscroll-contain rounded-xl border border-brand-warning/55 bg-[#171718] p-3.5 text-text-dark-primary opacity-0 shadow-2xl transition duration-150 data-[positioned=true]:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent motion-reduce:transition-none"
+              onFocus={clearCloseTimer}
+              onBlur={scheduleClose}
               onMouseEnter={clearCloseTimer}
               onMouseLeave={scheduleClose}
             >

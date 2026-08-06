@@ -1569,6 +1569,7 @@ function EvidenceRail({
 interface GenerateFormProps {
   readonly projectId: string;
   readonly action: ArtifactAction;
+  readonly initialOutputLocale?: string | undefined;
   readonly onQueued: (
     run: AsyncRun,
     artifactId: string | null,
@@ -1581,9 +1582,11 @@ interface GenerateFormProps {
 function localeOptions(
   project: Project | undefined,
   actionLocale: string,
+  initialOutputLocale: string | undefined,
 ): readonly string[] {
   const set = new Set<string>();
   set.add(actionLocale);
+  if (initialOutputLocale !== undefined) set.add(initialOutputLocale);
   if (project) {
     set.add(project.defaultDeliveryLocale);
     for (const code of project.site.languageCodes) set.add(code);
@@ -1610,6 +1613,7 @@ function normalizeTemplateOutputLocale(value: string): "en" | "zh-CN" | null {
 function GenerateForm({
   projectId,
   action,
+  initialOutputLocale,
   onQueued,
   onAlreadyActive,
   onCancel,
@@ -1624,13 +1628,19 @@ function GenerateForm({
   const project = projectQuery.data;
 
   const expected = expectedArtifactType(action);
-  const locales = localeOptions(project, action.contentLocale);
+  const locales = localeOptions(
+    project,
+    action.contentLocale,
+    initialOutputLocale,
+  );
   const [artifactType, setArtifactType] = useState<ArtifactType>(
     expected ?? "content_brief",
   );
   const [mode, setMode] = useState<GenerationMode>("structured_llm");
   const [locale, setLocale] = useState<string>(
-    project?.defaultDeliveryLocale ?? action.contentLocale,
+    initialOutputLocale ??
+      project?.defaultDeliveryLocale ??
+      action.contentLocale,
   );
   const localeEdited = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -1655,10 +1665,14 @@ function GenerateForm({
     mode === "template" ? templateLocale : normalizedLocale;
 
   useEffect(() => {
-    if (project !== undefined && !localeEdited.current) {
+    if (
+      initialOutputLocale === undefined &&
+      project !== undefined &&
+      !localeEdited.current
+    ) {
       setLocale(project.defaultDeliveryLocale);
     }
-  }, [project]);
+  }, [initialOutputLocale, project]);
 
   useEffect(() => {
     const heading = headingRef.current;
@@ -2012,6 +2026,8 @@ export function StudioClient({
   const [generateAction, setGenerateAction] = useState<ArtifactAction | null>(
     null,
   );
+  const [generateInitialOutputLocale, setGenerateInitialOutputLocale] =
+    useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   const [trackedRunIds, setTrackedRunIds] = useState<readonly string[]>([]);
   const [runQueryFailureIds, setRunQueryFailureIds] = useState<
@@ -2657,6 +2673,7 @@ export function StudioClient({
         setDirtyArtifactId(null);
         setSelectedId(null);
         setPickerOpen(false);
+        setGenerateInitialOutputLocale(undefined);
         setGenerateAction(action);
         return;
       }
@@ -2911,7 +2928,10 @@ export function StudioClient({
     });
   }
 
-  function openGenerate(action: ArtifactAction): void {
+  function openGenerate(
+    action: ArtifactAction,
+    initialOutputLocale?: string,
+  ): void {
     if (
       queuedActionBlocksGeneration(artifactProjectionSettlements, action.id) ||
       activeGenerationRecoveries.some(
@@ -2921,6 +2941,7 @@ export function StudioClient({
       return;
     }
     if (!confirmEditorDiscard()) return;
+    setGenerateInitialOutputLocale(initialOutputLocale);
     setGenerateAction(action);
     setPickerOpen(false);
     replaceExecutionTarget(action.id, null);
@@ -3575,6 +3596,7 @@ export function StudioClient({
             <GenerateForm
               projectId={projectId}
               action={generateAction}
+              initialOutputLocale={generateInitialOutputLocale}
               onQueued={(run, artifactId, artifactType) =>
                 onQueued(run, artifactId, generateAction.id, artifactType)
               }
@@ -3611,7 +3633,7 @@ export function StudioClient({
                     selected.artifactType,
                   ),
                 )
-                  ? () => openGenerate(selectedAction)
+                  ? () => openGenerate(selectedAction, selected.outputLocale)
                   : undefined
               }
             />

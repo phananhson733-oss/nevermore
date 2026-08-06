@@ -103,6 +103,26 @@ describe("marketing LimitationHint", () => {
     view.cleanup();
   });
 
+  it("moves keyboard focus into a long scrollable disclosure with ArrowDown", () => {
+    const limitation = "A long boundary ".repeat(80);
+    const view = clientRender(
+      <LimitationHint label="Limitations" limitations={[limitation]} />,
+    );
+    const trigger = view.container.querySelector("button");
+    act(() => trigger?.focus());
+    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+
+    act(() =>
+      trigger?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      ),
+    );
+
+    expect(tooltip?.tabIndex).toBe(0);
+    expect(document.activeElement).toBe(tooltip);
+    view.cleanup();
+  });
+
   it("does not reopen when Escape returns focus after hover", () => {
     const limitation = "A hovered boundary must stay closed after Escape.";
     const view = clientRender(
