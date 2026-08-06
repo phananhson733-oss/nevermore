@@ -757,7 +757,9 @@ export function createDataForSeoBacklinksAdapter(
         );
         canonicalSubjectUrl(row.sourceUrl, "DataForSEO backlink source URL");
         const projection: DataForSeoBacklinkProjection = {
-          sourceRef: safeSourceRef("link", row.sourceUrl, targetUrl),
+          // Provider identity stays on the raw target. Distinct observed links
+          // may intentionally collapse to one canonical subject URL.
+          sourceRef: safeSourceRef("link", row.sourceUrl, row.targetUrl),
           referringDomain: row.sourceDomain,
           sourceUrl: row.sourceUrl,
           targetUrl,

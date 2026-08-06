@@ -187,10 +187,10 @@ for (const operationId of asyncOperations) {
 
 const migrations = listOrderedMigrationSources({ root: repositoryRoot });
 const tables = migrationTableInventory(migrations);
-assert.equal(migrations.length, 44, "reviewed v0.4 migration count drift");
+assert.equal(migrations.length, 45, "reviewed v0.4 migration count drift");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
-  "0044_dataforseo_backlinks",
+  "0045_dataforseo_backlink_target_lineage",
   "reviewed v0.4 migration head drift",
 );
 assert.equal(tables.length, 78, "reviewed v0.4 table count drift");

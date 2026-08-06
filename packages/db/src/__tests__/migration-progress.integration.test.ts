@@ -149,6 +149,7 @@ describe("ordered migration progress", () => {
       await expect(runMigrations(DATABASE_URL)).resolves.toEqual([
         "0043_validate_contextual_diagnostic_rule_set.sql",
         "0044_dataforseo_backlinks.sql",
+        "0045_dataforseo_backlink_target_lineage.sql",
       ]);
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,

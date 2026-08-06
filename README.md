@@ -18,7 +18,7 @@ Contract inventory: **79 API operations / 10 async operations / 78 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0044_dataforseo_backlinks.sql` (**44 migrations**).
+`0045_dataforseo_backlink_target_lineage.sql` (**45 migrations**).
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0044_dataforseo_backlinks" as const;
+  "0045_dataforseo_backlink_target_lineage" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

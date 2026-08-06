@@ -4914,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0044_dataforseo_backlinks' THEN
+  ) IS DISTINCT FROM '0045_dataforseo_backlink_target_lineage' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (
@@ -5338,10 +5338,16 @@ DECLARE
   snapshot_id uuid := gen_random_uuid();
   summary_observation_id uuid := gen_random_uuid();
   detail_observation_id uuid := gen_random_uuid();
+  domain_detail_observation_id uuid := gen_random_uuid();
   authority_id uuid := gen_random_uuid();
   actor_id uuid := gen_random_uuid();
   host text := project_id::text || '.backlinks-smoke.example';
   unavailable_authority_rejected boolean := false;
+  foreign_dataforseo_target_rejected boolean := false;
+  credential_dataforseo_target_rejected boolean := false;
+  port_dataforseo_target_rejected boolean := false;
+  uppercase_dataforseo_target_rejected boolean := false;
+  prefixed_dataforseo_target_rejected boolean := false;
 BEGIN
   INSERT INTO app.workspaces (id, name)
   VALUES (workspace_id, 'DataForSEO Backlinks smoke');
@@ -5396,7 +5402,7 @@ BEGIN
     '2026-08-06T08:00:00.000Z',
     '{"start":null,"end":null}'::jsonb, 'available',
     'Provider details are a bounded sample while summary totals are complete.',
-    2, repeat('d', 64), '{}'::jsonb
+    3, repeat('d', 64), '{}'::jsonb
   );
   INSERT INTO app.normalized_observations (
     id, workspace_id, project_id, snapshot_id, provider,
@@ -5411,6 +5417,32 @@ BEGIN
       'rank', 54,
       'backlinks', 1240,
       'referringDomains', 87
+    ),
+    'vendor_observation', 'B', 'supports',
+    'Provider details are a bounded sample while summary totals are complete.'
+  );
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, provider,
+    metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  ) VALUES (
+    domain_detail_observation_id, workspace_id, project_id, snapshot_id,
+    'dataforseo', 'dataforseo.backlink.v1', 'url',
+    'https://www.' || host || '/guide',
+    '2026-08-06T08:00:00.000Z', 'available',
+    jsonb_build_object(
+      'sourceRef', 'provider-row-2',
+      'referringDomain', 'second-publisher.example',
+      'sourceUrl', 'https://second-publisher.example/article',
+      'targetUrl', 'https://www.' || host || '/guide',
+      'sourceRank', 57,
+      'linkKind', 'nofollow',
+      'anchorText', 'Alternate host guide',
+      'firstSeenAt', '2026-07-02T00:00:00.000Z',
+      'lastSeenAt', '2026-08-06T08:00:00.000Z',
+      'isNew', false,
+      'isLost', false,
+      'verification', null
     ),
     'vendor_observation', 'B', 'supports',
     'Provider details are a bounded sample while summary totals are complete.'
@@ -5460,7 +5492,7 @@ BEGIN
     '2026-08-06T08:00:00.000Z', 'available',
     'provider_index', 1240, 87, null, null,
     'dataforseo_rank', 54,
-    'dfs-' || snapshot_id::text, repeat('d', 64), 2, null, null
+    'dfs-' || snapshot_id::text, repeat('d', 64), 3, null, null
   );
   INSERT INTO app.backlink_facts (
     snapshot_id, workspace_id, project_id, site_id,
@@ -5480,6 +5512,123 @@ BEGIN
     '2026-08-06T08:00:00.000Z',
     'https://publisher.example/article', 200, null
   );
+  INSERT INTO app.backlink_facts (
+    snapshot_id, workspace_id, project_id, site_id,
+    referring_domain, source_url, target_url, target_site_page_id,
+    source_authority_metric_kind, source_authority_metric_value,
+    link_kind, source_ref, anchor_text, first_seen_at, last_seen_at,
+    is_new, is_lost
+  ) VALUES (
+    authority_id, workspace_id, project_id, site_id,
+    'second-publisher.example', 'https://second-publisher.example/article',
+    'https://www.' || host || '/guide', null,
+    'dataforseo_rank', 57, 'nofollow', 'provider-row-2',
+    'Alternate host guide', '2026-07-02T00:00:00.000Z',
+    '2026-08-06T08:00:00.000Z', false, false
+  );
+
+  BEGIN
+    INSERT INTO app.backlink_facts (
+      snapshot_id, workspace_id, project_id, site_id,
+      referring_domain, source_url, target_url, target_site_page_id,
+      source_authority_metric_kind, source_authority_metric_value,
+      link_kind, source_ref
+    ) VALUES (
+      authority_id, workspace_id, project_id, site_id,
+      'foreign-publisher.example', 'https://foreign-publisher.example/article',
+      'https://foreign-target.example/guide', null,
+      'dataforseo_rank', 40, 'dofollow', 'foreign-provider-row'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      foreign_dataforseo_target_rejected := true;
+  END;
+  IF NOT foreign_dataforseo_target_rejected THEN
+    RAISE EXCEPTION 'DataForSEO foreign target escaped summary-domain authority';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.backlink_facts (
+      snapshot_id, workspace_id, project_id, site_id,
+      referring_domain, source_url, target_url, target_site_page_id,
+      source_authority_metric_kind, source_authority_metric_value,
+      link_kind, source_ref
+    ) VALUES (
+      authority_id, workspace_id, project_id, site_id,
+      'credential-publisher.example',
+      'https://credential-publisher.example/article',
+      'https://' || host || '@foreign-target.example/guide', null,
+      'dataforseo_rank', 40, 'dofollow', 'credential-provider-row'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      credential_dataforseo_target_rejected := true;
+  END;
+  IF NOT credential_dataforseo_target_rejected THEN
+    RAISE EXCEPTION 'DataForSEO credential target escaped summary-domain authority';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.backlink_facts (
+      snapshot_id, workspace_id, project_id, site_id,
+      referring_domain, source_url, target_url, target_site_page_id,
+      source_authority_metric_kind, source_authority_metric_value,
+      link_kind, source_ref
+    ) VALUES (
+      authority_id, workspace_id, project_id, site_id,
+      'port-publisher.example', 'https://port-publisher.example/article',
+      'https://' || host || ':443/guide', null,
+      'dataforseo_rank', 40, 'dofollow', 'port-provider-row'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      port_dataforseo_target_rejected := true;
+  END;
+  IF NOT port_dataforseo_target_rejected THEN
+    RAISE EXCEPTION 'DataForSEO explicit-port target escaped summary-domain authority';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.backlink_facts (
+      snapshot_id, workspace_id, project_id, site_id,
+      referring_domain, source_url, target_url, target_site_page_id,
+      source_authority_metric_kind, source_authority_metric_value,
+      link_kind, source_ref
+    ) VALUES (
+      authority_id, workspace_id, project_id, site_id,
+      'uppercase-publisher.example',
+      'https://uppercase-publisher.example/article',
+      'https://' || upper(host) || '/guide', null,
+      'dataforseo_rank', 40, 'dofollow', 'uppercase-provider-row'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      uppercase_dataforseo_target_rejected := true;
+  END;
+  IF NOT uppercase_dataforseo_target_rejected THEN
+    RAISE EXCEPTION 'DataForSEO uppercase target escaped summary-domain authority';
+  END IF;
+
+  BEGIN
+    INSERT INTO app.backlink_facts (
+      snapshot_id, workspace_id, project_id, site_id,
+      referring_domain, source_url, target_url, target_site_page_id,
+      source_authority_metric_kind, source_authority_metric_value,
+      link_kind, source_ref
+    ) VALUES (
+      authority_id, workspace_id, project_id, site_id,
+      'prefixed-publisher.example',
+      'https://prefixed-publisher.example/article',
+      'https://' || host || '.evil.example/guide', null,
+      'dataforseo_rank', 40, 'dofollow', 'prefixed-provider-row'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      prefixed_dataforseo_target_rejected := true;
+  END;
+  IF NOT prefixed_dataforseo_target_rejected THEN
+    RAISE EXCEPTION 'DataForSEO host-prefix target escaped summary-domain authority';
+  END IF;
 
   BEGIN
     INSERT INTO app.backlink_authority_snapshots (
@@ -5494,7 +5643,7 @@ BEGIN
       'primary_site', 'provider_import', 'dataforseo',
       '2026-08-06T08:00:00.000Z', 'unavailable',
       'unavailable', null, null, null, null, null, null,
-      'dfs-' || snapshot_id::text, repeat('d', 64), 2, null,
+      'dfs-' || snapshot_id::text, repeat('d', 64), 3, null,
       'Provider unavailable smoke row.'
     );
   EXCEPTION
