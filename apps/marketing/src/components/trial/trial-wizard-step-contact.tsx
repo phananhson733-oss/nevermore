@@ -26,18 +26,20 @@ export function TrialStepContact({
   const t = useTranslations("trial");
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <Label className="text-[#F0EDE8]">{t("contactTitle")}</Label>
-        <p className="mt-0.5 text-xs text-[#9B9690]">
+        <Label className="text-[14px] font-semibold text-text-dark-primary">
+          {t("contactTitle")}
+        </Label>
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("contactDesc")}
         </p>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
           <Label
             htmlFor="trial-email"
-            className="text-xs text-[#9B9690]"
+            className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
           >
             {t("emailLabel")}
           </Label>
@@ -50,13 +52,13 @@ export function TrialStepContact({
             value={email}
             onChange={(e) => onEmailChange(e.target.value)}
             placeholder={t("emailPlaceholder")}
-            className="mt-1 border-[#F0EDE8]/[0.06] bg-[#131314] text-[#F0EDE8] placeholder:text-[#9B9690]/50"
+            className="mt-2"
           />
           {emailError && (
             <p
               id="trial-email-error"
               role="alert"
-              className="mt-1 text-xs text-red-400"
+              className="mt-2 text-[12.5px] text-brand-error"
             >
               {emailError}
             </p>
@@ -65,7 +67,7 @@ export function TrialStepContact({
         <div>
           <Label
             htmlFor="trial-name"
-            className="text-xs text-[#9B9690]"
+            className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
           >
             {t("nameLabel")}
           </Label>
@@ -75,7 +77,7 @@ export function TrialStepContact({
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder={t("namePlaceholder")}
-            className="mt-1 border-[#F0EDE8]/[0.06] bg-[#131314] text-[#F0EDE8] placeholder:text-[#9B9690]/50"
+            className="mt-2"
           />
         </div>
       </div>

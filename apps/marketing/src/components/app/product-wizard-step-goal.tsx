@@ -25,30 +25,33 @@ export function WizardStepGoal({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <Label className={isBrand ? "text-text-dark-primary" : "text-zinc-900"}>
+        <Label
+          className={
+            "text-[14px] font-semibold " +
+            (isBrand ? "text-text-dark-primary" : "text-text-dark-strong")
+          }
+        >
           {t("experimentGoal")}
         </Label>
-        <p
-          className={`mt-0.5 text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-        >
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("experimentGoalDesc")}
         </p>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {EXPERIMENT_GOALS.map((goal) => (
           <label
             key={goal.value}
             className={
-              "flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-colors " +
+              "flex cursor-pointer items-center gap-3 rounded-[10px] border p-3.5 text-[13px] transition-colors " +
               (experimentGoal === goal.value
                 ? isBrand
-                  ? "border-brand-accent bg-brand-accent/10 text-text-dark-primary"
-                  : "border-zinc-400 bg-zinc-100 text-zinc-900"
+                  ? "border-brand-accent/50 bg-brand-accent/[0.08] text-text-dark-primary"
+                  : "border-brand-border-strong bg-brand-panel-raised text-text-dark-primary"
                 : isBrand
-                  ? "border-brand-border text-text-dark-secondary hover:border-brand-accent/40"
-                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300")
+                  ? "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/40"
+                  : "border-brand-border text-text-dark-secondary hover:border-brand-border-strong")
             }
           >
             <input
@@ -56,7 +59,9 @@ export function WizardStepGoal({
               name="experiment_goal"
               checked={experimentGoal === goal.value}
               onChange={() => onExperimentGoalChange(goal.value)}
-              className={isBrand ? "accent-amber-600" : "accent-zinc-900"}
+              className={
+                isBrand ? "accent-brand-accent" : "accent-brand-accent-2"
+              }
             />
             {goalLabels[goal.value]}
           </label>

@@ -17,14 +17,19 @@ export function BottomCtaSection({
   const t = useTranslations("home.bottomCta");
 
   return (
-    <section className="bg-brand-bg-alt py-16 md:py-24">
-      <div className="max-w-content mx-auto px-4 text-center">
+    <section className="relative overflow-hidden border-t border-brand-border bg-brand-bg-alt py-20 md:py-25">
+      {/* GLOW_03 — 底部 CTA 地平线光，全站三处光效的最后一处 */}
+      <div
+        aria-hidden="true"
+        className="absolute -bottom-45 left-1/2 h-95 w-190 -translate-x-1/2 bg-[radial-gradient(ellipse,rgba(61,220,151,0.22),rgba(76,195,250,0.1)_60%,transparent_75%)] blur-[8px]"
+      />
+      <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
         <motion.h2
           {...fadeInUp}
           whileInView="animate"
           initial="initial"
           viewport={{ once: true }}
-          className="text-text-dark-primary font-semibold mb-4"
+          className="mb-3.5 text-text-dark-primary"
         >
           {t("title")}
         </motion.h2>
@@ -35,7 +40,7 @@ export function BottomCtaSection({
           initial="initial"
           viewport={{ once: true }}
           transition={{ ...fadeInUp.transition, delay: 0.15 }}
-          className="text-text-dark-secondary text-lg max-w-2xl mx-auto mb-10"
+          className="mx-auto mb-7.5 max-w-[540px] text-[15.5px] leading-[1.6] text-text-dark-secondary"
         >
           {t("subtitle")}
         </motion.p>
@@ -49,7 +54,7 @@ export function BottomCtaSection({
         >
           <a
             href={siteConfig.appUrl}
-            className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-accent px-8 text-base font-semibold text-white transition-colors hover:bg-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+            className="inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-7.5 text-[15px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             {t("cta")}
           </a>

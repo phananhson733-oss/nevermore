@@ -15,14 +15,14 @@ const decisions = [
   },
   {
     strategy: "Product Page Optimization", score: 48, decision: "iterate",
-    color: "#FBBF24", threshold: 70, delta: "-22", windows: 1, trend: "flat",
+    color: C.amber.text, threshold: 70, delta: "-22", windows: 1, trend: "flat",
     reason: "Insufficient data — extend measurement window by 14 days",
   },
 ];
 
 function scoreColor(s: number) {
   if (s >= 70) return C.emerald;
-  if (s >= 40) return "#FBBF24";
+  if (s >= 40) return C.amber.text;
   return C.red;
 }
 
@@ -34,12 +34,12 @@ export function OptimizationVisual({ isDark }: VisualProps) {
       {/* 阈值图例 */}
       <motion.div
         {...fadeItem} transition={{ duration: 0.3 }}
-        className="flex items-center gap-2 text-[8px]"
+        className="flex items-center gap-1.5 font-mono text-[8.5px] tracking-[0.06em] uppercase"
         style={{ color: t.textDim }}
       >
         <span className="w-2 h-0.5" style={{ backgroundColor: C.emerald }} />
         Scale up: 70+
-        <span className="w-2 h-0.5 ml-2" style={{ backgroundColor: "#FBBF24" }} />
+        <span className="w-2 h-0.5 ml-2" style={{ backgroundColor: C.amber.text }} />
         Iterate: 40-70
         <span className="w-2 h-0.5 ml-2" style={{ backgroundColor: C.red }} />
         Pause: &lt;40
@@ -54,34 +54,37 @@ export function OptimizationVisual({ isDark }: VisualProps) {
         >
           <div className="flex items-start justify-between gap-2 mb-2">
             <div>
-              <div className="text-[9px]" style={{ color: t.textDim }}>
+              <div className="text-[9.5px]" style={{ color: t.textDim }}>
                 {d.strategy}
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-lg font-bold" style={{ color: scoreColor(d.score) }}>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="font-mono text-[17px]" style={{ color: scoreColor(d.score) }}>
                   {d.score}
                 </span>
-                <span className="text-[8px]" style={{ color: t.textDim }}>
+                <span
+                  className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+                  style={{ color: t.textDim }}
+                >
                   threshold: {d.threshold}
                 </span>
-                <span className="text-[9px] font-medium" style={{ color: d.color }}>
+                <span className="font-mono text-[9px]" style={{ color: d.color }}>
                   ({d.delta})
                 </span>
               </div>
             </div>
             <span
-              className="text-[9px] font-medium px-2 py-0.5 rounded-full"
+              className="rounded px-2 py-[3px] font-mono text-[9px] tracking-[0.08em] uppercase"
               style={{ backgroundColor: `${d.color}20`, color: d.color }}
             >
               {d.decision}
             </span>
           </div>
 
-          <div className="text-[8px]" style={{ color: t.textDim }}>
+          <div className="font-mono text-[8.5px] tracking-[0.06em] uppercase" style={{ color: t.textDim }}>
             {d.windows} consecutive window{d.windows > 1 ? "s" : ""} | trend: {d.trend}
           </div>
           <div
-            className="text-[8px] mt-1 pt-1"
+            className="text-[9.5px] leading-[1.5] mt-1.5 pt-1.5"
             style={{ color: t.textDim, borderTop: `1px solid ${t.border}` }}
           >
             {d.reason}
@@ -92,7 +95,7 @@ export function OptimizationVisual({ isDark }: VisualProps) {
       {/* Playbook 沉淀 */}
       <motion.div
         {...fadeItem} transition={{ delay: 0.5 }}
-        className="flex items-center gap-1.5 text-[9px]"
+        className="flex items-center gap-1.5 text-[9.5px]"
         style={{ color: C.emerald }}
       >
         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: C.emerald }} />

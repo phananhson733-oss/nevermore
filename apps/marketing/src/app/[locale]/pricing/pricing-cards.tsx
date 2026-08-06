@@ -23,7 +23,7 @@ export function PricingCards({
       initial="initial"
       whileInView="animate"
       viewport={{ once: true }}
-      className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
+      className="grid grid-cols-1 gap-4 md:grid-cols-3"
     >
       {TIERS.map((tier) => (
         <TierCard key={tier} tier={tier} onCtaClick={onCtaClick} />
@@ -46,42 +46,42 @@ function TierCard({
   return (
     <motion.div
       {...staggerItem}
-      className={`relative flex flex-col rounded-card border p-6 lg:p-8 ${
+      className={`relative flex flex-col rounded-card border p-[26px] ${
         isPro
-          ? "border-brand-accent bg-brand-bg-alt"
-          : "border-white/10 bg-brand-bg-alt"
+          ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-[inset_2px_0_0_#3DDC97]"
+          : "border-brand-border-card bg-brand-panel"
       }`}
     >
       {isPro && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-accent px-4 py-1 text-xs font-semibold text-white">
+        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded bg-brand-accent px-2.5 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-on-accent uppercase">
           {t("badge")}
         </span>
       )}
 
-      <h3 className="text-text-dark-primary text-xl font-semibold">
+      <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("name")}
       </h3>
-      <p className="text-text-dark-secondary text-sm mt-1 mb-6">
+      <p className="mt-2 mb-6 text-[13px] leading-[1.6] text-text-dark-secondary">
         {t("description")}
       </p>
 
-      <div className="mb-6">
-        <span className="text-text-dark-primary text-4xl font-bold">
+      <div className="mb-6 flex items-baseline gap-1.5">
+        <span className="font-mono text-[28px] tracking-[-0.02em] text-text-dark-primary">
           {t("price")}
         </span>
-        <span className="text-text-dark-secondary text-sm">
+        <span className="font-mono text-[11px] tracking-[0.06em] text-text-dark-secondary">
           {t("period")}
         </span>
       </div>
 
-      <ul className="flex-1 space-y-3 mb-8">
+      <ul className="mb-7 flex-1 space-y-2.5">
         {features.map((feature) => (
           <li
             key={feature}
-            className="flex items-start gap-2 text-text-dark-secondary text-sm"
+            className="flex items-start gap-2.5 text-[13px] leading-[1.6] text-text-dark-strong"
           >
             <Check
-              className="size-4 shrink-0 mt-0.5 text-brand-accent"
+              className="mt-[3px] size-[15px] shrink-0 text-brand-accent"
               aria-hidden="true"
             />
             {feature}
@@ -92,10 +92,10 @@ function TierCard({
       <Button
         onClick={onCtaClick}
         size="lg"
-        className={`w-full ${
+        className={`h-11.5 w-full rounded-[10px] text-[14px] font-semibold ${
           isPro
-            ? "bg-brand-accent hover:bg-brand-accent-hover text-white"
-            : "bg-white/10 hover:bg-white/15 text-text-dark-primary"
+            ? "bg-brand-gradient text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta"
+            : "border border-brand-border-strong bg-brand-panel-raised text-text-dark-primary transition-colors hover:border-brand-accent/50 hover:bg-brand-panel-raised"
         }`}
       >
         {t("cta")}

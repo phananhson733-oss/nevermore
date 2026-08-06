@@ -89,30 +89,30 @@ export function ConsentPanel({ mode, onClose }: ConsentPanelProps) {
 
   return (
     <div
-      className="bg-brand-bg-alt border border-brand-border rounded-card p-4 md:p-6 max-w-lg w-full shadow-2xl"
+      className="w-full max-w-lg rounded-card border border-brand-border-card bg-brand-panel p-[22px] shadow-panel md:p-[26px]"
       role={mode === "preferences" ? "dialog" : "region"}
       aria-modal={mode === "preferences" ? true : undefined}
       aria-labelledby={titleId}
     >
       <h3
         id={titleId}
-        className="text-text-dark-primary font-semibold text-base mb-2"
+        className="mb-2 text-[16.5px] font-semibold text-text-dark-primary"
       >
         {t("title")}
       </h3>
-      <p className="text-text-dark-secondary text-sm mb-4">
+      <p className="mb-5 text-[13px] leading-[1.6] text-text-dark-secondary">
         {t("description")}
       </p>
 
       {showDetails && (
-        <div className="space-y-3 mb-4">
+        <div className="mb-5 space-y-2.5">
           {/* Necessary -- always on */}
-          <label className="flex items-center justify-between">
+          <label className="flex items-center justify-between gap-4 rounded-[10px] border border-brand-border bg-brand-panel-sunken px-3.5 py-3">
             <div>
-              <span className="text-text-dark-primary text-sm font-medium">
+              <span className="text-[13px] font-medium text-text-dark-primary">
                 {t("necessary")}
               </span>
-              <p className="text-text-dark-secondary text-xs">
+              <p className="mt-0.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                 {t("necessaryDesc")}
               </p>
             </div>
@@ -120,17 +120,17 @@ export function ConsentPanel({ mode, onClose }: ConsentPanelProps) {
               type="checkbox"
               checked
               disabled
-              className="accent-brand-accent size-4"
+              className="size-4 shrink-0 accent-brand-accent"
             />
           </label>
 
           {/* Analytics */}
-          <label className="flex items-center justify-between cursor-pointer">
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[10px] border border-brand-border bg-brand-panel-sunken px-3.5 py-3 transition-colors hover:border-brand-border-strong">
             <div>
-              <span className="text-text-dark-primary text-sm font-medium">
+              <span className="text-[13px] font-medium text-text-dark-primary">
                 {t("analytics")}
               </span>
-              <p className="text-text-dark-secondary text-xs">
+              <p className="mt-0.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                 {t("analyticsDesc")}
               </p>
             </div>
@@ -138,17 +138,17 @@ export function ConsentPanel({ mode, onClose }: ConsentPanelProps) {
               type="checkbox"
               checked={analytics}
               onChange={(e) => setAnalytics(e.target.checked)}
-              className="accent-brand-accent size-4"
+              className="size-4 shrink-0 accent-brand-accent"
             />
           </label>
 
           {/* Marketing */}
-          <label className="flex items-center justify-between cursor-pointer">
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[10px] border border-brand-border bg-brand-panel-sunken px-3.5 py-3 transition-colors hover:border-brand-border-strong">
             <div>
-              <span className="text-text-dark-primary text-sm font-medium">
+              <span className="text-[13px] font-medium text-text-dark-primary">
                 {t("marketing")}
               </span>
-              <p className="text-text-dark-secondary text-xs">
+              <p className="mt-0.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                 {t("marketingDesc")}
               </p>
             </div>
@@ -156,50 +156,32 @@ export function ConsentPanel({ mode, onClose }: ConsentPanelProps) {
               type="checkbox"
               checked={marketing}
               onChange={(e) => setMarketing(e.target.checked)}
-              className="accent-brand-accent size-4"
+              className="size-4 shrink-0 accent-brand-accent"
             />
           </label>
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2.5">
         {!showDetails && (
           <>
-            <Button
-              onClick={handleAcceptAll}
-              className="bg-brand-accent hover:bg-brand-accent-hover text-white text-sm"
-            >
+            <Button onClick={handleAcceptAll} variant="cta">
               {t("acceptAll")}
             </Button>
-            <Button
-              onClick={handleNecessaryOnly}
-              variant="outline"
-              className="text-sm"
-            >
+            <Button onClick={handleNecessaryOnly} variant="outline">
               {t("necessaryOnly")}
             </Button>
-            <Button
-              onClick={() => setShowDetails(true)}
-              variant="ghost"
-              className="text-sm"
-            >
+            <Button onClick={() => setShowDetails(true)} variant="ghost">
               {t("preferences")}
             </Button>
           </>
         )}
         {showDetails && (
           <>
-            <Button
-              onClick={handleSavePreferences}
-              className="bg-brand-accent hover:bg-brand-accent-hover text-white text-sm"
-            >
+            <Button onClick={handleSavePreferences} variant="cta">
               {t("save")}
             </Button>
-            <Button
-              onClick={handleAcceptAll}
-              variant="outline"
-              className="text-sm"
-            >
+            <Button onClick={handleAcceptAll} variant="outline">
               {t("acceptAll")}
             </Button>
           </>

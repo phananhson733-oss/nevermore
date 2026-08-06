@@ -16,38 +16,39 @@ export function TemplatesExperimentSection() {
   const locale = useLocale();
 
   return (
-    <section className="bg-brand-bg-light py-16 md:py-24">
-      <div className="max-w-content mx-auto px-4 text-center">
+    <section className="bg-brand-bg-alt border-brand-border border-t py-16 md:py-22">
+      <div className="max-w-content mx-auto px-6 text-center md:px-8">
         <motion.h2
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 14 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{
-            duration: 0.6,
+            duration: 0.45,
             ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
           }}
-          className="text-text-light-primary font-semibold mb-4"
+          className="text-text-dark-primary mb-4"
         >
           {tExp("title")}
         </motion.h2>
         <motion.p
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 14 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{
-            duration: 0.6,
+            duration: 0.45,
             delay: 0.15,
             ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
           }}
-          className="text-text-light-secondary text-lg max-w-2xl mx-auto mb-8"
+          className="text-text-dark-secondary mx-auto mb-8 max-w-2xl text-[15.5px] leading-[1.65]"
         >
           {tExp("desc")}
         </motion.p>
-        <div className="flex flex-wrap justify-center gap-6">
+        {/* 一屏一个主 CTA：博客入口走渐变，两个社交入口退到描边。 */}
+        <div className="flex flex-wrap justify-center gap-3.5">
           <Link href={localePath(locale, "/blog")}>
             <Button
               size="lg"
-              className="bg-brand-accent hover:bg-brand-accent-hover text-white text-base px-8 h-12"
+              className="bg-brand-gradient text-brand-on-accent shadow-cta hover:shadow-cta-hover h-12 rounded-[10px] px-[26px] text-[14.5px] font-semibold"
             >
               {tExp("blogCta")}
             </Button>
@@ -60,7 +61,7 @@ export function TemplatesExperimentSection() {
             <Button
               variant="outline"
               size="lg"
-              className="border-text-light-secondary/30 text-text-light-secondary hover:border-brand-accent-on-light hover:text-brand-accent-on-light text-base px-8 h-12"
+              className="border-brand-border-strong bg-brand-panel/60 text-text-dark-primary hover:border-brand-accent/50 hover:bg-brand-panel hover:text-text-dark-primary h-12 rounded-[10px] px-6 text-[14.5px] font-medium shadow-none transition-colors"
             >
               {tExp("xCta")}
             </Button>
@@ -73,7 +74,7 @@ export function TemplatesExperimentSection() {
             <Button
               variant="outline"
               size="lg"
-              className="border-text-light-secondary/30 text-text-light-secondary hover:border-brand-accent-on-light hover:text-brand-accent-on-light text-base px-8 h-12"
+              className="border-brand-border-strong bg-brand-panel/60 text-text-dark-primary hover:border-brand-accent/50 hover:bg-brand-panel hover:text-text-dark-primary h-12 rounded-[10px] px-6 text-[14.5px] font-medium shadow-none transition-colors"
             >
               {tExp("linkedinCta")}
             </Button>

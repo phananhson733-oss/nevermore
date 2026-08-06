@@ -17,8 +17,7 @@ export async function generateMetadata({
   const { locale } = await params;
   const document = await getLegalDocument("terms", locale);
   return generatePageMetadata({
-    title:
-      locale === "en" ? "Terms of Service" : "服务条款",
+    title: locale === "en" ? "Terms of Service" : "服务条款",
     description:
       locale === "en"
         ? "Terms and conditions for using GenGrowth services."
@@ -40,12 +39,15 @@ export default async function TermsPage({
 
   if (!doc) {
     return (
-      <div className="bg-brand-bg min-h-screen py-16 md:py-24">
-        <div className="max-w-3xl mx-auto px-4 text-center">
-          <h1 className="text-text-dark-primary font-semibold mb-4">
+      /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
+      <div className="bg-brand-bg min-h-screen pt-9 pb-24">
+        <div className="mx-auto max-w-3xl px-6 pt-10 text-center md:px-8">
+          <h1 className="text-page-title text-text-dark-primary">
             {t("terms.title")}
           </h1>
-          <p className="text-text-dark-secondary text-lg">{t("comingSoon")}</p>
+          <p className="text-text-dark-secondary mt-5 text-[15.5px] leading-[1.65]">
+            {t("comingSoon")}
+          </p>
         </div>
       </div>
     );

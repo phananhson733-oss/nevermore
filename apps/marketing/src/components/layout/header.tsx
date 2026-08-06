@@ -27,18 +27,18 @@ export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-brand-bg/80 backdrop-blur-md border-b border-brand-border">
-      <div className="max-w-content mx-auto px-4 h-16 flex items-center justify-between">
+    <header className="fixed top-0 right-0 left-0 z-50 border-b border-brand-border/80 bg-brand-bg/75 backdrop-blur-[14px]">
+      <div className="max-w-content mx-auto flex h-17 items-center justify-between px-6 md:px-8">
         {/* Logo */}
         <Link
           href={localePath(locale)}
-          className="flex items-center gap-2 text-text-dark-primary font-semibold text-lg"
+          className="flex items-center gap-2.5 text-base font-semibold text-text-dark-primary"
         >
           <Image
             src="/images/logo.png"
             alt="GenGrowth"
-            width={32}
-            height={32}
+            width={28}
+            height={28}
             className="rounded-full"
           />
           GenGrowth
@@ -47,13 +47,13 @@ export function Header() {
         {/* Desktop Nav */}
         <nav
           aria-label="Main navigation"
-          className="hidden md:flex items-center gap-6"
+          className="hidden items-center gap-7.5 md:flex"
         >
           {headerNavItems.map((item) => (
             <Link
               key={item.href}
               href={localePath(locale, item.href)}
-              className="text-text-dark-secondary hover:text-text-dark-primary transition-colors text-sm"
+              className="text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
             >
               {t(item.labelKey)}
             </Link>
@@ -65,7 +65,7 @@ export function Header() {
           <LanguageSwitcher />
           <a
             href={siteConfig.appUrl}
-            className="hidden rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-hover md:inline-flex"
+            className="hidden h-9.5 items-center rounded-lg bg-brand-gradient px-[18px] text-[13.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta md:inline-flex"
           >
             {t("common.openApp")}
           </a>
@@ -82,19 +82,19 @@ export function Header() {
             </SheetTrigger>
             <SheetContent
               side="right"
-              className="bg-brand-bg border-brand-border"
+              className="border-brand-border bg-brand-bg"
             >
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <nav
                 aria-label="Mobile navigation"
-                className="flex flex-col gap-4 mt-8 px-4"
+                className="mt-8 flex flex-col gap-4 px-4"
               >
                 {headerNavItems.map((item) => (
                   <Link
                     key={item.href}
                     href={localePath(locale, item.href)}
                     onClick={() => setMobileOpen(false)}
-                    className="text-text-dark-secondary hover:text-text-dark-primary text-lg transition-colors"
+                    className="text-lg text-text-dark-secondary transition-colors hover:text-text-dark-primary"
                   >
                     {t(item.labelKey)}
                   </Link>
@@ -102,7 +102,7 @@ export function Header() {
                 <a
                   href={siteConfig.appUrl}
                   onClick={() => setMobileOpen(false)}
-                  className="mt-4 rounded-lg bg-brand-accent px-4 py-2 text-center font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+                  className="mt-4 rounded-[10px] bg-brand-gradient px-4 py-2.5 text-center font-semibold text-brand-on-accent shadow-cta-sm"
                 >
                   {t("common.openApp")}
                 </a>

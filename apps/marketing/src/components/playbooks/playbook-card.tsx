@@ -4,7 +4,10 @@
 // once this file is updated, update header comments and _DIR.md in this folder
 
 import Link from "next/link";
-import type { PublicPlaybook, PublicPlaybookContent } from "@/lib/mock/playbook-public-data";
+import type {
+  PublicPlaybook,
+  PublicPlaybookContent,
+} from "@/lib/mock/playbook-public-data";
 import { localePath } from "@/lib/locale-path";
 
 interface PlaybookCardProps {
@@ -33,36 +36,37 @@ export function PlaybookCard({
       href={localePath(locale, `/playbooks/${playbook.slug}`)}
       className="group block"
     >
-      <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">
-        <div className="flex flex-wrap gap-2 mb-3">
-          <span className="inline-block rounded-full bg-brand-accent/15 px-2.5 py-0.5 text-[11px] font-medium text-brand-accent-text">
+      <article className="flex h-full flex-col rounded-card border border-brand-border-card bg-brand-panel p-[22px] transition-colors duration-200 group-hover:border-brand-accent/40">
+        <div className="flex flex-wrap gap-1.5">
+          <span className="rounded border border-brand-accent/30 px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
             {labels.industry}
           </span>
-          <span className="inline-block rounded-full bg-brand-bg-alt/60 border border-brand-border/50 px-2.5 py-0.5 text-[11px] font-medium text-text-dark-secondary">
+          <span className="rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
             {labels.channel}
           </span>
-          <span className="inline-block rounded-full bg-brand-bg-alt/60 border border-brand-border/50 px-2.5 py-0.5 text-[11px] font-medium text-text-dark-secondary">
+          <span className="rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
             {labels.goal}
           </span>
         </div>
 
-        <h2 className="text-text-dark-primary font-semibold text-[17px] leading-snug mb-2 group-hover:text-brand-accent-text transition-colors">
+        <h2 className="mt-4 text-[16.5px] leading-snug font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
           {content.title}
         </h2>
 
-        <p className="text-text-dark-secondary text-[13px] leading-relaxed mb-4 line-clamp-3">
+        <p className="mt-2 line-clamp-3 text-[13px] leading-[1.6] text-text-dark-secondary">
           {content.description}
         </p>
 
-        <div className="flex items-center gap-4 text-[12px] text-text-dark-secondary">
+        {/* 指标条：数字走 mono，单位标签走 mono 小标签 */}
+        <div className="mt-auto flex items-baseline gap-5 border-t border-brand-border-faint pt-4 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
           <span>
-            <span className="text-text-dark-primary font-semibold">
+            <span className="text-[17px] tracking-normal text-text-dark-primary">
               {successPct}%
             </span>{" "}
             {labels.successRate}
           </span>
           <span>
-            <span className="text-text-dark-primary font-semibold">
+            <span className="text-[17px] tracking-normal text-text-dark-primary">
               {playbook.stepCount}
             </span>{" "}
             {labels.steps}

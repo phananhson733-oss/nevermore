@@ -7,6 +7,10 @@ import Link from "next/link";
 import { localePath } from "@/lib/locale-path";
 import { getQuickWinsArticle } from "./seo-quick-wins-article-content";
 
+/** Navigation-type links go cyan; the accent green stays reserved for actions. */
+const NAV_LINK =
+  "text-[14.5px] font-medium text-brand-accent-2 transition-colors hover:text-brand-info";
+
 export function SeoQuickWinsArticle({
   locale,
   draftsEnabled,
@@ -19,17 +23,22 @@ export function SeoQuickWinsArticle({
 
   return (
     <>
-      <section className="py-14 md:py-20">
-        <h2 className="max-w-2xl text-[30px] font-semibold tracking-[-0.04em] text-text-dark-primary">
+      <section className="py-16 md:py-22">
+        <h2 className="max-w-2xl text-[27px] font-semibold tracking-[-0.03em] text-text-dark-primary">
           {article.exampleHeading}
         </h2>
-        <dl className="mt-8 grid gap-px overflow-hidden rounded-2xl border border-brand-border/70 bg-brand-border/40 md:grid-cols-2">
+        {/*
+         * 1px gap over the divider colour — the example reads as a record.
+         * 奇数条目进两列会余一格；底色即分隔线颜色，空格子会显示成一块更亮的实心
+         * 矩形，所以末格跨满剩余列宽。
+         */}
+        <dl className="mt-8 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 md:[&>*:last-child]:col-span-2">
           {article.example.map((item) => (
-            <div key={item.heading} className="bg-brand-bg-alt/35 p-5">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-accent-text">
+            <div key={item.heading} className="bg-brand-panel-sunken p-[22px]">
+              <dt className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
                 {item.heading}
               </dt>
-              <dd className="mt-3 text-[14px] leading-relaxed text-text-dark-secondary">
+              <dd className="mt-3 text-[13.5px] leading-[1.65] text-text-dark-secondary">
                 {item.body}
               </dd>
             </div>
@@ -40,13 +49,13 @@ export function SeoQuickWinsArticle({
       {article.sections.map((section) => (
         <section
           key={section.heading}
-          className="border-t border-brand-border/60 py-14 md:py-20"
+          className="border-t border-brand-border py-16 md:py-22"
         >
-          <h2 className="max-w-2xl text-[30px] font-semibold tracking-[-0.04em] text-text-dark-primary">
+          <h2 className="max-w-2xl text-[27px] font-semibold tracking-[-0.03em] text-text-dark-primary">
             {section.heading}
           </h2>
           {section.intro ? (
-            <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-text-dark-secondary">
+            <p className="mt-4 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary">
               {section.intro}
             </p>
           ) : null}
@@ -56,7 +65,7 @@ export function SeoQuickWinsArticle({
               {section.paragraphs.map((paragraph) => (
                 <p
                   key={paragraph.slice(0, 32)}
-                  className="text-[15px] leading-relaxed text-text-dark-secondary"
+                  className="text-[15.5px] leading-[1.65] text-text-dark-strong"
                 >
                   {paragraph}
                 </p>
@@ -68,10 +77,10 @@ export function SeoQuickWinsArticle({
             <div className="mt-8 grid gap-x-10 gap-y-8 md:grid-cols-2">
               {section.items.map((item) => (
                 <article key={item.heading}>
-                  <h3 className="text-[16px] font-semibold leading-snug text-text-dark-primary">
+                  <h3 className="text-[16.5px] leading-snug font-semibold text-text-dark-primary">
                     {item.heading}
                   </h3>
-                  <p className="mt-2 text-[14px] leading-relaxed text-text-dark-secondary">
+                  <p className="mt-2 text-[13.5px] leading-[1.65] text-text-dark-secondary">
                     {item.body}
                   </p>
                 </article>
@@ -81,21 +90,18 @@ export function SeoQuickWinsArticle({
         </section>
       ))}
 
-      <section className="grid gap-10 border-t border-brand-border/60 py-14 md:grid-cols-2 md:py-20">
+      <section className="grid gap-10 border-t border-brand-border py-16 md:grid-cols-2 md:py-22">
         <div>
-          <h2 className="text-[22px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+          <h2 className="text-[21px] font-semibold tracking-[-0.03em] text-text-dark-primary">
             {article.relatedToolsHeading}
           </h2>
           <ul className="mt-5 space-y-4">
             {article.relatedTools.map((link) => (
               <li key={link.href}>
-                <Link
-                  href={localePath(locale, link.href)}
-                  className="text-[15px] font-semibold text-brand-accent-text hover:underline"
-                >
+                <Link href={localePath(locale, link.href)} className={NAV_LINK}>
                   {link.label}
                 </Link>
-                <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">
+                <p className="mt-1.5 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {link.description}
                 </p>
               </li>
@@ -103,19 +109,16 @@ export function SeoQuickWinsArticle({
           </ul>
         </div>
         <div>
-          <h2 className="text-[22px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+          <h2 className="text-[21px] font-semibold tracking-[-0.03em] text-text-dark-primary">
             {article.relatedReadingHeading}
           </h2>
           <ul className="mt-5 space-y-4">
             {article.relatedReading.map((link) => (
               <li key={link.href}>
-                <Link
-                  href={localePath(locale, link.href)}
-                  className="text-[15px] font-semibold text-brand-accent-text hover:underline"
-                >
+                <Link href={localePath(locale, link.href)} className={NAV_LINK}>
                   {link.label}
                 </Link>
-                <p className="mt-1 text-[13px] leading-relaxed text-text-dark-secondary">
+                <p className="mt-1.5 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {link.description}
                 </p>
               </li>

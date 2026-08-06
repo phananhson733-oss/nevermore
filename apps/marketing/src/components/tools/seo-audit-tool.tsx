@@ -8,18 +8,20 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight, ScanSearch } from "lucide-react";
 import { useTranslations } from "next-intl";
-import type {
-  SeoAuditPayload,
-  SeoAuditReport,
-} from "@sf/public-tools";
+import type { SeoAuditPayload, SeoAuditReport } from "@sf/public-tools";
 import { trackMarketingEvent } from "@/components/layout/google-analytics";
 import { SeoAuditResults } from "./seo-audit-results";
 
 interface SeoAuditToolProps {
   readonly locale: string;
+  /**
+   * `panel` 自带面板外框，给独立工具页用；`bare` 交给外层提供外框，给首页那种
+   * 已经处在一张卡片里的嵌入位置用——否则两处各套一层会出现嵌套双描边。
+   */
+  readonly surface?: "panel" | "bare";
 }
 
-export function SeoAuditTool({ locale }: SeoAuditToolProps) {
+export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
   const t = useTranslations("tools.seoAudit");
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -63,26 +65,28 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
       aria-busy={loading}
       aria-live="polite"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-brand-border/70 bg-[#171718] p-5 md:p-7">
-        <div
-          aria-hidden="true"
-          className="absolute -right-20 -top-24 h-56 w-56 rounded-full bg-brand-accent/10 blur-3xl"
-        />
+      <div
+        className={
+          surface === "panel"
+            ? "border-brand-border-card bg-brand-panel rounded-[16px] border p-5 md:p-7"
+            : ""
+        }
+      >
         <form
           onSubmit={handleSubmit}
-          className="relative grid gap-3 md:grid-cols-[1fr_auto] md:items-end"
+          className="grid gap-2.5 md:grid-cols-[1fr_auto] md:items-end"
         >
           <label className="block">
             <span
               id="seo-audit-url-label"
-              className="mb-2 block text-[12px] font-medium uppercase tracking-[0.14em] text-text-dark-secondary"
+              className="mb-2 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
             >
               {t("formLabel")}
             </span>
-            <span className="flex h-12 items-center gap-3 rounded-xl border border-brand-border/80 bg-brand-bg px-4 focus-within:border-brand-accent/70">
+            <span className="flex h-12.5 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70">
               <ScanSearch
                 aria-hidden="true"
-                className="h-4 w-4 shrink-0 text-brand-accent-text"
+                className="size-[15px] shrink-0 text-brand-accent"
               />
               <input
                 id="seo-audit-url"
@@ -101,17 +105,17 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={t("placeholder")}
-                className="min-w-0 flex-1 bg-transparent text-[14px] font-medium tracking-[0.01em] text-text-dark-primary outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-text-dark-secondary/60"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary"
               />
             </span>
           </label>
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent/90 disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex h-12.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-5.5 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta disabled:cursor-wait disabled:opacity-70 disabled:shadow-none"
           >
             {loading ? t("running") : t("submit")}
-            <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </button>
         </form>
       </div>
@@ -119,7 +123,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
         <p
           id="seo-audit-error"
           role="alert"
-          className="rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-[13px] text-red-200"
+          className="rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[13px] text-brand-error"
         >
           {t(
             `errors.${
@@ -145,7 +149,7 @@ export function SeoAuditTool({ locale }: SeoAuditToolProps) {
       ) : null}
       <p
         id="seo-audit-scope"
-        className="text-[12px] leading-relaxed text-text-dark-secondary"
+        className="text-[12.5px] leading-relaxed text-text-dark-secondary"
       >
         {t("scopeShort")}
       </p>

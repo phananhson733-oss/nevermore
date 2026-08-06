@@ -105,15 +105,16 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
 
   if (step === "done") {
     return (
-      <div className="text-center py-6" role="status" aria-live="polite">
-        <CheckCircle
-          className="size-12 text-brand-success mx-auto mb-4"
-          aria-hidden="true"
-        />
-        <h3 className="text-text-dark-primary font-semibold text-lg mb-2">
+      <div className="py-8 text-center" role="status" aria-live="polite">
+        <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+          <CheckCircle className="size-[18px]" aria-hidden="true" />
+        </span>
+        <h3 className="mb-2 text-[16.5px] font-semibold text-text-dark-primary">
           {t("successTitle")}
         </h3>
-        <p className="text-text-dark-secondary text-sm">{t("successDesc")}</p>
+        <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
+          {t("successDesc")}
+        </p>
       </div>
     );
   }
@@ -136,11 +137,11 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
 
   // Step: email
   return (
-    <form onSubmit={handleEmailSubmit} className="py-2 space-y-4">
+    <form onSubmit={handleEmailSubmit} className="space-y-5 py-2">
       <div>
         <Label
           htmlFor="waitlist-email"
-          className="text-text-dark-secondary text-sm"
+          className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
         >
           {t("emailLabel")}
         </Label>
@@ -153,7 +154,7 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder={t("emailPlaceholder")}
-          className="mt-1 bg-brand-bg border-brand-border text-text-dark-primary"
+          className="mt-2"
         />
       </div>
 
@@ -162,7 +163,7 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
           <p
             id="waitlist-email-error"
             role="alert"
-            className="text-brand-error text-sm"
+            className="text-[12.5px] leading-[1.6] text-brand-error"
           >
             {error}
           </p>
@@ -171,9 +172,11 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
 
       <Button
         type="submit"
+        variant="cta"
+        size="lg"
         disabled={loading}
         aria-busy={loading}
-        className="w-full bg-brand-accent hover:bg-brand-accent-hover text-white text-sm"
+        className="w-full"
       >
         {loading ? t("submitting") : t("submit")}
       </Button>

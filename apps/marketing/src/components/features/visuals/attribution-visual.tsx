@@ -19,7 +19,7 @@ const isolation = [
   { label: "Isolation Score", value: "95%", status: "good" as const },
 ];
 
-const statusColors = { good: C.emerald, warning: "#FBBF24", bad: C.red };
+const statusColors = { good: C.emerald, warning: C.amber.text, bad: C.red };
 
 export function AttributionVisual({ isDark }: VisualProps) {
   const t = themeColors(isDark);
@@ -42,13 +42,19 @@ export function AttributionVisual({ isDark }: VisualProps) {
         className="rounded-lg p-3"
         style={{ backgroundColor: t.card, border: `1px solid ${t.border}` }}
       >
-        <div className="text-[9px] mb-2" style={{ color: t.textDim }}>
+        <div
+          className="mb-2.5 font-mono text-[8.5px] tracking-[0.1em] uppercase"
+          style={{ color: t.textDim }}
+        >
           Channel Attribution
         </div>
         <div className="space-y-2">
           {channels.map((ch, i) => (
             <div key={i} className="flex items-center gap-2">
-              <span className="text-[9px] w-10 text-right" style={{ color: t.text }}>
+              <span
+                className="w-11 text-right font-mono text-[9px] tracking-[0.06em] uppercase"
+                style={{ color: t.text }}
+              >
                 {ch.name}
               </span>
               <div className="flex-1">
@@ -63,7 +69,10 @@ export function AttributionVisual({ isDark }: VisualProps) {
                   />
                 </div>
               </div>
-              <span className="text-[8px] w-16 text-right" style={{ color: t.textDim }}>
+              <span
+                className="w-16 text-right font-mono text-[8.5px]"
+                style={{ color: t.textDim }}
+              >
                 {ch.sessions}s / {ch.conversions}c
               </span>
             </div>
@@ -80,9 +89,14 @@ export function AttributionVisual({ isDark }: VisualProps) {
             className="rounded-md p-2"
             style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
           >
-            <div className="text-[7px]" style={{ color: t.textDim }}>{card.label}</div>
             <div
-              className="text-sm font-bold"
+              className="font-mono text-[8.5px] tracking-[0.08em] uppercase"
+              style={{ color: t.textDim }}
+            >
+              {card.label}
+            </div>
+            <div
+              className="mt-0.5 font-mono text-[13px]"
               style={{ color: statusColors[card.status] }}
             >
               {card.value}

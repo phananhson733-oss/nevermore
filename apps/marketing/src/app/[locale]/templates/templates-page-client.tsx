@@ -42,19 +42,25 @@ export default function TemplatesPageClient() {
 
   return (
     <>
-      {/* Block 1: Hero */}
-      <section className="bg-brand-bg py-16 md:py-24">
-        <div className="max-w-content mx-auto px-4 text-center">
-          <motion.h1
-            {...fadeInUp}
-            className="text-text-dark-primary font-semibold mb-4"
-          >
+      {/* Block 1: Hero (页级 hero) */}
+      <section className="bg-brand-bg relative overflow-hidden pt-16 pb-16 md:pt-21 md:pb-20">
+        {/* GLOW_01 — 48px 网格线 + 氛围光，全站仅首屏与页级 hero 出现 */}
+        <div
+          aria-hidden="true"
+          className="bg-signal-grid absolute inset-0 opacity-40"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -top-30 right-[6%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
+        />
+        <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
+          <motion.h1 {...fadeInUp} className="text-text-dark-primary">
             {tHero("title")}
           </motion.h1>
           <motion.p
             {...fadeInUp}
             transition={{ ...fadeInUp.transition, delay: 0.15 }}
-            className="text-text-dark-secondary text-lg max-w-2xl mx-auto"
+            className="text-text-dark-secondary mx-auto mt-5 max-w-2xl text-[17.5px] leading-[1.65]"
           >
             {tHero("subtitle")}
           </motion.p>
@@ -62,17 +68,17 @@ export default function TemplatesPageClient() {
       </section>
 
       {/* Block 2: Experiment Framework */}
-      <section className="bg-brand-bg-light py-16 md:py-24">
-        <div className="max-w-content mx-auto px-4">
+      <section className="bg-brand-bg-alt border-brand-border border-t py-16 md:py-22">
+        <div className="max-w-content mx-auto px-6 md:px-8">
           <motion.h2
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{
-              duration: 0.6,
+              duration: 0.45,
               ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
             }}
-            className="text-text-light-primary font-semibold text-center mb-12"
+            className="text-text-dark-primary mb-11 text-center"
           >
             {tFw("title")}
           </motion.h2>
@@ -82,24 +88,27 @@ export default function TemplatesPageClient() {
             initial="initial"
             whileInView="animate"
             viewport={{ once: true }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+            className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4"
           >
             {FRAMEWORK_STEPS.map((step, i) => (
               <motion.div
                 key={step.key}
                 {...staggerItem}
-                className="bg-white border border-gray-200 rounded-card p-6 text-center"
+                className="border-brand-border-card bg-brand-panel rounded-card border p-[22px]"
               >
-                <div className="mb-3" aria-hidden="true">
-                  <step.icon className="size-7 text-brand-accent-on-light mx-auto" />
+                <div
+                  className="mb-3 flex items-center gap-3"
+                  aria-hidden="true"
+                >
+                  <span className="text-text-dark-faint font-mono text-[10px] tracking-[0.12em]">
+                    STEP_{String(i + 1).padStart(2, "0")}
+                  </span>
+                  <step.icon className="text-brand-accent size-[17px] shrink-0" />
                 </div>
-                <div className="text-brand-accent-on-light font-mono text-xs mb-2">
-                  {String(i + 1).padStart(2, "0")}
-                </div>
-                <h3 className="text-text-light-primary font-semibold text-base mb-1">
+                <h3 className="text-text-dark-primary mb-2 text-[15.5px] font-semibold">
                   {tFw(step.key)}
                 </h3>
-                <p className="text-text-light-secondary text-sm">
+                <p className="text-text-dark-secondary text-[12.5px] leading-[1.6]">
                   {tFw(step.descKey)}
                 </p>
               </motion.div>
@@ -109,14 +118,14 @@ export default function TemplatesPageClient() {
       </section>
 
       {/* Block 3: Playbook Templates */}
-      <section className="bg-brand-bg py-16 md:py-24">
-        <div className="max-w-content mx-auto px-4">
+      <section className="bg-brand-bg border-brand-border border-t py-16 md:py-22">
+        <div className="max-w-content mx-auto px-6 md:px-8">
           <motion.h2
             {...fadeInUp}
             whileInView="animate"
             initial="initial"
             viewport={{ once: true }}
-            className="text-text-dark-primary font-semibold text-center mb-12"
+            className="text-text-dark-primary mb-11 text-center"
           >
             {tPb("title")}
           </motion.h2>
@@ -126,21 +135,24 @@ export default function TemplatesPageClient() {
             initial="initial"
             whileInView="animate"
             viewport={{ once: true }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+            className="grid grid-cols-1 gap-4 md:grid-cols-3"
           >
             {PLAYBOOKS.map((pb) => (
               <motion.div
                 key={pb.titleKey}
                 {...staggerItem}
-                className="border border-brand-border rounded-card p-6"
+                className="border-brand-border-card bg-brand-panel rounded-card border p-[26px]"
               >
-                <div className="mb-3" aria-hidden="true">
-                  <pb.icon className="size-6 text-brand-accent" />
+                <div
+                  className="border-brand-accent/25 bg-brand-accent-soft text-brand-accent mb-4 flex size-10 items-center justify-center rounded-[10px] border"
+                  aria-hidden="true"
+                >
+                  <pb.icon className="size-[17px]" />
                 </div>
-                <h3 className="text-text-dark-primary font-semibold text-base mb-2">
+                <h3 className="text-text-dark-primary mb-2 text-[16.5px] font-semibold">
                   {tPb(pb.titleKey)}
                 </h3>
-                <p className="text-text-dark-secondary text-sm">
+                <p className="text-text-dark-secondary text-[13px] leading-[1.6]">
                   {tPb(pb.descKey)}
                 </p>
               </motion.div>

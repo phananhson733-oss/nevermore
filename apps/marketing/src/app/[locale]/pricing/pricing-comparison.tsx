@@ -38,20 +38,22 @@ const ROWS: ComparisonRow[] = [
 function CellValue({ value, t }: { value: Support; t: (key: string) => string }) {
   if (value === true) {
     return (
-      <Check className="size-4 text-brand-accent mx-auto" aria-label="Yes" />
+      <Check className="mx-auto size-[15px] text-brand-accent" aria-label="Yes" />
     );
   }
   if (value === false) {
     return (
       <Minus
-        className="size-4 text-text-dark-secondary/40 mx-auto"
+        className="mx-auto size-[15px] text-text-dark-secondary"
         aria-label="No"
       />
     );
   }
   const label = value === "unlimited" ? t("unlimited") : value;
   return (
-    <span className="text-text-dark-primary text-sm font-medium">{label}</span>
+    <span className="font-mono text-[12.5px] text-text-dark-primary">
+      {label}
+    </span>
   );
 }
 
@@ -65,7 +67,7 @@ export function PricingComparison() {
         whileInView="animate"
         initial="initial"
         viewport={{ once: true }}
-        className="text-text-dark-primary font-semibold text-center mb-12"
+        className="mb-9 text-center text-text-dark-primary"
       >
         {t("title")}
       </motion.h2>
@@ -76,21 +78,21 @@ export function PricingComparison() {
         initial="initial"
         viewport={{ once: true }}
         transition={{ ...fadeInUp.transition, delay: 0.15 }}
-        className="overflow-x-auto"
+        className="overflow-x-auto rounded-card border border-brand-border-card bg-brand-panel"
       >
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[600px]">
           <thead>
-            <tr className="border-b border-white/10">
-              <th className="text-left text-text-dark-secondary py-3 px-4 font-medium">
+            <tr className="border-b border-brand-border">
+              <th className="px-5 py-3.5 text-left font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                 {t("feature")}
               </th>
-              <th className="text-center text-text-dark-primary py-3 px-4 font-semibold">
+              <th className="px-5 py-3.5 text-center font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                 {t("starterLabel")}
               </th>
-              <th className="text-center text-brand-accent py-3 px-4 font-semibold">
+              <th className="px-5 py-3.5 text-center font-mono text-[10px] tracking-[0.12em] text-brand-accent-text uppercase">
                 {t("proLabel")}
               </th>
-              <th className="text-center text-text-dark-primary py-3 px-4 font-semibold">
+              <th className="px-5 py-3.5 text-center font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                 {t("growthLabel")}
               </th>
             </tr>
@@ -99,18 +101,18 @@ export function PricingComparison() {
             {ROWS.map((row) => (
               <tr
                 key={row.key}
-                className="border-b border-white/5 hover:bg-white/[0.02]"
+                className="border-b border-brand-border-faint transition-colors last:border-b-0 hover:bg-brand-panel-raised"
               >
-                <td className="text-text-dark-secondary py-3 px-4">
+                <td className="px-5 py-3 text-[13px] leading-[1.6] text-text-dark-strong">
                   {t(`rows.${row.key}`)}
                 </td>
-                <td className="text-center py-3 px-4">
+                <td className="px-5 py-3 text-center">
                   <CellValue value={row.starter} t={t} />
                 </td>
-                <td className="text-center py-3 px-4">
+                <td className="px-5 py-3 text-center">
                   <CellValue value={row.pro} t={t} />
                 </td>
-                <td className="text-center py-3 px-4">
+                <td className="px-5 py-3 text-center">
                   <CellValue value={row.growth} t={t} />
                 </td>
               </tr>

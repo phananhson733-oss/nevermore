@@ -16,44 +16,59 @@ export function FreeAuditSection() {
   return (
     <section
       aria-labelledby="free-audit-title"
-      className="border-y border-brand-border/70 bg-brand-bg-alt py-16 md:py-20"
+      className="border-t border-brand-border bg-brand-bg-alt py-16 md:py-22"
     >
-      <div className="mx-auto grid max-w-content gap-9 px-4 lg:grid-cols-[0.74fr_1.26fr] lg:gap-14">
-        <div className="lg:pt-3">
-          <div className="mb-5 flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
-            <ScanSearch aria-hidden="true" className="size-5" />
-          </div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-text">
+      <div className="max-w-content mx-auto grid items-center gap-9 px-6 md:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-14">
+        <div>
+          <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
             {t("eyebrow")}
           </p>
-          <h2
-            id="free-audit-title"
-            className="mt-3 max-w-md font-semibold text-text-dark-primary"
-          >
+          <h2 id="free-audit-title" className="mt-3.5 text-text-dark-primary">
             {t("title")}
           </h2>
-          <p className="mt-4 max-w-md text-base text-text-dark-secondary">
+          <p className="mt-4 text-[15px] leading-[1.7] text-text-dark-secondary">
             {t("body")}
           </p>
-          <ul className="mt-7 space-y-3 text-sm text-text-dark-secondary">
+          <ul className="mt-6 space-y-2.5 text-[13.5px] text-text-dark-secondary">
             {["point1", "point2", "point3"].map((key) => (
-              <li key={key} className="flex gap-3">
-                <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-brand-accent" />
+              <li key={key} className="flex items-baseline gap-2.5">
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 font-mono text-[10px] text-brand-accent"
+                >
+                  ▸
+                </span>
                 <span>{t(key)}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="rounded-3xl border border-brand-accent/20 bg-brand-bg p-5 shadow-[0_20px_70px_rgba(0,0,0,0.18)] md:p-7">
-          <SeoAuditTool locale={locale} />
-          <Link
-            href={localePath(locale, "/tools/seo-audit")}
-            className="mt-5 inline-flex items-center gap-2 text-xs font-semibold text-brand-accent-text transition-colors hover:text-brand-accent-hover"
-          >
-            {t("fullReport")}
-            <ArrowRight aria-hidden="true" className="size-3.5" />
-          </Link>
+        <div className="relative">
+          <div
+            aria-hidden="true"
+            className="absolute -top-17 -right-15 size-70 rounded-full bg-[radial-gradient(circle,rgba(61,220,151,0.1),transparent_70%)] blur-[10px]"
+          />
+          <div className="relative rounded-[16px] border border-brand-border-card bg-brand-panel p-5 shadow-panel md:p-7">
+            <div className="mb-4.5 flex items-center justify-between font-mono text-[10px] tracking-[0.1em] text-text-dark-secondary uppercase">
+              <span className="inline-flex items-center gap-2">
+                <ScanSearch
+                  aria-hidden="true"
+                  className="size-3.5 text-brand-accent"
+                />
+                {t("panelLabel")}
+              </span>
+              <span>{t("panelBadge")}</span>
+            </div>
+            <SeoAuditTool locale={locale} surface="bare" />
+            <Link
+              href={localePath(locale, "/tools/seo-audit")}
+              className="mt-4 inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
+            >
+              {t("fullReport")}
+              <ArrowRight aria-hidden="true" className="size-3" />
+            </Link>
+          </div>
         </div>
       </div>
     </section>

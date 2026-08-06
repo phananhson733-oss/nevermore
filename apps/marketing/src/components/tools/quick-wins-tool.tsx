@@ -18,6 +18,17 @@ import { QuickWinsResults } from "./quick-wins-results";
 const TOOL_PATH = "/tools/seo-quick-wins";
 const SECTION_ID = "quick-wins-tool";
 
+/** Shared surfaces, so this tool and the traffic-drop tool read as one console. */
+const PANEL =
+  "scroll-mt-8 rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+const FIELD_LABEL =
+  "block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+const FIELD_BASE =
+  "mt-2 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
+/** The property is an identifier, so it reads in mono; the brand list is prose. */
+const SELECT_FIELD = `${FIELD_BASE} font-mono text-[13px]`;
+const TEXT_FIELD = `${FIELD_BASE} text-[13.5px]`;
+
 interface QuickWinsToolProps {
   readonly locale: string;
   /**
@@ -93,7 +104,7 @@ export function QuickWinsTool({
         namespace="tools.quickWins"
         toolPath={TOOL_PATH}
         sectionId={SECTION_ID}
-        icon={<Search aria-hidden="true" className="size-5" />}
+        icon={<Search aria-hidden="true" className="size-[18px]" />}
         connectEnabled={connectEnabled}
         consentNotice={consentNotice}
       />
@@ -104,15 +115,11 @@ export function QuickWinsTool({
   // reads as broken unless the page says which one it is.
   if (properties.length === 0) {
     return (
-      <section
-        id={SECTION_ID}
-        data-locale={locale}
-        className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
-      >
-        <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+      <section id={SECTION_ID} data-locale={locale} className={PANEL}>
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t("noPropertyTitle")}
         </h2>
-        <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("noPropertyBody")}
         </p>
       </section>
@@ -120,20 +127,14 @@ export function QuickWinsTool({
   }
 
   return (
-    <section
-      id={SECTION_ID}
-      data-locale={locale}
-      className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
+    <section id={SECTION_ID} data-locale={locale} className={PANEL}>
+      <div className="grid gap-3.5 sm:grid-cols-2">
         <label className="block">
-          <span className="text-[13px] font-medium text-text-dark-primary">
-            {t("propertyLabel")}
-          </span>
+          <span className={FIELD_LABEL}>{t("propertyLabel")}</span>
           <select
             value={property}
             onChange={(event) => setProperty(event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-brand-border/70 bg-brand-bg px-3 py-2.5 text-[13px] text-text-dark-primary"
+            className={SELECT_FIELD}
           >
             {properties.map((candidate) => (
               <option key={candidate} value={candidate}>
@@ -144,25 +145,23 @@ export function QuickWinsTool({
         </label>
 
         <label className="block">
-          <span className="text-[13px] font-medium text-text-dark-primary">
-            {t("brandLabel")}
-          </span>
+          <span className={FIELD_LABEL}>{t("brandLabel")}</span>
           <input
             type="text"
             value={brandInput}
             onChange={(event) => setBrandInput(event.target.value)}
             placeholder={t("brandPlaceholder")}
-            className="mt-1.5 w-full rounded-xl border border-brand-border/70 bg-brand-bg px-3 py-2.5 text-[13px] text-text-dark-primary"
+            className={TEXT_FIELD}
           />
         </label>
       </div>
 
-      <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-3 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("brandHint")}
       </p>
 
       {propertyTotal > properties.length ? (
-        <p className="mt-3 text-[12px] text-text-dark-secondary">
+        <p className="mt-3 text-[12.5px] text-text-dark-secondary">
           {t("propertiesTruncated", { total: propertyTotal })}
         </p>
       ) : null}
@@ -172,7 +171,7 @@ export function QuickWinsTool({
         disabled={loading || property === ""}
         aria-busy={loading}
         onClick={() => void run(property)}
-        className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
+        className="mt-5 inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:opacity-60 disabled:shadow-none"
       >
         {loading ? t("running") : result ? t("rerun") : t("run")}
       </button>
@@ -193,7 +192,7 @@ export function QuickWinsTool({
       {errorCode !== null ? (
         <p
           role="alert"
-          className="mt-4 rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.07)] p-4 text-[13px] leading-relaxed text-text-dark-secondary"
+          className="mt-4 rounded-[10px] border border-brand-warning/25 bg-brand-warning/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-warning"
         >
           {/*
            * Unknown codes fall back to the generic unavailable message rather

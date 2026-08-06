@@ -42,22 +42,23 @@ export function WaitlistProfileStep({
 }: WaitlistProfileStepProps) {
   return (
     <div className="py-2">
-      <div className="text-center mb-6" role="status" aria-live="polite">
-        <CheckCircle
-          className="size-8 text-brand-success mx-auto mb-2"
-          aria-hidden="true"
-        />
-        <h3 className="text-text-dark-primary font-semibold text-lg mb-1">
+      <div className="mb-7 text-center" role="status" aria-live="polite">
+        <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+          <CheckCircle className="size-4" aria-hidden="true" />
+        </span>
+        <h3 className="mb-1.5 text-[16.5px] font-semibold text-text-dark-primary">
           {t("successTitle")}
         </h3>
-        <p className="text-text-dark-secondary text-sm">{t("successDesc")}</p>
+        <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
+          {t("successDesc")}
+        </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-5">
         <div>
           <Label
             htmlFor="waitlist-name"
-            className="text-text-dark-secondary text-sm"
+            className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
           >
             {t("nameLabel")}
           </Label>
@@ -65,14 +66,14 @@ export function WaitlistProfileStep({
             id="waitlist-name"
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            className="mt-1 bg-brand-bg border-brand-border text-text-dark-primary"
+            className="mt-2"
           />
         </div>
 
         <div>
           <Label
             htmlFor="waitlist-company"
-            className="text-text-dark-secondary text-sm"
+            className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
           >
             {t("companyLabel")}
           </Label>
@@ -80,14 +81,14 @@ export function WaitlistProfileStep({
             id="waitlist-company"
             value={company}
             onChange={(e) => onCompanyChange(e.target.value)}
-            className="mt-1 bg-brand-bg border-brand-border text-text-dark-primary"
+            className="mt-2"
           />
         </div>
 
         <div>
           <Label
             htmlFor="waitlist-role"
-            className="text-text-dark-secondary text-sm"
+            className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
           >
             {t("roleLabel")}
           </Label>
@@ -95,7 +96,7 @@ export function WaitlistProfileStep({
             id="waitlist-role"
             value={role}
             onChange={(e) => onRoleChange(e.target.value)}
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg text-text-dark-primary h-9 px-3 text-sm"
+            className="mt-2 h-11 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[14px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             <option value="">{t("rolePlaceholder")}</option>
             {ROLE_OPTIONS.map((opt) => (
@@ -106,19 +107,11 @@ export function WaitlistProfileStep({
           </select>
         </div>
 
-        <div className="flex gap-2">
-          <Button
-            type="submit"
-            className="flex-1 bg-brand-accent hover:bg-brand-accent-hover text-white text-sm"
-          >
+        <div className="flex gap-2.5">
+          <Button type="submit" variant="cta" size="lg" className="flex-1">
             {t("saveProfile")}
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onSkip}
-            className="text-sm"
-          >
+          <Button type="button" variant="ghost" size="lg" onClick={onSkip}>
             {t("skip")}
           </Button>
         </div>

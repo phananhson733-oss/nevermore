@@ -134,15 +134,16 @@ export function TrialWizard() {
 
   if (done) {
     return (
-      <div className="text-center py-6" role="status" aria-live="polite">
-        <CheckCircle
-          className="size-12 text-brand-success mx-auto mb-4"
-          aria-hidden="true"
-        />
-        <h3 className="text-text-dark-primary font-semibold text-lg mb-2">
+      <div className="py-8 text-center" role="status" aria-live="polite">
+        <span className="mx-auto mb-4 flex size-11 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+          <CheckCircle className="size-[18px]" aria-hidden="true" />
+        </span>
+        <h3 className="mb-2 text-[16.5px] font-semibold text-text-dark-primary">
           {t("successTitle")}
         </h3>
-        <p className="text-text-dark-secondary text-sm">{t("successDesc")}</p>
+        <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
+          {t("successDesc")}
+        </p>
       </div>
     );
   }
@@ -151,7 +152,7 @@ export function TrialWizard() {
     <div>
       <StepIndicator current={step} total={TRIAL_STEPS} variant="brand" />
 
-      <div className="mt-6 min-h-[220px] max-h-[60vh] overflow-y-auto">
+      <div className="mt-7 max-h-[60vh] min-h-[220px] overflow-y-auto">
         {step === 1 && (
           <TrialStepContact
             email={email}
@@ -192,7 +193,7 @@ export function TrialWizard() {
       </div>
 
       {error && (
-        <p className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400">
+        <p className="mt-4 rounded-[10px] border border-brand-error/25 bg-brand-error/10 px-3.5 py-2.5 text-[12.5px] leading-[1.6] text-brand-error">
           {error}
         </p>
       )}
