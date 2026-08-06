@@ -125,6 +125,11 @@ describe("i18n message key parity", () => {
     );
   });
 
+  it("renders the DataForSEO backlink provider as a customer-facing label", () => {
+    expect(en.growthMap.backlinks.provider.dataforseo).toBe("DataForSEO");
+    expect(zhCN.growthMap.backlinks.provider.dataforseo).toBe("DataForSEO");
+  });
+
   it("labels execution previews as presentational validation targets in both locales", () => {
     expect(en.growthMap.executionPreview).toEqual({
       eyebrow: "Execution preview",
