@@ -241,6 +241,7 @@
     "createAndConnectButton": "创建产品并连接数据源",
     "creating": "正在创建产品…",
     "createError": "产品创建失败，请检查输入后重试。",
+    "planLimitReached": "免费版包含 1 个进行中的项目。请先归档当前项目，再创建新的。",
     "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。",
     "requiredField": "请填写或选择此项。",
     "growthObjectivesRequired": "请至少选择一个主要增长目标。"

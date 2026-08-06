@@ -13,6 +13,8 @@ export type ProblemCode =
   | "OAUTH_STATE_EXPIRED"
   // 401
   | "AUTH_REQUIRED"
+  // 403
+  | "PLAN_LIMIT_REACHED"
   // 404
   | "NOT_FOUND"
   | "GROWTH_MAP_AUDIT_NOT_FOUND"
@@ -50,6 +52,7 @@ export const PROBLEM_STATUS: Record<ProblemCode, number> = {
   OAUTH_STATE_INVALID: 400,
   OAUTH_STATE_EXPIRED: 400,
   AUTH_REQUIRED: 401,
+  PLAN_LIMIT_REACHED: 403,
   NOT_FOUND: 404,
   GROWTH_MAP_AUDIT_NOT_FOUND: 404,
   VERSION_CONFLICT: 409,
@@ -105,6 +108,7 @@ export interface ProblemBody {
 const TITLES: Partial<Record<ProblemCode, string>> = {
   BAD_REQUEST: "Bad request",
   AUTH_REQUIRED: "Authentication required",
+  PLAN_LIMIT_REACHED: "Plan limit reached",
   NOT_FOUND: "Not found",
   GROWTH_MAP_AUDIT_NOT_FOUND: "Growth Map audit not found",
   VALIDATION_ERROR: "Validation failed",

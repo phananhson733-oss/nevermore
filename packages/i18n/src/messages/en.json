@@ -241,6 +241,7 @@
     "createAndConnectButton": "Create product and connect data",
     "creating": "Creating product…",
     "createError": "We couldn't create the product. Check the inputs and try again.",
+    "planLimitReached": "Your free plan includes one active project. Archive the current project before creating another.",
     "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment.",
     "requiredField": "Complete or select this field.",
     "growthObjectivesRequired": "Select at least one primary growth goal."

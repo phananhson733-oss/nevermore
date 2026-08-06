@@ -67,7 +67,9 @@ export function NewProjectForm() {
   const [productUrl, setProductUrl] = useState("");
   const [customerModel, setCustomerModel] = useState<CustomerModel | "">("");
   const [primaryMarket, setPrimaryMarket] = useState<PrimaryMarket | "">("");
-  const [growthObjectives, setGrowthObjectives] = useState<GrowthObjective[]>([]);
+  const [growthObjectives, setGrowthObjectives] = useState<GrowthObjective[]>(
+    [],
+  );
   const [optionalSources, setOptionalSources] = useState<
     OptionalGoogleSource[]
   >([]);
@@ -122,7 +124,11 @@ export function NewProjectForm() {
       );
       router.push(newProductContinuationPath(project.id, optionalSources));
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof ApiError && error.code === "PLAN_LIMIT_REACHED") {
+        // The generic create-failed copy would leave the operator retrying a
+        // form that cannot succeed. This one names the ceiling and the way out.
+        setGeneralError(t("planLimitReached"));
+      } else if (error instanceof ApiError) {
         const mapped = mapProjectFieldErrors(error.fieldErrors(), {
           productUrlInvalid: t("productUrlInvalid"),
           requiredField: t("requiredField"),
@@ -267,12 +273,18 @@ export function NewProjectForm() {
                       clearFieldError("growthObjectives");
                     }}
                   />
-                  <span>{t(`fields.growthObjectives.options.${objective}`)}</span>
+                  <span>
+                    {t(`fields.growthObjectives.options.${objective}`)}
+                  </span>
                 </label>
               ))}
             </div>
             {fieldErrors.growthObjectives ? (
-              <p id={objectiveErrorId} className={styles.fieldError} role="alert">
+              <p
+                id={objectiveErrorId}
+                className={styles.fieldError}
+                role="alert"
+              >
                 {fieldErrors.growthObjectives}
               </p>
             ) : null}
