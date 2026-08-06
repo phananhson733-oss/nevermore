@@ -270,10 +270,14 @@ export function QuickWinsEvidenceTable({
               >
                 <td className="px-3 py-2.5 text-text-dark-primary">
                   {row.query}
+                  {/*
+                   * 基线太薄的标记不能是表里最小的字：它是把「已测量」和「统计上
+                   * 站不住」分开的唯一视觉信号，缩到 9.5px 等于把不确定性藏起来。
+                   */}
                   {row.baselineBandUnderOnePercent ? (
                     <span
                       aria-describedby={BAND_NOTE_ID}
-                      className="ml-2 rounded border border-brand-warning/40 px-1.5 py-[2px] font-mono text-[9.5px] text-brand-warning"
+                      className="ml-2 rounded border border-brand-warning/40 px-1.5 py-[2px] font-mono text-[11px] text-brand-warning"
                     >
                       {row.bucketId}
                     </span>
@@ -362,7 +366,8 @@ function FilterChip({
       }`}
     >
       {label}
-      <span className="tabular-nums opacity-70">{count}</span>
+      {/* 计数是数据不是装饰；opacity-70 叠在 secondary 上只有 3.64:1 */}
+      <span className="tabular-nums">{count}</span>
     </button>
   );
 }

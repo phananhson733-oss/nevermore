@@ -105,7 +105,7 @@ export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={t("placeholder")}
-                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-faint"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary"
               />
             </span>
           </label>

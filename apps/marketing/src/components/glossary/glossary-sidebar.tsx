@@ -13,7 +13,9 @@ const LETTER_BASE =
   "flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] transition-colors";
 const LETTER_ACTIVE =
   "cursor-pointer border border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/50 hover:text-brand-accent-text";
-const LETTER_INACTIVE = "cursor-default text-text-dark-faint/50";
+// 全量 faint，不再叠 /50：叠上去只有 1.75:1，等于把「哪些字母有词条」这个唯一
+// 信号抹掉。可点性本来就靠 active 那档的描边表达，不靠把无效字母调到看不见。
+const LETTER_INACTIVE = "cursor-default text-text-dark-faint";
 
 interface GlossarySidebarProps {
   readonly terms: ReadonlyArray<GlossaryTerm>;

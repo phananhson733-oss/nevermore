@@ -222,7 +222,7 @@ export function WizardStepEvent({
                   value={brandSafetyPolicy ?? ""}
                   onChange={(e) => onBrandSafetyPolicyChange?.(e.target.value)}
                   rows={3}
-                  className="mt-2 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-3 text-[13px] leading-[1.6] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-faint focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/25"
+                  className="mt-2 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 py-3 text-[13px] leading-[1.6] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
                 />
               </div>
             </div>

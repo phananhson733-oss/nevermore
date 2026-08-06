@@ -20,7 +20,7 @@ const FIELD_LABEL =
   "text-text-dark-secondary mb-2 block font-mono text-[10px] tracking-[0.12em] uppercase";
 
 const FIELD_BOX =
-  "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-faint focus-visible:border-brand-accent/70 h-12.5 rounded-[10px] px-4 shadow-none transition-colors focus-visible:ring-0";
+  "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent h-12.5 rounded-[10px] px-4 shadow-none transition-colors";
 
 // ---------------------------------------------------------------------------
 // SuccessMessage

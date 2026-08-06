@@ -223,7 +223,12 @@ export default async function InternalLinkAuditPage({
                 {content.findsIntro}
               </p>
             </div>
-            <div className="mt-7 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 lg:grid-cols-3">
+            {/*
+             * 九条发现进两列会余一格，而伪表格的底色就是分隔线颜色，空格子会变成
+             * 一块比单元格更亮的实心矩形。两列时让末格跨满，三列时 9 恰好整除，
+             * 必须显式跨回一格，否则 lg 下会多占一列。
+             */}
+            <div className="mt-7 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 md:[&>*:last-child]:col-span-2 lg:grid-cols-3 lg:[&>*:last-child]:col-span-1">
               {content.findings.map((finding, index) => (
                 <article
                   key={finding.title}

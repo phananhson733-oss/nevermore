@@ -2,11 +2,11 @@
 // @output — Button 组件、buttonVariants
 // @pos    — shadcn/ui 按钮原子组件，全站最基础交互元素
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { Slot } from "radix-ui"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { Slot } from "radix-ui";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /*
  * Signal Console v1：圆角统一到 10px，高度 default 40 / lg 48。
@@ -14,14 +14,19 @@ import { cn } from "@/lib/utils"
  * 写死 hex 会让后续换色漏掉这里。渐变只属于 `cta`，一屏最多一个。
  */
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-[10px] text-[14px] font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/50 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-brand-error/70 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  /*
+   * 焦点圈用实色 outline + offset，不用半透明 ring。ring-brand-accent/50 压在
+   * cta 的绿→青渐变上只有 2.8–3.1:1，达不到 3:1；给它 2px 实色和 2px 偏移之后，
+   * 焦点圈落在按钮外侧的深色底上，对比度 10.87:1，且渐变按钮和幽灵按钮同一套。
+   */
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-[10px] text-[14px] font-medium whitespace-nowrap transition-all outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-brand-error/70 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         cta: "bg-brand-gradient font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover",
         destructive:
-          "bg-destructive text-brand-bg hover:bg-destructive/90 focus-visible:ring-brand-error/40",
+          "bg-destructive text-brand-bg hover:bg-destructive/90 focus-visible:outline-brand-error",
         outline:
           "border border-brand-border-strong bg-brand-panel/60 text-text-dark-primary transition-colors hover:border-brand-accent/50",
         secondary:
@@ -45,8 +50,8 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function Button({
   className,
@@ -56,9 +61,9 @@ function Button({
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
+    asChild?: boolean;
   }) {
-  const Comp = asChild ? Slot.Root : "button"
+  const Comp = asChild ? Slot.Root : "button";
 
   return (
     <Comp
@@ -68,7 +73,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

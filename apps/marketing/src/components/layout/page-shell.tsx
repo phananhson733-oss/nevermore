@@ -6,6 +6,7 @@
 
 import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
+import { MotionConfig } from "framer-motion";
 import { Header } from "./header";
 import { Footer } from "./footer";
 import { TrialProvider } from "./waitlist-context";
@@ -32,16 +33,21 @@ export function PageShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <TrialProvider value={ctxValue}>
-      <GoogleAnalytics />
-      <Header />
-      {/* 与 Header 的 h-17 (68px) 固定高度对齐 */}
-      <main className="pt-17">{children}</main>
-      <Footer onOpenCookiePreferences={() => setCookiePrefsOpen(true)} />
-      <CookieBanner
-        prefsOpen={cookiePrefsOpen}
-        onPrefsClose={() => setCookiePrefsOpen(false)}
-      />
-    </TrialProvider>
+    // reducedMotion="user" 让 framer-motion 跟随系统设置：入场动画只保留透明度，
+    // 位移一律不播。globals.css 里的 @media (prefers-reduced-motion) 只管得到 CSS
+    // 动画，管不到 motion.* 写在元素上的 inline transform，两边要一起设。
+    <MotionConfig reducedMotion="user">
+      <TrialProvider value={ctxValue}>
+        <GoogleAnalytics />
+        <Header />
+        {/* 与 Header 的 h-17 (68px) 固定高度对齐 */}
+        <main className="pt-17">{children}</main>
+        <Footer onOpenCookiePreferences={() => setCookiePrefsOpen(true)} />
+        <CookieBanner
+          prefsOpen={cookiePrefsOpen}
+          onPrefsClose={() => setCookiePrefsOpen(false)}
+        />
+      </TrialProvider>
+    </MotionConfig>
   );
 }

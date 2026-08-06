@@ -34,7 +34,7 @@ export function InputField({
         max={max}
         step={step}
         required={!optional}
-        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70 placeholder:text-text-dark-faint"
+        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent placeholder:text-text-dark-secondary"
       />
     </label>
   );
@@ -62,7 +62,7 @@ export function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70"
+        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>

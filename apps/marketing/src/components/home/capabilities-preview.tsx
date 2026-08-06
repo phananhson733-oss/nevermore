@@ -68,9 +68,12 @@ export function CapabilitiesPreview() {
 
           <Link
             href={localePath(locale, "/tools")}
-            className="font-mono text-[11px] tracking-[0.06em] whitespace-nowrap text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
+            className="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.06em] whitespace-nowrap text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
           >
-            {t("viewAll")} &rarr;
+            {/* 箭头靠 flex gap 与文字分开，不靠 JSX 里的空白字符：`{expr} &rarr;`
+                的那个空格会被 JSX 的文本清理吃掉，箭头会紧贴最后一个字母。 */}
+            {t("viewAll")}
+            <span aria-hidden="true">&rarr;</span>
           </Link>
         </div>
 
@@ -99,8 +102,9 @@ export function CapabilitiesPreview() {
                 <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {t(card.descKey)}
                 </p>
-                <span className="mt-4 inline-block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors group-hover:text-brand-accent-hover">
-                  {t("cardCta")} &rarr;
+                <span className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors group-hover:text-brand-accent-hover">
+                  {t("cardCta")}
+                  <span aria-hidden="true">&rarr;</span>
                 </span>
               </Link>
             </motion.div>

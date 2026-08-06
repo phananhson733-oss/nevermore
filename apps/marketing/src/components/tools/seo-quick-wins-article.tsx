@@ -27,8 +27,12 @@ export function SeoQuickWinsArticle({
         <h2 className="max-w-2xl text-[27px] font-semibold tracking-[-0.03em] text-text-dark-primary">
           {article.exampleHeading}
         </h2>
-        {/* 1px gap over the divider colour — the example reads as a record. */}
-        <dl className="mt-8 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2">
+        {/*
+         * 1px gap over the divider colour — the example reads as a record.
+         * 奇数条目进两列会余一格；底色即分隔线颜色，空格子会显示成一块更亮的实心
+         * 矩形，所以末格跨满剩余列宽。
+         */}
+        <dl className="mt-8 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 md:[&>*:last-child]:col-span-2">
           {article.example.map((item) => (
             <div key={item.heading} className="bg-brand-panel-sunken p-[22px]">
               <dt className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">

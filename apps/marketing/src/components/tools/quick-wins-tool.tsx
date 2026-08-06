@@ -24,7 +24,7 @@ const PANEL =
 const FIELD_LABEL =
   "block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
 const FIELD_BASE =
-  "mt-2 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-faint focus:border-brand-accent/70";
+  "mt-2 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
 /** The property is an identifier, so it reads in mono; the brand list is prose. */
 const SELECT_FIELD = `${FIELD_BASE} font-mono text-[13px]`;
 const TEXT_FIELD = `${FIELD_BASE} text-[13.5px]`;

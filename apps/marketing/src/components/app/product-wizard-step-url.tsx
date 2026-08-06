@@ -68,8 +68,8 @@ export function WizardStepUrl({
           className={
             "rounded-l-none font-mono " +
             (isBrand
-              ? "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-faint"
-              : "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-faint")
+              ? "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary"
+              : "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary")
           }
         />
         {checking && (

@@ -682,7 +682,7 @@ function LinkTree({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={copy.treeSearchPlaceholder}
-            className="h-12 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg pl-10 pr-11 font-mono text-[13.5px] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-faint focus:border-brand-accent/70"
+            className="h-12 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg pl-10 pr-11 font-mono text-[13.5px] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           />
           {query ? (
             <button
@@ -1181,7 +1181,7 @@ export function InternalLinkAuditTool({
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={copy.placeholder}
-                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-faint"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary"
               />
             </span>
           </label>

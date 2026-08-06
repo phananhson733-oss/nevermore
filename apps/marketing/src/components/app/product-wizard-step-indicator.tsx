@@ -17,14 +17,14 @@ const variantStyles: Record<
     complete:
       "border border-brand-border bg-brand-panel text-text-dark-secondary",
     inactive:
-      "border border-brand-border bg-brand-panel-sunken text-text-dark-faint",
+      "border border-brand-border bg-brand-panel-sunken text-text-dark-secondary",
   },
   brand: {
     active: "bg-brand-accent text-brand-on-accent",
     complete:
       "border border-brand-accent/40 bg-brand-accent/12 text-brand-accent-text",
     inactive:
-      "border border-brand-border-strong bg-brand-panel-sunken text-text-dark-faint",
+      "border border-brand-border-strong bg-brand-panel-sunken text-text-dark-secondary",
   },
 };
 
@@ -47,6 +47,7 @@ export function StepIndicator({
         return (
           <div
             key={step}
+            {...(isActive ? { "aria-current": "step" as const } : {})}
             className={
               "flex size-8 items-center justify-center rounded-full font-mono text-[11px] font-semibold transition-colors " +
               (isActive

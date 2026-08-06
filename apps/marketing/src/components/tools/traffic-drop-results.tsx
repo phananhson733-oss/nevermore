@@ -291,7 +291,11 @@ export function TrafficDropResults({
                    * look in.
                    */}
                   <p className="mt-2.5 text-[12.5px] text-text-dark-secondary">
-                    <span className="font-mono text-[10px] tracking-[0.12em] text-text-dark-faint uppercase">
+                    {/*
+                     * 「依据」是证据溯源标签，不是序号：读不到它，后面那串标题就会
+                     * 被当成又一条建议。faint 那档只留给读不到也不丢信息的记号。
+                     */}
+                    <span className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
                       {t("basisLabel")}:
                     </span>{" "}
                     {[

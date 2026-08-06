@@ -21,7 +21,14 @@
     sans-serif;
   --font-display: var(--font-ibm-plex-sans), var(--font-noto-sans-sc),
     system-ui, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, monospace;
+  /*
+   * mono 也要挂中文回退。IBM Plex Mono 没有汉字，而中文路由上每页有十几个 mono
+   * 标签含汉字（eyebrow、chip、面包屑、页脚小标题、日期）；不挂回退它们会落到
+   * 系统通用 monospace——每个操作系统一副面孔，且和旁边的拉丁 mono 字重对不上。
+   * 字体回退是逐字形的：拉丁仍走 Plex Mono，汉字走 Noto Sans SC。
+   */
+  --font-mono: var(--font-ibm-plex-mono), var(--font-noto-sans-sc), ui-monospace,
+    SFMono-Regular, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -298,26 +305,12 @@
   mask-image: linear-gradient(180deg, #000 0%, transparent 52%);
 }
 
-/* Dashboard utility animations */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* hero eyebrow 的呼吸点，全站唯一一个常驻动画 */
 @keyframes subtle-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out;
-}
-.animate-slide-up {
-  animation: slide-up 0.35s ease-out both;
-}
 .animate-subtle-pulse {
   animation: subtle-pulse 2.5s ease-in-out infinite;
 }
@@ -332,12 +325,31 @@
   line-height: 1.75;
 }
 
-/* Stagger children animation delays */
-.stagger-children > :nth-child(1) { animation-delay: 0ms; }
-.stagger-children > :nth-child(2) { animation-delay: 50ms; }
-.stagger-children > :nth-child(3) { animation-delay: 100ms; }
-.stagger-children > :nth-child(4) { animation-delay: 150ms; }
-.stagger-children > :nth-child(5) { animation-delay: 200ms; }
-.stagger-children > :nth-child(6) { animation-delay: 250ms; }
-.stagger-children > :nth-child(7) { animation-delay: 300ms; }
-.stagger-children > :nth-child(8) { animation-delay: 350ms; }
+/*
+ * mono 标签的字距是拉丁大写字母的排印手法：汉字本来就是等宽全角，再撑开
+ * 0.06–0.14em 只会让标签散架。中文路由上一并收掉。
+ *
+ * 代价是同一路由上的拉丁序号（PAIN_01 / STEP_01 / NOTE_01）也失去字距，但设计稿
+ * 里这些序号本来就没有 letter-spacing，只有区块 eyebrow 才有，所以这条规则对序号
+ * 反而更贴稿。放在 @layer 之外的理由与上面的行高兜底相同：要压过 utility 层。
+ */
+:lang(zh) .font-mono {
+  letter-spacing: normal;
+}
+
+/*
+ * 用户在系统里要求减少动效时，整站的入场动画和常驻动画一起停。framer-motion 那侧
+ * 由 MotionConfig reducedMotion="user" 处理（见 page-shell.tsx）；这里管的是 CSS
+ * 动画和过渡。用极小的时长而不是 none，是为了让依赖 transitionend/animationend 的
+ * 代码仍然收得到事件。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

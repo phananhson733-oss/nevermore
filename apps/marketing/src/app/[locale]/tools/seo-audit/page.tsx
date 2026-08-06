@@ -205,7 +205,12 @@ export default async function SeoAuditPage({
                 {t("signalsBody")}
               </p>
             </div>
-            <div className="mt-7 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 lg:grid-cols-3">
+            {/*
+             * 五格进二/三列都会余一格。伪表格的底色就是分隔线颜色，所以空出来的
+             * 格子不是留白，而是一块比单元格更亮的实心矩形。让末格跨满剩余列宽，
+             * 两个断点下 5%3 和 5%2 都恰好差一格，同一条规则通吃。
+             */}
+            <div className="mt-7 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-2 md:[&>*:last-child]:col-span-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5].map((index) => (
                 <article
                   key={index}

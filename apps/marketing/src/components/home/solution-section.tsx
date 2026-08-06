@@ -9,10 +9,10 @@ import { motion } from "framer-motion";
 import { fadeInUp, staggerContainer, staggerItem } from "@/lib/animations";
 
 const STEPS = [
-  { id: "STEP_01", labelKey: "step1" },
-  { id: "STEP_02", labelKey: "step2" },
-  { id: "STEP_03", labelKey: "step3" },
-  { id: "STEP_04", labelKey: "step4" },
+  { id: "STEP_01", labelKey: "step1", descKey: "step1Desc" },
+  { id: "STEP_02", labelKey: "step2", descKey: "step2Desc" },
+  { id: "STEP_03", labelKey: "step3", descKey: "step3Desc" },
+  { id: "STEP_04", labelKey: "step4", descKey: "step4Desc" },
 ] as const;
 
 export function SolutionSection() {
@@ -76,6 +76,13 @@ export function SolutionSection() {
               <div className="mt-2.5 text-[16.5px] font-semibold text-text-dark-primary">
                 {t(step.labelKey)}
               </div>
+              {/*
+               * 每格的说明句不是可选的装饰：没有它，四格塌成一条纯标签带，读者无从
+               * 知道每一步实际做什么，这也是首页唯一点名数据源的位置。
+               */}
+              <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                {t(step.descKey)}
+              </p>
             </motion.div>
           ))}
         </motion.div>

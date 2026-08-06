@@ -96,7 +96,7 @@ export function WaitlistProfileStep({
             id="waitlist-role"
             value={role}
             onChange={(e) => onRoleChange(e.target.value)}
-            className="mt-2 h-11 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[14px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent/70"
+            className="mt-2 h-11 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[14px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             <option value="">{t("rolePlaceholder")}</option>
             {ROLE_OPTIONS.map((opt) => (

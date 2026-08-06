@@ -332,7 +332,7 @@ export function TrafficDropTool({
           id="traffic-drop-property"
           value={property}
           onChange={(event) => selectProperty(event.target.value)}
-          className="h-12.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-3.5 font-mono text-[13px] text-text-dark-primary transition-colors outline-none focus:border-brand-accent/70"
+          className="h-12.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-3.5 font-mono text-[13px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
           {/* The value stays the property id; only the label is humanised. */}
           {properties.map((entry) => (
@@ -384,7 +384,7 @@ export function TrafficDropTool({
             invalidate();
           }}
           placeholder={t("brandTerms.placeholder")}
-          className="mt-3 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-faint focus:border-brand-accent/70"
+          className="mt-3 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         />
         <label className="mt-3 flex items-start gap-2.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           <input
