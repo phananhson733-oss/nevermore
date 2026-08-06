@@ -132,7 +132,7 @@ const observations = [
 const outcome = {
   availability: "available",
   capturedAt,
-  sourceWindow: { start: capturedAt, end: capturedAt },
+  sourceWindow: { start: null, end: null },
   rowCount: observations.length,
   stopReason: null,
   providerUsage: { apiCalls: 4, rowsReturned: observations.length },
@@ -272,6 +272,27 @@ beforeEach(() => {
 });
 
 describe("persistCollectionResult DataForSEO backlink projection", () => {
+  it("does not compare a live multi-row backlink index as equal-window scalar facts", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await persistCollectionResult(ctx, {
+      collectionRun,
+      datasetKey: "dataforseo.backlinks.v1",
+      schemaVersion: "dataforseo.backlinks.v1",
+      actorId: ids.actor,
+      startedAtMs: Date.now(),
+      attempt,
+      outcome,
+      observations,
+    });
+
+    expect(
+      ProviderDiscrepanciesRepository.prototype.detectForSnapshot,
+    ).not.toHaveBeenCalled();
+  });
+
   it("projects the immutable snapshot and lineage observations in the completion transaction before finalize", async () => {
     const transactionTx = { identity: "completion-transaction" };
     transaction.mockImplementationOnce(
