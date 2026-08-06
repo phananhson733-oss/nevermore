@@ -1515,7 +1515,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
         level: 2,
       }),
     ).toBeVisible();
-    await expect(detail.getByText("2,400", { exact: true })).toBeVisible();
+    await expect(detail.getByTitle("2,400")).toBeVisible();
     const rankHistory = detail.getByRole("heading", {
       name: "90 天排名趋势",
       level: 3,

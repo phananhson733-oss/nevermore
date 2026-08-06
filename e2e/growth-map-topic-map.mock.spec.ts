@@ -335,12 +335,13 @@ test("关键词库把访谈摘要与用户评价作为两个独立内置来源�
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map?object=keywords`);
 
   const row = page
-    .getByRole("button")
+    .getByRole("list", { name: "关键词列表" })
+    .getByRole("listitem")
     .filter({ hasText: vocKeyword.displayKeyword })
     .first();
   await expect(row).toContainText("访谈摘要");
   await expect(row).toContainText("用户评价");
-  await row.click();
+  await row.locator("button[aria-pressed]").click();
 
   const detail = page.locator('aside[aria-label="所选关键词详情"]');
   await expect(

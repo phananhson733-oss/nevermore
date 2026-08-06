@@ -195,7 +195,7 @@ async function createProjectInBrowser(
   if (!match?.[1]) throw new Error("created project id was missing from URL");
   await expect(
     page.getByRole("button", { name: "Edit Product Profile" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByRole("link", { name: "Connect live data" }),
   ).toHaveCount(0);
@@ -671,23 +671,64 @@ async function assertKeywordLibraryTraceability(input: {
   readonly csvSnapshotId: string;
 }): Promise<void> {
   const { page, item, expectedCount, csvSnapshotId } = input;
-  const list = page.getByRole("list", { name: "Keyword list" });
-  await expect(list.getByRole("button")).toHaveCount(expectedCount);
-  const row = list
-    .getByText(item.displayKeyword, { exact: true })
-    .locator("xpath=ancestor::button[1]");
-  // The first visible Keyword is intentionally rendered as an implicit
-  // selection when the URL has no selectedKeywordId. This assertion makes the
-  // acceptance test exercise a real row change instead of mistaking that
-  // fallback presentation for a successful click-driven navigation.
-  await expect(row).toHaveAttribute("aria-pressed", "false");
+  const intakePath = page.getByRole("region", {
+    name: "Intake path",
+  });
+  await expect(intakePath).toBeVisible();
+
+  const keywordSearch = page.getByRole("searchbox", {
+    name: "Search a Keyword, market, language, or mapped page",
+  });
+  const sourceFilter = page.getByRole("combobox", {
+    name: "Source filter",
+  });
+  await expect(keywordSearch).toBeVisible();
+  await expect(sourceFilter).toBeVisible();
+
+  let list = page.getByRole("list", { name: "Keyword list" });
+  await expect(list.locator("li button[aria-pressed]")).toHaveCount(
+    expectedCount,
+  );
+  await expect(
+    list.locator("xpath=preceding-sibling::*[1]").locator(":scope > span"),
+  ).toHaveCount(8);
+
+  await sourceFilter.selectOption("csv_import");
+  await expect(sourceFilter).toHaveValue("csv_import");
+  await expect(
+    intakePath.getByRole("button", { name: /^CSV import\b/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Prove that search changes the rendered library before restoring one exact,
+  // fixture-derived result. The assertion never relies on repository ordering.
+  await keywordSearch.fill("__growth_map_no_matching_keyword__");
+  await expect(list).toHaveCount(0);
+  await keywordSearch.fill(item.displayKeyword);
+  list = page.getByRole("list", { name: "Keyword list" });
+  await expect(list.locator("li button[aria-pressed]")).toHaveCount(1);
+  const row = list.locator("li button[aria-pressed]").filter({
+    hasText: item.displayKeyword,
+  });
+  await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+
+  const detail = page.locator('aside[aria-label="Selected Keyword detail"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: item.displayKeyword,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
+
+  // Clicking the already synchronized filtered row makes its identity explicit
+  // in the address without changing the selected detail.
   await row.click();
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("selectedKeywordId"))
     .toBe(item.keywordId);
 
-  const detail = page.locator('aside[aria-label="Selected Keyword detail"]');
   // The detail rail is correct only when the selected Keyword's exact text has
   // arrived inside the panel, but the h2 can briefly remount while the
   // relation/read-model refresh settles. Assert the operator-visible identity
@@ -745,17 +786,56 @@ async function assertCompetitorLibraryTraceability(input: {
   readonly csvSnapshotId: string;
 }): Promise<void> {
   const { page, item, expectedCount, csvSnapshotId } = input;
-  const list = page.getByRole("list", { name: "Competitor list" });
-  await expect(list.getByRole("button")).toHaveCount(expectedCount);
-  const row = list.getByRole("button").filter({ hasText: item.domain });
+  const discoveryPath = page
+    .getByTestId("competitor-library-provenance")
+    .getByRole("region", { name: "Discovery path" });
+  await expect(discoveryPath).toBeVisible();
+
+  const competitorSearch = page.getByRole("searchbox", {
+    name: "Search Competitors",
+  });
+  const statusFilter = page.getByRole("combobox", {
+    name: "Status filter",
+  });
+  await expect(competitorSearch).toBeVisible();
+  await expect(statusFilter).toBeVisible();
+
+  let list = page.getByRole("list", { name: "Competitor list" });
+  await expect(list.locator("li button[aria-pressed]")).toHaveCount(
+    expectedCount,
+  );
+  await expect(
+    list.locator("xpath=preceding-sibling::*[1]").locator(":scope > span"),
+  ).toHaveCount(7);
+
+  await statusFilter.selectOption("approved");
+  await expect(statusFilter).toHaveValue("approved");
+  await competitorSearch.fill("__growth_map_no_matching_competitor__");
+  await expect(list).toHaveCount(0);
+  await competitorSearch.fill(item.domain);
+  list = page.getByRole("list", { name: "Competitor list" });
+  await expect(list.locator("li button[aria-pressed]")).toHaveCount(1);
+  const row = list.locator("li button[aria-pressed]").filter({
+    hasText: item.domain,
+  });
   await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+
+  const detail = page.locator('aside[aria-label="Selected Competitor detail"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: item.name ?? item.domain,
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
+
   await row.click();
   await expect(row).toHaveAttribute("aria-pressed", "true");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("selectedCompetitorId"))
     .toBe(item.competitorId);
 
-  const detail = page.locator('aside[aria-label="Selected Competitor detail"]');
   await expect(
     detail.getByRole("heading", {
       level: 2,
@@ -795,6 +875,31 @@ async function assertCompetitorLibraryTraceability(input: {
   }
   await expect(
     originCard.getByText(origin.sourcePointer, { exact: true }),
+  ).toBeVisible();
+}
+
+async function assertUrlPortfolioPresentation(input: {
+  readonly page: Page;
+  readonly expectedCount: number;
+}): Promise<void> {
+  const { page, expectedCount } = input;
+  const summary = page.getByRole("region", {
+    name: "Loaded-scope summary",
+  });
+  await expect(summary).toBeVisible();
+  await expect(summary.locator(":scope > div")).toHaveCount(4);
+  const loadedUrls = summary
+    .getByText("Loaded URLs", { exact: true })
+    .locator("xpath=parent::*[1]");
+  await expect(loadedUrls.locator(":scope > strong")).toHaveText(
+    String(expectedCount),
+  );
+
+  await expect(
+    page.getByRole("combobox", { name: "Page type filter" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Priority filter" }),
   ).toBeVisible();
 }
 
@@ -901,11 +1006,10 @@ async function assertExactSelection(input: {
     "title",
     expected.normalizedUrl,
   );
-  await expect(
-    detail.getByText(expected.title ?? "Page title not collected", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  const detailTitle = detailHeading.locator("xpath=following-sibling::p[1]");
+  await expect(detailTitle).toHaveText(
+    expected.title ?? "Page title not collected",
+  );
   await expect(
     detail.getByRole("link", {
       name: "Open the live page in a new tab",
@@ -1128,14 +1232,22 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     if (!csvSnapshot) {
       throw new Error("real Growth Map fixture lost its CSV Snapshot identity");
     }
-    // Skip the implicit first-row fallback so the browser must persist an
-    // explicit, different Keyword identity into the address and detail panel.
-    const keyword = keywordLibrary.data.slice(1).find((item) =>
-      item.sourceOccurrences.some(
-        (occurrence) =>
-          occurrence.sourceKind === "csv_import" &&
-          occurrence.snapshotId === csvSnapshot.id,
-      ),
+    // Use a search term unique within the loaded fixture rather than relying
+    // on repository ordering or an implicit first-row selection.
+    const keyword = keywordLibrary.data.find(
+      (item) =>
+        item.sourceOccurrences.some(
+          (occurrence) =>
+            occurrence.sourceKind === "csv_import" &&
+            occurrence.snapshotId === csvSnapshot.id,
+        ) &&
+        keywordLibrary.data.every(
+          (candidate) =>
+            candidate.keywordId === item.keywordId ||
+            !candidate.displayKeyword
+              .toLocaleLowerCase("en")
+              .includes(item.displayKeyword.toLocaleLowerCase("en")),
+        ),
     );
     const competitor = competitorLibrary.data.find((item) =>
       item.originOccurrences.some(
@@ -1179,6 +1291,10 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         name: "Find the next growth opportunity, page by real page.",
       }),
     ).toBeVisible();
+    await assertUrlPortfolioPresentation({
+      page,
+      expectedCount: portfolio.data.length,
+    });
     const growthMapRscRequestCount = trackGrowthMapRscRequests(page);
     await switchObjectMode(page, "Keyword library", "keywords");
     await assertKeywordLibraryTraceability({

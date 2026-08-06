@@ -70,6 +70,36 @@ function postRequest(options?: {
   );
 }
 
+function postRequestWithRuntimeBody(
+  chunks: readonly Uint8Array[],
+) {
+  let index = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunk = chunks[index];
+      index += 1;
+      if (chunk !== undefined) {
+        controller.enqueue(chunk);
+        return;
+      }
+      controller.close();
+    },
+  });
+  const init = {
+    method: "POST",
+    headers: {
+      origin: "http://localhost",
+      "x-request-id": "request-keyword-relations-runtime-body",
+    },
+    body,
+    duplex: "half",
+  } as const;
+  return new NextRequest(
+    `http://localhost/api/mvp/projects/${ids.project}/audit/keyword-relations`,
+    init,
+  );
+}
+
 function invokeGet(
   request = getRequest(),
   projectId: string = ids.project,
@@ -211,6 +241,39 @@ describe("POST Growth Map Keyword Relation refresh", () => {
       { workspaceId: ids.workspace },
       ids.project,
     );
+  });
+
+  it("accepts the zero-byte body stream created by the Next.js Node adapter", async () => {
+    const request = postRequestWithRuntimeBody([]);
+
+    expect(request.body).not.toBeNull();
+    const response = await invokePost(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      mocks.refreshProjectAuditKeywordRelations,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace },
+      ids.project,
+    );
+  });
+
+  it("rejects actual streamed bytes before consuming an attempt", async () => {
+    const request = postRequestWithRuntimeBody([
+      new TextEncoder().encode("{"),
+    ]);
+
+    expect(request.headers.get("content-length")).toBeNull();
+    expect(request.headers.get("content-type")).toBeNull();
+    const response = await invokePost(request);
+
+    expect(response.status).toBe(422);
+    expect(
+      mocks.assertWorkspaceAttemptRateLimit,
+    ).not.toHaveBeenCalled();
+    expect(
+      mocks.refreshProjectAuditKeywordRelations,
+    ).not.toHaveBeenCalled();
   });
 
   it.each([
