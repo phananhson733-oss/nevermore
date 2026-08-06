@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CompetitorMonitorItem,
   CompetitorMonitorResponse,
+  GrowthMapCompetitorLibraryItem,
   GrowthMapKeywordLibraryItem,
   GrowthMapKeywordRankHistory,
   GrowthMapKeywordRelation,
@@ -11,6 +12,7 @@ import type {
   GrowthMapTopicModelInsights,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
+  GrowthMapUrlPortfolioItem,
   TopicModelWorkspaceProjection,
 } from "@sf/contracts";
 import { ApiError } from "@/lib/api";
@@ -21,6 +23,9 @@ import {
   buildConfirmTopicModelCommand,
   buildKeywordRankChartModel,
   buildKeywordGovernanceReviewCommand,
+  filterGrowthMapCompetitorItems,
+  filterGrowthMapKeywordEntries,
+  filterGrowthMapUrlItems,
   buildKeywordRelationDecisionCommand,
   buildKeywordRelationPageProjection,
   buildInternalLinkMapProjection,
@@ -262,8 +267,122 @@ function internalLinkMapFixture(): GrowthMapInternalLinkMap {
 function keywordItem(
   keywordId: string,
   displayKeyword: string,
+  overrides: Partial<GrowthMapKeywordLibraryItem> = {},
 ): GrowthMapKeywordLibraryItem {
-  return { keywordId, displayKeyword } as GrowthMapKeywordLibraryItem;
+  return {
+    projectId: IDS.project,
+    keywordId,
+    displayKeyword,
+    normalizedKeyword: displayKeyword.toLowerCase(),
+    marketCode: "US",
+    languageTag: "en-US",
+    queryKind: "search_query",
+    status: "approved",
+    revision: 1,
+    intent: "Commercial",
+    buyerStage: "Consideration",
+    cluster: null,
+    classificationLimitations: {
+      intent: null,
+      buyerStage: null,
+      cluster: null,
+    },
+    mappedTarget: { kind: "unassigned" },
+    sourceOccurrences: [],
+    metrics: {
+      volume: null,
+      kd: null,
+      currentRank: null,
+      currentUrl: null,
+      limitations: {
+        volume: null,
+        kd: null,
+        currentRank: null,
+        currentUrl: null,
+      },
+    },
+    coverage: {
+      availability: "available",
+      limitations: [],
+    },
+    ...overrides,
+  } as GrowthMapKeywordLibraryItem;
+}
+
+function urlPortfolioItem(
+  sitePageId: string,
+  overrides: Partial<GrowthMapUrlPortfolioItem> = {},
+): GrowthMapUrlPortfolioItem {
+  return {
+    projectId: IDS.project,
+    siteId: IDS.project,
+    diagnosticRunId: IDS.snapshot,
+    crawlSnapshotId: IDS.snapshot,
+    sitePageId,
+    pageSnapshotId: null,
+    pageSnapshotCapturedAt: null,
+    identitySources: [],
+    normalizedUrl: `https://example.test/${sitePageId}/`,
+    title: sitePageId,
+    pageType: "product",
+    templateKey: null,
+    clusterKey: null,
+    ownerId: null,
+    coverage: {
+      availability: "available",
+      limitations: [],
+    },
+    metricObservations: [],
+    findingIds: [],
+    reviewableFindingIds: [],
+    priority: {
+      availability: "available",
+      value: "high",
+      basis: {
+        findingIds: [IDS.finding],
+      },
+      limitation: null,
+    },
+    delta: {
+      availability: "unavailable",
+      limitation: "No prior diagnostic run is available for comparison.",
+    },
+    ...overrides,
+  } as GrowthMapUrlPortfolioItem;
+}
+
+function competitorItem(
+  competitorId: string,
+  domain: string,
+  overrides: Partial<GrowthMapCompetitorLibraryItem> = {},
+): GrowthMapCompetitorLibraryItem {
+  return {
+    projectId: IDS.project,
+    competitorId,
+    domain,
+    name: domain,
+    reviewStatus: "candidate",
+    relationship: null,
+    analysisScope: [],
+    revision: 1,
+    originOccurrences: [],
+    lastObservedAt: null,
+    serpOverlap: {
+      availability: "unavailable",
+      value: null,
+      limitation: "SERP overlap data is unavailable.",
+    },
+    aiCitationInsight: {
+      availability: "unavailable",
+      value: null,
+      limitation: "AI citation insight is unavailable.",
+    },
+    coverage: {
+      availability: "available",
+      limitations: [],
+    },
+    ...overrides,
+  } as GrowthMapCompetitorLibraryItem;
 }
 
 function keywordRelation(): GrowthMapKeywordRelation {
@@ -835,15 +954,233 @@ describe("Growth Map view model", () => {
     expect(resolveVisibleKeywordSelection("stale", [])).toBeNull();
   });
 
+  it("filters the current URL page by pageType and priority without mutating input order", () => {
+    const items = [
+      urlPortfolioItem(IDS.sitePage, {
+        pageType: "product",
+        priority: {
+          availability: "available",
+          value: "high",
+          basis: {
+            derivationVersion: "max_finding_severity.v1",
+            projectId: IDS.project,
+            siteId: IDS.project,
+            diagnosticRunId: IDS.snapshot,
+            sitePageId: IDS.sitePage,
+            findingIds: [IDS.finding],
+          },
+          limitation: null,
+        },
+      }),
+      urlPortfolioItem(IDS.sitePageB, {
+        pageType: "blog",
+        priority: {
+          availability: "available",
+          value: "medium",
+          basis: {
+            derivationVersion: "max_finding_severity.v1",
+            projectId: IDS.project,
+            siteId: IDS.project,
+            diagnosticRunId: IDS.snapshot,
+            sitePageId: IDS.sitePageB,
+            findingIds: [IDS.finding],
+          },
+          limitation: null,
+        },
+      }),
+      urlPortfolioItem(IDS.sitePageC, {
+        pageType: null,
+        priority: {
+          availability: "unavailable",
+          value: null,
+          limitation: "No confirmed priority is available.",
+        },
+      }),
+    ] as const;
+
+    const filtered = filterGrowthMapUrlItems(items, {
+      pageType: "product",
+      priority: "high",
+    });
+
+    expect(filtered.map((item) => item.sitePageId)).toEqual([IDS.sitePage]);
+    expect(items.map((item) => item.sitePageId)).toEqual([
+      IDS.sitePage,
+      IDS.sitePageB,
+      IDS.sitePageC,
+    ]);
+    expect(filtered).not.toBe(items);
+  });
+
+  it("treats all pageType and priority filters as pass-through", () => {
+    const items = [
+      urlPortfolioItem(IDS.sitePage),
+      urlPortfolioItem(IDS.sitePageB, { pageType: "blog" }),
+    ] as const;
+
+    expect(
+      filterGrowthMapUrlItems(items, {
+        pageType: "all",
+        priority: "all",
+      }).map((item) => item.sitePageId),
+    ).toEqual([IDS.sitePage, IDS.sitePageB]);
+  });
+
+  it("filters Keyword relation rows by NFKC/case-insensitive search and sourceKind", () => {
+    const items = buildKeywordRelationPageProjection(
+      [
+        keywordItem(IDS.keywordA, "Customer Onboarding", {
+          cluster: {
+            clusterId: IDS.topic,
+            name: "Activation Playbook",
+          },
+          intent: "Commercial",
+          sourceOccurrences: [
+            {
+              sourceKind: "gsc_top_query",
+            },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
+        keywordItem(IDS.keywordB, "オンボーディング", {
+          marketCode: "GB",
+          languageTag: "en-GB",
+          cluster: {
+            clusterId: IDS.topicChild,
+            name: "Ｐｌａｙｂｏｏｋ",
+          },
+          intent: "Informational",
+          buyerStage: "Awareness",
+          mappedTarget: {
+            kind: "existing_page",
+            reviewState: "approved",
+            revision: 1,
+            reason: null,
+            sitePageId: IDS.sitePage,
+            normalizedUrl: "https://example.test/guides/onboarding/",
+          },
+          sourceOccurrences: [
+            {
+              sourceKind: "manual",
+            },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
+      ],
+      [],
+    ).visibleItems;
+
+    expect(
+      filterGrowthMapKeywordEntries(items, {
+        search: "playbook",
+        sourceKind: "all",
+      }).map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA, IDS.keywordB]);
+    expect(
+      filterGrowthMapKeywordEntries(items, {
+        search: "commercial",
+        sourceKind: "gsc_top_query",
+      }).map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA]);
+    for (const search of [
+      "gb",
+      "en-gb",
+      "awareness",
+      "/guides/onboarding",
+    ]) {
+      expect(
+        filterGrowthMapKeywordEntries(items, {
+          search,
+          sourceKind: "all",
+        }).map((entry) => entry.item.keywordId),
+      ).toEqual([IDS.keywordB]);
+    }
+    expect(items.map((entry) => entry.item.keywordId)).toEqual([
+      IDS.keywordA,
+      IDS.keywordB,
+    ]);
+  });
+
+  it("treats empty Keyword relation search as pass-through", () => {
+    const items = buildKeywordRelationPageProjection(
+      [keywordItem(IDS.keywordA, "Customer onboarding")],
+      [],
+    ).visibleItems;
+
+    expect(
+      filterGrowthMapKeywordEntries(items, {
+        search: "   ",
+        sourceKind: "all",
+      }).map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA]);
+  });
+
+  it("filters Competitor Library rows by name/domain search and reviewStatus", () => {
+    const items = [
+      competitorItem(IDS.competitorA, "alpha.example", {
+        name: "Acme Labs",
+        reviewStatus: "approved",
+      }),
+      competitorItem(IDS.competitorB, "beta.example", {
+        name: "Beta Research",
+        reviewStatus: "candidate",
+      }),
+    ] as const;
+
+    expect(
+      filterGrowthMapCompetitorItems(items, {
+        search: "acme",
+        reviewStatus: "all",
+      }).map((item) => item.competitorId),
+    ).toEqual([IDS.competitorA]);
+    expect(
+      filterGrowthMapCompetitorItems(items, {
+        search: "EXAMPLE",
+        reviewStatus: "candidate",
+      }).map((item) => item.competitorId),
+    ).toEqual([IDS.competitorB]);
+    expect(items.map((item) => item.competitorId)).toEqual([
+      IDS.competitorA,
+      IDS.competitorB,
+    ]);
+  });
+
+  it("treats empty Competitor Library search and all status as pass-through", () => {
+    const items = [
+      competitorItem(IDS.competitorA, "alpha.example"),
+      competitorItem(IDS.competitorB, "beta.example"),
+    ] as const;
+
+    expect(
+      filterGrowthMapCompetitorItems(items, {
+        search: "",
+        reviewStatus: "all",
+      }).map((item) => item.competitorId),
+    ).toEqual([IDS.competitorA, IDS.competitorB]);
+  });
+
   it("collapses only an active supporting Keyword and keeps its name under the primary row", () => {
     const projection = buildKeywordRelationPageProjection(
       [
-        keywordItem(IDS.keywordA, "Customer onboarding"),
+        keywordItem(IDS.keywordA, "Customer onboarding", {
+          sourceOccurrences: [
+            { sourceKind: "csv_import" },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
         keywordItem(
           IDS.keywordB,
           "Customer onboarding automation",
+          {
+            sourceOccurrences: [
+              { sourceKind: "csv_import" },
+              { sourceKind: "manual" },
+              { sourceKind: "manual" },
+            ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+          },
         ),
-        keywordItem(IDS.keywordC, "Customer onboarding checklist"),
+        keywordItem(IDS.keywordC, "Customer onboarding checklist", {
+          sourceOccurrences: [
+            { sourceKind: "manual" },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
       ],
       [keywordRelation()],
     );
@@ -854,6 +1191,15 @@ describe("Growth Map view model", () => {
     expect(projection.collapsedSupportingKeywordIds).toEqual([
       IDS.keywordB,
     ]);
+    expect(projection.loadedSourceCounts).toEqual({
+      all: 3,
+      csv_import: 2,
+      dataforseo_ranked: 0,
+      gsc_top_query: 0,
+      interview_summary: 0,
+      user_review: 0,
+      manual: 2,
+    });
     expect(projection.visibleItems[0]).toMatchObject({
       relations: [{ relationId: IDS.relation }],
       supportingKeywords: [
@@ -1349,9 +1695,10 @@ describe("Growth Map view model", () => {
     expect(source).toContain(
       "useDecideGrowthMapKeywordRelation(projectId)",
     );
-    expect(source).toContain(
-      "entries={relationProjection.visibleItems}",
+    expect(source).toMatch(
+      /filterGrowthMapKeywordEntries\(relationProjection\.visibleItems,\s*\{\s*search: keywordSearch,\s*sourceKind: sourceFilter,/,
     );
+    expect(source).toContain("entries={filteredEntries}");
     expect(source).toContain('role="dialog"');
     expect(source).toContain('aria-modal="true"');
     expect(source).toContain(
@@ -1805,7 +2152,7 @@ describe("Growth Map view model", () => {
     );
   });
 
-  it("reads the current Keyword library while keeping published page evidence pinned", () => {
+  it("pins the Keyword library and published page evidence while keeping live governance review separate", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
       "utf8",
@@ -1817,8 +2164,8 @@ describe("Growth Map view model", () => {
     expect(source).toContain(
       "function KeywordLibraryPane({\n  projectId,\n  locationSearch,\n  navigation,\n  diagnosticRunId,",
     );
-    expect(source).toContain(
-      "const listQuery = useGrowthMapKeywords(projectId, {\n    cursor,\n    limit: 50,\n  });",
+    expect(source).toMatch(
+      /useGrowthMapKeywords\(projectId,\s*\{\s*cursor,\s*limit: 50,\s*diagnosticRunId,\s*\}\)/,
     );
     expect(source).toContain(
       "const reviewDetailQuery = useGrowthMapKeywordReviewDetail(",
@@ -1908,8 +2255,8 @@ describe("Growth Map view model", () => {
     expect(source).toContain(
       "const detailQuery = useGrowthMapUrlDetail(\n    projectId,\n    selectedSitePageId,\n    diagnosticRunId,",
     );
-    expect(source).toContain(
-      "const listQuery = useGrowthMapCompetitors(projectId, {\n    cursor,\n    limit: 50,\n  });",
+    expect(source).toMatch(
+      /useGrowthMapCompetitors\(projectId,\s*\{\s*cursor,\s*limit: 50,\s*diagnosticRunId,\s*\}\)/,
     );
     expect(source).toContain(
       "const detailQuery = useGrowthMapCompetitorReviewDetail(\n    projectId,\n    selectedCompetitorId,",

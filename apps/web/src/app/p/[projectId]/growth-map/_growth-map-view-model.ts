@@ -18,9 +18,11 @@ import type {
   GrowthMapKeywordRankProvider,
   GrowthMapKeywordRelation,
   GrowthMapKeywordTextMetric,
+  GrowthMapUrlPortfolioItem,
   GrowthMapUrlFinding,
   GrowthMapUrlIdentitySource,
   GrowthMapUrlMetricObservation,
+  GrowthMapCompetitorLibraryItem,
   InternalLinkMapCoverage,
   InternalLinkMapEdge,
   InternalLinkMapExecutionRef,
@@ -317,10 +319,145 @@ export interface KeywordRelationVisibleItem {
 export interface KeywordRelationPageProjection {
   readonly visibleItems: readonly KeywordRelationVisibleItem[];
   readonly collapsedSupportingKeywordIds: readonly string[];
+  /**
+   * Keyword identities in the loaded cursor range, counted once per source
+   * kind before duplicate-governance rows are folded from the visible list.
+   */
+  readonly loadedSourceCounts: Readonly<
+    Record<GrowthMapKeywordSourceFilter, number>
+  >;
   readonly relationsByKeywordId: ReadonlyMap<
     string,
     readonly GrowthMapKeywordRelation[]
   >;
+}
+
+export type GrowthMapUrlPageTypeFilter =
+  | "all"
+  | NonNullable<GrowthMapUrlPortfolioItem["pageType"]>;
+
+export type GrowthMapUrlPriorityFilter =
+  | "all"
+  | Extract<
+      GrowthMapUrlPortfolioItem["priority"],
+      { readonly availability: "available" }
+    >["value"];
+
+export interface GrowthMapUrlPageFilters {
+  readonly pageType: GrowthMapUrlPageTypeFilter;
+  readonly priority: GrowthMapUrlPriorityFilter;
+}
+
+export type GrowthMapKeywordSourceFilter =
+  | "all"
+  | GrowthMapKeywordLibraryItem["sourceOccurrences"][number]["sourceKind"];
+
+export const GROWTH_MAP_KEYWORD_SOURCE_KINDS = [
+  "csv_import",
+  "dataforseo_ranked",
+  "gsc_top_query",
+  "interview_summary",
+  "user_review",
+  "manual",
+] as const satisfies readonly Exclude<GrowthMapKeywordSourceFilter, "all">[];
+
+export interface KeywordRelationVisibleItemFilters {
+  readonly search: string;
+  readonly sourceKind: GrowthMapKeywordSourceFilter;
+}
+
+export type GrowthMapCompetitorStatusFilter =
+  | "all"
+  | GrowthMapCompetitorLibraryItem["reviewStatus"];
+
+export interface CompetitorLibraryItemFilters {
+  readonly search: string;
+  readonly reviewStatus: GrowthMapCompetitorStatusFilter;
+}
+
+function normalizeFilterText(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase();
+}
+
+function includesNormalizedText(
+  value: string | null | undefined,
+  search: string,
+): boolean {
+  return value !== null &&
+    value !== undefined &&
+    normalizeFilterText(value).includes(search);
+}
+
+export function filterGrowthMapUrlItems(
+  items: readonly GrowthMapUrlPortfolioItem[],
+  filters: GrowthMapUrlPageFilters,
+): readonly GrowthMapUrlPortfolioItem[] {
+  if (filters.pageType === "all" && filters.priority === "all") {
+    return items.filter(() => true);
+  }
+  return items.filter((item) => {
+    const pageTypeMatches =
+      filters.pageType === "all" || item.pageType === filters.pageType;
+    const priorityMatches =
+      filters.priority === "all" ||
+      (item.priority.availability === "available" &&
+        item.priority.value === filters.priority);
+    return pageTypeMatches && priorityMatches;
+  });
+}
+
+export function filterGrowthMapKeywordEntries(
+  items: readonly KeywordRelationVisibleItem[],
+  filters: KeywordRelationVisibleItemFilters,
+): readonly KeywordRelationVisibleItem[] {
+  const normalizedSearch = normalizeFilterText(filters.search);
+  const hasSearch = normalizedSearch.length > 0;
+  const filterBySourceKind = filters.sourceKind !== "all";
+  if (!hasSearch && !filterBySourceKind) {
+    return items.filter(() => true);
+  }
+  return items.filter(({ item }) => {
+    const searchMatches =
+      !hasSearch ||
+      includesNormalizedText(item.displayKeyword, normalizedSearch) ||
+      includesNormalizedText(item.marketCode, normalizedSearch) ||
+      includesNormalizedText(item.languageTag, normalizedSearch) ||
+      includesNormalizedText(item.cluster?.name, normalizedSearch) ||
+      includesNormalizedText(item.intent, normalizedSearch) ||
+      includesNormalizedText(item.buyerStage, normalizedSearch) ||
+      (item.mappedTarget.kind === "existing_page" &&
+        includesNormalizedText(
+          item.mappedTarget.normalizedUrl,
+          normalizedSearch,
+        ));
+    const sourceKindMatches =
+      !filterBySourceKind ||
+      item.sourceOccurrences.some(
+        (occurrence) => occurrence.sourceKind === filters.sourceKind,
+      );
+    return searchMatches && sourceKindMatches;
+  });
+}
+
+export function filterGrowthMapCompetitorItems(
+  items: readonly GrowthMapCompetitorLibraryItem[],
+  filters: CompetitorLibraryItemFilters,
+): readonly GrowthMapCompetitorLibraryItem[] {
+  const normalizedSearch = normalizeFilterText(filters.search);
+  const hasSearch = normalizedSearch.length > 0;
+  const filterByReviewStatus = filters.reviewStatus !== "all";
+  if (!hasSearch && !filterByReviewStatus) {
+    return items.filter(() => true);
+  }
+  return items.filter((item) => {
+    const searchMatches =
+      !hasSearch ||
+      includesNormalizedText(item.name, normalizedSearch) ||
+      includesNormalizedText(item.domain, normalizedSearch);
+    const reviewStatusMatches =
+      !filterByReviewStatus || item.reviewStatus === filters.reviewStatus;
+    return searchMatches && reviewStatusMatches;
+  });
 }
 
 function relationParticipant(
@@ -348,6 +485,23 @@ export function buildKeywordRelationPageProjection(
   items: readonly GrowthMapKeywordLibraryItem[],
   relations: readonly GrowthMapKeywordRelation[],
 ): KeywordRelationPageProjection {
+  const loadedSourceCounts: Record<GrowthMapKeywordSourceFilter, number> = {
+    all: items.length,
+    csv_import: 0,
+    dataforseo_ranked: 0,
+    gsc_top_query: 0,
+    interview_summary: 0,
+    user_review: 0,
+    manual: 0,
+  };
+  for (const item of items) {
+    const sourceKinds = new Set(
+      item.sourceOccurrences.map((occurrence) => occurrence.sourceKind),
+    );
+    for (const sourceKind of sourceKinds) {
+      loadedSourceCounts[sourceKind] += 1;
+    }
+  }
   const itemIds = new Set(items.map((item) => item.keywordId));
   const relationsByKeywordId = new Map<
     string,
@@ -448,6 +602,7 @@ export function buildKeywordRelationPageProjection(
     collapsedSupportingKeywordIds: [
       ...collapsedSupportingKeywordIds,
     ],
+    loadedSourceCounts,
     relationsByKeywordId,
   };
 }

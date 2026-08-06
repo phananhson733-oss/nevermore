@@ -60,6 +60,16 @@ describe("Growth Map Keyword evidence sources", () => {
     expect(component).toContain("occurrence.sourceUrl");
   });
 
+  it("keeps intake-card counts pinned to the loaded range before duplicate rows are folded", () => {
+    expect(component).toContain("relationProjection.loadedSourceCounts.all");
+    expect(component).toContain(
+      "relationProjection.loadedSourceCounts[sourceKind]",
+    );
+    expect(component).not.toContain(
+      "count: relationProjection.visibleItems.length",
+    );
+  });
+
   it("does not project raw interview or review-person fields into the customer UI", () => {
     for (const forbidden of [
       "participantName",
