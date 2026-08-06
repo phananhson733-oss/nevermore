@@ -28,6 +28,13 @@ export const METRIC_CRAWL_SITEMAP = "crawl.sitemap.v1";
 export const METRIC_GSC_PAGE = "gsc.page.v1";
 export const METRIC_GA4_LANDING = "ga4.landing.v1";
 export const METRIC_CSV_KEYWORD_GAP = "csv.keyword_gap.v1";
+export const METRIC_DATAFORSEO_BACKLINK_SUMMARY =
+  "dataforseo.backlink_summary.v1";
+export const METRIC_DATAFORSEO_BACKLINK = "dataforseo.backlink.v1";
+export const METRIC_DATAFORSEO_REFERRING_DOMAIN =
+  "dataforseo.referring_domain.v1";
+export const METRIC_DATAFORSEO_BACKLINK_PAGE =
+  "dataforseo.backlink_page.v1";
 
 // ---------------------------------------------------------------------------
 // Crawl projections (produced by the crawl adapter's normalize()).
@@ -136,6 +143,53 @@ export interface CsvKeywordProjection {
   readonly competitorRank: number | null;
   readonly marketCode: string;
   readonly languageCode: string;
+}
+
+export interface DataForSeoBacklinkSummaryProjection {
+  readonly targetDomain: string;
+  readonly rank: number;
+  readonly backlinks: number;
+  readonly referringDomains: number;
+}
+
+export interface DataForSeoBacklinkVerificationProjection {
+  readonly status: "verified" | "absent" | "blocked" | "inconclusive";
+  readonly checkedAt: string;
+  readonly finalUrl: string | null;
+  readonly httpStatus: number | null;
+  readonly anchorText: string | null;
+  readonly rel: string | null;
+  readonly limitation: string | null;
+}
+
+export interface DataForSeoBacklinkProjection {
+  readonly sourceRef: string;
+  readonly referringDomain: string;
+  readonly sourceUrl: string;
+  readonly targetUrl: string;
+  readonly sourceRank: number;
+  readonly linkKind: "dofollow" | "nofollow" | "ugc" | "sponsored";
+  readonly anchorText: string | null;
+  readonly firstSeenAt: string | null;
+  readonly lastSeenAt: string | null;
+  readonly isNew: boolean;
+  readonly isLost: boolean;
+  readonly verification: DataForSeoBacklinkVerificationProjection | null;
+}
+
+export interface DataForSeoReferringDomainProjection {
+  readonly targetDomain: string;
+  readonly referringDomain: string;
+  readonly rank: number;
+  readonly backlinks: number;
+}
+
+export interface DataForSeoBacklinkPageProjection {
+  readonly sourceRef: string;
+  readonly targetUrl: string;
+  readonly title: string | null;
+  readonly backlinks: number;
+  readonly referringDomains: number;
 }
 
 // ---------------------------------------------------------------------------

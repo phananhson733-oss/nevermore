@@ -45,6 +45,7 @@ export type BacklinkSourceKind = z.infer<typeof BacklinkSourceKind>;
 export const BacklinkProvider = z.enum([
   "ahrefs",
   "moz",
+  "dataforseo",
   "manual_csv",
   "search_derived",
 ]);
@@ -125,7 +126,11 @@ export type BacklinkCoverage = z.infer<typeof BacklinkCoverage>;
 
 export const BacklinkAuthorityMetric = z
   .object({
-    kind: z.enum(["domain_rating", "domain_authority"]),
+    kind: z.enum([
+      "domain_rating",
+      "domain_authority",
+      "dataforseo_rank",
+    ]),
     value: z.number().finite().min(0).max(100),
   })
   .strict();
@@ -179,7 +184,9 @@ export const BacklinkSnapshotSource = z
     const providerImport = source.sourceKind === "provider_import";
     const providerMatchesSource =
       source.sourceKind === "provider_import"
-        ? source.provider === "ahrefs" || source.provider === "moz"
+        ? source.provider === "ahrefs" ||
+          source.provider === "moz" ||
+          source.provider === "dataforseo"
         : source.sourceKind === "manual_csv"
           ? source.provider === "manual_csv"
           : source.provider === "search_derived";
@@ -249,21 +256,31 @@ export const BacklinkSnapshotSource = z
           "Manual CSV and search-derived evidence must remain a partial observed subset",
       });
     }
-    if (
-      providerImport &&
-      source.coverage.availability === "available" &&
-      (source.authorityMetric === null ||
+    if (providerImport && source.coverage.availability === "available") {
+      if (
         (source.provider === "ahrefs" &&
-          source.authorityMetric.kind !== "domain_rating") ||
+          source.authorityMetric?.kind !== "domain_rating") ||
         (source.provider === "moz" &&
-          source.authorityMetric.kind !== "domain_authority"))
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["authorityMetric"],
-        message:
-          "Available Ahrefs and Moz snapshots require their matching DR or DA authority metric",
-      });
+          source.authorityMetric?.kind !== "domain_authority")
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["authorityMetric"],
+          message:
+            "Available Ahrefs and Moz snapshots require their matching DR or DA authority metric",
+        });
+      }
+      if (
+        source.provider === "dataforseo" &&
+        source.authorityMetric?.kind !== "dataforseo_rank"
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["authorityMetric"],
+          message:
+            "DataForSEO snapshots require the dataforseo_rank authority metric and cannot be presented as DR or DA",
+        });
+      }
     }
     if (
       (source.sourceKind === "manual_csv") !==
@@ -335,7 +352,7 @@ export type BacklinkPageItem = z.infer<typeof BacklinkPageItem>;
 export const BacklinkComparison = z
   .object({
     state: z.enum(["comparable", "insufficient", "unavailable"]),
-    provider: z.enum(["ahrefs", "moz"]).nullable(),
+    provider: z.enum(["ahrefs", "moz", "dataforseo"]).nullable(),
     primarySiteSnapshotId: Uuid.nullable(),
     competitorSnapshotIds: z
       .array(Uuid)
@@ -417,7 +434,7 @@ export const GrowthMapBacklinkReadModel = z
     generatedAt: IsoDateTime,
     coverage: BacklinkCoverage,
     // One latest immutable row per subject/source/provider. A project may keep
-    // all four honest source scopes for the primary site and approved
+    // all honest source scopes for the primary site and approved
     // competitors even though only one source is selected for comparison.
     sources: z.array(BacklinkSnapshotSource).max(204),
     primarySite: BacklinkSnapshotSource.nullable(),

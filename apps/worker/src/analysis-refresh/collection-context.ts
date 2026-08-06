@@ -5,7 +5,9 @@ import {
 } from "@sf/db";
 import { ProductProfileDraft, type ProductProfileDraft as ProductProfileDraftValue } from "@sf/contracts";
 import {
+  createDataForSeoBacklinksScope,
   createDataForSeoSearchLandscapeV2Scope,
+  DATAFORSEO_BACKLINKS_OPERATION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
   resolveDataForSeoMarket,
   type DataForSeoSearchLandscapeSeed,
@@ -44,6 +46,11 @@ export const ANALYSIS_REFRESH_COLLECTION_CONFIG = {
     operation: DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
     queue: "collect.dataforseo",
   },
+  dataforseo_backlinks: {
+    provider: "dataforseo",
+    operation: DATAFORSEO_BACKLINKS_OPERATION,
+    queue: "collect.dataforseo",
+  },
 } as const;
 
 export interface DataForSeoConnectionConfig {
@@ -54,6 +61,14 @@ export interface DataForSeoConnectionConfig {
   readonly maxKeywords: number;
   readonly maxCompetitors: number;
   readonly maxSerpCompetitors: number;
+}
+
+export interface DataForSeoBacklinksConnectionConfig {
+  readonly target: string;
+  readonly maxBacklinks: number;
+  readonly maxReferringDomains: number;
+  readonly maxBacklinkPages: number;
+  readonly maxSourceVerifications: number;
 }
 
 interface DataForSeoSeedProfile {
@@ -260,6 +275,30 @@ export function dataForSeoSearchLandscapeScopeForSite(
   }
 }
 
+/**
+ * Backlink index collection needs only the canonical primary host. Provider
+ * semantics and all bounded caps are frozen by the shared sources contract.
+ */
+export function dataForSeoBacklinksScopeForSite(
+  site: Pick<SiteRow, "host">,
+  maxBacklinks: number,
+  maxReferringDomains: number,
+  maxBacklinkPages: number,
+  maxSourceVerifications: number,
+): ReturnType<typeof createDataForSeoBacklinksScope> | null {
+  try {
+    return createDataForSeoBacklinksScope({
+      target: site.host,
+      maxBacklinks,
+      maxReferringDomains,
+      maxBacklinkPages,
+      maxSourceVerifications,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function dataForSeoConnectionConfig(
   scope: DataForSeoSearchLandscapeV2Scope,
 ): DataForSeoConnectionConfig {
@@ -288,4 +327,22 @@ export function dataForSeoLimitation(
   config: DataForSeoConnectionConfig,
 ): string {
   return `DataForSEO search-landscape v2 observations for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}; ranked keywords at positions 1–100 are capped at ${config.maxKeywords}, organic competitor domains at ${config.maxCompetitors}, and the conditional SERP Competitors fallback at ${config.maxSerpCompetitors} per collection. GSC, Crawler, and Product Profile phrases remain declared seeds, never DataForSEO evidence. Every intersections value is an integer keyword-intersection count, not a percentage; no competitor name or business relationship is inferred.`;
+}
+
+export function dataForSeoBacklinksConnectionConfig(
+  scope: ReturnType<typeof createDataForSeoBacklinksScope>,
+): DataForSeoBacklinksConnectionConfig {
+  return {
+    target: scope.target,
+    maxBacklinks: scope.maxBacklinks,
+    maxReferringDomains: scope.maxReferringDomains,
+    maxBacklinkPages: scope.maxBacklinkPages,
+    maxSourceVerifications: scope.maxSourceVerifications,
+  };
+}
+
+export function dataForSeoBacklinksLimitation(
+  config: DataForSeoBacklinksConnectionConfig,
+): string {
+  return `DataForSEO live backlink-index observations for ${config.target}; backlink rows are capped at ${config.maxBacklinks}, referring domains at ${config.maxReferringDomains}, linked target pages at ${config.maxBacklinkPages}, and SSRF-safe source-page verification at ${config.maxSourceVerifications} pages per collection. Provider index facts and crawler verification remain separately identified evidence.`;
 }

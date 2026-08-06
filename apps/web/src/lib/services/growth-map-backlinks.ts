@@ -85,6 +85,21 @@ type BacklinkWorkspaceScope = WorkspaceScope & {
   readonly uiLocale: UiLocale;
 };
 
+function providerLabel(provider: BacklinkSnapshotSource["provider"]): string {
+  switch (provider) {
+    case "ahrefs":
+      return "Ahrefs";
+    case "moz":
+      return "Moz";
+    case "dataforseo":
+      return "DataForSEO";
+    case "manual_csv":
+      return "Manual CSV";
+    case "search_derived":
+      return "Search-derived";
+  }
+}
+
 function corruptBacklinks(): never {
   throw new ProblemError(
     "DEPENDENCY_UNAVAILABLE",
@@ -149,7 +164,9 @@ function coverageFor(
   }
   if (
     row.source_kind !== "provider_import" ||
-    (row.provider !== "ahrefs" && row.provider !== "moz") ||
+    (row.provider !== "ahrefs" &&
+      row.provider !== "moz" &&
+      row.provider !== "dataforseo") ||
     row.index_scope !== "unavailable" ||
     row.limitation === null ||
     row.total_backlinks !== null ||
@@ -165,9 +182,7 @@ function coverageFor(
     availability: "unavailable",
     indexScope: "unavailable",
     limitations: [
-      copy.providerUnavailable(
-        row.provider === "ahrefs" ? "Ahrefs" : "Moz",
-      ),
+      copy.providerUnavailable(providerLabel(row.provider)),
     ],
   };
 }
@@ -212,7 +227,9 @@ function authorityMetric(
     (row.provider === "ahrefs" &&
       row.authority_metric_kind !== "domain_rating") ||
     (row.provider === "moz" &&
-      row.authority_metric_kind !== "domain_authority")
+      row.authority_metric_kind !== "domain_authority") ||
+    (row.provider === "dataforseo" &&
+      row.authority_metric_kind !== "dataforseo_rank")
   ) {
     return corruptBacklinks();
   }
@@ -229,7 +246,8 @@ function sourceProjection(
   if (
     (row.source_kind === "provider_import" &&
       row.provider !== "ahrefs" &&
-      row.provider !== "moz") ||
+      row.provider !== "moz" &&
+      row.provider !== "dataforseo") ||
     (row.source_kind === "manual_csv" &&
       (row.provider !== "manual_csv" ||
         row.import_preview_id === null)) ||
@@ -273,7 +291,9 @@ function comparableCompetitors(
   if (
     primary.sourceKind !== "provider_import" ||
     primary.coverage.availability !== "available" ||
-    (primary.provider !== "ahrefs" && primary.provider !== "moz")
+    (primary.provider !== "ahrefs" &&
+      primary.provider !== "moz" &&
+      primary.provider !== "dataforseo")
   ) {
     return [];
   }
@@ -389,7 +409,9 @@ function referringDomainProjection(
           ? "domain_rating"
           : source.provider === "moz"
             ? "domain_authority"
-            : null;
+            : source.provider === "dataforseo"
+              ? "dataforseo_rank"
+              : null;
       if (
         scoreRows.some(
           (row) =>
@@ -474,7 +496,7 @@ function siteGapOpportunity(
     return null;
   }
   const roundedBenchmark = Math.round(benchmark);
-  const provider = primary.provider === "ahrefs" ? "Ahrefs" : "Moz";
+  const provider = providerLabel(primary.provider);
   return {
     opportunityKey: `backlink:site-gap:${primary.snapshotId}:${competitors
       .map((item) => item.snapshotId)
@@ -592,7 +614,10 @@ async function readBacklinksInSnapshot(
         }
       : {
           state: "comparable" as const,
-          provider: primary.provider as "ahrefs" | "moz",
+          provider: primary.provider as
+            | "ahrefs"
+            | "moz"
+            | "dataforseo",
           primarySiteSnapshotId: primary.snapshotId,
           competitorSnapshotIds: comparable
             .map((source) => source.snapshotId)
@@ -613,9 +638,7 @@ async function readBacklinksInSnapshot(
       kind: "page_without_provider_backlinks",
       severity: "medium",
       title: copy.pageGapTitle,
-      summary: copy.pageGapSummary(
-        primary.provider === "ahrefs" ? "Ahrefs" : "Moz",
-      ),
+      summary: copy.pageGapSummary(providerLabel(primary.provider)),
       sitePageId: page.sitePageId,
       evidenceSnapshotIds: [primary.snapshotId],
       executionRef: null,

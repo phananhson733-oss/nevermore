@@ -139,8 +139,8 @@ describe("ordered migration progress", () => {
 
       // Simulate a database that already received the original, immediately
       // validated 0042 before this release split. The forward-only runner must
-      // skip the edited 0042 body, safely replay only 0043, and retain a fully
-      // validated compatibility check.
+      // skip the edited 0042 body, safely replay 0043 and every later migration,
+      // and retain a fully validated compatibility check.
       await client.query(`
         CREATE OR REPLACE VIEW app.schema_migration_version AS
           SELECT '0042_contextual_indexability_opportunities'::text
@@ -148,6 +148,7 @@ describe("ordered migration progress", () => {
       `);
       await expect(runMigrations(DATABASE_URL)).resolves.toEqual([
         "0043_validate_contextual_diagnostic_rule_set.sql",
+        "0044_dataforseo_backlinks.sql",
       ]);
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,

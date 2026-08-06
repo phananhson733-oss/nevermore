@@ -85,11 +85,14 @@ export type {
   RunStatus,
 } from "./repositories/async-runs.ts";
 export {
+  ANALYSIS_REFRESH_LEGACY_PLAN_STEPS,
+  ANALYSIS_REFRESH_LEGACY_PLAN_VERSION,
   ANALYSIS_REFRESH_PLAN_STEPS,
   ANALYSIS_REFRESH_PLAN_VERSION,
   analysisRefreshPlanHash,
   analysisRefreshPlanManifest,
   AnalysisRefreshRunsRepository,
+  legacyAnalysisRefreshPlanManifest,
 } from "./repositories/analysis-refresh-runs.ts";
 export type {
   AnalysisRefreshPlanManifest,
@@ -226,6 +229,7 @@ export type {
 } from "./repositories/internal-link-map.ts";
 export * from "./repositories/content-decay-monitor.ts";
 export * from "./repositories/backlink-growth-map.ts";
+export * from "./repositories/backlink-growth-map-write.ts";
 export {
   KeywordOccurrencesRepository,
   MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL,

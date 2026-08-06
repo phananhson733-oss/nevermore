@@ -175,7 +175,7 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.equal(
     lock.migrationHead,
-    "0043_validate_contextual_diagnostic_rule_set",
+    "0044_dataforseo_backlinks",
   );
 
   assert.match(readme, /状态：\*\*active\*\*/);
@@ -209,7 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
-  assert.equal(migrations.length, 43, "v0.4 must freeze 43 migrations");
+  assert.equal(migrations.length, 44, "v0.4 must freeze 44 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),
@@ -302,6 +302,48 @@ export function verifyAuthoritySourceSet({
     authorityOpenApi,
     /DataForSEO Search\s+Landscape \(DFS\)/,
     "OpenAPI must identify DFS Search Landscape as a server-owned Analysis Refresh step",
+  );
+  assert.match(
+    authorityOpenApi,
+    /analysis-refresh\.plan\.v2[\s\S]*dataforseo_backlinks[\s\S]*Growth Audit/,
+    "new Analysis Refresh parents must freeze the six-step v2 plan",
+  );
+  assert.match(
+    authorityOpenApi,
+    /default-off rollout gate[\s\S]*500\/1000 backlink rows[\s\S]*20\/20 selective source-page verifications/,
+    "DataForSEO Backlinks must retain a default-off bounded rollout",
+  );
+  assert.match(
+    authorityOpenApi,
+    /analysis-refresh\.plan\.v1[\s\S]*readable and[\s\S]*resumable/,
+    "legacy five-step Analysis Refresh v1 parents must remain readable and resumable",
+  );
+  const backlinkAuthorityMetric = componentBlock(
+    authorityOpenApi,
+    "BacklinkAuthorityMetric",
+  );
+  assert.match(
+    backlinkAuthorityMetric,
+    /enum:\s*\[domain_rating,\s*domain_authority,\s*dataforseo_rank\]/,
+    "Backlink authority scales must include the distinct DataForSEO Rank metric",
+  );
+  const backlinkSnapshotSource = componentBlock(
+    authorityOpenApi,
+    "BacklinkSnapshotSource",
+  );
+  assert.match(
+    backlinkSnapshotSource,
+    /provider:[\s\S]*enum:\s*\[ahrefs,\s*moz,\s*dataforseo,\s*manual_csv,\s*search_derived\]/,
+    "Backlink provider imports must include DataForSEO",
+  );
+  const backlinkComparison = componentBlock(
+    authorityOpenApi,
+    "BacklinkComparison",
+  );
+  assert.match(
+    backlinkComparison,
+    /provider:\s*\{\s*type:\s*\[string,\s*'null'\],\s*enum:\s*\[ahrefs,\s*moz,\s*dataforseo,\s*null\]\s*\}/,
+    "Backlink comparisons must allow like-for-like DataForSEO snapshots",
   );
   const sourcesRead = operationBlock(
     authorityOpenApi,

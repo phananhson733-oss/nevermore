@@ -211,6 +211,69 @@ describe("GrowthMapReadRepository", () => {
     await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
   });
 
+  it("recognizes exact five-step v1 and six-step v2 publication lineage", async () => {
+    const { db, repo } = repository();
+    db.enqueue([]);
+
+    await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
+
+    const query = db.lastSql();
+    expect(query.sql).toContain("analysis-refresh.plan.v1");
+    expect(query.sql).toContain("analysis-refresh.plan.v2");
+    expect(query.sql).toContain(
+      "collection_step.step_key = 'dataforseo_backlinks'",
+    );
+    expect(query.sql).toContain(
+      'result_snapshot.provider = case collection_step.step_key',
+    );
+    expect(query.sql).toContain(
+      "when 'dataforseo_backlinks' then 'dataforseo'",
+    );
+    expect(query.sql).toContain('inner join "app"."collection_runs"');
+    expect(query.sql).toContain(
+      "collection_run.operation = 'search_landscape'",
+    );
+    expect(query.sql).toContain(
+      "collection_run.method_version = 'dataforseo.search_landscape.v1'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.dataset_key = 'dataforseo.search_landscape.v1'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.schema_version = 'dataforseo.search_landscape.v1'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.method_version = 'dataforseo.search_landscape.v1'",
+    );
+    expect(query.sql).toContain(
+      "collection_run.method_version = 'dataforseo.search_landscape.v2'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.dataset_key = 'dataforseo.search_landscape.v2'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.schema_version = 'dataforseo.search_landscape.v2'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.method_version = 'dataforseo.search_landscape.v2'",
+    );
+    expect(query.sql).toMatch(
+      /collection_run\.method_version = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.dataset_key = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.schema_version = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.method_version = 'dataforseo\.search_landscape\.v1'\s+\)\s+or\s+\(\s+collection_run\.method_version = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.dataset_key = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.schema_version = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.method_version = 'dataforseo\.search_landscape\.v2'/u,
+    );
+    expect(query.sql).toContain(
+      "collection_run.operation = 'backlinks'",
+    );
+    expect(query.sql).toContain(
+      "collection_run.method_version = 'dataforseo.backlinks.v1'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.dataset_key = 'dataforseo.backlinks.v1'",
+    );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_steps"."ordinal" = 6',
+    );
+  });
+
   it("admits only known current or legacy projections for an exact diagnostic pin", async () => {
     const { db, repo } = repository();
     const row = {

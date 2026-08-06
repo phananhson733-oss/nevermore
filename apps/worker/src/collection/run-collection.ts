@@ -25,9 +25,11 @@ import {
   createCrawlAdapter,
   createDefaultCrawlFetcher,
   createDataForSeoAdapter,
+  createDataForSeoBacklinksAdapter,
   createDataForSeoSearchLandscapeAdapter,
   createDataForSeoSearchLandscapeV2Adapter,
   dataForSeoParamsFromCollectionScope,
+  dataForSeoBacklinksSnapshotSummary,
   dataForSeoSearchLandscapeSnapshotSummary,
   dataForSeoSearchLandscapeV2SnapshotSummary,
   dataForSeoSnapshotSummary,
@@ -43,6 +45,7 @@ import {
   HttpGscClient,
   HttpDataForSeoClient,
   parseDataForSeoCollectionScope,
+  parseDataForSeoBacklinksScope,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
   InvalidBlobObjectKeyError,
@@ -54,6 +57,9 @@ import {
   CRAWL_METHOD_VERSION,
   DATAFORSEO_DATASET_KEY,
   DATAFORSEO_METHOD_VERSION,
+  DATAFORSEO_BACKLINKS_DATASET_KEY,
+  DATAFORSEO_BACKLINKS_METHOD_VERSION,
+  DATAFORSEO_BACKLINKS_OPERATION,
   DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
@@ -67,6 +73,7 @@ import {
   type CrawlSiteLanguageSummary,
   type CsvColumnMapping,
   type DataForSeoCollectionScope,
+  type DataForSeoBacklinksScope,
   type DataForSeoSearchLandscapeScope,
   type DataForSeoSearchLandscapeV2Scope,
   type GoogleTokenFetch,
@@ -106,8 +113,8 @@ interface CollectionSnapshotIdentity {
 }
 
 /**
- * DataForSEO has two intentionally supported identities. Reject every mixed
- * operation/method pair before constructing a credential-bound provider client.
+ * DataForSEO has an explicit operation/method allowlist. Reject every mixed
+ * pair before constructing a credential-bound provider client.
  */
 export function collectionSnapshotIdentity(
   run: Pick<CollectionRunRow, "provider" | "operation" | "method_version">,
@@ -138,6 +145,15 @@ export function collectionSnapshotIdentity(
       return {
         datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
         schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+      };
+    }
+    if (
+      run.operation === DATAFORSEO_BACKLINKS_OPERATION &&
+      run.method_version === DATAFORSEO_BACKLINKS_METHOD_VERSION
+    ) {
+      return {
+        datasetKey: DATAFORSEO_BACKLINKS_DATASET_KEY,
+        schemaVersion: DATAFORSEO_BACKLINKS_METHOD_VERSION,
       };
     }
     throw new SourceError(
@@ -999,30 +1015,46 @@ async function collectByProvider(
           "DataForSEO collection is disabled on this worker.",
         );
       }
+      const isBacklinks = run.operation === DATAFORSEO_BACKLINKS_OPERATION;
+      if (isBacklinks && !runtime.backlinksEnabled) {
+        throw new SourceError(
+          "FEATURE_DISABLED",
+          "DataForSEO Backlinks collection is disabled on this worker.",
+        );
+      }
       const isSearchLandscape =
         run.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION;
       const isSearchLandscapeV2 =
         isSearchLandscape &&
         run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
-      const collectionScope = isSearchLandscapeV2
-        ? resolveFrozenDataForSeoSearchLandscapeV2Scope(
-            run,
-            acceptedRequestPayload,
-            runtime.maxKeywords,
-            runtime.maxCompetitors,
-          )
-        : isSearchLandscape
-          ? resolveFrozenDataForSeoSearchLandscapeScope(
-            run,
-            acceptedRequestPayload,
-            runtime.maxKeywords,
-            runtime.maxCompetitors,
-          )
-          : resolveFrozenDataForSeoCollectionScope(
+      const collectionScope = isBacklinks
+        ? resolveFrozenDataForSeoBacklinksScope(run, acceptedRequestPayload, {
+            maxBacklinks: runtime.maxBacklinks ?? Number.NaN,
+            maxReferringDomains:
+              runtime.maxReferringDomains ?? Number.NaN,
+            maxBacklinkPages: runtime.maxBacklinkPages ?? Number.NaN,
+            maxSourceVerifications:
+              runtime.maxSourceVerifications ?? Number.NaN,
+          })
+        : isSearchLandscapeV2
+          ? resolveFrozenDataForSeoSearchLandscapeV2Scope(
               run,
               acceptedRequestPayload,
               runtime.maxKeywords,
-            );
+              runtime.maxCompetitors,
+            )
+          : isSearchLandscape
+            ? resolveFrozenDataForSeoSearchLandscapeScope(
+                run,
+                acceptedRequestPayload,
+                runtime.maxKeywords,
+                runtime.maxCompetitors,
+              )
+            : resolveFrozenDataForSeoCollectionScope(
+                run,
+                acceptedRequestPayload,
+                runtime.maxKeywords,
+              );
       if (!runtime.login || !runtime.password) {
         throw new SourceError(
           "AUTH_REQUIRED",
@@ -1038,6 +1070,25 @@ async function collectByProvider(
         password: runtime.password,
         fetchImpl: providerFetch,
       });
+      if (isBacklinks) {
+        const backlinksScope = collectionScope as DataForSeoBacklinksScope;
+        const adapter = createDataForSeoBacklinksAdapter(client);
+        const result = await adapter.collect(backlinksScope, adapterCtx);
+        const observations = await drain(
+          adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+          adapterCtx.signal,
+        );
+        return {
+          outcome: {
+            ...toOutcome(result),
+            summary: dataForSeoBacklinksSnapshotSummary(
+              backlinksScope,
+              result.capturedAt,
+            ) as unknown as Record<string, unknown>,
+          },
+          observations,
+        };
+      }
       if (isSearchLandscapeV2) {
         const searchLandscapeScope =
           collectionScope as DataForSeoSearchLandscapeV2Scope;
@@ -1255,6 +1306,80 @@ export function resolveFrozenDataForSeoCollectionScope(
     throw new SourceError(
       "INVALID_CONFIGURATION",
       "The frozen DataForSEO scope does not match the accepted command.",
+    );
+  }
+  return collectionScope;
+}
+
+/**
+ * Validate the command-time Backlinks scope and each independent runtime cap.
+ * The target and limits are immutable queue inputs; Site/source config changes
+ * after acceptance cannot redirect or enlarge the provider request.
+ */
+export function resolveFrozenDataForSeoBacklinksScope(
+  run: Pick<
+    CollectionRunRow,
+    | "provider"
+    | "operation"
+    | "method_version"
+    | "site_id"
+    | "source_connection_id"
+    | "parameters_hash"
+  >,
+  requestPayload: Record<string, unknown>,
+  workerCaps: {
+    readonly maxBacklinks: number;
+    readonly maxReferringDomains: number;
+    readonly maxBacklinkPages: number;
+    readonly maxSourceVerifications: number;
+  },
+): DataForSeoBacklinksScope {
+  if (
+    run.provider !== "dataforseo" ||
+    run.operation !== DATAFORSEO_BACKLINKS_OPERATION ||
+    run.method_version !== DATAFORSEO_BACKLINKS_METHOD_VERSION ||
+    requestPayload["provider"] !== run.provider ||
+    requestPayload["operation"] !== run.operation ||
+    requestPayload["sourceConnectionId"] !== run.source_connection_id
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO Backlinks command identity is incomplete or inconsistent.",
+    );
+  }
+  const collectionScope = parseDataForSeoBacklinksScope(
+    requestPayload["collectionScope"],
+  );
+  if (
+    !Number.isSafeInteger(workerCaps.maxBacklinks) ||
+    workerCaps.maxBacklinks < 1 ||
+    collectionScope.maxBacklinks > workerCaps.maxBacklinks ||
+    !Number.isSafeInteger(workerCaps.maxReferringDomains) ||
+    workerCaps.maxReferringDomains < 1 ||
+    collectionScope.maxReferringDomains > workerCaps.maxReferringDomains ||
+    !Number.isSafeInteger(workerCaps.maxBacklinkPages) ||
+    workerCaps.maxBacklinkPages < 1 ||
+    collectionScope.maxBacklinkPages > workerCaps.maxBacklinkPages ||
+    !Number.isSafeInteger(workerCaps.maxSourceVerifications) ||
+    workerCaps.maxSourceVerifications < 0 ||
+    collectionScope.maxSourceVerifications >
+      workerCaps.maxSourceVerifications
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO Backlinks limits exceed the current worker caps.",
+    );
+  }
+  const expectedParametersHash = contentHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    collectionScope: collectionScope as unknown as CanonicalValue,
+  });
+  if (run.parameters_hash !== expectedParametersHash) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO Backlinks scope does not match the accepted command.",
     );
   }
   return collectionScope;

@@ -7,6 +7,8 @@ const ORIGINAL_DATAFORSEO_MAX_KEYWORDS =
   process.env["DATAFORSEO_MAX_KEYWORDS"];
 const ORIGINAL_DATAFORSEO_MAX_COMPETITORS =
   process.env["DATAFORSEO_MAX_COMPETITORS"];
+const ORIGINAL_DATAFORSEO_BACKLINKS_ENABLED =
+  process.env["DATAFORSEO_BACKLINKS_ENABLED"];
 
 process.env["APP_ORIGIN"] ??= "http://localhost:3000";
 process.env["SUPABASE_URL"] ??= "http://localhost:54321";
@@ -26,6 +28,7 @@ process.env["DATAFORSEO_LOGIN"] = "offline-dataforseo-login";
 process.env["DATAFORSEO_PASSWORD"] = "offline-dataforseo-password";
 process.env["DATAFORSEO_MAX_KEYWORDS"] = "50";
 process.env["DATAFORSEO_MAX_COMPETITORS"] = "25";
+process.env["DATAFORSEO_BACKLINKS_ENABLED"] = "false";
 
 import {
   afterAll,
@@ -157,6 +160,10 @@ describeDb("Analysis Refresh real vertical chain", () => {
       "DATAFORSEO_MAX_COMPETITORS",
       ORIGINAL_DATAFORSEO_MAX_COMPETITORS,
     );
+    restoreEnv(
+      "DATAFORSEO_BACKLINKS_ENABLED",
+      ORIGINAL_DATAFORSEO_BACKLINKS_ENABLED,
+    );
   });
 
   it("runs the server-owned Crawl → GSC → GA4 → composite DFS → Growth Audit plan and publishes one coherent generation", async () => {
@@ -175,6 +182,17 @@ describeDb("Analysis Refresh real vertical chain", () => {
       projectId: fixture.scope.projectId,
       contractVersion: CONTRACT_VERSION,
     };
+    await expect(
+      stepByKey(
+        handle,
+        fixture.scope,
+        accepted.run.id,
+        "dataforseo_backlinks",
+      ),
+    ).resolves.toMatchObject({
+      state: "skipped",
+      skip_reason: "feature_disabled",
+    });
 
     for (const stepKey of ["crawl", "gsc", "ga4", "dataforseo"] as const) {
       await runAnalysisRefresh(context, parentJob, {
@@ -1079,7 +1097,13 @@ async function stepByKey(
   handle: DbHandle,
   scope: ProjectScope,
   runId: string,
-  stepKey: "crawl" | "gsc" | "ga4" | "dataforseo" | "growth_audit",
+  stepKey:
+    | "crawl"
+    | "gsc"
+    | "ga4"
+    | "dataforseo"
+    | "dataforseo_backlinks"
+    | "growth_audit",
 ) {
   const steps = await new AnalysisRefreshRunsRepository(handle.db).listSteps(
     scope,

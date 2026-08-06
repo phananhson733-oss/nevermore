@@ -1,6 +1,6 @@
 # Nevermore / GenGrowth Progress
 
-Updated: **2026-08-05**
+Updated: **2026-08-06**
 
 This is the current authority and verification handoff for the Nevermore
 repository and its customer-facing GenGrowth product. It replaces the retired
@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0043_validate_contextual_diagnostic_rule_set.sql` (**43 ordered migrations**)
+  `0044_dataforseo_backlinks.sql` (**44 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
@@ -114,15 +114,24 @@ preview authority and immutable measurement windows.
 Analysis Refresh and published-generation reads are part of this same
 four-module surface:
 
-- `createAnalysisRefreshRun` owns the fixed Crawl → connected GSC → connected
-  GA4 → DataForSEO Search Landscape (DFS) → Growth Audit plan. The public
-  collection command remains exactly `crawl|gsc|ga4`; it cannot accept DFS
-  target, market, language, limits, credentials, or provider queries.
+- New `createAnalysisRefreshRun` parents own the fixed six-step
+  `analysis-refresh.plan.v2`: Crawl → connected GSC → connected GA4 →
+  DataForSEO Search Landscape (DFS) → `dataforseo_backlinks` → Growth Audit.
+  Historical five-step v1 parents remain exact and resumable. The public
+  collection command remains exactly `crawl|gsc|ga4`; it cannot accept
+  DFS/Backlinks target, market, language, limits, credentials, or provider
+  queries.
 - DFS v2 runs frozen ranked-keywords and competitors-domain requests at
   positions/max-rank 1–100. Only when retained domain overlap is empty, it uses
   frozen GSC/Crawl/Product Profile seeds for at most one paid SERP Competitors
   fallback, then atomically persists one `dataforseo.search_landscape.v2`
   Snapshot. Partial provider success is not a published Search Landscape.
+- DataForSEO Backlinks remains separately default-off and cost-capped. When
+  explicitly enabled on both Web and Worker, it writes one
+  `dataforseo.backlinks.v1` Snapshot, exposes only `dataforseo_rank` on its own
+  authority scale, and selectively verifies at most the frozen cap of
+  provider-discovered source pages through the SSRF-safe crawler transport.
+  Verification evidence never rewrites the provider fact or unavailable state.
 - URL/Keyword/Competitor list and detail GETs accept an optional canonical
   `diagnosticRunId` pin for one exact published generation. Keyword/Competitor
   lists without a pin show the current automatically projected candidate
@@ -280,7 +289,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0043`; historical proof through `0021` does not prove
+   migrations through `0044`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live
@@ -288,10 +297,11 @@ sanitized evidence to the exact candidate SHA:
 4. Complete deployed-origin Supabase Auth/session/callback proof.
 5. Exercise Owner-approved live GSC and GA4 accounts and retain sanitized,
    token-free evidence.
-6. Exercise one cost-capped hosted DataForSEO Search Landscape collection and
-   the selected production OpenAI endpoint without logging credentials,
-   provider bodies, or
-   customer/model content.
+6. Exercise one cost-capped hosted DataForSEO Search Landscape collection. Keep
+   Backlinks disabled until its separate entitlement/rollout is approved; then
+   exercise one bounded Backlinks collection and selective source verification.
+   Exercise the selected production OpenAI endpoint without logging credentials,
+   provider bodies, customer/model content, or fetched source-page bodies.
 7. Confirm private Storage permissions, object-count alerting, bounded retention
    sweeps, and signed-download behavior.
 8. Perform the production recovery exercise in `docs/RESTORE-DRILL.md`,

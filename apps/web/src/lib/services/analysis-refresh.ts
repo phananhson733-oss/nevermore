@@ -20,6 +20,7 @@ import {
   type CreateAnalysisRefreshRunRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
+import { MAX_DATAFORSEO_SOURCE_VERIFICATIONS } from "@sf/sources";
 import { getEnv } from "@/env";
 import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
@@ -59,6 +60,19 @@ export const AnalysisRefreshRequestPayloadSchema = z
         enabled: z.boolean(),
         maxKeywords: z.number().int().min(1).max(1_000),
         maxCompetitors: z.number().int().min(1).max(1_000),
+      })
+      .strict(),
+    dataForSeoBacklinks: z
+      .object({
+        enabled: z.boolean(),
+        maxBacklinks: z.number().int().min(1).max(1_000),
+        maxReferringDomains: z.number().int().min(1).max(1_000),
+        maxBacklinkPages: z.number().int().min(1).max(1_000),
+        maxSourceVerifications: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_DATAFORSEO_SOURCE_VERIFICATIONS),
       })
       .strict(),
   })
@@ -264,6 +278,13 @@ function frozenPayload(
     readonly maxKeywords: number;
     readonly maxCompetitors: number;
   },
+  dataForSeoBacklinks: {
+    readonly enabled: boolean;
+    readonly maxBacklinks: number;
+    readonly maxReferringDomains: number;
+    readonly maxBacklinkPages: number;
+    readonly maxSourceVerifications: number;
+  },
 ): AnalysisRefreshRequestPayload {
   return parseAnalysisRefreshRequestPayload({
     siteId: inputs.siteId,
@@ -283,13 +304,22 @@ function frozenPayload(
       maxKeywords: dataForSeo.maxKeywords,
       maxCompetitors: dataForSeo.maxCompetitors,
     },
+    dataForSeoBacklinks: {
+      enabled: dataForSeoBacklinks.enabled,
+      maxBacklinks: dataForSeoBacklinks.maxBacklinks,
+      maxReferringDomains: dataForSeoBacklinks.maxReferringDomains,
+      maxBacklinkPages: dataForSeoBacklinks.maxBacklinkPages,
+      maxSourceVerifications:
+        dataForSeoBacklinks.maxSourceVerifications,
+    },
   });
 }
 
 /**
  * Queue the durable server-owned Crawl → optional GSC → optional GA4 →
- * optional DataForSEO → Growth Audit plan. The accepted empty request has no
- * planning authority; all identifiers and feature policy are frozen here.
+ * optional DataForSEO Search Landscape → optional DataForSEO Backlinks →
+ * Growth Audit plan. The accepted empty request has no planning authority; all
+ * identifiers and feature policy are frozen here.
  */
 export async function createAnalysisRefreshRun(
   scope: WorkspaceScope,
@@ -338,6 +368,15 @@ export async function createAnalysisRefreshRun(
     maxKeywords: env.DATAFORSEO_MAX_KEYWORDS,
     maxCompetitors: env.DATAFORSEO_MAX_COMPETITORS,
   };
+  const dataForSeoBacklinks = {
+    enabled:
+      dataForSeo.enabled && env.DATAFORSEO_BACKLINKS_ENABLED === "true",
+    maxBacklinks: env.DATAFORSEO_MAX_BACKLINKS,
+    maxReferringDomains: env.DATAFORSEO_MAX_REFERRING_DOMAINS,
+    maxBacklinkPages: env.DATAFORSEO_MAX_BACKLINK_PAGES,
+    maxSourceVerifications:
+      env.DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS,
+  };
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
   const boss = await getBoss();
 
@@ -377,7 +416,11 @@ export async function createAnalysisRefreshRun(
           currentProject,
           true,
         );
-        const requestPayload = frozenPayload(inputs, dataForSeo);
+        const requestPayload = frozenPayload(
+          inputs,
+          dataForSeo,
+          dataForSeoBacklinks,
+        );
         const run = await new AsyncRunsRepository(tx).insertQueued({
           runId,
           workspaceId: scope.workspaceId,
@@ -400,7 +443,11 @@ export async function createAnalysisRefreshRun(
         });
 
         const skip = async (
-          step: "gsc" | "ga4" | "dataforseo",
+          step:
+            | "gsc"
+            | "ga4"
+            | "dataforseo"
+            | "dataforseo_backlinks",
           reason: string,
         ): Promise<void> => {
           const changed = await plans.skipStep(
@@ -421,6 +468,9 @@ export async function createAnalysisRefreshRun(
         }
         if (!dataForSeo.enabled) {
           await skip("dataforseo", "feature_disabled");
+        }
+        if (!dataForSeoBacklinks.enabled) {
+          await skip("dataforseo_backlinks", "feature_disabled");
         }
 
         await enqueueRunInTx(boss, tx, "refresh.analysis", {

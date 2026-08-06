@@ -39,7 +39,12 @@ export interface BacklinkAuthoritySnapshotRow {
     | "provider_import"
     | "manual_csv"
     | "search_derived";
-  readonly provider: "ahrefs" | "moz" | "manual_csv" | "search_derived";
+  readonly provider:
+    | "ahrefs"
+    | "moz"
+    | "dataforseo"
+    | "manual_csv"
+    | "search_derived";
   readonly captured_at: string;
   readonly availability: "available" | "partial" | "unavailable";
   readonly index_scope:
@@ -53,6 +58,7 @@ export interface BacklinkAuthoritySnapshotRow {
   readonly authority_metric_kind:
     | "domain_rating"
     | "domain_authority"
+    | "dataforseo_rank"
     | null;
   readonly authority_metric_value: number | null;
   readonly source_ref: string;
@@ -88,8 +94,25 @@ export interface BacklinkFactRow {
   readonly source_authority_metric_kind:
     | "domain_rating"
     | "domain_authority"
+    | "dataforseo_rank"
     | null;
   readonly source_authority_metric_value: number | null;
+  readonly anchor_text: string | null;
+  readonly first_seen_at: string | null;
+  readonly last_seen_at: string | null;
+  readonly is_new: boolean;
+  readonly is_lost: boolean;
+  readonly verification_status:
+    | "not_checked"
+    | "verified"
+    | "absent"
+    | "blocked"
+    | "inconclusive";
+  /** Populated only for a positively verified source-page link. */
+  readonly verified_at: string | null;
+  readonly verification_final_url: string | null;
+  readonly verification_http_status: number | null;
+  readonly verification_limitation: string | null;
 }
 
 function assertUuid(label: string, value: string): void {
@@ -175,7 +198,13 @@ function normalizeSnapshot(
     !["provider_import", "manual_csv", "search_derived"].includes(
       sourceKind,
     ) ||
-    !["ahrefs", "moz", "manual_csv", "search_derived"].includes(provider) ||
+    ![
+      "ahrefs",
+      "moz",
+      "dataforseo",
+      "manual_csv",
+      "search_derived",
+    ].includes(provider) ||
     !["available", "partial", "unavailable"].includes(availability) ||
     !["provider_index", "observed_subset", "unavailable"].includes(
       indexScope,
@@ -184,6 +213,7 @@ function normalizeSnapshot(
       null,
       "domain_rating",
       "domain_authority",
+      "dataforseo_rank",
     ].includes(authorityMetricKind) ||
     (importPreviewId !== null && !UUID.test(importPreviewId)) ||
     !SHA256.test(checksum) ||
@@ -443,7 +473,17 @@ export class BacklinkGrowthMapRepository extends Repository {
         fact.target_url,
         fact.target_site_page_id,
         fact.source_authority_metric_kind,
-        fact.source_authority_metric_value
+        fact.source_authority_metric_value,
+        fact.anchor_text,
+        fact.first_seen_at,
+        fact.last_seen_at,
+        fact.is_new,
+        fact.is_lost,
+        fact.verification_status,
+        fact.verified_at,
+        fact.verification_final_url,
+        fact.verification_http_status,
+        fact.verification_limitation
       from app.backlink_facts fact
       inner join app.backlink_authority_snapshots snapshot
         on snapshot.workspace_id = fact.workspace_id
@@ -491,14 +531,83 @@ export class BacklinkGrowthMapRepository extends Repository {
       const metricValue = numericMetricOrNull(
         row["source_authority_metric_value"],
       );
+      const nullableFactString = (value: unknown): string | null => {
+        if (value === null) return null;
+        if (
+          typeof value !== "string" ||
+          value.length === 0 ||
+          value.trim() !== value
+        ) {
+          throw new BacklinkAuthorityIntegrityError("FACT_ROW_INVALID");
+        }
+        return value;
+      };
+      const nullableFactInstant = (value: unknown): string | null => {
+        if (value === null) return null;
+        const serialized =
+          value instanceof Date
+            ? value.toISOString()
+            : nullableFactString(value);
+        if (serialized === null) {
+          throw new BacklinkAuthorityIntegrityError("FACT_ROW_INVALID");
+        }
+        try {
+          return canonicalUtcTimestamptz(serialized);
+        } catch {
+          throw new BacklinkAuthorityIntegrityError("FACT_ROW_INVALID");
+        }
+      };
+      const anchorText = nullableFactString(row["anchor_text"]);
+      const firstSeenAt = nullableFactInstant(row["first_seen_at"]);
+      const lastSeenAt = nullableFactInstant(row["last_seen_at"]);
+      const isNew = row["is_new"];
+      const isLost = row["is_lost"];
+      const verificationStatus = exactString(row["verification_status"]);
+      const verifiedAt = nullableFactInstant(row["verified_at"]);
+      const verificationFinalUrl = nullableFactString(
+        row["verification_final_url"],
+      );
+      const rawHttpStatus = row["verification_http_status"];
+      const verificationHttpStatus =
+        rawHttpStatus === null
+          ? null
+          : typeof rawHttpStatus === "number"
+            ? rawHttpStatus
+            : Number(rawHttpStatus);
+      const verificationLimitation = nullableFactString(
+        row["verification_limitation"],
+      );
       if (
         workspaceId !== scope.workspaceId ||
         projectId !== scope.projectId ||
         !requested.has(snapshotId) ||
         !UUID.test(id) ||
         (targetSitePageId !== null && !UUID.test(targetSitePageId)) ||
-        ![null, "domain_rating", "domain_authority"].includes(metricKind) ||
-        (metricKind === null) !== (metricValue === null)
+        ![
+          null,
+          "domain_rating",
+          "domain_authority",
+          "dataforseo_rank",
+        ].includes(metricKind) ||
+        (metricKind === null) !== (metricValue === null) ||
+        typeof isNew !== "boolean" ||
+        typeof isLost !== "boolean" ||
+        ![
+          "not_checked",
+          "verified",
+          "absent",
+          "blocked",
+          "inconclusive",
+        ].includes(verificationStatus) ||
+        (verificationHttpStatus !== null &&
+          (!Number.isInteger(verificationHttpStatus) ||
+            verificationHttpStatus < 100 ||
+            verificationHttpStatus > 599)) ||
+        (verificationStatus === "verified") !== (verifiedAt !== null) ||
+        (verificationStatus === "not_checked" &&
+          (verificationFinalUrl !== null ||
+            verificationHttpStatus !== null ||
+            verificationLimitation !== null))
       ) {
         throw new BacklinkAuthorityIntegrityError("FACT_ROW_INVALID");
       }
@@ -514,6 +623,17 @@ export class BacklinkGrowthMapRepository extends Repository {
         source_authority_metric_kind:
           metricKind as BacklinkFactRow["source_authority_metric_kind"],
         source_authority_metric_value: metricValue,
+        anchor_text: anchorText,
+        first_seen_at: firstSeenAt,
+        last_seen_at: lastSeenAt,
+        is_new: isNew,
+        is_lost: isLost,
+        verification_status:
+          verificationStatus as BacklinkFactRow["verification_status"],
+        verified_at: verifiedAt,
+        verification_final_url: verificationFinalUrl,
+        verification_http_status: verificationHttpStatus,
+        verification_limitation: verificationLimitation,
       };
     });
   }

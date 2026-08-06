@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Bcp47Locale } from "@sf/contracts";
+import { MAX_DATAFORSEO_SOURCE_VERIFICATIONS } from "@sf/sources";
 
 const ContentHash = z.string().regex(/^[a-f0-9]{64}$/u);
 
@@ -33,6 +34,22 @@ export const AnalysisRefreshRequestPayload = z
         maxCompetitors: z.number().int().min(1).max(1_000),
       })
       .strict(),
+    // Optional only so already-persisted plan.v1 parents remain recoverable.
+    // The orchestrator requires this object when the durable parent is plan.v2.
+    dataForSeoBacklinks: z
+      .object({
+        enabled: z.boolean(),
+        maxBacklinks: z.number().int().min(1).max(1_000),
+        maxReferringDomains: z.number().int().min(1).max(1_000),
+        maxBacklinkPages: z.number().int().min(1).max(1_000),
+        maxSourceVerifications: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_DATAFORSEO_SOURCE_VERIFICATIONS),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

@@ -4,6 +4,7 @@ import {
   runtimeHttpUrlIssue,
   type RuntimeHttpUrlPolicy,
 } from "@sf/contracts/runtime-url";
+import { MAX_DATAFORSEO_SOURCE_VERIFICATIONS } from "@sf/sources";
 
 /**
  * Server env contract for the worker service (spec §3.4, worker column).
@@ -128,6 +129,9 @@ export function createWorkerEnvSchema(environment: string | undefined) {
       // convert it to a boolean only when building WorkerContext.
       FINDING_SUMMARIES_ENABLED: z.enum(["true", "false"]).default("true"),
       DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
+      DATAFORSEO_BACKLINKS_ENABLED: z
+        .enum(["true", "false"])
+        .default("false"),
       // Credentials are global provider secrets, never persisted in connection
       // config or job payloads. They become mandatory only when rollout is on.
       DATAFORSEO_LOGIN: z
@@ -156,6 +160,30 @@ export function createWorkerEnvSchema(environment: string | undefined) {
         .min(1)
         .max(1000)
         .default(100),
+      DATAFORSEO_MAX_BACKLINKS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(500),
+      DATAFORSEO_MAX_REFERRING_DOMAINS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(100),
+      DATAFORSEO_MAX_BACKLINK_PAGES: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(1000)
+        .default(500),
+      DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .max(MAX_DATAFORSEO_SOURCE_VERIFICATIONS)
+        .default(20),
       RAW_IMPORT_BUCKET: z.string().min(1),
       EXPORT_BUCKET: z.string().min(1),
       // Production is always Supabase. Local/test may opt into Supabase, otherwise

@@ -30,7 +30,7 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0043_validate_contextual_diagnostic_rule_set",
+      "0044_dataforseo_backlinks",
     );
     expect(migration).toMatch(
       /CHECK\s*\(\s*rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*,\s*'mvp\.rules\.0\.2\.2'\s*,\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)\s*\)/iu,
@@ -123,6 +123,32 @@ describe("readMigrationVersion", () => {
     );
     expect(validationMigration).toMatch(
       /BEGIN;[\s\S]*?SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'[\s\S]*?ALTER\s+TABLE\s+app\.diagnostic_runs\s+VALIDATE\s+CONSTRAINT\s+diagnostic_runs_rule_set_version_check[\s\S]*?SELECT\s+'0043_validate_contextual_diagnostic_rule_set'::text\s+AS\s+migration_version;[\s\S]*?COMMIT;/iu,
+    );
+  });
+
+  it("advances the head with bounded DataForSEO Backlinks and dual Analysis Refresh plans", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0044_dataforseo_backlinks.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/dataforseo\.backlinks\.v1/iu);
+    expect(migration).toMatch(
+      /provider\s+IN\s*\(\s*'ahrefs'\s*,\s*'moz'\s*,\s*'dataforseo'/iu,
+    );
+    expect(migration).toMatch(
+      /authority_metric_kind\s+IN\s*\([\s\S]*?'domain_rating'[\s\S]*?'domain_authority'[\s\S]*?'dataforseo_rank'/iu,
+    );
+    expect(migration).toMatch(
+      /'version'\s*,\s*'analysis-refresh\.plan\.v1'[\s\S]*?'version'\s*,\s*'analysis-refresh\.plan\.v2'[\s\S]*?'stepKey'\s*,\s*'dataforseo_backlinks'/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0044_dataforseo_backlinks'::text\s+AS\s+migration_version/iu,
     );
   });
 

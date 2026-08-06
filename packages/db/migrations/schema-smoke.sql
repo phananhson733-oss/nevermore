@@ -4914,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0043_validate_contextual_diagnostic_rule_set' THEN
+  ) IS DISTINCT FROM '0044_dataforseo_backlinks' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (
@@ -5180,6 +5180,116 @@ BEGIN
   ) <> 3 THEN
     RAISE EXCEPTION 'Backlink Growth Map authority routines are incomplete';
   END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND table_name = 'backlink_facts'
+      AND column_name IN (
+        'anchor_text',
+        'first_seen_at',
+        'last_seen_at',
+        'is_new',
+        'is_lost',
+        'verification_status',
+        'verified_at',
+        'verification_final_url',
+        'verification_http_status',
+        'verification_limitation'
+      )
+  ) <> 10 THEN
+    RAISE EXCEPTION 'DataForSEO backlink fact evidence columns are incomplete';
+  END IF;
+  IF position(
+    '''backlinks''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.collection_runs'::regclass
+        AND constraint_row.conname = 'collection_runs_operation_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'DataForSEO Backlinks collection operation is absent';
+  END IF;
+  IF position(
+    '''dataforseo.backlinks.v1''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.data_snapshots'::regclass
+        AND constraint_row.conname = 'data_snapshots_dataset_key_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'DataForSEO Backlinks dataset is absent';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
+    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'app'
+      AND NOT trigger_row.tgisinternal
+      AND trigger_row.tgname IN (
+        'collection_runs_dataforseo_backlinks_provenance_guard',
+        'data_snapshots_dataforseo_backlinks_provenance_guard',
+        'normalized_observations_dataforseo_backlinks_provenance_guard'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'DataForSEO Backlinks provenance triggers are incomplete';
+  END IF;
+  IF (
+    SELECT count(DISTINCT procedure.proname)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname IN (
+        'enforce_dataforseo_backlinks_collection_run_provenance',
+        'enforce_dataforseo_backlinks_data_snapshot_provenance',
+        'enforce_dataforseo_backlinks_observation_provenance'
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'DataForSEO Backlinks provenance routines are incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid =
+      'app.backlink_authority_snapshots'::regclass
+      AND constraint_row.conname =
+        'backlink_authority_snapshots_provider_metric_check'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%dataforseo%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%dataforseo_rank%'
+  ) THEN
+    RAISE EXCEPTION 'DataForSEO authority metric scale is incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'app.backlink_facts'::regclass
+      AND constraint_row.conname = 'backlink_facts_verification_status_check'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%not_checked%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%verified%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%absent%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%blocked%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%inconclusive%'
+  ) THEN
+    RAISE EXCEPTION 'Backlink source verification states are incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'app.analysis_refresh_runs'::regclass
+      AND constraint_row.conname =
+        'analysis_refresh_runs_plan_contract_check'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%analysis-refresh.plan.v2%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%dataforseo_backlinks%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65%'
+  ) THEN
+    RAISE EXCEPTION 'Analysis Refresh v2 backlinks plan contract is incomplete';
+  END IF;
   IF position(
     '''backlink_v1''' IN (
       SELECT pg_get_constraintdef(constraint_row.oid)
@@ -5216,6 +5326,196 @@ BEGIN
   END IF;
 END;
 $$;
+
+DO $dataforseo_backlinks_behavior$
+#variable_conflict use_variable
+DECLARE
+  workspace_id uuid := gen_random_uuid();
+  project_id uuid := gen_random_uuid();
+  site_id uuid := gen_random_uuid();
+  source_id uuid := gen_random_uuid();
+  run_id uuid := gen_random_uuid();
+  snapshot_id uuid := gen_random_uuid();
+  summary_observation_id uuid := gen_random_uuid();
+  detail_observation_id uuid := gen_random_uuid();
+  authority_id uuid := gen_random_uuid();
+  actor_id uuid := gen_random_uuid();
+  host text := project_id::text || '.backlinks-smoke.example';
+  unavailable_authority_rejected boolean := false;
+BEGIN
+  INSERT INTO app.workspaces (id, name)
+  VALUES (workspace_id, 'DataForSEO Backlinks smoke');
+  INSERT INTO app.client_projects (
+    id, workspace_id, client_name, project_name,
+    default_delivery_locale, created_by
+  ) VALUES (
+    project_id, workspace_id, 'Backlinks client',
+    'Backlinks project', 'zh-CN', actor_id
+  );
+  INSERT INTO app.sites (
+    id, workspace_id, project_id, origin, host,
+    market_codes, language_codes, is_primary
+  ) VALUES (
+    site_id, workspace_id, project_id, 'https://' || host, host,
+    ARRAY['US'], ARRAY['en-US'], true
+  );
+  INSERT INTO app.source_connections (
+    id, workspace_id, project_id, site_id, provider,
+    connection_type, state, external_ref, limitation,
+    connected_at, created_by
+  ) VALUES (
+    source_id, workspace_id, project_id, site_id, 'dataforseo',
+    'api_key_stub', 'available', host,
+    'Schema smoke uses deterministic local rows, not a provider call.',
+    '2026-08-06T08:00:00.000Z', actor_id
+  );
+  INSERT INTO app.async_runs (
+    id, workspace_id, project_id, kind, status,
+    initiated_by, started_at
+  ) VALUES (
+    run_id, workspace_id, project_id, 'collection', 'running',
+    actor_id, '2026-08-06T08:00:00.000Z'
+  );
+  INSERT INTO app.collection_runs (
+    id, workspace_id, project_id, site_id, source_connection_id,
+    provider, operation, method_version, parameters_hash
+  ) VALUES (
+    run_id, workspace_id, project_id, site_id, source_id,
+    'dataforseo', 'backlinks',
+    'dataforseo.backlinks.v1', repeat('c', 64)
+  );
+  INSERT INTO app.data_snapshots (
+    id, workspace_id, project_id, site_id, collection_run_id,
+    source_connection_id, provider, dataset_key, schema_version,
+    method_version, captured_at, source_window, availability,
+    limitation, row_count, checksum, summary
+  ) VALUES (
+    snapshot_id, workspace_id, project_id, site_id, run_id, source_id,
+    'dataforseo', 'dataforseo.backlinks.v1',
+    'dataforseo.backlinks.v1', 'dataforseo.backlinks.v1',
+    '2026-08-06T08:00:00.000Z',
+    '{"start":null,"end":null}'::jsonb, 'available',
+    'Provider details are a bounded sample while summary totals are complete.',
+    2, repeat('d', 64), '{}'::jsonb
+  );
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, provider,
+    metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  ) VALUES (
+    summary_observation_id, workspace_id, project_id, snapshot_id,
+    'dataforseo', 'dataforseo.backlink_summary.v1', 'site', host,
+    '2026-08-06T08:00:00.000Z', 'available',
+    jsonb_build_object(
+      'targetDomain', host,
+      'rank', 54,
+      'backlinks', 1240,
+      'referringDomains', 87
+    ),
+    'vendor_observation', 'B', 'supports',
+    'Provider details are a bounded sample while summary totals are complete.'
+  );
+  INSERT INTO app.normalized_observations (
+    id, workspace_id, project_id, snapshot_id, provider,
+    metric_key, subject_type, subject_ref, observed_at,
+    availability, value_json, origin, grade, support, limitation
+  ) VALUES (
+    detail_observation_id, workspace_id, project_id, snapshot_id,
+    'dataforseo', 'dataforseo.backlink.v1', 'url',
+    'https://' || host || '/guide',
+    '2026-08-06T08:00:00.000Z', 'available',
+    jsonb_build_object(
+      'sourceRef', 'provider-row-1',
+      'referringDomain', 'publisher.example',
+      'sourceUrl', 'https://publisher.example/article',
+      'targetUrl', 'https://' || host || '/guide',
+      'sourceRank', 63,
+      'linkKind', 'dofollow',
+      'anchorText', 'Astrology guide',
+      'firstSeenAt', '2026-07-01T00:00:00.000Z',
+      'lastSeenAt', '2026-08-06T08:00:00.000Z',
+      'isNew', true,
+      'isLost', false,
+      'verification', jsonb_build_object(
+        'status', 'verified',
+        'checkedAt', '2026-08-06T08:00:00.000Z',
+        'finalUrl', 'https://publisher.example/article',
+        'httpStatus', 200,
+        'limitation', null
+      )
+    ),
+    'vendor_observation', 'B', 'supports',
+    'Provider details are a bounded sample while summary totals are complete.'
+  );
+  INSERT INTO app.backlink_authority_snapshots (
+    id, workspace_id, project_id, site_id, competitor_id,
+    subject_kind, source_kind, provider, captured_at, availability,
+    index_scope, total_backlinks, total_referring_domains,
+    observed_backlinks, observed_referring_domains,
+    authority_metric_kind, authority_metric_value,
+    source_ref, checksum, row_count, import_preview_id, limitation
+  ) VALUES (
+    authority_id, workspace_id, project_id, site_id, null,
+    'primary_site', 'provider_import', 'dataforseo',
+    '2026-08-06T08:00:00.000Z', 'available',
+    'provider_index', 1240, 87, null, null,
+    'dataforseo_rank', 54,
+    'dfs-' || snapshot_id::text, repeat('d', 64), 2, null, null
+  );
+  INSERT INTO app.backlink_facts (
+    snapshot_id, workspace_id, project_id, site_id,
+    referring_domain, source_url, target_url, target_site_page_id,
+    source_authority_metric_kind, source_authority_metric_value,
+    link_kind, source_ref, anchor_text, first_seen_at, last_seen_at,
+    is_new, is_lost, verification_status, verified_at,
+    verification_final_url, verification_http_status,
+    verification_limitation
+  ) VALUES (
+    authority_id, workspace_id, project_id, site_id,
+    'publisher.example', 'https://publisher.example/article',
+    'https://' || host || '/guide', null,
+    'dataforseo_rank', 63, 'dofollow', 'provider-row-1',
+    'Astrology guide', '2026-07-01T00:00:00.000Z',
+    '2026-08-06T08:00:00.000Z', true, false, 'verified',
+    '2026-08-06T08:00:00.000Z',
+    'https://publisher.example/article', 200, null
+  );
+
+  BEGIN
+    INSERT INTO app.backlink_authority_snapshots (
+      workspace_id, project_id, site_id, competitor_id,
+      subject_kind, source_kind, provider, captured_at, availability,
+      index_scope, total_backlinks, total_referring_domains,
+      observed_backlinks, observed_referring_domains,
+      authority_metric_kind, authority_metric_value,
+      source_ref, checksum, row_count, import_preview_id, limitation
+    ) VALUES (
+      workspace_id, project_id, site_id, null,
+      'primary_site', 'provider_import', 'dataforseo',
+      '2026-08-06T08:00:00.000Z', 'unavailable',
+      'unavailable', null, null, null, null, null, null,
+      'dfs-' || snapshot_id::text, repeat('d', 64), 2, null,
+      'Provider unavailable smoke row.'
+    );
+  EXCEPTION
+    WHEN check_violation THEN
+      unavailable_authority_rejected := true;
+  END;
+  IF NOT unavailable_authority_rejected THEN
+    RAISE EXCEPTION 'DataForSEO unavailable authority escaped fail-closed projection';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM app.backlink_facts fact
+    WHERE fact.snapshot_id = authority_id
+      AND fact.source_authority_metric_kind = 'dataforseo_rank'
+      AND fact.verification_status = 'verified'
+      AND fact.verification_http_status = 200
+  ) THEN
+    RAISE EXCEPTION 'DataForSEO backlink fact projection evidence is incomplete';
+  END IF;
+END;
+$dataforseo_backlinks_behavior$;
 
 DO $dataforseo_search_landscape_contract$
 BEGIN

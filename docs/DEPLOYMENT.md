@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0043_validate_contextual_diagnostic_rule_set.sql` (**43 ordered migrations**)
+Migration range: `0001_init.sql` through `0044_dataforseo_backlinks.sql` (**44 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0043` are hosted; every release must back up,
+v0.4 migrations through `0044` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 
@@ -152,13 +152,21 @@ self-healing retry states.
    `RAILWAY_GIT_COMMIT_SHA`; leave `APP_BUILD_SHA` unset unless it is explicitly
    the exact same `<release SHA>`.
    Keep DataForSEO Basic Auth credentials on this worker only; Vercel receives
-   the boolean feature flag and row cap, never the login/password.
+   the boolean feature flags and frozen non-secret caps, never the
+   login/password. Keep `DATAFORSEO_BACKLINKS_ENABLED=false` on both services by
+   default; enabling it requires the same reviewed value and caps on Web and
+   Worker while global `DATAFORSEO_ENABLED=true` remains a prerequisite.
    DataForSEO Search Landscape (DFS) is invoked only by the server-owned
    Analysis Refresh plan. v2 queries positions 1–100 and can issue one paid
    SERP Competitors fallback only when domain overlap is empty and frozen
    GSC/Crawl/Product Profile seeds exist. The public collection API remains
-   limited to Crawl, GSC, and GA4; no client request may supply DFS target,
-   market, language, limits, credentials, or provider queries.
+   limited to Crawl, GSC, and GA4; no client request may supply DFS/Backlinks
+   target, market, language, limits, credentials, or provider queries. New
+   Analysis Refresh parents use six-step `analysis-refresh.plan.v2`; exact
+   five-step v1 parents remain recoverable. The Backlinks step freezes defaults
+   500/100/500/20 and hard caps 1000/1000/1000/20 for backlink rows,
+   referring domains, target pages, and selective SSRF-safe source-page
+   verifications respectively.
 6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
    completes, pg-boss starts and the worker holds its readiness lease. Logs must
    not expose environment values, provider bodies, model output or customer

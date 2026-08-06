@@ -275,10 +275,10 @@ export interface paths {
          * Queue one customer-triggerable provider collection
          * @description This public command accepts exactly Crawl, connected GSC, or connected
          *     GA4. CSV uses the dedicated import endpoint. DataForSEO Search
-         *     Landscape (DFS) is a built-in, server-owned Analysis Refresh step:
-         *     clients cannot trigger or configure it here, and this request never
-         *     accepts provider credentials, API keys, Search Landscape scope, or
-         *     provider limits.
+         *     Landscape (DFS) and DataForSEO Backlinks are built-in, server-owned
+         *     Analysis Refresh steps: clients cannot trigger or configure either one
+         *     here, and this request never accepts provider credentials, API keys,
+         *     Search Landscape/Backlinks scope, or provider limits.
          */
         post: operations["createCollectionRun"];
         delete?: never;
@@ -299,12 +299,18 @@ export interface paths {
         /**
          * Queue the server-owned durable Analysis Refresh plan
          * @description Freezes the primary Site, current confirmed ICP, and the fixed ordered
-         *     Crawl → connected GSC → connected GA4 → built-in DataForSEO Search
-         *     Landscape (DFS) → Growth Audit plan. The server derives the DFS target,
-         *     market, language and cost caps from frozen project context and server
-         *     configuration. Optional unavailable inputs are recorded as skipped
-         *     steps; the client cannot add, remove, reorder, configure, or directly
-         *     invoke any step.
+         *     `analysis-refresh.plan.v2`: Crawl → connected GSC → connected GA4 →
+         *     built-in DataForSEO Search Landscape (DFS) → built-in DataForSEO
+         *     Backlinks (`dataforseo_backlinks`) → Growth Audit. The server derives
+         *     DFS target/market/language/cost caps and Backlinks target/caps from
+         *     frozen project context and server configuration. Backlinks has a
+         *     separate default-off rollout gate and freezes defaults/hard limits of
+         *     500/1000 backlink rows, 100/1000 referring domains, 500/1000 target
+         *     pages, and 20/20 selective source-page verifications. Optional
+         *     unavailable inputs are recorded as skipped steps; the client cannot
+         *     add, remove, reorder, configure, or directly invoke any step. Exact
+         *     five-step `analysis-refresh.plan.v1` parents remain readable and
+         *     resumable but new parents use v2.
          */
         post: operations["createAnalysisRefreshRun"];
         delete?: never;
@@ -585,11 +591,17 @@ export interface paths {
         /**
          * Read the Backlink growth path inside Growth Map
          * @description Returns immutable backlink and referring-domain facts for the primary site and
-         *     approved competitors. Provider imports (Ahrefs or Moz), manual CSV imports, and
-         *     built-in search-derived discoveries remain different source authorities. Only a
-         *     real provider import may expose provider index totals or DR/DA. CSV and
+         *     approved competitors. Provider imports (Ahrefs, Moz, or DataForSEO), manual CSV
+         *     imports, and built-in search-derived discoveries remain different source
+         *     authorities. Only a
+         *     real provider import may expose provider index totals or DR/DA. In that family,
+         *     Ahrefs may expose DR, Moz may expose DA, and DataForSEO may expose only its typed
+         *     `dataforseo_rank`; these scales are never relabeled as one another. CSV and
          *     search-derived results are observed subsets and never claim complete coverage,
-         *     authority scores, or project-wide totals. Missing, partial, and unavailable data
+         *     authority scores, or project-wide totals. DataForSEO may selectively verify only a bounded set of
+         *     provider-discovered source pages through the SSRF-safe crawler transport;
+         *     verification evidence remains separate and never rewrites the provider fact.
+         *     Missing, partial, and unavailable data
          *     are explicit and are never replaced with zero. This is a built-in Growth Map
          *     growth path, not a fifth workspace module or a customer-managed data connection.
          */
@@ -2678,9 +2690,10 @@ export interface components {
             semantics: "provider_index_total" | "observed_fact_count" | "unavailable";
             value: number | null;
         };
+        /** @description Provider-specific authority scale. dataforseo_rank is not Ahrefs DR or Moz DA and must never be relabeled. */
         BacklinkAuthorityMetric: {
             /** @enum {string} */
-            kind: "domain_rating" | "domain_authority";
+            kind: "domain_rating" | "domain_authority" | "dataforseo_rank";
             value: number;
         };
         BacklinkSnapshotTrace: {
@@ -2690,7 +2703,7 @@ export interface components {
             rowCount: number;
             importPreviewId: components["schemas"]["Uuid"] | null;
         };
-        /** @description Immutable source authority. Only provider_import can expose provider totals and DR/DA; CSV/search-derived remain observed subsets. */
+        /** @description Immutable source authority. Only provider_import can expose provider totals and its matching DR, DA, or dataforseo_rank scale; CSV/search-derived remain observed subsets. */
         BacklinkSnapshotSource: {
             snapshotId: components["schemas"]["Uuid"];
             /** @enum {string} */
@@ -2701,7 +2714,7 @@ export interface components {
             /** @enum {string} */
             sourceKind: "provider_import" | "manual_csv" | "search_derived";
             /** @enum {string} */
-            provider: "ahrefs" | "moz" | "manual_csv" | "search_derived";
+            provider: "ahrefs" | "moz" | "dataforseo" | "manual_csv" | "search_derived";
             capturedAt: components["schemas"]["Timestamp"];
             coverage: components["schemas"]["BacklinkCoverage"];
             backlinks: components["schemas"]["BacklinkMetric"];
@@ -2731,7 +2744,7 @@ export interface components {
             /** @enum {string} */
             state: "comparable" | "insufficient" | "unavailable";
             /** @enum {string|null} */
-            provider: "ahrefs" | "moz" | null;
+            provider: "ahrefs" | "moz" | "dataforseo" | null;
             primarySiteSnapshotId: components["schemas"]["Uuid"] | null;
             competitorSnapshotIds: components["schemas"]["Uuid"][];
             limitation: string | null;

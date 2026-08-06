@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type Db, type DbHandle } from "../client.ts";
 import { contentHash } from "../hash.ts";
 import {
+  analysisRefreshRuns,
+  analysisRefreshSteps,
   asyncRuns,
   clientProjects,
   diagnosticRuns,
@@ -12,7 +14,11 @@ import {
   workspaces,
 } from "../schema.ts";
 import { requireSafeTestDatabaseUrl } from "../test-database-safety.ts";
-import { AnalysisRefreshRunsRepository } from "./analysis-refresh-runs.ts";
+import {
+  analysisRefreshPlanHash,
+  AnalysisRefreshRunsRepository,
+  legacyAnalysisRefreshPlanManifest,
+} from "./analysis-refresh-runs.ts";
 import {
   AuditRunsRepository,
   GROWTH_AUDIT_PROJECTION_VERSION,
@@ -44,7 +50,12 @@ type ParentStatus =
   | "partial"
   | "failed"
   | "cancelled";
-type CollectionStepKey = "crawl" | "gsc" | "ga4" | "dataforseo";
+type CollectionStepKey =
+  | "crawl"
+  | "gsc"
+  | "ga4"
+  | "dataforseo"
+  | "dataforseo_backlinks";
 type PlannedStepState =
   | "pending"
   | "completed"
@@ -54,24 +65,34 @@ type PlannedStepState =
 
 const COLLECTION_STEP_IDENTITY = {
   crawl: {
+    provider: "crawl",
     operation: "site_graph",
     methodVersion: "crawl.site_graph.v2",
     datasetKey: "crawl.site_graph.v1",
   },
   gsc: {
+    provider: "gsc",
     operation: "search_analytics",
     methodVersion: "gsc.page_query_daily.v1",
     datasetKey: "gsc.page_query_daily.v1",
   },
   ga4: {
+    provider: "ga4",
     operation: "organic_landing",
     methodVersion: "ga4.organic_landing_daily.v1",
     datasetKey: "ga4.organic_landing_daily.v1",
   },
   dataforseo: {
+    provider: "dataforseo",
     operation: "search_landscape",
-    methodVersion: "dataforseo.search_landscape.v1",
-    datasetKey: "dataforseo.search_landscape.v1",
+    methodVersion: "dataforseo.search_landscape.v2",
+    datasetKey: "dataforseo.search_landscape.v2",
+  },
+  dataforseo_backlinks: {
+    provider: "dataforseo",
+    operation: "backlinks",
+    methodVersion: "dataforseo.backlinks.v1",
+    datasetKey: "dataforseo.backlinks.v1",
   },
 } as const;
 
@@ -215,8 +236,12 @@ async function completeCollectionStep(
     workspaceId: fixture.workspaceId,
     projectId: fixture.projectId,
   };
+  const identity = COLLECTION_STEP_IDENTITY[stepKey];
   const sources = new SourceConnectionsRepository(db);
-  const existing = await sources.findConnectedByProvider(scope, stepKey);
+  const existing = await sources.findConnectedByProvider(
+    scope,
+    identity.provider,
+  );
   const source =
     existing ??
     (stepKey === "crawl"
@@ -230,15 +255,15 @@ async function completeCollectionStep(
           workspaceId: fixture.workspaceId,
           projectId: fixture.projectId,
           siteId: fixture.siteId,
-          provider: stepKey,
-          connectionType: stepKey === "dataforseo" ? "api_key_stub" : "oauth",
+          provider: identity.provider,
+          connectionType:
+            identity.provider === "dataforseo" ? "api_key_stub" : "oauth",
           state: "connected",
           externalRef: `${stepKey}:${fixture.siteId}`,
           limitation: "Deterministic Growth Map publication fixture.",
           connectedAt: true,
           createdBy: fixture.actorId,
         }));
-  const identity = COLLECTION_STEP_IDENTITY[stepKey];
   const childRunId = randomUUID();
   await db.insert(asyncRuns).values({
     id: childRunId,
@@ -264,7 +289,7 @@ async function completeCollectionStep(
     projectId: fixture.projectId,
     siteId: fixture.siteId,
     sourceConnectionId: source.id,
-    provider: stepKey,
+    provider: identity.provider,
     operation: identity.operation,
     methodVersion: identity.methodVersion,
     parametersHash: contentHash({
@@ -279,7 +304,7 @@ async function completeCollectionStep(
     siteId: fixture.siteId,
     collectionRunId: childRunId,
     sourceConnectionId: source.id,
-    provider: stepKey,
+    provider: identity.provider,
     datasetKey: identity.datasetKey,
     schemaVersion: identity.methodVersion,
     methodVersion: identity.methodVersion,
@@ -326,6 +351,7 @@ async function createRefreshParent(
     readonly stepStates?: Partial<
       Readonly<Record<CollectionStepKey, PlannedStepState>>
     >;
+    readonly legacyPlan?: boolean;
   },
 ): Promise<string> {
   const id = randomUUID();
@@ -350,13 +376,36 @@ async function createRefreshParent(
     updated_at: input.createdAt,
   });
   const plans = new AnalysisRefreshRunsRepository(db);
-  await plans.create({
-    runId: id,
-    workspaceId: fixture.workspaceId,
-    projectId: fixture.projectId,
-    siteId: fixture.siteId,
-    icpProfileId: fixture.icpProfileId,
-  });
+  if (input.legacyPlan) {
+    const manifest = legacyAnalysisRefreshPlanManifest();
+    await db.insert(analysisRefreshRuns).values({
+      id,
+      workspace_id: fixture.workspaceId,
+      project_id: fixture.projectId,
+      site_id: fixture.siteId,
+      icp_profile_id: fixture.icpProfileId,
+      plan_manifest: manifest as unknown as Record<string, unknown>,
+      plan_hash: analysisRefreshPlanHash(manifest),
+    });
+    await db.insert(analysisRefreshSteps).values(
+      manifest.steps.map((step) => ({
+        analysis_refresh_run_id: id,
+        workspace_id: fixture.workspaceId,
+        project_id: fixture.projectId,
+        ordinal: step.ordinal,
+        step_key: step.stepKey,
+        required: step.required,
+      })),
+    );
+  } else {
+    await plans.create({
+      runId: id,
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+      siteId: fixture.siteId,
+      icpProfileId: fixture.icpProfileId,
+    });
+  }
   const scope = {
     workspaceId: fixture.workspaceId,
     projectId: fixture.projectId,
@@ -366,13 +415,13 @@ async function createRefreshParent(
     gsc: input.stepStates?.gsc ?? "skipped",
     ga4: input.stepStates?.ga4 ?? "skipped",
     dataforseo: input.stepStates?.dataforseo ?? "skipped",
+    dataforseo_backlinks:
+      input.stepStates?.dataforseo_backlinks ?? "skipped",
   };
-  for (const stepKey of [
-    "crawl",
-    "gsc",
-    "ga4",
-    "dataforseo",
-  ] as const) {
+  const collectionStepKeys: readonly CollectionStepKey[] = input.legacyPlan
+    ? ["crawl", "gsc", "ga4", "dataforseo"]
+    : ["crawl", "gsc", "ga4", "dataforseo", "dataforseo_backlinks"];
+  for (const stepKey of collectionStepKeys) {
     const state = states[stepKey];
     if (state === "pending") continue;
     if (state === "completed" || state === "fabricated_completed") {
@@ -743,6 +792,103 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       id: foreignPublished,
       project_id: foreignProject.projectId,
       run_status: "completed",
+    });
+  });
+
+  it("keeps an exact legacy five-step parent readable and rejects mixed DataForSEO lineage", async () => {
+    const actorId = randomUUID();
+    const workspaceId = randomUUID();
+    await handle.db.insert(workspaces).values({
+      id: workspaceId,
+      name: `Growth Map legacy lineage ${workspaceId}`,
+    });
+    const fixture = await createProject(handle.db, workspaceId, actorId);
+    const diagnosticRunId = await createDiagnostic(handle.db, fixture, {
+      createdAt: timestamp(1),
+      publishAudit: true,
+    });
+    await createRefreshParent(handle.db, fixture, {
+      status: "completed",
+      createdAt: timestamp(2),
+      childDiagnosticRunId: diagnosticRunId,
+      legacyPlan: true,
+    });
+
+    const scope = { workspaceId, projectId: fixture.projectId };
+    await expect(
+      new GrowthMapReadRepository(handle.db).findReadableRunById(
+        scope,
+        diagnosticRunId,
+      ),
+    ).resolves.toMatchObject({
+      id: diagnosticRunId,
+      project_id: fixture.projectId,
+      site_id: fixture.siteId,
+    });
+
+    const source = await new SourceConnectionsRepository(
+      handle.db,
+    ).insertConnection({
+      workspaceId,
+      projectId: fixture.projectId,
+      siteId: fixture.siteId,
+      provider: "dataforseo",
+      connectionType: "api_key_stub",
+      state: "connected",
+      externalRef: `${fixture.projectId}.example.test`,
+      limitation: "Exact mixed-lineage rejection fixture.",
+      connectedAt: true,
+      createdBy: actorId,
+    });
+    const collectionRunId = randomUUID();
+    await handle.db.insert(asyncRuns).values({
+      id: collectionRunId,
+      workspace_id: workspaceId,
+      project_id: fixture.projectId,
+      kind: "collection",
+      status: "completed",
+      result_type: "collection_run",
+      result_id: collectionRunId,
+      initiated_by: actorId,
+      queued_at: timestamp(3),
+      started_at: timestamp(3),
+      completed_at: timestamp(3),
+    });
+    await new CollectionRunsRepository(handle.db).insertPlaceholder({
+      runId: collectionRunId,
+      workspaceId,
+      projectId: fixture.projectId,
+      siteId: fixture.siteId,
+      sourceConnectionId: source.id,
+      provider: "dataforseo",
+      operation: "search_landscape",
+      methodVersion: "dataforseo.search_landscape.v2",
+      parametersHash: contentHash({ collectionRunId, version: 2 }),
+    });
+
+    await expect(
+      new DataSnapshotsRepository(handle.db).insert({
+        workspaceId,
+        projectId: fixture.projectId,
+        siteId: fixture.siteId,
+        collectionRunId,
+        sourceConnectionId: source.id,
+        provider: "dataforseo",
+        datasetKey: "dataforseo.search_landscape.v1",
+        schemaVersion: "dataforseo.search_landscape.v1",
+        methodVersion: "dataforseo.search_landscape.v1",
+        capturedAt: timestamp(3),
+        sourceWindow: { start: null, end: null },
+        availability: "available",
+        limitation: "The mixed identity must be rejected.",
+        rawObjectKey: null,
+        rowCount: 0,
+        checksum: contentHash({ collectionRunId, mixed: true }),
+      }),
+    ).rejects.toMatchObject({
+      cause: {
+        message: expect.stringMatching(/exact collection identity/u),
+      },
     });
   });
 });

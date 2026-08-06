@@ -540,7 +540,7 @@ async function seedSerpOverlapOrigin(
     source_connection_id: sourceConnectionId,
     provider: "dataforseo",
     operation: "search_landscape",
-    method_version: "dataforseo.search_landscape.v1",
+    method_version: "dataforseo.search_landscape.v2",
     parameters_hash: contentHash({
       provider: "dataforseo",
       operation: "search_landscape",
@@ -556,9 +556,9 @@ async function seedSerpOverlapOrigin(
     collection_run_id: collectionRunId,
     source_connection_id: sourceConnectionId,
     provider: "dataforseo",
-    dataset_key: "dataforseo.search_landscape.v1",
-    schema_version: "dataforseo.search_landscape.v1",
-    method_version: "dataforseo.search_landscape.v1",
+    dataset_key: "dataforseo.search_landscape.v2",
+    schema_version: "dataforseo.search_landscape.v2",
+    method_version: "dataforseo.search_landscape.v2",
     captured_at: OBSERVED_AT,
     source_window: { start: null, end: null },
     availability: "available",
@@ -853,9 +853,9 @@ async function seedPublishedCompetitorGeneration(
             {
               snapshotId: input.dataForSeo.snapshotId,
               provider: "dataforseo",
-              datasetKey: "dataforseo.search_landscape.v1",
-              schemaVersion: "dataforseo.search_landscape.v1",
-              methodVersion: "dataforseo.search_landscape.v1",
+              datasetKey: "dataforseo.search_landscape.v2",
+              schemaVersion: "dataforseo.search_landscape.v2",
+              methodVersion: "dataforseo.search_landscape.v2",
               checksum: input.dataForSeo.checksum,
               capturedAt: OBSERVED_AT,
               sourceWindow,
@@ -1028,6 +1028,16 @@ async function seedPublishedCompetitorGeneration(
     ))
   ) {
     throw new Error("Could not skip the fixture dataforseo step.");
+  }
+  if (
+    !(await refreshes.skipStep(
+      projectScope,
+      analysisRefreshRunId,
+      "dataforseo_backlinks",
+      "Provider is not configured in this competitor fixture.",
+    ))
+  ) {
+    throw new Error("Could not skip the fixture dataforseo backlinks step.");
   }
   if (
     !(await refreshes.startStep(

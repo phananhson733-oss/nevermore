@@ -1,5 +1,6 @@
 export * from "./url-safety/index.ts";
 export * from "./public-http/index.ts";
+export * from "./backlinks/source-page-verifier.ts";
 export { normalizeSiteOrigin } from "./origin.ts";
 export type { NormalizedOrigin } from "./origin.ts";
 export { createSiteOriginProbe, probeSiteOrigin } from "./site-origin-probe.ts";
@@ -135,24 +136,39 @@ export type {
 } from "./dataforseo/adapter.ts";
 export {
   HttpDataForSeoClient,
+  DATAFORSEO_BACKLINK_SUMMARY_LIVE_URL,
+  DATAFORSEO_BACKLINKS_LIVE_URL,
   DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
+  DATAFORSEO_DOMAIN_PAGES_LIVE_URL,
   DATAFORSEO_RANKED_KEYWORDS_LIVE_URL,
+  DATAFORSEO_REFERRING_DOMAINS_LIVE_URL,
   DATAFORSEO_SERP_COMPETITORS_LIVE_URL,
   DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT,
   DEFAULT_DATAFORSEO_LIMIT,
   MAX_DATAFORSEO_LIMIT,
 } from "./dataforseo/client.ts";
 export type {
+  DataForSeoBacklinkListRequest,
+  DataForSeoBacklinkRow,
+  DataForSeoBacklinksClient,
+  DataForSeoBacklinksResponse,
+  DataForSeoBacklinkSummary,
+  DataForSeoBacklinkSummaryRequest,
+  DataForSeoBacklinkSummaryResponse,
   DataForSeoClient,
   DataForSeoCompetitorDomainRow,
   DataForSeoCompetitorsDomainClient,
   DataForSeoCompetitorsDomainRequest,
   DataForSeoCompetitorsDomainResponse,
+  DataForSeoDomainPageRow,
+  DataForSeoDomainPagesResponse,
   DataForSeoFetch,
   DataForSeoRankedKeywordsClient,
   DataForSeoRankedKeywordRow,
   DataForSeoRankedKeywordsRequest,
   DataForSeoRankedKeywordsResponse,
+  DataForSeoReferringDomainRow,
+  DataForSeoReferringDomainsResponse,
   DataForSeoSearchLandscapeClient,
   DataForSeoSearchLandscapeV2Client,
   DataForSeoSerpCompetitorRow,
@@ -161,6 +177,31 @@ export type {
   DataForSeoSerpCompetitorsResponse,
   HttpDataForSeoClientOptions,
 } from "./dataforseo/client.ts";
+export {
+  createDataForSeoBacklinksAdapter,
+  createDataForSeoBacklinksScope,
+  dataForSeoBacklinksSnapshotSummary,
+  dataforseoBacklinksAdapter,
+  parseDataForSeoBacklinksScope,
+  DATAFORSEO_BACKLINKS_DATASET_KEY,
+  DATAFORSEO_BACKLINKS_METHOD_VERSION,
+  DATAFORSEO_BACKLINKS_OPERATION,
+  DATAFORSEO_BACKLINKS_QUERY_KIND,
+  DATAFORSEO_BACKLINKS_ROW_CAP_STOP_REASON,
+  DATAFORSEO_BACKLINKS_SCOPE_VERSION,
+  MAX_DATAFORSEO_SOURCE_VERIFICATIONS,
+} from "./dataforseo/backlinks.ts";
+export type {
+  DataForSeoBacklinksAdapter,
+  DataForSeoBacklinksAdapterOptions,
+  DataForSeoBacklinksRaw,
+  DataForSeoBacklinksRawResponse,
+  DataForSeoBacklinksScope,
+  DataForSeoBacklinksScopeInput,
+  DataForSeoBacklinksSnapshotSummary,
+  DataForSeoBacklinkSourcePageVerifier,
+  DataForSeoVerifiedBacklinkRow,
+} from "./dataforseo/backlinks.ts";
 export {
   createDataForSeoSearchLandscapeAdapter,
   createDataForSeoSearchLandscapeScope,

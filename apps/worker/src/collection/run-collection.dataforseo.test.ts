@@ -34,8 +34,166 @@ afterEach(() => {
   mocks.persistCollectionResult.mockReset();
 });
 
+const backlinksIds = {
+  runId: "00000000-0000-4000-8000-000000000201",
+  workspaceId: "00000000-0000-4000-8000-000000000202",
+  projectId: "00000000-0000-4000-8000-000000000203",
+  actorId: "00000000-0000-4000-8000-000000000204",
+  siteId: "00000000-0000-4000-8000-000000000205",
+  sourceConnectionId: "00000000-0000-4000-8000-000000000206",
+} as const;
+
+const frozenBacklinksScope = {
+  schemaVersion: "dataforseo.backlinks-scope.v1",
+  queryKind: "backlinks",
+  target: "accepted.example",
+  includeSubdomains: true,
+  indirectLinksPolicy: {
+    summary: "included",
+    backlinks: "not_configurable",
+    referringDomains: "included",
+    domainPages: "not_configurable",
+  },
+  excludeInternalBacklinks: true,
+  backlinksStatusType: "live",
+  rankScale: "one_hundred",
+  maxBacklinks: 37,
+  maxReferringDomains: 19,
+  maxBacklinkPages: 23,
+  maxSourceVerifications: 7,
+} as const;
+
+function backlinksRunFixtures() {
+  const requestPayload = {
+    provider: "dataforseo",
+    operation: "backlinks",
+    sourceConnectionId: backlinksIds.sourceConnectionId,
+    collectionScope: frozenBacklinksScope,
+  };
+  const claimed = {
+    id: backlinksIds.runId,
+    workspace_id: backlinksIds.workspaceId,
+    project_id: backlinksIds.projectId,
+    attempt_count: 1,
+    initiated_by: backlinksIds.actorId,
+    request_payload: requestPayload,
+  };
+  const collectionRun = {
+    id: backlinksIds.runId,
+    workspace_id: backlinksIds.workspaceId,
+    project_id: backlinksIds.projectId,
+    site_id: backlinksIds.siteId,
+    provider: "dataforseo",
+    operation: "backlinks",
+    method_version: "dataforseo.backlinks.v1",
+    source_connection_id: backlinksIds.sourceConnectionId,
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "backlinks",
+      siteId: backlinksIds.siteId,
+      collectionScope: frozenBacklinksScope,
+    }),
+  };
+  return { requestPayload, claimed, collectionRun };
+}
+
+function arrangeBacklinksRunRepositories() {
+  const fixtures = backlinksRunFixtures();
+  vi.spyOn(AsyncRunsRepository.prototype, "claim").mockResolvedValue(
+    fixtures.claimed as never,
+  );
+  vi.spyOn(
+    AsyncRunsRepository.prototype,
+    "lockAttemptForUpdate",
+  ).mockResolvedValue(fixtures.claimed as never);
+  vi.spyOn(AsyncRunsRepository.prototype, "setTerminal").mockResolvedValue(true);
+  vi.spyOn(CollectionRunsRepository.prototype, "findById").mockResolvedValue(
+    fixtures.collectionRun as never,
+  );
+  vi.spyOn(SitesRepository.prototype, "findPrimary").mockResolvedValue({
+    id: backlinksIds.siteId,
+    origin: "https://mutated.example",
+    host: "mutated.example",
+    market_codes: ["CA"],
+    language_codes: ["fr-CA"],
+  } as never);
+  vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
+    id: backlinksIds.projectId,
+    workspace_id: backlinksIds.workspaceId,
+    archived_at: null,
+  } as never);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "updateState",
+  ).mockResolvedValue(undefined);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "findConnectedById",
+  ).mockResolvedValue({
+    id: backlinksIds.sourceConnectionId,
+    provider: "dataforseo",
+    config: { target: "mutated.example" },
+  } as never);
+  return fixtures;
+}
+
+function backlinksWorkerContext(input: {
+  readonly backlinksEnabled: boolean;
+  readonly providerFetch: typeof globalThis.fetch;
+}): CollectionWorkerContext {
+  return {
+    db: {
+      transaction: async (
+        callback: (tx: CollectionWorkerContext["db"]) => Promise<unknown>,
+      ) => callback({} as CollectionWorkerContext["db"]),
+    } as CollectionWorkerContext["db"],
+    blobStore: {},
+    credentialKey: Buffer.alloc(32),
+    googleOAuth: { clientId: "google-id", clientSecret: "google-secret" },
+    dataForSeo: {
+      enabled: true,
+      backlinksEnabled: input.backlinksEnabled,
+      login: "provider-login",
+      password: "provider-password",
+      maxKeywords: 100,
+      maxCompetitors: 50,
+      maxBacklinks: 500,
+      maxReferringDomains: 100,
+      maxBacklinkPages: 500,
+      maxSourceVerifications: 20,
+      fetch: input.providerFetch,
+    },
+    logger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+  } as unknown as CollectionWorkerContext;
+}
+
+function dataForSeoEnvelope(result: unknown): unknown {
+  return {
+    version: "0.1.20260720",
+    status_code: 20_000,
+    status_message: "Ok.",
+    cost: 0.01,
+    tasks_count: 1,
+    tasks_error: 0,
+    tasks: [
+      {
+        id: "00000000-0000-4000-8000-000000000211",
+        status_code: 20_000,
+        status_message: "Ok.",
+        cost: 0.01,
+        result_count: 1,
+        result: [result],
+      },
+    ],
+  };
+}
+
 describe("DataForSEO worker gates", () => {
-  it("recognizes the legacy ranked, v1 composite, and v2 composite identities", () => {
+  it("recognizes the legacy ranked, search-landscape, and backlinks identities", () => {
     expect(
       collectionSnapshotIdentity({
         provider: "dataforseo",
@@ -66,6 +224,16 @@ describe("DataForSEO worker gates", () => {
       datasetKey: "dataforseo.search_landscape.v2",
       schemaVersion: "dataforseo.search_landscape.v2",
     });
+    expect(
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "backlinks",
+        method_version: "dataforseo.backlinks.v1",
+      }),
+    ).toEqual({
+      datasetKey: "dataforseo.backlinks.v1",
+      schemaVersion: "dataforseo.backlinks.v1",
+    });
     expect(() =>
       collectionSnapshotIdentity({
         provider: "dataforseo",
@@ -81,6 +249,113 @@ describe("DataForSEO worker gates", () => {
         operation: "keyword_gap_import",
         method_version: "dataforseo.search_landscape.v1",
       }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+    expect(() =>
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
+        operation: "backlinks",
+        method_version: "dataforseo.search_landscape.v2",
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+  });
+
+  it("validates the exact frozen backlinks scope, hash, and every worker cap", async () => {
+    const runModule = (await import("./run-collection.ts")) as unknown as {
+      resolveFrozenDataForSeoBacklinksScope?: (
+        run: unknown,
+        requestPayload: Record<string, unknown>,
+        workerCaps: {
+          readonly maxBacklinks: number;
+          readonly maxReferringDomains: number;
+          readonly maxBacklinkPages: number;
+          readonly maxSourceVerifications: number;
+        },
+      ) => Record<string, unknown>;
+    };
+    expect(typeof runModule.resolveFrozenDataForSeoBacklinksScope).toBe(
+      "function",
+    );
+    const resolveScope = runModule.resolveFrozenDataForSeoBacklinksScope!;
+    const collectionScope = {
+      schemaVersion: "dataforseo.backlinks-scope.v1",
+      queryKind: "backlinks",
+      target: "accepted.example",
+      includeSubdomains: true,
+      indirectLinksPolicy: {
+        summary: "included",
+        backlinks: "not_configurable",
+        referringDomains: "included",
+        domainPages: "not_configurable",
+      },
+      excludeInternalBacklinks: true,
+      backlinksStatusType: "live",
+      rankScale: "one_hundred",
+      maxBacklinks: 37,
+      maxReferringDomains: 19,
+      maxBacklinkPages: 23,
+      maxSourceVerifications: 7,
+    } as const;
+    const run = {
+      provider: "dataforseo",
+      operation: "backlinks",
+      method_version: "dataforseo.backlinks.v1",
+      site_id: "00000000-0000-4000-8000-000000000205",
+      source_connection_id: "00000000-0000-4000-8000-000000000206",
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "backlinks",
+        siteId: "00000000-0000-4000-8000-000000000205",
+        collectionScope,
+      }),
+    };
+    const requestPayload = {
+      provider: "dataforseo",
+      operation: "backlinks",
+      sourceConnectionId: run.source_connection_id,
+      collectionScope,
+    };
+    const caps = {
+      maxBacklinks: 500,
+      maxReferringDomains: 100,
+      maxBacklinkPages: 500,
+      maxSourceVerifications: 20,
+    };
+
+    expect(resolveScope(run, requestPayload, caps)).toEqual(collectionScope);
+    for (const [cap, value] of [
+      ["maxBacklinks", 36],
+      ["maxReferringDomains", 18],
+      ["maxBacklinkPages", 22],
+      ["maxSourceVerifications", 6],
+    ] as const) {
+      expect(() =>
+        resolveScope(run, requestPayload, { ...caps, [cap]: value }),
+      ).toThrowError(
+        expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+      );
+    }
+    expect(() =>
+      resolveScope(
+        { ...run, parameters_hash: "0".repeat(64) },
+        requestPayload,
+        caps,
+      ),
+    ).toThrowError(
+      expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
+    );
+    expect(() =>
+      resolveScope(
+        run,
+        {
+          ...requestPayload,
+          collectionScope: { ...collectionScope, target: "tampered.example" },
+        },
+        caps,
+      ),
     ).toThrowError(
       expect.objectContaining({ code: "INVALID_CONFIGURATION" }),
     );
@@ -689,6 +964,135 @@ describe("DataForSEO worker gates", () => {
           },
         }),
         observations: [],
+      }),
+    );
+  });
+
+  it("fails a backlinks collection closed when its separate rollout flag is disabled", async () => {
+    arrangeBacklinksRunRepositories();
+    const setTerminal = vi.mocked(
+      AsyncRunsRepository.prototype.setTerminal,
+    );
+    const providerFetch = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new Error("provider fetch must not be reached");
+    });
+    const ctx = backlinksWorkerContext({
+      backlinksEnabled: false,
+      providerFetch,
+    });
+
+    await expect(
+      runCollection(ctx, {
+        runId: backlinksIds.runId,
+        workspaceId: backlinksIds.workspaceId,
+        projectId: backlinksIds.projectId,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(providerFetch).not.toHaveBeenCalled();
+    expect(
+      SourceConnectionsRepository.prototype.findConnectedById,
+    ).not.toHaveBeenCalled();
+    expect(mocks.persistCollectionResult).not.toHaveBeenCalled();
+    expect(setTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: backlinksIds.runId }),
+      {
+        status: "failed",
+        lastErrorCode: "FEATURE_DISABLED",
+        lastErrorSummary: "collection failed",
+      },
+    );
+  });
+
+  it("collects the frozen backlinks scope through all four endpoints and persists one canonical snapshot input", async () => {
+    const fixtures = arrangeBacklinksRunRepositories();
+    mocks.persistCollectionResult.mockResolvedValue("snapshot-backlinks-1");
+    const providerRequests: Array<{
+      readonly url: string;
+      readonly body: unknown;
+    }> = [];
+    const providerFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = String(input);
+      providerRequests.push({
+        url,
+        body: JSON.parse(String(init?.body)),
+      });
+      const result = url.endsWith("/summary/live")
+        ? {
+            target: "accepted.example",
+            first_seen: "2026-07-01 00:00:00 +00:00",
+            lost_date: null,
+            rank: 74,
+            backlinks: 0,
+            referring_domains: 0,
+            referring_main_domains: 0,
+          }
+        : {
+            target: "accepted.example",
+            total_count: 0,
+            items_count: 0,
+            items: [],
+          };
+      return new Response(JSON.stringify(dataForSeoEnvelope(result)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const ctx = backlinksWorkerContext({
+      backlinksEnabled: true,
+      providerFetch,
+    });
+
+    await runCollection(ctx, {
+      runId: backlinksIds.runId,
+      workspaceId: backlinksIds.workspaceId,
+      projectId: backlinksIds.projectId,
+    });
+
+    expect(providerRequests.map((request) => request.url).sort()).toEqual(
+      [
+        "https://api.dataforseo.com/v3/backlinks/backlinks/live",
+        "https://api.dataforseo.com/v3/backlinks/domain_pages/live",
+        "https://api.dataforseo.com/v3/backlinks/referring_domains/live",
+        "https://api.dataforseo.com/v3/backlinks/summary/live",
+      ].sort(),
+    );
+    expect(JSON.stringify(providerRequests)).toContain("accepted.example");
+    expect(JSON.stringify(providerRequests)).not.toContain("mutated.example");
+    expect(mocks.persistCollectionResult).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        collectionRun: fixtures.collectionRun,
+        datasetKey: "dataforseo.backlinks.v1",
+        schemaVersion: "dataforseo.backlinks.v1",
+        outcome: expect.objectContaining({
+          availability: "available",
+          rowCount: 1,
+          providerUsage: expect.objectContaining({ apiCalls: 4 }),
+          summary: {
+            collectionScope: frozenBacklinksScope,
+            timing: {
+              collectedAt: expect.any(String),
+              dataAsOf: null,
+              observedAt: null,
+              freshness: "unknown",
+            },
+          },
+        }),
+        observations: [
+          expect.objectContaining({
+            metricKey: "dataforseo.backlink_summary.v1",
+            subjectType: "site",
+            subjectRef: "accepted.example",
+            availability: "available",
+            valueJson: {
+              targetDomain: "accepted.example",
+              rank: 74,
+              backlinks: 0,
+              referringDomains: 0,
+            },
+          }),
+        ],
       }),
     );
   });

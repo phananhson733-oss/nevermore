@@ -44,6 +44,7 @@ const vercel = JSON.parse(read("apps/web/vercel.json"));
 assert.equal(vercel.framework, "nextjs");
 
 const vercelEnvironment = read("deploy/vercel.web.env.template");
+const workerEnvironment = read("deploy/worker.env.template");
 assert.match(
   vercelEnvironment,
   /^APP_ORIGIN=https:\/\/app\.gengrowth\.ai\s/m,
@@ -59,6 +60,25 @@ assert.doesNotMatch(
   /gengrowth\.ai\/app\b/,
   "the approved Vercel deployment must not use the retired /app mount",
 );
+for (const [name, expected] of [
+  ["DATAFORSEO_BACKLINKS_ENABLED", "false"],
+  ["DATAFORSEO_MAX_BACKLINKS", "500"],
+  ["DATAFORSEO_MAX_REFERRING_DOMAINS", "100"],
+  ["DATAFORSEO_MAX_BACKLINK_PAGES", "500"],
+  ["DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS", "20"],
+]) {
+  const declaration = new RegExp(`^${name}=${expected}\\s`, "m");
+  assert.match(
+    vercelEnvironment,
+    declaration,
+    `the Vercel template must freeze ${name}=${expected}`,
+  );
+  assert.match(
+    workerEnvironment,
+    declaration,
+    `the Worker template must freeze ${name}=${expected}`,
+  );
+}
 
 const dockerfile = read("Dockerfile.worker");
 assert.match(dockerfile, /^FROM node:24-/m);

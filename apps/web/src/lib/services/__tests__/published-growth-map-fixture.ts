@@ -20,8 +20,33 @@ const COLLECTION_STEP_KEYS = [
   "gsc",
   "ga4",
   "dataforseo",
+  "dataforseo_backlinks",
 ] as const;
-const OPTIONAL_STEP_KEYS = ["gsc", "ga4", "dataforseo"] as const;
+const OPTIONAL_STEP_KEYS = [
+  "gsc",
+  "ga4",
+  "dataforseo",
+  "dataforseo_backlinks",
+] as const;
+
+function collectionStepKeyForSnapshot(
+  snapshot: Awaited<
+    ReturnType<DataSnapshotsRepository["findByIds"]>
+  >[number],
+): (typeof COLLECTION_STEP_KEYS)[number] | null {
+  if (snapshot.provider === "dataforseo") {
+    return snapshot.dataset_key === "dataforseo.backlinks.v1" &&
+      snapshot.schema_version === "dataforseo.backlinks.v1" &&
+      snapshot.method_version === "dataforseo.backlinks.v1"
+      ? "dataforseo_backlinks"
+      : "dataforseo";
+  }
+  return COLLECTION_STEP_KEYS.includes(
+    snapshot.provider as (typeof COLLECTION_STEP_KEYS)[number],
+  )
+    ? (snapshot.provider as (typeof COLLECTION_STEP_KEYS)[number])
+    : null;
+}
 
 function manifestSnapshotIds(manifest: Record<string, unknown>): string[] {
   const snapshots = manifest["snapshots"];
@@ -152,13 +177,13 @@ export async function publishDiagnosticGeneration(
         "published diagnostic fixture cannot publish foreign-site Snapshots",
       );
     }
-    const provider = snapshot.provider as (typeof COLLECTION_STEP_KEYS)[number];
-    if (!COLLECTION_STEP_KEYS.includes(provider)) {
+    const stepKey = collectionStepKeyForSnapshot(snapshot);
+    if (!stepKey) {
       continue;
     }
-    if (snapshotByProvider.has(provider)) {
+    if (snapshotByProvider.has(stepKey)) {
       throw new Error(
-        `published diagnostic fixture has duplicate ${provider} Snapshots`,
+        `published diagnostic fixture has duplicate ${stepKey} Snapshots`,
       );
     }
     const collectionRun = await runs.findById(
@@ -176,10 +201,10 @@ export async function publishDiagnosticGeneration(
       snapshot.availability === "unavailable"
     ) {
       throw new Error(
-        `published diagnostic fixture ${provider} Snapshot lacks a terminal canonical collection`,
+        `published diagnostic fixture ${stepKey} Snapshot lacks a terminal canonical collection`,
       );
     }
-    snapshotByProvider.set(provider, snapshot);
+    snapshotByProvider.set(stepKey, snapshot);
   }
   if (!snapshotByProvider.has("crawl")) {
     throw new Error("published diagnostic fixture requires one Crawl Snapshot");
