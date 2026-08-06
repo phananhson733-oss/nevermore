@@ -457,7 +457,7 @@ reconciliation、route/OpenAPI 与测试。
 ## 10. 冻结数据库 inventory
 
 以下 78 张应用表来自 `0001_init.sql` 至
-`0044_dataforseo_backlinks.sql` 的 44 个 ordered migrations 与
+`0045_dataforseo_backlink_target_lineage.sql` 的 45 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->

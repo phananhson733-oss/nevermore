@@ -233,6 +233,11 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/0044_dataforseo_backlinks.sql",
     fixtureMigration("0044_dataforseo_backlinks"),
   );
+  write(
+    root,
+    "packages/db/migrations/0045_dataforseo_backlink_target_lineage.sql",
+    fixtureMigration("0045_dataforseo_backlink_target_lineage"),
+  );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
     write(
@@ -306,7 +311,7 @@ function makeFixture(t, options = {}) {
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0044_dataforseo_backlinks",
+    migrationHead: "0045_dataforseo_backlink_target_lineage",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -344,7 +349,7 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     activeLock.migrationHead,
-    "0044_dataforseo_backlinks",
+    "0045_dataforseo_backlink_target_lineage",
   );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
