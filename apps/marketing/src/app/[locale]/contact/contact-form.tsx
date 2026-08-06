@@ -15,6 +15,13 @@ import { CheckCircle } from "lucide-react";
 
 export type FormStatus = "idle" | "loading" | "success" | "error";
 
+// 字段标签走 mono 小标签；输入框走规范里的输入框配方（h-12.5 + 强描边 + 页面底色）
+const FIELD_LABEL =
+  "text-text-dark-secondary mb-2 block font-mono text-[10px] tracking-[0.12em] uppercase";
+
+const FIELD_BOX =
+  "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent h-12.5 rounded-[10px] px-4 shadow-none transition-colors";
+
 // ---------------------------------------------------------------------------
 // SuccessMessage
 // ---------------------------------------------------------------------------
@@ -27,18 +34,20 @@ export function SuccessMessage({
   return (
     <motion.div
       {...fadeInUp}
-      className="text-center py-12"
+      className="py-12 text-center"
       role="status"
       aria-live="polite"
     >
       <CheckCircle
-        className="size-12 text-brand-success mx-auto mb-4"
+        className="text-brand-success mx-auto mb-4 size-10"
         aria-hidden="true"
       />
-      <h2 className="text-text-dark-primary font-semibold text-xl mb-2">
+      <h2 className="text-text-dark-primary mb-2 text-[21px] tracking-[-0.02em]">
         {t("form.successTitle")}
       </h2>
-      <p className="text-text-dark-secondary">{t("form.successDesc")}</p>
+      <p className="text-text-dark-secondary text-[15px] leading-[1.65]">
+        {t("form.successDesc")}
+      </p>
     </motion.div>
   );
 }
@@ -77,15 +86,12 @@ export function ContactForm({
       {...fadeInUp}
       transition={{ ...fadeInUp.transition, delay: 0.2 }}
       onSubmit={onSubmit}
-      className="space-y-6"
+      className="space-y-5"
       noValidate
     >
       {/* Name (required) */}
       <div>
-        <Label
-          htmlFor="contact-name"
-          className="text-text-dark-secondary text-sm"
-        >
+        <Label htmlFor="contact-name" className={FIELD_LABEL}>
           {t("form.nameLabel")} *
         </Label>
         <Input
@@ -96,16 +102,13 @@ export function ContactForm({
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder={t("form.namePlaceholder")}
-          className="mt-1 bg-brand-bg-alt border-brand-border text-text-dark-primary"
+          className={`${FIELD_BOX} font-mono text-[14px]`}
         />
       </div>
 
       {/* Email (required) */}
       <div>
-        <Label
-          htmlFor="contact-email"
-          className="text-text-dark-secondary text-sm"
-        >
+        <Label htmlFor="contact-email" className={FIELD_LABEL}>
           {t("form.emailLabel")} *
         </Label>
         <Input
@@ -118,16 +121,13 @@ export function ContactForm({
           value={email}
           onChange={(e) => onEmailChange(e.target.value)}
           placeholder={t("form.emailPlaceholder")}
-          className="mt-1 bg-brand-bg-alt border-brand-border text-text-dark-primary"
+          className={`${FIELD_BOX} font-mono text-[14px]`}
         />
       </div>
 
-      {/* Message (required, min 10 chars) */}
+      {/* Message (required, min 10 chars) —— 成段正文不用 mono */}
       <div>
-        <Label
-          htmlFor="contact-message"
-          className="text-text-dark-secondary text-sm"
-        >
+        <Label htmlFor="contact-message" className={FIELD_LABEL}>
           {t("form.messageLabel")} *
         </Label>
         <Textarea
@@ -138,7 +138,7 @@ export function ContactForm({
           value={message}
           onChange={(e) => onMessageChange(e.target.value)}
           placeholder={t("form.messagePlaceholder")}
-          className="mt-1 bg-brand-bg-alt border-brand-border text-text-dark-primary min-h-32"
+          className={`${FIELD_BOX} h-auto min-h-36 py-3 text-[14px] leading-[1.65]`}
         />
       </div>
 
@@ -148,19 +148,19 @@ export function ContactForm({
           <p
             id="contact-form-error"
             role="alert"
-            className="text-brand-error text-sm"
+            className="border-brand-error/25 bg-brand-error/[0.08] text-brand-error rounded-[10px] border px-4 py-3 text-[13px]"
           >
             {errorMsg}
           </p>
         )}
       </div>
 
-      {/* Submit */}
+      {/* Submit — GLOW_02，本屏唯一的渐变主 CTA */}
       <Button
         type="submit"
         disabled={status === "loading"}
         aria-busy={status === "loading"}
-        className="w-full bg-brand-accent hover:brightness-110 text-white rounded-lg text-sm"
+        className="bg-brand-gradient text-brand-on-accent shadow-cta hover:shadow-cta-hover focus-visible:outline-brand-accent h-12 w-full rounded-[10px] text-[14.5px] font-semibold transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70 disabled:shadow-none"
       >
         {status === "loading" ? t("form.submitting") : t("form.submit")}
       </Button>

@@ -19,39 +19,44 @@ export function WizardStepRegions({
   const isBrand = variant === "brand";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <Label className={isBrand ? "text-text-dark-primary" : "text-zinc-900"}>
+        <Label
+          className={
+            "text-[14px] font-semibold " +
+            (isBrand ? "text-text-dark-primary" : "text-text-dark-strong")
+          }
+        >
           {t("targetRegions")}
         </Label>
-        <p
-          className={`mt-0.5 text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-        >
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("targetRegionsDesc")}
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {REGIONS.map((region) => {
           const selected = targetRegions.includes(region.value);
           return (
             <label
               key={region.value}
               className={
-                "flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm transition-colors " +
+                "flex cursor-pointer items-center gap-2 rounded-[10px] border p-2.5 text-[13px] transition-colors " +
                 (selected
                   ? isBrand
-                    ? "border-brand-accent bg-brand-accent/10 text-text-dark-primary"
-                    : "border-zinc-400 bg-zinc-100 text-zinc-900"
+                    ? "border-brand-accent/50 bg-brand-accent/[0.08] text-text-dark-primary"
+                    : "border-brand-border-strong bg-brand-panel-raised text-text-dark-primary"
                   : isBrand
-                    ? "border-brand-border text-text-dark-secondary hover:border-brand-accent/40"
-                    : "border-zinc-200 text-zinc-500 hover:border-zinc-300")
+                    ? "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/40"
+                    : "border-brand-border text-text-dark-secondary hover:border-brand-border-strong")
               }
             >
               <input
                 type="checkbox"
                 checked={selected}
                 onChange={() => onToggleRegion(region.value)}
-                className={isBrand ? "accent-amber-600" : "accent-zinc-900"}
+                className={
+                  isBrand ? "accent-brand-accent" : "accent-brand-accent-2"
+                }
               />
               <span>{region.flag}</span>
               <span>{region.label[locale] ?? region.label.en}</span>

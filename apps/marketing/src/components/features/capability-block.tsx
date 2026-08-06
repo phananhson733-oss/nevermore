@@ -33,22 +33,22 @@ export function CapabilityBlock({
   const t = useTranslations(`features.${ns}`);
   const locale = useLocale();
 
-  const bgClass = isDark ? "bg-brand-bg" : "bg-brand-bg-light";
-  const titleClass = isDark
-    ? "text-text-dark-primary"
-    : "text-text-light-primary";
-  const descClass = isDark
-    ? "text-text-dark-secondary"
-    : "text-text-light-secondary";
-  const cardBg = isDark ? "border-brand-border" : "border-gray-200";
+  // Signal Console 全站深色：相邻区块靠 bg / bg-alt 交替加 1px 分隔线分段，
+  // 不再翻转前景色，所以文字与描边在两种底色下都是同一套 token。
+  const bgClass = isDark ? "bg-brand-bg" : "bg-brand-bg-alt";
+  const titleClass = "text-text-dark-primary";
+  const descClass = "text-text-dark-secondary";
+  const cardBg = "border-brand-border-card";
   const faqBg = isDark
-    ? "bg-brand-bg-alt border-brand-border"
-    : "bg-white border-gray-200";
+    ? "bg-brand-panel border-brand-border-card"
+    : "bg-brand-panel-raised border-brand-border-card";
 
   return (
-    <section className={`${bgClass} py-16 md:py-24`}>
-      <div className="max-w-content mx-auto px-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
+    <section
+      className={`${bgClass} border-t border-brand-border py-16 md:py-22`}
+    >
+      <div className="max-w-content mx-auto px-6 md:px-8">
+        <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-2 lg:gap-14">
           {/* Text side */}
           <div className={reverse ? "lg:order-2" : ""}>
             <motion.h2
@@ -56,7 +56,7 @@ export function CapabilityBlock({
               whileInView="animate"
               initial="initial"
               viewport={{ once: true }}
-              className={`${titleClass} font-semibold mb-4`}
+              className={titleClass}
             >
               {t("title")}
             </motion.h2>
@@ -66,13 +66,13 @@ export function CapabilityBlock({
               initial="initial"
               viewport={{ once: true }}
               transition={{ ...fadeInUp.transition, delay: 0.1 }}
-              className={`${descClass} text-lg mb-8`}
+              className={`${descClass} mt-4 mb-7 text-[15.5px] leading-[1.65]`}
             >
               {t("desc")}
             </motion.p>
 
             {/* Feature list */}
-            <ul className="space-y-3">
+            <ul className="space-y-2.5">
               {features.map((fKey) => (
                 <motion.li
                   key={fKey}
@@ -80,10 +80,10 @@ export function CapabilityBlock({
                   whileInView="animate"
                   initial="initial"
                   viewport={{ once: true }}
-                  className={`${descClass} text-sm flex items-start gap-2`}
+                  className={`${descClass} flex items-start gap-2.5 text-[13px] leading-[1.6]`}
                 >
                   <Check
-                    className="text-brand-accent mt-0.5 h-4 w-4 shrink-0"
+                    className="mt-[3px] size-[13px] shrink-0 text-brand-accent"
                     aria-hidden="true"
                   />
                   {t(fKey)}
@@ -100,7 +100,7 @@ export function CapabilityBlock({
                 viewport={{ once: true }}
                 type="button"
                 onClick={onCtaClick}
-                className="mt-6 text-brand-accent text-sm font-medium hover:underline cursor-pointer inline-flex items-center gap-1"
+                className="mt-7 inline-flex cursor-pointer items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
               >
                 {t("cta")}
                 <span aria-hidden="true">&rarr;</span>
@@ -109,13 +109,13 @@ export function CapabilityBlock({
 
             {/* Related reading backlink */}
             {pillarSlug && (
-              <div className="mt-3">
-                <span className={`${descClass} text-xs`}>
+              <div className="mt-3.5">
+                <span className={`${descClass} text-[12.5px]`}>
                   {locale === "en" ? "Related reading:" : "相关阅读："}{" "}
                 </span>
                 <Link
                   href={`${localePath(locale, "/blog")}?pillar=${pillarSlug}`}
-                  className={`${descClass} text-xs hover:text-brand-accent transition-colors inline-flex items-center gap-0.5`}
+                  className="inline-flex items-center gap-0.5 text-[12.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
                 >
                   {t("relatedReading")}
                   <span aria-hidden="true">&rarr;</span>
@@ -126,10 +126,10 @@ export function CapabilityBlock({
 
           {/* Visual */}
           <div
-            className={`${reverse ? "lg:order-1" : ""} rounded-card border ${cardBg} p-6 md:p-8 flex items-center justify-center min-h-[160px] md:min-h-[200px]`}
+            className={`${reverse ? "lg:order-1" : ""} rounded-card border ${cardBg} flex min-h-[160px] items-center justify-center p-[22px] md:min-h-[200px] md:p-[26px]`}
           >
             {visual || (
-              <p className={`${descClass} text-sm italic`}>
+              <p className={`${descClass} font-mono text-[10px] tracking-[0.12em] uppercase`}>
                 [Data visualization]
               </p>
             )}
@@ -144,12 +144,15 @@ export function CapabilityBlock({
           viewport={{ once: true }}
           className="mt-12"
         >
-          <h3 className={`${titleClass} font-semibold text-lg mb-4`}>
+          <h3 className={`${titleClass} mb-4 text-[16.5px] font-semibold`}>
             {t("howItWorksTitle")}
           </h3>
-          <ol className="list-decimal list-inside space-y-3">
+          <ol className="list-decimal space-y-2.5 pl-5 marker:font-mono marker:text-[11px] marker:text-brand-accent-text">
             {(["step1", "step2", "step3"] as const).map((step) => (
-              <li key={step} className={`${descClass} text-sm leading-relaxed`}>
+              <li
+                key={step}
+                className={`${descClass} text-[13px] leading-[1.6]`}
+              >
                 {t(`howItWorks.${step}`)}
               </li>
             ))}
@@ -157,7 +160,7 @@ export function CapabilityBlock({
         </motion.div>
 
         {/* FAQ */}
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
           {["faq1", "faq2"].map((faq) => (
             <motion.div
               key={faq}
@@ -165,12 +168,12 @@ export function CapabilityBlock({
               whileInView="animate"
               initial="initial"
               viewport={{ once: true }}
-              className={`${faqBg} border rounded-card p-6`}
+              className={`${faqBg} rounded-card border p-[22px] transition-colors hover:border-brand-accent/40`}
             >
-              <h3 className={`${titleClass} font-medium text-sm mb-2`}>
+              <h3 className={`${titleClass} mb-2 text-[15.5px] font-semibold`}>
                 {t(`${faq}Q`)}
               </h3>
-              <p className={`${descClass} text-sm leading-relaxed`}>
+              <p className={`${descClass} text-[13px] leading-[1.6]`}>
                 {t(`${faq}A`)}
               </p>
             </motion.div>

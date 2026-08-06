@@ -1,6 +1,6 @@
 // @input  — next-intl, framer-motion
 // @output — SocialProofSection 组件（证据优先的方法论承诺）
-// @pos    — 首页区块 6，深色背景
+// @pos    — 首页区块 6，交替底色 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
@@ -11,98 +11,27 @@ import { motion } from "framer-motion";
 import { fadeInUp } from "@/lib/animations";
 import { localePath } from "@/lib/locale-path";
 
-function FingerprintIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
-      <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
-      <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
-      <path d="M2 12a10 10 0 0 1 18-6" />
-      <path d="M2 16h.01" />
-      <path d="M21.8 16c.2-2 .131-5.354 0-6" />
-      <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
-      <path d="M8.65 22c.21-.66.45-1.32.57-2" />
-      <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
-    </svg>
-  );
-}
-
-function CommunityIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function RhythmIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 20V10" />
-      <path d="M18 20V4" />
-      <path d="M6 20v-4" />
-    </svg>
-  );
-}
-
 export function SocialProofSection() {
   const t = useTranslations("home.socialProof");
   const locale = useLocale();
 
-  const trustItems = [
-    {
-      icon: <FingerprintIcon />,
-      title: t("evidenceTitle"),
-      sub: t("evidenceSub"),
-    },
-    {
-      icon: <CommunityIcon />,
-      title: t("sequenceTitle"),
-      sub: t("sequenceSub"),
-    },
-    {
-      icon: <RhythmIcon />,
-      title: t("limitsTitle"),
-      sub: t("limitsSub"),
-    },
+  // 三条原则说的是同一套方法论的三个环节，编号让它们读成一个序列；换成三个
+  // 互不相干的图标反而会把顺序关系抹掉。
+  const principles = [
+    { id: "PRINCIPLE_01", title: t("evidenceTitle"), sub: t("evidenceSub") },
+    { id: "PRINCIPLE_02", title: t("sequenceTitle"), sub: t("sequenceSub") },
+    { id: "PRINCIPLE_03", title: t("limitsTitle"), sub: t("limitsSub") },
   ];
 
   return (
-    <section className="bg-brand-bg py-16 md:py-24">
-      <div className="max-w-content mx-auto px-4 text-center">
+    <section className="border-t border-brand-border bg-brand-bg-alt py-16 md:py-22">
+      <div className="max-w-content mx-auto px-6 text-center md:px-8">
         <motion.h2
           {...fadeInUp}
           whileInView="animate"
           initial="initial"
           viewport={{ once: true }}
-          className="text-text-dark-primary font-semibold text-3xl md:text-4xl mb-4"
+          className="mb-3.5 text-text-dark-primary"
         >
           {t("title")}
         </motion.h2>
@@ -113,7 +42,7 @@ export function SocialProofSection() {
           initial="initial"
           viewport={{ once: true }}
           transition={{ ...fadeInUp.transition, delay: 0.15 }}
-          className="text-text-dark-secondary text-lg max-w-2xl mx-auto mb-14"
+          className="mx-auto mb-11 max-w-[600px] text-[15.5px] leading-[1.65] text-text-dark-secondary"
         >
           {t("subtitle")}
         </motion.p>
@@ -124,29 +53,29 @@ export function SocialProofSection() {
           initial="initial"
           viewport={{ once: true }}
           transition={{ ...fadeInUp.transition, delay: 0.3 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto mb-12"
+          className="grid grid-cols-1 gap-4 text-left md:grid-cols-3"
         >
-          {trustItems.map((item, i) => (
+          {principles.map((item) => (
             <div
-              key={i}
-              className="border border-brand-border rounded-card p-8 flex flex-col items-center gap-4 hover:border-brand-accent/40 transition-colors"
+              key={item.id}
+              className="rounded-card border border-brand-border-card bg-brand-panel p-[26px] transition-colors hover:border-brand-accent/40"
             >
-              <div className="text-brand-accent">{item.icon}</div>
-              <p className="text-text-dark-primary font-semibold text-lg">
+              <p className="font-mono text-[10px] tracking-[0.08em] text-brand-accent-text">
+                {item.id}
+              </p>
+              <p className="mt-3 text-base font-semibold text-text-dark-primary">
                 {item.title}
               </p>
-              {item.sub && (
-                <p className="text-text-dark-secondary text-sm">
-                  {item.sub}
-                </p>
-              )}
+              <p className="mt-2 text-[13px] leading-[1.65] text-text-dark-secondary">
+                {item.sub}
+              </p>
             </div>
           ))}
         </motion.div>
 
         <Link
           href={localePath(locale, "/blog")}
-          className="text-brand-accent-text hover:text-brand-accent-hover font-medium text-sm transition-colors"
+          className="mt-8 inline-block font-mono text-[11px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
         >
           {t("cta")}
         </Link>

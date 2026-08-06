@@ -46,7 +46,7 @@ export function CookieBanner({
       }
       if (e.key === "Tab" && modalRef.current) {
         const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (focusable.length === 0) return;
         const first = focusable[0];
@@ -63,7 +63,7 @@ export function CookieBanner({
     // Auto-focus first focusable element in modal
     if (modalRef.current) {
       const first = modalRef.current.querySelector<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       );
       first?.focus();
     }
@@ -76,7 +76,7 @@ export function CookieBanner({
       {/* Initial banner -- fixed bottom */}
       {showBanner && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center"
+          className="fixed right-0 bottom-0 left-0 z-50 flex justify-center p-4"
           role="region"
           aria-label="Cookie consent"
         >
@@ -88,15 +88,12 @@ export function CookieBanner({
       {effectiveShowPrefs && (
         <div
           ref={modalRef}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-brand-bg/80 p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) handleClosePreferences();
           }}
         >
-          <ConsentPanel
-            mode="preferences"
-            onClose={handleClosePreferences}
-          />
+          <ConsentPanel mode="preferences" onClose={handleClosePreferences} />
         </div>
       )}
 
@@ -105,7 +102,7 @@ export function CookieBanner({
         <button
           ref={triggerRef}
           onClick={() => setShowPreferences(true)}
-          className="fixed bottom-4 right-4 z-40 size-10 rounded-full bg-brand-bg-alt border border-brand-border flex items-center justify-center text-text-dark-secondary hover:text-text-dark-primary transition-colors shadow-lg"
+          className="fixed right-4 bottom-4 z-40 flex size-10 items-center justify-center rounded-full border border-brand-border-strong bg-brand-panel text-text-dark-secondary transition-colors hover:border-brand-accent/50 hover:text-text-dark-primary"
           aria-label="Cookie Preferences"
         >
           <Settings className="size-4" aria-hidden="true" />

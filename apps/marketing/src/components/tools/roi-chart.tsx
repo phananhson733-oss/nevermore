@@ -63,40 +63,61 @@ export function ROIChart({
 
   return (
     <div>
-      <h2 className="text-text-dark-primary font-semibold text-[20px] mb-4">
+      <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("chartTitle")}
       </h2>
-      <div className="rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6">
+      <div className="mt-4 rounded-card border border-brand-border-card bg-brand-panel p-[22px]">
         <div className="h-72 min-h-[18rem]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data}>
               <XAxis
                 dataKey="name"
-                tick={{ fill: "#9B9690", fontSize: 13 }}
-                axisLine={{ stroke: "#3a3a3c" }}
+                tick={{
+                  fill: "#8B96A5",
+                  fontSize: 11,
+                  fontFamily: "var(--font-mono)",
+                }}
+                axisLine={{ stroke: "#1B2430" }}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fill: "#9B9690", fontSize: 12 }}
+                tick={{
+                  fill: "#8B96A5",
+                  fontSize: 11,
+                  fontFamily: "var(--font-mono)",
+                }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={formatDollar}
               />
               <Tooltip
+                cursor={{ fill: "rgba(76,195,250,0.06)" }}
                 formatter={(value: unknown) => formatDollar(Number(value))}
                 contentStyle={{
-                  backgroundColor: "#1A1A1C",
-                  border: "1px solid #3a3a3c",
-                  borderRadius: 8,
-                  color: "#F0EDE8",
-                  fontSize: 13,
+                  backgroundColor: "#0E141C",
+                  border: "1px solid #1E2937",
+                  borderRadius: 10,
+                  color: "#E8EDF2",
+                  fontSize: 12.5,
+                  fontFamily: "var(--font-mono)",
                 }}
               />
-              <Bar dataKey={t("manual")} fill="#9B9690" radius={[4, 4, 0, 0]} />
+              {/*
+               * 两条序列必须靠形状区分，不能只靠颜色：绿与青在 deuteranopia 下
+               * 差异不足以单独承担辨识。基线（manual）走描边空心柱，投影后的
+               * automated 走实心柱，色盲与灰度打印下同样读得出哪根是哪根。
+               */}
+              <Bar
+                dataKey={t("manual")}
+                fill="rgba(76,195,250,0.14)"
+                stroke="#4CC3FA"
+                strokeWidth={1.5}
+                radius={[3, 3, 0, 0]}
+              />
               <Bar
                 dataKey={t("automated")}
-                fill="#D97757"
-                radius={[4, 4, 0, 0]}
+                fill="#3DDC97"
+                radius={[3, 3, 0, 0]}
               />
             </BarChart>
           </ResponsiveContainer>

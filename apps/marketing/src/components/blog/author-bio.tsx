@@ -10,23 +10,23 @@ export function AuthorBio() {
   const t = useTranslations("blog.authorBio");
 
   return (
-    <div className="flex items-start gap-4 rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-5 mt-14">
-      {/* Avatar placeholder */}
-      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-brand-accent/20 flex items-center justify-center">
-        <span className="text-brand-accent-text text-[13px] font-semibold leading-none">
+    <div className="mt-14 flex items-start gap-4 rounded-card border border-brand-border-card bg-brand-panel p-[22px]">
+      {/* Initials tile */}
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft">
+        <span className="font-mono text-[11px] tracking-[0.08em] text-brand-accent-text">
           GT
         </span>
       </div>
 
       {/* Text block */}
       <div className="min-w-0">
-        <p className="text-text-dark-primary text-[14px] font-semibold leading-tight">
+        <p className="text-[14px] leading-tight font-semibold text-text-dark-primary">
           {t("name")}
         </p>
-        <p className="text-text-dark-secondary text-[12px] mt-0.5">
+        <p className="mt-1.5 font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
           {t("title")}
         </p>
-        <p className="text-text-dark-secondary text-[13px] leading-relaxed mt-2">
+        <p className="mt-2.5 text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("bio")}
         </p>
       </div>

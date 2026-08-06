@@ -22,6 +22,14 @@ import {
   type SelfCheckDraft,
 } from "./traffic-drop-self-check-gate";
 
+/** Shared surfaces, so the connect state and the report read as one console. */
+const PANEL =
+  "scroll-mt-8 rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+const PRIMARY_CTA =
+  "inline-flex h-12.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent";
+const FIELD_LABEL =
+  "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+
 interface TrafficDropPayload {
   readonly result: TrafficDropResult;
   readonly series: readonly TrafficDailyPoint[];
@@ -187,23 +195,19 @@ export function TrafficDropTool({
 
   if (properties === null) {
     return (
-      <section
-        id="traffic-drop-tool"
-        data-locale={locale}
-        className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
-      >
-        <div className="flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
-          <LineChart aria-hidden="true" className="size-5" />
+      <section id="traffic-drop-tool" data-locale={locale} className={PANEL}>
+        <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+          <LineChart aria-hidden="true" className="size-[18px]" />
         </div>
-        <h2 className="mt-4 text-[20px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+        <h2 className="mt-4 text-[16.5px] font-semibold text-text-dark-primary">
           {t("connectTitle")}
         </h2>
-        <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("connectBody")}
         </p>
 
         {!connectEnabled ? (
-          <p className="mt-5 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-5 rounded-[10px] border border-brand-border bg-brand-panel-sunken p-4 text-[13px] leading-[1.6] text-text-dark-secondary">
             {t("connectPending")}
           </p>
         ) : consentNotice === "invite_only" ? (
@@ -213,11 +217,11 @@ export function TrafficDropTool({
            * the authorize link stays secondary — an invited tester loses one
            * click, a stranger learns why instead of hitting a wall.
            */
-          <div className="mt-5 rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+          <div className="mt-5 rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] p-4">
             <p className="text-[13px] font-semibold text-text-dark-primary">
               {t("inviteOnlyTitle")}
             </p>
-            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+            <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
               {t("inviteOnlyBody")}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -225,14 +229,14 @@ export function TrafficDropTool({
                 href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
                   localePath(locale, "/tools/traffic-drop-diagnosis"),
                 )}`}
-                className="inline-flex min-h-9 items-center gap-1.5 text-[13px] font-semibold text-brand-accent-text hover:underline"
+                className="inline-flex min-h-9 items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
               >
                 {t("inviteOnlyCta")}
-                <ArrowRight aria-hidden="true" className="size-4" />
+                <ArrowRight aria-hidden="true" className="size-3.5" />
               </a>
               <Link
                 href={localePath(locale, "/contact")}
-                className="text-[13px] text-text-dark-secondary hover:underline"
+                className="text-[12.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
               >
                 {t("inviteOnlyRequest")}
               </Link>
@@ -248,14 +252,14 @@ export function TrafficDropTool({
            * loses people; being told about it beforehand mostly does not.
            */
           <div className="mt-5 space-y-4">
-            <div className="rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+            <div className="rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] p-4">
               <p className="text-[13px] font-semibold text-text-dark-primary">
                 {t("unverifiedTitle")}
               </p>
-              <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+              <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
                 {t("unverifiedBody")}
               </p>
-              <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+              <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
                 {t("unverifiedScope")}
               </p>
             </div>
@@ -264,12 +268,12 @@ export function TrafficDropTool({
                 href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
                   localePath(locale, "/tools/traffic-drop-diagnosis"),
                 )}`}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+                className={PRIMARY_CTA}
               >
                 {t("connectCta")}
                 <ArrowRight aria-hidden="true" className="size-4" />
               </a>
-              <p className="flex items-center gap-2 text-[12px] text-text-dark-secondary">
+              <p className="flex items-center gap-2 text-[12.5px] text-text-dark-secondary">
                 <ShieldCheck aria-hidden="true" className="size-4" />
                 {t("connectTrust")}
               </p>
@@ -281,12 +285,12 @@ export function TrafficDropTool({
               href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
                 localePath(locale, "/tools/traffic-drop-diagnosis"),
               )}`}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+              className={PRIMARY_CTA}
             >
               {t("connectCta")}
               <ArrowRight aria-hidden="true" className="size-4" />
             </a>
-            <p className="flex items-center gap-2 text-[12px] text-text-dark-secondary">
+            <p className="flex items-center gap-2 text-[12.5px] text-text-dark-secondary">
               <ShieldCheck aria-hidden="true" className="size-4" />
               {t("connectTrust")}
             </p>
@@ -302,15 +306,11 @@ export function TrafficDropTool({
   // which reads as broken rather than as an answer.
   if (properties.length === 0) {
     return (
-      <section
-        id="traffic-drop-tool"
-        data-locale={locale}
-        className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
-      >
-        <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+      <section id="traffic-drop-tool" data-locale={locale} className={PANEL}>
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t("noPropertyTitle")}
         </h2>
-        <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("noPropertyBody")}
         </p>
       </section>
@@ -321,21 +321,18 @@ export function TrafficDropTool({
     <section
       id="traffic-drop-tool"
       data-locale={locale}
-      className="scroll-mt-8 space-y-5"
+      className="scroll-mt-8 space-y-4"
       aria-busy={loading}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <label
-          className="text-[13px] text-text-dark-secondary"
-          htmlFor="traffic-drop-property"
-        >
+        <label className={FIELD_LABEL} htmlFor="traffic-drop-property">
           {t("propertyLabel")}
         </label>
         <select
           id="traffic-drop-property"
           value={property}
           onChange={(event) => selectProperty(event.target.value)}
-          className="min-h-11 rounded-xl border border-brand-border bg-brand-bg-alt px-3 text-[13px] text-text-dark-primary"
+          className="h-12.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-3.5 font-mono text-[13px] text-text-dark-primary transition-colors outline-none focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
           {/* The value stays the property id; only the label is humanised. */}
           {properties.map((entry) => (
@@ -367,14 +364,11 @@ export function TrafficDropTool({
        * than inside the results because confirming it after a run would mean
        * paying for a second run to use it.
        */}
-      <div className="rounded-xl border border-brand-border/70 bg-brand-bg-alt/25 p-4">
-        <label
-          className="text-[13px] font-semibold text-text-dark-primary"
-          htmlFor="traffic-drop-brand-terms"
-        >
+      <div className="rounded-card border border-brand-border-card bg-brand-panel p-[22px]">
+        <label className={FIELD_LABEL} htmlFor="traffic-drop-brand-terms">
           {t("brandTerms.label")}
         </label>
-        <p className="mt-1 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-2 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("brandTerms.help")}
         </p>
         <input
@@ -390,9 +384,9 @@ export function TrafficDropTool({
             invalidate();
           }}
           placeholder={t("brandTerms.placeholder")}
-          className="mt-2.5 min-h-11 w-full rounded-xl border border-brand-border bg-brand-bg px-3 text-[13px] text-text-dark-primary"
+          className="mt-3 h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 text-[13.5px] text-text-dark-primary transition-colors outline-none placeholder:text-text-dark-secondary focus-visible:border-brand-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         />
-        <label className="mt-2.5 flex items-start gap-2 text-[12.5px] leading-relaxed text-text-dark-secondary">
+        <label className="mt-3 flex items-start gap-2.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           <input
             type="checkbox"
             checked={brandConfirmed}
@@ -401,7 +395,7 @@ export function TrafficDropTool({
               setBrandConfirmed(event.target.checked);
               invalidate();
             }}
-            className="mt-0.5 size-4 shrink-0"
+            className="mt-0.5 size-4 shrink-0 accent-brand-accent"
           />
           <span>{t("brandTerms.confirm")}</span>
         </label>
@@ -418,9 +412,11 @@ export function TrafficDropTool({
           type="button"
           onClick={() => void run()}
           disabled={
-            loading || property === "" || answersFor(selfChecks, property) === null
+            loading ||
+            property === "" ||
+            answersFor(selfChecks, property) === null
           }
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover disabled:opacity-60"
+          className={`${PRIMARY_CTA} disabled:opacity-60 disabled:shadow-none`}
         >
           {/* "Run again" before anything has run is an instruction to repeat
               something that never happened. */}
@@ -434,7 +430,7 @@ export function TrafficDropTool({
       </div>
 
       {propertyTotal > properties.length ? (
-        <p className="text-[12px] text-text-dark-secondary">
+        <p className="text-[12.5px] text-text-dark-secondary">
           {t("propertiesTruncated", {
             shown: properties.length,
             total: propertyTotal,
@@ -445,7 +441,7 @@ export function TrafficDropTool({
       {errorCode ? (
         <p
           role="status"
-          className="rounded-xl border border-brand-error/40 bg-[rgba(217,87,87,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
+          className="rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-error"
         >
           {t(`errors.${errorCode}`)}
         </p>
@@ -454,7 +450,7 @@ export function TrafficDropTool({
       {payload && payload.property !== property ? (
         <p
           role="status"
-          className="rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
+          className="rounded-[10px] border border-brand-warning/25 bg-brand-warning/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-warning"
         >
           {t("reportIsForOtherProperty", {
             reported: formatPropertyLabel(payload.property),
@@ -464,7 +460,7 @@ export function TrafficDropTool({
       ) : payload && stale ? (
         <p
           role="status"
-          className="rounded-xl border border-brand-warning/40 bg-[rgba(212,168,67,0.08)] p-4 text-[13px] leading-relaxed text-text-dark-primary"
+          className="rounded-[10px] border border-brand-warning/25 bg-brand-warning/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-warning"
         >
           {t("staleAnswers")}
         </p>
@@ -474,8 +470,8 @@ export function TrafficDropTool({
         <>
           {/* Bounds are null when the property returned no rows; we say so
               rather than printing today's date as if it were data. */}
-          <p className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-text-dark-secondary">
-            <span className="font-semibold text-text-dark-primary">
+          <p className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-text-dark-secondary">
+            <span className="font-mono text-[11px] tracking-[0.04em] text-text-dark-primary">
               {formatPropertyLabel(payload.property)}
             </span>
             <span>

@@ -16,23 +16,27 @@ interface VisibleBreadcrumbProps {
 
 export function VisibleBreadcrumb({ items }: VisibleBreadcrumbProps) {
   return (
+    /* 面包屑属于「路径标签」而非正文，走 mono + 宽字距；分隔符退到 faint 层。 */
     <nav
       aria-label="Breadcrumb"
-      className="text-text-dark-secondary text-[13px] mb-8"
+      className="mb-8 font-mono text-[12px] tracking-[0.06em] text-text-dark-secondary uppercase"
     >
       {items.map((item, idx) => {
         const isLast = idx === items.length - 1;
         return (
           <span key={item.label}>
             {idx > 0 && (
-              <span data-breadcrumb-separator="" className="mx-2 opacity-40">
+              <span
+                data-breadcrumb-separator=""
+                className="mx-2 text-text-dark-faint"
+              >
                 /
               </span>
             )}
             {item.href && !isLast ? (
               <Link
                 href={item.href}
-                className="hover:text-text-dark-primary transition-colors"
+                className="transition-colors hover:text-text-dark-primary"
               >
                 {item.label}
               </Link>

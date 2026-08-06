@@ -8,6 +8,15 @@ import type { GlossaryTerm } from "@/lib/glossary";
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
+// 字母导航按「过滤 pill」配方：有词条的字母是可点 chip，无词条的只留最淡的 mono 字。
+const LETTER_BASE =
+  "flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-[10.5px] transition-colors";
+const LETTER_ACTIVE =
+  "cursor-pointer border border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/50 hover:text-brand-accent-text";
+// 全量 faint，不再叠 /50：叠上去只有 1.75:1，等于把「哪些字母有词条」这个唯一
+// 信号抹掉。可点性本来就靠 active 那档的描边表达，不靠把无效字母调到看不见。
+const LETTER_INACTIVE = "cursor-default text-text-dark-faint";
+
 interface GlossarySidebarProps {
   readonly terms: ReadonlyArray<GlossaryTerm>;
 }
@@ -20,20 +29,18 @@ export function GlossarySidebar({ terms }: GlossarySidebarProps) {
   return (
     <nav
       aria-label="Alphabet navigation"
-      className="shrink-0 md:sticky md:top-28 md:self-start"
+      className="shrink-0 md:sticky md:top-[84px] md:self-start"
     >
       {/* Desktop: vertical sidebar */}
-      <div className="hidden md:flex flex-col gap-1 w-8">
+      <div className="hidden w-8 flex-col gap-1.5 md:flex">
         {ALPHABET.map((letter) => {
           const isActive = activeLetters.has(letter);
           return (
             <a
               key={letter}
               href={isActive ? `#letter-${letter}` : undefined}
-              className={`w-8 h-8 flex items-center justify-center rounded text-[13px] font-medium transition-colors ${
-                isActive
-                  ? "text-text-dark-primary hover:bg-brand-accent/20 hover:text-brand-accent cursor-pointer"
-                  : "text-text-dark-secondary/30 cursor-default"
+              className={`${LETTER_BASE} ${
+                isActive ? LETTER_ACTIVE : LETTER_INACTIVE
               }`}
               aria-disabled={!isActive}
               tabIndex={isActive ? 0 : -1}
@@ -45,17 +52,15 @@ export function GlossarySidebar({ terms }: GlossarySidebarProps) {
       </div>
 
       {/* Mobile: horizontal scroll */}
-      <div className="md:hidden flex gap-1 overflow-x-auto pb-4 mb-6 -mx-6 px-6 scrollbar-hide">
+      <div className="scrollbar-hide -mx-6 mb-6 flex gap-1.5 overflow-x-auto px-6 pb-4 md:hidden">
         {ALPHABET.map((letter) => {
           const isActive = activeLetters.has(letter);
           return (
             <a
               key={letter}
               href={isActive ? `#letter-${letter}` : undefined}
-              className={`shrink-0 w-8 h-8 flex items-center justify-center rounded text-[13px] font-medium transition-colors ${
-                isActive
-                  ? "text-text-dark-primary hover:bg-brand-accent/20 hover:text-brand-accent cursor-pointer"
-                  : "text-text-dark-secondary/30 cursor-default"
+              className={`${LETTER_BASE} ${
+                isActive ? LETTER_ACTIVE : LETTER_INACTIVE
               }`}
               aria-disabled={!isActive}
               tabIndex={isActive ? 0 : -1}

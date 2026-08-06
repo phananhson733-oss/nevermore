@@ -53,10 +53,10 @@ export function ABTestCalculator({ locale }: ABTestCalculatorProps) {
   }, [result, dailyTraffic]);
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {/* Form */}
-      <div className="rounded-xl border border-brand-border/60 bg-[#131314] p-6">
-        <div className="space-y-5">
+      <div className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+        <div className="space-y-4">
           <InputField
             label={t("baselineRate")}
             value={baselineRate}
@@ -104,12 +104,13 @@ export function ABTestCalculator({ locale }: ABTestCalculatorProps) {
       </div>
 
       {/* Results */}
-      <div className="rounded-xl border border-brand-border/60 bg-[#131314] p-6">
-        <h2 className="text-text-dark-primary font-semibold text-[17px] mb-6">
+      <div className="rounded-card border border-brand-border-card bg-brand-panel p-[26px]">
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t("results")}
         </h2>
         {result ? (
-          <div className="space-y-6">
+          /* 1px gap + 分隔色底 = 伪表格，把三个数字读成同一张读数表 */
+          <div className="mt-5 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card">
             <ResultRow
               label={t("samplePerVariation")}
               value={result.sampleSizePerVariation.toLocaleString(locale)}
@@ -127,7 +128,7 @@ export function ABTestCalculator({ locale }: ABTestCalculatorProps) {
             )}
           </div>
         ) : (
-          <p className="text-text-dark-secondary text-[14px]">
+          <p className="mt-4 text-[13px] leading-[1.6] text-text-dark-secondary">
             {locale === "en"
               ? "Enter valid parameters to see results."
               : "请输入有效参数以查看结果。"}

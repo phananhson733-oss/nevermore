@@ -19,22 +19,26 @@ import { TrafficDropChart } from "./traffic-drop-chart";
 import { TrafficDropSiteSignals } from "./traffic-drop-site-signals";
 import { LimitationHint } from "../ui/limitation-hint";
 
+/** Status chips: mono, 4px radius, tinted at 15%. */
+const CHIP =
+  "rounded font-mono text-[9.5px] tracking-[0.08em] uppercase px-2 py-[3px]";
+
 const TIER_STYLE: Record<TrafficFinding["tier"], string> = {
-  observed: "text-brand-series-2 bg-[rgba(79,134,200,0.14)]",
-  hypothesis: "text-brand-warning bg-[rgba(212,168,67,0.13)]",
-  data_boundary: "text-text-dark-secondary bg-[rgba(155,150,144,0.13)]",
+  observed: "bg-brand-info/15 text-brand-info",
+  hypothesis: "bg-brand-warning/15 text-brand-warning",
+  data_boundary: "border border-brand-border-strong text-text-dark-secondary",
 };
 
 const RAIL_STYLE: Record<TrafficFinding["tier"], string> = {
   observed: "bg-brand-error",
   hypothesis: "bg-brand-warning",
-  data_boundary: "bg-text-dark-secondary/50",
+  data_boundary: "bg-brand-border-strong",
 };
 
 const ACTION_STYLE: Record<TrafficAction["kind"], string> = {
-  do: "bg-brand-accent text-white",
-  external_data: "text-brand-warning bg-[rgba(212,168,67,0.13)]",
-  avoid: "text-text-dark-secondary border border-brand-border",
+  do: "bg-brand-accent text-brand-on-accent",
+  external_data: "bg-brand-info/15 text-brand-info",
+  avoid: "border border-brand-border-strong text-text-dark-secondary",
 };
 
 const CHECK_STYLE: Record<TrafficCheck["status"], string> = {
@@ -49,10 +53,29 @@ const WINDOW_RAIL: Record<TrafficWindow["id"], string> = {
   recent: "border-l-brand-error",
 };
 
+const CARD =
+  "rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+
 interface TrafficDropResultsProps {
   readonly result: TrafficDropResult;
   readonly series: readonly TrafficDailyPoint[];
   readonly locale: string;
+}
+
+/**
+ * Colour follows the DIRECTION of a change and nothing else.
+ *
+ * Counts and rates stay neutral: a large number is not a good number, and
+ * tinting one green is a judgement this surface does not make.
+ */
+function measureTone(measure: TrafficMeasure): string {
+  if (measure.value === null || typeof measure.value === "string") {
+    return "text-text-dark-primary";
+  }
+  if (!measure.key.endsWith("_change")) return "text-text-dark-primary";
+  if (measure.value < 0) return "text-brand-error";
+  if (measure.value > 0) return "text-brand-accent";
+  return "text-text-dark-primary";
 }
 
 export function TrafficDropResults({
@@ -92,11 +115,11 @@ export function TrafficDropResults({
        */}
       <TrafficDropSiteSignals signals={result.siteSignals} locale={locale} />
 
-      <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-        <h2 className="text-[16px] font-semibold text-text-dark-primary">
+      <section className={CARD}>
+        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
           {t("chartTitle")}
         </h2>
-        <p className="mt-1 mb-4 text-[12.5px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-1.5 mb-5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t(`states.${result.changePoint.state}.summary`)}
         </p>
 
@@ -111,9 +134,9 @@ export function TrafficDropResults({
             {result.changePoint.windows.map((window) => (
               <span
                 key={window.id}
-                className={`rounded-lg border border-brand-border border-l-[3px] bg-brand-bg px-3 py-1 text-[12px] tabular-nums text-text-dark-secondary ${WINDOW_RAIL[window.id]}`}
+                className={`rounded-[8px] border border-brand-border border-l-[3px] bg-brand-panel-sunken px-3 py-1.5 font-mono text-[11px] tabular-nums text-text-dark-secondary ${WINDOW_RAIL[window.id]}`}
               >
-                <b className="font-semibold text-text-dark-primary">
+                <b className="font-medium text-text-dark-primary">
                   {t(`windows.${window.id}.label`)} {window.startDate} →{" "}
                   {window.endDate}
                 </b>{" "}
@@ -122,7 +145,7 @@ export function TrafficDropResults({
                 {formatCtr(window)}
               </span>
             ))}
-            <p className="mt-1 w-full text-[12px] leading-relaxed text-text-dark-secondary/80">
+            <p className="mt-1 w-full text-[12.5px] leading-[1.6] text-text-dark-secondary">
               {t("windowsFixedExplainer")}
             </p>
           </div>
@@ -138,11 +161,11 @@ export function TrafficDropResults({
       </section>
 
       {result.findings.length > 0 ? (
-        <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-          <h2 className="text-[16px] font-semibold text-text-dark-primary">
+        <section className={CARD}>
+          <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
             {t("findingsTitle", { count: result.findings.length })}
           </h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {t("findingsIntro")}
           </p>
 
@@ -150,33 +173,43 @@ export function TrafficDropResults({
             {result.findings.map((finding) => (
               <article
                 key={finding.id}
-                className="flex gap-3.5 border-t border-brand-border/40 py-4 first:border-t-0"
+                className="flex gap-3.5 border-t border-brand-border-faint py-5 first:border-t-0"
               >
                 <span
                   aria-hidden="true"
-                  className={`my-1 w-2 shrink-0 rounded ${RAIL_STYLE[finding.tier]}`}
+                  className={`my-1 w-[3px] shrink-0 rounded-full ${RAIL_STYLE[finding.tier]}`}
                 />
                 <div className="min-w-0">
-                  <h3 className="text-[14px] font-semibold text-text-dark-primary">
+                  <h3 className="text-[15.5px] font-semibold text-text-dark-primary">
                     {t(`findings.${finding.id}.title`)}{" "}
                     <span
-                      className={`ml-1 inline-block rounded-full px-2 py-0.5 align-middle text-[11px] font-bold ${TIER_STYLE[finding.tier]}`}
+                      className={`ml-1.5 inline-block align-middle ${CHIP} ${TIER_STYLE[finding.tier]}`}
                     >
                       {t(`tiers.${finding.tier}`)}
                     </span>
                   </h3>
-                  <p className="mt-1 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
+                  <p className="mt-1.5 max-w-[52em] text-[13px] leading-[1.6] text-text-dark-secondary">
                     {t(`findings.${finding.id}.body`)}
                   </p>
 
+                  {/*
+                    The measures read as a table, not as a sentence: a 1px gap
+                    over the divider colour, one cell each, and the number in
+                    mono at a size the eye lands on before the label.
+                  */}
                   {finding.measures.length > 0 ? (
-                    <dl className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1.5">
+                    <dl className="mt-3.5 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
                       {finding.measures.map((measure) => (
-                        <div key={measure.key} className="text-[12.5px]">
-                          <dt className="inline text-text-dark-secondary">
-                            {t(`measures.${measure.key}`)}:{" "}
+                        <div
+                          key={measure.key}
+                          className="bg-brand-panel-sunken px-5 py-4"
+                        >
+                          <dt className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+                            {t(`measures.${measure.key}`)}
                           </dt>
-                          <dd className="inline font-semibold tabular-nums text-text-dark-primary">
+                          <dd
+                            className={`mt-2 font-mono text-[22px] tabular-nums ${measureTone(measure)}`}
+                          >
                             {formatMeasure(measure)}
                           </dd>
                         </div>
@@ -185,11 +218,11 @@ export function TrafficDropResults({
                   ) : null}
 
                   {finding.queries.length > 0 ? (
-                    <ul className="mt-2.5 flex list-none flex-wrap gap-2 p-0">
+                    <ul className="mt-3 flex list-none flex-wrap gap-2 p-0">
                       {finding.queries.map((query) => (
                         <li
                           key={query}
-                          className="rounded-full border border-brand-border bg-brand-bg px-3 py-0.5 text-[12px] text-text-dark-secondary"
+                          className="rounded-full border border-brand-border-strong bg-brand-panel-sunken px-3 py-1 font-mono text-[11px] text-text-dark-secondary"
                         >
                           {query}
                         </li>
@@ -198,9 +231,9 @@ export function TrafficDropResults({
                   ) : null}
 
                   {finding.hypothesis ? (
-                    <p className="mt-2.5 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
+                    <p className="mt-3 max-w-[52em] text-[13px] leading-[1.6] text-text-dark-secondary">
                       <span
-                        className={`mr-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${TIER_STYLE.hypothesis}`}
+                        className={`mr-2 inline-block align-middle ${CHIP} ${TIER_STYLE.hypothesis}`}
                       >
                         {t("tiers.hypothesis")}
                       </span>
@@ -223,11 +256,11 @@ export function TrafficDropResults({
       ) : null}
 
       {result.actions.length > 0 ? (
-        <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-          <h2 className="text-[16px] font-semibold text-text-dark-primary">
+        <section className={CARD}>
+          <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
             {t("actionsTitle", { count: result.actions.length })}
           </h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {t("actionsIntro")}
           </p>
 
@@ -235,18 +268,18 @@ export function TrafficDropResults({
             {result.actions.map((action) => (
               <article
                 key={action.id}
-                className="flex gap-3.5 border-t border-brand-border/40 py-4 first:border-t-0"
+                className="flex gap-3.5 border-t border-brand-border-faint py-5 first:border-t-0"
               >
                 <span
-                  className={`mt-0.5 shrink-0 self-start rounded-lg px-2.5 py-1 text-[11px] font-bold ${ACTION_STYLE[action.kind]}`}
+                  className={`mt-0.5 shrink-0 self-start ${CHIP} ${ACTION_STYLE[action.kind]}`}
                 >
                   {t(`actionKinds.${action.kind}`)}
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-[14px] font-semibold text-text-dark-primary">
+                  <h3 className="text-[15.5px] font-semibold text-text-dark-primary">
                     {t(`actions.${action.id}.title`)}
                   </h3>
-                  <p className="mt-1 max-w-[52em] text-[13px] leading-relaxed text-text-dark-secondary">
+                  <p className="mt-1.5 max-w-[52em] text-[13px] leading-[1.6] text-text-dark-secondary">
                     {t(`actions.${action.id}.body`)}
                   </p>
                   {/*
@@ -257,8 +290,14 @@ export function TrafficDropResults({
                    * ids would have this line guessing which namespace to
                    * look in.
                    */}
-                  <p className="mt-1.5 text-[12px] text-text-dark-secondary/80">
-                    {t("basisLabel")}:{" "}
+                  <p className="mt-2.5 text-[12.5px] text-text-dark-secondary">
+                    {/*
+                     * 「依据」是证据溯源标签，不是序号：读不到它，后面那串标题就会
+                     * 被当成又一条建议。faint 那档只留给读不到也不丢信息的记号。
+                     */}
+                    <span className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+                      {t("basisLabel")}:
+                    </span>{" "}
                     {[
                       ...action.basis.map((id) => t(`findings.${id}.title`)),
                       ...action.signalBasis.map((id) =>
@@ -273,8 +312,8 @@ export function TrafficDropResults({
         </section>
       ) : null}
 
-      <details className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/25 px-5 md:px-6">
-        <summary className="cursor-pointer py-4 text-[13px] text-text-dark-secondary">
+      <details className="rounded-card border border-brand-border-card bg-brand-panel px-[22px] md:px-[26px]">
+        <summary className="cursor-pointer py-4 text-[13px] text-text-dark-secondary transition-colors hover:text-brand-accent-text">
           {t("checksSummary", {
             total: result.checks.length,
             hits: result.checks.filter((check) => check.status === "hit")
@@ -285,10 +324,10 @@ export function TrafficDropResults({
           {result.checks.map((check) => (
             <li
               key={check.id}
-              className="flex flex-wrap gap-x-3 gap-y-1 border-t border-brand-border/40 py-2 text-[12.5px] first:border-t-0"
+              className="flex flex-wrap gap-x-3 gap-y-1 border-t border-brand-border-faint py-2.5 text-[12.5px] first:border-t-0"
             >
               <span
-                className={`w-20 shrink-0 font-bold ${CHECK_STYLE[check.status]}`}
+                className={`w-20 shrink-0 font-mono text-[10px] tracking-[0.08em] uppercase ${CHECK_STYLE[check.status]}`}
               >
                 {t(`checkStatus.${check.status}`)}
               </span>

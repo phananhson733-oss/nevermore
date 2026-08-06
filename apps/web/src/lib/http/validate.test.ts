@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
+  BODY_READ_TIMEOUT_MS,
   isMultipartFormDataContentType,
   MAX_JSON_BODY_BYTES,
   parseJsonBody,
@@ -13,6 +14,7 @@ import {
   parseQueryLimit,
   parseQueryValue,
   parseUuidParam,
+  requestHasBodyBytes,
   requireIdempotencyKey,
   zodToFieldErrors,
 } from "./validate";
@@ -33,6 +35,7 @@ type FakeRequestInit = {
   readonly noBody?: boolean;
   readonly aborted?: boolean;
   readonly getReaderThrows?: boolean;
+  readonly readNeverResolves?: boolean;
   readonly readRejects?: unknown;
 };
 
@@ -49,6 +52,9 @@ function fakeRequest(init: FakeRequestInit = {}): NextRequest {
           return {
             read: async () => {
               if (init.readRejects !== undefined) throw init.readRejects;
+              if (init.readNeverResolves) {
+                return new Promise(() => undefined);
+              }
               if (queue.length === 0) return { done: true, value: undefined };
               return { done: false, value: queue.shift() };
             },
@@ -87,6 +93,104 @@ const problem = async (run: () => Promise<unknown> | unknown) => {
   }
   throw new Error("expected the call to reject");
 };
+
+describe("request body byte detection", () => {
+  it("treats both a missing stream and a zero-byte stream as empty", async () => {
+    await expect(
+      requestHasBodyBytes(fakeRequest({ noBody: true })),
+    ).resolves.toBe(false);
+    await expect(
+      requestHasBodyBytes(
+        fakeRequest({ chunks: [new Uint8Array(0)] }),
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("uses a positive Content-Length as a fast rejection and cancels the stream", async () => {
+    const request = fakeRequest({
+      headers: { "content-length": "1" },
+      getReaderThrows: true,
+    });
+
+    await expect(requestHasBodyBytes(request)).resolves.toBe(true);
+    expect(cancelled.count).toBeGreaterThan(0);
+  });
+
+  it("stops at the first real byte instead of waiting for the stream to close", async () => {
+    let readCount = 0;
+    let cancelCount = 0;
+    const request = {
+      headers: new Headers(),
+      body: {
+        getReader() {
+          return {
+            read() {
+              readCount += 1;
+              if (readCount === 1) {
+                return Promise.resolve({
+                  done: false,
+                  value: new Uint8Array([1]),
+                });
+              }
+              return new Promise(() => undefined);
+            },
+            cancel: async () => {
+              cancelCount += 1;
+            },
+            releaseLock: () => undefined,
+          };
+        },
+      },
+      signal: new AbortController().signal,
+    } as unknown as NextRequest;
+
+    await expect(requestHasBodyBytes(request)).resolves.toBe(true);
+    expect(readCount).toBe(1);
+    expect(cancelCount).toBe(1);
+  });
+
+  it("turns transport failures into a stable 400 and cancels the reader", async () => {
+    const error = await problem(() =>
+      requestHasBodyBytes(
+        fakeRequest({ readRejects: new Error("transport failed") }),
+      ),
+    );
+
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.status).toBe(400);
+    expect(cancelled.count).toBeGreaterThan(0);
+  });
+
+  it("fails an already-aborted request as 400 and cancels the reader", async () => {
+    const error = await problem(() =>
+      requestHasBodyBytes(fakeRequest({ aborted: true })),
+    );
+
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.status).toBe(400);
+    expect(cancelled.count).toBeGreaterThan(0);
+  });
+
+  it("times out a stalled stream as 400 and cancels the reader", async () => {
+    vi.useFakeTimers();
+    try {
+      const pendingError = problem(() =>
+        requestHasBodyBytes(
+          fakeRequest({ readNeverResolves: true }),
+        ),
+      );
+
+      await vi.advanceTimersByTimeAsync(BODY_READ_TIMEOUT_MS);
+      const error = await pendingError;
+
+      expect(error.code).toBe("BAD_REQUEST");
+      expect(error.status).toBe(400);
+      expect(cancelled.count).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("the JSON body cap is enforced before anything is parsed", () => {
   it("refuses a declared Content-Length over the cap and cancels the stream", async () => {

@@ -25,19 +25,25 @@ export interface WizardNavProps {
   readonly variant?: NavVariant;
 }
 
+/*
+ * 两个 variant 都在深色面上：app 走中性实心，brand 走唯一的品牌渐变（弹窗里
+ * 只有这一个主 CTA）。次按钮一律无投影，层级只靠描边。
+ */
 const navVariantStyles: Record<
   NavVariant,
   { outline: string; primary: string }
 > = {
   app: {
-    outline: "border-zinc-200 text-zinc-500",
+    outline:
+      "border-brand-border text-text-dark-secondary hover:border-brand-border-strong",
     primary:
-      "bg-zinc-900 text-white hover:bg-zinc-800 transition-colors duration-150",
+      "bg-brand-accent text-brand-on-accent hover:bg-brand-accent-hover transition-colors duration-150",
   },
   brand: {
-    outline: "border-brand-border text-text-dark-secondary",
+    outline:
+      "border-brand-border-strong text-text-dark-primary hover:border-brand-accent/50",
     primary:
-      "bg-brand-accent text-white hover:bg-brand-accent-hover transition-colors duration-150",
+      "bg-brand-gradient text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta",
   },
 };
 
@@ -59,7 +65,7 @@ export function WizardNav({
   const styles = navVariantStyles[variant];
 
   return (
-    <div className="mt-6 flex items-center justify-between">
+    <div className="mt-7 flex items-center justify-between border-t border-brand-border pt-5">
       <div>
         {step > 1 ? (
           <Button

@@ -376,9 +376,7 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     "competitor-library-provenance",
   );
   await expect(
-    competitorProvenance.getByRole("link", {
-      name: "完善产品画像 / 添加竞品",
-    }),
+    page.getByRole("link", { name: "添加竞品", exact: true }),
   ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/context`);
   await expect(
     competitorProvenance.getByRole("link", { name: "管理数据来源" }),

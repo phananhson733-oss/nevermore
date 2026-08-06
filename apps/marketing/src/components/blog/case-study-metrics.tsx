@@ -15,40 +15,41 @@ interface CaseStudyMetricsProps {
   readonly locale: string;
 }
 
-export function CaseStudyMetrics({
-  metrics,
-  locale,
-}: CaseStudyMetricsProps) {
+export function CaseStudyMetrics({ metrics, locale }: CaseStudyMetricsProps) {
   const beforeLabel = locale === "zh" ? "之前" : "Before";
   const afterLabel = locale === "zh" ? "之后" : "After";
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-10">
+    /*
+     * 指标走伪表格：共享外框 + 1px 分隔线，让「之前/之后」读成同一张读数表的
+     * 若干行，而不是几张彼此独立、可单独挑选的卡片。
+     */
+    <div className="my-10 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card sm:grid-cols-2">
       {metrics.map((metric) => (
-        <div
-          key={metric.label}
-          className="bg-brand-bg-alt rounded-lg border border-brand-border/30 p-5"
-        >
-          <p className="text-text-dark-secondary text-[13px] mb-3 font-medium">
+        <div key={metric.label} className="bg-brand-panel-sunken p-[20px_22px]">
+          <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
             {metric.label}
           </p>
-          <div className="flex items-baseline gap-3 mb-2">
-            <span className="text-text-dark-secondary text-[12px] uppercase tracking-wide">
+
+          <div className="mt-4 flex items-baseline justify-between gap-3">
+            <span className="font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
               {beforeLabel}
             </span>
-            <span className="text-text-dark-primary text-[15px]">
+            <span className="font-mono text-[14px] text-text-dark-secondary">
               {metric.before}
             </span>
           </div>
-          <div className="flex items-baseline gap-3 mb-3">
-            <span className="text-text-dark-secondary text-[12px] uppercase tracking-wide">
+
+          <div className="mt-2.5 flex items-baseline justify-between gap-3">
+            <span className="font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
               {afterLabel}
             </span>
-            <span className="text-text-dark-primary text-[15px] font-semibold">
+            <span className="font-mono text-[22px] leading-none text-text-dark-primary">
               {metric.after}
             </span>
           </div>
-          <p className="text-brand-accent-text text-[16px] font-semibold">
+
+          <p className="mt-4 border-t border-brand-border-faint pt-3 font-mono text-[12px] tracking-[0.04em] text-brand-accent-text">
             {metric.change}
           </p>
         </div>

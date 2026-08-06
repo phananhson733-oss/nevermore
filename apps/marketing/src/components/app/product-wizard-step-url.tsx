@@ -26,26 +26,28 @@ export function WizardStepUrl({
   const showReachOk = !checking && reachable === true;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <Label
-          className={isBrand ? "text-text-dark-primary" : "text-zinc-900"}
+          className={
+            "text-[14px] font-semibold " +
+            (isBrand ? "text-text-dark-primary" : "text-text-dark-strong")
+          }
         >
           {t("productUrlLabel")}
         </Label>
-        <p
-          className={`mt-0.5 text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-500"}`}
-        >
+        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("productUrlDesc")}
         </p>
       </div>
       <div className="flex items-center gap-0">
+        {/* 协议前缀是数据，不是文案：走 mono，和输入框拼成一个整体 */}
         <span
           className={
-            "flex h-9 items-center rounded-l-md border border-r-0 px-3 text-sm select-none " +
+            "flex h-11 items-center rounded-l-[10px] border border-r-0 px-3.5 font-mono text-[13px] select-none " +
             (isBrand
-              ? "border-brand-border bg-brand-bg text-text-dark-secondary"
-              : "border-zinc-200 bg-zinc-100 text-zinc-500")
+              ? "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary"
+              : "border-brand-border-strong bg-brand-panel text-text-dark-secondary")
           }
         >
           https://
@@ -64,40 +66,42 @@ export function WizardStepUrl({
             }
           }}
           className={
-            "rounded-l-none " +
+            "rounded-l-none font-mono " +
             (isBrand
-              ? "border-brand-border bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary/50"
-              : "border-zinc-200 bg-zinc-50 text-zinc-900 placeholder:text-zinc-500/50")
+              ? "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary"
+              : "border-brand-border-strong bg-brand-bg text-text-dark-primary placeholder:text-text-dark-secondary")
           }
         />
         {checking && (
           <Loader2
             size={16}
-            className={`ml-2 shrink-0 animate-spin ${isBrand ? "text-text-dark-secondary" : "text-zinc-400"}`}
+            className="ml-2.5 shrink-0 animate-spin text-text-dark-secondary"
           />
         )}
         {showReachOk && (
-          <CheckCircle size={16} className="ml-2 shrink-0 text-green-500" />
+          <CheckCircle size={16} className="ml-2.5 shrink-0 text-brand-success" />
         )}
         {showReachWarning && (
           <AlertTriangle
             size={16}
-            className="ml-2 shrink-0 text-amber-500"
+            className="ml-2.5 shrink-0 text-brand-warning"
           />
         )}
       </div>
       {showPatternError && (
-        <p className="text-xs text-red-400">{t(patternError)}</p>
+        <p className="text-[12.5px] leading-[1.6] text-brand-error">
+          {t(patternError)}
+        </p>
       )}
       {checking && (
-        <p
-          className={`text-xs ${isBrand ? "text-text-dark-secondary" : "text-zinc-400"}`}
-        >
+        <p className="font-mono text-[10.5px] tracking-[0.12em] text-text-dark-secondary uppercase">
           {t("urlChecking")}
         </p>
       )}
       {showReachWarning && (
-        <p className="text-xs text-amber-500">{t(reachError)}</p>
+        <p className="text-[12.5px] leading-[1.6] text-brand-warning">
+          {t(reachError)}
+        </p>
       )}
     </div>
   );

@@ -27,6 +27,11 @@ const TILE_ORDER: readonly QuickWinTrack[] = [
   "at_or_above_curve",
 ];
 
+const CARD =
+  "rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]";
+const MONO_LABEL =
+  "font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase";
+
 export function QuickWinsResults({
   result,
   locale,
@@ -38,7 +43,7 @@ export function QuickWinsResults({
   const hasRows = result.rows.length > 0;
 
   return (
-    <div className="mt-8 space-y-5">
+    <div className="mt-8 space-y-4">
       <ResultsHeader result={result} locale={locale} />
 
       {/*
@@ -52,11 +57,11 @@ export function QuickWinsResults({
       {hasRows ? (
         <QuickWinsEvidenceTable result={result} locale={locale} />
       ) : (
-        <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-          <h3 className="text-[15px] font-semibold text-text-dark-primary">
+        <section className={CARD}>
+          <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
             {t("emptyTitle")}
           </h3>
-          <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
             {t("emptyBody")}
           </p>
         </section>
@@ -91,15 +96,16 @@ function ResultsHeader({
   const counts = trackCounts(result.rows);
 
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-      <p className="text-[12.5px] text-text-dark-secondary">
+    <section className={CARD}>
+      <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("window", {
           startDate: result.window.startDate,
           endDate: result.window.endDate,
         })}
       </p>
 
-      <div className="mt-4 flex flex-wrap gap-2.5">
+      {/* 1px gap over the divider colour: counts read as a table, not as chips. */}
+      <div className="mt-4 grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
         <Tile
           label={t("summaryRowsLabel")}
           value={formatCount(result.rows.length, locale)}
@@ -128,16 +134,18 @@ function Tile({
 }) {
   return (
     <div
-      className={`min-w-[7.5rem] rounded-xl border px-3.5 py-2.5 ${
-        emphasis
-          ? "border-brand-accent/40 bg-brand-accent-soft"
-          : "border-brand-border/70 bg-brand-bg"
+      className={`px-5 py-4 ${
+        emphasis ? "bg-brand-panel-raised" : "bg-brand-panel-sunken"
       }`}
     >
-      <p className="text-[19px] font-semibold tabular-nums leading-none text-text-dark-primary">
+      <p
+        className={`font-mono text-[22px] leading-none tabular-nums ${
+          emphasis ? "text-brand-accent-text" : "text-text-dark-primary"
+        }`}
+      >
         {value}
       </p>
-      <p className="mt-1.5 text-[12px] leading-tight text-text-dark-secondary">
+      <p className="mt-2.5 text-[12.5px] leading-tight text-text-dark-secondary">
         {label}
       </p>
     </div>
@@ -173,42 +181,42 @@ function CurveSection({
   );
 
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-      <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+    <section className={CARD}>
+      <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("curveTitle")}
       </h3>
-      <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("curveIntro")}
       </p>
 
-      <table className="mt-4 w-full table-fixed text-left text-[13px]">
+      <table className="mt-5 w-full table-fixed text-left text-[13px]">
         <caption className="sr-only">{t("curveCaption")}</caption>
         {/*
           Visible, not sr-only. The bar carries the shape; the two count
           columns are what tell a reader whether a band's rate is worth
           believing, and a bare number under no heading is not.
         */}
-        <thead className="text-[11.5px] uppercase tracking-wide text-text-dark-secondary/70">
+        <thead className="font-mono text-[10px] font-normal tracking-[0.1em] text-text-dark-secondary uppercase">
           <tr>
-            <th scope="col" className="w-16 pb-2 pr-3 text-right font-medium">
+            <th scope="col" className="w-16 pr-3 pb-2 text-right font-normal">
               {t("curveColumns.band")}
             </th>
-            <th scope="col" className="pb-2 pr-4 font-medium">
+            <th scope="col" className="pr-4 pb-2 font-normal">
               {t("curveColumns.ctr")}
             </th>
             <th
               scope="col"
-              className="hidden w-20 pb-2 pr-4 text-right font-medium sm:table-cell"
+              className="hidden w-20 pr-4 pb-2 text-right font-normal sm:table-cell"
             >
               {t("curveColumns.queries")}
             </th>
             <th
               scope="col"
-              className="hidden w-28 pb-2 pr-4 text-right font-medium md:table-cell"
+              className="hidden w-28 pr-4 pb-2 text-right font-normal md:table-cell"
             >
               {t("curveColumns.impressions")}
             </th>
-            <th scope="col" className="w-36 pb-2 text-right font-medium">
+            <th scope="col" className="w-36 pb-2 text-right font-normal">
               {t("curveColumns.quality")}
             </th>
           </tr>
@@ -224,7 +232,7 @@ function CurveSection({
               <tr key={bucket.bucketId} className="align-middle">
                 <th
                   scope="row"
-                  className="w-16 py-1.5 pr-3 text-right text-[12.5px] font-medium tabular-nums text-text-dark-secondary"
+                  className="w-16 py-1.5 pr-3 text-right font-mono text-[12px] font-normal tabular-nums text-text-dark-secondary"
                 >
                   {bucket.bucketId}
                 </th>
@@ -239,22 +247,20 @@ function CurveSection({
                       <span
                         aria-hidden="true"
                         style={{ width: `${width}%` }}
-                        className={`block h-3.5 min-w-[2px] rounded-sm ${
-                          dimmed
-                            ? "bg-text-dark-secondary/30"
-                            : "bg-brand-accent"
+                        className={`block h-3 min-w-[2px] rounded-[2px] ${
+                          dimmed ? "bg-brand-border-strong" : "bg-brand-accent"
                         }`}
                       />
                     </span>
-                    <span className="w-14 shrink-0 text-right text-[12.5px] tabular-nums text-text-dark-primary">
+                    <span className="w-14 shrink-0 text-right font-mono text-[12px] tabular-nums text-text-dark-primary">
                       {formatPercent(bucket.ctr, locale)}
                     </span>
                   </div>
                 </td>
-                <td className="hidden py-1.5 pr-4 text-right text-[12px] tabular-nums text-text-dark-secondary sm:table-cell">
+                <td className="hidden py-1.5 pr-4 text-right font-mono text-[12px] tabular-nums text-text-dark-secondary sm:table-cell">
                   {formatCount(bucket.queryCount, locale)}
                 </td>
-                <td className="hidden py-1.5 pr-4 text-right text-[12px] tabular-nums text-text-dark-secondary md:table-cell">
+                <td className="hidden py-1.5 pr-4 text-right font-mono text-[12px] tabular-nums text-text-dark-secondary md:table-cell">
                   {formatCount(bucket.impressions, locale)}
                 </td>
                 {/*
@@ -264,10 +270,8 @@ function CurveSection({
                   as baseline" reads as a yes when it may be the opposite.
                 */}
                 <td
-                  className={`py-1.5 text-right text-[12px] ${
-                    dimmed
-                      ? "text-brand-warning/80"
-                      : "text-text-dark-secondary"
+                  className={`py-1.5 text-right font-mono text-[10px] tracking-[0.06em] uppercase ${
+                    dimmed ? "text-brand-warning" : "text-text-dark-secondary"
                   }`}
                 >
                   {t(`bucketQuality.${bucket.quality}`)}
@@ -279,7 +283,7 @@ function CurveSection({
       </table>
 
       {result.curve.brandRowsExcluded > 0 ? (
-        <p className="mt-3 text-[12px] text-text-dark-secondary">
+        <p className="mt-4 text-[12.5px] text-text-dark-secondary">
           {t("brandExcluded", { count: result.curve.brandRowsExcluded })}
         </p>
       ) : null}
@@ -301,21 +305,21 @@ function DraftSection({ result }: { readonly result: QuickWinsResult }) {
   if (result.drafts.length === 0 && skipped.length === 0) return null;
 
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
-      <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+    <section className={CARD}>
+      <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
         {t("draftsTitle")}
       </h3>
-      <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("draftsIntro")}
       </p>
 
       {result.drafts.length === 0 ? (
-        <p className="mt-4 max-w-[52em] rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
+        <p className="mt-4 max-w-[52em] rounded-[10px] border border-brand-border bg-brand-panel-sunken p-4 text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("draftsNone")}
         </p>
       ) : (
         <ul
-          className={`mt-4 grid gap-3 ${
+          className={`mt-4 grid gap-3.5 ${
             // A single candidate in a two-column grid is a card with an empty
             // half beside it, which reads as something that failed to load.
             result.drafts.length > 1 ? "lg:grid-cols-2" : ""
@@ -324,36 +328,32 @@ function DraftSection({ result }: { readonly result: QuickWinsResult }) {
           {result.drafts.map((draft) => (
             <li
               key={draft.query}
-              className="rounded-xl border border-brand-border/60 bg-brand-bg p-4"
+              className="rounded-[10px] border border-brand-border bg-brand-panel-sunken p-[18px]"
             >
-              <p className="text-[13px] font-semibold text-text-dark-primary">
+              <p className="font-mono text-[12.5px] text-text-dark-primary">
                 {draft.query}
               </p>
-              <dl className="mt-3 space-y-2.5 text-[13px]">
+              <dl className="mt-3.5 space-y-3 text-[13px]">
                 <div>
-                  <dt className="text-[11px] font-medium uppercase tracking-wide text-text-dark-secondary">
-                    {t("draftTitleLabel")}
-                  </dt>
-                  <dd className="mt-0.5 leading-relaxed text-text-dark-primary">
+                  <dt className={MONO_LABEL}>{t("draftTitleLabel")}</dt>
+                  <dd className="mt-1 leading-[1.6] text-text-dark-primary">
                     {draft.title}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] font-medium uppercase tracking-wide text-text-dark-secondary">
-                    {t("draftMetaLabel")}
-                  </dt>
-                  <dd className="mt-0.5 leading-relaxed text-text-dark-primary">
+                  <dt className={MONO_LABEL}>{t("draftMetaLabel")}</dt>
+                  <dd className="mt-1 leading-[1.6] text-text-dark-primary">
                     {draft.metaDescription}
                   </dd>
                 </div>
               </dl>
-              <p className="mt-3 border-t border-brand-border/50 pt-2.5 text-[12px] text-text-dark-secondary">
+              <p className="mt-3.5 border-t border-brand-border-faint pt-3 text-[12.5px] text-text-dark-secondary">
                 {t("draftsSource")}{" "}
                 <a
                   href={draft.comparablePage}
                   rel="noreferrer nofollow"
                   target="_blank"
-                  className="break-all underline hover:no-underline"
+                  className="break-all text-brand-accent-2 transition-colors hover:text-brand-info"
                 >
                   {draft.comparablePage}
                 </a>
@@ -368,9 +368,11 @@ function DraftSection({ result }: { readonly result: QuickWinsResult }) {
           {skipped.map(([query, reason]) => (
             <li
               key={query}
-              className="max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary"
+              className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary"
             >
-              <span className="text-text-dark-primary">{query}</span>
+              <span className="font-mono text-[11.5px] text-text-dark-primary">
+                {query}
+              </span>
               {" — "}
               {t(`draftSkipped.${reason}`)}
             </li>
@@ -403,21 +405,21 @@ function ContextSection({
   );
 
   return (
-    <details className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/25 px-5 md:px-6">
-      <summary className="cursor-pointer py-4 text-[13px] font-medium text-text-dark-primary">
+    <details className="rounded-card border border-brand-border-card bg-brand-panel px-[22px] md:px-[26px]">
+      <summary className="cursor-pointer py-4 text-[13px] font-medium text-text-dark-primary transition-colors hover:text-brand-accent-text">
         {t("contextTitle")}
       </summary>
 
       <div className="space-y-6 pb-5">
-        <p className="max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+        <p className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("contextIntro")}
         </p>
 
         <section>
-          <h4 className="text-[13px] font-semibold text-text-dark-primary">
+          <h4 className="text-[13.5px] font-semibold text-text-dark-primary">
             {t("anonymizationTitle")}
           </h4>
-          <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {result.anonymization === null ||
             result.anonymization.missingImpressionShare === null
               ? t("anonymizationUnknown")
@@ -438,14 +440,14 @@ function ContextSection({
 
         {exclusions.length > 0 ? (
           <section>
-            <h4 className="text-[13px] font-semibold text-text-dark-primary">
+            <h4 className="text-[13.5px] font-semibold text-text-dark-primary">
               {t("excludedTitle")}
             </h4>
             <ul className="mt-1.5 space-y-1.5">
               {exclusions.map(([reason, value]) => (
                 <li
                   key={reason}
-                  className="max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary"
+                  className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary"
                 >
                   {t(`exclusions.${reason}`, { count: value })}
                 </li>
@@ -461,7 +463,7 @@ function ContextSection({
           )}
         />
 
-        <p className="max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary">
+        <p className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
           {t("storageNote")}
         </p>
       </div>
