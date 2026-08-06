@@ -313,6 +313,24 @@ class SharedSourceBacklinksClient extends FixtureBacklinksClient {
   }
 }
 
+class InvalidTimestampBacklinksClient extends FixtureBacklinksClient {
+  constructor(private readonly invalidTimestamp: string) {
+    super();
+  }
+
+  override backlinks(request: unknown) {
+    this.backlinkRequests.push(request);
+    const response = backlinksResponse();
+    return Promise.resolve({
+      ...response,
+      rows: response.rows.map((row) => ({
+        ...row,
+        firstSeen: this.invalidTimestamp,
+      })),
+    });
+  }
+}
+
 function createScope(api: BacklinksModuleApi): BacklinksScope {
   return api.createDataForSeoBacklinksScope({
     target: "https://www.example.com/pricing?utm_source=fixture",
@@ -515,8 +533,8 @@ describe("DataForSEO Backlinks adapter", () => {
             sourceRank: 63,
             linkKind: "nofollow",
             anchorText: "GenGrowth guide",
-            firstSeenAt: "2026-07-01 00:00:00 +00:00",
-            lastSeenAt: "2026-08-05 00:00:00 +00:00",
+            firstSeenAt: "2026-07-01 00:00:00+00:00",
+            lastSeenAt: "2026-08-05 00:00:00+00:00",
             isNew: true,
             isLost: false,
             verification: {
@@ -616,6 +634,41 @@ describe("DataForSEO Backlinks adapter", () => {
       ]),
     );
   });
+
+  it.each([
+    "2026-13-01 00:00:00 +00:00",
+    "9999-12-31 23:30:00 -14:00",
+  ])(
+    "rejects malformed provider backlink timestamp %s during normalization",
+    async (invalidTimestamp) => {
+      const api = await requireBacklinksModule();
+      const adapter = api.createDataForSeoBacklinksAdapter(
+        new InvalidTimestampBacklinksClient(invalidTimestamp),
+        {
+          now: () => new Date("2026-08-06T01:00:00.000Z"),
+          sourcePageVerifier: async () => ({
+            status: "inconclusive",
+            checkedAt: "2026-08-06T00:59:00.000Z",
+            finalUrl: null,
+            httpStatus: null,
+            anchorText: null,
+            rel: null,
+            limitation: "Fixture verification was not attempted.",
+          }),
+        },
+      );
+
+      const result = await adapter.collect(
+        createScope(api),
+        collectionContext,
+      );
+      const error = await observationsFor(adapter, result.raw).catch(
+        (value: unknown) => value,
+      );
+
+      expect(error).toMatchObject({ code: "INVALID_RESPONSE" });
+    },
+  );
 
   it("keeps an inconclusive source-page check from downgrading provider availability", async () => {
     const api = await requireBacklinksModule();

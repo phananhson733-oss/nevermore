@@ -49,6 +49,10 @@ export const MAX_DATAFORSEO_SOURCE_VERIFICATIONS = 20;
 const HOSTNAME_RE =
   /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
+const STRICT_ZONED_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:Z|([+-])(\d{2})(?::?(\d{2}))?)$/u;
+const DATAFORSEO_OFFSET_SEPARATOR = / ([+-]\d{2}:?\d{2})$/u;
+
 const BASE_LIMITATION =
   "DataForSEO Backlinks is a live vendor-index observation using its 0–100 rank scale. Summary and referring-domain aggregates include indirect links. The backlink and target-page detail endpoints do not provide an indirect-link selector, so their bounded samples are not asserted to use the same configurable universe. Referring-domain rows are also bounded by the frozen collection cap. Selective source-page verification is direct public evidence and never changes the provider fact itself.";
 
@@ -335,6 +339,74 @@ function canonicalSubjectUrl(value: string, label: string): string {
     );
   }
   return canonical.subjectUrl;
+}
+
+function canonicalBacklinkInstant(
+  value: string | null,
+  label: string,
+): string | null {
+  if (value === null) return null;
+
+  // DataForSEO inserts one separator space before numeric offsets. Remove only
+  // that documented separator, then preserve the DB's strict instant boundary.
+  const normalized = value.replace(DATAFORSEO_OFFSET_SEPARATOR, "$1");
+  const match = STRICT_ZONED_TIMESTAMP.exec(normalized);
+  if (!match) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${label} must be a strict zoned timestamp instant.`,
+    );
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetSign = match[8] === "-" ? -1 : 1;
+  const offsetHour = Number(match[9] ?? "0");
+  const offsetMinute = Number(match[10] ?? "0");
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    year < 1 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > (days[month - 1] ?? 0) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0)
+  ) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${label} must be a strict zoned timestamp instant.`,
+    );
+  }
+
+  const wallClock = new Date(0);
+  wallClock.setUTCFullYear(year, month - 1, day);
+  wallClock.setUTCHours(hour, minute, second, 0);
+  const utcMs =
+    wallClock.getTime() -
+    offsetSign * (offsetHour * 60 + offsetMinute) * 60_000;
+  const utc = new Date(utcMs);
+  if (
+    !Number.isFinite(utcMs) ||
+    utc.getUTCFullYear() < 1 ||
+    utc.getUTCFullYear() > 9999
+  ) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${label} must be a strict zoned timestamp instant.`,
+    );
+  }
+
+  return normalized;
 }
 
 function safeSourceRef(prefix: "link" | "page", ...parts: readonly string[]) {
@@ -692,8 +764,14 @@ export function createDataForSeoBacklinksAdapter(
           sourceRank: row.domainRank,
           linkKind: linkKind(row),
           anchorText: row.anchor,
-          firstSeenAt: row.firstSeen,
-          lastSeenAt: row.lastSeen,
+          firstSeenAt: canonicalBacklinkInstant(
+            row.firstSeen,
+            "DataForSEO backlink firstSeen",
+          ),
+          lastSeenAt: canonicalBacklinkInstant(
+            row.lastSeen,
+            "DataForSEO backlink lastSeen",
+          ),
           isNew: row.isNew,
           isLost: row.isLost,
           verification: row.verification,
