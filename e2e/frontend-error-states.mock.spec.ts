@@ -1007,6 +1007,7 @@ test("zh-CN Studio keeps server validation detail out of localized feedback", as
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await page.getByRole("button", { name: "打开", exact: true }).click();
+  await page.getByRole("tab", { name: "编辑 Markdown" }).click();
   await page.getByLabel("内容").fill("更新后的执行物内容");
   await page.getByRole("button", { name: "保存版本" }).click();
 

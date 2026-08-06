@@ -48,7 +48,7 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
     const queue = page.locator("[data-studio-queue]");
     await expect(
       hero.getByRole("heading", {
-        name: "Turn actions into client-ready work.",
+        name: "Execution center",
       }),
     ).toBeVisible();
     await expect(
