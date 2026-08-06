@@ -1336,6 +1336,7 @@
       },
       "provider": {
         "ahrefs": "Ahrefs",
+        "dataforseo": "DataForSEO",
         "moz": "Moz",
         "manual_csv": "CSV",
         "search_derived": "Built-in discovery"
