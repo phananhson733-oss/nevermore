@@ -33,7 +33,7 @@
     "historical-publication-candidate/spec-v0.4-candidate-lock.json": "ff3dd02f4f4a3dbe9000b6ed61d8b02b6311a81df91814c21c9fd80448754b8e"
   },
   "implementationFiles": {
-    "package.json": "e6b6e78f31b2200495399777ae07aea0bce91c8e57241db0a7665b237366a52e",
+    "package.json": "8f129b08ae69a5a5bd640acd9338ab6ce1004e8fb04cd3ef06c6d2ff6681bb56",
     "patches/brace-expansion@5.0.9.patch": "ba6642f3f2bab54e19c3ba63eb311a090ac5b6a61eb001861935a8b7f5cae6ce",
     "authority/index.json": "b6fddefa29598c098bacb3fd222d7d65955d5e7fee0bda74016a782296e8f72e",
     "openapi/mvp.yaml": "b8df5b94ad1153d126fb00298444329f60771040c02aed85813c7b7e830ad176",
