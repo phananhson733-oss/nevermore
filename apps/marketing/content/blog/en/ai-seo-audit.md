@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-07-09
 heroImage: /images/blog/ai-seo-audit.jpg
-heroImageAlt: Flat-vector illustration: a clipboard holding a checklist of empty checkboxes, with a horizontal scanning light bar sweeping across it
+heroImageAlt: Technical line illustration: a clipboard holding a checklist of empty checkboxes, with a horizontal scanning light bar sweeping across it
 localeExclusive: true
 ---
 

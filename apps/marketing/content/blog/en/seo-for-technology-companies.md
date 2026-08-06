@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-for-technology-companies.jpg
-heroImageAlt: Flat-vector illustration: a thick technical manual standing open on a low pedestal, a narrow spotlight cone falling on it from above
+heroImageAlt: Technical line illustration: a thick technical manual standing open on a low pedestal, a narrow spotlight cone falling on it from above
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/ethical-seo-services.jpg
-heroImageAlt: Flat-vector illustration: a clipboard split by a vertical dividing line down the middle, simple shapes sorted onto the left half and different shapes onto the right half
+heroImageAlt: Technical line illustration: a glass-fronted display cabinet standing open, a neat stack of documents visible on its single shelf, a round wax-seal medallion hanging from the open door
 localeExclusive: true
 ---
 

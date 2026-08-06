@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-15
 updatedAt: 2026-07-15
 heroImage: /images/blog/chatgpt-seo.jpg
-heroImageAlt: Flat-vector illustration: an open book on the left with one page lifting away and curling into a large rounded speech bubble on the right
+heroImageAlt: Technical line illustration: an open book on the left with one page lifting away and curling into a large rounded speech bubble on the right
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/integrated-seo.jpg
-heroImageAlt: Flat-vector illustration: five interlocking jigsaw pieces snapped together into one solid rounded shape, no gaps
+heroImageAlt: Technical line illustration: five interlocking jigsaw pieces snapped together into one solid rounded shape, no gaps
 localeExclusive: true
 ---
 

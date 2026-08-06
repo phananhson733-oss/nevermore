@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/seo-reporting-tool-for-seo-companies.jpg
-heroImageAlt: Flat-vector illustration: a boxy machine with a document sheet emerging from its output slot, a round clock face mounted on the machine's side
+heroImageAlt: Technical line illustration: a boxy machine with a document sheet emerging from its output slot, a round clock face mounted on the machine's side
 localeExclusive: true
 ---
 

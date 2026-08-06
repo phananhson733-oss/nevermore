@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/seo-diagrams.jpg
-heroImageAlt: Flat-vector illustration: four framed picture panels hanging in a row, each frame containing a different simple shape: a closed loop, a branching tree, a grid map, and a downward arrow flow
+heroImageAlt: Technical line illustration: four framed picture panels hanging in a row, each frame containing a different simple shape: a closed loop, a branching tree, a grid map, and a downward arrow flow
 localeExclusive: true
 ---
 

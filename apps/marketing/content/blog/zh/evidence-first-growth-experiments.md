@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/evidence-first-growth-experiments.jpg
-heroImageAlt: 扁平矢量插图：实验烧瓶立在窄平台上，平台两侧各有一道护栏
+heroImageAlt: 技术线稿插图：实验烧瓶立在窄平台上，平台两侧各有一道护栏
 localeExclusive: false
 ---
 

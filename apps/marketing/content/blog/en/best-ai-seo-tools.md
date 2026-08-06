@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/best-ai-seo-tools.jpg
-heroImageAlt: Flat-vector illustration: a conveyor belt running across the frame with three work stations above it: a pen, a pair of gears, and a checkmark stamp
+heroImageAlt: Technical line illustration: a conveyor belt running across the frame with three work stations above it: a pen, a pair of gears, and a checkmark stamp
 localeExclusive: true
 ---
 

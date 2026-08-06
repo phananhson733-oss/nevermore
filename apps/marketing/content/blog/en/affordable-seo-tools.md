@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-23
 updatedAt: 2026-06-23
 heroImage: /images/blog/affordable-seo-tools.jpg
-heroImageAlt: Flat-vector illustration: a folding multi-tool opened out like a fan, five different implements splayed from one shared hinge
+heroImageAlt: Technical line illustration: a folding multi-tool opened out like a fan, five different implements splayed from one shared hinge
 localeExclusive: true
 ---
 

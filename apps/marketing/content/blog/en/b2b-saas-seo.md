@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-02
 updatedAt: 2026-07-02
 heroImage: /images/blog/b2b-saas-seo.jpg
-heroImageAlt: Flat-vector illustration: a tall funnel with four clearly banded layers, small round tokens entering wide at the top and a single token emerging at the narrow spout
+heroImageAlt: Technical line illustration: a tall funnel with four clearly banded layers, small round tokens entering wide at the top and a single token emerging at the narrow spout
 localeExclusive: true
 ---
 

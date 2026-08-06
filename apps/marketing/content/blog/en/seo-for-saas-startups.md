@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-06-16
 heroImage: /images/blog/seo-for-saas-startups.jpg
-heroImageAlt: Flat-vector illustration: a single pennant flag planted upright in bare flat ground, a low sun disc rising behind the horizon line
+heroImageAlt: Technical line illustration: a single pennant flag planted upright in bare flat ground, a low sun disc rising behind the horizon line
 localeExclusive: true
 ---
 

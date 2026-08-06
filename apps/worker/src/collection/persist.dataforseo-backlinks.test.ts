@@ -106,8 +106,8 @@ const observations = [
       sourceRank: 63,
       linkKind: "dofollow",
       anchorText: "Example guide",
-      firstSeenAt: capturedAt,
-      lastSeenAt: capturedAt,
+      firstSeenAt: "2026-07-01 00:00:00+00:00",
+      lastSeenAt: "2026-08-05 00:00:00+00:00",
       isNew: false,
       isLost: false,
       verification: {

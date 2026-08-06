@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/programmatic-seo-at-scale.jpg
-heroImageAlt: Flat-vector illustration: a hand press stamp coming down on the left, producing a long fanned stack of identical rectangular pages spreading to the right
+heroImageAlt: Technical line illustration: a hand press stamp coming down on the left, producing a long fanned stack of identical rectangular pages spreading to the right
 localeExclusive: false
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-22
 updatedAt: 2026-06-22
 heroImage: /images/blog/ethical-seo.jpg
-heroImageAlt: Flat-vector illustration: a single broad tree with a full rounded canopy above ground and a deep mirrored root system spreading below the ground line
+heroImageAlt: Technical line illustration: a tree whose root system below the ground line mirrors the outline of its canopy above
 localeExclusive: true
 ---
 

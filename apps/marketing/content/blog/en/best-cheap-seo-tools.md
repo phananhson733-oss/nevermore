@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/best-cheap-seo-tools.jpg
-heroImageAlt: Flat-vector illustration: a vending machine with three visible shelves, each shelf holding a parcel of a different size, and a single coin dropping into its coin slot
+heroImageAlt: Technical line illustration: a vending machine with three visible shelves, each shelf holding a parcel of a different size, and a single coin dropping into its coin slot
 localeExclusive: true
 ---
 

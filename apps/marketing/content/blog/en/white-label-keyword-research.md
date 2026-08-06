@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-16
 updatedAt: 2026-08-05
 heroImage: /images/blog/white-label-keyword-research.jpg
-heroImageAlt: Flat-vector illustration: a blank pennant flag being raised up a mast, a neat stack of plain index cards at the mast's base
+heroImageAlt: Technical line illustration: a blank pennant flag being raised up a mast, a neat stack of plain index cards at the mast's base
 localeExclusive: true
 ---
 

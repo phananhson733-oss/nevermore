@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-09
 updatedAt: 2026-08-05
 heroImage: /images/blog/google-july-2026-update.jpg
-heroImageAlt: Flat-vector illustration: a two-pan balance scale, a hand-free weight descending onto the left pan tipping the beam, the right pan rising
+heroImageAlt: Technical line illustration: a two-pan balance scale, a hand-free weight descending onto the left pan tipping the beam, the right pan rising
 localeExclusive: true
 ---
 

@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-03-10
 updatedAt: 2026-03-10
 heroImage: /images/blog/social-first-week-1.jpg
-heroImageAlt: 扁平矢量插图：左侧六个小对话气泡由细线汇入右侧一份大文档
+heroImageAlt: 技术线稿插图：左侧六个小对话气泡由细线汇入右侧一份大文档
 localeExclusive: false
 ---
 

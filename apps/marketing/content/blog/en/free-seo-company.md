@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-01
 updatedAt: 2026-08-05
 heroImage: /images/blog/free-seo-company.jpg
-heroImageAlt: Flat-vector illustration: a gift box with its lid lifted and tilted, revealing a cluster of gears packed inside
+heroImageAlt: Technical line illustration: a gift box with its lid lifted and tilted, revealing a cluster of gears packed inside
 localeExclusive: true
 ---
 

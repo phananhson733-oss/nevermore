@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-07-30
 updatedAt: 2026-07-30
 heroImage: /images/blog/bounded-internal-link-crawl.jpg
-heroImageAlt: Flat-vector illustration: a flashlight on the left casting a cone of light across a network of connected boxes; the boxes inside the cone are solid, the ones outside fade to faint outlines
+heroImageAlt: Technical line illustration: a flashlight beam bounded by two thin lines, the boxes inside it drawn solid and the boxes outside it dashed
 localeExclusive: false
 ---
 

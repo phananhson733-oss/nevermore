@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-06-22
 updatedAt: 2026-06-22
 heroImage: /images/blog/content-audit-tool.jpg
-heroImageAlt: Flat-vector illustration: a sorting station: pages sliding down two chutes, the left chute ending in a tray marked by a circular refresh arrow, the right chute ending in a waste bin
+heroImageAlt: Technical line illustration: a sorting station: pages sliding down two chutes, the left chute ending in a tray marked by a circular refresh arrow, the right chute ending in a waste bin
 localeExclusive: true
 ---
 

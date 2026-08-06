@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-01-15
 updatedAt: 2026-08-05
 heroImage: /images/blog/what-is-growth-automation.jpg
-heroImageAlt: Flat-vector illustration: a machine with a detached hand crank lying on the ground beside it, and a compact motor now mounted in the crank's place, driving the same gear
+heroImageAlt: Technical line illustration: a machine with a detached hand crank lying on the ground beside it, and a compact motor now mounted in the crank's place, driving the same gear
 localeExclusive: false
 ---
 
