@@ -184,8 +184,8 @@ const ARTIFACT_FILTERS = ["all", ...ARTIFACT_TYPE_ORDER] as const;
 type ArtifactFilter = (typeof ARTIFACT_FILTERS)[number];
 
 const GENERATION_MODES: readonly GenerationMode[] = [
-  "template",
   "structured_llm",
+  "template",
 ];
 
 function artifactGenerationKey(
@@ -715,6 +715,7 @@ interface ArtifactEditorProps {
   readonly artifact: Artifact;
   readonly onClose: () => void;
   readonly onDirtyChange: (artifactId: string, dirty: boolean) => void;
+  readonly onRegenerate: (() => void) | undefined;
 }
 
 interface EditorFeedback {
@@ -733,6 +734,7 @@ function ArtifactEditor({
   artifact,
   onClose,
   onDirtyChange,
+  onRegenerate,
 }: ArtifactEditorProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
@@ -960,6 +962,19 @@ function ArtifactEditor({
               <li key={`${index}:${message}`}>{message}</li>
             ))}
           </ul>
+          <p className={styles.errorsRepairHint}>
+            {t("validationRepairHint")}
+          </p>
+          {onRegenerate !== undefined ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRegenerate}
+              disabled={busy}
+            >
+              {t("regenerate")}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -1613,11 +1628,12 @@ function GenerateForm({
   const [artifactType, setArtifactType] = useState<ArtifactType>(
     expected ?? "content_brief",
   );
-  const [mode, setMode] = useState<GenerationMode>("template");
+  const [mode, setMode] = useState<GenerationMode>("structured_llm");
   const [locale, setLocale] = useState<string>(
     project?.defaultDeliveryLocale ?? action.contentLocale,
   );
   const localeEdited = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [instructions, setInstructions] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [problemError, setProblemError] = useState<unknown | null>(null);
@@ -1643,6 +1659,13 @@ function GenerateForm({
       setLocale(project.defaultDeliveryLocale);
     }
   }, [project]);
+
+  useEffect(() => {
+    const heading = headingRef.current;
+    if (heading === null) return;
+    heading.scrollIntoView({ block: "center", inline: "nearest" });
+    heading.focus({ preventScroll: true });
+  }, []);
 
   async function onSubmit(): Promise<void> {
     setError(null);
@@ -1686,7 +1709,12 @@ function GenerateForm({
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
           <span className="sf-eyebrow">{t("generateHeading")}</span>
-          <h2 id="sf-generate-title" className={styles.editorTitle}>
+          <h2
+            ref={headingRef}
+            id="sf-generate-title"
+            className={styles.editorTitle}
+            tabIndex={-1}
+          >
             {action.title}
           </h2>
         </div>
@@ -1827,6 +1855,14 @@ function ActionPicker({
   const tCommon = useTranslations("common");
   const tLane = useTranslations("lane");
   const tBand = useTranslations("priorityBand");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    const heading = headingRef.current;
+    if (heading === null) return;
+    heading.scrollIntoView({ block: "center", inline: "nearest" });
+    heading.focus({ preventScroll: true });
+  }, []);
 
   return (
     <Panel
@@ -1836,7 +1872,12 @@ function ActionPicker({
     >
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
-          <h2 id="sf-picker-title" className={styles.editorTitle}>
+          <h2
+            ref={headingRef}
+            id="sf-picker-title"
+            className={styles.editorTitle}
+            tabIndex={-1}
+          >
             {t("pickAction")}
           </h2>
           <p className={styles.pickerHint}>{t("pickActionHelp")}</p>
@@ -3561,6 +3602,18 @@ export function StudioClient({
               artifact={selected}
               onClose={closeEditor}
               onDirtyChange={onEditorDirtyChange}
+              onRegenerate={
+                selectedAction !== undefined &&
+                selectedAction.status !== "dismissed" &&
+                !generationFenceKeys.has(
+                  artifactGenerationKey(
+                    selected.actionId,
+                    selected.artifactType,
+                  ),
+                )
+                  ? () => openGenerate(selectedAction)
+                  : undefined
+              }
             />
           ) : (
             <EditorPlaceholder

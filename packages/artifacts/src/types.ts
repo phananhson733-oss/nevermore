@@ -26,6 +26,18 @@ export const ARTIFACT_FORMAT: Record<ArtifactType, ContentFormat> = {
 export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
 
 /**
+ * The validator-aligned technical-ticket prompt contract.
+ *
+ * This version is scoped because `PROMPT_SET_VERSION` is also persisted by the
+ * diagnostic pipeline and is pinned by a database CHECK. Technical tickets are
+ * recorded in `analysis_invocations`, whose prompt version is intentionally an
+ * unconstrained ledger value, so changing this one prompt must not drift queued
+ * diagnostics or the unrelated content-brief and metadata prompts.
+ */
+export const TECHNICAL_TICKET_PROMPT_SET_VERSION =
+  "mvp.prompts.technical-ticket.0.3.0";
+
+/**
  * The prompt set for the Content Shadow English draft (Slice 2 Task 4b).
  *
  * SCOPED, not global. `PROMPT_SET_VERSION` is pinned by a DB CHECK on
@@ -35,9 +47,10 @@ export const PROMPT_SET_VERSION = "mvp.prompts.0.2.0";
  * `english_blog_draft` prompt. `analysis_invocations.prompt_set_version` has no
  * CHECK and the repository already carries a scoped precedent
  * (`PRODUCT_PROFILE_PROMPT_SET_VERSION`), so the draft prompt gets its own,
- * semantically precise name and the other three artifact prompts keep theirs —
- * which stays honest only because `contentBriefOutline` is gated to
- * `english_blog_draft` and their prompt bytes are unchanged.
+ * semantically precise name. The content-brief and metadata prompts keep the
+ * global version, while the independently changed technical-ticket prompt has
+ * its own scoped version. This stays honest because `contentBriefOutline` is
+ * gated to `english_blog_draft` and cannot alter any of those other prompts.
  *
  * This is the ONE definition the accepting service, the worker replay guard and
  * the LLM client all read. They used to read two different constants that

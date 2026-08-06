@@ -5,6 +5,7 @@ import type { ArtifactPromptInput } from "../types.ts";
 import {
   CONTENT_SHADOW_PROMPT_SET_VERSION,
   PROMPT_SET_VERSION,
+  TECHNICAL_TICKET_PROMPT_SET_VERSION,
 } from "../types.ts";
 import { MAX_BRIEF_OUTLINE_SECTIONS } from "../brief/outline.ts";
 import {
@@ -468,17 +469,16 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     );
   });
 
-  it("records the global prompt set for the three artifact prompts it did not change", async () => {
-    // All THREE unchanged types, not two. While `metadata_rewrite` went
+  it("records the global prompt set for the two artifact prompts it did not change", async () => {
+    // Both unchanged types. While `metadata_rewrite` went
     // unasserted, `promptSetVersionFor` could hand it the scoped Content Shadow
     // version — making every metadata invocation in the ledger claim a prompt
     // set it was never built from — with the whole unit suite still green.
     const unchanged = [
       "content_brief",
       "metadata_rewrite",
-      "technical_ticket",
     ] as const;
-    expect(unchanged).toHaveLength(3);
+    expect(unchanged).toHaveLength(2);
 
     for (const artifactType of unchanged) {
       const fetchImpl = vi.fn().mockResolvedValue(
@@ -512,6 +512,23 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
 
       expect(result.invocation.promptSetVersion).toBe(PROMPT_SET_VERSION);
     }
+  });
+
+  it("records the scoped technical-ticket prompt version", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
+    const client = createOpenAIClient({
+      apiKey: "test-key",
+      model: "gpt-4o-mini",
+      fetchImpl,
+    });
+
+    const result = await client.generateArtifact(
+      makeInput({ artifactType: "technical_ticket" }),
+    );
+
+    expect(result.invocation.promptSetVersion).toBe(
+      TECHNICAL_TICKET_PROMPT_SET_VERSION,
+    );
   });
 
   it("refuses an oversized brief outline before any transport call", async () => {
