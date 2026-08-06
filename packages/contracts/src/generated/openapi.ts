@@ -5805,6 +5805,16 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description The workspace plan does not allow this. The request is well formed and the caller is authenticated; the plan tier is what refuses it. */
+        PlanLimitReached: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Resource absent or outside the current workspace/project. */
         NotFound: {
             headers: {
@@ -5974,6 +5984,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["PlanLimitReached"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
         };

@@ -175,8 +175,54 @@ describe("Supabase session cookie policy", () => {
     const { response } = await updateSession(
       new NextRequest("https://app.gengrowth.ai/api/mvp/projects"),
     );
-    for (const header of response.headers.getSetCookie()) {
+    // Only the real writes; the legacy-twin deletions deliberately carry no
+    // Domain, which is what makes them match the host-only cookie.
+    const writes = response.headers
+      .getSetCookie()
+      .filter((header) => !/Max-Age=0/.test(header));
+    expect(writes).toHaveLength(2);
+    for (const header of writes) {
       expect(header).toContain("Domain=gengrowth.ai");
+    }
+  });
+
+  it("expires the legacy host-only twin whenever it writes a scoped cookie", async () => {
+    // Widening scope ADDS a cookie; it does not replace one. A browser holding
+    // the old host-only `sb-…-auth-token` would send both, and which one wins
+    // is header order — not something the app controls. So each write also
+    // emits a `Max-Age=0` with no Domain, which matches only the legacy twin.
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SESSION_COOKIE_DOMAIN", "gengrowth.ai");
+
+    const { response } = await updateSession(
+      new NextRequest("https://app.gengrowth.ai/api/mvp/projects"),
+    );
+    const setCookies = response.headers.getSetCookie();
+
+    for (const name of ["sb-project-auth-token.0", "sb-project-auth-token.1"]) {
+      const scoped = setCookies.filter(
+        (h) => h.startsWith(`${name}=`) && h.includes("Domain=gengrowth.ai"),
+      );
+      const expiry = setCookies.filter(
+        (h) => h.startsWith(`${name}=`) && !h.includes("Domain="),
+      );
+      expect(scoped, `${name} scoped write`).toHaveLength(1);
+      expect(expiry, `${name} legacy expiry`).toHaveLength(1);
+      expect(expiry[0]).toMatch(/Max-Age=0/);
+    }
+  });
+
+  it("emits no legacy expiry when the cookie is already host-only", async () => {
+    // Without a configured domain there is no second cookie to disambiguate
+    // from, and emitting the deletion would expire the cookie being set.
+    vi.stubEnv("NODE_ENV", "production");
+
+    const { response } = await updateSession(
+      new NextRequest("https://app.gengrowth.ai/api/mvp/projects"),
+    );
+
+    for (const header of response.headers.getSetCookie()) {
+      expect(header).not.toMatch(/Max-Age=0/);
     }
   });
 

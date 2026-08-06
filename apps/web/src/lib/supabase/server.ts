@@ -22,6 +22,10 @@ export async function createSupabaseServerClient() {
       },
       setAll(cookiesToSet) {
         try {
+          // The legacy host-only twin is expired by the proxy (refresh.ts),
+          // which runs on every request and can append a second Set-Cookie.
+          // `cookieStore.set` is keyed by NAME, so writing the deletion here
+          // would just be overwritten by the real cookie on the next line.
           for (const { name, value, options } of cookiesToSet) {
             cookieStore.set(
               name,

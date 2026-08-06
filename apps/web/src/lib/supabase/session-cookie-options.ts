@@ -53,3 +53,35 @@ export function hardenSessionCookieOptions(
     ...sessionCookieOptions(env),
   };
 }
+
+/**
+ * Attributes that expire a pre-existing HOST-ONLY cookie of the same name.
+ *
+ * Widening scope does not replace a cookie — it adds one. A browser that
+ * already holds `sb-…-auth-token` for `app.gengrowth.ai` keeps it alongside the
+ * new `Domain=gengrowth.ai` copy, sends BOTH on every request, and which one
+ * the server reads is decided by header order rather than by us. That is how a
+ * sign-out leaves a still-valid session behind, or a refresh writes to one copy
+ * while reads come from the other.
+ *
+ * So on every write we also emit a deletion for the un-scoped twin. `maxAge: 0`
+ * with NO domain attribute matches only the host-only cookie; the domain-scoped
+ * one we just wrote is a different cookie and is untouched. Once no browser
+ * holds a legacy cookie this is a no-op that costs one Set-Cookie header.
+ *
+ * Only meaningful while a domain IS configured — without one there is no second
+ * cookie to disambiguate from, and emitting this would delete the very cookie
+ * being set.
+ */
+export function legacyHostOnlyExpiry(
+  env: RuntimeEnvironment = process.env,
+): CookieOptions | null {
+  if (!sessionCookieDomain(env)) return null;
+  return {
+    path: "/",
+    sameSite: "lax",
+    httpOnly: true,
+    secure: env["NODE_ENV"] === "production",
+    maxAge: 0,
+  };
+}

@@ -19,7 +19,14 @@ function fakeDb(
   const workspaceId = "00000000-0000-4000-8000-000000000099";
   const limit = vi.fn(async () => [...existing]);
   const where = vi.fn(() => ({ limit }));
-  const from = vi.fn(() => ({ where }));
+  // Records the table on the TOP-LEVEL handle too, not just inside the
+  // transaction. Scoping the isolation assertion to `tx` alone let the same
+  // regression pass simply by moving the join above `db.transaction(...)`.
+  const selectedTables: unknown[] = [];
+  const from = vi.fn((table: unknown) => {
+    selectedTables.push(table);
+    return { where };
+  });
   const select = vi.fn(() => ({ from }));
 
   // Each insert mints a distinct id, so a test can tell "provisioned a new
@@ -80,7 +87,13 @@ function fakeDb(
   return {
     select,
     transaction,
-    transactionSpies: { tx, workspaceValues, profileValues, txSelectedTables },
+    transactionSpies: {
+      tx,
+      workspaceValues,
+      profileValues,
+      txSelectedTables,
+      selectedTables,
+    },
   };
 }
 
@@ -170,10 +183,21 @@ describe("getOperatorContext provisioning boundary", () => {
     mocks.getDb.mockReturnValue({ db });
     authenticatedAs("00000000-0000-4000-8000-000000000013");
 
-    await getOperatorContext();
+    const context = await getOperatorContext();
 
-    expect(db.transactionSpies.txSelectedTables).not.toContain(workspaces);
+    // Asserted across BOTH handles. Scoping this to the transaction alone made
+    // the test pass for a join written just above `db.transaction(...)` —
+    // verified by mutation — which is the same data leak one line earlier.
+    const everySelect = [
+      ...db.transactionSpies.selectedTables,
+      ...db.transactionSpies.txSelectedTables,
+    ];
+    expect(everySelect).not.toContain(workspaces);
     expect(db.transactionSpies.txSelectedTables).toContain(operatorProfiles);
+
+    // And the id handed back is the one THIS call minted, not one it found.
+    expect(db.transactionSpies.workspaceValues).toHaveBeenCalledTimes(1);
+    expect(context?.workspaceId).toBe("00000000-0000-4000-8000-000000000091");
   });
 
   it("gives two different first-time accounts two different workspaces", async () => {
