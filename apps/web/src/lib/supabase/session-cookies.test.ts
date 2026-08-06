@@ -157,6 +157,43 @@ describe("Supabase session cookie policy", () => {
     }
   });
 
+  it("scopes the session to the registrable domain when configured", async () => {
+    // Sign-in can start on gengrowth.ai via One Tap and continue here. If this
+    // app kept writing a host-only cookie of the same name, the two properties
+    // would hold two sessions whose precedence we do not control. Asserted on
+    // the emitted Set-Cookie header, not just the options object, because the
+    // header is what the browser actually acts on.
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SESSION_COOKIE_DOMAIN", "gengrowth.ai");
+
+    await createSupabaseServerClient();
+    mocks.clients[0]!.cookies.setAll(weakCookies);
+    for (const call of mocks.cookieSet.mock.calls) {
+      expect(call[2]).toMatchObject({ domain: "gengrowth.ai" });
+    }
+
+    const { response } = await updateSession(
+      new NextRequest("https://app.gengrowth.ai/api/mvp/projects"),
+    );
+    for (const header of response.headers.getSetCookie()) {
+      expect(header).toContain("Domain=gengrowth.ai");
+    }
+  });
+
+  it("stays host-only when no domain is configured", async () => {
+    // The default has to be the narrow one: a wrong domain is a wider scope,
+    // and on localhost or *.vercel.app the attribute is rejected outright,
+    // which reads as a silent sign-out rather than a configuration error.
+    vi.stubEnv("NODE_ENV", "production");
+
+    const { response } = await updateSession(
+      new NextRequest("https://app.gengrowth.ai/api/mvp/projects"),
+    );
+    for (const header of response.headers.getSetCookie()) {
+      expect(header).not.toContain("Domain=");
+    }
+  });
+
   it("uses the same HttpOnly/Lax/root policy without forcing Secure in development", async () => {
     vi.stubEnv("NODE_ENV", "development");
 
