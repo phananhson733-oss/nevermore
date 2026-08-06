@@ -5,7 +5,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 const GSI_SRC = "https://accounts.google.com/gsi/client";
 const GSI_SCRIPT_ID = "google-identity-services";
@@ -80,7 +79,6 @@ function loadGsi(): Promise<void> {
  * raw value never reaches this component, only its hash. See one-tap.ts.
  */
 export function GoogleOneTap() {
-  const router = useRouter();
 
   useEffect(() => {
     // React 18+ development remounts effects, and `prompt()` twice in one
@@ -89,6 +87,18 @@ export function GoogleOneTap() {
     const controller = new AbortController();
 
     async function start(): Promise<void> {
+      // Google has no idea we already have a session, so without this an
+      // already-signed-in reader keeps being prompted — and picking a different
+      // Google account would silently REPLACE the session they came with.
+      const session = await fetch("/api/auth/session", {
+        signal: controller.signal,
+      });
+      if (session.ok) {
+        const { signedIn } = (await session.json()) as { signedIn?: boolean };
+        if (signedIn) return;
+      }
+      if (controller.signal.aborted) return;
+
       const response = await fetch("/api/auth/one-tap/nonce", {
         signal: controller.signal,
       });
@@ -120,9 +130,14 @@ export function GoogleOneTap() {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ credential }),
           }).then((result) => {
-            // The session lives in cookies the server just wrote, so the page
-            // has to be re-rendered by the server to reflect it.
-            if (result.ok) router.refresh();
+            if (!result.ok) return;
+            // A full reload, not router.refresh(). The session lives in cookies
+            // the server just wrote, but the header's sign-in control is a
+            // client component that read its state in a mount-only effect —
+            // an RSC refresh preserves that state and re-runs no effect, so the
+            // header would keep offering "Sign in" to someone who just signed
+            // in. Reloading re-mounts everything against the new cookies.
+            window.location.reload();
           });
         },
       });
@@ -138,7 +153,7 @@ export function GoogleOneTap() {
       controller.abort();
       window.google?.accounts.id.cancel();
     };
-  }, [router]);
+  }, []);
 
   return null;
 }

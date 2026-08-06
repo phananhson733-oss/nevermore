@@ -4,10 +4,9 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { cookies } from "next/headers";
-import { screenCredential } from "@/lib/auth/one-tap";
-import { open } from "@/lib/auth/sealed-cookie";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isGoogleConnectEnabled } from "@/lib/tools/traffic-drop-session";
+import { isOneTapEnabled, screenCredential } from "../../../../lib/auth/one-tap";
+import { open } from "../../../../lib/auth/sealed-cookie";
+import { createServerSupabaseClient } from "../../../../lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -17,7 +16,11 @@ const MAX_CREDENTIAL_BYTES = 8 * 1024;
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      // Cookie-mutating and per-visitor; a cached copy would be a shared session.
+      "cache-control": "no-store, private",
+    },
   });
 }
 
@@ -37,7 +40,7 @@ function json(body: unknown, status: number): Response {
  * invalid" tells an attacker which half of the pairing they still need.
  */
 export async function POST(request: Request): Promise<Response> {
-  if (!isGoogleConnectEnabled()) {
+  if (!isOneTapEnabled()) {
     return json({ error: "unavailable" }, 404);
   }
 

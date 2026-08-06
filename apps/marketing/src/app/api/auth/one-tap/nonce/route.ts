@@ -4,9 +4,12 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { cookies } from "next/headers";
-import { createOneTapNonce, NONCE_TTL_SECONDS } from "@/lib/auth/one-tap";
-import { cookieAttributes, seal } from "@/lib/auth/sealed-cookie";
-import { isGoogleConnectEnabled } from "@/lib/tools/traffic-drop-session";
+import {
+  createOneTapNonce,
+  isOneTapEnabled,
+  NONCE_TTL_SECONDS,
+} from "../../../../../lib/auth/one-tap";
+import { cookieAttributes, seal } from "../../../../../lib/auth/sealed-cookie";
 
 export const runtime = "nodejs";
 
@@ -23,12 +26,8 @@ export const runtime = "nodejs";
  * makes a stolen id_token insufficient on its own.
  */
 export async function GET(): Promise<Response> {
-  if (!isGoogleConnectEnabled()) {
-    return new Response(null, { status: 404 });
-  }
-
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  if (!clientId) {
+  if (!isOneTapEnabled() || !clientId) {
     // Not an error worth alarming about: a deployment without One Tap
     // configured simply does not prompt.
     return new Response(null, { status: 404 });

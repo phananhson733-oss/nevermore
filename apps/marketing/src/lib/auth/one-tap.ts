@@ -23,6 +23,27 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 /** Short by design: it covers one page view's worth of sign-in intent. */
 export const NONCE_TTL_SECONDS = 600;
 
+/**
+ * One Tap's own switch.
+ *
+ * Deliberately NOT `isGoogleConnectEnabled()`, which gates the Search Console
+ * connector — a sensitive-scope data feature that is off by default. Sharing
+ * that flag couples an authentication surface to an unrelated data grant in
+ * both directions: One Tap silently 404s wherever GSC is off (the expected
+ * state, and what the deployment doc's own instructions produce), and turning
+ * GSC on would quietly enable a sign-in surface nobody asked for.
+ *
+ * Sign-in needs a browser-visible client id anyway, so its presence IS the
+ * configuration. Absent means One Tap does not prompt — see google-one-tap.tsx,
+ * which treats "no prompt" as a normal outcome rather than an error.
+ */
+export function isOneTapEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const clientId = env["NEXT_PUBLIC_GOOGLE_CLIENT_ID"];
+  return typeof clientId === "string" && clientId.trim() !== "";
+}
+
 export interface OneTapNonce {
   /** Kept server-side, sealed into a cookie. Never rendered. */
   readonly raw: string;
@@ -35,8 +56,19 @@ export function createOneTapNonce(): OneTapNonce {
   return { raw, hashed: hashNonce(raw) };
 }
 
+/**
+ * Lowercase hex, not base64url.
+ *
+ * This encoding is not ours to choose. GoTrue verifies One Tap by computing
+ * `fmt.Sprintf("%x", sha256.Sum256(nonce))` over the raw nonce we hand
+ * `signInWithIdToken` and comparing it to the `nonce` claim Google echoed from
+ * what we gave GSI. Hand GSI a base64url digest and that comparison can never
+ * match — every One Tap sign-in fails closed with a 401 and the feature simply
+ * never works. Supabase's own One Tap recipe hashes with
+ * `b.toString(16).padStart(2, "0")` for exactly this reason.
+ */
 export function hashNonce(raw: string): string {
-  return createHash("sha256").update(raw).digest("base64url");
+  return createHash("sha256").update(raw).digest("hex");
 }
 
 /**

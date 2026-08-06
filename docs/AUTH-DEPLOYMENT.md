@@ -3,6 +3,18 @@
 代码已经就绪，但**在下面的配置完成前，登录/注册在生产上不会工作**。这些都是
 Owner-gated 的控制台操作，代码无法代劳。
 
+> ## ⚠️ 顺序：迁移必须先于合并
+>
+> 合并到 main 即部署。新代码**无条件读写 `workspaces.plan_tier`**，而迁移
+> `0044` 是独立的人工步骤。如果先合并后迁移，生产库还停在 0043，那么
+> **每次创建项目和每次首登都会 42703 `column "plan_tier" does not exist`**，
+> 一直持续到有人想起来跑迁移。
+>
+> 正确顺序：先对生产库跑 `0044`（它是纯增量、向后兼容的——旧代码从不提及
+> 这一列，列默认值覆盖了省略该字段的插入），`pnpm db:migrate:check` 确认，
+> **然后**再合并。若无法阻止合并即部署，先把 `SF_SIGNUP_MODE=invite` 设上，
+> 等迁移落地再放开。
+
 相关实现：spec §1.6、`apps/web/src/lib/auth/{session,plan,actions}.ts`、
 `apps/marketing/src/lib/auth/one-tap.ts`、两个 app 的
 `lib/supabase/session-cookie-options.ts`。
@@ -81,7 +93,7 @@ https://app.gengrowth.ai/auth/callback
 | 变量 | 值 | 说明 |
 |---|---|---|
 | `SESSION_COOKIE_DOMAIN` | `gengrowth.ai` | 同上，两站必须一致 |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | 与 `GOOGLE_CLIENT_ID` 相同 | One Tap 需要在浏览器端拿到 client id。**不设则不弹 One Tap**（静默跳过，不报错） |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | 与 `GOOGLE_CLIENT_ID` 相同 | **这就是 One Tap 的开关**。不设则不弹（静默跳过，不报错）。One Tap 不再依赖 `MARKETING_GSC_CONNECT_ENABLED`——那是 Search Console 的数据授权开关，默认关闭，曾经会让 One Tap 直接 404 |
 | `NEXT_PUBLIC_SUPABASE_URL` / `_ANON_KEY` | 指向产品站同一个 Supabase | 见第 0 节 |
 
 > `SESSION_COOKIE_DOMAIN` **只在真实域名下设置**。localhost 和 `*.vercel.app`

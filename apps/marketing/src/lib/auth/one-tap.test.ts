@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { createHash } from "node:crypto";
+
 import {
   createOneTapNonce,
   hashNonce,
+  isOneTapEnabled,
   nonceMatches,
   readUnverifiedClaims,
   screenCredential,
@@ -22,6 +25,54 @@ function credential(claims: Record<string, unknown>): string {
     Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
   return `${encode({ alg: "RS256" })}.${encode(claims)}.signature-not-checked-here`;
 }
+
+describe("hashNonce encoding", () => {
+  /**
+   * This encoding is a contract with GoTrue, not a local choice.
+   *
+   * GoTrue verifies One Tap by computing `fmt.Sprintf("%x", sha256.Sum256(raw))`
+   * and comparing it to the nonce claim Google echoed from what we gave GSI.
+   * A base64url digest can never match that, so the feature fails closed with a
+   * 401 on every attempt and looks simply "broken" rather than misconfigured.
+   * Asserting the exact bytes is what makes that a test failure instead of a
+   * production mystery — every behavioural test below passes under either
+   * encoding.
+   */
+  it("is lowercase hex, because GoTrue compares against %x of the raw nonce", () => {
+    const hashed = hashNonce("known-input");
+
+    expect(hashed).toBe(
+      createHash("sha256").update("known-input").digest("hex"),
+    );
+    expect(hashed).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("isOneTapEnabled", () => {
+  it("is off when no browser client id is configured", () => {
+    expect(isOneTapEnabled({})).toBe(false);
+    expect(isOneTapEnabled({ NEXT_PUBLIC_GOOGLE_CLIENT_ID: "  " })).toBe(false);
+  });
+
+  it("is on when the client id is present", () => {
+    expect(
+      isOneTapEnabled({
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: "abc.apps.googleusercontent.com",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not depend on the Search Console connector flag", () => {
+    // Sign-in must not be coupled to an unrelated sensitive-scope data grant:
+    // GSC off is the expected state, and it used to 404 One Tap entirely.
+    expect(
+      isOneTapEnabled({
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: "abc.apps.googleusercontent.com",
+        MARKETING_GSC_CONNECT_ENABLED: "false",
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("createOneTapNonce", () => {
   it("hands GSI the hash and keeps the raw value back", () => {
@@ -134,8 +185,8 @@ describe("screenCredential", () => {
   });
 
   it("rejects a malformed credential before looking at the cookie", () => {
-    expect(
-      screenCredential({ credential: "garbage", sealedNonce: null }),
-    ).toBe("malformed_credential");
+    expect(screenCredential({ credential: "garbage", sealedNonce: null })).toBe(
+      "malformed_credential",
+    );
   });
 });
