@@ -10,6 +10,7 @@ import {
   SoftwareApplicationJsonLd,
 } from "@/components/seo/json-ld";
 import HomePageClient from "./home-page-client";
+import { GoogleOneTap } from "@/components/auth/google-one-tap";
 
 export async function generateMetadata({
   params,
@@ -43,6 +44,10 @@ export default async function Home({
     <>
       <OrganizationJsonLd />
       <SoftwareApplicationJsonLd />
+      {/* One Tap is mounted where signing in is plausibly the next step —
+          the homepage and the tools pages — rather than site-wide, so it does
+          not interrupt someone reading a blog post. */}
+      <GoogleOneTap />
       <NextIntlClientProvider
         messages={{
           home: messages.home,

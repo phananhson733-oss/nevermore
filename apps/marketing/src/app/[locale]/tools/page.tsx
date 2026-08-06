@@ -9,6 +9,7 @@ import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { localePath, localeUrl } from "@/lib/locale-path";
+import { GoogleOneTap } from "@/components/auth/google-one-tap";
 
 const DIAGNOSIS_TOOLS = [
   {
@@ -89,6 +90,9 @@ export default async function ToolsPage({
     /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
     <div className="min-h-screen bg-brand-bg pt-9 pb-24">
       <div className="max-w-report mx-auto px-6 md:px-8">
+        {/* See the homepage: One Tap is scoped to pages where signing in
+            is plausibly the next step. */}
+        <GoogleOneTap />
         <BreadcrumbJsonLd
           items={[{ name: home, url: localeUrl(locale) }, { name: tools }]}
         />

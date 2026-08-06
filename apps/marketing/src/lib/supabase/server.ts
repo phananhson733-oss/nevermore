@@ -4,6 +4,10 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import {
+  hardenSessionCookieOptions,
+  sessionCookieOptions,
+} from "./session-cookie-options";
 
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies();
@@ -12,6 +16,9 @@ export async function createServerSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Scoped to the registrable domain so a sign-in here is also a sign-in on
+      // app.gengrowth.ai. See session-cookie-options.ts.
+      cookieOptions: sessionCookieOptions(),
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -19,7 +26,7 @@ export async function createServerSupabaseClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+              cookieStore.set(name, value, hardenSessionCookieOptions(options)),
             );
           } catch {
             // Server Component 中 setAll 会抛错，可忽略
