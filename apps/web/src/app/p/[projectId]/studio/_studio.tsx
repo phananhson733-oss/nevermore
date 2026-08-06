@@ -3526,7 +3526,7 @@ export function StudioClient({
                         action !== undefined &&
                         action.status !== "dismissed" &&
                         !generationFenced
-                          ? () => openGenerate(action)
+                          ? () => openGenerate(action, artifact.outputLocale)
                           : undefined
                       }
                     />
@@ -3594,6 +3594,7 @@ export function StudioClient({
             />
           ) : generateAction !== null ? (
             <GenerateForm
+              key={`${generateAction.id}:${generateInitialOutputLocale ?? ""}`}
               projectId={projectId}
               action={generateAction}
               initialOutputLocale={generateInitialOutputLocale}

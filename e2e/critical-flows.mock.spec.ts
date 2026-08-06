@@ -444,6 +444,16 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
   const card = page.locator(
     `[data-studio-artifact-id="${invalidArtifact.id}"]`,
   );
+  await card.getByRole("button", { name: "Regenerate" }).click();
+  await expect(page.getByLabel("Generation mode")).toHaveValue(
+    "structured_llm",
+  );
+  await expect(page.getByLabel("Output language")).toHaveValue("fr-FR");
+  await canvas
+    .getByRole("button", { name: "Cancel", exact: true })
+    .last()
+    .click();
+
   await card.getByRole("button", { name: "Open" }).click();
   const errorBox = page.getByText("Validation errors", { exact: true }).locator("..");
   await expect(errorBox).toContainText("## Affected Scope");

@@ -177,6 +177,9 @@ export function LimitationHint({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       close();
       const trigger = triggerRef.current;
       if (trigger !== null && document.activeElement !== trigger) {
@@ -187,12 +190,12 @@ export function LimitationHint({
     window.addEventListener("resize", onViewportChange);
     window.addEventListener("scroll", onViewportChange, true);
     document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("resize", onViewportChange);
       window.removeEventListener("scroll", onViewportChange, true);
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown, true);
     };
   }, [close, open, updatePosition]);
 
@@ -206,9 +209,10 @@ export function LimitationHint({
 
   return (
     <span
-      className={`inline-flex w-max flex-none items-center leading-none ${className ?? ""}`}
+      className={`inline-flex w-max flex-none items-center leading-none after:hidden print:block print:w-auto print:text-black print:after:block print:after:whitespace-pre-wrap print:after:text-[10pt] print:after:leading-relaxed print:after:content-[attr(data-print-limitations)] ${className ?? ""}`}
       data-limitation-hint=""
       data-limitation-count={items.length}
+      data-print-limitations={`${label}: ${items.join(" • ")}`}
       onMouseEnter={show}
       onMouseLeave={scheduleClose}
     >

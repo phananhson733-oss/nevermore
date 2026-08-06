@@ -33,7 +33,7 @@ function clientRender(node: React.ReactNode) {
 }
 
 describe("marketing LimitationHint", () => {
-  it("keeps limitation copy out of the default reading line", () => {
+  it("keeps copy out of the control while preserving it for print", () => {
     const limitation = "A long evidence boundary available only on demand.";
     const markup = renderToStaticMarkup(
       <LimitationHint label="限制说明" limitations={[limitation]} />,
@@ -42,7 +42,8 @@ describe("marketing LimitationHint", () => {
     expect(markup).toContain('data-limitation-hint=""');
     expect(markup).toContain('aria-label="限制说明 (1)"');
     expect(markup).toContain('aria-expanded="false"');
-    expect(markup).not.toContain(limitation);
+    expect(markup).toContain('data-print-limitations="限制说明:');
+    expect(markup).toContain(limitation);
   });
 
   it("deduplicates boundaries, ignores blanks, and renders nothing when empty", () => {
@@ -142,6 +143,29 @@ describe("marketing LimitationHint", () => {
     );
     expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    view.cleanup();
+  });
+
+  it("consumes Escape before an ancestor overlay can close", () => {
+    let ancestorEscapeCount = 0;
+    const onAncestorKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") ancestorEscapeCount += 1;
+    };
+    document.addEventListener("keydown", onAncestorKeyDown);
+    const view = clientRender(
+      <LimitationHint label="Limitations" limitations={["Nested boundary."]} />,
+    );
+    const trigger = view.container.querySelector("button");
+    act(() => trigger?.focus());
+
+    act(() =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+
+    expect(ancestorEscapeCount).toBe(0);
+    document.removeEventListener("keydown", onAncestorKeyDown);
     view.cleanup();
   });
 });

@@ -455,7 +455,10 @@ function PortfolioRow({
 
   return (
     <li className={styles.portfolioRow}>
-      <div className={cx(styles.rowButton, selected && styles.rowSelected)}>
+      <div
+        className={cx(styles.rowButton, selected && styles.rowSelected)}
+        data-growth-map-url-row={item.sitePageId}
+      >
         <button
           type="button"
           className={styles.rowSelectButton}

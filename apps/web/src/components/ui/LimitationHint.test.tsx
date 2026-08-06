@@ -29,7 +29,7 @@ function clientRender(node: React.ReactNode) {
 }
 
 describe("LimitationHint", () => {
-  it("keeps long limitation copy out of the default reading line", () => {
+  it("keeps long copy out of the control while preserving it for print", () => {
     const limitation = "Canonical source boundary that should only appear on demand.";
     const html = renderToStaticMarkup(
       <LimitationHint label="限制说明" limitations={[limitation]} />,
@@ -38,7 +38,8 @@ describe("LimitationHint", () => {
     expect(html).toContain('data-limitation-hint=""');
     expect(html).toContain('aria-label="限制说明 (1)"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain(limitation);
+    expect(html).toContain('data-print-limitations="限制说明:');
+    expect(html).toContain(limitation);
   });
 
   it("deduplicates canonical boundaries and ignores empty entries", () => {
@@ -70,7 +71,10 @@ describe("LimitationHint", () => {
     );
     const trigger = view.container.querySelector("button");
     expect(trigger).not.toBeNull();
-    expect(document.body.textContent).not.toContain(limitation);
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    expect(trigger?.parentElement?.getAttribute("data-print-limitations")).toContain(
+      limitation,
+    );
 
     act(() => trigger?.focus());
 
@@ -154,6 +158,29 @@ describe("LimitationHint", () => {
 
     expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    view.cleanup();
+  });
+
+  it("consumes Escape before an ancestor overlay can close", () => {
+    let ancestorEscapeCount = 0;
+    const onAncestorKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") ancestorEscapeCount += 1;
+    };
+    document.addEventListener("keydown", onAncestorKeyDown);
+    const view = clientRender(
+      <LimitationHint label="Limitations" limitations={["Nested boundary."]} />,
+    );
+    const trigger = view.container.querySelector("button");
+    act(() => trigger?.focus());
+
+    act(() =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+
+    expect(ancestorEscapeCount).toBe(0);
+    document.removeEventListener("keydown", onAncestorKeyDown);
     view.cleanup();
   });
 });

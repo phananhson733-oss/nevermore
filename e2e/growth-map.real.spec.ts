@@ -804,7 +804,8 @@ function exactPortfolioRow(page: Page, normalizedUrl: string): Locator {
   });
   return portfolio
     .getByTitle(normalizedUrl, { exact: true })
-    .locator("xpath=ancestor::button[1]");
+    .locator("xpath=ancestor::*[@data-growth-map-url-row][1]")
+    .getByRole("button");
 }
 
 function exclusiveFinding(
