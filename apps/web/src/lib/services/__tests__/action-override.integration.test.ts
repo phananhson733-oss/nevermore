@@ -229,7 +229,7 @@ describeDb(
       handle = createDbHandle(DATABASE_URL);
       const [ws] = await handle.db
         .insert(workspaces)
-        .values({ name: `WS-${randomUUID()}` })
+        .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
         .returning();
       workspaceId = ws!.id;
       const created = await createProject(
@@ -431,7 +431,7 @@ describeDb(
       const suffix = randomUUID();
       const [workspace] = await handle.db
         .insert(workspaces)
-        .values({ name: `${label}-${suffix}` })
+        .values({ name: `${label}-${suffix}`, plan_tier: "internal" })
         .returning();
       const created = await createProject(
         { workspaceId: workspace!.id },

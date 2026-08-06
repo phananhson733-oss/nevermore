@@ -224,7 +224,7 @@ describeDb("createDiagnosticRun idempotency ordering", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Diagnostic-idem-${randomUUID()}` })
+      .values({ name: `Diagnostic-idem-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

@@ -10,13 +10,35 @@ SET LOCAL lock_timeout = '5s';
 
 -- Existing workspaces predate self-serve signup: they were provisioned by hand
 -- for operators we know, so they are 'internal' and unbounded. Only accounts
--- created from here on default to 'free'. The column default is deliberately
--- 'free' — an unlabelled INSERT from any future code path should land in the
--- bounded tier, not the unbounded one.
+-- created from here on default to 'free' — an unlabelled INSERT from any future
+-- code path must land in the BOUNDED tier, not the unbounded one.
+--
+-- Both facts are established without touching a single row: the ADD COLUMN's
+-- default backfills existing rows to 'internal' as metadata only (PG 11+), then
+-- the default is swapped to 'free' for everything inserted afterwards.
+--
+-- The obvious spelling — ADD COLUMN DEFAULT 'free' followed by
+-- `UPDATE app.workspaces SET plan_tier = 'internal'` — is wrong three times
+-- over, and every one of them only bites in production:
+--   1. Replay. A bare UPDATE has no WHERE, so running this file a second time
+--      (psql -f, or executing the concatenated authority/schema.sql) promotes
+--      every self-serve customer to the unbounded tier — deleting the exact
+--      limit this migration exists to install. Only the forward-only runner
+--      stands between that and a live database.
+--   2. Lock hold. `lock_timeout` bounds lock ACQUISITION, never hold time. A
+--      full-table UPDATE holds ACCESS EXCLUSIVE until COMMIT, and 70 tables
+--      carry `REFERENCES app.workspaces`, so FK checks across the whole product
+--      would stall behind it — not just writes to this table.
+--   3. Provenance. The UPDATE fires workspaces_set_updated_at and overwrites
+--      every workspace's updated_at with the migration's clock, irreversibly.
 ALTER TABLE app.workspaces
-  ADD COLUMN plan_tier text NOT NULL DEFAULT 'free';
+  ADD COLUMN IF NOT EXISTS plan_tier text NOT NULL DEFAULT 'internal';
 
-UPDATE app.workspaces SET plan_tier = 'internal';
+ALTER TABLE app.workspaces
+  ALTER COLUMN plan_tier SET DEFAULT 'free';
+
+ALTER TABLE app.workspaces
+  DROP CONSTRAINT IF EXISTS workspaces_plan_tier_check;
 
 ALTER TABLE app.workspaces
   ADD CONSTRAINT workspaces_plan_tier_check

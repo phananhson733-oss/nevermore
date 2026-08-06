@@ -102,7 +102,7 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     handle = createDbHandle(DATABASE_URL);
     const [ws] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: ws!.id },
@@ -137,7 +137,7 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     const actorId = randomUUID();
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `${label}-${randomUUID()}` })
+      .values({ name: `${label}-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: workspace!.id },
@@ -345,7 +345,7 @@ describeDb("connect select_property — full credential envelope (#4)", () => {
     const actorId = randomUUID();
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `onboarding-source-${randomUUID()}` })
+      .values({ name: `onboarding-source-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: workspace!.id },

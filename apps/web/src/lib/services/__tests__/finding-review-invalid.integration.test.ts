@@ -111,7 +111,7 @@ describeDb("finding_review_events is append-only (AC-027, spec §5.2)", () => {
     handle = createDbHandle(DATABASE_URL);
     const [ws] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = ws!.id;
     const created = await createProject(

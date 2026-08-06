@@ -121,7 +121,7 @@ describe("offline Google provider chains against real PostgreSQL (AC-014/AC-015)
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Google-chain-${randomUUID()}` })
+      .values({ name: `Google-chain-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

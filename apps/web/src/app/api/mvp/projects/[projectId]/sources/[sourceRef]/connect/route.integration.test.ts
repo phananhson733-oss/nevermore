@@ -53,7 +53,7 @@ describe("POST OAuth connect returnPath isolation", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `OAuth route ${randomUUID()}` })
+      .values({ name: `OAuth route ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     operator.workspaceId = workspace!.id;
     operator.userId = randomUUID();

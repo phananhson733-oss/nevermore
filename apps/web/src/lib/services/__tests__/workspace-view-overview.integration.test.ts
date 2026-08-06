@@ -44,7 +44,7 @@ describeDb("workspace overview coverage (spec §11.3, AC-036)", () => {
     handle = createDbHandle(DATABASE_URL);
     const [ws] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = ws!.id;
   });

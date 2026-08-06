@@ -229,7 +229,7 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Growth Map ${randomUUID()}` })
+      .values({ name: `Growth Map ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: workspace!.id },

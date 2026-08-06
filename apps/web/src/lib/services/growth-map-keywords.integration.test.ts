@@ -458,6 +458,7 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
     await inRolledBackFixture(handle, async (tx) => {
       const workspaceId = randomUUID();
       await tx.insert(workspaces).values({
+        plan_tier: "internal",
         id: workspaceId,
         name: `Keyword read integration ${workspaceId}`,
       });

@@ -148,7 +148,11 @@ async function seedShadowFixture(handle: DbHandle): Promise<ShadowFixture> {
 
   await db
     .insert(workspaces)
-    .values({ id: workspaceId, name: `Shadow-svc ${workspaceId}` });
+    .values({
+      id: workspaceId,
+      name: `Shadow-svc ${workspaceId}`,
+      plan_tier: "internal",
+    });
   await db.insert(clientProjects).values({
     id: projectId,
     workspace_id: workspaceId,

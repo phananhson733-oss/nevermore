@@ -123,7 +123,7 @@ describeDb("handleGoogleCallback — single-use state (AC-014)", () => {
     handle = createDbHandle(DATABASE_URL);
     const [ws] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const workspaceId = ws!.id;
     const created = await createProject(
