@@ -32,7 +32,7 @@
   "home": {
     "hero": {
       "eyebrow": "串联起来的 SEO 增长系统",
-      "title": "知道该修什么，也知道下一步做什么。",
+      "title": "知道该修什么，<hl>也知道下一步做什么。</hl>",
       "subtitle": "GenGrowth 将诊断、关键词研究、网站结构、内链和外链建设串成一条可执行的 SEO 工作流。",
       "primaryCta": "开始使用 GenGrowth",
       "secondaryCta": "探索免费工具",
@@ -45,6 +45,8 @@
       "point1": "每项发现均展示可测量的问题与对应证据。",
       "point2": "明确区分已检查的内容与公开扫描无法证明的内容。",
       "point3": "把结果作为下一步的起点，而不是一个泛泛的总分。",
+      "panelLabel": "公开审计",
+      "panelBadge": "免费 · 无需账号",
       "fullReport": "了解完整 SEO 审计如何工作"
     },
     "painPoints": {
@@ -76,7 +78,7 @@
       "linksTitle": "内链审计",
       "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
       "cardCta": "运行工具",
-      "viewAll": "浏览全部免费工具 →"
+      "viewAll": "浏览全部免费工具"
     },
     "socialProof": {
       "title": "SEO 建议应当展示它的推导过程",

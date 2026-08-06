@@ -23,11 +23,11 @@ export function TrialModal({ open, onOpenChange }: TrialModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-brand-bg-alt border-brand-border sm:max-w-lg">
-        <DialogTitle className="text-text-dark-primary text-lg font-semibold">
+      <DialogContent className="border-brand-border-card bg-brand-panel sm:max-w-lg">
+        <DialogTitle className="text-[16.5px] leading-snug font-semibold text-text-dark-primary">
           {t("modalTitle")}
         </DialogTitle>
-        <DialogDescription className="text-text-dark-secondary text-sm">
+        <DialogDescription className="text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("modalDesc")}
         </DialogDescription>
         <TrialWizard />

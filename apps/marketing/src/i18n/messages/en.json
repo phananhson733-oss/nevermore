@@ -32,7 +32,7 @@
   "home": {
     "hero": {
       "eyebrow": "A connected SEO growth system",
-      "title": "Know what to fix. Know what comes next.",
+      "title": "Know what to fix. <hl>Know what comes next.</hl>",
       "subtitle": "GenGrowth connects diagnosis, keyword research, site structure, internal links, and authority-building into one practical SEO workflow.",
       "primaryCta": "Start using GenGrowth",
       "secondaryCta": "Explore free tools",
@@ -45,6 +45,8 @@
       "point1": "See measurable issues with the evidence behind each finding.",
       "point2": "Separate what was checked from what cannot be proven in a public scan.",
       "point3": "Use the result as the first step—not a generic scorecard.",
+      "panelLabel": "Public audit",
+      "panelBadge": "Free · no account",
       "fullReport": "See how the full SEO audit works"
     },
     "painPoints": {
@@ -76,7 +78,7 @@
       "linksTitle": "Internal Link Audit",
       "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
       "cardCta": "Run the tool",
-      "viewAll": "Browse all free tools →"
+      "viewAll": "Browse all free tools"
     },
     "socialProof": {
       "title": "SEO advice should show its work",

@@ -22,13 +22,14 @@ export function ComparisonCta({
 }: ComparisonCtaProps) {
   return (
     <>
-      <div className="mt-16 text-center">
-        <p className="text-text-dark-secondary text-[14px] mb-4">
+      {/* 「下一步」容器走虚线 + 微渐变底，与实线的内容区分开 */}
+      <div className="mt-16 rounded-[16px] border border-dashed border-brand-border-dashed bg-[linear-gradient(135deg,rgba(61,220,151,0.04),rgba(76,195,250,0.05))] p-7 text-center md:p-10">
+        <p className="mx-auto max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {ctaSubtitle}
         </p>
         <Link
           href={`${localePath(locale)}#waitlist`}
-          className="inline-block rounded-full bg-brand-accent px-8 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-brand-accent/90"
+          className="mt-5 inline-flex h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-[26px] text-[14.5px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
         >
           {ctaLabel}
         </Link>
@@ -36,7 +37,7 @@ export function ComparisonCta({
       <div className="mt-8 text-center">
         <Link
           href={localePath(locale, "/compare")}
-          className="text-text-dark-secondary text-[13px] hover:text-text-dark-primary transition-colors"
+          className="font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
         >
           &larr; {backLabel}
         </Link>

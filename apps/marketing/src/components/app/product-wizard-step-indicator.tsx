@@ -12,14 +12,19 @@ const variantStyles: Record<
   { active: string; complete: string; inactive: string }
 > = {
   app: {
-    active: "bg-zinc-900 text-white",
-    complete: "bg-zinc-900/30 text-zinc-700",
-    inactive: "bg-zinc-100 text-zinc-500",
+    active:
+      "border border-brand-border-strong bg-brand-panel-raised text-text-dark-primary",
+    complete:
+      "border border-brand-border bg-brand-panel text-text-dark-secondary",
+    inactive:
+      "border border-brand-border bg-brand-panel-sunken text-text-dark-faint",
   },
   brand: {
-    active: "bg-brand-accent text-white",
-    complete: "bg-brand-accent/30 text-brand-accent",
-    inactive: "bg-white/10 text-text-dark-secondary",
+    active: "bg-brand-accent text-brand-on-accent",
+    complete:
+      "border border-brand-accent/40 bg-brand-accent/12 text-brand-accent-text",
+    inactive:
+      "border border-brand-border-strong bg-brand-panel-sunken text-text-dark-faint",
   },
 };
 
@@ -43,7 +48,7 @@ export function StepIndicator({
           <div
             key={step}
             className={
-              "flex size-8 items-center justify-center rounded-full text-xs font-semibold transition-colors " +
+              "flex size-8 items-center justify-center rounded-full font-mono text-[11px] font-semibold transition-colors " +
               (isActive
                 ? styles.active
                 : isComplete

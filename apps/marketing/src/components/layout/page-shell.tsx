@@ -35,7 +35,8 @@ export function PageShell({ children }: { children: React.ReactNode }) {
     <TrialProvider value={ctxValue}>
       <GoogleAnalytics />
       <Header />
-      <main className="pt-16">{children}</main>
+      {/* 与 Header 的 h-17 (68px) 固定高度对齐 */}
+      <main className="pt-17">{children}</main>
       <Footer onOpenCookiePreferences={() => setCookiePrefsOpen(true)} />
       <CookieBanner
         prefsOpen={cookiePrefsOpen}

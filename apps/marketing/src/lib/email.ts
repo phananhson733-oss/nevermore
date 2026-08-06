@@ -119,13 +119,13 @@ const NURTURE_TEMPLATES: Record<NurtureEmailType, NurtureTemplate> = {
     body: (n, locale) =>
       locale === "zh"
         ? `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-            <h1 style="color: #D97757; font-size: 24px;">Hi ${n}，</h1>
+            <h1 style="color: #0E6B49; font-size: 24px;">Hi ${n}，</h1>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">感谢你加入 GenGrowth 等待列表！以下是我们本周的产品进展和你可以期待的内容。</p>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">我们的 AI 增长引擎正在持续优化，很快就能为你提供专属的增长策略。</p>
             <p style="color: #666; font-size: 14px; margin-top: 30px;">— GenGrowth 团队</p>
           </div>`
         : `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-            <h1 style="color: #D97757; font-size: 24px;">Hi ${n},</h1>
+            <h1 style="color: #0E6B49; font-size: 24px;">Hi ${n},</h1>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">Thanks for joining the GenGrowth waitlist! Here's what we've been working on this week.</p>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">Our AI growth engine is continuously improving, and we'll have personalized growth strategies ready for you soon.</p>
             <p style="color: #666; font-size: 14px; margin-top: 30px;">— The GenGrowth Team</p>
@@ -225,7 +225,7 @@ function generateInviteHtml({
   const isZh = locale === "zh";
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-      <h1 style="color: #D97757; font-size: 24px;">${isZh ? "你的 GenGrowth 邀请已就绪" : "Your GenGrowth Invite is Ready"}</h1>
+      <h1 style="color: #0E6B49; font-size: 24px;">${isZh ? "你的 GenGrowth 邀请已就绪" : "Your GenGrowth Invite is Ready"}</h1>
       <p style="color: #333; font-size: 16px; line-height: 1.6;">
         ${
           isZh
@@ -234,7 +234,7 @@ function generateInviteHtml({
         }
       </p>
       <div style="text-align: center; margin: 30px 0;">
-        <a href="${activationLink}" style="display: inline-block; background-color: #D97757; color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+        <a href="${activationLink}" style="display: inline-block; background-color: #3DDC97; color: #06110C; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 16px; font-weight: 600;">
           ${isZh ? "激活账户" : "Activate Your Account"}
         </a>
       </div>
@@ -272,7 +272,7 @@ function generateWelcomeHtml({
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-      <h1 style="color: #D97757; font-size: 24px;">${greeting}</h1>
+      <h1 style="color: #0E6B49; font-size: 24px;">${greeting}</h1>
       <p style="color: #333; font-size: 16px; line-height: 1.6;">
         ${
           isZh

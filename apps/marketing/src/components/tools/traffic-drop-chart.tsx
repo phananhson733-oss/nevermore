@@ -48,12 +48,34 @@ const PAD_BOTTOM = 34;
 const PLOT_WIDTH = VIEW_WIDTH - PAD_LEFT - PAD_RIGHT;
 const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
 
-/** Window tints follow the reading order of the report, not a rank. */
+/**
+ * Window tints follow the reading order of the report, not a rank.
+ *
+ * Kept at 5–6% so the band never competes with the two series drawn over it:
+ * the highlight marks WHERE the comparison was cut, and the lines are what the
+ * reader is meant to look at.
+ */
 const WINDOW_TINT: Record<TrafficWindow["id"], string> = {
-  peak: "rgba(91, 185, 140, 0.07)",
-  mid: "rgba(212, 168, 67, 0.07)",
-  recent: "rgba(217, 87, 87, 0.08)",
+  peak: "rgba(61, 220, 151, 0.06)",
+  mid: "rgba(229, 200, 120, 0.055)",
+  recent: "rgba(240, 144, 144, 0.06)",
 };
+
+/** The same three colours at 25%, dashed — an edge, not a frame. */
+const WINDOW_EDGE: Record<TrafficWindow["id"], string> = {
+  peak: "rgba(61, 220, 151, 0.25)",
+  mid: "rgba(229, 200, 120, 0.25)",
+  recent: "rgba(240, 144, 144, 0.25)",
+};
+
+const WINDOW_LABEL: Record<TrafficWindow["id"], string> = {
+  peak: "var(--color-brand-accent)",
+  mid: "var(--color-brand-warning)",
+  recent: "var(--color-brand-error)",
+};
+
+/** GLOW_03 — the one data highlight this surface is allowed. */
+const CLICK_AREA_FILL_ID = "traffic-drop-click-area";
 
 interface TrafficDropChartProps {
   readonly series: readonly TrafficDailyPoint[];
@@ -167,6 +189,13 @@ export function TrafficDropChart({
           onMouseMove={handleMove}
           onMouseLeave={() => setHovered(null)}
         >
+          <defs>
+            <linearGradient id={CLICK_AREA_FILL_ID} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#3DDC97" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="#3DDC97" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+
           {windows.map((window) => {
             const from = indexOf(window.startDate);
             const to = indexOf(window.endDate);
@@ -179,14 +208,18 @@ export function TrafficDropChart({
                   width={Math.max(1, x(to) - x(from))}
                   height={PLOT_HEIGHT}
                   fill={WINDOW_TINT[window.id]}
+                  stroke={WINDOW_EDGE[window.id]}
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
                 />
                 <text
                   x={(x(from) + x(to)) / 2}
                   y={PAD_TOP + 12}
                   textAnchor="middle"
-                  fontSize={10.5}
-                  fontWeight={700}
-                  fill="var(--color-text-dark-secondary)"
+                  fontFamily="var(--font-mono)"
+                  fontSize={9.5}
+                  letterSpacing="0.1em"
+                  fill={WINDOW_LABEL[window.id]}
                 >
                   {t(`windows.${window.id}.short`)}
                 </text>
@@ -198,19 +231,25 @@ export function TrafficDropChart({
             const value = clickMax * step;
             return (
               <g key={step}>
+                {/* Baseline is the axis (#1B2430); the rest are grid (#141C26). */}
                 <line
                   x1={PAD_LEFT}
                   x2={VIEW_WIDTH - PAD_RIGHT}
                   y1={yClicks(value)}
                   y2={yClicks(value)}
-                  stroke="var(--color-brand-border)"
+                  stroke={
+                    step === 0
+                      ? "var(--color-brand-border)"
+                      : "var(--color-brand-border-faint)"
+                  }
                   strokeWidth={1}
                 />
                 <text
                   x={PAD_LEFT - 8}
                   y={yClicks(value) + 4}
                   textAnchor="end"
-                  fontSize={10}
+                  fontFamily="var(--font-mono)"
+                  fontSize={9.5}
                   fill="var(--color-text-dark-secondary)"
                 >
                   {formatCompact(value, locale)}
@@ -218,8 +257,10 @@ export function TrafficDropChart({
                 <text
                   x={VIEW_WIDTH - PAD_RIGHT + 8}
                   y={yImpressions(impressionMax * step) + 4}
-                  fontSize={10}
+                  fontFamily="var(--font-mono)"
+                  fontSize={9.5}
                   fill="var(--color-brand-series-2)"
+                  opacity={0.75}
                 >
                   {formatCompact(impressionMax * step, locale)}
                 </text>
@@ -227,28 +268,40 @@ export function TrafficDropChart({
             );
           })}
 
+          {/*
+            Impressions are the SECOND series and are drawn dashed, not merely
+            in a second colour: green and cyan are close enough under
+            deuteranopia that colour alone cannot carry the distinction.
+          */}
           <polyline
             points={impressionLine}
             fill="none"
             stroke="var(--color-brand-series-2)"
-            strokeWidth={1.6}
-            opacity={0.65}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            opacity={0.75}
           />
           <polygon
             points={`${x(0)},${yClicks(0)} ${clickLine} ${x(series.length - 1)},${yClicks(0)}`}
-            fill="rgba(200, 100, 68, 0.12)"
+            fill={`url(#${CLICK_AREA_FILL_ID})`}
           />
           <polyline
             points={clickLine}
             fill="none"
             stroke="var(--color-brand-series-1)"
-            strokeWidth={2.2}
+            strokeWidth={2}
             strokeLinejoin="round"
           />
           <circle
             cx={x(series.length - 1)}
             cy={yClicks(series[series.length - 1]?.clicks ?? 0)}
-            r={4}
+            r={7}
+            fill="rgba(61, 220, 151, 0.16)"
+          />
+          <circle
+            cx={x(series.length - 1)}
+            cy={yClicks(series[series.length - 1]?.clicks ?? 0)}
+            r={3.5}
             fill="var(--color-brand-series-1)"
           />
 
@@ -258,17 +311,17 @@ export function TrafficDropChart({
               x2={x(hovered)}
               y1={PAD_TOP}
               y2={PAD_TOP + PLOT_HEIGHT}
-              stroke="var(--color-text-dark-secondary)"
+              stroke="var(--color-brand-accent)"
               strokeWidth={1}
               strokeDasharray="3 3"
-              opacity={0.6}
+              opacity={0.4}
             />
           ) : null}
         </svg>
 
         {hoveredDay && hovered !== null ? (
           <p
-            className="pointer-events-none absolute top-1 whitespace-nowrap rounded-lg border border-brand-border bg-brand-bg-alt px-3 py-1.5 text-[12px] tabular-nums text-text-dark-primary shadow-lg"
+            className="pointer-events-none absolute top-1 whitespace-nowrap rounded-[8px] border border-brand-border-strong bg-brand-panel-raised px-3 py-1.5 font-mono text-[11px] tabular-nums text-text-dark-primary"
             aria-hidden="true"
             style={{
               left: `${(x(hovered) / VIEW_WIDTH) * 100}%`,
@@ -286,46 +339,83 @@ export function TrafficDropChart({
         ) : null}
       </div>
 
-      <figcaption className="mt-2 flex flex-wrap gap-4 text-[12px] text-text-dark-secondary">
-        <span className="flex items-center gap-1.5">
-          <i
+      {/*
+        The legend states the LINE STYLE, not just the colour. A key that only
+        names colours is unreadable to the readers the dashing is there for.
+      */}
+      <figcaption className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-text-dark-secondary">
+        <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.1em] text-text-dark-secondary uppercase">
+          <svg
             aria-hidden="true"
-            className="inline-block h-[3px] w-3.5 rounded-sm bg-brand-series-1"
-          />
+            width="18"
+            height="6"
+            viewBox="0 0 18 6"
+            className="shrink-0"
+          >
+            <line
+              x1="0"
+              y1="3"
+              x2="18"
+              y2="3"
+              stroke="var(--color-brand-series-1)"
+              strokeWidth="2"
+            />
+          </svg>
           {t("clicks")}
         </span>
-        <span className="flex items-center gap-1.5">
-          <i
+        <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.1em] text-text-dark-secondary uppercase">
+          <svg
             aria-hidden="true"
-            className="inline-block h-[3px] w-3.5 rounded-sm bg-brand-series-2"
-          />
+            width="18"
+            height="6"
+            viewBox="0 0 18 6"
+            className="shrink-0"
+          >
+            <line
+              x1="0"
+              y1="3"
+              x2="18"
+              y2="3"
+              stroke="var(--color-brand-series-2)"
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+              opacity="0.75"
+            />
+          </svg>
           {t("impressionsRightAxis")}
         </span>
         <span>{t("windowsAreFixed")}</span>
       </figcaption>
 
-      <details className="mt-3 rounded-xl border border-brand-border/70 bg-brand-bg-alt/25 px-4">
-        <summary className="cursor-pointer py-2.5 text-[12.5px] text-text-dark-secondary">
+      <details className="mt-3 rounded-card border border-brand-border-card bg-brand-panel px-[18px]">
+        <summary className="cursor-pointer py-3 text-[12.5px] text-text-dark-secondary transition-colors hover:text-brand-accent-text">
           {t("viewAsTable")}
         </summary>
         <div className="max-h-72 overflow-auto pb-3">
-          <table className="w-full text-[12.5px] tabular-nums">
+          <table className="w-full font-mono text-[11.5px] tabular-nums">
             <thead>
               <tr className="text-left text-text-dark-secondary">
-                <th className="py-1.5 pr-4 font-medium">{t("date")}</th>
-                <th className="py-1.5 pr-4 text-right font-medium">
+                <th className="py-1.5 pr-4 text-[10px] tracking-[0.1em] uppercase">
+                  {t("date")}
+                </th>
+                <th className="py-1.5 pr-4 text-right text-[10px] tracking-[0.1em] uppercase">
                   {t("clicks")}
                 </th>
-                <th className="py-1.5 text-right font-medium">
+                <th className="py-1.5 text-right text-[10px] tracking-[0.1em] uppercase">
                   {t("impressions")}
                 </th>
               </tr>
             </thead>
             <tbody>
               {series.map((day) => (
-                <tr key={day.date} className="border-t border-brand-border/40">
+                <tr
+                  key={day.date}
+                  className="border-t border-brand-border-faint text-text-dark-secondary"
+                >
                   <td className="py-1 pr-4">{day.date}</td>
-                  <td className="py-1 pr-4 text-right">{day.clicks}</td>
+                  <td className="py-1 pr-4 text-right text-text-dark-primary">
+                    {day.clicks}
+                  </td>
                   <td className="py-1 text-right">
                     {day.impressions.toLocaleString()}
                   </td>

@@ -70,12 +70,18 @@ const TRACK_ORDER: readonly QuickWinTrack[] = [
  * row wears a bright chip has no emphasis left to spend on the rows that do.
  */
 const TRACK_BADGE: Record<QuickWinTrack, string> = {
-  compare_with_own_page: "bg-brand-accent-soft text-brand-accent-text",
-  read_the_serp: "text-brand-series-2 bg-[rgba(79,134,200,0.14)]",
-  band_is_the_story: "text-brand-warning bg-[rgba(212,168,67,0.13)]",
-  gap_within_noise: "text-text-dark-secondary bg-brand-bg-alt",
-  at_or_above_curve: "text-text-dark-secondary bg-brand-bg-alt",
+  compare_with_own_page: "bg-brand-accent/15 text-brand-accent-text",
+  read_the_serp: "bg-brand-info/15 text-brand-info",
+  band_is_the_story: "bg-brand-warning/15 text-brand-warning",
+  gap_within_noise:
+    "border border-brand-border-strong text-text-dark-secondary",
+  at_or_above_curve:
+    "border border-brand-border-strong text-text-dark-secondary",
 };
+
+/** Numeric cells: mono and lining, so a column of rates reads as a column. */
+const NUMERIC_CELL =
+  "px-3 py-2.5 text-right font-mono text-[12px] tabular-nums";
 
 /**
  * The filter that is actually in force, dropped when this run has no rows on it.
@@ -141,20 +147,20 @@ export function QuickWinsEvidenceTable({
   const hasBandCaveat = rows.some((row) => row.baselineBandUnderOnePercent);
 
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-5 md:p-6">
+    <section className="rounded-card border border-brand-border-card bg-brand-panel p-[22px] md:p-[26px]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+          <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
             {t("tableTitle")}
           </h3>
-          <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {t("tableIntro")}
           </p>
         </div>
         <button
           type="button"
           onClick={() => downloadCsv(result)}
-          className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-brand-border/70 px-4 text-[13px] font-semibold text-text-dark-primary transition-colors hover:bg-brand-bg-alt/60"
+          className="inline-flex h-11.5 shrink-0 items-center gap-2 rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-5 text-[13px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50"
         >
           <Download aria-hidden="true" className="size-4" />
           {t("download")}
@@ -167,7 +173,7 @@ export function QuickWinsEvidenceTable({
         which is the only version of the file that can be diffed against
         another run.
       */}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-5 flex flex-wrap gap-2">
         <FilterChip
           label={t("trackFilterAll")}
           count={formatCount(result.rows.length, locale)}
@@ -192,59 +198,66 @@ export function QuickWinsEvidenceTable({
       {track !== null ? (
         <p
           role="status"
-          className="mt-3 max-w-[52em] rounded-xl border border-brand-border/60 bg-brand-bg/60 p-3 text-[12.5px] leading-relaxed text-text-dark-secondary"
+          className="mt-3 max-w-[52em] rounded-[10px] border border-brand-border bg-brand-panel-sunken p-3.5 text-[12.5px] leading-[1.6] text-text-dark-secondary"
         >
           {t(`tracks.${track}.hint`)}
         </p>
       ) : null}
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-brand-border/60">
+      <div className="mt-4 overflow-x-auto rounded-card border border-brand-border-card">
         <table className="w-full min-w-[860px] text-left text-[13px]">
           <caption className="sr-only">{t("tableCaption")}</caption>
-          <thead className="bg-brand-bg-alt/50 text-[12px] text-text-dark-secondary">
+          <thead className="bg-brand-panel-sunken font-mono text-[10px] font-normal tracking-[0.1em] text-text-dark-secondary uppercase">
             <tr>
               {COLUMNS.map((column, index) => (
                 <Fragment key={column.key}>
-                <th
-                  scope="col"
-                  aria-sort={ariaSort(sort, column.key)}
-                  className={`font-medium ${column.numeric ? "text-right" : ""}`}
-                >
-                  {/*
+                  <th
+                    scope="col"
+                    aria-sort={ariaSort(sort, column.key)}
+                    className={
+                      column.numeric ? "font-medium text-right" : "font-medium"
+                    }
+                  >
+                    {/*
                     A button, not a click handler on the cell: sorting a table
                     is an action, and an action a keyboard cannot reach is not
                     one this table offers.
                   */}
-                  <button
-                    type="button"
-                    onClick={() => setSort(nextSort(sort, column.key))}
-                    title={t("sortBy", { column: t(`columns.${column.key}`) })}
-                    className={`flex min-h-9 w-full items-center gap-1 px-3 py-2.5 transition-colors hover:text-text-dark-primary ${
-                      column.numeric ? "justify-end" : ""
-                    } ${sort.key === column.key ? "text-text-dark-primary" : ""}`}
-                  >
-                    {t(`columns.${column.key}`)}
-                    <span aria-hidden="true" className="text-[10px] opacity-70">
-                      {sort.key === column.key
-                        ? sort.direction === "asc"
-                          ? "▲"
-                          : "▼"
-                        : ""}
-                    </span>
-                  </button>
-                </th>
-                {/*
+                    <button
+                      type="button"
+                      onClick={() => setSort(nextSort(sort, column.key))}
+                      title={t("sortBy", {
+                        column: t(`columns.${column.key}`),
+                      })}
+                      className={`flex min-h-9 w-full items-center gap-1 px-3 py-2.5 transition-colors hover:text-brand-accent-text ${
+                        column.numeric ? "justify-end" : ""
+                      } ${sort.key === column.key ? "text-text-dark-primary" : ""}`}
+                    >
+                      {t(`columns.${column.key}`)}
+                      <span
+                        aria-hidden="true"
+                        className="text-[9px] opacity-70"
+                      >
+                        {sort.key === column.key
+                          ? sort.direction === "asc"
+                            ? "▲"
+                            : "▼"
+                          : ""}
+                      </span>
+                    </button>
+                  </th>
+                  {/*
                   Second, not last. It is the column that says what to do, and
-                  the table is 860px wide inside a horizontal scroller \u2014 last
+                  the table is 860px wide inside a horizontal scroller — last
                   would put the answer nine columns off the right edge of a
                   phone, which is a small rerun of the problem this column was
                   added to solve.
                 */}
-                {index === 0 ? (
-                  <th scope="col" className="px-3 py-2.5 font-medium">
-                    {t("columns.track")}
-                  </th>
-                ) : null}
+                  {index === 0 ? (
+                    <th scope="col" className="px-3 py-2.5 font-medium">
+                      {t("columns.track")}
+                    </th>
+                  ) : null}
                 </Fragment>
               ))}
             </tr>
@@ -253,14 +266,14 @@ export function QuickWinsEvidenceTable({
             {rows.map((row) => (
               <tr
                 key={row.query}
-                className="border-t border-brand-border/40 align-top"
+                className="border-t border-brand-border-faint align-top"
               >
                 <td className="px-3 py-2.5 text-text-dark-primary">
                   {row.query}
                   {row.baselineBandUnderOnePercent ? (
                     <span
                       aria-describedby={BAND_NOTE_ID}
-                      className="ml-2 rounded border border-brand-warning/40 px-1.5 py-0.5 text-[11px] text-text-dark-secondary"
+                      className="ml-2 rounded border border-brand-warning/40 px-1.5 py-[2px] font-mono text-[9.5px] text-brand-warning"
                     >
                       {row.bucketId}
                     </span>
@@ -268,30 +281,30 @@ export function QuickWinsEvidenceTable({
                 </td>
                 <td className="px-3 py-2.5">
                   <span
-                    className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${TRACK_BADGE[row.track]}`}
+                    className={`inline-block whitespace-nowrap rounded px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] uppercase ${TRACK_BADGE[row.track]}`}
                   >
                     {t(`tracks.${row.track}.label`)}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
+                <td className={`${NUMERIC_CELL} text-text-dark-secondary`}>
                   {formatPosition(row.position, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
+                <td className={`${NUMERIC_CELL} text-text-dark-secondary`}>
                   {formatCount(row.impressions, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
+                <td className={`${NUMERIC_CELL} text-text-dark-secondary`}>
                   {formatCount(row.clicks, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-primary">
+                <td className={`${NUMERIC_CELL} text-text-dark-primary`}>
                   {formatPercent(row.observedCtr, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
+                <td className={`${NUMERIC_CELL} text-text-dark-secondary`}>
                   {formatPercent(row.baselineCtr, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-primary">
+                <td className={`${NUMERIC_CELL} text-text-dark-primary`}>
                   {formatGap(row.clickGap, locale)}
                 </td>
-                <td className="px-3 py-2.5 text-right tabular-nums text-text-dark-secondary">
+                <td className={`${NUMERIC_CELL} text-text-dark-secondary`}>
                   {formatTail(row.tailProbability, locale)}
                 </td>
               </tr>
@@ -308,18 +321,18 @@ export function QuickWinsEvidenceTable({
       {hasBandCaveat ? (
         <p
           id={BAND_NOTE_ID}
-          className="mt-3 max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary"
+          className="mt-3 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary"
         >
           {t("bandWarning")}
         </p>
       ) : null}
-      <p className="mt-3 max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-3 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("gapNote")}
       </p>
-      <p className="mt-2 max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-2 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("tailNote")}
       </p>
-      <p className="mt-2 max-w-[52em] text-[12px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-2 max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("downloadNote")}
       </p>
     </section>
@@ -342,10 +355,10 @@ function FilterChip({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3.5 text-[12.5px] transition-colors ${
+      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-[10px] tracking-[0.06em] uppercase transition-colors ${
         active
-          ? "border-brand-accent/50 bg-brand-accent-soft text-text-dark-primary"
-          : "border-brand-border/70 text-text-dark-secondary hover:text-text-dark-primary"
+          ? "border-brand-accent/50 bg-brand-accent/12 text-brand-accent-text"
+          : "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/50 hover:text-text-dark-primary"
       }`}
     >
       {label}

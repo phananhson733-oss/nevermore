@@ -5,35 +5,39 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import { Space_Grotesk, DM_Sans, Noto_Sans_SC } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, Noto_Sans_SC } from "next/font/google";
 import { routing } from "@/i18n/routing";
 import { PageShell } from "@/components/layout/page-shell";
 import { localePath } from "@/lib/locale-path";
 
-const dmSans = DM_Sans({
+// Signal Console v1 排印：一个 sans 家族承担全部阅读文字，mono 只用于数据、
+// eyebrow 和小标签。globals.css 通过这三个 CSS 变量绑定 --font-sans/display/mono。
+const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  variable: "--font-dm-sans",
-  weight: ["400", "500", "600"],
-  display: "swap",
-});
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
+  variable: "--font-ibm-plex-sans",
   weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  variable: "--font-ibm-plex-mono",
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
+
+// 标题字重在新规范里 600 封顶，所以中文侧也只到 600——避免浏览器为 600 合成
+// 伪粗体，同时不为一个用不到的 700 拉一份中文字形分片。
 const notoSansSC = Noto_Sans_SC({
   subsets: ["latin"],
   variable: "--font-noto-sans-sc",
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
   display: "swap",
 });
 
 const fontVars = [
-  dmSans.variable,
-  spaceGrotesk.variable,
+  ibmPlexSans.variable,
+  ibmPlexMono.variable,
   notoSansSC.variable,
 ].join(" ");
 

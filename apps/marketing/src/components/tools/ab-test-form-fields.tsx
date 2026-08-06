@@ -23,7 +23,7 @@ export function InputField({
 }) {
   return (
     <label className="block">
-      <span className="text-text-dark-secondary text-[13px] mb-1.5 block">
+      <span className="mb-2 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
         {label}
       </span>
       <input
@@ -34,7 +34,7 @@ export function InputField({
         max={max}
         step={step}
         required={!optional}
-        className="w-full rounded-lg border border-brand-border/60 bg-brand-bg-alt/30 px-3 py-2 text-text-dark-primary text-[14px] outline-none transition-colors focus:border-[#D97757] placeholder:text-text-dark-secondary/40"
+        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70 placeholder:text-text-dark-faint"
       />
     </label>
   );
@@ -56,13 +56,13 @@ export function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="text-text-dark-secondary text-[13px] mb-1.5 block">
+      <span className="mb-2 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
         {label}
       </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-brand-border/60 bg-brand-bg-alt/30 px-3 py-2 text-text-dark-primary text-[14px] outline-none transition-colors focus:border-[#D97757]"
+        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -84,11 +84,18 @@ export function ResultRow({
   readonly accent?: boolean;
 }) {
   return (
-    <div>
-      <p className="text-text-dark-secondary text-[13px] mb-1">{label}</p>
+    /* 指标格：外层网格用 1px gap + 分隔色底拼出伪表格，格子自己只负责底色和内距 */
+    <div
+      className={`bg-brand-panel-sunken px-5 py-4 ${
+        accent ? "shadow-[inset_2px_0_0_#3DDC97]" : ""
+      }`}
+    >
+      <p className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+        {label}
+      </p>
       <p
-        className={`font-semibold text-[24px] tracking-tight ${
-          accent ? "text-[#D97757]" : "text-text-dark-primary"
+        className={`mt-2 font-mono text-[22px] ${
+          accent ? "text-brand-accent-text" : "text-text-dark-primary"
         }`}
       >
         {value}

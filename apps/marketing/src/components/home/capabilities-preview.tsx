@@ -1,6 +1,6 @@
 // @input  — next-intl, framer-motion
 // @output — CapabilitiesPreview 组件（按用户情境分组的免费工具入口）
-// @pos    — 首页区块 5，暖白背景
+// @pos    — 首页区块 5，深色背景 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
@@ -9,12 +9,32 @@ import { useLocale } from "next-intl";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import { ArrowRight, Link2, ScanSearch, type LucideIcon } from "lucide-react";
+import { Link2, ScanSearch, type LucideIcon } from "lucide-react";
 import { localePath } from "@/lib/locale-path";
 
-const CARDS: { icon: LucideIcon; titleKey: string; descKey: string; slug: string }[] = [
-  { icon: ScanSearch, titleKey: "auditTitle", descKey: "auditDesc", slug: "seo-audit" },
-  { icon: Link2, titleKey: "linksTitle", descKey: "linksDesc", slug: "internal-link-audit" },
+/*
+ * 只放**输入一个 URL 就能跑出结果**的工具。共享的「运行工具」CTA 是一句承诺，
+ * 而需要先接 Google OAuth（且受环境开关控制）的工具放在这里，会让人以为点进去
+ * 就能得到结果——那些工具在 /tools 里有自己的页面把前置条件讲清楚。
+ */
+const CARDS: {
+  icon: LucideIcon;
+  titleKey: string;
+  descKey: string;
+  slug: string;
+}[] = [
+  {
+    icon: ScanSearch,
+    titleKey: "auditTitle",
+    descKey: "auditDesc",
+    slug: "seo-audit",
+  },
+  {
+    icon: Link2,
+    titleKey: "linksTitle",
+    descKey: "linksDesc",
+    slug: "internal-link-audit",
+  },
 ];
 
 export function CapabilitiesPreview() {
@@ -22,65 +42,70 @@ export function CapabilitiesPreview() {
   const locale = useLocale();
 
   return (
-    <section className="bg-brand-bg-light py-16 md:py-24">
-      <div className="max-w-content mx-auto px-4">
-        <p className="mb-3 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-accent-on-light">
-          {t("eyebrow")}
-        </p>
-        <motion.h2
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
-          className="mb-4 text-center font-semibold text-text-light-primary"
-        >
-          {t("title")}
-        </motion.h2>
+    <section className="border-t border-brand-border bg-brand-bg py-16 md:py-22">
+      <div className="max-w-content mx-auto px-6 md:px-8">
+        <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl">
+            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+              {t("eyebrow")}
+            </p>
+            <motion.h2
+              initial={{ opacity: 0, y: 14 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{
+                duration: 0.45,
+                ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+              }}
+              className="mt-3 text-text-dark-primary"
+            >
+              {t("title")}
+            </motion.h2>
+            <p className="mt-4 text-[14.5px] leading-[1.65] text-text-dark-secondary">
+              {t("subtitle")}
+            </p>
+          </div>
 
-        <p className="mx-auto mb-10 max-w-2xl text-center text-base text-text-light-secondary">
-          {t("subtitle")}
-        </p>
+          <Link
+            href={localePath(locale, "/tools")}
+            className="font-mono text-[11px] tracking-[0.06em] whitespace-nowrap text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
+          >
+            {t("viewAll")} &rarr;
+          </Link>
+        </div>
+
         <motion.div
           {...staggerContainer}
           initial="initial"
           whileInView="animate"
           viewport={{ once: true }}
-          className="mx-auto mb-8 grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
         >
           {CARDS.map((card) => (
-            <motion.div
-              key={card.titleKey}
-              {...staggerItem}
-              className="group flex gap-4 rounded-card border border-gray-200 bg-white p-6 transition-all hover:-translate-y-1 hover:border-brand-accent/50 hover:shadow-lg"
-            >
-              <span className="shrink-0" aria-hidden="true"><card.icon className="size-6 text-brand-accent-on-light" /></span>
-              <div>
-                <h3 className="text-text-light-primary font-semibold text-base mb-1">
+            <motion.div key={card.titleKey} {...staggerItem}>
+              <Link
+                href={localePath(locale, `/tools/${card.slug}`)}
+                className="group block h-full rounded-card border border-brand-border-card bg-brand-panel p-[26px] transition-colors hover:border-brand-accent/40"
+              >
+                <span
+                  className="flex size-[38px] items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent"
+                  aria-hidden="true"
+                >
+                  <card.icon className="size-[17px]" />
+                </span>
+                <h3 className="mt-4 text-[16.5px] font-semibold text-text-dark-primary">
                   {t(card.titleKey)}
                 </h3>
-                <p className="text-text-light-secondary text-sm leading-relaxed">
+                <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {t(card.descKey)}
                 </p>
-                <Link
-                  href={localePath(locale, `/tools/${card.slug}`)}
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-accent-on-light"
-                >
-                  {t("cardCta")}
-                  <ArrowRight aria-hidden="true" className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              </div>
+                <span className="mt-4 inline-block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors group-hover:text-brand-accent-hover">
+                  {t("cardCta")} &rarr;
+                </span>
+              </Link>
             </motion.div>
           ))}
         </motion.div>
-
-        <div className="text-center">
-          <Link
-            href={localePath(locale, "/tools")}
-            className="text-brand-accent-on-light hover:text-brand-accent font-medium text-sm transition-colors"
-          >
-            {t("viewAll")}
-          </Link>
-        </div>
       </div>
     </section>
   );

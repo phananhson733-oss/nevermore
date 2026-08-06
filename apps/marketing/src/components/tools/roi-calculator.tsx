@@ -31,7 +31,14 @@ export function ROICalculator({ locale }: ROICalculatorProps) {
 
   const result = useMemo(() => {
     const rate = conversionRate / 100;
-    if (rate < 0 || rate > 1 || monthlyTraffic < 0 || revenuePerCustomer < 0 || manualHours < 0 || hourlyCost < 0) {
+    if (
+      rate < 0 ||
+      rate > 1 ||
+      monthlyTraffic < 0 ||
+      revenuePerCustomer < 0 ||
+      manualHours < 0 ||
+      hourlyCost < 0
+    ) {
       return null;
     }
     return calculateGrowthROI({
@@ -41,20 +48,58 @@ export function ROICalculator({ locale }: ROICalculatorProps) {
       manualHoursPerWeek: manualHours,
       hourlyCost,
     });
-  }, [monthlyTraffic, conversionRate, revenuePerCustomer, manualHours, hourlyCost]);
+  }, [
+    monthlyTraffic,
+    conversionRate,
+    revenuePerCustomer,
+    manualHours,
+    hourlyCost,
+  ]);
 
   const manualMonthlyCost = manualHours * 4 * hourlyCost;
-  const manualRevenue = monthlyTraffic * (conversionRate / 100) * revenuePerCustomer;
+  const manualRevenue =
+    monthlyTraffic * (conversionRate / 100) * revenuePerCustomer;
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       {/* Input form */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <InputField label={t("monthlyTraffic")} value={monthlyTraffic} onChange={setMonthlyTraffic} min={0} step={1000} />
-        <InputField label={t("conversionRate")} value={conversionRate} onChange={setConversionRate} min={0} max={100} step={0.1} />
-        <InputField label={t("revenuePerCustomer")} value={revenuePerCustomer} onChange={setRevenuePerCustomer} min={0} step={10} />
-        <InputField label={t("manualHours")} value={manualHours} onChange={setManualHours} min={0} step={1} />
-        <InputField label={t("hourlyCost")} value={hourlyCost} onChange={setHourlyCost} min={0} step={5} />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <InputField
+          label={t("monthlyTraffic")}
+          value={monthlyTraffic}
+          onChange={setMonthlyTraffic}
+          min={0}
+          step={1000}
+        />
+        <InputField
+          label={t("conversionRate")}
+          value={conversionRate}
+          onChange={setConversionRate}
+          min={0}
+          max={100}
+          step={0.1}
+        />
+        <InputField
+          label={t("revenuePerCustomer")}
+          value={revenuePerCustomer}
+          onChange={setRevenuePerCustomer}
+          min={0}
+          step={10}
+        />
+        <InputField
+          label={t("manualHours")}
+          value={manualHours}
+          onChange={setManualHours}
+          min={0}
+          step={1}
+        />
+        <InputField
+          label={t("hourlyCost")}
+          value={hourlyCost}
+          onChange={setHourlyCost}
+          min={0}
+          step={5}
+        />
       </div>
 
       {/* Results */}
@@ -87,10 +132,17 @@ interface InputFieldProps {
   readonly step?: number;
 }
 
-function InputField({ label, value, onChange, min, max, step }: InputFieldProps) {
+function InputField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}: InputFieldProps) {
   return (
     <label className="block">
-      <span className="text-text-dark-secondary text-[13px] mb-1.5 block">
+      <span className="mb-2 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
         {label}
       </span>
       <input
@@ -100,7 +152,7 @@ function InputField({ label, value, onChange, min, max, step }: InputFieldProps)
         min={min}
         max={max}
         step={step}
-        className="w-full rounded-lg border border-brand-border/60 bg-brand-bg-alt/30 px-3 py-2 text-text-dark-primary text-[14px] outline-none focus:border-brand-accent/60 transition-colors"
+        className="h-12.5 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 font-mono text-[14px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70"
       />
     </label>
   );

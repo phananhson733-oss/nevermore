@@ -59,20 +59,20 @@ export function GscConnectPanel({
     <section
       id={sectionId}
       data-locale={locale}
-      className="scroll-mt-8 rounded-2xl border border-brand-border/70 bg-brand-bg-alt/35 p-6 md:p-7"
+      className="rounded-card border-brand-border-card bg-brand-panel scroll-mt-8 border p-[22px] md:p-[26px]"
     >
-      <div className="flex size-11 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
+      <div className="flex size-11 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
         {icon}
       </div>
-      <h2 className="mt-4 text-[20px] font-semibold tracking-[-0.02em] text-text-dark-primary">
+      <h2 className="mt-4 text-[16.5px] font-semibold text-text-dark-primary">
         {t("connectTitle")}
       </h2>
-      <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-text-dark-secondary">
+      <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
         {t("connectBody")}
       </p>
 
       {!connectEnabled ? (
-        <p className="mt-5 rounded-xl border border-brand-border/60 bg-brand-bg/60 p-4 text-[13px] leading-relaxed text-text-dark-secondary">
+        <p className="border-brand-border bg-brand-bg mt-5 rounded-[10px] border p-4 text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("connectPending")}
         </p>
       ) : consentNotice === "invite_only" ? (
@@ -82,25 +82,25 @@ export function GscConnectPanel({
          * the authorize link stays secondary — an invited tester loses one
          * click, a stranger learns why instead of hitting a wall.
          */
-        <div className="mt-5 rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+        <div className="mt-5 rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] p-4">
           <p className="text-[13px] font-semibold text-text-dark-primary">
             {t("inviteOnlyTitle")}
           </p>
-          <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+          <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
             {t("inviteOnlyBody")}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
             <a
               href={authorizeHref}
-              className="inline-flex min-h-9 items-center gap-1.5 text-[13px] font-semibold text-brand-accent-text hover:underline"
+              className="inline-flex min-h-9 items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
             >
               {t("inviteOnlyCta")}
-              <ArrowRight aria-hidden="true" className="size-4" />
+              <ArrowRight aria-hidden="true" className="size-3.5" />
             </a>
             {inviteRequestLabel ? (
               <Link
                 href={localePath(locale, "/contact")}
-                className="text-[13px] text-text-dark-secondary hover:underline"
+                className="text-[12.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
               >
                 {inviteRequestLabel}
               </Link>
@@ -117,22 +117,30 @@ export function GscConnectPanel({
          * mostly does not.
          */
         <div className="mt-5 space-y-4">
-          <div className="rounded-xl border border-brand-warning/30 bg-[rgba(212,168,67,0.07)] p-4">
+          <div className="rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] p-4">
             <p className="text-[13px] font-semibold text-text-dark-primary">
               {t("unverifiedTitle")}
             </p>
-            <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+            <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
               {t("unverifiedBody")}
             </p>
-            <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-text-dark-secondary">
+            <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
               {t("unverifiedScope")}
             </p>
           </div>
-          <ConnectCta href={authorizeHref} cta={t("connectCta")} trust={t("connectTrust")} />
+          <ConnectCta
+            href={authorizeHref}
+            cta={t("connectCta")}
+            trust={t("connectTrust")}
+          />
         </div>
       ) : (
         <div className="mt-5">
-          <ConnectCta href={authorizeHref} cta={t("connectCta")} trust={t("connectTrust")} />
+          <ConnectCta
+            href={authorizeHref}
+            cta={t("connectCta")}
+            trust={t("connectTrust")}
+          />
         </div>
       )}
     </section>
@@ -150,15 +158,20 @@ function ConnectCta({
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/*
+       * 这是一颗第三方登录按钮，不是本站主 CTA：走规范的次按钮（描边 + 面板底），
+       * 品牌渐变留给页面自己的主 CTA，一屏最多一个。不借 Google 的品牌色做标记——
+       * 那会读成官方背书，而这里只是“交给 Google 的那一步”。
+       */}
       <a
         href={href}
-        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-accent-hover"
+        className="border-brand-border-strong bg-brand-panel/60 text-text-dark-primary inline-flex h-11.5 min-h-11 items-center justify-center gap-2 rounded-[10px] border px-5 text-[14px] font-medium transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
       >
         {cta}
         <ArrowRight aria-hidden="true" className="size-4" />
       </a>
-      <p className="flex items-center gap-2 text-[12px] text-text-dark-secondary">
-        <ShieldCheck aria-hidden="true" className="size-4" />
+      <p className="flex items-center gap-2 text-[12.5px] text-text-dark-secondary">
+        <ShieldCheck aria-hidden="true" className="size-4 text-brand-accent" />
         {trust}
       </p>
     </div>

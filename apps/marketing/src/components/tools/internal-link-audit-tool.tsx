@@ -21,13 +21,7 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { LimitationHint } from "../ui/limitation-hint";
 import { type InternalLinkAuditLocale } from "./internal-link-audit-content";
 import {
@@ -57,8 +51,13 @@ const COPY = {
     start: "Run internal link audit",
     running: "Crawling public static HTML…",
     help: "We start from the submitted public URL, follow same-origin static HTML links, and respect robots.txt. To avoid repeatedly hitting the same site, public crawl facts may be temporarily shared from a server-side cache; no submitter identity or page body is stored.",
-    scope: "No login required · roughly 950 pages per run · four-minute processing boundary",
-    progress: ["Checking robots and sitemap", "Following same-origin HTML links", "Building the page hierarchy"],
+    scope:
+      "No login required · roughly 950 pages per run · four-minute processing boundary",
+    progress: [
+      "Checking robots and sitemap",
+      "Following same-origin HTML links",
+      "Building the page hierarchy",
+    ],
     result: "Internal link structure report",
     partial: "Report ready · partial coverage",
     available: "Report ready",
@@ -66,7 +65,8 @@ const COPY = {
     completeLabel: "Collection status",
     completeReason: "Completed within the safety limits",
     completeBody: "The crawl finished without reaching an early-stop boundary.",
-    partialBody: "The collected pages and evidence remain available for review.",
+    partialBody:
+      "The collected pages and evidence remain available for review.",
     mapped: "Pages collected",
     links: "HTML links observed",
     sitemap: "Sitemap URLs observed",
@@ -80,13 +80,15 @@ const COPY = {
     fourPlusClicks: "4+ clicks",
     unreachableCount: "Unreachable",
     tree: "Site page hierarchy",
-    treeBody: "Indentation follows one shortest observed HTML-link path from the homepage. Sitemap discovery does not shorten click depth; cross-links remain visible in the mapped-inbound badge and link counts.",
+    treeBody:
+      "Indentation follows one shortest observed HTML-link path from the homepage. Sitemap discovery does not shorten click depth; cross-links remain visible in the mapped-inbound badge and link counts.",
     treeSearch: "Find a page in this crawl",
     treeSearchPlaceholder: "Search URL or page title",
     clearSearch: "Clear tree search",
     connectedBranch: "Page hierarchy",
     unlinkedBranch: "Outside the main hierarchy",
-    unlinkedBody: "Each branch starts with a page that the observed static HTML graph cannot reach from the homepage. It may still have inbound links from another unreachable page.",
+    unlinkedBody:
+      "Each branch starts with a page that the observed static HTML graph cannot reach from the homepage. It may still have inbound links from another unreachable page.",
     treeMatches: "pages match",
     noTreeMatches: "No collected page matches this filter and search.",
     expandAll: "Expand all",
@@ -123,26 +125,38 @@ const COPY = {
     source: "Observed source page",
     anchor: "Observed anchor text",
     findings: "Prioritized review list",
-    findingsBody: "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
+    findingsBody:
+      "These are editorial review prompts, not automatic changes. Verify important findings after any site or navigation update.",
     affectedPages: "affected pages",
     confidence: "confidence",
     impact: "impact",
     high: "high",
     medium: "medium",
     low: "low",
-    noFindings: "No prioritized structural candidates were found in the pages collected by this run.",
-    errorInvalid: "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
-    errorRate: "This network has run several crawls recently. Each one fetches hundreds of pages from the target site, so there is an hourly ceiling.",
-    errorTargetBusy: "This site has been crawled several times in the last hour, by you or by someone else. The limit protects the site being audited from repeated automated traffic.",
-    errorRobotsDisallowed: "This site's robots.txt asks crawlers not to fetch its pages, so nothing was crawled. That is the site owner's choice and says nothing about the site's link structure.",
-    errorRobotsUnreachable: "This site's robots.txt could not be read, so nothing was crawled. A crawler that cannot read the rules has to assume it is not allowed.",
-    errorQuotaUnavailable: "Something on our side is down: the service that enforces usage limits is not responding, and this tool will not crawl a site without a working limit in place. This is not about your usage — nothing you did caused it, and nothing has been counted against you.",
-    errorProgress: "An audit for this browser address is already running. Please wait for it to finish.",
-    errorTimeout: "The synchronous crawl reached its execution-time boundary before a report could be returned. Large sites may need a future asynchronous scan.",
-    errorGeneric: "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
+    noFindings:
+      "No prioritized structural candidates were found in the pages collected by this run.",
+    errorInvalid:
+      "Enter a publicly reachable HTTP(S) domain. Local, IP-literal, credentialed, and reserved addresses are not accepted.",
+    errorRate:
+      "This network has run several crawls recently. Each one fetches hundreds of pages from the target site, so there is an hourly ceiling.",
+    errorTargetBusy:
+      "This site has been crawled several times in the last hour, by you or by someone else. The limit protects the site being audited from repeated automated traffic.",
+    errorRobotsDisallowed:
+      "This site's robots.txt asks crawlers not to fetch its pages, so nothing was crawled. That is the site owner's choice and says nothing about the site's link structure.",
+    errorRobotsUnreachable:
+      "This site's robots.txt could not be read, so nothing was crawled. A crawler that cannot read the rules has to assume it is not allowed.",
+    errorQuotaUnavailable:
+      "Something on our side is down: the service that enforces usage limits is not responding, and this tool will not crawl a site without a working limit in place. This is not about your usage — nothing you did caused it, and nothing has been counted against you.",
+    errorProgress:
+      "An audit for this browser address is already running. Please wait for it to finish.",
+    errorTimeout:
+      "The synchronous crawl reached its execution-time boundary before a report could be returned. Large sites may need a future asynchronous scan.",
+    errorGeneric:
+      "We could not collect a safe public crawl result for that site. Check that it is publicly reachable and try again.",
     sourceUnavailable: "No observed source page",
     anchorUnavailable: "No anchor text recorded",
-    actualScope: "Static HTML · same origin · temporary shared crawl cache · no submitter identity",
+    actualScope:
+      "Static HTML · same origin · temporary shared crawl cache · no submitter identity",
   },
   zh: {
     label: "网站 URL",
@@ -173,13 +187,15 @@ const COPY = {
     fourPlusClicks: "4 次以上",
     unreachableCount: "无法到达",
     tree: "网站页面层级树",
-    treeBody: "缩进表示从首页出发的一条最短已观测 HTML 链接路径。Sitemap 只补充发现范围，不会缩短点击深度；交叉内链仍显示在已映射入链标记和链接计数中。",
+    treeBody:
+      "缩进表示从首页出发的一条最短已观测 HTML 链接路径。Sitemap 只补充发现范围，不会缩短点击深度；交叉内链仍显示在已映射入链标记和链接计数中。",
     treeSearch: "在本次抓取中查找页面",
     treeSearchPlaceholder: "搜索 URL 或页面标题",
     clearSearch: "清空树状视图搜索",
     connectedBranch: "页面主层级",
     unlinkedBranch: "主层级之外",
-    unlinkedBody: "每个分支的起点都无法通过已观测静态 HTML 链接从首页到达；它仍可能收到另一个不可达页面的入链。",
+    unlinkedBody:
+      "每个分支的起点都无法通过已观测静态 HTML 链接从首页到达；它仍可能收到另一个不可达页面的入链。",
     treeMatches: "个页面匹配",
     noTreeMatches: "没有页面同时符合当前筛选和搜索条件。",
     expandAll: "全部展开",
@@ -216,7 +232,8 @@ const COPY = {
     source: "观测到的来源页",
     anchor: "观测到的锚文本",
     findings: "优先复核清单",
-    findingsBody: "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
+    findingsBody:
+      "这些是编辑复核提示，而不是自动改动。网站或导航更新后，请复核重要发现。",
     affectedPages: "个受影响页面",
     confidence: "置信度",
     impact: "影响",
@@ -224,15 +241,23 @@ const COPY = {
     medium: "中",
     low: "低",
     noFindings: "本次已采集页面中未发现需要优先处理的结构候选项。",
-    errorInvalid: "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
-    errorRate: "该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。",
-    errorTargetBusy: "这个站点在过去一小时内已被抓取多次（可能来自你，也可能来自其他人）。该限制用于保护被审计的站点免受重复的自动化流量。",
-    errorRobotsDisallowed: "该站点的 robots.txt 要求爬虫不要抓取其页面，因此没有抓取任何内容。这是站点所有者的选择，与该站的链接结构无关。",
-    errorRobotsUnreachable: "该站点的 robots.txt 无法读取，因此没有抓取任何内容。读不到规则的爬虫必须假定自己不被允许。",
-    errorQuotaUnavailable: "这是我们这边的故障：负责执行用量限制的服务没有响应，而这个工具在限制不可用时不会去抓取任何站点。这与你的使用量无关——不是你做了什么导致的，也没有记在你头上。",
+    errorInvalid:
+      "请输入可公开访问的 HTTP(S) 域名。不接受本地地址、IP 地址、带凭据或保留地址。",
+    errorRate:
+      "该网络最近已发起多次抓取。每次都会从目标站点获取数百个页面，因此设有每小时上限。",
+    errorTargetBusy:
+      "这个站点在过去一小时内已被抓取多次（可能来自你，也可能来自其他人）。该限制用于保护被审计的站点免受重复的自动化流量。",
+    errorRobotsDisallowed:
+      "该站点的 robots.txt 要求爬虫不要抓取其页面，因此没有抓取任何内容。这是站点所有者的选择，与该站的链接结构无关。",
+    errorRobotsUnreachable:
+      "该站点的 robots.txt 无法读取，因此没有抓取任何内容。读不到规则的爬虫必须假定自己不被允许。",
+    errorQuotaUnavailable:
+      "这是我们这边的故障：负责执行用量限制的服务没有响应，而这个工具在限制不可用时不会去抓取任何站点。这与你的使用量无关——不是你做了什么导致的，也没有记在你头上。",
     errorProgress: "该浏览器地址已有一次审计正在进行，请等待它完成。",
-    errorTimeout: "同步抓取在返回报告前触及执行时间边界。大型网站可能需要后续异步扫描版本。",
-    errorGeneric: "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
+    errorTimeout:
+      "同步抓取在返回报告前触及执行时间边界。大型网站可能需要后续异步扫描版本。",
+    errorGeneric:
+      "无法为该网站采集安全的公开抓取结果。请确认网站可公开访问后重试。",
     sourceUnavailable: "没有观测到来源页面",
     anchorUnavailable: "未记录锚文本",
     actualScope: "静态 HTML · 同源 · 临时共享抓取缓存 · 不保存提交者身份",
@@ -241,16 +266,19 @@ const COPY = {
 
 type ToolCopy = (typeof COPY)[keyof typeof COPY];
 
-const STYLE: Record<InternalLinkAuditNode["kind"], { fill: string; ring: string }> = {
-  home: { fill: "#F0EDE8", ring: "#F0EDE8" },
-  page: { fill: "#6F9C8B", ring: "#8FC8B2" },
-  deep: { fill: "#D4A843", ring: "#F0C761" },
-  unreachable: { fill: "#D95757", ring: "#F27A7A" },
-  orphan_candidate: { fill: "#D95757", ring: "#F27A7A" },
+const STYLE: Record<
+  InternalLinkAuditNode["kind"],
+  { fill: string; ring: string }
+> = {
+  home: { fill: "#E8EDF2", ring: "#E8EDF2" },
+  page: { fill: "#3DDC97", ring: "#6BE7B2" },
+  deep: { fill: "#E5C878", ring: "#F0DCA8" },
+  unreachable: { fill: "#F09090", ring: "#F5B4B4" },
+  orphan_candidate: { fill: "#F09090", ring: "#F5B4B4" },
   // Deliberately not the orphan red: the crawl stopped early, so this node is
   // a question, not a finding.
-  orphan_undetermined: { fill: "#8A8279", ring: "#B8AFA4" },
-  unresolved_target: { fill: "#9B9690", ring: "#D5D0CA" },
+  orphan_undetermined: { fill: "#5E6B7A", ring: "#8B96A5" },
+  unresolved_target: { fill: "#8B96A5", ring: "#B8C2CE" },
 };
 
 function displayPath(url: string): string {
@@ -274,12 +302,15 @@ function displayPathSegment(url: string): string {
   }
 }
 
-function displayClickDepth(node: InternalLinkAuditNode, copy: ToolCopy): string {
+function displayClickDepth(
+  node: InternalLinkAuditNode,
+  copy: ToolCopy,
+): string {
   return node.clickDepth === null ? copy.notReachable : String(node.clickDepth);
 }
 
 function inboundTone(inboundLinks: number): string {
-  if (inboundLinks === 0) return "text-red-300";
+  if (inboundLinks === 0) return "text-brand-error";
   if (inboundLinks <= 2) return "text-brand-warning";
   return "text-text-dark-secondary";
 }
@@ -290,10 +321,10 @@ function errorMessage(
   locale: InternalLinkAuditLocale,
   retryAfterHeader: string | null,
 ): string {
-  if (code === "invalid_url" || code === "invalid_request") return copy.errorInvalid;
+  if (code === "invalid_url" || code === "invalid_request")
+    return copy.errorInvalid;
   if (code === "rate_limited" || code === "target_busy") {
-    const base =
-      code === "target_busy" ? copy.errorTargetBusy : copy.errorRate;
+    const base = code === "target_busy" ? copy.errorTargetBusy : copy.errorRate;
     const retry = retryAfterMessage(retryAfterHeader, locale);
     return retry ? `${base} ${retry}` : base;
   }
@@ -353,8 +384,7 @@ function TreeNodeRow({
   const secondaryInbound = secondaryInboundById.get(node.id) ?? 0;
   const hasChildren = children.length > 0;
   const expanded = forceExpanded || !collapsedIds.has(node.id);
-  const visuallyIndented =
-    level > 1 && level <= MAX_VISUAL_TREE_LEVEL;
+  const visuallyIndented = level > 1 && level <= MAX_VISUAL_TREE_LEVEL;
   const visiblePath =
     level === 1
       ? displayPath(node.url)
@@ -369,17 +399,17 @@ function TreeNodeRow({
     <li
       className={`relative ${
         visuallyIndented
-          ? "before:absolute before:-left-3 before:top-6 before:w-3 before:border-t before:border-brand-accent/45 sm:before:-left-5 sm:before:w-5"
+          ? "before:absolute before:-left-3 before:top-6 before:w-3 before:border-t before:border-brand-border-strong sm:before:-left-5 sm:before:w-5"
           : ""
       }`}
     >
       <div
-        className={`group flex min-h-12 w-full items-stretch overflow-hidden rounded-lg border-l-2 transition-colors ${
+        className={`group flex min-h-12 w-full items-stretch overflow-hidden rounded-[11px] border-l-2 transition-colors ${
           selected
-            ? "border-brand-accent bg-brand-accent/12"
+            ? "border-brand-accent bg-brand-accent/[0.10]"
             : level === 1
-              ? "border-brand-accent/55 bg-brand-accent/[0.045] hover:bg-brand-accent/[0.075]"
-              : "border-brand-border bg-black/10 hover:bg-white/[0.025]"
+              ? "border-brand-accent/55 bg-brand-accent/[0.05] hover:bg-brand-accent/[0.08]"
+              : "border-brand-border-strong bg-brand-panel-raised hover:bg-white/[0.03]"
         } ${directMatch ? "opacity-100" : "opacity-55"}`}
       >
         {hasChildren ? (
@@ -389,18 +419,18 @@ function TreeNodeRow({
             aria-label={branchLabel}
             disabled={forceExpanded}
             onClick={() => onToggle(node.id)}
-            className="flex w-10 shrink-0 items-center justify-center border-r border-brand-border/45 text-text-dark-secondary transition-colors hover:bg-white/[0.035] hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+            className="flex w-10 shrink-0 items-center justify-center border-r border-brand-border text-text-dark-secondary transition-colors hover:bg-white/[0.035] hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
           >
             {expanded ? (
-              <ChevronDown aria-hidden="true" className="h-4 w-4" />
+              <ChevronDown aria-hidden="true" className="size-4" />
             ) : (
-              <ChevronRight aria-hidden="true" className="h-4 w-4" />
+              <ChevronRight aria-hidden="true" className="size-4" />
             )}
           </button>
         ) : (
           <span
             aria-hidden="true"
-            className="relative w-10 shrink-0 border-r border-brand-border/35 after:absolute after:left-1/2 after:top-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-brand-border"
+            className="relative w-10 shrink-0 border-r border-brand-border after:absolute after:left-1/2 after:top-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-brand-border-strong"
           />
         )}
         <button
@@ -416,7 +446,7 @@ function TreeNodeRow({
               className="h-2.5 w-2.5 shrink-0 rounded-full border-2"
               style={{
                 backgroundColor: nodeStyle.fill,
-                borderColor: selected ? "#F0EDE8" : nodeStyle.ring,
+                borderColor: selected ? "#E8EDF2" : nodeStyle.ring,
               }}
             />
             <span className="min-w-0 flex-1">
@@ -424,57 +454,62 @@ function TreeNodeRow({
               <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <strong
                   aria-hidden="true"
-                  className="min-w-0 break-words font-mono text-[12px] font-medium leading-5 text-text-dark-primary sm:text-[13px]"
+                  className="min-w-0 break-words font-mono text-[12.5px] font-medium leading-5 text-text-dark-primary sm:text-[13px]"
                   title={displayPath(node.url)}
                 >
                   {visiblePath}
                 </strong>
                 {node.kind !== "page" ? (
-                  <span className="rounded border border-brand-border/70 px-1.5 py-px text-[9px] uppercase tracking-[0.08em] text-text-dark-secondary">
+                  <span className="rounded border border-brand-border-strong px-1.5 py-px font-mono text-[9px] tracking-[0.08em] text-text-dark-secondary uppercase">
                     {copy[node.kind]}
                   </span>
                 ) : null}
                 {parentRelation === "observed_link" ? (
-                  <span className="inline-flex items-center gap-1 rounded border border-brand-accent/30 bg-brand-accent/[0.06] px-1.5 py-px text-[9px] text-brand-accent-text">
-                    <Link2 aria-hidden="true" className="h-2.5 w-2.5" />
+                  <span className="inline-flex items-center gap-1 rounded border border-brand-accent/30 bg-brand-accent/[0.08] px-1.5 py-px font-mono text-[9px] tracking-[0.08em] text-brand-accent-text uppercase">
+                    <Link2 aria-hidden="true" className="size-2.5" />
                     {copy.linkGrouped}
                   </span>
                 ) : null}
                 {secondaryInbound > 0 ? (
                   <span
-                    className="inline-flex items-center gap-1 text-[10px] text-brand-accent-text"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] text-brand-accent-2"
                     title={`${secondaryInbound} ${copy.additionalInbound}`}
                   >
-                    <GitBranch aria-hidden="true" className="h-3 w-3" />
-                    +{secondaryInbound}
-                    <span className="sr-only">
-                      {" "}
-                      {copy.additionalInbound}
-                    </span>
+                    <GitBranch aria-hidden="true" className="size-3" />+
+                    {secondaryInbound}
+                    <span className="sr-only"> {copy.additionalInbound}</span>
                   </span>
                 ) : null}
               </span>
               {node.title && node.title !== visiblePath ? (
-                <span className="mt-0.5 block truncate text-[10px] leading-4 text-text-dark-secondary">
+                <span className="mt-0.5 block truncate text-[11.5px] leading-4 text-text-dark-secondary">
                   {node.title}
                 </span>
               ) : null}
-              <span className="mt-1 flex items-center gap-3 text-[10px] leading-4 text-text-dark-secondary sm:hidden">
-                <span className={inboundTone(node.inboundLinks)}>{copy.inbound} {node.inboundLinks}</span>
-                <span>{copy.outbound} {node.outboundLinks}</span>
-                <span>{copy.depthLabel} {displayClickDepth(node, copy)}</span>
+              <span className="mt-1 flex items-center gap-3 font-mono text-[10px] leading-4 text-text-dark-secondary sm:hidden">
+                <span className={inboundTone(node.inboundLinks)}>
+                  {copy.inbound} {node.inboundLinks}
+                </span>
+                <span>
+                  {copy.outbound} {node.outboundLinks}
+                </span>
+                <span>
+                  {copy.depthLabel} {displayClickDepth(node, copy)}
+                </span>
               </span>
             </span>
             {hasChildren ? (
               <span
                 aria-hidden="true"
-                className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 font-mono text-[9px] text-text-dark-secondary"
+                className="shrink-0 rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[9px] text-text-dark-secondary"
               >
                 {children.length}
               </span>
             ) : null}
           </span>
-          <span className={`hidden text-center font-mono text-[11px] sm:block ${inboundTone(node.inboundLinks)}`}>
+          <span
+            className={`hidden text-center font-mono text-[11px] sm:block ${inboundTone(node.inboundLinks)}`}
+          >
             <span className="sr-only">{copy.inbound} </span>
             {node.inboundLinks}
           </span>
@@ -492,7 +527,7 @@ function TreeNodeRow({
         <ul
           className={
             level < MAX_VISUAL_TREE_LEVEL
-              ? "ml-3 mt-1.5 space-y-1.5 border-l border-brand-accent/35 pl-3 sm:ml-5 sm:pl-5"
+              ? "ml-3 mt-1.5 space-y-1.5 border-l border-brand-border-strong pl-3 sm:ml-5 sm:pl-5"
               : "mt-1.5 space-y-1.5"
           }
         >
@@ -621,17 +656,17 @@ function LinkTree({
   }
 
   return (
-    <div className="rounded-2xl border border-brand-border/70 bg-[#111112]">
-      <div className="border-b border-brand-border/60 p-5">
+    <div className="rounded-card border border-brand-border-card bg-brand-panel">
+      <div className="border-b border-brand-border p-5">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text">
-            <FolderTree aria-hidden="true" className="h-4 w-4" />
+          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-brand-accent/25 bg-brand-accent-soft text-brand-accent">
+            <FolderTree aria-hidden="true" className="size-4" />
           </span>
           <div>
-            <h3 className="text-[17px] font-semibold text-text-dark-primary">
+            <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
               {copy.tree}
             </h3>
-            <p className="mt-1 max-w-2xl text-[13px] leading-5 text-text-dark-secondary">
+            <p className="mt-1.5 max-w-2xl text-[13px] leading-[1.6] text-text-dark-secondary">
               {copy.treeBody}
             </p>
           </div>
@@ -640,29 +675,35 @@ function LinkTree({
           <span className="sr-only">{copy.treeSearch}</span>
           <Search
             aria-hidden="true"
-            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-dark-secondary"
+            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-brand-accent"
           />
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={copy.treeSearchPlaceholder}
-            className="h-11 w-full rounded-xl border border-brand-border/70 bg-black/15 pl-10 pr-11 text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary/65 focus:border-brand-accent/70"
+            className="h-12 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg pl-10 pr-11 font-mono text-[13.5px] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-faint focus:border-brand-accent/70"
           />
           {query ? (
             <button
               type="button"
               aria-label={copy.clearSearch}
               onClick={() => setQuery("")}
-              className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-text-dark-secondary hover:text-text-dark-primary"
+              className="absolute right-0 top-0 flex size-12 items-center justify-center text-text-dark-secondary transition-colors hover:text-text-dark-primary"
             >
-              <X aria-hidden="true" className="h-4 w-4" />
+              <X aria-hidden="true" className="size-4" />
             </button>
           ) : null}
         </label>
         <div className="mt-4 flex flex-wrap gap-2">
           {filters.map(([value, label]) => (
-            <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)} className={`min-h-11 rounded-full border px-3.5 py-2 text-[12px] ${filter === value ? "border-brand-accent bg-brand-accent/15 text-brand-accent-text" : "border-brand-border text-text-dark-secondary hover:border-brand-border/90 hover:text-text-dark-primary"}`}>
+            <button
+              key={value}
+              type="button"
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+              className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-[10px] tracking-[0.06em] uppercase transition-colors ${filter === value ? "border-brand-accent/50 bg-brand-accent/12 text-brand-accent-text" : "border-brand-border-strong text-text-dark-secondary hover:border-brand-accent/50 hover:text-text-dark-primary"}`}
+            >
               {label}
             </button>
           ))}
@@ -671,7 +712,7 @@ function LinkTree({
               type="button"
               disabled={forceExpanded}
               onClick={() => setCollapsedIds(new Set())}
-              className="min-h-9 rounded-lg px-2.5 text-[11px] text-text-dark-secondary hover:bg-white/[0.035] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-white/[0.04] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
             >
               {copy.expandAll}
             </button>
@@ -679,11 +720,11 @@ function LinkTree({
               type="button"
               disabled={forceExpanded}
               onClick={() => setCollapsedIds(new Set(expandableIds))}
-              className="min-h-9 rounded-lg px-2.5 text-[11px] text-text-dark-secondary hover:bg-white/[0.035] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
+              className="min-h-9 rounded-[8px] px-2.5 font-mono text-[10px] tracking-[0.06em] text-text-dark-secondary uppercase transition-colors hover:bg-white/[0.04] hover:text-text-dark-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-text-dark-secondary"
             >
               {copy.collapseAll}
             </button>
-            <span className="ml-1 font-mono text-[11px] text-text-dark-secondary">
+            <span className="ml-1 font-mono text-[10.5px] text-text-dark-secondary">
               {matchIds.size}/{report.nodes.length} {copy.treeMatches}
             </span>
           </div>
@@ -697,7 +738,7 @@ function LinkTree({
           >
             <div
               aria-hidden="true"
-              className="mb-2 hidden items-center border-b border-brand-border/55 pb-2 text-[9px] font-medium uppercase tracking-[0.1em] text-text-dark-secondary sm:flex"
+              className="mb-2 hidden items-center border-b border-brand-border-faint pb-2 font-mono text-[9.5px] uppercase tracking-[0.1em] text-text-dark-secondary sm:flex"
             >
               <span className="w-10 shrink-0" />
               <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_4.25rem_4.25rem_4.25rem] items-center px-3">
@@ -711,11 +752,14 @@ function LinkTree({
               <section aria-labelledby="internal-link-tree-connected">
                 <h4
                   id="internal-link-tree-connected"
-                  className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-brand-accent-text"
+                  className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.14em] text-brand-accent-text"
                 >
                   {copy.connectedBranch}
                 </h4>
-                <ul aria-labelledby="internal-link-tree-connected" className="space-y-2">
+                <ul
+                  aria-labelledby="internal-link-tree-connected"
+                  className="space-y-2"
+                >
                   {connectedRoots.map((rootId) => (
                     <TreeNodeRow
                       key={rootId}
@@ -741,18 +785,25 @@ function LinkTree({
             {unlinkedRoots.length ? (
               <section
                 aria-labelledby="internal-link-tree-unlinked"
-                className={connectedRoots.length ? "mt-6 border-t border-brand-border/60 pt-5" : ""}
+                className={
+                  connectedRoots.length
+                    ? "mt-6 border-t border-brand-border pt-5"
+                    : ""
+                }
               >
                 <h4
                   id="internal-link-tree-unlinked"
-                  className="text-[11px] font-medium uppercase tracking-[0.14em] text-brand-warning"
+                  className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-brand-warning"
                 >
                   {copy.unlinkedBranch}
                 </h4>
-                <p className="mt-1 max-w-2xl text-[12px] leading-5 text-text-dark-secondary">
+                <p className="mt-1.5 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {copy.unlinkedBody}
                 </p>
-                <ul aria-labelledby="internal-link-tree-unlinked" className="mt-3 space-y-2">
+                <ul
+                  aria-labelledby="internal-link-tree-unlinked"
+                  className="mt-3 space-y-2"
+                >
                   {unlinkedRoots.map((rootId) => (
                     <TreeNodeRow
                       key={rootId}
@@ -778,13 +829,15 @@ function LinkTree({
           </div>
         ) : (
           <p
-            className="rounded-xl border border-dashed border-brand-border/70 px-4 py-8 text-center text-[13px] text-text-dark-secondary"
+            className="rounded-[12px] border border-dashed border-brand-border-dashed px-4 py-8 text-center text-[13px] text-text-dark-secondary"
             data-testid="internal-link-tree-empty"
           >
             {copy.noTreeMatches}
           </p>
         )}
-        <p className="mt-4 border-t border-brand-border/50 pt-4 font-mono text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.actualScope}</p>
+        <p className="mt-4 border-t border-brand-border pt-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-dark-secondary">
+          {copy.actualScope}
+        </p>
       </div>
     </div>
   );
@@ -796,55 +849,126 @@ function NodeDetail({
   node,
 }: {
   readonly copy: ToolCopy;
-  readonly finding: InternalLinkAuditPayload["result"]["findings"][number] | null;
+  readonly finding:
+    | InternalLinkAuditPayload["result"]["findings"][number]
+    | null;
   readonly node: InternalLinkAuditNode;
 }) {
   return (
     <aside
-      className="rounded-2xl border border-brand-accent/25 bg-brand-accent/[0.055] p-5 xl:sticky xl:top-24"
+      className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[22px] shadow-[inset_2px_0_0_#3DDC97] xl:sticky xl:top-24"
       aria-live="polite"
       data-testid="internal-link-node-detail"
     >
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-brand-accent-text">
+      <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-brand-accent-text">
         {finding ? copy.selectedFinding : copy.selected}
       </p>
       {finding ? (
         <>
-          <h3 className="mt-2 text-[15px] font-semibold leading-6 text-text-dark-primary">
+          <h3 className="mt-2 text-[15.5px] font-semibold leading-6 text-text-dark-primary">
             {finding.title}
           </h3>
-          <p className="mt-2 text-[13px] leading-5 text-text-dark-secondary">
+          <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {finding.detail}
           </p>
-          <p className="mt-5 border-t border-brand-border/60 pt-5 text-[11px] font-medium uppercase tracking-[0.12em] text-text-dark-secondary">
+          <p className="mt-5 border-t border-brand-border pt-5 font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
             {copy.pageContext}
           </p>
         </>
       ) : null}
-      <h3 className="mt-2 break-all font-mono text-[15px] font-semibold leading-6 text-text-dark-primary">
+      <h3 className="mt-2 break-all font-mono text-[14.5px] font-semibold leading-6 text-text-dark-primary">
         {displayPath(node.url)}
       </h3>
-      <p className="mt-1 text-[13px] leading-5 text-text-dark-secondary">
+      <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {node.title ?? node.url}
       </p>
-      <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-brand-border/60 pt-5 text-[13px]">
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.inbound}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.inboundLinks}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.outbound}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.outboundLinks}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.depthLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{displayClickDepth(node, copy)}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.crawlDepthLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.crawlDepth}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.sitemapLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.sitemapMember ? copy.yes : copy.no}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.robotsLabel}</dt><dd className="mt-1 font-mono text-text-dark-primary">{node.robotsIndexable ? copy.yes : copy.no}</dd></div>
-        <div><dt className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.canonicalLabel}</dt><dd className="mt-1 break-all font-mono text-text-dark-primary">{node.canonicalTarget ?? copy.no}</dd></div>
+      <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-brand-border pt-5 text-[13px]">
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.inbound}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {node.inboundLinks}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.outbound}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {node.outboundLinks}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.depthLabel}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {displayClickDepth(node, copy)}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.crawlDepthLabel}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {node.crawlDepth}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.sitemapLabel}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {node.sitemapMember ? copy.yes : copy.no}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.robotsLabel}
+          </dt>
+          <dd className="mt-1 font-mono text-text-dark-primary">
+            {node.robotsIndexable ? copy.yes : copy.no}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+            {copy.canonicalLabel}
+          </dt>
+          <dd className="mt-1 break-all font-mono text-text-dark-primary">
+            {node.canonicalTarget ?? copy.no}
+          </dd>
+        </div>
       </dl>
       {finding ? (
-        <div className="mt-5 space-y-4 border-t border-brand-border/60 pt-5 text-[13px] leading-5">
-          <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.evidence}</p><p className="mt-1 text-text-dark-primary">{finding.evidence}</p></div>
+        <div className="mt-5 space-y-4 border-t border-brand-border pt-5 text-[12.5px] leading-[1.6]">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+              {copy.evidence}
+            </p>
+            <p className="mt-1 text-text-dark-primary">{finding.evidence}</p>
+          </div>
+          {/* limitation 走共享的 LimitationHint（折叠式披露），其余三格是普通字段 */}
           <LimitationHint
             label={copy.limitation}
             limitations={[finding.limitation]}
           />
-          <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.source}</p><p className="mt-1 break-all font-mono text-text-dark-primary">{finding.suggestedSourceUrl ?? copy.sourceUnavailable}</p></div>
-          <div><p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.anchor}</p><p className="mt-1 text-text-dark-primary">{finding.observedAnchorText ?? copy.anchorUnavailable}</p></div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+              {copy.source}
+            </p>
+            <p className="mt-1 break-all font-mono text-text-dark-primary">
+              {finding.suggestedSourceUrl ?? copy.sourceUnavailable}
+            </p>
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+              {copy.anchor}
+            </p>
+            <p className="mt-1 text-text-dark-primary">
+              {finding.observedAnchorText ?? copy.anchorUnavailable}
+            </p>
+          </div>
         </div>
       ) : null}
     </aside>
@@ -865,11 +989,17 @@ function FindingsList({
   ) => void;
 }) {
   return (
-    <section className="rounded-2xl border border-brand-border/70 bg-[#171718] p-5">
-      <h3 className="text-[17px] font-semibold text-text-dark-primary">{copy.findings}</h3>
-      <p className="mt-1 text-[13px] leading-5 text-text-dark-secondary">{copy.findingsBody}</p>
+    <section className="rounded-card border border-brand-border-card bg-brand-panel p-[22px]">
+      <h3 className="text-[16.5px] font-semibold text-text-dark-primary">
+        {copy.findings}
+      </h3>
+      <p className="mt-1.5 text-[13px] leading-[1.6] text-text-dark-secondary">
+        {copy.findingsBody}
+      </p>
       {findings.length === 0 ? (
-        <p className="mt-5 text-[13px] text-text-dark-secondary">{copy.noFindings}</p>
+        <p className="mt-5 text-[13px] text-text-dark-secondary">
+          {copy.noFindings}
+        </p>
       ) : (
         <div className="mt-5 grid gap-2 lg:grid-cols-2">
           {findings.map((finding) => {
@@ -881,27 +1011,33 @@ function FindingsList({
                 onClick={() => onSelect(finding)}
                 aria-pressed={selected}
                 data-testid={`internal-link-finding-${finding.id}`}
-                className={`min-h-16 rounded-xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
+                className={`min-h-16 rounded-[11px] border p-3.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent ${
                   selected
-                    ? "border-brand-accent/60 bg-brand-accent/10"
-                    : "border-brand-border/60 bg-black/10 hover:border-brand-border"
+                    ? "border-brand-accent/50 bg-brand-accent/[0.08] shadow-[inset_2px_0_0_#3DDC97]"
+                    : "border-brand-border bg-brand-panel-raised hover:border-brand-accent/40"
                 }`}
               >
                 <span className="flex gap-3">
-                  <span className="h-fit rounded bg-brand-warning/10 px-2 py-1 font-mono text-[11px] text-brand-warning">
+                  <span className="h-fit rounded bg-brand-warning/15 px-2 py-[3px] font-mono text-[10.5px] tracking-[0.08em] text-brand-warning uppercase">
                     {finding.priority}
                   </span>
                   <span className="min-w-0">
-                    <strong className="block text-[13px] font-medium leading-5 text-text-dark-primary">
+                    <strong className="block text-[13.5px] font-medium leading-5 text-text-dark-primary">
                       {finding.title}
                     </strong>
-                    <small className="mt-1 block text-[12px] leading-5 text-text-dark-secondary">
+                    <small className="mt-1 block text-[12.5px] leading-[1.6] text-text-dark-secondary">
                       {finding.detail}
                     </small>
                     <small className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-text-dark-secondary">
-                      <span>{finding.affectedUrls.length} {copy.affectedPages}</span>
-                      <span>{copy.confidence}: {copy[finding.confidence]}</span>
-                      <span>{copy.impact}: {copy[finding.impact]}</span>
+                      <span>
+                        {finding.affectedUrls.length} {copy.affectedPages}
+                      </span>
+                      <span>
+                        {copy.confidence}: {copy[finding.confidence]}
+                      </span>
+                      <span>
+                        {copy.impact}: {copy[finding.impact]}
+                      </span>
                     </small>
                   </span>
                 </span>
@@ -914,7 +1050,9 @@ function FindingsList({
   );
 }
 
-export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAuditToolProps) {
+export function InternalLinkAuditTool({
+  locale: localeValue,
+}: InternalLinkAuditToolProps) {
   const locale: InternalLinkAuditLocale = localeValue === "zh" ? "zh" : "en";
   const copy = COPY[locale];
   const [url, setUrl] = useState("");
@@ -923,13 +1061,30 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
   const [payload, setPayload] = useState<InternalLinkAuditPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(
+    null,
+  );
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { if (phase === "result") resultHeadingRef.current?.focus(); }, [phase]);
-  useEffect(() => { if (phase !== "running") return; const first = window.setTimeout(() => setStage(1), 800); const second = window.setTimeout(() => setStage(2), 2200); return () => { window.clearTimeout(first); window.clearTimeout(second); }; }, [phase]);
+  useEffect(() => {
+    if (phase === "result") resultHeadingRef.current?.focus();
+  }, [phase]);
+  useEffect(() => {
+    if (phase !== "running") return;
+    const first = window.setTimeout(() => setStage(1), 800);
+    const second = window.setTimeout(() => setStage(2), 2200);
+    return () => {
+      window.clearTimeout(first);
+      window.clearTimeout(second);
+    };
+  }, [phase]);
   const report = payload?.result ?? null;
-  const selectedNode = report?.nodes.find((node) => node.id === selectedNodeId) ?? report?.nodes[0] ?? null;
-  const selectedFinding = report?.findings.find((finding) => finding.id === selectedFindingId) ?? null;
+  const selectedNode =
+    report?.nodes.find((node) => node.id === selectedNodeId) ??
+    report?.nodes[0] ??
+    null;
+  const selectedFinding =
+    report?.findings.find((finding) => finding.id === selectedFindingId) ??
+    null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -940,8 +1095,15 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
     setPhase("running");
     setStage(0);
     try {
-      const response = await fetch("/api/tools/internal-link-audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
-      const body = (await response.json().catch(() => null)) as { data?: InternalLinkAuditPayload; error?: { code?: string } } | null;
+      const response = await fetch("/api/tools/internal-link-audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        data?: InternalLinkAuditPayload;
+        error?: { code?: string };
+      } | null;
       if (!response.ok || !body?.data) {
         setError(
           errorMessage(
@@ -963,10 +1125,25 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
         )?.id ?? null,
       );
       setPhase("result");
-      trackMarketingEvent("tool_complete", { tool_name: "internal_link_audit" });
-    } catch { setError(copy.errorGeneric); setPhase("error"); }
+      trackMarketingEvent("tool_complete", {
+        tool_name: "internal_link_audit",
+      });
+    } catch {
+      setError(copy.errorGeneric);
+      setPhase("error");
+    }
   }
-  const metricItems = report ? [[copy.mapped, String(report.pagesCrawled), Waypoints], [copy.links, String(report.linksObserved), Link2], [copy.sitemap, report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—", Network]] as const : [];
+  const metricItems = report
+    ? ([
+        [copy.mapped, String(report.pagesCrawled), Waypoints],
+        [copy.links, String(report.linksObserved), Link2],
+        [
+          copy.sitemap,
+          report.sitemapFetched ? String(report.sitemapUrlsObserved) : "—",
+          Network,
+        ],
+      ] as const)
+    : [];
 
   return (
     <section
@@ -975,14 +1152,23 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
       className="scroll-mt-24"
       data-testid="internal-link-audit-tool"
     >
-      <div className="relative overflow-hidden rounded-2xl border border-brand-border/70 bg-[#171718] p-5 md:p-7">
-        <form onSubmit={handleSubmit} className="relative grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+      <div className="relative overflow-hidden rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-7">
+        <form
+          onSubmit={handleSubmit}
+          className="relative grid gap-2.5 md:grid-cols-[1fr_auto] md:items-end"
+        >
           <label className="block">
-            <span id="internal-link-url-label" className="mb-2 block text-[12px] font-medium uppercase tracking-[0.12em] text-text-dark-secondary">
+            <span
+              id="internal-link-url-label"
+              className="mb-2 block font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary"
+            >
               {copy.label}
             </span>
-            <span className="flex h-13 items-center gap-3 rounded-xl border border-brand-border/80 bg-brand-bg px-4 focus-within:border-brand-accent/70">
-              <Link2 aria-hidden="true" className="h-4 w-4 shrink-0 text-brand-accent-text" />
+            <span className="flex h-12.5 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70">
+              <Link2
+                aria-hidden="true"
+                className="size-[15px] shrink-0 text-brand-accent"
+              />
               <input
                 id="internal-link-url"
                 type="text"
@@ -995,25 +1181,35 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder={copy.placeholder}
-                className="min-w-0 flex-1 bg-transparent text-[14px] font-medium tracking-[0.01em] text-text-dark-primary outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-text-dark-secondary/60"
+                className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-faint"
               />
             </span>
           </label>
           <button
             type="submit"
             disabled={phase === "running"}
-            className="inline-flex h-13 items-center justify-center gap-2 rounded-xl bg-brand-accent px-5 text-[13px] font-semibold text-white disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex h-12.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-5.5 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta disabled:cursor-wait disabled:opacity-70 disabled:shadow-none"
           >
             {phase === "running" ? copy.running : copy.start}
             {phase === "running" ? (
-              <ScanLine aria-hidden="true" className="h-4 w-4 animate-pulse motion-reduce:animate-none" />
+              <ScanLine
+                aria-hidden="true"
+                className="size-4 animate-pulse motion-reduce:animate-none"
+              />
             ) : (
-              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              <ArrowRight aria-hidden="true" className="size-4" />
             )}
           </button>
         </form>
-        {error ? <p role="alert" className="mt-3 text-[13px] leading-5 text-red-200">{error}</p> : null}
-        <div className="mt-4 grid gap-2 border-t border-brand-border/60 pt-4 text-[12px] leading-5 text-text-dark-secondary md:grid-cols-2">
+        {error ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-error"
+          >
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-4 grid gap-2 border-t border-brand-border pt-4 text-[12.5px] leading-[1.6] text-text-dark-secondary md:grid-cols-2">
           <p>{copy.help}</p>
           <p>{copy.scope}</p>
         </div>
@@ -1021,23 +1217,27 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
 
       {phase === "running" ? (
         <div
-          className="mt-5 rounded-2xl border border-brand-border/70 bg-[#151516] p-5"
+          className="mt-5 rounded-card border border-brand-border-card bg-brand-panel p-5"
           role="status"
           aria-live="polite"
           data-testid="internal-link-progress"
         >
           <div className="mb-4 flex items-center justify-between">
-            <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-brand-accent-text">{copy.running}</p>
-            <span className="font-mono text-[11px] text-text-dark-secondary">0{stage + 1}/03</span>
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-brand-accent-text">
+              {copy.running}
+            </p>
+            <span className="font-mono text-[10.5px] text-text-dark-secondary">
+              0{stage + 1}/03
+            </span>
           </div>
           <ol className="grid gap-2 md:grid-cols-3">
             {copy.progress.map((item, index) => (
               <li
                 key={item}
-                className={`rounded-lg border px-3 py-3 text-[12px] ${
+                className={`rounded-[10px] border px-3.5 py-3 text-[12.5px] ${
                   index <= stage
-                    ? "border-brand-accent/40 bg-brand-accent/10 text-text-dark-primary"
-                    : "border-brand-border/60 text-text-dark-secondary"
+                    ? "border-brand-accent/40 bg-brand-accent/[0.08] text-text-dark-primary"
+                    : "border-brand-border text-text-dark-secondary"
                 }`}
               >
                 {item}
@@ -1048,75 +1248,105 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
       ) : null}
 
       {report && phase === "result" ? (
-        <div className="mt-6 space-y-5" data-testid="internal-link-audit-result">
-          <div className="overflow-hidden rounded-2xl border border-brand-border/70 bg-[#171718]">
-            <div className="grid gap-5 border-b border-brand-border/60 p-5 md:grid-cols-[1.3fr_0.7fr] md:p-7">
+        <div
+          className="mt-6 space-y-4"
+          data-testid="internal-link-audit-result"
+        >
+          <div className="overflow-hidden rounded-card border border-brand-border-card bg-brand-panel">
+            <div className="grid gap-5 border-b border-brand-border p-5 md:grid-cols-[1.3fr_0.7fr] md:p-7">
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.13em] text-brand-accent-text">{copy.result}</p>
+                <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-brand-accent-text">
+                  {copy.result}
+                </p>
                 <h2
                   ref={resultHeadingRef}
                   tabIndex={-1}
-                  className="mt-3 text-[24px] font-semibold leading-tight tracking-[-0.03em] text-text-dark-primary outline-none md:text-[30px]"
+                  className="mt-3 text-[25px] font-semibold leading-tight tracking-[-0.03em] text-text-dark-primary outline-none md:text-[28px]"
                 >
-                  {report.availability === "partial" ? copy.partial : copy.available}
+                  {report.availability === "partial"
+                    ? copy.partial
+                    : copy.available}
                 </h2>
-                <p className="mt-3 text-[16px] font-medium leading-6 text-text-dark-primary">
+                <p className="mt-3 text-[15.5px] leading-[1.65] text-text-dark-primary">
                   {actionSummary(report, locale)}
                 </p>
-                <p className="mt-2 text-[13px] leading-5 text-text-dark-secondary">
+                <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {coverageSummary(report, locale)}
                 </p>
               </div>
-              <div className="rounded-xl border border-brand-border/70 bg-black/10 px-4 py-3 text-[12px] leading-5 text-text-dark-secondary">
-                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-text-dark-secondary">
+              <div className="rounded-row border border-brand-border bg-brand-panel-sunken px-4 py-3.5">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
                   {report.availability === "partial"
                     ? copy.stopLabel
                     : copy.completeLabel}
                 </p>
-                <p className="mt-2 text-[16px] font-semibold leading-6 text-text-dark-primary">
+                <p className="mt-2 text-[15.5px] font-semibold leading-6 text-text-dark-primary">
                   {report.availability === "partial"
                     ? stopReasonLabel(report.stopReason, locale)
                     : copy.completeReason}
                 </p>
-                <p className="mt-2 text-[12px] leading-5 text-text-dark-secondary">
+                <p className="mt-2 text-[12.5px] leading-[1.6] text-text-dark-secondary">
                   {report.availability === "partial"
                     ? copy.partialBody
                     : copy.completeBody}
                 </p>
               </div>
             </div>
-            <div className="grid gap-px bg-brand-border/60 md:grid-cols-[0.8fr_1.2fr]">
-              <div className="bg-[#151516] p-5 md:p-6">
-                <p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.attention}</p>
-                <p className="mt-3 font-mono text-[38px] leading-none text-text-dark-primary">{report.actionablePages}</p>
+            {/* 指标格：1px gap + 分隔色底的伪表格 */}
+            <div className="grid gap-px bg-brand-border-card md:grid-cols-[0.8fr_1.2fr]">
+              <div className="bg-brand-panel-sunken p-5 md:p-6">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+                  {copy.attention}
+                </p>
+                <p className="mt-3 font-mono text-[34px] leading-none text-text-dark-primary">
+                  {report.actionablePages}
+                </p>
               </div>
-              <div className="bg-[#151516] p-5 md:p-6">
-                <p className="text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">{copy.depthDistribution}</p>
+              <div className="bg-brand-panel-sunken p-5 md:p-6">
+                <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
+                  {copy.depthDistribution}
+                </p>
                 <dl className="mt-3 grid grid-cols-5 gap-2">
                   {[
                     [copy.oneClick, report.clickDepthDistribution.oneClick],
                     [copy.twoClicks, report.clickDepthDistribution.twoClicks],
-                    [copy.threeClicks, report.clickDepthDistribution.threeClicks],
-                    [copy.fourPlusClicks, report.clickDepthDistribution.fourPlusClicks],
-                    [copy.unreachableCount, report.clickDepthDistribution.unreachable],
+                    [
+                      copy.threeClicks,
+                      report.clickDepthDistribution.threeClicks,
+                    ],
+                    [
+                      copy.fourPlusClicks,
+                      report.clickDepthDistribution.fourPlusClicks,
+                    ],
+                    [
+                      copy.unreachableCount,
+                      report.clickDepthDistribution.unreachable,
+                    ],
                   ].map(([label, value]) => (
                     <div key={label}>
-                      <dt className="text-[10px] leading-4 text-text-dark-secondary">{label}</dt>
-                      <dd className="mt-1 font-mono text-[20px] text-text-dark-primary">{value}</dd>
+                      <dt className="font-mono text-[9.5px] leading-4 tracking-[0.06em] text-text-dark-secondary uppercase">
+                        {label}
+                      </dt>
+                      <dd className="mt-1.5 font-mono text-[20px] text-text-dark-primary">
+                        {value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               </div>
             </div>
-            <dl className="grid grid-cols-1 gap-px bg-brand-border/60 sm:grid-cols-3">
+            <dl className="grid grid-cols-1 gap-px bg-brand-border-card sm:grid-cols-3">
               {metricItems.map(([label, value, Icon]) => (
-                <div key={label} className="bg-[#151516] p-4 md:p-5">
-                  <dt className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.1em] text-text-dark-secondary">
+                <div key={label} className="bg-brand-panel-sunken p-4 md:p-5">
+                  <dt className="flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-dark-secondary">
                     <span>{label}</span>
-                    <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-brand-accent-text" />
+                    <Icon
+                      aria-hidden="true"
+                      className="size-3.5 shrink-0 text-brand-accent"
+                    />
                   </dt>
                   <dd
-                    className="mt-3 font-mono text-[24px] leading-none text-text-dark-primary"
+                    className="mt-3 font-mono text-[22px] leading-none text-text-dark-primary"
                     data-testid={
                       label === copy.mapped
                         ? "internal-link-pages-collected"
@@ -1128,8 +1358,9 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
                 </div>
               ))}
             </dl>
-            <p className="border-t border-brand-border/60 bg-[#151516] px-5 py-3 text-[11px] leading-5 text-text-dark-secondary">
-              {report.nodes.filter((node) => !node.sitemapMember).length} {copy.sitemapGap}
+            <p className="border-t border-brand-border bg-brand-panel-sunken px-5 py-3.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+              {report.nodes.filter((node) => !node.sitemapMember).length}{" "}
+              {copy.sitemapGap}
             </p>
           </div>
 
@@ -1143,7 +1374,7 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
             }}
           />
 
-          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <LinkTree
               report={report}
               copy={copy}
@@ -1151,15 +1382,20 @@ export function InternalLinkAuditTool({ locale: localeValue }: InternalLinkAudit
               onSelect={(nodeId) => {
                 setSelectedNodeId(nodeId);
                 setSelectedFindingId(
-                  report.findings.find((finding) => finding.nodeIds.includes(nodeId))?.id ?? null,
+                  report.findings.find((finding) =>
+                    finding.nodeIds.includes(nodeId),
+                  )?.id ?? null,
                 );
               }}
             />
             {selectedNode ? (
-              <NodeDetail node={selectedNode} finding={selectedFinding} copy={copy} />
+              <NodeDetail
+                node={selectedNode}
+                finding={selectedFinding}
+                copy={copy}
+              />
             ) : null}
           </div>
-
         </div>
       ) : null}
     </section>

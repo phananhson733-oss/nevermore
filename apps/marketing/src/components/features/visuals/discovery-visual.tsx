@@ -49,9 +49,14 @@ export function DiscoveryVisual({ isDark }: VisualProps) {
             className="flex-1 rounded-md p-2"
             style={{ backgroundColor: t.cardDeep, border: `1px solid ${t.border}` }}
           >
-            <div className="text-[9px]" style={{ color: t.textDim }}>{s.label}</div>
             <div
-              className="text-sm font-bold"
+              className="font-mono text-[8.5px] tracking-[0.1em] uppercase"
+              style={{ color: t.textDim }}
+            >
+              {s.label}
+            </div>
+            <div
+              className="mt-0.5 font-mono text-[13px]"
               style={{ color: i === 2 ? C.emerald : t.text }}
             >
               {s.value}
@@ -69,15 +74,15 @@ export function DiscoveryVisual({ isDark }: VisualProps) {
           >
             <div className="flex items-center gap-1 mb-1.5">
               <span
-                className="w-4 h-4 rounded text-[8px] font-bold flex items-center justify-center"
+                className="w-4 h-4 rounded font-mono text-[8.5px] font-semibold flex items-center justify-center"
                 style={{ backgroundColor: col.color.bg, color: col.color.text }}
               >
                 {col.icon}
               </span>
-              <span className="text-[8px] font-medium truncate" style={{ color: t.text }}>
+              <span className="text-[9px] truncate" style={{ color: t.text }}>
                 {col.label}
               </span>
-              <span className="text-[8px] ml-auto" style={{ color: t.textDim }}>
+              <span className="font-mono text-[8.5px] ml-auto" style={{ color: t.textDim }}>
                 {col.items.length}
               </span>
             </div>
@@ -87,18 +92,18 @@ export function DiscoveryVisual({ isDark }: VisualProps) {
                   key={ii} className="rounded-md p-1.5"
                   style={{ backgroundColor: t.card, border: `1px solid ${t.border}` }}
                 >
-                  <div className="flex items-center gap-1 mb-0.5">
+                  <div className="flex items-center gap-1 mb-1">
                     <span
-                      className="text-[7px] px-1 rounded-full"
+                      className="rounded px-1 py-[1px] font-mono text-[8.5px] tracking-[0.08em] uppercase"
                       style={{ backgroundColor: col.color.bg, color: col.color.text }}
                     >
                       {item.priority}
                     </span>
                   </div>
-                  <div className="text-[8px] leading-tight" style={{ color: t.text }}>
+                  <div className="text-[9px] leading-tight" style={{ color: t.text }}>
                     {item.title}
                   </div>
-                  <div className="text-[8px] font-semibold mt-0.5" style={{ color: C.emerald }}>
+                  <div className="mt-1 font-mono text-[8.5px]" style={{ color: C.emerald }}>
                     ${item.cpc}/mo
                   </div>
                 </div>

@@ -13,7 +13,7 @@ export function Skeleton({ className, ...props }: SkeletonProps) {
   return (
     <div
       className={cn(
-        "animate-pulse rounded-md bg-[#F0EDE8]/[0.06]",
+        "animate-pulse rounded-[8px] bg-brand-panel-raised",
         className,
       )}
       {...props}
@@ -30,11 +30,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: TableSkeletonProps) {
   return (
     <div className="space-y-3">
       {Array.from({ length: rows }, (_, rowIdx) => (
-        <div
-          key={rowIdx}
-          data-skeleton-row=""
-          className="flex gap-4"
-        >
+        <div key={rowIdx} data-skeleton-row="" className="flex gap-4">
           {Array.from({ length: columns }, (_, colIdx) => (
             <Skeleton
               key={colIdx}

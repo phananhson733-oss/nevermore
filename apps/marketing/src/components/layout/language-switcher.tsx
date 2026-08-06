@@ -23,7 +23,7 @@ export function LanguageSwitcher() {
   return (
     <button
       onClick={switchLocale}
-      className="text-text-dark-secondary hover:text-text-dark-primary transition-colors text-sm font-medium"
+      className="font-mono text-[12px] tracking-[0.08em] text-text-dark-secondary uppercase transition-colors hover:text-brand-accent-text"
       aria-label={locale === "en" ? "切换到中文" : "Switch to English"}
     >
       {locale === "en" ? "中" : "EN"}

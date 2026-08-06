@@ -32,41 +32,36 @@ export function ToolCard({
   locale,
   ctaLabel,
 }: ToolCardProps) {
-  const categoryLabel =
-    CATEGORY_LABELS[category]?.[locale] ?? category;
+  const categoryLabel = CATEGORY_LABELS[category]?.[locale] ?? category;
 
   return (
-    <Link
-      href={localePath(locale, `/tools/${slug}`)}
-      className="group block"
-    >
-      <article className="h-full rounded-xl border border-brand-border/60 bg-brand-bg-alt/30 p-6 transition-all duration-200 group-hover:border-brand-accent/50 group-hover:bg-brand-bg-alt/60">
-        {/* Category badge */}
-        <div className="mb-3">
-          <span className="text-brand-accent-text text-[11px] font-medium tracking-wider uppercase">
-            {categoryLabel}
-          </span>
-        </div>
+    <Link href={localePath(locale, `/tools/${slug}`)} className="group block">
+      <article className="flex h-full flex-col rounded-card border border-brand-border-card bg-brand-panel p-[26px] transition-colors duration-200 group-hover:border-brand-accent/40">
+        {/* Category chip */}
+        <span className="w-fit rounded border border-brand-accent/30 px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
+          {categoryLabel}
+        </span>
 
         {/* Tool name */}
-        <h3 className="text-text-dark-primary font-semibold text-[17px] leading-snug mb-2 group-hover:text-brand-accent-text transition-colors">
+        <h3 className="mt-4 text-[16.5px] leading-snug font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
           {title}
         </h3>
 
         {/* Description */}
-        <p className="text-text-dark-secondary text-[13px] leading-relaxed line-clamp-3 mb-4">
+        <p className="mt-2 line-clamp-3 text-[13px] leading-[1.6] text-text-dark-secondary">
           {description}
         </p>
 
-        {/* Footer: try it + arrow */}
-        <div className="flex items-center justify-between text-[12px]">
-          <span className="text-text-dark-secondary">
-            {ctaLabel ?? (locale === "en" ? "Try it free" : "免费使用")}
-          </span>
-          <span className="text-brand-accent-text opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0">
+        {/* Footer: continuation label + arrow */}
+        <span className="mt-auto flex items-center gap-1.5 pt-5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase">
+          {ctaLabel ?? (locale === "en" ? "Try it free" : "免费使用")}
+          <span
+            aria-hidden="true"
+            className="transition-transform duration-200 group-hover:translate-x-0.5"
+          >
             &rarr;
           </span>
-        </div>
+        </span>
       </article>
     </Link>
   );
