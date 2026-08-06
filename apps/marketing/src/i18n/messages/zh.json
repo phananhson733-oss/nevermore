@@ -4,7 +4,9 @@
     "openApp": "打开 GenGrowth",
     "learnMore": "了解更多",
     "backToHome": "返回首页",
-    "home": "首页"
+    "home": "首页",
+    "signIn": "登录",
+    "getStarted": "免费开始"
   },
   "nav": {
     "tools": "免费工具",

@@ -18,8 +18,11 @@ import {
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
 import { ToolsMenu, ToolsMenuMobile } from "./tools-menu";
+import {
+  SignInControl,
+  SignInControlMobile,
+} from "@/components/auth/sign-in-control";
 import { headerNavItems } from "@/config/navigation";
-import { siteConfig } from "@/config/site";
 import { localePath } from "@/lib/locale-path";
 
 export function Header() {
@@ -77,12 +80,7 @@ export function Header() {
         {/* Right */}
         <div className="flex items-center gap-4">
           <LanguageSwitcher />
-          <a
-            href={siteConfig.appUrl}
-            className="hidden h-9.5 items-center rounded-lg bg-brand-gradient px-[18px] text-[13.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta md:inline-flex"
-          >
-            {t("common.openApp")}
-          </a>
+          <SignInControl />
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -123,13 +121,7 @@ export function Header() {
                     </Link>
                   ),
                 )}
-                <a
-                  href={siteConfig.appUrl}
-                  onClick={() => setMobileOpen(false)}
-                  className="mt-4 rounded-[10px] bg-brand-gradient px-4 py-2.5 text-center font-semibold text-brand-on-accent shadow-cta-sm"
-                >
-                  {t("common.openApp")}
-                </a>
+                <SignInControlMobile onNavigate={() => setMobileOpen(false)} />
               </nav>
             </SheetContent>
           </Sheet>

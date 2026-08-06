@@ -4,7 +4,9 @@
     "openApp": "Open GenGrowth",
     "learnMore": "Learn More",
     "backToHome": "Back to Home",
-    "home": "Home"
+    "home": "Home",
+    "signIn": "Sign in",
+    "getStarted": "Get started free"
   },
   "nav": {
     "tools": "Free Tools",
