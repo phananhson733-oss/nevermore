@@ -299,6 +299,10 @@ function countOf(html: string, needle: string): number {
   return html.split(needle).length - 1;
 }
 
+function withoutPrintOnlyCopy(html: string): string {
+  return html.replace(/\sdata-print-limitations="[^"]*"/g, "");
+}
+
 function priorityCard(html: string): string {
   return sectionWith(html, ">PRIORITY<");
 }
@@ -453,7 +457,9 @@ describe("Overview coverage limitations", () => {
     expect(html).toContain(COPY.limitationsTitle);
     expect(html).toContain('data-limitation-count="2"');
     expect(html).toContain('aria-expanded="false"');
-    for (const limitation of LIMITATIONS) expect(html).not.toContain(limitation);
+    for (const limitation of LIMITATIONS) {
+      expect(withoutPrintOnlyCopy(html)).not.toContain(limitation);
+    }
   });
 
   it("keeps the reasons outside the four-metric definition list", () => {
@@ -651,7 +657,9 @@ describe("Overview content-health limitations", () => {
     expect(html).toContain('aria-expanded="false"');
     // The initial reading line is deliberately compact. The localized
     // threshold is verified after interaction in overview-read-model.mock.
-    expect(html).not.toContain(String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS));
+    expect(withoutPrintOnlyCopy(html)).not.toContain(
+      String(CONTENT_DECAY_MIN_PREVIOUS_CLICKS),
+    );
     expect(html).not.toContain("</summary>");
   });
 
@@ -670,7 +678,7 @@ describe("Overview content-health limitations", () => {
 
     expect(html).toContain(COPY.healthLimitationsTitle);
     expect(html).toContain('data-limitation-count="1"');
-    expect(html).not.toContain(foreign);
+    expect(withoutPrintOnlyCopy(html)).not.toContain(foreign);
   });
 
   it("renders no disclosure when the engine reported no limitation", () => {
