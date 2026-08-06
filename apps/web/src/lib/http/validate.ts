@@ -59,6 +59,93 @@ function declaredBodyBytes(headers: Headers): number | null {
 }
 
 /**
+ * Detect whether a request carries any actual body bytes without buffering it.
+ * Next.js' Node adapter exposes a readable stream even for a zero-byte POST, so
+ * stream presence alone cannot distinguish an empty command from caller input.
+ */
+export async function requestHasBodyBytes(
+  request: NextRequest,
+): Promise<boolean> {
+  const declared = declaredBodyBytes(request.headers);
+  if (declared !== null && declared > 0) {
+    cancelBody(request.body);
+    return true;
+  }
+
+  const body = request.body;
+  if (!body) return false;
+
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = body.getReader();
+  } catch {
+    throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+  }
+
+  const cancelReader = (): void => {
+    try {
+      void Promise.resolve(reader.cancel()).catch(() => undefined);
+    } catch {
+      // Detection outcome must not depend on transport cleanup.
+    }
+  };
+  const boundaryFailure = new ProblemError("BAD_REQUEST", BODY_INVALID);
+  let rejectBoundary!: (reason: unknown) => void;
+  const boundary = new Promise<never>((_resolve, reject) => {
+    rejectBoundary = reject;
+  });
+  const timeout = setTimeout(
+    () => rejectBoundary(boundaryFailure),
+    BODY_READ_TIMEOUT_MS,
+  );
+  const signal = request.signal;
+  const onAbort = (): void => rejectBoundary(boundaryFailure);
+  try {
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  } catch {
+    rejectBoundary(boundaryFailure);
+  }
+
+  try {
+    while (true) {
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        const pendingRead = Promise.resolve().then(() => reader.read());
+        result = await Promise.race([pendingRead, boundary]);
+      } catch (error: unknown) {
+        cancelReader();
+        if (error === boundaryFailure) throw boundaryFailure;
+        throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+      }
+
+      const { done, value } = result;
+      if (done) return false;
+      if (!(value instanceof Uint8Array)) {
+        cancelReader();
+        throw new ProblemError("BAD_REQUEST", BODY_INVALID);
+      }
+      if (value.byteLength === 0) continue;
+
+      cancelReader();
+      return true;
+    }
+  } finally {
+    clearTimeout(timeout);
+    try {
+      signal?.removeEventListener("abort", onAbort);
+    } catch {
+      // Cleanup failure must not replace the stable request problem.
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // Do not let transport cleanup replace the stable request problem.
+    }
+  }
+}
+
+/**
  * Read the decoded Fetch request stream with a hard byte ceiling. The stream is
  * cancelled as soon as a chunk would cross the limit, so callers never buffer
  * an unbounded body and cannot bypass the cap with a false Content-Length.

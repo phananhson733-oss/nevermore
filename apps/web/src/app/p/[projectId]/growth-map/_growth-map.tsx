@@ -122,6 +122,7 @@ import { RunDiagnosis } from "./_run-diagnosis.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
+  GROWTH_MAP_KEYWORD_SOURCE_KINDS,
   buildBeginTopicModelDraftCommand,
   buildConfirmTopicModelCommand,
   buildKeywordRankChartModel,
@@ -141,6 +142,9 @@ import {
   competitorDetailReadState,
   competitorMonitorDisplayState,
   competitorLibraryReadState,
+  filterGrowthMapCompetitorItems,
+  filterGrowthMapKeywordEntries,
+  filterGrowthMapUrlItems,
   findMetricObservation,
   findingTargetLabelKey,
   growthMapDetailAllowsFindingReview,
@@ -173,6 +177,10 @@ import {
   type GrowthMapObjectMode,
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
+  type GrowthMapCompetitorStatusFilter,
+  type GrowthMapKeywordSourceFilter,
+  type GrowthMapUrlPageTypeFilter,
+  type GrowthMapUrlPriorityFilter,
   type KeywordRelationVisibleItem,
   type KeywordGovernanceReviewDraft,
   type TopicMapTreeNode,
@@ -181,7 +189,6 @@ import styles from "./growth-map.module.css";
 import { BacklinkGrowthPath } from "./_backlink-growth-path.tsx";
 
 const LIST_METRICS = {
-  crawlStatus: { provider: "crawl", pointer: "/status" },
   clicks: { provider: "gsc", pointer: "/current28d/clicks" },
   position: { provider: "gsc", pointer: "/current28d/position" },
 } as const;
@@ -319,6 +326,85 @@ const COMPETITOR_REVIEW_ANALYSIS_SCOPES = [
   "serp_visibility",
 ] as const satisfies readonly ProductProfileCompetitorAnalysisScope[];
 
+const URL_PRIORITY_FILTERS = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+] as const satisfies readonly Exclude<GrowthMapUrlPriorityFilter, "all">[];
+
+const COMPETITOR_STATUS_FILTERS = [
+  "candidate",
+  "approved",
+  "excluded",
+] as const satisfies readonly Exclude<GrowthMapCompetitorStatusFilter, "all">[];
+
+interface SourceStripItem {
+  readonly key: string;
+  readonly label: string;
+  readonly count: number;
+  readonly tone: "mint" | "amber" | "violet" | "coral" | "cobalt";
+}
+
+function SourceStrip({
+  label,
+  title,
+  description,
+  items,
+  selectedKey,
+  onSelect,
+  countLabel,
+}: {
+  readonly label: string;
+  readonly title: string;
+  readonly description: string;
+  readonly items: readonly SourceStripItem[];
+  readonly selectedKey?: string;
+  readonly onSelect?: (key: string) => void;
+  readonly countLabel: (count: number) => string;
+}) {
+  return (
+    <section className={styles.sourceStrip} aria-label={label}>
+      <div className={styles.sourceStripIntro}>
+        <span>{label}</span>
+        <strong>{title}</strong>
+        <p>{description}</p>
+      </div>
+      <div className={styles.sourceStripItems}>
+        {items.map((item) => {
+          const content = (
+            <>
+              <i aria-hidden="true" data-tone={item.tone} />
+              <span>
+                <strong>{item.label}</strong>
+                <small>{countLabel(item.count)}</small>
+              </span>
+            </>
+          );
+          return onSelect === undefined ? (
+            <div className={styles.sourceChip} key={item.key}>
+              {content}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={cx(
+                styles.sourceChip,
+                selectedKey === item.key && styles.sourceChipActive,
+              )}
+              aria-pressed={selectedKey === item.key}
+              key={item.key}
+              onClick={() => onSelect(item.key)}
+            >
+              {content}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 type GrowthMapNavigationPatch = Parameters<typeof growthMapLocationHref>[2];
 
 interface GrowthMapNavigationController {
@@ -440,10 +526,6 @@ function PortfolioRow({
 }) {
   const t = useTranslations("growthMap");
   const url = urlPresentation(item.normalizedUrl);
-  const status = findMetricObservation(
-    item.metricObservations,
-    LIST_METRICS.crawlStatus,
-  );
   const clicks = findMetricObservation(
     item.metricObservations,
     LIST_METRICS.clicks,
@@ -474,8 +556,18 @@ function PortfolioRow({
           <span>{item.title ?? t("titleNotCollected")}</span>
           <small>{url.hostname}</small>
         </span>
-        <span className={styles.metricCell} data-column={t("columns.httpStatus")}>
-          <MetricValue observation={status} compact />
+        <span className={styles.metricCell} data-column={t("columns.pageType")}>
+          <strong className={styles.libraryMetricPrimary}>
+            {item.pageType ?? t("notCollected")}
+          </strong>
+        </span>
+        <span className={styles.findingCell} data-column={t("columns.signals")}>
+          <strong>{item.findingIds.length}</strong>
+          <small>
+            {t("reviewableCount", {
+              count: item.reviewableFindingIds.length,
+            })}
+          </small>
         </span>
         <span className={styles.metricCell} data-column={t("columns.clicks")}>
           <MetricValue observation={clicks} compact />
@@ -483,17 +575,7 @@ function PortfolioRow({
         <span className={styles.metricCell} data-column={t("columns.position")}>
           <MetricValue observation={position} compact />
         </span>
-        <span className={styles.findingCell} data-column={t("columns.findings")}>
-          <strong>{item.findingIds.length}</strong>
-          {item.reviewableFindingIds.length > 0 ? (
-            <small>
-              {t("reviewableCount", {
-                count: item.reviewableFindingIds.length,
-              })}
-            </small>
-          ) : null}
-        </span>
-        <span className={styles.priorityCell} data-column={t("columns.priority")}>
+        <span className={styles.priorityCell} data-column={t("columns.currentState")}>
           <PriorityPill item={item} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
@@ -516,11 +598,11 @@ function PortfolioList({
     <div className={styles.ledger}>
       <div className={styles.ledgerHeader} aria-hidden="true">
         <span>{t("columns.url")}</span>
-        <span>{t("columns.httpStatus")}</span>
+        <span>{t("columns.pageType")}</span>
+        <span>{t("columns.signals")}</span>
         <span>{t("columns.clicks")}</span>
         <span>{t("columns.position")}</span>
-        <span>{t("columns.findings")}</span>
-        <span>{t("columns.priority")}</span>
+        <span>{t("columns.currentState")}</span>
       </div>
       <ul className={styles.portfolioList} aria-label={t("portfolioLabel")}>
         {items.map((item) => (
@@ -1734,11 +1816,29 @@ function UrlDetailPanel({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap");
-  const tPriority = useTranslations("priorityBand");
   const [detailState, setDetailState] =
     useState<GrowthMapDetailState>("audit_evidence");
   const url = urlPresentation(detail.normalizedUrl);
   const externalUrl = safeExternalPageUrl(detail.normalizedUrl);
+  const clicks = findMetricObservation(
+    detail.metricObservations,
+    LIST_METRICS.clicks,
+  );
+  const position = findMetricObservation(
+    detail.metricObservations,
+    LIST_METRICS.position,
+  );
+  const topFinding = detail.findings[0] ?? null;
+
+  function openHighestPriorityFinding(): void {
+    if (topFinding === null) return;
+    setDetailState("opportunity_review");
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`sf-finding-${topFinding.findingId}`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }
 
   useEffect(() => {
     if (
@@ -1765,7 +1865,11 @@ function UrlDetailPanel({
     <aside className={styles.detailPanel} aria-label={t("selectedUrlDetail")}>
       <header className={styles.detailHeader}>
         <div className={styles.detailEyebrow}>
-          <span>{t("selectedUrl")}</span>
+          <span>
+            {t("selectedUrl")} · {detail.priority.availability === "available"
+              ? PRIORITY_CODE[detail.priority.value]
+              : "—"}
+          </span>
           <CoveragePill coverage={detail.coverage} />
         </div>
         <div className={styles.detailTitleRow}>
@@ -1801,24 +1905,16 @@ function UrlDetailPanel({
 
       <section className={styles.detailSummary} aria-label={t("pageSummary")}>
         <div>
-          <span>{t("priority")}</span>
-          {detail.priority.availability === "available" ? (
-            <strong className={PRIORITY_CLASS[detail.priority.value]}>
-              {PRIORITY_CODE[detail.priority.value]} · {tPriority(detail.priority.value)}
-            </strong>
-          ) : (
-            <strong className={styles.summaryMissing}>
-              {t("priorityUnavailable")}
-            </strong>
-          )}
+          <span>{t("columns.clicks")}</span>
+          <MetricValue observation={clicks} compact />
         </div>
         <div>
-          <span>{t("currentFindings")}</span>
-          <strong>{detail.findings.length}</strong>
+          <span>{t("columns.position")}</span>
+          <MetricValue observation={position} compact />
         </div>
         <div>
-          <span>{t("reviewable")}</span>
-          <strong>{detail.reviewableFindingIds.length}</strong>
+          <span>{t("cluster")}</span>
+          <strong>{detail.clusterKey ?? t("notCollected")}</strong>
         </div>
       </section>
 
@@ -1872,6 +1968,12 @@ function UrlDetailPanel({
 
       {detailState === "audit_evidence" ? (
         <div data-detail-panel="audit-evidence">
+          <FindingSection
+            projectId={projectId}
+            detail={detail}
+            state="audit_evidence"
+          />
+
           <section className={styles.detailSection}>
             <div className={styles.sectionHeading}>
               <div>
@@ -1889,12 +1991,6 @@ function UrlDetailPanel({
           <InternalLinkMapSection
             projectId={projectId}
             sitePageId={detail.sitePageId}
-          />
-
-          <FindingSection
-            projectId={projectId}
-            detail={detail}
-            state="audit_evidence"
           />
 
           <section className={styles.comparisonStrip}>
@@ -1922,6 +2018,19 @@ function UrlDetailPanel({
             detail={detail}
             state="opportunity_review"
           />
+        </div>
+      )}
+
+      {topFinding === null ? null : (
+        <div className={styles.detailPrimaryAction}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={openHighestPriorityFinding}
+          >
+            {t("primaryOpportunityAction")}
+            <ArrowRight aria-hidden="true" size={17} />
+          </Button>
         </div>
       )}
 
@@ -2048,6 +2157,10 @@ function PortfolioPane({
   );
   const canonicalSelectedFindingId = canonicalSearchParams.get("findingId");
   const [searchDraft, setSearchDraft] = useState(querySearch);
+  const [pageTypeFilter, setPageTypeFilter] =
+    useState<GrowthMapUrlPageTypeFilter>("all");
+  const [priorityFilter, setPriorityFilter] =
+    useState<GrowthMapUrlPriorityFilter>("all");
   const [cursorHistory, setCursorHistory] = useState<readonly (string | null)[]>([]);
   const listQuery = useGrowthMapUrls(projectId, {
     search: querySearch,
@@ -2055,16 +2168,39 @@ function PortfolioPane({
     limit: 50,
     diagnosticRunId,
   });
+  const summaryKeywordsQuery = useGrowthMapKeywords(projectId, {
+    limit: 100,
+    diagnosticRunId,
+  });
   const items = listQuery.data?.data ?? [];
+  const pageTypeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          items.flatMap((item) =>
+            item.pageType === null ? [] : [item.pageType],
+          ),
+        ),
+      ).sort((left, right) => left.localeCompare(right)),
+    [items],
+  );
+  const filteredItems = useMemo(
+    () =>
+      filterGrowthMapUrlItems(items, {
+        pageType: pageTypeFilter,
+        priority: priorityFilter,
+      }),
+    [items, pageTypeFilter, priorityFilter],
+  );
   const selectedSitePageId = resolveVisibleSitePageSelectionForFinding(
     selectedParam,
     selectedFindingId,
-    items,
+    filteredItems,
   );
   const canonicalSelectedSitePageId = resolveVisibleSitePageSelectionForFinding(
     canonicalSelectedParam,
     canonicalSelectedFindingId,
-    items,
+    filteredItems,
   );
 
   useEffect(() => {
@@ -2178,41 +2314,82 @@ function PortfolioPane({
   }
 
   const response = listQuery.data;
+  const opportunityUrlCount = items.filter(
+    (item) => item.findingIds.length > 0,
+  ).length;
+  const signalCount = items.reduce(
+    (count, item) => count + item.findingIds.length,
+    0,
+  );
+  const summaryKeywords = summaryKeywordsQuery.data?.data ?? null;
+  const uncoveredKeywords =
+    summaryKeywords?.filter((keyword) => keyword.mappedTarget.kind === "unassigned") ??
+    null;
+  const uncoveredClusterCount =
+    uncoveredKeywords === null
+      ? null
+      : new Set(
+          uncoveredKeywords.flatMap((keyword) =>
+            keyword.cluster === null ? [] : [keyword.cluster.clusterId],
+          ),
+        ).size;
 
   return (
-    <>
-      <section className={styles.provenanceBand} aria-label={t("runProvenance")}>
-        <div className={styles.provenanceIntro}>
-          <ShieldCheck aria-hidden="true" size={22} />
-          <div>
-            <strong>{t("traceableRun")}</strong>
-            <p>{t("traceableRunDescription")}</p>
-          </div>
+    <section aria-label={t("runProvenance")}>
+      <section
+        className={styles.businessSummary}
+        aria-label={t("portfolioSummary.label")}
+      >
+        <div className={styles.businessSummaryItem}>
+          <span>{t("portfolioSummary.loaded")}</span>
+          <strong>{items.length}</strong>
+          <small>{t("portfolioSummary.loadedNote", { count: items.length })}</small>
         </div>
-        <dl className={styles.provenanceFacts}>
-          <div>
-            <dt>{t("loadedOnPage")}</dt>
-            <dd>{response.data.length}</dd>
-          </div>
-          <div>
-            <dt>{t("runCoverage")}</dt>
-            <dd><CoveragePill coverage={response.meta.coverage} /></dd>
-          </div>
-          <div>
-            <dt>{t("ids.diagnosticRun")}</dt>
-            <dd title={response.diagnosticRunId}>{truncateId(response.diagnosticRunId)}</dd>
-          </div>
-          <div>
-            <dt>{t("ids.crawlSnapshot")}</dt>
-            <dd title={response.crawlSnapshotId}>{truncateId(response.crawlSnapshotId)}</dd>
-          </div>
-        </dl>
-        <LimitationList limitations={response.meta.coverage.limitations} />
+        <div className={styles.businessSummaryItem}>
+          <span>{t("portfolioSummary.opportunityUrls")}</span>
+          <strong>{opportunityUrlCount}</strong>
+          <small>
+            {URL_PRIORITY_FILTERS.map((priority) => {
+              const count = items.filter(
+                (item) =>
+                  item.priority.availability === "available" &&
+                  item.priority.value === priority,
+              ).length;
+              return `${PRIORITY_CODE[priority]} ${count}`;
+            }).join(" · ")}
+          </small>
+        </div>
+        <div className={styles.businessSummaryItem}>
+          <span>{t("portfolioSummary.signals")}</span>
+          <strong>{signalCount}</strong>
+          <small>{t("portfolioSummary.signalsNote", { count: signalCount })}</small>
+        </div>
+        <div className={styles.businessSummaryItem}>
+          <span>{t("portfolioSummary.uncoveredKeywords")}</span>
+          <strong>
+            {uncoveredKeywords === null
+              ? t("portfolioSummary.unavailable")
+              : uncoveredKeywords.length}
+          </strong>
+          <small>
+            {uncoveredClusterCount === null
+              ? t("portfolioSummary.unavailable")
+              : t(
+                  summaryKeywordsQuery.data?.meta.hasNext
+                    ? "portfolioSummary.uncoveredNoteTruncated"
+                    : "portfolioSummary.uncoveredNote",
+                  {
+                  count: uncoveredClusterCount,
+                    loaded: summaryKeywords?.length ?? 0,
+                  },
+                )}
+          </small>
+        </div>
       </section>
+      <LimitationList limitations={response.meta.coverage.limitations} />
 
-      <form className={styles.searchBar} role="search" onSubmit={submitSearch}>
-        <label htmlFor="growth-map-url-search">{t("searchLabel")}</label>
-        <div className={styles.searchControl}>
+      <form className={styles.libraryToolbar} role="search" onSubmit={submitSearch}>
+        <label className={styles.librarySearch} htmlFor="growth-map-url-search">
           <Search aria-hidden="true" size={20} />
           <input
             id="growth-map-url-search"
@@ -2222,10 +2399,41 @@ function PortfolioPane({
             onChange={(event) => setSearchDraft(event.target.value)}
             placeholder={t("searchPlaceholder")}
           />
-          <Button type="submit" variant="primary">
-            {t("searchAction")}
-          </Button>
-        </div>
+          <span className={styles.rowSelectLabel}>{t("searchLabel")}</span>
+        </label>
+        <label className={styles.libraryFilter}>
+          <span>{t("portfolioFilters.pageType")}</span>
+          <select
+            value={pageTypeFilter}
+            onChange={(event) =>
+              setPageTypeFilter(event.target.value as GrowthMapUrlPageTypeFilter)
+            }
+          >
+            <option value="all">{t("portfolioFilters.allPageTypes")}</option>
+            {pageTypeOptions.map((pageType) => (
+              <option value={pageType} key={pageType}>{pageType}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.libraryFilter}>
+          <span>{t("portfolioFilters.priority")}</span>
+          <select
+            value={priorityFilter}
+            onChange={(event) =>
+              setPriorityFilter(event.target.value as GrowthMapUrlPriorityFilter)
+            }
+          >
+            <option value="all">{t("portfolioFilters.allPriorities")}</option>
+            {URL_PRIORITY_FILTERS.map((priority) => (
+              <option value={priority} key={priority}>
+                {PRIORITY_CODE[priority]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button type="submit" variant="primary">
+          {t("searchAction")}
+        </Button>
       </form>
 
       {items.length === 0 ? (
@@ -2235,11 +2443,18 @@ function PortfolioPane({
           title={querySearch ? t("noSearchResults") : t("noPagesTitle")}
           description={querySearch ? t("noSearchResultsDescription") : t("noPagesDescription")}
         />
+      ) : filteredItems.length === 0 ? (
+        <EmptyState
+          className={styles.libraryFilteredEmpty}
+          icon={<Search size={30} />}
+          title={t("noSearchResults")}
+          description={t("noSearchResultsDescription")}
+        />
       ) : (
         <div className={styles.workspace}>
           <div className={styles.masterColumn}>
             <PortfolioList
-              items={items}
+              items={filteredItems}
               selectedSitePageId={selectedSitePageId}
               onSelect={selectUrl}
             />
@@ -2273,7 +2488,7 @@ function PortfolioPane({
           />
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -2301,15 +2516,54 @@ const KEYWORD_RELATION_DECISION_KINDS = [
   "needs_research",
 ] as const satisfies readonly KeywordRelationDecisionKind[];
 
-function latestKeywordCollection(
+function latestKeywordOccurrence(
   occurrences: readonly GrowthMapKeywordSourceOccurrence[],
-): string | null {
-  return occurrences.reduce<string | null>((latest, occurrence) => {
-    if (latest === null) return occurrence.collectedAt;
-    return Date.parse(occurrence.collectedAt) > Date.parse(latest)
-      ? occurrence.collectedAt
-      : latest;
-  }, null);
+): GrowthMapKeywordSourceOccurrence | null {
+  return occurrences.reduce<GrowthMapKeywordSourceOccurrence | null>(
+    (latest, occurrence) => {
+      if (latest === null) return occurrence;
+      return Date.parse(occurrence.collectedAt) > Date.parse(latest.collectedAt)
+        ? occurrence
+        : latest;
+    },
+    null,
+  );
+}
+
+function KeywordListMetric({
+  metric,
+  absenceLimitation,
+}: {
+  readonly metric: KeywordMetric | null | undefined;
+  readonly absenceLimitation: string | null;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.keywordLibrary");
+  const presentation = keywordMetricPresentation(metric, absenceLimitation);
+
+  if (presentation.state === "unavailable") {
+    return (
+      <span className={styles.libraryMetricSecondary}>
+        {t("notAvailable")}
+        {presentation.limitation === null ? null : (
+          <LimitationHint
+            label={t("scopeLimitation")}
+            limitations={[presentation.limitation]}
+          />
+        )}
+      </span>
+    );
+  }
+
+  const value =
+    typeof presentation.value === "number"
+      ? formatNumber(locale, presentation.value)
+      : presentation.value;
+  return (
+    <strong className={styles.libraryMetricPrimary} title={String(value)}>
+      {value}
+    </strong>
+  );
 }
 
 function KeywordStatusPill({
@@ -2360,7 +2614,7 @@ function KeywordRow({
   const sourceKinds = Array.from(
     new Set(item.sourceOccurrences.map((occurrence) => occurrence.sourceKind)),
   );
-  const latestCollectedAt = latestKeywordCollection(item.sourceOccurrences);
+  const latestSource = latestKeywordOccurrence(item.sourceOccurrences);
 
   const hasRelationContext =
     entry.relations.length > 0 ||
@@ -2379,18 +2633,36 @@ function KeywordRow({
         hasRelationContext && styles.keywordRowWithRelations,
       )}
     >
-      <button
-        type="button"
+      <div
         className={cx(
           styles.keywordRowButton,
           selected && styles.keywordRowSelected,
         )}
-        aria-pressed={selected}
-        onClick={() => onSelect(item.keywordId)}
       >
+        <button
+          type="button"
+          className={styles.rowSelectButton}
+          aria-pressed={selected}
+          onClick={() => onSelect(item.keywordId)}
+        >
+          <span className={styles.rowSelectLabel}>
+            {item.displayKeyword} — {item.cluster?.name ?? t("intake.unassignedCluster")}
+          </span>
+        </button>
         <span className={styles.keywordIdentityCell}>
           <strong>{item.displayKeyword}</strong>
           <small>
+            {item.cluster?.name ?? t("intake.unassignedCluster")}
+          </small>
+        </span>
+        <span
+          className={styles.keywordKindCell}
+          data-column={t("columns.intent")}
+        >
+          <strong className={styles.libraryMetricPrimary}>
+            {item.intent ?? t("notAvailable")}
+          </strong>
+          <small className={styles.libraryMetricSecondary}>
             {t("marketLanguageValue", {
               market: item.marketCode,
               language: item.languageTag,
@@ -2398,16 +2670,35 @@ function KeywordRow({
           </small>
         </span>
         <span
-          className={styles.keywordKindCell}
-          data-column={t("columns.queryKind")}
+          className={styles.libraryMetricCell}
+          data-column={t("columns.volume")}
         >
-          {t(`queryKind.${item.queryKind}`)}
+          <KeywordListMetric
+            metric={item.metrics.volume}
+            absenceLimitation={item.metrics.limitations.volume}
+          />
         </span>
         <span
-          className={styles.keywordStatusCell}
-          data-column={t("columns.status")}
+          className={styles.libraryMetricCell}
+          data-column={t("columns.kd")}
         >
-          <KeywordStatusPill status={item.status} />
+          <KeywordListMetric
+            metric={item.metrics.kd}
+            absenceLimitation={item.metrics.limitations.kd}
+          />
+        </span>
+        <span
+          className={styles.libraryMetricCell}
+          data-column={t("columns.rankUrl")}
+        >
+          <KeywordListMetric
+            metric={item.metrics.currentRank}
+            absenceLimitation={item.metrics.limitations.currentRank}
+          />
+          <KeywordListMetric
+            metric={item.metrics.currentUrl}
+            absenceLimitation={item.metrics.limitations.currentUrl}
+          />
         </span>
         <span
           className={styles.keywordSourceSummary}
@@ -2415,22 +2706,38 @@ function KeywordRow({
         >
           <span>
             {sourceKinds.map((sourceKind) => (
-              <small
-                key={sourceKind}
-                data-source-kind={sourceKind}
-              >
+              <small key={sourceKind} data-source-kind={sourceKind}>
                 {t(`sourceKind.${sourceKind}`)}
               </small>
             ))}
           </span>
-          {latestCollectedAt === null ? null : (
-            <time dateTime={latestCollectedAt}>
-              {formatObservedAt(locale, latestCollectedAt)}
-            </time>
+        </span>
+        <span
+          className={styles.libraryMetricCell}
+          data-column={t("columns.freshness")}
+        >
+          {latestSource === null ? (
+            <span className={styles.libraryMetricSecondary}>{t("notAvailable")}</span>
+          ) : (
+            <>
+              <KeywordFreshnessPill freshness={latestSource.freshness} />
+              <time
+                className={styles.libraryMetricSecondary}
+                dateTime={latestSource.collectedAt}
+              >
+                {formatObservedAt(locale, latestSource.collectedAt)}
+              </time>
+            </>
           )}
+        </span>
+        <span
+          className={styles.keywordStatusCell}
+          data-column={t("columns.status")}
+        >
+          <KeywordStatusPill status={item.status} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
-      </button>
+      </div>
       {hasRelationContext ? (
         <div className={styles.keywordRelationRowMeta}>
           {entry.relations.length === 0 ? null : (
@@ -2491,9 +2798,13 @@ function KeywordList({
     <div className={styles.keywordLedger}>
       <div className={styles.keywordLedgerHeader} aria-hidden="true">
         <span>{t("columns.keyword")}</span>
-        <span>{t("columns.queryKind")}</span>
-        <span>{t("columns.status")}</span>
+        <span>{t("columns.intent")}</span>
+        <span>{t("columns.volume")}</span>
+        <span>{t("columns.kd")}</span>
+        <span>{t("columns.rankUrl")}</span>
         <span>{t("columns.source")}</span>
+        <span>{t("columns.freshness")}</span>
+        <span>{t("columns.status")}</span>
       </div>
       <ul className={styles.keywordList} aria-label={t("listLabel")}>
         {entries.map((entry) => (
@@ -5763,6 +6074,8 @@ function KeywordDetailPanel({
   isSitePagesPending,
   sitePagesError,
   sitePagesTruncated,
+  relatedKeywords,
+  onSelectKeyword,
 }: {
   readonly projectId: string;
   readonly detail: GrowthMapKeywordLibraryItem;
@@ -5778,10 +6091,24 @@ function KeywordDetailPanel({
   readonly isSitePagesPending: boolean;
   readonly sitePagesError: unknown;
   readonly sitePagesTruncated: boolean;
+  readonly relatedKeywords: readonly GrowthMapKeywordLibraryItem[];
+  readonly onSelectKeyword: (keywordId: string) => void;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const latestSource = latestKeywordOccurrence(detail.sourceOccurrences);
+  const clusterPeersInLoadedRange = relatedKeywords.filter(
+    (keyword) =>
+      keyword.keywordId !== detail.keywordId &&
+      keyword.cluster?.clusterId !== undefined &&
+      keyword.cluster.clusterId === detail.cluster?.clusterId,
+  );
+  const clusterPeers = clusterPeersInLoadedRange.slice(0, 5);
+  const mappedTargetLabel =
+    detail.mappedTarget.kind === "existing_page"
+      ? urlPresentation(detail.mappedTarget.normalizedUrl).path
+      : t(`mappingTarget.${detail.mappedTarget.kind}`);
   const metricKeys = [
     "volume",
     "kd",
@@ -5814,18 +6141,6 @@ function KeywordDetailPanel({
           <KeywordStatusPill status={detail.status} />
         </div>
         <div className={styles.keywordReviewHeaderAction}>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setReviewSaved(false);
-              setReviewOpen(true);
-            }}
-          >
-            <Pencil aria-hidden="true" size={15} />
-            {t("review.open")}
-          </Button>
           {reviewSaved ? (
             <span role="status">
               <CheckCircle2 aria-hidden="true" size={15} />
@@ -5836,6 +6151,121 @@ function KeywordDetailPanel({
       </header>
 
       <LimitationList limitations={detail.coverage.limitations} />
+
+      <div className={styles.detailMetricsFour}>
+        <div>
+          <span>{t("columns.volume")}</span>
+          <KeywordListMetric
+            metric={detail.metrics.volume}
+            absenceLimitation={detail.metrics.limitations.volume}
+          />
+        </div>
+        <div>
+          <span>{t("columns.kd")}</span>
+          <KeywordListMetric
+            metric={detail.metrics.kd}
+            absenceLimitation={detail.metrics.limitations.kd}
+          />
+        </div>
+        <div>
+          <span>{t("metric.currentRank")}</span>
+          <KeywordListMetric
+            metric={detail.metrics.currentRank}
+            absenceLimitation={detail.metrics.limitations.currentRank}
+          />
+        </div>
+        <div>
+          <span>{t("columns.freshness")}</span>
+          {latestSource === null ? (
+            <strong>{t("notAvailable")}</strong>
+          ) : (
+            <KeywordFreshnessPill freshness={latestSource.freshness} />
+          )}
+        </div>
+      </div>
+
+      <section className={styles.routeCard}>
+        <span>{t("intake.routeLabel")}</span>
+        <strong>
+          {Array.from(
+            new Set(
+              detail.sourceOccurrences.map((occurrence) =>
+                t(`sourceKind.${occurrence.sourceKind}`),
+              ),
+            ),
+          ).join(" · ")}
+        </strong>
+        <p>
+          {t("intake.routeDescription", {
+            count: detail.sourceOccurrences.length,
+          })}
+        </p>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("classificationEyebrow")}</span>
+            <h3>{t("intake.pathTitle")}</h3>
+          </div>
+          <Network aria-hidden="true" size={21} />
+        </div>
+        <div className={styles.conversionPath}>
+          <div className={styles.conversionStep}>
+            <span>01</span>
+            <small>{t("intake.pathStepCluster")}</small>
+            <strong>{detail.cluster?.name ?? t("intake.unassignedCluster")}</strong>
+          </div>
+          <ArrowRight aria-hidden="true" size={16} />
+          <div className={styles.conversionStep}>
+            <span>02</span>
+            <small>{t("intake.pathStepPage")}</small>
+            <strong>{mappedTargetLabel}</strong>
+          </div>
+          <ArrowRight aria-hidden="true" size={16} />
+          <div className={styles.conversionStep}>
+            <span>03</span>
+            <small>{t("intake.pathStepBuyerStage")}</small>
+            <strong>{detail.buyerStage ?? t("notAvailable")}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("cluster")}</span>
+            <h3>{t("intake.relatedTitle")}</h3>
+          </div>
+          <span className={styles.sectionCount}>
+            {t("intake.relatedCount", {
+              shown: clusterPeers.length,
+              total: clusterPeersInLoadedRange.length,
+            })}
+          </span>
+        </div>
+        {clusterPeers.length === 0 ? (
+          <p className={styles.keywordSectionDescription}>
+            {t("intake.relatedCount", { shown: 0, total: 0 })}
+          </p>
+        ) : (
+          <div className={styles.relatedList}>
+            {clusterPeers.map((keyword) => (
+              <button
+                type="button"
+                key={keyword.keywordId}
+                onClick={() => onSelectKeyword(keyword.keywordId)}
+              >
+                <span>
+                  <strong>{keyword.displayKeyword}</strong>
+                  <small>{keyword.intent ?? t("notAvailable")}</small>
+                </span>
+                <ArrowRight aria-hidden="true" size={15} />
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className={styles.keywordDetailSection}>
         <div className={styles.keywordSectionHeading}>
@@ -5883,7 +6313,10 @@ function KeywordDetailPanel({
         </dl>
       </section>
 
-      <section className={styles.keywordDetailSection}>
+      <section
+        className={styles.keywordDetailSection}
+        id={`sf-keyword-sources-${detail.keywordId}`}
+      >
         <div className={styles.keywordSectionHeading}>
           <div>
             <span>{t("metricsEyebrow")}</span>
@@ -5935,6 +6368,30 @@ function KeywordDetailPanel({
         </div>
       </section>
 
+      <div className={styles.detailActions}>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById(`sf-keyword-sources-${detail.keywordId}`)
+              ?.scrollIntoView({ block: "start" })
+          }
+        >
+          <ShieldCheck aria-hidden="true" size={16} />
+          {t("intake.viewSources")}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setReviewSaved(false);
+            setReviewOpen(true);
+          }}
+        >
+          <Pencil aria-hidden="true" size={16} />
+          {t("review.open")}
+        </button>
+      </div>
+
       <footer className={styles.keywordDetailFooter}>
         <details className={styles.recordDisclosure}>
           <summary>{t("viewRecordDetails")}</summary>
@@ -5974,10 +6431,14 @@ function KeywordDetailState({
   projectId,
   selectedKeywordId,
   diagnosticRunId,
+  relatedKeywords,
+  onSelectKeyword,
 }: {
   readonly projectId: string;
   readonly selectedKeywordId: string | null;
   readonly diagnosticRunId: string | null;
+  readonly relatedKeywords: readonly GrowthMapKeywordLibraryItem[];
+  readonly onSelectKeyword: (keywordId: string) => void;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
   const detailQuery = useGrowthMapKeywordReviewDetail(
@@ -6076,6 +6537,8 @@ function KeywordDetailState({
         pinnedSitePagesQuery.isError ? pinnedSitePagesQuery.error : null
       }
       sitePagesTruncated={pinnedSitePagesQuery.data?.meta.hasNext ?? false}
+      relatedKeywords={relatedKeywords}
+      onSelectKeyword={onSelectKeyword}
     />
   );
 }
@@ -6128,6 +6591,9 @@ function KeywordLibraryPane({
   const [cursorPredecessors, setCursorPredecessors] = useState<
     ReadonlyMap<string, string | null>
   >(() => new Map());
+  const [keywordSearch, setKeywordSearch] = useState("");
+  const [sourceFilter, setSourceFilter] =
+    useState<GrowthMapKeywordSourceFilter>("all");
   const [relationDialogKeywordId, setRelationDialogKeywordId] =
     useState<string | null>(null);
   const automaticRelationRefreshProjectRef = useRef<string | null>(
@@ -6136,6 +6602,7 @@ function KeywordLibraryPane({
   const listQuery = useGrowthMapKeywords(projectId, {
     cursor,
     limit: 50,
+    diagnosticRunId,
   });
   const items = useMemo(
     () => listQuery.data?.data ?? [],
@@ -6163,12 +6630,20 @@ function KeywordLibraryPane({
       ),
     [items, relationQuery.data],
   );
+  const filteredEntries = useMemo(
+    () =>
+      filterGrowthMapKeywordEntries(relationProjection.visibleItems, {
+        search: keywordSearch,
+        sourceKind: sourceFilter,
+      }),
+    [keywordSearch, relationProjection.visibleItems, sourceFilter],
+  );
   const visibleKeywordIds = useMemo(
     () =>
-      relationProjection.visibleItems.map(
+      filteredEntries.map(
         (entry) => entry.item.keywordId,
       ),
-    [relationProjection.visibleItems],
+    [filteredEntries],
   );
   const selectedKeywordId = resolveVisibleKeywordSelection(
     requestedKeywordId,
@@ -6319,6 +6794,22 @@ function KeywordLibraryPane({
     (count, item) => count + item.sourceOccurrences.length,
     0,
   );
+  const sourceStripItems: readonly SourceStripItem[] = [
+    {
+      key: "all",
+      label: t("intake.all"),
+      count: relationProjection.loadedSourceCounts.all,
+      tone: "mint",
+    },
+    ...GROWTH_MAP_KEYWORD_SOURCE_KINDS.map((sourceKind, index) => ({
+      key: sourceKind,
+      label: t(`sourceKind.${sourceKind}`),
+      count: relationProjection.loadedSourceCounts[sourceKind],
+      tone: (["amber", "cobalt", "mint", "violet", "coral", "mint"] as const)[
+        index
+      ]!,
+    })),
+  ];
   const relationStatusText =
     keywordIds.length === 0
       ? t("relations.empty")
@@ -6337,33 +6828,21 @@ function KeywordLibraryPane({
 
   return (
     <>
-      <section
-        className={styles.provenanceBand}
-        aria-label={t("libraryScopeLabel")}
-      >
-        <div className={styles.provenanceIntro}>
-          <ShieldCheck aria-hidden="true" size={22} />
-          <div>
-            <strong>{t("libraryScopeTitle")}</strong>
-            <p>{t("libraryScopeDescription")}</p>
-          </div>
-        </div>
-        <dl className={cx(styles.provenanceFacts, styles.keywordPageFacts)}>
-          <div>
-            <dt>{t("loadedOnPage")}</dt>
-            <dd>{response.data.length}</dd>
-          </div>
-          <div>
-            <dt>{t("sourceOccurrencesOnPage")}</dt>
-            <dd>{occurrenceCount}</dd>
-          </div>
-          <div>
-            <dt>{t("coverageLabel")}</dt>
-            <dd><CoveragePill coverage={response.meta.coverage} /></dd>
-          </div>
-        </dl>
+      <SourceStrip
+        label={t("intake.label")}
+        title={t("intake.title")}
+        description={t("intake.description")}
+        items={sourceStripItems}
+        selectedKey={sourceFilter}
+        onSelect={(key) => setSourceFilter(key as GrowthMapKeywordSourceFilter)}
+        countLabel={(count) => t("intake.count", { count })}
+      />
+      <div className={styles.pageScopeNote}>
+        <span>{t("loadedCount", { count: response.data.length })}</span>
+        <span>{t("sourceOccurrencesOnPage")}: {occurrenceCount}</span>
+        <CoveragePill coverage={response.meta.coverage} />
         <LimitationList limitations={response.meta.coverage.limitations} />
-      </section>
+      </div>
 
       <TopicMapGateway projectId={projectId} />
 
@@ -6431,6 +6910,41 @@ function KeywordLibraryPane({
             ) : null}
           </section>
 
+          <div className={styles.libraryToolbar}>
+            <label className={styles.librarySearch}>
+              <Search aria-hidden="true" size={19} />
+              <input
+                type="search"
+                value={keywordSearch}
+                onChange={(event) => setKeywordSearch(event.target.value)}
+                placeholder={t("intake.searchPlaceholder")}
+              />
+              <span className={styles.rowSelectLabel}>
+                {t("intake.searchPlaceholder")}
+              </span>
+            </label>
+            <label className={styles.libraryFilter}>
+              <span>{t("intake.sourceFilterLabel")}</span>
+              <select
+                value={sourceFilter}
+                onChange={(event) =>
+                  setSourceFilter(event.target.value as GrowthMapKeywordSourceFilter)
+                }
+              >
+                <option value="all">{t("intake.all")}</option>
+                {GROWTH_MAP_KEYWORD_SOURCE_KINDS.map((sourceKind) => (
+                  <option value={sourceKind} key={sourceKind}>
+                    {t(`sourceKind.${sourceKind}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link className={styles.libraryAction} href={`/p/${projectId}/sources`}>
+              <Plus aria-hidden="true" size={17} />
+              {t("intake.addKeyword")}
+            </Link>
+          </div>
+
           <div className={styles.keywordWorkspace}>
             <div className={styles.masterColumn}>
               {readState === "cursor_empty" ? (
@@ -6441,9 +6955,16 @@ function KeywordLibraryPane({
                   actionLabel={t("firstPage")}
                   onReset={goFirst}
                 />
+              ) : filteredEntries.length === 0 ? (
+                <EmptyState
+                  className={styles.libraryFilteredEmpty}
+                  icon={<Search size={28} />}
+                  title={t("intake.noMatchesTitle")}
+                  description={t("intake.noMatchesDescription")}
+                />
               ) : (
                 <KeywordList
-                  entries={relationProjection.visibleItems}
+                  entries={filteredEntries}
                   selectedKeywordId={selectedKeywordId}
                   onSelect={selectKeyword}
                   onOpenRelations={setRelationDialogKeywordId}
@@ -6464,8 +6985,9 @@ function KeywordLibraryPane({
                   {t("previousPage")}
                 </Button>
                 <span>
-                  {t("loadedCount", {
-                    count: relationProjection.visibleItems.length,
+                  {t("visibleCount", {
+                    visible: filteredEntries.length,
+                    total: response.data.length,
                   })}
                 </span>
                 <Button
@@ -6484,6 +7006,8 @@ function KeywordLibraryPane({
               projectId={projectId}
               selectedKeywordId={selectedKeywordId}
               diagnosticRunId={diagnosticRunId}
+              relatedKeywords={items}
+              onSelectKeyword={selectKeyword}
             />
           </div>
           <KeywordRelationDialog
@@ -6546,6 +7070,35 @@ function CompetitorRelationship({
   );
 }
 
+function CompetitorListInsight({
+  insight,
+}: {
+  readonly insight: CompetitorInsight;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  if (insight.availability === "unavailable") {
+    return (
+      <span className={styles.libraryMetricSecondary}>
+        {t("noCanonicalObservation")}
+        <LimitationHint
+          label={t("coverageLabel")}
+          limitations={[insight.limitation]}
+        />
+      </span>
+    );
+  }
+  const value =
+    typeof insight.value === "number"
+      ? formatNumber(locale, insight.value)
+      : insight.value;
+  return (
+    <strong className={styles.libraryMetricPrimary} title={String(value)}>
+      {value}
+    </strong>
+  );
+}
+
 function CompetitorRow({
   item,
   selected,
@@ -6557,30 +7110,33 @@ function CompetitorRow({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
-  const originKinds = Array.from(
-    new Set(item.originOccurrences.map((origin) => origin.originKind)),
-  );
 
   return (
     <li className={styles.competitorRow}>
-      <button
-        type="button"
+      <div
         className={cx(
           styles.competitorRowButton,
           selected && styles.competitorRowSelected,
         )}
-        aria-pressed={selected}
-        onClick={() => onSelect(item.competitorId)}
       >
+        <button
+          type="button"
+          className={styles.rowSelectButton}
+          aria-pressed={selected}
+          onClick={() => onSelect(item.competitorId)}
+        >
+          <span className={styles.rowSelectLabel}>
+            {item.name ?? item.domain} — {item.domain}
+          </span>
+        </button>
         <span className={styles.competitorIdentityCell}>
           <strong>{item.name ?? item.domain}</strong>
           <small>{item.domain}</small>
         </span>
         <span
           className={styles.competitorGovernanceCell}
-          data-column={t("columns.governance")}
+          data-column={t("relationshipLabel")}
         >
-          <CompetitorStatusPill status={item.reviewStatus} />
           <CompetitorRelationship relationship={item.relationship} />
         </span>
         <span
@@ -6596,24 +7152,43 @@ function CompetitorRow({
           )}
         </span>
         <span
-          className={styles.competitorOriginSummary}
-          data-column={t("columns.origins")}
+          className={styles.libraryMetricCell}
+          data-column={t("columns.serpOverlap")}
         >
-          <span>
-            {originKinds.map((originKind) => (
-              <small key={originKind}>{t(`originKind.${originKind}`)}</small>
-            ))}
-          </span>
+          <CompetitorListInsight insight={item.serpOverlap} />
+        </span>
+        <span
+          className={styles.libraryMetricCell}
+          data-column={t("columns.evidence")}
+        >
+          <strong className={styles.libraryMetricPrimary}>
+            {item.originOccurrences.length}
+          </strong>
           {item.lastObservedAt === null ? (
-            <time>{t("notObserved")}</time>
+            <span className={styles.libraryMetricSecondary}>{t("notObserved")}</span>
           ) : (
-            <time dateTime={item.lastObservedAt}>
+            <time
+              className={styles.libraryMetricSecondary}
+              dateTime={item.lastObservedAt}
+            >
               {formatObservedAt(locale, item.lastObservedAt)}
             </time>
           )}
+        </span>
+        <span
+          className={styles.libraryMetricCell}
+          data-column={t("columns.aiCitations")}
+        >
+          <CompetitorListInsight insight={item.aiCitationInsight} />
+        </span>
+        <span
+          className={styles.competitorGovernanceCell}
+          data-column={t("reviewStatusLabel")}
+        >
+          <CompetitorStatusPill status={item.reviewStatus} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
-      </button>
+      </div>
     </li>
   );
 }
@@ -6632,9 +7207,12 @@ function CompetitorList({
     <div className={styles.competitorLedger}>
       <div className={styles.competitorLedgerHeader} aria-hidden="true">
         <span>{t("columns.competitor")}</span>
-        <span>{t("columns.governance")}</span>
+        <span>{t("relationshipLabel")}</span>
         <span>{t("columns.analysisScope")}</span>
-        <span>{t("columns.origins")}</span>
+        <span>{t("columns.serpOverlap")}</span>
+        <span>{t("columns.evidence")}</span>
+        <span>{t("columns.aiCitations")}</span>
+        <span>{t("reviewStatusLabel")}</span>
       </div>
       <ul className={styles.competitorList} aria-label={t("listLabel")}>
         {items.map((item) => (
@@ -7685,6 +8263,20 @@ function CompetitorDetailPanel({
   const t = useTranslations("growthMap.competitorLibrary");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const originLabels = Array.from(
+    new Set(
+      detail.originOccurrences.map((origin) =>
+        t(`originKind.${origin.originKind}`),
+      ),
+    ),
+  );
+  const keywordGapParticipation =
+    detail.reviewStatus === "candidate"
+      ? "unknown"
+      : detail.reviewStatus === "approved" &&
+          detail.analysisScope.includes("keyword_gap")
+        ? "participating"
+        : "not_participating";
   return (
     <>
       <aside
@@ -7703,19 +8295,6 @@ function CompetitorDetailPanel({
             <CompetitorRelationship relationship={detail.relationship} />
           </div>
           <div className={styles.keywordReviewHeaderAction}>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              data-testid="competitor-review-open"
-              onClick={() => {
-                setReviewSaved(false);
-                setReviewOpen(true);
-              }}
-            >
-              <Pencil aria-hidden="true" size={15} />
-              {t("review.open")}
-            </Button>
             {reviewSaved ? (
               <span role="status">
                 <CheckCircle2 aria-hidden="true" size={15} />
@@ -7726,6 +8305,83 @@ function CompetitorDetailPanel({
         </header>
 
       <LimitationList limitations={detail.coverage.limitations} />
+
+      <section
+        className={cx(
+          styles.routeCard,
+          detail.reviewStatus === "candidate" && styles.routeCardWarning,
+        )}
+      >
+        <span>{t("poolEntryTitle")}</span>
+        <strong>{originLabels.join(" · ")}</strong>
+        <p>{t("poolEntryDescription")}</p>
+      </section>
+
+      <div className={styles.detailMetricsFour}>
+        <div>
+          <span>{t("insight.serpOverlap")}</span>
+          <CompetitorListInsight insight={detail.serpOverlap} />
+        </div>
+        <div>
+          <span>{t("insight.aiCitationInsight")}</span>
+          <CompetitorListInsight insight={detail.aiCitationInsight} />
+        </div>
+        <div>
+          <span>{t("originOccurrencesForCompetitor")}</span>
+          <strong>{detail.originOccurrences.length}</strong>
+        </div>
+        <div>
+          <span>{t("lastObservedAt")}</span>
+          <strong>
+            {detail.lastObservedAt === null
+              ? t("notObserved")
+              : formatObservedAt(locale, detail.lastObservedAt)}
+          </strong>
+        </div>
+      </div>
+
+      <dl className={styles.competitorFacts}>
+        <div>
+          <dt>{t("relationshipLabel")}</dt>
+          <dd><CompetitorRelationship relationship={detail.relationship} /></dd>
+        </div>
+        <div>
+          <dt>{t("analysisScopeLabel")}</dt>
+          <dd>
+            {detail.analysisScope.length === 0
+              ? t("scopePending")
+              : detail.analysisScope
+                  .map((scope) => t(`analysisScope.${scope}`))
+                  .join(" · ")}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("keywordGapParticipationLabel")}</dt>
+          <dd>{t(`keywordGapParticipation.${keywordGapParticipation}`)}</dd>
+        </div>
+        <div>
+          <dt>{t("evidenceRefs")}</dt>
+          <dd>{detail.originOccurrences.length}</dd>
+        </div>
+      </dl>
+
+      <div className={styles.detailActions}>
+        <Link href={`/p/${projectId}/context`}>
+          <Globe2 aria-hidden="true" size={16} />
+          {t("openProductProfile")}
+        </Link>
+        <button
+          type="button"
+          data-testid="competitor-review-open"
+          onClick={() => {
+            setReviewSaved(false);
+            setReviewOpen(true);
+          }}
+        >
+          <Pencil aria-hidden="true" size={16} />
+          {t("reviewScope")}
+        </button>
+      </div>
 
       <CompetitorMonitorSection
         projectId={projectId}
@@ -8007,10 +8663,12 @@ function CompetitorLibraryPane({
   projectId,
   locationSearch,
   navigation,
+  diagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
+  readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   const pathname = usePathname();
@@ -8031,18 +8689,30 @@ function CompetitorLibraryPane({
   const [cursorPredecessors, setCursorPredecessors] = useState<
     ReadonlyMap<string, string | null>
   >(() => new Map());
+  const [competitorSearch, setCompetitorSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<GrowthMapCompetitorStatusFilter>("all");
   const listQuery = useGrowthMapCompetitors(projectId, {
     cursor,
     limit: 50,
+    diagnosticRunId,
   });
   const items = listQuery.data?.data ?? [];
+  const filteredItems = useMemo(
+    () =>
+      filterGrowthMapCompetitorItems(items, {
+        search: competitorSearch,
+        reviewStatus: statusFilter,
+      }),
+    [competitorSearch, items, statusFilter],
+  );
   const selectedCompetitorId = resolveVisibleCompetitorSelection(
     requestedCompetitorId,
-    items.map((item) => item.competitorId),
+    filteredItems.map((item) => item.competitorId),
   );
   const canonicalSelectedCompetitorId = resolveVisibleCompetitorSelection(
     canonicalRequestedCompetitorId,
-    items.map((item) => item.competitorId),
+    filteredItems.map((item) => item.competitorId),
   );
   const readState = competitorLibraryReadState({
     isPending: listQuery.isPending,
@@ -8138,94 +8808,157 @@ function CompetitorLibraryPane({
     (count, item) => count + item.originOccurrences.length,
     0,
   );
+  const discoveryItems: readonly SourceStripItem[] = [
+    {
+      key: "product_profile",
+      label: t("discoverySource.product_profile"),
+      count: items.filter((item) =>
+        item.originOccurrences.some((origin) => origin.originKind === "product_profile"),
+      ).length,
+      tone: "amber",
+    },
+    {
+      key: "serp_overlap",
+      label: t("discoverySource.serp_overlap"),
+      count: items.filter((item) =>
+        item.originOccurrences.some((origin) => origin.originKind === "serp_overlap"),
+      ).length,
+      tone: "mint",
+    },
+    {
+      key: "ai_citation",
+      label: t("discoverySource.ai_citation"),
+      count: items.filter((item) =>
+        item.originOccurrences.some((origin) => origin.originKind === "ai_citation"),
+      ).length,
+      tone: "violet",
+    },
+    {
+      key: "csv_manual",
+      label: t("discoverySource.csv_manual"),
+      count: items.filter((item) =>
+        item.originOccurrences.some(
+          (origin) =>
+            origin.originKind === "csv_keyword_gap" || origin.originKind === "manual",
+        ),
+      ).length,
+      tone: "cobalt",
+    },
+  ];
 
   return (
     <>
-      <section
-        className={styles.provenanceBand}
-        aria-label={t("libraryScopeLabel")}
-        data-testid="competitor-library-provenance"
-      >
-        <div className={styles.provenanceIntro}>
-          <ShieldCheck aria-hidden="true" size={22} />
-          <div>
-            <strong>{t("libraryScopeTitle")}</strong>
-            <p>{t("libraryScopeDescription")}</p>
-            <Link
-              className={styles.competitorInlineSourceLink}
-              href={`/p/${projectId}/context`}
-            >
-              <Pencil aria-hidden="true" size={15} />
-              {t("editProfileCompetitors")}
-            </Link>
-          </div>
-        </div>
-        <dl className={cx(styles.provenanceFacts, styles.keywordPageFacts)}>
-          <div>
-            <dt>{t("loadedOnPage")}</dt>
-            <dd>{response.data.length}</dd>
-          </div>
-          <div>
-            <dt>{t("originOccurrencesOnPage")}</dt>
-            <dd>{originCount}</dd>
-          </div>
-          <div>
-            <dt>{t("coverageLabel")}</dt>
-            <dd><CoveragePill coverage={response.meta.coverage} /></dd>
-          </div>
-        </dl>
+      <div data-testid="competitor-library-provenance">
+        <SourceStrip
+          label={t("discoveryPathLabel")}
+          title={t("discoveryPathTitle")}
+          description={t("discoveryPathDescription")}
+          items={discoveryItems}
+          countLabel={(count) => t("discoveryCount", { count })}
+        />
+      </div>
+      <div className={styles.pageScopeNote}>
+        <span>{t("loadedCount", { count: response.data.length })}</span>
+        <span>{t("originOccurrencesOnPage")}: {originCount}</span>
+        <CoveragePill coverage={response.meta.coverage} />
         <LimitationList limitations={response.meta.coverage.limitations} />
-      </section>
+      </div>
 
       {readState === "empty" ? (
         <CompetitorLibraryEmpty projectId={projectId} />
       ) : (
-        <div className={styles.competitorWorkspace}>
-          <div className={styles.masterColumn}>
-            {readState === "cursor_empty" ? (
-              <LibraryCursorPageEmpty
-                icon={<Target size={28} />}
-                title={t("cursorPageEmptyTitle")}
-                description={t("cursorPageEmptyDescription")}
-                actionLabel={t("firstPage")}
-                onReset={goFirst}
+        <>
+          <div className={styles.libraryToolbar}>
+            <label className={styles.librarySearch}>
+              <Search aria-hidden="true" size={19} />
+              <input
+                type="search"
+                value={competitorSearch}
+                onChange={(event) => setCompetitorSearch(event.target.value)}
+                placeholder={t("searchPlaceholder")}
               />
-            ) : (
-              <CompetitorList
-                items={items}
-                selectedCompetitorId={selectedCompetitorId}
-                onSelect={selectCompetitor}
-              />
-            )}
-            <nav className={styles.pagination} aria-label={t("paginationLabel")}>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={previousCursor === undefined}
-                onClick={goPrevious}
+              <span className={styles.rowSelectLabel}>{t("searchLabel")}</span>
+            </label>
+            <label className={styles.libraryFilter}>
+              <span>{t("statusFilterLabel")}</span>
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as GrowthMapCompetitorStatusFilter)
+                }
               >
-                <ArrowLeft aria-hidden="true" size={16} />
-                {t("previousPage")}
-              </Button>
-              <span>{t("loadedCount", { count: items.length })}</span>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={!response.meta.hasNext}
-                onClick={goNext}
-              >
-                {t("nextPage")}
-                <ArrowRight aria-hidden="true" size={16} />
-              </Button>
-            </nav>
+                <option value="all">{t("statusFilterAll")}</option>
+                {COMPETITOR_STATUS_FILTERS.map((status) => (
+                  <option value={status} key={status}>
+                    {t(`reviewStatus.${status}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Link className={styles.libraryAction} href={`/p/${projectId}/context`}>
+              <Plus aria-hidden="true" size={17} />
+              {t("addCompetitor")}
+            </Link>
           </div>
-          <CompetitorDetailState
-            projectId={projectId}
-            selectedCompetitorId={selectedCompetitorId}
-          />
-        </div>
+          <div className={styles.competitorWorkspace}>
+            <div className={styles.masterColumn}>
+              {readState === "cursor_empty" ? (
+                <LibraryCursorPageEmpty
+                  icon={<Target size={28} />}
+                  title={t("cursorPageEmptyTitle")}
+                  description={t("cursorPageEmptyDescription")}
+                  actionLabel={t("firstPage")}
+                  onReset={goFirst}
+                />
+              ) : filteredItems.length === 0 ? (
+                <EmptyState
+                  className={styles.libraryFilteredEmpty}
+                  icon={<Search size={28} />}
+                  title={t("noMatchesTitle")}
+                  description={t("noMatchesDescription")}
+                />
+              ) : (
+                <CompetitorList
+                  items={filteredItems}
+                  selectedCompetitorId={selectedCompetitorId}
+                  onSelect={selectCompetitor}
+                />
+              )}
+              <nav className={styles.pagination} aria-label={t("paginationLabel")}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={previousCursor === undefined}
+                  onClick={goPrevious}
+                >
+                  <ArrowLeft aria-hidden="true" size={16} />
+                  {t("previousPage")}
+                </Button>
+                <span>
+                  {t("visibleCount", {
+                    visible: filteredItems.length,
+                    total: response.data.length,
+                  })}
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={!response.meta.hasNext}
+                  onClick={goNext}
+                >
+                  {t("nextPage")}
+                  <ArrowRight aria-hidden="true" size={16} />
+                </Button>
+              </nav>
+            </div>
+            <CompetitorDetailState
+              projectId={projectId}
+              selectedCompetitorId={selectedCompetitorId}
+            />
+          </div>
+        </>
       )}
     </>
   );
@@ -8384,6 +9117,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
+          diagnosticRunId={diagnosticRunId!}
         />
       ) : (
         <BacklinkGrowthPath projectId={projectId} />
