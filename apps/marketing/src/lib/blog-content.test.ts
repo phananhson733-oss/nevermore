@@ -136,14 +136,22 @@ describe("repository-backed blog content", () => {
     // the page that ranks. Chinese stays at 9: the backfill was English-only.
     // Keep both counts exact so an accidental content deletion or an
     // unreviewed bulk import fails this gate instead of shipping silently.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(62);
+    //
+    // 62 → 66 on 2026-08-07: the keyword-opportunity batch (377a4b9) added
+    // four English posts — low-hanging-fruit / pagerank-sculpting /
+    // striking-distance-keywords / zero-search-volume-keywords — and left this
+    // count behind, so the gate fired exactly as intended. Reviewed and
+    // accepted; Chinese is untouched.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(66);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    // Newest-first ordering: the most recent backfilled article dates to 07-31.
-    expect(posts[0]?.published_at).toBe("2026-07-31T00:00:00.000Z");
+    // Newest-first ordering. Was 07-31 until the 2026-08-07 keyword-opportunity
+    // batch (377a4b9) landed four posts dated that day; the assertion pins the
+    // ordering, not any particular article, so it moves with the newest one.
+    expect(posts[0]?.published_at).toBe("2026-08-07T00:00:00.000Z");
   });
 
   it("keeps every published product CTA on the product subdomain", async () => {

@@ -2,7 +2,7 @@
 title: Terms of Service
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 These terms govern your use of gengrowth.ai, app.gengrowth.ai, and the free

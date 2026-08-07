@@ -87,20 +87,38 @@ describe("getLocalLegalDocument", () => {
   });
 
   /**
-   * The review gate, asserted rather than assumed.
+   * Every document the site links to must actually resolve.
    *
-   * These four documents ship as drafts on purpose: merging them must not
-   * publish them. If this test ever fails because a file flipped to
-   * `published`, that is the intended one-word change — update the expectation
-   * deliberately, do not delete the test.
+   * These shipped as drafts first and were published on 2026-08-07 after
+   * review. A footer link to a policy that renders "coming soon" is the
+   * failure this guards: `getLocalLegalDocument` answers null for a missing
+   * file, a draft, and malformed frontmatter alike, so nothing else would
+   * distinguish "not written yet" from "silently broken".
    */
-  it("keeps every shipped document unpublished until it is reviewed", async () => {
+  it("resolves a published document for every linked type and locale", async () => {
     for (const locale of LEGAL_LOCALES) {
       for (const docType of LEGAL_DOC_TYPES) {
-        await expect(
-          getLocalLegalDocument(docType, locale),
-        ).resolves.toBeNull();
+        const doc = await getLocalLegalDocument(docType, locale);
+        expect(doc, `${locale}/${docType}`).not.toBeNull();
+        expect(doc?.doc_type).toBe(docType);
+        expect(doc?.locale).toBe(locale);
+        expect(doc?.title.trim()).not.toBe("");
+        expect(doc?.content.length).toBeGreaterThan(400);
+        expect(doc?.effective_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       }
+    }
+  });
+
+  it("localises the title rather than shipping the English one twice", async () => {
+    for (const docType of LEGAL_DOC_TYPES) {
+      const en = await getLocalLegalDocument(docType, "en");
+      const zh = await getLocalLegalDocument(docType, "zh");
+      // Cookie 政策 legitimately keeps the English word "Cookie"; the rest must
+      // differ outright, which catches a zh file copied from en and not translated.
+      if (docType !== "cookies") {
+        expect(zh?.title, docType).not.toBe(en?.title);
+      }
+      expect(zh?.content, docType).not.toBe(en?.content);
     }
   });
 });

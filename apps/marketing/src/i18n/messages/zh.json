@@ -6,6 +6,7 @@
     "backToHome": "返回首页",
     "home": "首页",
     "signIn": "登录",
+    "signOut": "登出",
     "getStarted": "免费开始"
   },
   "auth": {

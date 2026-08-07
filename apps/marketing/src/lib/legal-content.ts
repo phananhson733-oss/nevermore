@@ -2,7 +2,7 @@
 // @output — 仓库内的法务文档，契约与原 Supabase 版本一致
 // @pos    — 法务数据层的真实来源，取代已不可访问的 legacy Supabase 表
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cache } from "react";
 import { z } from "zod";
@@ -110,8 +110,40 @@ export function isLegalDocType(value: string): value is LegalDocType {
   return (LEGAL_DOC_TYPES as readonly string[]).includes(value);
 }
 
-function contentRoot(): string {
-  return join(process.cwd(), "content", "legal");
+let contentRootPromise: Promise<string> | undefined;
+
+/**
+ * Resolve the content directory against both working directories that occur.
+ *
+ * The marketing app is invoked from its own directory in production, while
+ * monorepo-level test commands run from the repository root. Assuming one of
+ * them is worse than a wrong path: `getLocalLegalDocument` answers null for a
+ * missing file, so the page renders "coming soon" and a test asserting exactly
+ * that passes for entirely the wrong reason. Throwing when neither candidate
+ * exists keeps a misplaced directory loud.
+ */
+async function getContentRoot(): Promise<string> {
+  contentRootPromise ??= (async () => {
+    const candidates = [
+      join(process.cwd(), "content", "legal"),
+      join(process.cwd(), "apps", "marketing", "content", "legal"),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate);
+        return candidate;
+      } catch {
+        // Try the next one.
+      }
+    }
+
+    throw new Error(
+      "Marketing legal content directory was not found. Expected content/legal or apps/marketing/content/legal.",
+    );
+  })();
+
+  return contentRootPromise;
 }
 
 /**
@@ -126,7 +158,14 @@ export const getLocalLegalDocument = cache(
     if (!isLegalDocType(docType)) return null;
     if (!(LEGAL_LOCALES as readonly string[]).includes(locale)) return null;
 
-    const path = join(contentRoot(), locale, `${docType}.md`);
+    let root: string;
+    try {
+      root = await getContentRoot();
+    } catch {
+      return null;
+    }
+
+    const path = join(root, locale, `${docType}.md`);
     let source: string;
     try {
       source = await readFile(path, "utf8");

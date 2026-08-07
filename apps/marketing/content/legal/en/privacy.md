@@ -2,7 +2,7 @@
 title: Privacy Policy
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 GenGrowth is an SEO and GEO diagnostic workbench operated at gengrowth.ai and

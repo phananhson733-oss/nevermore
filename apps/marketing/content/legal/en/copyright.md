@@ -2,7 +2,7 @@
 title: Copyright Notice
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 ## Our content
