@@ -727,7 +727,7 @@ test("Studio adopts a cross-tab active generation from the refreshed artifact pr
   ).toBeVisible();
   await expect(
     card.locator(":scope > button"),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await expect(
     page.getByText("Something went wrong", { exact: true }),
   ).toHaveCount(0);
@@ -837,16 +837,12 @@ test("Studio releases a 409 recovery fence when the canonical run has already se
 
   await expect.poll(() => createAttempts).toBe(1);
   await expect.poll(() => artifactReads).toBe(2);
-  // Re-aimed for the unified queue, not loosened. A fenced row keeps its
-  // single whole-row View control disabled, while the opened document no
-  // longer receives a Regenerate handler. The same fence is therefore proven by
-  // the ABSENCE of the control plus a blocked selection. Both halves are
-  // required: a fence that silently dropped would restore the button, and a
-  // fence that stopped blocking selection would enable View.
+  // The recovery fence blocks another generation without blocking read-only
+  // access to the last canonical revision.
   await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
     card.locator(":scope > button"),
-  ).toBeDisabled();
+  ).toBeEnabled();
   expect(createAttempts).toBe(1);
 
   releaseSettledProjection();
@@ -970,7 +966,7 @@ test("Studio fences a locally queued generation before artifact projection catch
   ).toBeVisible();
   await expect(
     staleCard.locator(":scope > button"),
-  ).toBeDisabled();
+  ).toBeEnabled();
 
   await hero
     .getByRole("button", { name: "Configure a new deliverable" })
@@ -1657,11 +1653,12 @@ test("Studio keeps the 409 fence across a route change while the projection is i
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect.poll(() => createAttempts).toBe(1);
 
-  // Fenced on this mount, proven the way §16.4 proves it.
+  // Fenced on this mount: generation remains unavailable while the existing
+  // canonical revision remains viewable.
   await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
     card.locator(":scope > button"),
-  ).toBeDisabled();
+  ).toBeEnabled();
 
   const navLinks = page
     .getByRole("navigation", { name: "Project sections" })
@@ -1684,6 +1681,6 @@ test("Studio keeps the 409 fence across a route change while the projection is i
   await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
     card.locator(":scope > button"),
-  ).toBeDisabled();
+  ).toBeEnabled();
   expect(createAttempts).toBe(1);
 });

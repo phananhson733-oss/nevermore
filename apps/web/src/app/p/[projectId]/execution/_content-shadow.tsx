@@ -1356,6 +1356,7 @@ export function ContentShadowArtifactPanel({
   readonly action?: ArtifactAction | undefined;
   readonly renderEditor?: (options: {
     readonly allowReadyStatusChange: boolean;
+    readonly initialMarkdownMode?: "preview" | "edit";
   }) => ReactNode;
   readonly editorDirty?: boolean;
 }) {
@@ -1543,7 +1544,10 @@ export function ContentShadowArtifactPanel({
             aria-labelledby={editTabId}
             hidden={surfaceMode !== "edit"}
           >
-            {renderEditor({ allowReadyStatusChange: false })}
+            {renderEditor({
+              allowReadyStatusChange: false,
+              initialMarkdownMode: "edit",
+            })}
           </div>
         </>
       )}

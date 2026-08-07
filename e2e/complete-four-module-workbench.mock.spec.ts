@@ -1668,13 +1668,15 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(queue).toContainText(
       "确认 Customer Onboarding 对比页 Content Brief",
     );
-    const editMarkdown = page.getByRole("button", {
-      name: "编辑 Markdown",
-      exact: true,
-    });
-    if ((await editMarkdown.count()) > 0) {
-      await editMarkdown.click();
-    }
+    await expect(
+      page.locator("[data-studio-markdown-preview]"),
+    ).toContainText(
+      "How to Automate Customer Onboarding Without Losing the Human Touch",
+    );
+    await page
+      .getByRole("tablist", { name: "Markdown 查看方式" })
+      .getByRole("tab", { name: "编辑 Markdown", exact: true })
+      .click();
     await expect(page.getByRole("textbox", { name: "内容" })).toHaveValue(
       /How to Automate Customer Onboarding Without Losing the Human Touch/,
     );

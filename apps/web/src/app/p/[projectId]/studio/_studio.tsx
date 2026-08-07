@@ -479,7 +479,6 @@ interface ArtifactCardProps {
    */
   readonly executionState: ActionExecutionStateEvent | null | undefined;
   readonly generationActive: boolean;
-  readonly selectionBlocked: boolean;
   readonly selected: boolean;
   readonly onOpen: () => void;
 }
@@ -554,7 +553,6 @@ function ArtifactCard({
   actionTitle,
   executionState,
   generationActive,
-  selectionBlocked,
   selected,
   onOpen,
 }: ArtifactCardProps) {
@@ -578,7 +576,6 @@ function ArtifactCard({
         type="button"
         className={styles.artRowButton}
         onClick={onOpen}
-        disabled={selectionBlocked || generating}
         aria-label={t("viewGeneration")}
         aria-describedby={descriptionId}
         aria-current={selected ? "true" : undefined}
@@ -3647,12 +3644,6 @@ export function StudioClient({
                 ))}
                 {queuedArtifacts.map((artifact) => {
                   const action = actionById.get(artifact.actionId);
-                  const generationFenced = generationFenceKeys.has(
-                    artifactGenerationKey(
-                      artifact.actionId,
-                      artifact.artifactType,
-                    ),
-                  );
                   return (
                     <ArtifactCard
                       key={artifact.id}
@@ -3671,7 +3662,6 @@ export function StudioClient({
                           artifact.artifactType,
                         ),
                       )}
-                      selectionBlocked={generationFenced}
                       selected={selected?.id === artifact.id}
                       onOpen={() => selectArtifact(artifact.id)}
                     />
@@ -3773,7 +3763,10 @@ export function StudioClient({
                   projectId={projectId}
                   artifact={selected}
                   action={selectedAction}
-                  renderEditor={({ allowReadyStatusChange }) => (
+                  renderEditor={({
+                    allowReadyStatusChange,
+                    initialMarkdownMode = "preview",
+                  }) => (
                     <ArtifactEditor
                       key={selected.id}
                       projectId={projectId}
@@ -3782,6 +3775,7 @@ export function StudioClient({
                       onClose={closeEditor}
                       onDirtyChange={onEditorDirtyChange}
                       onRegenerate={selectedArtifactRegenerate}
+                      initialMarkdownMode={initialMarkdownMode}
                       allowReadyStatusChange={allowReadyStatusChange}
                     />
                   )}

@@ -410,7 +410,7 @@ async function openExecution(
   );
   if (scenario.validationState === "invalid") {
     await expect(page.locator("[data-content-shadow]")).toHaveCount(0);
-    await expect(page.getByLabel("内容", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-studio-markdown-preview]")).toBeVisible();
   } else {
     await expect(page.locator("[data-content-shadow]")).toBeVisible();
   }
@@ -577,14 +577,8 @@ test("the unified English-draft review opens when the gate does not block", asyn
   ).toHaveCount(0);
 
   const shadow = page.locator("[data-content-shadow]");
-  const reviewTab = shadow.getByRole("tab", {
-    name: "审阅文档",
-    exact: true,
-  });
-  const editTab = shadow.getByRole("tab", {
-    name: "编辑 Markdown",
-    exact: true,
-  });
+  const reviewTab = shadow.locator('[data-surface-mode="review"]');
+  const editTab = shadow.locator('[data-surface-mode="edit"]');
   await editTab.click();
   const content = page.getByLabel("内容", { exact: true });
   await expect(content).toBeVisible();
@@ -593,7 +587,7 @@ test("the unified English-draft review opens when the gate does not block", asyn
   ).toHaveCount(0);
   await expect(
     page.locator("[aria-labelledby^='sf-markdown-']"),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
 
   await content.fill(`${DRAFT_BODY}\n\nUnsaved keyboard guard.`);
   await editTab.focus();
@@ -652,6 +646,11 @@ test("an invalid English draft opens the Markdown repair editor without waiting 
 }) => {
   await openExecution(page, scenario({ validationState: "invalid" }));
 
+  await expect(page.locator("[data-studio-markdown-preview]")).toBeVisible();
+  await page
+    .getByRole("tablist", { name: "Markdown 查看方式" })
+    .getByRole("tab", { name: "编辑 Markdown", exact: true })
+    .click();
   await expect(page.getByLabel("内容", { exact: true })).toBeVisible();
   await expect(page.getByText("校验错误", { exact: true })).toBeVisible();
   await expect(page.getByText("加载中", { exact: true })).toHaveCount(0);
