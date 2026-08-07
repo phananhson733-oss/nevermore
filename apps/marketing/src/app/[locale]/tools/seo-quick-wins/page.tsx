@@ -29,8 +29,8 @@ export async function generateMetadata({
   return generatePageMetadata({
     title:
       locale === "en"
-        ? "SEO Quick Wins from Search Console"
-        : "用 Search Console 找出 SEO 快速机会",
+        ? "High Impressions, Low Clicks in GSC? Find Pages to Fix"
+        : "GSC 曝光高但点击少？找出该修复的页面",
     description:
       locale === "en"
         ? "Connect Search Console read-only to find measurable query and page opportunities, with evidence, limits, and an ordered next step."

@@ -1256,7 +1256,7 @@
       "reportIsForOtherProperty": "下面这份报告是 {reported} 的，你现在选中的是 {selected}。要看 {selected} 的，请重新回答两个自查问题再生成。"
     },
     "quickWins": {
-      "title": "SEO Quick Wins",
+      "title": "GSC Opportunity Finder",
       "description": "找出那些 Google 已经为你展示了成千上万次、却几乎没人点击的查询词。衡量基准来自你自己网站的点击率曲线，而不是一张行业平均表。",
       "metaDescription": "Google 已经为这些查询词把你展示了成千上万次，却几乎没人点击。连接 Search Console 找出全部。免费，只读。",
       "eyebrow": "免费工具",

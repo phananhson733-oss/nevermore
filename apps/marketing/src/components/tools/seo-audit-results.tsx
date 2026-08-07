@@ -1,11 +1,13 @@
-// @input  -- language-neutral site-wide report plus compact limitation disclosure
-// @output -- crawl coverage, audit evidence, on-demand boundaries, and lazy page inventory
+// @input  -- site-wide report, locale, and the seo-audit-result-copy helpers
+// @output -- coverage, count-ordered records with state legend and grouped
+//            duplicate evidence, lazy page inventory, and a GSC-connect closing
 // @pos    -- audit-only result surface for the public SEO Audit tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
 
 import {
+  ArrowRight,
   ChevronDown,
   CircleHelp,
   FileSearch,
@@ -19,15 +21,41 @@ import type {
   SeoAuditRecordState,
   SeoAuditReport,
 } from "@sf/public-tools";
+// Relative import: the shared Vitest config maps `@/` to apps/web only.
+import { localePath } from "../../lib/locale-path";
 import { LimitationHint } from "../ui/limitation-hint";
+import {
+  closingCopy,
+  duplicateGroups,
+  legendCopy,
+  observedIssueRecords,
+  pageCountLabel,
+  partitionRecords,
+  resultCopyLocale,
+  zeroObservationSummary,
+  type SeoAuditDuplicateGroup,
+  type SeoAuditResultCopyLocale,
+} from "./seo-audit-result-copy";
 
-/* 状态只用描边 + 15% 底色的 chip 表达，不引入第三种色系。 */
+/* 状态只用描边 + 15% 底色的 chip 表达。 */
 const STATE_STYLES: Record<SeoAuditRecordState, string> = {
   observed: "border-brand-accent/30 bg-brand-accent/10 text-brand-accent-text",
   not_observed:
     "border-brand-border-strong bg-brand-panel-raised text-text-dark-secondary",
   unverified: "border-brand-warning/30 bg-brand-warning/15 text-brand-warning",
 };
+
+/* "Observed" 在问题类检查里表示情况存在，在两条站点资源记录里只表示资源被
+   找到。前者用 info 蓝与后者的 accent 绿区分开——这是语义区分，不是严重度。 */
+const OBSERVED_CONDITION_STYLE =
+  "border-brand-info/30 bg-brand-info/10 text-brand-info";
+
+function stateChipClass(record: SeoAuditRecord): string {
+  if (record.state === "observed" && record.unit !== "site_resource") {
+    return OBSERVED_CONDITION_STYLE;
+  }
+  return STATE_STYLES[record.state];
+}
 
 const STATE_ICONS = {
   observed: FileSearch,
@@ -48,9 +76,56 @@ function EvidenceValue({
   return <>{String(value)}</>;
 }
 
-function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
+function DuplicateGroupList({
+  groups,
+  copyLocale,
+}: {
+  readonly groups: readonly SeoAuditDuplicateGroup[];
+  readonly copyLocale: SeoAuditResultCopyLocale;
+}) {
+  return (
+    <div className="grid gap-3">
+      {groups.map((group) => (
+        <article
+          key={group.value}
+          data-testid="seo-audit-duplicate-group"
+          className="rounded-row border border-brand-border bg-brand-panel-raised p-4"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="min-w-0 text-[12.5px] leading-[1.55] font-medium break-words text-text-dark-primary">
+              {group.value}
+            </p>
+            <span className="shrink-0 rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+              {pageCountLabel(group.pageCount, copyLocale)}
+            </span>
+          </div>
+          <ul className="mt-2.5 space-y-1">
+            {group.urls.map((url) => (
+              <li
+                key={url}
+                className="font-mono text-[10.5px] break-all text-brand-accent-text"
+              >
+                {url}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function AuditRecordRow({
+  record,
+  copyLocale,
+}: {
+  readonly record: SeoAuditRecord;
+  readonly copyLocale: SeoAuditResultCopyLocale;
+}) {
   const t = useTranslations("tools.seoAudit");
   const Icon = STATE_ICONS[record.state];
+  const chipClass = stateChipClass(record);
+  const groups = duplicateGroups(record);
 
   return (
     <details
@@ -60,7 +135,7 @@ function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
       <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center md:px-5">
         <div className="flex min-w-0 items-start gap-3">
           <span
-            className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-[9px] border ${STATE_STYLES[record.state]}`}
+            className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-[9px] border ${chipClass}`}
           >
             <Icon aria-hidden="true" className="size-3.5" />
           </span>
@@ -75,7 +150,7 @@ function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-10 sm:pl-0">
           <span
-            className={`rounded border px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] uppercase ${STATE_STYLES[record.state]}`}
+            className={`rounded border px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] uppercase ${chipClass}`}
           >
             {t(`recordStates.${record.state}`)}
           </span>
@@ -94,7 +169,9 @@ function AuditRecordRow({ record }: { readonly record: SeoAuditRecord }) {
       </summary>
 
       <div className="border-t border-brand-border-faint bg-brand-panel-sunken px-4 py-4 md:px-5">
-        {record.observations.length > 0 ? (
+        {groups ? (
+          <DuplicateGroupList groups={groups} copyLocale={copyLocale} />
+        ) : record.observations.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {record.observations.map((observation, index) => (
               <article
@@ -284,13 +361,98 @@ function PageInventory({ report }: { readonly report: SeoAuditReport }) {
   );
 }
 
-export function SeoAuditResults({
+function ClosingSection({
   report,
+  copyLocale,
 }: {
   readonly report: SeoAuditReport;
+  readonly copyLocale: SeoAuditResultCopyLocale;
+}) {
+  const t = useTranslations("tools.seoAudit");
+  const issueRecords = observedIssueRecords(report.records);
+  const copy = closingCopy(
+    {
+      pagesInspected: report.coverage.pagesInspected,
+      issueTypeCount: issueRecords.length,
+    },
+    copyLocale,
+  );
+  const topIssues = issueRecords.slice(0, 3);
+  const connectHref = `/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
+    localePath(copyLocale, "/tools/seo-quick-wins"),
+  )}`;
+
+  return (
+    <section
+      data-testid="seo-audit-closing"
+      aria-labelledby="seo-audit-closing-title"
+      className="rounded-card border border-brand-border-card bg-brand-panel p-6 md:p-7"
+    >
+      <h3
+        id="seo-audit-closing-title"
+        className="max-w-2xl text-[16.5px] font-semibold text-text-dark-primary"
+      >
+        {copy.heading}
+      </h3>
+      {topIssues.length > 0 ? (
+        <ol className="mt-4 grid gap-px overflow-hidden rounded-row border border-brand-border-card bg-brand-border-card">
+          {topIssues.map((issue, index) => (
+            <li
+              key={issue.id}
+              className="grid gap-3 bg-brand-panel-sunken px-4 py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <p className="flex min-w-0 items-baseline gap-3">
+                <span className="font-mono text-[10px] tracking-[0.08em] text-text-dark-faint">
+                  0{index + 1}
+                </span>
+                <span className="text-[13.5px] font-medium text-text-dark-primary">
+                  {t(`records.${issue.id}.title`)}
+                </span>
+              </p>
+              <span className="w-fit rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+                {t("recordCount", {
+                  affected: issue.affected,
+                  tested: issue.tested,
+                  unit: t(`recordUnits.${issue.unit}`),
+                })}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {copy.topNote === null ? null : (
+        <p className="mt-2.5 font-mono text-[10.5px] tracking-[0.06em] text-text-dark-faint">
+          {copy.topNote}
+        </p>
+      )}
+      <p className="mt-5 max-w-2xl text-[12.5px] leading-[1.65] text-text-dark-secondary">
+        {copy.boundary}
+      </p>
+      <a
+        href={connectHref}
+        className="mt-6 inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+      >
+        {copy.cta}
+        <ArrowRight aria-hidden="true" className="size-4" />
+      </a>
+    </section>
+  );
+}
+
+export function SeoAuditResults({
+  report,
+  locale,
+}: {
+  readonly report: SeoAuditReport;
+  readonly locale: string;
 }) {
   const t = useTranslations("tools.seoAudit");
   const coverage = report.coverage;
+  const copyLocale = resultCopyLocale(locale);
+  const legend = legendCopy(copyLocale);
+  const { observed, unverified, nothingObserved } = partitionRecords(
+    report.records,
+  );
 
   return (
     <section
@@ -413,15 +575,79 @@ export function SeoAuditResults({
           <p className="mt-2 max-w-3xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
             {t("recordsBody")}
           </p>
+          <dl
+            data-testid="seo-audit-state-legend"
+            aria-label={legend.title}
+            className="mt-4 max-w-3xl rounded-row border border-brand-border bg-brand-panel-sunken px-4 py-3.5"
+          >
+            <dt className="font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase">
+              {legend.title}
+            </dt>
+            {[legend.observed, legend.notObserved, legend.unverified].map(
+              (entry) => (
+                <dd
+                  key={entry}
+                  className="mt-2 text-[11.5px] leading-[1.6] text-text-dark-secondary"
+                >
+                  {entry}
+                </dd>
+              ),
+            )}
+          </dl>
         </div>
         <div>
-          {report.records.map((auditRecord) => (
-            <AuditRecordRow key={auditRecord.id} record={auditRecord} />
+          {/* 观察数降序是算术排序，不是严重度排序；0 observed 折叠为一行，
+              unverified 是「没能查」而非「查了没有」，因此单独保留。 */}
+          {[...observed, ...unverified].map((auditRecord) => (
+            <AuditRecordRow
+              key={auditRecord.id}
+              record={auditRecord}
+              copyLocale={copyLocale}
+            />
           ))}
+          {nothingObserved.length > 0 ? (
+            <details
+              data-testid="seo-audit-zero-records"
+              className="group/zero border-t border-brand-border-faint"
+            >
+              <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center md:px-5 [&::-webkit-details-marker]:hidden">
+                <p className="flex min-w-0 items-start gap-3 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                  <span
+                    className={`mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-[9px] border ${STATE_STYLES.not_observed}`}
+                  >
+                    <Minus aria-hidden="true" className="size-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    {zeroObservationSummary(
+                      nothingObserved.map((entry) =>
+                        t(`records.${entry.id}.title`),
+                      ),
+                      copyLocale,
+                    )}
+                  </span>
+                </p>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="hidden size-4 text-text-dark-secondary transition-transform group-open/zero:rotate-180 sm:block"
+                />
+              </summary>
+              <div className="border-t border-brand-border-faint">
+                {nothingObserved.map((auditRecord) => (
+                  <AuditRecordRow
+                    key={auditRecord.id}
+                    record={auditRecord}
+                    copyLocale={copyLocale}
+                  />
+                ))}
+              </div>
+            </details>
+          ) : null}
         </div>
       </section>
 
       <PageInventory report={report} />
+
+      <ClosingSection report={report} copyLocale={copyLocale} />
     </section>
   );
 }

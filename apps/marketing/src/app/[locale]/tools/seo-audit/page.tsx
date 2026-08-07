@@ -12,6 +12,7 @@ import {
   BreadcrumbJsonLd,
   FaqPageJsonLd,
   HowToJsonLd,
+  ToolSoftwareApplicationJsonLd,
 } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { siteConfig } from "@/config/site";
@@ -62,6 +63,14 @@ export default async function SeoAuditPage({
             { name: tools, url: localeUrl(locale, "/tools") },
             { name: t("pageTitle") },
           ]}
+        />
+        {/* Structured data reuses the strings the page renders, so the schema
+            cannot drift from the visible copy. */}
+        <ToolSoftwareApplicationJsonLd
+          name={t("pageTitle")}
+          description={t("metaDescription")}
+          url={localeUrl(locale, PATH)}
+          featureList={[1, 2, 3, 4, 5].map((index) => t(`signal${index}Title`))}
         />
         <HowToJsonLd
           name={t("howTitle")}

@@ -13,10 +13,12 @@ import { localePath, localeUrl } from "@/lib/locale-path";
 const DIAGNOSIS_TOOLS = [
   {
     slug: "seo-quick-wins",
-    title: { en: "SEO Quick Wins", zh: "SEO Quick Wins" },
+    // Naming table 2026-08-06: the card carries the formal name in both
+    // locales; the search-phrase Title/H1 stay on the tool page itself.
+    title: { en: "GSC Opportunity Finder", zh: "GSC Opportunity Finder" },
     description: {
-      en: "Find high-impression pages with click opportunities from your own Search Console data.",
-      zh: "用自己的 Search Console 数据找出曝光高、存在点击机会的页面。",
+      en: "Find high-impression queries with click opportunities from your own Search Console data.",
+      zh: "用自己的 Search Console 数据找出曝光高、存在点击机会的查询词。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "diagnosis",
@@ -53,7 +55,10 @@ const PLANNING_TOOLS = [
       en: "Turn site context into keyword directions only after demand signals are verified.",
       zh: "先验证需求信号，再把网站上下文转为关键词方向。",
     },
-    cta: { en: "Check availability", zh: "查看可用性" },
+    // The tool has not shipped; the card must say so instead of implying a
+    // gate the visitor can pass today. The page carries the waitlist form.
+    status: { en: "Coming soon", zh: "即将上线" },
+    cta: { en: "Join the waitlist", zh: "加入等待列表" },
     category: "planning",
   },
 ] as const;
@@ -195,6 +200,7 @@ export default async function ToolsPage({
                 category={tool.category}
                 locale={locale}
                 ctaLabel={tool.cta[locale as "en" | "zh"]}
+                statusLabel={tool.status[locale as "en" | "zh"]}
               />
             ))}
           </div>

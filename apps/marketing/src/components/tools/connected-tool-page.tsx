@@ -3,9 +3,22 @@
 // @pos    -- public handoff for product workflows that cannot use anonymous demo data
 import { ArrowRight, CheckCircle2, Database, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { siteConfig } from "@/config/site";
+// Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
+// aliased imports would make this file untestable from the unit project.
+import { siteConfig } from "../../config/site";
 import type { ConnectedToolContent } from "./connected-tool-content";
-import { localePath } from "@/lib/locale-path";
+import { localePath } from "../../lib/locale-path";
+
+/**
+ * Tools whose Google grant starts on this page. Their hero CTA must open the
+ * OAuth flow and return here — handing off to the app home drops both the
+ * requested scope and the way back to the tool. Everything else keeps the
+ * product hand-off.
+ */
+const GSC_CONNECT_PATHS: ReadonlySet<string> = new Set([
+  "/tools/seo-quick-wins",
+  "/tools/traffic-drop-diagnosis",
+]);
 
 export function ConnectedToolPage({
   locale,
@@ -40,6 +53,13 @@ export function ConnectedToolPage({
   const homeLabel = locale === "zh" ? "首页" : "Home";
   const relatedLabel =
     locale === "zh" ? "可先试用的公开工具" : "Public tools you can run first";
+  // Same URL the in-page connect panel builds, locale prefix included, so the
+  // two CTAs on one page cannot start two different flows.
+  const ctaHref = GSC_CONNECT_PATHS.has(content.path)
+    ? `/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
+        localePath(locale, content.path),
+      )}`
+    : siteConfig.appUrl;
 
   return (
     /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
@@ -104,15 +124,15 @@ export function ConnectedToolPage({
               </div>
             )}
             {/*
-            The hand-off to the product is for someone who cannot run the tool
-            here. Once they have connected, it contradicts the working tool
-            below; before that, it steps down to a link so two identical primary
-            buttons do not pull people away from the thing they came to run.
+            This CTA is for someone who cannot run the tool here. Once they
+            have connected, it contradicts the working tool below; before
+            that, it steps down to a link so two identical primary buttons do
+            not pull people away from the thing they came to run.
           */}
             {connected ? null : (
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a
-                  href={siteConfig.appUrl}
+                  href={ctaHref}
                   className={
                     children
                       ? "inline-flex min-h-11 items-center gap-2 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
@@ -196,7 +216,13 @@ export function ConnectedToolPage({
 
         {article}
 
-        <section className="grid gap-10 py-16 md:grid-cols-[1.25fr_0.75fr] md:py-22">
+        <section
+          className={
+            connected
+              ? "py-16 md:py-22"
+              : "grid gap-10 py-16 md:grid-cols-[1.25fr_0.75fr] md:py-22"
+          }
+        >
           <div>
             <h2 className="text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
               FAQ
@@ -214,33 +240,37 @@ export function ConnectedToolPage({
               ))}
             </div>
           </div>
-          <aside className="rounded-card border-brand-border-card bg-brand-panel h-fit border p-[22px]">
-            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
-              {relatedLabel}
-            </p>
-            <p className="mt-3 text-[15.5px] leading-snug font-semibold text-text-dark-primary">
-              {locale === "zh"
-                ? "先用无需连接的数据检查网站基础。"
-                : "Start with a site check that does not require a connection."}
-            </p>
-            {/* 「去别处」型导航链接走次强调色，避免和页面主强调抢 */}
-            <div className="mt-5 space-y-3">
-              <Link
-                href={localePath(locale, "/tools/seo-audit")}
-                className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
-              >
-                {locale === "zh" ? "免费 SEO 审计" : "Free SEO Audit"}
-                <span aria-hidden="true">&rarr;</span>
-              </Link>
-              <Link
-                href={localePath(locale, "/tools/internal-link-audit")}
-                className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
-              >
-                {locale === "zh" ? "内链审计" : "Internal Link Audit"}
-                <span aria-hidden="true">&rarr;</span>
-              </Link>
-            </div>
-          </aside>
+          {/* 这张卡对「还没连接」的访客说话（run first / 无需连接）。连接后的
+              报告自带出口卡，再渲染这张会在同一页出现两个出口。 */}
+          {connected ? null : (
+            <aside className="rounded-card border-brand-border-card bg-brand-panel h-fit border p-[22px]">
+              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+                {relatedLabel}
+              </p>
+              <p className="mt-3 text-[15.5px] leading-snug font-semibold text-text-dark-primary">
+                {locale === "zh"
+                  ? "先用无需连接的数据检查网站基础。"
+                  : "Start with a site check that does not require a connection."}
+              </p>
+              {/* 「去别处」型导航链接走次强调色，避免和页面主强调抢 */}
+              <div className="mt-5 space-y-3">
+                <Link
+                  href={localePath(locale, "/tools/seo-audit")}
+                  className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
+                >
+                  {locale === "zh" ? "免费 SEO 审计" : "Free SEO Audit"}
+                  <span aria-hidden="true">&rarr;</span>
+                </Link>
+                <Link
+                  href={localePath(locale, "/tools/internal-link-audit")}
+                  className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
+                >
+                  {locale === "zh" ? "内链审计" : "Internal Link Audit"}
+                  <span aria-hidden="true">&rarr;</span>
+                </Link>
+              </div>
+            </aside>
+          )}
         </section>
       </div>
     </section>

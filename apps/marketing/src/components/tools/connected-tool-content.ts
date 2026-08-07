@@ -47,9 +47,9 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
     eyebrow: "Search performance evidence",
-    title: "High impressions, low clicks",
+    title: "Find SEO Opportunities in Google Search Console",
     description:
-      "Google already shows you for these search queries thousands of times, and almost nobody clicks. We measure the gap against your own site's click-through curve rather than an industry table. The engine reads one dimension — queries — so every row is a search term, not a page.",
+      "Turn high-impression, low-click queries and positions 8–20 into a prioritized action list.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
       "GenGrowth requests read-only Search Console access. It cannot publish pages, change rankings, or modify your Google account, and it stores nothing.",
@@ -168,59 +168,104 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Search performance diagnosis",
     title: "Investigate a sudden drop in organic traffic with your own data",
     description:
-      "Find out whether your organic traffic really dropped, when it turned, and how much of it held \u2014 measured against your own Search Console history, with the comparison windows chosen by change-point detection rather than by you.",
+      "Find out whether your organic traffic really dropped, when it turned, and how much of it held \u2014 measured against your own Search Console history, with the comparison windows chosen by change-point detection rather than by you. If what you are really asking is \u201cwas I penalized?\u201d, the diagnosis puts the drop next to what your data actually shows, and is explicit about which parts of that question it cannot settle.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
-      "GenGrowth uses read-only Search Console access and asks you to review the selected property.",
-    cta: "Open GenGrowth and investigate the drop",
+      "GenGrowth requests read-only Search Console access and asks you to review the selected property. It cannot change your site, your rankings, or your Google account, and the report is computed from your own history rather than from a demo dataset.",
+    cta: "Connect Search Console and investigate the drop",
     trust:
-      "No generic demo or automatic blame. The result is limited to the evidence available in your property.",
-    workflowTitle: "What happens in the product",
+      "No generic demo and no automatic blame. The result is limited to the evidence available in your property, and every claim in it names where it came from.",
+    workflowTitle: "What happens when you run the diagnosis",
     steps: [
-      { name: "Open a project", text: "Create or open a GenGrowth project." },
       {
-        name: "Authorize Search Console",
-        text: "Read-only access, then choose the affected property.",
+        name: "Answer two questions from your own Search Console",
+        text: "Before anything runs, the tool asks what you saw on the Manual actions and Security issues pages. No Google API exposes either report \u2014 the Search Console API publishes sites, sitemaps, search analytics, and URL inspection, nothing more \u2014 so an honest tool has to ask rather than pretend it looked. Your answers are carried through the report marked as reported by you, not observed by us.",
       },
       {
-        name: "Compare the periods",
-        text: "Inspect page-level changes and review the supported root-cause hypotheses.",
+        name: "Connect Search Console, read-only",
+        text: "One click, revocable at any time from your Google account. The connection can read your search performance history; it cannot publish content, change rankings, or modify your account.",
+      },
+      {
+        name: "Change-point detection chooses the comparison windows",
+        text: "The tool reads your daily clicks and impressions and looks for the turn across the full available history. The before-and-after windows are chosen by the detector, never by you \u2014 a hand-picked window is a hand-picked conclusion. A dip that did not persist is reported as a transient anomaly, not sold to you as a decline.",
+      },
+      {
+        name: "The query mix is split and described",
+        text: "Brand and non-brand queries are separated and each half's movement is described with its coverage attached. Search Console withholds low-volume queries, so the report states how much of your traffic the visible rows actually account for \u2014 and stays silent when that coverage is too thin to support a comparison.",
+      },
+      {
+        name: "Read the findings in order",
+        text: "Observed changes first, each tied to the numbers behind it. Then the explanations those numbers are compatible with. Then, listed rather than hidden, every check that could not run and where you would need to look instead.",
       },
     ],
     outputTitle: "What the diagnosis keeps separate",
     outputs: [
       {
         label: "Observation",
-        body: "The magnitude, timing, and affected pages or queries in the selected periods.",
+        body: "The magnitude and timing of the change, the affected queries — and pages, where the data allows — and how the brand and non-brand halves of your query set each moved across the windows the detector chose.",
       },
       {
         label: "Diagnosis",
-        body: "Supported explanations such as ranking, CTR, indexing, or seasonal changes—not a guessed single cause.",
+        body: "The explanations the observed data is compatible with — ranking loss, click-through change, indexing, seasonality — listed rather than ranked. When several fit, the report says so instead of electing one.",
+      },
+      {
+        label: "Penalty status, kept honest",
+        body: "What you reported from the Manual actions and Security issues pages, printed as your report rather than our observation. A reported issue leads the output, because resolving a manual action is the one recovery procedure Google actually defines. If you answered that you were not sure, the diagnosis says nothing about penalties — including that there is no evidence of one.",
       },
       {
         label: "Recommendation",
-        body: "A scoped investigation or remediation step tied to the observed segment.",
+        body: "A scoped next step tied to the observed segment: which report to open, which pages to look at, and which conclusions the current evidence does not support yet.",
+      },
+      {
+        label: "Checks that could not run",
+        body: "The check list is fixed and always rendered in full — the checks that found nothing and the ones that could not run, each with its reason. A report that shows only its hits reads as if it examined everything.",
       },
       {
         label: "Artifact",
-        body: "A comparison record that preserves the chosen windows and evidence boundary.",
+        body: "A comparison record that preserves the chosen windows, the evidence boundary, and the lineage of every claim, so someone else can see what was measured, what was reported, and what was left open.",
       },
     ],
     faq: [
       {
-        question: "Can a public crawl diagnose a traffic drop?",
+        question: "How do I know if my site has a manual action?",
         answer:
-          "Not reliably. The pages may still be public while private search-performance data has changed.",
+          "Open Search Console and read the Manual actions report — it is the only authoritative source. A manual action is a penalty applied by a human reviewer at Google; when one exists, that report names the violation and Google notifies the property's verified owners. No API exposes the report, so no external tool — this one included — can read it for you. If it says no issues were detected, you do not have a manual action, and the drop needs a different explanation.",
       },
       {
-        question: "Is the Google connection read-only?",
+        question:
+          "What is the difference between a manual action and an algorithmic adjustment?",
         answer:
-          "Yes. GenGrowth requests read-only Search Console access and does not change your site or account.",
+          "A manual action is a documented penalty: a named violation listed in Search Console, with a reconsideration process for lifting it. An algorithmic adjustment is Google's ranking systems revaluing your pages — nothing is listed anywhere, no notice is sent, and there is no form to file; improving the site is the only route back. People say “penalized” for both, but only the manual action is something Google will confirm to you.",
+      },
+      {
+        question: "Can this tool tell me whether I was penalized?",
+        answer:
+          "It can situate the question; it cannot settle it. It asks what your Manual actions report says, because only that report is authoritative for a manual action. For the algorithmic case there is no report to read — anywhere — so the diagnosis shows what your own data can support: when the drop started, whether it persisted, which queries carried it, and which mundane causes fit the same curve. It does not confirm causation, and a tool that claims to is guessing.",
+      },
+      {
+        question: "Can this tool tell me if a core update hit my site?",
+        answer:
+          "No. It shows where your drop sits against Google's published update timeline, as orientation — rollouts span weeks and cover a large share of the calendar, so a date overlap is background rather than evidence, and Google adjusts ranking continuously between announced updates, so a miss rules nothing out. Google confirms when updates run; it does not confirm which sites they touched.",
+      },
+      {
+        question: "What are common causes of a drop that are not penalties?",
+        answer:
+          "Most drops are not penalties. Seasonality moves demand before anything on your site changes. SERP feature shifts — an AI Overview or a featured snippet appearing above you — take clicks while rankings hold. Tracking changes and migrations move traffic between reports rather than losing it: a property change, a redirect, a re-tagged analytics setup. And an indexing fault — a stray noindex, a robots rule — imitates a penalty closely while being listed in a different Search Console report entirely. The diagnosis works through explanations like these before anything site-wide is on the table.",
       },
       {
         question: "Can it prove one root cause?",
         answer:
-          "Not always. The output distinguishes what the data supports from hypotheses that need further checking.",
+          "Not always, and it says so rather than guess. The output separates what the data supports from hypotheses that need further checking. Different problems draw the same curve — a lost SERP feature, a noindex on one template, a seasonal trough — and a tool that always names a single culprit is choosing your conclusion for you.",
+      },
+      {
+        question: "Can a public crawl diagnose a traffic drop?",
+        answer:
+          "Not reliably. Your pages can be public, crawlable, and unchanged while your private search performance has collapsed. A drop lives in the clicks-and-impressions record that only Search Console holds, which is why this diagnosis starts from your property rather than from a crawl of your site.",
+      },
+      {
+        question: "Is the Google connection read-only?",
+        answer:
+          "Yes. GenGrowth requests read-only Search Console access. It cannot change your site, your rankings, or your account, and you can revoke the access at any time from your Google account settings.",
       },
     ],
   },
@@ -295,9 +340,9 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   "seo-quick-wins": {
     path: "/tools/seo-quick-wins",
     eyebrow: "搜索表现证据",
-    title: "曝光很高，点击很少",
+    title: "在 Google Search Console 中找出 SEO 机会",
     description:
-      "Google 已经为这些查询词把你展示了成千上万次，却几乎没人点击。我们用你自己网站的点击率曲线来衡量这个缺口，而不是一张行业平均表。引擎只读一个维度——查询词，所以每一行都是搜索词，不是页面。",
+      "把高曝光、低点击的查询词和位置 8–20 的排名，变成一份按优先级排序的行动清单。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
       "GenGrowth 只请求 Search Console 的只读权限，不能发布页面、改变排名或修改你的 Google 账号，也不保存任何结果。",
@@ -414,52 +459,103 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "搜索表现诊断",
     title: "用自己的数据排查自然流量突然下降",
     description:
-      "用你自己的 Search Console 历史数据弄清楚：流量是不是真的跌了、从哪天开始跌、跌下去之后有没有稳住。对比窗口由变点检测自动选定，不由你挑。",
+      "用你自己的 Search Console 历史数据弄清楚：流量是不是真的跌了、从哪天开始跌、跌下去之后有没有稳住。对比窗口由变点检测自动选定，不由你挑。如果你真正想问的是「我是不是被惩罚了」，诊断会把这次下跌放到你的数据实际显示的内容旁边，并明确说明这个问题里哪些部分是它无法替你了结的。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
-      "GenGrowth 使用只读 Search Console 权限，并要求你审阅选择的站点属性。",
-    cta: "打开 GenGrowth 并排查流量下降",
+      "GenGrowth 请求只读 Search Console 权限，并要求你审阅选择的站点属性。它不能修改你的网站、排名或 Google 账号，报告完全由你自己的历史数据算出，而不是演示数据集。",
+    cta: "连接 Search Console 并排查流量下降",
     trust:
-      "没有通用演示，也不会自动归咎于某个原因。结论受限于你的站点属性中可用的证据。",
-    workflowTitle: "产品中的执行方式",
+      "没有通用演示，也不会自动归咎于某个原因。结论受限于你的站点属性中可用的证据，报告里每一条判断都会写明它的出处。",
+    workflowTitle: "运行诊断时会发生什么",
     steps: [
-      { name: "打开项目", text: "创建或打开一个 GenGrowth 项目。" },
       {
-        name: "授权 Search Console",
-        text: "只读访问，然后选择受影响的站点属性。",
+        name: "先回答来自你自己 Search Console 的两个问题",
+        text: "在任何计算开始之前，工具会先问你在「手动操作」和「安全问题」两个页面上看到了什么。没有任何 Google API 开放这两份报告——Search Console API 只提供站点、站点地图、搜索分析和网址检查，再无其他——所以诚实的工具只能问你，而不是假装自己看过。你的回答会贯穿整份报告，并被标记为「你报告的」，而不是「我们观测的」。",
       },
       {
-        name: "比较时间段",
-        text: "检查页面级变化，并审阅有证据支持的根因假设。",
+        name: "以只读方式连接 Search Console",
+        text: "一次点击，随时可以在 Google 账号里撤销。这个连接只能读取你的搜索表现历史，不能发布内容、改变排名或修改你的账号。",
+      },
+      {
+        name: "由变点检测选定对比窗口",
+        text: "工具读取你每天的点击与曝光，在整段可用历史上寻找拐点。前后对比窗口由检测器选定，绝不由你手挑——手挑的窗口就是手挑的结论。没有持续下去的短暂下探会被如实报告为短期异常，不会被当成下降趋势卖给你。",
+      },
+      {
+        name: "拆分并描述查询词构成",
+        text: "品牌词与非品牌词会被分开，各自的变动连同覆盖率一起描述。Search Console 会隐去低量查询词，所以报告会写明可见行实际覆盖了你多少流量——当覆盖率薄到撑不起对比时，报告会选择沉默。",
+      },
+      {
+        name: "按顺序阅读结论",
+        text: "先看已观测到的变化，每一条都挂着背后的数字；再看这些数字能兼容哪些解释；最后是逐条列出、而非藏起来的「无法执行的检查」，以及你需要去哪里补上它们。",
       },
     ],
     outputTitle: "诊断如何区分不同层次",
     outputs: [
       {
         label: "Observation",
-        body: "选定时间段内变化的幅度、时点与受影响页面或查询词。",
+        body: "变化的幅度与时点、受影响的查询词——在数据允许时也包括页面——以及品牌与非品牌两半在检测器选定的窗口之间各自怎么动。",
       },
       {
         label: "Diagnosis",
-        body: "排名、CTR、索引或季节性等有证据支持的解释，而不是猜测单一原因。",
+        body: "已观测数据能兼容的解释——排名下滑、点击率变化、索引、季节性——只列出，不排序。当多种解释都成立时，报告会直说，而不是替你选一个。",
       },
-      { label: "Recommendation", body: "与观察区间对应的排查或修复步骤。" },
-      { label: "Artifact", body: "保留所选时间窗口和证据边界的比较记录。" },
+      {
+        label: "惩罚状态，如实呈现",
+        body: "你在「手动操作」和「安全问题」页面上看到的内容，会以「你的报告」而非「我们的观测」呈现。你报告了问题时，它会排在输出最前面，因为解除手动操作是 Google 唯一明确定义过的恢复流程。你回答「不确定」时，诊断对惩罚不做任何表态——包括「没有证据表明被惩罚」这种表态。",
+      },
+      {
+        label: "Recommendation",
+        body: "与观察到的分段对应的、范围明确的下一步：打开哪份报告、去看哪些页面，以及哪些结论是当前证据还不支持的。",
+      },
+      {
+        label: "无法执行的检查",
+        body: "检查清单是固定的，而且永远完整渲染——查过但没发现问题的、和根本无法执行的，都逐条列出并附原因。只展示命中项的报告，读起来就像它检查过所有东西。",
+      },
+      {
+        label: "Artifact",
+        body: "一份保留所选窗口、证据边界和每条判断来源的比较记录，让其他人能看清哪些是测出来的、哪些是转述的、哪些仍然悬而未决。",
+      },
     ],
     faq: [
       {
+        question: "怎么知道我的网站有没有手动操作？",
+        answer:
+          "打开 Search Console 的「手动操作」报告——它是唯一权威来源。手动操作是 Google 人工审核员施加的惩罚；存在时，那份报告会写明违规名目，Google 也会通知资产的已验证所有者。没有任何 API 开放这份报告，所以任何外部工具——包括本工具——都不能替你读它。如果报告显示未检测到问题，你就没有手动操作，这次下跌需要别的解释。",
+      },
+      {
+        question: "手动操作和算法调整有什么区别？",
+        answer:
+          "手动操作是有据可查的惩罚：违规名目列在 Search Console 里，并有一套申请解除的复审流程。算法调整则是 Google 的排名系统对你的页面重新估值——任何地方都不会列出，不发通知，也没有表格可提交；改进网站是唯一的出路。两种情况人们都叫「被降权」，但只有手动操作是 Google 会向你确认的那一种。",
+      },
+      {
+        question: "这个工具能告诉我「我是不是被惩罚了」吗？",
+        answer:
+          "它能把这个问题摆到证据旁边，但不能替你了结它。它会问你「手动操作」报告怎么说，因为对手动操作而言只有那份报告是权威的。至于算法层面，任何地方都没有一份可读的报告，所以诊断只展示你自己的数据能支持什么：下跌从何时开始、有没有持续、由哪些查询词构成，以及哪些平常的原因也能画出同一条曲线。它不确认因果——声称能确认的工具是在猜。",
+      },
+      {
+        question: "它能告诉我是不是被某次核心更新打中了吗？",
+        answer:
+          "不能。它会展示你的下跌落在 Google 已公布更新时间线的什么位置，仅作定位——更新的推送往往持续数周、覆盖全年相当大的比例，日期重合是背景噪声而不是证据；而已公布的更新之间 Google 也在持续调整排名，日期错开同样排除不了任何东西。Google 会确认更新何时进行，但从不确认它触及了哪些网站。",
+      },
+      {
+        question: "哪些常见原因会导致下跌、但并不是惩罚？",
+        answer:
+          "大多数下跌都不是惩罚。季节性会在你的网站没有任何变化之前先移走需求；SERP 特性变化——AI Overview 或精选摘要出现在你上方——会在排名不动的情况下拿走点击；跟踪方式变更和站点迁移会把流量在报告之间搬家而不是弄丢：换资产、加跳转、重打分析代码；而索引故障——一个多余的 noindex、一条 robots 规则——表现得和惩罚非常像，却列在 Search Console 完全不同的报告里。诊断会先走完这类解释，再谈任何站点级的问题。",
+      },
+      {
+        question: "它能证明唯一根因吗？",
+        answer:
+          "不一定，而且它会直说，不会去猜。输出会区分数据支持的事实和仍需验证的假设。不同的问题会画出同一条曲线——丢掉一个 SERP 特性、某个模板上的 noindex、一个季节性低谷——永远给你点名单一元凶的工具，是在替你选结论。",
+      },
+      {
         question: "公开爬取能诊断流量下降吗？",
         answer:
-          "不能可靠地做到。页面可能仍然公开，但私有搜索表现数据已经变化。",
+          "不能可靠地做到。页面可以照常公开、可抓取、内容不变，而你的私有搜索表现已经塌了。下跌记录在只有 Search Console 才持有的点击与曝光序列里，这也是本诊断从你的站点属性、而不是从爬取你的网站开始的原因。",
       },
       {
         question: "Google 连接是只读的吗？",
         answer:
-          "是。GenGrowth 请求只读 Search Console 权限，不会修改你的网站或账号。",
-      },
-      {
-        question: "它能证明唯一根因吗？",
-        answer: "不一定。输出会区分数据支持的事实和仍需验证的假设。",
+          "是。GenGrowth 请求只读 Search Console 权限，不能修改你的网站、排名或账号，你随时可以在 Google 账号设置里撤销授权。",
       },
     ],
   },
