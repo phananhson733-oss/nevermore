@@ -385,21 +385,26 @@ export default async function InternalLinkAuditPage({
               <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-text-dark-primary">
                 {content.relatedTitle}
               </h2>
-              <Link
-                href={localePath(locale, "/tools/seo-audit")}
-                className="mt-5 block rounded-row border border-brand-border bg-brand-panel-raised p-[18px] transition-colors hover:border-brand-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-              >
-                <span className="flex items-center gap-2 text-[13.5px] font-semibold text-text-dark-primary">
-                  <Link2
-                    aria-hidden="true"
-                    className="size-4 text-brand-accent-text"
-                  />
-                  {content.relatedAudit}
-                </span>
-                <span className="mt-2 block text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                  {content.relatedAuditBody}
-                </span>
-              </Link>
+              <div className="mt-5 space-y-3">
+                {content.relatedItems.map((item) => (
+                  <Link
+                    key={item.slug}
+                    href={localePath(locale, `/tools/${item.slug}`)}
+                    className="block rounded-row border border-brand-border bg-brand-panel-raised p-[18px] transition-colors hover:border-brand-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
+                  >
+                    <span className="flex items-center gap-2 text-[13.5px] font-semibold text-text-dark-primary">
+                      <Link2
+                        aria-hidden="true"
+                        className="size-4 shrink-0 text-brand-accent-text"
+                      />
+                      {item.title}
+                    </span>
+                    <span className="mt-2 block text-[12.5px] leading-[1.6] text-text-dark-secondary">
+                      {item.body}
+                    </span>
+                  </Link>
+                ))}
+              </div>
               <Link
                 href={localePath(locale, "/tools")}
                 className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-2 uppercase transition-colors hover:text-brand-info"

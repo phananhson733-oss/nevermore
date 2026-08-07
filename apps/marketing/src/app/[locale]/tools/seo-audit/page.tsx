@@ -334,6 +334,48 @@ export default async function SeoAuditPage({
             </div>
           </section>
 
+          {/*
+           * 枢纽区块。这一页是唯一触及全部其他工具的入口，所以「每类记录去哪」
+           * 只有它讲得通。它替代的是「先修哪个」——记录里刻意没有 score /
+           * priority，方向因此由归属给出，不由排序给出。
+           *
+           * 第 1 条尤其要小心措辞：noindex 是**前提**不是**优先级**。写成
+           * 「这些排在最前面」就是在替产品做它拒绝做的判断；写成「它们在其他
+           * 问题之前」是陈述逻辑关系，两者差一个词，性质完全不同。
+           */}
+          <section className="mt-18">
+            <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
+              {t("handoffEyebrow")}
+            </p>
+            <h2 className="mt-2 max-w-3xl text-[25px] font-semibold tracking-[-0.03em] text-text-dark-primary">
+              {t("handoffTitle")}
+            </h2>
+            <p className="mt-3 max-w-3xl text-[13px] leading-[1.7] text-text-dark-secondary">
+              {t("handoffBody")}
+            </p>
+            <ol className="mt-7 space-y-3">
+              {[1, 2, 3, 4, 5].map((index) => (
+                <li
+                  key={index}
+                  className="rounded-card border border-brand-border-card bg-brand-panel p-[22px]"
+                >
+                  <h3 className="flex items-baseline gap-3 text-[15.5px] font-semibold text-text-dark-primary">
+                    <span
+                      aria-hidden="true"
+                      className="shrink-0 font-mono text-[10px] tracking-[0.12em] text-text-dark-faint"
+                    >
+                      0{index}
+                    </span>
+                    {t(`handoff${index}Title`)}
+                  </h3>
+                  <p className="mt-2 pl-8 text-[12.5px] leading-[1.7] text-text-dark-secondary">
+                    {t(`handoff${index}Body`)}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </section>
+
           <section className="mt-18">
             <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {t("faqEyebrow")}

@@ -92,9 +92,23 @@ export function HeroSection() {
         <motion.p
           {...fadeInUp}
           transition={{ ...fadeInUp.transition, delay: 0.45 }}
-          className="mt-5 pb-22 text-[13px] leading-[1.6] text-text-dark-secondary"
+          className="mt-5 text-[13px] leading-[1.6] text-text-dark-secondary"
         >
           {t("socialProof")}
+        </motion.p>
+
+        {/*
+         * 实体定义句：写给 AI 答案引擎的，不是写给人的。它们从 H1 那种口号里
+         * 提取不出「这是什么」，需要一句主语是品牌名、说清品类的完整定义。
+         * 必须是正文真实文本——AI 引擎主要读正文，只放进 schema 拿不到。
+         * 视觉上可以淡，但不能做成 11px faint 那一档（对比度读不动）。
+         */}
+        <motion.p
+          {...fadeInUp}
+          transition={{ ...fadeInUp.transition, delay: 0.55 }}
+          className="mx-auto mt-8 max-w-[680px] border-t border-brand-border pt-6 pb-22 text-[13.5px] leading-[1.7] text-text-dark-secondary"
+        >
+          {t("entityDefinition")}
         </motion.p>
       </div>
     </section>

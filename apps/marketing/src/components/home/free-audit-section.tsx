@@ -42,6 +42,13 @@ export function FreeAuditSection() {
               </li>
             ))}
           </ul>
+          {/*
+           * 这条替代的是「先修哪个」——产品的 record 里刻意没有 score /
+           * severity / priority，所以方向由「属于哪一步」给，不由排序给。
+           */}
+          <p className="mt-6 border-l-2 border-brand-accent/40 pl-4 text-[13.5px] leading-[1.7] text-text-dark-secondary">
+            {t("workflowNote")}
+          </p>
         </div>
 
         <div className="relative">
@@ -68,6 +75,20 @@ export function FreeAuditSection() {
               {t("fullReport")}
               <ArrowRight aria-hidden="true" className="size-3" />
             </Link>
+            {/*
+             * 孤岛判定是 internal-link-audit 的输出（sitemap 差集），不是
+             * seo-audit 的。与其在一个结果里混两个工具的数据，不如在这里
+             * 交叉引流——更诚实，也多一次自然的工具间流转。
+             */}
+            <p className="mt-5 border-t border-brand-border pt-4 text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {t("orphanHint")}{" "}
+              <Link
+                href={localePath(locale, "/tools/internal-link-audit")}
+                className="text-brand-accent-text underline-offset-4 transition-colors hover:text-brand-accent-hover hover:underline"
+              >
+                {t("orphanHintLink")}
+              </Link>
+            </p>
           </div>
         </div>
       </div>
