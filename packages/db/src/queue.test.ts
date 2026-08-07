@@ -7,6 +7,7 @@ import {
   enqueueRunInTx,
   PgBoss,
   QUEUE_CONFIG,
+  TRANSIENT_RETRY_DELAY_SECONDS,
   QUEUE_NAMES,
   startBoss,
   type RunJobPayload,
@@ -33,6 +34,7 @@ describe("pg-boss queue contract", () => {
       expireInSeconds: 600,
       retryLimit: 3,
       retryBackoff: true,
+      retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
       heartbeatSeconds: 60,
     });
   });
@@ -43,6 +45,7 @@ describe("pg-boss queue contract", () => {
       expireInSeconds: 300,
       retryLimit: 2,
       retryBackoff: true,
+      retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
       heartbeatSeconds: 60,
     });
   });
@@ -53,6 +56,7 @@ describe("pg-boss queue contract", () => {
       expireInSeconds: 600,
       retryLimit: 0,
       retryBackoff: false,
+      retryDelay: 0,
       heartbeatSeconds: 60,
     });
   });
@@ -63,6 +67,7 @@ describe("pg-boss queue contract", () => {
       expireInSeconds: 600,
       retryLimit: 3,
       retryBackoff: true,
+      retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
       heartbeatSeconds: 60,
     });
   });
@@ -73,8 +78,30 @@ describe("pg-boss queue contract", () => {
       expireInSeconds: 15 * 60,
       retryLimit: 2,
       retryBackoff: true,
+      retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
       heartbeatSeconds: 60,
     });
+  });
+
+  it("gives every retryable queue a backoff long enough to outlast a transient dependency outage", () => {
+    // pg-boss defaults retryDelay to 1s when retryBackoff is on, which yields a
+    // ~3-6s total window across two retries. A saturated connection pooler or a
+    // rate-limited provider is still down at that point, so every attempt burns
+    // against the same outage and the run fails as if it had never retried.
+    expect(TRANSIENT_RETRY_DELAY_SECONDS).toBeGreaterThanOrEqual(30);
+
+    for (const name of QUEUE_NAMES) {
+      const cfg = QUEUE_CONFIG[name];
+      if (cfg.retryLimit === 0) continue;
+      expect(cfg.retryBackoff).toBe(true);
+      expect(cfg.retryDelay).toBe(TRANSIENT_RETRY_DELAY_SECONDS);
+    }
+  });
+
+  it("leaves the non-replaying external-write queue without a retry delay", () => {
+    expect(QUEUE_CONFIG.publication.retryLimit).toBe(0);
+    expect(QUEUE_CONFIG.publication.retryBackoff).toBe(false);
+    expect(QUEUE_CONFIG.publication.retryDelay).toBe(0);
   });
 
   it("constructs normal and enqueue-only clients without opening connections", () => {

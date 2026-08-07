@@ -472,6 +472,7 @@ export type {
 export {
   PGBOSS_SCHEMA,
   QUEUE_CONFIG,
+  TRANSIENT_RETRY_DELAY_SECONDS,
   QUEUE_NAMES,
   createBoss,
   startBoss,
