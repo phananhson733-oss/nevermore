@@ -5,6 +5,7 @@
 
 import { cookies } from "next/headers";
 
+import { cookieAttributes } from "../../../../lib/auth/sealed-cookie.ts";
 import { createServerSupabaseClient } from "../../../../lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -45,8 +46,12 @@ export async function POST(): Promise<Response> {
   }
 
   const jar = await cookies();
-  for (const name of ["gg_id", "gg_gsc", "gg_sites", "gg_oauth_tx"]) {
-    jar.delete(name);
+  // The path has to come from whatever wrote the cookie: `gg_gsc` lives at
+  // /api, and a delete at the default "/" does not match it, so the grant
+  // would survive the sign-out that was supposed to end it. Same failure the
+  // note above describes for the session cookie's domain, one attribute over.
+  for (const name of ["gg_id", "gg_gsc", "gg_sites", "gg_oauth_tx"] as const) {
+    jar.delete({ name, path: cookieAttributes(name, 0).path });
   }
 
   return Response.json(
