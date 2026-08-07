@@ -79,6 +79,7 @@ function keywordFixture(
     languageTag: "en-US",
     queryKind: "search_query" as const,
     status: "candidate" as const,
+    reviewOrigin: null,
     revision: 0,
     intent: null,
     buyerStage: null,

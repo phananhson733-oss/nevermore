@@ -45,6 +45,8 @@ import {
   growthMapPageTypeLabel,
   growthMapPageWindow,
   growthMapPrimaryOpportunity,
+  growthMapKeywordReviewPresentation,
+  GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
   competitorMonitorDisplayState,
@@ -2947,7 +2949,11 @@ describe("growth map keyset page window", () => {
 
 describe("growth map primary opportunity", () => {
   it("has nothing to open when the URL projects no Finding", () => {
-    expect(growthMapPrimaryOpportunity([])).toEqual({ kind: "none" });
+    expect(growthMapPrimaryOpportunity([])).toEqual({
+      kind: "none",
+      reason: "no_findings",
+      closedFindingCount: 0,
+    });
   });
 
   it("selects by severity, not by the server's id ordering", () => {
@@ -2999,5 +3005,172 @@ describe("growth map primary opportunity", () => {
       kind: "review",
       finding: critical,
     });
+  });
+
+  it("never promotes a Finding a person ignored, matching the row priority pill", () => {
+    const ignoredCritical = urlFinding(IDS.finding, {
+      severity: "critical",
+      reviewState: "ignored",
+    });
+    const openHigh = urlFinding(IDS.supportingFinding, { severity: "high" });
+
+    expect(growthMapPrimaryOpportunity([ignoredCritical, openHigh])).toEqual({
+      kind: "review",
+      finding: openHigh,
+    });
+  });
+
+  it("never promotes a Finding the run no longer reports as active", () => {
+    const resolvedCritical = urlFinding(IDS.finding, {
+      severity: "critical",
+      active: false,
+    });
+    const openLow = urlFinding(IDS.supportingFinding, { severity: "low" });
+
+    expect(growthMapPrimaryOpportunity([resolvedCritical, openLow])).toEqual({
+      kind: "review",
+      finding: openLow,
+    });
+  });
+
+  it("keeps a confirmed Finding rankable until it is actually resolved", () => {
+    const confirmed = urlFinding(IDS.finding, {
+      severity: "high",
+      reviewState: "confirmed",
+    });
+
+    expect(growthMapPrimaryOpportunity([confirmed])).toEqual({
+      kind: "review",
+      finding: confirmed,
+    });
+  });
+
+  it("refuses to open Execution for an ignored Finding that still names an Action", () => {
+    const ignored = urlFinding(IDS.finding, {
+      severity: "critical",
+      reviewState: "ignored",
+      executionRef: { actionId: IDS.action, artifactIds: [IDS.artifact] },
+    });
+
+    expect(growthMapPrimaryOpportunity([ignored])).toEqual({
+      kind: "none",
+      reason: "all_closed",
+      closedFindingCount: 1,
+    });
+  });
+
+  it("degrades to a named reason when every Finding is ignored or inactive", () => {
+    const ignored = urlFinding(IDS.finding, {
+      severity: "critical",
+      reviewState: "ignored",
+    });
+    const inactive = urlFinding(IDS.supportingFinding, {
+      severity: "high",
+      active: false,
+    });
+
+    expect(growthMapPrimaryOpportunity([ignored, inactive])).toEqual({
+      kind: "none",
+      reason: "all_closed",
+      closedFindingCount: 2,
+    });
+  });
+});
+
+describe("growth map keyword governance origin presentation", () => {
+  it("keeps the plain status label when a person made the decision", () => {
+    expect(
+      growthMapKeywordReviewPresentation({
+        status: "approved",
+        reviewOrigin: "user",
+      }),
+    ).toEqual({
+      statusLabelKey: "status.approved",
+      originLabelKey: null,
+      awaitingHumanReview: false,
+    });
+  });
+
+  it("keeps the plain status label when no decision was ever recorded", () => {
+    expect(
+      growthMapKeywordReviewPresentation({
+        status: "candidate",
+        reviewOrigin: null,
+      }),
+    ).toEqual({
+      statusLabelKey: "status.candidate",
+      originLabelKey: null,
+      awaitingHumanReview: false,
+    });
+  });
+
+  it("reads a read model that does not carry the field yet as no decision", () => {
+    expect(
+      growthMapKeywordReviewPresentation(
+        keywordItem(IDS.keywordA, "pipeline software"),
+      ),
+    ).toEqual({
+      statusLabelKey: "status.approved",
+      originLabelKey: null,
+      awaitingHumanReview: false,
+    });
+  });
+
+  it("never presents a system-approved keyword with the human confirmation label", () => {
+    const presentation = growthMapKeywordReviewPresentation({
+      status: "approved",
+      reviewOrigin: "system_suggestion",
+    });
+
+    expect(presentation).toEqual({
+      statusLabelKey: "reviewOrigin.approvedBySystem",
+      originLabelKey: "reviewOrigin.pendingHumanReview",
+      awaitingHumanReview: true,
+    });
+    expect(presentation.statusLabelKey).not.toBe("status.approved");
+  });
+
+  it("separates a migration baseline approval from a human confirmation", () => {
+    expect(
+      growthMapKeywordReviewPresentation({
+        status: "approved",
+        reviewOrigin: "migration_baseline",
+      }),
+    ).toEqual({
+      statusLabelKey: "reviewOrigin.approvedByMigration",
+      originLabelKey: "reviewOrigin.pendingHumanReview",
+      awaitingHumanReview: true,
+    });
+  });
+
+  it("discloses a machine origin on the other governance states too", () => {
+    expect(
+      growthMapKeywordReviewPresentation({
+        status: "excluded",
+        reviewOrigin: "system_suggestion",
+      }),
+    ).toEqual({
+      statusLabelKey: "status.excluded",
+      originLabelKey: "reviewOrigin.system_suggestion",
+      awaitingHumanReview: true,
+    });
+    expect(
+      growthMapKeywordReviewPresentation({
+        status: "parked",
+        reviewOrigin: "migration_baseline",
+      }),
+    ).toEqual({
+      statusLabelKey: "status.parked",
+      originLabelKey: "reviewOrigin.migration_baseline",
+      awaitingHumanReview: true,
+    });
+  });
+
+  it("names every decision origin the governance table can persist", () => {
+    expect(GROWTH_MAP_KEYWORD_REVIEW_ORIGINS).toEqual([
+      "migration_baseline",
+      "system_suggestion",
+      "user",
+    ]);
   });
 });

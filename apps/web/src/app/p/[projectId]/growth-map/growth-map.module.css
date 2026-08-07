@@ -2590,7 +2590,11 @@
 
 .keywordKindCell,
 .keywordStatusCell {
+  display: inline-flex;
   min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .libraryMetricCell .keywordFreshness,
@@ -2630,6 +2634,28 @@
 .keywordStatusParked {
   color: var(--sf-violet-text);
   background: var(--sf-violet-soft);
+}
+
+/* A governance state written by the system has never been human-reviewed, so
+   it must not keep the mint "confirmed" treatment a person's decision earns. */
+.keywordStatusMachine {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+  border: 1px dashed var(--sf-amber-text);
+}
+
+.keywordReviewOrigin {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 750;
+  background: var(--sf-surface-deep);
+  border: 1px dashed var(--sf-border-strong);
+  border-radius: 999px;
 }
 
 .keywordFreshnessUnknown {
@@ -7221,6 +7247,19 @@ a.competitorMonitorContentUrl:hover {
   overflow-wrap: anywhere;
   color: var(--sf-fg);
   font-size: 14px;
+}
+
+/* States the scope gap between the whole-generation band counts in the summary
+   cards and the page-local page-type/priority filter. */
+.portfolioFilterScopeNote {
+  margin: 0 0 12px;
+  padding: 10px 13px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  background: color-mix(in srgb, var(--sf-surface-deep) 56%, var(--sf-surface));
+  border: 1px dashed var(--sf-border-strong);
+  border-radius: 12px;
 }
 
 .portfolioPagination {

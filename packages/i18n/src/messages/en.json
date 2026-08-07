@@ -1723,6 +1723,16 @@
         "excluded": "Excluded",
         "parked": "Parked"
       },
+      "reviewOrigin": {
+        "label": "Decision origin",
+        "user": "Reviewed by a person",
+        "system_suggestion": "System suggestion",
+        "migration_baseline": "Migration baseline",
+        "approvedBySystem": "Auto-approved by system",
+        "approvedByMigration": "Approved by migration baseline",
+        "pendingHumanReview": "Awaiting human review",
+        "pendingHumanReviewHint": "This keyword's current status was written by the system and has not been reviewed by a person, so it is not a confirmation."
+      },
       "freshness": {
         "current": "Current",
         "stale": "Stale",
@@ -2245,7 +2255,9 @@
       "more": "More filters",
       "moreLabel": "More filter controls",
       "moreActiveCount": "{count} active",
-      "expandRowDetails": "Expand row details"
+      "expandRowDetails": "Expand row details",
+      "clear": "Clear filters",
+      "clientScopeNote": "Page type and priority narrow only the {limit} URLs loaded on this page. The band counts in the cards above are whole-generation totals, so URLs in other bands can sit on other pages — use the pager to reach them."
     },
     "loadingPortfolio": "Reading the real URL portfolio…",
     "loadingDetail": "Reading the selected URL evidence chain…",
@@ -2292,6 +2304,9 @@
     "noSearchResultsDescription": "Try another full URL, domain, or path. Approximate results are never added just to fill the list.",
     "noPagesTitle": "This audit has no verifiable URLs",
     "noPagesDescription": "Complete an audit with a Crawl PageSnapshot or a uniquely mapped page Observation first.",
+    "filteredPageEmptyTitle": "No URL on this page matches the filter",
+    "filteredPageEmptyDescription": "Page type and priority narrow only the batch loaded on this page. Page through the list to keep looking, or clear the filter.",
+    "filteredPageEmptyPriorityDescription": "This generation has {count} {code} URLs in total, none of them on this page. The list is ordered by coverage, not by priority, so page through it or clear the filter.",
     "paginationLabel": "URL list pagination",
     "previousPage": "Previous",
     "nextPage": "Next",
@@ -2541,10 +2556,12 @@
     },
     "primaryOpportunityReviewAction": "Review the highest-priority opportunity",
     "primaryOpportunityReviewHint": "This opportunity has no confirmed Action yet, so review it below first.",
+    "primaryOpportunityClosedAction": "Review the closed signals",
+    "primaryOpportunityClosedHint": "All {count} signals on this URL are ignored or no longer reported, so there is no highest-priority opportunity to act on.",
     "modeCount": {
       "pages": "{count, plural, one {# page} other {# pages}}"
     },
-    "paginationStatusFiltered": "{count, plural, one {# row matches on this page} other {# rows match on this page}} · Page {page} of {pages}"
+    "paginationStatusFiltered": "{count, plural, one {# row matches on this page} other {# rows match on this page}} · {total} in this generation · Page {page} of {pages}"
   },
   "plan": {
     "kicker": "Evidence-led roadmap · 90 days",

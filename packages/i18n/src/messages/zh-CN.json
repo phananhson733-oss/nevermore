@@ -1723,6 +1723,16 @@
         "excluded": "已排除",
         "parked": "已暂存"
       },
+      "reviewOrigin": {
+        "label": "决策来源",
+        "user": "人工确认",
+        "system_suggestion": "系统建议",
+        "migration_baseline": "迁移基线",
+        "approvedBySystem": "系统已批准",
+        "approvedByMigration": "迁移基线已批准",
+        "pendingHumanReview": "待人工复核",
+        "pendingHumanReviewHint": "这条关键词的当前状态由系统写入，尚未经人工复核，不等于已确认。"
+      },
       "freshness": {
         "current": "当前",
         "stale": "较旧",
@@ -2245,7 +2255,9 @@
       "more": "更多筛选",
       "moreLabel": "更多筛选条件",
       "moreActiveCount": "已启用 {count} 项",
-      "expandRowDetails": "展开本页详情"
+      "expandRowDetails": "展开本页详情",
+      "clear": "清除筛选",
+      "clientScopeNote": "页面类型与优先级只筛选当前页已加载的 {limit} 条 URL；上方卡片里的分档数量是本代全量，其它分档的 URL 可能落在别的页，请翻页查看。"
     },
     "loadingPortfolio": "正在读取真实 URL 组合…",
     "loadingDetail": "正在读取所选 URL 的证据链…",
@@ -2292,6 +2304,9 @@
     "noSearchResultsDescription": "请更换完整 URL、Domain 或路径；系统不会为了填满列表而添加近似结果。",
     "noPagesTitle": "本次审计没有可验证的 URL",
     "noPagesDescription": "需要先完成一次带有 Crawl PageSnapshot 或唯一页面 Observation 的审计。",
+    "filteredPageEmptyTitle": "本页没有符合筛选条件的 URL",
+    "filteredPageEmptyDescription": "页面类型与优先级只筛选当前页已加载的这一批；请翻页继续查找，或清除筛选。",
+    "filteredPageEmptyPriorityDescription": "本代共有 {count} 条 {code} 的 URL，但都不在当前页。列表按覆盖面排序而不是按优先级，请翻页继续查找，或清除筛选。",
     "paginationLabel": "URL 列表分页",
     "previousPage": "上一页",
     "nextPage": "下一页",
@@ -2541,10 +2556,12 @@
     },
     "primaryOpportunityReviewAction": "先审核最高优先机会",
     "primaryOpportunityReviewHint": "这条机会还没有确认出可执行的 Action，先在下方完成审核。",
+    "primaryOpportunityClosedAction": "查看已关闭的信号",
+    "primaryOpportunityClosedHint": "本页的 {count} 条信号已全部被忽略或已不再出现，没有可推进的最高优先机会。",
     "modeCount": {
       "pages": "{count} 个页面"
     },
-    "paginationStatusFiltered": "本页筛选出 {count} 条 · 第 {page} / {pages} 页"
+    "paginationStatusFiltered": "本页筛选出 {count} 条 · 全代共 {total} 条 · 第 {page} / {pages} 页"
   },
   "plan": {
     "kicker": "证据驱动的路线图 · 90 天",

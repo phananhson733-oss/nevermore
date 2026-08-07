@@ -3,6 +3,7 @@ import {
   DataSnapshotsRepository,
   EvidenceRepository,
   GrowthMapReadRepository,
+  MAX_GROWTH_MAP_ENTITY_LOOKUP,
   ProjectsRepository,
   sha256Hex,
   type CanonicalValue,
@@ -367,6 +368,250 @@ function installUrlDetailFixtures(options: {
   );
 }
 
+/**
+ * One portfolio page holds up to 100 URLs, and a single template defect can
+ * put dozens of distinct Findings on each of them, so the union of Finding IDs
+ * a page must resolve routinely exceeds the repository's per-call entity
+ * lookup bound. Three URLs are enough to cross it here without making the
+ * fixture unreadable.
+ */
+const WIDE_URL_COUNT = 3;
+const WIDE_FINDINGS_PER_URL = 80;
+const WIDE_FINDING_COUNT = WIDE_URL_COUNT * WIDE_FINDINGS_PER_URL;
+/** Blast radius of the one structural Finding, drawn from the real generation. */
+const STRUCTURAL_COVERAGE = 354;
+
+function wideId(kind: number, index: number): string {
+  return `0000000${kind}-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+}
+
+/**
+ * Mirrors `uniqueBoundedIds` in `GrowthMapReadRepository`: the real repository
+ * refuses more than MAX_GROWTH_MAP_ENTITY_LOOKUP unique IDs with a RangeError,
+ * which is exactly what an unbatched service-layer call would trigger.
+ */
+function boundedUniqueIds(label: string, ids: readonly string[]): string[] {
+  const unique = [...new Set(ids)];
+  if (unique.length > MAX_GROWTH_MAP_ENTITY_LOOKUP) {
+    throw new RangeError(
+      `${label} accepts at most ${MAX_GROWTH_MAP_ENTITY_LOOKUP} unique IDs`,
+    );
+  }
+  return unique;
+}
+
+function installWideGenerationFixtures(): {
+  readonly coverageBatchSizes: readonly number[];
+  readonly structuralFindingId: string;
+  readonly structuralSitePageId: string;
+  readonly isolatedSitePageIds: readonly string[];
+} {
+  const generation = publishedGenerationFixture();
+  const inventory: Record<string, unknown>[] = [];
+  const observations: Record<string, unknown>[] = [];
+  const targets: Record<string, unknown>[] = [];
+  const findingsById = new Map<string, Record<string, unknown>>();
+  const coverageByFinding = new Map<string, number>();
+
+  for (let url = 0; url < WIDE_URL_COUNT; url += 1) {
+    const pageUrl = `https://example.test/wiki/topic-${url}/`;
+    const sitePageId = wideId(1, url);
+    const observationId = wideId(2, url);
+    const pageSnapshotId = wideId(5, url);
+    const pageExtract = {
+      schemaVersion: "crawl.page-extract.v1",
+      depth: 0,
+      subjectUrl: pageUrl,
+      projection: { fetchUrl: pageUrl, title: `Topic ${url}` },
+    };
+    inventory.push({
+      workspace_id: scope.workspaceId,
+      project_id: projectId,
+      site_page_id: sitePageId,
+      site_id: siteId,
+      normalized_url: pageUrl,
+      normalized_url_hash: sha256Hex(pageUrl),
+      template_key: null,
+      site_page_created_at: capturedAt,
+      page_snapshot_id: pageSnapshotId,
+      crawl_snapshot_id: snapshotId,
+      page_snapshot_content_hash: contentHash(
+        pageExtract as unknown as CanonicalValue,
+      ),
+      page_snapshot_canonical_extract: null,
+      page_snapshot_extract: pageExtract,
+      page_snapshot_captured_at: capturedAt,
+    });
+    observations.push({
+      id: observationId,
+      workspace_id: scope.workspaceId,
+      project_id: projectId,
+      snapshot_id: snapshotId,
+      site_page_id: sitePageId,
+      provider: "crawl",
+      metric_key: "crawl.page.v1",
+      subject_type: "url",
+      subject_ref: pageUrl,
+      observed_at: capturedAt,
+      availability: "available",
+      value_numeric: null,
+      value_text: null,
+      value_json: {
+        fetchUrl: pageUrl,
+        status: 200,
+        finalStatus: 200,
+        wordCount: 1200,
+        responseMs: 100,
+      },
+      unit: null,
+      origin: "source_observation",
+      method: "observed",
+      grade: "A",
+      support: "supports",
+      limitation: "Bounded public crawl.",
+    });
+    for (let offset = 0; offset < WIDE_FINDINGS_PER_URL; offset += 1) {
+      const index = url * WIDE_FINDINGS_PER_URL + offset;
+      const wideFindingId = wideId(4, index);
+      targets.push({
+        id: wideId(3, index),
+        workspace_id: scope.workspaceId,
+        project_id: projectId,
+        site_id: siteId,
+        finding_id: wideFindingId,
+        diagnostic_run_id: olderPublishedRunId,
+        relation: "direct_url",
+        target_kind: "url",
+        target_ref: pageUrl,
+        resolution_state: "resolved",
+        basis_kind: "crawl_exact_fetch",
+        site_page_id: sitePageId,
+        page_snapshot_id: pageSnapshotId,
+        source_observation_id: observationId,
+        member_ref: pageUrl,
+        limitation: null,
+        relation_key: "direct-url",
+        created_at: capturedAt,
+      });
+      findingsById.set(wideFindingId, {
+        id: wideFindingId,
+        workspace_id: scope.workspaceId,
+        project_id: projectId,
+        finding_key: `${pageUrl}:TECH-LINKGRAPH-005:${offset}`,
+        rule_id: "TECH-LINKGRAPH-005",
+        rule_version: 1,
+        rule_family: "technical",
+        intent: "fix",
+        domain: "technical_search",
+        title_key: "finding.technical",
+        title_args: {},
+        summary: "Fix the selected URL.",
+        summary_locale: "en",
+        summary_invocation_id: null,
+        subject_refs: [pageUrl],
+        severity: "medium",
+        confidence: "high",
+        review_state: "unreviewed",
+        review_revision: 0,
+        review_reason: null,
+        review_note: null,
+        active: true,
+        regressed: false,
+        first_seen_run_id: olderPublishedRunId,
+        last_seen_run_id: olderPublishedRunId,
+        first_seen_at: capturedAt,
+        last_seen_at: capturedAt,
+        resolved_at: null,
+        created_at: capturedAt,
+        updated_at: capturedAt,
+      });
+      coverageByFinding.set(wideFindingId, 1);
+    }
+  }
+
+  // Deliberately the highest-sorting Finding ID, so its coverage count is only
+  // reachable from the last batch: a fix that keeps just the first batch, or
+  // that lets a later batch overwrite an earlier one, still fails here.
+  const structuralFindingId = wideId(4, WIDE_FINDING_COUNT - 1);
+  coverageByFinding.set(structuralFindingId, STRUCTURAL_COVERAGE);
+  const structuralSitePageId = wideId(1, WIDE_URL_COUNT - 1);
+
+  const coverageBatchSizes: number[] = [];
+
+  vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+    id: projectId,
+    default_delivery_locale: "en",
+  } as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "findReadableRunById",
+  ).mockResolvedValue(generation.run);
+  vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+    generation.snapshot,
+  ]);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listCurrentRunUrls",
+  ).mockResolvedValue({ rows: inventory as never, nextCursor: null });
+  installPortfolioSummary({
+    urlCount: WIDE_URL_COUNT,
+    opportunityUrlCount: WIDE_URL_COUNT,
+    listedUrlCount: WIDE_URL_COUNT,
+    signalCount: WIDE_FINDING_COUNT,
+    precedingUrlCount: 0,
+    rankGroups: [
+      {
+        severityRank: 2,
+        coverageCount: STRUCTURAL_COVERAGE,
+        findingCount: WIDE_FINDINGS_PER_URL,
+        urlCount: 1,
+      },
+      {
+        severityRank: 2,
+        coverageCount: 1,
+        findingCount: WIDE_FINDINGS_PER_URL,
+        urlCount: WIDE_URL_COUNT - 1,
+      },
+    ],
+  });
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listObservations",
+  ).mockResolvedValue(observations as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listResolvedTargets",
+  ).mockResolvedValue(targets as never);
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listFindings",
+  ).mockImplementation(async (_scope, _diagnosticRunId, findingIdsInput) => {
+    const ids = boundedUniqueIds("findingIds", findingIdsInput);
+    return ids.map((id) => {
+      const row = findingsById.get(id);
+      if (!row) throw new Error(`unknown Finding ${id}`);
+      return row;
+    }) as never;
+  });
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listFindingCoverageCounts",
+  ).mockImplementation(async (_scope, _diagnosticRunId, findingIdsInput) => {
+    const ids = boundedUniqueIds("findingIds", findingIdsInput);
+    coverageBatchSizes.push(ids.length);
+    return new Map(ids.map((id) => [id, coverageByFinding.get(id) ?? 1]));
+  });
+
+  return {
+    coverageBatchSizes,
+    structuralFindingId,
+    structuralSitePageId,
+    isolatedSitePageIds: inventory
+      .map((row) => row["site_page_id"] as string)
+      .filter((id) => id !== structuralSitePageId),
+  };
+}
+
 describe("Growth Map URL read boundary", () => {
   beforeEach(() => {
     mocks.getDb.mockReset();
@@ -642,6 +887,41 @@ describe("Growth Map URL read boundary", () => {
       olderPublishedRunId,
       { limit: 50, cursor: null, opportunitiesOnly: true, search: "wiki" },
     );
+  });
+
+  it("resolves Finding coverage for a page whose Findings exceed one repository lookup", async () => {
+    const fixtures = installWideGenerationFixtures();
+
+    const result = await listProjectAuditUrls(
+      scope,
+      projectId,
+      { limit: 50, cursor: null, diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    // Every call stays inside the repository bound, and the batches together
+    // still cover every distinct Finding exactly once.
+    expect(fixtures.coverageBatchSizes.length).toBeGreaterThan(1);
+    for (const size of fixtures.coverageBatchSizes) {
+      expect(size).toBeLessThanOrEqual(MAX_GROWTH_MAP_ENTITY_LOOKUP);
+    }
+    expect(
+      fixtures.coverageBatchSizes.reduce((total, size) => total + size, 0),
+    ).toBe(WIDE_FINDING_COUNT);
+
+    // The structural Finding lives in the last batch, so its blast radius is
+    // only visible once every batch is merged.
+    const byId = new Map(result.data.map((item) => [item.sitePageId, item]));
+    expect(byId.get(fixtures.structuralSitePageId)?.priority).toMatchObject({
+      availability: "available",
+      value: "high",
+    });
+    for (const sitePageId of fixtures.isolatedSitePageIds) {
+      expect(byId.get(sitePageId)?.priority).toMatchObject({
+        availability: "available",
+        value: "medium",
+      });
+    }
   });
 
   it("fails closed when a summary rank group has no readable severity", async () => {

@@ -1446,6 +1446,7 @@ function keywordItem() {
     languageTag: "en-US",
     queryKind: "search_query",
     status: "candidate",
+    reviewOrigin: null,
     revision: 1,
     intent: null,
     buyerStage: "consideration",
@@ -1530,6 +1531,39 @@ describe("Growth Map Keyword Library contracts", () => {
       GrowthMapKeywordLibraryResponse.safeParse({
         ...keywordLibraryResponse(),
         confirmActionId: ids.action,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps the deciding authority readable and refuses to omit it", () => {
+    // Automated governance writes the same approved + confirmed pair a human
+    // review writes, so status alone can present an unreviewed keyword as
+    // confirmed. The origin is therefore required, not optional.
+    for (const reviewOrigin of [
+      "user",
+      "system_suggestion",
+      "migration_baseline",
+      null,
+    ] as const) {
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: { ...keywordItem(), status: "approved", reviewOrigin },
+        }).success,
+      ).toBe(true);
+    }
+
+    const { reviewOrigin: _omitted, ...withoutOrigin } = keywordItem();
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: withoutOrigin,
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: { ...keywordItem(), reviewOrigin: "auto_pilot" },
       }).success,
     ).toBe(false);
   });

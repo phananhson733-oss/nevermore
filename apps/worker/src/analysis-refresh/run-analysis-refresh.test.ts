@@ -9,6 +9,7 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   IcpProfilesRepository,
+  KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
@@ -970,6 +971,7 @@ describe("runAnalysisRefresh", () => {
         gsc_impression_evidence: 0,
         gsc_attributed_site_page_count: 0,
         gsc_attributed_site_page_id: null,
+        occurrence_count: 2,
       },
     ]);
     const approvals = vi
@@ -1007,6 +1009,39 @@ describe("runAnalysisRefresh", () => {
     );
     // The freeze must observe the approvals this run just produced.
     expect(approvals).toHaveBeenCalledBefore(frozenRead);
+  });
+
+  it("still freezes and creates the Growth Audit when automated governance throws", async () => {
+    // Governance is a supplement, not a precondition. Every other failure in
+    // this step takes the safe path, so a governance defect must not be the one
+    // way an entire diagnostic is destroyed: the library simply stays at the
+    // governance it already had.
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    const logged = vi.spyOn(harness.ctx.logger, "error");
+    vi.mocked(
+      KeywordsRepository.prototype.listAutoGovernanceCandidates,
+    ).mockRejectedValue(
+      new KeywordGovernanceIntegrityError("CURRENT_DECISION_MISSING"),
+    );
+    const frozenRead = vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(frozenRead).toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.insert).toHaveBeenCalledTimes(1);
+    expect(AuditRunsRepository.prototype.create).toHaveBeenCalledTimes(1);
+    expect(harness.state.steps[5]).toMatchObject({ state: "running" });
+    // The failure is reported, never swallowed.
+    expect(logged).toHaveBeenCalledWith(
+      "analysis_refresh_auto_keyword_governance_failed",
+      expect.objectContaining({
+        code: "AUTO_KEYWORD_GOVERNANCE_CURRENT_DECISION_MISSING",
+        limitation: expect.stringContaining("no decision"),
+      }),
+    );
   });
 
   it("writes no automated keyword decision when the rollout flag is off", async () => {
@@ -1504,6 +1539,10 @@ function createHarness(options: {
     KeywordsRepository.prototype,
     "listAutoGovernanceCandidates",
   ).mockResolvedValue([]);
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "readDiagnosticGovernanceLoad",
+  ).mockResolvedValue({ eligibleEntities: 0, occurrenceRefs: 0 });
   vi.spyOn(
     KeywordOccurrencesRepository.prototype,
     "listForEntityIds",

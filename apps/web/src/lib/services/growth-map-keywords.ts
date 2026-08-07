@@ -8,6 +8,7 @@ import {
   type GrowthMapKeywordMappedTarget,
   type GrowthMapKeywordMetrics,
   type GrowthMapKeywordNumericMetric,
+  type GrowthMapKeywordReviewOrigin,
   type GrowthMapKeywordSourceOccurrence,
   type GrowthMapKeywordTextMetric,
   type ReviewKeywordRequest,
@@ -20,6 +21,7 @@ import {
   KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
+  MAX_KEYWORD_DECISION_ORIGIN_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
   MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
   ProjectsRepository,
@@ -32,6 +34,7 @@ import {
   schemaTables,
   type CurrentKeywordGovernance,
   type Executor,
+  type KeywordDecisionOriginRow,
   type KeywordEntityRow,
   type KeywordOccurrenceRow,
   type ProjectScope,
@@ -206,6 +209,56 @@ interface KeywordProjectionRows {
   readonly snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>;
   readonly collectionRunsById: ReadonlyMap<string, CanonicalCollectionRunRow>;
   readonly sitePagesById: ReadonlyMap<string, SitePageRow>;
+  /**
+   * Which authority decided each keyword at the EXACT revision this projection
+   * reports. A keyword absent from the map has no decision at that revision.
+   */
+  readonly reviewOriginsByKeywordId: ReadonlyMap<
+    string,
+    GrowthMapKeywordReviewOrigin
+  >;
+}
+
+/**
+ * Read the deciding authority for a whole page in one project-scoped
+ * statement.
+ *
+ * Automated keyword governance writes the same `approved` + `confirmed` pair a
+ * human review writes, because the diagnostic freeze requires exactly that
+ * pair. Without this the customer-visible library cannot tell an operator's
+ * confirmation from a machine's, which would present an unreviewed keyword as
+ * reviewed.
+ */
+async function loadReviewOrigins(
+  exec: Executor,
+  scope: ProjectScope,
+  refs: readonly { readonly keywordId: string; readonly revision: number }[],
+): Promise<ReadonlyMap<string, GrowthMapKeywordReviewOrigin>> {
+  const byKeywordId = new Map<string, GrowthMapKeywordReviewOrigin>();
+  if (refs.length === 0) return byKeywordId;
+  const repository = new KeywordGovernanceRepository(exec);
+  for (const batch of batches(refs, MAX_KEYWORD_DECISION_ORIGIN_BATCH)) {
+    let rows: readonly KeywordDecisionOriginRow[];
+    try {
+      rows = await repository.listDecisionOriginsAt(
+        scope,
+        batch.map((ref) => ({
+          keywordId: ref.keywordId,
+          governanceRevision: ref.revision,
+        })),
+      );
+    } catch (error) {
+      if (error instanceof KeywordGovernanceIntegrityError) {
+        return corruptKeywordLibrary();
+      }
+      throw error;
+    }
+    for (const row of rows) {
+      if (byKeywordId.has(row.keywordId)) return corruptKeywordLibrary();
+      byKeywordId.set(row.keywordId, row.decisionOrigin);
+    }
+  }
+  return byKeywordId;
 }
 
 interface ProjectedOccurrence {
@@ -864,12 +917,23 @@ async function _loadProjectionRows(
     ),
   ];
   const sitePagesById = await loadSitePages(exec, scope, sitePageIds);
+  // The live library reports each keyword at its current revision, so the
+  // deciding authority is read at that same revision.
+  const reviewOriginsByKeywordId = await loadReviewOrigins(
+    exec,
+    scope,
+    entities.map((entity) => ({
+      keywordId: entity.id,
+      revision: entity.mapping_revision,
+    })),
+  );
   return {
     histories,
     observationsById,
     snapshotsById,
     collectionRunsById,
     sitePagesById,
+    reviewOriginsByKeywordId,
   };
 }
 
@@ -921,12 +985,25 @@ async function loadFrozenProjectionRows(
     ),
   ]);
   const sitePagesById = await loadSitePages(exec, scope, sitePageIds);
+  // A published generation reports frozen facts AT the revision it froze, so
+  // the deciding authority is read at that exact revision too. Resolving the
+  // latest decision instead would attribute a later review to an older
+  // generation.
+  const reviewOriginsByKeywordId = await loadReviewOrigins(
+    exec,
+    scope,
+    reads.map(({ frozen }) => ({
+      keywordId: frozen.fact.keywordEntityId,
+      revision: frozen.fact.revision,
+    })),
+  );
   return {
     histories,
     observationsById,
     snapshotsById,
     collectionRunsById,
     sitePagesById,
+    reviewOriginsByKeywordId,
   };
 }
 
@@ -1928,6 +2005,12 @@ function projectItem(
   }
   const status =
     frozen !== undefined ? frozenFact!.status : current?.status ?? entity.status;
+  // The live governance authority is definitive when the caller loaded it;
+  // otherwise the page read supplies the same fact for the exact revision.
+  const reviewOrigin =
+    governance?.decision.decisionOrigin ??
+    rows.reviewOriginsByKeywordId.get(entity.id) ??
+    null;
   const revision =
     frozen !== undefined
       ? frozenFact!.revision
@@ -1961,6 +2044,7 @@ function projectItem(
     languageTag: entity.language_tag,
     queryKind: entity.query_kind,
     status,
+    reviewOrigin,
     revision,
     intent,
     buyerStage,
