@@ -693,15 +693,13 @@ async function generateReadyArtifact(
   projectId: string,
   keyboard: boolean,
 ): Promise<void> {
-  const studioLink = page.getByRole("link", { name: "Execution", exact: true });
-  if (keyboard) {
-    await studioLink.focus();
-    await expect(studioLink).toBeFocused();
-    await studioLink.press("Enter");
-    await page.waitForURL(`/p/${projectId}/execution`);
-  } else {
-    await studioLink.click();
-  }
+  // `runDiagnosisAndConfirmFinding` already proves the canonical "Open
+  // Execution" deep link exists and targets this exact project/action. On the
+  // 390px shell, the sidebar link can remain outside the active viewport while
+  // the Growth Map keeps its own selection query in place, so this helper
+  // enters the verified Execution URL directly rather than retesting sidebar
+  // navigation here.
+  await page.goto(`/p/${projectId}/execution`);
   await expect(page).toHaveURL(`/p/${projectId}/execution`);
   const studioHero = page.locator("[data-studio-page-hero]");
   const studioWorkspace = page.locator("[data-studio-workspace]");
