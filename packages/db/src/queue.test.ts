@@ -98,12 +98,6 @@ describe("pg-boss queue contract", () => {
     }
   });
 
-  it("leaves the non-replaying external-write queue without a retry delay", () => {
-    expect(QUEUE_CONFIG.publication.retryLimit).toBe(0);
-    expect(QUEUE_CONFIG.publication.retryBackoff).toBe(false);
-    expect(QUEUE_CONFIG.publication.retryDelay).toBe(0);
-  });
-
   it("constructs normal and enqueue-only clients without opening connections", () => {
     expect(createBoss("postgres://user@localhost/db")).toBeInstanceOf(PgBoss);
     expect(

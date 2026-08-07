@@ -1124,6 +1124,7 @@ describe("OpenAIProductProfileClient", () => {
     ["a null domain", null],
     ["a missing domain", undefined],
     ["a non-string domain", 42],
+    ["an empty-string domain", ""],
     ["an unnormalized domain", "https://Userpilot.com/pricing"],
   ])(
     "drops a competitor with %s instead of rejecting the whole candidate",
@@ -1217,6 +1218,114 @@ describe("OpenAIProductProfileClient", () => {
 
     expect(error).toBeInstanceOf(LLMError);
     expect(error).toMatchObject({ code: "SCHEMA_INVALID" });
+  });
+
+  it.each([
+    ["a bare string entry", "userpilot.com"],
+    ["a null entry", null],
+    ["an array entry", []],
+  ])(
+    "still rejects a response whose competitor pool contains %s",
+    async (_label, entry) => {
+      const client = createOpenAIProductProfileClient({
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        fetchImpl: vi.fn().mockResolvedValue(
+          chatResponse({
+            ...VALID_B2B_CANDIDATE,
+            competitorCandidates: [
+              ...VALID_B2B_CANDIDATE.competitorCandidates,
+              entry,
+            ],
+          }),
+        ),
+      });
+
+      const error = await client
+        .synthesizeProductProfile(input({ pages: [page(), page()] }))
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(LLMError);
+      expect(error).toMatchObject({ code: "SCHEMA_INVALID" });
+    },
+  );
+
+  it("keeps an emptied competitor pool even when the model marked nothing unknown", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          competitorCandidates: [
+            { ...VALID_B2B_CANDIDATE.competitorCandidates[0]!, domain: null },
+          ],
+        }),
+      ),
+    });
+
+    const result = await client.synthesizeProductProfile(
+      input({ pages: [page(), page()] }),
+    );
+
+    expect(result.candidate.competitorCandidates).toEqual([]);
+    expect(result.invocation).toMatchObject({ status: "succeeded" });
+  });
+
+  it("rejects an oversized raw competitor pool instead of filtering it under the cap", async () => {
+    const junk = Array.from({ length: 101 }, (_, index) => ({
+      ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
+      name: `Junk ${index + 1}`,
+      domain: null,
+    }));
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          competitorCandidates: [
+            ...VALID_B2B_CANDIDATE.competitorCandidates,
+            ...junk,
+          ],
+        }),
+      ),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect(error).toMatchObject({ code: "SCHEMA_INVALID" });
+  });
+
+  it("trips the safety gate on unsafe content riding in a dropped competitor", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          competitorCandidates: [
+            ...VALID_B2B_CANDIDATE.competitorCandidates,
+            {
+              ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
+              name: "Unlocatable",
+              domain: null,
+              reason: "See <script>alert(1)</script> for details.",
+            },
+          ],
+        }),
+      ),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect(error).toMatchObject({ code: "SAFETY_VIOLATION" });
   });
 
   it("names the schema paths a rejected candidate failed", async () => {

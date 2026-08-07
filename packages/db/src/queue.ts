@@ -28,10 +28,19 @@ export const COLLECT_CRAWL_JOB_EXPIRY_SECONDS = 15 * 60;
  *
  * The failures these retries exist for — an exhausted pooler, a rate-limited or
  * briefly unavailable provider — clear on a scale of tens of seconds, so start
- * there. With the retry limits below the last attempt lands roughly 1.5-4
- * minutes out, which stays well inside every queue's expiry window. Jobs
- * awaiting a retry hold `retry` state, which run recovery treats as live
- * (`isLiveQueueState`), so a longer wait is not mistaken for a stalled run.
+ * there. Verified against pg-boss 12.26.1: the n-th retry waits between
+ * 30*2^n/2 and 30*2^n seconds, so the last attempt starts after a cumulative
+ * 1.5-3 minutes of delay at retryLimit 2 and 3.5-7 minutes at retryLimit 3.
+ * Retry delays never consume `expireInSeconds` (a per-attempt execution
+ * timeout); the invariant that bounds them is the run recovery missing-job
+ * window (RUN_RECOVERY_MISSING_AFTER_MS, one hour) — worst case, attempts
+ * plus delays total ~48 minutes for collect.crawl. Jobs awaiting a retry hold
+ * `retry` state, which run recovery treats as live (`isLiveQueueState`), so a
+ * longer wait is not mistaken for a stalled run.
+ *
+ * Rollback caveat: pg-boss's updateQueue COALESCEs omitted keys, so reverting
+ * to code that does not pass `retryDelay` leaves 30 in every pgboss.queue row.
+ * Lowering the delay requires a forward-fix passing an explicit smaller value.
  */
 export const TRANSIENT_RETRY_DELAY_SECONDS = 30;
 
@@ -222,22 +231,17 @@ export async function startBoss(boss: PgBoss): Promise<void> {
   await boss.start();
   for (const name of QUEUE_NAMES) {
     const cfg = QUEUE_CONFIG[name];
-    await boss.createQueue(name, {
+    const policy = {
       expireInSeconds: cfg.expireInSeconds,
       retryLimit: cfg.retryLimit,
       retryBackoff: cfg.retryBackoff,
       retryDelay: cfg.retryDelay,
       heartbeatSeconds: cfg.heartbeatSeconds,
-    });
+    };
+    await boss.createQueue(name, policy);
     // createQueue is intentionally create-only in pg-boss. Re-apply mutable
     // policy so an existing production queue receives heartbeat/retry updates.
-    await boss.updateQueue(name, {
-      expireInSeconds: cfg.expireInSeconds,
-      retryLimit: cfg.retryLimit,
-      retryBackoff: cfg.retryBackoff,
-      retryDelay: cfg.retryDelay,
-      heartbeatSeconds: cfg.heartbeatSeconds,
-    });
+    await boss.updateQueue(name, policy);
   }
 }
 
