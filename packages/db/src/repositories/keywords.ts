@@ -8,8 +8,16 @@ import {
   isNull,
   lt,
   or,
+  sql,
 } from "drizzle-orm";
-import { clientProjects, keywordEntities } from "../schema.ts";
+import {
+  clientProjects,
+  keywordEntities,
+  keywordEntitySources,
+  keywordOccurrences,
+  keywordReviewDecisions,
+  normalizedObservations,
+} from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
   decodeTimestampUuidCursor,
@@ -80,9 +88,55 @@ export interface KeywordReviewMappingInput {
   readonly mappingReviewState: KeywordMappingReviewState;
 }
 
+/**
+ * One candidate keyword plus the immutable provider evidence that an automated
+ * (system) governance pass is allowed to reason about. Every counter below is
+ * derived from persisted Observation lineage only — nothing is inferred, and an
+ * absent counter is 0 because no such immutable row exists, never because a
+ * value was unavailable.
+ */
+export interface AutoGovernanceCandidateRow {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly project_id: string;
+  readonly display_keyword: string;
+  readonly normalized_keyword: string;
+  readonly market: string;
+  readonly language_tag: string;
+  readonly query_kind: KeywordQueryKind;
+  readonly mapping_revision: number;
+  /**
+   * Occurrences whose `dataforseo_ranked` Observation carries a positive
+   * `currentRank`, i.e. DataForSEO observed this site already ranking in the
+   * SERP for the keyword.
+   */
+  readonly dataforseo_ranked_evidence: number;
+  /**
+   * Occurrences whose `gsc_top_query` Observation entry carries at least one
+   * impression, i.e. Search Console observed this site actually served for the
+   * query. Zero-impression GSC rows exist and are deliberately not evidence.
+   */
+  readonly gsc_impression_evidence: number;
+  /** Distinct Site Pages attributed by those impression-bearing GSC rows. */
+  readonly gsc_attributed_site_page_count: number;
+  /** Only meaningful when `gsc_attributed_site_page_count` is exactly 1. */
+  readonly gsc_attributed_site_page_id: string | null;
+}
+
+export interface AutoGovernanceCandidateReadOptions {
+  readonly limit: number;
+}
+
 export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
 /** 5,000 accepted facts plus one overflow sentinel. */
 export const MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ = 5_001;
+/**
+ * Automated governance runs inside the already-open Growth Audit transaction,
+ * so its read and its two bulk writes stay bounded well below the diagnostic
+ * freeze ceiling. A project with more untouched candidates simply converges
+ * over consecutive Analysis Refresh runs instead of holding one long lock.
+ */
+export const MAX_AUTO_GOVERNANCE_CANDIDATE_READ = 2_000;
 /** Safety ceiling for one frozen keyword identity set (search + generative). */
 export const MAX_KEYWORD_ENTITY_BATCH = 500;
 /** Published Growth Map governance currently freezes at most 5,000 Keyword IDs. */
@@ -169,6 +223,178 @@ export class KeywordsRepository extends Repository {
       )
       .orderBy(asc(keywordEntities.id))
       .limit(options.limit)) as KeywordEntityRow[];
+  }
+
+  /**
+   * Read untouched candidate keywords that carry immutable provider evidence an
+   * automated governance pass may act on, together with that evidence.
+   *
+   * Three membership rules are enforced in SQL so no caller can weaken them:
+   *   1. only `candidate` + `unreviewed` entities are returned, so a keyword
+   *      that already carries any review outcome is never revisited;
+   *   2. a keyword with ANY `user` Decision in its append-only ledger is
+   *      excluded forever — a human decision outranks every system decision,
+   *      including one taken after a later system invalidation; and
+   *   3. a keyword with no qualifying evidence row at all is excluded BEFORE
+   *      the page limit is applied. Filtering after the limit would let a large
+   *      block of low-id evidence-free candidates permanently starve every
+   *      evidence-bearing keyword behind them.
+   *
+   * Rule 3 is deliberately only a presence floor: zero evidence can never
+   * justify an automated decision under any policy, so this can only ever be a
+   * superset of what the caller accepts. The numeric thresholds themselves stay
+   * with the caller that owns the policy, never in SQL.
+   */
+  async listAutoGovernanceCandidates(
+    scope: ProjectScope,
+    options: AutoGovernanceCandidateReadOptions,
+  ): Promise<AutoGovernanceCandidateRow[]> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_AUTO_GOVERNANCE_CANDIDATE_READ
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_AUTO_GOVERNANCE_CANDIDATE_READ}`,
+      );
+    }
+    if (!UUID.test(scope.workspaceId) || !UUID.test(scope.projectId)) {
+      throw new RangeError("scope must contain canonical UUIDs");
+    }
+
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with candidates as (
+        select
+          keyword.id,
+          keyword.workspace_id,
+          keyword.project_id,
+          keyword.display_keyword,
+          keyword.normalized_keyword,
+          keyword.market,
+          keyword.language_tag,
+          keyword.query_kind,
+          keyword.mapping_revision
+        from ${keywordEntities} keyword
+        inner join ${clientProjects} project
+          on project.id = keyword.project_id
+         and project.workspace_id = keyword.workspace_id
+        where keyword.workspace_id = ${scope.workspaceId}::uuid
+          and keyword.project_id = ${scope.projectId}::uuid
+          and project.archived_at is null
+          and keyword.status = 'candidate'
+          and keyword.mapping_review_state = 'unreviewed'
+          and not exists (
+            select 1
+            from ${keywordReviewDecisions} decision
+            where decision.workspace_id = keyword.workspace_id
+              and decision.project_id = keyword.project_id
+              and decision.keyword_entity_id = keyword.id
+              and decision.decision_origin = 'user'
+          )
+      ),
+      evidence as (
+        select
+          source.keyword_entity_id,
+          occurrence.source_kind,
+          observation.site_page_id,
+          case
+            when occurrence.source_kind = 'dataforseo_ranked'
+              and jsonb_typeof(observation.value_json -> 'currentRank')
+                = 'number'
+            then (observation.value_json ->> 'currentRank')::numeric
+          end as dataforseo_rank,
+          case
+            when occurrence.source_kind = 'gsc_top_query'
+              and jsonb_typeof(
+                observation.value_json
+                  -> 'topQueries'
+                  -> (
+                    substring(
+                      occurrence.source_pointer
+                      from '^/valueJson/topQueries/([0-9])/query$'
+                    )
+                  )::int
+                  -> 'impressions'
+              ) = 'number'
+            then (
+              observation.value_json
+                -> 'topQueries'
+                -> (
+                  substring(
+                    occurrence.source_pointer
+                    from '^/valueJson/topQueries/([0-9])/query$'
+                  )
+                )::int
+                ->> 'impressions'
+            )::numeric
+          end as gsc_impressions
+        from ${keywordEntitySources} source
+        inner join candidates
+          on candidates.id = source.keyword_entity_id
+        inner join ${keywordOccurrences} occurrence
+          on occurrence.id = source.keyword_occurrence_id
+         and occurrence.workspace_id = source.workspace_id
+         and occurrence.project_id = source.project_id
+        inner join ${normalizedObservations} observation
+          on observation.id = occurrence.normalized_observation_id
+         and observation.workspace_id = occurrence.workspace_id
+         and observation.project_id = occurrence.project_id
+        where source.workspace_id = ${scope.workspaceId}::uuid
+          and source.project_id = ${scope.projectId}::uuid
+      ),
+      scored as (
+      select
+        candidates.id,
+        candidates.workspace_id,
+        candidates.project_id,
+        candidates.display_keyword,
+        candidates.normalized_keyword,
+        candidates.market,
+        candidates.language_tag,
+        candidates.query_kind,
+        candidates.mapping_revision,
+        count(*) filter (
+          where evidence.source_kind = 'dataforseo_ranked'
+            and evidence.dataforseo_rank >= 1
+        )::int as dataforseo_ranked_evidence,
+        count(*) filter (
+          where evidence.source_kind = 'gsc_top_query'
+            and evidence.gsc_impressions >= 1
+        )::int as gsc_impression_evidence,
+        count(distinct evidence.site_page_id) filter (
+          where evidence.source_kind = 'gsc_top_query'
+            and evidence.gsc_impressions >= 1
+            and evidence.site_page_id is not null
+        )::int as gsc_attributed_site_page_count,
+        (
+          array_agg(distinct evidence.site_page_id) filter (
+            where evidence.source_kind = 'gsc_top_query'
+              and evidence.gsc_impressions >= 1
+              and evidence.site_page_id is not null
+          )
+        )[1] as gsc_attributed_site_page_id
+      from candidates
+      left join evidence
+        on evidence.keyword_entity_id = candidates.id
+      group by
+        candidates.id,
+        candidates.workspace_id,
+        candidates.project_id,
+        candidates.display_keyword,
+        candidates.normalized_keyword,
+        candidates.market,
+        candidates.language_tag,
+        candidates.query_kind,
+        candidates.mapping_revision
+      )
+      select *
+      from scored
+      where scored.dataforseo_ranked_evidence >= 1
+         or scored.gsc_impression_evidence >= 1
+      order by scored.id asc
+      limit ${options.limit}
+    `);
+    return result.rows as unknown as AutoGovernanceCandidateRow[];
   }
 
   async listByProject(

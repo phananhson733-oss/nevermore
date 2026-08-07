@@ -128,6 +128,14 @@ export function createWorkerEnvSchema(environment: string | undefined) {
       // artifact generation. Keep the raw env contract explicit at boot and
       // convert it to a boolean only when building WorkerContext.
       FINDING_SUMMARIES_ENABLED: z.enum(["true", "false"]).default("true"),
+      // Automated keyword governance approves ingested candidate keywords that
+      // already carry immutable provider evidence, so the Keyword Library is
+      // not empty merely because nobody has clicked through it. It is ON by
+      // default; setting it to "false" restores fully manual governance and the
+      // Analysis Refresh writes no automated decision at all.
+      KEYWORD_AUTO_GOVERNANCE_ENABLED: z
+        .enum(["true", "false"])
+        .default("true"),
       DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
       DATAFORSEO_BACKLINKS_ENABLED: z
         .enum(["true", "false"])
@@ -286,6 +294,26 @@ export function resolveLlmClientConfig(env: WorkerEnv): LlmClientConfig {
     temperature: env.OPENAI_TEMPERATURE,
     authScheme: "bearer",
   };
+}
+
+/** Env key for the automated keyword governance rollout switch. */
+export const KEYWORD_AUTO_GOVERNANCE_ENV_KEY =
+  "KEYWORD_AUTO_GOVERNANCE_ENABLED";
+
+/**
+ * Resolve the automated keyword governance switch.
+ *
+ * Default ON: the Owner-visible requirement is that an ingested Keyword Library
+ * is populated without manual work. A booted worker has already validated this
+ * key through the schema above, so only "true", "false" or absent can reach
+ * here; any other value can only come from an unvalidated caller and is treated
+ * as OFF, which is the behaviour that existed before the feature.
+ */
+export function keywordAutoGovernanceEnabled(
+  source: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  const raw = source[KEYWORD_AUTO_GOVERNANCE_ENV_KEY];
+  return raw === undefined ? true : raw === "true";
 }
 
 let cached: WorkerEnv | undefined;

@@ -296,10 +296,28 @@ export type GrowthMapFindingComparisonBasis = z.infer<
   typeof GrowthMapFindingComparisonBasis
 >;
 
+/**
+ * Deterministic URL priority derivations.
+ *
+ * `max_finding_severity.v1` mapped the highest current-run Finding severity
+ * straight onto the band. `url_opportunity_rank.v1` additionally weighs the
+ * cross-page blast radius of those Findings and how many reviewable Findings
+ * stack on the URL. Both literals stay readable so an already published
+ * generation keeps the derivation it was projected with instead of being
+ * silently reinterpreted by a newer one.
+ */
+export const GrowthMapPriorityDerivationVersion = z.enum([
+  "max_finding_severity.v1",
+  "url_opportunity_rank.v1",
+]);
+export type GrowthMapPriorityDerivationVersion = z.infer<
+  typeof GrowthMapPriorityDerivationVersion
+>;
+
 /** Priority is a deterministic current-run Finding projection, not a recheck. */
 export const GrowthMapFindingPriorityBasis = z
   .object({
-    derivationVersion: z.literal("max_finding_severity.v1"),
+    derivationVersion: GrowthMapPriorityDerivationVersion,
     projectId: Uuid,
     siteId: Uuid,
     diagnosticRunId: Uuid,
@@ -503,6 +521,11 @@ const GrowthMapUrlProjectionShape = {
   identitySources: z.array(GrowthMapUrlIdentitySource).min(1).max(100),
   normalizedUrl: z.string().trim().url().max(2048),
   title: NullableBoundedLabel,
+  /**
+   * Stable `page_type.v1` slug derived at read time from the frozen Crawl
+   * page extract and the canonical path. It is null when no rule matched,
+   * which means unclassified and never "not collected".
+   */
   pageType: NullableBoundedLabel,
   templateKey: NullableBoundedLabel,
   clusterKey: NullableBoundedLabel,
@@ -720,12 +743,83 @@ export type GrowthMapUrlPortfolioItem = z.infer<
   typeof GrowthMapUrlPortfolioItem
 >;
 
+const PortfolioCount = z.number().int().min(0).max(2_000_000);
+
+/**
+ * Deterministic counts for the exact frozen generation this page was read from.
+ *
+ * These are not a synthesized project-wide total across generations: every
+ * number is counted inside one immutable DiagnosticRun inventory under one
+ * stated filter, the same way `totalRecommendationCount` and `totalEdgeCount`
+ * already report bounded per-projection totals. Keeping them server-side is
+ * what stops a client from re-deriving a page-local number (for example,
+ * summing `findingIds` across the loaded rows) and presenting it as the
+ * generation total.
+ */
+export const GrowthMapUrlPortfolioSummary = z
+  .object({
+    /** Canonical SitePages admitted by the frozen generation, filters ignored. */
+    urlCount: PortfolioCount,
+    /** Admitted SitePages carrying at least one active, non-ignored Finding. */
+    opportunityUrlCount: PortfolioCount,
+    /** Rows the current filtered list contains in total, across every page. */
+    listedUrlCount: PortfolioCount,
+    /** Distinct Findings reaching this generation's URL inventory, deduplicated. */
+    signalCount: PortfolioCount,
+    /** Opportunity URLs per derived priority band; sums to opportunityUrlCount. */
+    priorityCounts: z
+      .object({
+        critical: PortfolioCount,
+        high: PortfolioCount,
+        medium: PortfolioCount,
+        low: PortfolioCount,
+      })
+      .strict(),
+    /** Listed rows before this page. Keyset paging has no offset to infer it. */
+    precedingUrlCount: PortfolioCount,
+  })
+  .strict()
+  .superRefine((summary, ctx) => {
+    for (const key of ["opportunityUrlCount", "listedUrlCount"] as const) {
+      if (summary[key] > summary.urlCount) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `${key} cannot exceed the frozen generation URL count`,
+        });
+      }
+    }
+    if (summary.precedingUrlCount > summary.listedUrlCount) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["precedingUrlCount"],
+        message: "precedingUrlCount cannot exceed the filtered list length",
+      });
+    }
+    const banded =
+      summary.priorityCounts.critical +
+      summary.priorityCounts.high +
+      summary.priorityCounts.medium +
+      summary.priorityCounts.low;
+    if (banded !== summary.opportunityUrlCount) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["priorityCounts"],
+        message: "priorityCounts must band every opportunity URL exactly once",
+      });
+    }
+  });
+export type GrowthMapUrlPortfolioSummary = z.infer<
+  typeof GrowthMapUrlPortfolioSummary
+>;
+
 export const GrowthMapUrlPortfolioMeta = z
   .object({
     limit: z.number().int().min(1).max(100),
     nextCursor: Cursor.nullable(),
     hasNext: z.boolean(),
     coverage: GrowthMapCoverage,
+    summary: GrowthMapUrlPortfolioSummary,
   })
   .strict()
   .superRefine((meta, ctx) => {
@@ -752,7 +846,12 @@ const GrowthMapUrlPortfolioResponseObject = z
   })
   .strict();
 
-/** A bounded project-scoped cursor page; deliberately has no project total. */
+/**
+ * A bounded project-scoped cursor page. It carries no cross-generation total:
+ * `meta.summary` counts only inside the one frozen generation named by
+ * `diagnosticRunId`, so a page and its summary can never describe different
+ * inventories.
+ */
 export const GrowthMapUrlPortfolioResponse =
   GrowthMapUrlPortfolioResponseObject.superRefine((response, ctx) => {
     if (response.data.length > response.meta.limit) {
@@ -760,6 +859,25 @@ export const GrowthMapUrlPortfolioResponse =
         code: "custom",
         path: ["data"],
         message: "A portfolio page cannot exceed its declared limit",
+      });
+    }
+
+    const summary = response.meta.summary;
+    const throughThisPage = summary.precedingUrlCount + response.data.length;
+    if (throughThisPage > summary.listedUrlCount) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["meta", "summary", "precedingUrlCount"],
+        message:
+          "Rows read through this page cannot exceed the filtered list length",
+      });
+    }
+    if (!response.meta.hasNext && throughThisPage !== summary.listedUrlCount) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["meta", "summary", "listedUrlCount"],
+        message:
+          "The last page must complete the filtered list it reports a total for",
       });
     }
 

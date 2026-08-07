@@ -12,6 +12,7 @@ import {
   and,
   desc,
   eq,
+  inArray,
   isNull,
   sql,
 } from "drizzle-orm";
@@ -35,6 +36,20 @@ import {
   type ProjectScope,
 } from "./base.ts";
 import { acquireTopicGovernanceProjectWriterLock } from "./topic-models.ts";
+
+/**
+ * Automated keyword governance spans two repositories: the candidate read with
+ * its immutable provider evidence lives next to the other keyword reads, while
+ * the writer below consumes it. Re-exported here so one `@sf/db` import gives a
+ * caller the complete automated-governance contract.
+ */
+export {
+  MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
+} from "./keywords.ts";
+export type {
+  AutoGovernanceCandidateReadOptions,
+  AutoGovernanceCandidateRow,
+} from "./keywords.ts";
 
 export type ReviewKeywordInput = ReviewKeywordRequest;
 
@@ -72,6 +87,67 @@ export interface CurrentKeywordGovernance {
 
 export interface ReviewKeywordResult extends CurrentKeywordGovernance {
   readonly replayed: boolean;
+}
+
+/**
+ * Automated governance is bounded per Analysis Refresh run because it executes
+ * inside the already-open Growth Audit transaction. A project with more
+ * untouched candidates converges over consecutive runs instead of holding one
+ * long write lock.
+ */
+export const MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH = 500;
+
+/**
+ * `auto_keyword_governance.v1` — the persisted identity of the automated
+ * governance behaviour. Any change to what an automated decision is allowed to
+ * write MUST bump this literal (spec §"版本化字面量").
+ */
+export const AUTO_KEYWORD_GOVERNANCE_VERSION = "auto_keyword_governance.v1";
+
+/**
+ * One automated approval the caller has already justified from immutable
+ * provider evidence. The repository never invents evidence: it only enforces
+ * that the resulting write stays truthful — recorded as an actorless
+ * `system_suggestion`, never overwriting a human decision, and advancing
+ * exactly one governance revision under a row lock.
+ *
+ * A Topic Node is deliberately absent. Topic Models are a manual authority and
+ * the system must not fabricate one, so an automated decision carries only the
+ * deterministic `cluster_key` compatibility label.
+ */
+export interface SystemKeywordApprovalInput {
+  readonly keywordId: string;
+  readonly expectedGovernanceRevision: number;
+  /** Deterministic cluster label; 1 to 200 trimmed characters. */
+  readonly clusterKey: string;
+  /**
+   * `new_asset` is intentionally unreachable: proposing a new asset is an
+   * editorial judgement no provider Observation can support.
+   */
+  readonly mappingDecision: "unassigned" | "existing_page";
+  readonly mappedSitePageId: string | null;
+  readonly reason: string;
+}
+
+/**
+ * Why one candidate was left completely untouched. Every value is a fact the
+ * repository observed under the lock, never a swallowed failure: the caller
+ * reports the counts and the keyword keeps its previous governance.
+ */
+export type SystemKeywordApprovalSkip =
+  | "keyword_absent"
+  | "human_decision_exists"
+  | "already_reviewed"
+  | "revision_moved"
+  | "revision_exhausted"
+  | "site_page_absent"
+  | "ledger_unreadable";
+
+export interface SystemKeywordApprovalOutcome {
+  readonly keywordId: string;
+  readonly applied: boolean;
+  readonly skipped: SystemKeywordApprovalSkip | null;
+  readonly governanceRevision: number | null;
 }
 
 export type KeywordGovernanceConflictCode =
@@ -403,6 +479,63 @@ function canonicalReview(input: ReviewKeywordInput): CanonicalReview {
     };
   }
 
+  return { ...input };
+}
+
+/**
+ * Validate one automated approval before any SQL runs. The bounds mirror the
+ * database CHECK constraints so a malformed automated write is rejected by the
+ * application rather than aborting the caller's whole transaction.
+ */
+function canonicalSystemApproval(
+  input: SystemKeywordApprovalInput,
+): SystemKeywordApprovalInput {
+  assertUuid(input.keywordId, "keywordId");
+  if (
+    !Number.isSafeInteger(input.expectedGovernanceRevision) ||
+    input.expectedGovernanceRevision < 0 ||
+    input.expectedGovernanceRevision >
+      MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
+  ) {
+    throw new RangeError(
+      `expectedGovernanceRevision must be a non-negative integer at most ${MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION}`,
+    );
+  }
+  if (
+    input.clusterKey.length < 1 ||
+    input.clusterKey.length > 200 ||
+    input.clusterKey.trim() !== input.clusterKey
+  ) {
+    throw new RangeError(
+      "clusterKey must contain 1 to 200 trimmed characters",
+    );
+  }
+  if (
+    input.mappingDecision !== "unassigned" &&
+    input.mappingDecision !== "existing_page"
+  ) {
+    throw new RangeError(
+      "an automated decision may only leave a keyword unassigned or map it to an existing page",
+    );
+  }
+  if (
+    (input.mappingDecision === "existing_page") !==
+    (input.mappedSitePageId !== null)
+  ) {
+    throw new RangeError(
+      "mappedSitePageId is required for existing_page and forbidden otherwise",
+    );
+  }
+  if (input.mappedSitePageId !== null) {
+    assertUuid(input.mappedSitePageId, "mappedSitePageId");
+  }
+  if (
+    input.reason.length < 3 ||
+    input.reason.length > 2_000 ||
+    input.reason.trim() !== input.reason
+  ) {
+    throw new RangeError("reason must contain 3 to 2000 trimmed characters");
+  }
   return { ...input };
 }
 
@@ -1091,6 +1224,304 @@ export class KeywordGovernanceRepository extends Repository {
     return {
       ...stateFromRows(updatedKeyword, insertedDecision),
       replayed: false,
+    };
+  }
+
+  /**
+   * Append actorless `system_suggestion` approvals for candidate keywords whose
+   * evidence the caller has already proven, so an ingested library becomes
+   * visible to the diagnostic freeze without a human ever pretending to have
+   * reviewed it.
+   *
+   * Truthfulness rules enforced here, not by the caller:
+   *   - `decision_origin` is always `system_suggestion` and `decided_by` is
+   *     always NULL, so the ledger can never present this as a user decision;
+   *   - a keyword with ANY `user` decision in its append-only ledger is skipped
+   *     forever — a human decision outranks every automated one;
+   *   - a keyword that is no longer `candidate` + `unreviewed` under the row
+   *     lock is skipped, which is also what makes repeated runs idempotent;
+   *   - `intent` and `buyer_stage` are carried over unchanged, because no
+   *     provider Observation can support a classification judgement.
+   *
+   * The caller owns the transaction whenever it already has one (Analysis
+   * Refresh runs this inside the open Growth Audit transaction); a pooled
+   * executor is wrapped so the batch stays atomic either way.
+   */
+  async applySystemApprovals(
+    scope: ProjectScope,
+    inputs: readonly SystemKeywordApprovalInput[],
+  ): Promise<readonly SystemKeywordApprovalOutcome[]> {
+    assertUuid(scope.workspaceId, "workspaceId");
+    assertUuid(scope.projectId, "projectId");
+    const canonical = inputs.map(canonicalSystemApproval);
+    if (canonical.length > MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH) {
+      throw new RangeError(
+        `inputs must contain at most ${MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH} keywords`,
+      );
+    }
+    if (new Set(canonical.map((input) => input.keywordId)).size !==
+      canonical.length) {
+      throw new RangeError("inputs must not repeat a keywordId");
+    }
+    if (canonical.length === 0) return [];
+
+    const transactional = this.exec as TransactionalExecutor;
+    if (typeof transactional.transaction === "function") {
+      return transactional.transaction((tx) =>
+        this.applySystemApprovalsWithExecutor(tx, scope, canonical),
+      );
+    }
+    return this.applySystemApprovalsWithExecutor(
+      this.exec,
+      scope,
+      canonical,
+    );
+  }
+
+  private async applySystemApprovalsWithExecutor(
+    exec: Executor,
+    scope: ProjectScope,
+    inputs: readonly SystemKeywordApprovalInput[],
+  ): Promise<readonly SystemKeywordApprovalOutcome[]> {
+    // The same writer lock a human review takes, so an operator review can
+    // never interleave between the membership read and the automated write.
+    await acquireTopicGovernanceProjectWriterLock(exec, scope);
+
+    const keywordIds = inputs.map((input) => input.keywordId);
+    const humanDecided = new Set(
+      (
+        (await exec
+          .select({
+            keyword_entity_id:
+              keywordReviewDecisions.keyword_entity_id,
+          })
+          .from(keywordReviewDecisions)
+          .where(
+            and(
+              projectPredicate(keywordReviewDecisions, scope),
+              eq(keywordReviewDecisions.decision_origin, "user"),
+              inArray(
+                keywordReviewDecisions.keyword_entity_id,
+                keywordIds,
+              ),
+            ),
+          )) as { readonly keyword_entity_id: string }[]
+      ).map((row) => row.keyword_entity_id),
+    );
+
+    const requestedPageIds = [
+      ...new Set(
+        inputs.flatMap((input) =>
+          input.mappedSitePageId === null ? [] : [input.mappedSitePageId],
+        ),
+      ),
+    ];
+    const knownPageIds = new Set(
+      requestedPageIds.length === 0
+        ? []
+        : (
+            (await exec
+              .select({ id: sitePages.id })
+              .from(sitePages)
+              .where(
+                and(
+                  projectPredicate(sitePages, scope),
+                  inArray(sitePages.id, requestedPageIds),
+                ),
+              )) as { readonly id: string }[]
+          ).map((row) => row.id),
+    );
+
+    const outcomes: SystemKeywordApprovalOutcome[] = [];
+    for (const input of inputs) {
+      outcomes.push(
+        await this.applyOneSystemApproval(
+          exec,
+          scope,
+          input,
+          humanDecided,
+          knownPageIds,
+        ),
+      );
+    }
+    return outcomes;
+  }
+
+  private async applyOneSystemApproval(
+    exec: Executor,
+    scope: ProjectScope,
+    input: SystemKeywordApprovalInput,
+    humanDecided: ReadonlySet<string>,
+    knownPageIds: ReadonlySet<string>,
+  ): Promise<SystemKeywordApprovalOutcome> {
+    const skip = (
+      reason: SystemKeywordApprovalSkip,
+    ): SystemKeywordApprovalOutcome => ({
+      keywordId: input.keywordId,
+      applied: false,
+      skipped: reason,
+      governanceRevision: null,
+    });
+
+    if (humanDecided.has(input.keywordId)) {
+      return skip("human_decision_exists");
+    }
+    if (
+      input.mappedSitePageId !== null &&
+      !knownPageIds.has(input.mappedSitePageId)
+    ) {
+      return skip("site_page_absent");
+    }
+
+    const keyword = await this.findKeyword(
+      exec,
+      scope,
+      input.keywordId,
+      true,
+    );
+    if (!keyword) return skip("keyword_absent");
+    // Re-proved under the row lock: this is the idempotency guard. A second
+    // Analysis Refresh sees `approved` + `confirmed` and writes nothing.
+    if (
+      keyword.status !== "candidate" ||
+      keyword.mapping_review_state !== "unreviewed"
+    ) {
+      return skip("already_reviewed");
+    }
+    if (
+      keyword.mapping_revision !== input.expectedGovernanceRevision ||
+      keyword.mapping_revision >=
+        MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
+    ) {
+      return skip(
+        keyword.mapping_revision !== input.expectedGovernanceRevision
+          ? "revision_moved"
+          : "revision_exhausted",
+      );
+    }
+
+    const current = await this.findLatestDecision(
+      exec,
+      scope,
+      input.keywordId,
+    );
+    if (!current) return skip("ledger_unreadable");
+    if (current.decision_origin === "user") {
+      return skip("human_decision_exists");
+    }
+    if (current.governance_revision !== input.expectedGovernanceRevision) {
+      return skip("revision_moved");
+    }
+    let currentState: CurrentKeywordGovernance;
+    try {
+      currentState = stateFromRows(keyword, current);
+    } catch (error) {
+      // An unreadable ledger is reported, never repaired: the keyword keeps
+      // its previous governance and the strict readers keep failing closed.
+      if (error instanceof KeywordGovernanceIntegrityError) {
+        return skip("ledger_unreadable");
+      }
+      throw error;
+    }
+
+    const decisionId = this.clock.newId();
+    if (!UUID.test(decisionId)) {
+      throw new KeywordGovernanceIntegrityError("SERVER_FACT_INVALID");
+    }
+    const governanceRevision = input.expectedGovernanceRevision + 1;
+    const reviewedProjection: KeywordGovernanceReviewedProjection = {
+      projectId: scope.projectId,
+      keywordId: input.keywordId,
+      governanceRevision,
+      status: "approved",
+      intent: keyword.intent,
+      buyerStage: keyword.buyer_stage,
+      topicNodeId: null,
+      topicModelRevision: null,
+      clusterKey: input.clusterKey,
+      mappingDecision: input.mappingDecision,
+      mappedSitePageId: input.mappedSitePageId,
+      mappingReviewState: "confirmed",
+      assignmentInvalidatedBy: null,
+      earlierHistoryAvailable:
+        currentState.reviewedProjection.earlierHistoryAvailable,
+    };
+
+    const updatedRows = await exec
+      .update(keywordEntities)
+      .set({
+        status: "approved",
+        cluster_key: input.clusterKey,
+        mapping_decision: input.mappingDecision,
+        mapped_site_page_id: input.mappedSitePageId,
+        mapping_review_state: "confirmed",
+        mapping_revision: governanceRevision,
+        updated_at: sql`greatest(
+          clock_timestamp(),
+          ${keywordEntities.updated_at} + interval '1 microsecond'
+        )`,
+      })
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          eq(keywordEntities.id, input.keywordId),
+          eq(
+            keywordEntities.mapping_revision,
+            input.expectedGovernanceRevision,
+          ),
+          sql`exists (
+            select 1
+            from ${clientProjects}
+            where ${clientProjects.id} = ${scope.projectId}
+              and ${clientProjects.workspace_id} = ${scope.workspaceId}
+              and ${clientProjects.archived_at} is null
+          )`,
+        ),
+      )
+      .returning({
+        mapping_revision: keywordEntities.mapping_revision,
+        updated_at: keywordEntities.updated_at,
+      });
+    const updated = updatedRows[0];
+    if (
+      !updated ||
+      updated.mapping_revision !== governanceRevision ||
+      !isTimestamptzInstant(updated.updated_at)
+    ) {
+      throw new KeywordGovernanceIntegrityError("CAS_UPDATE_FAILED");
+    }
+    const decidedAt = canonicalUtcTimestamptz(updated.updated_at);
+
+    await exec.insert(keywordReviewDecisions).values({
+      id: decisionId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      keyword_entity_id: input.keywordId,
+      governance_revision: governanceRevision,
+      decision_origin: "system_suggestion",
+      status: "approved",
+      intent: keyword.intent,
+      buyer_stage: keyword.buyer_stage,
+      topic_node_id: null,
+      topic_model_revision: null,
+      cluster_key_at_decision: input.clusterKey,
+      mapping_decision: input.mappingDecision,
+      mapped_site_page_id: input.mappedSitePageId,
+      review_state: "confirmed",
+      assignment_invalidated_by: null,
+      // An automated decision has no human decision maker. Migration 0032
+      // relaxed the actor CHECK exactly so this can stay honestly NULL.
+      decided_by: null,
+      reason: input.reason,
+      decided_at: decidedAt,
+      reviewed_projection: { ...reviewedProjection },
+    });
+
+    return {
+      keywordId: input.keywordId,
+      applied: true,
+      skipped: null,
+      governanceRevision,
     };
   }
 }

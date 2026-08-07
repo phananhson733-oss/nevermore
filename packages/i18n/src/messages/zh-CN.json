@@ -2224,22 +2224,28 @@
       }
     },
     "portfolioSummary": {
-      "label": "已加载范围摘要",
-      "loaded": "已加载 URL",
-      "loadedNote": "当前已加载范围内共有 {count} 个 URL",
-      "opportunityUrls": "有机会的 URL",
+      "label": "增长地图口径摘要",
+      "loaded": "已收录页面",
+      "loadedNote": "本次冻结诊断共收录 {count} 个 URL",
+      "opportunityUrls": "有机会的 URLs",
       "signals": "增长信号",
-      "signalsNote": "当前已加载范围内共有 {count} 条增长信号",
-      "uncoveredKeywords": "已加载未覆盖关键词",
+      "signalsNote": "去重后共 {count} 条 Finding；同一条 Finding 可能影响多个 URL",
+      "uncoveredKeywords": "未覆盖关键词",
       "uncoveredNote": "已加载 {loaded} 个关键词，其中仍有 {count} 个主题簇未覆盖",
       "uncoveredNoteTruncated": "首批已加载 {loaded} 个关键词，其中仍有 {count} 个主题簇未覆盖 · 还有更多记录",
+      "uncoveredEmpty": "关键词库还没有记录",
+      "uncoveredEmptyAction": "去导入关键词",
       "unavailable": "不可用"
     },
     "portfolioFilters": {
-      "pageType": "页面类型筛选",
+      "pageType": "页面类型",
       "allPageTypes": "全部页面类型",
-      "priority": "优先级筛选",
-      "allPriorities": "全部优先级"
+      "priority": "优先级",
+      "allPriorities": "全部优先级",
+      "more": "更多筛选",
+      "moreLabel": "更多筛选条件",
+      "moreActiveCount": "已启用 {count} 项",
+      "expandRowDetails": "展开本页详情"
     },
     "loadingPortfolio": "正在读取真实 URL 组合…",
     "loadingDetail": "正在读取所选 URL 的证据链…",
@@ -2327,7 +2333,7 @@
     "pageType": "页面类型 · {value}",
     "templateKey": "Template · {value}",
     "clusterKey": "Cluster · {value}",
-    "primaryOpportunityAction": "优先处理最高优先级机会",
+    "primaryOpportunityAction": "处理最高优先机会",
     "pageSummary": "所选页面概况",
     "priority": "当前优先级",
     "currentFindings": "当前 Finding",
@@ -2508,7 +2514,37 @@
       "sitePage": "页面对象 ID（SitePage）",
       "diagnosticRun": "诊断运行 ID",
       "crawlSnapshot": "抓取快照 ID"
-    }
+    },
+    "pageTypeLabel": {
+      "home": "首页",
+      "product": "产品页",
+      "blog": "Blog",
+      "integration": "集成页",
+      "comparison": "对比页",
+      "commercial": "商业页",
+      "resource": "资源页",
+      "trust": "信任页",
+      "solution": "方案页",
+      "template": "模板页",
+      "documentation": "文档页",
+      "unclassified": "未分类"
+    },
+    "paginationStatus": "当前筛选 {count} 条 · 第 {page} / {pages} 页",
+    "rowDetails": {
+      "label": "本页详情",
+      "templateKey": "页面模板",
+      "cluster": "主题簇",
+      "sources": "数据来源",
+      "pageSnapshot": "页面快照",
+      "unassigned": "未分配",
+      "notRecorded": "未记录"
+    },
+    "primaryOpportunityReviewAction": "先审核最高优先机会",
+    "primaryOpportunityReviewHint": "这条机会还没有确认出可执行的 Action，先在下方完成审核。",
+    "modeCount": {
+      "pages": "{count} 个页面"
+    },
+    "paginationStatusFiltered": "本页筛选出 {count} 条 · 第 {page} / {pages} 页"
   },
   "plan": {
     "kicker": "证据驱动的路线图 · 90 天",

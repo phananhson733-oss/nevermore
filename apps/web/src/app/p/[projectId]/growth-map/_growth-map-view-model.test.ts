@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api";
 import {
   GROWTH_MAP_OBJECT_MODES,
   GROWTH_MAP_DETAIL_STATES,
+  GROWTH_MAP_PAGE_TYPES,
   buildBeginTopicModelDraftCommand,
   buildConfirmTopicModelCommand,
   buildKeywordRankChartModel,
@@ -40,6 +41,10 @@ import {
   buildGrowthMapReviewCommand,
   findMetricObservation,
   growthMapLocationHref,
+  growthMapPageTypeFilterOptions,
+  growthMapPageTypeLabel,
+  growthMapPageWindow,
+  growthMapPrimaryOpportunity,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
   competitorMonitorDisplayState,
@@ -2804,5 +2809,195 @@ describe("Growth Map view model", () => {
       "http://example.com/page",
     );
     expect(safeExternalPageUrl("javascript:alert(1)")).toBeNull();
+  });
+});
+
+function urlFinding(
+  findingId: string,
+  overrides: Partial<GrowthMapUrlFinding> = {},
+): GrowthMapUrlFinding {
+  return {
+    projectId: IDS.project,
+    siteId: IDS.project,
+    findingId,
+    diagnosticRunId: IDS.snapshot,
+    ruleId: "TECH-CANONICAL-001",
+    ruleVersion: 1,
+    title: findingId,
+    severity: "medium",
+    reviewState: "unreviewed",
+    reviewRevision: 0,
+    active: true,
+    regressed: false,
+    evidenceIds: [IDS.evidence],
+    targetRelation: { relation: "affects_url", sitePageId: IDS.sitePage },
+    executionPreview: null,
+    executionRef: null,
+    ...overrides,
+  } as GrowthMapUrlFinding;
+}
+
+describe("growth map page type presentation", () => {
+  it("names every stable page_type.v1 slug the read model can send", () => {
+    expect(GROWTH_MAP_PAGE_TYPES).toEqual([
+      "home",
+      "product",
+      "solution",
+      "commercial",
+      "comparison",
+      "integration",
+      "template",
+      "blog",
+      "resource",
+      "documentation",
+      "trust",
+    ]);
+  });
+
+  it("reads a null page type as unclassified, never as not collected", () => {
+    expect(growthMapPageTypeLabel(null)).toEqual({ kind: "unclassified" });
+  });
+
+  it("maps a known slug to its own translated label", () => {
+    expect(growthMapPageTypeLabel("documentation")).toEqual({
+      kind: "known",
+      slug: "documentation",
+    });
+  });
+
+  it("passes an unknown slug through instead of inventing a label", () => {
+    expect(growthMapPageTypeLabel("changelog")).toEqual({
+      kind: "raw",
+      value: "changelog",
+    });
+  });
+
+  it("orders the filter options by the canonical slug order", () => {
+    expect(
+      growthMapPageTypeFilterOptions([
+        urlPortfolioItem(IDS.sitePage, { pageType: "blog" }),
+        urlPortfolioItem(IDS.sitePageB, { pageType: "home" }),
+        urlPortfolioItem(IDS.sitePageC, { pageType: null }),
+      ]),
+    ).toEqual(["home", "blog"]);
+  });
+
+  it("keeps unknown slugs last and deduplicated", () => {
+    expect(
+      growthMapPageTypeFilterOptions([
+        urlPortfolioItem(IDS.sitePage, { pageType: "changelog" }),
+        urlPortfolioItem(IDS.sitePageB, { pageType: "blog" }),
+        urlPortfolioItem(IDS.sitePageC, { pageType: "changelog" }),
+      ]),
+    ).toEqual(["blog", "changelog"]);
+  });
+});
+
+describe("growth map keyset page window", () => {
+  it("derives the first page from the server-side preceding row count", () => {
+    expect(
+      growthMapPageWindow({
+        listedUrlCount: 647,
+        precedingUrlCount: 0,
+        limit: 50,
+      }),
+    ).toEqual({ page: 1, pageCount: 13 });
+  });
+
+  it("derives a deep-linked page without any client cursor history", () => {
+    expect(
+      growthMapPageWindow({
+        listedUrlCount: 647,
+        precedingUrlCount: 300,
+        limit: 50,
+      }),
+    ).toEqual({ page: 7, pageCount: 13 });
+  });
+
+  it("reports a single page for an empty filtered list", () => {
+    expect(
+      growthMapPageWindow({
+        listedUrlCount: 0,
+        precedingUrlCount: 0,
+        limit: 50,
+      }),
+    ).toEqual({ page: 1, pageCount: 1 });
+  });
+
+  it("never reports a page beyond the page count", () => {
+    expect(
+      growthMapPageWindow({
+        listedUrlCount: 12,
+        precedingUrlCount: 12,
+        limit: 50,
+      }),
+    ).toEqual({ page: 1, pageCount: 1 });
+  });
+
+  it("falls back to one page when the limit is not positive", () => {
+    expect(
+      growthMapPageWindow({
+        listedUrlCount: 12,
+        precedingUrlCount: 0,
+        limit: 0,
+      }),
+    ).toEqual({ page: 1, pageCount: 1 });
+  });
+});
+
+describe("growth map primary opportunity", () => {
+  it("has nothing to open when the URL projects no Finding", () => {
+    expect(growthMapPrimaryOpportunity([])).toEqual({ kind: "none" });
+  });
+
+  it("selects by severity, not by the server's id ordering", () => {
+    const low = urlFinding(IDS.finding, { severity: "low" });
+    const critical = urlFinding(IDS.supportingFinding, {
+      severity: "critical",
+    });
+
+    expect(growthMapPrimaryOpportunity([low, critical])).toEqual({
+      kind: "review",
+      finding: critical,
+    });
+  });
+
+  it("keeps the projected order when two Findings share a severity", () => {
+    const first = urlFinding(IDS.finding, { severity: "high" });
+    const second = urlFinding(IDS.supportingFinding, { severity: "high" });
+
+    expect(growthMapPrimaryOpportunity([first, second])).toEqual({
+      kind: "review",
+      finding: first,
+    });
+  });
+
+  it("targets Execution only when the selected Finding names a canonical Action", () => {
+    const executionRef = { actionId: IDS.action, artifactIds: [IDS.artifact] };
+    const critical = urlFinding(IDS.supportingFinding, {
+      severity: "critical",
+      executionRef,
+    });
+
+    expect(growthMapPrimaryOpportunity([critical])).toEqual({
+      kind: "execution",
+      finding: critical,
+      executionRef,
+    });
+  });
+
+  it("stays in the review panel when the highest severity Finding has no Action", () => {
+    const critical = urlFinding(IDS.supportingFinding, {
+      severity: "critical",
+    });
+    const highWithAction = urlFinding(IDS.finding, {
+      severity: "high",
+      executionRef: { actionId: IDS.action, artifactIds: [] },
+    });
+
+    expect(growthMapPrimaryOpportunity([critical, highWithAction])).toEqual({
+      kind: "review",
+      finding: critical,
+    });
   });
 });

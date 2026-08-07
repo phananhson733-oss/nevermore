@@ -35,12 +35,14 @@ import type {
   TopicModelWorkspaceProjection,
 } from "@sf/contracts";
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
   BookOpenText,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   CircleDashed,
   Database,
@@ -49,6 +51,7 @@ import {
   Map as MapIcon,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Target,
   GitMerge,
@@ -149,7 +152,11 @@ import {
   findingTargetLabelKey,
   growthMapDetailAllowsFindingReview,
   growthMapLocationHref,
+  growthMapPageTypeFilterOptions,
+  growthMapPageTypeLabel,
+  growthMapPageWindow,
   growthMapPlatformLimitationKey,
+  growthMapPrimaryOpportunity,
   identitySourceKey,
   keywordDetailReadState,
   keywordTopicNeedsConflictConfirmation,
@@ -515,16 +522,88 @@ function PriorityPill({ item }: { readonly item: GrowthMapUrlPortfolioItem }) {
   );
 }
 
+/**
+ * `pageType` is a read-time `page_type.v1` derivation. A null value means no
+ * classification rule matched, which is not the same claim as "the page was
+ * not collected", and a slug this build does not know is shown verbatim
+ * instead of being relabelled into something the read model never said.
+ */
+function usePageTypeLabel(): (pageType: string | null) => string {
+  const t = useTranslations("growthMap.pageTypeLabel");
+  return useCallback(
+    (pageType: string | null): string => {
+      const label = growthMapPageTypeLabel(pageType);
+      if (label.kind === "unclassified") return t("unclassified");
+      return label.kind === "known" ? t(label.slug) : label.value;
+    },
+    [t],
+  );
+}
+
+/**
+ * Optional per-row disclosure. It only shows facts the portfolio projection
+ * already carries for this URL; anything the read model does not send stays
+ * absent rather than being filled in with a guess.
+ */
+function PortfolioRowDetails({
+  item,
+}: {
+  readonly item: GrowthMapUrlPortfolioItem;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.rowDetails");
+  const tProvider = useTranslations("provider");
+  const providers = Array.from(
+    new Set(item.identitySources.map((source) => source.provider)),
+  );
+
+  return (
+    <dl className={styles.rowDetails} aria-label={t("label")}>
+      <div>
+        <dt>{t("templateKey")}</dt>
+        <dd>{item.templateKey ?? t("notRecorded")}</dd>
+      </div>
+      <div>
+        <dt>{t("cluster")}</dt>
+        <dd>{item.clusterKey ?? t("unassigned")}</dd>
+      </div>
+      <div>
+        <dt>{t("sources")}</dt>
+        <dd>
+          {providers.length === 0
+            ? t("notRecorded")
+            : providers.map((provider) => tProvider(provider)).join(" · ")}
+        </dd>
+      </div>
+      <div>
+        <dt>{t("pageSnapshot")}</dt>
+        <dd>
+          {item.pageSnapshotCapturedAt === null ? (
+            t("notRecorded")
+          ) : (
+            <time dateTime={item.pageSnapshotCapturedAt}>
+              {formatObservedAt(locale, item.pageSnapshotCapturedAt)}
+            </time>
+          )}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
 function PortfolioRow({
   item,
   selected,
+  showDetails,
   onSelect,
 }: {
   readonly item: GrowthMapUrlPortfolioItem;
   readonly selected: boolean;
+  readonly showDetails: boolean;
   readonly onSelect: (sitePageId: string) => void;
 }) {
   const t = useTranslations("growthMap");
+  const pageTypeLabel = usePageTypeLabel();
   const url = urlPresentation(item.normalizedUrl);
   const clicks = findMetricObservation(
     item.metricObservations,
@@ -558,7 +637,7 @@ function PortfolioRow({
         </span>
         <span className={styles.metricCell} data-column={t("columns.pageType")}>
           <strong className={styles.libraryMetricPrimary}>
-            {item.pageType ?? t("notCollected")}
+            {pageTypeLabel(item.pageType)}
           </strong>
         </span>
         <span className={styles.findingCell} data-column={t("columns.signals")}>
@@ -580,6 +659,7 @@ function PortfolioRow({
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
       </div>
+      {showDetails ? <PortfolioRowDetails item={item} /> : null}
     </li>
   );
 }
@@ -587,10 +667,12 @@ function PortfolioRow({
 function PortfolioList({
   items,
   selectedSitePageId,
+  showRowDetails,
   onSelect,
 }: {
   readonly items: readonly GrowthMapUrlPortfolioItem[];
   readonly selectedSitePageId: string | null;
+  readonly showRowDetails: boolean;
   readonly onSelect: (sitePageId: string) => void;
 }) {
   const t = useTranslations("growthMap");
@@ -610,6 +692,7 @@ function PortfolioList({
             key={item.sitePageId}
             item={item}
             selected={selectedSitePageId === item.sitePageId}
+            showDetails={showRowDetails}
             onSelect={onSelect}
           />
         ))}
@@ -1828,14 +1911,19 @@ function UrlDetailPanel({
     detail.metricObservations,
     LIST_METRICS.position,
   );
-  const topFinding = detail.findings[0] ?? null;
+  const pageTypeLabel = usePageTypeLabel();
+  // The detail read model orders Findings by canonical id, so the first row is
+  // not the most urgent one. Rank by severity instead, then let the selected
+  // Finding decide whether the primary action can leave for Execution at all.
+  const primaryOpportunity = growthMapPrimaryOpportunity(detail.findings);
 
-  function openHighestPriorityFinding(): void {
-    if (topFinding === null) return;
+  function reviewPrimaryOpportunity(): void {
+    if (primaryOpportunity.kind === "none") return;
+    const { findingId } = primaryOpportunity.finding;
     setDetailState("opportunity_review");
     window.requestAnimationFrame(() => {
       document
-        .getElementById(`sf-finding-${topFinding.findingId}`)
+        .getElementById(`sf-finding-${findingId}`)
         ?.scrollIntoView({ block: "nearest" });
     });
   }
@@ -1891,9 +1979,7 @@ function UrlDetailPanel({
           )}
         </div>
         <div className={styles.detailTags}>
-          {detail.pageType === null ? null : (
-            <span>{t("pageType", { value: detail.pageType })}</span>
-          )}
+          <span>{t("pageType", { value: pageTypeLabel(detail.pageType) })}</span>
           {detail.templateKey === null ? null : (
             <span>{t("templateKey", { value: detail.templateKey })}</span>
           )}
@@ -2021,16 +2107,34 @@ function UrlDetailPanel({
         </div>
       )}
 
-      {topFinding === null ? null : (
+      {primaryOpportunity.kind === "none" ? null : (
         <div className={styles.detailPrimaryAction}>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={openHighestPriorityFinding}
-          >
-            {t("primaryOpportunityAction")}
-            <ArrowRight aria-hidden="true" size={17} />
-          </Button>
+          {primaryOpportunity.kind === "execution" ? (
+            <Link
+              className={styles.detailPrimaryActionLink}
+              href={executionHrefForRef(
+                projectId,
+                primaryOpportunity.executionRef,
+              )}
+            >
+              {t("primaryOpportunityAction")}
+              <ArrowRight aria-hidden="true" size={17} />
+            </Link>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={reviewPrimaryOpportunity}
+              >
+                {t("primaryOpportunityReviewAction")}
+                <ArrowDown aria-hidden="true" size={17} />
+              </Button>
+              <p className={styles.detailPrimaryActionHint}>
+                {t("primaryOpportunityReviewHint")}
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -2138,6 +2242,9 @@ function PortfolioPane({
   readonly diagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap");
+  const tPriority = useTranslations("priorityBand");
+  const pageTypeLabel = usePageTypeLabel();
+  const moreFiltersId = useId();
   const pathname = usePathname();
   const canonicalSearchParams = useSearchParams();
   const canonicalLocationSearch = canonicalSearchParams.toString();
@@ -2161,6 +2268,8 @@ function PortfolioPane({
     useState<GrowthMapUrlPageTypeFilter>("all");
   const [priorityFilter, setPriorityFilter] =
     useState<GrowthMapUrlPriorityFilter>("all");
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [rowDetailsOpen, setRowDetailsOpen] = useState(false);
   const [cursorHistory, setCursorHistory] = useState<readonly (string | null)[]>([]);
   const listQuery = useGrowthMapUrls(projectId, {
     search: querySearch,
@@ -2174,14 +2283,7 @@ function PortfolioPane({
   });
   const items = listQuery.data?.data ?? [];
   const pageTypeOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          items.flatMap((item) =>
-            item.pageType === null ? [] : [item.pageType],
-          ),
-        ),
-      ).sort((left, right) => left.localeCompare(right)),
+    () => growthMapPageTypeFilterOptions(items),
     [items],
   );
   const filteredItems = useMemo(
@@ -2314,13 +2416,20 @@ function PortfolioPane({
   }
 
   const response = listQuery.data;
-  const opportunityUrlCount = items.filter(
-    (item) => item.findingIds.length > 0,
-  ).length;
-  const signalCount = items.reduce(
-    (count, item) => count + item.findingIds.length,
-    0,
-  );
+  // Every headline count is the server's frozen-generation total. Summing the
+  // loaded rows here is what made one Finding covering 354 URLs read as 56
+  // separate signals, so the page never recomputes these.
+  const summary = response.meta.summary;
+  const pageWindow = growthMapPageWindow({
+    listedUrlCount: summary.listedUrlCount,
+    precedingUrlCount: summary.precedingUrlCount,
+    limit: response.meta.limit,
+  });
+  const activeMoreFilterCount = priorityFilter === "all" ? 0 : 1;
+  // Page type and priority narrow only the rows already loaded, so while either
+  // is on, the server's filtered-list total would overstate what the ledger can
+  // actually show. Say which of the two counts the number is.
+  const clientFiltered = pageTypeFilter !== "all" || priorityFilter !== "all";
   const summaryKeywords = summaryKeywordsQuery.data?.data ?? null;
   const uncoveredKeywords =
     summaryKeywords?.filter((keyword) => keyword.mappedTarget.kind === "unassigned") ??
@@ -2342,53 +2451,69 @@ function PortfolioPane({
       >
         <div className={styles.businessSummaryItem}>
           <span>{t("portfolioSummary.loaded")}</span>
-          <strong>{items.length}</strong>
-          <small>{t("portfolioSummary.loadedNote", { count: items.length })}</small>
+          <strong>{summary.urlCount}</strong>
+          <small>
+            {t("portfolioSummary.loadedNote", { count: summary.urlCount })}
+          </small>
         </div>
         <div className={styles.businessSummaryItem}>
           <span>{t("portfolioSummary.opportunityUrls")}</span>
-          <strong>{opportunityUrlCount}</strong>
+          <strong>{summary.opportunityUrlCount}</strong>
           <small>
-            {URL_PRIORITY_FILTERS.map((priority) => {
-              const count = items.filter(
-                (item) =>
-                  item.priority.availability === "available" &&
-                  item.priority.value === priority,
-              ).length;
-              return `${PRIORITY_CODE[priority]} ${count}`;
-            }).join(" · ")}
+            {URL_PRIORITY_FILTERS.map(
+              (priority) =>
+                `${PRIORITY_CODE[priority]} ${summary.priorityCounts[priority]}`,
+            ).join(" · ")}
           </small>
         </div>
         <div className={styles.businessSummaryItem}>
           <span>{t("portfolioSummary.signals")}</span>
-          <strong>{signalCount}</strong>
-          <small>{t("portfolioSummary.signalsNote", { count: signalCount })}</small>
+          <strong>{summary.signalCount}</strong>
+          <small>
+            {t("portfolioSummary.signalsNote", { count: summary.signalCount })}
+          </small>
         </div>
         <div className={styles.businessSummaryItem}>
           <span>{t("portfolioSummary.uncoveredKeywords")}</span>
           <strong>
             {uncoveredKeywords === null
               ? t("portfolioSummary.unavailable")
-              : uncoveredKeywords.length}
+              : summaryKeywords !== null && summaryKeywords.length === 0
+                ? "—"
+                : uncoveredKeywords.length}
           </strong>
           <small>
-            {uncoveredClusterCount === null
-              ? t("portfolioSummary.unavailable")
-              : t(
-                  summaryKeywordsQuery.data?.meta.hasNext
-                    ? "portfolioSummary.uncoveredNoteTruncated"
-                    : "portfolioSummary.uncoveredNote",
-                  {
+            {summaryKeywords === null || uncoveredClusterCount === null ? (
+              t("portfolioSummary.unavailable")
+            ) : summaryKeywords.length === 0 ? (
+              <>
+                {t("portfolioSummary.uncoveredEmpty")}
+                {" · "}
+                <Link href={`/p/${projectId}/sources`}>
+                  {t("portfolioSummary.uncoveredEmptyAction")}
+                </Link>
+              </>
+            ) : (
+              t(
+                summaryKeywordsQuery.data?.meta.hasNext
+                  ? "portfolioSummary.uncoveredNoteTruncated"
+                  : "portfolioSummary.uncoveredNote",
+                {
                   count: uncoveredClusterCount,
-                    loaded: summaryKeywords?.length ?? 0,
-                  },
-                )}
+                  loaded: summaryKeywords.length,
+                },
+              )
+            )}
           </small>
         </div>
       </section>
       <LimitationList limitations={response.meta.coverage.limitations} />
 
-      <form className={styles.libraryToolbar} role="search" onSubmit={submitSearch}>
+      <form
+        className={cx(styles.libraryToolbar, styles.portfolioToolbar)}
+        role="search"
+        onSubmit={submitSearch}
+      >
         <label className={styles.librarySearch} htmlFor="growth-map-url-search">
           <Search aria-hidden="true" size={20} />
           <input
@@ -2411,29 +2536,83 @@ function PortfolioPane({
           >
             <option value="all">{t("portfolioFilters.allPageTypes")}</option>
             {pageTypeOptions.map((pageType) => (
-              <option value={pageType} key={pageType}>{pageType}</option>
-            ))}
-          </select>
-        </label>
-        <label className={styles.libraryFilter}>
-          <span>{t("portfolioFilters.priority")}</span>
-          <select
-            value={priorityFilter}
-            onChange={(event) =>
-              setPriorityFilter(event.target.value as GrowthMapUrlPriorityFilter)
-            }
-          >
-            <option value="all">{t("portfolioFilters.allPriorities")}</option>
-            {URL_PRIORITY_FILTERS.map((priority) => (
-              <option value={priority} key={priority}>
-                {PRIORITY_CODE[priority]}
+              <option value={pageType} key={pageType}>
+                {pageTypeLabel(pageType)}
               </option>
             ))}
           </select>
         </label>
+        <div className={styles.portfolioToolGroup}>
+          <button
+            type="button"
+            className={cx(
+              styles.portfolioToolButton,
+              (moreFiltersOpen || activeMoreFilterCount > 0) &&
+                styles.portfolioToolButtonActive,
+            )}
+            aria-expanded={moreFiltersOpen}
+            aria-controls={moreFiltersId}
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+          >
+            <SlidersHorizontal aria-hidden="true" size={17} />
+            <span>{t("portfolioFilters.more")}</span>
+            {activeMoreFilterCount === 0 ? null : (
+              <em className={styles.portfolioToolBadge}>
+                {t("portfolioFilters.moreActiveCount", {
+                  count: activeMoreFilterCount,
+                })}
+              </em>
+            )}
+          </button>
+          <button
+            type="button"
+            className={cx(
+              styles.portfolioToolButton,
+              rowDetailsOpen && styles.portfolioToolButtonActive,
+            )}
+            aria-pressed={rowDetailsOpen}
+            onClick={() => setRowDetailsOpen((open) => !open)}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              size={17}
+              className={cx(rowDetailsOpen && styles.portfolioToolIconOpen)}
+            />
+            <span>{t("portfolioFilters.expandRowDetails")}</span>
+          </button>
+        </div>
         <Button type="submit" variant="primary">
           {t("searchAction")}
         </Button>
+        {moreFiltersOpen ? (
+          <div
+            className={styles.portfolioFilterDrawer}
+            id={moreFiltersId}
+            role="group"
+            aria-label={t("portfolioFilters.moreLabel")}
+          >
+            <label className={styles.libraryFilter}>
+              <span>{t("portfolioFilters.priority")}</span>
+              <select
+                value={priorityFilter}
+                onChange={(event) =>
+                  setPriorityFilter(
+                    event.target.value as GrowthMapUrlPriorityFilter,
+                  )
+                }
+              >
+                <option value="all">
+                  {t("portfolioFilters.allPriorities")}
+                </option>
+                {URL_PRIORITY_FILTERS.map((priority) => (
+                  <option value={priority} key={priority}>
+                    {PRIORITY_CODE[priority]} · {tPriority(priority)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
       </form>
 
       {items.length === 0 ? (
@@ -2456,28 +2635,47 @@ function PortfolioPane({
             <PortfolioList
               items={filteredItems}
               selectedSitePageId={selectedSitePageId}
+              showRowDetails={rowDetailsOpen}
               onSelect={selectUrl}
             />
-            <nav className={styles.pagination} aria-label={t("paginationLabel")}>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={cursorHistory.length === 0}
-                onClick={goPrevious}
-              >
-                <ArrowLeft aria-hidden="true" size={16} />
-                {t("previousPage")}
-              </Button>
-              <span>{t("loadedCount", { count: items.length })}</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!response.meta.hasNext}
-                onClick={goNext}
-              >
-                {t("nextPage")}
-                <ArrowRight aria-hidden="true" size={16} />
-              </Button>
+            <nav
+              className={styles.portfolioPagination}
+              aria-label={t("paginationLabel")}
+            >
+              <span className={styles.portfolioPaginationStatus}>
+                {t(
+                  clientFiltered
+                    ? "paginationStatusFiltered"
+                    : "paginationStatus",
+                  {
+                    count: clientFiltered
+                      ? filteredItems.length
+                      : summary.listedUrlCount,
+                    page: pageWindow.page,
+                    pages: pageWindow.pageCount,
+                  },
+                )}
+              </span>
+              <span className={styles.portfolioPaginationControls}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={cursorHistory.length === 0}
+                  onClick={goPrevious}
+                >
+                  <ArrowLeft aria-hidden="true" size={16} />
+                  {t("previousPage")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!response.meta.hasNext}
+                  onClick={goNext}
+                >
+                  {t("nextPage")}
+                  <ArrowRight aria-hidden="true" size={16} />
+                </Button>
+              </span>
             </nav>
           </div>
           <DetailState
@@ -9010,6 +9208,10 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
     [replaceCanonicalHref, requestNavigation],
   );
 
+  // Only the URL portfolio publishes a frozen-generation total. The Keyword and
+  // Competitor tabs have no equivalent summary, and the loaded page length is
+  // not that total, so they stay uncounted instead of stating a smaller number.
+  const urlCount = generationQuery.data?.meta.summary.urlCount ?? null;
   const tabItems = useMemo(
     () =>
       GROWTH_MAP_OBJECT_MODES.map((key) => ({
@@ -9062,7 +9264,14 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           >
             <Icon aria-hidden="true" size={19} strokeWidth={1.8} />
             <span>
-              <strong>{t(`modes.${key}.label`)}</strong>
+              <strong>
+                {t(`modes.${key}.label`)}
+                {key === "pages" && urlCount !== null ? (
+                  <em className={styles.objectTabCount}>
+                    {t("modeCount.pages", { count: urlCount })}
+                  </em>
+                ) : null}
+              </strong>
               <small>{t(`modes.${key}.description`)}</small>
             </span>
           </button>

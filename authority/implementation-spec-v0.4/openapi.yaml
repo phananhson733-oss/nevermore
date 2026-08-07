@@ -4168,7 +4168,10 @@ components:
       additionalProperties: false
       required: [derivationVersion, projectId, siteId, diagnosticRunId, sitePageId, findingIds]
       properties:
-        derivationVersion: { type: string, const: max_finding_severity.v1 }
+        derivationVersion:
+          type: string
+          enum: [max_finding_severity.v1, url_opportunity_rank.v1]
+          description: max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Both stay readable so a published generation keeps the derivation it was projected with.
         projectId: { $ref: '#/components/schemas/Uuid' }
         siteId: { $ref: '#/components/schemas/Uuid' }
         diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
@@ -4420,13 +4423,58 @@ components:
           items: { $ref: '#/components/schemas/Uuid' }
         priority: { $ref: '#/components/schemas/GrowthMapUrlPriority' }
         delta: { $ref: '#/components/schemas/GrowthMapUrlDelta' }
-      description: One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot; page type, cluster, and owner remain null unless persisted.
+      description: One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot. pageType is a stable page_type.v1 slug derived at read time from the frozen Crawl page extract and the canonical path; null means unclassified, never uncollected. Cluster and owner remain null unless persisted.
       x-signalframe-runtime-refinement: exactIdentityMetricPriorityAndDeltaLineage
+
+    GrowthMapUrlPortfolioPriorityCounts:
+      type: object
+      additionalProperties: false
+      required: [critical, high, medium, low]
+      properties:
+        critical: { type: integer, minimum: 0, maximum: 2000000 }
+        high: { type: integer, minimum: 0, maximum: 2000000 }
+        medium: { type: integer, minimum: 0, maximum: 2000000 }
+        low: { type: integer, minimum: 0, maximum: 2000000 }
+      description: Opportunity URLs per derived priority band. The four counts sum to opportunityUrlCount.
+
+    GrowthMapUrlPortfolioSummary:
+      type: object
+      additionalProperties: false
+      required: [urlCount, opportunityUrlCount, listedUrlCount, signalCount, priorityCounts, precedingUrlCount]
+      properties:
+        urlCount:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+          description: Canonical SitePages admitted by this frozen generation, ignoring list filters.
+        opportunityUrlCount:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+          description: Admitted SitePages carrying at least one active, non-ignored Finding.
+        listedUrlCount:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+          description: Rows the current filtered list contains in total across every page.
+        signalCount:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+          description: Distinct Findings reaching this generation's URL inventory, deduplicated rather than counted once per affected URL.
+        priorityCounts: { $ref: '#/components/schemas/GrowthMapUrlPortfolioPriorityCounts' }
+        precedingUrlCount:
+          type: integer
+          minimum: 0
+          maximum: 2000000
+          description: Listed rows before this page. Keyset paging carries no offset, so the page position cannot be inferred client-side.
+      description: Deterministic counts inside the one frozen generation named by diagnosticRunId. This is not a synthesized cross-generation project total.
+      x-signalframe-runtime-refinement: portfolioSummaryCountConsistency
 
     GrowthMapUrlPortfolioMeta:
       type: object
       additionalProperties: false
-      required: [limit, nextCursor, hasNext, coverage]
+      required: [limit, nextCursor, hasNext, coverage, summary]
       properties:
         limit: { type: integer, minimum: 1, maximum: 100 }
         nextCursor:
@@ -4436,7 +4484,8 @@ components:
           pattern: '^[A-Za-z0-9_-]+$'
         hasNext: { type: boolean }
         coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
-      description: hasNext is true exactly when nextCursor is non-null.
+        summary: { $ref: '#/components/schemas/GrowthMapUrlPortfolioSummary' }
+      description: hasNext is true exactly when nextCursor is non-null. summary counts the whole frozen generation, never only the returned page.
       x-signalframe-runtime-refinement: cursorAvailabilityConsistency
 
     GrowthMapUrlPortfolioResponse:
@@ -4453,8 +4502,8 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/GrowthMapUrlPortfolioItem' }
         meta: { $ref: '#/components/schemas/GrowthMapUrlPortfolioMeta' }
-      description: Bounded current-run URL portfolio. It intentionally exposes no project-wide total and every item repeats the same immutable scope identifiers.
-      x-signalframe-runtime-refinement: portfolioScopeAndCanonicalIdentityUniqueness
+      description: Bounded current-run URL portfolio. It exposes no cross-generation project total; meta.summary counts only inside the frozen generation named by diagnosticRunId, and every item repeats the same immutable scope identifiers.
+      x-signalframe-runtime-refinement: portfolioScopeCanonicalIdentityUniquenessAndSummaryPaging
 
     GrowthMapUrlDetail:
       type: object

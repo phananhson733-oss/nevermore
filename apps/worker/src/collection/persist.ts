@@ -21,6 +21,7 @@ import {
   DATAFORSEO_BACKLINKS_OPERATION,
   objectKey,
   parseCrawlSiteLanguageSnapshotSummary,
+  projectableSiteLanguageTag,
   SourceError,
   type Availability,
   type BlobPutResult,
@@ -253,17 +254,24 @@ export async function persistCollectionResult(
         run.provider,
         observationsWithPageLineage,
       );
+      // A multilingual site keeps `conflicting` status, but the crawl still
+      // counted which language most of its pages declare, and that plurality
+      // is the site's own statement. Without this the project language stays
+      // empty forever and every language-scoped provider step skips itself.
+      const observedSiteLanguage =
+        crawlSiteLanguage === null
+          ? null
+          : projectableSiteLanguageTag(crawlSiteLanguage);
       if (
         projectionsMutable &&
         canonicalSite.is_primary &&
         outcome.availability === "available" &&
-        crawlSiteLanguage?.status === "resolved" &&
-        crawlSiteLanguage.languageTag !== null
+        observedSiteLanguage !== null
       ) {
         await new SitesRepository(tx).projectPrimaryLanguageIfEmpty(
           scope,
           run.site_id,
-          crawlSiteLanguage.languageTag,
+          observedSiteLanguage,
         );
       }
       const monitorProjection = await projectCompetitorMonitorSnapshot(

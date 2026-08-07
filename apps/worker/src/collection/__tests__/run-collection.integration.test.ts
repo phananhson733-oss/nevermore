@@ -503,7 +503,7 @@ describeDb("collection runner (spec §13)", () => {
     expect(snapshots.rows).toHaveLength(1);
     expect(snapshots.rows[0]?.summary).toEqual({
       siteLanguage: {
-        schemaVersion: "crawl.site-language-summary.v1",
+        schemaVersion: "crawl.site-language-summary.v2",
         status: "resolved",
         languageTag: "en-US",
         pagesAnalyzed: 1,
@@ -511,6 +511,8 @@ describeDb("collection runner (spec §13)", () => {
         missingPageCount: 0,
         invalidDeclarationCount: 0,
         canonicalTags: ["en-US"],
+        dominantTag: "en-US",
+        tagCounts: [{ canonicalTag: "en-US", declaredPageCount: 1 }],
         evidence: [
           {
             fetchUrl: `${seed.siteOrigin}/`,

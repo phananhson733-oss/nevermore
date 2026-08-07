@@ -240,6 +240,17 @@ function gscOnlyPortfolioItem() {
   };
 }
 
+function portfolioSummary() {
+  return {
+    urlCount: 12,
+    opportunityUrlCount: 5,
+    listedUrlCount: 5,
+    signalCount: 3,
+    priorityCounts: { critical: 1, high: 1, medium: 2, low: 1 },
+    precedingUrlCount: 0,
+  };
+}
+
 function portfolioResponse() {
   return {
     projectId: ids.project,
@@ -255,7 +266,19 @@ function portfolioResponse() {
         availability: "partial",
         limitations: ["One discovered URL could not be collected."],
       },
+      summary: portfolioSummary(),
     },
+  };
+}
+
+/** A terminal page must account for exactly the filtered rows it reports. */
+function lastPageMeta(dataLength: number) {
+  const meta = portfolioResponse().meta;
+  return {
+    ...meta,
+    nextCursor: null,
+    hasNext: false,
+    summary: { ...meta.summary, listedUrlCount: dataLength },
   };
 }
 
@@ -366,7 +389,7 @@ describe("Growth Map URL contracts", () => {
           metricObservations: [metric],
         },
       ],
-      meta: { ...response.meta, nextCursor: null, hasNext: false },
+      meta: lastPageMeta(1),
     };
 
     expect(GrowthMapUrlPortfolioResponse.safeParse(projection).success).toBe(
@@ -439,11 +462,7 @@ describe("Growth Map URL contracts", () => {
       GrowthMapUrlPortfolioResponse.safeParse({
         ...portfolioResponse(),
         data: [{ ...item, identitySources, metricObservations }],
-        meta: {
-          ...portfolioResponse().meta,
-          nextCursor: null,
-          hasNext: false,
-        },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(true);
 
@@ -461,11 +480,7 @@ describe("Growth Map URL contracts", () => {
             metricObservations,
           },
         ],
-        meta: {
-          ...portfolioResponse().meta,
-          nextCursor: null,
-          hasNext: false,
-        },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(false);
   });
@@ -724,7 +739,7 @@ describe("Growth Map URL contracts", () => {
         GrowthMapUrlPortfolioResponse.safeParse({
           ...response,
           data: [item],
-          meta: { ...response.meta, nextCursor: null, hasNext: false },
+          meta: lastPageMeta(1),
         }).success,
       ).toBe(false);
     }
@@ -797,6 +812,140 @@ describe("Growth Map URL contracts", () => {
         meta: { ...portfolioResponse().meta, limit: 1 },
       }).success,
     ).toBe(false);
+  });
+
+  it("requires a frozen-generation summary alongside the cursor page", () => {
+    const response = portfolioResponse();
+    const withoutSummary = { ...response.meta } as Record<string, unknown>;
+    delete withoutSummary["summary"];
+
+    expect(
+      GrowthMapUrlPortfolioResponse.safeParse({
+        ...response,
+        meta: withoutSummary,
+      }).success,
+    ).toBe(false);
+
+    expect(GrowthMapUrlPortfolioResponse.safeParse(response).success).toBe(true);
+    expect(
+      GrowthMapUrlPortfolioResponse.parse(response).meta.summary,
+    ).toEqual(portfolioSummary());
+  });
+
+  it("rejects a summary that contradicts its own frozen generation counts", () => {
+    const response = portfolioResponse();
+    for (const summary of [
+      // Opportunity URLs can never exceed the admitted inventory.
+      { ...portfolioSummary(), opportunityUrlCount: 13 },
+      // Neither can the filtered list.
+      { ...portfolioSummary(), listedUrlCount: 13 },
+      // Preceding rows are part of the same filtered list.
+      { ...portfolioSummary(), precedingUrlCount: 6 },
+      // Every opportunity URL lands in exactly one band.
+      {
+        ...portfolioSummary(),
+        priorityCounts: { critical: 0, high: 1, medium: 2, low: 1 },
+      },
+      {
+        ...portfolioSummary(),
+        priorityCounts: { critical: 2, high: 1, medium: 2, low: 1 },
+      },
+      // Counts are non-negative integers, never a signed placeholder.
+      { ...portfolioSummary(), signalCount: -1 },
+      { ...portfolioSummary(), urlCount: 1.5 },
+    ]) {
+      expect(
+        GrowthMapUrlPortfolioResponse.safeParse({
+          ...response,
+          meta: { ...response.meta, summary },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps the page, its offset and the filtered total mutually consistent", () => {
+    const response = portfolioResponse();
+
+    // Rows read through this page cannot exceed the filtered list.
+    expect(
+      GrowthMapUrlPortfolioResponse.safeParse({
+        ...response,
+        meta: {
+          ...response.meta,
+          summary: {
+            ...portfolioSummary(),
+            precedingUrlCount: 4,
+            listedUrlCount: 5,
+          },
+        },
+      }).success,
+    ).toBe(false);
+
+    // A terminal page must complete the filtered list it reports.
+    expect(
+      GrowthMapUrlPortfolioResponse.safeParse({
+        ...response,
+        meta: {
+          ...response.meta,
+          nextCursor: null,
+          hasNext: false,
+          summary: { ...portfolioSummary(), precedingUrlCount: 0 },
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      GrowthMapUrlPortfolioResponse.safeParse({
+        ...response,
+        meta: {
+          ...response.meta,
+          nextCursor: null,
+          hasNext: false,
+          summary: {
+            ...portfolioSummary(),
+            precedingUrlCount: 3,
+            listedUrlCount: 5,
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("reads both published priority derivations without rewriting history", () => {
+    const response = portfolioResponse();
+    const withDerivation = (derivationVersion: string) => ({
+      ...response,
+      data: [
+        {
+          ...portfolioItem(),
+          priority: {
+            ...portfolioItem().priority,
+            basis: { ...priorityBasis(), derivationVersion },
+          },
+        },
+      ],
+      meta: lastPageMeta(1),
+    });
+
+    for (const derivationVersion of [
+      "max_finding_severity.v1",
+      "url_opportunity_rank.v1",
+    ]) {
+      expect(
+        GrowthMapUrlPortfolioResponse.safeParse(withDerivation(derivationVersion))
+          .success,
+      ).toBe(true);
+    }
+    for (const derivationVersion of [
+      "url_opportunity_rank.v2",
+      "max_finding_severity",
+      "",
+    ]) {
+      expect(
+        GrowthMapUrlPortfolioResponse.safeParse(withDerivation(derivationVersion))
+          .success,
+      ).toBe(false);
+    }
   });
 
   it("requires an explicit limitation whenever URL coverage is not available", () => {
@@ -908,7 +1057,7 @@ describe("Growth Map URL contracts", () => {
             metricObservations: [clicks, position],
           },
         ],
-        meta: { ...response.meta, nextCursor: null, hasNext: false },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(true);
 
@@ -921,7 +1070,7 @@ describe("Growth Map URL contracts", () => {
             metricObservations: [clicks, clicks],
           },
         ],
-        meta: { ...response.meta, nextCursor: null, hasNext: false },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(false);
   });
@@ -937,7 +1086,7 @@ describe("Growth Map URL contracts", () => {
             delta: unavailableDelta(),
           },
         ],
-        meta: { ...portfolioResponse().meta, nextCursor: null, hasNext: false },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(true);
 
@@ -952,7 +1101,7 @@ describe("Growth Map URL contracts", () => {
             delta: unavailableDelta(),
           },
         ],
-        meta: { ...portfolioResponse().meta, nextCursor: null, hasNext: false },
+        meta: lastPageMeta(1),
       }).success,
     ).toBe(true);
 

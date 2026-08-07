@@ -280,14 +280,17 @@ export {
   buildCrawlSiteLanguageSummary,
   parseCrawlSiteLanguageSnapshotSummary,
   parseHtmlLanguageDeclaration,
+  projectableSiteLanguageTag,
   CRAWL_SITE_LANGUAGE_EVIDENCE_LIMIT,
   CRAWL_SITE_LANGUAGE_SUMMARY_VERSION,
+  CRAWL_SITE_LANGUAGE_SUMMARY_VERSION_V1,
 } from "./crawl/site-language.ts";
 export type {
   CrawlPageLanguageEvidence,
   CrawlSiteLanguageEvidenceSample,
   CrawlSiteLanguageStatus,
   CrawlSiteLanguageSummary,
+  CrawlSiteLanguageTagCount,
   HtmlLanguageDeclaration,
 } from "./crawl/site-language.ts";
 export {

@@ -173,6 +173,7 @@ function availabilityCopy(
 export interface GrowthMapProjectionCopy {
   readonly partialRun: string;
   readonly priorityUnavailable: string;
+  readonly priorityAllReviewed: string;
   readonly deltaUnavailable: string;
   readonly staleMetricSuffix: string;
   readonly missingSnapshot: (provider: string) => string;
@@ -197,6 +198,8 @@ export function growthMapProjectionCopy(
     return {
       partialRun: "最新一次已完成的诊断仅覆盖了部分数据。",
       priorityUnavailable: "当前诊断没有指向该 URL 的 Finding。",
+      priorityAllReviewed:
+        "指向该 URL 的 Finding 已全部被忽略或解决，因此不再派生优先级。",
       deltaUnavailable: "该 URL 尚无两个不可变复查锚点，无法计算变化。",
       staleMetricSuffix: "数据快照已超过该数据源的新鲜度期限。",
       missingSnapshot: (provider) =>
@@ -215,6 +218,8 @@ export function growthMapProjectionCopy(
   return {
     partialRun: "The latest completed diagnostic run has partial coverage.",
     priorityUnavailable: "No current-run Finding targets this URL.",
+    priorityAllReviewed:
+      "Every current-run Finding on this URL is ignored or resolved, so no priority is derived.",
     deltaUnavailable:
       "No two immutable recheck anchors are available for this URL.",
     staleMetricSuffix: "Snapshot is stale under the provider freshness policy.",
@@ -439,10 +444,14 @@ export function validateGrowthMapFrozenRun(
   };
 }
 
-/** Page title is never read from mutable SitePage or an unrelated Observation. */
-export function verifiedGrowthMapPageTitle(
+/**
+ * The content-addressed crawl projection for one URL. Everything derived from a
+ * page body must come through here so a mutable SitePage row or an unrelated
+ * Observation can never become Growth Map truth.
+ */
+export function verifiedGrowthMapPageProjection(
   input: GrowthMapPageTitleInput,
-): string | null {
+): Record<string, unknown> {
   let canonical: string;
   try {
     canonical = canonicalize(input.extract as CanonicalValue);
@@ -469,12 +478,21 @@ export function verifiedGrowthMapPageTitle(
   ) {
     invalidPageSnapshot();
   }
+  return projection as Record<string, unknown>;
+}
+
+/** Page title is never read from mutable SitePage or an unrelated Observation. */
+export function verifiedGrowthMapPageTitle(
+  input: GrowthMapPageTitleInput,
+): string | null {
+  const projection = verifiedGrowthMapPageProjection(input);
   const title = projection["title"];
   if (title === null || title === undefined) return null;
   if (typeof title !== "string") invalidPageSnapshot();
   const normalized = title.trim();
   return normalized.length > 0 && normalized.length <= 500 ? normalized : null;
 }
+
 
 export interface GrowthMapUrlCoverageInput {
   readonly hasPageSnapshot: boolean;

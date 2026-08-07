@@ -811,7 +811,7 @@ describe("persistCollectionResult crawl page materialization", () => {
   ): Record<string, unknown> {
     return {
       siteLanguage: {
-        schemaVersion: "crawl.site-language-summary.v1",
+        schemaVersion: "crawl.site-language-summary.v2",
         status: "resolved",
         languageTag: "en-US",
         pagesAnalyzed: 1,
@@ -819,6 +819,8 @@ describe("persistCollectionResult crawl page materialization", () => {
         missingPageCount: 0,
         invalidDeclarationCount: 0,
         canonicalTags: ["en-US"],
+        dominantTag: "en-US",
+        tagCounts: [{ canonicalTag: "en-US", declaredPageCount: 1 }],
         evidence: [
           {
             fetchUrl: "https://example.com/pricing/",
@@ -828,6 +830,66 @@ describe("persistCollectionResult crawl page materialization", () => {
         ],
         omittedEvidenceCount: 0,
         ...overrides,
+      },
+    };
+  }
+
+  /** A frozen pre-v2 summary: the same decision, without any per-tag count. */
+  function legacyLanguageSummary(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    const { siteLanguage } = languageSummary(overrides) as {
+      siteLanguage: Record<string, unknown>;
+    };
+    const {
+      dominantTag: _dominantTag,
+      tagCounts: _tagCounts,
+      ...rest
+    } = siteLanguage;
+    return {
+      siteLanguage: {
+        ...rest,
+        schemaVersion: "crawl.site-language-summary.v1",
+      },
+    };
+  }
+
+  /**
+   * Build a multi-page crawl raw so a bilingual site-language summary can be
+   * validated against the same page count the crawl really reported.
+   */
+  function multilingualCrawlOutcome(
+    fetchUrls: readonly string[],
+  ): CollectionOutcome {
+    const first = crawlOutcome();
+    const raw = first.raw as Record<string, unknown> & {
+      readonly pages: readonly {
+        readonly subjectUrl: string;
+        readonly depth: number;
+        readonly projection: typeof pageProjection;
+      }[];
+    };
+    const usage = { ...first.providerUsage, pagesCollected: fetchUrls.length };
+    return {
+      ...first,
+      rowCount: fetchUrls.length,
+      providerUsage: usage,
+      raw: {
+        ...raw,
+        pages: [
+          ...raw.pages,
+          ...fetchUrls.slice(1).map((fetchUrl) => ({
+            subjectUrl: fetchUrl,
+            depth: 1,
+            projection: {
+              ...pageProjection,
+              fetchUrl,
+              canonicalTarget: null,
+              internalOutlinks: [],
+            },
+          })),
+        ],
+        providerUsage: usage,
       },
     };
   }
@@ -997,6 +1059,8 @@ describe("persistCollectionResult crawl page materialization", () => {
               missingPageCount: 1,
               invalidDeclarationCount: 0,
               canonicalTags: [],
+              dominantTag: null,
+              tagCounts: [],
               evidence: [],
             }
           : status === "invalid"
@@ -1005,6 +1069,8 @@ describe("persistCollectionResult crawl page materialization", () => {
                 languageTag: null,
                 invalidDeclarationCount: 1,
                 canonicalTags: [],
+                dominantTag: null,
+                tagCounts: [],
                 evidence: [
                   {
                     fetchUrl: "https://example.com/pricing/",
@@ -1014,6 +1080,8 @@ describe("persistCollectionResult crawl page materialization", () => {
                 ],
               }
             : {
+                // An exactly tied bilingual site: the ASCII tie-break still
+                // names one tag, but no plurality exists to project.
                 status,
                 languageTag: null,
                 pagesAnalyzed: 2,
@@ -1021,6 +1089,11 @@ describe("persistCollectionResult crawl page materialization", () => {
                 missingPageCount: 0,
                 invalidDeclarationCount: 0,
                 canonicalTags: ["en", "fr"],
+                dominantTag: "en",
+                tagCounts: [
+                  { canonicalTag: "en", declaredPageCount: 1 },
+                  { canonicalTag: "fr", declaredPageCount: 1 },
+                ],
                 evidence: [
                   {
                     fetchUrl: "https://example.com/pricing/",
@@ -1037,42 +1110,10 @@ describe("persistCollectionResult crawl page materialization", () => {
       const selectedOutcome =
         status !== "conflicting"
           ? crawlOutcome()
-          : (() => {
-              const first = crawlOutcome();
-              const raw = first.raw as {
-                readonly pages: readonly {
-                  readonly subjectUrl: string;
-                  readonly depth: number;
-                  readonly projection: typeof pageProjection;
-                }[];
-              } & Record<string, unknown>;
-              const usage = {
-                ...first.providerUsage,
-                pagesCollected: 2,
-              };
-              return {
-                ...first,
-                rowCount: 2,
-                providerUsage: usage,
-                raw: {
-                  ...raw,
-                  pages: [
-                    ...raw.pages,
-                    {
-                      subjectUrl: "https://example.com/fr",
-                      depth: 1,
-                      projection: {
-                        ...pageProjection,
-                        fetchUrl: "https://example.com/fr",
-                        canonicalTarget: null,
-                        internalOutlinks: [],
-                      },
-                    },
-                  ],
-                  providerUsage: usage,
-                },
-              };
-            })();
+          : multilingualCrawlOutcome([
+              "https://example.com/pricing/",
+              "https://example.com/fr",
+            ]);
       await expect(
         persist({
           outcome: {
@@ -1087,6 +1128,155 @@ describe("persistCollectionResult crawl page materialization", () => {
       ).not.toHaveBeenCalled();
     },
   );
+
+  /** A bilingual site with a real majority: `/en` and `/zh` under one host. */
+  function bilingualSummary(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return languageSummary({
+      status: "conflicting",
+      languageTag: null,
+      pagesAnalyzed: 3,
+      declaredPageCount: 3,
+      missingPageCount: 0,
+      invalidDeclarationCount: 0,
+      canonicalTags: ["en", "zh"],
+      dominantTag: "en",
+      tagCounts: [
+        { canonicalTag: "en", declaredPageCount: 2 },
+        { canonicalTag: "zh", declaredPageCount: 1 },
+      ],
+      evidence: [
+        {
+          fetchUrl: "https://example.com/pricing/",
+          declaredTag: "en",
+          canonicalTag: "en",
+        },
+        {
+          fetchUrl: "https://example.com/en/about",
+          declaredTag: "en",
+          canonicalTag: "en",
+        },
+        {
+          fetchUrl: "https://example.com/zh/about",
+          declaredTag: "zh",
+          canonicalTag: "zh",
+        },
+      ],
+      omittedEvidenceCount: 0,
+      ...overrides,
+    });
+  }
+
+  const bilingualPages = [
+    "https://example.com/pricing/",
+    "https://example.com/en/about",
+    "https://example.com/zh/about",
+  ] as const;
+
+  it("projects the dominant declared language of a conflicting bilingual Crawl", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        outcome: {
+          ...multilingualCrawlOutcome(bilingualPages),
+          summary: bilingualSummary(),
+        },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      collectionRun.site_id,
+      "en",
+    );
+    // The stored evidence keeps saying the site declares two languages.
+    expect(
+      vi.mocked(DataSnapshotsRepository.prototype.insert).mock.calls[0]?.[0],
+    ).toMatchObject({ summary: bilingualSummary() });
+  });
+
+  it("leaves an operator-set Site language untouched when the empty-array guard refuses", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+    vi.mocked(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).mockResolvedValueOnce(false);
+
+    await expect(
+      persist({
+        outcome: {
+          ...multilingualCrawlOutcome(bilingualPages),
+          summary: bilingualSummary(),
+        },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    // The empty-array precondition lives in that one statement; nothing here
+    // retries it or reaches for a second Site write when it declines.
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reinterpret a frozen pre-v2 summary that never counted its tags", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    const { siteLanguage } = bilingualSummary() as {
+      siteLanguage: Record<string, unknown>;
+    };
+    const {
+      dominantTag: _dominantTag,
+      tagCounts: _tagCounts,
+      ...legacy
+    } = siteLanguage;
+
+    await expect(
+      persist({
+        outcome: {
+          ...multilingualCrawlOutcome(bilingualPages),
+          summary: {
+            siteLanguage: {
+              ...legacy,
+              schemaVersion: "crawl.site-language-summary.v1",
+            },
+          },
+        },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("still projects a resolved language from a frozen pre-v2 summary", async () => {
+    transaction.mockImplementationOnce(
+      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+    );
+
+    await expect(
+      persist({
+        outcome: { ...crawlOutcome(), summary: legacyLanguageSummary() },
+      }),
+    ).resolves.toBe("snapshot-1");
+
+    expect(
+      SitesRepository.prototype.projectPrimaryLanguageIfEmpty,
+    ).toHaveBeenCalledWith(
+      { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
+      collectionRun.site_id,
+      "en-US",
+    );
+  });
 
   it("rejects site-language evidence whose page count drifts from the validated Crawl raw", async () => {
     await expect(

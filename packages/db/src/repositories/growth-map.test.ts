@@ -564,6 +564,217 @@ describe("GrowthMapReadRepository", () => {
     expect(db.calls).toEqual([]);
   });
 
+  it("counts the whole frozen generation, not only the returned page", async () => {
+    const { db, repo } = repository();
+    db.enqueue(
+      [
+        {
+          url_count: 647,
+          opportunity_url_count: 359,
+          listed_url_count: 359,
+          signal_count: 8,
+          preceding_url_count: 0,
+        },
+      ],
+      [
+        { severity_rank: 2, coverage_count: 354, finding_count: 1, url_count: 353 },
+        { severity_rank: 2, coverage_count: 6, finding_count: 2, url_count: 1 },
+        { severity_rank: 2, coverage_count: 1, finding_count: 1, url_count: 5 },
+      ],
+    );
+
+    await expect(
+      repo.summarizeCurrentRunUrls(scope, runId, { cursor: null }),
+    ).resolves.toEqual({
+      urlCount: 647,
+      opportunityUrlCount: 359,
+      listedUrlCount: 359,
+      signalCount: 8,
+      precedingUrlCount: 0,
+      rankGroups: [
+        { severityRank: 2, coverageCount: 354, findingCount: 1, urlCount: 353 },
+        { severityRank: 2, coverageCount: 6, findingCount: 2, urlCount: 1 },
+        { severityRank: 2, coverageCount: 1, findingCount: 1, urlCount: 5 },
+      ],
+    });
+
+    const groupQuery = db.lastSql();
+    expect(groupQuery.sql).toContain("opportunity_sort.priority_rank");
+    expect(groupQuery.sql).toContain("group by 1, 2, 3");
+    expect(groupQuery.sql).toContain("opportunity_sort.finding_count > 0");
+
+    const totalsQuery = new PgDialect().sqlToQuery(
+      db.calls[0]?.args[0] as never,
+    );
+    expect(totalsQuery.sql).toContain("count(*)::integer as url_count");
+    expect(totalsQuery.sql).toContain(
+      "count(*) filter (where finding_count > 0)::integer as opportunity_url_count",
+    );
+    expect(totalsQuery.sql).toContain("from inventory_signals");
+    // The generation inventory bounds the deduplicated signal count.
+    expect(totalsQuery.sql).toContain(
+      "inventory.site_page_id = \"app\".\"finding_targets\".\"site_page_id\"",
+    );
+    expect(totalsQuery.params).toContain(runId);
+  });
+
+  it("counts preceding rows under the exact filters the page is paging", async () => {
+    const { db, repo } = repository();
+    db.enqueue([{ site_page_id: pageId, site_page_created_at: "2026-07-22T01:00:00.000Z" }]);
+    const page = await repo.listCurrentRunUrls(scope, runId, {
+      limit: 1,
+      cursor: null,
+    });
+    db.enqueue([]);
+    const nextPage = await repo.listCurrentRunUrls(scope, runId, {
+      limit: 1,
+      cursor: null,
+    });
+    expect(nextPage.rows).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+
+    const encodedCursor = Buffer.from(
+      JSON.stringify({
+        coverageCount: 12,
+        priorityRank: 2,
+        findingCount: 3,
+        timestamp: "2026-07-22T01:00:00.000Z",
+        id: pageId,
+      }),
+      "utf8",
+    ).toString("base64url");
+
+    db.enqueue(
+      [
+        {
+          url_count: 10,
+          opportunity_url_count: 6,
+          listed_url_count: 4,
+          signal_count: 2,
+          preceding_url_count: 3,
+        },
+      ],
+      [],
+    );
+    const summary = await repo.summarizeCurrentRunUrls(scope, runId, {
+      cursor: encodedCursor,
+      search: "guide",
+    });
+    expect(summary.listedUrlCount).toBe(4);
+    expect(summary.precedingUrlCount).toBe(3);
+
+    const totalsQuery = new PgDialect().sqlToQuery(
+      db.calls.at(-2)?.args[0] as never,
+    );
+    expect(totalsQuery.sql).toContain("where matches_search and is_listed");
+    expect(totalsQuery.sql).toContain("and not after_cursor");
+    expect(totalsQuery.sql).toContain("position(lower($");
+    expect(totalsQuery.params).toContain("guide");
+    expect(totalsQuery.params).toContain(12);
+  });
+
+  it("keeps every unfiltered inventory row countable when Opportunities are off", async () => {
+    const { db, repo } = repository();
+    db.enqueue(
+      [
+        {
+          url_count: 5,
+          opportunity_url_count: 0,
+          listed_url_count: 5,
+          signal_count: 0,
+          preceding_url_count: 0,
+        },
+      ],
+      [],
+    );
+
+    const summary = await repo.summarizeCurrentRunUrls(scope, runId, {
+      cursor: null,
+      opportunitiesOnly: false,
+    });
+    expect(summary).toMatchObject({ listedUrlCount: 5, rankGroups: [] });
+
+    const totalsQuery = new PgDialect().sqlToQuery(
+      db.calls[0]?.args[0] as never,
+    );
+    expect(totalsQuery.sql).not.toContain(
+      "(coalesce(opportunity_sort.finding_count, 0) > 0) as is_listed",
+    );
+  });
+
+  it("rejects malformed summary identities and unreadable aggregates", async () => {
+    const { db, repo } = repository();
+    await expect(
+      repo.summarizeCurrentRunUrls(scope, runId, {
+        cursor: "not-a-canonical-cursor",
+      }),
+    ).rejects.toThrow(/cursor/i);
+    await expect(
+      repo.summarizeCurrentRunUrls(scope, "not-a-uuid", { cursor: null }),
+    ).rejects.toThrow(/diagnosticRunId/i);
+    expect(db.calls).toEqual([]);
+
+    db.enqueue([]);
+    await expect(
+      repo.summarizeCurrentRunUrls(scope, runId, { cursor: null }),
+    ).rejects.toThrow(/aggregate row/i);
+
+    db.enqueue(
+      [
+        {
+          url_count: -1,
+          opportunity_url_count: 0,
+          listed_url_count: 0,
+          signal_count: 0,
+          preceding_url_count: 0,
+        },
+      ],
+      [],
+    );
+    await expect(
+      repo.summarizeCurrentRunUrls(scope, runId, { cursor: null }),
+    ).rejects.toThrow(/non-negative safe integer/i);
+  });
+
+  it("reads Finding blast radius with the same definition the keyset sorts by", async () => {
+    const { db, repo } = repository();
+    db.enqueue([
+      { finding_id: pageId, coverage_count: "354" },
+      { finding_id: secondPageId, coverage_count: 1 },
+    ]);
+
+    const coverage = await repo.listFindingCoverageCounts(scope, runId, [
+      pageId,
+      secondPageId,
+      pageId,
+    ]);
+    expect([...coverage.entries()]).toEqual([
+      [pageId, 354],
+      [secondPageId, 1],
+    ]);
+
+    const query = db.lastSql();
+    expect(query.sql).toContain("count(distinct");
+    expect(query.sql).toContain("\"resolution_state\" = 'resolved'");
+    expect(query.sql).toContain('"app"."finding_targets"."workspace_id" = $');
+    expect(query.sql).toContain('"app"."finding_targets"."project_id" = $');
+    expect(query.params).toContain(runId);
+
+    await expect(repo.listFindingCoverageCounts(scope, runId, [])).resolves
+      .toEqual(new Map());
+    await expect(
+      repo.listFindingCoverageCounts(
+        scope,
+        runId,
+        Array.from(
+          { length: MAX_GROWTH_MAP_ENTITY_LOOKUP + 1 },
+          (_, index) =>
+            `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        ),
+      ),
+    ).rejects.toThrow(/findingIds/i);
+  });
+
   it("finds selected URL only through the same frozen current-run inventory", async () => {
     const { db, repo } = repository();
     const row = {

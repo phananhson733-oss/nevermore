@@ -48,6 +48,24 @@ describe("web production URL environment policy", () => {
     expect(production.parse({ ...BASE, DB_POOL_MAX: "2" }).DB_POOL_MAX).toBe(2);
   });
 
+  it("mirrors the worker automated keyword governance default", () => {
+    // Web never executes automated governance, but a deployment must not be
+    // able to answer "is the Keyword Library populated automatically" twice.
+    expect(production.parse(BASE).KEYWORD_AUTO_GOVERNANCE_ENABLED).toBe(
+      "true",
+    );
+    expect(
+      production.parse({ ...BASE, KEYWORD_AUTO_GOVERNANCE_ENABLED: "false" })
+        .KEYWORD_AUTO_GOVERNANCE_ENABLED,
+    ).toBe("false");
+    expect(
+      production.safeParse({
+        ...BASE,
+        KEYWORD_AUTO_GOVERNANCE_ENABLED: "1",
+      }).success,
+    ).toBe(false);
+  });
+
   it("defaults DataForSEO off with bounded ranked and competitor collection sizes", () => {
     const { DATAFORSEO_ENABLED: _enabled, ...withoutFlag } = BASE;
     const parsed = production.parse(withoutFlag);

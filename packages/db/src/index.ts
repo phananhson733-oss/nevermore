@@ -207,10 +207,13 @@ export {
 } from "./repositories/growth-map.ts";
 export type {
   GrowthMapObservationLookup,
+  GrowthMapOpportunityRankGroup,
   GrowthMapReadableRunRow,
   GrowthMapUrlInventoryOptions,
   GrowthMapUrlInventoryPage,
   GrowthMapUrlInventoryRow,
+  GrowthMapUrlInventorySummary,
+  GrowthMapUrlSummaryOptions,
 } from "./repositories/growth-map.ts";
 export {
   InternalLinkMapIntegrityError,

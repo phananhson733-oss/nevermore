@@ -4,6 +4,7 @@ import {
   MAX_FROZEN_KEYWORD_ENTITY_BATCH,
   KeywordsRepository,
   LegacyKeywordReviewDisabledError,
+  MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
   MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
   type KeywordEntityRow,
@@ -61,9 +62,21 @@ class FakeQuery {
 class FakeExecutor {
   readonly calls: RecordedCall[] = [];
   private readonly results: unknown[] = [];
+  private readonly executeResults: unknown[] = [];
 
   enqueue(...results: unknown[]): void {
     this.results.push(...results);
+  }
+
+  enqueueExecute(...results: unknown[]): void {
+    this.executeResults.push(...results);
+  }
+
+  async execute(...args: unknown[]): Promise<unknown> {
+    this.calls.push({ method: "execute", args });
+    return this.executeResults.length > 0
+      ? this.executeResults.shift()
+      : { rows: [] };
   }
 
   take(): unknown {
@@ -176,6 +189,84 @@ describe("KeywordsRepository", () => {
     expect(db.last("limit").args).toEqual([
       MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
     ]);
+  });
+
+  it("reads untouched candidates with their immutable provider evidence only", async () => {
+    const db = new FakeExecutor();
+    const row = {
+      id: entity.id,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      display_keyword: entity.display_keyword,
+      normalized_keyword: entity.normalized_keyword,
+      market: "US",
+      language_tag: "en-US",
+      query_kind: "search_query",
+      mapping_revision: 0,
+      dataforseo_ranked_evidence: 3,
+      gsc_impression_evidence: 0,
+      gsc_attributed_site_page_count: 0,
+      gsc_attributed_site_page_id: null,
+    };
+    db.enqueueExecute({ rows: [row] });
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listAutoGovernanceCandidates(scope, {
+        limit: MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
+      }),
+    ).resolves.toEqual([row]);
+
+    const query = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
+      ]),
+    );
+    // Membership rules a caller must not be able to weaken.
+    expect(query.sql).toContain("keyword.status = 'candidate'");
+    expect(query.sql).toContain(
+      "keyword.mapping_review_state = 'unreviewed'",
+    );
+    expect(query.sql).toContain("project.archived_at is null");
+    expect(query.sql).toContain("decision.decision_origin = 'user'");
+    expect(query.sql).toContain("not exists");
+    // Evidence rules: a zero-impression GSC row and a rankless DataForSEO row
+    // are never evidence.
+    expect(query.sql).toContain("evidence.gsc_impressions >= 1");
+    expect(query.sql).toContain("evidence.dataforseo_rank >= 1");
+    // Evidence-free candidates are dropped BEFORE the page limit, so a block of
+    // low-id evidence-free rows can never starve evidence-bearing keywords.
+    const filterIndex = query.sql.indexOf(
+      "scored.dataforseo_ranked_evidence >= 1",
+    );
+    expect(filterIndex).toBeGreaterThan(-1);
+    expect(query.sql.indexOf("limit", filterIndex)).toBeGreaterThan(
+      filterIndex,
+    );
+    expect(query.sql.slice(0, filterIndex)).not.toContain("limit");
+  });
+
+  it("rejects an unbounded or non-canonical automated governance read before SQL", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listAutoGovernanceCandidates(scope, {
+        limit: MAX_AUTO_GOVERNANCE_CANDIDATE_READ + 1,
+      }),
+    ).rejects.toThrow(/limit/iu);
+    await expect(
+      repo.listAutoGovernanceCandidates(
+        { workspaceId: "not-a-uuid", projectId: scope.projectId },
+        { limit: 1 },
+      ),
+    ).rejects.toThrow(/UUID/iu);
+    expect(db.calls).toEqual([]);
   });
 
   it("returns null for a foreign, archived or absent detail within the SQL scope", async () => {

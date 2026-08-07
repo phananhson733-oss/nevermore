@@ -1865,3 +1865,140 @@ export function safeExternalPageUrl(normalizedUrl: string): string | null {
     ? normalizedUrl
     : null;
 }
+
+/**
+ * The eleven `page_type.v1` slugs the URL read model can send, in the order the
+ * filter offers them. The list is a presentation contract only: classification
+ * itself is derived server-side, and a slug the client does not know is shown
+ * verbatim rather than dropped or relabelled.
+ */
+export const GROWTH_MAP_PAGE_TYPES = [
+  "home",
+  "product",
+  "solution",
+  "commercial",
+  "comparison",
+  "integration",
+  "template",
+  "blog",
+  "resource",
+  "documentation",
+  "trust",
+] as const;
+
+export type GrowthMapKnownPageType = (typeof GROWTH_MAP_PAGE_TYPES)[number];
+
+export type GrowthMapPageTypeLabel =
+  | { readonly kind: "unclassified" }
+  | { readonly kind: "known"; readonly slug: GrowthMapKnownPageType }
+  | { readonly kind: "raw"; readonly value: string };
+
+function isKnownGrowthMapPageType(
+  value: string,
+): value is GrowthMapKnownPageType {
+  return (GROWTH_MAP_PAGE_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * A null page type means no classification rule matched this URL. It never
+ * means the page was not collected, so the caller must not reuse the
+ * "not collected" copy for it.
+ */
+export function growthMapPageTypeLabel(
+  pageType: string | null,
+): GrowthMapPageTypeLabel {
+  if (pageType === null) return { kind: "unclassified" };
+  return isKnownGrowthMapPageType(pageType)
+    ? { kind: "known", slug: pageType }
+    : { kind: "raw", value: pageType };
+}
+
+/** Offer only page types the loaded rows actually carry, in canonical order. */
+export function growthMapPageTypeFilterOptions(
+  items: readonly GrowthMapUrlPortfolioItem[],
+): readonly string[] {
+  const present = new Set(
+    items.flatMap((item) => (item.pageType === null ? [] : [item.pageType])),
+  );
+  const known = GROWTH_MAP_PAGE_TYPES.filter((slug) => present.has(slug));
+  const unknown = [...present]
+    .filter((value) => !isKnownGrowthMapPageType(value))
+    .sort((left, right) => left.localeCompare(right));
+  return [...known, ...unknown];
+}
+
+export interface GrowthMapPageWindowInput {
+  /** Rows the current filtered list holds in total, across every page. */
+  readonly listedUrlCount: number;
+  /** Rows the frozen generation already listed before this page. */
+  readonly precedingUrlCount: number;
+  readonly limit: number;
+}
+
+export interface GrowthMapPageWindow {
+  readonly page: number;
+  readonly pageCount: number;
+}
+
+/**
+ * Keyset paging carries no offset, so the page number can only come from the
+ * server-side `precedingUrlCount`. Deriving it from the client cursor stack
+ * would report page 1 for every deep link and every reload.
+ */
+export function growthMapPageWindow(
+  input: GrowthMapPageWindowInput,
+): GrowthMapPageWindow {
+  if (input.limit <= 0) return { page: 1, pageCount: 1 };
+  const pageCount = Math.max(1, Math.ceil(input.listedUrlCount / input.limit));
+  const page = Math.min(
+    pageCount,
+    Math.floor(input.precedingUrlCount / input.limit) + 1,
+  );
+  return { page, pageCount };
+}
+
+const FINDING_SEVERITY_RANK: Readonly<
+  Record<GrowthMapUrlFinding["severity"], number>
+> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+export type GrowthMapPrimaryOpportunity =
+  | { readonly kind: "none" }
+  | {
+      readonly kind: "execution";
+      readonly finding: GrowthMapUrlFinding;
+      readonly executionRef: GrowthMapExecutionRef;
+    }
+  | { readonly kind: "review"; readonly finding: GrowthMapUrlFinding };
+
+/**
+ * The detail read model orders Findings by canonical id, which says nothing
+ * about how urgent they are. The primary action therefore ranks by severity
+ * and keeps the projected order as the tie-break, then targets Execution only
+ * when that exact Finding already names a canonical Action.
+ */
+export function growthMapPrimaryOpportunity(
+  findings: readonly GrowthMapUrlFinding[],
+): GrowthMapPrimaryOpportunity {
+  const selected = findings.reduce<GrowthMapUrlFinding | null>(
+    (best, candidate) =>
+      best === null ||
+      FINDING_SEVERITY_RANK[candidate.severity] <
+        FINDING_SEVERITY_RANK[best.severity]
+        ? candidate
+        : best,
+    null,
+  );
+  if (selected === null) return { kind: "none" };
+  return selected.executionRef === null
+    ? { kind: "review", finding: selected }
+    : {
+        kind: "execution",
+        finding: selected,
+        executionRef: selected.executionRef,
+      };
+}

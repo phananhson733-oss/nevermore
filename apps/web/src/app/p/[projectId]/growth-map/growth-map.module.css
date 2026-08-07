@@ -647,27 +647,42 @@
   gap: 12px;
 }
 
+/* Scrolls horizontally instead of clipping, matching .keywordLedger and
+   .competitorLedger. Also the query container for the column budget below:
+   the list column is squeezed by the 252px sidebar, the 1480px shell cap and
+   the detail panel, so viewport width is not a usable proxy for it. */
 .ledger {
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--sf-surface);
   border: 1px solid var(--sf-border);
   border-radius: 14px;
   box-shadow: var(--sf-shadow-sm);
+  container-name: gm-url-ledger;
+  container-type: inline-size;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sf-border-strong) transparent;
 }
 
+/* Full-desktop budget: 210+120+132+92+92+126 = 772 tracks + 5x10px gap
+   + 2x15px padding = 852px. The list column tops out at 876px (shell main
+   1480 - 2x56 padding = 1368; minus the 16px workspace gap; times
+   1.62/(1.62+0.88)), so 852px clears it with 24px of headroom. min-width
+   keeps the row background flush with the tracks while scrolled. */
 .ledgerHeader,
 .rowButton {
   display: grid;
   grid-template-columns:
-    minmax(260px, 2.2fr)
+    minmax(210px, 2.2fr)
     minmax(120px, 0.82fr)
     minmax(132px, 0.94fr)
     minmax(92px, 0.72fr)
     minmax(92px, 0.72fr)
-    minmax(118px, 0.82fr);
+    minmax(126px, 0.82fr);
   align-items: center;
   gap: 10px;
+  min-width: 852px;
 }
 
 .ledgerHeader {
@@ -860,6 +875,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 7px;
+  /* Reserve the 2px the arrow slides on hover/selection (see the
+     translateX(2px) rule below) so it never lands outside this cell. The
+     column minimum was widened 118px -> 126px to pay for it plus the wider
+     "P2 · Medium" pill. */
+  padding-right: 2px;
 }
 
 .priorityCell > svg {
@@ -5492,15 +5512,25 @@ a.competitorMonitorContentUrl:hover {
       minmax(138px, 0.84fr)
       minmax(112px, 0.72fr);
   }
+}
+
+/* Compact budget: 140+80+88+72+72+126 = 578 tracks + 5x10px gap + 2x15px
+   padding = 658px. Keyed to the ledger's own width, not the viewport: the old
+   `@media (max-width: 1240px)` tier-down fired ~450px too late, because at a
+   1240-1690px viewport the list column is only ~500-850px wide and the 852px
+   desktop budget has already stopped fitting. Anything still too narrow for
+   658px scrolls inside .ledger rather than losing a column. */
+@container gm-url-ledger (max-width: 851px) {
   .ledgerHeader,
   .rowButton {
     grid-template-columns:
-      minmax(228px, 2fr)
-      minmax(108px, 0.8fr)
-      minmax(122px, 0.9fr)
-      82px
-      82px
-      104px;
+      minmax(140px, 2.2fr)
+      minmax(80px, 0.82fr)
+      minmax(88px, 0.94fr)
+      minmax(72px, 0.72fr)
+      minmax(72px, 0.72fr)
+      minmax(126px, 0.82fr);
+    min-width: 658px;
   }
 }
 
@@ -5607,6 +5637,7 @@ a.competitorMonitorContentUrl:hover {
     gap: 14px 8px;
     min-height: 0;
     padding: 16px;
+    min-width: 0;
   }
   .keywordRowButton {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7087,4 +7118,234 @@ a.competitorMonitorContentUrl:hover {
   .keywordRelationRefreshSpinning {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   URL portfolio toolbar, row disclosure and keyset pagination.
+   These are additive classes: the shared .libraryToolbar / .pagination rules
+   above still own the Keyword and Competitor ledgers untouched.
+   --------------------------------------------------------------------------- */
+
+.portfolioToolGroup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.portfolioToolButton {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: var(--sf-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.portfolioToolButton > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolioToolButton:hover {
+  border-color: var(--sf-cobalt);
+}
+
+.portfolioToolButtonActive {
+  color: var(--sf-cobalt-text);
+  background: var(--sf-cobalt-soft);
+  border-color: var(--sf-cobalt);
+}
+
+.portfolioToolBadge {
+  padding: 1px 7px;
+  color: var(--sf-cobalt-text);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  background: var(--sf-surface);
+  border-radius: 999px;
+}
+
+.portfolioToolIconOpen {
+  transform: rotate(180deg);
+}
+
+.portfolioFilterDrawer {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 0.4fr));
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.rowDetails {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 18px;
+  margin: 0;
+  padding: 0 15px 14px;
+  background: var(--sf-surface-deep);
+  border-top: 1px solid var(--sf-border);
+}
+
+.rowDetails > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 11px;
+}
+
+.rowDetails dt {
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.rowDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 14px;
+}
+
+.portfolioPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.portfolioPaginationStatus {
+  color: var(--sf-muted);
+  font-size: 14px;
+}
+
+.portfolioPaginationControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.objectTabCount {
+  margin-left: 7px;
+  padding: 1px 7px;
+  color: var(--gm-ink, var(--sf-fg));
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--sf-white) 22%, transparent);
+  border-radius: 999px;
+}
+
+.detailPrimaryActionLink {
+  display: inline-flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 17px;
+  color: var(--sf-white);
+  font-size: 15px;
+  font-weight: 780;
+  text-decoration: none;
+  background: var(--sf-cobalt);
+  border: 1px solid var(--sf-cobalt);
+  border-radius: 12px;
+  box-shadow: var(--sf-shadow-sm);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.detailPrimaryActionLink:hover {
+  color: var(--sf-white);
+  background: var(--sf-cobalt-dark);
+  transform: translateY(-1px);
+}
+
+.detailPrimaryActionHint {
+  margin: 9px 0 0;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+@media (max-width: 560px) {
+  .portfolioToolGroup {
+    flex-wrap: wrap;
+  }
+  .portfolioPagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .portfolioPaginationControls {
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detailPrimaryActionLink {
+    transition: none;
+  }
+  .detailPrimaryActionLink:hover {
+    transform: none;
+  }
+}
+
+/* The URL toolbar carries one control group more than the Keyword and
+   Competitor toolbars, and the group holds two labelled buttons. Flow the
+   controls instead of forcing them into the shared four-track grid: this rule
+   sits after every responsive .libraryToolbar override above, so switching to
+   flex makes those grid tracks inert at every width and the controls wrap on
+   their own instead of truncating their labels. */
+.portfolioToolbar {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.portfolioToolbar > .librarySearch {
+  flex: 1 1 240px;
+}
+
+.portfolioToolbar > .libraryFilter {
+  flex: 0 1 235px;
+}
+
+.portfolioToolbar > .libraryFilter > span,
+.portfolioFilterDrawer .libraryFilter > span {
+  white-space: nowrap;
+}
+
+/* Both tool buttons keep their full label; the group wraps to its own line
+   before either one truncates. */
+.portfolioToolbar > .portfolioToolGroup {
+  flex: 0 0 auto;
+}
+
+.portfolioToolbar .portfolioToolButton {
+  flex: 0 0 auto;
+}
+
+.portfolioToolbar > button[type="submit"] {
+  flex: 0 0 auto;
+}
+
+.portfolioFilterDrawer {
+  flex: 1 1 100%;
 }
