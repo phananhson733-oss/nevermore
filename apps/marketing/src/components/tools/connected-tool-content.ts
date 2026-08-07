@@ -52,10 +52,10 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       "Turn high-impression, low-click queries and positions 8–20 into a prioritized action list.",
     sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
-      "GenGrowth requests read-only Search Console access. It cannot publish pages, change rankings, or modify your Google account, and it stores nothing.",
+      "GenGrowth requests read-only Search Console access. It cannot publish pages, change rankings, or modify your Google account, and it stores nothing on our servers.",
     cta: "Connect Search Console",
     trust:
-      "No demo data, nothing stored. Every number is computed from the property you choose.",
+      "No demo data, nothing stored on our servers. Every number is computed from the property you choose.",
     workflowTitle: "How to find high impressions with low clicks",
     steps: [
       {
@@ -137,7 +137,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Do you store my data?",
         answer:
-          "No. We read Search Console, compute the report, and send it to your browser. Nothing is written to a database, so export what you want to keep before you close the tab.",
+          "No. We read Search Console, compute the report, and send it to your browser. Nothing is written to a database, so export what you want to keep before you close the tab. The one thing that persists is the Google authorization itself, encrypted in a cookie in your own browser so a return visit does not start from the consent screen; revoking access in your Google account settings ends it.",
       },
       {
         question: "Can I keep the results after I close the tab?",
@@ -345,9 +345,10 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       "把高曝光、低点击的查询词和位置 8–20 的排名，变成一份按优先级排序的行动清单。",
     sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
-      "GenGrowth 只请求 Search Console 的只读权限，不能发布页面、改变排名或修改你的 Google 账号，也不保存任何结果。",
+      "GenGrowth 只请求 Search Console 的只读权限，不能发布页面、改变排名或修改你的 Google 账号，也不在我们的服务器上留存任何结果。",
     cta: "连接 Search Console",
-    trust: "不展示演示数据，不保存任何结果。每个数字都来自你选择的站点属性。",
+    trust:
+      "不展示演示数据，服务器上不留存任何结果。每个数字都来自你选择的站点属性。",
     workflowTitle: "怎么找出「曝光高、点击少」的查询词",
     steps: [
       {
@@ -429,7 +430,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "你们会保存我的数据吗？",
         answer:
-          "不会。我们读取 Search Console、算出报告、发送到你的浏览器，不写入任何数据库。所以想留下的内容请在关闭标签页之前导出。",
+          "不会。我们读取 Search Console、算出报告、发送到你的浏览器，不写入任何数据库。所以想留下的内容请在关闭标签页之前导出。唯一会留下来的是 Google 授权本身：它加密保存在你自己浏览器的 cookie 里，让你下次回来不必从同意屏幕重新开始；在 Google 账号设置里撤销即可终止。",
       },
       {
         question: "关掉页面之后结果还能留下吗？",

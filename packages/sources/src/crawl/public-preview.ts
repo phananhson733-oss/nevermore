@@ -15,6 +15,7 @@ import {
   crawlSite,
   createDefaultCrawlFetcher,
   type CrawlEngineOptions,
+  type CrawlPageProgress,
 } from "./engine.ts";
 import type { CrawlBudget, CrawlFetcher, CrawlRaw } from "./types.ts";
 
@@ -58,6 +59,46 @@ export interface PublicPreviewCrawlOptions {
   readonly engineOptions?: Omit<CrawlEngineOptions, "budget">;
   /** Offline test seam for canonical entry resolution. */
   readonly entryResolver?: PublicSiteEntryResolver;
+  /**
+   * Production door for the engine's collected-page count, separate from
+   * `engineOptions` because that seam is offline-only. Observation cannot
+   * change the budget, the pacing, or what is fetched.
+   */
+  readonly onPageProgress?: (progress: CrawlPageProgress) => void;
+  /**
+   * Production door for the running wire-request count, for the same reason
+   * `onPageProgress` has one. Counting requests from outside would mean handing
+   * in a transport through `fetcher`, and that seam is offline-only precisely
+   * so the shipped crawl is always the guarded default transport. The count
+   * covers robots.txt, every sitemap document, every page fetch and every
+   * redirect hop, and is reported before the request is issued.
+   */
+  readonly onRequestSent?: (requestsSent: number) => void;
+}
+
+/**
+ * Count wire requests without changing the transport that makes them.
+ *
+ * The engine runs the SSRF guard and builds the pinned dispatcher before
+ * calling the fetcher, and passes both on `init`; this wrapper forwards that
+ * object by reference, so the guarded transport is still the transport.
+ */
+export function countingCrawlFetcher(
+  inner: CrawlFetcher,
+  onRequest: (requestsSent: number) => void,
+): CrawlFetcher {
+  let requestsSent = 0;
+  return {
+    fetch(url, init) {
+      requestsSent += 1;
+      try {
+        onRequest(requestsSent);
+      } catch {
+        // Observation must never end a crawl.
+      }
+      return inner.fetch(url, init);
+    },
+  };
 }
 
 function withoutWww(hostname: string): string {
@@ -143,6 +184,12 @@ export async function crawlPublicSitePreview(
     throw new Error("public_preview_requires_normalized_origin");
   }
 
+  // The default is built here, not by the caller, so an observed crawl and an
+  // unobserved one issue their requests through the same guarded transport.
+  const transport =
+    options.fetcher ??
+    createDefaultCrawlFetcher(PUBLIC_PREVIEW_CRAWL_USER_AGENT);
+
   return crawlSite(
     {
       origin: normalized.origin,
@@ -159,9 +206,16 @@ export async function crawlPublicSitePreview(
       runId: "public-preview",
       ...(signal ? { signal } : {}),
     },
-    options.fetcher ?? createDefaultCrawlFetcher(PUBLIC_PREVIEW_CRAWL_USER_AGENT),
+    options.onRequestSent
+      ? countingCrawlFetcher(transport, options.onRequestSent)
+      : transport,
     {
       ...options.engineOptions,
+      // Present only when a listener exists: an explicit undefined is a
+      // different type under exactOptionalPropertyTypes.
+      ...(options.onPageProgress
+        ? { onPageProgress: options.onPageProgress }
+        : {}),
       budget: PUBLIC_TOOL_SYNC_CRAWL_BUDGET,
       maxRequests: PUBLIC_TOOL_SYNC_MAX_REQUESTS,
     },

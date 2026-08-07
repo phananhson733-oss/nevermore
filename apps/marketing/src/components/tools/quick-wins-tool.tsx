@@ -12,7 +12,8 @@ import type { QuickWinsResult } from "@sf/public-tools";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
 import { trackMarketingEvent } from "@/components/layout/google-analytics";
-import { GscConnectPanel } from "./gsc-connect-panel";
+import { GscConnectPanel, gscAuthorizeHref } from "./gsc-connect-panel";
+import { GscDisconnect } from "./gsc-disconnect";
 import { QuickWinsResults } from "./quick-wins-results";
 
 const TOOL_PATH = "/tools/seo-quick-wins";
@@ -122,6 +123,9 @@ export function QuickWinsTool({
         <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("noPropertyBody")}
         </p>
+        {/* Connected, just with nothing to run against — and a visitor who
+            authorized the wrong account needs the way out most here. */}
+        <GscDisconnect namespace="tools.quickWins" />
       </section>
     );
   }
@@ -203,6 +207,8 @@ export function QuickWinsTool({
             `errors.${
               [
                 "gsc_unavailable",
+                "gsc_revoked",
+                "gsc_temporarily_unavailable",
                 "scan_in_progress",
                 "rate_limited",
                 "quota_unavailable",
@@ -214,12 +220,27 @@ export function QuickWinsTool({
                 : "gsc_unavailable"
             }`,
           )}
+          {/*
+           * A revoked grant is the one error a visitor can fix on the spot,
+           * and the only route back is the consent screen. Without this the
+           * message reads as an instruction with nowhere to carry it out.
+           */}
+          {errorCode === "gsc_revoked" ? (
+            <a
+              href={gscAuthorizeHref(locale, TOOL_PATH)}
+              className="mt-2 block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
+            >
+              {t("reconnect")}
+            </a>
+          ) : null}
         </p>
       ) : null}
 
       {result !== null ? (
         <QuickWinsResults result={result} locale={locale} />
       ) : null}
+
+      <GscDisconnect namespace="tools.quickWins" />
     </section>
   );
 }

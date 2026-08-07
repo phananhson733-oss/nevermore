@@ -4,74 +4,47 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { cookies } from "next/headers";
+import { after } from "next/server";
+import { revocableGrantToken } from "@/lib/auth/disconnect";
 import {
   exchangeCode,
   hasSearchConsoleScope,
   listSearchConsoleProperties,
   readGoogleOAuthConfig,
+  revokeToken,
   stateMatches,
 } from "@/lib/auth/google-oauth";
 import {
+  clearGrantCookies,
+  GRANT_TTL_SECONDS,
+  IDENTITY_TTL_SECONDS,
+  sealGrantProperties,
+  sealGrantWithinBudget,
+  type GrantCookieJar,
+  type StoredGrant,
+} from "@/lib/auth/grant-cookie";
+import {
+  assertCookieSecretConfigured,
   cookieAttributes,
-  MAX_SEALED_VALUE_BYTES,
   open,
   seal,
-  sealedByteLength,
+  SealedCookieError,
 } from "@/lib/auth/sealed-cookie";
+import { decideSupersededGrant } from "@/lib/auth/superseded-grant";
 import { isGoogleConnectEnabled } from "@/lib/tools/traffic-drop-session";
 
 export const runtime = "nodejs";
 
-/** Identity outlives one visit; the access token does not. */
-const IDENTITY_TTL_SECONDS = 30 * 24 * 60 * 60;
 /**
- * The grant cookie never outlives the token inside it. With access_type=online
- * there is no refresh token, so when this expires the visitor authorizes again.
+ * Fallback lifetime when Google issued no refresh token.
+ *
+ * The grant cookie then never outlives the token inside it, exactly as it did
+ * before offline access: when it expires the visitor authorizes again. Google
+ * withholds the refresh token whenever the user was not actually re-prompted,
+ * so this path is reachable and must degrade rather than promise persistence it
+ * does not have.
  */
 const GRANT_SAFETY_MARGIN_SECONDS = 60;
-
-/**
- * Seal as many properties as fit in one cookie, and record how many there were.
- *
- * An account with a hundred Search Console properties seals to well over the
- * ~4096 bytes a browser will store, and the browser discards the whole cookie
- * without telling anyone. The visitor authorizes, Google redirects them back,
- * and the page — unable to read a cookie that was never stored — shows them
- * the connect button again. That is the same dead end the `gg_gsc`/`gg_sites`
- * split was made to fix, reappearing for exactly the multi-site and agency
- * accounts this tool is for.
- *
- * So the list is fitted to the budget and the FULL count travels with it. A
- * truncated list the page knows is truncated can be described honestly; a
- * truncated list that claims to be complete cannot.
- */
-function sealPropertiesWithinBudget(
-  properties: readonly string[],
-  ttlSeconds: number,
-): { readonly value: string; readonly shown: number } {
-  let fitted = properties;
-  let value = seal(
-    "gg_sites",
-    { properties: fitted, total: properties.length },
-    ttlSeconds,
-  );
-
-  // Drop from the end until it fits. Linear rather than clever: the list is at
-  // most a few hundred entries and this runs once per authorization.
-  while (
-    fitted.length > 0 &&
-    sealedByteLength(value) > MAX_SEALED_VALUE_BYTES
-  ) {
-    fitted = fitted.slice(0, fitted.length - 1);
-    value = seal(
-      "gg_sites",
-      { properties: fitted, total: properties.length },
-      ttlSeconds,
-    );
-  }
-
-  return { value, shown: fitted.length };
-}
 
 interface Transaction {
   readonly state: string;
@@ -103,6 +76,32 @@ function backTo(request: Request, path: string, error?: string): Response {
   return Response.redirect(target.toString(), 302);
 }
 
+/**
+ * Revoke the grant this authorization supersedes, after the response.
+ *
+ * Clearing the cookies only forgets the credential: the refresh token stays
+ * live at Google for months, on an account that has just been replaced in this
+ * browser. The disconnect control revokes for exactly this reason, and the
+ * reasoning does not change because the visitor arrived here instead.
+ *
+ * Never awaited inside the redirect. A slow or failing revoke endpoint must not
+ * delay a sign-in that has already succeeded, and there is no one left to
+ * report a failure to. `after` is what keeps the work alive on a runtime that
+ * would otherwise stop executing the moment the redirect is returned — a bare
+ * floating promise there is dropped, not deferred.
+ *
+ * Called only for a grant whose subject is KNOWN and differs from the subject
+ * that just authorized; `decideSupersededGrant` is what establishes that, and
+ * an unreadable subject on either side never reaches here. Revocation at Google
+ * is per client+user, so revoking a grant that in fact belongs to the account
+ * authorizing right now would kill the credential this request just issued.
+ */
+function revokeSupersededGrant(held: StoredGrant): void {
+  const token = revocableGrantToken(held);
+  if (token === null) return;
+  after(() => revokeToken({ token }));
+}
+
 export async function GET(request: Request): Promise<Response> {
   if (!isGoogleConnectEnabled()) {
     return new Response("Google sign-in is not enabled on this site.", {
@@ -110,7 +109,29 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
+  try {
+    // Before a single cookie is opened. A root key that cannot be built reads
+    // every sealed cookie as absent, so without this the symptom is "the
+    // transaction expired" on every authorization, forever, with nothing
+    // naming the variable that is wrong.
+    assertCookieSecretConfigured();
+  } catch (error) {
+    if (!(error instanceof SealedCookieError)) throw error;
+    // The message names an environment variable, which is the operator's
+    // business and not the visitor's.
+    console.error("[auth/callback] cookie secret unusable:", error.message);
+    return new Response("Google sign-in is misconfigured on this site.", {
+      status: 503,
+    });
+  }
+
   const jar = await cookies();
+  // The explicit path matters: `gg_gsc` lives at /api and a Set-Cookie at /
+  // does not match it, so a delete without it reports success and leaves the
+  // credential in the browser.
+  const grantJar: Pick<GrantCookieJar, "clear"> = {
+    clear: (name, path) => jar.delete({ name, path }),
+  };
   const transaction = open<Transaction>(
     "gg_oauth_tx",
     jar.get("gg_oauth_tx")?.value,
@@ -140,9 +161,32 @@ export async function GET(request: Request): Promise<Response> {
       codeVerifier: transaction.codeVerifier,
     });
 
+    // Drop a grant belonging to anyone but the account that just authorized —
+    // BEFORE the identity cookie is written, so the two can never name
+    // different people. Without this, A connects, B signs in on the same
+    // browser, and A's refresh token stays the credential every Search Console
+    // read is made with while the site displays B.
+    //
+    // The two effects are decided apart, because they are not equally cheap to
+    // get wrong: a grant whose subject cannot be READ on both sides is cleared
+    // from this browser and left alone at Google. `decideSupersededGrant`
+    // carries the reasoning and the tests.
+    const held = open<StoredGrant>("gg_gsc", jar.get("gg_gsc")?.value);
+    if (held) {
+      const action = decideSupersededGrant({
+        heldSub: held.sub,
+        authorizingSub: tokens.sub,
+      });
+      if (action !== "keep") clearGrantCookies(grantJar);
+      if (action === "clear_and_revoke") revokeSupersededGrant(held);
+    }
+
     if (tokens.sub) {
       // Identity carries the subject only — never a token. This cookie is
-      // readable on page requests, so nothing sensitive may live in it.
+      // readable on page requests, so nothing sensitive may live in it. Its
+      // lifetime is the grant's absolute cap, stamped in this same request:
+      // `resolveGrant` refuses a grant whose identity is missing, which it can
+      // only do because this cookie cannot expire first.
       jar.set(
         "gg_id",
         seal(
@@ -159,25 +203,64 @@ export async function GET(request: Request): Promise<Response> {
         // Signed in, but the Search Console box was left unchecked.
         return backTo(request, transaction.next, "gsc_not_granted");
       }
+      if (!tokens.sub) {
+        // Nothing to bind this credential to, and `resolveGrant` refuses a
+        // grant it cannot bind — so sealing this one would hand the visitor a
+        // 30-day cookie that is dropped on their very next request, with the
+        // page offering "connect" again and nothing anywhere saying why.
+        // Google returns `sub` for the `openid` scope this flow always asks
+        // for, so reaching here means the id_token did not parse.
+        console.error(
+          "[auth/callback] token set carried no subject; not storing a grant no request could use",
+        );
+        return backTo(request, transaction.next, "identity_missing");
+      }
       const properties = await listSearchConsoleProperties({
         accessToken: tokens.accessToken,
       });
-      const ttl = Math.max(
-        60,
-        tokens.expiresInSeconds - GRANT_SAFETY_MARGIN_SECONDS,
-      );
+      // With a refresh token the grant outlives its access token and both
+      // cookies carry the same long life. Without one they stay bound to the
+      // token, which is the pre-offline behaviour.
+      const ttl = tokens.refreshToken
+        ? GRANT_TTL_SECONDS
+        : Math.max(60, tokens.expiresInSeconds - GRANT_SAFETY_MARGIN_SECONDS);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const grant: StoredGrant = {
+        accessToken: tokens.accessToken,
+        accessTokenExpiresAt: nowSeconds + tokens.expiresInSeconds,
+        // `grantedAt` is what the absolute cap is measured against, so it is
+        // stamped once here and never again.
+        grantedAt: nowSeconds,
+        ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}),
+        // Whose grant this is. Not optional here, whatever the type says: every
+        // later request requires it to equal the identity cookie, so a grant
+        // sealed without one is a grant nothing can use.
+        sub: tokens.sub,
+      };
+      const sealedGrant = sealGrantWithinBudget(grant, ttl);
+      if (sealedGrant === null) {
+        // An over-budget Set-Cookie is discarded by the browser without a word
+        // to the server or the page, so "authorized" and "silently dropped"
+        // would look identical to the visitor. Saying so costs one redirect
+        // parameter and is the difference between a bug report and a mystery.
+        console.error(
+          "[auth/callback] grant exceeds the cookie budget; not storing it",
+        );
+        clearGrantCookies(grantJar);
+        return backTo(request, transaction.next, "grant_too_large");
+      }
       // Token at /api, property list at /. The page renders the picker, the
       // route handler does the reading — and a cookie scoped to /api is not
       // sent with a page request, so keeping both in one cookie left the page
       // unable to see the grant its own visitor had just completed.
-      jar.set(
-        "gg_gsc",
-        seal("gg_gsc", { accessToken: tokens.accessToken }, ttl),
-        cookieAttributes("gg_gsc", ttl),
-      );
+      //
+      // Both cookies get the SAME ttl: the page decides "connected" from
+      // `gg_sites` alone, so a long-lived token behind a short-lived site list
+      // would still show the connect button.
+      jar.set("gg_gsc", sealedGrant, cookieAttributes("gg_gsc", ttl));
       jar.set(
         "gg_sites",
-        sealPropertiesWithinBudget(properties, ttl).value,
+        sealGrantProperties(properties, ttl).value,
         cookieAttributes("gg_sites", ttl),
       );
     }

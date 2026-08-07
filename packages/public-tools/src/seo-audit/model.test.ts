@@ -142,6 +142,26 @@ describe("site-wide SEO audit model", () => {
     }
   });
 
+  /**
+   * The live crawl panel shows the engine's collected-page count while a crawl
+   * is still running, and the reader is told it is the figure this report
+   * gives. That is only true while `pagesInspected` counts every collected
+   * page — a filter added here would make the two disagree silently, so it has
+   * to fail here instead.
+   */
+  it("counts every collected page, which is what the live progress seam reports", () => {
+    const collected = [
+      page("https://acme.test/", {}, 0),
+      page("https://acme.test/missing", { finalStatus: 404 }),
+      page("https://acme.test/paper", { contentType: "application/pdf" }),
+    ];
+
+    const report = buildSeoAuditReport(raw({ pages: collected }));
+
+    expect(report.coverage.pagesInspected).toBe(collected.length);
+    expect(report.pages).toHaveLength(collected.length);
+  });
+
   it("aggregates duplicate metadata with every affected inspected URL", () => {
     const duplicate = "Same normalised title";
     const fixture = raw({

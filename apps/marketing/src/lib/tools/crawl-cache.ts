@@ -1,7 +1,11 @@
 // @input  -- tool name, target host, payload; Supabase service-role client
-// @output -- readCrawlCache() / writeCrawlCache()
+// @output -- readCrawlCache() / writeCrawlCache() / cacheCompletedCrawl()
 // @pos    -- shared crawl-result cache for the anonymous public crawl tools
 // Once this file is updated, update the header comment and the folder _DIR.md
+import {
+  crawlRanToCompletion,
+  type CrawlCompletionFacts,
+} from "@sf/public-tools";
 import { createAdminSupabaseClient } from "../supabase/admin.ts";
 
 /**
@@ -114,6 +118,39 @@ export async function writeCrawlCache(
   } catch {
     // A write failure must never turn a successful crawl into an error.
   }
+}
+
+/**
+ * Keep a result only when the crawl behind it ended on its own terms.
+ *
+ * One cache entry answers every visitor asking about this site for the next
+ * hour, without crawling anything. A run cut short by its caller leaving would
+ * therefore hand all of them a report that silently under-reports the site,
+ * and nothing in that report says a crawl was interrupted. Two independent
+ * signals say a run was cut short, and the crawl's own stop reason is the one
+ * that knows. The request's abort state cannot add anything: the engine holds
+ * that same signal, so an abort it observed is already `aborted` here. The
+ * only runs the abort state would additionally reject are ones the engine
+ * finished — or stopped at one of this profile's fixed ceilings — before the
+ * caller walked away, and discarding those buys nothing while costing the next
+ * visitor a full re-crawl of someone else's site.
+ *
+ * Both crawl tools admit through here. They hold separate rows — the cache is
+ * keyed on tool and target host together — so a truncated run of one is never
+ * served as the other's answer, but each can still poison its own row, and the
+ * rule that stops it must not exist in two drifting copies.
+ */
+export async function cacheCompletedCrawl<TPayload>(options: {
+  readonly raw: CrawlCompletionFacts;
+  readonly payload: TPayload;
+  readonly normalizedUrl: string;
+  readonly cachePayload: (
+    normalizedUrl: string,
+    payload: TPayload,
+  ) => Promise<void>;
+}): Promise<void> {
+  if (!crawlRanToCompletion(options.raw)) return;
+  await options.cachePayload(options.normalizedUrl, options.payload);
 }
 
 export function targetHostOf(normalizedUrl: string): string | null {

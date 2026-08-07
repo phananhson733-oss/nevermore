@@ -96,8 +96,24 @@ export interface CrawlEngineOptions {
    * It is deliberately not embedded in the frozen v2 raw/page projections.
    */
   readonly onSiteLanguageSummary?: (summary: CrawlSiteLanguageSummary) => void;
+  /**
+   * Fires whenever a page record is collected, carrying the count the crawl
+   * would report if it ended right there. Observation only: it cannot change
+   * what is fetched, and a listener that throws cannot end a crawl.
+   */
+  readonly onPageProgress?: (progress: CrawlPageProgress) => void;
   /** Trusted cap across robots, sitemap documents, page fetches, and redirects. */
   readonly maxRequests?: number;
+}
+
+/**
+ * A live reading of the same quantity `CrawlRaw.pages.length` and
+ * `providerUsage.pagesCollected` carry when the crawl finishes. It counts
+ * collected pages, never wire requests: robots.txt, sitemap documents and
+ * redirect hops all send requests and collect no page.
+ */
+export interface CrawlPageProgress {
+  readonly pagesCollected: number;
 }
 
 /**
@@ -1198,6 +1214,15 @@ export async function crawlSite(
     }
     pagesByFetchUrl.set(fetchUrl, candidate);
     usage.pagesCollected = pagesByFetchUrl.size;
+    // Emitted from the one place that collects a page, so the last number a
+    // listener sees is the number this crawl returns.
+    if (options.onPageProgress) {
+      try {
+        options.onPageProgress({ pagesCollected: pagesByFetchUrl.size });
+      } catch {
+        // Observation must never end a crawl.
+      }
+    }
     return true;
   };
   let crawledCount = 0;

@@ -10,7 +10,23 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
-import { localePath } from "@/lib/locale-path";
+// Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
+// an aliased runtime import would not resolve from the unit project.
+import { localePath } from "../../lib/locale-path";
+
+/**
+ * The one URL that starts the Search Console grant for a tool.
+ *
+ * Exported because the connect panel is not the only place that offers it any
+ * more: a visitor whose grant was revoked meets a reconnect link inside the
+ * running tool, and two constructions of this URL are two chances to drop the
+ * scope or the way back.
+ */
+export function gscAuthorizeHref(locale: string, toolPath: string): string {
+  return `/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
+    localePath(locale, toolPath),
+  )}`;
+}
 
 interface GscConnectPanelProps {
   readonly locale: string;
@@ -51,9 +67,7 @@ export function GscConnectPanel({
   inviteRequestLabel,
 }: GscConnectPanelProps) {
   const t = useTranslations(namespace);
-  const authorizeHref = `/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
-    localePath(locale, toolPath),
-  )}`;
+  const authorizeHref = gscAuthorizeHref(locale, toolPath);
 
   return (
     <section

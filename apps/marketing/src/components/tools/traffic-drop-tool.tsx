@@ -14,6 +14,8 @@ import type { GoogleConsentNotice } from "@/lib/tools/traffic-drop-session";
 import { localePath } from "@/lib/locale-path";
 import { formatPropertyLabel } from "@/lib/tools/property-label";
 import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import { gscAuthorizeHref } from "./gsc-connect-panel";
+import { GscDisconnect } from "./gsc-disconnect";
 import { TrafficDropResults } from "./traffic-drop-results";
 import {
   answersFor,
@@ -21,6 +23,29 @@ import {
   TrafficDropSelfCheckGate,
   type SelfCheckDraft,
 } from "./traffic-drop-self-check-gate";
+
+const TOOL_PATH = "/tools/traffic-drop-diagnosis";
+
+/**
+ * Every code this surface has copy for.
+ *
+ * Listed rather than derived: the handler's codes come from the shared error
+ * envelope and from the admission gate, and next-intl throws on a key it does
+ * not have — so an unlisted code would replace the report with a crash.
+ */
+const TRAFFIC_DROP_ERROR_CODES: readonly string[] = [
+  "no_gsc_data",
+  "gsc_unavailable",
+  "gsc_revoked",
+  "gsc_temporarily_unavailable",
+  "scan_in_progress",
+  "rate_limited",
+  "quota_unavailable",
+  "invalid_request",
+  "payload_too_large",
+  "unsupported_media_type",
+  "unknown",
+];
 
 /** Shared surfaces, so the connect state and the report read as one console. */
 const PANEL =
@@ -226,9 +251,7 @@ export function TrafficDropTool({
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
               <a
-                href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
-                  localePath(locale, "/tools/traffic-drop-diagnosis"),
-                )}`}
+                href={gscAuthorizeHref(locale, TOOL_PATH)}
                 className="inline-flex min-h-9 items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
               >
                 {t("inviteOnlyCta")}
@@ -265,9 +288,7 @@ export function TrafficDropTool({
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <a
-                href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
-                  localePath(locale, "/tools/traffic-drop-diagnosis"),
-                )}`}
+                href={gscAuthorizeHref(locale, TOOL_PATH)}
                 className={PRIMARY_CTA}
               >
                 {t("connectCta")}
@@ -282,9 +303,7 @@ export function TrafficDropTool({
         ) : (
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
             <a
-              href={`/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
-                localePath(locale, "/tools/traffic-drop-diagnosis"),
-              )}`}
+              href={gscAuthorizeHref(locale, TOOL_PATH)}
               className={PRIMARY_CTA}
             >
               {t("connectCta")}
@@ -313,6 +332,9 @@ export function TrafficDropTool({
         <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
           {t("noPropertyBody")}
         </p>
+        {/* Connected, just with nothing to run against — and a visitor who
+            authorized the wrong account needs the way out most here. */}
+        <GscDisconnect namespace="tools.trafficDrop" />
       </section>
     );
   }
@@ -443,7 +465,26 @@ export function TrafficDropTool({
           role="status"
           className="rounded-[10px] border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[13px] leading-[1.6] text-brand-error"
         >
-          {t(`errors.${errorCode}`)}
+          {/*
+           * Unknown codes fall back to the generic message rather than being
+           * looked up: next-intl throws on a missing key, so a code nobody
+           * planned for would replace the report with a crash.
+           */}
+          {t(
+            `errors.${TRAFFIC_DROP_ERROR_CODES.includes(errorCode) ? errorCode : "unknown"}`,
+          )}
+          {/*
+           * A revoked grant is the one error a visitor can fix on the spot,
+           * and the only route back is the consent screen.
+           */}
+          {errorCode === "gsc_revoked" ? (
+            <a
+              href={gscAuthorizeHref(locale, TOOL_PATH)}
+              className="mt-2 block font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover"
+            >
+              {t("reconnect")}
+            </a>
+          ) : null}
         </p>
       ) : null}
 
@@ -495,6 +536,8 @@ export function TrafficDropTool({
           />
         </>
       ) : null}
+
+      <GscDisconnect namespace="tools.trafficDrop" />
     </section>
   );
 }

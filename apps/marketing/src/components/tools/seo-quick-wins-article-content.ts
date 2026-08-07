@@ -109,7 +109,7 @@ const EN: QuickWinsArticle = {
         },
         {
           heading: "The whole table, out of the tab",
-          body: "Nothing is stored, so the export is the copy that survives. It carries the same rows, the same measured window and the same blanks — a value we could not compute stays an empty cell rather than becoming a zero.",
+          body: "Nothing is stored on our servers, so the export is the copy that survives. It carries the same rows, the same measured window and the same blanks — a value we could not compute stays an empty cell rather than becoming a zero.",
         },
       ],
     },
@@ -165,7 +165,8 @@ const EN: QuickWinsArticle = {
           body: "This is the big one. A gap can mean your title is weak, or that searchers wanted something else, or that Google answered the query in the results page. We measure the gap; we do not detect which. Read a few of the actual queries before rewriting anything.",
         },
         {
-          heading: "Whether an AI Overview or featured snippet is taking the clicks",
+          heading:
+            "Whether an AI Overview or featured snippet is taking the clicks",
           body: "We do not detect SERP features. Search Console does not expose them in a way we can line up with the rest of this data, and we would rather leave the question open than guess.",
         },
         {
@@ -267,7 +268,7 @@ const ZH: QuickWinsArticle = {
         },
         {
           heading: "整张表可以带出这个标签页",
-          body: "我们不保存任何结果，所以导出的文件就是唯一能留下的副本。文件里是同样的行、同样的统计区间、同样的空白——算不出来的值在文件里也是空的，不会变成 0。",
+          body: "结果不会存在我们的服务器上，所以导出的文件就是唯一能留下的副本。文件里是同样的行、同样的统计区间、同样的空白——算不出来的值在文件里也是空的，不会变成 0。",
         },
       ],
     },

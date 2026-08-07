@@ -12,10 +12,16 @@ import {
   type TrafficDailyPoint,
   type TrafficQueryEvidence,
 } from "@sf/public-tools";
-import { openGscGate, type GscGateResult } from "./gsc-gate.ts";
+import type { GrantResolution } from "../auth/grant-cookie.ts";
+import {
+  openGscGate,
+  refuseWithoutGrant,
+  type GscGateResult,
+} from "./gsc-gate.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import {
   readTrafficDropSession,
+  resolveTrafficDropGrant,
   type TrafficDropSession,
 } from "./traffic-drop-session.ts";
 
@@ -50,14 +56,35 @@ export interface TrafficDropQueryReadRequest {
    * asymmetry that manufactures the pattern this tool reports.
    */
   readonly now: Date;
+  /** From this request's resolution; never captured at module scope. */
+  readonly accessToken: string;
 }
 
 export interface TrafficDropHandlerDependencies {
+  /**
+   * The page-level view: which properties, read from the visitor's own cookie.
+   *
+   * Costs no network call, which is what makes it safe to consult before
+   * admission control.
+   */
   readonly readSession: () => Promise<TrafficDropSession>;
+  /**
+   * Produce the access token for this request.
+   *
+   * A thunk rather than a value because resolving it can spend two outbound
+   * Google calls (the token endpoint, then the site list) against a shared
+   * OAuth client and a per-PROJECT Search Console quota. Called once, and only
+   * after the gate has admitted the request — otherwise one legitimate grant
+   * is enough to drive unlimited traffic through both with no limiter in
+   * front of them.
+   */
+  readonly resolveGrant: () => Promise<GrantResolution>;
   /** Fetches the [date]-dimension series. Injected so the route stays transport-free. */
   readonly readDailySeries: (input: {
     readonly property: string;
     readonly lookbackDays: number;
+    /** From this request's resolution; never captured at module scope. */
+    readonly accessToken: string;
   }) => Promise<readonly TrafficDailyPoint[]>;
   /**
    * Fetches the optional query-dimension evidence.
@@ -189,7 +216,12 @@ function parseInput(
  * Run the diagnosis for one property the visitor has granted access to.
  *
  * The property must be one the grant covers — a caller cannot name someone
- * else's site and have us read it.
+ * else's site and have us read it. That is checked twice: once off the
+ * visitor's own cookie before the gate, which costs nothing, and again against
+ * the token this request resolved, which is the list Google agrees with. The
+ * resolution itself waits for the gate, because renewing a token is two calls
+ * on a shared OAuth client and a per-project quota — a limiter it runs ahead
+ * of is not a limiter.
  *
  * The optional query-dimension evidence follows a strict degradation rule: it
  * is read AFTER a complete report already exists, and anything that goes wrong
@@ -216,6 +248,7 @@ export async function handleTrafficDropRequest(
   const input = parseInput(body.value);
   if (!input.ok) return json(createPublicToolError("invalid_request"), 400);
 
+  // Off the cookie, so this costs nothing and can safely run before the gate.
   const session = await dependencies.readSession();
   if (session.properties === null) {
     return json(createPublicToolError("gsc_unavailable"), 401);
@@ -238,9 +271,21 @@ export async function handleTrafficDropRequest(
   if (!gate.ok) return gate.response;
 
   try {
+    // Inside the gate, so a silent refresh cannot be driven faster than the
+    // per-IP budget allows, and inside the try so the slot is released on
+    // every path out of here.
+    const grant = await dependencies.resolveGrant();
+    if (grant.kind !== "grant") return refuseWithoutGrant(grant);
+    if (!grant.properties.includes(input.value.property)) {
+      // The resolution may have re-listed from Google since the cookie was
+      // written. The newer list is the one we are allowed to read with.
+      return json(createPublicToolError("gsc_unavailable"), 404);
+    }
+
     const daily = await dependencies.readDailySeries({
       property: input.value.property,
       lookbackDays: TRAFFIC_DROP_LOOKBACK_DAYS,
+      accessToken: grant.accessToken,
     });
     if (daily.length === 0) {
       return json(createPublicToolError("no_gsc_data"), 200);
@@ -268,6 +313,7 @@ export async function handleTrafficDropRequest(
             property: input.value.property,
             changePoint: firstPass.result.changePoint,
             now: runAt,
+            accessToken: grant.accessToken,
           });
 
     const envelope =
@@ -306,12 +352,12 @@ async function readQueryEvidenceSoftly(
 
 export const DEFAULT_TRAFFIC_DROP_DEPENDENCIES: Pick<
   TrafficDropHandlerDependencies,
-  "readSession" | "now" | "openGate"
+  "readSession" | "resolveGrant" | "now" | "openGate"
 > = {
-  // The route builds its own dependencies so the access token stays in the
-  // request scope; this default exists for callers that only need the
-  // page-level session view.
+  // The route builds its own readers so the access token stays in the request
+  // scope; these defaults carry everything that does not depend on it.
   readSession: readTrafficDropSession,
+  resolveGrant: resolveTrafficDropGrant,
   now: () => new Date(),
   openGate: (clientIp) => openGscGate(clientIp),
 };

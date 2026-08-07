@@ -1,8 +1,35 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// 32 bytes of hex, matching the shape of the deployed key. Set before the
+// fixtures below are sealed.
+process.env.TOKEN_ENCRYPTION_KEY = "9c".repeat(32);
+
+/**
+ * The visitor's cookies, without a request.
+ *
+ * `readTrafficDropSession` is what a page render calls, so the seam that has to
+ * be exercised is the real `next/headers` one — a hand-rolled jar would test a
+ * function this module does not use.
+ */
+const cookieStore = vi.hoisted(() => new Map<string, string>());
+vi.mock("next/headers", () => ({
+  cookies: () =>
+    Promise.resolve({
+      get: (name: string) => {
+        const value = cookieStore.get(name);
+        return value === undefined ? undefined : { name, value };
+      },
+      set: () => {},
+      delete: () => {},
+    }),
+}));
+
+import { seal } from "../auth/sealed-cookie.ts";
 import {
   isGoogleConnectEnabled,
   readGoogleConsentNotice,
+  readTrafficDropSession,
+  resolveTrafficDropGrant,
 } from "./traffic-drop-session.ts";
 
 afterEach(() => {
@@ -41,5 +68,117 @@ describe("connect flags", () => {
 
     process.env.MARKETING_GSC_CONSENT_NOTICE = "none";
     expect(readGoogleConsentNotice()).toBe("none");
+  });
+});
+
+const PROPERTY = "sc-domain:example.com";
+const SUB = "108000000000000000001";
+
+describe("the tool page on a deployment whose cookie key cannot be built", () => {
+  const CONFIGURED_KEY = process.env.TOKEN_ENCRYPTION_KEY;
+
+  beforeEach(() => {
+    process.env.MARKETING_GSC_CONNECT_ENABLED = "true";
+    cookieStore.set(
+      "gg_sites",
+      seal("gg_sites", { properties: [PROPERTY], total: 1 }, 3_600),
+    );
+    cookieStore.set(
+      "gg_id",
+      seal("gg_id", { sub: SUB, email: "owner@example.com" }, 3_600),
+    );
+  });
+
+  afterEach(() => {
+    process.env.TOKEN_ENCRYPTION_KEY = CONFIGURED_KEY;
+    cookieStore.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("reads a connected visitor's own properties while the key is right", () => {
+    // The control for the two below: without it they would pass on a session
+    // that was never connected in the first place.
+    return expect(readTrafficDropSession()).resolves.toMatchObject({
+      properties: [PROPERTY],
+      propertyTotal: 1,
+    });
+  });
+
+  it("renders as not connected instead of failing the page render", async () => {
+    // The pages that would 500 are the connected tools, and the disconnect
+    // control lives on them — so a throw here locks out exactly the visitors
+    // holding a credential they can no longer use. They see the connect entry
+    // point instead.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+
+    await expect(readTrafficDropSession()).resolves.toMatchObject({
+      properties: null,
+      propertyTotal: 0,
+      connectEnabled: true,
+    });
+  });
+
+  it("names the misconfiguration in the log rather than passing for a visitor with no cookie", async () => {
+    // Indistinguishable to the VISITOR only. An operator reading the log has
+    // to be able to tell a renamed environment variable from an ordinary
+    // absent cookie, or a bad paste signs out a whole site in silence.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+
+    await readTrafficDropSession();
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0]?.join(" ")).toMatch(/TOKEN_ENCRYPTION_KEY/);
+  });
+
+  it("answers the tool routes with no grant instead of throwing", async () => {
+    // The same key failure reaches the API path twice: once through the
+    // pre-gate session read above, and once here, where the route resolves the
+    // token it would run with.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+
+    await expect(resolveTrafficDropGrant()).resolves.toEqual({ kind: "none" });
+  });
+});
+
+describe("what the page calls connected", () => {
+  const PROPERTIES = seal(
+    "gg_sites",
+    { properties: [PROPERTY], total: 1 },
+    3_600,
+  );
+
+  beforeEach(() => {
+    process.env.MARKETING_GSC_CONNECT_ENABLED = "true";
+  });
+
+  afterEach(() => {
+    cookieStore.clear();
+  });
+
+  it("does not call a visitor connected when the identity binding it to the grant is gone", async () => {
+    // The page cannot check the binding itself: the grant cookie is scoped to
+    // /api and `gg_sites` names no account. It can check the half it CAN see,
+    // and it has to — `resolveGrant` refuses a grant with no identity beside
+    // it, so rendering the property picker here would promise a run the route
+    // is about to refuse.
+    cookieStore.set("gg_sites", PROPERTIES);
+
+    await expect(readTrafficDropSession()).resolves.toMatchObject({
+      properties: null,
+      propertyTotal: 0,
+    });
+  });
+
+  it("calls a visitor with both cookies connected", async () => {
+    cookieStore.set("gg_sites", PROPERTIES);
+    cookieStore.set("gg_id", seal("gg_id", { sub: SUB }, 3_600));
+
+    await expect(readTrafficDropSession()).resolves.toMatchObject({
+      properties: [PROPERTY],
+      propertyTotal: 1,
+    });
   });
 });

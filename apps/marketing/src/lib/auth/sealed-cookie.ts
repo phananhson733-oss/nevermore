@@ -38,6 +38,10 @@ export class SealedCookieError extends Error {
   }
 }
 
+/** 64 hex characters: the exact shape of `TOKEN_ENCRYPTION_KEY`. */
+const HEX_KEY_PATTERN = /^[0-9a-fA-F]{64}$/;
+const HEX_PATTERN = /^[0-9a-fA-F]+$/;
+
 /**
  * Root key material.
  *
@@ -47,11 +51,38 @@ export class SealedCookieError extends Error {
  * HKDF-derived subkey below, so a cookie key and a stored-token key are
  * different keys even though they share a root. `MARKETING_COOKIE_SECRET`
  * (base64) overrides it when the two should not share a root at all.
+ *
+ * Every rejection below names the variable that is wrong. Node's decoders are
+ * lenient in both directions — base64 silently skips characters outside its
+ * alphabet, hex silently stops at the first character outside its own — so a
+ * bad paste does not fail, it produces a DIFFERENT key. The visible symptom is
+ * then "every visitor is signed out", weeks later, with nothing pointing at an
+ * environment variable. A wrong key is unrecoverable rather than merely broken:
+ * the cookies sealed under the right one can never be opened again.
  */
 function rootSecret(): Buffer {
   const override = process.env.MARKETING_COOKIE_SECRET;
   if (override) {
+    // Checked before base64, because the two alphabets overlap: 64 hex
+    // characters are also valid base64 and decode to 48 bytes, which clears
+    // every length check while being the wrong key entirely.
+    if (HEX_KEY_PATTERN.test(override)) {
+      throw new SealedCookieError(
+        "MARKETING_COOKIE_SECRET is 64 hex characters, which is the shape of " +
+          "TOKEN_ENCRYPTION_KEY. It must be base64. Either set base64 key " +
+          "material here, or unset it to reuse TOKEN_ENCRYPTION_KEY.",
+      );
+    }
     const secret = Buffer.from(override, "base64");
+    if (
+      secret.toString("base64").replace(/=+$/, "") !==
+      override.replace(/=+$/, "")
+    ) {
+      throw new SealedCookieError(
+        "MARKETING_COOKIE_SECRET is not valid base64. Node decodes around " +
+          "stray characters instead of failing, which yields a different key.",
+      );
+    }
     if (secret.length < MIN_SECRET_BYTES) {
       throw new SealedCookieError(
         "MARKETING_COOKIE_SECRET must decode to at least 32 bytes.",
@@ -66,6 +97,13 @@ function rootSecret(): Buffer {
       "Neither MARKETING_COOKIE_SECRET nor TOKEN_ENCRYPTION_KEY is configured.",
     );
   }
+  if (!HEX_PATTERN.test(existing) || existing.length % 2 !== 0) {
+    throw new SealedCookieError(
+      "TOKEN_ENCRYPTION_KEY must be an even number of hex characters. " +
+        "Node's hex decoder stops at the first character outside the " +
+        "alphabet, so a base64 value here silently becomes a shorter key.",
+    );
+  }
   const secret = Buffer.from(existing, "hex");
   if (secret.length < MIN_SECRET_BYTES) {
     throw new SealedCookieError(
@@ -73,6 +111,44 @@ function rootSecret(): Buffer {
     );
   }
   return secret;
+}
+
+/**
+ * Build the root key and throw if it cannot be built, sealing nothing.
+ *
+ * Called at the entry of every authorization route, which is the earliest
+ * point this deployment does cookie work. Without it the key is only ever read
+ * inside `seal`/`open`, where a wrong-but-decodable value produces cookies
+ * nobody can open rather than an error anybody can see.
+ */
+export function assertCookieSecretConfigured(): void {
+  rootSecret();
+}
+
+/**
+ * The same diagnosis as a value: the reason the root key cannot be built, or
+ * null when it can.
+ *
+ * Throwing is right where an operator is the only possible audience — the two
+ * authorization routes catch it and answer 503. It is wrong on a READ path: a
+ * page render that throws takes down the connected tool pages, and the
+ * disconnect control lives on them, so the visitors holding a credential they
+ * can no longer use are exactly the ones a throw locks out.
+ *
+ * So readers ask this first and degrade to "this visitor has no cookie" — in
+ * what the VISITOR sees only. In the log the two must stay distinguishable:
+ * every caller that degrades logs this message, because a configuration
+ * failure that reads as an ordinary absent cookie is how a bad paste signs out
+ * a whole site in silence.
+ */
+export function cookieSecretFailure(): string | null {
+  try {
+    rootSecret();
+    return null;
+  } catch (error) {
+    if (error instanceof SealedCookieError) return error.message;
+    throw error;
+  }
 }
 
 /** Per-purpose key. The purpose is the HKDF info, which is what separates them. */
@@ -123,6 +199,11 @@ export function seal(
  * rotated — returns null rather than throwing. A visitor holding a cookie we
  * cannot verify is simply a visitor without one; there is nothing for them to
  * fix and nothing useful to tell them.
+ *
+ * A root key that cannot be BUILT is the one exception and is thrown. That is
+ * not a fact about this visitor's cookie: it is a deployment that will read
+ * every cookie as absent, and swallowing it is how a bad paste signs out
+ * everyone in silence.
  */
 export function open<T>(
   purpose: SealedCookiePurpose,
@@ -130,6 +211,9 @@ export function open<T>(
   now: () => number = Date.now,
 ): T | null {
   if (!value) return null;
+  // Derived outside the try: a configuration failure must escape while a
+  // cookie failure must not.
+  const key = deriveKey(purpose);
   try {
     const raw = Buffer.from(value, "base64url");
     if (raw.length <= IV_BYTES + TAG_BYTES) return null;
@@ -138,7 +222,7 @@ export function open<T>(
     const tag = raw.subarray(raw.length - TAG_BYTES);
     const body = raw.subarray(IV_BYTES, raw.length - TAG_BYTES);
 
-    const decipher = createDecipheriv(ALGORITHM, deriveKey(purpose), iv);
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAAD(Buffer.from(purpose, "utf8"));
     decipher.setAuthTag(tag);
     const plain = Buffer.concat([

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  countingCrawlFetcher,
   crawlPublicSitePreview,
   isAllowedPublicToolEntryRedirect,
   PUBLIC_PREVIEW_CRAWL_USER_AGENT,
@@ -44,10 +45,13 @@ describe("public preview crawl profile", () => {
             headers: { "content-type": "application/xml" },
           });
         }
-        return new Response("<html><title>Fixture</title><body>Body</body></html>", {
-          status: 200,
-          headers: { "content-type": "text/html; charset=utf-8" },
-        });
+        return new Response(
+          "<html><title>Fixture</title><body>Body</body></html>",
+          {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          },
+        );
       },
     };
 
@@ -71,8 +75,7 @@ describe("public preview crawl profile", () => {
     expect(
       result.pages.some(
         (page) =>
-          page.projection.fetchUrl ===
-          "https://acme.test/docs?section=seo",
+          page.projection.fetchUrl === "https://acme.test/docs?section=seo",
       ),
     ).toBe(true);
     expect(
@@ -85,11 +88,7 @@ describe("public preview crawl profile", () => {
     ["HTTP upgrade", "http://acme.test/", "https://acme.test/"],
     ["apex to www", "https://acme.test/", "https://www.acme.test/"],
     ["www to apex", "https://www.acme.test/", "https://acme.test/"],
-    [
-      "HTTP apex to HTTPS www",
-      "http://acme.test/",
-      "https://www.acme.test/",
-    ],
+    ["HTTP apex to HTTPS www", "http://acme.test/", "https://www.acme.test/"],
   ])("allows the %s canonical entry transition", (_label, from, to) => {
     expect(isAllowedPublicToolEntryRedirect(from, to)).toBe(true);
   });
@@ -159,9 +158,7 @@ describe("public preview crawl profile", () => {
     );
 
     expect(result.origin).toBe("https://www.acme.test");
-    expect(result.pages[0]?.projection.fetchUrl).toBe(
-      "https://www.acme.test/",
-    );
+    expect(result.pages[0]?.projection.fetchUrl).toBe("https://www.acme.test/");
     expect(
       requested.every((url) => new URL(url).hostname === "www.acme.test"),
     ).toBe(true);
@@ -226,6 +223,161 @@ describe("public preview crawl profile", () => {
 
     expect(result.pages.length).toBeGreaterThan(25);
     expect(result.stopReason).not.toBe("max_urls");
+  });
+
+  /**
+   * The public tools may only ever state a page figure the finished report can
+   * confirm, so the live seam has to be the engine's collected-page count and
+   * not a transport counter. `engineOptions` is an offline test seam that API
+   * callers cannot reach, so the listener needs its own production-safe door.
+   */
+  it("reports the collected page count while the crawl runs", async () => {
+    const seen: number[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response("User-agent: *\n", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (path === "/sitemap.xml") {
+          return new Response(
+            '<?xml version="1.0"?><urlset><url><loc>https://acme.test/about</loc></url></urlset>',
+            { status: 200, headers: { "content-type": "application/xml" } },
+          );
+        }
+        return new Response("<html><title>Fixture page</title></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    };
+
+    const result = await crawlPublicSitePreview(
+      "https://acme.test/",
+      undefined,
+      {
+        fetcher,
+        entryResolver: async (url) => entryResult(url),
+        onPageProgress: ({ pagesCollected }) => seen.push(pagesCollected),
+        engineOptions: {
+          guard: async (url) => ({
+            safe: true,
+            normalizedUrl: url,
+            pinnedIp: "93.184.216.34",
+            reason: null,
+          }),
+        },
+      },
+    );
+
+    expect(result.pages.length).toBe(2);
+    expect(seen.at(-1)).toBe(result.pages.length);
+  });
+
+  /**
+   * The wire-request count needs a door of its own for exactly the reason the
+   * page count does. Reading it by injecting a transport through `fetcher`
+   * would put production on the seam this file documents as offline-only, and
+   * the whole guarantee of that seam is that the shipped crawl uses the
+   * guarded default transport.
+   */
+  it("counts wire requests through its own door rather than a transport injection", async () => {
+    const sent: number[] = [];
+    const requested: string[] = [];
+    const fetcher: CrawlFetcher = {
+      async fetch(url) {
+        requested.push(url);
+        const path = new URL(url).pathname;
+        if (path === "/robots.txt") {
+          return new Response("User-agent: *\n", {
+            status: 200,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        if (path === "/sitemap.xml") {
+          return new Response(
+            '<?xml version="1.0"?><urlset><url><loc>https://acme.test/about</loc></url></urlset>',
+            { status: 200, headers: { "content-type": "application/xml" } },
+          );
+        }
+        return new Response("<html><title>Fixture page</title></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    };
+
+    await crawlPublicSitePreview("https://acme.test/", undefined, {
+      fetcher,
+      entryResolver: async (url) => entryResult(url),
+      onRequestSent: (requestsSent) => sent.push(requestsSent),
+      engineOptions: {
+        guard: async (url) => ({
+          safe: true,
+          normalizedUrl: url,
+          pinnedIp: "93.184.216.34",
+          reason: null,
+        }),
+      },
+    });
+
+    // One reading per wire request, in issue order: robots.txt and every
+    // sitemap document count, which is why this runs ahead of the page count.
+    expect(sent).toEqual(requested.map((_url, index) => index + 1));
+    expect(sent.length).toBeGreaterThan(2);
+  });
+});
+
+/**
+ * The wrapper behind `onRequestSent`. It is tested directly because its whole
+ * job is to add a count without touching the request: the engine builds the
+ * SSRF-pinned dispatcher and passes it on `init`, so a wrapper that rebuilds
+ * that object strips the pinned transport and every fetch fails closed.
+ */
+describe("countingCrawlFetcher", () => {
+  function innerFetcher(): CrawlFetcher {
+    return { fetch: vi.fn(async () => new Response("ok")) };
+  }
+
+  it("reports the running wire-request count before each request goes out", async () => {
+    const inner = innerFetcher();
+    const seen: number[] = [];
+    const fetcher = countingCrawlFetcher(inner, (count) => seen.push(count));
+    const signal = new AbortController().signal;
+
+    await fetcher.fetch("https://acme.test/robots.txt", { signal });
+    await fetcher.fetch("https://acme.test/", { signal });
+    await fetcher.fetch("https://acme.test/about", { signal });
+
+    expect(seen).toEqual([1, 2, 3]);
+  });
+
+  it("hands the transport init through untouched so the pinned dispatcher survives", async () => {
+    const inner = innerFetcher();
+    const fetcher = countingCrawlFetcher(inner, () => {});
+    const signal = new AbortController().signal;
+    const init = { signal, pinnedIp: "203.0.113.7", dispatcher: {} };
+
+    await fetcher.fetch("https://acme.test/", init);
+
+    expect(inner.fetch).toHaveBeenCalledWith("https://acme.test/", init);
+  });
+
+  it("never lets an observation failure end a crawl", async () => {
+    const inner = innerFetcher();
+    const fetcher = countingCrawlFetcher(inner, () => {
+      throw new Error("observer exploded");
+    });
+
+    await expect(
+      fetcher.fetch("https://acme.test/", {
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toBeInstanceOf(Response);
+    expect(inner.fetch).toHaveBeenCalledOnce();
   });
 });
 

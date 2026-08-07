@@ -16,6 +16,7 @@ import {
   DEFAULT_CRAWL_GATE_DEPENDENCIES,
 } from "./crawl-gate.ts";
 import {
+  cacheCompletedCrawl,
   readCrawlCache,
   writeCrawlCache,
   targetHostOf,
@@ -30,8 +31,13 @@ const REQUEST_BODY_LIMIT_BYTES = 4_096;
 export interface InternalLinkAuditHandlerDependencies {
   readonly normalizeUrl: (value: unknown) => InternalLinkAuditUrlResult;
   /** Receives the request signal so a client disconnect aborts the crawl. */
-  readonly scan: (url: string, signal?: AbortSignal) => Promise<InternalLinkAuditRaw>;
-  readonly buildPayload: (raw: InternalLinkAuditRaw) => InternalLinkAuditPayload;
+  readonly scan: (
+    url: string,
+    signal?: AbortSignal,
+  ) => Promise<InternalLinkAuditRaw>;
+  readonly buildPayload: (
+    raw: InternalLinkAuditRaw,
+  ) => InternalLinkAuditPayload;
   readonly extractClientIp: (headers: Headers) => string;
   /**
    * Shared with seo-audit. The old fuse here was a per-isolate Map, so it reset
@@ -45,7 +51,8 @@ export interface InternalLinkAuditHandlerDependencies {
   /**
    * Store a fresh result so the next caller asking about this same site does
    * not send it another crawl's worth of traffic. Never allowed to fail the
-   * request it just served.
+   * request it just served, and reached only for a run that finished on its
+   * own terms — see `cacheCompletedCrawl`.
    */
   readonly cachePayload: (
     normalizedUrl: string,
@@ -131,7 +138,12 @@ export async function handleInternalLinkAuditRequest(
   try {
     const raw = await dependencies.scan(normalized.url, request.signal);
     const payload = dependencies.buildPayload(raw);
-    await dependencies.cachePayload(normalized.url, payload);
+    await cacheCompletedCrawl({
+      raw,
+      payload,
+      normalizedUrl: normalized.url,
+      cachePayload: dependencies.cachePayload,
+    });
     return json({ data: payload }, 200);
   } catch (error) {
     if (error instanceof InternalLinkAuditScanError) {
