@@ -38,6 +38,23 @@ function allProse(locale: string, draftsEnabled = true): string {
 }
 
 describe("SEO Quick Wins page copy", () => {
+  it("carries the decided H1 and supporting line, both locales", () => {
+    // Three-layer naming decided 2026-08-06: the SEO title lives in page.tsx,
+    // the H1 names the task surface, the line under it names the output. Not
+    // copy to be improved in passing.
+    const en = getConnectedToolContent("en", "seo-quick-wins");
+    expect(en.title).toBe("Find SEO Opportunities in Google Search Console");
+    expect(en.description).toBe(
+      "Turn high-impression, low-click queries and positions 8–20 into a prioritized action list.",
+    );
+
+    const zh = getConnectedToolContent("zh", "seo-quick-wins");
+    expect(zh.title).toBe("在 Google Search Console 中找出 SEO 机会");
+    expect(zh.description).toBe(
+      "把高曝光、低点击的查询词和位置 8–20 的排名，变成一份按优先级排序的行动清单。",
+    );
+  });
+
   for (const locale of LOCALES) {
     it(`promises no outcome (${locale})`, () => {
       // The engine refuses to emit a draft that promises a result. The page
@@ -164,10 +181,12 @@ describe("SEO Quick Wins page copy", () => {
 
       expect(off.steps).toHaveLength(on.steps.length - 1);
       expect(off.faq).toHaveLength(on.faq.length - 1);
-      expect(
-        off.steps.every((step) => step.requiresDrafts !== true),
-      ).toBe(true);
-      expect(off.faq.every((entry) => entry.requiresDrafts !== true)).toBe(true);
+      expect(off.steps.every((step) => step.requiresDrafts !== true)).toBe(
+        true,
+      );
+      expect(off.faq.every((entry) => entry.requiresDrafts !== true)).toBe(
+        true,
+      );
     });
   }
 

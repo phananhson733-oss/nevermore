@@ -1,5 +1,7 @@
 // @input  -- the site-signal group from a traffic-drop result
-// @output -- the recorded self-checks, the path this report is on, and the observations
+// @output -- the recorded self-checks, the path this report is on, the computed
+//            observations, plus the not-computed blocks exported separately for
+//            the report's collapsed could-not-check region
 // @pos    -- top of the report surface; renders before the chart on purpose
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -46,20 +48,41 @@ interface TrafficDropSiteSignalsProps {
   readonly locale: string;
 }
 
+/**
+ * How many of the three algorithm-side blocks the run could not compute.
+ *
+ * This is the tag the report's collapse state binds to (交办 5c): a block whose
+ * outcome is `not_available` sinks into the shared "what we could not check"
+ * region, a computed one stays on the surface with its numbers.
+ */
+export function uncheckedSignalBlockCount(signals: TrafficSiteSignals): number {
+  return [
+    signals.coreUpdateTimeline.kind,
+    signals.brandSplit.kind,
+    signals.queryCohort.kind,
+  ].filter((kind) => kind === "not_available").length;
+}
+
+function percentFormatters(locale: string) {
+  return {
+    percent: new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      style: "percent",
+      maximumFractionDigits: 0,
+    }),
+    signed: new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
+      style: "percent",
+      maximumFractionDigits: 0,
+      signDisplay: "exceptZero",
+    }),
+  };
+}
+
 export function TrafficDropSiteSignals({
   signals,
   locale,
 }: TrafficDropSiteSignalsProps) {
   const t = useTranslations("tools.trafficDrop");
-  const percent = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
-    style: "percent",
-    maximumFractionDigits: 0,
-  });
-  const signed = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-US", {
-    style: "percent",
-    maximumFractionDigits: 0,
-    signDisplay: "exceptZero",
-  });
+  const { percent, signed } = percentFormatters(locale);
 
   const { path } = signals.selfChecks;
 
@@ -98,25 +121,94 @@ export function TrafficDropSiteSignals({
         </p>
       </section>
 
-      <section className={CARD}>
-        <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
-          {t("siteSignals.sectionTitle")}
-        </h2>
-        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-          {t("siteSignals.sectionIntro")}
-        </p>
+      {/*
+        Computed blocks only. The `not_available` ones render through
+        `TrafficDropUncheckedSignals` inside the report's collapsed region —
+        their tag says the run could not look, and prose about what we could
+        not look at should not sit above the numbers we did measure. When
+        nothing here was computed the whole section (intro included) moves
+        down with them.
+      */}
+      {uncheckedSignalBlockCount(signals) < 3 ? (
+        <section className={CARD}>
+          <h2 className="text-[16.5px] font-semibold text-text-dark-primary">
+            {t("siteSignals.sectionTitle")}
+          </h2>
+          <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("siteSignals.sectionIntro")}
+          </p>
 
-        <div className="mt-5 space-y-4">
+          <div className="mt-5 space-y-4">
+            {signals.coreUpdateTimeline.kind === "not_available" ? null : (
+              <CoreUpdateBlock timeline={signals.coreUpdateTimeline} t={t} />
+            )}
+            {signals.brandSplit.kind === "not_available" ? null : (
+              <BrandSplitBlock
+                outcome={signals.brandSplit}
+                percent={percent}
+                signed={signed}
+                t={t}
+              />
+            )}
+            {signals.queryCohort.kind === "not_available" ? null : (
+              <CohortBlock
+                outcome={signals.queryCohort}
+                percent={percent}
+                t={t}
+              />
+            )}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The algorithm-side blocks this run could NOT compute, for the report's
+ * collapsed "what we could not check" region. Same block components, same
+ * copy, every sentence intact — only the position changes.
+ */
+export function TrafficDropUncheckedSignals({
+  signals,
+  locale,
+}: TrafficDropSiteSignalsProps) {
+  const t = useTranslations("tools.trafficDrop");
+  const { percent, signed } = percentFormatters(locale);
+  const allUnchecked = uncheckedSignalBlockCount(signals) === 3;
+
+  return (
+    <div>
+      {/*
+        When no block was computed the section header up top is gone too, so
+        its title and intro travel here with the blocks they introduce.
+      */}
+      {allUnchecked ? (
+        <>
+          <h3 className="text-[14px] font-semibold text-text-dark-primary">
+            {t("siteSignals.sectionTitle")}
+          </h3>
+          <p className="mt-1.5 text-[12.5px] leading-[1.6] text-text-dark-secondary">
+            {t("siteSignals.sectionIntro")}
+          </p>
+        </>
+      ) : null}
+      <div className={`space-y-4 ${allUnchecked ? "mt-4" : ""}`}>
+        {signals.coreUpdateTimeline.kind === "not_available" ? (
           <CoreUpdateBlock timeline={signals.coreUpdateTimeline} t={t} />
+        ) : null}
+        {signals.brandSplit.kind === "not_available" ? (
           <BrandSplitBlock
             outcome={signals.brandSplit}
             percent={percent}
             signed={signed}
             t={t}
           />
+        ) : null}
+        {signals.queryCohort.kind === "not_available" ? (
           <CohortBlock outcome={signals.queryCohort} percent={percent} t={t} />
-        </div>
-      </section>
+        ) : null}
+      </div>
     </div>
   );
 }

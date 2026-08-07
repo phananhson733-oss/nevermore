@@ -1283,7 +1283,7 @@
       "reportIsForOtherProperty": "The report below is for {reported}; you now have {selected} selected. To see {selected}, answer the two self-checks again and run it."
     },
     "quickWins": {
-      "title": "SEO Quick Wins",
+      "title": "GSC Opportunity Finder",
       "description": "Find the search queries Google already shows you for thousands of times that almost nobody clicks, measured against your own site's click-through curve rather than an industry table.",
       "metaDescription": "Google already shows you for these queries thousands of times, and almost nobody clicks. Connect Search Console to find every one of them. Free, read-only.",
       "eyebrow": "Free tool",

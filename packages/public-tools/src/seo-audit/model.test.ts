@@ -166,6 +166,133 @@ describe("site-wide SEO audit model", () => {
     ).toEqual(["https://acme.test/", "https://acme.test/a"]);
   });
 
+  it("does not report duplicates when the only sharer is canonicalised elsewhere", () => {
+    const fixture = raw({
+      pages: [
+        page("https://acme.test/en/wiki/aries", {
+          title: "Aries",
+          metaDescription: "About Aries",
+        }),
+        page("https://acme.test/wiki/aries", {
+          title: "Aries",
+          metaDescription: "About Aries",
+          canonicalTarget: "https://acme.test/en/wiki/aries",
+        }),
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    expect(byId(report, "title_duplicate")).toMatchObject({
+      state: "not_observed",
+      tested: 1,
+      affected: 0,
+    });
+    expect(byId(report, "title_duplicate")?.observations).toEqual([]);
+    expect(byId(report, "meta_description_duplicate")).toMatchObject({
+      state: "not_observed",
+      tested: 1,
+      affected: 0,
+    });
+    expect(byId(report, "meta_description_duplicate")?.observations).toEqual(
+      [],
+    );
+  });
+
+  it("still reports a duplicate title shared by self-canonical pages", () => {
+    const fixture = raw({
+      pages: [
+        page("https://acme.test/a", {
+          title: "Shared title",
+          canonicalTarget: "https://acme.test/a",
+        }),
+        page("https://acme.test/b", {
+          title: "Shared title",
+          // Slash variant of the page itself: still self-canonical by subject.
+          canonicalTarget: "https://acme.test/b/",
+        }),
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    expect(byId(report, "title_duplicate")).toMatchObject({
+      state: "observed",
+      tested: 2,
+      affected: 2,
+    });
+    expect(
+      byId(report, "title_duplicate")?.observations.map(
+        (observation) => observation.url,
+      ),
+    ).toEqual(["https://acme.test/a", "https://acme.test/b"]);
+  });
+
+  it("groups a shared title only among its self-canonical sharers", () => {
+    const fixture = raw({
+      pages: [
+        page("https://acme.test/en/wiki/aries", { title: "Aries" }),
+        page("https://acme.test/en/wiki/aries-profile", { title: "Aries" }),
+        page("https://acme.test/wiki/aries", {
+          title: "Aries",
+          canonicalTarget: "https://acme.test/en/wiki/aries",
+        }),
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    expect(byId(report, "title_duplicate")).toMatchObject({
+      state: "observed",
+      tested: 2,
+      affected: 2,
+    });
+    expect(byId(report, "title_duplicate")?.observations).toEqual([
+      {
+        url: "https://acme.test/en/wiki/aries",
+        values: [
+          { label: "title", value: "Aries" },
+          { label: "matching_pages", value: 2 },
+        ],
+      },
+      {
+        url: "https://acme.test/en/wiki/aries-profile",
+        values: [
+          { label: "title", value: "Aries" },
+          { label: "matching_pages", value: 2 },
+        ],
+      },
+    ]);
+  });
+
+  it("groups a shared meta description only among its self-canonical sharers", () => {
+    const shared = "Shared description";
+    const fixture = raw({
+      pages: [
+        page("https://acme.test/en/wiki/aries", { metaDescription: shared }),
+        page("https://acme.test/en/wiki/aries-profile", {
+          metaDescription: shared,
+        }),
+        page("https://acme.test/wiki/aries", {
+          metaDescription: shared,
+          canonicalTarget: "https://acme.test/en/wiki/aries",
+        }),
+      ],
+    });
+    const report = buildSeoAuditReport(fixture);
+
+    expect(byId(report, "meta_description_duplicate")).toMatchObject({
+      state: "observed",
+      tested: 2,
+      affected: 2,
+    });
+    expect(
+      byId(report, "meta_description_duplicate")?.observations.map(
+        (observation) => observation.url,
+      ),
+    ).toEqual([
+      "https://acme.test/en/wiki/aries",
+      "https://acme.test/en/wiki/aries-profile",
+    ]);
+  });
+
   it("marks a technical page-safety stop as partial without evaluating site quality", () => {
     const report = buildSeoAuditReport(
       raw({
@@ -191,11 +318,7 @@ describe("site-wide SEO audit model", () => {
   });
 
   it("preserves the submitted depth-zero URL as the reported target", () => {
-    const submitted = page(
-      "https://acme.test/zh",
-      { title: "Acme 中文" },
-      0,
-    );
+    const submitted = page("https://acme.test/zh", { title: "Acme 中文" }, 0);
     const report = buildSeoAuditReport(
       raw({
         requestedUrl: "https://acme.test/zh",
@@ -215,9 +338,7 @@ describe("site-wide SEO audit model", () => {
         requestedUrl: "https://acme.test/",
         origin: "https://www.acme.test",
         host: "www.acme.test",
-        pages: [
-          page("https://www.acme.test/", { title: "Canonical home" }, 0),
-        ],
+        pages: [page("https://www.acme.test/", { title: "Canonical home" }, 0)],
       }),
     );
 

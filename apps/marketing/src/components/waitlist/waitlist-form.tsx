@@ -1,6 +1,6 @@
-// @input  — next-intl, ui/button, ui/input, ui/label, waitlist-profile-step, Supabase API
+// @input  — next-intl, ui/button, ui/input, ui/label, waitlist-profile-step, /api/waitlist；可选 source 归因与文案覆盖
 // @output — WaitlistForm 组件（邮箱提交 + 渐进补充资料）
-// @pos    — Waitlist 核心表单，支持两步流程，SPEC 2.4.2
+// @pos    — Waitlist 核心表单，支持两步流程，SPEC 2.4.2；工具页可传 copy 覆盖成功/提交文案
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
@@ -17,9 +17,25 @@ type Step = "email" | "profile" | "done";
 
 interface WaitlistFormProps {
   onSuccess: () => void;
+  /** Recorded with the signup so the list can be segmented by entry point. */
+  source?: string;
+  /**
+   * Copy overrides for surfaces whose promise differs from the product
+   * waitlist (e.g. a tool-specific "we will email you when it opens").
+   * Untouched keys keep the shared `waitlist` namespace copy.
+   */
+  copy?: {
+    readonly submit?: string;
+    readonly successTitle?: string;
+    readonly successDesc?: string;
+  };
 }
 
-export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
+export function WaitlistForm({
+  onSuccess,
+  source = "website",
+  copy,
+}: WaitlistFormProps) {
   const t = useTranslations("waitlist");
   const locale = useLocale();
 
@@ -46,7 +62,7 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
         body: JSON.stringify({
           email,
           locale,
-          source: "website",
+          source,
           landing_page: window.location.pathname,
         }),
       });
@@ -54,16 +70,20 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
       const json = await res.json();
 
       if (!res.ok) {
-        if (json.error?.code === "DUPLICATE_EMAIL") {
-          setError(t("duplicateError"));
-        } else {
-          setError(t("genericError"));
-        }
+        setError(t("genericError"));
         return;
       }
 
-      setSubscriberId(json.data?.id || null);
-      setStep("profile");
+      // A null id means the email was already on the list (the API keeps the
+      // two cases indistinguishable); there is no row to attach a profile to.
+      const id = json.data?.id || null;
+      setSubscriberId(id);
+      if (id) {
+        setStep("profile");
+      } else {
+        setStep("done");
+        onSuccess();
+      }
     } catch {
       setError(t("genericError"));
     } finally {
@@ -110,10 +130,10 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
           <CheckCircle className="size-[18px]" aria-hidden="true" />
         </span>
         <h3 className="mb-2 text-[16.5px] font-semibold text-text-dark-primary">
-          {t("successTitle")}
+          {copy?.successTitle ?? t("successTitle")}
         </h3>
         <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
-          {t("successDesc")}
+          {copy?.successDesc ?? t("successDesc")}
         </p>
       </div>
     );
@@ -178,7 +198,7 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
         aria-busy={loading}
         className="w-full"
       >
-        {loading ? t("submitting") : t("submit")}
+        {loading ? t("submitting") : (copy?.submit ?? t("submit"))}
       </Button>
     </form>
   );

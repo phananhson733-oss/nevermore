@@ -491,6 +491,7 @@ export function TrafficDropTool({
             result={payload.result}
             series={payload.series}
             locale={locale}
+            property={payload.property}
           />
         </>
       ) : null}

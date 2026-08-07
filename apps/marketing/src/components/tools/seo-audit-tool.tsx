@@ -153,7 +153,7 @@ export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
       >
         {t("scopeShort")}
       </p>
-      {report ? <SeoAuditResults report={report} /> : null}
+      {report ? <SeoAuditResults report={report} locale={locale} /> : null}
     </section>
   );
 }

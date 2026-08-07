@@ -168,6 +168,14 @@ function buildRecords(
       page.finalStatus < 300 &&
       isHtml(page.contentType),
   );
+  // Duplicate detection runs only over self-canonical pages: a page whose
+  // canonical resolves to another subject is excluded from grouping AND from
+  // `tested`, so `tested` counts exactly the population the check ran over.
+  const selfCanonicalHtmlPages = htmlPages.filter(
+    (page) =>
+      page.canonicalTarget === null ||
+      subjectUrlOf(page.canonicalTarget) === page.subjectUrl,
+  );
   const collectedBySubject = new Map(
     pages.map((page) => [page.subjectUrl, page] as const),
   );
@@ -288,9 +296,7 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.robotsDirectiveState === "noindex_observed")
-        .map((page) =>
-          pageObservation(page, { robots_directive: "noindex" }),
-        ),
+        .map((page) => pageObservation(page, { robots_directive: "noindex" })),
       limitation: "static_response_directives_only",
     }),
     record({
@@ -299,9 +305,7 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.canonicalTarget === null)
-        .map((page) =>
-          pageObservation(page, { canonical_target: null }),
-        ),
+        .map((page) => pageObservation(page, { canonical_target: null })),
     }),
     record({
       id: "canonical_differs",
@@ -326,16 +330,15 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.title === null)
-        .map((page) =>
-          pageObservation(page, { title: null }),
-        ),
+        .map((page) => pageObservation(page, { title: null })),
     }),
     record({
       id: "title_duplicate",
       category: "metadata",
-      tested: htmlPages.filter((page) => page.title !== null).length,
+      tested: selfCanonicalHtmlPages.filter((page) => page.title !== null)
+        .length,
       observations: duplicateObservations(
-        htmlPages,
+        selfCanonicalHtmlPages,
         (page) => page.title,
         "title",
       ),
@@ -347,16 +350,16 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.metaDescription === null)
-        .map((page) =>
-          pageObservation(page, { meta_description: null }),
-        ),
+        .map((page) => pageObservation(page, { meta_description: null })),
     }),
     record({
       id: "meta_description_duplicate",
       category: "metadata",
-      tested: htmlPages.filter((page) => page.metaDescription !== null).length,
+      tested: selfCanonicalHtmlPages.filter(
+        (page) => page.metaDescription !== null,
+      ).length,
       observations: duplicateObservations(
-        htmlPages,
+        selfCanonicalHtmlPages,
         (page) => page.metaDescription,
         "meta_description",
       ),
@@ -368,9 +371,7 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.h1Count === 0)
-        .map((page) =>
-          pageObservation(page, { h1_count: 0 }),
-        ),
+        .map((page) => pageObservation(page, { h1_count: 0 })),
     }),
     record({
       id: "multiple_h1",
@@ -378,9 +379,7 @@ function buildRecords(
       tested: htmlPages.length,
       observations: htmlPages
         .filter((page) => page.h1Count > 1)
-        .map((page) =>
-          pageObservation(page, { h1_count: page.h1Count }),
-        ),
+        .map((page) => pageObservation(page, { h1_count: page.h1Count })),
     }),
     record({
       id: "sitemap_page_without_observed_inlink",

@@ -34,14 +34,11 @@ export async function generateMetadata({
   // the root layout's title template adds it for `<title>`, so `content.title`
   // must not carry it either.
   return generatePageMetadata({
-    title:
-      locale === "en"
-        ? "SEO Traffic Drop Diagnosis"
-        : "SEO 流量下降诊断",
+    title: locale === "en" ? "SEO Traffic Drop Diagnosis" : "SEO 流量下降诊断",
     description:
       locale === "en"
-        ? "Use your Search Console history to verify whether organic traffic dropped, locate the change point, and review evidence-backed causes."
-        : "使用 Search Console 历史数据确认自然流量是否下降、定位变化时点，并审阅有证据支持的原因。",
+        ? "Verify a drop against your own Search Console history, locate the change point, and see what the data can and cannot say about a penalty or manual action."
+        : "用自己的 Search Console 历史数据确认自然流量是否真的下降、定位变化时点，并弄清数据对「是否被惩罚 / 手动操作」能说明什么、不能说明什么。",
     locale,
     path: content.path,
   });

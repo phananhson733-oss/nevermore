@@ -14,6 +14,8 @@ interface ToolCardProps {
   category: string;
   locale: string;
   ctaLabel?: string;
+  /** Availability state, e.g. "Coming soon". Only for tools that cannot run yet. */
+  statusLabel?: string;
 }
 
 const CATEGORY_LABELS: Record<string, Record<string, string>> = {
@@ -31,16 +33,25 @@ export function ToolCard({
   category,
   locale,
   ctaLabel,
+  statusLabel,
 }: ToolCardProps) {
   const categoryLabel = CATEGORY_LABELS[category]?.[locale] ?? category;
 
   return (
     <Link href={localePath(locale, `/tools/${slug}`)} className="group block">
       <article className="flex h-full flex-col rounded-card border border-brand-border-card bg-brand-panel p-[26px] transition-colors duration-200 group-hover:border-brand-accent/40">
-        {/* Category chip */}
-        <span className="w-fit rounded border border-brand-accent/30 px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
-          {categoryLabel}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Category chip */}
+          <span className="rounded border border-brand-accent/30 px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
+            {categoryLabel}
+          </span>
+          {/* Availability chip stays neutral: it is a fact, not a selling point */}
+          {statusLabel ? (
+            <span className="rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
+              {statusLabel}
+            </span>
+          ) : null}
+        </div>
 
         {/* Tool name */}
         <h3 className="mt-4 text-[16.5px] leading-snug font-semibold text-text-dark-primary transition-colors group-hover:text-brand-accent-text">
