@@ -33,7 +33,7 @@ describe("diagnostic coverage output locale", () => {
       "Crawl 采集不完整；部分链接图视图可能缺失。",
       "未连接 Google Search Console；搜索规则已跳过。",
       "未连接 GA4；落地页转化规则已跳过。",
-      "未提供关键词差距 CSV 或 DataForSEO 快照；内容差距规则已跳过。",
+      "本次诊断没有可用的关键词差距数据：未导入 CSV，或本轮未采集到 DataForSEO 快照；内容差距规则已跳过。",
     ]);
   });
 

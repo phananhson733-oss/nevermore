@@ -24,6 +24,7 @@ import {
   type Executor,
   type FindingRow,
   type FindingTargetRow,
+  type GrowthMapOpportunityRankGroup,
   type GrowthMapReadableRunRow,
   type GrowthMapUrlInventoryRow,
   type ObservationRow,
@@ -40,9 +41,15 @@ import {
   growthMapIsoInstant,
   projectGrowthMapUrlCoverage,
   projectGrowthMapMetricObservations,
-  verifiedGrowthMapPageTitle,
+  verifiedGrowthMapPageProjection,
   type FrozenGrowthMapRun,
 } from "./growth-map-projection";
+import {
+  classifyGrowthMapPageType,
+  deriveGrowthMapUrlOpportunityRank,
+  URL_OPPORTUNITY_RANK_VERSION,
+  type GrowthMapPriorityBand,
+} from "./growth-map-derivations";
 import { loadPublishedGrowthMapGeneration } from "./growth-map-generation";
 import { buildExecutionPreview } from "./execution-preview";
 import { isStale } from "./source-mappers";
@@ -57,6 +64,22 @@ const SEVERITY_ORDER = {
   low: 1,
 } as const;
 const REVIEWABLE_STATES = new Set(["unreviewed", "needs_more_data"]);
+/**
+ * Findings a URL's priority may be derived from. This deliberately differs from
+ * REVIEWABLE_STATES: it is the exact set the Opportunity keyset in
+ * `GrowthMapReadRepository.listCurrentRunUrls` ranks by (`active` and not
+ * `ignored`). A confirmed Finding is an accepted problem, so it must keep
+ * ranking its URL until it is actually resolved; an ignored or inactive one
+ * must stop ranking it, which is what a human review decision is for.
+ */
+const UNRANKABLE_REVIEW_STATE = "ignored";
+/** Mirrors the repository's severity ranking in the Opportunity keyset. */
+const SEVERITY_BY_RANK: Readonly<Record<number, GrowthMapPriorityBand>> = {
+  0: "critical",
+  1: "high",
+  2: "medium",
+  3: "low",
+};
 const TARGET_RELATION_KIND = {
   direct_url: "url",
   affected_by_template: "template",
@@ -105,6 +128,8 @@ interface ProjectionRows {
   readonly observations: readonly ObservationRow[];
   readonly targets: readonly FindingTargetRow[];
   readonly findings: readonly FindingRow[];
+  /** Cross-page blast radius per Finding inside this exact frozen run. */
+  readonly findingCoverage: ReadonlyMap<string, number>;
 }
 
 function corruptGrowthMap(): never {
@@ -436,9 +461,14 @@ async function loadProjectionRows(
     context.run.id,
     findingIds,
   );
+  const findingCoverage = await repo.listFindingCoverageCounts(
+    context.projectScope,
+    context.run.id,
+    findingIds,
+  );
   observationsBySitePage(inventory, observations, context.frozen);
   targetsBySitePage(inventory, targets, observations, context);
-  return { inventory, observations, targets, findings };
+  return { inventory, observations, targets, findings, findingCoverage };
 }
 
 /**
@@ -565,21 +595,34 @@ function derivedTemplateKey(
   return refs[0] ?? null;
 }
 
+/**
+ * Priority is derived only from the Findings that still rank the URL. An
+ * ignored or inactive Finding must not keep a URL ranked: the repository
+ * already excludes them from the Opportunity keyset, so reading anything wider
+ * here would make the list order and the per-row band disagree.
+ */
 function priorityForUrl(
   context: GrowthMapReadContext,
   sitePageId: string,
-  findingIds: readonly string[],
+  targetedFindingIds: readonly string[],
+  rankableFindingIds: readonly string[],
   findings: ReadonlyMap<string, FindingRow>,
+  findingCoverage: ReadonlyMap<string, number>,
 ): GrowthMapUrlPortfolioItem["priority"] {
-  if (findingIds.length === 0) {
+  const copy = growthMapProjectionCopy(context.uiLocale);
+  if (rankableFindingIds.length === 0) {
     return {
       availability: "unavailable",
       value: null,
-      limitation: growthMapProjectionCopy(context.uiLocale).priorityUnavailable,
+      limitation:
+        targetedFindingIds.length === 0
+          ? copy.priorityUnavailable
+          : copy.priorityAllReviewed,
     };
   }
   let selected: keyof typeof SEVERITY_ORDER | null = null;
-  for (const findingId of findingIds) {
+  let coverageCount = 0;
+  for (const findingId of rankableFindingIds) {
     const finding = findings.get(findingId);
     if (!finding) corruptGrowthMap();
     const severity = finding.severity as keyof typeof SEVERITY_ORDER;
@@ -589,21 +632,65 @@ function priorityForUrl(
     ) {
       selected = severity;
     }
+    // A resolved target for this URL always exists, so the floor is 1.
+    coverageCount = Math.max(coverageCount, findingCoverage.get(findingId) ?? 1);
   }
   if (selected === null) corruptGrowthMap();
+  let value: GrowthMapPriorityBand;
+  try {
+    value = deriveGrowthMapUrlOpportunityRank({
+      severity: selected,
+      coverageCount,
+      findingCount: rankableFindingIds.length,
+    });
+  } catch {
+    return corruptGrowthMap();
+  }
   return {
     availability: "available",
-    value: selected,
+    value,
     basis: {
-      derivationVersion: "max_finding_severity.v1",
+      derivationVersion: URL_OPPORTUNITY_RANK_VERSION,
       projectId: context.projectScope.projectId,
       siteId: context.run.site_id,
       diagnosticRunId: context.run.id,
       sitePageId,
-      findingIds: [...findingIds],
+      findingIds: [...rankableFindingIds],
     },
     limitation: null,
   };
+}
+
+/**
+ * Band the whole frozen generation with the same derivation the rows use. The
+ * repository collapses the inventory onto the derivation's exact inputs, so the
+ * stat cards and the visible rows can never drift apart.
+ */
+function summaryPriorityCounts(
+  rankGroups: readonly GrowthMapOpportunityRankGroup[],
+): Record<GrowthMapPriorityBand, number> {
+  const counts: Record<GrowthMapPriorityBand, number> = {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
+  for (const group of rankGroups) {
+    const severity = SEVERITY_BY_RANK[group.severityRank];
+    if (severity === undefined) corruptGrowthMap();
+    let band: GrowthMapPriorityBand;
+    try {
+      band = deriveGrowthMapUrlOpportunityRank({
+        severity,
+        coverageCount: group.coverageCount,
+        findingCount: group.findingCount,
+      });
+    } catch {
+      return corruptGrowthMap();
+    }
+    counts[band] += group.urlCount;
+  }
+  return counts;
 }
 
 function findingTargetRelation(
@@ -684,6 +771,8 @@ function portfolioItems(
   );
   const findings = findingById(rows.findings, context.run.output_locale);
   const baseCoverage = sourceCoverage(context, now);
+  const declaredLanguageCodes =
+    context.frozen.contextProjection?.siteLanguage.languageCodes ?? [];
   return rows.inventory.map((inventory) => {
     const pageObservations = observations.get(inventory.site_page_id) ?? [];
     const pageTargets = targets.get(inventory.site_page_id) ?? [];
@@ -696,20 +785,37 @@ function portfolioItems(
         REVIEWABLE_STATES.has(finding.review_state)
       );
     });
+    const rankableFindingIds = findingIds.filter((findingId) => {
+      const finding = findings.get(findingId);
+      return (
+        finding !== undefined &&
+        finding.active &&
+        finding.review_state !== UNRANKABLE_REVIEW_STATE
+      );
+    });
     let title: string | null = null;
+    let pageProjection: Record<string, unknown> | null = null;
     if (
       inventory.page_snapshot_id !== null &&
       inventory.page_snapshot_content_hash !== null &&
       inventory.page_snapshot_extract !== null
     ) {
       try {
-        title = verifiedGrowthMapPageTitle({
+        pageProjection = verifiedGrowthMapPageProjection({
           normalizedUrl: inventory.normalized_url,
           contentHash: inventory.page_snapshot_content_hash,
           canonicalExtract: inventory.page_snapshot_canonical_extract,
           extract: inventory.page_snapshot_extract,
         });
       } catch {
+        corruptGrowthMap();
+      }
+      const rawTitle = pageProjection?.["title"];
+      if (typeof rawTitle === "string") {
+        const normalized = rawTitle.trim();
+        title =
+          normalized.length > 0 && normalized.length <= 500 ? normalized : null;
+      } else if (rawTitle !== null && rawTitle !== undefined) {
         corruptGrowthMap();
       }
     }
@@ -737,7 +843,11 @@ function portfolioItems(
       identitySources: pageIdentitySources(inventory, pageObservations),
       normalizedUrl: inventory.normalized_url,
       title,
-      pageType: null,
+      pageType: classifyGrowthMapPageType({
+        normalizedUrl: inventory.normalized_url,
+        projection: pageProjection,
+        ...(declaredLanguageCodes.length > 0 ? { declaredLanguageCodes } : {}),
+      }),
       templateKey: derivedTemplateKey(pageTargets),
       clusterKey: null,
       ownerId: null,
@@ -754,7 +864,9 @@ function portfolioItems(
         context,
         inventory.site_page_id,
         findingIds,
+        rankableFindingIds,
         findings,
+        rows.findingCoverage,
       ),
       delta: {
         availability: "unavailable",
@@ -778,15 +890,23 @@ async function listProjectAuditUrlsInSnapshot(
     projectId,
     opts.diagnosticRunId ?? null,
   );
-  const page = await new GrowthMapReadRepository(exec).listCurrentRunUrls(
+  const repo = new GrowthMapReadRepository(exec);
+  const listFilters = {
+    cursor: opts.cursor,
+    opportunitiesOnly: true,
+    ...(opts.search ? { search: opts.search } : {}),
+  };
+  const page = await repo.listCurrentRunUrls(context.projectScope, context.run.id, {
+    limit: opts.limit,
+    ...listFilters,
+  });
+  // Counted server-side under the exact same filters: a keyset page can never
+  // see its own offset, and a client summing the loaded rows would report the
+  // page as if it were the whole generation.
+  const summary = await repo.summarizeCurrentRunUrls(
     context.projectScope,
     context.run.id,
-    {
-      limit: opts.limit,
-      cursor: opts.cursor,
-      opportunitiesOnly: true,
-      ...(opts.search ? { search: opts.search } : {}),
-    },
+    listFilters,
   );
   const rows = await loadProjectionRows(exec, context, page.rows);
   const result = {
@@ -800,6 +920,14 @@ async function listProjectAuditUrlsInSnapshot(
       nextCursor: page.nextCursor,
       hasNext: page.nextCursor !== null,
       coverage: sourceCoverage(context, now),
+      summary: {
+        urlCount: summary.urlCount,
+        opportunityUrlCount: summary.opportunityUrlCount,
+        listedUrlCount: summary.listedUrlCount,
+        signalCount: summary.signalCount,
+        priorityCounts: summaryPriorityCounts(summary.rankGroups),
+        precedingUrlCount: summary.precedingUrlCount,
+      },
     },
   };
   try {

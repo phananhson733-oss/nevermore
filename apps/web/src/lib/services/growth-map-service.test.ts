@@ -168,18 +168,52 @@ function publishedGenerationFixture(runId = olderPublishedRunId): {
   };
 }
 
+const emptySummary = {
+  urlCount: 0,
+  opportunityUrlCount: 0,
+  listedUrlCount: 0,
+  signalCount: 0,
+  precedingUrlCount: 0,
+  rankGroups: [],
+} as const;
+
+function installPortfolioSummary(
+  summary: {
+    readonly urlCount: number;
+    readonly opportunityUrlCount: number;
+    readonly listedUrlCount: number;
+    readonly signalCount: number;
+    readonly precedingUrlCount: number;
+    readonly rankGroups: readonly {
+      readonly severityRank: number;
+      readonly coverageCount: number;
+      readonly findingCount: number;
+      readonly urlCount: number;
+    }[];
+  } = emptySummary,
+) {
+  return vi
+    .spyOn(GrowthMapReadRepository.prototype, "summarizeCurrentRunUrls")
+    .mockResolvedValue(summary);
+}
+
 function installUrlDetailFixtures(options: {
   readonly ruleId: string;
   readonly reviewState: "unreviewed" | "confirmed";
   readonly withExecution: boolean;
+  readonly severity?: "critical" | "high" | "medium" | "low";
+  readonly active?: boolean;
+  readonly normalizedUrl?: string;
+  readonly coverageCount?: number;
 }) {
   const generation = publishedGenerationFixture();
+  const pageUrl = options.normalizedUrl ?? normalizedUrl;
   const pageExtract = {
     schemaVersion: "crawl.page-extract.v1",
     depth: 0,
-    subjectUrl: normalizedUrl,
+    subjectUrl: pageUrl,
     projection: {
-      fetchUrl: normalizedUrl,
+      fetchUrl: pageUrl,
       title: "Customer onboarding",
     },
   };
@@ -188,8 +222,8 @@ function installUrlDetailFixtures(options: {
     project_id: projectId,
     site_page_id: sitePageId,
     site_id: siteId,
-    normalized_url: normalizedUrl,
-    normalized_url_hash: sha256Hex(normalizedUrl),
+    normalized_url: pageUrl,
+    normalized_url_hash: sha256Hex(pageUrl),
     template_key: null,
     site_page_created_at: capturedAt,
     page_snapshot_id: "00000000-0000-4000-8000-000000000019",
@@ -210,13 +244,13 @@ function installUrlDetailFixtures(options: {
     provider: "crawl",
     metric_key: "crawl.page.v1",
     subject_type: "url",
-    subject_ref: normalizedUrl,
+    subject_ref: pageUrl,
     observed_at: capturedAt,
     availability: "available",
     value_numeric: null,
     value_text: null,
     value_json: {
-      fetchUrl: normalizedUrl,
+      fetchUrl: pageUrl,
       status: 200,
       finalStatus: 200,
       wordCount: 1200,
@@ -238,13 +272,13 @@ function installUrlDetailFixtures(options: {
     diagnostic_run_id: olderPublishedRunId,
     relation: "direct_url",
     target_kind: "url",
-    target_ref: normalizedUrl,
+    target_ref: pageUrl,
     resolution_state: "resolved",
     basis_kind: "crawl_exact_fetch",
     site_page_id: sitePageId,
     page_snapshot_id: inventory.page_snapshot_id,
     source_observation_id: observationId,
-    member_ref: normalizedUrl,
+    member_ref: pageUrl,
     limitation: null,
     relation_key: "direct-url",
     created_at: capturedAt,
@@ -253,7 +287,7 @@ function installUrlDetailFixtures(options: {
     id: findingId,
     workspace_id: scope.workspaceId,
     project_id: projectId,
-    finding_key: `${normalizedUrl}:${options.ruleId}`,
+    finding_key: `${pageUrl}:${options.ruleId}`,
     rule_id: options.ruleId,
     rule_version: options.ruleId === "TECH-HTTP-001" ? 2 : 1,
     rule_family: "technical",
@@ -264,14 +298,14 @@ function installUrlDetailFixtures(options: {
     summary: "Fix the selected URL.",
     summary_locale: "en",
     summary_invocation_id: null,
-    subject_refs: [normalizedUrl],
-    severity: "high",
+    subject_refs: [pageUrl],
+    severity: options.severity ?? "high",
     confidence: "high",
     review_state: options.reviewState,
     review_revision: options.reviewState === "confirmed" ? 1 : 0,
     review_reason: null,
     review_note: null,
-    active: true,
+    active: options.active ?? true,
     regressed: false,
     first_seen_run_id: olderPublishedRunId,
     last_seen_run_id: olderPublishedRunId,
@@ -308,6 +342,10 @@ function installUrlDetailFixtures(options: {
   vi.spyOn(GrowthMapReadRepository.prototype, "listFindings").mockResolvedValue(
     [finding] as never,
   );
+  vi.spyOn(
+    GrowthMapReadRepository.prototype,
+    "listFindingCoverageCounts",
+  ).mockResolvedValue(new Map([[findingId, options.coverageCount ?? 1]]));
   vi.spyOn(EvidenceRepository.prototype, "listForFindings").mockResolvedValue([
     { finding_id: findingId, evidence_id: evidenceId, role: "primary" },
   ] as never);
@@ -503,6 +541,7 @@ describe("Growth Map URL read boundary", () => {
     const listUrls = vi
       .spyOn(GrowthMapReadRepository.prototype, "listCurrentRunUrls")
       .mockResolvedValue({ rows: [], nextCursor: null });
+    installPortfolioSummary();
     vi.spyOn(
       GrowthMapReadRepository.prototype,
       "listObservations",
@@ -532,6 +571,281 @@ describe("Growth Map URL read boundary", () => {
     expect(latestRun).not.toHaveBeenCalled();
   });
 
+  it("reports the whole frozen generation in meta.summary, not the loaded page", async () => {
+    const current = publishedGenerationFixture();
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+      id: projectId,
+    } as never);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "findReadableRunById",
+    ).mockResolvedValue(current.run);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      current.snapshot,
+    ]);
+    const listUrls = vi
+      .spyOn(GrowthMapReadRepository.prototype, "listCurrentRunUrls")
+      .mockResolvedValue({ rows: [], nextCursor: "bmV4dC1wYWdl" });
+    // The production Astrologywiki generation: 647 admitted URLs, 359 with an
+    // Opportunity, and only 8 deduplicated Findings behind 2934 memberships.
+    const summarize = installPortfolioSummary({
+      urlCount: 647,
+      opportunityUrlCount: 359,
+      listedUrlCount: 359,
+      signalCount: 8,
+      precedingUrlCount: 0,
+      rankGroups: [
+        { severityRank: 2, coverageCount: 354, findingCount: 1, urlCount: 353 },
+        { severityRank: 2, coverageCount: 6, findingCount: 1, urlCount: 1 },
+        { severityRank: 2, coverageCount: 2, findingCount: 1, urlCount: 2 },
+        { severityRank: 2, coverageCount: 1, findingCount: 1, urlCount: 3 },
+      ],
+    });
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listObservations",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listResolvedTargets",
+    ).mockResolvedValue([]);
+
+    const result = await listProjectAuditUrls(
+      scope,
+      projectId,
+      {
+        limit: 50,
+        cursor: null,
+        search: "wiki",
+        diagnosticRunId: olderPublishedRunId,
+      },
+      {} as never,
+    );
+
+    expect(result.meta.summary).toEqual({
+      urlCount: 647,
+      opportunityUrlCount: 359,
+      listedUrlCount: 359,
+      signalCount: 8,
+      // A medium Finding on 354 pages outranks the same severity on one page.
+      priorityCounts: { critical: 0, high: 353, medium: 1, low: 5 },
+      precedingUrlCount: 0,
+    });
+    // The summary is counted under the exact filters the page was read with.
+    expect(summarize).toHaveBeenCalledWith(
+      { workspaceId: scope.workspaceId, projectId },
+      olderPublishedRunId,
+      { cursor: null, opportunitiesOnly: true, search: "wiki" },
+    );
+    expect(listUrls).toHaveBeenCalledWith(
+      { workspaceId: scope.workspaceId, projectId },
+      olderPublishedRunId,
+      { limit: 50, cursor: null, opportunitiesOnly: true, search: "wiki" },
+    );
+  });
+
+  it("fails closed when a summary rank group has no readable severity", async () => {
+    const current = publishedGenerationFixture();
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue({
+      id: projectId,
+    } as never);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "findReadableRunById",
+    ).mockResolvedValue(current.run);
+    vi.spyOn(DataSnapshotsRepository.prototype, "findByIds").mockResolvedValue([
+      current.snapshot,
+    ]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listCurrentRunUrls",
+    ).mockResolvedValue({ rows: [], nextCursor: null });
+    installPortfolioSummary({
+      urlCount: 1,
+      opportunityUrlCount: 1,
+      listedUrlCount: 1,
+      signalCount: 1,
+      precedingUrlCount: 0,
+      rankGroups: [
+        { severityRank: 4, coverageCount: 1, findingCount: 1, urlCount: 1 },
+      ],
+    });
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listObservations",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      GrowthMapReadRepository.prototype,
+      "listResolvedTargets",
+    ).mockResolvedValue([]);
+
+    await expect(
+      listProjectAuditUrls(
+        scope,
+        projectId,
+        { limit: 50, cursor: null, diagnosticRunId: olderPublishedRunId },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+  });
+
+  it.each([
+    {
+      name: "an ignored Finding",
+      reviewState: "ignored" as const,
+      active: true,
+    },
+    {
+      name: "a resolved Finding",
+      reviewState: "unreviewed" as const,
+      active: false,
+    },
+  ])("never lets $name keep a URL ranked", async ({ reviewState, active }) => {
+    installUrlDetailFixtures({
+      ruleId: "TECH-HTTP-001",
+      reviewState: reviewState as "unreviewed" | "confirmed",
+      withExecution: false,
+      active,
+      coverageCount: 354,
+    });
+
+    const result = await getProjectAuditUrl(
+      scope,
+      projectId,
+      sitePageId,
+      { diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    expect(result.data.findingIds).toEqual([findingId]);
+    expect(result.data.reviewableFindingIds).toEqual([]);
+    expect(result.data.priority).toEqual({
+      availability: "unavailable",
+      value: null,
+      limitation: "指向该 URL 的 Finding 已全部被忽略或解决，因此不再派生优先级。",
+    });
+  });
+
+  it("keeps an accepted Finding ranking its URL until it is resolved", async () => {
+    installUrlDetailFixtures({
+      ruleId: "SEARCH-CTR-004",
+      reviewState: "confirmed",
+      withExecution: true,
+      severity: "high",
+      coverageCount: 1,
+    });
+
+    const result = await getProjectAuditUrl(
+      scope,
+      projectId,
+      sitePageId,
+      { diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    // A confirmed Finding no longer needs a review decision, so it leaves
+    // reviewableFindingIds, but it is still an accepted open problem and the
+    // Opportunity keyset still orders by it.
+    expect(result.data.reviewableFindingIds).toEqual([]);
+    expect(result.data.priority).toMatchObject({
+      availability: "available",
+      value: "high",
+      basis: { findingIds: [findingId] },
+    });
+  });
+
+  it("ranks a medium Finding by its cross-page blast radius, not by severity alone", async () => {
+    installUrlDetailFixtures({
+      ruleId: "TECH-LINKGRAPH-005",
+      reviewState: "unreviewed",
+      withExecution: false,
+      severity: "medium",
+      coverageCount: 354,
+    });
+
+    const result = await getProjectAuditUrl(
+      scope,
+      projectId,
+      sitePageId,
+      { diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    expect(result.data.priority).toMatchObject({
+      availability: "available",
+      value: "high",
+      basis: {
+        derivationVersion: "url_opportunity_rank.v1",
+        sitePageId,
+        findingIds: [findingId],
+      },
+    });
+  });
+
+  it("leaves a single-page medium Finding at the bottom of the same generation", async () => {
+    installUrlDetailFixtures({
+      ruleId: "SEARCH-CTR-004",
+      reviewState: "unreviewed",
+      withExecution: false,
+      severity: "medium",
+      coverageCount: 1,
+    });
+
+    const result = await getProjectAuditUrl(
+      scope,
+      projectId,
+      sitePageId,
+      { diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    expect(result.data.priority).toMatchObject({
+      availability: "available",
+      value: "low",
+    });
+  });
+
+  it.each([
+    {
+      name: "a language-prefixed wiki page",
+      url: "https://example.test/zh/wiki/aries-rising/",
+      pageType: "documentation",
+    },
+    {
+      name: "an unprefixed blog post",
+      url: "https://example.test/blog/2026/mercury-retrograde/",
+      pageType: "blog",
+    },
+    {
+      name: "a locale home page",
+      url: "https://example.test/en/",
+      pageType: "home",
+    },
+    {
+      name: "an unmatched path",
+      url: "https://example.test/customer-onboarding/",
+      pageType: null,
+    },
+  ])("classifies $name without touching template_key", async ({ url, pageType }) => {
+    installUrlDetailFixtures({
+      ruleId: "TECH-HTTP-001",
+      reviewState: "unreviewed",
+      withExecution: false,
+      normalizedUrl: url,
+    });
+
+    const result = await getProjectAuditUrl(
+      scope,
+      projectId,
+      sitePageId,
+      { diagnosticRunId: olderPublishedRunId },
+      {} as never,
+    );
+
+    expect(result.data.pageType).toBe(pageType);
+    expect(result.data.templateKey).toBeNull();
+  });
+
   it("surfaces the run's stored coverage limitations behind the generic partial sentence", async () => {
     const current = publishedGenerationFixture();
     const storedLimitation =
@@ -558,6 +872,7 @@ describe("Growth Map URL read boundary", () => {
       GrowthMapReadRepository.prototype,
       "listCurrentRunUrls",
     ).mockResolvedValue({ rows: [], nextCursor: null });
+    installPortfolioSummary();
     vi.spyOn(
       GrowthMapReadRepository.prototype,
       "listObservations",

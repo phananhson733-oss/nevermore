@@ -388,11 +388,18 @@ function buildCoverage(
         ? "未连接 GA4；落地页转化规则已跳过。"
         : "GA4 not connected; landing conversion was skipped.",
     );
+  // The engine sees only that no keyword-gap dataset reached this run's frozen
+  // manifest. It cannot see WHY: the customer may never have imported a CSV, or
+  // our own DataForSEO step may have skipped itself (for example when the
+  // project language is still undetermined). Naming one of those as the cause
+  // would be an accusation we cannot support, so the copy states the run fact
+  // and both open possibilities. Attributing this precisely needs the Analysis
+  // Refresh step's `skip_reason` carried into DiagnosticContext.coverage.
   if (ctx.coverage.csv === "unavailable")
     limitations.push(
       zh
-        ? "未提供关键词差距 CSV 或 DataForSEO 快照；内容差距规则已跳过。"
-        : "No keyword-gap CSV or DataForSEO snapshot; content gap was skipped.",
+        ? "本次诊断没有可用的关键词差距数据：未导入 CSV，或本轮未采集到 DataForSEO 快照；内容差距规则已跳过。"
+        : "This run had no keyword-gap dataset: no CSV was imported, or no DataForSEO snapshot was collected for it; content gap was skipped.",
     );
   return { overall, domains, limitations };
 }

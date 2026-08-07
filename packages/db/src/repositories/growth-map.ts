@@ -93,6 +93,37 @@ export interface GrowthMapUrlInventoryPage {
   readonly nextCursor: string | null;
 }
 
+/** Summary options mirror the list filters minus its page size. */
+export interface GrowthMapUrlSummaryOptions {
+  readonly cursor: string | null;
+  readonly search?: string;
+  readonly opportunitiesOnly?: boolean;
+}
+
+/**
+ * Opportunity URLs collapsed onto the exact deterministic inputs a priority
+ * derivation is allowed to read. Returning groups instead of per-URL rows keeps
+ * the generation-wide banding bounded while leaving one implementation of the
+ * derivation itself in the service layer.
+ */
+export interface GrowthMapOpportunityRankGroup {
+  /** 0 critical, 1 high, 2 medium, 3 low; 4 means no readable severity. */
+  readonly severityRank: number;
+  readonly coverageCount: number;
+  readonly findingCount: number;
+  readonly urlCount: number;
+}
+
+/** Deterministic counts for one frozen generation, not a cross-run total. */
+export interface GrowthMapUrlInventorySummary {
+  readonly urlCount: number;
+  readonly opportunityUrlCount: number;
+  readonly listedUrlCount: number;
+  readonly signalCount: number;
+  readonly precedingUrlCount: number;
+  readonly rankGroups: readonly GrowthMapOpportunityRankGroup[];
+}
+
 export interface GrowthMapObservationLookup {
   readonly snapshotIds: readonly string[];
   readonly sitePageIds: readonly string[];
@@ -127,6 +158,35 @@ type RawOpportunityUrlInventoryRow = RawUrlInventoryRow & {
   readonly opportunity_priority_rank: number;
   readonly opportunity_finding_count: number;
 };
+
+type RawUrlInventorySummaryRow = {
+  readonly url_count: number | string;
+  readonly opportunity_url_count: number | string;
+  readonly listed_url_count: number | string;
+  readonly signal_count: number | string;
+  readonly preceding_url_count: number | string;
+};
+
+type RawOpportunityRankGroupRow = {
+  readonly severity_rank: number | string;
+  readonly coverage_count: number | string;
+  readonly finding_count: number | string;
+  readonly url_count: number | string;
+};
+
+type RawFindingCoverageRow = {
+  readonly finding_id: string;
+  readonly coverage_count: number | string;
+};
+
+/** PostgreSQL may hand back bigint counts as text; never coerce silently. */
+function requiredCount(label: string, value: number | string): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new RangeError(`${label} must be a non-negative safe integer`);
+  }
+  return parsed;
+}
 
 const CANONICAL_BASE64URL = /^[A-Za-z0-9_-]+$/u;
 
@@ -354,6 +414,92 @@ function currentRunUrlInventoryCtes(
         and ${sitePages.project_id} = ${scope.projectId}
     )
   `;
+}
+
+/**
+ * Shared Opportunity aggregation for both the URL page and its generation-wide
+ * summary.
+ *
+ * `finding_coverage` is one Finding's cross-page blast radius inside this run;
+ * `opportunity_sort` reduces it to the per-SitePage keyset (widest blast
+ * radius, then strongest severity, then most stacked Findings). Both exclude
+ * inactive and ignored Findings so a human review decision actually removes a
+ * URL from the Opportunity list instead of only hiding one Finding on it.
+ */
+function opportunitySortCtes(scope: ProjectScope, diagnosticRunId: string) {
+  return sql`
+    , finding_coverage as (
+      select
+        ${findingTargets.finding_id} as finding_id,
+        count(distinct ${findingTargets.site_page_id})::integer as coverage_count
+      from ${findingTargets}
+      inner join ${findings}
+        on ${findings.id} = ${findingTargets.finding_id}
+       and ${findings.workspace_id} = ${scope.workspaceId}
+       and ${findings.project_id} = ${scope.projectId}
+       and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
+       and ${findings.active}
+       and ${findings.review_state} <> 'ignored'
+      where ${findingTargets.workspace_id} = ${scope.workspaceId}
+        and ${findingTargets.project_id} = ${scope.projectId}
+        and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
+        and ${findingTargets.resolution_state} = 'resolved'
+        and ${findingTargets.site_page_id} is not null
+      group by ${findingTargets.finding_id}
+    ), opportunity_sort as (
+      select
+        ${findingTargets.site_page_id} as site_page_id,
+        max(finding_coverage.coverage_count)::integer as coverage_count,
+        min(
+          case ${findings.severity}
+            when 'critical' then 0
+            when 'high' then 1
+            when 'medium' then 2
+            when 'low' then 3
+            else 4
+          end
+        )::integer as priority_rank,
+        count(distinct ${findingTargets.finding_id})::integer as finding_count
+      from ${findingTargets}
+      inner join ${findings}
+        on ${findings.id} = ${findingTargets.finding_id}
+       and ${findings.workspace_id} = ${scope.workspaceId}
+       and ${findings.project_id} = ${scope.projectId}
+       and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
+       and ${findings.active}
+       and ${findings.review_state} <> 'ignored'
+      inner join finding_coverage
+        on finding_coverage.finding_id = ${findingTargets.finding_id}
+      where ${findingTargets.workspace_id} = ${scope.workspaceId}
+        and ${findingTargets.project_id} = ${scope.projectId}
+        and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
+        and ${findingTargets.resolution_state} = 'resolved'
+        and ${findingTargets.site_page_id} is not null
+      group by ${findingTargets.site_page_id}
+    )
+  `;
+}
+
+/** Rows strictly after the cursor row in the composite Opportunity order. */
+function afterOpportunityCursor(cursor: GrowthMapOpportunityKeyset | null) {
+  if (cursor === null) return sql`true`;
+  return sql`(
+    coalesce(opportunity_sort.coverage_count, 0) < ${cursor.coverageCount}
+    or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+      and coalesce(opportunity_sort.priority_rank, 4) > ${cursor.priorityRank})
+    or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+      and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+      and coalesce(opportunity_sort.finding_count, 0) < ${cursor.findingCount})
+    or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+      and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+      and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
+      and inventory.site_page_created_at > ${cursor.timestamp})
+    or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
+      and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
+      and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
+      and inventory.site_page_created_at = ${cursor.timestamp}
+      and inventory.site_page_id > ${cursor.id}::uuid)
+  )`;
 }
 
 /**
@@ -722,55 +868,7 @@ export class GrowthMapReadRepository extends Repository {
 
     const result = await this.exec.execute<RawOpportunityUrlInventoryRow>(sql`
       ${currentRunUrlInventoryCtes(scope, diagnosticRunId)}
-      , finding_coverage as (
-        select
-          ${findingTargets.finding_id} as finding_id,
-          count(distinct ${findingTargets.site_page_id})::integer as coverage_count
-        from ${findingTargets}
-        inner join ${findings}
-          on ${findings.id} = ${findingTargets.finding_id}
-         and ${findings.workspace_id} = ${scope.workspaceId}
-         and ${findings.project_id} = ${scope.projectId}
-         and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
-         and ${findings.active}
-         and ${findings.review_state} <> 'ignored'
-        where ${findingTargets.workspace_id} = ${scope.workspaceId}
-          and ${findingTargets.project_id} = ${scope.projectId}
-          and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
-          and ${findingTargets.resolution_state} = 'resolved'
-          and ${findingTargets.site_page_id} is not null
-        group by ${findingTargets.finding_id}
-      ), opportunity_sort as (
-        select
-          ${findingTargets.site_page_id} as site_page_id,
-          max(finding_coverage.coverage_count)::integer as coverage_count,
-          min(
-            case ${findings.severity}
-              when 'critical' then 0
-              when 'high' then 1
-              when 'medium' then 2
-              when 'low' then 3
-              else 4
-            end
-          )::integer as priority_rank,
-          count(distinct ${findingTargets.finding_id})::integer as finding_count
-        from ${findingTargets}
-        inner join ${findings}
-          on ${findings.id} = ${findingTargets.finding_id}
-         and ${findings.workspace_id} = ${scope.workspaceId}
-         and ${findings.project_id} = ${scope.projectId}
-         and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
-         and ${findings.active}
-         and ${findings.review_state} <> 'ignored'
-        inner join finding_coverage
-          on finding_coverage.finding_id = ${findingTargets.finding_id}
-        where ${findingTargets.workspace_id} = ${scope.workspaceId}
-          and ${findingTargets.project_id} = ${scope.projectId}
-          and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
-          and ${findingTargets.resolution_state} = 'resolved'
-          and ${findingTargets.site_page_id} is not null
-        group by ${findingTargets.site_page_id}
-      )
+      ${opportunitySortCtes(scope, diagnosticRunId)}
       select
         inventory.*,
         coalesce(opportunity_sort.coverage_count, 0)::integer as opportunity_coverage_count,
@@ -781,27 +879,7 @@ export class GrowthMapReadRepository extends Repository {
         on opportunity_sort.site_page_id = inventory.site_page_id
       where ${search === null ? sql`true` : sql`position(lower(${search}) in lower(normalized_url)) > 0`}
         and ${options.opportunitiesOnly === false ? sql`true` : sql`coalesce(opportunity_sort.finding_count, 0) > 0`}
-        and ${
-          cursor === null
-            ? sql`true`
-            : sql`(
-                coalesce(opportunity_sort.coverage_count, 0) < ${cursor.coverageCount}
-                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
-                  and coalesce(opportunity_sort.priority_rank, 4) > ${cursor.priorityRank})
-                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
-                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
-                  and coalesce(opportunity_sort.finding_count, 0) < ${cursor.findingCount})
-                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
-                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
-                  and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
-                  and inventory.site_page_created_at > ${cursor.timestamp})
-                or (coalesce(opportunity_sort.coverage_count, 0) = ${cursor.coverageCount}
-                  and coalesce(opportunity_sort.priority_rank, 4) = ${cursor.priorityRank}
-                  and coalesce(opportunity_sort.finding_count, 0) = ${cursor.findingCount}
-                  and inventory.site_page_created_at = ${cursor.timestamp}
-                  and inventory.site_page_id > ${cursor.id}::uuid)
-              )`
-        }
+        and ${afterOpportunityCursor(cursor)}
       order by
         opportunity_coverage_count desc,
         opportunity_priority_rank asc,
@@ -828,6 +906,154 @@ export class GrowthMapReadRepository extends Repository {
             })
           : null,
     };
+  }
+
+  /**
+   * Count the whole frozen generation behind one cursor page.
+   *
+   * Keyset paging carries no offset and a page can never see beyond its own
+   * rows, so every generation-wide number a customer reads has to be counted
+   * here. `urlCount` and `opportunityUrlCount` ignore the list filters on
+   * purpose: they describe the admitted inventory, while `listedUrlCount` and
+   * `precedingUrlCount` describe the exact filtered list the caller is paging.
+   */
+  async summarizeCurrentRunUrls(
+    scope: ProjectScope,
+    diagnosticRunId: string,
+    options: GrowthMapUrlSummaryOptions,
+  ): Promise<GrowthMapUrlInventorySummary> {
+    assertId("diagnosticRunId", diagnosticRunId);
+    const search = validateSearch(options.search);
+    const cursor = options.cursor
+      ? decodeGrowthMapUrlCursor(options.cursor)
+      : null;
+    if (options.cursor && !cursor) {
+      throw new RangeError("cursor is not a canonical SitePage keyset");
+    }
+
+    const totals = await this.exec.execute<RawUrlInventorySummaryRow>(sql`
+      ${currentRunUrlInventoryCtes(scope, diagnosticRunId)}
+      ${opportunitySortCtes(scope, diagnosticRunId)}
+      , inventory_signals as (
+        select distinct ${findingTargets.finding_id} as finding_id
+        from ${findingTargets}
+        inner join ${findings}
+          on ${findings.id} = ${findingTargets.finding_id}
+         and ${findings.workspace_id} = ${scope.workspaceId}
+         and ${findings.project_id} = ${scope.projectId}
+         and ${findings.last_seen_run_id} = ${diagnosticRunId}::uuid
+         and ${findings.active}
+         and ${findings.review_state} <> 'ignored'
+        inner join inventory
+          on inventory.site_page_id = ${findingTargets.site_page_id}
+        where ${findingTargets.workspace_id} = ${scope.workspaceId}
+          and ${findingTargets.project_id} = ${scope.projectId}
+          and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}::uuid
+          and ${findingTargets.resolution_state} = 'resolved'
+          and ${findingTargets.site_page_id} is not null
+      ), scored as (
+        select
+          coalesce(opportunity_sort.finding_count, 0)::integer as finding_count,
+          (${search === null ? sql`true` : sql`position(lower(${search}) in lower(normalized_url)) > 0`}) as matches_search,
+          (${options.opportunitiesOnly === false ? sql`true` : sql`coalesce(opportunity_sort.finding_count, 0) > 0`}) as is_listed,
+          (${afterOpportunityCursor(cursor)}) as after_cursor
+        from inventory
+        left join opportunity_sort
+          on opportunity_sort.site_page_id = inventory.site_page_id
+      )
+      select
+        count(*)::integer as url_count,
+        count(*) filter (where finding_count > 0)::integer as opportunity_url_count,
+        count(*) filter (where matches_search and is_listed)::integer as listed_url_count,
+        count(*) filter (
+          where matches_search and is_listed and not after_cursor
+        )::integer as preceding_url_count,
+        (select count(*)::integer from inventory_signals) as signal_count
+      from scored
+    `);
+    const totalsRow = totals.rows[0];
+    if (!totalsRow) {
+      throw new RangeError("Growth Map URL summary returned no aggregate row");
+    }
+
+    const groups = await this.exec.execute<RawOpportunityRankGroupRow>(sql`
+      ${currentRunUrlInventoryCtes(scope, diagnosticRunId)}
+      ${opportunitySortCtes(scope, diagnosticRunId)}
+      select
+        opportunity_sort.priority_rank::integer as severity_rank,
+        opportunity_sort.coverage_count::integer as coverage_count,
+        opportunity_sort.finding_count::integer as finding_count,
+        count(*)::integer as url_count
+      from inventory
+      inner join opportunity_sort
+        on opportunity_sort.site_page_id = inventory.site_page_id
+      where opportunity_sort.finding_count > 0
+      group by 1, 2, 3
+      order by 1 asc, 2 desc, 3 desc
+    `);
+
+    return {
+      urlCount: requiredCount("urlCount", totalsRow.url_count),
+      opportunityUrlCount: requiredCount(
+        "opportunityUrlCount",
+        totalsRow.opportunity_url_count,
+      ),
+      listedUrlCount: requiredCount(
+        "listedUrlCount",
+        totalsRow.listed_url_count,
+      ),
+      signalCount: requiredCount("signalCount", totalsRow.signal_count),
+      precedingUrlCount: requiredCount(
+        "precedingUrlCount",
+        totalsRow.preceding_url_count,
+      ),
+      rankGroups: groups.rows.map((row) => ({
+        severityRank: requiredCount("severityRank", row.severity_rank),
+        coverageCount: requiredCount("coverageCount", row.coverage_count),
+        findingCount: requiredCount("findingCount", row.finding_count),
+        urlCount: requiredCount("urlCount", row.url_count),
+      })),
+    };
+  }
+
+  /**
+   * Cross-page blast radius of the given Findings inside one frozen run, using
+   * the same definition the Opportunity keyset sorts by. A URL priority is only
+   * allowed to weigh a Finding's reach through this shared count.
+   */
+  async listFindingCoverageCounts(
+    scope: ProjectScope,
+    diagnosticRunId: string,
+    findingIdsInput: readonly string[],
+  ): Promise<ReadonlyMap<string, number>> {
+    assertId("diagnosticRunId", diagnosticRunId);
+    const findingIds = uniqueBoundedIds(
+      "findingIds",
+      findingIdsInput,
+      MAX_GROWTH_MAP_ENTITY_LOOKUP,
+    );
+    if (findingIds.length === 0) return new Map();
+
+    const result = await this.exec.execute<RawFindingCoverageRow>(sql`
+      select
+        ${findingTargets.finding_id} as finding_id,
+        count(distinct ${findingTargets.site_page_id})::integer as coverage_count
+      from ${findingTargets}
+      where ${findingTargets.workspace_id} = ${scope.workspaceId}
+        and ${findingTargets.project_id} = ${scope.projectId}
+        and ${findingTargets.diagnostic_run_id} = ${diagnosticRunId}
+        and ${findingTargets.resolution_state} = 'resolved'
+        and ${findingTargets.site_page_id} is not null
+        and ${findingTargets.finding_id} in (${uuidList(findingIds)})
+      group by ${findingTargets.finding_id}
+      order by ${findingTargets.finding_id} asc
+    `);
+    return new Map(
+      result.rows.map((row) => [
+        row.finding_id,
+        requiredCount("coverageCount", row.coverage_count),
+      ]),
+    );
   }
 
   /**

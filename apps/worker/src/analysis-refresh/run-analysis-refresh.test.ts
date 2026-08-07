@@ -9,6 +9,7 @@ import {
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   IcpProfilesRepository,
+  KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
   ObservationsRepository,
@@ -50,6 +51,7 @@ const IDS = {
   gscSnapshot: "00000000-0000-4000-8000-000000000014",
   dataForSeoSnapshot: "00000000-0000-4000-8000-000000000015",
   dataForSeoBacklinksSnapshot: "00000000-0000-4000-8000-000000000016",
+  keyword: "00000000-0000-4000-8000-000000000017",
 } as const;
 
 const NOW = new Date("2026-07-29T04:00:00.000Z");
@@ -947,6 +949,90 @@ describe("runAnalysisRefresh", () => {
     });
   });
 
+  it("auto-governs evidence-bearing candidate keywords before it freezes the library", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    const candidates = vi.mocked(
+      KeywordsRepository.prototype.listAutoGovernanceCandidates,
+    );
+    candidates.mockResolvedValue([
+      {
+        id: IDS.keyword,
+        workspace_id: IDS.workspace,
+        project_id: IDS.project,
+        display_keyword: "Customer Onboarding Software",
+        normalized_keyword: "customer onboarding software",
+        market: "US",
+        language_tag: "en-US",
+        query_kind: "search_query",
+        mapping_revision: 0,
+        dataforseo_ranked_evidence: 3,
+        gsc_impression_evidence: 0,
+        gsc_attributed_site_page_count: 0,
+        gsc_attributed_site_page_id: null,
+      },
+    ]);
+    const approvals = vi
+      .spyOn(KeywordGovernanceRepository.prototype, "applySystemApprovals")
+      .mockResolvedValue([
+        {
+          keywordId: IDS.keyword,
+          applied: true,
+          skipped: null,
+          governanceRevision: 1,
+        },
+      ]);
+    const frozenRead = vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(candidates).toHaveBeenCalledWith(
+      { workspaceId: IDS.workspace, projectId: IDS.project },
+      { limit: expect.any(Number) },
+    );
+    expect(approvals).toHaveBeenCalledWith(
+      { workspaceId: IDS.workspace, projectId: IDS.project },
+      [
+        {
+          keywordId: IDS.keyword,
+          expectedGovernanceRevision: 0,
+          clusterKey: "customer onboarding",
+          mappingDecision: "unassigned",
+          mappedSitePageId: null,
+          reason: expect.stringContaining("auto_keyword_governance.v1"),
+        },
+      ],
+    );
+    // The freeze must observe the approvals this run just produced.
+    expect(approvals).toHaveBeenCalledBefore(frozenRead);
+  });
+
+  it("writes no automated keyword decision when the rollout flag is off", async () => {
+    vi.stubEnv("KEYWORD_AUTO_GOVERNANCE_ENABLED", "false");
+    try {
+      const harness = createHarness();
+      installCompletedCollectionPlan(harness);
+      const approvals = vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "applySystemApprovals",
+      );
+
+      await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+      expect(
+        KeywordsRepository.prototype.listAutoGovernanceCandidates,
+      ).not.toHaveBeenCalled();
+      expect(approvals).not.toHaveBeenCalled();
+      expect(
+        DiagnosticRunsRepository.prototype.insert,
+      ).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("resumes a completed historical DataForSEO Search Landscape v1 step into Growth Audit", async () => {
     const harness = createHarness({ legacyPlan: true });
     const connection = sourceConnection("dataforseo");
@@ -1414,6 +1500,10 @@ function createHarness(options: {
   vi.spyOn(KeywordsRepository.prototype, "listDiagnosticEligible").mockResolvedValue(
     [],
   );
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "listAutoGovernanceCandidates",
+  ).mockResolvedValue([]);
   vi.spyOn(
     KeywordOccurrencesRepository.prototype,
     "listForEntityIds",

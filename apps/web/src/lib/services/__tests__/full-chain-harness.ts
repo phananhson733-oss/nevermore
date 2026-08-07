@@ -211,7 +211,7 @@ function verticalFor(label: string): FixtureVertical {
 export const DEGRADATION_LIMITATIONS: readonly string[] = [
   "Search Console not connected; search rules were skipped.",
   "GA4 not connected; landing conversion was skipped.",
-  "No keyword-gap CSV or DataForSEO snapshot; content gap was skipped.",
+  "This run had no keyword-gap dataset: no CSV was imported, or no DataForSEO snapshot was collected for it; content gap was skipped.",
 ];
 
 // --- worker-context harness (mirrors run-collection.integration.test.ts) -----

@@ -981,6 +981,18 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       crawlSnapshotId: fixture.crawlSnapshotId,
       meta: { hasNext: false, nextCursor: null, limit: 100 },
     });
+    // Counted across the whole frozen generation, not the two loaded rows: the
+    // analytics-only URL is admitted inventory without an Opportunity, and the
+    // two Findings that reach the inventory are counted once each even though
+    // one of them has two SitePage memberships.
+    expect(result.meta.summary).toEqual({
+      urlCount: 3,
+      opportunityUrlCount: 2,
+      listedUrlCount: 2,
+      signalCount: 2,
+      priorityCounts: { critical: 0, high: 1, medium: 0, low: 1 },
+      precedingUrlCount: 0,
+    });
     expect(result.data).toHaveLength(2);
     const byId = new Map(result.data.map((row) => [row.sitePageId, row]));
     const pricing = byId.get(fixture.pricing.id)!;
@@ -1019,7 +1031,10 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
       title: "Implementation Docs",
       coverage: { availability: "partial" },
       findingIds: [fixture.aggregateFindingId],
-      priority: { availability: "available", value: "medium" },
+      // url_opportunity_rank.v1: a medium Finding reaching only two canonical
+      // pages is the smallest unit of work, so it no longer restates "medium"
+      // the way max_finding_severity.v1 did.
+      priority: { availability: "available", value: "low" },
     });
     expect(docs.metricObservations.every((metric) => metric.provider === "crawl"))
       .toBe(true);
@@ -1056,6 +1071,12 @@ describeDb("Growth Map frozen URL portfolio and detail service", () => {
     );
     expect(second.data).toHaveLength(1);
     expect(second.meta).toMatchObject({ hasNext: false, nextCursor: null });
+    // Keyset paging has no offset, so the page position is counted server-side
+    // and the terminal page must complete the filtered list exactly.
+    expect(first.meta.summary.precedingUrlCount).toBe(0);
+    expect(second.meta.summary.precedingUrlCount).toBe(1);
+    expect(second.meta.summary.listedUrlCount).toBe(2);
+    expect(second.meta.summary.urlCount).toBe(3);
     expect(
       new Set([...first.data, ...second.data].map((row) => row.sitePageId)),
     ).toEqual(

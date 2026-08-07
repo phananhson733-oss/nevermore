@@ -56,6 +56,13 @@ export function createWebEnvSchema(environment: string | undefined) {
     GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
     // Web only needs the public feature state and collection-size policy. The
     // provider credentials remain worker-only and never enter a Vercel runtime.
+    // Automated keyword governance is executed only by the worker, inside the
+    // Growth Audit transaction. Web validates the same key with the same
+    // default so a deployment cannot be configured with two different answers
+    // to "is the Keyword Library populated automatically".
+    KEYWORD_AUTO_GOVERNANCE_ENABLED: z
+      .enum(["true", "false"])
+      .default("true"),
     DATAFORSEO_ENABLED: z.enum(["true", "false"]).default("false"),
     DATAFORSEO_BACKLINKS_ENABLED: z
       .enum(["true", "false"])

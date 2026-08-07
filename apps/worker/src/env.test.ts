@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createWorkerEnvSchema,
   getWorkerEnv,
+  KEYWORD_AUTO_GOVERNANCE_ENV_KEY,
+  keywordAutoGovernanceEnabled,
   resolveLlmClientConfig,
   type WorkerEnv,
 } from "./env.ts";
@@ -161,6 +163,24 @@ describe("worker production URL environment policy", () => {
     ).toBe("false");
     expect(
       production.safeParse({ ...BASE, FINDING_SUMMARIES_ENABLED: "1" }).success,
+    ).toBe(false);
+  });
+
+  it("defaults automated keyword governance ON and accepts only true/false", () => {
+    // The Owner requirement is that an ingested Keyword Library is populated
+    // without manual work, so the rollout default must be on.
+    expect(production.parse(BASE).KEYWORD_AUTO_GOVERNANCE_ENABLED).toBe(
+      "true",
+    );
+    expect(
+      production.parse({ ...BASE, KEYWORD_AUTO_GOVERNANCE_ENABLED: "false" })
+        .KEYWORD_AUTO_GOVERNANCE_ENABLED,
+    ).toBe("false");
+    expect(
+      production.safeParse({
+        ...BASE,
+        KEYWORD_AUTO_GOVERNANCE_ENABLED: "yes",
+      }).success,
     ).toBe(false);
   });
 
@@ -407,5 +427,28 @@ describe("Azure endpoint composition", () => {
       temperature: 0.2,
       authScheme: "api-key",
     });
+  });
+});
+
+describe("keywordAutoGovernanceEnabled", () => {
+  it("is on when unset and off only for an explicit or unvalidated value", () => {
+    expect(keywordAutoGovernanceEnabled({})).toBe(true);
+    expect(
+      keywordAutoGovernanceEnabled({
+        [KEYWORD_AUTO_GOVERNANCE_ENV_KEY]: "true",
+      }),
+    ).toBe(true);
+    expect(
+      keywordAutoGovernanceEnabled({
+        [KEYWORD_AUTO_GOVERNANCE_ENV_KEY]: "false",
+      }),
+    ).toBe(false);
+    // A value the boot schema would already have rejected falls back to the
+    // pre-feature behaviour instead of guessing that it meant "on".
+    expect(
+      keywordAutoGovernanceEnabled({
+        [KEYWORD_AUTO_GOVERNANCE_ENV_KEY]: "TRUE",
+      }),
+    ).toBe(false);
   });
 });

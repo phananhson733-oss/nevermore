@@ -1067,7 +1067,7 @@ function onboardingPortfolioItem(input: {
     ],
     normalizedUrl: input.normalizedUrl,
     title: input.title,
-    pageType: "guide",
+    pageType: "documentation",
     templateKey: "guide-detail",
     clusterKey: null,
     ownerId: null,
@@ -1085,7 +1085,7 @@ function onboardingPortfolioItem(input: {
           availability: "available",
           value: input.priority!,
           basis: {
-            derivationVersion: "max_finding_severity.v1",
+            derivationVersion: "url_opportunity_rank.v1",
             projectId: E2E_PROJECT_ID,
             siteId: E2E_SITE_ID,
             diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
@@ -1104,6 +1104,41 @@ function onboardingPortfolioItem(input: {
       value: null,
       limitation: "No immutable before-and-after recheck is available.",
     },
+  };
+}
+
+function countPriorityBand(
+  items: readonly GrowthMapUrlPortfolioItem[],
+  band: "critical" | "high" | "medium" | "low",
+): number {
+  return items.filter(
+    (item) =>
+      item.priority.availability === "available" && item.priority.value === band,
+  ).length;
+}
+
+/**
+ * The generation-wide counts the portfolio contract requires beside every page.
+ * They are derived from the fixture rows rather than hand-written so the mock
+ * can never claim a total its own rows contradict.
+ */
+function portfolioSummary(items: readonly GrowthMapUrlPortfolioItem[]) {
+  const opportunityUrls = items.filter((item) => item.findingIds.length > 0);
+  const signalIds = new Set(
+    opportunityUrls.flatMap((item) => [...item.findingIds]),
+  );
+  return {
+    urlCount: items.length,
+    opportunityUrlCount: opportunityUrls.length,
+    listedUrlCount: items.length,
+    signalCount: signalIds.size,
+    priorityCounts: {
+      critical: countPriorityBand(opportunityUrls, "critical"),
+      high: countPriorityBand(opportunityUrls, "high"),
+      medium: countPriorityBand(opportunityUrls, "medium"),
+      low: countPriorityBand(opportunityUrls, "low"),
+    },
+    precedingUrlCount: 0,
   };
 }
 
@@ -1144,6 +1179,7 @@ export function growthAuditPortfolioFixture(
       limit: 50,
       nextCursor: null,
       hasNext: false,
+      summary: portfolioSummary([onboarding, secondary]),
       coverage: {
         availability: "partial",
         limitations: [

@@ -2321,8 +2321,11 @@ export interface components {
             current: components["schemas"]["GrowthMapComparisonAnchor"];
         };
         GrowthMapFindingPriorityBasis: {
-            /** @constant */
-            derivationVersion: "max_finding_severity.v1";
+            /**
+             * @description max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Both stay readable so a published generation keeps the derivation it was projected with.
+             * @enum {string}
+             */
+            derivationVersion: "max_finding_severity.v1" | "url_opportunity_rank.v1";
             projectId: components["schemas"]["Uuid"];
             siteId: components["schemas"]["Uuid"];
             diagnosticRunId: components["schemas"]["Uuid"];
@@ -2478,7 +2481,7 @@ export interface components {
             executionPreview: components["schemas"]["ExecutionPreview"] | null;
             executionRef: components["schemas"]["GrowthMapExecutionRef"] | null;
         };
-        /** @description One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot; page type, cluster, and owner remain null unless persisted. */
+        /** @description One canonical SitePage in the current frozen DiagnosticRun. Title is present only when verified from an immutable Crawl PageSnapshot. pageType is a stable page_type.v1 slug derived at read time from the frozen Crawl page extract and the canonical path; null means unclassified, never uncollected. Cluster and owner remain null unless persisted. */
         GrowthMapUrlPortfolioItem: {
             projectId: components["schemas"]["Uuid"];
             siteId: components["schemas"]["Uuid"];
@@ -2505,14 +2508,36 @@ export interface components {
             priority: components["schemas"]["GrowthMapUrlPriority"];
             delta: components["schemas"]["GrowthMapUrlDelta"];
         };
-        /** @description hasNext is true exactly when nextCursor is non-null. */
+        /** @description Opportunity URLs per derived priority band. The four counts sum to opportunityUrlCount. */
+        GrowthMapUrlPortfolioPriorityCounts: {
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+        };
+        /** @description Deterministic counts inside the one frozen generation named by diagnosticRunId. This is not a synthesized cross-generation project total. */
+        GrowthMapUrlPortfolioSummary: {
+            /** @description Canonical SitePages admitted by this frozen generation, ignoring list filters. */
+            urlCount: number;
+            /** @description Admitted SitePages carrying at least one active, non-ignored Finding. */
+            opportunityUrlCount: number;
+            /** @description Rows the current filtered list contains in total across every page. */
+            listedUrlCount: number;
+            /** @description Distinct Findings reaching this generation's URL inventory, deduplicated rather than counted once per affected URL. */
+            signalCount: number;
+            priorityCounts: components["schemas"]["GrowthMapUrlPortfolioPriorityCounts"];
+            /** @description Listed rows before this page. Keyset paging carries no offset, so the page position cannot be inferred client-side. */
+            precedingUrlCount: number;
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. summary counts the whole frozen generation, never only the returned page. */
         GrowthMapUrlPortfolioMeta: {
             limit: number;
             nextCursor: string | null;
             hasNext: boolean;
             coverage: components["schemas"]["GrowthMapCoverage"];
+            summary: components["schemas"]["GrowthMapUrlPortfolioSummary"];
         };
-        /** @description Bounded current-run URL portfolio. It intentionally exposes no project-wide total and every item repeats the same immutable scope identifiers. */
+        /** @description Bounded current-run URL portfolio. It exposes no cross-generation project total; meta.summary counts only inside the frozen generation named by diagnosticRunId, and every item repeats the same immutable scope identifiers. */
         GrowthMapUrlPortfolioResponse: {
             projectId: components["schemas"]["Uuid"];
             siteId: components["schemas"]["Uuid"];

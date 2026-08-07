@@ -2224,22 +2224,28 @@
       }
     },
     "portfolioSummary": {
-      "label": "Loaded-scope summary",
-      "loaded": "Loaded URLs",
-      "loadedNote": "{count, plural, one {# URL loaded in the current range} other {# URLs loaded in the current range}}",
+      "label": "Growth Map scope summary",
+      "loaded": "Collected pages",
+      "loadedNote": "{count, plural, one {# URL in this frozen generation} other {# URLs in this frozen generation}}",
       "opportunityUrls": "URLs with opportunities",
       "signals": "Growth signals",
-      "signalsNote": "{count, plural, one {# signal in the loaded range} other {# signals in the loaded range}}",
-      "uncoveredKeywords": "Loaded uncovered Keywords",
+      "signalsNote": "{count, plural, one {# deduplicated Finding; one Finding can affect many URLs} other {# deduplicated Findings; one Finding can affect many URLs}}",
+      "uncoveredKeywords": "Uncovered Keywords",
       "uncoveredNote": "{count} clusters among {loaded} loaded Keywords",
       "uncoveredNoteTruncated": "{count} clusters among the first {loaded} Keywords · more records exist",
+      "uncoveredEmpty": "The Keyword library has no records yet",
+      "uncoveredEmptyAction": "Import Keywords",
       "unavailable": "Unavailable"
     },
     "portfolioFilters": {
-      "pageType": "Page type filter",
+      "pageType": "Page type",
       "allPageTypes": "All page types",
-      "priority": "Priority filter",
-      "allPriorities": "All priorities"
+      "priority": "Priority",
+      "allPriorities": "All priorities",
+      "more": "More filters",
+      "moreLabel": "More filter controls",
+      "moreActiveCount": "{count} active",
+      "expandRowDetails": "Expand row details"
     },
     "loadingPortfolio": "Reading the real URL portfolio…",
     "loadingDetail": "Reading the selected URL evidence chain…",
@@ -2327,7 +2333,7 @@
     "pageType": "Page type · {value}",
     "templateKey": "Template · {value}",
     "clusterKey": "Cluster · {value}",
-    "primaryOpportunityAction": "Handle the highest-priority opportunity first",
+    "primaryOpportunityAction": "Handle the highest-priority opportunity",
     "pageSummary": "Selected page summary",
     "priority": "Current priority",
     "currentFindings": "Current Findings",
@@ -2508,7 +2514,37 @@
       "sitePage": "SitePage ID",
       "diagnosticRun": "Diagnostic Run ID",
       "crawlSnapshot": "Crawl Snapshot ID"
-    }
+    },
+    "pageTypeLabel": {
+      "home": "Home",
+      "product": "Product",
+      "blog": "Blog",
+      "integration": "Integration",
+      "comparison": "Comparison",
+      "commercial": "Commercial",
+      "resource": "Resource",
+      "trust": "Trust",
+      "solution": "Solution",
+      "template": "Template",
+      "documentation": "Documentation",
+      "unclassified": "Unclassified"
+    },
+    "paginationStatus": "{count, plural, one {# filtered row} other {# filtered rows}} · Page {page} of {pages}",
+    "rowDetails": {
+      "label": "Row details",
+      "templateKey": "Page template",
+      "cluster": "Topic cluster",
+      "sources": "Data sources",
+      "pageSnapshot": "Page snapshot",
+      "unassigned": "Unassigned",
+      "notRecorded": "Not recorded"
+    },
+    "primaryOpportunityReviewAction": "Review the highest-priority opportunity",
+    "primaryOpportunityReviewHint": "This opportunity has no confirmed Action yet, so review it below first.",
+    "modeCount": {
+      "pages": "{count, plural, one {# page} other {# pages}}"
+    },
+    "paginationStatusFiltered": "{count, plural, one {# row matches on this page} other {# rows match on this page}} · Page {page} of {pages}"
   },
   "plan": {
     "kicker": "Evidence-led roadmap · 90 days",

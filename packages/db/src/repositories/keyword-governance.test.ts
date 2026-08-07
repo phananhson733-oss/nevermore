@@ -4,8 +4,10 @@ import {
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH,
   type KeywordGovernanceReviewedProjection,
   type ReviewKeywordInput,
+  type SystemKeywordApprovalInput,
 } from "./keyword-governance.ts";
 import {
   MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION,
@@ -913,5 +915,306 @@ describe("KeywordGovernanceRepository", () => {
       name: "KeywordGovernanceIntegrityError",
       code: "CURRENT_DECISION_DIVERGED",
     });
+  });
+});
+
+describe("KeywordGovernanceRepository.applySystemApprovals", () => {
+  const approval = {
+    keywordId: ids.keyword,
+    expectedGovernanceRevision: 3,
+    clusterKey: "customer onboarding",
+    mappingDecision: "unassigned",
+    mappedSitePageId: null,
+    reason:
+      "auto_keyword_governance.v1 approved this candidate from provider evidence.",
+  } as const satisfies SystemKeywordApprovalInput;
+
+  it("appends an actorless system decision and advances the legacy mirror once", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      // no user decision in the ledger, no mapped Site Page to resolve
+      [],
+      [keyword],
+      [baseline],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+    );
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+
+    await expect(
+      repo.applySystemApprovals(scope, [approval]),
+    ).resolves.toEqual([
+      {
+        keywordId: ids.keyword,
+        applied: true,
+        skipped: null,
+        governanceRevision: 4,
+      },
+    ]);
+
+    expect(db.last("set").args[0]).toMatchObject({
+      status: "approved",
+      cluster_key: "customer onboarding",
+      mapping_decision: "unassigned",
+      mapped_site_page_id: null,
+      mapping_review_state: "confirmed",
+      mapping_revision: 4,
+    });
+    expect(db.last("values").args[0]).toEqual({
+      id: ids.newDecision,
+      workspace_id: ids.workspace,
+      project_id: ids.project,
+      keyword_entity_id: ids.keyword,
+      governance_revision: 4,
+      decision_origin: "system_suggestion",
+      status: "approved",
+      intent: null,
+      buyer_stage: null,
+      topic_node_id: null,
+      topic_model_revision: null,
+      cluster_key_at_decision: "customer onboarding",
+      mapping_decision: "unassigned",
+      mapped_site_page_id: null,
+      review_state: "confirmed",
+      assignment_invalidated_by: null,
+      decided_by: null,
+      reason: approval.reason,
+      decided_at: canonicalDatabaseNow,
+      reviewed_projection: {
+        projectId: ids.project,
+        keywordId: ids.keyword,
+        governanceRevision: 4,
+        status: "approved",
+        intent: null,
+        buyerStage: null,
+        topicNodeId: null,
+        topicModelRevision: null,
+        clusterKey: "customer onboarding",
+        mappingDecision: "unassigned",
+        mappedSitePageId: null,
+        mappingReviewState: "confirmed",
+        assignmentInvalidatedBy: null,
+        earlierHistoryAvailable: false,
+      },
+    });
+    // Serialized against human review by the same project writer lock.
+    const lock = sqlFor(db.calls.find((call) => call.method === "execute")!);
+    expect(lock.sql).toContain("pg_advisory_xact_lock");
+    expect(db.last("for").args).toEqual(["update"]);
+  });
+
+  it("never overwrites a keyword a human has already decided", async () => {
+    const db = new FakeExecutor();
+    db.enqueue([{ keyword_entity_id: ids.keyword }]);
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+
+    await expect(
+      repo.applySystemApprovals(scope, [approval]),
+    ).resolves.toEqual([
+      {
+        keywordId: ids.keyword,
+        applied: false,
+        skipped: "human_decision_exists",
+        governanceRevision: null,
+      },
+    ]);
+    expect(db.all("update")).toHaveLength(0);
+    expect(db.all("insert")).toHaveLength(0);
+  });
+
+  it("is idempotent: a keyword this pass already approved is left untouched", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [],
+      [
+        {
+          ...keyword,
+          status: "approved",
+          cluster_key: "customer onboarding",
+          mapping_review_state: "confirmed",
+          mapping_revision: 4,
+        },
+      ],
+    );
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+
+    await expect(
+      repo.applySystemApprovals(scope, [approval]),
+    ).resolves.toEqual([
+      {
+        keywordId: ids.keyword,
+        applied: false,
+        skipped: "already_reviewed",
+        governanceRevision: null,
+      },
+    ]);
+    expect(db.all("update")).toHaveLength(0);
+    expect(db.all("insert")).toHaveLength(0);
+  });
+
+  it("skips a keyword whose revision moved, a foreign Site Page, and an absent keyword", async () => {
+    const movedDb = new FakeExecutor();
+    movedDb.enqueue([], [{ ...keyword, mapping_revision: 5 }]);
+    await expect(
+      new KeywordGovernanceRepository(
+        movedDb as never,
+        clock,
+      ).applySystemApprovals(scope, [approval]),
+    ).resolves.toMatchObject([{ applied: false, skipped: "revision_moved" }]);
+    expect(movedDb.all("update")).toHaveLength(0);
+
+    const pageDb = new FakeExecutor();
+    // no user decisions, and the requested Site Page resolves to nothing
+    pageDb.enqueue([], []);
+    await expect(
+      new KeywordGovernanceRepository(
+        pageDb as never,
+        clock,
+      ).applySystemApprovals(scope, [
+        {
+          ...approval,
+          mappingDecision: "existing_page",
+          mappedSitePageId: ids.page,
+        },
+      ]),
+    ).resolves.toMatchObject([
+      { applied: false, skipped: "site_page_absent" },
+    ]);
+    expect(pageDb.all("update")).toHaveLength(0);
+
+    const absentDb = new FakeExecutor();
+    absentDb.enqueue([], []);
+    await expect(
+      new KeywordGovernanceRepository(
+        absentDb as never,
+        clock,
+      ).applySystemApprovals(scope, [approval]),
+    ).resolves.toMatchObject([{ applied: false, skipped: "keyword_absent" }]);
+    expect(absentDb.all("update")).toHaveLength(0);
+  });
+
+  it("reports an unreadable ledger instead of repairing or overwriting it", async () => {
+    const missingDb = new FakeExecutor();
+    missingDb.enqueue([], [keyword], []);
+    await expect(
+      new KeywordGovernanceRepository(
+        missingDb as never,
+        clock,
+      ).applySystemApprovals(scope, [approval]),
+    ).resolves.toMatchObject([
+      { applied: false, skipped: "ledger_unreadable" },
+    ]);
+    expect(missingDb.all("update")).toHaveLength(0);
+
+    const divergentDb = new FakeExecutor();
+    divergentDb.enqueue(
+      [],
+      [keyword],
+      [{ ...baseline, status: "approved" }],
+    );
+    await expect(
+      new KeywordGovernanceRepository(
+        divergentDb as never,
+        clock,
+      ).applySystemApprovals(scope, [approval]),
+    ).resolves.toMatchObject([
+      { applied: false, skipped: "ledger_unreadable" },
+    ]);
+    expect(divergentDb.all("update")).toHaveLength(0);
+  });
+
+  it("carries the existing classification forward instead of inventing one", async () => {
+    const classified = {
+      ...keyword,
+      intent: "commercial",
+      buyer_stage: "consideration",
+    };
+    const db = new FakeExecutor();
+    db.enqueue(
+      [],
+      [classified],
+      [
+        {
+          ...baseline,
+          intent: "commercial",
+          buyer_stage: "consideration",
+          reviewed_projection: {
+            ...baselineProjection,
+            intent: "commercial",
+            buyerStage: "consideration",
+          },
+        },
+      ],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+    );
+
+    await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).applySystemApprovals(scope, [approval]);
+
+    expect(db.last("values").args[0]).toMatchObject({
+      intent: "commercial",
+      buyer_stage: "consideration",
+      reviewed_projection: expect.objectContaining({
+        intent: "commercial",
+        buyerStage: "consideration",
+      }),
+    });
+  });
+
+  it("rejects malformed or oversized automated batches before any SQL", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+
+    await expect(
+      repo.applySystemApprovals(scope, [{ ...approval, clusterKey: "" }]),
+    ).rejects.toThrow(/clusterKey/u);
+    await expect(
+      repo.applySystemApprovals(scope, [
+        { ...approval, clusterKey: "x".repeat(201) },
+      ]),
+    ).rejects.toThrow(/clusterKey/u);
+    await expect(
+      repo.applySystemApprovals(scope, [
+        { ...approval, mappingDecision: "existing_page" },
+      ]),
+    ).rejects.toThrow(/mappedSitePageId/u);
+    await expect(
+      repo.applySystemApprovals(scope, [
+        {
+          ...approval,
+          mappingDecision: "new_asset" as never,
+        },
+      ]),
+    ).rejects.toThrow(/unassigned or map it to an existing page/u);
+    await expect(
+      repo.applySystemApprovals(scope, [approval, approval]),
+    ).rejects.toThrow(/repeat a keywordId/u);
+    await expect(
+      repo.applySystemApprovals(
+        scope,
+        Array.from(
+          { length: MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH + 1 },
+          (_value, index) => ({
+            ...approval,
+            keywordId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/at most/u);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("does nothing at all for an empty batch", async () => {
+    const db = new FakeExecutor();
+    await expect(
+      new KeywordGovernanceRepository(
+        db as never,
+        clock,
+      ).applySystemApprovals(scope, []),
+    ).resolves.toEqual([]);
+    expect(db.calls).toEqual([]);
   });
 });

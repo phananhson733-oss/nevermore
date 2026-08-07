@@ -197,6 +197,44 @@ const EMPTY_PORTFOLIO_ITEM = portfolioItem({
   title: "About RelayOps",
 });
 
+function countPriorityBand(
+  items: readonly GrowthMapUrlPortfolioItem[],
+  band: "critical" | "high" | "medium" | "low",
+): number {
+  return items.filter(
+    (item) =>
+      item.priority.availability === "available" && item.priority.value === band,
+  ).length;
+}
+
+/**
+ * Generation-wide counts derived from the fixture rows. A truncated page still
+ * has to name one unread row so the contract invariants stay satisfiable.
+ */
+function portfolioSummary(
+  items: readonly GrowthMapUrlPortfolioItem[],
+  hasNext: boolean,
+) {
+  const opportunityUrls = items.filter((item) => item.findingIds.length > 0);
+  const signalIds = new Set(
+    opportunityUrls.flatMap((item) => [...item.findingIds]),
+  );
+  const listedUrlCount = items.length + (hasNext ? 1 : 0);
+  return {
+    urlCount: listedUrlCount,
+    opportunityUrlCount: opportunityUrls.length,
+    listedUrlCount,
+    signalCount: signalIds.size,
+    priorityCounts: {
+      critical: countPriorityBand(opportunityUrls, "critical"),
+      high: countPriorityBand(opportunityUrls, "high"),
+      medium: countPriorityBand(opportunityUrls, "medium"),
+      low: countPriorityBand(opportunityUrls, "low"),
+    },
+    precedingUrlCount: 0,
+  };
+}
+
 function portfolioFixture(input: {
   readonly data: readonly GrowthMapUrlPortfolioItem[];
   readonly coverage?: "available" | "partial" | "unavailable";
@@ -214,6 +252,7 @@ function portfolioFixture(input: {
       limit: 100,
       nextCursor: hasNext ? "bmV4dC1wYWdl" : null,
       hasNext,
+      summary: portfolioSummary(input.data, hasNext),
       coverage: {
         availability: coverage,
         limitations:

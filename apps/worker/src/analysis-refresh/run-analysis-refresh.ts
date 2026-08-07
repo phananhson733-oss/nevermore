@@ -55,6 +55,8 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
+import { keywordAutoGovernanceEnabled } from "../env.ts";
+import { runAutoKeywordGovernance } from "./auto-keyword-governance.ts";
 import {
   ANALYSIS_REFRESH_COLLECTION_CONFIG,
   dataForSeoBacklinksConnectionConfig,
@@ -1328,6 +1330,19 @@ async function startGrowthAuditStep(
     );
     return;
   }
+
+  // Turn ingested candidate keywords that already carry immutable provider
+  // evidence into diagnostic-eligible facts BEFORE the freeze reads the
+  // library, so an Owner never sees an empty Keyword Library for a project the
+  // collectors already populated. Every write is an actorless
+  // `system_suggestion`; a human decision is never overwritten.
+  const autoGovernance = await runAutoKeywordGovernance(tx, parent.scope, {
+    enabled: keywordAutoGovernanceEnabled(),
+  });
+  ctx.logger.info("analysis_refresh_auto_keyword_governance", {
+    analysisRefreshRunId: parent.job.runId,
+    ...autoGovernance,
+  });
 
   const governance = await freezeDiagnosticGovernance(tx, parent.scope);
   const frozen = buildAnalysisRefreshDiagnosticFrozenInput({

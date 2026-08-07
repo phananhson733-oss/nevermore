@@ -111,10 +111,12 @@ describe("createCrawlAdapter", () => {
     });
     expect(result.limitation.trim()).not.toBe("");
     expect(siteLanguageSummary).toMatchObject({
-      schemaVersion: "crawl.site-language-summary.v1",
+      schemaVersion: "crawl.site-language-summary.v2",
       status: "resolved",
       languageTag: "en-US",
       pagesAnalyzed: 1,
+      dominantTag: "en-US",
+      tagCounts: [{ canonicalTag: "en-US", declaredPageCount: 1 }],
     });
     expect(result.raw).not.toHaveProperty("siteLanguage");
     expect(result.raw.pages[0]?.projection).not.toHaveProperty("htmlLanguage");

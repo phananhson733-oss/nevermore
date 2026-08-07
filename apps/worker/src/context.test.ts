@@ -53,6 +53,7 @@ describe("buildWorkerContext", () => {
         OPENAI_MODEL: "test",
         OPENAI_TEMPERATURE: 0.2,
         FINDING_SUMMARIES_ENABLED: configured,
+        KEYWORD_AUTO_GOVERNANCE_ENABLED: "true",
         DATAFORSEO_ENABLED: "false",
         DATAFORSEO_BACKLINKS_ENABLED: "true",
         DATAFORSEO_MAX_KEYWORDS: 200,

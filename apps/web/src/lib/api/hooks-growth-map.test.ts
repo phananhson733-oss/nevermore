@@ -146,6 +146,14 @@ function portfolioResponse() {
       nextCursor: null,
       hasNext: false,
       coverage: { availability: "available", limitations: [] },
+      summary: {
+        urlCount: 0,
+        opportunityUrlCount: 0,
+        listedUrlCount: 0,
+        signalCount: 0,
+        priorityCounts: { critical: 0, high: 0, medium: 0, low: 0 },
+        precedingUrlCount: 0,
+      },
     },
   } as const;
 }

@@ -616,6 +616,60 @@ describe("Growth Map Keyword Library read service", () => {
     expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
   });
 
+
+  it("surfaces an automatically governed keyword through the current library read", async () => {
+    // The shape automated governance writes: approved + confirmed + a
+    // deterministic cluster key, with no Topic Node and no page assignment.
+    // These are exactly the three conditions the diagnostic freeze requires,
+    // so the same row is simultaneously listable here and freezable.
+    mockProject();
+    const governed = entity({
+      status: "approved",
+      mapping_review_state: "confirmed",
+      cluster_key: "customer onboarding",
+      mapping_decision: "unassigned",
+      mapped_site_page_id: null,
+      mapping_revision: 1,
+    });
+    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+      rows: [governed],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data).toEqual([
+      expect.objectContaining({
+        keywordId: ids.keyword,
+        status: "approved",
+        revision: 1,
+        mappedTarget: expect.objectContaining({ kind: "unassigned" }),
+      }),
+    ]);
+    // Reading the live library must never consult a published generation.
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
+    expect(KeywordsRepository.prototype.listByProject).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { limit: 50, cursor: null },
+    );
+  });
+
   it("returns an empty unavailable page for a valid published generation with no governed keywords", async () => {
     mockProject();
     const governance = {
