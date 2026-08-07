@@ -2,7 +2,7 @@
 title: Cookie 政策
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 本页列出 GenGrowth 设置的每一个 cookie、它的用途和有效期。本页是

@@ -2,7 +2,7 @@
 title: 版权声明
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 ## 我们的内容

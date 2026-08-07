@@ -2,7 +2,7 @@
 title: Cookie Policy
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 This page lists every cookie GenGrowth sets, what it is for, and how long it

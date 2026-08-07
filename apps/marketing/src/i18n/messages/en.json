@@ -6,6 +6,7 @@
     "backToHome": "Back to Home",
     "home": "Home",
     "signIn": "Sign in",
+    "signOut": "Sign out",
     "getStarted": "Get started free"
   },
   "auth": {

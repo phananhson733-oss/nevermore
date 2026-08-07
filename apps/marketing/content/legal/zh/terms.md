@@ -2,7 +2,7 @@
 title: 服务条款
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 本条款适用于你对 gengrowth.ai、app.gengrowth.ai 及其上发布的免费工具（下称

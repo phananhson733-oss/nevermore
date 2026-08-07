@@ -2,7 +2,7 @@
 title: 隐私政策
 version: 1.0
 effectiveDate: 2026-08-07
-status: draft
+status: published
 ---
 
 GenGrowth 是运行在 gengrowth.ai 与 app.gengrowth.ai 上的 SEO / GEO 诊断工作台。
