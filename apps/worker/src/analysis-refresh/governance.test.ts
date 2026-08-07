@@ -6,6 +6,8 @@ import {
   type CompetitorEntityRow,
   type CompetitorOriginKind,
   type CompetitorOriginRow,
+  type KeywordEntityRow,
+  type KeywordOccurrenceForEntityRow,
   type ProjectScope,
 } from "@sf/db";
 import { freezeDiagnosticGovernance } from "./governance.ts";
@@ -109,11 +111,117 @@ function mockLibraryReads(row: CompetitorOriginRow): void {
   ).mockResolvedValue([row]);
 }
 
+const keywordEntityId = "71000000-0000-4000-8000-000000000010";
+
+function keywordEntity(): KeywordEntityRow {
+  return {
+    id: keywordEntityId,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    display_keyword: "www.astrologywiki.com",
+    normalized_keyword: "www.astrologywiki.com",
+    market: "US",
+    language_tag: "en",
+    query_kind: "search_query",
+    status: "approved",
+    intent: null,
+    buyer_stage: null,
+    cluster_key: "www-astrologywiki-com",
+    mapping_decision: "unassigned",
+    mapped_site_page_id: null,
+    mapping_review_state: "confirmed",
+    mapping_revision: 1,
+    first_seen_at: instant,
+    last_seen_at: instant,
+    created_at: instant,
+    updated_at: instant,
+  } as unknown as KeywordEntityRow;
+}
+
+function keywordOccurrence(index: number): KeywordOccurrenceForEntityRow {
+  const suffix = String(index).padStart(12, "0");
+  return {
+    keyword_entity_id: keywordEntityId,
+    id: `71000000-0000-4000-9000-${suffix}`,
+    workspace_id: scope.workspaceId,
+    project_id: scope.projectId,
+    data_snapshot_id: `71000000-0000-4000-a000-${suffix}`,
+    normalized_observation_id: `71000000-0000-4000-b000-${suffix}`,
+    display_keyword: "www.astrologywiki.com",
+    normalized_keyword: "www.astrologywiki.com",
+    market: "US",
+    language_tag: "en",
+    query_kind: "search_query",
+    source_kind: "gsc_top_query",
+    scope_basis: "project_context",
+    source_pointer: "/valueJson/topQueries/0/query",
+    source_ref: `observation:71000000-0000-4000-b000-${suffix}#/valueJson/topQueries/0/query`,
+    collected_at: instant,
+    provider_data_as_of: null,
+    created_at: instant,
+  } as unknown as KeywordOccurrenceForEntityRow;
+}
+
+function mockKeywordReads(
+  occurrences: readonly KeywordOccurrenceForEntityRow[],
+): void {
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([keywordEntity()]);
+  vi.spyOn(
+    KeywordOccurrencesRepository.prototype,
+    "listForEntityIds",
+  ).mockResolvedValue([...occurrences]);
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "listDiagnosticEligible",
+  ).mockResolvedValue([]);
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "listOriginsForCompetitorIds",
+  ).mockResolvedValue([]);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("freezeDiagnosticGovernance (analysis refresh)", () => {
+  it("keeps the newest per-entity window when a head keyword overflows the occurrence cap", async () => {
+    // Regression: the brand query of a www site reached 135 distinct GSC
+    // sources (1 of 1186 entities) and the overflow was treated as fatal,
+    // killing every diagnostic of the project. Healthy growth must bound the
+    // evidence, not the run.
+    const rows = Array.from({ length: 100 }, (_, index) =>
+      keywordOccurrence(index + 1),
+    );
+    mockKeywordReads(rows);
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    const facts = projection.keywordClusters.flatMap(
+      (cluster) => cluster.keywords,
+    );
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.occurrenceRefs).toHaveLength(99);
+    // The repository ranks newest-first; the retained window is its prefix.
+    expect(facts[0]?.occurrenceRefs[0]?.occurrenceId).toBe(rows[0]?.id);
+    expect(facts[0]?.occurrenceRefs[98]?.occurrenceId).toBe(rows[98]?.id);
+  });
+
+  it("freezes all occurrences when a keyword stays inside the per-entity cap", async () => {
+    const rows = [keywordOccurrence(1), keywordOccurrence(2)];
+    mockKeywordReads(rows);
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(
+      projection.keywordClusters.flatMap((cluster) => cluster.keywords)[0]
+        ?.occurrenceRefs,
+    ).toHaveLength(2);
+  });
+
   it("freezes exact canonical lineage for serp_overlap competitor origins", async () => {
     mockLibraryReads(origin("serp_overlap"));
 

@@ -142,17 +142,26 @@ function keywordFact(
   rows: readonly KeywordOccurrenceForEntityRow[],
   seenOccurrenceIds: Set<string>,
 ): GovernanceKeywordFactV1 {
-  if (
+  // A head keyword's occurrences grow without bound: every GSC page
+  // observation whose topQueries mention it adds one, so any site with real
+  // traffic eventually pushes its brand keyword past the per-entity read
+  // window. That is healthy data, not corruption — treating the overflow as
+  // fatal killed every diagnostic of www.astrologywiki.com once its brand
+  // query reached 135 distinct sources (2026-08-07, exactly 1 of 1186
+  // entities over the cap). Keep the newest rows instead: the repository
+  // ranks occurrences by created_at desc with a deterministic id tiebreak,
+  // so the retained evidence is the freshest per-entity window and the
+  // projection stays bounded and reproducible. The total-refs cap below
+  // still fails loudly — it bounds the whole manifest, not one entity's
+  // organic growth.
+  const bounded =
     rows.length > DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity
-  ) {
-    governanceTooLarge(
-      `more than ${DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity} occurrences for keyword ${entity.id}`,
-    );
-  }
-  if (rows.length === 0) {
+      ? rows.slice(0, DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity)
+      : rows;
+  if (bounded.length === 0) {
     corruptGovernance("eligible keyword entity has no immutable occurrence");
   }
-  const occurrenceRefs = rows.map((row) => {
+  const occurrenceRefs = bounded.map((row) => {
     if (row.keyword_entity_id !== entity.id) {
       corruptGovernance(
         "keyword occurrence batch does not match its entity identity",
