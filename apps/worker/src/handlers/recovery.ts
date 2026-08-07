@@ -2,6 +2,7 @@ import {
   AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
   DiagnosticRunsRepository,
+  toRunAttempt,
   ExecutionArtifactsRepository,
   IdempotencyRepository,
   OAuthIntentsRepository,
@@ -621,16 +622,66 @@ async function reconcileOne(
 
   if (
     run.kind === "analysis_refresh" &&
-    run.status === "queued" &&
-    currentAnalysisRefreshJob?.state === "failed"
+    currentAnalysisRefreshJob !== null &&
+    (currentAnalysisRefreshJob.state === "failed" ||
+      currentAnalysisRefreshJob.state === "completed") &&
+    (run.status === "queued" || run.status === "running")
   ) {
-    await ctx.boss.retry(queue, currentAnalysisRefreshJob.id);
-    throwIfRecoveryAborted(signal);
-    ctx.logger.warn("run_recovery_retried", {
-      code: "ANALYSIS_REFRESH_CONTINUATION_RETRY",
-      runId: run.id,
-    });
-    return;
+    // A dead continuation chain is a transport failure, not a plan failure:
+    // the durable plan and its children are intact, only the next delivery is
+    // missing. That covers more than the original queued+failed pair — a tick
+    // that died after its claim leaves the parent `running`, and a redelivery
+    // swallowed as not-deliverable leaves the newest job `completed` — and in
+    // production (2026-08-07, run 69e877d4) that exact combination orphaned a
+    // run whose crawl child had succeeded. Revive within the missing-job
+    // window; past it, fall through to the terminal classification below so a
+    // chain that cannot make progress still ends.
+    // The original queued+failed pair keeps its unconditional redrive — that
+    // is long-standing behavior with pg-boss's own retry bookkeeping behind
+    // it. The newly revivable combinations are bounded by the missing-job
+    // window, measured from when the chain actually died (the newest job's
+    // completion) rather than from the run's start, so a long multi-source
+    // refresh is never denied revival just for being old.
+    const isOriginalRedrivePath =
+      run.status === "queued" && currentAnalysisRefreshJob.state === "failed";
+    const chainDiedAtMs = (
+      currentAnalysisRefreshJob.completedOn ??
+      new Date(run.started_at ?? run.queued_at)
+    ).getTime();
+    if (
+      isOriginalRedrivePath ||
+      (Number.isFinite(chainDiedAtMs) &&
+        now.getTime() - chainDiedAtMs < missingAfterMs)
+    ) {
+      if (run.status === "running") {
+        const reset = await new AsyncRunsRepository(ctx.db).resetToQueued(
+          toRunAttempt(run),
+        );
+        throwIfRecoveryAborted(signal);
+        // A failed CAS means a newer attempt claimed the run between the job
+        // lookup and now — a live chain exists, so recovery must not compete.
+        if (!reset) return;
+      }
+      if (currentAnalysisRefreshJob.state === "failed") {
+        await ctx.boss.retry(queue, currentAnalysisRefreshJob.id);
+      } else {
+        // The newest job is terminal `completed`; pg-boss cannot redrive it,
+        // so mint a fresh continuation delivery for the canonical parent.
+        const jobId = await ctx.boss.send(queue, {
+          runId: run.id,
+          workspaceId: run.workspace_id,
+          projectId: run.project_id,
+          contractVersion: run.contract_version,
+        });
+        if (jobId === null) return;
+      }
+      throwIfRecoveryAborted(signal);
+      ctx.logger.warn("run_recovery_retried", {
+        code: "ANALYSIS_REFRESH_CONTINUATION_RETRY",
+        runId: run.id,
+      });
+      return;
+    }
   }
 
   if (currentJobs.some((job) => job.state === "failed")) {

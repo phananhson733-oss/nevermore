@@ -867,6 +867,127 @@ describe("reconcileActiveRuns", () => {
     expect(failStep).not.toHaveBeenCalled();
   });
 
+  it("revives a wedged running Analysis Refresh parent whose newest continuation completed without handing off", async () => {
+    // Production shape (2026-08-07, run 69e877d4): a tick died after its
+    // claim, the pg-boss redelivery was consumed as not-deliverable, and the
+    // parent sat `running` with the newest job `completed` while its crawl
+    // child had actually succeeded.
+    const row = {
+      ...run("analysis_refresh", {}),
+      status: "running",
+      started_at: new Date(Date.now() - 3 * 60_000).toISOString(),
+      attempt_count: 45,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const reset = vi
+      .spyOn(AsyncRunsRepository.prototype, "resetToQueued")
+      .mockResolvedValue(true);
+    const newestCompleted = {
+      ...jobFor(row, "completed", "00000000-0000-4000-8000-000000000099"),
+      createdOn: new Date(Date.now() - 3 * 60_000),
+      completedOn: new Date(Date.now() - 2 * 60_000),
+    };
+    const send = vi.fn(async () => "00000000-0000-4000-8000-000000000100");
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => null),
+        findJobs: vi.fn(async () => [newestCompleted]),
+        send,
+      }),
+    );
+
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith("refresh.analysis", {
+      runId: row.id,
+      workspaceId: row.workspace_id,
+      projectId: row.project_id,
+      contractVersion: row.contract_version,
+    });
+    expect(terminal).not.toHaveBeenCalled();
+  });
+
+  it("does not compete with a live chain when the wedged-parent reset loses the race", async () => {
+    const row = {
+      ...run("analysis_refresh", {}),
+      status: "running",
+      started_at: new Date(Date.now() - 3 * 60_000).toISOString(),
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockResolvedValue(
+      false,
+    );
+    const send = vi.fn();
+    const newestCompleted = {
+      ...jobFor(row, "completed", "00000000-0000-4000-8000-000000000099"),
+      completedOn: new Date(Date.now() - 60_000),
+    };
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => null),
+        findJobs: vi.fn(async () => [newestCompleted]),
+        send,
+      }),
+    );
+
+    expect(send).not.toHaveBeenCalled();
+    expect(terminal).not.toHaveBeenCalled();
+  });
+
+  it("still terminalizes a completed-without-result chain that died outside the revival window", async () => {
+    const row = {
+      ...run("analysis_refresh", {}),
+      status: "running",
+      started_at: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    const terminal = vi
+      .spyOn(AsyncRunsRepository.prototype, "reconcileActiveToTerminal")
+      .mockResolvedValue(true);
+    const reset = vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued");
+    const send = vi.fn();
+    const newestCompleted = {
+      ...jobFor(row, "completed", "00000000-0000-4000-8000-000000000099"),
+      completedOn: new Date(Date.now() - 2 * 60 * 60_000),
+    };
+
+    await reconcileActiveRuns(
+      contextWithBoss({
+        getJobById: vi.fn(async () => null),
+        findJobs: vi.fn(async () => [newestCompleted]),
+        send,
+      }),
+    );
+
+    expect(reset).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledWith(
+      scopeFor(row),
+      row.id,
+      expect.objectContaining({
+        lastErrorCode: "QUEUE_JOB_COMPLETED_WITHOUT_CANONICAL_RESULT",
+      }),
+    );
+  });
+
   it("classifies only the newest Analysis Refresh continuation terminal state", async () => {
     const row = {
       ...run("analysis_refresh", {}),

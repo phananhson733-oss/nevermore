@@ -1,6 +1,7 @@
 import type { JobWithMetadata, QueueName } from "@sf/db";
 import type { WorkerContext } from "../context.ts";
 import { runCollection, type CollectJobPayload } from "../collection/run-collection.ts";
+import { notifyAnalysisRefreshParent } from "../analysis-refresh/notify-parent.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
 /**
@@ -30,6 +31,9 @@ export async function registerCollectHandlers(ctx: WorkerContext): Promise<void>
               retryLimit: job.retryLimit,
             }),
           );
+          // After the delivery settles, hand an owning Analysis Refresh
+          // parent its continuation immediately (poll tick is the fallback).
+          await notifyAnalysisRefreshParent(ctx, job.data);
         }
       },
     );

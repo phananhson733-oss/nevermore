@@ -97,7 +97,14 @@ export interface AnalysisRefreshRuntime {
   readonly continuationDelayMs?: number;
 }
 
-export const ANALYSIS_REFRESH_CONTINUATION_DELAY_MS = 2_000;
+/**
+ * Poll fallback cadence while a child run is in flight. Child handlers notify
+ * the parent directly the moment a child settles (see
+ * `notifyAnalysisRefreshParent`), so this poll only covers a lost
+ * notification; at 2s it produced 45-61 delivery ticks per run — 45 chances
+ * per run to hit a mid-tick failure — for no added freshness.
+ */
+export const ANALYSIS_REFRESH_CONTINUATION_DELAY_MS = 15_000;
 
 const COLLECTION_STEP_KEYS = [
   "crawl",
@@ -376,6 +383,13 @@ async function scheduleContinuationInTx(
   steps: readonly AnalysisRefreshStepRow[],
   messageKey: string,
   runtime: AnalysisRefreshRuntime,
+  /**
+   * "advance" delivers immediately — the plan just made durable progress and
+   * the next tick has work to do. "poll" waits the fallback delay — the plan
+   * is blocked on a child run, and child settlement already triggers a direct
+   * notification, so the delayed tick is only a safety net.
+   */
+  pace: "advance" | "poll",
 ): Promise<void> {
   const runs = new AsyncRunsRepository(tx);
   if (!(await runs.setProgress(parent.attempt, progress(steps, messageKey)))) {
@@ -393,7 +407,7 @@ async function scheduleContinuationInTx(
       projectId: parent.job.projectId,
       contractVersion: parent.claimed.contract_version,
     },
-    { startAfter: continuationDate(runtime) },
+    pace === "poll" ? { startAfter: continuationDate(runtime) } : {},
   );
 }
 
@@ -431,6 +445,7 @@ async function terminalizeParentInTx(
 
 async function failParent(
   ctx: WorkerContext,
+  tx: DbTx,
   input: {
     readonly attempt: RunAttempt;
     readonly scope: ProjectScope;
@@ -438,30 +453,28 @@ async function failParent(
     readonly error: { readonly code: string; readonly summary: string };
   },
 ): Promise<void> {
-  await ctx.db.transaction(async (tx) => {
-    await lockParentAttempt(tx, input.attempt);
-    await lockProject(tx, input.scope);
-    const plans = new AnalysisRefreshRunsRepository(tx);
-    const steps = await plans.listSteps(input.scope, input.job.runId);
-    const running = steps.find((step) => step.state === "running");
-    if (running) {
-      await plans.failStep(input.scope, input.job.runId, running.step_key, {
-        childAsyncRunId: running.child_async_run_id,
-        error: input.error,
-      });
-    }
-    const currentSteps = await plans.listSteps(input.scope, input.job.runId);
-    await terminalizeParentInTx(
-      tx,
-      {
-        attempt: input.attempt,
-        job: input.job,
-      },
-      currentSteps,
-      "failed",
-      input.error,
-    );
-  });
+  await lockParentAttempt(tx, input.attempt);
+  await lockProject(tx, input.scope);
+  const plans = new AnalysisRefreshRunsRepository(tx);
+  const steps = await plans.listSteps(input.scope, input.job.runId);
+  const running = steps.find((step) => step.state === "running");
+  if (running) {
+    await plans.failStep(input.scope, input.job.runId, running.step_key, {
+      childAsyncRunId: running.child_async_run_id,
+      error: input.error,
+    });
+  }
+  const currentSteps = await plans.listSteps(input.scope, input.job.runId);
+  await terminalizeParentInTx(
+    tx,
+    {
+      attempt: input.attempt,
+      job: input.job,
+    },
+    currentSteps,
+    "failed",
+    input.error,
+  );
 }
 
 function nextUnfinishedStep(
@@ -589,6 +602,7 @@ async function createCollectionChildInTx(
       steps,
       `analysisRefresh.${input.stepKey}.waitingForActiveRun`,
       runtime,
+      "poll",
     );
     return;
   }
@@ -647,6 +661,7 @@ async function createCollectionChildInTx(
     currentSteps,
     `analysisRefresh.${input.stepKey}.running`,
     runtime,
+    "poll",
   );
 }
 
@@ -677,6 +692,7 @@ async function skipOptionalStepInTx(
     steps,
     `analysisRefresh.${stepKey}.skipped`,
     runtime,
+    "advance",
   );
 }
 
@@ -715,6 +731,7 @@ async function failStepInTx(
     steps,
     `analysisRefresh.${step.step_key}.failed`,
     runtime,
+    "advance",
   );
 }
 
@@ -996,6 +1013,7 @@ async function startDataForSeoStep(
       steps,
       "analysisRefresh.dataforseo.waitingForActiveRun",
       runtime,
+      "poll",
     );
     return;
   }
@@ -1125,6 +1143,7 @@ async function startDataForSeoBacklinksStep(
       steps,
       "analysisRefresh.dataforseo_backlinks.waitingForActiveRun",
       runtime,
+      "poll",
     );
     return;
   }
@@ -1269,6 +1288,7 @@ async function startGrowthAuditStep(
       steps,
       "analysisRefresh.growth_audit.waitingForActiveRun",
       runtime,
+      "poll",
     );
     return;
   }
@@ -1468,70 +1488,70 @@ async function startGrowthAuditStep(
     currentSteps,
     "analysisRefresh.growth_audit.running",
     runtime,
+    "poll",
   );
 }
 
 async function advancePendingStep(
   ctx: WorkerContext,
+  tx: DbTx,
   parent: ParentContext,
   stepKey: AnalysisRefreshStepKey,
   runtime: AnalysisRefreshRuntime,
 ): Promise<void> {
-  await ctx.db.transaction(async (tx) => {
-    await lockParentAttempt(tx, parent.attempt);
-    const project = await lockProject(tx, parent.scope);
-    const plans = new AnalysisRefreshRunsRepository(tx);
-    const steps = await plans.listSteps(parent.scope, parent.job.runId);
-    const step = steps.find((candidate) => candidate.step_key === stepKey);
-    if (!step || step.state !== "pending") {
-      throw new Error("Analysis Refresh pending step changed unexpectedly");
-    }
-    if (project.archived_at) {
-      await failStepInTx(
+  await lockParentAttempt(tx, parent.attempt);
+  const project = await lockProject(tx, parent.scope);
+  const plans = new AnalysisRefreshRunsRepository(tx);
+  const steps = await plans.listSteps(parent.scope, parent.job.runId);
+  const step = steps.find((candidate) => candidate.step_key === stepKey);
+  if (!step || step.state !== "pending") {
+    throw new Error("Analysis Refresh pending step changed unexpectedly");
+  }
+  if (project.archived_at) {
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.projectArchived,
+      runtime,
+      true,
+    );
+    return;
+  }
+
+  switch (step.step_key) {
+    case "crawl":
+      await startCrawlStep(ctx, tx, parent, steps, step, runtime);
+      return;
+    case "gsc":
+    case "ga4":
+      await startGoogleStep(
         ctx,
         tx,
         parent,
+        steps,
         step,
-        SAFE_FAILURES.projectArchived,
+        step.step_key,
         runtime,
-        true,
       );
       return;
-    }
-
-    switch (step.step_key) {
-      case "crawl":
-        await startCrawlStep(ctx, tx, parent, steps, step, runtime);
-        return;
-      case "gsc":
-      case "ga4":
-        await startGoogleStep(
-          ctx,
-          tx,
-          parent,
-          steps,
-          step,
-          step.step_key,
-          runtime,
-        );
-        return;
-      case "dataforseo":
-        await startDataForSeoStep(ctx, tx, parent, steps, runtime);
-        return;
-      case "dataforseo_backlinks":
-        await startDataForSeoBacklinksStep(
-          ctx,
-          tx,
-          parent,
-          steps,
-          runtime,
-        );
-        return;
-      case "growth_audit":
-        await startGrowthAuditStep(ctx, tx, parent, steps, step, runtime);
-        return;
-    }
-  });
+    case "dataforseo":
+      await startDataForSeoStep(ctx, tx, parent, steps, runtime);
+      return;
+    case "dataforseo_backlinks":
+      await startDataForSeoBacklinksStep(
+        ctx,
+        tx,
+        parent,
+        steps,
+        runtime,
+      );
+      return;
+    case "growth_audit":
+      await startGrowthAuditStep(ctx, tx, parent, steps, step, runtime);
+      return;
+  }
 }
 
 function collectionSnapshotValid(
@@ -1626,6 +1646,7 @@ async function observeCollectionChildInTx(
       steps,
       `analysisRefresh.${step.step_key}.waiting`,
       runtime,
+      "poll",
     );
     return;
   }
@@ -1724,6 +1745,7 @@ async function observeCollectionChildInTx(
     steps,
     `analysisRefresh.${step.step_key}.completed`,
     runtime,
+    "advance",
   );
 }
 
@@ -1747,6 +1769,7 @@ async function observeAuditChildInTx(
       steps,
       "analysisRefresh.growth_audit.waiting",
       runtime,
+      "poll",
     );
     return;
   }
@@ -1822,51 +1845,41 @@ async function observeAuditChildInTx(
 
 async function observeRunningStep(
   ctx: WorkerContext,
+  tx: DbTx,
   parent: ParentContext,
   stepKey: AnalysisRefreshStepKey,
   runtime: AnalysisRefreshRuntime,
 ): Promise<void> {
-  await ctx.db.transaction(async (tx) => {
-    await lockParentAttempt(tx, parent.attempt);
-    await lockProject(tx, parent.scope);
-    const plans = new AnalysisRefreshRunsRepository(tx);
-    const steps = await plans.listSteps(parent.scope, parent.job.runId);
-    const step = steps.find((candidate) => candidate.step_key === stepKey);
-    if (
-      !step ||
-      step.state !== "running" ||
-      step.child_async_run_id === null
-    ) {
-      throw new Error("Analysis Refresh running step changed unexpectedly");
-    }
-    const child = await new AsyncRunsRepository(tx).findById(
-      parent.scope,
-      step.child_async_run_id,
+  await lockParentAttempt(tx, parent.attempt);
+  await lockProject(tx, parent.scope);
+  const plans = new AnalysisRefreshRunsRepository(tx);
+  const steps = await plans.listSteps(parent.scope, parent.job.runId);
+  const step = steps.find((candidate) => candidate.step_key === stepKey);
+  if (
+    !step ||
+    step.state !== "running" ||
+    step.child_async_run_id === null
+  ) {
+    throw new Error("Analysis Refresh running step changed unexpectedly");
+  }
+  const child = await new AsyncRunsRepository(tx).findById(
+    parent.scope,
+    step.child_async_run_id,
+  );
+  if (!child) {
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.childInvalid,
+      runtime,
     );
-    if (!child) {
-      await failStepInTx(
-        ctx,
-        tx,
-        parent,
-        step,
-        SAFE_FAILURES.childInvalid,
-        runtime,
-      );
-      return;
-    }
+    return;
+  }
 
-    if (step.step_key === "growth_audit") {
-      await observeAuditChildInTx(
-        ctx,
-        tx,
-        parent,
-        step,
-        child,
-        runtime,
-      );
-      return;
-    }
-    await observeCollectionChildInTx(
+  if (step.step_key === "growth_audit") {
+    await observeAuditChildInTx(
       ctx,
       tx,
       parent,
@@ -1874,57 +1887,65 @@ async function observeRunningStep(
       child,
       runtime,
     );
-  });
+    return;
+  }
+  await observeCollectionChildInTx(
+    ctx,
+    tx,
+    parent,
+    step,
+    child,
+    runtime,
+  );
 }
 
 async function finalizeAlreadyTerminalPlan(
   ctx: WorkerContext,
+  tx: DbTx,
   parent: ParentContext,
 ): Promise<void> {
-  await ctx.db.transaction(async (tx) => {
-    await lockParentAttempt(tx, parent.attempt);
-    await lockProject(tx, parent.scope);
-    const steps = await new AnalysisRefreshRunsRepository(tx).listSteps(
-      parent.scope,
-      parent.job.runId,
-    );
-    const requiredFailure = steps.find(
-      (step) => step.required && step.state !== "completed",
-    );
-    if (requiredFailure) {
-      await terminalizeParentInTx(
-        tx,
-        parent,
-        steps,
-        "failed",
-        requiredFailure.error ?? SAFE_FAILURES.projectionInvalid,
-      );
-      return;
-    }
-    const auditStep = steps.find(
-      (step) => step.step_key === "growth_audit",
-    );
-    const auditChild =
-      auditStep?.child_async_run_id
-        ? await new AsyncRunsRepository(tx).findById(
-            parent.scope,
-            auditStep.child_async_run_id,
-          )
-        : null;
-    const status = await finalStatusInTx(
-      tx,
-      parent,
-      steps,
-      auditChild?.status ?? "failed",
-    );
+  await lockParentAttempt(tx, parent.attempt);
+  await lockProject(tx, parent.scope);
+  const steps = await new AnalysisRefreshRunsRepository(tx).listSteps(
+    parent.scope,
+    parent.job.runId,
+  );
+  const requiredFailure = steps.find(
+    (step) => step.required && step.state !== "completed",
+  );
+  if (requiredFailure) {
     await terminalizeParentInTx(
       tx,
       parent,
       steps,
-      status,
-      status === "failed" ? SAFE_FAILURES.auditUnusable : undefined,
+      "failed",
+      requiredFailure.error ?? SAFE_FAILURES.projectionInvalid,
     );
-  });
+    return;
+  }
+  const auditStep = steps.find(
+    (step) => step.step_key === "growth_audit",
+  );
+  const auditChild =
+    auditStep?.child_async_run_id
+      ? await new AsyncRunsRepository(tx).findById(
+          parent.scope,
+          auditStep.child_async_run_id,
+        )
+      : null;
+  const status = await finalStatusInTx(
+    tx,
+    parent,
+    steps,
+    auditChild?.status ?? "failed",
+  );
+  await terminalizeParentInTx(
+    tx,
+    parent,
+    steps,
+    status,
+    status === "failed" ? SAFE_FAILURES.auditUnusable : undefined,
+  );
 }
 
 /**
@@ -1941,71 +1962,80 @@ export async function runAnalysisRefresh(
     workspaceId: job.workspaceId,
     projectId: job.projectId,
   };
-  const runs = new AsyncRunsRepository(ctx.db);
-  const claimed = await runs.claim(scope, job.runId);
-  if (!claimed) {
-    ctx.logger.info("analysis_refresh_skip_not_queued", {
-      code: "CANONICAL_RUN_NOT_QUEUED",
-      runId: job.runId,
-    });
-    return;
-  }
-  const attempt = toRunAttempt(claimed);
+  // One transaction per delivery, with the claim as its first write. The claim
+  // used to autocommit before this transaction existed; a tick that then died
+  // waiting on the project row lock (held by a child's terminalization
+  // transaction) left the parent pinned `running` with no live job — and
+  // `prepareDelivery`'s attempt_count <= retryCount rescue clause can never
+  // match a continuation chain (attempt counts tick deliveries, not retries),
+  // so the pg-boss redelivery was swallowed and the whole run was orphaned.
+  // Inside the transaction any death rolls the claim back to `queued`, and the
+  // redelivery replays the tick from the start.
+  await ctx.db.transaction(async (tx) => {
+    const runs = new AsyncRunsRepository(tx);
+    const claimed = await runs.claim(scope, job.runId);
+    if (!claimed) {
+      ctx.logger.info("analysis_refresh_skip_not_queued", {
+        code: "CANONICAL_RUN_NOT_QUEUED",
+        runId: job.runId,
+      });
+      return;
+    }
+    const attempt = toRunAttempt(claimed);
 
-  let payload: AnalysisRefreshRequestPayload;
-  try {
-    payload = parseAnalysisRefreshRequestPayload(claimed.request_payload);
-  } catch {
-    await failParent(ctx, {
+    let payload: AnalysisRefreshRequestPayload;
+    try {
+      payload = parseAnalysisRefreshRequestPayload(claimed.request_payload);
+    } catch {
+      await failParent(ctx, tx, {
+        attempt,
+        scope,
+        job,
+        error: SAFE_FAILURES.payloadInvalid,
+      });
+      ctx.logger.warn("analysis_refresh_failed", {
+        code: SAFE_FAILURES.payloadInvalid.code,
+        runId: job.runId,
+      });
+      return;
+    }
+
+    const plans = new AnalysisRefreshRunsRepository(tx);
+    const parentProjection = await plans.findById(scope, job.runId);
+    const steps = await plans.listSteps(scope, job.runId);
+    try {
+      assertDurablePlan(claimed, parentProjection, steps, payload);
+    } catch {
+      await failParent(ctx, tx, {
+        attempt,
+        scope,
+        job,
+        error: SAFE_FAILURES.projectionInvalid,
+      });
+      ctx.logger.warn("analysis_refresh_failed", {
+        code: SAFE_FAILURES.projectionInvalid.code,
+        runId: job.runId,
+      });
+      return;
+    }
+
+    const parent: ParentContext = {
+      parent: parentProjection,
+      payload,
+      claimed,
       attempt,
       scope,
       job,
-      error: SAFE_FAILURES.payloadInvalid,
-    });
-    ctx.logger.warn("analysis_refresh_failed", {
-      code: SAFE_FAILURES.payloadInvalid.code,
-      runId: job.runId,
-    });
-    return;
-  }
-
-  const plans = new AnalysisRefreshRunsRepository(ctx.db);
-  const [parentProjection, steps] = await Promise.all([
-    plans.findById(scope, job.runId),
-    plans.listSteps(scope, job.runId),
-  ]);
-  try {
-    assertDurablePlan(claimed, parentProjection, steps, payload);
-  } catch {
-    await failParent(ctx, {
-      attempt,
-      scope,
-      job,
-      error: SAFE_FAILURES.projectionInvalid,
-    });
-    ctx.logger.warn("analysis_refresh_failed", {
-      code: SAFE_FAILURES.projectionInvalid.code,
-      runId: job.runId,
-    });
-    return;
-  }
-
-  const parent: ParentContext = {
-    parent: parentProjection,
-    payload,
-    claimed,
-    attempt,
-    scope,
-    job,
-  };
-  const step = nextUnfinishedStep(steps);
-  if (!step) {
-    await finalizeAlreadyTerminalPlan(ctx, parent);
-    return;
-  }
-  if (step.state === "pending") {
-    await advancePendingStep(ctx, parent, step.step_key, runtime);
-    return;
-  }
-  await observeRunningStep(ctx, parent, step.step_key, runtime);
+    };
+    const step = nextUnfinishedStep(steps);
+    if (!step) {
+      await finalizeAlreadyTerminalPlan(ctx, tx, parent);
+      return;
+    }
+    if (step.state === "pending") {
+      await advancePendingStep(ctx, tx, parent, step.step_key, runtime);
+      return;
+    }
+    await observeRunningStep(ctx, tx, parent, step.step_key, runtime);
+  });
 }

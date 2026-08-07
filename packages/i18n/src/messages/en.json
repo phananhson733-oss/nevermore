@@ -1031,6 +1031,7 @@
     },
     "runStatusUnavailable": "We couldn't refresh this run's status. The source data was refreshed; retry the status check before starting another run.",
     "collectNow": "Collect now",
+    "collectionSettled": "Collection finished — status and snapshots refreshed.",
     "retryCollection": "Retry collection",
     "collecting": "Collecting…",
     "collectDataForSeo": "Collect ranking keywords",

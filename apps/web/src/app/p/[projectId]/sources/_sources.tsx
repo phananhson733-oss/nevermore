@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  CheckCircle2,
   ChevronDown,
   Database,
   FileUp,
@@ -1590,6 +1591,18 @@ function SourceCard({
             runId={activeRunId}
             onSettled={onSettled}
           />
+        ) : null}
+
+        {settledRunId !== null &&
+        failedRunId === null &&
+        activeRunId === null ? (
+          // Keep a visible settle confirmation: the watcher unmounts the
+          // moment a run reaches a terminal state, and a silently refreshed
+          // freshness timestamp reads as "nothing happened".
+          <p className={styles.runSettled} role="status">
+            <CheckCircle2 size={15} strokeWidth={2} aria-hidden="true" />
+            {t("collectionSettled")}
+          </p>
         ) : null}
 
         {failedRunId !== null && activeRunId === null ? (
