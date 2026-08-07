@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Nevermore** 是内部仓库、产品边界、授权边界和 system of record；**GenGrowth** 是客户可见品牌。`signalframe-mvp-app`、`@sf/*`、`signalframe.*` schema、数据库名、历史导出版本与 problem type URL 只是兼容实现标识，不是客户品牌。
 
+> **GitHub / Vercel / Supabase / Railway / GCP 的账号、项目 ID、域名、环境变量落点与故障速查见 [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md)。** 涉及部署、环境变量、数据库连接或 OAuth 时先读它，不要凭项目显示名推断归属——`nevermore` / `signalframe` / `gengrowth-agents` 指的常常不是同一层的东西。
+
 当前产品版本为 **0.3.0**，合同版本为 **2026-07-21**。GenGrowth 是面向欧美 B2B/B2C 客户的中文优先 1 对 1 SEO/GEO 定制服务工作台。一个已登录的内部 Operator 走完同一条 canonical chain：
 
 `创建项目 → Product Profile/ICP → Snapshot/Observation → Evidence → Finding → Review → Action → Artifact Revision → Approval → Recheck/Outcome Observation → Results`

@@ -330,6 +330,10 @@ pnpm deploy:check
 
 ## 7. 仓库与营销站发布标识
 
+> 完整的基础设施对应关系（GitHub / Vercel / Supabase / Railway / GCP 的账号、
+> 项目 ID、域名、环境变量落点、故障速查）见
+> [`docs/INFRASTRUCTURE.md`](docs/INFRASTRUCTURE.md)。本节只保留发布标识的硬约束。
+
 - GitHub 代码仓库与 Vercel Git 集成的唯一源仓库都是
   `phananhson733-oss/nevermore`（完整地址：
   `https://github.com/phananhson733-oss/nevermore.git`）。引用仓库、核对
