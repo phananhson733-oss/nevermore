@@ -500,6 +500,7 @@ const synthesizeProductProfile = vi.fn(
   ): Promise<ProductProfileSynthesisResult> => ({
     candidate: candidate(),
     pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+    droppedCompetitorCount: 0,
     invocation,
   }),
 );
@@ -510,6 +511,7 @@ beforeEach(() => {
   synthesizeProductProfile.mockReset().mockResolvedValue({
     candidate: candidate(),
     pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+    droppedCompetitorCount: 0,
     invocation,
   });
   vi.mocked(logger.info).mockClear();
@@ -751,6 +753,7 @@ describe("runProductProfileSynthesis", () => {
       return {
         candidate: candidate(),
         pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+        droppedCompetitorCount: 0,
         invocation,
       };
     });
@@ -842,6 +845,67 @@ describe("runProductProfileSynthesis", () => {
     });
     expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toMatch(
       /B2B workflow|Acme Product|raw\.json|inputHash|outputHash/,
+    );
+  });
+
+  it("warns with the drop count when the provider thinned the competitor pool", async () => {
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.reserve,
+    ).mockImplementation(async () => ({ kind: "reserved", reservation }));
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.finalizeWithInvocation,
+    ).mockImplementation(async () => ({
+      kind: "finalized",
+      reservation: finalizedReservation,
+      invocationId: IDS.invocation,
+    }));
+    vi.mocked(ProductProfileRunsRepository.prototype.setResult).mockImplementation(
+      async () => true,
+    );
+    vi.mocked(AsyncRunsRepository.prototype.setTerminal).mockImplementation(
+      async () => true,
+    );
+    synthesizeProductProfile.mockResolvedValueOnce({
+      candidate: candidate(),
+      pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      droppedCompetitorCount: 2,
+      invocation,
+    });
+
+    await runProductProfileSynthesis(ctx, { runId: IDS.run, ...scope }, dependencies);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      "product_profile_competitors_dropped",
+      {
+        code: "PRODUCT_PROFILE_COMPETITORS_DROPPED",
+        droppedCompetitorCount: 2,
+      },
+    );
+  });
+
+  it("stays silent about drops on a clean response", async () => {
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.reserve,
+    ).mockImplementation(async () => ({ kind: "reserved", reservation }));
+    vi.mocked(
+      ProductProfileInvocationAttemptsRepository.prototype.finalizeWithInvocation,
+    ).mockImplementation(async () => ({
+      kind: "finalized",
+      reservation: finalizedReservation,
+      invocationId: IDS.invocation,
+    }));
+    vi.mocked(ProductProfileRunsRepository.prototype.setResult).mockImplementation(
+      async () => true,
+    );
+    vi.mocked(AsyncRunsRepository.prototype.setTerminal).mockImplementation(
+      async () => true,
+    );
+
+    await runProductProfileSynthesis(ctx, { runId: IDS.run, ...scope }, dependencies);
+
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      "product_profile_competitors_dropped",
+      expect.anything(),
     );
   });
 
@@ -1114,6 +1178,7 @@ describe("runProductProfileSynthesis", () => {
       synthesizeProductProfile.mockResolvedValueOnce({
         candidate: candidate(),
         pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+        droppedCompetitorCount: 0,
         invocation: legacyInvocation,
       });
 
@@ -1225,6 +1290,7 @@ describe("runProductProfileSynthesis", () => {
     synthesizeProductProfile.mockResolvedValueOnce({
       candidate: candidate(),
       pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      droppedCompetitorCount: 0,
       invocation: priorInvocation,
     });
 
@@ -1513,6 +1579,7 @@ describe("runProductProfileSynthesis", () => {
     synthesizeProductProfile.mockResolvedValueOnce({
       candidate: candidate(),
       pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      droppedCompetitorCount: 0,
       invocation: { ...invocation, inputHash: "d".repeat(64) },
     });
 
@@ -1716,6 +1783,7 @@ describe("runProductProfileSynthesis", () => {
     synthesizeProductProfile.mockResolvedValueOnce({
       candidate: candidate(),
       pageKeyMap: [{ pageKey: "page-1", inputIndex: 0 }],
+      droppedCompetitorCount: 0,
       invocation: { ...invocation, outputHash: "d".repeat(64) },
     });
 

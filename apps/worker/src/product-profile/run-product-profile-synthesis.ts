@@ -1292,6 +1292,15 @@ export async function runProductProfileSynthesis(
   try {
     // The durable reservation is authoritative before this network boundary.
     result = await client.synthesizeProductProfile(providerInput);
+    if (result.droppedCompetitorCount > 0) {
+      // A succeeded invocation that silently thinned the competitor pool is
+      // the one state production forensics cannot reconstruct afterwards:
+      // the persisted profile looks identical to "the model found none".
+      ctx.logger.warn("product_profile_competitors_dropped", {
+        code: "PRODUCT_PROFILE_COMPETITORS_DROPPED",
+        droppedCompetitorCount: result.droppedCompetitorCount,
+      });
+    }
     const persisted = await finalizeReservedInvocation(
       ctx,
       invocationAttempts,
