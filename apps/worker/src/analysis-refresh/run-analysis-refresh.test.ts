@@ -302,6 +302,28 @@ describe("runAnalysisRefresh", () => {
     expect(harness.state.steps[0]?.state).toBe("running");
   });
 
+  it("rolls the claim back with the transaction so a redelivery replays the tick", async () => {
+    const harness = createHarness({ failFirstContinuation: true });
+
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW }),
+    ).rejects.toThrow(/continuation/i);
+
+    // The claim participates in the tick transaction: a mid-tick death must
+    // leave the parent `queued`, not pinned `running`. Before this held, a
+    // died tick left `running` and the pg-boss redelivery was swallowed by
+    // prepareDelivery's rescue clause (attempt_count can never be <= the
+    // pg-boss retry count on a continuation chain), orphaning the whole run.
+    expect(harness.state.parentStatus).toBe("queued");
+
+    // The redelivery replays the tick from the start and hands off normally.
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW }),
+    ).resolves.toBeUndefined();
+    expect(harness.state.steps[0]?.state).toBe("running");
+    expect(harness.state.parentStatus).toBe("queued");
+  });
+
   it("skips only one missing optional source step per claim", async () => {
     const harness = createHarness();
     harness.state.steps[0] = step("crawl", 1, true, {
@@ -839,11 +861,13 @@ describe("runAnalysisRefresh", () => {
     });
     expect(harness.state.steps[5]?.state).toBe("pending");
     expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
-    expect(harness.send).toHaveBeenCalledWith(
-      "refresh.analysis",
-      expect.objectContaining({ runId: IDS.parent }),
-      expect.objectContaining({ startAfter: expect.any(Date) }),
+    // A failed optional step is durable progress, so its continuation is an
+    // immediate "advance" delivery — no poll delay.
+    const continuation = harness.send.mock.calls.find(
+      (call) => call[0] === "refresh.analysis",
     );
+    expect(continuation?.[1]).toMatchObject({ runId: IDS.parent });
+    expect(continuation?.[2]).not.toHaveProperty("startAfter");
   });
 
   it("creates the Growth Audit child with the exact Snapshot manifest and governance projection", async () => {
@@ -1264,6 +1288,8 @@ interface HarnessState {
   snapshots: Map<string, DataSnapshotRow>;
   auditChildren: Map<string, Awaited<ReturnType<AuditRunsRepository["findByDiagnosticRunId"]>>>;
   stage: string;
+  /** Parent canonical run status; the claim mutates it so rollback is observable. */
+  parentStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
 }
 
 interface Harness {
@@ -1296,6 +1322,7 @@ function createHarness(options: {
           step("dataforseo_backlinks", 5, false),
           step("growth_audit", 6, true),
         ],
+    parentStatus: "queued",
     children: new Map(),
     collections: new Map(),
     snapshots: new Map(),
@@ -1329,7 +1356,13 @@ function createHarness(options: {
   const crawlConnection = sourceConnection();
   const project = projectRow();
 
-  vi.spyOn(AsyncRunsRepository.prototype, "claim").mockResolvedValue(parentRun);
+  vi.spyOn(AsyncRunsRepository.prototype, "claim").mockImplementation(
+    async () => {
+      if (state.parentStatus !== "queued") return null;
+      state.parentStatus = "running";
+      return parentRun;
+    },
+  );
   vi.spyOn(
     AsyncRunsRepository.prototype,
     "lockAttemptForUpdate",
@@ -1355,10 +1388,18 @@ function createHarness(options: {
     async (_scope, id) => state.children.get(id) ?? null,
   );
   vi.spyOn(AsyncRunsRepository.prototype, "setProgress").mockResolvedValue(true);
-  vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockResolvedValue(
-    true,
+  vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockImplementation(
+    async () => {
+      state.parentStatus = "queued";
+      return true;
+    },
   );
-  vi.spyOn(AsyncRunsRepository.prototype, "setTerminal").mockResolvedValue(true);
+  vi.spyOn(AsyncRunsRepository.prototype, "setTerminal").mockImplementation(
+    async (_attempt, values) => {
+      state.parentStatus = values.status;
+      return true;
+    },
+  );
 
   vi.spyOn(
     AnalysisRefreshRunsRepository.prototype,
@@ -1742,6 +1783,7 @@ function cloneState(state: HarnessState): HarnessState {
       [...state.auditChildren].map(([id, row]) => [id, structuredClone(row)]),
     ),
     stage: state.stage,
+    parentStatus: state.parentStatus,
   };
 }
 
@@ -1752,6 +1794,7 @@ function restoreState(target: HarnessState, source: HarnessState): void {
   target.snapshots = source.snapshots;
   target.auditChildren = source.auditChildren;
   target.stage = source.stage;
+  target.parentStatus = source.parentStatus;
 }
 
 function replaceStep(

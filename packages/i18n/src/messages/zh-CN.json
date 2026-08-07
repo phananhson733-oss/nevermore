@@ -1031,6 +1031,7 @@
     },
     "runStatusUnavailable": "无法刷新本次任务的状态。数据源已重新刷新；开始其他任务前，请重试状态检查。",
     "collectNow": "立即采集",
+    "collectionSettled": "采集已结束，连接状态与快照已刷新。",
     "retryCollection": "重新采集",
     "collecting": "采集中…",
     "collectDataForSeo": "采集排名关键词",

@@ -253,6 +253,31 @@ export class AnalysisRefreshRunsRepository extends Repository {
       .orderBy(asc(analysisRefreshSteps.ordinal))) as AnalysisRefreshStepRow[];
   }
 
+  /**
+   * Resolve the Analysis Refresh parent that owns a child run, if any. Child
+   * terminalization uses this to hand the parent its continuation immediately
+   * instead of leaving the handoff to the next poll tick.
+   */
+  async findParentRunIdByChildRunId(
+    scope: ProjectScope,
+    childRunId: string,
+  ): Promise<string | null> {
+    const rows = await this.exec
+      .select({
+        analysis_refresh_run_id:
+          analysisRefreshSteps.analysis_refresh_run_id,
+      })
+      .from(analysisRefreshSteps)
+      .where(
+        and(
+          projectPredicate(analysisRefreshSteps, scope),
+          eq(analysisRefreshSteps.child_async_run_id, childRunId),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.analysis_refresh_run_id ?? null;
+  }
+
   async startStep(
     scope: ProjectScope,
     runId: string,

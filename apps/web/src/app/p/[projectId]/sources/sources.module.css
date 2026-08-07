@@ -945,6 +945,16 @@
   font-size: var(--sf-text-sm);
   color: var(--sf-coral-text);
 }
+.runSettled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--sf-text-sm);
+  font-weight: 600;
+  color: var(--sf-mint-text);
+}
+
 .runFailure {
   display: flex;
   flex-wrap: wrap;
