@@ -8,6 +8,20 @@
  * the process is frozen, even though the TCP connection itself can remain open.
  * This preserves the frozen 28-table application schema: no heartbeat table is
  * needed.
+ *
+ * CONNECTION MODE CONSTRAINT — both the worker holding the lease and any caller
+ * of `checkWorkerReadiness` must reach PostgreSQL over a *session*-pinned
+ * connection (a direct connection, or Supabase's session pooler on port 5432).
+ * A transaction-mode pooler (Supavisor on 6543, PgBouncer in transaction mode)
+ * hands each statement whichever backend is free, so `pg_advisory_unlock` can
+ * land on a different backend than the `pg_try_advisory_lock` that took the
+ * lock. Measured against production on 2026-08-07 with 30 concurrent clients,
+ * each locking a distinct key and unlocking one second later: 28 of 30 unlocks
+ * returned false and leaked their lock. Every leaked exclusive lock makes the
+ * next probe's `pg_try_advisory_lock` fail, which this function reports as a
+ * healthy worker — so `/health/ready` would go permanently green even with no
+ * worker running. Moving the web app to a transaction pooler therefore requires
+ * replacing this probe first; it is not a connection-string change.
  */
 
 const WORKER_READINESS_LOCK_NAMESPACE = 1_397_116_237;

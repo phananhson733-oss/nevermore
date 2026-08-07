@@ -15,6 +15,26 @@ export const PGBOSS_SCHEMA = "pgboss";
 /** Frozen spec §13.1 queue window. Provider work must finish before this cap. */
 export const COLLECT_CRAWL_JOB_EXPIRY_SECONDS = 15 * 60;
 
+/**
+ * Seconds before the first retry of a job that failed on a transient dependency.
+ *
+ * pg-boss defaults `retryDelay` to 1 second whenever `retryBackoff` is enabled,
+ * and its backoff is `retryDelay * (2^n / 2 + 2^n / 2 * random())`. At the
+ * default that spends every attempt inside the first ~6 seconds, so a run that
+ * hit a saturated connection pooler retried twice against the same outage and
+ * failed as if retries were switched off — observed in production when the
+ * Supabase session pooler ran out of client slots and a crawl burned all three
+ * attempts within ten seconds.
+ *
+ * The failures these retries exist for — an exhausted pooler, a rate-limited or
+ * briefly unavailable provider — clear on a scale of tens of seconds, so start
+ * there. With the retry limits below the last attempt lands roughly 1.5-4
+ * minutes out, which stays well inside every queue's expiry window. Jobs
+ * awaiting a retry hold `retry` state, which run recovery treats as live
+ * (`isLiveQueueState`), so a longer wait is not mistaken for a stalled run.
+ */
+export const TRANSIENT_RETRY_DELAY_SECONDS = 30;
+
 export type QueueName =
   | "collect.crawl"
   | "collect.gsc"
@@ -37,6 +57,8 @@ interface QueueConfig {
   readonly retryLimit: number;
   /** Exponential backoff with jitter (spec §13.1). */
   readonly retryBackoff: boolean;
+  /** Seconds before the first retry; pg-boss grows it exponentially from here. */
+  readonly retryDelay: number;
   /** Worker-managed heartbeat; a dead process stops touching the active job. */
   readonly heartbeatSeconds: number;
 }
@@ -47,54 +69,63 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
     expireInSeconds: COLLECT_CRAWL_JOB_EXPIRY_SECONDS,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "collect.gsc": {
     expireInSeconds: 600,
     retryLimit: 3,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "collect.ga4": {
     expireInSeconds: 600,
     retryLimit: 3,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "collect.csv": {
     expireInSeconds: 600,
     retryLimit: 1,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "collect.dataforseo": {
     expireInSeconds: 600,
     retryLimit: 3,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   diagnose: {
     expireInSeconds: 600,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "profile.synthesize": {
     expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "artifact.generate": {
     expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "export.bundle": {
     expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   // Content Shadow is a multi-stage long-running capability (research → draft →
@@ -104,6 +135,7 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
     expireInSeconds: 600,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   // Publication can cross the external-write boundary. An unknown provider
@@ -113,18 +145,21 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
     expireInSeconds: 600,
     retryLimit: 0,
     retryBackoff: false,
+    retryDelay: 0,
     heartbeatSeconds: 60,
   },
   measurement: {
     expireInSeconds: 600,
     retryLimit: 3,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
   "refresh.analysis": {
     expireInSeconds: 15 * 60,
     retryLimit: 2,
     retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
     heartbeatSeconds: 60,
   },
 };
@@ -156,6 +191,10 @@ export interface BossOptions {
    * is reached through a connection-limited pooler (e.g. Supabase's session
    * pooler caps clients per project) so web + worker Drizzle + pg-boss pools all
    * fit under the ceiling. Defaults to pg-boss's own default when unset.
+   *
+   * Switching to a transaction-mode pooler to escape that ceiling is not an
+   * option today: the worker readiness lease depends on session-pinned advisory
+   * locks. See the connection mode constraint in `worker-readiness.ts`.
    */
   readonly max?: number;
 }
@@ -187,6 +226,7 @@ export async function startBoss(boss: PgBoss): Promise<void> {
       expireInSeconds: cfg.expireInSeconds,
       retryLimit: cfg.retryLimit,
       retryBackoff: cfg.retryBackoff,
+      retryDelay: cfg.retryDelay,
       heartbeatSeconds: cfg.heartbeatSeconds,
     });
     // createQueue is intentionally create-only in pg-boss. Re-apply mutable
@@ -195,6 +235,7 @@ export async function startBoss(boss: PgBoss): Promise<void> {
       expireInSeconds: cfg.expireInSeconds,
       retryLimit: cfg.retryLimit,
       retryBackoff: cfg.retryBackoff,
+      retryDelay: cfg.retryDelay,
       heartbeatSeconds: cfg.heartbeatSeconds,
     });
   }
