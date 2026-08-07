@@ -66,7 +66,7 @@ describeDb("Product Profile synthesis command persistence", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Product Profile synthesis Web ${randomUUID()}` })
+      .values({ name: `Product Profile synthesis Web ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

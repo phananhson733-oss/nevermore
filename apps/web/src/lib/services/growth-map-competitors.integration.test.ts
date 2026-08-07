@@ -1088,6 +1088,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
     await inRolledBackFixture(handle, async (tx) => {
       const workspaceId = randomUUID();
       await tx.insert(workspaces).values({
+        plan_tier: "internal",
         id: workspaceId,
         name: `Competitor read integration ${workspaceId}`,
       });
@@ -1279,6 +1280,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
     await inRolledBackFixture(handle, async (tx) => {
       const workspaceId = randomUUID();
       await tx.insert(workspaces).values({
+        plan_tier: "internal",
         id: workspaceId,
         name: `Historical competitor origin ${workspaceId}`,
       });
@@ -1349,6 +1351,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
     await inRolledBackFixture(handle, async (tx) => {
       const workspaceId = randomUUID();
       await tx.insert(workspaces).values({
+        plan_tier: "internal",
         id: workspaceId,
         name: `Pinned SERP origin ${workspaceId}`,
       });
@@ -1486,6 +1489,7 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
     await inRolledBackFixture(handle, async (tx) => {
       const workspaceId = randomUUID();
       await tx.insert(workspaces).values({
+        plan_tier: "internal",
         id: workspaceId,
         name: `Pinned competitor generation ${workspaceId}`,
       });

@@ -65,7 +65,7 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Analysis Refresh Web ${randomUUID()}` })
+      .values({ name: `Analysis Refresh Web ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

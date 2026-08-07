@@ -64,9 +64,17 @@ This phase must finish before deploying the worker or web.
 
 - [ ] Record the successful migration version/check output without exposing the
   connection string **[me]**
-- [ ] Disable public Supabase Auth signup. Create approved Auth users and
-  explicitly provision each into `app.operator_profiles`; the application must
-  not auto-create production memberships **[Owner]**
+- [ ] Enable Google as a Supabase Auth provider and **leave public signup on**.
+  Spec §1.6 was revised: a first-time account now self-provisions its own NEW
+  workspace at the `free` tier. This reverses the previous instruction to
+  hand-provision every `app.operator_profiles` row — following the old wording
+  would silently disable self-serve signup. `SF_SIGNUP_MODE=invite` restores the
+  old admission rule if signups are ever abused. See `docs/AUTH-DEPLOYMENT.md`
+  **[Owner]**
+- [ ] Review which OTHER Supabase Auth providers are enabled. Provisioning
+  admits any authenticated identity, not only Google, so email/password and
+  anonymous sign-in should be off unless you intend them to grant a workspace
+  **[Owner]**
 - [ ] Confirm `raw-imports` and `exports` exist and are private **[Owner]**
 - [ ] Confirm the service role can create/read/list/delete in both buckets;
   list/delete are required by retention and orphan cleanup **[Owner]**

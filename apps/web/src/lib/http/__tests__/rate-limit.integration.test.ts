@@ -24,8 +24,8 @@ describeDb("workspace rate limiting against PostgreSQL", () => {
     const rows = await handle.db
       .insert(workspaces)
       .values([
-        { name: `Rate limit ${randomUUID()}` },
-        { name: `Rate limit isolated ${randomUUID()}` },
+        { name: `Rate limit ${randomUUID()}`, plan_tier: "internal" },
+        { name: `Rate limit isolated ${randomUUID()}`, plan_tier: "internal" },
       ])
       .returning({ id: workspaces.id });
     workspaceId = rows[0]!.id;
@@ -45,7 +45,12 @@ describeDb("workspace rate limiting against PostgreSQL", () => {
   });
 
   it("serializes concurrent attempts, preserves exact replay, and isolates workspaces", async () => {
-    const keys = ["concurrent-a", "concurrent-b", "concurrent-c", "concurrent-d"];
+    const keys = [
+      "concurrent-a",
+      "concurrent-b",
+      "concurrent-c",
+      "concurrent-d",
+    ];
     const policyFor = (idempotencyKey: string) => ({
       idempotencyKey,
       scope,
@@ -55,11 +60,7 @@ describeDb("workspace rate limiting against PostgreSQL", () => {
 
     const results = await Promise.allSettled(
       keys.map((key) =>
-        assertWorkspaceRateLimitWithDb(
-          handle.db,
-          workspaceId,
-          policyFor(key),
-        ),
+        assertWorkspaceRateLimitWithDb(handle.db, workspaceId, policyFor(key)),
       ),
     );
     const acceptedKeys = keys.filter(
@@ -117,9 +118,9 @@ describeDb("workspace rate limiting against PostgreSQL", () => {
         ),
       );
 
-    expect(stored.filter((row) => row.workspaceId === workspaceId)).toHaveLength(
-      2,
-    );
+    expect(
+      stored.filter((row) => row.workspaceId === workspaceId),
+    ).toHaveLength(2);
     expect(
       stored.filter((row) => row.workspaceId === otherWorkspaceId),
     ).toHaveLength(1);

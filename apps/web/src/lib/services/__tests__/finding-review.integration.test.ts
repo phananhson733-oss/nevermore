@@ -148,7 +148,7 @@ describeDb(
       handle = createDbHandle(DATABASE_URL);
       const [ws] = await handle.db
         .insert(workspaces)
-        .values({ name: `WS-${randomUUID()}` })
+        .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
         .returning();
       workspaceId = ws!.id;
       const created = await createProject(
@@ -271,7 +271,7 @@ describeDb(
       const suffix = randomUUID();
       const [raceWorkspace] = await handle.db
         .insert(workspaces)
-        .values({ name: `Finding-archive-${suffix}` })
+        .values({ name: `Finding-archive-${suffix}`, plan_tier: "internal" })
         .returning();
       const created = await createProject(
         { workspaceId: raceWorkspace!.id },

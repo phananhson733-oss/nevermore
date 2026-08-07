@@ -141,7 +141,11 @@
     "signInButton": "Sign in",
     "signingIn": "Signing in…",
     "signInError": "We couldn't sign you in. Check your email and password and try again.",
-    "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link."
+    "magicLinkHint": "Trouble signing in? Ask an administrator to send you a magic link.",
+    "continueWithGoogle": "Continue with Google",
+    "oauthError": "Google sign-in didn't complete. Please try again.",
+    "oauthDenied": "Google sign-in was cancelled.",
+    "orDivider": "or"
   },
   "newProject": {
     "eyebrow": "PRODUCT · ICP",
@@ -241,6 +245,7 @@
     "createAndConnectButton": "Create product and connect data",
     "creating": "Creating product…",
     "createError": "We couldn't create the product. Check the inputs and try again.",
+    "planLimitReached": "Your free plan includes one active project. Archive the current project before creating another.",
     "productUrlInvalid": "Enter a public http(s) product URL without credentials or a fragment.",
     "requiredField": "Complete or select this field.",
     "growthObjectivesRequired": "Select at least one primary growth goal."

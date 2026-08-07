@@ -50,7 +50,7 @@ const blockGuard: UrlGuard = async () => ({
 });
 
 async function newWorkspace(handle: DbHandle): Promise<string> {
-  const [ws] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}` }).returning();
+  const [ws] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}`, plan_tier: "internal" }).returning();
   return ws!.id;
 }
 

@@ -26,13 +26,13 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0045_dataforseo_backlink_target_lineage.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0046_workspace_plan_tier.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
 Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 
-当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0045_dataforseo_backlink_target_lineage.sql`（45 个 migration）。`0042` 以 `NOT VALID` 在短事务锁窗口安装扩展后的 rule-set 约束，`0043` 再以较低级别锁验证历史行；`0044` 在不增加表或规则的前提下加入 DataForSEO Backlinks provenance、typed authority scale、selective crawler verification 与 Analysis Refresh v2/v1 兼容约束；`0045` 保留原始 Provider link identity，并允许同一站点 domain family 内的 DataForSEO target lineage，同时继续拒绝外域和带 credentials 的目标。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
+当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0046_workspace_plan_tier.sql`（46 个 migration）。`0042` 以 `NOT VALID` 在短事务锁窗口安装扩展后的 rule-set 约束，`0043` 再以较低级别锁验证历史行；`0044` 在不增加表或规则的前提下加入 DataForSEO Backlinks provenance、typed authority scale、selective crawler verification 与 Analysis Refresh v2/v1 兼容约束；`0045` 保留原始 Provider link identity，并允许同一站点 domain family 内的 DataForSEO target lineage，同时继续拒绝外域和带 credentials 的目标；`0046` 为 spec §1.6 的自助注册加上 workspace `plan_tier`，以 metadata-only 的 ADD COLUMN DEFAULT 回填既有行为 `internal`、再把默认值切到 `free`，全程零行改写。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
 
 任何冲突都是合同缺陷：先保护规格的安全边界与证据诚实性，再回改机器合同并让 `pnpm verify:spec` 通过，**不得在业务代码里暗藏兼容猜测**。旧 PRD / draft specs / mock Artifact 只作背景与视觉参考。
 

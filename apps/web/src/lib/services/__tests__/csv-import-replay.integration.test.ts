@@ -167,7 +167,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     handle = createDbHandle(DATABASE_URL);
     const [ws] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const workspaceId = ws!.id;
     const created = await createProject(
@@ -237,7 +237,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     queueFixture.send.mockClear();
     const [clockWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-clock-${randomUUID()}` })
+      .values({ name: `CSV-clock-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: clockWorkspace!.id },
@@ -290,7 +290,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     queueFixture.send.mockClear();
     const [concurrentWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-idem-${randomUUID()}` })
+      .values({ name: `CSV-idem-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: concurrentWorkspace!.id },
@@ -341,7 +341,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     queueFixture.send.mockClear();
     const [raceWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-active-race-${randomUUID()}` })
+      .values({ name: `CSV-active-race-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: raceWorkspace!.id },
@@ -420,7 +420,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     const chainActor = randomUUID();
     const [chainWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-chain-${randomUUID()}` })
+      .values({ name: `CSV-chain-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const chainWorkspaceId = chainWorkspace!.id;
     const created = await createProject(
@@ -608,7 +608,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
 
     const [foreignWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-foreign-${randomUUID()}` })
+      .values({ name: `CSV-foreign-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     await expect(
       confirmImport(
@@ -688,7 +688,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     const raceActor = randomUUID();
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-preview-archive-${suffix}` })
+      .values({ name: `CSV-preview-archive-${suffix}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: workspace!.id },
@@ -753,7 +753,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     const raceActor = randomUUID();
     const [raceWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-CAS-${randomUUID()}` })
+      .values({ name: `CSV-CAS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: raceWorkspace!.id },
@@ -815,7 +815,7 @@ describeDb("confirmImport — single-use import token (AC-016)", () => {
     const rollbackActor = randomUUID();
     const [rollbackWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `CSV-rollback-${randomUUID()}` })
+      .values({ name: `CSV-rollback-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: rollbackWorkspace!.id },

@@ -108,7 +108,7 @@ describeDb("DataForSEO public collection boundary", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `DFS boundary ${randomUUID()}` })
+      .values({ name: `DFS boundary ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
 

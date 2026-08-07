@@ -5,6 +5,24 @@
 export interface NavItem {
   labelKey: string;
   href: string;
+  /** Present when the item opens a submenu instead of navigating on its own. */
+  menu?: NavMenuGroup[];
+}
+
+/** One labelled section of a header submenu (mirrors the /tools hub sections). */
+export interface NavMenuGroup {
+  labelKey: string;
+  items: NavMenuItem[];
+}
+
+export interface NavMenuItem {
+  /** The tool's route segment — also the join key against the /tools hub. */
+  slug: string;
+  labelKey: string;
+  descriptionKey: string;
+  /** Lucide icon name, resolved to a component by the rendering layer so this
+   *  config stays free of React imports. */
+  icon: string;
 }
 
 export interface FooterLink {

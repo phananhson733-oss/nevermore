@@ -300,7 +300,7 @@ describeDb("createGrowthAuditRun canonical projection", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Audit-svc-${randomUUID()}` })
+      .values({ name: `Audit-svc-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

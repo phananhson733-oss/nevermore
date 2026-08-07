@@ -141,7 +141,11 @@
     "signInButton": "登录",
     "signingIn": "登录中…",
     "signInError": "登录失败。请检查邮箱和密码后重试。",
-    "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。"
+    "magicLinkHint": "登录遇到问题？请联系管理员为你发送一次性登录链接。",
+    "continueWithGoogle": "使用 Google 账号继续",
+    "oauthError": "Google 登录未完成，请重试。",
+    "oauthDenied": "已取消 Google 登录。",
+    "orDivider": "或"
   },
   "newProject": {
     "eyebrow": "产品与 ICP",
@@ -241,6 +245,7 @@
     "createAndConnectButton": "创建产品并连接数据源",
     "creating": "正在创建产品…",
     "createError": "产品创建失败，请检查输入后重试。",
+    "planLimitReached": "免费版包含 1 个进行中的项目。请先归档当前项目，再创建新的。",
     "productUrlInvalid": "请输入公开可访问的 http(s) 产品 URL，不得包含账号密码或页面片段。",
     "requiredField": "请填写或选择此项。",
     "growthObjectivesRequired": "请至少选择一个主要增长目标。"

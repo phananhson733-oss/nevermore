@@ -21,6 +21,30 @@ import type {
   LegacyCreateProjectRequest,
 } from "@sf/contracts";
 import type { UrlGuardResult } from "@sf/sources";
+import { workspaces } from "@sf/db/schema";
+
+/**
+ * A transaction stub that answers only the plan-limit lookup.
+ *
+ * Every repository below is spied on its prototype, so the transaction object
+ * itself is otherwise unused — but `createProject` now reads the workspace tier
+ * and counts active projects through it before inserting. Defaults are the
+ * unbounded tier so the tests that are about creation stay about creation.
+ */
+function txWithPlan(planTier = "internal", activeProjects = 0) {
+  return {
+    select: () => ({
+      from: (table: unknown) =>
+        table === workspaces
+          ? {
+              where: () => ({
+                for: () => ({ limit: async () => [{ planTier }] }),
+              }),
+            }
+          : { where: async () => [{ total: activeProjects }] },
+    }),
+  };
+}
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -38,9 +62,8 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/boss", () => ({ getBoss: mocks.getBoss }));
 
-const { archiveProject, createProject, getProject, listProjects } = await import(
-  "../projects.ts"
-);
+const { archiveProject, createProject, getProject, listProjects } =
+  await import("../projects.ts");
 
 const scope = { workspaceId: "workspace-1" };
 const actorId = "user-1";
@@ -80,9 +103,7 @@ const siteRow = {
   updated_at: "2026-07-19T00:00:00.000Z",
 } as SiteRow;
 
-function requestHash(
-  body: CreateProjectWireRequest,
-): string {
+function requestHash(body: CreateProjectWireRequest): string {
   if ("mode" in body) {
     return contentHash({
       mode: body.mode,
@@ -173,28 +194,42 @@ const safeVerdict: UrlGuardResult = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  mocks.transaction.mockReset().mockImplementation(
-    async (callback: (tx: object) => Promise<unknown>) => callback({}),
-  );
+  mocks.transaction
+    .mockReset()
+    .mockImplementation(async (callback: (tx: object) => Promise<unknown>) =>
+      callback(txWithPlan()),
+    );
   vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValue(null);
   vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValue(
     reservedIdempotency(baseBody),
   );
   vi.spyOn(IdempotencyRepository.prototype, "complete").mockResolvedValue();
-  vi.spyOn(ProjectsRepository.prototype, "insert").mockResolvedValue(projectRow);
-  vi.spyOn(ProjectsRepository.prototype, "setCurrentIcpProfile").mockResolvedValue(true);
-  vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(projectRow);
-  vi.spyOn(SitesRepository.prototype, "insertPrimary").mockResolvedValue(siteRow);
+  vi.spyOn(ProjectsRepository.prototype, "insert").mockResolvedValue(
+    projectRow,
+  );
+  vi.spyOn(
+    ProjectsRepository.prototype,
+    "setCurrentIcpProfile",
+  ).mockResolvedValue(true);
+  vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValue(
+    projectRow,
+  );
+  vi.spyOn(SitesRepository.prototype, "insertPrimary").mockResolvedValue(
+    siteRow,
+  );
   vi.spyOn(SitesRepository.prototype, "findPrimary").mockResolvedValue(siteRow);
-  vi.spyOn(SitesRepository.prototype, "mapPrimariesByProjects").mockResolvedValue(
-    new Map([[projectRow.id, siteRow]]),
-  );
-  vi.spyOn(SourceConnectionsRepository.prototype, "insertDefaultCrawl").mockResolvedValue(
-    { id: "source-1" } as never,
-  );
-  vi.spyOn(SourceConnectionsRepository.prototype, "insertConnection").mockResolvedValue(
-    { id: "dataforseo-source-1" } as never,
-  );
+  vi.spyOn(
+    SitesRepository.prototype,
+    "mapPrimariesByProjects",
+  ).mockResolvedValue(new Map([[projectRow.id, siteRow]]));
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "insertDefaultCrawl",
+  ).mockResolvedValue({ id: "source-1" } as never);
+  vi.spyOn(
+    SourceConnectionsRepository.prototype,
+    "insertConnection",
+  ).mockResolvedValue({ id: "dataforseo-source-1" } as never);
   vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue({
     id: "00000000-0000-4000-8000-000000000099",
   } as never);
@@ -202,7 +237,10 @@ beforeEach(() => {
     CollectionRunsRepository.prototype,
     "insertPlaceholder",
   ).mockResolvedValue({ id: "00000000-0000-4000-8000-000000000099" } as never);
-  vi.spyOn(SitePagesRepository.prototype, "upsertNormalizedUrl").mockResolvedValue({
+  vi.spyOn(
+    SitePagesRepository.prototype,
+    "upsertNormalizedUrl",
+  ).mockResolvedValue({
     id: "page-1",
   } as never);
   vi.spyOn(TelemetryRepository.prototype, "emit").mockResolvedValue();
@@ -237,10 +275,7 @@ describe("createProject", () => {
       productName: "RelayOps",
       customerModel: "b2b",
       primaryMarket: "US",
-      growthObjectives: [
-        "increase_signups",
-        "generate_qualified_leads",
-      ],
+      growthObjectives: ["increase_signups", "generate_qualified_leads"],
     };
     const guard = vi.fn(async (url: string) => ({
       ...safeVerdict,
@@ -274,7 +309,9 @@ describe("createProject", () => {
         languageCodes: [],
       }),
     );
-    expect(SitePagesRepository.prototype.upsertNormalizedUrl).toHaveBeenCalledWith(
+    expect(
+      SitePagesRepository.prototype.upsertNormalizedUrl,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         normalizedUrl: "https://example.com/products/growth/?plan=pro",
       }),
@@ -290,10 +327,7 @@ describe("createProject", () => {
           analysisInvocationId: null,
           productName: "RelayOps",
           customerModel: "b2b",
-          growthObjectives: [
-            "increase_signups",
-            "generate_qualified_leads",
-          ],
+          growthObjectives: ["increase_signups", "generate_qualified_leads"],
           targetMarkets: [{ marketCode: "US", priority: "primary" }],
           targetAudiences: [],
           competitorCandidates: [],
@@ -302,40 +336,30 @@ describe("createProject", () => {
             expect.objectContaining({
               path: "/productName",
               derivation: "declared",
-              evidenceRefs: [
-                expect.objectContaining({ kind: "userEdit" }),
-              ],
+              evidenceRefs: [expect.objectContaining({ kind: "userEdit" })],
             }),
             expect.objectContaining({
               path: "/customerModel",
               derivation: "declared",
-              evidenceRefs: [
-                expect.objectContaining({ kind: "userEdit" }),
-              ],
+              evidenceRefs: [expect.objectContaining({ kind: "userEdit" })],
             }),
             expect.objectContaining({
               path: "/targetMarkets",
               derivation: "declared",
-              evidenceRefs: [
-                expect.objectContaining({ kind: "userEdit" }),
-              ],
+              evidenceRefs: [expect.objectContaining({ kind: "userEdit" })],
             }),
             expect.objectContaining({
               path: "/growthObjectives",
               derivation: "declared",
-              evidenceRefs: [
-                expect.objectContaining({ kind: "userEdit" }),
-              ],
+              evidenceRefs: [expect.objectContaining({ kind: "userEdit" })],
             }),
           ]),
         }),
       }),
     );
-    expect(ProjectsRepository.prototype.setCurrentIcpProfile).toHaveBeenCalledWith(
-      scope,
-      projectRow.id,
-      "icp-profile-1",
-    );
+    expect(
+      ProjectsRepository.prototype.setCurrentIcpProfile,
+    ).toHaveBeenCalledWith(scope, projectRow.id, "icp-profile-1");
     expect(result.project.contextStatus).toBe("draft");
     expect(result.project.confirmedIcpProfileVersion).toBeNull();
     expect(result.location).toBe(`/p/${projectRow.id}/context`);
@@ -361,7 +385,9 @@ describe("createProject", () => {
       },
     });
 
-    expect(SourceConnectionsRepository.prototype.insertConnection).toHaveBeenCalledWith(
+    expect(
+      SourceConnectionsRepository.prototype.insertConnection,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "dataforseo",
         state: "connected",
@@ -390,7 +416,9 @@ describe("createProject", () => {
         }),
       }),
     );
-    expect(CollectionRunsRepository.prototype.insertPlaceholder).toHaveBeenCalledWith(
+    expect(
+      CollectionRunsRepository.prototype.insertPlaceholder,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "dataforseo",
         operation: "search_landscape",
@@ -438,13 +466,7 @@ describe("createProject", () => {
     };
     const guard = vi.fn(async () => safeVerdict);
 
-    await createProject(
-      scope,
-      actorId,
-      idempotencyKey,
-      historicalBody,
-      guard,
-    );
+    await createProject(scope, actorId, idempotencyKey, historicalBody, guard);
 
     expect(IdempotencyRepository.prototype.begin).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -567,7 +589,9 @@ describe("createProject", () => {
     vi.spyOn(IdempotencyRepository.prototype, "find").mockResolvedValueOnce(
       completedIdempotency(baseBody),
     );
-    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValueOnce(null);
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValueOnce(
+      null,
+    );
 
     await expect(
       createProject(scope, actorId, idempotencyKey, baseBody, guard),
@@ -768,15 +792,16 @@ describe("createProject", () => {
       },
     );
 
-    const exactPageUrl =
-      "https://example.com/products/growth/?plan=pro";
+    const exactPageUrl = "https://example.com/products/growth/?plan=pro";
     expect(guard).toHaveBeenCalledOnce();
     expect(guard).toHaveBeenCalledWith(exactPageUrl);
     expect(probe).toHaveBeenCalledWith({
       origin: "https://example.com",
       pinnedIp: "203.0.113.10",
     });
-    expect(SitePagesRepository.prototype.upsertNormalizedUrl).toHaveBeenCalledWith(
+    expect(
+      SitePagesRepository.prototype.upsertNormalizedUrl,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         normalizedUrl: exactPageUrl,
       }),
@@ -856,13 +881,7 @@ describe("createProject", () => {
     }));
 
     await expect(
-      createProject(
-        scope,
-        actorId,
-        idempotencyKey,
-        baseBody,
-        guard,
-      ),
+      createProject(scope, actorId, idempotencyKey, baseBody, guard),
     ).rejects.toMatchObject({
       code: "VALIDATION_ERROR",
       status: 422,
@@ -875,9 +894,36 @@ describe("createProject", () => {
     });
   });
 
+  it("refuses a second project on the free tier without inserting", async () => {
+    const guard = vi.fn(async () => safeVerdict);
+    mocks.transaction.mockImplementation(
+      async (callback: (tx: object) => Promise<unknown>) =>
+        callback(txWithPlan("free", 1)),
+    );
+
+    await expect(
+      createProject(scope, actorId, idempotencyKey, baseBody, guard),
+    ).rejects.toMatchObject({ code: "PLAN_LIMIT_REACHED" });
+    expect(ProjectsRepository.prototype.insert).not.toHaveBeenCalled();
+  });
+
+  it("admits the first project on the free tier", async () => {
+    const guard = vi.fn(async () => safeVerdict);
+    mocks.transaction.mockImplementation(
+      async (callback: (tx: object) => Promise<unknown>) =>
+        callback(txWithPlan("free", 0)),
+    );
+
+    await createProject(scope, actorId, idempotencyKey, baseBody, guard);
+
+    expect(ProjectsRepository.prototype.insert).toHaveBeenCalled();
+  });
+
   it("replays when another transaction wins the idempotency key after the fast-path read", async () => {
     const guard = vi.fn(async () => safeVerdict);
-    vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValueOnce(null);
+    vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValueOnce(
+      null,
+    );
     vi.spyOn(IdempotencyRepository.prototype, "find")
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(completedIdempotency(baseBody));
@@ -896,19 +942,15 @@ describe("createProject", () => {
 
   it("fails closed when another transaction wins the idempotency key but no completed replay is available yet", async () => {
     const guard = vi.fn(async () => safeVerdict);
-    vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValueOnce(null);
+    vi.spyOn(IdempotencyRepository.prototype, "begin").mockResolvedValueOnce(
+      null,
+    );
     vi.spyOn(IdempotencyRepository.prototype, "find")
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null);
 
     await expect(
-      createProject(
-        scope,
-        actorId,
-        idempotencyKey,
-        baseBody,
-        guard,
-      ),
+      createProject(scope, actorId, idempotencyKey, baseBody, guard),
     ).rejects.toMatchObject({
       code: "IDEMPOTENCY_KEY_REUSED",
       message: "Idempotency key is being processed.",
@@ -936,7 +978,9 @@ describe("createProject", () => {
 
 describe("getProject and listProjects", () => {
   it("404s when the project does not exist in the workspace scope", async () => {
-    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValueOnce(null);
+    vi.spyOn(ProjectsRepository.prototype, "findById").mockResolvedValueOnce(
+      null,
+    );
 
     await expect(getProject(scope, randomUUID())).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -945,9 +989,10 @@ describe("getProject and listProjects", () => {
   });
 
   it("fails closed when a listed project is missing its primary site", async () => {
-    vi.spyOn(SitesRepository.prototype, "mapPrimariesByProjects").mockResolvedValueOnce(
-      new Map(),
-    );
+    vi.spyOn(
+      SitesRepository.prototype,
+      "mapPrimariesByProjects",
+    ).mockResolvedValueOnce(new Map());
 
     await expect(
       listProjects(scope, { limit: 50, cursor: null, archived: false }),

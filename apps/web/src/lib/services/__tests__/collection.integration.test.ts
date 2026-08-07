@@ -62,7 +62,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
 
   beforeAll(async () => {
     handle = createDbHandle(DATABASE_URL);
-    const [ws] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}` }).returning();
+    const [ws] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}`, plan_tier: "internal" }).returning();
     workspaceId = ws!.id;
     const created = await createProject(
       { workspaceId },
@@ -116,7 +116,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("freezes the exact URL-first Product Profile page and hashes both seed fields", async () => {
     const [profileWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-profile-seed-${randomUUID()}` })
+      .values({ name: `WS-profile-seed-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: profileWorkspace!.id },
@@ -195,7 +195,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("rejects a foreign Product Profile at persistence and a missing exact SitePage before queueing", async () => {
     const [profileWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-invalid-profile-seed-${randomUUID()}` })
+      .values({ name: `WS-invalid-profile-seed-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: profileWorkspace!.id },
@@ -283,7 +283,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const [raceWorkspace] = await handle.db
         .insert(workspaces)
-        .values({ name: `WS-race-${attempt}-${randomUUID()}` })
+        .values({ name: `WS-race-${attempt}-${randomUUID()}`, plan_tier: "internal" })
         .returning();
       const raceProject = await createProject(
         { workspaceId: raceWorkspace!.id },
@@ -347,7 +347,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("names the contended key when the active-key winner is gone before the loser reads it", async () => {
     const [lostWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-lost-winner-${randomUUID()}` })
+      .values({ name: `WS-lost-winner-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const lostProject = await createProject(
       { workspaceId: lostWorkspace!.id },
@@ -418,7 +418,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("422s an explicit source id once that source has been disconnected", async () => {
     const [explicitWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: explicitWorkspace!.id },
@@ -470,7 +470,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
 
   it("replays the 202 for the same Idempotency-Key + body", async () => {
     // A fresh project so no active run interferes with the replay assertion.
-    const [ws2] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}` }).returning();
+    const [ws2] = await handle.db.insert(workspaces).values({ name: `WS-${randomUUID()}`, plan_tier: "internal" }).returning();
     const proj = await createProject(
       { workspaceId: ws2!.id },
       actor,
@@ -519,7 +519,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("returns one accepted result and one replay for concurrent exact retries", async () => {
     const [concurrentWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: concurrentWorkspace!.id },
@@ -555,7 +555,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
   it("rejects a different hash while the idempotency key is still pending", async () => {
     const [pendingWorkspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `WS-${randomUUID()}` })
+      .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
       .returning();
     const created = await createProject(
       { workspaceId: pendingWorkspace!.id },
@@ -595,7 +595,7 @@ describeDb("createCollectionRun (AC-019, spec §7.5)", () => {
     const replayWorkspaceId = (
       await handle.db
         .insert(workspaces)
-        .values({ name: `WS-${randomUUID()}` })
+        .values({ name: `WS-${randomUUID()}`, plan_tier: "internal" })
         .returning()
     )[0]!.id;
     const created = await createProject(

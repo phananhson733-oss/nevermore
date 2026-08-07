@@ -38,7 +38,7 @@ describeDb("Sources read Product/ICP gate integration", () => {
     handle = createDbHandle(DATABASE_URL);
     const [workspace] = await handle.db
       .insert(workspaces)
-      .values({ name: `Sources read gate ${randomUUID()}` })
+      .values({ name: `Sources read gate ${randomUUID()}`, plan_tier: "internal" })
       .returning();
     workspaceId = workspace!.id;
   });

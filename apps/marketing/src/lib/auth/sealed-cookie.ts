@@ -28,7 +28,8 @@ export type SealedCookiePurpose =
   | "gg_oauth_tx"
   | "gg_id"
   | "gg_gsc"
-  | "gg_sites";
+  | "gg_sites"
+  | "gg_onetap";
 
 export class SealedCookieError extends Error {
   constructor(message: string) {

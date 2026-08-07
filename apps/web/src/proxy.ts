@@ -5,8 +5,14 @@ import { safePostLoginPath } from "@/lib/auth/redirect";
 import { updateSession } from "@/lib/supabase/refresh";
 import { buildContentSecurityPolicy } from "../security-headers.ts";
 
-/** Public page paths that never require authentication. */
-const PUBLIC_PAGES = ["/login"];
+/**
+ * Public page paths that never require authentication.
+ *
+ * `/auth/callback` has to be here: it is the leg of the OAuth flow that CREATES
+ * the session, so it necessarily arrives without one. Gating it would bounce
+ * every Google sign-in back to `/login` before the code could be exchanged.
+ */
+const PUBLIC_PAGES = ["/login", "/auth/callback"];
 /** Public API prefixes (health checks) that bypass auth. */
 const PUBLIC_API_PREFIXES = ["/api/mvp/health"];
 
@@ -57,8 +63,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // handlers report the exact DB/queue/worker dependencies they are probing.
   if (
     PUBLIC_API_PREFIXES.some(
-      (prefix) =>
-        pathname === prefix || pathname.startsWith(`${prefix}/`),
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     )
   ) {
     return secure(nextWithOverrides(request, overrides), csp);

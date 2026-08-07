@@ -85,6 +85,7 @@ paths:
               schema: { $ref: '#/components/schemas/ProjectResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/PlanLimitReached' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
@@ -2510,6 +2511,13 @@ components:
           schema: { $ref: '#/components/schemas/Problem' }
     Unauthenticated:
       description: Missing or invalid session.
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PlanLimitReached:
+      description: The workspace plan does not allow this. The request is well formed and the caller is authenticated; the plan tier is what refuses it.
       headers:
         X-Request-Id: { $ref: '#/components/headers/RequestId' }
       content:

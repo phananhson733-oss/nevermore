@@ -18,7 +18,10 @@ const PUBLIC_ASSETS = [
 
 describe("GenGrowth browser identity", () => {
   it("declares favicon, PNG, shortcut, and Apple Touch icons in root metadata", async () => {
-    const layout = await readFile(new URL("./layout.tsx", import.meta.url), "utf8");
+    const layout = await readFile(
+      new URL("./layout.tsx", import.meta.url),
+      "utf8",
+    );
 
     expect(layout).toContain('applicationName: "GenGrowth"');
     expect(layout).toContain(
@@ -47,14 +50,29 @@ describe("GenGrowth browser identity", () => {
     },
   );
 
-  it("ships favicon.ico as a 32x32 Windows icon, not renamed JPEG bytes", async () => {
+  it("ships favicon.ico as a Windows icon containing the declared 32x32, not renamed JPEG bytes", async () => {
     const bytes = await readFile(
       new URL("../../public/favicon.ico", import.meta.url),
     );
 
+    // ICONDIR: reserved=0, type=1 (icon), then the image count.
     expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0, 0, 1, 0]));
-    expect(bytes.readUInt16LE(4)).toBe(1);
-    expect(bytes[6]).toBe(32);
-    expect(bytes[7]).toBe(32);
+    const count = bytes.readUInt16LE(4);
+    expect(count).toBeGreaterThan(0);
+
+    // The frame count is not the point — the point is that the size the root
+    // metadata advertises is actually in the file. A multi-size .ico is better
+    // than one 32px frame the browser has to rescale for a 16px tab, so this
+    // reads the directory rather than pinning a single entry. A 0 byte means
+    // 256 in the ICONDIRENTRY encoding.
+    const frames = Array.from({ length: count }, (_, index) => {
+      const entry = 6 + index * 16;
+      return {
+        width: bytes[entry] === 0 ? 256 : bytes[entry],
+        height: bytes[entry + 1] === 0 ? 256 : bytes[entry + 1],
+      };
+    });
+
+    expect(frames).toContainEqual({ width: 32, height: 32 });
   });
 });

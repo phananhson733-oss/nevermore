@@ -4,7 +4,9 @@
     "openApp": "Open GenGrowth",
     "learnMore": "Learn More",
     "backToHome": "Back to Home",
-    "home": "Home"
+    "home": "Home",
+    "signIn": "Sign in",
+    "getStarted": "Get started free"
   },
   "nav": {
     "tools": "Free Tools",
@@ -14,7 +16,32 @@
     "about": "About",
     "contact": "Contact",
     "glossary": "Glossary",
-    "pricing": "Pricing"
+    "pricing": "Pricing",
+    "toolsMenu": {
+      "diagnoseGroup": "Diagnose what's happening",
+      "planGroup": "Plan what's next",
+      "viewAll": "View all free tools",
+      "seoQuickWins": {
+        "label": "SEO Quick Wins",
+        "description": "High-impression pages with click opportunities, from your own Search Console."
+      },
+      "internalLinkAudit": {
+        "label": "Internal Link Audit",
+        "description": "Map internal links and expose orphan and deep pages. No account required."
+      },
+      "trafficDropDiagnosis": {
+        "label": "Traffic Drop Diagnosis",
+        "description": "Compare Search Console periods before deciding why organic traffic changed."
+      },
+      "seoAudit": {
+        "label": "Site-wide SEO Audit",
+        "description": "Crawl public pages and inspect response, indexability, metadata and structure."
+      },
+      "hiddenKeywords": {
+        "label": "Keyword Opportunity Map",
+        "description": "Turn site context into keyword directions after demand signals are verified."
+      }
+    }
   },
   "footer": {
     "privacy": "Privacy Policy",

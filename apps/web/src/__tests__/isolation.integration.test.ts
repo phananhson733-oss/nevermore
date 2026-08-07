@@ -19,8 +19,8 @@ describeDb("workspace/project isolation (AC-005)", () => {
 
   beforeAll(async () => {
     handle = createDbHandle(DATABASE_URL!);
-    const [a] = await handle.db.insert(workspaces).values({ name: "WS-A" }).returning();
-    const [b] = await handle.db.insert(workspaces).values({ name: "WS-B" }).returning();
+    const [a] = await handle.db.insert(workspaces).values({ name: "WS-A", plan_tier: "internal" }).returning();
+    const [b] = await handle.db.insert(workspaces).values({ name: "WS-B", plan_tier: "internal" }).returning();
     wsA = a!.id;
     wsB = b!.id;
     const [pa] = await handle.db

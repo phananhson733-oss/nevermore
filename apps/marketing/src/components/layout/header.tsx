@@ -17,8 +17,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
+import { ToolsMenu, ToolsMenuMobile } from "./tools-menu";
+import {
+  SignInControl,
+  SignInControlMobile,
+} from "@/components/auth/sign-in-control";
 import { headerNavItems } from "@/config/navigation";
-import { siteConfig } from "@/config/site";
 import { localePath } from "@/lib/locale-path";
 
 export function Header() {
@@ -34,8 +38,12 @@ export function Header() {
           href={localePath(locale)}
           className="flex items-center gap-2.5 text-base font-semibold text-text-dark-primary"
         >
+          {/* logo-mark is the alpha-masked build of the brand mark. The older
+              logo.png is a JPEG on a white square, so a round crop of it showed
+              white corners. That file stays put for the Organization JSON-LD,
+              which wants an opaque logo. */}
           <Image
-            src="/images/logo.png"
+            src="/images/logo-mark.png"
             alt="GenGrowth"
             width={28}
             height={28}
@@ -49,26 +57,30 @@ export function Header() {
           aria-label="Main navigation"
           className="hidden items-center gap-7.5 md:flex"
         >
-          {headerNavItems.map((item) => (
-            <Link
-              key={item.href}
-              href={localePath(locale, item.href)}
-              className="text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
-            >
-              {t(item.labelKey)}
-            </Link>
-          ))}
+          {headerNavItems.map((item) =>
+            item.menu ? (
+              <ToolsMenu
+                key={item.href}
+                groups={item.menu}
+                locale={locale}
+                triggerLabel={t(item.labelKey)}
+              />
+            ) : (
+              <Link
+                key={item.href}
+                href={localePath(locale, item.href)}
+                className="text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
+              >
+                {t(item.labelKey)}
+              </Link>
+            ),
+          )}
         </nav>
 
         {/* Right */}
         <div className="flex items-center gap-4">
           <LanguageSwitcher />
-          <a
-            href={siteConfig.appUrl}
-            className="hidden h-9.5 items-center rounded-lg bg-brand-gradient px-[18px] text-[13.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta md:inline-flex"
-          >
-            {t("common.openApp")}
-          </a>
+          <SignInControl />
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -89,23 +101,27 @@ export function Header() {
                 aria-label="Mobile navigation"
                 className="mt-8 flex flex-col gap-4 px-4"
               >
-                {headerNavItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={localePath(locale, item.href)}
-                    onClick={() => setMobileOpen(false)}
-                    className="text-lg text-text-dark-secondary transition-colors hover:text-text-dark-primary"
-                  >
-                    {t(item.labelKey)}
-                  </Link>
-                ))}
-                <a
-                  href={siteConfig.appUrl}
-                  onClick={() => setMobileOpen(false)}
-                  className="mt-4 rounded-[10px] bg-brand-gradient px-4 py-2.5 text-center font-semibold text-brand-on-accent shadow-cta-sm"
-                >
-                  {t("common.openApp")}
-                </a>
+                {headerNavItems.map((item) =>
+                  item.menu ? (
+                    <ToolsMenuMobile
+                      key={item.href}
+                      groups={item.menu}
+                      locale={locale}
+                      triggerLabel={t(item.labelKey)}
+                      onNavigate={() => setMobileOpen(false)}
+                    />
+                  ) : (
+                    <Link
+                      key={item.href}
+                      href={localePath(locale, item.href)}
+                      onClick={() => setMobileOpen(false)}
+                      className="text-lg text-text-dark-secondary transition-colors hover:text-text-dark-primary"
+                    >
+                      {t(item.labelKey)}
+                    </Link>
+                  ),
+                )}
+                <SignInControlMobile onNavigate={() => setMobileOpen(false)} />
               </nav>
             </SheetContent>
           </Sheet>

@@ -4,7 +4,9 @@
     "openApp": "打开 GenGrowth",
     "learnMore": "了解更多",
     "backToHome": "返回首页",
-    "home": "首页"
+    "home": "首页",
+    "signIn": "登录",
+    "getStarted": "免费开始"
   },
   "nav": {
     "tools": "免费工具",
@@ -14,7 +16,32 @@
     "about": "关于我们",
     "contact": "联系我们",
     "glossary": "术语表",
-    "pricing": "定价"
+    "pricing": "定价",
+    "toolsMenu": {
+      "diagnoseGroup": "诊断现状",
+      "planGroup": "规划下一步",
+      "viewAll": "查看全部免费工具",
+      "seoQuickWins": {
+        "label": "SEO Quick Wins",
+        "description": "用自己的 Search Console 数据，找出曝光高、存在点击机会的页面。"
+      },
+      "internalLinkAudit": {
+        "label": "内链审计",
+        "description": "绘制站内链接关系，发现孤岛与深层页面。无需注册账号。"
+      },
+      "trafficDropDiagnosis": {
+        "label": "流量下降诊断",
+        "description": "先比较 Search Console 时间段，再判断自然流量为何变化。"
+      },
+      "seoAudit": {
+        "label": "全站 SEO 审计",
+        "description": "抓取同源公开页面，检查响应、索引指令、元数据与页面结构。"
+      },
+      "hiddenKeywords": {
+        "label": "关键词机会地图",
+        "description": "先验证需求信号，再把网站上下文转为关键词方向。"
+      }
+    }
   },
   "footer": {
     "privacy": "隐私政策",

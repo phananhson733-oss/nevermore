@@ -27,6 +27,7 @@ import {
   type ProductProfileCreateProjectRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
+import { assertProjectQuotaAvailable } from "@/lib/services/plan-limits";
 import {
   canonicalUrlGuard,
   canonicalizeUrl,
@@ -72,10 +73,7 @@ export interface CreateProjectResult {
   readonly replayed: boolean;
 }
 
-function locationFor(
-  projectId: string,
-  productProfileMode: boolean,
-): string {
+function locationFor(projectId: string, productProfileMode: boolean): string {
   return `/p/${projectId}/${productProfileMode ? "context" : "overview"}`;
 }
 
@@ -142,7 +140,11 @@ export async function createProject(
   // before DNS/reachability checks whose result can legitimately change after
   // the original 201 was committed.
   const idem = new IdempotencyRepository(db);
-  const existing = await idem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+  const existing = await idem.find(
+    scope.workspaceId,
+    IDEMPOTENCY_SCOPE,
+    idempotencyKey,
+  );
   if (existing) {
     const replay = await replayOrConflict(
       db,
@@ -164,11 +166,14 @@ export async function createProject(
         "VALIDATION_ERROR",
         "productUrl must be a public http(s) URL.",
         {
-          errors: [{
-            pointer: "/productUrl",
-            code: "invalid_url",
-            message: "Use a public http(s) page URL without credentials or a fragment.",
-          }],
+          errors: [
+            {
+              pointer: "/productUrl",
+              code: "invalid_url",
+              message:
+                "Use a public http(s) page URL without credentials or a fragment.",
+            },
+          ],
         },
       );
     }
@@ -183,13 +188,15 @@ export async function createProject(
       "VALIDATION_ERROR",
       `${pointer.slice(1)} is invalid.`,
       {
-        errors: [{
-          pointer,
-          code: "invalid_url",
-          message: productProfileMode
-            ? "Use a public http(s) page URL."
-            : "Use an http(s) origin without a path, query, or fragment.",
-        }],
+        errors: [
+          {
+            pointer,
+            code: "invalid_url",
+            message: productProfileMode
+              ? "Use a public http(s) page URL."
+              : "Use an http(s) origin without a path, query, or fragment.",
+          },
+        ],
       },
     );
   }
@@ -210,11 +217,13 @@ export async function createProject(
         "VALIDATION_ERROR",
         `${productProfileMode ? "productUrl" : "siteUrl"} could not be normalized to a secure origin.`,
         {
-          errors: [{
-            pointer: productProfileMode ? "/productUrl" : "/siteUrl",
-            code: "invalid_url",
-            message: "The secure site origin is invalid.",
-          }],
+          errors: [
+            {
+              pointer: productProfileMode ? "/productUrl" : "/siteUrl",
+              code: "invalid_url",
+              message: "The secure site origin is invalid.",
+            },
+          ],
         },
       );
     }
@@ -227,11 +236,13 @@ export async function createProject(
         "VALIDATION_ERROR",
         "productUrl could not be canonicalized.",
         {
-          errors: [{
-            pointer: "/productUrl",
-            code: "invalid_url",
-            message: "The product page URL is invalid.",
-          }],
+          errors: [
+            {
+              pointer: "/productUrl",
+              code: "invalid_url",
+              message: "The product page URL is invalid.",
+            },
+          ],
         },
       );
     }
@@ -252,11 +263,13 @@ export async function createProject(
         "VALIDATION_ERROR",
         "The HTTPS site origin could not be reached safely.",
         {
-          errors: [{
-            pointer: productProfileMode ? "/productUrl" : "/siteUrl",
-            code: "https_unreachable",
-            message: "Confirm that the HTTPS origin is publicly reachable.",
-          }],
+          errors: [
+            {
+              pointer: productProfileMode ? "/productUrl" : "/siteUrl",
+              code: "https_unreachable",
+              message: "Confirm that the HTTPS origin is publicly reachable.",
+            },
+          ],
         },
       );
     }
@@ -271,11 +284,13 @@ export async function createProject(
       "VALIDATION_ERROR",
       "productUrl could not be canonicalized.",
       {
-        errors: [{
-          pointer: "/productUrl",
-          code: "invalid_url",
-          message: "The product page URL is invalid.",
-        }],
+        errors: [
+          {
+            pointer: "/productUrl",
+            code: "invalid_url",
+            message: "The product page URL is invalid.",
+          },
+        ],
       },
     );
   }
@@ -284,15 +299,19 @@ export async function createProject(
   // upgrade branch already guarded the exact page/origin before probing.
   verdict ??= await guard(canonicalProductPage?.fetchUrl ?? normalized.origin);
   if (!verdict.safe) {
-    throw new ProblemError("VALIDATION_ERROR", "The submitted URL is not an allowed public address.", {
-      errors: [
-        {
-          pointer: productProfileMode ? "/productUrl" : "/siteUrl",
-          code: "blocked_url",
-          message: "Use a public URL on a standard HTTP(S) port.",
-        },
-      ],
-    });
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "The submitted URL is not an allowed public address.",
+      {
+        errors: [
+          {
+            pointer: productProfileMode ? "/productUrl" : "/siteUrl",
+            code: "blocked_url",
+            message: "Use a public URL on a standard HTTP(S) port.",
+          },
+        ],
+      },
+    );
   }
 
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString();
@@ -323,7 +342,11 @@ export async function createProject(
     });
     if (!reserved) {
       // Another transaction won the key between the fast-path read and here.
-      const now = await txIdem.find(scope.workspaceId, IDEMPOTENCY_SCOPE, idempotencyKey);
+      const now = await txIdem.find(
+        scope.workspaceId,
+        IDEMPOTENCY_SCOPE,
+        idempotencyKey,
+      );
       const replay = now
         ? await replayOrConflict(
             tx,
@@ -334,8 +357,16 @@ export async function createProject(
           )
         : null;
       if (replay) return replay;
-      throw new ProblemError("IDEMPOTENCY_KEY_REUSED", "Idempotency key is being processed.");
+      throw new ProblemError(
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key is being processed.",
+      );
     }
+
+    // After the idempotency reservation, so a replay of an already-created
+    // project returns its original 201 instead of being refused by a ceiling
+    // the original create was allowed to cross.
+    await assertProjectQuotaAvailable(tx, scope.workspaceId);
 
     const projects = new ProjectsRepository(tx);
     const sites = new SitesRepository(tx);
@@ -517,11 +548,7 @@ export async function createProject(
         }),
         createdBy: actorId,
       });
-      await projects.setCurrentIcpProfile(
-        scope,
-        project.id,
-        initialProfile.id,
-      );
+      await projects.setCurrentIcpProfile(scope, project.id, initialProfile.id);
     }
     await telemetry.emit({
       workspaceId: scope.workspaceId,
@@ -574,7 +601,12 @@ export async function createProject(
 async function replayOrConflict(
   exec: Db | DbTx,
   scope: WorkspaceScope,
-  row: { request_hash: string; status: string; resource_id: string | null; response_body: unknown },
+  row: {
+    request_hash: string;
+    status: string;
+    resource_id: string | null;
+    response_body: unknown;
+  },
   requestHash: string,
   productProfileMode: boolean,
 ): Promise<CreateProjectResult | null> {
@@ -623,7 +655,10 @@ async function loadAggregate(
 ): Promise<ProjectDto> {
   const sites = new SitesRepository(exec);
   const icps = new IcpProfilesRepository(exec);
-  const site = await sites.findPrimary({ workspaceId: scope.workspaceId, projectId: project.id });
+  const site = await sites.findPrimary({
+    workspaceId: scope.workspaceId,
+    projectId: project.id,
+  });
   if (!site) {
     throw new ProblemError("NOT_FOUND", "Project has no primary site.");
   }
@@ -704,18 +739,19 @@ export async function listProjects(
   const icpsRepo = new IcpProfilesRepository(db);
 
   const projectIds = page.rows.map((r) => r.id);
-  const siteByProject = await sitesRepo.mapPrimariesByProjects(scope, projectIds);
+  const siteByProject = await sitesRepo.mapPrimariesByProjects(
+    scope,
+    projectIds,
+  );
   const icpIds = page.rows
-    .flatMap((r) => [
-      r.current_icp_profile_id,
-      r.confirmed_icp_profile_id,
-    ])
+    .flatMap((r) => [r.current_icp_profile_id, r.confirmed_icp_profile_id])
     .filter((id): id is string => id !== null);
   const icpById = await icpsRepo.mapByIds(scope, icpIds);
 
   const data = page.rows.map((project) => {
     const site = siteByProject.get(project.id);
-    if (!site) throw new ProblemError("NOT_FOUND", "Project has no primary site.");
+    if (!site)
+      throw new ProblemError("NOT_FOUND", "Project has no primary site.");
     const icp = project.current_icp_profile_id
       ? (icpById.get(project.current_icp_profile_id) ?? null)
       : null;

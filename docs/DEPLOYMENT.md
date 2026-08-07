@@ -27,7 +27,7 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0045_dataforseo_backlink_target_lineage.sql` (**45 ordered migrations**)
+Migration range: `0001_init.sql` through `0046_workspace_plan_tier.sql` (**46 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
 v0.4 migrations through `0045` are hosted; every release must back up,

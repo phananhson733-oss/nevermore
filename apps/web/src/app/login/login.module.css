@@ -59,6 +59,41 @@
   gap: 16px;
 }
 
+.oauthForm {
+  display: flex;
+}
+.oauthButton {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.googleMark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * "or" rule. The line is drawn with two flexed borders rather than a single
+ * background gradient so it stays crisp at any card width.
+ */
+.divider {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 18px 0;
+  color: var(--sf-muted);
+  font-size: var(--sf-text-sm);
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--sf-border);
+}
+
 .error {
   margin: 0;
   padding: 10px 12px;

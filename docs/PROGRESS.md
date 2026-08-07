@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0045_dataforseo_backlink_target_lineage.sql` (**45 ordered migrations**)
+  `0046_workspace_plan_tier.sql` (**46 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
