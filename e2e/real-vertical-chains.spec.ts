@@ -711,11 +711,13 @@ async function generateReadyArtifact(
   await expect(studioWorkspace).toBeVisible();
   await expectNoDocumentOverflow(page);
 
-  await studioHero.getByRole("button", { name: "Generate artifact" }).click();
+  await studioHero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   const picker = editorCanvas.locator('[aria-labelledby="sf-picker-title"]');
   await expect(picker.locator("#sf-picker-title")).toBeVisible();
   await picker
-    .getByRole("button", { name: "Generate", exact: true })
+    .getByRole("button", { name: "Configure a new deliverable", exact: true })
     .first()
     .click();
 
@@ -743,7 +745,9 @@ async function generateReadyArtifact(
   await expect(artifactRow.getByText("Draft", { exact: true })).toBeVisible({
     timeout: 45_000,
   });
-  await artifactRow.getByRole("button", { name: "Open" }).click();
+  await artifactRow
+    .getByRole("button", { name: "View", exact: true })
+    .click();
   const markReady = page.getByRole("button", { name: "Mark ready" });
   await expect(markReady).toBeEnabled();
   if (keyboard) {

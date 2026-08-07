@@ -75,7 +75,9 @@ async function openExecution(page: Page): Promise<void> {
 
 async function selectArtifact(page: Page, artifactId: string): Promise<void> {
   const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
-  await card.getByRole("button", { name: "Open" }).click();
+  const view = card.locator(":scope > button");
+  await expect(view).toHaveAccessibleName("View");
+  await view.click();
   // The selected treatment is the card's only stable selection signal (the
   // button label does not change), and dev-mode CSS-module names keep the
   // authored class readable.
@@ -970,7 +972,10 @@ test("a linked action on a later cursor page is auto-paginated into reach", asyn
   // without any operator gesture.
   await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Cross page action 3" }),
+    evidenceRail(page).getByRole("heading", {
+      name: "Cross page action 3",
+      level: 3,
+    }),
   ).toBeVisible();
   // Each cursor exactly once: the initial page, then the one follow-up page
   // the walk needed. A loop or a duplicate fetch fails this exact sequence.
@@ -1038,7 +1043,10 @@ test("a failed linked-action page read shows retry, and retry recovers the entry
   await rail.locator("[data-linked-action-retry]").click();
   await expect(page.locator("[data-studio-adjust-action]")).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Cross page action 3" }),
+    evidenceRail(page).getByRole("heading", {
+      name: "Cross page action 3",
+      level: 3,
+    }),
   ).toBeVisible();
   expect(state.actionGetRequests.map((request) => request.cursor)).toEqual([
     null,
@@ -1159,7 +1167,9 @@ test("a planned action without an artifact is ready to generate; a dismissed one
 
   // It is also selectable from the canonical generation picker. A dismissed
   // artifact-less action remains absent from both surfaces.
-  await page.getByRole("button", { name: "Generate artifact" }).click();
+  await page
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   const picker = page.getByLabel("Pick an action");
   await expect(
     picker.getByText("Planned without artifact", { exact: true }),

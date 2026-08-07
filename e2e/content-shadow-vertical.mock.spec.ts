@@ -202,7 +202,7 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
     `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
   );
   await expect(draftRow).toHaveCount(1);
-  await draftRow.getByRole("button", { name: "Open", exact: true }).click();
+  await draftRow.getByRole("button", { name: "View", exact: true }).click();
 
   const shadow = page.locator("[data-content-shadow]");
   await expect(shadow).toBeVisible();
@@ -436,7 +436,7 @@ test("one measured content Finding yields exactly one Action and exactly one con
   const draft = queue.locator(
     `[data-studio-artifact-id="${DRAFT_ARTIFACT_ID}"][data-studio-artifact-type="english_blog_draft"]`,
   );
-  await draft.getByRole("button", { name: "Open", exact: true }).click();
+  await draft.getByRole("button", { name: "View", exact: true }).click();
   const shadow = page.locator("[data-content-shadow]");
   await expect(shadow).toBeVisible();
   await expect(shadow.locator("[aria-current]")).toHaveCount(0);

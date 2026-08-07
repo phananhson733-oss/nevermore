@@ -24,6 +24,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ import {
   type ActionExecutionStateEvent,
 } from "@sf/contracts";
 import {
+  ArrowLeft,
   Clock3,
   CircleAlert,
   CircleCheckBig,
@@ -49,7 +51,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   Badge,
   Button,
-  Card,
   EmptyState,
   Field,
   Panel,
@@ -481,7 +482,6 @@ interface ArtifactCardProps {
   readonly selectionBlocked: boolean;
   readonly selected: boolean;
   readonly onOpen: () => void;
-  readonly onRegenerate: (() => void) | undefined;
 }
 
 function ArtifactExecutionSummary({
@@ -494,71 +494,58 @@ function ArtifactExecutionSummary({
   const view = buildExecutionQueueStateView(current);
   if (view.kind === "empty") return null;
 
+  const label =
+    view.kind === "blocked"
+      ? t("status.blocked")
+      : view.kind === "completed"
+        ? t("status.completed")
+        : t("status.inProgress");
+  const detail =
+    view.kind === "blocked"
+      ? `${view.blockerSummary} ${view.unlockCondition}`
+      : view.kind === "in_progress" && view.progress !== null
+        ? t("progressValue", {
+            completed: view.progress.completedSteps,
+            total: view.progress.totalSteps,
+          })
+        : label;
+
   return (
-    <section
+    <span
       className={cx(
-        styles.artExecutionSummary,
+        styles.artExecutionInline,
         view.kind === "blocked" && styles.artExecutionBlocked,
         view.kind === "completed" && styles.artExecutionCompleted,
       )}
       data-artifact-execution-state={view.kind}
       aria-label={t("queueSummary")}
+      title={detail}
     >
-      <div className={styles.artExecutionHead}>
+      <span className={styles.artExecutionLabel}>
         {view.kind === "blocked" ? (
-          <CircleAlert aria-hidden="true" size={16} />
+          <CircleAlert aria-hidden="true" size={14} />
         ) : view.kind === "completed" ? (
-          <CircleCheckBig aria-hidden="true" size={16} />
+          <CircleCheckBig aria-hidden="true" size={14} />
         ) : (
-          <Clock3 aria-hidden="true" size={16} />
+          <Clock3 aria-hidden="true" size={14} />
         )}
-        <StatusPill
-          tone={
-            view.kind === "blocked"
-              ? "danger"
-              : view.kind === "completed"
-                ? "success"
-                : "info"
-          }
-        >
-          {view.kind === "blocked"
-            ? t("status.blocked")
-            : view.kind === "completed"
-              ? t("status.completed")
-              : t("status.inProgress")}
-        </StatusPill>
-      </div>
-
+        <span>{label}</span>
+      </span>
       {view.kind === "blocked" ? (
-        <dl className={styles.artExecutionBlocker}>
-          <div>
-            <dt>{t("blocker")}</dt>
-            <dd>{view.blockerSummary}</dd>
-          </div>
-          <div>
-            <dt>{t("unlockCondition")}</dt>
-            <dd>{view.unlockCondition}</dd>
-          </div>
-        </dl>
+        <span className={styles.artExecutionDetail}>
+          {view.blockerSummary} {view.unlockCondition}
+        </span>
       ) : view.kind === "in_progress" && view.progress !== null ? (
-        <div className={styles.artExecutionProgress}>
-          <span>
-            {t("progressValue", {
-              completed: view.progress.completedSteps,
-              total: view.progress.totalSteps,
-            })}
-          </span>
+        <span className={styles.artExecutionProgressCompact}>
+          <span>{detail}</span>
           <progress
             value={view.progress.completedSteps}
             max={view.progress.totalSteps}
-            aria-label={t("progressValue", {
-              completed: view.progress.completedSteps,
-              total: view.progress.totalSteps,
-            })}
+            aria-label={detail}
           />
-        </div>
+        </span>
       ) : null}
-    </section>
+    </span>
   );
 }
 
@@ -570,7 +557,6 @@ function ArtifactCard({
   selectionBlocked,
   selected,
   onOpen,
-  onRegenerate,
 }: ArtifactCardProps) {
   const t = useTranslations("studio");
   const tRun = useTranslations("runState");
@@ -580,83 +566,66 @@ function ArtifactCard({
     artifact.activeRun !== null;
   const displayedStatus = generating ? "generating" : artifact.status;
   const TypeIcon = ARTIFACT_TYPE_ICON[artifact.artifactType];
+  const descriptionId = `sf-artifact-row-${artifact.id}`;
 
   return (
-    <Card
-      padding="sm"
+    <div
       className={cx(styles.artCard, selected && styles.artCardSelected)}
       data-studio-artifact-id={artifact.id}
       data-studio-artifact-type={artifact.artifactType}
     >
-      <div className={styles.artHead}>
-        <span className={styles.artTypeWrap}>
-          <span className={styles.artIcon}>
-            <TypeIcon aria-hidden="true" size={16} />
+      <button
+        type="button"
+        className={styles.artRowButton}
+        onClick={onOpen}
+        disabled={selectionBlocked || generating}
+        aria-label={t("viewGeneration")}
+        aria-describedby={descriptionId}
+        aria-current={selected ? "true" : undefined}
+      >
+        <span className={styles.artRowMark} aria-hidden="true">
+          <TypeIcon size={17} />
+        </span>
+        <span id={descriptionId} className={styles.artRowCopy}>
+          <span className={styles.artHead}>
+            <span className={styles.artType}>
+              {t(`artifactType.${artifact.artifactType}`)}
+            </span>
+            <StatusPill tone={artifactStatusTone(displayedStatus)}>
+              {t(`status.${displayedStatus}`)}
+            </StatusPill>
           </span>
-          <span className={styles.artType}>
-            {t(`artifactType.${artifact.artifactType}`)}
+          <strong className={styles.artAction}>
+            {actionTitle ?? t(`artifactType.${artifact.artifactType}`)}
+          </strong>
+          <small className={styles.artQueueMeta}>
+            {t("queueArtifactMeta", {
+              revision: artifact.currentRevision,
+              locale: artifact.outputLocale,
+            })}
+          </small>
+          <span className={styles.artRowFoot}>
+            <StatusPill tone={validationTone(artifact.validationState)}>
+              {t(`validationState.${artifact.validationState}`)}
+            </StatusPill>
+            <ArtifactExecutionSummary current={executionState} />
+            <span className={styles.artRowView}>
+              {t("viewGeneration")} <span aria-hidden="true">→</span>
+            </span>
           </span>
+          {generating ? (
+            <span className={styles.artRun} aria-live="polite">
+              <Spinner size="sm" label={t("generating")} />
+              <span className={styles.metaLabel}>
+                {artifact.activeRun === null
+                  ? t("generating")
+                  : tRun(artifact.activeRun.status)}
+              </span>
+            </span>
+          ) : null}
         </span>
-        <StatusPill tone={artifactStatusTone(displayedStatus)}>
-          {t(`status.${displayedStatus}`)}
-        </StatusPill>
-      </div>
-
-      {actionTitle !== undefined ? (
-        <p className={styles.artAction}>{actionTitle}</p>
-      ) : null}
-
-      <div className={styles.artMeta}>
-        <span className={styles.metaItem}>
-          <span className={styles.metaLabel}>{t("validation")}</span>
-          <StatusPill tone={validationTone(artifact.validationState)}>
-            {t(`validationState.${artifact.validationState}`)}
-          </StatusPill>
-        </span>
-        <span className={styles.metaItem}>
-          <span className={styles.metaLabel}>{t("revision")}</span>
-          <Badge>{String(artifact.currentRevision)}</Badge>
-        </span>
-        <span className={styles.metaItem}>
-          <span className={styles.metaLabel}>{t("outputLocale")}</span>
-          <Badge>{artifact.outputLocale}</Badge>
-        </span>
-      </div>
-
-      {generating ? (
-        <div className={styles.artRun} aria-live="polite">
-          <Spinner size="sm" label={t("generating")} />
-          <span className={styles.metaLabel}>
-            {artifact.activeRun === null
-              ? t("generating")
-              : tRun(artifact.activeRun.status)}
-          </span>
-        </div>
-      ) : null}
-
-      <ArtifactExecutionSummary current={executionState} />
-
-      <div className={styles.artActions}>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={onOpen}
-          disabled={selectionBlocked}
-        >
-          {selected ? t("openSelected") : t("open")}
-        </Button>
-        {onRegenerate !== undefined ? (
-          <Button
-            variant="text"
-            size="sm"
-            onClick={onRegenerate}
-            disabled={generating}
-          >
-            {generating ? t("generating") : t("regenerate")}
-          </Button>
-        ) : null}
-      </div>
-    </Card>
+      </button>
+    </div>
   );
 }
 
@@ -673,41 +642,47 @@ function PendingActionCard({
   const artifactType = expectedArtifactType(action);
   if (artifactType === null) return null;
   const TypeIcon = ARTIFACT_TYPE_ICON[artifactType];
+  const descriptionId = `sf-pending-action-row-${action.id}`;
 
   return (
-    <Card
-      padding="sm"
+    <div
       className={cx(styles.artCard, styles.pendingActionCard)}
       data-studio-pending-action-id={action.id}
       data-studio-artifact-type={artifactType}
     >
-      <div className={styles.artHead}>
-        <span className={styles.artTypeWrap}>
-          <span className={styles.artIcon}>
-            <TypeIcon aria-hidden="true" size={16} />
+      <button
+        type="button"
+        className={styles.artRowButton}
+        onClick={onGenerate}
+        aria-label={t("viewGeneration")}
+        aria-describedby={descriptionId}
+      >
+        <span className={styles.artRowMark} aria-hidden="true">
+          <TypeIcon size={17} />
+        </span>
+        <span id={descriptionId} className={styles.artRowCopy}>
+          <span className={styles.artHead}>
+            <span className={styles.artType}>
+              {t(`artifactType.${artifactType}`)}
+            </span>
+            <StatusPill tone="warning">{t("pendingGeneration")}</StatusPill>
           </span>
-          <span className={styles.artType}>
-            {t(`artifactType.${artifactType}`)}
+          <strong className={styles.artAction}>{action.title}</strong>
+          <small className={styles.artQueueMeta}>
+            {t("queuePendingMeta", {
+              priority: tBand(action.priorityBand),
+              lane: tLane(action.roadmapLane),
+            })}
+          </small>
+          <span className={styles.pendingActionHint}>
+            {t("pendingGenerationHint")}
+          </span>
+          <span className={styles.artRowView}>
+            {t("viewGeneration")} <span aria-hidden="true">→</span>
           </span>
         </span>
-        <StatusPill tone="warning">{t("pendingGeneration")}</StatusPill>
-      </div>
-
-      <p className={styles.artAction}>{action.title}</p>
-
-      <div className={styles.pendingActionMeta}>
-        <Badge tone="accent">{tBand(action.priorityBand)}</Badge>
-        <Badge>{tLane(action.roadmapLane)}</Badge>
-      </div>
-
-      <p className={styles.pendingActionHint}>{t("pendingGenerationHint")}</p>
-
-      <div className={styles.artActions}>
-        <Button variant="primary" size="sm" onClick={onGenerate}>
-          {t("viewGeneration")}
-        </Button>
-      </div>
-    </Card>
+      </button>
+    </div>
   );
 }
 
@@ -716,6 +691,7 @@ function PendingActionCard({
 interface ArtifactEditorProps {
   readonly projectId: string;
   readonly artifact: Artifact;
+  readonly action: ArtifactAction | undefined;
   readonly onClose: () => void;
   readonly onDirtyChange: (artifactId: string, dirty: boolean) => void;
   readonly onRegenerate: (() => void) | undefined;
@@ -739,6 +715,7 @@ type MarkdownEditorMode = "preview" | "edit";
 function ArtifactEditor({
   projectId,
   artifact,
+  action,
   onClose,
   onDirtyChange,
   onRegenerate,
@@ -748,6 +725,8 @@ function ArtifactEditor({
 }: ArtifactEditorProps) {
   const t = useTranslations("studio");
   const tCommon = useTranslations("common");
+  const tBand = useTranslations("priorityBand");
+  const tLane = useTranslations("lane");
   const queryClient = useQueryClient();
   const update = useUpdateArtifact(projectId, artifact.id);
 
@@ -954,8 +933,7 @@ function ArtifactEditor({
   }
 
   return (
-    <Panel
-      padding="lg"
+    <section
       className={styles.editor}
       aria-labelledby="sf-editor-title"
       data-studio-editor=""
@@ -963,10 +941,13 @@ function ArtifactEditor({
       <div className={styles.editorHead}>
         <div className={styles.editorHeadText}>
           <span className="sf-eyebrow">
-            {t(`artifactType.${artifact.artifactType}`)}
+            {t("documentKicker", {
+              type: t(`artifactType.${artifact.artifactType}`),
+              revision: artifact.currentRevision,
+            })}
           </span>
           <h2 id="sf-editor-title" className={styles.editorTitle}>
-            {t("revisionLabel", { n: artifact.currentRevision })}
+            {action?.title ?? t(`artifactType.${artifact.artifactType}`)}
           </h2>
         </div>
         <div className={styles.editorHeadMeta}>
@@ -981,11 +962,53 @@ function ArtifactEditor({
               {dirty ? t("editorUnsaved") : t("editorSaved")}
             </StatusPill>
           </span>
+          {onRegenerate !== undefined ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRegenerate}
+              disabled={busy || artifact.status === "generating"}
+            >
+              {artifact.status === "generating"
+                ? t("generating")
+                : t("regenerate")}
+            </Button>
+          ) : null}
           <Button variant="text" size="sm" onClick={onClose}>
             {tCommon("close")}
           </Button>
         </div>
       </div>
+
+      <section
+        className={styles.documentMeta}
+        aria-label={t("documentMetaLabel")}
+        data-studio-document-meta=""
+      >
+        <div>
+          <span>{t("documentTarget")}</span>
+          <strong>{action?.expectedOutcome ?? t("documentUnavailable")}</strong>
+        </div>
+        <div>
+          <span>{t("documentSourceAction")}</span>
+          <strong>{action?.title ?? t("linkedActionUnavailable")}</strong>
+        </div>
+        <div>
+          <span>{t("documentPriority")}</span>
+          <strong>
+            {action === undefined
+              ? t("documentUnavailable")
+              : `${tBand(action.priorityBand)} · ${tLane(action.roadmapLane)}`}
+          </strong>
+        </div>
+        <div>
+          <span>{t("documentValidation")}</span>
+          <strong>
+            {t(`validationState.${artifact.validationState}`)} ·{" "}
+            {t("revisionLabel", { n: artifact.currentRevision })}
+          </strong>
+        </div>
+      </section>
 
       {feedback.top !== null ? (
         feedbackProblem !== null ? (
@@ -1236,7 +1259,7 @@ function ArtifactEditor({
           ) : null}
         </div>
       )}
-    </Panel>
+    </section>
   );
 }
 
@@ -1332,7 +1355,7 @@ function EditorPlaceholder({
         onClick={onGenerate}
         disabled={generationUnavailable || !canGenerate}
       >
-        {t("generate")}
+        {t("configureGeneration")}
       </Button>
     </Panel>
   );
@@ -1436,8 +1459,7 @@ function EvidenceRail({
           : t("linkedActionUnavailable");
 
   return (
-    <Panel
-      padding="none"
+    <aside
       className={styles.evidenceRail}
       data-studio-evidence-rail=""
       aria-labelledby="sf-studio-evidence-title"
@@ -1697,7 +1719,7 @@ function EvidenceRail({
         <ShieldCheck aria-hidden="true" size={17} />
         <p>{t("manualHandoff")}</p>
       </div>
-    </Panel>
+    </aside>
   );
 }
 
@@ -2018,7 +2040,6 @@ function GenerateForm({
 
 interface ActionPickerProps {
   readonly actions: readonly ArtifactAction[];
-  readonly liveKeys: ReadonlySet<string>;
   readonly activeKeys: ReadonlySet<string>;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
@@ -2030,7 +2051,6 @@ interface ActionPickerProps {
 
 function ActionPicker({
   actions,
-  liveKeys,
   activeKeys,
   hasMore,
   loadingMore,
@@ -2085,7 +2105,6 @@ function ActionPicker({
             const type = expectedArtifactType(action);
             const key =
               type === null ? null : artifactGenerationKey(action.id, type);
-            const hasLive = key !== null && liveKeys.has(key);
             const active = key !== null && activeKeys.has(key);
             return (
               <li key={action.id} className={styles.pickerRow}>
@@ -2107,9 +2126,7 @@ function ActionPicker({
                 >
                   {active
                     ? t("generating")
-                    : hasLive
-                      ? t("regenerate")
-                      : t("generateSubmit")}
+                    : t("configureGeneration")}
                 </Button>
               </li>
             );
@@ -2383,17 +2400,6 @@ export function StudioClient({
   );
   const recoveryPaginationKey = JSON.stringify([...recoveryKeys].sort());
   const generationFenceKeys = new Set([...settlementKeys, ...recoveryKeys]);
-  const canonicalLiveKeys = new Set(
-    artifacts
-      .filter((a) => a.status !== "archived")
-      .map((a) => artifactGenerationKey(a.actionId, a.artifactType)),
-  );
-  const liveKeys = new Set([
-    ...canonicalLiveKeys,
-    ...Object.values(localActiveKeysByRun),
-    ...recoveryKeys,
-    ...settlementKeys,
-  ]);
   const activeKeys = new Set(
     artifacts
       .filter(
@@ -3388,8 +3394,15 @@ export function StudioClient({
                   : undefined
               }
             >
-              {t("generate")}
+              {t("configureGeneration")}
             </Button>
+            <Link
+              href={`/p/${encodeURIComponent(projectId)}/growth-map`}
+              className={styles.growthMapLink}
+            >
+              <ArrowLeft aria-hidden="true" size={16} />
+              {t("backToGrowthMap")}
+            </Link>
             {actionsInitialLoading ? (
               <p id="sf-gen-note" className={styles.heroNote}>
                 {tCommon("loading")}
@@ -3403,7 +3416,6 @@ export function StudioClient({
             ) : null}
           </div>
         </div>
-
       </header>
 
       {actionsInitialError ? (
@@ -3662,13 +3674,6 @@ export function StudioClient({
                       selectionBlocked={generationFenced}
                       selected={selected?.id === artifact.id}
                       onOpen={() => selectArtifact(artifact.id)}
-                      onRegenerate={
-                        action !== undefined &&
-                        action.status !== "dismissed" &&
-                        !generationFenced
-                          ? () => openGenerate(action, artifact.outputLocale)
-                          : undefined
-                      }
                     />
                   );
                 })}
@@ -3721,11 +3726,7 @@ export function StudioClient({
         </Panel>
 
         <section
-          className={cx(
-            styles.editorColumn,
-            selected?.artifactType === "english_blog_draft" &&
-              styles.editorColumnWide,
-          )}
+          className={styles.editorColumn}
           data-studio-editor-column=""
           aria-label={t("editorCanvas")}
         >
@@ -3753,7 +3754,6 @@ export function StudioClient({
           ) : pickerOpen ? (
             <ActionPicker
               actions={generationEligibleActions}
-              liveKeys={liveKeys}
               activeKeys={activeKeys}
               hasMore={actionsQuery.hasNextPage}
               loadingMore={actionsQuery.isFetchingNextPage}
@@ -3764,38 +3764,56 @@ export function StudioClient({
             />
           ) : selected !== null ? (
             selected.artifactType === "english_blog_draft" ? (
-              <ContentShadowArtifactPanel
-                key={selected.id}
-                projectId={projectId}
-                artifact={selected}
-                action={selectedAction}
-                renderEditor={({ allowReadyStatusChange }) => (
+              <div
+                className={styles.documentShellWide}
+                data-studio-document=""
+              >
+                <ContentShadowArtifactPanel
+                  key={selected.id}
+                  projectId={projectId}
+                  artifact={selected}
+                  action={selectedAction}
+                  renderEditor={({ allowReadyStatusChange }) => (
+                    <ArtifactEditor
+                      key={selected.id}
+                      projectId={projectId}
+                      artifact={selected}
+                      action={selectedAction}
+                      onClose={closeEditor}
+                      onDirtyChange={onEditorDirtyChange}
+                      onRegenerate={selectedArtifactRegenerate}
+                      allowReadyStatusChange={allowReadyStatusChange}
+                    />
+                  )}
+                  editorDirty={selectedEditorDirty}
+                />
+              </div>
+            ) : (
+              <Panel
+                padding="none"
+                className={styles.documentShell}
+                data-studio-document=""
+              >
+                <div className={styles.documentBodyColumn}>
                   <ArtifactEditor
                     key={selected.id}
                     projectId={projectId}
                     artifact={selected}
+                    action={selectedAction}
                     onClose={closeEditor}
                     onDirtyChange={onEditorDirtyChange}
                     onRegenerate={selectedArtifactRegenerate}
-                    initialMarkdownMode="edit"
-                    showMarkdownModeTabs={false}
-                    allowReadyStatusChange={allowReadyStatusChange}
                   />
-                )}
-                editorDirty={selectedEditorDirty}
-              />
-            ) : (
-              <ArtifactEditor
-                key={selected.id}
-                projectId={projectId}
-                artifact={selected}
-                onClose={closeEditor}
-                onDirtyChange={onEditorDirtyChange}
-                onRegenerate={selectedArtifactRegenerate}
-                initialMarkdownMode={
-                  selected.validationState === "invalid" ? "edit" : "preview"
-                }
-              />
+                </div>
+                <EvidenceRail
+                  projectId={projectId}
+                  artifact={selected}
+                  action={selectedAction}
+                  linkedActionState={linkedActionState}
+                  editorDirty={selectedEditorDirty}
+                  onLinkedActionRetry={retryLinkedAction}
+                />
+              </Panel>
             )
           ) : (
             <EditorPlaceholder
@@ -3807,17 +3825,6 @@ export function StudioClient({
             />
           )}
         </section>
-
-        {selected?.artifactType === "english_blog_draft" ? null : (
-          <EvidenceRail
-            projectId={projectId}
-            artifact={selected}
-            action={selectedAction}
-            linkedActionState={linkedActionState}
-            editorDirty={selectedEditorDirty}
-            onLinkedActionRetry={retryLinkedAction}
-          />
-        )}
       </div>
     </div>
   );
