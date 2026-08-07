@@ -14,9 +14,13 @@ export function FreeAuditSection() {
   const locale = useLocale();
 
   return (
+    // overflow-hidden 不是可选的：右侧面板那圈 -right-15 的光晕会伸出容器，
+    // 而 section 是这条链上唯一能裁掉它的祖先。少了它，文档宽度被撑出视口，
+    // 1200px 以下整页可以横向拖动 28px（390px 上是 36px）。首页其余 section
+    // 都带着它，只有这里漏了。
     <section
       aria-labelledby="free-audit-title"
-      className="border-t border-brand-border bg-brand-bg-alt py-16 md:py-22"
+      className="relative overflow-hidden border-t border-brand-border bg-brand-bg-alt py-16 md:py-22"
     >
       <div className="max-w-content mx-auto grid items-center gap-9 px-6 md:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-14">
         <div>
@@ -32,9 +36,14 @@ export function FreeAuditSection() {
           <ul className="mt-6 space-y-2.5 text-[13.5px] text-text-dark-secondary">
             {["point1", "point2", "point3"].map((key) => (
               <li key={key} className="flex items-baseline gap-2.5">
+                {/*
+                 * 字体栈钉死 system-ui：▸ (U+25B8) 不在 IBM Plex Mono 的拉丁分片里，
+                 * 走 --font-mono 会一路落到 Noto Sans SC，为一个装饰箭头给英文页
+                 * 拉一份 7KB 的中文符号分片。和语言切换键同一个处理。
+                 */}
                 <span
                   aria-hidden="true"
-                  className="shrink-0 font-mono text-[10px] text-brand-accent"
+                  className="shrink-0 text-[10px] text-brand-accent [font-family:system-ui,sans-serif]"
                 >
                   ▸
                 </span>
