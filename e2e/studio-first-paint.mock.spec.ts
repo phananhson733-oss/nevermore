@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { E2E_PROJECT_ID, installCriticalFlowApi } from "./mock-api.ts";
+import {
+  E2E_ARTIFACT_ID,
+  E2E_PROJECT_ID,
+  installCriticalFlowApi,
+} from "./mock-api.ts";
 
 const API_BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
 
@@ -48,20 +52,24 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
     const queue = page.locator("[data-studio-queue]");
     await expect(
       hero.getByRole("heading", {
-        name: "Execution center",
+        name: "Review and process deliverables directly",
       }),
     ).toBeVisible();
     await expect(
       page.getByText("Technical ticket", { exact: true }).first(),
     ).toBeVisible();
+    const artifactRow = page.locator(
+      `[data-studio-artifact-id="${E2E_ARTIFACT_ID}"]`,
+    );
+    await expect(artifactRow).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Open", exact: true }),
-    ).toBeVisible();
+      artifactRow.locator(":scope > button[type='button']"),
+    ).toHaveCount(1);
     await expect(
       queue.getByText("Fix the failing product page", { exact: true }),
     ).toHaveCount(0);
     await expect(
-      hero.getByRole("button", { name: "Generate artifact" }),
+      hero.getByRole("button", { name: "Configure a new deliverable" }),
     ).toBeDisabled();
     expect(projectReads).toBe(0);
 
@@ -71,7 +79,9 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
     await expect(
       queue.getByText("Fix the failing product page", { exact: true }),
     ).toBeVisible();
-    const generate = hero.getByRole("button", { name: "Generate artifact" });
+    const generate = hero.getByRole("button", {
+      name: "Configure a new deliverable",
+    });
     await expect(generate).toBeEnabled();
     expect(projectReads).toBe(0);
 
@@ -85,7 +95,7 @@ test("Studio renders artifacts before actions and defers project metadata", asyn
     await page
       .getByRole("listitem")
       .filter({ hasText: "Fix the failing product page" })
-      .getByRole("button", { name: /Generate|Regenerate/ })
+      .getByRole("button", { name: "Configure a new deliverable" })
       .click();
     await expect(page.getByLabel("Output language")).toHaveValue("en");
     await expect.poll(() => projectReads).toBe(1);

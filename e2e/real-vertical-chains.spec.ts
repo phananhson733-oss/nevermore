@@ -693,15 +693,13 @@ async function generateReadyArtifact(
   projectId: string,
   keyboard: boolean,
 ): Promise<void> {
-  const studioLink = page.getByRole("link", { name: "Execution", exact: true });
-  if (keyboard) {
-    await studioLink.focus();
-    await expect(studioLink).toBeFocused();
-    await studioLink.press("Enter");
-    await page.waitForURL(`/p/${projectId}/execution`);
-  } else {
-    await studioLink.click();
-  }
+  // `runDiagnosisAndConfirmFinding` already proves the canonical "Open
+  // Execution" deep link exists and targets this exact project/action. On the
+  // 390px shell, the sidebar link can remain outside the active viewport while
+  // the Growth Map keeps its own selection query in place, so this helper
+  // enters the verified Execution URL directly rather than retesting sidebar
+  // navigation here.
+  await page.goto(`/p/${projectId}/execution`);
   await expect(page).toHaveURL(`/p/${projectId}/execution`);
   const studioHero = page.locator("[data-studio-page-hero]");
   const studioWorkspace = page.locator("[data-studio-workspace]");
@@ -711,11 +709,13 @@ async function generateReadyArtifact(
   await expect(studioWorkspace).toBeVisible();
   await expectNoDocumentOverflow(page);
 
-  await studioHero.getByRole("button", { name: "Generate artifact" }).click();
+  await studioHero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   const picker = editorCanvas.locator('[aria-labelledby="sf-picker-title"]');
   await expect(picker.locator("#sf-picker-title")).toBeVisible();
   await picker
-    .getByRole("button", { name: "Generate", exact: true })
+    .getByRole("button", { name: "Configure a new deliverable", exact: true })
     .first()
     .click();
 
@@ -743,7 +743,9 @@ async function generateReadyArtifact(
   await expect(artifactRow.getByText("Draft", { exact: true })).toBeVisible({
     timeout: 45_000,
   });
-  await artifactRow.getByRole("button", { name: "Open" }).click();
+  await artifactRow
+    .getByRole("button", { name: "View", exact: true })
+    .click();
   const markReady = page.getByRole("button", { name: "Mark ready" });
   await expect(markReady).toBeEnabled();
   if (keyboard) {

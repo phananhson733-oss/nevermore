@@ -224,7 +224,9 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
     secondArtifactCard.getByText(secondAction.title, { exact: true }),
   ).toBeVisible();
 
-  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await hero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   await expect(canvas.getByRole("heading", { name: "Pick an action" })).toBeVisible();
   await expect(
     canvas.getByText(secondAction.title, { exact: true }),
@@ -232,7 +234,7 @@ test("Studio exposes artifact and action next pages", async ({ page }) => {
   await expect(canvas.getByRole("button", { name: "Load more" })).toHaveCount(0);
 });
 
-test("Studio guards hero generation and card regeneration while the editor is dirty", async ({
+test("Studio guards configuration and document regeneration while the editor is dirty", async ({
   page,
 }) => {
   const action = actionFixture(1, "Guarded generation action");
@@ -271,10 +273,11 @@ test("Studio guards hero generation and card regeneration while the editor is di
   const note = page.getByRole("textbox", { name: "Revision note" });
   const heroGenerate = page
     .locator("[data-studio-page-hero]")
-    .getByRole("button", { name: "Generate artifact" });
-  const regenerate = page
-    .locator(`[data-studio-artifact-id="${artifact.id}"]`)
-    .getByRole("button", { name: "Regenerate" });
+    .getByRole("button", { name: "Configure a new deliverable" });
+  const regenerate = page.getByRole("button", {
+    name: "Regenerate",
+    exact: true,
+  });
 
   await content.fill("Unsaved content survives a rejected transition");
   await note.fill("Unsaved note survives too");
@@ -362,15 +365,13 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await page.getByRole("link", { name: "Execution", exact: true }).click();
   await expect(page).toHaveURL(onProjectScreen("execution"));
 
-  const firstOpen = page
-    .getByText(firstAction.title, { exact: true })
-    .locator("..")
-    .getByRole("button", { name: "Open", exact: true });
-  const secondOpen = page
-    .getByText(secondAction.title, { exact: true })
-    .locator("..")
-    .getByRole("button", { name: "Open", exact: true });
-  await firstOpen.click();
+  const firstView = page
+    .locator(`[data-studio-artifact-id="${firstArtifact.id}"]`)
+    .getByRole("button", { name: "View", exact: true });
+  const secondView = page
+    .locator(`[data-studio-artifact-id="${secondArtifact.id}"]`)
+    .getByRole("button", { name: "View", exact: true });
+  await firstView.click();
   const editMarkdown = page.getByRole("tab", {
     name: "Edit Markdown",
     exact: true,
@@ -412,14 +413,14 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await expect(note).toHaveValue("Keep this operator note");
 
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = secondOpen.click();
+  transitionPromise = secondView.click();
   dialog = await dialogPromise;
   await dialog.dismiss();
   await transitionPromise;
   await expect(content).toHaveValue("Locally edited first artifact");
 
   dialogPromise = page.waitForEvent("dialog");
-  transitionPromise = secondOpen.click();
+  transitionPromise = secondView.click();
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
@@ -463,7 +464,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   expect(resultsPosition as number).toBeLessThan(executionPosition as number);
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
-  await firstOpen.click();
+  await firstView.click();
   if ((await editMarkdown.count()) > 0) {
     await editMarkdown.click();
   }
@@ -487,7 +488,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
 
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
-  await firstOpen.click();
+  await firstView.click();
   if ((await editMarkdown.count()) > 0) {
     await editMarkdown.click();
   }
@@ -496,7 +497,7 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   await expect(page).toHaveURL(onProjectScreen("overview"));
   await page.goBack();
   await expect(page).toHaveURL(onProjectScreen("execution"));
-  await firstOpen.click();
+  await firstView.click();
   if ((await editMarkdown.count()) > 0) {
     await editMarkdown.click();
   }

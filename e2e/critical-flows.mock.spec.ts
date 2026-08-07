@@ -338,12 +338,17 @@ test("artifact edit surfaces a stale-revision conflict without overwriting", asy
   await overrideStudioArtifacts(page, [markdownArtifact]);
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
-  await page.getByRole("button", { name: "Open", exact: true }).click();
+  await page
+    .locator(`[data-studio-artifact-id="${E2E_ARTIFACT_ID}"]`)
+    .locator(":scope > button")
+    .click();
   const canvas = page.locator("[data-studio-editor-column]");
   await expect(
     canvas.getByRole("heading", { name: "Repair plan", level: 2 }),
   ).toBeVisible();
-  await expect(canvas.locator("strong")).toHaveText("verified evidence");
+  await expect(
+    canvas.locator("[data-studio-markdown-preview] strong"),
+  ).toHaveText("verified evidence");
   const renderedList = canvas
     .getByRole("list")
     .filter({ hasText: "Keep the canonical source" });
@@ -442,22 +447,24 @@ test("Studio chrome localizes to zh-CN without translating action content", asyn
   const hero = page.locator("[data-studio-page-hero]");
   const queue = page.locator("[data-studio-queue]");
   const canvas = page.locator("[data-studio-editor-column]");
-  await expect(hero.getByRole("button", { name: "生成执行物" })).toBeVisible();
   await expect(
-    queue.getByRole("heading", { name: "交付文件", level: 2 }),
+    hero.getByRole("button", { name: "配置新交付物" }),
+  ).toBeVisible();
+  await expect(
+    queue.getByRole("heading", { name: "当前交付物", level: 2 }),
   ).toBeVisible();
   await expect(
     queue.getByText("Fix the failing product page", { exact: true }),
   ).toBeVisible();
 
-  await hero.getByRole("button", { name: "生成执行物" }).click();
+  await hero.getByRole("button", { name: "配置新交付物" }).click();
   const pickerHeading = canvas.getByRole("heading", { name: "选择一个行动" });
   await expect(pickerHeading).toBeVisible();
   await expect(pickerHeading).toBeFocused();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
-    .getByRole("button", { name: /生成|重新生成/ })
+    .getByRole("button", { name: "配置新交付物" })
     .click();
   await expect(page.getByLabel("输出语言")).toHaveValue("en");
   await expect(page.getByLabel("生成方式")).toHaveValue("structured_llm");
@@ -482,11 +489,13 @@ test("Studio requires structured LLM for template-unsupported output locales", a
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const hero = page.locator("[data-studio-page-hero]");
   const canvas = page.locator("[data-studio-editor-column]");
-  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await hero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
-    .getByRole("button", { name: /Generate|Regenerate/ })
+    .getByRole("button", { name: "Configure a new deliverable" })
     .click();
 
   const locale = page.getByLabel("Output language");
@@ -563,7 +572,12 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
   const card = page.locator(
     `[data-studio-artifact-id="${invalidArtifact.id}"]`,
   );
-  await card.getByRole("button", { name: "Regenerate" }).click();
+  await card.locator(":scope > button").click();
+  await canvas
+    .locator("[data-studio-editor]")
+    .getByRole("button", { name: "Regenerate", exact: true })
+    .first()
+    .click();
   await expect(page.getByLabel("Generation mode")).toHaveValue(
     "structured_llm",
   );
@@ -573,7 +587,7 @@ test("Studio offers an in-place AI repair path for an invalid artifact", async (
     .last()
     .click();
 
-  await card.getByRole("button", { name: "Open" }).click();
+  await card.locator(":scope > button").click();
   const errorBox = page.getByText("Validation errors", { exact: true }).locator("..");
   await expect(errorBox).toContainText("## Affected Scope");
 

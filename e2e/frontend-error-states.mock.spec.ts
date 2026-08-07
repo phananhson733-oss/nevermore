@@ -563,11 +563,13 @@ test("Studio generation errors expose stable code and request ID without raw pro
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const hero = page.locator("[data-studio-page-hero]");
   const canvas = page.locator("[data-studio-editor-column]");
-  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await hero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
-    .getByRole("button", { name: /Generate|Regenerate/ })
+    .getByRole("button", { name: "Configure a new deliverable" })
     .click();
   await page.getByLabel("Output language").fill("fr-FR");
   await page.getByLabel("Generation mode").selectOption("structured_llm");
@@ -713,7 +715,8 @@ test("Studio adopts a cross-tab active generation from the refreshed artifact pr
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
-  await card.getByRole("button", { name: "Regenerate" }).click();
+  await card.locator(":scope > button").click();
+  await page.getByRole("button", { name: "Regenerate" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 
   await expect.poll(() => artifactReads).toBeGreaterThanOrEqual(2);
@@ -723,8 +726,8 @@ test("Studio adopts a cross-tab active generation from the refreshed artifact pr
     page.locator(`[data-studio-active-run="${runId}"]`),
   ).toBeVisible();
   await expect(
-    card.getByRole("button", { name: "Generating…" }),
-  ).toBeDisabled();
+    card.locator(":scope > button"),
+  ).toBeEnabled();
   await expect(
     page.getByText("Something went wrong", { exact: true }),
   ).toHaveCount(0);
@@ -732,7 +735,7 @@ test("Studio adopts a cross-tab active generation from the refreshed artifact pr
 
   await page
     .locator("[data-studio-page-hero]")
-    .getByRole("button", { name: "Generate artifact" })
+    .getByRole("button", { name: "Configure a new deliverable" })
     .click();
   const activeAction = page
     .locator("[data-studio-editor-column]")
@@ -828,27 +831,22 @@ test("Studio releases a 409 recovery fence when the canonical run has already se
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
-  await card.getByRole("button", { name: "Regenerate" }).click();
+  await card.locator(":scope > button").click();
+  await page.getByRole("button", { name: "Regenerate" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 
   await expect.poll(() => createAttempts).toBe(1);
   await expect.poll(() => artifactReads).toBe(2);
-  // Re-aimed for the unified queue, not loosened. The fence used to show as a
-  // disabled "Generating…" button on the card. In the unified queue a fenced
-  // row is not given a regenerate handler at all and its Open control is
-  // disabled (studio/_studio.tsx:3089 `generationFenced`, :711 `onRegenerate`,
-  // :705 `disabled={selectionBlocked}`), so the same fence is now proven by
-  // the ABSENCE of the control plus a blocked selection. Both halves are
-  // required: a fence that silently dropped would restore the button, and a
-  // fence that stopped blocking selection would enable Open.
-  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+  // The recovery fence blocks another generation without blocking read-only
+  // access to the last canonical revision.
+  await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Open", exact: true }),
-  ).toBeDisabled();
+    card.locator(":scope > button"),
+  ).toBeEnabled();
   expect(createAttempts).toBe(1);
 
   releaseSettledProjection();
-  const regenerate = card.getByRole("button", { name: "Regenerate" });
+  const regenerate = page.getByRole("button", { name: "Regenerate" });
   await expect(regenerate).toBeEnabled();
   await expect(page.locator("[data-studio-conflict-recovery]")).toHaveCount(0);
   expect(createAttempts).toBe(1);
@@ -948,11 +946,13 @@ test("Studio fences a locally queued generation before artifact projection catch
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   const hero = page.locator("[data-studio-page-hero]");
   const canvas = page.locator("[data-studio-editor-column]");
-  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await hero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   await canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
-    .getByRole("button", { name: "Regenerate", exact: true })
+    .getByRole("button", { name: "Configure a new deliverable" })
     .click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
 
@@ -965,10 +965,12 @@ test("Studio fences a locally queued generation before artifact projection catch
     staleCard.getByText("Generating", { exact: true }),
   ).toBeVisible();
   await expect(
-    staleCard.getByRole("button", { name: "Generating…" }),
-  ).toBeDisabled();
+    staleCard.locator(":scope > button"),
+  ).toBeEnabled();
 
-  await hero.getByRole("button", { name: "Generate artifact" }).click();
+  await hero
+    .getByRole("button", { name: "Configure a new deliverable" })
+    .click();
   const queuedAction = canvas
     .getByRole("listitem")
     .filter({ hasText: "Fix the failing product page" })
@@ -1006,7 +1008,7 @@ test("zh-CN Studio keeps server validation detail out of localized feedback", as
 
   await page.goto(`/p/${E2E_PROJECT_ID}/studio`);
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await page.getByRole("button", { name: "打开", exact: true }).click();
+  await page.getByRole("button", { name: "查看", exact: true }).click();
   await page.getByRole("tab", { name: "编辑 Markdown" }).click();
   await page.getByLabel("内容").fill("更新后的执行物内容");
   await page.getByRole("button", { name: "保存版本" }).click();
@@ -1646,15 +1648,17 @@ test("Studio keeps the 409 fence across a route change while the projection is i
 
   await page.goto(`/p/${E2E_PROJECT_ID}/execution`);
   const card = page.locator(`[data-studio-artifact-id="${artifactId}"]`);
-  await card.getByRole("button", { name: "Regenerate" }).click();
+  await card.locator(":scope > button").click();
+  await page.getByRole("button", { name: "Regenerate" }).click();
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect.poll(() => createAttempts).toBe(1);
 
-  // Fenced on this mount, proven the way §16.4 proves it.
-  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+  // Fenced on this mount: generation remains unavailable while the existing
+  // canonical revision remains viewable.
+  await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Open", exact: true }),
-  ).toBeDisabled();
+    card.locator(":scope > button"),
+  ).toBeEnabled();
 
   const navLinks = page
     .getByRole("navigation", { name: "Project sections" })
@@ -1674,9 +1678,9 @@ test("Studio keeps the 409 fence across a route change while the projection is i
 
   // The run is still live and the projection still cannot prove otherwise, so
   // the fence has to survive the round trip.
-  await expect(card.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Regenerate" })).toHaveCount(0);
   await expect(
-    card.getByRole("button", { name: "Open", exact: true }),
-  ).toBeDisabled();
+    card.locator(":scope > button"),
+  ).toBeEnabled();
   expect(createAttempts).toBe(1);
 });
