@@ -22,6 +22,7 @@ import {
   SignInControl,
   SignInControlMobile,
 } from "@/components/auth/sign-in-control";
+import { SignInDialog } from "@/components/auth/sign-in-dialog";
 import { headerNavItems } from "@/config/navigation";
 import { localePath } from "@/lib/locale-path";
 
@@ -29,6 +30,9 @@ export function Header() {
   const t = useTranslations();
   const locale = useLocale();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Owned here rather than by either trigger: the mobile trigger lives inside
+  // the sheet, and a dialog nested there would unmount as the sheet closed.
+  const [signInOpen, setSignInOpen] = useState(false);
 
   return (
     <header className="fixed top-0 right-0 left-0 z-50 border-b border-brand-border/80 bg-brand-bg/75 backdrop-blur-[14px]">
@@ -80,7 +84,7 @@ export function Header() {
         {/* Right */}
         <div className="flex items-center gap-4">
           <LanguageSwitcher />
-          <SignInControl />
+          <SignInControl onSignIn={() => setSignInOpen(true)} />
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -121,12 +125,17 @@ export function Header() {
                     </Link>
                   ),
                 )}
-                <SignInControlMobile onNavigate={() => setMobileOpen(false)} />
+                <SignInControlMobile
+                  onNavigate={() => setMobileOpen(false)}
+                  onSignIn={() => setSignInOpen(true)}
+                />
               </nav>
             </SheetContent>
           </Sheet>
         </div>
       </div>
+
+      <SignInDialog open={signInOpen} onOpenChange={setSignInOpen} />
     </header>
   );
 }

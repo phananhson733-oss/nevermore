@@ -48,7 +48,7 @@
     "scripts/verify-spec-lock.test.mjs": "2530402e2e00ca9b006b86d8dd996444bcd6288396ebf274070d0aa528266eaa",
     "scripts/verify-docs-consistency.test.mjs": "737f360584c8b16aafa7a28572daedf9c4ab6ca0f2fc6350661ae2ca447fd12b",
     "README.md": "dd55bb6a25cbc12b02f2c191046baf1aac310caa5ef20da555b46d12767cd764",
-    "CLAUDE.md": "d1fd1a59d1df3fae8fc0c19672c97ac6e91174d5b29a03914fff2afe9cb02623",
+    "CLAUDE.md": "fb2d6cdbf1eee507b3332c9f698a2d9aa2abd8fbf12de5694b96ba8f717a16db",
     "docs/PROGRESS.md": "969f38d24e5c71f49f9f64e3c68834828c5bd37450f6ce957f711228faa60c7a",
     "docs/DEPLOYMENT.md": "306097c17ccc3574cd2bdec67449852f182dbd68f923384da7f197e369a6cbe5"
   },

@@ -1,5 +1,5 @@
 // @input  -- /api/auth/session, siteConfig.appUrl, common.signIn / common.openApp
-// @output — 未登录显示「登录」+ 主 CTA；已登录只留主 CTA
+// @output — 未登录显示「登录」按钮（打开站内 Google 登录弹层）+ 主 CTA；已登录只留主 CTA
 // @pos    -- Header 右侧的登录入口，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -7,11 +7,6 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { siteConfig } from "@/config/site";
-
-/** Where the product's own sign-in screen lives. */
-function signInHref(): string {
-  return `${siteConfig.appUrl}/login`;
-}
 
 /**
  * The header's sign-in affordance.
@@ -24,10 +19,22 @@ function signInHref(): string {
  * The consequence is that the state is unknown for the first moment. Rendering
  * "sign in" during that window would flash the wrong control at someone who is
  * already signed in, so the slot renders the primary CTA alone until the answer
- * arrives — the CTA is correct in both states, and only the extra sign-in link
- * appears once we know it is warranted.
+ * arrives — the CTA is correct in both states, and only the extra sign-in
+ * control appears once we know it is warranted.
+ *
+ * Signing in happens HERE, in a dialog the Header owns, rather than by sending
+ * the visitor to the product's login screen. The marketing site is where the
+ * Google prompt belongs: bouncing a first-time reader to app.gengrowth.ai to
+ * authenticate and then back is a worse funnel than a single tap in place. And
+ * One Tap cannot carry it alone — Google suppresses that prompt after a
+ * dismissal and never shows it to a visitor with no Google session, which left
+ * the marketing site with no visible way to sign in at all.
  */
-export function SignInControl() {
+export function SignInControl({
+  onSignIn,
+}: {
+  readonly onSignIn: () => void;
+}) {
   const t = useTranslations();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
@@ -40,7 +47,7 @@ export function SignInControl() {
       })
       .catch(() => {
         // Unreachable session endpoint: fall back to offering sign-in, which is
-        // never harmful — an already-signed-in visitor lands on the app anyway.
+        // never harmful — the panel degrades to the app's own login page.
         if (!controller.signal.aborted) setSignedIn(false);
       });
     return () => controller.abort();
@@ -49,12 +56,13 @@ export function SignInControl() {
   return (
     <>
       {signedIn === false ? (
-        <a
-          href={signInHref()}
-          className="hidden text-[13.5px] text-text-dark-secondary transition-colors hover:text-text-dark-primary md:inline-flex"
+        <button
+          type="button"
+          onClick={onSignIn}
+          className="hidden h-9.5 items-center rounded-lg border border-brand-border-card px-[14px] text-[13.5px] text-text-dark-secondary transition-colors hover:border-brand-accent/40 hover:text-text-dark-primary md:inline-flex"
         >
           {t("common.signIn")}
-        </a>
+        </button>
       ) : null}
 
       <a
@@ -67,11 +75,18 @@ export function SignInControl() {
   );
 }
 
-/** The same pair inside the mobile sheet, where both are always shown. */
+/**
+ * The same pair inside the mobile sheet, where both are always shown.
+ *
+ * Signing in closes the sheet first: the dialog is the Header's, not the
+ * sheet's, so leaving the sheet open would stack two focus traps.
+ */
 export function SignInControlMobile({
   onNavigate,
+  onSignIn,
 }: {
   readonly onNavigate: () => void;
+  readonly onSignIn: () => void;
 }) {
   const t = useTranslations();
 
@@ -84,13 +99,16 @@ export function SignInControlMobile({
       >
         {t("common.getStarted")}
       </a>
-      <a
-        href={signInHref()}
-        onClick={onNavigate}
+      <button
+        type="button"
+        onClick={() => {
+          onNavigate();
+          onSignIn();
+        }}
         className="text-center text-[15px] text-text-dark-secondary transition-colors hover:text-text-dark-primary"
       >
         {t("common.signIn")}
-      </a>
+      </button>
     </>
   );
 }
