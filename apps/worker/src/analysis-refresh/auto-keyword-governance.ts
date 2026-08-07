@@ -1,16 +1,19 @@
 import {
   AUTO_KEYWORD_GOVERNANCE_VERSION,
+  KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
   KeywordsRepository,
   MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
   MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH,
   type AutoGovernanceCandidateRow,
   type DbTx,
+  type DiagnosticGovernanceLoad,
   type ProjectScope,
   type SystemKeywordApprovalInput,
   type SystemKeywordApprovalSkip,
 } from "@sf/db";
 import { CLUSTER_KEY_VERSION, clusterKey } from "@sf/sources";
+import { DIAGNOSTIC_GOVERNANCE_LIMITS } from "./governance.ts";
 
 /**
  * How many untouched candidates one Analysis Refresh may govern. This runs
@@ -22,6 +25,22 @@ export const MAX_AUTO_GOVERNED_KEYWORDS_PER_RUN = Math.min(
   MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH,
   MAX_AUTO_GOVERNANCE_CANDIDATE_READ,
 );
+
+/**
+ * Headroom this pass refuses to spend, in eligible keyword entities.
+ *
+ * Automated governance and `freezeDiagnosticGovernance` share ONE transaction,
+ * so a freeze that overflows its hard ceiling also rolls the approvals back —
+ * and the next Analysis Refresh reads the same candidates in the same id order
+ * and overflows again, wedging the Growth Audit forever while the committed
+ * database still looks under the ceiling. The reserve keeps a run from
+ * approving right up to the edge, where an operator review or a concurrent
+ * ingestion landing between this budget read and the freeze would tip it over.
+ */
+export const AUTO_GOVERNANCE_ENTITY_SAFETY_RESERVE = 50;
+
+/** The same reserve for occurrence references. See the entity reserve. */
+export const AUTO_GOVERNANCE_OCCURRENCE_SAFETY_RESERVE = 500;
 
 /**
  * Minimum immutable DataForSEO evidence.
@@ -55,6 +74,52 @@ export type AutoKeywordGovernanceRejection =
   | "insufficient_evidence"
   | "no_cluster_key";
 
+/**
+ * Why an approval the evidence policy accepted was NOT submitted this run.
+ *
+ * Every value is a fact observed before any write, and every one of them is
+ * reported. A withheld candidate keeps its previous governance and is read
+ * again by the next Analysis Refresh; nothing is silently dropped.
+ */
+export type AutoKeywordGovernanceWithholding =
+  /** The diagnostic freeze has no room left for another eligible keyword. */
+  | "entity_budget_exhausted"
+  /** The freeze has no room left for this keyword's occurrence references. */
+  | "occurrence_budget_exhausted"
+  /**
+   * This keyword alone carries more occurrences than the freeze reads per
+   * entity, so approving it would make every future freeze fail. It is left
+   * ungoverned instead, which is honest and reversible.
+   */
+  | "occurrence_history_unfreezable"
+  /**
+   * No immutable occurrence backs this keyword, and the freeze rejects an
+   * eligible keyword with no occurrence as corrupt.
+   */
+  | "occurrence_lineage_absent";
+
+/** What the diagnostic freeze budget looked like before this pass wrote. */
+export interface AutoKeywordGovernanceBudget {
+  /** Eligible keyword entities already committed, read before any write. */
+  readonly eligibleEntities: number;
+  /** Occurrence references those entities already contribute. */
+  readonly occurrenceRefs: number;
+  /** Entities this run was allowed to add, after the safety reserve. */
+  readonly entityHeadroom: number;
+  /** Occurrence references this run was allowed to add. */
+  readonly occurrenceHeadroom: number;
+}
+
+/**
+ * Why an automated governance pass produced nothing. The Growth Audit
+ * continues with the library exactly as it already stands, and this is
+ * reported rather than swallowed.
+ */
+export interface AutoKeywordGovernanceFailure {
+  readonly code: string;
+  readonly summary: string;
+}
+
 export interface AutoKeywordGovernanceReport {
   readonly enabled: boolean;
   /**
@@ -62,24 +127,40 @@ export interface AutoKeywordGovernanceReport {
    * with no qualifying evidence at all, so this counts evidence-bearing rows.
    */
   readonly considered: number;
-  /** Candidates that produced an automated approval attempt. */
+  /** Candidates the evidence policy would approve, before any budget. */
   readonly proposed: number;
+  /** Approvals actually sent to the repository after the freeze budget. */
+  readonly submitted: number;
   /** Automated approvals actually appended to the ledger. */
   readonly approved: number;
   readonly rejected: Readonly<Record<AutoKeywordGovernanceRejection, number>>;
+  readonly withheld: Readonly<
+    Record<AutoKeywordGovernanceWithholding, number>
+  >;
   readonly skipped: Readonly<Record<SystemKeywordApprovalSkip, number>>;
+  /** Null only when no budget was read (disabled, or the pass failed). */
+  readonly budget: AutoKeywordGovernanceBudget | null;
+  readonly failure: AutoKeywordGovernanceFailure | null;
 }
 
-const EMPTY_REPORT: AutoKeywordGovernanceReport = Object.freeze({
-  enabled: false,
-  considered: 0,
-  proposed: 0,
-  approved: 0,
-  rejected: Object.freeze({
-    insufficient_evidence: 0,
-    no_cluster_key: 0,
-  }),
-  skipped: Object.freeze({
+const EMPTY_REJECTIONS: Readonly<
+  Record<AutoKeywordGovernanceRejection, number>
+> = Object.freeze({
+  insufficient_evidence: 0,
+  no_cluster_key: 0,
+});
+
+const EMPTY_WITHHOLDINGS: Readonly<
+  Record<AutoKeywordGovernanceWithholding, number>
+> = Object.freeze({
+  entity_budget_exhausted: 0,
+  occurrence_budget_exhausted: 0,
+  occurrence_history_unfreezable: 0,
+  occurrence_lineage_absent: 0,
+});
+
+const EMPTY_SKIPS: Readonly<Record<SystemKeywordApprovalSkip, number>> =
+  Object.freeze({
     keyword_absent: 0,
     human_decision_exists: 0,
     already_reviewed: 0,
@@ -87,8 +168,51 @@ const EMPTY_REPORT: AutoKeywordGovernanceReport = Object.freeze({
     revision_exhausted: 0,
     site_page_absent: 0,
     ledger_unreadable: 0,
-  }),
+  });
+
+const EMPTY_REPORT: AutoKeywordGovernanceReport = Object.freeze({
+  enabled: false,
+  considered: 0,
+  proposed: 0,
+  submitted: 0,
+  approved: 0,
+  rejected: EMPTY_REJECTIONS,
+  withheld: EMPTY_WITHHOLDINGS,
+  skipped: EMPTY_SKIPS,
+  budget: null,
+  failure: null,
 });
+
+/**
+ * Turn a thrown automated-governance failure into the same honest report shape
+ * the success path produces, so the caller can log one thing and carry on.
+ *
+ * The caller MUST still freeze and create the Growth Audit: the Keyword Library
+ * simply stays at the governance it already had, which is an existing and
+ * truthful state. Losing an entire diagnostic because a best-effort governance
+ * pass threw would be the strictly worse failure.
+ */
+export function autoKeywordGovernanceFailureReport(
+  error: unknown,
+): AutoKeywordGovernanceReport {
+  const code =
+    error instanceof KeywordGovernanceIntegrityError
+      ? `AUTO_KEYWORD_GOVERNANCE_${error.code}`
+      : error instanceof RangeError
+        ? "AUTO_KEYWORD_GOVERNANCE_BOUND_EXCEEDED"
+        : "AUTO_KEYWORD_GOVERNANCE_FAILED";
+  return {
+    ...EMPTY_REPORT,
+    enabled: true,
+    failure: {
+      code,
+      summary:
+        "Automated keyword governance produced no decision this run. " +
+        "The Keyword Library keeps the governance it already had and the " +
+        "Growth Audit continues from it.",
+    },
+  };
+}
 
 /**
  * The policy gate. The repository read already enforces the presence floor in
@@ -192,21 +316,115 @@ export function deriveAutoKeywordApproval(
   };
 }
 
+/**
+ * What the diagnostic freeze still has room for, after subtracting the load
+ * that is already committed and the reserve this pass never spends.
+ */
+export function freezeBudget(
+  load: DiagnosticGovernanceLoad,
+): AutoKeywordGovernanceBudget {
+  return {
+    eligibleEntities: load.eligibleEntities,
+    occurrenceRefs: load.occurrenceRefs,
+    entityHeadroom: Math.max(
+      0,
+      DIAGNOSTIC_GOVERNANCE_LIMITS.keywordEntities -
+        AUTO_GOVERNANCE_ENTITY_SAFETY_RESERVE -
+        load.eligibleEntities,
+    ),
+    occurrenceHeadroom: Math.max(
+      0,
+      DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrenceRefsTotal -
+        AUTO_GOVERNANCE_OCCURRENCE_SAFETY_RESERVE -
+        load.occurrenceRefs,
+    ),
+  };
+}
+
+interface BudgetedApprovals {
+  readonly approvals: readonly SystemKeywordApprovalInput[];
+  readonly withheld: Readonly<
+    Record<AutoKeywordGovernanceWithholding, number>
+  >;
+}
+
+/**
+ * Spend the freeze's remaining budget on as many policy-approved candidates as
+ * fit, in the repository's own id order, and account for every candidate that
+ * does not fit.
+ *
+ * Deterministic and side-effect free, so the decision to withhold is testable
+ * without a database and identical across retries of the same input.
+ */
+export function withinFreezeBudget(
+  proposals: readonly {
+    readonly candidate: AutoGovernanceCandidateRow;
+    readonly input: SystemKeywordApprovalInput;
+  }[],
+  budget: AutoKeywordGovernanceBudget,
+): BudgetedApprovals {
+  const withheld: Record<AutoKeywordGovernanceWithholding, number> = {
+    entity_budget_exhausted: 0,
+    occurrence_budget_exhausted: 0,
+    occurrence_history_unfreezable: 0,
+    occurrence_lineage_absent: 0,
+  };
+  const approvals: SystemKeywordApprovalInput[] = [];
+  let entityHeadroom = budget.entityHeadroom;
+  let occurrenceHeadroom = budget.occurrenceHeadroom;
+
+  for (const proposal of proposals) {
+    const occurrences = proposal.candidate.occurrence_count;
+    if (!Number.isSafeInteger(occurrences) || occurrences < 1) {
+      withheld.occurrence_lineage_absent += 1;
+      continue;
+    }
+    if (occurrences > DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity) {
+      withheld.occurrence_history_unfreezable += 1;
+      continue;
+    }
+    if (entityHeadroom < 1) {
+      withheld.entity_budget_exhausted += 1;
+      continue;
+    }
+    if (occurrenceHeadroom < occurrences) {
+      withheld.occurrence_budget_exhausted += 1;
+      continue;
+    }
+    entityHeadroom -= 1;
+    occurrenceHeadroom -= occurrences;
+    approvals.push(proposal.input);
+  }
+
+  return { approvals, withheld };
+}
+
 export interface RunAutoKeywordGovernanceOptions {
   /** Resolved from the worker env flag by the caller; never read here. */
   readonly enabled: boolean;
   readonly limit?: number;
 }
 
+interface NestingExecutor {
+  readonly transaction?: <T>(run: (inner: DbTx) => Promise<T>) => Promise<T>;
+}
+
 /**
  * Approve every candidate keyword whose immutable provider evidence already
- * justifies it, so an ingested library is not invisible to the diagnostic
- * freeze merely because no operator has clicked through it.
+ * justifies it AND that still fits inside the diagnostic freeze's hard budget,
+ * so an ingested library is not invisible to the freeze merely because no
+ * operator has clicked through it — and so a library larger than the freeze can
+ * hold degrades into "governed later" instead of "diagnostic wedged forever".
  *
  * MUST run inside the caller's open Growth Audit transaction and BEFORE
  * `freezeDiagnosticGovernance`, so the freeze observes the approvals it just
  * produced. Everything it writes is recorded as an actorless
  * `system_suggestion`; a human decision is never overwritten.
+ *
+ * The whole pass runs inside a nested transaction (a PostgreSQL SAVEPOINT)
+ * whenever the executor supports one, so a failure part-way through a batch
+ * rolls back only the automated writes and leaves the caller's transaction
+ * usable for the freeze.
  */
 export async function runAutoKeywordGovernance(
   tx: DbTx,
@@ -214,32 +432,56 @@ export async function runAutoKeywordGovernance(
   options: RunAutoKeywordGovernanceOptions,
 ): Promise<AutoKeywordGovernanceReport> {
   if (!options.enabled) return EMPTY_REPORT;
+  const executor = tx as unknown as NestingExecutor;
+  if (typeof executor.transaction === "function") {
+    return executor.transaction((inner) =>
+      governInTransaction(inner, scope, options),
+    );
+  }
+  return governInTransaction(tx, scope, options);
+}
 
+async function governInTransaction(
+  tx: DbTx,
+  scope: ProjectScope,
+  options: RunAutoKeywordGovernanceOptions,
+): Promise<AutoKeywordGovernanceReport> {
   const limit = Math.min(
     options.limit ?? MAX_AUTO_GOVERNED_KEYWORDS_PER_RUN,
     MAX_AUTO_GOVERNED_KEYWORDS_PER_RUN,
   );
-  const candidates = await new KeywordsRepository(
-    tx,
-  ).listAutoGovernanceCandidates(scope, { limit });
+  const keywords = new KeywordsRepository(tx);
+  // Read the committed load BEFORE proposing anything: the freeze that follows
+  // in this same transaction cannot be retried on its own, so overflowing it is
+  // not a recoverable error but a permanently repeating rollback.
+  const budget = freezeBudget(
+    await keywords.readDiagnosticGovernanceLoad(scope),
+  );
+  const candidates = await keywords.listAutoGovernanceCandidates(scope, {
+    limit,
+  });
 
   const rejected = { insufficient_evidence: 0, no_cluster_key: 0 };
-  const approvals: SystemKeywordApprovalInput[] = [];
+  const proposals: {
+    readonly candidate: AutoGovernanceCandidateRow;
+    readonly input: SystemKeywordApprovalInput;
+  }[] = [];
   for (const candidate of candidates) {
     const decision = deriveAutoKeywordApproval(candidate);
     if (decision.kind === "reject") {
       rejected[decision.reason] += 1;
       continue;
     }
-    approvals.push(decision.input);
+    proposals.push({ candidate, input: decision.input });
   }
 
+  const budgeted = withinFreezeBudget(proposals, budget);
   const outcomes =
-    approvals.length === 0
+    budgeted.approvals.length === 0
       ? []
       : await new KeywordGovernanceRepository(tx).applySystemApprovals(
           scope,
-          approvals,
+          budgeted.approvals,
         );
 
   const skipped: Record<SystemKeywordApprovalSkip, number> = {
@@ -263,9 +505,13 @@ export async function runAutoKeywordGovernance(
   return {
     enabled: true,
     considered: candidates.length,
-    proposed: approvals.length,
+    proposed: proposals.length,
+    submitted: budgeted.approvals.length,
     approved,
     rejected,
+    withheld: budgeted.withheld,
     skipped,
+    budget,
+    failure: null,
   };
 }

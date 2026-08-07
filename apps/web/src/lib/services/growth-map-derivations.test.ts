@@ -105,6 +105,49 @@ describe("page_type.v1", () => {
     ).toBe("resource");
   });
 
+  it.each([
+    // canonicalizeUrl only normalises well-formed %XX escapes and the WHATWG
+    // URL parser keeps a bare "%" verbatim, so these paths really do reach the
+    // read model. Decoding must degrade to the raw segment, never throw: a
+    // URIError here would 500 the whole /audit/urls page.
+    {
+      name: "a bare percent in a sibling segment",
+      url: "https://example.test/blog/50%-off",
+      expected: "blog",
+    },
+    {
+      name: "a truncated escape in a sibling segment",
+      url: "https://example.test/docs/%E4%B8",
+      expected: "documentation",
+    },
+    {
+      name: "a bare percent in the only segment",
+      url: "https://example.test/a%zz",
+      expected: null,
+    },
+    {
+      name: "a non-UTF-8 escape sequence",
+      url: "https://example.test/%C0%80/",
+      expected: null,
+    },
+    {
+      name: "an undecodable locale-looking prefix",
+      url: "https://example.test/%zh/wiki/aries",
+      expected: "documentation",
+    },
+  ])("survives $name and classifies it as $expected", ({ url, expected }) => {
+    expect(() => classify(url)).not.toThrow();
+    expect(classify(url)).toBe(expected);
+  });
+
+  it("still decodes every well-formed escape", () => {
+    expect(classify("https://example.test/wiki/%E6%96%87%E6%A1%A3")).toBe(
+      "documentation",
+    );
+    // The decoded form is what matches, so the raw fallback must not shadow it.
+    expect(classify("https://example.test/%64ocs/api")).toBe("documentation");
+  });
+
   it("answers null rather than guessing when nothing deterministic matched", () => {
     expect(classify("not-a-url")).toBeNull();
     expect(classify("https://example.test/customer-onboarding")).toBeNull();

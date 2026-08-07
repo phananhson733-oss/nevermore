@@ -56,7 +56,11 @@ import {
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import { keywordAutoGovernanceEnabled } from "../env.ts";
-import { runAutoKeywordGovernance } from "./auto-keyword-governance.ts";
+import {
+  autoKeywordGovernanceFailureReport,
+  runAutoKeywordGovernance,
+  type AutoKeywordGovernanceReport,
+} from "./auto-keyword-governance.ts";
 import {
   ANALYSIS_REFRESH_COLLECTION_CONFIG,
   dataForSeoBacklinksConnectionConfig,
@@ -1336,9 +1340,29 @@ async function startGrowthAuditStep(
   // library, so an Owner never sees an empty Keyword Library for a project the
   // collectors already populated. Every write is an actorless
   // `system_suggestion`; a human decision is never overwritten.
-  const autoGovernance = await runAutoKeywordGovernance(tx, parent.scope, {
-    enabled: keywordAutoGovernanceEnabled(),
-  });
+  // Automated governance is a best-effort supplement to the Keyword Library,
+  // never a precondition of the diagnostic. It can throw — ledger integrity,
+  // batch bounds — and every OTHER known failure in this step already takes the
+  // safe `failStepInTx` path, so letting this one escape would be the single
+  // way a governance defect destroys an entire Growth Audit. Catch it, report
+  // the limitation, and freeze the library exactly as it already stands: an
+  // ungoverned library is an existing and truthful state, a lost diagnostic is
+  // not. The pass itself runs in a nested transaction, so nothing it half-wrote
+  // survives into the freeze.
+  let autoGovernance: AutoKeywordGovernanceReport;
+  try {
+    autoGovernance = await runAutoKeywordGovernance(tx, parent.scope, {
+      enabled: keywordAutoGovernanceEnabled(),
+    });
+  } catch (error) {
+    autoGovernance = autoKeywordGovernanceFailureReport(error);
+    ctx.logger.error("analysis_refresh_auto_keyword_governance_failed", {
+      analysisRefreshRunId: parent.job.runId,
+      code: autoGovernance.failure?.code ?? null,
+      limitation: autoGovernance.failure?.summary ?? null,
+      error: error instanceof Error ? error.name : "unknown",
+    });
+  }
   ctx.logger.info("analysis_refresh_auto_keyword_governance", {
     analysisRefreshRunId: parent.job.runId,
     ...autoGovernance,

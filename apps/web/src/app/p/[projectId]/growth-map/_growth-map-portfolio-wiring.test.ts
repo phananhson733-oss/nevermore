@@ -138,3 +138,89 @@ describe("Growth Map URL portfolio wiring", () => {
     });
   });
 });
+
+describe("Growth Map filter and review honesty wiring", () => {
+  const locales = [zhCN, en];
+
+  it("keeps the pager reachable when the page-local filter empties this page", () => {
+    const workspaceStart = source.indexOf("<div className={styles.workspace}>");
+    const filteredEmptyStart = source.indexOf(
+      "{filteredItems.length === 0 ? (",
+    );
+    const paginationStart = source.indexOf(
+      "className={styles.portfolioPagination}",
+    );
+
+    expect(workspaceStart).toBeGreaterThan(0);
+    expect(filteredEmptyStart).toBeGreaterThan(workspaceStart);
+    expect(paginationStart).toBeGreaterThan(filteredEmptyStart);
+
+    const filteredEmptyBlock = source.slice(
+      filteredEmptyStart,
+      paginationStart,
+    );
+    expect(filteredEmptyBlock).toContain('t("filteredPageEmptyTitle")');
+    expect(filteredEmptyBlock).toContain('t("portfolioFilters.clear")');
+    // The generation still holds rows in the filtered band, so the page must
+    // not claim "no real URL matches".
+    expect(filteredEmptyBlock).not.toContain('t("noSearchResults")');
+  });
+
+  it("states the scope gap between the generation band counts and the filter", () => {
+    expect(source).toContain('t("portfolioFilters.clientScopeNote"');
+    expect(source).toContain("total: summary.listedUrlCount,");
+    for (const messages of locales) {
+      const filters = messages.growthMap["portfolioFilters"] as Record<
+        string,
+        string
+      >;
+      expect(filters["clientScopeNote"]).toContain("{limit}");
+      expect(filters["clear"]).toBeTruthy();
+      expect(String(messages.growthMap["paginationStatusFiltered"])).toContain(
+        "{total}",
+      );
+      expect(
+        String(messages.growthMap["filteredPageEmptyPriorityDescription"]),
+      ).toContain("{count}");
+    }
+  });
+
+  it("degrades the primary opportunity honestly when every Finding is closed", () => {
+    expect(source).toContain(
+      'primaryOpportunity.reason === "no_findings" ? null : (',
+    );
+    expect(source).toContain('t("primaryOpportunityClosedAction")');
+    expect(source).toContain("onClick={openClosedFindings}");
+    for (const messages of locales) {
+      expect(
+        String(messages.growthMap["primaryOpportunityClosedHint"]),
+      ).toContain("{count}");
+      expect(messages.growthMap["primaryOpportunityClosedAction"]).toBeTruthy();
+    }
+  });
+
+  it("never labels a machine-approved keyword with the human confirmation wording", () => {
+    expect(source).toContain("growthMapKeywordReviewPresentation(item)");
+    expect(source).not.toContain("<KeywordStatusPill status=");
+    for (const messages of locales) {
+      const library = messages.growthMap["keywordLibrary"] as Record<
+        string,
+        unknown
+      >;
+      const origin = library["reviewOrigin"] as Record<string, string>;
+      const status = library["status"] as Record<string, string>;
+      expect(Object.keys(origin).sort()).toEqual([
+        "approvedByMigration",
+        "approvedBySystem",
+        "label",
+        "migration_baseline",
+        "pendingHumanReview",
+        "pendingHumanReviewHint",
+        "system_suggestion",
+        "user",
+      ]);
+      expect(origin["approvedBySystem"]).not.toBe(status["approved"]);
+      expect(origin["approvedByMigration"]).not.toBe(status["approved"]);
+    }
+  });
+});

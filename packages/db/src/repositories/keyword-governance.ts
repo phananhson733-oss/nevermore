@@ -35,6 +35,7 @@ import {
   type Executor,
   type ProjectScope,
 } from "./base.ts";
+import { MAX_KEYWORD_ENTITY_PAGE_SIZE } from "./keywords.ts";
 import { acquireTopicGovernanceProjectWriterLock } from "./topic-models.ts";
 
 /**
@@ -49,6 +50,7 @@ export {
 export type {
   AutoGovernanceCandidateReadOptions,
   AutoGovernanceCandidateRow,
+  DiagnosticGovernanceLoad,
 } from "./keywords.ts";
 
 export type ReviewKeywordInput = ReviewKeywordRequest;
@@ -87,6 +89,27 @@ export interface CurrentKeywordGovernance {
 
 export interface ReviewKeywordResult extends CurrentKeywordGovernance {
   readonly replayed: boolean;
+}
+
+/**
+ * One Keyword Library cursor page. A caller asking for more than one page of
+ * decision origins has lost its own page bound, which is exactly the mistake
+ * this ceiling should surface instead of silently issuing a huge `IN` list.
+ */
+export const MAX_KEYWORD_DECISION_ORIGIN_BATCH = MAX_KEYWORD_ENTITY_PAGE_SIZE;
+
+export type KeywordDecisionOrigin = KeywordReviewDecision["decisionOrigin"];
+
+export interface KeywordDecisionOriginRef {
+  readonly keywordId: string;
+  /** The exact revision the caller is projecting, never "the latest". */
+  readonly governanceRevision: number;
+}
+
+export interface KeywordDecisionOriginRow {
+  readonly keywordId: string;
+  readonly governanceRevision: number;
+  readonly decisionOrigin: KeywordDecisionOrigin;
 }
 
 /**
@@ -873,6 +896,101 @@ export class KeywordGovernanceRepository extends Repository {
       );
     }
     return stateFromRows(keyword, current);
+  }
+
+  /**
+   * Read WHICH authority decided each keyword at the exact governance revision
+   * the caller is projecting — one project-scoped statement for a whole page,
+   * never one query per keyword.
+   *
+   * The exact revision is the point. A published generation reports frozen
+   * facts at the revision it froze and the live library reports the current
+   * revision; resolving "the latest decision" instead would attribute a later
+   * review to an earlier projection. Decisions are append-only and unique per
+   * (keyword, revision), so this read is immutable and repeatable.
+   *
+   * A keyword with no decision at that revision is simply absent from the
+   * result. The caller MUST render that absence as "no recorded decision",
+   * never as a human review.
+   */
+  async listDecisionOriginsAt(
+    scope: ProjectScope,
+    refs: readonly KeywordDecisionOriginRef[],
+  ): Promise<readonly KeywordDecisionOriginRow[]> {
+    assertUuid(scope.workspaceId, "workspaceId");
+    assertUuid(scope.projectId, "projectId");
+    if (refs.length === 0) return [];
+    if (refs.length > MAX_KEYWORD_DECISION_ORIGIN_BATCH) {
+      throw new RangeError(
+        `refs must contain at most ${MAX_KEYWORD_DECISION_ORIGIN_BATCH} keywords`,
+      );
+    }
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      assertUuid(ref.keywordId, "keywordId");
+      if (seen.has(ref.keywordId)) {
+        throw new RangeError("refs must not repeat a keywordId");
+      }
+      seen.add(ref.keywordId);
+      if (
+        !Number.isSafeInteger(ref.governanceRevision) ||
+        ref.governanceRevision < 0 ||
+        ref.governanceRevision > MAX_POSTGRES_INTEGER_REVISION
+      ) {
+        throw new RangeError(
+          `governanceRevision must be between 0 and ${MAX_POSTGRES_INTEGER_REVISION}`,
+        );
+      }
+    }
+
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      select
+        ${keywordReviewDecisions.keyword_entity_id} as keyword_entity_id,
+        ${keywordReviewDecisions.governance_revision} as governance_revision,
+        ${keywordReviewDecisions.decision_origin} as decision_origin
+      from ${keywordReviewDecisions}
+      where ${keywordReviewDecisions.workspace_id} = ${scope.workspaceId}::uuid
+        and ${keywordReviewDecisions.project_id} = ${scope.projectId}::uuid
+        and (
+          ${keywordReviewDecisions.keyword_entity_id},
+          ${keywordReviewDecisions.governance_revision}
+        ) in (
+          ${sql.join(
+            refs.map(
+              (ref) =>
+                sql`(${ref.keywordId}::uuid, ${ref.governanceRevision}::int)`,
+            ),
+            sql`, `,
+          )}
+        )
+    `);
+
+    const rows: KeywordDecisionOriginRow[] = [];
+    const returned = new Set<string>();
+    for (const raw of result.rows) {
+      const keywordId = raw["keyword_entity_id"];
+      const governanceRevision = raw["governance_revision"];
+      const decisionOrigin = raw["decision_origin"];
+      if (
+        typeof keywordId !== "string" ||
+        !seen.has(keywordId) ||
+        returned.has(keywordId) ||
+        typeof governanceRevision !== "number" ||
+        typeof decisionOrigin !== "string" ||
+        !DECISION_ORIGINS.has(decisionOrigin as never)
+      ) {
+        throw new KeywordGovernanceIntegrityError(
+          "CURRENT_DECISION_DIVERGED",
+        );
+      }
+      returned.add(keywordId);
+      rows.push({
+        keywordId,
+        governanceRevision,
+        decisionOrigin: decisionOrigin as KeywordDecisionOrigin,
+      });
+    }
+    return rows;
   }
 
   async reviewKeyword(

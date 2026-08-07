@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import { MAX_KEYWORD_OCCURRENCE_PAGE_SIZE } from "./keyword-occurrences.ts";
 import {
   MAX_FROZEN_KEYWORD_ENTITY_BATCH,
   KeywordsRepository,
@@ -207,6 +208,7 @@ describe("KeywordsRepository", () => {
       gsc_impression_evidence: 0,
       gsc_attributed_site_page_count: 0,
       gsc_attributed_site_page_id: null,
+      occurrence_count: 4,
     };
     db.enqueueExecute({ rows: [row] });
     const repo = new KeywordsRepository(db as never);
@@ -249,6 +251,60 @@ describe("KeywordsRepository", () => {
       filterIndex,
     );
     expect(query.sql.slice(0, filterIndex)).not.toContain("limit");
+    // The caller must be able to spend the diagnostic freeze's occurrence
+    // budget, so every candidate carries the occurrence count it would add.
+    expect(query.sql).toContain("occurrence_counts");
+    expect(query.sql).toContain("as occurrence_count");
+  });
+
+  it("counts the eligible library the way the diagnostic freeze counts it", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({
+      rows: [{ eligible_entities: 4_900, occurrence_refs: 9_800 }],
+    });
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.readDiagnosticGovernanceLoad(scope),
+    ).resolves.toEqual({ eligibleEntities: 4_900, occurrenceRefs: 9_800 });
+
+    const query = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    // Exactly the freeze's own eligibility rule.
+    expect(query.sql).toContain("keyword.status = 'approved'");
+    expect(query.sql).toContain(
+      "keyword.mapping_review_state = 'confirmed'",
+    );
+    expect(query.sql).toContain("keyword.cluster_key is not null");
+    expect(query.sql).toContain("project.archived_at is null");
+    // Project isolation inside the one statement, never in memory.
+    expect(query.sql).toContain("keyword.workspace_id = $1::uuid");
+    expect(query.sql).toContain("keyword.project_id = $2::uuid");
+    // The freeze reads at most one occurrence page per entity, so the budget
+    // read applies the same clamp instead of the raw history length.
+    expect(query.sql).toContain("least(occurrence_count");
+    expect(query.params).toEqual([
+      scope.workspaceId,
+      scope.projectId,
+      MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+    ]);
+  });
+
+  it("fails closed rather than reporting an invented governance load", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({ rows: [] });
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(repo.readDiagnosticGovernanceLoad(scope)).rejects.toThrow(
+      /invalid result/u,
+    );
+    await expect(
+      repo.readDiagnosticGovernanceLoad({
+        workspaceId: "not-a-uuid",
+        projectId: scope.projectId,
+      }),
+    ).rejects.toThrow(/UUID/iu);
   });
 
   it("rejects an unbounded or non-canonical automated governance read before SQL", async () => {

@@ -68,9 +68,25 @@ interface QueryLike {
 class FakeExecutor {
   readonly calls: string[] = [];
   private readonly results: unknown[] = [];
+  private readonly executeResults: unknown[] = [];
 
   enqueue(...results: unknown[]): void {
     this.results.push(...results);
+  }
+
+  /**
+   * Raw statements keep their own queue. The decision-origin read is a raw
+   * statement, so it must never consume a result a `select` chain enqueued.
+   */
+  enqueueExecute(...results: unknown[]): void {
+    this.executeResults.push(...results);
+  }
+
+  async execute(): Promise<{ rows: unknown[] }> {
+    this.calls.push("execute");
+    return this.executeResults.length > 0
+      ? (this.executeResults.shift() as { rows: unknown[] })
+      : { rows: [] };
   }
 
   select(): QueryLike {
@@ -616,6 +632,106 @@ describe("Growth Map Keyword Library read service", () => {
     expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
   });
 
+
+  it("labels an automatically governed keyword as a system decision, never as a human confirmation", async () => {
+    // The production symptom this guards: automated governance writes exactly
+    // the approved + confirmed pair a human review writes, because the
+    // diagnostic freeze requires that pair. Without the decision origin the
+    // customer-visible library renders a keyword no human has read as
+    // confirmed.
+    mockProject();
+    const governed = entity({
+      status: "approved",
+      mapping_review_state: "confirmed",
+      cluster_key: "customer onboarding",
+      mapping_decision: "unassigned",
+      mapped_site_page_id: null,
+      mapping_revision: 1,
+    });
+    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+      rows: [governed],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    const origins = vi
+      .spyOn(KeywordGovernanceRepository.prototype, "listDecisionOriginsAt")
+      .mockResolvedValue([
+        {
+          keywordId: ids.keyword,
+          governanceRevision: 1,
+          decisionOrigin: "system_suggestion",
+        },
+      ]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      status: "approved",
+      mappedTarget: expect.objectContaining({ reviewState: "approved" }),
+      reviewOrigin: "system_suggestion",
+    });
+    // One bounded batch read at the EXACT revision the row reports.
+    expect(origins).toHaveBeenCalledTimes(1);
+    expect(origins).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      [{ keywordId: ids.keyword, governanceRevision: 1 }],
+    );
+  });
+
+  it("reports no review origin at all when the ledger holds no decision at that revision", async () => {
+    mockProject();
+    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+      rows: [
+        entity({
+          status: "candidate",
+          mapping_review_state: "unreviewed",
+          mapping_decision: "unassigned",
+          mapped_site_page_id: null,
+        }),
+      ],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockResolvedValue([]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    // Absence is reported as absence, never softened into a review.
+    expect(response.data[0]?.reviewOrigin).toBeNull();
+  });
 
   it("surfaces an automatically governed keyword through the current library read", async () => {
     // The shape automated governance writes: approved + confirmed + a
@@ -1541,7 +1657,9 @@ describe("Growth Map Keyword Library read service", () => {
         scopeBasis: "manual",
       }),
     ]);
-    expect(exec.calls).toEqual(["select"]);
+    // One select for the manual occurrence lineage, plus the bounded
+    // decision-origin read every projected page performs.
+    expect(exec.calls).toEqual(["select", "execute"]);
   });
 
   it("fails closed for archived projects and foreign Existing Page identities", async () => {
@@ -1568,6 +1686,41 @@ describe("Growth Map Keyword Library read service", () => {
         exec as never,
       ),
     ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+  });
+
+  it("reads the frozen generation's review origin at the frozen revision, not the live one", async () => {
+    const exec = arrangeList({
+      entity: entity({
+        status: "approved",
+        mapping_review_state: "confirmed",
+        mapping_revision: 9,
+      }),
+    });
+    const origins = vi
+      .spyOn(KeywordGovernanceRepository.prototype, "listDecisionOriginsAt")
+      .mockResolvedValue([
+        {
+          keywordId: ids.keyword,
+          governanceRevision: 2,
+          decisionOrigin: "user",
+        },
+      ]);
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.publishedRun },
+      exec as never,
+    );
+
+    // The frozen fact is revision 2 while the live row already moved to 9.
+    // Reading the latest decision would attribute a later review to this
+    // published generation.
+    expect(origins).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      [{ keywordId: ids.keyword, governanceRevision: 2 }],
+    );
+    expect(response.data[0]?.reviewOrigin).toBe("user");
   });
 
   it("returns detail from the append-only governance authority, including the canonical Topic identity and server-resolved name", async () => {

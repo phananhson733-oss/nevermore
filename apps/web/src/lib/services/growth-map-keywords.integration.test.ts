@@ -495,6 +495,9 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
         marketCode: "US",
         languageTag: "en-US",
         queryKind: "search_query",
+        // Read at the EXACT frozen revision: ingestion wrote the r0 baseline
+        // decision, and no human has touched this keyword.
+        reviewOrigin: "system_suggestion",
         sourceOccurrences: [
           {
             occurrenceId: local.occurrenceId,

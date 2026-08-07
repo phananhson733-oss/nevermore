@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDbHandle, type DbHandle } from "@sf/db/client";
 import {
   contentHash,
@@ -10,6 +10,7 @@ import {
   type CanonicalKeywordOccurrenceInput,
 } from "@sf/db";
 import { runAutoKeywordGovernance } from "../auto-keyword-governance.ts";
+import { DIAGNOSTIC_GOVERNANCE_LIMITS } from "../governance.ts";
 
 // The integration project already refuses any unsafe database in its global
 // setup before this file can open a pool.
@@ -485,6 +486,159 @@ describeDb("automated keyword governance against a real PostgreSQL", () => {
     await expect(
       keywords.listDiagnosticEligible(scope, { limit: 100 }),
     ).resolves.toHaveLength(2);
+  });
+
+  it("counts the freeze budget and reports the deciding authority on real rows", async () => {
+    const fixture = await createFixture(handle);
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    const occurrences = new KeywordOccurrencesRepository(handle.db);
+    const dfs = await occurrences.upsertIntoLibrary(
+      scope,
+      dataForSeoOccurrence(fixture),
+    );
+    const gscRanked = await occurrences.upsertIntoLibrary(
+      scope,
+      gscOccurrence(fixture, 0),
+    );
+    const keywords = new KeywordsRepository(handle.db);
+    const governance = new KeywordGovernanceRepository(handle.db);
+
+    // Nothing is eligible yet, so the freeze budget is untouched.
+    await expect(
+      keywords.readDiagnosticGovernanceLoad(scope),
+    ).resolves.toEqual({ eligibleEntities: 0, occurrenceRefs: 0 });
+
+    // Every candidate reports the occurrence cost it would add to the freeze.
+    const candidates = await keywords.listAutoGovernanceCandidates(scope, {
+      limit: 100,
+    });
+    expect(
+      candidates.map((row) => row.occurrence_count).sort(),
+    ).toEqual([1, 1]);
+
+    await runAutoKeywordGovernance(handle.db as never, scope, {
+      enabled: true,
+    });
+
+    // The load now equals exactly what the freeze would have to read.
+    await expect(
+      keywords.readDiagnosticGovernanceLoad(scope),
+    ).resolves.toEqual({ eligibleEntities: 2, occurrenceRefs: 2 });
+
+    // The customer-visible read model must be able to say WHO decided: both
+    // rows are approved + confirmed, and neither was seen by a human.
+    const origins = await governance.listDecisionOriginsAt(scope, [
+      { keywordId: dfs.entityId, governanceRevision: 1 },
+      { keywordId: gscRanked.entityId, governanceRevision: 1 },
+    ]);
+    expect(
+      [...origins].sort((left, right) =>
+        left.keywordId.localeCompare(right.keywordId),
+      ),
+    ).toEqual(
+      [
+        {
+          keywordId: dfs.entityId,
+          governanceRevision: 1,
+          decisionOrigin: "system_suggestion",
+        },
+        {
+          keywordId: gscRanked.entityId,
+          governanceRevision: 1,
+          decisionOrigin: "system_suggestion",
+        },
+      ].sort((left, right) => left.keywordId.localeCompare(right.keywordId)),
+    );
+
+    // A human review at a later revision must not be attributed to the
+    // revision a published generation froze.
+    await governance.reviewKeyword(scope, dfs.entityId, fixture.actorId, {
+      expectedGovernanceRevision: 1,
+      status: "approved",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      reason: "The operator confirmed this query belongs to the product.",
+    });
+    await expect(
+      governance.listDecisionOriginsAt(scope, [
+        { keywordId: dfs.entityId, governanceRevision: 1 },
+      ]),
+    ).resolves.toEqual([
+      {
+        keywordId: dfs.entityId,
+        governanceRevision: 1,
+        decisionOrigin: "system_suggestion",
+      },
+    ]);
+    await expect(
+      governance.listDecisionOriginsAt(scope, [
+        { keywordId: dfs.entityId, governanceRevision: 2 },
+      ]),
+    ).resolves.toEqual([
+      {
+        keywordId: dfs.entityId,
+        governanceRevision: 2,
+        decisionOrigin: "user",
+      },
+    ]);
+
+    // A revision that was never decided is absent, never softened.
+    await expect(
+      governance.listDecisionOriginsAt(scope, [
+        { keywordId: gscRanked.entityId, governanceRevision: 99 },
+      ]),
+    ).resolves.toEqual([]);
+  });
+
+  it("approves nothing and keeps the diagnostic freeze readable when the budget is gone", async () => {
+    const fixture = await createFixture(handle);
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    await new KeywordOccurrencesRepository(handle.db).upsertIntoLibrary(
+      scope,
+      dataForSeoOccurrence(fixture),
+    );
+
+    // Simulate an exhausted freeze budget without materialising 5,000 rows.
+    const load = vi
+      .spyOn(KeywordsRepository.prototype, "readDiagnosticGovernanceLoad")
+      .mockResolvedValue({
+        eligibleEntities: DIAGNOSTIC_GOVERNANCE_LIMITS.keywordEntities,
+        occurrenceRefs:
+          DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrenceRefsTotal,
+      });
+    try {
+      const report = await runAutoKeywordGovernance(
+        handle.db as never,
+        scope,
+        { enabled: true },
+      );
+      expect(report).toMatchObject({
+        proposed: 1,
+        submitted: 0,
+        approved: 0,
+        withheld: expect.objectContaining({ entity_budget_exhausted: 1 }),
+      });
+    } finally {
+      load.mockRestore();
+    }
+
+    // Nothing was written, so the next run sees the same candidate again and
+    // the library is still honestly ungoverned rather than half-governed.
+    await expect(
+      new KeywordsRepository(handle.db).listDiagnosticEligible(scope, {
+        limit: 100,
+      }),
+    ).resolves.toEqual([]);
   });
 
   it("never revisits or overwrites a keyword a human has decided", async () => {

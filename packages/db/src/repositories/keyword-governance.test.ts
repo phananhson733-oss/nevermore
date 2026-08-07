@@ -4,6 +4,7 @@ import {
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  MAX_KEYWORD_DECISION_ORIGIN_BATCH,
   MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH,
   type KeywordGovernanceReviewedProjection,
   type ReviewKeywordInput,
@@ -74,6 +75,7 @@ class FakeQuery {
 class FakeExecutor {
   readonly calls: RecordedCall[] = [];
   private readonly results: unknown[] = [];
+  private readonly executeResults: unknown[] = [];
 
   enqueue(...results: unknown[]): void {
     this.results.push(...results);
@@ -100,9 +102,15 @@ class FakeExecutor {
     return this.query("insert", args);
   }
 
-  async execute(...args: unknown[]): Promise<{ rows: never[] }> {
+  async execute(...args: unknown[]): Promise<{ rows: unknown[] }> {
     this.calls.push({ method: "execute", args });
-    return { rows: [] };
+    return this.executeResults.length > 0
+      ? (this.executeResults.shift() as { rows: unknown[] })
+      : { rows: [] };
+  }
+
+  enqueueExecute(...results: unknown[]): void {
+    this.executeResults.push(...results);
   }
 
   async transaction<T>(run: (tx: never) => Promise<T>): Promise<T> {
@@ -1216,5 +1224,160 @@ describe("KeywordGovernanceRepository.applySystemApprovals", () => {
       ).applySystemApprovals(scope, []),
     ).resolves.toEqual([]);
     expect(db.calls).toEqual([]);
+  });
+});
+
+describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
+  const otherKeyword = "00000000-0000-4000-8000-000000000009";
+
+  it("reads one project-scoped statement keyed by the EXACT revision", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({
+      rows: [
+        {
+          keyword_entity_id: ids.keyword,
+          governance_revision: 1,
+          decision_origin: "system_suggestion",
+        },
+        {
+          keyword_entity_id: otherKeyword,
+          governance_revision: 4,
+          decision_origin: "user",
+        },
+      ],
+    });
+
+    const rows = await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).listDecisionOriginsAt(scope, [
+      { keywordId: ids.keyword, governanceRevision: 1 },
+      { keywordId: otherKeyword, governanceRevision: 4 },
+    ]);
+
+    expect(rows).toEqual([
+      {
+        keywordId: ids.keyword,
+        governanceRevision: 1,
+        decisionOrigin: "system_suggestion",
+      },
+      {
+        keywordId: otherKeyword,
+        governanceRevision: 4,
+        decisionOrigin: "user",
+      },
+    ]);
+    // One statement for the whole page: never one query per keyword.
+    expect(db.all("execute")).toHaveLength(1);
+    const query = sqlFor(db.last("execute"));
+    expect(query.sql).toMatch(/"workspace_id" = \$\d+::uuid/u);
+    // Project isolation lives in the same WHERE, never in memory.
+    expect(query.sql).toMatch(/"project_id" = \$\d+::uuid/u);
+    expect(query.sql).toContain("governance_revision");
+    expect(query.params).toEqual([
+      ids.workspace,
+      ids.project,
+      ids.keyword,
+      1,
+      otherKeyword,
+      4,
+    ]);
+  });
+
+  it("leaves a keyword with no decision at that revision out of the result", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({ rows: [] });
+
+    await expect(
+      new KeywordGovernanceRepository(db as never, clock).listDecisionOriginsAt(
+        scope,
+        [{ keywordId: ids.keyword, governanceRevision: 7 }],
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it("touches the database for nothing when no keyword is requested", async () => {
+    const db = new FakeExecutor();
+    await expect(
+      new KeywordGovernanceRepository(db as never, clock).listDecisionOriginsAt(
+        scope,
+        [],
+      ),
+    ).resolves.toEqual([]);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("refuses an unbounded, repeated or impossible request before any read", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+    await expect(
+      repo.listDecisionOriginsAt(scope, [
+        { keywordId: ids.keyword, governanceRevision: 1 },
+        { keywordId: ids.keyword, governanceRevision: 2 },
+      ]),
+    ).rejects.toThrow(/repeat a keywordId/u);
+    await expect(
+      repo.listDecisionOriginsAt(scope, [
+        { keywordId: ids.keyword, governanceRevision: -1 },
+      ]),
+    ).rejects.toThrow(/governanceRevision/u);
+    await expect(
+      repo.listDecisionOriginsAt(scope, [
+        { keywordId: "not-a-uuid", governanceRevision: 1 },
+      ]),
+    ).rejects.toThrow(/keywordId/u);
+    await expect(
+      repo.listDecisionOriginsAt(
+        scope,
+        Array.from(
+          { length: MAX_KEYWORD_DECISION_ORIGIN_BATCH + 1 },
+          (_value, index) => ({
+            keywordId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+            governanceRevision: 0,
+          }),
+        ),
+      ),
+    ).rejects.toThrow(/at most/u);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("fails closed instead of reporting an origin the ledger never proved", async () => {
+    const unrequested = new FakeExecutor();
+    unrequested.enqueueExecute({
+      rows: [
+        {
+          keyword_entity_id: otherKeyword,
+          governance_revision: 1,
+          decision_origin: "user",
+        },
+      ],
+    });
+    await expect(
+      new KeywordGovernanceRepository(
+        unrequested as never,
+        clock,
+      ).listDecisionOriginsAt(scope, [
+        { keywordId: ids.keyword, governanceRevision: 1 },
+      ]),
+    ).rejects.toBeInstanceOf(KeywordGovernanceIntegrityError);
+
+    const unknownOrigin = new FakeExecutor();
+    unknownOrigin.enqueueExecute({
+      rows: [
+        {
+          keyword_entity_id: ids.keyword,
+          governance_revision: 1,
+          decision_origin: "auto_pilot",
+        },
+      ],
+    });
+    await expect(
+      new KeywordGovernanceRepository(
+        unknownOrigin as never,
+        clock,
+      ).listDecisionOriginsAt(scope, [
+        { keywordId: ids.keyword, governanceRevision: 1 },
+      ]),
+    ).rejects.toBeInstanceOf(KeywordGovernanceIntegrityError);
   });
 });

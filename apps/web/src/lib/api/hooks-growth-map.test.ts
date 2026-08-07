@@ -380,6 +380,7 @@ function keywordItem(keywordId = KEYWORD_A) {
     languageTag: "en-US",
     queryKind: "search_query",
     status: "candidate",
+    reviewOrigin: null,
     revision: 0,
     intent: null,
     buyerStage: null,

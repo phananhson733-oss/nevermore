@@ -783,6 +783,7 @@ function checkOpenApi() {
       "languageTag",
       "queryKind",
       "status",
+      "reviewOrigin",
       "revision",
       "intent",
       "buyerStage",

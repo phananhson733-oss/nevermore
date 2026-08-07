@@ -302,9 +302,14 @@ export type GrowthMapFindingComparisonBasis = z.infer<
  * `max_finding_severity.v1` mapped the highest current-run Finding severity
  * straight onto the band. `url_opportunity_rank.v1` additionally weighs the
  * cross-page blast radius of those Findings and how many reviewable Findings
- * stack on the URL. Both literals stay readable so an already published
- * generation keeps the derivation it was projected with instead of being
- * silently reinterpreted by a newer one.
+ * stack on the URL.
+ *
+ * Priority is derived at read time by the current product version, so this
+ * literal names the derivation that produced this response rather than one
+ * frozen with the generation. Re-reading an already published generation after
+ * a derivation change can therefore report a different literal and a different
+ * band than the same generation reported before. The superseded literal stays
+ * readable so payloads captured under it still validate.
  */
 export const GrowthMapPriorityDerivationVersion = z.enum([
   "max_finding_severity.v1",
@@ -1125,6 +1130,30 @@ export const GrowthMapKeywordStatus = z.enum([
 ]);
 export type GrowthMapKeywordStatus = z.infer<typeof GrowthMapKeywordStatus>;
 
+/**
+ * WHICH authority produced the keyword's currently effective governance
+ * decision, mirroring `keyword_review_decisions.decision_origin` exactly.
+ *
+ * This exists because `status` and `mappedTarget.reviewState` alone cannot
+ * distinguish an operator's review from an automated approval: automated
+ * keyword governance writes the very same `approved` + `confirmed` pair the
+ * diagnostic freeze requires. Rendering both as "confirmed" would present a
+ * keyword no human has read as human-reviewed, which the evidence-honesty
+ * boundary forbids. A reader MUST label `system_suggestion` distinctly from
+ * `user`.
+ *
+ * `null` does not mean "unknown": it means the append-only Decision ledger
+ * holds no decision at the exact revision this projection reports.
+ */
+export const GrowthMapKeywordReviewOrigin = z.enum([
+  "user",
+  "system_suggestion",
+  "migration_baseline",
+]);
+export type GrowthMapKeywordReviewOrigin = z.infer<
+  typeof GrowthMapKeywordReviewOrigin
+>;
+
 export const GrowthMapKeywordMappingReviewState = z.enum([
   "unreviewed",
   "approved",
@@ -1570,6 +1599,7 @@ const GrowthMapKeywordLibraryItemObject = z
     languageTag: GrowthMapLibraryLanguageTag,
     queryKind: GrowthMapKeywordQueryKind,
     status: GrowthMapKeywordStatus,
+    reviewOrigin: GrowthMapKeywordReviewOrigin.nullable(),
     revision: z.number().int().nonnegative(),
     intent: BoundedLabel.nullable(),
     buyerStage: BoundedLabel.nullable(),

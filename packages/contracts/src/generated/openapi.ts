@@ -2322,7 +2322,7 @@ export interface components {
         };
         GrowthMapFindingPriorityBasis: {
             /**
-             * @description max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Both stay readable so a published generation keeps the derivation it was projected with.
+             * @description max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Priority is derived at read time by the current product version, so this literal names the derivation that produced this response rather than one frozen with the generation. Re-reading an already published generation after a derivation change can therefore report a different literal and a different band than the same generation reported before. The superseded literal stays readable so payloads captured under it still validate.
              * @enum {string}
              */
             derivationVersion: "max_finding_severity.v1" | "url_opportunity_rank.v1";
@@ -3526,6 +3526,11 @@ export interface components {
             queryKind: "search_query" | "generative_query";
             /** @enum {string} */
             status: "candidate" | "approved" | "excluded" | "parked";
+            /**
+             * @description Which authority produced the currently effective governance decision, mirroring keyword_review_decisions.decision_origin. system_suggestion is an automated approval no human has reviewed and must never be labelled as a human confirmation. null means the append-only ledger holds no decision at this revision.
+             * @enum {string|null}
+             */
+            reviewOrigin: "user" | "system_suggestion" | "migration_baseline" | null;
             revision: number;
             intent: string | null;
             buyerStage: string | null;

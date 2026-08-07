@@ -23,7 +23,10 @@ import {
   decodeTimestampUuidCursor,
   encodeTimestampUuidCursor,
 } from "./cursor.ts";
-import type { KeywordQueryKind } from "./keyword-occurrences.ts";
+import {
+  MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+  type KeywordQueryKind,
+} from "./keyword-occurrences.ts";
 
 export type KeywordStatus = "candidate" | "approved" | "excluded" | "parked";
 export type KeywordMappingDecision =
@@ -121,6 +124,33 @@ export interface AutoGovernanceCandidateRow {
   readonly gsc_attributed_site_page_count: number;
   /** Only meaningful when `gsc_attributed_site_page_count` is exactly 1. */
   readonly gsc_attributed_site_page_id: string | null;
+  /**
+   * Immutable occurrence rows this keyword would contribute to the diagnostic
+   * freeze once it becomes eligible. Counted uncapped, so a caller can both
+   * spend its remaining occurrence budget correctly AND recognise a keyword
+   * whose own history already exceeds the freeze's per-entity ceiling.
+   */
+  readonly occurrence_count: number;
+}
+
+/**
+ * How much of the diagnostic freeze's hard budget the already-eligible library
+ * consumes right now.
+ *
+ * Automated governance and the freeze run in ONE transaction, so a freeze that
+ * overflows its ceiling rolls the approvals back too — and the next run reads
+ * the same candidates in the same order and overflows again. Reading the load
+ * first is what lets a run converge instead of wedging the Growth Audit.
+ */
+export interface DiagnosticGovernanceLoad {
+  /** Keyword entities the freeze would read as diagnostic-eligible. */
+  readonly eligibleEntities: number;
+  /**
+   * Occurrence refs those entities would contribute. The freeze reads at most
+   * `MAX_KEYWORD_OCCURRENCE_PAGE_SIZE` rows per entity, so every entity is
+   * counted under the same clamp instead of by its raw history length.
+   */
+  readonly occurrenceRefs: number;
 }
 
 export interface AutoGovernanceCandidateReadOptions {
@@ -223,6 +253,68 @@ export class KeywordsRepository extends Repository {
       )
       .orderBy(asc(keywordEntities.id))
       .limit(options.limit)) as KeywordEntityRow[];
+  }
+
+  /**
+   * Count exactly what the diagnostic freeze would have to read for the
+   * keywords that are ALREADY eligible, using the freeze's own membership rule
+   * and its own per-entity occurrence clamp.
+   *
+   * This is a budget read, never a projection: it returns two integers and no
+   * identity, so it cannot be mistaken for the frozen library itself.
+   */
+  async readDiagnosticGovernanceLoad(
+    scope: ProjectScope,
+  ): Promise<DiagnosticGovernanceLoad> {
+    if (!UUID.test(scope.workspaceId) || !UUID.test(scope.projectId)) {
+      throw new RangeError("scope must contain canonical UUIDs");
+    }
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with eligible as (
+        select
+          keyword.id,
+          (
+            select count(*)
+            from ${keywordEntitySources} source
+            where source.workspace_id = keyword.workspace_id
+              and source.project_id = keyword.project_id
+              and source.keyword_entity_id = keyword.id
+          ) as occurrence_count
+        from ${keywordEntities} keyword
+        inner join ${clientProjects} project
+          on project.id = keyword.project_id
+         and project.workspace_id = keyword.workspace_id
+        where keyword.workspace_id = ${scope.workspaceId}::uuid
+          and keyword.project_id = ${scope.projectId}::uuid
+          and project.archived_at is null
+          and keyword.status = 'approved'
+          and keyword.mapping_review_state = 'confirmed'
+          and keyword.cluster_key is not null
+      )
+      select
+        count(*)::int as eligible_entities,
+        coalesce(
+          sum(least(occurrence_count, ${MAX_KEYWORD_OCCURRENCE_PAGE_SIZE}::bigint)),
+          0
+        )::int as occurrence_refs
+      from eligible
+    `);
+    const row = result.rows[0];
+    const eligibleEntities = row?.["eligible_entities"];
+    const occurrenceRefs = row?.["occurrence_refs"];
+    if (
+      typeof eligibleEntities !== "number" ||
+      typeof occurrenceRefs !== "number" ||
+      !Number.isSafeInteger(eligibleEntities) ||
+      !Number.isSafeInteger(occurrenceRefs) ||
+      eligibleEntities < 0 ||
+      occurrenceRefs < 0
+    ) {
+      throw new Error(
+        "diagnostic governance load read returned an invalid result",
+      );
+    }
+    return { eligibleEntities, occurrenceRefs };
   }
 
   /**
@@ -342,6 +434,17 @@ export class KeywordsRepository extends Repository {
         where source.workspace_id = ${scope.workspaceId}::uuid
           and source.project_id = ${scope.projectId}::uuid
       ),
+      occurrence_counts as (
+        select
+          source.keyword_entity_id,
+          count(*)::int as occurrence_count
+        from ${keywordEntitySources} source
+        inner join candidates
+          on candidates.id = source.keyword_entity_id
+        where source.workspace_id = ${scope.workspaceId}::uuid
+          and source.project_id = ${scope.projectId}::uuid
+        group by source.keyword_entity_id
+      ),
       scored as (
       select
         candidates.id,
@@ -353,6 +456,7 @@ export class KeywordsRepository extends Repository {
         candidates.language_tag,
         candidates.query_kind,
         candidates.mapping_revision,
+        coalesce(occurrence_counts.occurrence_count, 0)::int as occurrence_count,
         count(*) filter (
           where evidence.source_kind = 'dataforseo_ranked'
             and evidence.dataforseo_rank >= 1
@@ -376,6 +480,8 @@ export class KeywordsRepository extends Repository {
       from candidates
       left join evidence
         on evidence.keyword_entity_id = candidates.id
+      left join occurrence_counts
+        on occurrence_counts.keyword_entity_id = candidates.id
       group by
         candidates.id,
         candidates.workspace_id,
@@ -385,7 +491,8 @@ export class KeywordsRepository extends Repository {
         candidates.market,
         candidates.language_tag,
         candidates.query_kind,
-        candidates.mapping_revision
+        candidates.mapping_revision,
+        occurrence_counts.occurrence_count
       )
       select *
       from scored

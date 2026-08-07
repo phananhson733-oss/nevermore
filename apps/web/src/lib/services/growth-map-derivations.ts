@@ -127,6 +127,28 @@ function localePathSegments(
   return segments;
 }
 
+/**
+ * `canonicalizeUrl` only normalises well-formed `%XX` escapes and the WHATWG
+ * URL parser keeps a bare `%` verbatim, so a stored `normalized_url` such as
+ * `/50%-off` or `/a%zz` really does reach this read model. `decodeURIComponent`
+ * throws `URIError` on those, which would take the whole URL list down with a
+ * 500, so a segment that cannot be decoded degrades to its raw path text.
+ *
+ * Degrading per segment rather than dropping the URL is the conservative
+ * choice: every rule is an anchored exact match over ASCII words, so an
+ * undecoded segment can only fail to match one, never match one it should not.
+ * The failure therefore moves at most that one segment toward the documented
+ * null answer ("no rule matched") instead of erasing the correct, evidence
+ * backed classification carried by its well-formed siblings.
+ */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 function canonicalPathSegments(
   normalizedUrl: string,
   declared: readonly string[] | undefined,
@@ -140,7 +162,7 @@ function canonicalPathSegments(
   const segments = pathname
     .toLowerCase()
     .split("/")
-    .map((segment) => decodeURIComponent(segment))
+    .map((segment) => decodeSegment(segment))
     .filter((segment) => segment.length > 0);
   const first = segments[0];
   if (first !== undefined && localePathSegments(declared).has(first)) {

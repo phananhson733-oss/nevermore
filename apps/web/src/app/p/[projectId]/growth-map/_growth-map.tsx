@@ -157,6 +157,7 @@ import {
   growthMapPageWindow,
   growthMapPlatformLimitationKey,
   growthMapPrimaryOpportunity,
+  growthMapKeywordReviewPresentation,
   identitySourceKey,
   keywordDetailReadState,
   keywordTopicNeedsConflictConfirmation,
@@ -185,6 +186,7 @@ import {
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
   type GrowthMapCompetitorStatusFilter,
+  type GrowthMapKeywordReviewOriginInput,
   type GrowthMapKeywordSourceFilter,
   type GrowthMapUrlPageTypeFilter,
   type GrowthMapUrlPriorityFilter,
@@ -1928,6 +1930,20 @@ function UrlDetailPanel({
     });
   }
 
+  // Every Finding on this URL is ignored or no longer active, so there is no
+  // top opportunity to promote. The panel still takes the operator to the
+  // closed signals rather than leaving a control that does nothing.
+  function openClosedFindings(): void {
+    setDetailState("opportunity_review");
+    const first = detail.findings[0];
+    if (first === undefined) return;
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`sf-finding-${first.findingId}`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
   useEffect(() => {
     if (
       selectedFindingId !== null &&
@@ -2107,7 +2123,25 @@ function UrlDetailPanel({
         </div>
       )}
 
-      {primaryOpportunity.kind === "none" ? null : (
+      {primaryOpportunity.kind === "none" ? (
+        primaryOpportunity.reason === "no_findings" ? null : (
+          <div className={styles.detailPrimaryAction}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={openClosedFindings}
+            >
+              {t("primaryOpportunityClosedAction")}
+              <ArrowDown aria-hidden="true" size={17} />
+            </Button>
+            <p className={styles.detailPrimaryActionHint}>
+              {t("primaryOpportunityClosedHint", {
+                count: primaryOpportunity.closedFindingCount,
+              })}
+            </p>
+          </div>
+        )
+      ) : (
         <div className={styles.detailPrimaryAction}>
           {primaryOpportunity.kind === "execution" ? (
             <Link
@@ -2432,6 +2466,10 @@ function PortfolioPane({
     limit: response.meta.limit,
   });
   const activeMoreFilterCount = priorityFilter === "all" ? 0 : 1;
+  function clearRowFilters(): void {
+    setPageTypeFilter("all");
+    setPriorityFilter("all");
+  }
   // Page type and priority narrow only the rows already loaded, so while either
   // is on, the server's filtered-list total would overstate what the ledger can
   // actually show. Say which of the two counts the number is.
@@ -2621,6 +2659,12 @@ function PortfolioPane({
         ) : null}
       </form>
 
+      {clientFiltered ? (
+        <p className={styles.portfolioFilterScopeNote}>
+          {t("portfolioFilters.clientScopeNote", { limit: response.meta.limit })}
+        </p>
+      ) : null}
+
       {items.length === 0 ? (
         <EmptyState
           className={styles.portfolioEmpty}
@@ -2628,22 +2672,43 @@ function PortfolioPane({
           title={querySearch ? t("noSearchResults") : t("noPagesTitle")}
           description={querySearch ? t("noSearchResultsDescription") : t("noPagesDescription")}
         />
-      ) : filteredItems.length === 0 ? (
-        <EmptyState
-          className={styles.libraryFilteredEmpty}
-          icon={<Search size={30} />}
-          title={t("noSearchResults")}
-          description={t("noSearchResultsDescription")}
-        />
       ) : (
         <div className={styles.workspace}>
           <div className={styles.masterColumn}>
-            <PortfolioList
-              items={filteredItems}
-              selectedSitePageId={selectedSitePageId}
-              showRowDetails={rowDetailsOpen}
-              onSelect={selectUrl}
-            />
+            {/* The pager stays mounted even when the client-side filter empties
+                this page: the band counts above are whole-generation totals, so
+                paging is the only way to reach the rows they promise. */}
+            {filteredItems.length === 0 ? (
+              <EmptyState
+                className={styles.libraryFilteredEmpty}
+                icon={<Search size={30} />}
+                title={t("filteredPageEmptyTitle")}
+                description={
+                  priorityFilter === "all"
+                    ? t("filteredPageEmptyDescription")
+                    : t("filteredPageEmptyPriorityDescription", {
+                        code: PRIORITY_CODE[priorityFilter],
+                        count: summary.priorityCounts[priorityFilter],
+                      })
+                }
+              >
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={clearRowFilters}
+                >
+                  {t("portfolioFilters.clear")}
+                </Button>
+              </EmptyState>
+            ) : (
+              <PortfolioList
+                items={filteredItems}
+                selectedSitePageId={selectedSitePageId}
+                showRowDetails={rowDetailsOpen}
+                onSelect={selectUrl}
+              />
+            )}
             <nav
               className={styles.portfolioPagination}
               aria-label={t("paginationLabel")}
@@ -2657,6 +2722,7 @@ function PortfolioPane({
                     count: clientFiltered
                       ? filteredItems.length
                       : summary.listedUrlCount,
+                    total: summary.listedUrlCount,
                     page: pageWindow.page,
                     pages: pageWindow.pageCount,
                   },
@@ -2770,16 +2836,43 @@ function KeywordListMetric({
   );
 }
 
+/**
+ * `approved` is the label for a decision a person made. A keyword the system
+ * auto-approved (`system_suggestion`) or a migration backfilled
+ * (`migration_baseline`) has never been human-reviewed, so it is labelled as
+ * approved *by the machine* and tagged as awaiting review instead of borrowing
+ * the confirmation wording. `item` is read structurally so this keeps working
+ * both before and after `reviewOrigin` reaches the read model.
+ */
 function KeywordStatusPill({
-  status,
+  item,
 }: {
-  readonly status: GrowthMapKeywordLibraryItem["status"];
+  readonly item: GrowthMapKeywordReviewOriginInput;
 }) {
-  const t = useTranslations("growthMap.keywordLibrary.status");
+  const t = useTranslations("growthMap.keywordLibrary");
+  const presentation = growthMapKeywordReviewPresentation(item);
   return (
-    <span className={cx(styles.keywordStatus, KEYWORD_STATUS_CLASS[status])}>
-      {t(status)}
-    </span>
+    <>
+      <span
+        className={cx(
+          styles.keywordStatus,
+          KEYWORD_STATUS_CLASS[item.status],
+          presentation.awaitingHumanReview && styles.keywordStatusMachine,
+        )}
+        title={
+          presentation.awaitingHumanReview
+            ? t("reviewOrigin.pendingHumanReviewHint")
+            : undefined
+        }
+      >
+        {t(presentation.statusLabelKey)}
+      </span>
+      {presentation.originLabelKey === null ? null : (
+        <span className={styles.keywordReviewOrigin}>
+          {t(presentation.originLabelKey)}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -2938,7 +3031,7 @@ function KeywordRow({
           className={styles.keywordStatusCell}
           data-column={t("columns.status")}
         >
-          <KeywordStatusPill status={item.status} />
+          <KeywordStatusPill item={item} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
       </div>
@@ -6342,7 +6435,7 @@ function KeywordDetailPanel({
         </p>
         <div className={styles.keywordDetailTags}>
           <span>{t(`queryKind.${detail.queryKind}`)}</span>
-          <KeywordStatusPill status={detail.status} />
+          <KeywordStatusPill item={detail} />
         </div>
         <div className={styles.keywordReviewHeaderAction}>
           {reviewSaved ? (

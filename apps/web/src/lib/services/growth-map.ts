@@ -437,6 +437,35 @@ async function loadFindings(
   return rows;
 }
 
+/**
+ * Coverage is a per-Finding aggregate (`group by finding_id`), so a Finding
+ * never spans two batches and merging is a plain set. The repository refuses
+ * more than MAX_GROWTH_MAP_ENTITY_LOOKUP unique IDs per call, and one portfolio
+ * page of up to 100 URLs routinely references more distinct Findings than that.
+ */
+async function loadFindingCoverage(
+  repo: GrowthMapReadRepository,
+  scope: ProjectScope,
+  runId: string,
+  findingIds: readonly string[],
+): Promise<ReadonlyMap<string, number>> {
+  const coverage = new Map<string, number>();
+  for (const batch of batches(
+    unique(findingIds).sort(),
+    MAX_GROWTH_MAP_ENTITY_LOOKUP,
+  )) {
+    for (const [findingId, count] of await repo.listFindingCoverageCounts(
+      scope,
+      runId,
+      batch,
+    )) {
+      if (coverage.has(findingId)) corruptGrowthMap();
+      coverage.set(findingId, count);
+    }
+  }
+  return coverage;
+}
+
 async function loadProjectionRows(
   exec: Executor,
   context: GrowthMapReadContext,
@@ -461,7 +490,8 @@ async function loadProjectionRows(
     context.run.id,
     findingIds,
   );
-  const findingCoverage = await repo.listFindingCoverageCounts(
+  const findingCoverage = await loadFindingCoverage(
+    repo,
     context.projectScope,
     context.run.id,
     findingIds,

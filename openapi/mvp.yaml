@@ -4171,7 +4171,7 @@ components:
         derivationVersion:
           type: string
           enum: [max_finding_severity.v1, url_opportunity_rank.v1]
-          description: max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Both stay readable so a published generation keeps the derivation it was projected with.
+          description: max_finding_severity.v1 mapped the highest current-run Finding severity straight onto the band. url_opportunity_rank.v1 also weighs the cross-page blast radius of those Findings and how many reviewable Findings stack on the URL. Priority is derived at read time by the current product version, so this literal names the derivation that produced this response rather than one frozen with the generation. Re-reading an already published generation after a derivation change can therefore report a different literal and a different band than the same generation reported before. The superseded literal stays readable so payloads captured under it still validate.
         projectId: { $ref: '#/components/schemas/Uuid' }
         siteId: { $ref: '#/components/schemas/Uuid' }
         diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
@@ -6371,7 +6371,7 @@ components:
     GrowthMapKeywordLibraryItem:
       type: object
       additionalProperties: false
-      required: [projectId, keywordId, displayKeyword, normalizedKeyword, marketCode, languageTag, queryKind, status, revision, intent, buyerStage, cluster, classificationLimitations, mappedTarget, sourceOccurrences, metrics, coverage]
+      required: [projectId, keywordId, displayKeyword, normalizedKeyword, marketCode, languageTag, queryKind, status, reviewOrigin, revision, intent, buyerStage, cluster, classificationLimitations, mappedTarget, sourceOccurrences, metrics, coverage]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
         keywordId: { $ref: '#/components/schemas/Uuid' }
@@ -6381,6 +6381,10 @@ components:
         languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
         queryKind: { type: string, enum: [search_query, generative_query] }
         status: { type: string, enum: [candidate, approved, excluded, parked] }
+        reviewOrigin:
+          type: [string, 'null']
+          enum: [user, system_suggestion, migration_baseline, null]
+          description: Which authority produced the currently effective governance decision, mirroring keyword_review_decisions.decision_origin. system_suggestion is an automated approval no human has reviewed and must never be labelled as a human confirmation. null means the append-only ledger holds no decision at this revision.
         revision: { type: integer, minimum: 0 }
         intent: { type: [string, 'null'], minLength: 1, maxLength: 500 }
         buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 500 }

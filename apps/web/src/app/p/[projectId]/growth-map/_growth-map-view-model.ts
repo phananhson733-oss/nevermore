@@ -1474,6 +1474,77 @@ type GrowthMapKeywordMetric =
   | GrowthMapKeywordNumericMetric
   | GrowthMapKeywordTextMetric;
 
+/**
+ * Mirrors `app.keyword_review_decisions.decision_origin`. `user` is the only
+ * value that means a person looked at this keyword; `system_suggestion` and
+ * `migration_baseline` are machine writes that have never been human-reviewed.
+ */
+export const GROWTH_MAP_KEYWORD_REVIEW_ORIGINS = [
+  "migration_baseline",
+  "system_suggestion",
+  "user",
+] as const;
+
+export type GrowthMapKeywordReviewOrigin =
+  (typeof GROWTH_MAP_KEYWORD_REVIEW_ORIGINS)[number];
+
+/**
+ * Read structurally, not off `GrowthMapKeywordLibraryItem`, so this keeps
+ * compiling while `reviewOrigin` is being added to the read model. A read
+ * model that does not carry the field yet is the same claim as "no decision
+ * was ever recorded" — never "a person confirmed it".
+ */
+export interface GrowthMapKeywordReviewOriginInput {
+  readonly status: GrowthMapKeywordStatus;
+  readonly reviewOrigin?: GrowthMapKeywordReviewOrigin | null;
+}
+
+export interface GrowthMapKeywordReviewPresentation {
+  /** i18n key under `growthMap.keywordLibrary` for the status pill label. */
+  readonly statusLabelKey: string;
+  /** i18n key under `growthMap.keywordLibrary` for the origin qualifier. */
+  readonly originLabelKey: string | null;
+  /** True when the current status was written by a machine, not a person. */
+  readonly awaitingHumanReview: boolean;
+}
+
+const KEYWORD_MACHINE_APPROVAL_LABEL_KEY: Readonly<
+  Record<Exclude<GrowthMapKeywordReviewOrigin, "user">, string>
+> = {
+  system_suggestion: "reviewOrigin.approvedBySystem",
+  migration_baseline: "reviewOrigin.approvedByMigration",
+};
+
+/**
+ * `approved` reads as "a person confirmed this keyword", so a machine-written
+ * approval must never borrow that label. An auto-approved or migration-baseline
+ * keyword is presented as approved *by the system and still awaiting human
+ * review*, which is the claim the governance table actually supports.
+ */
+export function growthMapKeywordReviewPresentation(
+  input: GrowthMapKeywordReviewOriginInput,
+): GrowthMapKeywordReviewPresentation {
+  const origin = input.reviewOrigin ?? null;
+  if (origin === null || origin === "user") {
+    return {
+      statusLabelKey: `status.${input.status}`,
+      originLabelKey: null,
+      awaitingHumanReview: false,
+    };
+  }
+  return input.status === "approved"
+    ? {
+        statusLabelKey: KEYWORD_MACHINE_APPROVAL_LABEL_KEY[origin],
+        originLabelKey: "reviewOrigin.pendingHumanReview",
+        awaitingHumanReview: true,
+      }
+    : {
+        statusLabelKey: `status.${input.status}`,
+        originLabelKey: `reviewOrigin.${origin}`,
+        awaitingHumanReview: true,
+      };
+}
+
 export type KeywordMetricPresentation =
   | {
       readonly state: "unavailable";
@@ -1967,7 +2038,16 @@ const FINDING_SEVERITY_RANK: Readonly<
 };
 
 export type GrowthMapPrimaryOpportunity =
-  | { readonly kind: "none" }
+  | {
+      readonly kind: "none";
+      /**
+       * `no_findings`: the URL projects no Finding at all.
+       * `all_closed`: every projected Finding is ignored or no longer active,
+       * so there is nothing left to promote as the top opportunity.
+       */
+      readonly reason: "no_findings" | "all_closed";
+      readonly closedFindingCount: number;
+    }
   | {
       readonly kind: "execution";
       readonly finding: GrowthMapUrlFinding;
@@ -1976,15 +2056,32 @@ export type GrowthMapPrimaryOpportunity =
   | { readonly kind: "review"; readonly finding: GrowthMapUrlFinding };
 
 /**
+ * The exact set the server ranks a URL's priority from (`active` and not
+ * `ignored`, see `GrowthMapReadRepository.listCurrentRunUrls`). A confirmed
+ * Finding is an accepted problem and keeps ranking until it is resolved; an
+ * ignored or inactive one must stop ranking, which is what the human review
+ * decision is for.
+ */
+function isRankableGrowthMapFinding(finding: GrowthMapUrlFinding): boolean {
+  return finding.active && finding.reviewState !== "ignored";
+}
+
+/**
  * The detail read model orders Findings by canonical id, which says nothing
  * about how urgent they are. The primary action therefore ranks by severity
  * and keeps the projected order as the tie-break, then targets Execution only
  * when that exact Finding already names a canonical Action.
+ *
+ * Selection runs over the same rankable set the row's priority pill is derived
+ * from. Ranking over every Finding instead would promote a Finding a person
+ * already ignored — or one the run no longer reports — as "the top
+ * opportunity", contradicting the pill on the same screen.
  */
 export function growthMapPrimaryOpportunity(
   findings: readonly GrowthMapUrlFinding[],
 ): GrowthMapPrimaryOpportunity {
-  const selected = findings.reduce<GrowthMapUrlFinding | null>(
+  const rankable = findings.filter(isRankableGrowthMapFinding);
+  const selected = rankable.reduce<GrowthMapUrlFinding | null>(
     (best, candidate) =>
       best === null ||
       FINDING_SEVERITY_RANK[candidate.severity] <
@@ -1993,7 +2090,13 @@ export function growthMapPrimaryOpportunity(
         : best,
     null,
   );
-  if (selected === null) return { kind: "none" };
+  if (selected === null) {
+    return {
+      kind: "none",
+      reason: findings.length === 0 ? "no_findings" : "all_closed",
+      closedFindingCount: findings.length,
+    };
+  }
   return selected.executionRef === null
     ? { kind: "review", finding: selected }
     : {
