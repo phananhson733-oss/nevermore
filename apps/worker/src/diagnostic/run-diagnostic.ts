@@ -1201,6 +1201,24 @@ function validateCrawlPageIdentity(
   return true;
 }
 
+/**
+ * The DataForSEO adapter never queries the raw site hostname: `normalizeTarget`
+ * (packages/sources/src/dataforseo/adapter.ts) lowercases it and strips a
+ * trailing dot and a leading `www.` before any request is made, and the
+ * collected observations freeze that normalized value as `targetDomain`.
+ * The frozen-contract check must compare against the same normalization —
+ * demanding the raw hostname rejects every landscape observation of a
+ * www-origin site and kills the whole diagnostic before those rows are even
+ * filtered out. First production hit: www.astrologywiki.com, 2026-08-07
+ * (100 frozen competitor rows with targetDomain "astrologywiki.com").
+ */
+export function dataForSeoTargetForOrigin(siteOrigin: string): string {
+  return new URL(siteOrigin).hostname
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+}
+
 function validateAvailableObservationValue(
   observation: ObservationRow,
   siteOrigin: string,
@@ -1314,7 +1332,7 @@ function validateAvailableObservationValue(
       );
       if (
         !parsed.success ||
-        parsed.data.targetDomain !== new URL(siteOrigin).hostname ||
+        parsed.data.targetDomain !== dataForSeoTargetForOrigin(siteOrigin) ||
         parsed.data.competitorDomain !== observation.subject_ref ||
         parsed.data.targetDomain === parsed.data.competitorDomain
       ) {
@@ -1328,7 +1346,7 @@ function validateAvailableObservationValue(
       );
       if (
         !parsed.success ||
-        parsed.data.targetDomain !== new URL(siteOrigin).hostname ||
+        parsed.data.targetDomain !== dataForSeoTargetForOrigin(siteOrigin) ||
         parsed.data.competitorDomain !== observation.subject_ref ||
         parsed.data.targetDomain === parsed.data.competitorDomain
       ) {
