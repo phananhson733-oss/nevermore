@@ -976,18 +976,10 @@ describe("OpenAIProductProfileClient", () => {
         ],
       },
     ],
-    [
-      "invalid domain",
-      {
-        ...VALID_B2B_CANDIDATE,
-        competitorCandidates: [
-          {
-            ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
-            domain: "https://Userpilot.com/path",
-          },
-        ],
-      },
-    ],
+    // An invalid `domain` is deliberately absent here: it drops the single
+    // competitor instead of the whole candidate. See the "drops a competitor
+    // with an unnormalized domain" case, which asserts the same input never
+    // reaches the persisted pool.
     [
       "invalid relationship",
       {
@@ -1126,6 +1118,105 @@ describe("OpenAIProductProfileClient", () => {
       status: "succeeded",
       errorCode: null,
     });
+  });
+
+  it.each([
+    ["a null domain", null],
+    ["a missing domain", undefined],
+    ["a non-string domain", 42],
+    ["an unnormalized domain", "https://Userpilot.com/pricing"],
+  ])(
+    "drops a competitor with %s instead of rejecting the whole candidate",
+    async (_label, domain) => {
+      const broken: Record<string, unknown> = {
+        ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
+        name: "Unlocatable",
+      };
+      if (domain === undefined) {
+        delete broken["domain"];
+      } else {
+        broken["domain"] = domain;
+      }
+
+      const client = createOpenAIProductProfileClient({
+        apiKey: "test-key",
+        model: "gpt-4.1-mini",
+        fetchImpl: vi.fn().mockResolvedValue(
+          chatResponse({
+            ...VALID_B2B_CANDIDATE,
+            competitorCandidates: [
+              ...VALID_B2B_CANDIDATE.competitorCandidates,
+              broken,
+            ],
+          }),
+        ),
+      });
+
+      const result = await client.synthesizeProductProfile(
+        input({ pages: [page(), page()] }),
+      );
+
+      expect(result.candidate.competitorCandidates).toEqual(
+        VALID_B2B_CANDIDATE.competitorCandidates,
+      );
+      expect(result.invocation).toMatchObject({
+        task: "product_profile_synthesis",
+        status: "succeeded",
+        errorCode: null,
+      });
+    },
+  );
+
+  it("keeps the empty competitor pool when every competitor is unusable", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          competitorCandidates: [
+            {
+              ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
+              domain: null,
+            },
+          ],
+          unknownPaths: ["/competitorCandidates"],
+        }),
+      ),
+    });
+
+    const result = await client.synthesizeProductProfile(
+      input({ pages: [page(), page()] }),
+    );
+
+    expect(result.candidate.competitorCandidates).toEqual([]);
+    expect(result.candidate.unknownPaths).toEqual(["/competitorCandidates"]);
+    expect(result.invocation).toMatchObject({ status: "succeeded" });
+  });
+
+  it("still rejects a competitor whose other fields are malformed", async () => {
+    const client = createOpenAIProductProfileClient({
+      apiKey: "test-key",
+      model: "gpt-4.1-mini",
+      fetchImpl: vi.fn().mockResolvedValue(
+        chatResponse({
+          ...VALID_B2B_CANDIDATE,
+          competitorCandidates: [
+            {
+              ...VALID_B2B_CANDIDATE.competitorCandidates[0]!,
+              relationship: "co-founder",
+            },
+          ],
+        }),
+      ),
+    });
+
+    const error = await client
+      .synthesizeProductProfile(input({ pages: [page(), page()] }))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(LLMError);
+    expect(error).toMatchObject({ code: "SCHEMA_INVALID" });
   });
 
   it("names the schema paths a rejected candidate failed", async () => {

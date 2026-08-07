@@ -354,6 +354,44 @@ function normalizeAdvisoryUnknownPaths(value: unknown): unknown {
   return { ...candidate, unknownPaths };
 }
 
+/**
+ * A competitor the model could not locate to a domain is advisory noise, not a
+ * fatal response defect.
+ *
+ * The synthesis contract already treats the competitor pool as optional: the
+ * system prompt tells the model an empty pool is valid and preferred to
+ * guessing, and `retainExactlyGroundedCompetitors` drops every competitor the
+ * cited pages do not name outright. But `domain` is a strict normalized
+ * hostname, so one candidate the model named without a locatable domain
+ * rejected the whole response and discarded an otherwise complete Product
+ * Profile in production.
+ *
+ * Only the domain check is relaxed, and only by removing the entry. Every other
+ * competitor field stays strict, so a malformed `relationship`, a missing
+ * `reason` or absent page evidence still fails the response loudly. Entries
+ * that are not objects are kept so the strict schema can reject a response
+ * whose shape is wrong rather than a competitor whose domain is unknown.
+ */
+function dropCompetitorsWithoutUsableDomain(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const candidate = value as Record<string, unknown>;
+  const competitors = candidate["competitorCandidates"];
+  if (!Array.isArray(competitors)) return value;
+
+  const usable = competitors.filter((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      return true;
+    }
+    return ProductProfileCompetitorDomain.safeParse(
+      (entry as Record<string, unknown>)["domain"],
+    ).success;
+  });
+  if (usable.length === competitors.length) return value;
+  return { ...candidate, competitorCandidates: usable };
+}
+
 export type ProductProfileSemanticCandidateEnvelope = z.infer<
   typeof productProfileSemanticCandidateSchema
 >;
@@ -1276,7 +1314,9 @@ export class OpenAIProductProfileClient
       );
     }
     const parsed = productProfileSemanticCandidateSchema.safeParse(
-      normalizeAdvisoryUnknownPaths(rawCandidate),
+      dropCompetitorsWithoutUsableDomain(
+        normalizeAdvisoryUnknownPaths(rawCandidate),
+      ),
     );
     if (!parsed.success) {
       throw this.error(
