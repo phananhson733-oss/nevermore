@@ -57,6 +57,7 @@ import {
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
+  dataForSeoTargetForOrigin,
   findingTargetInsertsForFinding,
   lineageForEvidenceProvider,
   runDiagnostic,
@@ -3548,5 +3549,20 @@ describe("diagnostic retry classification", () => {
       "diagnostic_skip_stale_attempt",
       { code: "UNAVAILABLE" },
     );
+  });
+});
+
+describe("dataForSeoTargetForOrigin", () => {
+  // Regression for the 2026-08-07 production outage: the adapter's
+  // normalizeTarget strips `www.` before querying DataForSEO, so frozen
+  // observations of www-origin sites carry the apex domain. The diagnostic
+  // used to demand the raw hostname and killed every run of such sites.
+  it.each([
+    ["https://www.astrologywiki.com", "astrologywiki.com"],
+    ["https://example.com", "example.com"],
+    ["https://WWW.Example.COM", "example.com"],
+    ["https://example.com.", "example.com"],
+  ])("normalizes %s to %s exactly like the adapter", (origin, expected) => {
+    expect(dataForSeoTargetForOrigin(origin)).toBe(expected);
   });
 });
