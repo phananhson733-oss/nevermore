@@ -8,6 +8,13 @@
     "signIn": "登录",
     "getStarted": "免费开始"
   },
+  "auth": {
+    "title": "登录 GenGrowth",
+    "subtitle": "使用 Google 账号登录，不用设密码，也不用填表单。",
+    "consent": "登录即创建 GenGrowth 账号，并表示同意服务条款与隐私政策。我们只读取你的姓名和邮箱地址。",
+    "loading": "正在加载 Google 登录…",
+    "continueOnApp": "前往 app.gengrowth.ai 登录"
+  },
   "nav": {
     "tools": "免费工具",
     "features": "核心能力",

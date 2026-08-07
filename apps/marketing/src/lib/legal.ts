@@ -1,57 +1,44 @@
-// @input  — @/lib/supabase, @/types/legal
+// @input  — @/lib/legal-content, @/types/legal
 // @output — getLegalDocument() / getLegalVersions() 数据获取函数
 // @pos    — 法务数据层，effective_date 自动切换逻辑，SPEC 3.16 + 4.2.16-17
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import { getSupabase } from "@/lib/supabase";
+import { getLocalLegalDocument } from "@/lib/legal-content";
 import type { LegalDocument, LegalDocumentVersion } from "@/types";
 
 /**
  * 获取当前生效的法务文档
+ *
+ * Content lives in `content/legal/{locale}/{docType}.md` rather than in
+ * Supabase. The `legal_documents` tables only ever existed in a Supabase
+ * project that became permanently unreachable when its owning account was
+ * lost, so these four pages had rendered "coming soon" against a table that
+ * was not there. Repository-backed content also puts the text under review in
+ * the same pull request as the code that serves it, which is the right place
+ * for a document with legal consequences.
+ *
+ * Returns null for a missing or still-draft document, which the pages already
+ * render as their explicit fallback.
  */
 export async function getLegalDocument(
   docType: string,
   locale: string,
 ): Promise<LegalDocument | null> {
-  try {
-    const supabase = getSupabase();
-    const today = new Date().toISOString().split("T")[0];
-    const { data, error } = await supabase
-      .from("legal_documents")
-      .select("*")
-      .eq("doc_type", docType)
-      .eq("locale", locale)
-      .eq("is_current", true)
-      .lte("effective_date", today)
-      .order("effective_date", { ascending: false })
-      .single();
-
-    if (error) return null;
-    return data as LegalDocument;
-  } catch {
-    // Legal documents are deployment-managed content. Missing optional database
-    // configuration must render the page's explicit fallback, never turn a
-    // Footer link into a 500 response.
-    return null;
-  }
+  return getLocalLegalDocument(docType, locale);
 }
 
 /**
  * 获取历史版本列表
+ *
+ * Empty by construction: the repository keeps exactly one current file per
+ * document, and its history is the git history. The template already guards on
+ * `versions.length > 0`, so the version panel simply does not render.
+ *
+ * If published superseded versions ever need to be shown on the page, they
+ * belong in `content/legal/{locale}/{docType}/` as dated files — not restored
+ * from the lost database.
  */
 export async function getLegalVersions(
-  documentId: string,
+  _documentId: string,
 ): Promise<LegalDocumentVersion[]> {
-  try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from("legal_document_versions")
-      .select("*")
-      .eq("document_id", documentId)
-      .order("effective_date", { ascending: false });
-
-    if (error) return [];
-    return (data as LegalDocumentVersion[]) || [];
-  } catch {
-    return [];
-  }
+  return [];
 }

@@ -76,6 +76,9 @@ export default async function LocaleLayout({
     nav: messages.nav,
     footer: messages.footer,
     cookie: messages.cookie,
+    // The sign-in dialog lives in the Header, so it is part of the shell on
+    // every page rather than a route-level surface. Five short strings.
+    auth: messages.auth,
   };
   return (
     <html lang={locale} suppressHydrationWarning>

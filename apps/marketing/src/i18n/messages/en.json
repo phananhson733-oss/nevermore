@@ -8,6 +8,13 @@
     "signIn": "Sign in",
     "getStarted": "Get started free"
   },
+  "auth": {
+    "title": "Sign in to GenGrowth",
+    "subtitle": "Use your Google account. No password to create, no form to fill.",
+    "consent": "Signing in creates a GenGrowth account and accepts the Terms and Privacy Policy. We read your name and email address only.",
+    "loading": "Loading Google sign-in…",
+    "continueOnApp": "Continue on app.gengrowth.ai"
+  },
   "nav": {
     "tools": "Free Tools",
     "features": "Features",
