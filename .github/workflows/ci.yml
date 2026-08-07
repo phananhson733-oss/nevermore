@@ -1,8 +1,9 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  # Verification runs locally before a push and on the Vercel deployment;
+  # automatic push/pull_request triggers were retired to stop paying for a
+  # third run of the same checks. Still runnable by hand from the Actions tab.
   workflow_dispatch:
 
 permissions:
