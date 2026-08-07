@@ -1037,6 +1037,14 @@ for (const screen of ["execution", "results"] as const) {
   }) => {
     await page.goto(`/p/${E2E_PROJECT_ID}/${screen}`);
     await expect(page.getByRole("main")).toBeVisible();
+    // Next dev can reveal the route body before streamed root metadata has
+    // settled. Prove the shipped title/lang exist before asking axe to inspect
+    // the document, matching the real a11y harness's settled-document gate.
+    await page.waitForFunction(
+      () =>
+        document.title.trim().length > 0 &&
+        document.documentElement.lang.trim().length > 0,
+    );
     if (screen === "results") {
       // Scan the ready surface, not a spinner (R3 blueprint D8): the report
       // document must be mounted and query traffic settled before axe runs.
