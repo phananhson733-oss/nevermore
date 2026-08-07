@@ -480,6 +480,14 @@ export interface ProductProfileSynthesisResult {
   readonly candidate: ProductProfileSemanticCandidateEnvelope;
   readonly pageKeyMap: readonly ProductProfilePageKeyMapEntry[];
   readonly invocation: AnalysisInvocationRecord;
+  /**
+   * Competitor entries removed because their domain could not be parsed
+   * (see `dropCompetitorsWithoutUsableDomain`). Zero on a clean response.
+   * Callers must surface a non-zero count: without it, "the model found no
+   * competitors" and "every competitor was dropped" are indistinguishable
+   * from persisted data alone.
+   */
+  readonly droppedCompetitorCount: number;
 }
 
 export interface ProductProfileSynthesisPreflight {
@@ -1396,6 +1404,7 @@ export class OpenAIProductProfileClient
     return {
       candidate: parsed.data,
       pageKeyMap: prepared.pageKeyMap,
+      droppedCompetitorCount: dropOutcome.dropped.length,
       invocation: buildInvocation({
         model: this.model,
         inputHash: prepared.inputHash,

@@ -1113,6 +1113,7 @@ describe("OpenAIProductProfileClient", () => {
       targetAudiences: VALID_B2B_CANDIDATE.targetAudiences,
       unknownPaths: [],
     });
+    expect(result.droppedCompetitorCount).toBe(0);
     expect(result.invocation).toMatchObject({
       task: "product_profile_synthesis",
       status: "succeeded",
@@ -1160,6 +1161,7 @@ describe("OpenAIProductProfileClient", () => {
       expect(result.candidate.competitorCandidates).toEqual(
         VALID_B2B_CANDIDATE.competitorCandidates,
       );
+      expect(result.droppedCompetitorCount).toBe(1);
       expect(result.invocation).toMatchObject({
         task: "product_profile_synthesis",
         status: "succeeded",
@@ -1192,6 +1194,7 @@ describe("OpenAIProductProfileClient", () => {
 
     expect(result.candidate.competitorCandidates).toEqual([]);
     expect(result.candidate.unknownPaths).toEqual(["/competitorCandidates"]);
+    expect(result.droppedCompetitorCount).toBe(1);
     expect(result.invocation).toMatchObject({ status: "succeeded" });
   });
 
