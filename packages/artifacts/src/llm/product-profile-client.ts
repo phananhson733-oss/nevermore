@@ -72,6 +72,7 @@ const MAX_CONTENT_TYPE_CHARS = 160;
 const MAX_BUSINESS_HINT_CHARS = 1_000;
 const MAX_PRODUCT_NAME_CHARS = 160;
 const MAX_CONFLICTS = 500;
+const MAX_COMPETITOR_CANDIDATES = 100;
 const MAX_UNKNOWN_PATHS = 500;
 const UUID_PATTERN =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/giu;
@@ -269,7 +270,7 @@ const productProfileSemanticCandidateSchema = z
     targetAudiences: z.array(GroundedTargetAudience).max(100),
     competitorCandidates: z
       .array(GroundedCompetitorCandidate)
-      .max(100)
+      .max(MAX_COMPETITOR_CANDIDATES)
       .refine(
         (items) => unique(items.map((item) => item.domain)),
         "competitor domains must be unique",
@@ -366,30 +367,56 @@ function normalizeAdvisoryUnknownPaths(value: unknown): unknown {
  * rejected the whole response and discarded an otherwise complete Product
  * Profile in production.
  *
- * Only the domain check is relaxed, and only by removing the entry. Every other
- * competitor field stays strict, so a malformed `relationship`, a missing
- * `reason` or absent page evidence still fails the response loudly. Entries
- * that are not objects are kept so the strict schema can reject a response
- * whose shape is wrong rather than a competitor whose domain is unknown.
+ * Only the domain check is relaxed, and only by removing the entry. For
+ * entries whose domain does parse, every other field stays strict: a malformed
+ * `relationship`, a missing `reason` or absent page evidence still fails the
+ * response loudly. The flip side is deliberate: an object entry whose domain
+ * is missing or unparseable is dropped wholesale, however defective its other
+ * fields — it was never going to be persisted, so strictness on the rest
+ * would only convert a silent drop into a loud failure over discarded data.
+ * Entries that are not objects are kept so the strict schema can reject a
+ * response whose shape is wrong rather than a competitor whose domain is
+ * unknown. A raw pool over MAX_COMPETITOR_CANDIDATES is likewise passed
+ * through unfiltered so the schema's cardinality bound still fires on the
+ * array the model actually emitted. Dropped entries are returned to the
+ * caller: unsafe content inside them must still trip the safety gate even
+ * though the entries themselves are discarded.
  */
-function dropCompetitorsWithoutUsableDomain(value: unknown): unknown {
+interface CompetitorDropOutcome {
+  /** The candidate to validate; competitor entries without a usable domain removed. */
+  readonly candidate: unknown;
+  /** The removed entries, verbatim, for the safety tripwire and drop accounting. */
+  readonly dropped: readonly unknown[];
+}
+
+function dropCompetitorsWithoutUsableDomain(value: unknown): CompetitorDropOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return value;
+    return { candidate: value, dropped: [] };
   }
   const candidate = value as Record<string, unknown>;
   const competitors = candidate["competitorCandidates"];
-  if (!Array.isArray(competitors)) return value;
+  if (!Array.isArray(competitors)) return { candidate: value, dropped: [] };
+  // An oversized raw pool is a response-shape defect, not a grounding problem.
+  // Pass it through unfiltered so the schema's cardinality bound rejects the
+  // response; filtering first would let unbounded junk entries shrink a
+  // thousands-long array under the cap.
+  if (competitors.length > MAX_COMPETITOR_CANDIDATES) {
+    return { candidate: value, dropped: [] };
+  }
 
+  const dropped: unknown[] = [];
   const usable = competitors.filter((entry) => {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       return true;
     }
-    return ProductProfileCompetitorDomain.safeParse(
+    const ok = ProductProfileCompetitorDomain.safeParse(
       (entry as Record<string, unknown>)["domain"],
     ).success;
+    if (!ok) dropped.push(entry);
+    return ok;
   });
-  if (usable.length === competitors.length) return value;
-  return { ...candidate, competitorCandidates: usable };
+  if (dropped.length === 0) return { candidate: value, dropped: [] };
+  return { candidate: { ...candidate, competitorCandidates: usable }, dropped };
 }
 
 export type ProductProfileSemanticCandidateEnvelope = z.infer<
@@ -1313,10 +1340,26 @@ export class OpenAIProductProfileClient
         startedAt,
       );
     }
+    const dropOutcome = dropCompetitorsWithoutUsableDomain(
+      normalizeAdvisoryUnknownPaths(rawCandidate),
+    );
+    // Discarded competitors are still model output: content that would trip
+    // the safety gate must reject the response even when it rode in on an
+    // entry the domain filter was about to remove. Without this, the drop
+    // silently disarms the tripwire for exactly the malformed entries an
+    // injected page is most likely to produce.
+    if (dropOutcome.dropped.some(hasUnsafeRawContent)) {
+      throw this.error(
+        "SAFETY_VIOLATION",
+        "Product Profile candidate failed safety validation.",
+        "rejected",
+        prepared.inputHash,
+        response.usage,
+        startedAt,
+      );
+    }
     const parsed = productProfileSemanticCandidateSchema.safeParse(
-      dropCompetitorsWithoutUsableDomain(
-        normalizeAdvisoryUnknownPaths(rawCandidate),
-      ),
+      dropOutcome.candidate,
     );
     if (!parsed.success) {
       throw this.error(
