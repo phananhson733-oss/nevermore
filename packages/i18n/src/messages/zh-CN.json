@@ -346,6 +346,7 @@
       "reviewCompetitor": "审核 / 纠正",
       "confirm": "确认产品画像",
       "confirmAndConnect": "确认并进入数据连接",
+      "confirmAndAnalyze": "确认并开始分析",
       "confirmBlocked": "暂不能确认"
     },
     "states": {
@@ -627,6 +628,7 @@
       "activeRunBlocked": "请等待当前证据分析完成，再编辑或确认这个版本。",
       "dialogTitle": "确认这份产品画像？",
       "dialogDetail": "当前草稿将成为后续 SEO / GEO 与技术分析使用的正式产品画像和核心 ICP。本操作不会启动审计；确认后会进入真实数据连接。",
+      "dialogDetailConnected": "当前草稿将成为后续 SEO / GEO 与技术分析使用的正式产品画像和核心 ICP。本操作不会启动审计；你在创建产品时连接的数据源已就绪，确认后系统会自动开始采集与分析。",
       "items": {
         "identity": "产品身份",
         "business": "商业模式",
@@ -636,6 +638,9 @@
         "competitors": "有效的默认竞品集合"
       },
       "missingFields": "还需补齐：{fields}"
+    },
+    "connectedSources": {
+      "pill": "{providers} 已连接 · 确认画像后自动开始分析"
     }
   },
   "context": {

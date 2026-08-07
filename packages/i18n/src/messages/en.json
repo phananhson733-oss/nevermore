@@ -346,6 +346,7 @@
       "reviewCompetitor": "Review / correct",
       "confirm": "Confirm Product Profile",
       "confirmAndConnect": "Confirm and open data connections",
+      "confirmAndAnalyze": "Confirm and start analysis",
       "confirmBlocked": "Not ready to confirm"
     },
     "states": {
@@ -627,6 +628,7 @@
       "activeRunBlocked": "Wait for the current evidence analysis to finish before editing or confirming this version.",
       "dialogTitle": "Confirm this Product Profile?",
       "dialogDetail": "The current draft becomes the canonical Product Profile and Primary ICP for downstream SEO / GEO and technical analysis. This action does not start an Audit.",
+      "dialogDetailConnected": "The current draft becomes the canonical Product Profile and Primary ICP for downstream SEO / GEO and technical analysis. This action does not start an Audit. The data sources you connected during setup are ready; collection and analysis start automatically after confirmation.",
       "items": {
         "identity": "Product identity",
         "business": "Business model",
@@ -636,6 +638,9 @@
         "competitors": "Valid default competitor set"
       },
       "missingFields": "Still needed: {fields}"
+    },
+    "connectedSources": {
+      "pill": "{providers} connected · analysis starts automatically after confirmation"
     }
   },
   "context": {

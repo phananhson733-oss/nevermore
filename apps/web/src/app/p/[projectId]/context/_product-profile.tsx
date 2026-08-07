@@ -750,7 +750,14 @@ function CompetitorEditor({
   );
 }
 
-export function ProductProfilePage({ projectId }: { readonly projectId: string }) {
+export function ProductProfilePage({
+  projectId,
+  connectedGoogleProviders = [],
+}: {
+  readonly projectId: string;
+  /** GSC/GA4 already connected during onboarding; presentational only. */
+  readonly connectedGoogleProviders?: readonly string[];
+}) {
   const t = useTranslations("productProfile");
   const locale = useLocale();
   const router = useRouter();
@@ -1378,6 +1385,15 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
               <Database size={16} aria-hidden="true" />
               {t("actions.connectData")}
             </Link>
+          ) : connectedGoogleProviders.length > 0 ? (
+            <span className={styles.versionPill} data-connected-sources="">
+              <Database size={15} aria-hidden="true" />
+              {t("connectedSources.pill", {
+                providers: connectedGoogleProviders
+                  .map((provider) => provider.toUpperCase())
+                  .join(" + "),
+              })}
+            </span>
           ) : null}
           {editable ? <button type="button" className={styles.primaryButton} onClick={() => void startSynthesis(currentRow.version, "manual")} disabled={synthesisMutation.isPending || profileWorkActive}><Sparkles size={16} aria-hidden="true" />{profileWorkActive ? t("actions.synthesizing") : t("actions.synthesize")}</button> : null}
         </div>
@@ -1545,7 +1561,7 @@ export function ProductProfilePage({ projectId }: { readonly projectId: string }
       <ProfileEditor profile={profile} open={editorOpen} initialFocus={editorInitialFocus} saving={updateMutation.isPending} onClose={closeEditor} onSave={saveProfile} />
       <CompetitorEditor open={competitorEditor !== null} candidate={competitorEditor === "add" ? null : competitorEditor} saving={addMutation.isPending || reviewMutation.isPending} onClose={closeCompetitorEditor} onSubmit={saveCompetitor} />
       <ModalFrame open={confirmOpen} titleId="confirm-profile-title" onRequestClose={closeConfirmation}>
-        <div className={styles.confirmDialog}><ShieldCheck size={26} aria-hidden="true" /><h2 id="confirm-profile-title">{t("confirmation.dialogTitle")}</h2><p>{t("confirmation.dialogDetail")}</p><div className={styles.dialogActions}><button type="button" className={styles.secondaryButton} onClick={closeConfirmation}>{t("actions.cancel")}</button><button type="button" className={styles.primaryButton} disabled={confirmMutation.isPending} onClick={() => void confirmProfile()}>{confirmMutation.isPending ? <LoaderCircle className={styles.spin} size={17} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}{t("actions.confirmAndConnect")}</button></div></div>
+        <div className={styles.confirmDialog}><ShieldCheck size={26} aria-hidden="true" /><h2 id="confirm-profile-title">{t("confirmation.dialogTitle")}</h2><p>{t(connectedGoogleProviders.length > 0 ? "confirmation.dialogDetailConnected" : "confirmation.dialogDetail")}</p><div className={styles.dialogActions}><button type="button" className={styles.secondaryButton} onClick={closeConfirmation}>{t("actions.cancel")}</button><button type="button" className={styles.primaryButton} disabled={confirmMutation.isPending} onClick={() => void confirmProfile()}>{confirmMutation.isPending ? <LoaderCircle className={styles.spin} size={17} aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}{t(connectedGoogleProviders.length > 0 ? "actions.confirmAndAnalyze" : "actions.confirmAndConnect")}</button></div></div>
       </ModalFrame>
     </div>
   );
