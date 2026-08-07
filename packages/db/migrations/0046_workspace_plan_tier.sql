@@ -45,6 +45,6 @@ ALTER TABLE app.workspaces
   CHECK (plan_tier IN ('free', 'internal'));
 
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0044_workspace_plan_tier'::text AS migration_version;
+  SELECT '0046_workspace_plan_tier'::text AS migration_version;
 
 COMMIT;

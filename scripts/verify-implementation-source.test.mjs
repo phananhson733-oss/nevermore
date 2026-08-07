@@ -52,7 +52,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     lock.migrationHead,
-    "0045_dataforseo_backlink_target_lineage",
+    "0046_workspace_plan_tier",
   );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
@@ -114,8 +114,15 @@ test("gates the current Supabase production authentication boundary", () => {
     "production requests must derive page authentication from refreshed Supabase user state",
     "unauthenticated pages must redirect to login with a sanitized return target",
     "operator resolution must verify the authenticated user with Supabase Auth",
-    "production operator resolution must require a pre-provisioned operator profile",
-    "non-development sessions must fail closed before resolving pre-provisioned membership",
+    "operator resolution must look membership up by the authenticated user id",
+    "non-development sessions must fail closed before any membership resolution",
+    // Spec §1.6 opened self-serve signup. The invariant that replaced
+    // "pre-provisioned membership" is the one that still protects data: a
+    // signup must CREATE its workspace and must never select an existing one.
+    "self-serve signup must live in provisionSelfServeOperator so its isolation can be verified",
+    "self-serve signup must create the workspace it admits an account into",
+    "self-serve signup must never select an existing workspace to join",
+    "self-serve signup must serialize per user so a concurrent first request cannot orphan a workspace",
     "SF_DEV_AUTH must fail closed outside exact loopback development",
   ]) {
     assert.match(verifier, new RegExp(invariant));

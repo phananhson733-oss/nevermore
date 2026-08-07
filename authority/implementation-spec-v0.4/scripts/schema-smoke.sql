@@ -4914,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0045_dataforseo_backlink_target_lineage' THEN
+  ) IS DISTINCT FROM '0046_workspace_plan_tier' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

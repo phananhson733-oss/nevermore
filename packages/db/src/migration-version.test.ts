@@ -29,9 +29,12 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe(
-      "0045_dataforseo_backlink_target_lineage",
-    );
+    // This test is about the 0042/0043 pair — the NOT VALID install and its
+    // low-lock validation. Pinning the head here only held while 0043 happened
+    // to be last; the head itself is asserted against the migration directory
+    // in "advances the database projection exactly once per migration file",
+    // which cannot go stale the same way.
+    expect(LATEST_APP_MIGRATION >= "0043").toBe(true);
     expect(migration).toMatch(
       /CHECK\s*\(\s*rule_set_version\s+IN\s*\(\s*'mvp\.rules\.0\.2\.0'\s*,\s*'mvp\.rules\.0\.2\.1'\s*,\s*'mvp\.rules\.0\.2\.2'\s*,\s*'mvp\.rules\.0\.2\.3'\s*,\s*'mvp\.rules\.0\.2\.4'\s*\)\s*\)/iu,
     );
