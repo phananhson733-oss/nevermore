@@ -2277,9 +2277,15 @@ function PortfolioPane({
     limit: 50,
     diagnosticRunId,
   });
+  // Reads the live library rather than the frozen generation: a keyword that
+  // has been collected but not yet reviewed still belongs in this count. Pinned
+  // to the generation this reported zero until someone had reviewed a keyword,
+  // which reads as "we found nothing" instead of "nothing is reviewed yet".
+  // Must stay in the same scope as the Keyword Library tab or the card and the
+  // tab will disagree about the very same keywords.
   const summaryKeywordsQuery = useGrowthMapKeywords(projectId, {
     limit: 100,
-    diagnosticRunId,
+    diagnosticRunId: null,
   });
   const items = listQuery.data?.data ?? [];
   const pageTypeOptions = useMemo(
@@ -6768,7 +6774,8 @@ function KeywordLibraryPane({
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
-  readonly diagnosticRunId: string;
+  /** null reads the live library, including keywords awaiting review. */
+  readonly diagnosticRunId: string | null;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
   const pathname = usePathname();
@@ -9319,7 +9326,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
-          diagnosticRunId={diagnosticRunId!}
+          diagnosticRunId={null}
         />
       ) : mode === "competitors" ? (
         <CompetitorLibraryPane
