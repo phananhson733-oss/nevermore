@@ -5,12 +5,21 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, ScanSearch } from "lucide-react";
 import { useTranslations } from "next-intl";
-import type { SeoAuditPayload, SeoAuditReport } from "@sf/public-tools";
+import type { SeoAuditReport } from "@sf/public-tools";
 import { trackMarketingEvent } from "@/components/layout/google-analytics";
+import {
+  readSeoAuditStream,
+  type SeoAuditStreamEvent,
+} from "../../lib/tools/seo-audit-stream";
 import { SeoAuditResults } from "./seo-audit-results";
+import { SeoAuditProgressPanel } from "./seo-audit-progress-panel";
+import {
+  progressCopyLocale,
+  type SeoAuditProgressPhase,
+} from "./seo-audit-progress-copy";
 
 interface SeoAuditToolProps {
   readonly locale: string;
@@ -21,12 +30,64 @@ interface SeoAuditToolProps {
   readonly surface?: "panel" | "bare";
 }
 
+/**
+ * A monotonic reading, because the wall clock is not one: an NTP step
+ * backwards mid-crawl makes `Date.now()` differences negative, which the label
+ * clamps to "0s elapsed" and then holds frozen for the length of the
+ * adjustment.
+ */
+function monotonicNow(): number {
+  return typeof performance !== "undefined" &&
+    typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+/** What the crawl last reported about itself. Never advanced by this component. */
+interface CrawlProgress {
+  readonly pagesCrawled: number;
+  readonly requestsSent: number;
+}
+
+/** Start and elapsed live together so one can never be reset without the other. */
+interface RunClock {
+  readonly startedAt: number;
+  readonly elapsedMs: number;
+}
+
 export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
   const t = useTranslations("tools.seoAudit");
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [report, setReport] = useState<SeoAuditReport | null>(null);
+  const [progress, setProgress] = useState<CrawlProgress | null>(null);
+  /**
+   * Which part of the run is happening, as reported by the server. It is the
+   * only side that knows when the crawl returned; from here the two windows
+   * look identical, because in both of them the page count sits still.
+   */
+  const [phase, setPhase] = useState<SeoAuditProgressPhase>("crawl");
+  const [clock, setClock] = useState<RunClock | null>(null);
+  const startedAt = clock?.startedAt ?? null;
+
+  /**
+   * Elapsed time is measured here rather than sent by the server, because it
+   * is a real local fact — how long this request has been in flight — and two
+   * elapsed numbers would invite a blended one. It stops the moment the run
+   * ends, so it can never keep counting past an answer.
+   */
+  useEffect(() => {
+    if (startedAt === null) return;
+    const ticker = setInterval(() => {
+      setClock((current) =>
+        current === null || current.startedAt !== startedAt
+          ? current
+          : { startedAt, elapsedMs: monotonicNow() - startedAt },
+      );
+    }, 1_000);
+    return () => clearInterval(ticker);
+  }, [startedAt]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -34,26 +95,56 @@ export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
     setLoading(true);
     setErrorCode(null);
     setReport(null);
+    setProgress(null);
+    setPhase("crawl");
+    // Reset here rather than in the ticker effect: an effect runs after paint,
+    // so a second run would paint the first run's elapsed time once.
+    setClock({ startedAt: monotonicNow(), elapsedMs: 0 });
     try {
       const response = await fetch("/api/tools/seo-audit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Opt into the progress stream. Without this header the endpoint
+          // returns the same single JSON object it always has, which the same
+          // reader parses, so a client/server version skew is harmless.
+          Accept: "application/x-ndjson",
+        },
         body: JSON.stringify({ url }),
       });
-      const payload = (await response.json()) as {
-        data?: SeoAuditPayload;
-        error?: { code?: string };
-      };
-      if (!response.ok || !payload.data) {
-        setErrorCode(payload.error?.code ?? "unknown");
+
+      const terminal: SeoAuditStreamEvent[] = [];
+      await readSeoAuditStream(response, (streamEvent) => {
+        if (streamEvent.kind === "progress") {
+          setProgress({
+            pagesCrawled: streamEvent.pagesCrawled,
+            requestsSent: streamEvent.requestsSent,
+          });
+          return;
+        }
+        if (streamEvent.kind === "stage") {
+          // The crawl is over. The figures on screen are the crawl's final
+          // ones from here on, and nothing more is being fetched from the site.
+          setPhase("report");
+          return;
+        }
+        terminal.push(streamEvent);
+      });
+
+      const answer = terminal.at(-1);
+      if (answer?.kind !== "result") {
+        setErrorCode(answer?.kind === "error" ? answer.code : "unknown");
         return;
       }
-      setReport(payload.data.result);
+      setReport(answer.payload.result);
       trackMarketingEvent("tool_complete", { tool_name: "seo_audit" });
     } catch {
       setErrorCode("unknown");
     } finally {
       setLoading(false);
+      setClock(null);
+      setProgress(null);
+      setPhase("crawl");
     }
   }
 
@@ -119,6 +210,22 @@ export function SeoAuditTool({ locale, surface = "panel" }: SeoAuditToolProps) {
           </button>
         </form>
       </div>
+      {/* Only once the response has reported a crawl. A cache hit and every
+          gate refusal send no progress line because they run no crawl, and
+          this panel asserts one is running. It is destroyed on completion or
+          error, so it can never narrate a run that already ended, and once the
+          server says the crawl returned it stops claiming one is running. The
+          section is already one polite live region; a nested one would
+          double-announce. */}
+      {loading && progress !== null ? (
+        <SeoAuditProgressPanel
+          pagesCrawled={progress.pagesCrawled}
+          requestsSent={progress.requestsSent}
+          elapsedMs={clock?.elapsedMs ?? 0}
+          locale={progressCopyLocale(locale)}
+          phase={phase}
+        />
+      ) : null}
       {errorCode ? (
         <p
           id="seo-audit-error"

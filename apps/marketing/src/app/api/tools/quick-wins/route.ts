@@ -9,35 +9,20 @@ import {
   handleQuickWinsRequest,
 } from "@/lib/tools/quick-wins-handler";
 import { createQuickWinsReader } from "@/lib/tools/quick-wins-reader";
-import {
-  isGoogleConnectEnabled,
-  readGoogleConsentNotice,
-  readTrafficDropGrant,
-} from "@/lib/tools/traffic-drop-session";
 
 export const runtime = "nodejs";
 /** Two concurrent Search Console reads plus one backoff each. */
 export const maxDuration = 60;
 
 export async function POST(request: Request): Promise<Response> {
-  // The token is read here and handed straight to the reader, so it exists
-  // only for the life of this request and never reaches a server component.
-  const grant = await readTrafficDropGrant();
-
   return handleQuickWinsRequest(request, {
-    readSession: () =>
-      Promise.resolve({
-        properties: grant?.properties ?? null,
-        propertyTotal: grant?.properties.length ?? 0,
-        connectEnabled: isGoogleConnectEnabled(),
-        consentNotice: readGoogleConsentNotice(),
-      }),
-    runReport: grant
-      ? createQuickWinsReader({ accessToken: grant.accessToken })
-      : /* Unreachable: the handler rejects a missing grant before reading. */
-        () => Promise.reject(new Error("no_search_console_grant")),
+    ...DEFAULT_QUICK_WINS_DEPENDENCIES,
+    // The reader is built from the token the handler resolved, inside the
+    // gate. Building it here would mean resolving the grant before admission
+    // control, which is two outbound Google calls per unadmitted request.
+    runReport: ({ accessToken, ...input }) =>
+      createQuickWinsReader({ accessToken })(input),
     now: () => new Date(),
     extractClientIp,
-    openGate: DEFAULT_QUICK_WINS_DEPENDENCIES.openGate,
   });
 }

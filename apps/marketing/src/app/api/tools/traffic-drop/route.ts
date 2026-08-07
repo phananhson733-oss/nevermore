@@ -10,11 +10,6 @@ import {
 } from "@/lib/tools/traffic-drop-handler";
 import { createTrafficDropQueryReader } from "@/lib/tools/traffic-drop-query-reader";
 import { createTrafficDropReader } from "@/lib/tools/traffic-drop-reader";
-import {
-  isGoogleConnectEnabled,
-  readGoogleConsentNotice,
-  readTrafficDropGrant,
-} from "@/lib/tools/traffic-drop-session";
 
 export const runtime = "nodejs";
 /** Search Console paging plus backoff; well inside the platform limit. */
@@ -31,35 +26,19 @@ export const maxDuration = 60;
 const QUERY_READ_BUDGET_MS = 25_000;
 
 export async function POST(request: Request): Promise<Response> {
-  // The token is read here and handed straight to the readers, so it exists
-  // only for the life of this request and never reaches a server component.
-  const grant = await readTrafficDropGrant();
-
   const startedAt = Date.now();
   const remainingMs = () => QUERY_READ_BUDGET_MS - (Date.now() - startedAt);
 
   return handleTrafficDropRequest(request, {
-    readSession: () =>
-      Promise.resolve({
-        properties: grant?.properties ?? null,
-        propertyTotal: grant?.properties.length ?? 0,
-        connectEnabled: isGoogleConnectEnabled(),
-        consentNotice: readGoogleConsentNotice(),
-      }),
-    readDailySeries: grant
-      ? createTrafficDropReader({ accessToken: grant.accessToken })
-      : /* Unreachable: the handler rejects a missing grant before reading. */
-        () => Promise.reject(new Error("no_search_console_grant")),
-    ...(grant
-      ? {
-          readQueryEvidence: createTrafficDropQueryReader({
-            accessToken: grant.accessToken,
-            remainingMs,
-          }),
-        }
-      : {}),
+    ...DEFAULT_TRAFFIC_DROP_DEPENDENCIES,
+    // Both readers are built from the token the handler resolved, inside the
+    // gate. Building them here would mean resolving the grant before admission
+    // control, which is two outbound Google calls per unadmitted request.
+    readDailySeries: ({ accessToken, ...input }) =>
+      createTrafficDropReader({ accessToken })(input),
+    readQueryEvidence: ({ accessToken, ...input }) =>
+      createTrafficDropQueryReader({ accessToken, remainingMs })(input),
     now: () => new Date(),
     extractClientIp,
-    openGate: DEFAULT_TRAFFIC_DROP_DEPENDENCIES.openGate,
   });
 }

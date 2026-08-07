@@ -61,6 +61,8 @@ function post(body: unknown, contentType = "application/json"): Request {
   });
 }
 
+const ACCESS_TOKEN = "test-access-token";
+
 function deps(
   overrides: Partial<QuickWinsHandlerDependencies> = {},
 ): QuickWinsHandlerDependencies {
@@ -70,6 +72,12 @@ function deps(
       propertyTotal: 1,
       connectEnabled: true,
       consentNotice: "none",
+    }),
+    resolveGrant: async () => ({
+      kind: "grant",
+      accessToken: ACCESS_TOKEN,
+      properties: [PROPERTY],
+      propertyTotal: 1,
     }),
     runReport: async () => ENVELOPE,
     now: () => new Date("2026-08-03T09:00:00.000Z"),
@@ -81,14 +89,20 @@ function deps(
 
 describe("handleQuickWinsRequest", () => {
   it("returns the envelope for a granted property", async () => {
-    const response = await handleQuickWinsRequest(post({ property: PROPERTY }), deps());
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps(),
+    );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ data: ENVELOPE });
   });
 
   it("never caches a report about someone's own property", async () => {
-    const response = await handleQuickWinsRequest(post({ property: PROPERTY }), deps());
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps(),
+    );
 
     expect(response.headers.get("Cache-Control")).toBe("no-store, private");
   });
@@ -131,6 +145,140 @@ describe("handleQuickWinsRequest", () => {
     });
   });
 
+  it("makes no Google call at all when the gate refuses", async () => {
+    // Resolving the grant can cost two outbound calls — the token endpoint and
+    // the Search Console site list — and both are made with the shared OAuth
+    // client against a per-PROJECT quota. Doing that before admission control
+    // means one legitimate grant is enough to drive unlimited traffic through
+    // this route with nothing in front of it.
+    const resolveGrant = vi.fn(async () => ({ kind: "none" }) as const);
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        resolveGrant,
+        openGate: async () => ({
+          ok: false,
+          response: Response.json(createPublicToolError("rate_limited"), {
+            status: 429,
+          }),
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(resolveGrant).not.toHaveBeenCalled();
+  });
+
+  it("resolves the grant only after the gate has opened", async () => {
+    const order: string[] = [];
+    await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        openGate: async () => {
+          order.push("gate");
+          return { ok: true, release: () => order.push("release") };
+        },
+        resolveGrant: async () => {
+          order.push("resolve");
+          return {
+            kind: "grant",
+            accessToken: ACCESS_TOKEN,
+            properties: [PROPERTY],
+            propertyTotal: 1,
+          };
+        },
+      }),
+    );
+
+    expect(order).toEqual(["gate", "resolve", "release"]);
+  });
+
+  it("hands the freshly resolved token to the report", async () => {
+    // The token is resolved per request and never stored, so the report has to
+    // receive the one this resolution produced rather than one captured when
+    // the route module was built.
+    const runReport = vi.fn(async () => ENVELOPE);
+    await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        runReport,
+        resolveGrant: async () => ({
+          kind: "grant",
+          accessToken: "test-access-token-refreshed",
+          properties: [PROPERTY],
+          propertyTotal: 1,
+        }),
+      }),
+    );
+
+    expect(runReport).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "test-access-token-refreshed" }),
+    );
+  });
+
+  it("tells a revoked visitor to reconnect rather than that Google is down", async () => {
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({ resolveGrant: async () => ({ kind: "revoked" }) }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gsc_revoked" },
+    });
+  });
+
+  it("answers a momentary Google failure as temporary, with a retry hint", async () => {
+    // A refresh that Google could not answer says nothing about the grant. A
+    // 401 there sends a still-authorized visitor to the consent screen for a
+    // blip, and the copy would tell them their connection is broken.
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({ resolveGrant: async () => ({ kind: "unavailable" }) }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("30");
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gsc_temporarily_unavailable" },
+    });
+  });
+
+  it("releases the slot when the grant resolves to nothing usable", async () => {
+    const release = vi.fn();
+    await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        openGate: async () => ({ ok: true, release }),
+        resolveGrant: async () => ({ kind: "revoked" }),
+      }),
+    );
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a property the RESOLVED grant no longer covers", async () => {
+    // The pre-gate check reads the page-scoped property cookie; the resolution
+    // re-lists from Google. When they disagree the newer answer is the one we
+    // are allowed to read with.
+    const runReport = vi.fn(async () => ENVELOPE);
+    const response = await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        runReport,
+        resolveGrant: async () => ({
+          kind: "grant",
+          accessToken: ACCESS_TOKEN,
+          properties: ["sc-domain:something-else.com"],
+          propertyTotal: 1,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
   it("holds one Search Console read per client at a time", async () => {
     // Search Console quota is counted per GCP project, not per visitor: an
     // unbounded caller spends every other visitor's budget.
@@ -141,7 +289,10 @@ describe("handleQuickWinsRequest", () => {
           ok: false,
           response: Response.json(createPublicToolError("scan_in_progress"), {
             status: 409,
-            headers: { "Retry-After": "5", "Cache-Control": "no-store, private" },
+            headers: {
+              "Retry-After": "5",
+              "Cache-Control": "no-store, private",
+            },
           }),
         }),
       }),
@@ -236,6 +387,7 @@ describe("handleQuickWinsRequest", () => {
     expect(runReport).toHaveBeenCalledWith({
       property: PROPERTY,
       brandTerms: ["Acme", "acme corp"],
+      accessToken: ACCESS_TOKEN,
     });
   });
 
@@ -249,6 +401,7 @@ describe("handleQuickWinsRequest", () => {
     expect(runReport).toHaveBeenCalledWith({
       property: PROPERTY,
       brandTerms: ["acme"],
+      accessToken: ACCESS_TOKEN,
     });
   });
 
@@ -256,7 +409,10 @@ describe("handleQuickWinsRequest", () => {
     const response = await handleQuickWinsRequest(
       post({
         property: PROPERTY,
-        brandTerms: Array.from({ length: MAX_BRAND_TERMS + 1 }, (_, i) => `t${i}`),
+        brandTerms: Array.from(
+          { length: MAX_BRAND_TERMS + 1 },
+          (_, i) => `t${i}`,
+        ),
       }),
       deps(),
     );

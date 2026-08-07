@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  assertCookieSecretConfigured,
   cookieAttributes,
+  cookieSecretFailure,
   open,
   seal,
   SealedCookieError,
@@ -22,7 +24,9 @@ describe("sealed cookies", () => {
   it("round-trips a payload", () => {
     const value = seal("gg_id", { sub: "1234567890" }, 3_600);
 
-    expect(open<{ sub: string }>("gg_id", value)).toEqual({ sub: "1234567890" });
+    expect(open<{ sub: string }>("gg_id", value)).toEqual({
+      sub: "1234567890",
+    });
   });
 
   it("does not let a value sealed for one purpose open as another", () => {
@@ -82,9 +86,81 @@ describe("sealed cookies", () => {
   });
 
   it("refuses a secret that is too short to be worth having", () => {
-    process.env.MARKETING_COOKIE_SECRET = Buffer.alloc(16, 1).toString("base64");
+    process.env.MARKETING_COOKIE_SECRET = Buffer.alloc(16, 1).toString(
+      "base64",
+    );
 
     expect(() => seal("gg_id", {}, 60)).toThrow(SealedCookieError);
+  });
+
+  it("refuses the hex key pasted into the base64 slot, by name", () => {
+    // `TOKEN_ENCRYPTION_KEY` is 64 hex characters, which base64-decodes to 48
+    // bytes and clears the length check. The operator would see nothing wrong
+    // and every cookie ever issued would stop opening.
+    process.env.MARKETING_COOKIE_SECRET = "ab".repeat(32);
+
+    expect(() => seal("gg_id", {}, 60)).toThrow(/TOKEN_ENCRYPTION_KEY/);
+  });
+
+  it("refuses a base64 secret with stray characters instead of decoding around them", () => {
+    // Node's base64 decoder skips anything outside the alphabet, so a pasted
+    // quote or newline yields a shorter, different key — silently.
+    process.env.MARKETING_COOKIE_SECRET = `"${SECRET}"`;
+
+    expect(() => seal("gg_id", {}, 60)).toThrow(/MARKETING_COOKIE_SECRET/);
+  });
+
+  it("refuses a TOKEN_ENCRYPTION_KEY that is not hex", () => {
+    delete process.env.MARKETING_COOKIE_SECRET;
+    process.env.TOKEN_ENCRYPTION_KEY = SECRET;
+
+    expect(() => seal("gg_id", {}, 60)).toThrow(/TOKEN_ENCRYPTION_KEY/);
+
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+  });
+
+  it("reports the same diagnosis before a single cookie has been sealed", () => {
+    // The check exists so the failure arrives at the authorization entry point
+    // with the variable named, instead of arriving as "every visitor is signed
+    // out" weeks later.
+    process.env.MARKETING_COOKIE_SECRET = "ab".repeat(32);
+
+    expect(() => assertCookieSecretConfigured()).toThrow(SealedCookieError);
+    expect(() => assertCookieSecretConfigured()).toThrow(
+      /TOKEN_ENCRYPTION_KEY/,
+    );
+  });
+
+  it("passes the eager check on a correctly configured deployment", () => {
+    expect(() => assertCookieSecretConfigured()).not.toThrow();
+  });
+
+  it("does not read a misconfigured key as a visitor who has no cookie", () => {
+    // `open` swallows every failure so an unverifiable cookie reads as an
+    // absent one. A root key that cannot be built is not a cookie problem at
+    // all, and returning null for it is how a bad paste signs out every
+    // visitor in silence.
+    const value = seal("gg_id", { sub: "1" }, 3_600);
+    delete process.env.MARKETING_COOKIE_SECRET;
+    delete process.env.TOKEN_ENCRYPTION_KEY;
+
+    expect(() => open("gg_id", value)).toThrow(SealedCookieError);
+  });
+
+  it("hands the same diagnosis to a reader as a value rather than a throw", () => {
+    // Throwing is right at the entry of the authorization flow, where an
+    // operator is the only one who can act on it. It is wrong on a page render:
+    // the pages that would 500 are the connected tools, and they carry the
+    // disconnect control — so the visitors most in need of it are the ones the
+    // throw would lock out. Readers ask for the reason, log it, and show what
+    // someone holding no cookie sees.
+    process.env.MARKETING_COOKIE_SECRET = "ab".repeat(32);
+
+    expect(cookieSecretFailure()).toMatch(/TOKEN_ENCRYPTION_KEY/);
+  });
+
+  it("answers null when the root key builds", () => {
+    expect(cookieSecretFailure()).toBeNull();
   });
 
   it("keeps the access-token cookie off page requests", () => {

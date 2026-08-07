@@ -245,13 +245,11 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
       "The crawler stopped at the synchronous page-safety boundary. Every record below describes only the pages that were inspected.",
     ),
   ).toBeVisible();
-  await expect(
-    page.locator('[data-testid^="seo-audit-record-"]'),
-  ).toHaveCount(3);
-
-  const duplicateRecord = page.getByTestId(
-    "seo-audit-record-title_duplicate",
+  await expect(page.locator('[data-testid^="seo-audit-record-"]')).toHaveCount(
+    3,
   );
+
+  const duplicateRecord = page.getByTestId("seo-audit-record-title_duplicate");
   await duplicateRecord
     .getByText("Repeated title text", { exact: true })
     .click();
@@ -271,10 +269,12 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
     .getByRole("button", { name: "Evidence boundary (1)" })
     .click();
   await expect(
-    page.getByRole("tooltip").getByText(
-      "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
-      { exact: true },
-    ),
+    page
+      .getByRole("tooltip")
+      .getByText(
+        "Duplicate groups use case-insensitive, whitespace-normalised text and include only inspected pages.",
+        { exact: true },
+      ),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(
@@ -288,9 +288,7 @@ test("renders the bilingual site-wide shell and an audit-only multi-page report"
   await expect(pageInventoryToggle).toContainText("Show 3 pages");
   await pageInventoryToggle.click();
   await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(3);
-  await expect(pageInventoryToggle).toContainText(
-    "Collapse page inventory",
-  );
+  await expect(pageInventoryToggle).toContainText("Collapse page inventory");
   await pageInventoryToggle.click();
   await expect(page.getByTestId("seo-audit-page-row")).toHaveCount(0);
 
@@ -362,6 +360,206 @@ test("keeps a long multi-page audit record contained on a mobile viewport", asyn
         document.documentElement.clientWidth,
     ),
   ).toBe(true);
+});
+
+/**
+ * The measured production run sat on "Auditing the site…" for 2.5 minutes with
+ * no progress element, no spinner and no animation. This drives the real
+ * client parser against a genuinely chunked NDJSON body, so a change that
+ * withholds every line until the crawl finishes — which passes every unit test
+ * and does nothing in production — fails here instead.
+ */
+test("narrates the crawl, says when it ends, then replaces the panel with the report", async ({
+  page,
+}) => {
+  await page.addInitScript((payload) => {
+    // Record every distinct panel text as it happens. Asserting on the live
+    // DOM instead would race a panel that is deliberately short-lived, and a
+    // flaky assertion here would be the first thing someone deletes.
+    const recorder = window as unknown as { __panelStates: string[] };
+    recorder.__panelStates = [];
+    const record = (): void => {
+      const text =
+        document.querySelector('[data-testid="seo-audit-progress"]')
+          ?.textContent ?? "";
+      if (text && recorder.__panelStates.at(-1) !== text) {
+        recorder.__panelStates.push(text);
+      }
+    };
+    const observe = (): void => {
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+    };
+    if (document.body) observe();
+    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+
+    const lines = [
+      JSON.stringify({ progress: { pagesCrawled: 0, requestsSent: 1 } }),
+      JSON.stringify({ progress: { pagesCrawled: 3, requestsSent: 37 } }),
+      // The crawl has returned; the report is built, serialized and cached
+      // after this line and before the terminal one.
+      JSON.stringify({ stage: "building_report" }),
+      JSON.stringify(payload),
+    ].map((line) => `${line}\n`);
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (!url.includes("/api/tools/seo-audit")) {
+        return originalFetch(input, init);
+      }
+      const encoder = new TextEncoder();
+      let index = 0;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (index >= lines.length) {
+            controller.close();
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          controller.enqueue(encoder.encode(lines[index] ?? ""));
+          index += 1;
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson" },
+      });
+    };
+  }, mockedPayload);
+
+  await page.goto("/tools/seo-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run free audit" }).click();
+
+  const panel = page.getByTestId("seo-audit-progress");
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("seo-audit-results")).toBeVisible({
+    timeout: 15_000,
+  });
+  // The panel is destroyed on completion, so it can never narrate a finished run.
+  await expect(panel).toHaveCount(0);
+
+  const states = await page.evaluate(
+    () => (window as unknown as { __panelStates: string[] }).__panelStates,
+  );
+  const firstMatching = (needle: string): number =>
+    states.findIndex((state) => state.includes(needle));
+
+  // The panel exists only because the crawl reported something, so its first
+  // state already carries that first observation.
+  expect(states[0]).toContain("No page crawled yet");
+  expect(states[0]).toContain("1 request sent by the crawl");
+  // Every figure is one the crawl reported, in the order it reported it, each
+  // rendered before the report arrived.
+  expect(firstMatching("3 pages crawled so far")).toBeGreaterThan(0);
+  expect(firstMatching("37 requests sent by the crawl")).toBe(
+    firstMatching("3 pages crawled so far"),
+  );
+
+  // Elapsed seconds are the caller's own measurement and are always on screen.
+  // Asserting a particular reading would race the stream's own timing, and a
+  // flaky assertion here would be the first thing someone deletes.
+  for (const state of states) expect(state).toMatch(/\d+s elapsed/);
+
+  // While the crawl is running the panel says so, and carries the caveats that
+  // belong to a running crawl.
+  const crawling =
+    states.find((state) => state.includes("Crawl in progress")) ?? "";
+  expect(crawling).toContain(
+    "The page count is the figure the finished report gives as Pages inspected. Requests run ahead of it: they include robots.txt, sitemap files, and every redirect.",
+  );
+  expect(crawling).toContain("there is no percentage to show");
+  expect(crawling).toContain("The crawl itself stops after four minutes");
+
+  /**
+   * The window this test was extended for: `crawlSite` has returned and the
+   * report is being built, serialized and cached. The page count is frozen and
+   * the clock is still running, and the panel used to call all of that a crawl.
+   */
+  const lastState = states.at(-1) ?? "";
+  expect(lastState).toContain("Crawl finished, building the report");
+  expect(lastState).not.toContain("Crawl in progress");
+  expect(lastState).toContain("3 pages crawled");
+  expect(lastState).not.toContain("so far");
+  expect(lastState).toContain("Nothing more is being fetched from the site");
+  for (const state of states) expect(state).not.toContain("%");
+});
+
+/**
+ * A cache hit and every gate refusal answer without crawling anything, and
+ * they send no progress line. The panel asserts a crawl is running, so it must
+ * not appear for them — the recorder proves it never appeared at all, which
+ * polling the live DOM after the fact cannot.
+ */
+test("never claims a crawl for an answer that ran none", async ({ page }) => {
+  await page.addInitScript(() => {
+    const recorder = window as unknown as { __panelStates: string[] };
+    recorder.__panelStates = [];
+    const record = (): void => {
+      const text =
+        document.querySelector('[data-testid="seo-audit-progress"]')
+          ?.textContent ?? "";
+      if (text && recorder.__panelStates.at(-1) !== text) {
+        recorder.__panelStates.push(text);
+      }
+    };
+    const observe = (): void => {
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+    };
+    if (document.body) observe();
+    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+  });
+  await page.route("**/api/tools/seo-audit", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-crawl-cache": "hit" },
+      body: JSON.stringify(mockedPayload),
+    });
+  });
+
+  await page.goto("/tools/seo-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run free audit" }).click();
+
+  await expect(page.getByTestId("seo-audit-results")).toBeVisible();
+  const states = await page.evaluate(
+    () => (window as unknown as { __panelStates: string[] }).__panelStates,
+  );
+  expect(states).toEqual([]);
+});
+
+test("asks the endpoint for the progress stream and renders a terminal-only body", async ({
+  page,
+}) => {
+  let accept: string | undefined;
+  await page.route("**/api/tools/seo-audit", async (route) => {
+    accept = route.request().headers()["accept"];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: `${JSON.stringify(mockedPayload)}\n`,
+    });
+  });
+
+  await page.goto("/tools/seo-audit");
+  await page.getByLabel("Website URL").fill("acme.com");
+  await page.getByRole("button", { name: "Run free audit" }).click();
+
+  await expect(page.getByTestId("seo-audit-results")).toBeVisible();
+  expect(accept).toContain("application/x-ndjson");
 });
 
 test("rejects malformed requests without making an outbound scan", async ({

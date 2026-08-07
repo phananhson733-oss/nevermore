@@ -67,6 +67,8 @@ function inflightOnlyGate(clientIp: string) {
   );
 }
 
+const ACCESS_TOKEN = "test-access-token";
+
 function deps(
   overrides: Partial<TrafficDropHandlerDependencies> = {},
 ): TrafficDropHandlerDependencies {
@@ -77,6 +79,13 @@ function deps(
         propertyTotal: 1,
         connectEnabled: true,
         consentNotice: "none" as const,
+      }),
+    resolveGrant: () =>
+      Promise.resolve({
+        kind: "grant" as const,
+        accessToken: ACCESS_TOKEN,
+        properties: [PROPERTY],
+        propertyTotal: 1,
       }),
     readDailySeries: () => Promise.resolve(series(120)),
     now: () => new Date("2026-07-31T00:00:00.000Z"),
@@ -194,6 +203,7 @@ describe("handleTrafficDropRequest", () => {
     expect(readDailySeries).toHaveBeenCalledWith({
       property: PROPERTY,
       lookbackDays: 480,
+      accessToken: ACCESS_TOKEN,
     });
   });
 
@@ -217,6 +227,103 @@ describe("handleTrafficDropRequest", () => {
     );
 
     expect(response.status).toBe(429);
+    expect(readDailySeries).not.toHaveBeenCalled();
+  });
+
+  it("makes no Google call at all when the gate refuses", async () => {
+    // Resolving the grant can spend a token-endpoint call and a site-list call
+    // on the shared OAuth client, both against a per-PROJECT quota. Before the
+    // gate, one legitimate grant is enough to drive both without any limiter.
+    const resolveGrant = vi.fn(() =>
+      Promise.resolve({ kind: "none" } as const),
+    );
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, ...ANSWERED }),
+      deps({
+        resolveGrant,
+        openGate: () =>
+          Promise.resolve({
+            ok: false,
+            response: Response.json(createPublicToolError("rate_limited"), {
+              status: 429,
+            }),
+          }),
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(resolveGrant).not.toHaveBeenCalled();
+  });
+
+  it("resolves the grant only after the gate has opened", async () => {
+    const order: string[] = [];
+    await handleTrafficDropRequest(
+      request({ property: PROPERTY, ...ANSWERED }),
+      deps({
+        openGate: () => {
+          order.push("gate");
+          return Promise.resolve({
+            ok: true,
+            release: () => order.push("release"),
+          });
+        },
+        resolveGrant: () => {
+          order.push("resolve");
+          return Promise.resolve({
+            kind: "grant" as const,
+            accessToken: ACCESS_TOKEN,
+            properties: [PROPERTY],
+            propertyTotal: 1,
+          });
+        },
+      }),
+    );
+
+    expect(order).toEqual(["gate", "resolve", "release"]);
+  });
+
+  it("tells a revoked visitor to reconnect rather than that Google is down", async () => {
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, ...ANSWERED }),
+      deps({ resolveGrant: () => Promise.resolve({ kind: "revoked" }) }),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gsc_revoked" },
+    });
+  });
+
+  it("answers a momentary Google failure as temporary, with a retry hint", async () => {
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, ...ANSWERED }),
+      deps({ resolveGrant: () => Promise.resolve({ kind: "unavailable" }) }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("30");
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "gsc_temporarily_unavailable" },
+    });
+  });
+
+  it("refuses a property the RESOLVED grant no longer covers", async () => {
+    const readDailySeries = vi.fn();
+    const response = await handleTrafficDropRequest(
+      request({ property: PROPERTY, ...ANSWERED }),
+      deps({
+        readDailySeries,
+        resolveGrant: () =>
+          Promise.resolve({
+            kind: "grant" as const,
+            accessToken: ACCESS_TOKEN,
+            properties: ["sc-domain:something-else.com"],
+            propertyTotal: 1,
+          }),
+      }),
+    );
+
+    expect(response.status).toBe(404);
     expect(readDailySeries).not.toHaveBeenCalled();
   });
 

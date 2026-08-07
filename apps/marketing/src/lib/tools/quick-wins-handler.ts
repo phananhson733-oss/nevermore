@@ -3,11 +3,20 @@
 // @pos    -- shared handler behind /api/tools/quick-wins
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import { createPublicToolError, type QuickWinsEnvelope } from "@sf/public-tools";
-import { openGscGate, type GscGateResult } from "./gsc-gate.ts";
+import {
+  createPublicToolError,
+  type QuickWinsEnvelope,
+} from "@sf/public-tools";
+import type { GrantResolution } from "../auth/grant-cookie.ts";
+import {
+  openGscGate,
+  refuseWithoutGrant,
+  type GscGateResult,
+} from "./gsc-gate.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import {
   readTrafficDropSession,
+  resolveTrafficDropGrant,
   type TrafficDropSession,
 } from "./traffic-drop-session.ts";
 
@@ -27,11 +36,30 @@ export const MAX_BRAND_TERMS = 10;
 export const MAX_BRAND_TERM_LENGTH = 60;
 
 export interface QuickWinsHandlerDependencies {
+  /**
+   * The page-level view: which properties, read from the visitor's own cookie.
+   *
+   * Costs no network call, which is what makes it safe to consult before
+   * admission control.
+   */
   readonly readSession: () => Promise<GscGrantSession>;
+  /**
+   * Produce the access token for this request.
+   *
+   * A thunk rather than a value because resolving it can spend two outbound
+   * Google calls (the token endpoint, then the site list) against a shared
+   * OAuth client and a per-PROJECT Search Console quota. Called once, and only
+   * after the gate has admitted the request — otherwise one legitimate grant
+   * is enough to drive unlimited traffic through both with no limiter in
+   * front of them.
+   */
+  readonly resolveGrant: () => Promise<GrantResolution>;
   /** Runs the report. Injected so the route stays transport-free. */
   readonly runReport: (input: {
     readonly property: string;
     readonly brandTerms: readonly string[];
+    /** From this request's resolution; never captured at module scope. */
+    readonly accessToken: string;
   }) => Promise<QuickWinsEnvelope>;
   readonly now: () => Date;
   readonly extractClientIp: (headers: Headers) => string;
@@ -93,9 +121,12 @@ function parseInput(
 /**
  * Run the evidence table for one property the visitor has granted access to.
  *
- * The grant is checked before any Search Console call: a caller who was never
- * granted a property must not be able to make us spend project quota looking
- * it up.
+ * The grant is checked TWICE, and the split is deliberate. The cheap check
+ * comes first, off the visitor's own cookie, so a caller who was never granted
+ * a property is turned away without a single outbound call. Renewing the token
+ * comes last, after admission control, because that step is itself two calls
+ * on a shared OAuth client and a per-project quota — a limiter it runs ahead
+ * of is not a limiter.
  */
 export async function handleQuickWinsRequest(
   request: Request,
@@ -115,6 +146,7 @@ export async function handleQuickWinsRequest(
   const input = parseInput(body.value);
   if (!input.ok) return json(createPublicToolError("invalid_request"), 400);
 
+  // Off the cookie, so this costs nothing and can safely run before the gate.
   const session = await dependencies.readSession();
   if (session.properties === null) {
     return json(createPublicToolError("gsc_unavailable"), 401);
@@ -130,9 +162,21 @@ export async function handleQuickWinsRequest(
   if (!gate.ok) return gate.response;
 
   try {
+    // Inside the gate, so a silent refresh cannot be driven faster than the
+    // per-IP budget allows, and inside the try so the slot is released on
+    // every path out of here.
+    const grant = await dependencies.resolveGrant();
+    if (grant.kind !== "grant") return refuseWithoutGrant(grant);
+    if (!grant.properties.includes(input.value.property)) {
+      // The resolution may have re-listed from Google since the cookie was
+      // written. The newer list is the one we are allowed to read with.
+      return json(createPublicToolError("gsc_unavailable"), 404);
+    }
+
     const envelope = await dependencies.runReport({
       property: input.value.property,
       brandTerms: input.value.brandTerms,
+      accessToken: grant.accessToken,
     });
     return json({ data: envelope }, 200);
   } catch {
@@ -145,11 +189,12 @@ export async function handleQuickWinsRequest(
 
 export const DEFAULT_QUICK_WINS_DEPENDENCIES: Pick<
   QuickWinsHandlerDependencies,
-  "readSession" | "now" | "openGate"
+  "readSession" | "resolveGrant" | "now" | "openGate"
 > = {
   // The route builds its own reader so the access token stays in the request
-  // scope; these defaults exist for callers that only need the page-level view.
+  // scope; these defaults carry everything that does not depend on it.
   readSession: readTrafficDropSession,
+  resolveGrant: resolveTrafficDropGrant,
   now: () => new Date(),
   openGate: (clientIp) => openGscGate(clientIp),
 };

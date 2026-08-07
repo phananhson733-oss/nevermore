@@ -1,6 +1,6 @@
 ---
 title: Cookie Policy
-version: 1.0
+version: 1.1
 effectiveDate: 2026-08-07
 status: published
 ---
@@ -19,7 +19,7 @@ and the free tools cannot function.
 | `gg_onetap` | A single-use nonce that binds a Google sign-in to the page that started it, so a captured token cannot be replayed. Encrypted, HTTP-only. | 10 minutes |
 | `gg_oauth_tx` | Holds the in-flight Google authorisation exchange. Encrypted, HTTP-only. | 10 minutes |
 | `gg_id` | Remembers which Google identity authorised Search Console, so you are not asked again on every visit. Encrypted, HTTP-only. | 30 days |
-| `gg_gsc` | Your Search Console **read-only** access token. Encrypted, HTTP-only, and sent only to `/api` paths. | Until the token expires |
+| `gg_gsc` | Your Search Console **read-only** access token, together with the refresh token that renews it, so a return visit does not start from the consent screen again. Encrypted, HTTP-only, and sent only to `/api` paths. | 30 days, extended on each use, up to 90 days from the day you authorised |
 | `gg_sites` | The list of Search Console properties you granted, so the page can offer them. Encrypted, HTTP-only. | Same as `gg_gsc` |
 | `NEXT_LOCALE` | Your language choice. | 1 year |
 
@@ -48,7 +48,11 @@ working; the free public tools will continue to function.
 To opt out of Google Analytics specifically, you can install Google's
 [opt-out browser add-on](https://tools.google.com/dlpage/gaoptout).
 
-To revoke our Search Console access, use your
+To end the Search Console connection, use the **Disconnect** control on either
+connected tool page. It clears these cookies and revokes our access at Google in
+the same step. Signing out does the same.
+
+You can also revoke it from your
 [Google account permissions page](https://myaccount.google.com/permissions).
 This takes effect immediately, regardless of any cookie still in your browser.
 

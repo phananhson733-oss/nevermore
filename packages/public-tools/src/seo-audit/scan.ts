@@ -22,13 +22,85 @@ export class SeoAuditScanError extends Error {
   }
 }
 
+/**
+ * What the crawl has actually done so far, from two different seams.
+ *
+ * `pagesCrawled` is the crawl engine's own collected-page count, which is the
+ * figure the finished report states as `coverage.pagesInspected`; the two can
+ * never disagree because they are the same number read at different times.
+ *
+ * `requestsSent` counts wire requests issued to the target: robots.txt, every
+ * sitemap document, every redirect hop, and every page fetch. It runs strictly
+ * ahead of the page count and must never be rendered as one.
+ */
+export interface SeoAuditProgress {
+  readonly pagesCrawled: number;
+  readonly requestsSent: number;
+}
+
+export type SeoAuditProgressListener = (progress: SeoAuditProgress) => void;
+
 export type SeoAuditCrawler = (
   url: string,
   signal?: AbortSignal,
+  onProgress?: SeoAuditProgressListener,
 ) => Promise<CrawlRaw>;
+
 export type SeoAuditRaw = CrawlRaw & {
   /** Normalized visitor submission retained separately from the crawl origin. */
   readonly requestedUrl: string;
+};
+
+export interface SeoAuditScanOptions {
+  /**
+   * Best-effort observation sink. Never changes budget, pacing, or abort
+   * behaviour, and a listener that throws cannot end the crawl.
+   */
+  readonly onProgress?: SeoAuditProgressListener;
+  /** Offline test seam. */
+  readonly crawl?: SeoAuditCrawler;
+}
+
+/**
+ * Merge the transport's request count and the engine's page count into one
+ * observation, so a reader is never shown one figure updated and the other
+ * stale. Neither seam can reach the other's number, and the merged state is
+ * committed before the listener runs, so a listener that throws loses one
+ * observation rather than desynchronising the next.
+ */
+export function crawlProgressReporter(onProgress: SeoAuditProgressListener): {
+  readonly onRequest: (requestsSent: number) => void;
+  readonly onPageProgress: (progress: {
+    readonly pagesCollected: number;
+  }) => void;
+} {
+  let latest: SeoAuditProgress = { pagesCrawled: 0, requestsSent: 0 };
+  const report = (next: SeoAuditProgress): void => {
+    latest = next;
+    onProgress(next);
+  };
+  return {
+    onRequest: (requestsSent) => report({ ...latest, requestsSent }),
+    onPageProgress: ({ pagesCollected }) =>
+      report({ ...latest, pagesCrawled: pagesCollected }),
+  };
+}
+
+/**
+ * The production crawler, instrumented only when someone is listening.
+ *
+ * Both figures come from the crawler's own observation doors, so an observed
+ * crawl and an unobserved one run the identical transport: this file hands in
+ * no fetcher, and `PublicPreviewCrawlOptions.fetcher` stays what its comment
+ * says it is — an offline test seam.
+ */
+const instrumentedCrawler: SeoAuditCrawler = (url, signal, onProgress) => {
+  if (!onProgress) return crawlPublicSitePreview(url, signal);
+  const reporter = crawlProgressReporter(onProgress);
+  return crawlPublicSitePreview(url, signal, {
+    onRequestSent: reporter.onRequest,
+    onPageProgress: reporter.onPageProgress,
+  });
 };
 
 /**
@@ -46,11 +118,11 @@ export async function scanSeoAuditSite(
    * relay rather than a request the caller is waiting on.
    */
   signal?: AbortSignal,
-  /** Offline test seam. */
-  crawl: SeoAuditCrawler = crawlPublicSitePreview,
+  options: SeoAuditScanOptions = {},
 ): Promise<SeoAuditRaw> {
+  const crawl = options.crawl ?? instrumentedCrawler;
   try {
-    const raw = await crawl(url, signal);
+    const raw = await crawl(url, signal, options.onProgress);
     if (raw.availability === "unavailable") {
       // Say which of the three it was. "The site told us not to crawl it" and
       // "we could not reach the site" are different answers, and neither is

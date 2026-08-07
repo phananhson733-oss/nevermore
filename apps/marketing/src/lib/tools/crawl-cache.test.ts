@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cacheCompletedCrawl,
   readCrawlCache,
   targetHostOf,
   writeCrawlCache,
@@ -28,7 +29,10 @@ beforeEach(() => {
 
 describe("readCrawlCache", () => {
   it("returns a stored entry", async () => {
-    const entry = { payload: { hello: "world" }, capturedAt: "2026-08-03T10:00:00Z" };
+    const entry = {
+      payload: { hello: "world" },
+      capturedAt: "2026-08-03T10:00:00Z",
+    };
     const result = await readCrawlCache(
       "seo_audit",
       "acme.com",
@@ -60,7 +64,12 @@ describe("readCrawlCache", () => {
 describe("writeCrawlCache", () => {
   it("stores a bounded payload", async () => {
     const write = vi.fn(async () => {});
-    await writeCrawlCache("seo_audit", "acme.com", { a: 1 }, cacheDeps({ write }));
+    await writeCrawlCache(
+      "seo_audit",
+      "acme.com",
+      { a: 1 },
+      cacheDeps({ write }),
+    );
     expect(write).toHaveBeenCalledWith("seo_audit", "acme.com", { a: 1 });
   });
 
@@ -68,7 +77,10 @@ describe("writeCrawlCache", () => {
     const write = vi.fn(async () => {});
     // Comfortably past the 1.5 MB ceiling.
     const huge = {
-      pages: Array.from({ length: 20_000 }, (_, i) => `${"x".repeat(120)}-${i}`),
+      pages: Array.from(
+        { length: 20_000 },
+        (_, i) => `${"x".repeat(120)}-${i}`,
+      ),
     };
     await writeCrawlCache("seo_audit", "acme.com", huge, cacheDeps({ write }));
     expect(write).not.toHaveBeenCalled();
@@ -89,6 +101,63 @@ describe("writeCrawlCache", () => {
       ),
     ).resolves.toBeUndefined();
   });
+});
+
+/**
+ * The admission rule for the shared cache, in one place because both crawl
+ * tools write to the same table with the same crawler behind them. A copy of
+ * it per handler is a copy that can be forgotten — which is exactly what
+ * happened to internal-link-audit the first time this gate was added.
+ */
+describe("cacheCompletedCrawl", () => {
+  function gate(raw: { readonly stopReason: string | null }) {
+    const cachePayload = vi.fn(async () => {});
+    return {
+      cachePayload,
+      run: () =>
+        cacheCompletedCrawl({
+          raw,
+          payload: { pages: 25 },
+          normalizedUrl: "https://acme.com/",
+          cachePayload,
+        }),
+    };
+  }
+
+  it("refuses a run the crawl engine reported as aborted", async () => {
+    const { cachePayload, run } = gate({ stopReason: "aborted" });
+    await run();
+    expect(cachePayload).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The engine holds the same signal the request does, so a run it finished
+   * is a whole run even if the reader has since left. Rejecting it here would
+   * only send the next visitor's crawl back to the target site.
+   */
+  it("stores a completed run even though the reader has already left", async () => {
+    const { cachePayload, run } = gate({ stopReason: null });
+    await run();
+    expect(cachePayload).toHaveBeenCalledWith("https://acme.com/", {
+      pages: 25,
+    });
+  });
+
+  /**
+   * The regression this guards: a gate that cached nothing would send every
+   * visitor's crawl to the target site again, which is the traffic the cache
+   * exists to remove.
+   */
+  it.each([null, "max_urls", "max_duration"] as const)(
+    "stores a run that stopped for %s",
+    async (stopReason) => {
+      const { cachePayload, run } = gate({ stopReason });
+      await run();
+      expect(cachePayload).toHaveBeenCalledWith("https://acme.com/", {
+        pages: 25,
+      });
+    },
+  );
 });
 
 describe("targetHostOf", () => {
@@ -121,7 +190,10 @@ describe("cache and the per-target budget together", () => {
       "203.0.113.9",
       "https://acme.com/",
       { quota, acquireSlot: acquirePublicCrawlSlot },
-      async () => ({ payload: { cached: true }, capturedAt: "2026-08-03T10:00:00Z" }),
+      async () => ({
+        payload: { cached: true },
+        capturedAt: "2026-08-03T10:00:00Z",
+      }),
     );
 
     expect(result.ok).toBe(true);

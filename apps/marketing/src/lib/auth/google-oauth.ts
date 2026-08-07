@@ -1,5 +1,5 @@
-// @input  -- marketing-site Google OAuth env, an authorization code, an access token
-// @output -- PKCE material, an auth URL, an exchanged token set, granted GSC properties
+// @input  -- marketing-site Google OAuth env, an authorization code, a refresh token, an access token
+// @output -- PKCE material, an auth URL, an exchanged/refreshed token set, granted GSC properties, revocation
 // @pos    -- the marketing site's own Google client, independent of apps/web
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -14,6 +14,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
  */
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 const GSC_SITES_ENDPOINT = "https://www.googleapis.com/webmasters/v3/sites";
 
 /** Read-only, and the only sensitive scope this site ever asks for. */
@@ -112,10 +113,23 @@ export function buildAuthUrl(input: {
   url.searchParams.set("state", input.state);
   url.searchParams.set("code_challenge", input.codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
-  // Online access only: no refresh token is issued, so there is no long-lived
-  // credential to store or leak. A public tool that runs while the visitor is
-  // on the page does not need offline access.
-  url.searchParams.set("access_type", "online");
+  if (input.includeSearchConsole) {
+    // Offline access, so a visitor who comes back on day 7 runs the tool
+    // instead of meeting the consent screen again — an access token lives an
+    // hour, and re-consenting every hour is what made these tools feel like a
+    // demo. The refresh token never leaves the visitor's own sealed cookie.
+    url.searchParams.set("access_type", "offline");
+    // Google issues a refresh token only on a FIRST authorization for a
+    // client+user pair. Every current visitor has already authorized through
+    // the online flow, so `access_type=offline` alone would silently return no
+    // refresh token for exactly the returning visitors this is for. The cost is
+    // one consent screen per grant lifetime instead of one per hour.
+    url.searchParams.set("prompt", "consent");
+  } else {
+    // Identity-only sign-in needs no refresh token, so it keeps online access
+    // and stays a near-silent redirect for someone who already granted.
+    url.searchParams.set("access_type", "online");
+  }
   url.searchParams.set("include_granted_scopes", "true");
   if (input.loginHint) url.searchParams.set("login_hint", input.loginHint);
   return url.toString();
@@ -129,6 +143,15 @@ export interface GoogleTokenSet {
   readonly accessToken: string;
   readonly expiresInSeconds: number;
   readonly grantedScopes: readonly string[];
+  /**
+   * The long-lived half of an offline grant, or `null`.
+   *
+   * Google withholds it whenever the user was not actually re-prompted, so
+   * `null` is a real and expected answer rather than a failure. A grant without
+   * one simply behaves as it did before offline access existed: it lives as
+   * long as its access token and then asks for consent again.
+   */
+  readonly refreshToken: string | null;
   /** Google's stable subject id. The join key — never the email, which changes. */
   readonly sub: string | null;
   readonly email: string | null;
@@ -253,6 +276,7 @@ export async function exchangeCode(input: {
 
   const payload = (await readJson(response, "Token exchange")) as {
     access_token?: unknown;
+    refresh_token?: unknown;
     expires_in?: unknown;
     scope?: unknown;
     id_token?: unknown;
@@ -268,9 +292,135 @@ export async function exchangeCode(input: {
       typeof payload.expires_in === "number" ? payload.expires_in : 3_600,
     grantedScopes:
       typeof payload.scope === "string" ? payload.scope.split(" ") : [],
+    refreshToken:
+      typeof payload.refresh_token === "string" ? payload.refresh_token : null,
     sub: claims.sub,
     email: claims.email,
   };
+}
+
+/**
+ * The outcome of a refresh, as a value rather than an exception.
+ *
+ * The distinction between the three IS the control flow: `invalid_grant` is the
+ * only answer that means the visitor's authorization is gone and their cookies
+ * should be cleared, and every other failure must leave the grant alone so a
+ * Google blip does not cost someone their consent screen.
+ */
+export type RefreshResult =
+  | {
+      readonly kind: "refreshed";
+      readonly accessToken: string;
+      readonly expiresInSeconds: number;
+      readonly grantedScopes: readonly string[];
+    }
+  | { readonly kind: "invalid_grant" }
+  | { readonly kind: "transient" };
+
+/**
+ * Trade a refresh token for a fresh access token.
+ *
+ * No PKCE verifier: a refresh grant is authenticated by the client secret, and
+ * there is no authorization code to bind. The response carries neither a new
+ * refresh token (Google does not rotate them) nor an id_token, so the caller
+ * keeps the refresh token and the original grant time it already holds.
+ */
+export async function refreshAccessToken(input: {
+  readonly config: GoogleOAuthConfig;
+  readonly refreshToken: string;
+  readonly fetchImpl?: FetchLike;
+}): Promise<RefreshResult> {
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch;
+  const body = new URLSearchParams({
+    client_id: input.config.clientId,
+    client_secret: input.config.clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: input.refreshToken,
+  });
+
+  try {
+    const response = await fetchImpl(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      redirect: "error",
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      // Only the `error` field is read, and nothing from the body is logged or
+      // echoed — the same rule `exchangeCode` follows, for the same reason.
+      const failure = (await readJson(response, "Token refresh")) as {
+        error?: unknown;
+      };
+      // `invalid_grant` is the only revocation signal. Everything else,
+      // `invalid_client` included, is our own misconfiguration or Google having
+      // a bad minute; treating those as revocation would delete a good grant
+      // from every visitor's browser the moment a secret was rotated wrong.
+      return failure.error === "invalid_grant"
+        ? { kind: "invalid_grant" }
+        : { kind: "transient" };
+    }
+
+    const payload = (await readJson(response, "Token refresh")) as {
+      access_token?: unknown;
+      expires_in?: unknown;
+      scope?: unknown;
+    };
+    if (typeof payload.access_token !== "string") return { kind: "transient" };
+
+    return {
+      kind: "refreshed",
+      accessToken: payload.access_token,
+      expiresInSeconds:
+        typeof payload.expires_in === "number" ? payload.expires_in : 3_600,
+      grantedScopes:
+        typeof payload.scope === "string" ? payload.scope.split(" ") : [],
+    };
+  } catch {
+    // A timeout, a socket failure, an oversized or unparseable body. None of
+    // them say anything about whether the grant still exists.
+    return { kind: "transient" };
+  }
+}
+
+/**
+ * Revoke a grant at Google.
+ *
+ * Prefer the refresh token: revoking it kills the whole grant, including access
+ * tokens derived from it. Revoking an access token leaves the refresh token
+ * alive, which is a disconnect that did not disconnect.
+ *
+ * Returns whether Google confirmed it. The caller clears its cookies either
+ * way — leaving a credential in someone's browser because Google was
+ * unreachable is the worse of the two outcomes.
+ */
+export async function revokeToken(input: {
+  readonly token: string;
+  readonly fetchImpl?: FetchLike;
+}): Promise<boolean> {
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch;
+  try {
+    const response = await fetchImpl(REVOKE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: input.token }).toString(),
+      redirect: "error",
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+
+    if (response.ok) return true;
+
+    // `invalid_token` means there is nothing left to revoke, which is the state
+    // the caller asked for. Reporting it as a failure would send the visitor to
+    // their Google account settings to undo something already undone.
+    const failure = (await readJson(response, "Token revocation")) as {
+      error?: unknown;
+    };
+    return failure.error === "invalid_token";
+  } catch {
+    return false;
+  }
 }
 
 /** Whether the grant actually includes Search Console. Users can uncheck it. */

@@ -13,7 +13,12 @@ import {
   readGoogleOAuthConfig,
 } from "@/lib/auth/google-oauth";
 import { safeNextPath } from "@/lib/auth/next-path";
-import { cookieAttributes, seal } from "@/lib/auth/sealed-cookie";
+import {
+  assertCookieSecretConfigured,
+  cookieAttributes,
+  seal,
+  SealedCookieError,
+} from "@/lib/auth/sealed-cookie";
 import { isGoogleConnectEnabled } from "@/lib/tools/traffic-drop-session";
 
 export const runtime = "nodejs";
@@ -31,9 +36,21 @@ export async function GET(request: Request): Promise<Response> {
   let config;
   try {
     config = readGoogleOAuthConfig();
+    // Checked here, at the entry of the flow, rather than at the first seal.
+    // A root key that is wrong but decodable produces cookies nothing can
+    // open, and the only symptom is every visitor appearing signed out — the
+    // one failure that would otherwise reach production undiagnosed.
+    assertCookieSecretConfigured();
   } catch (error) {
     if (error instanceof GoogleOAuthError) {
       return new Response("Google sign-in is not configured.", { status: 503 });
+    }
+    if (error instanceof SealedCookieError) {
+      // Named in the log only: the message identifies an environment variable.
+      console.error("[auth/start] cookie secret unusable:", error.message);
+      return new Response("Google sign-in is misconfigured on this site.", {
+        status: 503,
+      });
     }
     throw error;
   }

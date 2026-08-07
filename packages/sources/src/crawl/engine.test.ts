@@ -2320,3 +2320,115 @@ describe("crawlSite", () => {
     expect(releaseAttempts).toBe(1);
   });
 });
+
+/**
+ * The page-progress seam exists so a caller can say how many pages a running
+ * crawl has collected. Its only contract is that the last number it emits is
+ * the number the finished crawl reports, so a live figure and the finished
+ * report can never disagree.
+ */
+describe("crawlSite page progress", () => {
+  it("ends on the page count the finished crawl reports", async () => {
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(ROBOTS_TXT),
+      "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+      "https://example.com/": () => html(HOME_HTML),
+      "https://example.com/about": () => html(ABOUT_HTML),
+    });
+    const seen: number[] = [];
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+      onPageProgress: ({ pagesCollected }) => seen.push(pagesCollected),
+    });
+
+    expect(raw.pages).toHaveLength(2);
+    expect(seen.at(-1)).toBe(raw.pages.length);
+    expect(seen.at(-1)).toBe(raw.providerUsage.pagesCollected);
+    // Never runs backwards: a reader watching it must not see the count drop.
+    expect(seen).toEqual([...seen].sort((left, right) => left - right));
+  });
+
+  /**
+   * robots.txt and every sitemap document are wire requests that collect no
+   * page. A seam that fired on transport instead of on collection would report
+   * pages before a single one existed.
+   */
+  it("stays silent while only robots and sitemap requests have gone out", async () => {
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () =>
+        text("User-agent: *\nDisallow: /"),
+      "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+    });
+    const seen: number[] = [];
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+      onPageProgress: ({ pagesCollected }) => seen.push(pagesCollected),
+    });
+
+    expect(raw.pages).toHaveLength(0);
+    expect(seen).toEqual([]);
+  });
+
+  it("never lets a throwing listener end a crawl", async () => {
+    const { fetcher } = makeFetcher({
+      "https://example.com/robots.txt": () => text(ROBOTS_TXT),
+      "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+      "https://example.com/": () => html(HOME_HTML),
+      "https://example.com/about": () => html(ABOUT_HTML),
+    });
+
+    const raw = await crawlSite(PARAMS, CONFIG, CTX, fetcher, {
+      guard: GUARD,
+      budget: FAST_BUDGET,
+      onPageProgress: () => {
+        throw new Error("observer exploded");
+      },
+    });
+
+    expect(raw.availability).toBe("available");
+    expect(raw.pages).toHaveLength(2);
+  });
+
+  /**
+   * Observation may not change what gets fetched. Same fixture, same budget,
+   * same requests, with and without a listener.
+   */
+  it("changes nothing about what the crawl fetches", async () => {
+    const routes = {
+      "https://example.com/robots.txt": () => text(ROBOTS_TXT),
+      "https://example.com/sitemap.xml": () => xml(SITEMAP_XML),
+      "https://example.com/": () => html(HOME_HTML),
+      "https://example.com/about": () => html(ABOUT_HTML),
+    };
+    const silent = makeFetcher(routes);
+    const observed = makeFetcher(routes);
+
+    const withoutListener = await crawlSite(
+      PARAMS,
+      CONFIG,
+      CTX,
+      silent.fetcher,
+      {
+        guard: GUARD,
+        budget: FAST_BUDGET,
+      },
+    );
+    const withListener = await crawlSite(
+      PARAMS,
+      CONFIG,
+      CTX,
+      observed.fetcher,
+      { guard: GUARD, budget: FAST_BUDGET, onPageProgress: () => {} },
+    );
+
+    expect([...observed.calls].sort()).toEqual([...silent.calls].sort());
+    expect(withListener.pages.map((page) => page.projection.fetchUrl)).toEqual(
+      withoutListener.pages.map((page) => page.projection.fetchUrl),
+    );
+    expect(withListener.stopReason).toBe(withoutListener.stopReason);
+  });
+});

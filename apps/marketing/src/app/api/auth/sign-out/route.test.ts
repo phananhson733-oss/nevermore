@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const deleted: string[] = [];
+const deleted: { readonly name: string; readonly path: string }[] = [];
 const signOutCalls: unknown[] = [];
 let signOutImpl: () => Promise<unknown> = async () => ({ error: null });
 let clientImpl: () => Promise<unknown> = async () => ({
@@ -12,10 +12,17 @@ let clientImpl: () => Promise<unknown> = async () => ({
   },
 });
 
+// Records the path too. A cookie is only removed when name, domain AND path
+// all match what wrote it, so a mock that captures the name alone stays green
+// while the real browser keeps the cookie.
 vi.mock("next/headers", () => ({
   cookies: async () => ({
-    delete: (name: string) => {
-      deleted.push(name);
+    delete: (target: string | { name: string; path?: string }) => {
+      deleted.push(
+        typeof target === "string"
+          ? { name: target, path: "/" }
+          : { name: target.name, path: target.path ?? "/" },
+      );
     },
   }),
 }));
@@ -61,9 +68,20 @@ describe("POST /api/auth/sign-out", () => {
     });
   });
 
-  it("clears the Search Console grant alongside the session", async () => {
+  /**
+   * `gg_gsc` is written with `Path=/api` (see cookieAttributes), so it is the
+   * one cookie here a default-path delete cannot reach. Since the grant now
+   * holds a refresh token for up to 30 days, missing it would leave a live
+   * Search Console credential in a browser whose session just ended.
+   */
+  it("clears the Search Console grant alongside the session, at the path that wrote it", async () => {
     await POST();
-    expect(deleted).toEqual(["gg_id", "gg_gsc", "gg_sites", "gg_oauth_tx"]);
+    expect(deleted).toEqual([
+      { name: "gg_id", path: "/" },
+      { name: "gg_gsc", path: "/api" },
+      { name: "gg_sites", path: "/" },
+      { name: "gg_oauth_tx", path: "/" },
+    ]);
   });
 
   /**
@@ -76,7 +94,12 @@ describe("POST /api/auth/sign-out", () => {
     };
     const response = await POST();
     expect(response.status).toBe(200);
-    expect(deleted).toEqual(["gg_id", "gg_gsc", "gg_sites", "gg_oauth_tx"]);
+    expect(deleted.map((cookie) => cookie.name)).toEqual([
+      "gg_id",
+      "gg_gsc",
+      "gg_sites",
+      "gg_oauth_tx",
+    ]);
   });
 
   it("never lets a proxy cache the response", async () => {

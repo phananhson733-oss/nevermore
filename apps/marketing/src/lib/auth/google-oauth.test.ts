@@ -11,6 +11,8 @@ import {
   hasSearchConsoleScope,
   listSearchConsoleProperties,
   readGoogleOAuthConfig,
+  refreshAccessToken,
+  revokeToken,
   stateMatches,
   type FetchLike,
 } from "./google-oauth.ts";
@@ -64,8 +66,10 @@ describe("buildAuthUrl", () => {
 
     expect(url.searchParams.get("scope")).toBe("openid email profile");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    // Online only: no refresh token means no long-lived credential to leak.
+    // Sign-in needs no refresh token, so it keeps online access — and with it
+    // the near-silent redirect-through for someone who already granted.
     expect(url.searchParams.get("access_type")).toBe("online");
+    expect(url.searchParams.get("prompt")).toBeNull();
   });
 
   it("adds the read-only Search Console scope when requested", () => {
@@ -80,6 +84,192 @@ describe("buildAuthUrl", () => {
 
     expect(url.searchParams.get("scope")).toContain(GSC_SCOPE);
     expect(url.searchParams.get("scope")).toContain("readonly");
+  });
+
+  it("asks for offline access AND re-consent on the Search Console grant", () => {
+    const url = new URL(
+      buildAuthUrl({
+        config: CONFIG,
+        state: "state-value",
+        codeChallenge: "challenge",
+        includeSearchConsole: true,
+      }),
+    );
+
+    expect(url.searchParams.get("access_type")).toBe("offline");
+    // `prompt=consent` is not a nicety. Google issues a refresh token only on a
+    // FIRST authorization for a client+user pair, and every current visitor has
+    // already authorized through the online flow — so offline access on its own
+    // would return no refresh token for exactly the returning visitors this
+    // exists for, and every unit test here would still pass.
+    expect(url.searchParams.get("prompt")).toBe("consent");
+    expect(url.searchParams.get("include_granted_scopes")).toBe("true");
+  });
+});
+
+describe("refreshAccessToken", () => {
+  it("returns the new access token and its lifetime", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(
+        jsonResponse({
+          access_token: "test-access-token-2",
+          expires_in: 3_599,
+          scope: `openid email profile ${GSC_SCOPE}`,
+        }),
+      ),
+    );
+
+    const result = await refreshAccessToken({
+      config: CONFIG,
+      refreshToken: "test-refresh-token",
+      fetchImpl,
+    });
+
+    expect(result).toEqual({
+      kind: "refreshed",
+      accessToken: "test-access-token-2",
+      expiresInSeconds: 3_599,
+      grantedScopes: ["openid", "email", "profile", GSC_SCOPE],
+    });
+  });
+
+  it("sends a refresh grant and never a PKCE verifier", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({ access_token: "test-access-token-2" })),
+    );
+
+    await refreshAccessToken({
+      config: CONFIG,
+      refreshToken: "test-refresh-token",
+      fetchImpl,
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    const body = String(init?.body);
+    expect(url).not.toContain("test-refresh-token");
+    expect(body).toContain("grant_type=refresh_token");
+    expect(body).toContain("refresh_token=test-refresh-token");
+    expect(body).not.toContain("code_verifier");
+  });
+
+  it("reports invalid_grant, the one answer that means the grant is gone", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({ error: "invalid_grant" }, 400)),
+    );
+
+    await expect(
+      refreshAccessToken({
+        config: CONFIG,
+        refreshToken: "test-refresh-token",
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ kind: "invalid_grant" });
+  });
+
+  it("treats our own misconfiguration as transient, never as a lost grant", async () => {
+    // `invalid_client` is a deployment mistake on our side. Reading it as
+    // "revoked" would delete a perfectly good grant from every visitor's
+    // browser the moment a secret was rotated wrong.
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({ error: "invalid_client" }, 401)),
+    );
+
+    await expect(
+      refreshAccessToken({
+        config: CONFIG,
+        refreshToken: "test-refresh-token",
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ kind: "transient" });
+  });
+
+  it("treats a server error as transient", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({}, 500)),
+    );
+
+    await expect(
+      refreshAccessToken({
+        config: CONFIG,
+        refreshToken: "test-refresh-token",
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ kind: "transient" });
+  });
+
+  it("treats a network failure as transient", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.reject(new Error("socket hang up")),
+    );
+
+    await expect(
+      refreshAccessToken({
+        config: CONFIG,
+        refreshToken: "test-refresh-token",
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ kind: "transient" });
+  });
+
+  it("treats a success body without a token as transient", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({ expires_in: 3_600 })),
+    );
+
+    await expect(
+      refreshAccessToken({
+        config: CONFIG,
+        refreshToken: "test-refresh-token",
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ kind: "transient" });
+  });
+});
+
+describe("revokeToken", () => {
+  it("posts the token in the body and reports success", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(new Response("", { status: 200 })),
+    );
+
+    await expect(
+      revokeToken({ token: "test-refresh-token", fetchImpl }),
+    ).resolves.toBe(true);
+
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).not.toContain("test-refresh-token");
+    expect(String(init?.body)).toBe("token=test-refresh-token");
+  });
+
+  it("treats an already-invalid token as revoked", async () => {
+    // Nothing is left to revoke, which is the state the caller asked for.
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({ error: "invalid_token" }, 400)),
+    );
+
+    await expect(
+      revokeToken({ token: "test-refresh-token", fetchImpl }),
+    ).resolves.toBe(true);
+  });
+
+  it("reports a server error as not revoked", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.resolve(jsonResponse({}, 500)),
+    );
+
+    await expect(
+      revokeToken({ token: "test-refresh-token", fetchImpl }),
+    ).resolves.toBe(false);
+  });
+
+  it("reports a network failure as not revoked", async () => {
+    const fetchImpl = vi.fn<FetchLike>(() =>
+      Promise.reject(new Error("socket hang up")),
+    );
+
+    await expect(
+      revokeToken({ token: "test-refresh-token", fetchImpl }),
+    ).resolves.toBe(false);
   });
 });
 
@@ -131,6 +321,36 @@ describe("exchangeCode", () => {
     // sub, not email: an email can be reassigned, a subject cannot.
     expect(tokens.sub).toBe("10769150350006150715");
     expect(hasSearchConsoleScope(tokens.grantedScopes)).toBe(true);
+  });
+
+  it("carries the refresh token when Google issues one, and null when it does not", async () => {
+    const withRefresh = await exchangeCode({
+      config: CONFIG,
+      code: "c",
+      codeVerifier: "v",
+      fetchImpl: vi.fn<FetchLike>(() =>
+        Promise.resolve(
+          jsonResponse({
+            access_token: "test-access-token",
+            refresh_token: "test-refresh-token",
+          }),
+        ),
+      ),
+    });
+    expect(withRefresh.refreshToken).toBe("test-refresh-token");
+
+    // Google withholds it whenever the user has already granted this client
+    // without being re-prompted. Reading the absence as `null` rather than
+    // inventing one is what lets the grant degrade to today's behaviour.
+    const without = await exchangeCode({
+      config: CONFIG,
+      code: "c",
+      codeVerifier: "v",
+      fetchImpl: vi.fn<FetchLike>(() =>
+        Promise.resolve(jsonResponse({ access_token: "test-access-token" })),
+      ),
+    });
+    expect(without.refreshToken).toBeNull();
   });
 
   it("sends the verifier and never puts the code in the URL", async () => {
@@ -195,8 +415,14 @@ describe("listSearchConsoleProperties", () => {
         jsonResponse({
           siteEntry: [
             { siteUrl: "sc-domain:example.com", permissionLevel: "siteOwner" },
-            { siteUrl: "https://blog.example.com/", permissionLevel: "siteFullUser" },
-            { siteUrl: "https://nope.example/", permissionLevel: "siteUnverifiedUser" },
+            {
+              siteUrl: "https://blog.example.com/",
+              permissionLevel: "siteFullUser",
+            },
+            {
+              siteUrl: "https://nope.example/",
+              permissionLevel: "siteUnverifiedUser",
+            },
           ],
         }),
       ),

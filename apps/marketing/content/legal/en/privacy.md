@@ -1,6 +1,6 @@
 ---
 title: Privacy Policy
-version: 1.0
+version: 1.1
 effectiveDate: 2026-08-07
 status: published
 ---
@@ -48,10 +48,13 @@ That scope is **read-only**. We cannot submit sitemaps, request indexing, change
 settings, or write anything to your property. We ask for no other sensitive
 scope.
 
-The resulting access token is held in an encrypted, HTTP-only cookie in your own
-browser and sent back to us only on the API requests that need it. We do not
-store your Search Console data in our database for these tools; the analysis
-runs and the result is returned to your browser.
+The resulting access token, and the refresh token that renews it, are held in an
+encrypted, HTTP-only cookie in your own browser and sent back to us only on the
+API requests that need it. Keeping the refresh token is what lets a return visit
+skip the consent screen; it stays in that cookie for 30 days, extended each time
+you use it, up to 90 days from the day you authorised. We hold no copy on our
+servers. We do not store your Search Console data in our database for these
+tools; the analysis runs and the result is returned to your browser.
 
 ### 3. When you sign in
 
@@ -90,7 +93,7 @@ purpose and lifetime.
 | --- | --- |
 | Free-tool crawl cache | 1 hour |
 | Rate-limit counters (contain IP) | Until the counting window closes |
-| Search Console access token | In your browser cookie only, until it expires |
+| Search Console access and refresh tokens | In your browser cookie only; 30 days, extended on use, up to 90 days from authorisation |
 | Account name and email | Until you delete the account |
 | Waitlist email and profile | Until you ask to be removed |
 | Analytics | Per Google Analytics 4 defaults |
@@ -106,7 +109,10 @@ the United States.
 
 Depending on where you live, you may have the right to access, correct, delete,
 or export your personal data, to object to or restrict processing, and to
-withdraw consent. You can also disconnect Search Console at any time from your
+withdraw consent. You can disconnect Search Console at any time from the
+**Disconnect** control on either connected tool page, which clears the cookie
+and revokes our read access at Google in one step; signing out does the same.
+You can also do it from your
 [Google account permissions page](https://myaccount.google.com/permissions),
 which immediately revokes our read access.
 

@@ -1,9 +1,10 @@
-// @input  -- client IP and the shared-quota dependencies
+// @input  -- client IP, the shared-quota dependencies, and a resolved Google grant
 // @output -- openGscGate(): a released slot, or the Response to return instead
 // @pos    -- the single admission point for every Search Console-backed public tool
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import { createPublicToolError } from "@sf/public-tools";
+import type { GrantResolution } from "../auth/grant-cookie.ts";
 import { acquireGscSlot } from "./gsc-inflight.ts";
 import type { PublicToolSlot } from "./public-tool-request.ts";
 import {
@@ -116,4 +117,39 @@ export async function openGscGate(
   }
 
   return { ok: true, release };
+}
+
+/**
+ * How long to wait before retrying a grant Google could not renew right now.
+ *
+ * Short: the failure is a token-endpoint blip, not a quota window, and the
+ * visitor is sitting in front of a tool they already authorized.
+ */
+export const GRANT_RETRY_AFTER_SECONDS = 30;
+
+/** Every resolution except the one that produced a token. */
+export type UnusableGrant = Exclude<GrantResolution, { kind: "grant" }>;
+
+/**
+ * The refusal for a resolution that produced no usable token.
+ *
+ * The reasons are NOT interchangeable, and collapsing them was the defect this
+ * exists to prevent: a grant that is genuinely gone and a Google blip both
+ * used to answer `401 gsc_unavailable`, so the visitor whose authorization had
+ * actually expired was told to "check the connection" with no way back to the
+ * consent screen, and the visitor who hit a bad minute was told their
+ * connection was broken when it was not.
+ */
+export function refuseWithoutGrant(resolution: UnusableGrant): Response {
+  if (resolution.kind === "unavailable") {
+    // 503, not 401: nothing about the authorization changed, and the honest
+    // instruction is to come back rather than to authorize again.
+    return json(createPublicToolError("gsc_temporarily_unavailable"), 503, {
+      "Retry-After": String(GRANT_RETRY_AFTER_SECONDS),
+    });
+  }
+  // `revoked` and `none` both mean the browser now holds no usable grant and
+  // the way forward is the consent screen. The client renders a connect entry
+  // point for this code and only this code.
+  return json(createPublicToolError("gsc_revoked"), 401, {});
 }
