@@ -2410,6 +2410,7 @@ function OpportunityDetailPanel({
   const tActionStatus = useTranslations("actionStatus");
   const tPriority = useTranslations("priorityBand");
   const tProvider = useTranslations("provider");
+  const [targetsExpanded, setTargetsExpanded] = useState(false);
   const opportunity = item.opportunity;
   const outputType = opportunityOutputType(opportunity);
   const findingCount =
@@ -2557,22 +2558,48 @@ function OpportunityDetailPanel({
         {item.targetPages.length === 0 ? (
           <p>{t("opportunity.noTargets")}</p>
         ) : (
-          <ul className={styles.compactRailActions}>
-            {item.targetPages.slice(0, 5).map((page) => (
-              <li key={page.sitePageId}>
-                <button
-                  type="button"
-                  onClick={() => onOpenUrl(page.sitePageId, primaryFindingId)}
-                >
-                  <span className={styles.railTargetText}>
-                    <strong>{urlPresentation(page.normalizedUrl).path}</strong>
-                    <small>{page.title ?? tRoot("titleNotCollected")}</small>
-                  </span>
-                  <ArrowRight aria-hidden="true" size={15} />
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul
+              className={cx(
+                styles.compactRailActions,
+                targetsExpanded && styles.railTargetScroll,
+              )}
+            >
+              {(targetsExpanded
+                ? item.targetPages
+                : item.targetPages.slice(0, 5)
+              ).map((page) => (
+                <li key={page.sitePageId}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenUrl(page.sitePageId, primaryFindingId)}
+                  >
+                    <span className={styles.railTargetText}>
+                      <strong>{urlPresentation(page.normalizedUrl).path}</strong>
+                      <small>{page.title ?? tRoot("titleNotCollected")}</small>
+                    </span>
+                    <ArrowRight aria-hidden="true" size={15} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {/* The count above promises every target; never let the list
+                silently deliver fewer than the section header claims. */}
+            {item.targetPages.length > 5 ? (
+              <button
+                type="button"
+                className={styles.railShowAll}
+                aria-expanded={targetsExpanded}
+                onClick={() => setTargetsExpanded((open) => !open)}
+              >
+                {targetsExpanded
+                  ? t("opportunity.collapseTargets")
+                  : t("opportunity.showAllTargets", {
+                      count: item.targetPages.length - 5,
+                    })}
+              </button>
+            ) : null}
+          </>
         )}
       </section>
 
@@ -2774,6 +2801,7 @@ function OpportunityPageView({
         </aside>
       ) : (
         <OpportunityDetailPanel
+          key={selected.id}
           projectId={projectId}
           item={selected}
           onOpenUrl={onOpenUrl}
@@ -2914,6 +2942,13 @@ function PortfolioPane({
       selectedSitePageId: null,
       selectedFindingId: null,
     });
+  }
+
+  function repairOpportunitySelection(id: string | null): void {
+    // Canonical-selection repair only touches the stale Opportunity id. A
+    // deep link whose page selection is still valid must keep its URL
+    // drill-down open even when the Opportunity it referenced is gone.
+    navigation.request({ selectedOpportunityId: id });
   }
 
   function openUrlFromOpportunity(
@@ -3186,7 +3221,7 @@ function PortfolioPane({
           selectedSitePageId={selectedSitePageId}
           selectedFindingId={selectedFindingId}
           onSelect={selectOpportunity}
-          onRepairSelection={selectOpportunity}
+          onRepairSelection={repairOpportunitySelection}
           onOpenUrl={openUrlFromOpportunity}
           onCloseUrl={closeUrlDetail}
         />

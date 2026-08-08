@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   E2E_CANONICAL_ACTION_ID,
+  E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_PROJECT_ID,
@@ -130,9 +131,26 @@ test("keeps Internal Link Map inside the existing URL detail and refreshes it on
   await expect(pricingRecommendation).toContainText("/customer-onboarding");
   await expect(pricingRecommendation).toContainText("/pricing");
 
-  // Repeat the round trip: selection is not a one-shot interaction. Every
-  // reactivated exact SitePage re-reads its live Finding/Action references.
-  await selectUrl(page, E2E_ONBOARDING_SITE_PAGE_ID);
+  // Repeat the round trip through the real same-page UI: back to the
+  // Opportunity ledger, reselect the canonical Opportunity, and drill into
+  // its exact target again. A page.goto would remount the whole tree and
+  // could not catch a stale client-side query key keeping the previous
+  // page's map on screen.
+  await page.getByRole("button", { name: "返回机会列表" }).click();
+  await page
+    .locator(`[data-growth-map-opportunity-row="${E2E_CANONICAL_FINDING_ID}"]`)
+    .getByRole("button")
+    .first()
+    .click();
+  await page
+    .locator(`[data-opportunity-detail="${E2E_CANONICAL_FINDING_ID}"]`)
+    .getByRole("button", { name: "/customer-onboarding" })
+    .first()
+    .click();
+  await openFullEvidenceAndReview(page);
+  // Drilling from an Opportunity pins its Finding and opens Opportunity
+  // Review; the Internal Link Map lives in the Audit Evidence state.
+  await page.locator('[data-detail-state="audit-evidence"]').click();
   await expect(linkMap).toHaveAttribute(
     "data-site-page-id",
     E2E_ONBOARDING_SITE_PAGE_ID,

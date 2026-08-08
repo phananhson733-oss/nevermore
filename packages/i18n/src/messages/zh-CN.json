@@ -2266,6 +2266,8 @@
         "backToList": "返回机会列表",
         "evidenceCount": "{count} 条记录",
         "targetsCount": "{count} 项",
+        "showAllTargets": "显示其余 {count} 项",
+        "collapseTargets": "收起目标列表",
         "eyebrow": "增长机会",
         "metrics": {
           "urls": "目标 URLs",
@@ -2388,11 +2390,6 @@
     "unavailable": "不可用",
     "titleNotCollected": "页面标题未采集",
     "reviewableCount": "{count} 项待审核",
-    "priorityUnavailable": "未评估",
-    "paginationLabel": "URL 列表分页",
-    "previousPage": "上一页",
-    "nextPage": "下一页",
-    "loadedCount": "当前页 {count} 条",
     "portfolio": {
       "summary": {
         "loadedUrls": "已加载 URL",
@@ -2626,7 +2623,6 @@
       "documentation": "文档页",
       "unclassified": "未分类"
     },
-    "paginationStatus": "当前筛选 {count} 条 · 第 {page} / {pages} 页",
     "primaryOpportunityReviewAction": "先审核最高优先机会",
     "primaryOpportunityReviewHint": "这条机会还没有确认出可执行的 Action，先在下方完成审核。",
     "primaryOpportunityClosedAction": "查看已关闭的信号",
