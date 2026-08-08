@@ -7468,6 +7468,16 @@ a.competitorMonitorContentUrl:hover {
   box-shadow: var(--sf-focus-ring);
 }
 
+.railLimitationList {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 17px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .compactRailSection > span {
   color: var(--sf-coral-text);
   font-size: 12px;

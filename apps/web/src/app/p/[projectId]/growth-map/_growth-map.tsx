@@ -2606,6 +2606,7 @@ function OpportunityDetailPanel({
   const tActionStatus = useTranslations("actionStatus");
   const tPriority = useTranslations("priorityBand");
   const tProvider = useTranslations("provider");
+  const tPlatform = useTranslations("growthMap.platformLimitations");
   const [targetsExpanded, setTargetsExpanded] = useState(false);
   const opportunity = item.opportunity;
   const outputType = opportunityOutputType(opportunity);
@@ -2804,7 +2805,16 @@ function OpportunityDetailPanel({
         {opportunity.coverageAndLimitations.length === 0 ? (
           <p>{t("opportunity.noLimitations")}</p>
         ) : (
-          <LimitationList limitations={opportunity.coverageAndLimitations} />
+          <ul className={styles.railLimitationList}>
+            {opportunity.coverageAndLimitations.map((limitation) => {
+              const key = growthMapPlatformLimitationKey(limitation);
+              return (
+                <li key={limitation}>
+                  {key === null ? limitation : tPlatform(key)}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 
