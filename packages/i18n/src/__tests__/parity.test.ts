@@ -190,7 +190,7 @@ describe("i18n message key parity", () => {
   it("keeps the libraries Chinese-first, customer-readable, and free of unsupported actions", () => {
     expect(zhCN.growthMap.keywordLibrary).toMatchObject({
       libraryScopeTitle: "已入库关键词及其来源",
-      selectedKeyword: "所选关键词",
+      selectedKeyword: "关键词详情",
       classificationTitle: "分类与页面",
       metricsTitle: "关键词指标",
       sourcesTitle: "来源记录",

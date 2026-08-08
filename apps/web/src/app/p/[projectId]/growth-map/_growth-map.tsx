@@ -3268,12 +3268,59 @@ function latestKeywordOccurrence(
   );
 }
 
+const KEYWORD_INTENT_LABEL_KEYS = [
+  "informational",
+  "commercial",
+  "transactional",
+  "navigational",
+] as const;
+
+const KEYWORD_BUYER_STAGE_LABEL_KEYS = [
+  "awareness",
+  "consideration",
+  "decision",
+  "retention",
+] as const;
+
+function knownKeywordIntent(
+  intent: string,
+): (typeof KEYWORD_INTENT_LABEL_KEYS)[number] | null {
+  return (
+    KEYWORD_INTENT_LABEL_KEYS.find((candidate) => candidate === intent) ?? null
+  );
+}
+
+function knownKeywordBuyerStage(
+  stage: string,
+): (typeof KEYWORD_BUYER_STAGE_LABEL_KEYS)[number] | null {
+  return (
+    KEYWORD_BUYER_STAGE_LABEL_KEYS.find((candidate) => candidate === stage) ??
+    null
+  );
+}
+
+function keywordVolumeSummary(
+  locale: string,
+  metric: KeywordMetric | null | undefined,
+): string | null {
+  const presentation = keywordMetricPresentation(metric, null);
+  if (presentation.state === "unavailable") return null;
+  return typeof presentation.value === "number"
+    ? formatNumber(locale, presentation.value)
+    : String(presentation.value);
+}
+
 function KeywordListMetric({
   metric,
   absenceLimitation,
+  fallbackLabel,
+  hideLimitationHint = false,
 }: {
   readonly metric: KeywordMetric | null | undefined;
   readonly absenceLimitation: string | null;
+  /** Ledger cells state absence in artifact vocabulary instead of a hint icon. */
+  readonly fallbackLabel?: string | undefined;
+  readonly hideLimitationHint?: boolean;
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.keywordLibrary");
@@ -3281,9 +3328,12 @@ function KeywordListMetric({
 
   if (presentation.state === "unavailable") {
     return (
-      <span className={styles.libraryMetricSecondary}>
-        {t("notAvailable")}
-        {presentation.limitation === null ? null : (
+      <span
+        className={styles.libraryMetricSecondary}
+        title={presentation.limitation ?? undefined}
+      >
+        {fallbackLabel ?? t("notAvailable")}
+        {presentation.limitation === null || hideLimitationHint ? null : (
           <LimitationHint
             label={t("scopeLimitation")}
             limitations={[presentation.limitation]}
@@ -3314,8 +3364,10 @@ function KeywordListMetric({
  */
 function KeywordStatusPill({
   item,
+  showOrigin = true,
 }: {
   readonly item: GrowthMapKeywordReviewOriginInput;
+  readonly showOrigin?: boolean;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
   const presentation = growthMapKeywordReviewPresentation(item);
@@ -3335,7 +3387,7 @@ function KeywordStatusPill({
       >
         {t(presentation.statusLabelKey)}
       </span>
-      {presentation.originLabelKey === null ? null : (
+      {presentation.originLabelKey === null || !showOrigin ? null : (
         <span className={styles.keywordReviewOrigin}>
           {t(presentation.originLabelKey)}
         </span>
@@ -3425,7 +3477,11 @@ function KeywordRow({
           data-column={t("columns.intent")}
         >
           <strong className={styles.libraryMetricPrimary}>
-            {item.intent ?? t("notAvailable")}
+            {item.intent === null
+              ? t("notAvailable")
+              : knownKeywordIntent(item.intent) === null
+                ? item.intent
+                : t(`intentLabel.${knownKeywordIntent(item.intent)!}`)}
           </strong>
           <small className={styles.libraryMetricSecondary}>
             {t("marketLanguageValue", {
@@ -3441,6 +3497,8 @@ function KeywordRow({
           <KeywordListMetric
             metric={item.metrics.volume}
             absenceLimitation={item.metrics.limitations.volume}
+            fallbackLabel={t("listFallback.volume")}
+            hideLimitationHint
           />
         </span>
         <span
@@ -3450,6 +3508,8 @@ function KeywordRow({
           <KeywordListMetric
             metric={item.metrics.kd}
             absenceLimitation={item.metrics.limitations.kd}
+            fallbackLabel={t("listFallback.kd")}
+            hideLimitationHint
           />
         </span>
         <span
@@ -3459,11 +3519,14 @@ function KeywordRow({
           <KeywordListMetric
             metric={item.metrics.currentRank}
             absenceLimitation={item.metrics.limitations.currentRank}
+            fallbackLabel={t("listFallback.currentRank")}
+            hideLimitationHint
           />
-          <KeywordListMetric
-            metric={item.metrics.currentUrl}
-            absenceLimitation={item.metrics.limitations.currentUrl}
-          />
+          <small className={styles.libraryMetricSecondary}>
+            {item.mappedTarget.kind === "existing_page"
+              ? urlPresentation(item.mappedTarget.normalizedUrl).path
+              : t(`mappingTarget.${item.mappedTarget.kind}`)}
+          </small>
         </span>
         <span
           className={styles.keywordSourceSummary}
@@ -3499,7 +3562,7 @@ function KeywordRow({
           className={styles.keywordStatusCell}
           data-column={t("columns.status")}
         >
-          <KeywordStatusPill item={item} />
+          <KeywordStatusPill item={item} showOrigin={false} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
       </div>
@@ -6860,6 +6923,7 @@ function KeywordDetailPanel({
   readonly onSelectKeyword: (keywordId: string) => void;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
+  const locale = useLocale();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
   const latestSource = latestKeywordOccurrence(detail.sourceOccurrences);
@@ -6896,13 +6960,20 @@ function KeywordDetailPanel({
         </div>
         <h2>{detail.displayKeyword}</h2>
         <p>
+          {detail.cluster?.name ?? t("intake.unassignedCluster")}
+          {" · "}
+          {detail.intent === null
+            ? t("notAvailable")
+            : knownKeywordIntent(detail.intent) === null
+              ? detail.intent
+              : t(`intentLabel.${knownKeywordIntent(detail.intent)!}`)}
+          {" · "}
           {t("marketLanguageValue", {
             market: detail.marketCode,
             language: detail.languageTag,
           })}
         </p>
         <div className={styles.keywordDetailTags}>
-          <span>{t(`queryKind.${detail.queryKind}`)}</span>
           <KeywordStatusPill item={detail} />
         </div>
         <div className={styles.keywordReviewHeaderAction}>
@@ -6944,7 +7015,11 @@ function KeywordDetailPanel({
           {latestSource === null ? (
             <strong>{t("notAvailable")}</strong>
           ) : (
-            <KeywordFreshnessPill freshness={latestSource.freshness} />
+            <strong>
+              <time dateTime={latestSource.collectedAt}>
+                {formatObservedAt(locale, latestSource.collectedAt)}
+              </time>
+            </strong>
           )}
         </div>
       </div>
@@ -6970,10 +7045,8 @@ function KeywordDetailPanel({
       <section className={styles.keywordDetailSection}>
         <div className={styles.keywordSectionHeading}>
           <div>
-            <span>{t("classificationEyebrow")}</span>
             <h3>{t("intake.pathTitle")}</h3>
           </div>
-          <Network aria-hidden="true" size={21} />
         </div>
         <div className={styles.conversionPath}>
           <div className={styles.conversionStep}>
@@ -6991,7 +7064,13 @@ function KeywordDetailPanel({
           <div className={styles.conversionStep}>
             <span>03</span>
             <small>{t("intake.pathStepBuyerStage")}</small>
-            <strong>{detail.buyerStage ?? t("notAvailable")}</strong>
+            <strong>
+              {detail.buyerStage === null
+                ? t("notAvailable")
+                : knownKeywordBuyerStage(detail.buyerStage) === null
+                  ? detail.buyerStage
+                  : t(`stageLabel.${knownKeywordBuyerStage(detail.buyerStage)!}`)}
+            </strong>
           </div>
         </div>
       </section>
@@ -6999,7 +7078,6 @@ function KeywordDetailPanel({
       <section className={styles.keywordDetailSection}>
         <div className={styles.keywordSectionHeading}>
           <div>
-            <span>{t("cluster")}</span>
             <h3>{t("intake.relatedTitle")}</h3>
           </div>
           <span className={styles.sectionCount}>
@@ -7015,22 +7093,61 @@ function KeywordDetailPanel({
           </p>
         ) : (
           <div className={styles.relatedList}>
-            {clusterPeers.map((keyword) => (
-              <button
-                type="button"
-                key={keyword.keywordId}
-                onClick={() => onSelectKeyword(keyword.keywordId)}
-              >
-                <span>
-                  <strong>{keyword.displayKeyword}</strong>
-                  <small>{keyword.intent ?? t("notAvailable")}</small>
-                </span>
-                <ArrowRight aria-hidden="true" size={15} />
-              </button>
-            ))}
+            {clusterPeers.map((keyword) => {
+              const volume = keywordVolumeSummary(
+                locale,
+                keyword.metrics.volume,
+              );
+              return (
+                <button
+                  type="button"
+                  key={keyword.keywordId}
+                  onClick={() => onSelectKeyword(keyword.keywordId)}
+                >
+                  <span>
+                    <strong>{keyword.displayKeyword}</strong>
+                    <small>
+                      {keyword.intent === null
+                        ? t("notAvailable")
+                        : knownKeywordIntent(keyword.intent) === null
+                          ? keyword.intent
+                          : t(`intentLabel.${knownKeywordIntent(keyword.intent)!}`)}
+                      {volume === null
+                        ? null
+                        : ` · ${t("relatedVolume", { volume })}`}
+                    </small>
+                  </span>
+                  <ArrowRight aria-hidden="true" size={15} />
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
+
+      <div className={styles.detailActions}>
+        <button
+          type="button"
+          onClick={() =>
+            document
+              .getElementById(`sf-keyword-sources-${detail.keywordId}`)
+              ?.scrollIntoView({ block: "start" })
+          }
+        >
+          <ShieldCheck aria-hidden="true" size={16} />
+          {t("intake.viewSources")}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setReviewSaved(false);
+            setReviewOpen(true);
+          }}
+        >
+          <Pencil aria-hidden="true" size={16} />
+          {t("review.open")}
+        </button>
+      </div>
 
       <section className={styles.keywordDetailSection}>
         <div className={styles.keywordSectionHeading}>
@@ -7060,6 +7177,12 @@ function KeywordDetailPanel({
             identity={detail.cluster?.clusterId}
             limitation={detail.classificationLimitations.cluster}
           />
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("columns.queryKind")}</dt>
+            <dd>
+              <strong>{t(`queryKind.${detail.queryKind}`)}</strong>
+            </dd>
+          </div>
           <div className={styles.keywordClassificationField}>
             <dt>{t("mappedTarget")}</dt>
             <dd><KeywordMappedTarget target={detail.mappedTarget} /></dd>
@@ -7132,30 +7255,6 @@ function KeywordDetailPanel({
           ))}
         </div>
       </section>
-
-      <div className={styles.detailActions}>
-        <button
-          type="button"
-          onClick={() =>
-            document
-              .getElementById(`sf-keyword-sources-${detail.keywordId}`)
-              ?.scrollIntoView({ block: "start" })
-          }
-        >
-          <ShieldCheck aria-hidden="true" size={16} />
-          {t("intake.viewSources")}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setReviewSaved(false);
-            setReviewOpen(true);
-          }}
-        >
-          <Pencil aria-hidden="true" size={16} />
-          {t("review.open")}
-        </button>
-      </div>
 
       <footer className={styles.keywordDetailFooter}>
         <details className={styles.recordDisclosure}>
@@ -7556,10 +7655,6 @@ function KeywordLibraryPane({
     );
   }
   const response = listQuery.data;
-  const occurrenceCount = response.data.reduce(
-    (count, item) => count + item.sourceOccurrences.length,
-    0,
-  );
   const sourceStripItems: readonly SourceStripItem[] = [
     {
       key: "all",
@@ -7603,79 +7698,10 @@ function KeywordLibraryPane({
         onSelect={(key) => setSourceFilter(key as GrowthMapKeywordSourceFilter)}
         countLabel={(count) => t("intake.count", { count })}
       />
-      <div className={styles.pageScopeNote}>
-        <span>{t("loadedCount", { count: response.data.length })}</span>
-        <span>{t("sourceOccurrencesOnPage")}: {occurrenceCount}</span>
-        <CoveragePill coverage={response.meta.coverage} />
-        <LimitationList limitations={response.meta.coverage.limitations} />
-      </div>
-
-      <TopicMapGateway projectId={projectId} />
-
       {readState === "empty" ? (
         <KeywordLibraryEmpty />
       ) : (
         <>
-          <section
-            className={styles.keywordRelationToolbar}
-            aria-labelledby="keyword-relation-toolbar-title"
-          >
-            <div className={styles.keywordRelationToolbarIntro}>
-              <GitMerge aria-hidden="true" size={20} />
-              <div>
-                <span>{t("relations.toolbarLabel")}</span>
-                <strong id="keyword-relation-toolbar-title">
-                  {t("relations.toolbarTitle")}
-                </strong>
-                <p>{t("relations.toolbarDescription")}</p>
-              </div>
-            </div>
-            <div className={styles.keywordRelationToolbarStatus}>
-              <p role="status" aria-live="polite">
-                {relationStatusText}
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={isRefreshingRelations}
-                onClick={runRelationRefresh}
-              >
-                <RefreshCw
-                  aria-hidden="true"
-                  size={15}
-                  className={
-                    isRefreshingRelations
-                      ? styles.keywordRelationRefreshSpinning
-                      : undefined
-                  }
-                />
-                {isRefreshingRelations
-                  ? t("relations.refreshing")
-                  : t("relations.refresh")}
-              </Button>
-            </div>
-            {relationQuery.isError ? (
-              <ProblemNotice
-                error={relationQuery.error}
-                message={t("relations.refreshError")}
-                onRetry={() => void relationQuery.refetch()}
-                retryLabel={t("relations.retry")}
-                compact
-                className={styles.keywordRelationToolbarError}
-              />
-            ) : isRelationRefreshError ? (
-              <ProblemNotice
-                error={relationRefreshError}
-                message={t("relations.refreshError")}
-                onRetry={runRelationRefresh}
-                retryLabel={t("relations.retry")}
-                compact
-                className={styles.keywordRelationToolbarError}
-              />
-            ) : null}
-          </section>
-
           <div className={styles.libraryToolbar}>
             <label className={styles.librarySearch}>
               <Search aria-hidden="true" size={19} />
@@ -7750,11 +7776,12 @@ function KeywordLibraryPane({
                   <ArrowLeft aria-hidden="true" size={16} />
                   {t("previousPage")}
                 </Button>
-                <span>
+                <span className={styles.paginationSummary}>
                   {t("visibleCount", {
                     visible: filteredEntries.length,
                     total: response.data.length,
                   })}
+                  <CoveragePill coverage={response.meta.coverage} />
                 </span>
                 <Button
                   type="button"
@@ -7775,6 +7802,68 @@ function KeywordLibraryPane({
               relatedKeywords={items}
               onSelectKeyword={selectKeyword}
             />
+          </div>
+          <div className={styles.keywordGovernanceAppendix}>
+            <TopicMapGateway projectId={projectId} />
+          <section
+            className={styles.keywordRelationToolbar}
+            aria-labelledby="keyword-relation-toolbar-title"
+          >
+            <div className={styles.keywordRelationToolbarIntro}>
+              <GitMerge aria-hidden="true" size={20} />
+              <div>
+                <span>{t("relations.toolbarLabel")}</span>
+                <strong id="keyword-relation-toolbar-title">
+                  {t("relations.toolbarTitle")}
+                </strong>
+                <p>{t("relations.toolbarDescription")}</p>
+              </div>
+            </div>
+            <div className={styles.keywordRelationToolbarStatus}>
+              <p role="status" aria-live="polite">
+                {relationStatusText}
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={isRefreshingRelations}
+                onClick={runRelationRefresh}
+              >
+                <RefreshCw
+                  aria-hidden="true"
+                  size={15}
+                  className={
+                    isRefreshingRelations
+                      ? styles.keywordRelationRefreshSpinning
+                      : undefined
+                  }
+                />
+                {isRefreshingRelations
+                  ? t("relations.refreshing")
+                  : t("relations.refresh")}
+              </Button>
+            </div>
+            {relationQuery.isError ? (
+              <ProblemNotice
+                error={relationQuery.error}
+                message={t("relations.refreshError")}
+                onRetry={() => void relationQuery.refetch()}
+                retryLabel={t("relations.retry")}
+                compact
+                className={styles.keywordRelationToolbarError}
+              />
+            ) : isRelationRefreshError ? (
+              <ProblemNotice
+                error={relationRefreshError}
+                message={t("relations.refreshError")}
+                onRetry={runRelationRefresh}
+                retryLabel={t("relations.retry")}
+                compact
+                className={styles.keywordRelationToolbarError}
+              />
+            ) : null}
+          </section>
           </div>
           <KeywordRelationDialog
             projectId={projectId}

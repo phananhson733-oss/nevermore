@@ -1396,6 +1396,24 @@
       "listLabel": "Keyword list",
       "loadedCount": "{count, plural, one {# Keyword loaded on this page} other {# Keywords loaded on this page}}",
       "visibleCount": "Showing {visible} of {total} Keywords in the loaded range",
+      "listFallback": {
+        "volume": "Not connected",
+        "kd": "Unavailable",
+        "currentRank": "Not covered"
+      },
+      "relatedVolume": "Volume {volume}",
+      "intentLabel": {
+        "informational": "Informational",
+        "commercial": "Commercial",
+        "transactional": "Transactional",
+        "navigational": "Navigational"
+      },
+      "stageLabel": {
+        "awareness": "Awareness",
+        "consideration": "Consideration",
+        "decision": "Decision",
+        "retention": "Retention"
+      },
       "intake": {
         "label": "Intake path",
         "title": "Every Keyword keeps its intake path, mapping, and current state",
