@@ -32,36 +32,27 @@ const ARTIFACT_DIR =
   "/tmp/nevermore-four-module-workbench";
 
 const SEO_KEYWORD_ID = "51000000-0000-4000-8000-000000000001";
-const SEO_KEYWORD_OCCURRENCE_ID =
-  "51000000-0000-4000-8000-000000000002";
-const SEO_KEYWORD_SNAPSHOT_ID =
-  "51000000-0000-4000-8000-000000000003";
-const SEO_KEYWORD_OBSERVATION_ID =
-  "51000000-0000-4000-8000-000000000004";
-const SEO_KEYWORD_CLUSTER_ID =
-  "51000000-0000-4000-8000-000000000005";
+const SEO_KEYWORD_OCCURRENCE_ID = "51000000-0000-4000-8000-000000000002";
+const SEO_KEYWORD_SNAPSHOT_ID = "51000000-0000-4000-8000-000000000003";
+const SEO_KEYWORD_OBSERVATION_ID = "51000000-0000-4000-8000-000000000004";
+const SEO_KEYWORD_CLUSTER_ID = "51000000-0000-4000-8000-000000000005";
 const VOC_KEYWORD_ID = "51000000-0000-4000-8000-000000000006";
 const ROOT_TOPIC_ID = "51000000-0000-4000-8000-000000000007";
 const CHILD_TOPIC_ID = "51000000-0000-4000-8000-000000000008";
 const TOPIC_ACTOR_ID = "51000000-0000-4000-8000-000000000009";
 const KEYWORD_RELATION_ID = "51000000-0000-4000-8000-000000000019";
-const KEYWORD_RELATION_CANDIDATE_ID =
-  "51000000-0000-4000-8000-000000000020";
+const KEYWORD_RELATION_CANDIDATE_ID = "51000000-0000-4000-8000-000000000020";
 
 const COMPETITOR_A_ID = "52000000-0000-4000-8000-000000000001";
 const COMPETITOR_B_ID = "52000000-0000-4000-8000-000000000002";
 const COMPETITOR_TOPIC_ID = "52000000-0000-4000-8000-000000000003";
 const COMPETITOR_KEYWORD_ID = "52000000-0000-4000-8000-000000000004";
-const COMPETITOR_CURRENT_SNAPSHOT_ID =
-  "52000000-0000-4000-8000-000000000005";
-const COMPETITOR_PREVIOUS_SNAPSHOT_ID =
-  "52000000-0000-4000-8000-000000000006";
+const COMPETITOR_CURRENT_SNAPSHOT_ID = "52000000-0000-4000-8000-000000000005";
+const COMPETITOR_PREVIOUS_SNAPSHOT_ID = "52000000-0000-4000-8000-000000000006";
 const COMPETITOR_SIGNAL_ID = "52000000-0000-4000-8000-000000000007";
 
-const BACKLINK_PRIMARY_SNAPSHOT_ID =
-  "53000000-0000-4000-8000-000000000001";
-const BACKLINK_COMPETITOR_SNAPSHOT_ID =
-  "53000000-0000-4000-8000-000000000002";
+const BACKLINK_PRIMARY_SNAPSHOT_ID = "53000000-0000-4000-8000-000000000001";
+const BACKLINK_COMPETITOR_SNAPSHOT_ID = "53000000-0000-4000-8000-000000000002";
 const BACKLINK_FACT_ID = "53000000-0000-4000-8000-000000000003";
 
 function json(route: Route, value: unknown, status = 200): Promise<void> {
@@ -94,8 +85,7 @@ function metric(
     value,
     observedAt: "2026-07-25T08:00:00.000Z",
     freshness: "unknown" as const,
-    limitation:
-      "DataForSEO 未提供独立数据时点；这里保留实际采集观测时间。",
+    limitation: "DataForSEO 未提供独立数据时点；这里保留实际采集观测时间。",
   };
 }
 
@@ -139,8 +129,7 @@ const seoKeyword = GrowthMapKeywordLibraryItem.parse({
       collectedAt: "2026-07-25T08:00:00.000Z",
       providerDataAsOf: null,
       freshness: "unknown",
-      limitation:
-        "DataForSEO 未提供独立数据时点；范围由冻结采集任务限定。",
+      limitation: "DataForSEO 未提供独立数据时点；范围由冻结采集任务限定。",
       scopeBasis: "provider_collection_scope",
       scopeLimitation:
         "example.test · US · en-US · location 2840 · 前 200 条排名结果。",
@@ -211,8 +200,7 @@ const vocKeyword = GrowthMapKeywordLibraryItem.parse({
       freshness: "current",
       limitation: null,
       scopeBasis: "user_provided",
-      scopeLimitation:
-        "客户批准的去标识化研究范围，不包含逐字稿或受访者身份。",
+      scopeLimitation: "客户批准的去标识化研究范围，不包含逐字稿或受访者身份。",
       marketCode: "US",
       languageTag: "en-US",
       evidenceLabel: "第二季度客户入职访谈摘要",
@@ -230,8 +218,7 @@ const vocKeyword = GrowthMapKeywordLibraryItem.parse({
       freshness: "current",
       limitation: null,
       scopeBasis: "provider_collection_scope",
-      scopeLimitation:
-        "有限的 G2 公开评价采集范围，不代表平台完整评价全集。",
+      scopeLimitation: "有限的 G2 公开评价采集范围，不代表平台完整评价全集。",
       marketCode: "US",
       languageTag: "en-US",
       evidenceLabel: "RelayOps 的 G2 公开评价语料",
@@ -269,8 +256,7 @@ function rankPoint(input: {
   observedAt: string;
 }) {
   const suffix = String(input.id).padStart(12, "0");
-  const providerDataAsOf =
-    input.provider === "gsc" ? input.observedAt : null;
+  const providerDataAsOf = input.provider === "gsc" ? input.observedAt : null;
   return {
     occurrenceId: `54000000-0000-4000-8000-${suffix}`,
     snapshotId: `54100000-0000-4000-8000-${suffix}`,
@@ -465,11 +451,7 @@ function competitor(
     name,
     reviewStatus: "approved" as const,
     relationship: "direct" as const,
-    analysisScope: [
-      "keyword_gap",
-      "content",
-      "serp_visibility",
-    ] as const,
+    analysisScope: ["keyword_gap", "content", "serp_visibility"] as const,
     revision: 2,
     originOccurrences: [
       {
@@ -800,18 +782,9 @@ async function installArtifactApi(page: Page): Promise<void> {
     },
   };
   const findingTitles = new Map([
-    [
-      "TECH-CANONICAL-002",
-      "客户入职页面的 canonical URL 存在冲突。",
-    ],
-    [
-      "SEARCH-CTR-004",
-      "客户入职页面已有曝光，但自然搜索点击率偏低。",
-    ],
-    [
-      "CONTENT-COVERAGE-001",
-      "客户入职页面存在可量化的内容覆盖缺口。",
-    ],
+    ["TECH-CANONICAL-002", "客户入职页面的 canonical URL 存在冲突。"],
+    ["SEARCH-CTR-004", "客户入职页面已有曝光，但自然搜索点击率偏低。"],
+    ["CONTENT-COVERAGE-001", "客户入职页面存在可量化的内容覆盖缺口。"],
   ]);
   const localizedPortfolio = growthAuditPortfolioFixture();
 
@@ -853,22 +826,18 @@ async function installArtifactApi(page: Page): Promise<void> {
                 : "价格方案",
             coverage: {
               ...item.coverage,
-              limitations: [
-                "该 URL 暂无客户分析数据，因此不展示点击率证据。",
-              ],
+              limitations: ["该 URL 暂无客户分析数据，因此不展示点击率证据。"],
             },
             priority:
               item.priority.availability === "unavailable"
                 ? {
                     ...item.priority,
-                    limitation:
-                      "当前诊断运行没有 Finding 指向该 URL。",
+                    limitation: "当前诊断运行没有 Finding 指向该 URL。",
                   }
                 : item.priority,
             delta: {
               ...item.delta,
-              limitation:
-                "尚无可对比的不可变审计前后复查窗口。",
+              limitation: "尚无可对比的不可变审计前后复查窗口。",
             },
           })),
           meta: {
@@ -904,22 +873,18 @@ async function installArtifactApi(page: Page): Promise<void> {
               : "价格方案",
           coverage: {
             ...detail.data.coverage,
-            limitations: [
-              "该 URL 暂无客户分析数据，因此不展示点击率证据。",
-            ],
+            limitations: ["该 URL 暂无客户分析数据，因此不展示点击率证据。"],
           },
           priority:
             detail.data.priority.availability === "unavailable"
               ? {
                   ...detail.data.priority,
-                  limitation:
-                    "当前诊断运行没有 Finding 指向该 URL。",
+                  limitation: "当前诊断运行没有 Finding 指向该 URL。",
                 }
               : detail.data.priority,
           delta: {
             ...detail.data.delta,
-            limitation:
-              "尚无可对比的不可变审计前后复查窗口。",
+            limitation: "尚无可对比的不可变审计前后复查窗口。",
           },
           findings: detail.data.findings.map((finding) => ({
             ...finding,
@@ -930,48 +895,43 @@ async function installArtifactApi(page: Page): Promise<void> {
     });
   });
 
-  await page.route(
-    `**${API_BASE}/audit/internal-link-map**`,
-    async (route) => {
-      if (route.request().method() !== "GET") {
-        await route.fallback();
-        return;
-      }
-      const selectedSitePageId =
-        new URL(route.request().url()).searchParams.get("sitePageId") ??
-        E2E_ONBOARDING_SITE_PAGE_ID;
-      const map = growthInternalLinkMapFixture(selectedSitePageId);
-      await json(route, {
-        data: {
-          ...map,
-          graph: {
-            ...map.graph,
-            nodes: map.graph.nodes.map((node) => ({
-              ...node,
-              title: node.sitePageIds.includes(
-                E2E_ONBOARDING_SITE_PAGE_ID,
-              )
-                ? "客户入职指南"
-                : node.sitePageIds.includes(E2E_SECOND_SITE_PAGE_ID)
-                  ? "价格方案"
-                  : node.title,
-              executionRefs: node.sitePageIds.includes(
-                E2E_ONBOARDING_SITE_PAGE_ID,
-              )
-                ? [
-                    ...node.executionRefs,
-                    {
-                      findingId: E2E_CONTENT_FINDING_ID,
-                      actionId: null,
-                    },
-                  ]
-                : node.executionRefs,
-            })),
-          },
+  await page.route(`**${API_BASE}/audit/internal-link-map**`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const selectedSitePageId =
+      new URL(route.request().url()).searchParams.get("sitePageId") ??
+      E2E_ONBOARDING_SITE_PAGE_ID;
+    const map = growthInternalLinkMapFixture(selectedSitePageId);
+    await json(route, {
+      data: {
+        ...map,
+        graph: {
+          ...map.graph,
+          nodes: map.graph.nodes.map((node) => ({
+            ...node,
+            title: node.sitePageIds.includes(E2E_ONBOARDING_SITE_PAGE_ID)
+              ? "客户入职指南"
+              : node.sitePageIds.includes(E2E_SECOND_SITE_PAGE_ID)
+                ? "价格方案"
+                : node.title,
+            executionRefs: node.sitePageIds.includes(
+              E2E_ONBOARDING_SITE_PAGE_ID,
+            )
+              ? [
+                  ...node.executionRefs,
+                  {
+                    findingId: E2E_CONTENT_FINDING_ID,
+                    actionId: null,
+                  },
+                ]
+              : node.executionRefs,
+          })),
         },
-      });
-    },
-  );
+      },
+    });
+  });
 
   await page.route(`**${API_BASE}/audit/keywords**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -1016,47 +976,38 @@ async function installArtifactApi(page: Page): Promise<void> {
     });
   });
 
-  await page.route(
-    `**${API_BASE}/audit/keyword-relations**`,
-    async (route) => {
-      const url = new URL(route.request().url());
-      const listPath = `${API_BASE}/audit/keyword-relations`;
-      if (
-        route.request().method() === "GET" &&
-        url.pathname === listPath
-      ) {
-        await json(route, {
-          data: {
-            projectId: E2E_PROJECT_ID,
-            data: [keywordRelation],
-            meta: {
-              limit: 100,
-              nextCursor: null,
-              hasNext: false,
-              coverage: { availability: "available", limitations: [] },
-            },
+  await page.route(`**${API_BASE}/audit/keyword-relations**`, async (route) => {
+    const url = new URL(route.request().url());
+    const listPath = `${API_BASE}/audit/keyword-relations`;
+    if (route.request().method() === "GET" && url.pathname === listPath) {
+      await json(route, {
+        data: {
+          projectId: E2E_PROJECT_ID,
+          data: [keywordRelation],
+          meta: {
+            limit: 100,
+            nextCursor: null,
+            hasNext: false,
+            coverage: { availability: "available", limitations: [] },
           },
-        });
-        return;
-      }
-      if (
-        route.request().method() === "POST" &&
-        url.pathname === listPath
-      ) {
-        await json(route, {
-          data: {
-            projectId: E2E_PROJECT_ID,
-            eligiblePairCount: 1,
-            createdRelationCount: 0,
-            createdCandidateCount: 0,
-            generatedAt: "2026-07-28T01:00:00.000Z",
-          },
-        });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+        },
+      });
+      return;
+    }
+    if (route.request().method() === "POST" && url.pathname === listPath) {
+      await json(route, {
+        data: {
+          projectId: E2E_PROJECT_ID,
+          eligiblePairCount: 1,
+          createdRelationCount: 0,
+          createdCandidateCount: 0,
+          generatedAt: "2026-07-28T01:00:00.000Z",
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
 
   await page.route(`${`**${API_BASE}/audit/topic-model`}`, async (route) => {
     const topicNode = (
@@ -1186,16 +1137,13 @@ async function installArtifactApi(page: Page): Promise<void> {
     });
   });
 
-  await page.route(
-    `**${API_BASE}/audit/competitor-monitor`,
-    async (route) => {
-      if (route.request().method() === "GET") {
-        await json(route, { data: competitorMonitor });
-        return;
-      }
-      await route.fallback();
-    },
-  );
+  await page.route(`**${API_BASE}/audit/competitor-monitor`, async (route) => {
+    if (route.request().method() === "GET") {
+      await json(route, { data: competitorMonitor });
+      return;
+    }
+    await route.fallback();
+  });
 
   await page.route(`**${API_BASE}/audit/backlinks**`, async (route) => {
     await json(route, { data: backlinkModel });
@@ -1407,9 +1355,7 @@ async function openFullEvidenceAndReview(page: Page): Promise<void> {
   const disclosure = page.locator("[data-full-evidence-disclosure]");
   await expect(disclosure).toBeVisible();
   if ((await disclosure.getAttribute("open")) === null) {
-    await page
-      .locator("[data-full-evidence-disclosure] > summary")
-      .click();
+    await page.locator("[data-full-evidence-disclosure] > summary").click();
   }
   await expect(disclosure).toHaveAttribute("open", "");
 }
@@ -1467,15 +1413,15 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     const canonicalFinding = page
       .locator(`[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`)
       .getByRole("heading", {
-      name: "客户入职页面的 canonical URL 存在冲突。",
-      exact: true,
-    });
+        name: "客户入职页面的 canonical URL 存在冲突。",
+        exact: true,
+      });
     const contentFinding = page
       .locator(`[data-finding-card="${E2E_CONTENT_FINDING_ID}"]`)
       .getByRole("heading", {
-      name: "客户入职页面存在可量化的内容覆盖缺口。",
-      exact: true,
-    });
+        name: "客户入职页面存在可量化的内容覆盖缺口。",
+        exact: true,
+      });
     await expect(canonicalFinding).toBeVisible();
     await expect(contentFinding).toBeVisible();
     await contentFinding.scrollIntoViewIfNeeded();
@@ -1520,7 +1466,9 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       "data-site-page-id",
       E2E_ONBOARDING_SITE_PAGE_ID,
     );
-    await expect(linkMap.getByText("锚文本：Customer onboarding")).toBeVisible();
+    await expect(
+      linkMap.getByText("锚文本：Customer onboarding"),
+    ).toBeVisible();
   });
 
   await test.step("增长地图 / 关键词库：排名证据与 VOC 来源分开呈现", async () => {
@@ -1585,9 +1533,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     const conflictConfirmation = reviewDialog.getByTestId(
       "keyword-review-conflict-confirmation",
     );
-    await expect(conflictConfirmation).toContainText(
-      "所选 Topic 存在意图冲突",
-    );
+    await expect(conflictConfirmation).toContainText("所选 Topic 存在意图冲突");
     await conflictConfirmation.scrollIntoViewIfNeeded();
     await captureCurrentViewport(
       page,
@@ -1633,7 +1579,28 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await page.goto(
       `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
     );
+    // Artifact-parity ledger: seven labelled columns plus the row-arrow slot,
+    // and honest per-metric fallbacks instead of the removed "暂无可用数据".
+    const ledgerHeader = page
+      .getByRole("list", { name: "竞品列表" })
+      .locator("xpath=preceding-sibling::*[1]");
+    await expect(ledgerHeader.locator(":scope > span")).toHaveCount(8);
+    await expect(ledgerHeader).toContainText("自然搜索重叠度");
+    await expect(ledgerHeader).toContainText("共同关键词");
+    await expect(ledgerHeader).toContainText("AI 引用");
+    const atlasRow = page
+      .getByRole("listitem")
+      .filter({ hasText: "atlasflow.com" });
+    await expect(atlasRow).toContainText("数据不足");
+    await expect(atlasRow).toContainText("不可用");
+    await expect(atlasRow).not.toContainText("暂无可用数据");
+
+    // CompetitorMonitorSection moved into the full-profile drawer; open it
+    // from the row arrow before asserting monitor evidence.
+    const drawer = page.getByTestId("competitor-profile-drawer");
     const monitor = page.getByTestId("competitor-monitor");
+    await atlasRow.getByRole("button", { name: "打开竞品完整详情" }).click();
+    await expect(drawer).toBeVisible();
     await expect(monitor).toHaveAttribute(
       "data-competitor-id",
       COMPETITOR_A_ID,
@@ -1642,6 +1609,9 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(monitor).toContainText("排名 18 → 9，提升 9 位");
     await capture(page, "07-growth-map-competitor-atlasflow");
 
+    // The drawer's scrim covers the ledger, so close it before switching rows.
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
     await page
       .getByRole("button")
       .filter({ hasText: "BeaconPath" })
@@ -1650,15 +1620,21 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(page).toHaveURL(
       new RegExp(`selectedCompetitorId=${COMPETITOR_B_ID}`),
     );
+    await page
+      .getByRole("listitem")
+      .filter({ hasText: "beaconpath.com" })
+      .getByRole("button", { name: "打开竞品完整详情" })
+      .click();
+    await expect(drawer).toBeVisible();
     await expect(monitor).toHaveAttribute(
       "data-competitor-id",
       COMPETITOR_B_ID,
     );
     await expect(monitor).toContainText("首次真实采集只用于建立基线");
-    await expect(monitor).not.toContainText(
-      "customer onboarding automation",
-    );
+    await expect(monitor).not.toContainText("customer onboarding automation");
     await capture(page, "08-growth-map-competitor-beaconpath");
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
   });
 
   await test.step("增长地图 / 外链增长：Provider 总量、页面与竞品差距", async () => {
@@ -1675,13 +1651,9 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await capture(page, "09-growth-map-backlinks");
     await capture(page, "09-growth-map-backlinks-full", { fullPage: true });
 
-    await path
-      .getByRole("link", { name: /Pricing overview/ })
-      .click();
+    await path.getByRole("link", { name: /Pricing overview/ }).click();
     await expect(page).toHaveURL(
-      new RegExp(
-        `object=pages&selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`,
-      ),
+      new RegExp(`object=pages&selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`),
     );
     await expect(page.getByRole("heading", { name: "/pricing" })).toBeVisible();
   });
@@ -1697,9 +1669,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(queue).toContainText(
       "确认 Customer Onboarding 对比页 Content Brief",
     );
-    await expect(
-      page.locator("[data-studio-markdown-preview]"),
-    ).toContainText(
+    await expect(page.locator("[data-studio-markdown-preview]")).toContainText(
       "How to Automate Customer Onboarding Without Losing the Human Touch",
     );
     await page
@@ -1792,9 +1762,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(structureEvidence).toContainText(
       "仅呈现有证据约束的观察或推断，不把结构差异解释为引用原因。",
     );
-    await expect(geo).toContainText(
-      "不能解释为“为什么被引用”",
-    );
+    await expect(geo).toContainText("不能解释为“为什么被引用”");
     await structureEvidence.scrollIntoViewIfNeeded();
     await captureCurrentViewport(page, "13-results-geo-evidence");
   });

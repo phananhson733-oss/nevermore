@@ -144,18 +144,22 @@ async function createProjectInBrowser(
   page: Page,
   definition: VerticalDefinition,
 ): Promise<string> {
-  await page.context().addCookies([
-    { name: "sf_ui_locale", value: "en", url: BASE_URL },
-  ]);
+  await page
+    .context()
+    .addCookies([{ name: "sf_ui_locale", value: "en", url: BASE_URL }]);
   await page.goto("/new-project");
   // The heading is server-rendered, but the form submit handler belongs to the
   // hydrated client island. Wait for its script requests to settle before
   // editing so an early native form submission cannot reload the empty form.
   await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("heading", { name: "Add a product" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Add a product" }),
+  ).toBeVisible();
   await page.getByLabel("Product name").fill(definition.productName);
   await page.getByLabel("Product URL").fill(definition.siteUrl);
-  await page.getByLabel("Customer model").selectOption(definition.customerModel);
+  await page
+    .getByLabel("Customer model")
+    .selectOption(definition.customerModel);
   await page.getByLabel("Primary target market").selectOption("US");
   const growthObjective =
     definition.customerModel === "b2b"
@@ -407,25 +411,21 @@ async function approveImportedGrowthGovernance(
       reason: "Create the governed Topic for the Growth Map fixture.",
     },
   );
-  const edited = await topics.patchDraft(
-    scope,
-    canonicalAuthority.actor_id,
-    {
-      topicModelRevision: draft.topicModelRevision,
-      expectedEditRevision: draft.editRevision,
-      reason: "Add the imported Keyword cluster before publication.",
-      intents: [
-        {
-          kind: "create",
-          parentTopicNodeId: null,
-          label: "Revenue operations workflow",
-          description:
-            "Reviewed Keyword demand for the real Growth Map browser chain.",
-          intentEnvelope: ["Commercial"],
-        },
-      ],
-    },
-  );
+  const edited = await topics.patchDraft(scope, canonicalAuthority.actor_id, {
+    topicModelRevision: draft.topicModelRevision,
+    expectedEditRevision: draft.editRevision,
+    reason: "Add the imported Keyword cluster before publication.",
+    intents: [
+      {
+        kind: "create",
+        parentTopicNodeId: null,
+        label: "Revenue operations workflow",
+        description:
+          "Reviewed Keyword demand for the real Growth Map browser chain.",
+        intentEnvelope: ["Commercial"],
+      },
+    ],
+  });
   const confirmed = await topics.confirmDraft(
     scope,
     canonicalAuthority.actor_id,
@@ -436,7 +436,9 @@ async function approveImportedGrowthGovernance(
     },
   );
   if (confirmed.rootTopicNodeId === null) {
-    throw new Error("Growth Map fixture did not produce a confirmed Topic root");
+    throw new Error(
+      "Growth Map fixture did not produce a confirmed Topic root",
+    );
   }
 
   const governance = new KeywordGovernanceRepository(db.db);
@@ -465,10 +467,7 @@ async function approveImportedGrowthGovernance(
     limit: 20,
     cursor: null,
   });
-  if (
-    competitorPage.rows.length !== 1 ||
-    competitorPage.nextCursor !== null
-  ) {
+  if (competitorPage.rows.length !== 1 || competitorPage.nextCursor !== null) {
     throw new Error(
       "Growth Map fixture requires exactly one imported Competitor candidate",
     );
@@ -556,10 +555,7 @@ function trackGrowthMapRscRequests(page: Page): () => number {
   let count = 0;
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (
-      url.pathname.endsWith("/growth-map") &&
-      url.searchParams.has("_rsc")
-    ) {
+    if (url.pathname.endsWith("/growth-map") && url.searchParams.has("_rsc")) {
       count += 1;
     }
   });
@@ -599,7 +595,8 @@ async function rapidObjectModeRoundTrip(page: Page): Promise<void> {
   await expect(competitors).not.toHaveAttribute("aria-current", "page");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("object"), {
-      message: "rapid object-tab round trip did not keep Pages as latest intent",
+      message:
+        "rapid object-tab round trip did not keep Pages as latest intent",
     })
     .toBe("pages");
   await expectOpportunityLedger(page);
@@ -906,8 +903,9 @@ async function assertCompetitorLibraryTraceability(input: {
   const competitorSearch = page.getByRole("searchbox", {
     name: "Search Competitors",
   });
+  // The toolbar label shortened to "Status" in the artifact-parity redesign.
   const statusFilter = page.getByRole("combobox", {
-    name: "Status filter",
+    name: "Status",
   });
   await expect(competitorSearch).toBeVisible();
   await expect(statusFilter).toBeVisible();
@@ -916,9 +914,10 @@ async function assertCompetitorLibraryTraceability(input: {
   await expect(list.locator("li button[aria-pressed]")).toHaveCount(
     expectedCount,
   );
+  // Seven labelled columns plus the trailing row-arrow slot.
   await expect(
     list.locator("xpath=preceding-sibling::*[1]").locator(":scope > span"),
-  ).toHaveCount(7);
+  ).toHaveCount(8);
 
   await statusFilter.selectOption("approved");
   await expect(statusFilter).toHaveValue("approved");
@@ -955,7 +954,13 @@ async function assertCompetitorLibraryTraceability(input: {
       exact: true,
     }),
   ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
-  const recordDetails = detail.locator("details").filter({
+  // The record disclosure and origin provenance moved into the full-profile
+  // drawer; open it through the detail panel action, assert the immutable
+  // identities there, and close it again so the library keeps handling clicks.
+  await detail.getByRole("button", { name: "View full profile" }).click();
+  const drawer = page.getByTestId("competitor-profile-drawer");
+  await expect(drawer).toBeVisible();
+  const recordDetails = drawer.locator("details").filter({
     hasText: "View record details",
   });
   await recordDetails.locator("summary").click();
@@ -971,7 +976,7 @@ async function assertCompetitorLibraryTraceability(input: {
   if (!origin || origin.originKind !== "csv_keyword_gap") {
     throw new Error(`${item.domain} lost its exact CSV Competitor origin`);
   }
-  const originCard = detail
+  const originCard = drawer
     .getByTitle(origin.occurrenceId, { exact: true })
     .locator("xpath=ancestor::article[1]");
   await originCard.getByText("View source details", { exact: true }).click();
@@ -988,6 +993,8 @@ async function assertCompetitorLibraryTraceability(input: {
   await expect(
     originCard.getByText(origin.sourcePointer, { exact: true }),
   ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
 }
 
 async function assertUrlPortfolioPresentation(input: {
@@ -1007,15 +1014,11 @@ async function assertUrlPortfolioPresentation(input: {
     String(expectedFrozenUrlCount),
   );
 
-  await expect(
-    page.getByRole("combobox", { name: "Page type" }),
-  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Page type" })).toBeVisible();
   const moreFilters = page.getByRole("button", { name: "More filters" });
   await moreFilters.click();
   await expect(moreFilters).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    page.getByRole("combobox", { name: "Priority" }),
-  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Priority" })).toBeVisible();
   await moreFilters.click();
   await expect(moreFilters).toHaveAttribute("aria-expanded", "false");
 }
@@ -1064,9 +1067,13 @@ function metricLabel(observation: GrowthMapUrlMetricObservation): string {
   return label;
 }
 
-function formattedMetricValue(observation: GrowthMapUrlMetricObservation): string {
+function formattedMetricValue(
+  observation: GrowthMapUrlMetricObservation,
+): string {
   if (observation.availability !== "available" || observation.value === null) {
-    throw new Error("Growth Map real fixture unexpectedly emitted a missing metric");
+    throw new Error(
+      "Growth Map real fixture unexpectedly emitted a missing metric",
+    );
   }
   return new Intl.NumberFormat("en", {
     maximumFractionDigits: Number.isInteger(observation.value) ? 0 : 2,
@@ -1105,10 +1112,9 @@ async function assertExactSelection(input: {
   }
 
   await expect
-    .poll(
-      () => new URL(page.url()).searchParams.get("selectedSitePageId"),
-      { message: `address did not select ${expected.sitePageId}` },
-    )
+    .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"), {
+      message: `address did not select ${expected.sitePageId}`,
+    })
     .toBe(expected.sitePageId);
 
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
@@ -1125,10 +1131,7 @@ async function assertExactSelection(input: {
   await expect(detailHeading).toBeVisible({
     timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
   });
-  await expect(detailHeading).toHaveAttribute(
-    "title",
-    expected.normalizedUrl,
-  );
+  await expect(detailHeading).toHaveAttribute("title", expected.normalizedUrl);
   await openFullUrlDetail(detail);
   const detailTitle = detailHeading.locator("xpath=following-sibling::p[1]");
   await expect(detailTitle).toHaveText(
@@ -1524,7 +1527,9 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         detailA.reviewableFindingIds.includes(finding.findingId),
     );
     if (!findingToConfirm) {
-      throw new Error("real Growth Map fixture had no reviewable Finding to confirm");
+      throw new Error(
+        "real Growth Map fixture had no reviewable Finding to confirm",
+      );
     }
     const confirmationCard = page
       .getByTitle(findingToConfirm.findingId, { exact: true })

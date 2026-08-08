@@ -8,10 +8,7 @@ import {
   type UpdateCompetitorMonitorRequest,
 } from "../packages/contracts/src/index.ts";
 
-import {
-  E2E_PROJECT_ID,
-  installGrowthVerticalApi,
-} from "./mock-api.ts";
+import { E2E_PROJECT_ID, installGrowthVerticalApi } from "./mock-api.ts";
 
 const COMPETITOR_A_ID = "41000000-0000-4000-8000-000000000001";
 const COMPETITOR_B_ID = "41000000-0000-4000-8000-000000000002";
@@ -344,6 +341,27 @@ function competitorButton(page: Page, name: string) {
   return page.getByRole("button").filter({ hasText: name }).first();
 }
 
+/**
+ * CompetitorMonitorSection moved from the detail panel into the full-profile
+ * drawer (d7a0d11). Every monitor assertion must first open the drawer, either
+ * from the row arrow or from the detail panel's "查看完整档案" action.
+ */
+function competitorDrawer(page: Page) {
+  return page.getByTestId("competitor-profile-drawer");
+}
+
+function rowArrowButton(page: Page, domain: string) {
+  return page
+    .getByRole("listitem")
+    .filter({ hasText: domain })
+    .getByRole("button", { name: "打开竞品完整详情" });
+}
+
+async function closeCompetitorDrawer(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+  await expect(competitorDrawer(page)).toHaveCount(0);
+}
+
 test.beforeEach(async ({ page }) => {
   await useChineseUi(page);
   await installGrowthVerticalApi(page);
@@ -382,11 +400,13 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     competitorProvenance.getByRole("link", { name: "管理数据来源" }),
   ).toHaveCount(0);
 
+  // Monitor evidence now lives in the full-profile drawer; open it for A via
+  // the new row arrow.
+  const drawer = competitorDrawer(page);
   const monitor = page.getByTestId("competitor-monitor");
-  await expect(monitor).toHaveAttribute(
-    "data-competitor-id",
-    COMPETITOR_A_ID,
-  );
+  await rowArrowButton(page, "atlasflow.com").click();
+  await expect(drawer).toBeVisible();
+  await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_A_ID);
   await expect(monitor.getByTestId("competitor-monitor-status")).toHaveText(
     "本期可比较",
   );
@@ -405,9 +425,7 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
   });
   await expect(contentLimitation).toBeVisible();
   await contentLimitation.hover();
-  await expect(page.getByRole("tooltip")).toContainText(
-    "这不是发布日期证明",
-  );
+  await expect(page.getByRole("tooltip")).toContainText("这不是发布日期证明");
   const rankSignal = monitor.getByTestId(
     `competitor-monitor-signal-${RANK_SIGNAL_ID}`,
   );
@@ -429,47 +447,45 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     monitor.getByRole("link", { name: /进入执行中心/ }),
   ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/execution`);
 
+  // The drawer's scrim covers the ledger, so close it before switching rows,
+  // then reopen it for B from B's own row arrow.
+  await closeCompetitorDrawer(page);
   await competitorButton(page, "BeaconPath").click();
   await expect(page).toHaveURL(
     new RegExp(`selectedCompetitorId=${COMPETITOR_B_ID}`),
   );
-  await expect(monitor).toHaveAttribute(
-    "data-competitor-id",
-    COMPETITOR_B_ID,
-  );
+  await rowArrowButton(page, "beaconpath.com").click();
+  await expect(drawer).toBeVisible();
+  await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_B_ID);
   await expect(monitor.getByTestId("competitor-monitor-status")).toHaveText(
     "基线已建立",
   );
-  await expect(monitor).toContainText(
-    "首次真实采集只用于建立基线",
-  );
+  await expect(monitor).toContainText("首次真实采集只用于建立基线");
   await expect(monitor).not.toContainText("customer onboarding automation");
   await expect(monitor).not.toContainText("atlasflow.com/guides");
 
+  await closeCompetitorDrawer(page);
   await competitorButton(page, "AtlasFlow").click();
   await expect(page).toHaveURL(
     new RegExp(`selectedCompetitorId=${COMPETITOR_A_ID}`),
   );
-  await expect(monitor).toHaveAttribute(
-    "data-competitor-id",
-    COMPETITOR_A_ID,
-  );
+  // Reopen the drawer through the second entry point: the detail panel's
+  // "查看完整档案" action.
+  await page.getByRole("button", { name: "查看完整档案" }).click();
+  await expect(drawer).toBeVisible();
+  await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_A_ID);
   await expect(monitor).toContainText("customer onboarding automation");
   await expect(monitor).not.toContainText("首次采集仅建立 baseline");
 
   // The current Competitor Library is live review authority, rather than the
   // frozen published diagnosis projection. Returning to A therefore performs
   // a fresh authority read instead of reusing the earlier published detail.
-  await expect.poll(() => api.detailReads).toEqual([
-    COMPETITOR_A_ID,
-    COMPETITOR_B_ID,
-    COMPETITOR_A_ID,
-  ]);
+  await expect
+    .poll(() => api.detailReads)
+    .toEqual([COMPETITOR_A_ID, COMPETITOR_B_ID, COMPETITOR_A_ID]);
 
   await monitor.getByRole("link", { name: /进入执行中心/ }).click();
-  await expect(page).toHaveURL(
-    new RegExp(`/p/${E2E_PROJECT_ID}/execution`),
-  );
+  await expect(page).toHaveURL(new RegExp(`/p/${E2E_PROJECT_ID}/execution`));
 });
 
 test("updates the only supported monthly cadence with CAS and keeps conflicts explicit", async ({
@@ -480,6 +496,10 @@ test("updates the only supported monthly cadence with CAS and keeps conflicts ex
     `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
   );
 
+  // The monitor settings moved into the full-profile drawer with the rest of
+  // CompetitorMonitorSection; open it before exercising CAS.
+  await rowArrowButton(page, "atlasflow.com").click();
+  await expect(competitorDrawer(page)).toBeVisible();
   const monitor = page.getByTestId("competitor-monitor");
   await expect(monitor).toContainText("更新频率");
   await expect(monitor).toContainText("每月一次");

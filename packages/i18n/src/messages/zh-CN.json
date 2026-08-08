@@ -2003,7 +2003,6 @@
       "libraryScopeLabel": "Competitor Library 概览",
       "libraryScopeTitle": "已入库竞品及其来源",
       "libraryScopeDescription": "查看审核状态、来源和最近更新时间。暂无数据时会明确提示。",
-      "loadedOnPage": "本页竞品",
       "originOccurrencesOnPage": "本页来源记录",
       "originOccurrencesForCompetitor": "该竞品的来源记录",
       "coverageLabel": "数据覆盖",
@@ -2014,21 +2013,19 @@
       "visibleCount": "当前已加载 {total} 个竞品，筛选后显示 {visible} 个",
       "discoveryPathLabel": "发现路径",
       "discoveryPathTitle": "先建立大的竞品池，再由客户确认分析范围",
-      "discoveryPathDescription": "候选竞品不会自动进入关键词缺口分析；只有审核通过且分析范围允许的记录才参与正式比较。当前卡片只统计已加载范围。",
-      "discoveryCount": "此路径下有 {count} 个竞品",
+      "discoveryPathDescription": "候选竞品不会自动进入关键词缺口分析；只有审核通过且范围允许的域名才参与正式比较。",
+      "discoveryCount": "{count} 个域名",
       "discoverySource": {
-        "all": "全部发现路径",
-        "product_profile": "Product Profile",
-        "serp_overlap": "SERP overlap",
-        "ai_citation": "AI citation",
-        "csv_manual": "CSV 或人工导入"
+        "customer_input": "客户与销售输入",
+        "serp_duplicate": "搜索结果中的重复域名",
+        "ai_co_citation": "AI 共同引用",
+        "approved_corpus": "已批准语料库"
       },
       "searchLabel": "搜索竞品",
-      "searchPlaceholder": "搜索竞品名称或域名",
-      "statusFilterLabel": "状态筛选",
+      "searchPlaceholder": "搜索公司或域名",
+      "statusFilterLabel": "状态",
       "statusFilterAll": "全部状态",
       "addCompetitor": "添加竞品",
-      "addCompetitorHint": "竞品入库从产品画像或数据源开始。",
       "paginationLabel": "Competitor Library 翻页",
       "previousPage": "上一页",
       "nextPage": "下一页",
@@ -2036,15 +2033,24 @@
       "cursorPageEmptyDescription": "这个分页位置没有记录，可返回第一页继续查看。",
       "firstPage": "返回第一页",
       "columns": {
-        "competitor": "竞品 / 域名",
-        "governance": "审核状态 / 关系",
-        "serpOverlap": "SERP 重叠",
-        "evidence": "证据",
-        "aiCitations": "AI 引用",
-        "lastObserved": "最近观测",
+        "competitor": "竞品",
+        "relationship": "关系",
         "analysisScope": "分析范围",
-        "origins": "真实来源 / 观测时间"
+        "organicOverlap": "自然搜索重叠度",
+        "sharedKeywords": "共同关键词",
+        "aiCitations": "AI 引用",
+        "status": "状态"
       },
+      "fallback": {
+        "insufficientData": "数据不足",
+        "collecting": "采集中",
+        "unavailable": "不可用"
+      },
+      "sharedKeywords": {
+        "pendingHint": "已记录搜索结果竞品来源，共同关键词计数尚未派生为正式指标。",
+        "noDataHint": "尚无搜索结果采集来源覆盖该域名。"
+      },
+      "openFullProfile": "打开竞品完整详情",
       "noMatchesTitle": "没有匹配的竞品",
       "noMatchesDescription": "请尝试其他名称、域名或审核状态。这里仅显示当前已加载到的精确记录。",
       "reviewStatus": {
@@ -2080,23 +2086,51 @@
       "selectedCompetitor": "所选竞品",
       "selectCompetitorTitle": "选择一个竞品",
       "selectCompetitorDescription": "从列表选择一个竞品，查看审核状态、数据和来源记录。",
-      "poolEntryTitle": "为什么这个竞品会进入竞品池",
-      "poolEntryDescription": "这里会说明它从哪条发现路径进入、是哪类证据引入的，以及是否正在参与关键词差距分析。",
-      "summary": {
-        "label": "竞品摘要",
-        "approved": "已确认竞品",
-        "candidates": "待审核候选",
-        "keywordGapParticipants": "关键词差距参与项",
-        "monitored": "月度监控竞品"
+      "detailEyebrow": "竞品档案",
+      "poolEntry": {
+        "title": "为什么进入竞品池",
+        "reasonCustomer": "客户与市场信号共同确认该域名与当前采购场景有关。",
+        "reasonCollection": "该域名来自搜索结果与语料采集；外部差距指标将在下一次数据更新后生成。",
+        "reasonMetrics": "该域名因 {overlap}% 自然搜索重叠度进入竞品池。"
       },
+      "metrics": {
+        "organicOverlap": "自然搜索重叠度",
+        "sharedKeywords": "共同关键词",
+        "aiCitations": "AI 引用",
+        "evidence": "证据"
+      },
+      "facts": {
+        "relationship": "竞争关系",
+        "analysisScope": "分析范围",
+        "keywordGap": "关键词缺口",
+        "systemEvidence": "系统证据"
+      },
+      "systemEvidenceCount": "{count} 条内置溯源证据",
       "keywordGapParticipationLabel": "关键词差距参与状态",
       "keywordGapParticipation": {
-        "participating": "正在参与",
-        "not_participating": "未参与",
-        "unknown": "参与状态未知"
+        "participating": "已纳入正式分析",
+        "awaiting_confirmation": "等待客户确认",
+        "not_participating": "不参与"
       },
       "openProductProfile": "查看产品画像",
-      "reviewScope": "审核分析范围",
+      "viewFullProfile": "查看完整档案",
+      "reviewScopeCandidate": "审核竞品范围",
+      "reviewScopeApproved": "调整分析范围",
+      "drawer": {
+        "scopeSection": "当前分析范围",
+        "discoverySection": "为什么被发现",
+        "monitorSection": "动态监控",
+        "reviewStatus": "审核状态",
+        "keywordGapImpact": "对关键词缺口的影响",
+        "impact": {
+          "approved": "已纳入",
+          "candidate": "等待确认",
+          "excluded": "不参与"
+        },
+        "badgeManual": "人工确认",
+        "badgeSnapshot": "场景快照",
+        "close": "关闭"
+      },
       "governanceEyebrow": "审核信息",
       "governanceTitle": "审核状态与分析范围",
       "governanceDescription": "候选和已排除记录会标明状态；已确认记录还会显示竞品关系和分析范围。",
@@ -2145,10 +2179,9 @@
       "competitorId": "竞品 ID（Competitor）",
       "revision": "记录版本",
       "review": {
-        "open": "审核竞品",
         "saved": "审核已保存，待下次分析刷新",
         "eyebrow": "Competitor Library 审核",
-        "title": "审核 {competitor}",
+        "title": "确认竞品范围",
         "description": "确认候选竞品的名称、关系与分析用途。这里保存的是当前审核状态；客户交付视图会在下次分析刷新后按同一诊断版本更新。",
         "close": "关闭竞品审核",
         "loading": "正在读取最新审核状态…",
@@ -2161,15 +2194,17 @@
         "field": {
           "name": "竞品名称",
           "nameHelp": "选填；留空时界面使用规范域名。",
-          "status": "审核状态",
           "relationship": "竞品关系",
           "analysisScope": "分析范围（至少选择一项）"
         },
-        "status": {
-          "candidate": "保留为候选",
-          "approved": "确认纳入分析",
+        "decisionLabel": "审核决定",
+        "decision": {
+          "approved": "确认并纳入分析",
+          "candidate": "保留为候选竞品",
           "excluded": "排除"
         },
+        "impactTitle": "这个决定会影响",
+        "impactBody": "关键词缺口、内容对比、AI 引用基准和对比页面证据。",
         "relationship": {
           "direct": "直接竞品",
           "indirect": "间接竞品",
@@ -2195,7 +2230,14 @@
         "revision": "当前审核版本 {revision}",
         "cancel": "取消",
         "saving": "正在保存…",
-        "save": "保存审核"
+        "submit": "确认并记录",
+        "successTitle": "审核决定已记录",
+        "success": {
+          "approved": "已确认并纳入分析；参与范围：{scopes}。",
+          "excluded": "已从分析范围排除，历史证据仍保留。",
+          "candidate": "继续保留为竞品候选，不参与正式差距计算。"
+        },
+        "done": "完成"
       },
       "monitor": {
         "eyebrow": "月度动态",

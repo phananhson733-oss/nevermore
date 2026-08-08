@@ -75,13 +75,11 @@ const INTERNAL_LINK_NEIGHBOR_EDGE_LIMIT = 20;
 const INTERNAL_LINK_INBOUND_SOURCE_LIMIT = 8;
 const INTERNAL_LINK_RECOMMENDATION_LIMIT = 8;
 
-export interface InternalLinkExecutionReference
-  extends InternalLinkMapExecutionRef {
+export interface InternalLinkExecutionReference extends InternalLinkMapExecutionRef {
   readonly role: "target" | "source";
 }
 
-export interface InternalLinkRecommendationProjection
-  extends InternalLinkRecommendation {
+export interface InternalLinkRecommendationProjection extends InternalLinkRecommendation {
   readonly executionRefs: readonly InternalLinkExecutionReference[];
 }
 
@@ -321,9 +319,7 @@ function growthMapOpportunityTargetPages(
   portfolio: readonly GrowthMapUrlPortfolioItem[],
 ): readonly GrowthMapUrlPortfolioItem[] {
   const primaryFindingId =
-    opportunity.readiness === "candidate"
-      ? null
-      : opportunity.primaryFindingId;
+    opportunity.readiness === "candidate" ? null : opportunity.primaryFindingId;
   const ownedAsset = opportunity.currentOwnedAsset;
   return portfolio.filter(
     (page) =>
@@ -515,9 +511,11 @@ function includesNormalizedText(
   value: string | null | undefined,
   search: string,
 ): boolean {
-  return value !== null &&
+  return (
+    value !== null &&
     value !== undefined &&
-    normalizeFilterText(value).includes(search);
+    normalizeFilterText(value).includes(search)
+  );
 }
 
 export function filterGrowthMapUrlItems(
@@ -635,10 +633,7 @@ export function buildKeywordRelationPageProjection(
     }
   }
   const itemIds = new Set(items.map((item) => item.keywordId));
-  const relationsByKeywordId = new Map<
-    string,
-    GrowthMapKeywordRelation[]
-  >();
+  const relationsByKeywordId = new Map<string, GrowthMapKeywordRelation[]>();
   const supportingByPrimaryId = new Map<
     string,
     KeywordRelationSupportingKeyword[]
@@ -674,37 +669,27 @@ export function buildKeywordRelationPageProjection(
       relation,
       relation.supportingKeywordId,
     );
-    const primary = relationParticipant(
-      relation,
-      relation.primaryKeywordId,
-    );
+    const primary = relationParticipant(relation, relation.primaryKeywordId);
     if (supporting === null || primary === null) continue;
 
     const supportingRows =
       supportingByPrimaryId.get(relation.primaryKeywordId) ?? [];
     if (
-      !supportingRows.some(
-        (item) => item.relationId === relation.relationId,
-      )
+      !supportingRows.some((item) => item.relationId === relation.relationId)
     ) {
       supportingRows.push({
         relationId: relation.relationId,
         keywordId: supporting.keywordId,
         displayKeyword: supporting.displayKeyword,
       });
-      supportingByPrimaryId.set(
-        relation.primaryKeywordId,
-        supportingRows,
-      );
+      supportingByPrimaryId.set(relation.primaryKeywordId, supportingRows);
     }
 
     if (
       itemIds.has(relation.primaryKeywordId) &&
       itemIds.has(relation.supportingKeywordId)
     ) {
-      collapsedSupportingKeywordIds.add(
-        relation.supportingKeywordId,
-      );
+      collapsedSupportingKeywordIds.add(relation.supportingKeywordId);
     } else if (
       itemIds.has(relation.supportingKeywordId) &&
       !itemIds.has(relation.primaryKeywordId)
@@ -719,21 +704,15 @@ export function buildKeywordRelationPageProjection(
 
   return {
     visibleItems: items
-      .filter(
-        (item) =>
-          !collapsedSupportingKeywordIds.has(item.keywordId),
-      )
+      .filter((item) => !collapsedSupportingKeywordIds.has(item.keywordId))
       .map((item) => ({
         item,
         relations: relationsByKeywordId.get(item.keywordId) ?? [],
-        supportingKeywords:
-          supportingByPrimaryId.get(item.keywordId) ?? [],
+        supportingKeywords: supportingByPrimaryId.get(item.keywordId) ?? [],
         offPagePrimary:
           offPagePrimaryBySupportingId.get(item.keywordId) ?? null,
       })),
-    collapsedSupportingKeywordIds: [
-      ...collapsedSupportingKeywordIds,
-    ],
+    collapsedSupportingKeywordIds: [...collapsedSupportingKeywordIds],
     loadedSourceCounts,
     relationsByKeywordId,
   };
@@ -751,10 +730,7 @@ export function buildKeywordRelationDecisionCommand(
   reason: string,
 ): DecideKeywordRelationRequest | null {
   const normalizedReason = reason.trim();
-  if (
-    normalizedReason.length < 3 ||
-    relation.candidateState !== "current"
-  ) {
+  if (normalizedReason.length < 3 || relation.candidateState !== "current") {
     return null;
   }
   if (decisionKind !== "primary_supporting") {
@@ -778,8 +754,7 @@ export function buildKeywordRelationDecisionCommand(
     candidateId: relation.candidate.candidateId,
     decisionKind,
     primaryKeywordId,
-    supportingKeywordId:
-      primaryKeywordId === keywordA ? keywordB : keywordA,
+    supportingKeywordId: primaryKeywordId === keywordA ? keywordB : keywordA,
     reason: normalizedReason,
   };
 }
@@ -841,16 +816,14 @@ export function buildTopicMapProjection(
   );
   const successorById = new Map<string, string[]>();
   for (const relationship of structure?.successorRelationships ?? []) {
-    const successors =
-      successorById.get(relationship.sourceTopicNodeId) ?? [];
+    const successors = successorById.get(relationship.sourceTopicNodeId) ?? [];
     successors.push(relationship.successorTopicNodeId);
     successorById.set(relationship.sourceTopicNodeId, successors);
   }
   const childrenByParentId = new Map<string | null, TopicNodeRevision[]>();
   for (const node of activeNodes) {
     const parentId =
-      node.parentTopicNodeId !== null &&
-      activeIds.has(node.parentTopicNodeId)
+      node.parentTopicNodeId !== null && activeIds.has(node.parentTopicNodeId)
         ? node.parentTopicNodeId
         : null;
     const siblings = childrenByParentId.get(parentId) ?? [];
@@ -864,8 +837,8 @@ export function buildTopicMapProjection(
     node,
     depth,
     insight: insightById.get(node.topicNodeId) ?? null,
-    children: (childrenByParentId.get(node.topicNodeId) ?? []).map(
-      (child) => buildBranch(child, depth + 1),
+    children: (childrenByParentId.get(node.topicNodeId) ?? []).map((child) =>
+      buildBranch(child, depth + 1),
     ),
     successorNodeIds: successorById.get(node.topicNodeId) ?? [],
   });
@@ -1245,8 +1218,7 @@ export interface KeywordRankChartSeries {
   readonly polylinePoints: string | null;
 }
 
-export interface KeywordRankChartChangeMarker
-  extends GrowthMapKeywordContentChangeMarker {
+export interface KeywordRankChartChangeMarker extends GrowthMapKeywordContentChangeMarker {
   readonly x: number;
 }
 
@@ -1411,6 +1383,77 @@ export function competitorMonitorDisplayState(
   }
   if (item.evaluationState === "baseline") return "baseline";
   return item.limitation === null ? "available" : "partial";
+}
+
+export type CompetitorPoolEntryReason =
+  | "customer_confirmed"
+  | "collection_pending"
+  | "metrics";
+
+/**
+ * Why one Competitor entered the pool, in strict priority order. Any Product
+ * Profile or manual origin is a customer confirmation and always wins; without
+ * one, a missing canonical SERP-overlap observation means collection is still
+ * pending. The "metrics" branch is reserved for a future canonical
+ * SERP-overlap writer and is unreachable in Competitor Library v1.
+ */
+export function competitorPoolEntryReason(
+  item: Pick<
+    GrowthMapCompetitorLibraryItem,
+    "originOccurrences" | "serpOverlap"
+  >,
+): CompetitorPoolEntryReason {
+  const customerConfirmed = item.originOccurrences.some(
+    (origin) =>
+      origin.originKind === "product_profile" || origin.originKind === "manual",
+  );
+  if (customerConfirmed) return "customer_confirmed";
+  if (item.serpOverlap.availability !== "available") {
+    return "collection_pending";
+  }
+  return "metrics";
+}
+
+export type CompetitorKeywordGapParticipation =
+  | "participating"
+  | "awaiting_confirmation"
+  | "not_participating";
+
+/**
+ * The single Keyword-gap participation ruling shared by the Competitor detail
+ * panel and the full-profile drawer: only an approved review with an explicit
+ * keyword_gap scope participates, a candidate is awaiting the customer's
+ * confirmation, and everything else stays out of the formal comparison.
+ */
+export function competitorKeywordGapParticipation(
+  item: Pick<GrowthMapCompetitorLibraryItem, "reviewStatus" | "analysisScope">,
+): CompetitorKeywordGapParticipation {
+  if (
+    item.reviewStatus === "approved" &&
+    item.analysisScope.includes("keyword_gap")
+  ) {
+    return "participating";
+  }
+  if (item.reviewStatus === "candidate") return "awaiting_confirmation";
+  return "not_participating";
+}
+
+export type CompetitorSharedKeywordDisplay = "collecting" | "no_data";
+
+/**
+ * Shared-keyword counts have no canonical writer yet, so the cell may only
+ * claim "collecting" when a serp_overlap origin proves collection actually
+ * covers this domain; otherwise the honest state is "no data". A number is
+ * never invented here.
+ */
+export function competitorSharedKeywordDisplay(
+  item: Pick<GrowthMapCompetitorLibraryItem, "originOccurrences">,
+): CompetitorSharedKeywordDisplay {
+  return item.originOccurrences.some(
+    (origin) => origin.originKind === "serp_overlap",
+  )
+    ? "collecting"
+    : "no_data";
 }
 
 export type GrowthMapPlatformLimitationKey =
@@ -1756,7 +1799,8 @@ export function metricPresentation(
       limitation: observation.limitation,
     };
   }
-  if (observation.value === null) return { state: "unavailable", limitation: null };
+  if (observation.value === null)
+    return { state: "unavailable", limitation: null };
   return {
     state: "observed",
     value: observation.value,
@@ -1796,10 +1840,7 @@ export type GrowthMapReviewIntent =
   | { readonly reviewState: "ignored"; readonly reason: string }
   | { readonly reviewState: "needs_more_data"; readonly note: string };
 
-export type GrowthMapFindingReviewMode =
-  | "idle"
-  | "dismiss"
-  | "needs_more_data";
+export type GrowthMapFindingReviewMode = "idle" | "dismiss" | "needs_more_data";
 
 export type GrowthMapReviewProblemPresentation =
   | {
