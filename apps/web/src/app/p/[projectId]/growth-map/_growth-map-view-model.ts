@@ -1438,22 +1438,47 @@ export function competitorKeywordGapParticipation(
   return "not_participating";
 }
 
-export type CompetitorSharedKeywordDisplay = "collecting" | "no_data";
+export type CompetitorSharedKeywordDisplay =
+  | {
+      readonly state: "counted";
+      readonly value: number;
+      readonly limitation: string | null;
+    }
+  | {
+      readonly state: "collecting" | "no_data";
+      readonly limitation: string;
+    };
 
 /**
- * Shared-keyword counts have no canonical writer yet, so the cell may only
- * claim "collecting" when a serp_overlap origin proves collection actually
- * covers this domain; otherwise the honest state is "no data". A number is
- * never invented here.
+ * The shared-keyword cell shows a count only when the API marks that insight
+ * available, and then it is the canonical observed count carried by the
+ * contract — never derived here. An unavailable insight keeps the API's own
+ * limitation and only distinguishes whether a serp_overlap origin already
+ * covers this domain ("collecting") or nothing does ("no data"); 0 is never
+ * borrowed for a missing observation.
  */
 export function competitorSharedKeywordDisplay(
-  item: Pick<GrowthMapCompetitorLibraryItem, "originOccurrences">,
+  item: Pick<
+    GrowthMapCompetitorLibraryItem,
+    "originOccurrences" | "sharedKeywordInsight"
+  >,
 ): CompetitorSharedKeywordDisplay {
-  return item.originOccurrences.some(
-    (origin) => origin.originKind === "serp_overlap",
-  )
-    ? "collecting"
-    : "no_data";
+  const insight = item.sharedKeywordInsight;
+  if (insight.availability === "available") {
+    return {
+      state: "counted",
+      value: insight.value,
+      limitation: insight.limitation,
+    };
+  }
+  return {
+    state: item.originOccurrences.some(
+      (origin) => origin.originKind === "serp_overlap",
+    )
+      ? "collecting"
+      : "no_data",
+    limitation: insight.limitation,
+  };
 }
 
 export type GrowthMapPlatformLimitationKey =
