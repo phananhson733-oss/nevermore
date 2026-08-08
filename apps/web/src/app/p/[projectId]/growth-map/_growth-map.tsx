@@ -2407,9 +2407,11 @@ function OpportunityLedger({
 function OpportunityInlineReview({
   projectId,
   opportunity,
+  onReviewed,
 }: {
   readonly projectId: string;
   readonly opportunity: Extract<GrowthOpportunity, { readiness: "reviewable" }>;
+  readonly onReviewed: () => void;
 }) {
   const t = useTranslations("growthMap");
   const tCommon = useTranslations("common");
@@ -2443,6 +2445,10 @@ function OpportunityInlineReview({
       });
       setMode("idle");
       setText("");
+      // Pin the reviewed Opportunity before the refetched projection re-ranks
+      // it: without this the rail silently jumps to the next near-identical
+      // row and a successful decision reads as "nothing happened".
+      onReviewed();
       await refreshOpportunities();
       setSaved(true);
     } catch (err) {
@@ -2587,10 +2593,12 @@ function OpportunityDetailPanel({
   projectId,
   item,
   onOpenUrl,
+  onPinSelection,
 }: {
   readonly projectId: string;
   readonly item: GrowthMapOpportunityViewItem;
   readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
+  readonly onPinSelection: (id: string) => void;
 }) {
   const t = useTranslations("growthMap.pageViews");
   const tRoot = useTranslations("growthMap");
@@ -2846,6 +2854,7 @@ function OpportunityDetailPanel({
           <OpportunityInlineReview
             projectId={projectId}
             opportunity={opportunity}
+            onReviewed={() => onPinSelection(item.id)}
           />
         ) : firstTarget === null ? null : (
           <Button
@@ -2878,6 +2887,7 @@ function OpportunityPageView({
   selectedFindingId,
   onSelect,
   onRepairSelection,
+  onPinSelection,
   onOpenUrl,
   onCloseUrl,
 }: {
@@ -2892,6 +2902,7 @@ function OpportunityPageView({
   readonly selectedFindingId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onRepairSelection: (id: string | null) => void;
+  readonly onPinSelection: (id: string) => void;
   readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
   readonly onCloseUrl: () => void;
 }) {
@@ -3004,6 +3015,7 @@ function OpportunityPageView({
           projectId={projectId}
           item={selected}
           onOpenUrl={onOpenUrl}
+          onPinSelection={onPinSelection}
         />
       )}
     </div>
@@ -3421,6 +3433,7 @@ function PortfolioPane({
           selectedFindingId={selectedFindingId}
           onSelect={selectOpportunity}
           onRepairSelection={repairOpportunitySelection}
+          onPinSelection={repairOpportunitySelection}
           onOpenUrl={openUrlFromOpportunity}
           onCloseUrl={closeUrlDetail}
         />
