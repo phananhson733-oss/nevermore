@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { MAX_KEYWORD_OCCURRENCE_PAGE_SIZE } from "./keyword-occurrences.ts";
+import { encodeNumericTimestampUuidCursor } from "./cursor.ts";
 import {
   MAX_FROZEN_KEYWORD_ENTITY_BATCH,
   KeywordsRepository,
@@ -133,9 +134,18 @@ const entity = {
 } as const satisfies KeywordEntityRow;
 
 describe("KeywordsRepository", () => {
-  it("lists active-project entities by a bounded stable cursor", async () => {
+  it("lists the customer library ordered by newest canonical search volume", async () => {
     const db = new FakeExecutor();
-    db.enqueue([entity, { ...entity, id: "00000000-0000-4000-8000-000000000011" }]);
+    db.enqueueExecute({
+      rows: [
+        { ...entity, sort_volume_text: "2400" },
+        {
+          ...entity,
+          id: "00000000-0000-4000-8000-000000000011",
+          sort_volume_text: null,
+        },
+      ],
+    });
     const repo = new KeywordsRepository(db as never);
 
     const page = await repo.listByProject(scope, {
@@ -144,19 +154,70 @@ describe("KeywordsRepository", () => {
       status: "candidate",
       queryKind: "search_query",
       market: "US",
+      sourceKind: "csv_import",
     });
 
     expect(page.rows).toEqual([entity]);
     expect(page.nextCursor).toEqual(expect.any(String));
-    const predicate = new PgDialect().sqlToQuery(
-      db.last("where").args[0] as never,
+    const query = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
     );
-    expect(predicate.sql).toContain('"workspace_id" = $1');
-    expect(predicate.sql).toContain('"project_id" = $2');
-    expect(predicate.sql).toContain('"archived_at" is null');
-    expect(predicate.params).toContain("candidate");
-    expect(predicate.params).toContain("search_query");
-    expect(predicate.params).toContain("US");
+    expect(query.sql).toContain("order by ranked.sort_volume desc nulls last");
+    expect(query.sql).toContain("value_json ? \'searchVolume\'");
+    expect(query.sql).toContain("when jsonb_typeof");
+    expect(query.sql).toContain(
+      "source_kind in (\'csv_import\', \'dataforseo_ranked\')",
+    );
+    expect(query.sql).toContain("project.archived_at is null");
+    expect(query.sql).toContain("created_at::text");
+    expect(query.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        "candidate",
+        "search_query",
+        "US",
+        "csv_import",
+      ]),
+    );
+  });
+
+  it("resumes the value-ordered keyset from an exact opaque cursor", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({ rows: [{ ...entity, sort_volume_text: null }] });
+    const repo = new KeywordsRepository(db as never);
+    const cursor = encodeNumericTimestampUuidCursor(
+      "2400",
+      "2026-07-22T08:00:00.000Z",
+      entity.id,
+    );
+
+    const page = await repo.listByProject(scope, { limit: 5, cursor });
+
+    expect(page.rows).toEqual([entity]);
+    expect(page.nextCursor).toBeNull();
+    const query = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(query.sql).toContain("ranked.sort_volume < ");
+    expect(query.sql).toContain("ranked.sort_volume is null");
+    expect(query.params).toEqual(
+      expect.arrayContaining(["2400", "2026-07-22T08:00:00.000Z", entity.id]),
+    );
+  });
+
+  it("returns an empty page for a cursor in the retired intake-time language", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordsRepository(db as never);
+    const legacyCursor = Buffer.from(
+      `2026-07-22T08:00:00.000Z ${entity.id}`,
+      "utf8",
+    ).toString("base64url");
+
+    await expect(
+      repo.listByProject(scope, { limit: 5, cursor: legacyCursor }),
+    ).resolves.toEqual({ rows: [], nextCursor: null });
+    expect(db.calls).toEqual([]);
   });
 
   it("reads only approved, confirmed, clustered diagnostic facts with one sentinel", async () => {

@@ -63,7 +63,10 @@ import {
   loadPublishedGrowthMapGeneration,
   type PublishedGrowthMapGeneration,
 } from "./growth-map-generation";
-import { assertValidTimestampUuidListCursor } from "./list-cursor";
+import {
+  assertValidKeywordLibraryLiveListCursor,
+  assertValidTimestampUuidListCursor,
+} from "./list-cursor";
 import { isStale } from "./source-mappers";
 
 const { collectionRuns, dataSnapshots, keywordOccurrences, normalizedObservations } =
@@ -2277,7 +2280,6 @@ export async function listProjectAuditKeywords(
   options: GrowthMapKeywordListOptions,
   exec?: Executor,
 ): Promise<ReturnType<typeof GrowthMapKeywordLibraryResponse.parse>> {
-  assertValidTimestampUuidListCursor(options.cursor);
   if (
     !Number.isSafeInteger(options.limit) ||
     options.limit < 1 ||
@@ -2304,6 +2306,14 @@ export async function listProjectAuditKeywords(
     throw new RangeError(
       "sourceKind is only supported for the live Keyword Library read",
     );
+  }
+  // The live library pages over the value-ordered keyset; frozen and legacy
+  // reads keep the original intake-time keyset, so each path validates the
+  // cursor language it actually binds.
+  if (diagnosticRunId === null && !useLegacyLatestPublishedRead) {
+    assertValidKeywordLibraryLiveListCursor(options.cursor);
+  } else {
+    assertValidTimestampUuidListCursor(options.cursor);
   }
   const read = (selected: Executor) =>
     diagnosticRunId === null && !useLegacyLatestPublishedRead
