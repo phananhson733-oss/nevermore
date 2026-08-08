@@ -207,6 +207,34 @@ async function completeContext(
   projectId: string,
   definition: VerticalDefinition,
 ): Promise<void> {
+  // Next development mode lazily compiles this API route. In CI, its first
+  // request can overlap a manifest write and briefly return an unparseable 500
+  // before the route is stable. Warm only this idempotent read boundary; the
+  // real read and PATCH below still fail immediately on any product error.
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(
+          `/api/mvp/projects/${projectId}/context`,
+        );
+        if (!response.ok()) return false;
+        try {
+          const body = (await response.json()) as DataEnvelope<{
+            readonly version: number;
+          }>;
+          return Number.isInteger(body.data.version);
+        } catch {
+          return false;
+        }
+      },
+      {
+        message: "context API route did not finish compiling",
+        timeout: 30_000,
+        intervals: [200, 400, 800, 1_000],
+      },
+    )
+    .toBe(true);
+
   const current = await responseJson<
     DataEnvelope<{ readonly version: number }>
   >(
@@ -680,6 +708,55 @@ async function readCompetitorLibrary(
   return GrowthMapCompetitorLibraryResponse.parse(envelope.data);
 }
 
+async function warmJsonReadRoute(
+  request: APIRequestContext,
+  path: string,
+): Promise<void> {
+  const response = await request.get(path, {
+    headers: { cookie: "sf_ui_locale=en" },
+  });
+  expect(response.ok(), `${path} failed on its first read`).toBe(true);
+  await expect(
+    response.json(),
+    `${path} did not return JSON on its first read`,
+  ).resolves.toBeDefined();
+}
+
+async function warmGrowthMapDetailRoutes(input: {
+  readonly request: APIRequestContext;
+  readonly projectId: string;
+  readonly keywordIds: readonly string[];
+  readonly selectedKeywordId: string;
+  readonly selectedCompetitorId: string;
+  readonly initialSitePageId: string;
+}): Promise<void> {
+  const {
+    request,
+    projectId,
+    keywordIds,
+    selectedKeywordId,
+    selectedCompetitorId,
+    initialSitePageId,
+  } = input;
+  const prefix = `/api/mvp/projects/${projectId}/audit`;
+  const relationParams = new URLSearchParams({ limit: "100" });
+  for (const keywordId of keywordIds) {
+    relationParams.append("keywordId", keywordId);
+  }
+  const paths = [
+    `${prefix}/topic-model`,
+    `${prefix}/topic-model/insights`,
+    `${prefix}/urls?limit=100`,
+    `${prefix}/internal-link-map?sitePageId=${encodeURIComponent(initialSitePageId)}`,
+    `${prefix}/keywords/${selectedKeywordId}?view=review`,
+    `${prefix}/keywords/${selectedKeywordId}/rank-history`,
+    `${prefix}/keyword-relations?${relationParams.toString()}`,
+    `${prefix}/competitors/${selectedCompetitorId}?view=review`,
+    `${prefix}/competitor-monitor`,
+  ];
+  for (const path of paths) await warmJsonReadRoute(request, path);
+}
+
 async function assertKeywordLibraryTraceability(input: {
   readonly page: Page;
   readonly item: GrowthMapKeywordLibraryItem;
@@ -805,7 +882,9 @@ async function assertCompetitorLibraryTraceability(input: {
   const discoveryPath = page
     .getByTestId("competitor-library-provenance")
     .getByRole("region", { name: "Discovery path" });
-  await expect(discoveryPath).toBeVisible();
+  await expect(discoveryPath).toBeVisible({
+    timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+  });
 
   const competitorSearch = page.getByRole("searchbox", {
     name: "Search Competitors",
@@ -1288,9 +1367,25 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     const pageB = portfolio.data.find(
       (item) => item.normalizedUrl === `${definition.siteUrl}/gone`,
     );
-    if (!pageA || !pageB) {
+    const initialPortfolioPage = portfolio.data[0];
+    if (!pageA || !pageB || !initialPortfolioPage) {
       throw new Error("real Growth Map portfolio lost /product or /gone");
     }
+    // Next development mode compiles these dynamic API routes lazily. Read
+    // each route exactly once, serially, before measuring browser navigation
+    // so an HMR refresh from compilation cannot be mistaken for an
+    // interaction-driven RSC request. Any first-read HTTP or JSON failure is a
+    // real test failure; the browser then exercises the same reads below.
+    await warmGrowthMapDetailRoutes({
+      request,
+      projectId,
+      keywordIds: keywordLibrary.data.map((item) => item.keywordId),
+      selectedKeywordId: keyword.keywordId,
+      selectedCompetitorId: competitor.competitorId,
+      // The UI applies the first visible portfolio ID when the URL carries no
+      // explicit selection, so compile the exact first-render detail route.
+      initialSitePageId: initialPortfolioPage.sitePageId,
+    });
     const [detailA, detailB] = await Promise.all([
       readDetail(request, projectId, pageA.sitePageId),
       readDetail(request, projectId, pageB.sitePageId),
