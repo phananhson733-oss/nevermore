@@ -588,12 +588,13 @@ function checkOpenApi() {
       "#/components/parameters/Limit",
       "#/components/parameters/Cursor",
       "#/components/parameters/DiagnosticRunIdPin",
+      "#/components/parameters/KeywordSourceKindFilter",
     ],
-    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId",
+    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId/sourceKind",
   );
   invariant(
     keywordListParameterRefs.every((reference) => typeof reference === "string"),
-    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId",
+    "Growth Map Keyword list query must be exactly limit/cursor/diagnosticRunId/sourceKind",
   );
   assertExactSet(
     (keywordDetail.parameters ?? []).map((parameter) => parameter.$ref),
@@ -871,7 +872,7 @@ function checkOpenApi() {
   );
   assertExactSet(
     Object.keys(keywordPageMeta?.properties ?? {}),
-    ["limit", "nextCursor", "hasNext", "coverage"],
+    ["limit", "nextCursor", "hasNext", "coverage", "sourceCounts"],
     "Growth Map Keyword cursor page metadata fields",
   );
   assertExactSet(

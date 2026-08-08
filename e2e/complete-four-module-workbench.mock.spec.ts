@@ -971,6 +971,7 @@ async function installArtifactApi(page: Page): Promise<void> {
               "关键词指标按各自真实来源呈现，VOC 不会补成搜索量或排名。",
             ],
           },
+          sourceCounts: null,
         },
       }),
     });

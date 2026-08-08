@@ -157,6 +157,7 @@ async function fulfillJson(page: Page): Promise<void> {
               nextCursor: null,
               hasNext: false,
               coverage: { availability: "available", limitations: [] },
+              sourceCounts: null,
             },
           },
         }),

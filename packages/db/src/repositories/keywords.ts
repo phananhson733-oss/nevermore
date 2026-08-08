@@ -69,7 +69,20 @@ export interface KeywordEntityListOptions {
   readonly status?: KeywordStatus | null;
   readonly queryKind?: KeywordQueryKind | null;
   readonly market?: string | null;
+  /** Keep only entities holding at least one occurrence of this source. */
+  readonly sourceKind?: string | null;
 }
+
+export interface KeywordSourceCounts {
+  readonly all: number;
+  readonly csv_import: number;
+  readonly dataforseo_ranked: number;
+  readonly gsc_top_query: number;
+  readonly interview_summary: number;
+  readonly user_review: number;
+  readonly manual: number;
+}
+
 
 export interface FrozenKeywordEntityListOptions {
   readonly limit: number;
@@ -557,6 +570,20 @@ export class KeywordsRepository extends Repository {
           options.market
             ? eq(keywordEntities.market, options.market)
             : undefined,
+          options.sourceKind
+            ? sql`exists (
+                select 1
+                from ${keywordEntitySources} filter_source
+                inner join ${keywordOccurrences} filter_occurrence
+                  on filter_occurrence.id = filter_source.keyword_occurrence_id
+                 and filter_occurrence.workspace_id = filter_source.workspace_id
+                 and filter_occurrence.project_id = filter_source.project_id
+                where filter_source.keyword_entity_id = ${keywordEntities.id}
+                  and filter_source.workspace_id = ${keywordEntities.workspace_id}
+                  and filter_source.project_id = ${keywordEntities.project_id}
+                  and filter_occurrence.source_kind = ${options.sourceKind}
+              )`
+            : undefined,
           after,
         ),
       )
@@ -571,6 +598,69 @@ export class KeywordsRepository extends Repository {
         hasNext && last
           ? encodeTimestampUuidCursor(last.created_at, last.id)
           : null,
+    };
+  }
+
+  /**
+   * Whole-library Keyword counts per intake source for one active project.
+   * Distinct entities per source kind; `all` is the unfiltered entity count,
+   * so the numbers stay meaningful regardless of any page-level filter.
+   */
+  async countBySourceKind(scope: ProjectScope): Promise<KeywordSourceCounts> {
+    const result = await this.exec.execute(sql`
+      with active_entities as (
+        select entity.id
+        from ${keywordEntities} entity
+        inner join ${clientProjects} project
+          on project.id = entity.project_id
+         and project.workspace_id = entity.workspace_id
+        where entity.project_id = ${scope.projectId}::uuid
+          and entity.workspace_id = ${scope.workspaceId}::uuid
+          and project.archived_at is null
+      ),
+      by_kind as (
+        select
+          occurrence.source_kind,
+          count(distinct source.keyword_entity_id)::int as keyword_count
+        from ${keywordEntitySources} source
+        inner join ${keywordOccurrences} occurrence
+          on occurrence.id = source.keyword_occurrence_id
+         and occurrence.workspace_id = source.workspace_id
+         and occurrence.project_id = source.project_id
+        inner join active_entities
+          on active_entities.id = source.keyword_entity_id
+        where source.project_id = ${scope.projectId}::uuid
+          and source.workspace_id = ${scope.workspaceId}::uuid
+        group by occurrence.source_kind
+      )
+      select
+        (select count(*)::int from active_entities) as all_count,
+        coalesce((select keyword_count from by_kind where source_kind = 'csv_import'), 0) as csv_import,
+        coalesce((select keyword_count from by_kind where source_kind = 'dataforseo_ranked'), 0) as dataforseo_ranked,
+        coalesce((select keyword_count from by_kind where source_kind = 'gsc_top_query'), 0) as gsc_top_query,
+        coalesce((select keyword_count from by_kind where source_kind = 'interview_summary'), 0) as interview_summary,
+        coalesce((select keyword_count from by_kind where source_kind = 'user_review'), 0) as user_review,
+        coalesce((select keyword_count from by_kind where source_kind = 'manual'), 0) as manual
+    `);
+    const row = (result.rows[0] ?? {}) as Record<string, unknown>;
+    const readCount = (key: string): number => {
+      const value = row[key];
+      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+        return value;
+      }
+      if (typeof value === "string" && /^[0-9]+$/.test(value)) {
+        return Number.parseInt(value, 10);
+      }
+      throw new RangeError(`Keyword source count ${key} is not a safe integer`);
+    };
+    return {
+      all: readCount("all_count"),
+      csv_import: readCount("csv_import"),
+      dataforseo_ranked: readCount("dataforseo_ranked"),
+      gsc_top_query: readCount("gsc_top_query"),
+      interview_summary: readCount("interview_summary"),
+      user_review: readCount("user_review"),
+      manual: readCount("manual"),
     };
   }
 

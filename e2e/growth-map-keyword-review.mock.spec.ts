@@ -388,6 +388,7 @@ async function installKeywordReviewApi(
             availability: "partial",
             limitations: ["部分关键词仍需客户审核。"],
           },
+          sourceCounts: null,
         },
       },
     });

@@ -387,7 +387,13 @@ export function verifyAuthoritySourceSet({
     ],
     [
       "listProjectAuditKeywords",
-      ["ProjectId", "Limit", "Cursor", "DiagnosticRunIdPin"],
+      [
+        "ProjectId",
+        "Limit",
+        "Cursor",
+        "DiagnosticRunIdPin",
+        "KeywordSourceKindFilter",
+      ],
     ],
     [
       "getProjectAuditKeyword",

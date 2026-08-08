@@ -59,7 +59,7 @@ describe("GET project Growth Map Keyword Library", () => {
     expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 25, cursor, diagnosticRunId: null },
+      { limit: 25, cursor, diagnosticRunId: null, sourceKind: null },
     );
     await expect(response.json()).resolves.toEqual({
       data: expect.objectContaining({ projectId, data: [] }),
@@ -73,8 +73,40 @@ describe("GET project Growth Map Keyword Library", () => {
     expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 50, cursor: null, diagnosticRunId: null },
+      { limit: 50, cursor: null, diagnosticRunId: null, sourceKind: null },
     );
+  });
+
+  it("passes a validated intake sourceKind for the live library read", async () => {
+    const response = await invoke("?sourceKind=dataforseo_ranked");
+
+    expect(response.status).toBe(200);
+    expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
+      { workspaceId: "00000000-0000-4000-8000-000000000002" },
+      projectId,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: null,
+        sourceKind: "dataforseo_ranked",
+      },
+    );
+  });
+
+  it("rejects unknown sourceKind values without reading", async () => {
+    const response = await invoke("?sourceKind=not_a_source");
+
+    expect(response.status).toBe(422);
+    expect(mocks.listProjectAuditKeywords).not.toHaveBeenCalled();
+  });
+
+  it("rejects sourceKind combined with a pinned generation", async () => {
+    const response = await invoke(
+      `?sourceKind=csv_import&diagnosticRunId=${diagnosticRunId}`,
+    );
+
+    expect(response.status).toBe(422);
+    expect(mocks.listProjectAuditKeywords).not.toHaveBeenCalled();
   });
 
   it("passes a strict lowercase diagnosticRunId pin when requested", async () => {
@@ -84,7 +116,7 @@ describe("GET project Growth Map Keyword Library", () => {
     expect(mocks.listProjectAuditKeywords).toHaveBeenCalledWith(
       { workspaceId: "00000000-0000-4000-8000-000000000002" },
       projectId,
-      { limit: 50, cursor: null, diagnosticRunId },
+      { limit: 50, cursor: null, diagnosticRunId, sourceKind: null },
     );
   });
 

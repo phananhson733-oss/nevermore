@@ -457,6 +457,15 @@ function keywordLibraryResponse() {
         availability: "partial",
         limitations: ["Only source-verified Keyword occurrences are returned."],
       },
+      sourceCounts: {
+        all: 1,
+        csv_import: 1,
+        dataforseo_ranked: 0,
+        gsc_top_query: 0,
+        interview_summary: 0,
+        user_review: 0,
+        manual: 0,
+      },
     },
   } as const;
 }
@@ -1292,7 +1301,7 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "keywords",
-      { cursor: "next+/=", limit: 25, diagnosticRunId: null },
+      { cursor: "next+/=", limit: 25, diagnosticRunId: null, sourceKind: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=25&cursor=next%2B%2F%3D`,
@@ -1316,7 +1325,7 @@ describe("Growth Map browser API boundary", () => {
       PROJECT_ID,
       UI_LOCALE,
       "keywords",
-      { cursor: null, limit: 50, diagnosticRunId: null },
+      { cursor: null, limit: 50, diagnosticRunId: null, sourceKind: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=50`,
@@ -1350,6 +1359,7 @@ describe("Growth Map browser API boundary", () => {
         cursor: null,
         limit: 50,
         diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+        sourceKind: null,
       },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(

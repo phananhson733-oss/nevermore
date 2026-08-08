@@ -7739,6 +7739,7 @@ function KeywordLibraryPane({
     cursor,
     limit: 50,
     diagnosticRunId,
+    sourceKind: sourceFilter === "all" ? null : sourceFilter,
   });
   const items = useMemo(
     () => listQuery.data?.data ?? [],
@@ -7768,11 +7769,15 @@ function KeywordLibraryPane({
   );
   const filteredEntries = useMemo(
     () =>
+      // The server already restricted the page by intake source, and its
+      // predicate scans the full occurrence ledger while item.sourceOccurrences
+      // is a truncated projection — re-filtering here would silently hide
+      // legitimately matched rows, so only the text search runs client-side.
       filterGrowthMapKeywordEntries(relationProjection.visibleItems, {
         search: keywordSearch,
-        sourceKind: sourceFilter,
+        sourceKind: "all",
       }),
-    [keywordSearch, relationProjection.visibleItems, sourceFilter],
+    [keywordSearch, relationProjection.visibleItems],
   );
   const visibleKeywordIds = useMemo(
     () =>
@@ -7824,6 +7829,15 @@ function KeywordLibraryPane({
   const runRelationRefresh = useCallback(() => {
     refreshRelations();
   }, [refreshRelations]);
+  // Changing the intake source changes the server-filtered cursor space, so
+  // every filter change restarts from the first page with no stale selection.
+  const changeSourceFilter = useCallback(
+    (next: GrowthMapKeywordSourceFilter): void => {
+      setSourceFilter(next);
+      navigation.request({ cursor: null, selectedKeywordId: null });
+    },
+    [navigation],
+  );
   const closeRelationDialog = useCallback(() => {
     setRelationDialogKeywordId(null);
   }, []);
@@ -7926,17 +7940,23 @@ function KeywordLibraryPane({
     );
   }
   const response = listQuery.data;
+  // Whole-library counts come from the live read; the loaded-page tallies
+  // remain the honest fallback whenever the meta block is absent.
+  const librarySourceCounts = response.meta.sourceCounts ?? null;
   const sourceStripItems: readonly SourceStripItem[] = [
     {
       key: "all",
       label: t("intake.all"),
-      count: relationProjection.loadedSourceCounts.all,
+      count:
+        librarySourceCounts?.all ?? relationProjection.loadedSourceCounts.all,
       tone: "mint",
     },
     ...GROWTH_MAP_KEYWORD_SOURCE_KINDS.map((sourceKind, index) => ({
       key: sourceKind,
       label: t(`sourceKind.${sourceKind}`),
-      count: relationProjection.loadedSourceCounts[sourceKind],
+      count:
+        librarySourceCounts?.[sourceKind] ??
+        relationProjection.loadedSourceCounts[sourceKind],
       tone: (["amber", "cobalt", "mint", "violet", "coral", "mint"] as const)[
         index
       ]!,
@@ -7966,10 +7986,41 @@ function KeywordLibraryPane({
         description={t("intake.description")}
         items={sourceStripItems}
         selectedKey={sourceFilter}
-        onSelect={(key) => setSourceFilter(key as GrowthMapKeywordSourceFilter)}
+        onSelect={(key) =>
+          changeSourceFilter(key as GrowthMapKeywordSourceFilter)
+        }
         countLabel={(count) => t("intake.count", { count })}
       />
-      {readState === "empty" ? (
+      {readState === "empty" && sourceFilter !== "all" ? (
+        <>
+          <div className={styles.libraryToolbar}>
+            <label className={styles.libraryFilter}>
+              <span>{t("intake.sourceFilterLabel")}</span>
+              <select
+                value={sourceFilter}
+                onChange={(event) =>
+                  changeSourceFilter(
+                    event.target.value as GrowthMapKeywordSourceFilter,
+                  )
+                }
+              >
+                <option value="all">{t("intake.all")}</option>
+                {GROWTH_MAP_KEYWORD_SOURCE_KINDS.map((sourceKind) => (
+                  <option value={sourceKind} key={sourceKind}>
+                    {t(`sourceKind.${sourceKind}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <EmptyState
+            className={styles.libraryFilteredEmpty}
+            icon={<Search size={28} />}
+            title={t("intake.noMatchesTitle")}
+            description={t("intake.noMatchesDescription")}
+          />
+        </>
+      ) : readState === "empty" ? (
         <KeywordLibraryEmpty />
       ) : (
         <>
@@ -7991,7 +8042,9 @@ function KeywordLibraryPane({
               <select
                 value={sourceFilter}
                 onChange={(event) =>
-                  setSourceFilter(event.target.value as GrowthMapKeywordSourceFilter)
+                  changeSourceFilter(
+                    event.target.value as GrowthMapKeywordSourceFilter,
+                  )
                 }
               >
                 <option value="all">{t("intake.all")}</option>
