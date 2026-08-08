@@ -724,7 +724,7 @@ test("creates a URL-first draft, supports a manual customer edit, confirms it, t
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await editor.getByLabel("产品名称").fill("RelayOps Global");
   await editor.getByRole("button", { name: "保存为新版本" }).click();
@@ -763,7 +763,7 @@ test("only a dirty open Product Profile editor fences the browser unload", async
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await expect(editor).toBeVisible();
   await expect(editor.getByText("没有更改", { exact: true })).toBeVisible();
@@ -794,7 +794,7 @@ test("opens the Primary ICP editor directly from confirmation readiness", async 
   await trigger.click();
 
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await expect(editor).toBeVisible();
   const primaryIcpInput = editor.getByLabel("目标企业 / 目标用户");
@@ -886,7 +886,7 @@ test("browser Back asks before discarding a dirty Product Profile editor", async
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await expect(editor).toBeVisible();
   const productName = editor.getByLabel("产品名称");
@@ -954,7 +954,7 @@ test("browser Back still asks when the Navigation API is unavailable", async ({
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await expect(editor).toBeVisible();
   const productName = editor.getByLabel("产品名称");
@@ -1038,7 +1038,7 @@ test("loads an API-backed draft in the Chinese-first customer view and sends onl
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await expect(editor).toBeVisible();
 
@@ -1248,7 +1248,7 @@ test("contains modal focus, closes with Escape, and restores the launch control"
   const trigger = page.getByRole("button", { name: "编辑产品画像与 ICP" });
   await trigger.click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   const close = editor.getByRole("button", { name: "关闭" });
   const cancel = editor.getByRole("button", { name: "取消" });
@@ -1294,6 +1294,180 @@ test("contains modal focus, closes with Escape, and restores the launch control"
       };
     });
   expect(restoredBackground).toEqual({ inert: false, ariaHidden: null });
+});
+
+test("matches the Artifact density and editor geometry across desktop and sheet layouts", async ({
+  page,
+}) => {
+  await installProductProfileApi(page);
+  await useChineseUi(page);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/context`);
+  await expect(
+    page.getByRole("heading", { name: "RelayOps API Canonical" }),
+  ).toBeVisible();
+
+  const identityCard = page.locator("[data-product-profile-identity-card]");
+  const sectionTitle = identityCard.getByRole("heading", {
+    name: "产品是什么，以及为什么值得购买",
+  });
+  const valueProposition = page
+    .locator("[data-product-profile-value-proposition]")
+    .locator("p");
+  expect(
+    await identityCard.evaluate((element) => getComputedStyle(element).paddingTop),
+  ).toBe("24px");
+  expect(
+    await sectionTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("22px");
+  expect(
+    await valueProposition.evaluate(
+      (element) => getComputedStyle(element).fontSize,
+    ),
+  ).toBe("17px");
+
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
+  const editor = page.getByRole("dialog", {
+    name: "编辑产品与 ICP",
+  });
+  await expect(editor).toBeVisible();
+  await editor.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  );
+  expect(
+    await editor.getByRole("group").evaluateAll((groups) =>
+      groups.map((group) => group.querySelector("legend")?.textContent?.trim()),
+    ),
+  ).toEqual(["产品身份与价值", "目标市场", "核心 ICP", "补充产品信息"]);
+  expect(
+    await editor
+      .getByRole("group", { name: "产品身份与价值" })
+      .locator(":scope > label > span")
+      .allTextContents(),
+  ).toEqual(["一句话定位", "价值主张", "其他商业模式", "核心功能"]);
+  const editorBox = await editor.boundingBox();
+  expect(editorBox).not.toBeNull();
+  expect(editorBox!.width).toBeCloseTo(900, 0);
+  expect(editorBox!.x + editorBox!.width / 2).toBeCloseTo(720, 0);
+  expect(editorBox!.y).toBeGreaterThanOrEqual(21);
+  expect(editorBox!.height).toBeLessThanOrEqual(856);
+  expect(
+    await editor.evaluate((element) => getComputedStyle(element).borderRadius),
+  ).toBe("20px");
+  expect(
+    await editor
+      .getByRole("heading", { name: "编辑产品与 ICP" })
+      .evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("28px");
+  expect(
+    await editor
+      .getByText("产品名称", { exact: true })
+      .evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("12px");
+  expect(
+    await editor
+      .getByLabel("产品名称")
+      .evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("14px");
+  expect(
+    await editor
+      .getByRole("group", { name: "产品身份与价值" })
+      .evaluate((element) => getComputedStyle(element).paddingTop),
+  ).toBe("14px");
+  const scrollRegion = editor.locator(
+    "[data-product-profile-editor-scroll-region]",
+  );
+  expect(
+    await scrollRegion.evaluate((element) => ({
+      overflowY: getComputedStyle(element).overflowY,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    })),
+  ).toMatchObject({ overflowY: "auto" });
+  const scrollMetrics = await scrollRegion.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+  const footerBox = await editor.locator("footer").boundingBox();
+  expect(footerBox).not.toBeNull();
+  expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(
+    editorBox!.y + editorBox!.height + 1,
+  );
+  await editor.getByRole("button", { name: "取消" }).click();
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  const story = page.locator("[data-product-profile-identity-card]");
+  const rail = page.locator("[data-product-profile-review-rail]");
+  const [storyBox, railBox] = await Promise.all([
+    story.boundingBox(),
+    rail.boundingBox(),
+  ]);
+  expect(storyBox).not.toBeNull();
+  expect(railBox).not.toBeNull();
+  expect(storyBox!.y).toBeLessThan(railBox!.y);
+
+  await page.setViewportSize({ width: 760, height: 900 });
+  await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
+  await expect(editor).toBeVisible();
+  await editor.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  );
+  const sheetBox = await editor.boundingBox();
+  expect(sheetBox).not.toBeNull();
+  expect(sheetBox!.x).toBeCloseTo(0, 0);
+  expect(sheetBox!.width).toBeCloseTo(760, 0);
+  expect(sheetBox!.height).toBeLessThanOrEqual(828);
+  expect(sheetBox!.y + sheetBox!.height).toBeCloseTo(900, 0);
+  expect(
+    await editor.evaluate((element) => getComputedStyle(element).borderRadius),
+  ).toBe("20px 20px 0px 0px");
+  expect(await hasPageOverflow(page), "760px editor overflow").toBe(false);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileSheetBox = await editor.boundingBox();
+  expect(mobileSheetBox).not.toBeNull();
+  expect(mobileSheetBox!.x).toBeCloseTo(0, 0);
+  expect(mobileSheetBox!.width).toBeCloseTo(390, 0);
+  expect(mobileSheetBox!.height).toBeLessThanOrEqual(777);
+  expect(mobileSheetBox!.y + mobileSheetBox!.height).toBeCloseTo(844, 0);
+  expect(
+    await editor
+      .locator("footer")
+      .evaluate((element) => getComputedStyle(element).flexDirection),
+  ).toBe("column-reverse");
+  expect(
+    await editor
+      .getByRole("checkbox", { name: "提升注册", exact: true })
+      .evaluate(
+        (element) =>
+          getComputedStyle(element.parentElement!.parentElement!)
+            .gridTemplateColumns.split(" ").length,
+      ),
+  ).toBe(1);
+  const [cancelBox, saveBox] = await Promise.all([
+    editor.getByRole("button", { name: "取消" }).boundingBox(),
+    editor.getByRole("button", { name: "保存为新版本" }).boundingBox(),
+  ]);
+  expect(cancelBox).not.toBeNull();
+  expect(saveBox).not.toBeNull();
+  expect(cancelBox!.width).toBeGreaterThanOrEqual(350);
+  expect(saveBox!.width).toBeCloseTo(cancelBox!.width, 0);
+  expect(await hasPageOverflow(page), "390px editor overflow").toBe(false);
+  expect(
+    await blockingAxeViolations(
+      page,
+      "[data-product-profile-modal-backdrop]",
+    ),
+  ).toEqual([]);
+  await page
+    .locator("[data-product-profile-modal-backdrop]")
+    .click({ position: { x: 5, y: 5 } });
+  await expect(editor).toBeHidden();
+  expect(
+    await sectionTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("22px");
 });
 
 test("has no page-level overflow or blocking axe findings on desktop and 390px", async ({

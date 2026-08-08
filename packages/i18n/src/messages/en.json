@@ -415,13 +415,14 @@
       "enter_new_markets": "Enter new markets"
     },
     "editor": {
-      "eyebrow": "CUSTOMER REVIEW",
-      "title": "Edit Product Profile and Primary ICP",
-      "description": "Only the fields changed here are saved as customer-declared facts in a new version.",
+      "eyebrow": "ONLY FIELDS THAT AFFECT DIAGNOSTICS, KEYWORDS, AND CONTENT",
+      "title": "Edit product and ICP",
+      "description": "Changes are saved as customer-declared facts in a new profile version.",
       "sections": {
         "product": "Product identity and value",
         "market": "Target markets",
-        "icp": "Primary ICP"
+        "icp": "Primary ICP",
+        "details": "Additional product details"
       },
       "choose": "Select…",
       "custom": "Other / custom",

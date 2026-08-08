@@ -267,7 +267,7 @@ function ModalFrame({
   if (!mounted || !open) return null;
   return createPortal(
     <div
-      className={styles.modalBackdrop}
+      className={`${styles.modalBackdrop} ${wide ? styles.profileEditorBackdrop : ""}`}
       data-product-profile-modal-backdrop=""
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onRequestClose();
@@ -432,81 +432,17 @@ function ProfileEditor({
             </button>
           </header>
 
-          <div className={styles.drawerBody}>
+          <div className={styles.drawerBody} data-product-profile-editor-scroll-region="">
             <fieldset className={styles.formSection}>
               <legend>{t("editor.sections.product")}</legend>
-              <div className={styles.formGrid}>
-                <label className={styles.field}>
-                  <span>{t("fields.productName")}</span>
-                  <input value={state.productName} onChange={(event) => set("productName", event.target.value)} />
-                </label>
-                <label className={styles.field}>
-                  <span>{t("fields.category")}</span>
-                  <input value={state.category} onChange={(event) => set("category", event.target.value)} />
-                </label>
-              </div>
-              <label className={styles.field}>
-                <span>{t("fields.customerModel")}</span>
-                <select
-                  value={state.customerModel}
-                  onChange={(event) =>
-                    set("customerModel", event.target.value as CustomerModel)
-                  }
-                >
-                  <option value="" disabled>{t("editor.choose")}</option>
-                  {CUSTOMER_MODELS.map((model) => (
-                    <option key={model} value={model}>
-                      {t(`customerModels.${model}`)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className={styles.field}>
-                <span>{t("fields.growthObjectives")}</span>
-                <div className={styles.checkGrid}>
-                  {GROWTH_OBJECTIVES.map((objective) => (
-                    <label key={objective} className={styles.checkChoice}>
-                      <input
-                        type="checkbox"
-                        checked={state.growthObjectives.includes(objective)}
-                        onChange={(event) =>
-                          set(
-                            "growthObjectives",
-                            event.target.checked
-                              ? [...state.growthObjectives, objective]
-                              : state.growthObjectives.filter(
-                                  (item) => item !== objective,
-                                ),
-                          )
-                        }
-                      />
-                      <span>{t(`growthObjectives.${objective}`)}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
               <label className={styles.field}>
                 <span>{t("fields.oneLiner")}</span>
                 <textarea value={state.oneLiner} onChange={(event) => set("oneLiner", event.target.value)} rows={3} />
               </label>
               <label className={styles.field}>
-                <span>{t("fields.productType")}</span>
-                <select value={state.productType} onChange={(event) => set("productType", event.target.value)}>
-                  <option value="">{t("editor.choose")}</option>
-                  {PRODUCT_TYPES.map((item) => (
-                    <option key={item} value={item}>
-                      {t(`editor.productTypes.${PRODUCT_TYPE_MESSAGE_KEYS[item]}`)}
-                    </option>
-                  ))}
-                  <option value="__custom__">{t("editor.custom")}</option>
-                </select>
+                <span>{t("fields.valueProposition")}</span>
+                <textarea value={state.valueProposition} onChange={(event) => set("valueProposition", event.target.value)} rows={4} />
               </label>
-              {state.productType === "__custom__" ? (
-                <label className={styles.field}>
-                  <span>{t("editor.customProductType")}</span>
-                  <input value={state.customProductType} onChange={(event) => set("customProductType", event.target.value)} />
-                </label>
-              ) : null}
               <div className={styles.field}>
                 <span>{t("fields.businessModels")}</span>
                 <div className={styles.checkGrid}>
@@ -532,10 +468,6 @@ function ProfileEditor({
               <label className={styles.field}>
                 <span>{t("editor.otherBusinessModels")}</span>
                 <textarea value={state.otherBusinessModels} onChange={(event) => set("otherBusinessModels", event.target.value)} rows={2} />
-              </label>
-              <label className={styles.field}>
-                <span>{t("fields.valueProposition")}</span>
-                <textarea value={state.valueProposition} onChange={(event) => set("valueProposition", event.target.value)} rows={4} />
               </label>
               <label className={styles.field}>
                 <span>{t("fields.coreFeatures")}</span>
@@ -588,7 +520,7 @@ function ProfileEditor({
                     <span>{t("fields.targetCompanyOrAudience")}</span>
                     <textarea data-primary-icp-editor-input value={state.targetCompanyOrAudience} onChange={(event) => set("targetCompanyOrAudience", event.target.value)} rows={3} />
                   </label>
-                  {(["buyerRoles", "userRoles", "useCases", "triggers", "pains", "jtbd", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] as const).map((key) => (
+                  {(["buyerRoles", "userRoles", "jtbd", "triggers", "pains", "useCases", "outcomes", "barriers", "qualificationSignals", "disqualifiers"] as const).map((key) => (
                     <label key={key} className={styles.field}>
                       <span>{t(`fields.${key}`)}</span>
                       <textarea value={state[key]} onChange={(event) => set(key, event.target.value)} rows={3} />
@@ -598,6 +530,78 @@ function ProfileEditor({
                 </>
               ) : null}
               {currentAudience ? <p className={styles.formNote}>{t("editor.singleProductIcp")}</p> : null}
+            </fieldset>
+
+            <fieldset className={styles.formSection}>
+              <legend>{t("editor.sections.details")}</legend>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span>{t("fields.productName")}</span>
+                  <input value={state.productName} onChange={(event) => set("productName", event.target.value)} />
+                </label>
+                <label className={styles.field}>
+                  <span>{t("fields.category")}</span>
+                  <input value={state.category} onChange={(event) => set("category", event.target.value)} />
+                </label>
+              </div>
+              <label className={styles.field}>
+                <span>{t("fields.customerModel")}</span>
+                <select
+                  value={state.customerModel}
+                  onChange={(event) =>
+                    set("customerModel", event.target.value as CustomerModel)
+                  }
+                >
+                  <option value="" disabled>{t("editor.choose")}</option>
+                  {CUSTOMER_MODELS.map((model) => (
+                    <option key={model} value={model}>
+                      {t(`customerModels.${model}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>{t("fields.productType")}</span>
+                <select value={state.productType} onChange={(event) => set("productType", event.target.value)}>
+                  <option value="">{t("editor.choose")}</option>
+                  {PRODUCT_TYPES.map((item) => (
+                    <option key={item} value={item}>
+                      {t(`editor.productTypes.${PRODUCT_TYPE_MESSAGE_KEYS[item]}`)}
+                    </option>
+                  ))}
+                  <option value="__custom__">{t("editor.custom")}</option>
+                </select>
+              </label>
+              {state.productType === "__custom__" ? (
+                <label className={styles.field}>
+                  <span>{t("editor.customProductType")}</span>
+                  <input value={state.customProductType} onChange={(event) => set("customProductType", event.target.value)} />
+                </label>
+              ) : null}
+              <div className={styles.field}>
+                <span>{t("fields.growthObjectives")}</span>
+                <div className={styles.checkGrid}>
+                  {GROWTH_OBJECTIVES.map((objective) => (
+                    <label key={objective} className={styles.checkChoice}>
+                      <input
+                        type="checkbox"
+                        checked={state.growthObjectives.includes(objective)}
+                        onChange={(event) =>
+                          set(
+                            "growthObjectives",
+                            event.target.checked
+                              ? [...state.growthObjectives, objective]
+                              : state.growthObjectives.filter(
+                                  (item) => item !== objective,
+                                ),
+                          )
+                        }
+                      />
+                      <span>{t(`growthObjectives.${objective}`)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </fieldset>
           </div>
 
@@ -1430,7 +1434,7 @@ export function ProductProfilePage({
 
       <div className={styles.deliveryGrid}>
         <div className={styles.storyColumn}>
-          <section className={styles.editorialCard}>
+          <section className={styles.editorialCard} data-product-profile-identity-card="">
             <SectionHeading eyebrow={t("sections.identity.eyebrow")} title={t("sections.identity.title")} fact={fact("/productName")} />
             <div className={styles.identityGrid}>
               <div><span>{t("fields.category")}</span><strong>{profile.category ?? <MissingValue />}</strong></div>
@@ -1457,7 +1461,7 @@ export function ProductProfilePage({
               <span>{t("fields.growthObjectives")}</span>
               <ValueList values={localizedGrowthObjectives} />
             </div>
-            <div className={styles.statement} data-length={(profile.valueProposition?.length ?? 0) > 110 ? "long" : "short"}><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
+            <div className={styles.statement} data-product-profile-value-proposition=""><span>{t("fields.valueProposition")}</span><p>{profile.valueProposition ?? <MissingValue />}</p></div>
           </section>
 
           <section className={styles.editorialCard}>
@@ -1511,7 +1515,7 @@ export function ProductProfilePage({
           </section>
         </div>
 
-        <aside className={styles.reviewRail} aria-label={t("confirmation.railLabel")}>
+        <aside className={styles.reviewRail} data-product-profile-review-rail="" aria-label={t("confirmation.railLabel")}>
           <div className={styles.reviewCard}>
             <p className={styles.eyebrow}>{t("confirmation.eyebrow")}</p>
             <h2>{t("confirmation.title")}</h2>

@@ -139,7 +139,7 @@ test("persists the customer-entered Product Profile and ICP before opening live 
 
   await page.getByRole("button", { name: "编辑产品画像与 ICP" }).click();
   const editor = page.getByRole("dialog", {
-    name: "编辑产品画像与核心 ICP",
+    name: "编辑产品与 ICP",
   });
   await editor.getByLabel("产品名称").fill("RelayOps");
   await editor

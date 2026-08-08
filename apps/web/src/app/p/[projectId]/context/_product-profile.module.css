@@ -303,20 +303,20 @@
 .deliveryGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(270px, 330px);
-  gap: clamp(22px, 3vw, 42px);
+  gap: 24px;
   align-items: start;
-  margin-top: 34px;
+  margin-top: 28px;
 }
 
 .storyColumn {
   display: grid;
-  gap: 22px;
+  gap: 18px;
 }
 
 .editorialCard,
 .evidenceCard,
 .reviewCard {
-  padding: clamp(22px, 3.2vw, 38px);
+  padding: 24px;
   border: 1px solid var(--sf-border);
   border-radius: var(--sf-radius-card);
   background: var(--sf-surface);
@@ -329,21 +329,24 @@
 
 .sectionHeading {
   display: flex;
-  gap: 18px;
+  gap: 12px;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .sectionHeading h2,
 .reviewCard h2 {
   color: var(--sf-fg);
   font-family: var(--sf-font-display);
-  font-size: clamp(26px, 3vw, 38px);
   font-weight: 560;
-  line-height: 1.08;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
   text-wrap: balance;
+}
+
+.sectionHeading h2 {
+  font-size: var(--sf-text-xl);
+  line-height: 1.2;
 }
 
 .factPill[data-fact-state="supported"] {
@@ -377,8 +380,8 @@
 
 .identityGrid > div {
   display: grid;
-  gap: 7px;
-  padding: 18px;
+  gap: 6px;
+  padding: 16px;
   background: var(--sf-surface-deep);
 }
 
@@ -387,29 +390,29 @@
 .icpLead span,
 .evidenceGrid span {
   color: var(--sf-muted);
-  font-size: 13px;
+  font-size: var(--sf-text-xs);
   font-weight: 760;
   letter-spacing: 0.03em;
 }
 
 .identityGrid strong,
 .icpLead strong {
-  font-size: 17px;
+  font-size: var(--sf-text-base);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .statement {
-  margin-top: 26px;
-  padding-left: 20px;
+  margin-top: 20px;
+  padding-left: 16px;
   border-left: 3px solid var(--sf-coral);
 }
 
 .goalBlock {
   display: grid;
   gap: 10px;
-  margin-top: 24px;
-  padding: 18px 20px;
+  margin-top: 18px;
+  padding: 14px 16px;
   border: 1px solid var(--sf-border);
   border-radius: 12px;
   background: var(--sf-cobalt-soft);
@@ -427,31 +430,18 @@
 }
 
 .statement p {
-  max-width: 42em;
+  max-width: var(--sf-read-measure);
   margin: 7px 0 0;
   font-family: var(--sf-font-display);
-  font-size: clamp(21px, 2.5vw, 30px);
-  line-height: 1.42;
-  letter-spacing: -0.018em;
-}
-
-/*
- * The display size above is sized for a short positioning line. Synthesis often
- * returns a full paragraph instead, and at 30px that becomes a wall of text
- * rather than a statement. Step down to a reading size once the value
- * proposition stops being a one-liner; the marker is set from its length at
- * render time because CSS cannot measure text content.
- */
-.statement[data-length="long"] p {
-  font-size: clamp(17px, 1.3vw, 20px);
-  line-height: 1.62;
+  font-size: var(--sf-text-read);
+  line-height: 1.6;
   letter-spacing: -0.006em;
 }
 
 .splitContent {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: 34px;
+  gap: 24px;
 }
 
 .splitContent h3,
@@ -477,7 +467,7 @@
   position: relative;
   padding-left: 18px;
   color: var(--sf-fg);
-  font-size: 16px;
+  font-size: var(--sf-text-base);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -496,7 +486,7 @@
 .missingValue {
   display: inline-flex;
   color: var(--sf-amber-text);
-  font-size: 16px;
+  font-size: var(--sf-text-base);
   font-style: normal;
   font-weight: 650;
 }
@@ -511,7 +501,7 @@
   display: flex;
   gap: 13px;
   align-items: center;
-  padding: 17px;
+  padding: 14px;
   border: 1px solid var(--sf-border);
   border-radius: 12px;
   background: var(--sf-surface-deep);
@@ -533,7 +523,7 @@
 }
 
 .marketList strong {
-  font-size: 16px;
+  font-size: var(--sf-text-base);
 }
 
 .marketList span {
@@ -544,14 +534,14 @@
 
 .icpContent {
   display: grid;
-  gap: 28px;
+  gap: 20px;
 }
 
 .icpLead {
   display: flex;
   gap: 15px;
   align-items: flex-start;
-  padding: 20px;
+  padding: 16px;
   border-radius: 12px;
   color: var(--sf-mint-text);
   background: var(--sf-mint-soft);
@@ -628,7 +618,7 @@
 }
 
 .icpMatrix > div {
-  padding: 20px;
+  padding: 16px;
   border-right: 1px solid var(--sf-border);
   border-bottom: 1px solid var(--sf-border);
 }
@@ -645,7 +635,7 @@
   max-width: 54ch;
   margin: 0;
   color: var(--sf-muted);
-  font-size: 16px;
+  font-size: var(--sf-text-base);
 }
 
 .competitorList {
@@ -662,7 +652,7 @@
   grid-template-columns: minmax(150px, 0.72fr) minmax(230px, 1.2fr) minmax(180px, 1fr) auto;
   gap: 18px;
   align-items: center;
-  padding: 18px;
+  padding: 14px;
   background: var(--sf-surface);
 }
 
@@ -681,7 +671,7 @@
 }
 
 .competitorIdentity strong {
-  font-size: 16px;
+  font-size: var(--sf-text-base);
 }
 
 .competitorIdentity a {
@@ -812,7 +802,8 @@
 }
 
 .reviewCard h2 {
-  font-size: 29px;
+  font-size: var(--sf-text-2xl);
+  line-height: 1.15;
 }
 
 .reviewCard > p:not(.eyebrow, .blockReason) {
@@ -966,19 +957,25 @@
   backdrop-filter: blur(4px);
 }
 
+.profileEditorBackdrop {
+  padding: 22px;
+  background: rgba(10, 25, 21, 0.56);
+  backdrop-filter: blur(5px);
+}
+
 .drawer {
-  position: absolute;
-  inset: 0 0 0 auto;
+  position: relative;
   display: flex;
-  width: min(760px, calc(100vw - 28px));
-  height: 100dvh;
+  width: min(900px, 100%);
+  max-height: calc(100dvh - 44px);
   flex-direction: column;
   overflow: hidden;
   color: var(--sf-fg);
-  background: var(--sf-bg);
-  border-left: 1px solid var(--sf-border);
-  box-shadow: -24px 0 60px rgba(17, 25, 35, 0.19);
-  animation: drawerIn 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 20px;
+  box-shadow: 0 30px 90px rgba(7, 24, 19, 0.3);
+  animation: dialogIn 180ms ease both;
 }
 
 .dialog {
@@ -995,11 +992,25 @@
 
 .editorForm {
   display: flex;
-  height: 100%;
+  width: 100%;
+  max-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.drawerHeader,
+.drawerHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 20px;
+  align-items: start;
+  padding: 22px 24px 18px;
+  background: var(--sf-surface);
+  border-bottom: 1px solid var(--sf-border);
+  flex: none;
+}
+
 .dialogHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 42px;
@@ -1010,7 +1021,11 @@
   border-bottom: 1px solid var(--sf-border);
 }
 
-.drawerHeader h2,
+.drawerHeader h2 {
+  font-size: var(--sf-text-2xl);
+  line-height: 1.15;
+}
+
 .dialogHeader h2,
 .confirmDialog h2 {
   font-size: 29px;
@@ -1018,16 +1033,23 @@
 }
 
 .drawerHeader p:not(.eyebrow) {
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   color: var(--sf-muted);
-  font-size: 15px;
+  font-size: 14px;
+}
+
+.drawerHeader .iconButton {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
 }
 
 .drawerBody {
   display: grid;
-  gap: 18px;
+  min-height: 0;
+  gap: 17px;
   flex: 1;
-  padding: 22px 28px 36px;
+  padding: 24px;
   overflow-y: auto;
 }
 
@@ -1140,12 +1162,13 @@
 
 .drawerFooter {
   display: flex;
-  gap: 18px;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 28px;
+  padding: 14px 24px;
   background: var(--sf-surface);
   border-top: 1px solid var(--sf-border);
+  flex: none;
 }
 
 .drawerFooter > div,
@@ -1165,6 +1188,40 @@
 
 .clean {
   color: var(--sf-muted);
+}
+
+.editorForm .formSection {
+  padding: 14px;
+  border-radius: 10px;
+}
+
+.editorForm .formSection legend,
+.editorForm .field > span {
+  color: var(--sf-muted);
+  font-size: var(--sf-text-xs);
+  font-weight: 750;
+}
+
+.editorForm .field input,
+.editorForm .field textarea,
+.editorForm .field select {
+  font-size: 14px;
+  border-radius: 9px;
+}
+
+.editorForm .field textarea {
+  min-height: 92px;
+}
+
+.editorForm .checkGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.editorForm .checkChoice,
+.editorForm .field small,
+.drawerFooter .primaryButton,
+.drawerFooter .secondaryButton {
+  font-size: 14px;
 }
 
 .competitorForm {
@@ -1223,11 +1280,6 @@
   to { transform: rotate(360deg); }
 }
 
-@keyframes drawerIn {
-  from { transform: translateX(24px); }
-  to { transform: translateX(0); }
-}
-
 @keyframes dialogIn {
   from { transform: translateY(8px) scale(0.985); }
   to { transform: translateY(0) scale(1); }
@@ -1240,7 +1292,6 @@
 
   .reviewRail {
     position: static;
-    order: -1;
   }
 
   .reviewCard {
@@ -1330,14 +1381,37 @@
     justify-self: start;
   }
 
-  .drawerFooter {
-    align-items: stretch;
-    flex-direction: column;
+  .profileEditorBackdrop {
+    align-items: flex-end;
+    padding: 0;
   }
 
-  .drawerFooter > div,
-  .drawerFooter button {
+  .drawer {
+    position: relative;
     width: 100%;
+    max-height: 92dvh;
+    height: auto;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .drawerHeader {
+    padding: 19px 18px 15px;
+  }
+
+  .drawerHeader h2 {
+    font-size: 24px;
+  }
+
+  .drawerBody {
+    padding: 20px 18px;
+  }
+
+  .editorForm .checkGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .drawerFooter {
+    padding: 12px 18px max(12px, env(safe-area-inset-bottom));
   }
 }
 
@@ -1368,7 +1442,7 @@
   }
 
   .sectionHeading h2 {
-    font-size: 28px;
+    font-size: var(--sf-text-xl);
   }
 
   .marketList,
@@ -1382,7 +1456,6 @@
     align-items: flex-end;
   }
 
-  .drawer,
   .dialog {
     width: 100%;
     max-width: none;
@@ -1393,28 +1466,30 @@
     max-height: 92dvh;
   }
 
-  .drawer {
-    inset: 0;
-    border-radius: 0;
-  }
-
-  .drawerHeader,
   .dialogHeader {
     padding: 20px 17px;
   }
 
-  .drawerBody,
   .dialogBody {
     padding: 18px 14px 30px;
   }
 
-  .formSection {
-    padding: 18px 14px;
-  }
-
-  .drawerFooter,
   .competitorForm > .dialogActions {
     padding: 13px 14px;
+  }
+
+  .drawerFooter {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .drawerFooter > div {
+    width: 100%;
+    flex-direction: column-reverse;
+  }
+
+  .drawerFooter button {
+    width: 100%;
   }
 
   .dialogActions,

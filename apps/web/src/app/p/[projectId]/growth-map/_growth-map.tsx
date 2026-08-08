@@ -2313,10 +2313,14 @@ function OpportunityLedger({
   const t = useTranslations("growthMap.pageViews");
   const tExecution = useTranslations("growthMap.executionPreview");
   return (
-    <div className={cx(styles.ledger, styles.groupedLedger)}>
+    <div
+      className={cx(styles.ledger, styles.groupedLedger)}
+      data-growth-map-opportunity-ledger
+    >
       <div
         className={cx(styles.ledgerHeader, styles.opportunityLedgerHeader)}
         aria-hidden="true"
+        data-growth-map-opportunity-ledger-header
       >
         <span>{t("columns.opportunity")}</span>
         <span>{t("columns.type")}</span>
@@ -2352,10 +2356,10 @@ function OpportunityLedger({
                 </button>
                 <span className={styles.urlCell}>
                   <strong>{opportunity.title}</strong>
-                  <span>{opportunity.targetRef}</span>
-                  <small>
+                  <span>
+                    {opportunity.targetRef} ·{" "}
                     {t(`opportunity.target.${opportunity.primaryTarget}`)}
-                  </small>
+                  </span>
                 </span>
                 <span className={styles.metricCell}>
                   <strong className={styles.libraryMetricPrimary}>
@@ -2363,9 +2367,6 @@ function OpportunityLedger({
                       `opportunity.lenses.${opportunity.lenses[0] ?? "site_health"}`,
                     )}
                   </strong>
-                  <small>
-                    {t(`opportunity.workShape.${opportunity.workShape}`)}
-                  </small>
                 </span>
                 <span className={styles.metricCell}>
                   <OpportunityPriorityPill item={item} />
@@ -2391,7 +2392,6 @@ function OpportunityLedger({
                   >
                     {t(`opportunity.readiness.${opportunity.readiness}`)}
                   </span>
-                  <ArrowRight aria-hidden="true" size={17} />
                 </span>
               </div>
             </li>
@@ -2632,7 +2632,7 @@ function OpportunityDetailPanel({
 
   return (
     <aside
-      className={styles.detailPanel}
+      className={cx(styles.detailPanel, styles.opportunityDetailPanel)}
       aria-label={t("opportunity.detailLabel")}
       data-opportunity-detail={item.id}
     >
@@ -2982,8 +2982,14 @@ function OpportunityPageView({
     );
   }
   return (
-    <div className={styles.workspace}>
-      <div className={styles.masterColumn}>
+    <div
+      className={cx(styles.workspace, styles.opportunityWorkspace)}
+      data-growth-map-opportunity-workspace
+    >
+      <div
+        className={styles.masterColumn}
+        data-growth-map-opportunity-master
+      >
         {visibleItems.length === 0 ? (
           <EmptyState
             className={styles.portfolioEmpty}

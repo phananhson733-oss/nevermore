@@ -223,6 +223,152 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
   await expect(opportunityDetail.locator("[data-finding-card]")).toHaveCount(0);
 });
 
+test("matches the Artifact opportunity ledger density at desktop width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const firstRow = page.locator("[data-growth-map-opportunity-row]").first();
+  await expect(firstRow).toBeVisible();
+  const measurements = await page.evaluate(() => {
+    const workspace = document.querySelector<HTMLElement>(
+      "[data-growth-map-opportunity-workspace]",
+    );
+    const ledger = document.querySelector<HTMLElement>(
+      "[data-growth-map-opportunity-ledger]",
+    );
+    const header = document.querySelector<HTMLElement>(
+      "[data-growth-map-opportunity-ledger-header]",
+    );
+    const row = document.querySelector<HTMLElement>(
+      "[data-growth-map-opportunity-row]",
+    );
+    const detail = document.querySelector<HTMLElement>(
+      "aside[data-opportunity-detail]",
+    );
+    const title = row?.querySelector<HTMLElement>(":scope > span strong");
+    const cells = [
+      ...(row?.querySelectorAll<HTMLElement>(":scope > span") ?? []),
+    ];
+    const detailTitle = detail?.querySelector<HTMLElement>("h2");
+    const detailSubtitle = detail?.querySelector<HTMLElement>("header p");
+    if (
+      workspace == null ||
+      ledger == null ||
+      header == null ||
+      row == null ||
+      detail == null ||
+      title == null ||
+      cells.length !== 6 ||
+      detailTitle == null ||
+      detailSubtitle == null
+    ) {
+      throw new Error("Opportunity master-detail structure is incomplete");
+    }
+    const rowStyle = getComputedStyle(row);
+    const headerStyle = getComputedStyle(header);
+    const workspaceStyle = getComputedStyle(workspace);
+    const titleStyle = getComputedStyle(title);
+    const typeStyle = getComputedStyle(cells[1]!.querySelector("strong")!);
+    const urlCountStyle = getComputedStyle(cells[3]!.querySelector("strong")!);
+    const outputStyle = getComputedStyle(cells[4]!.querySelector("strong")!);
+    const detailTitleStyle = getComputedStyle(detailTitle);
+    const detailSubtitleStyle = getComputedStyle(detailSubtitle);
+    const gridTracks = rowStyle.gridTemplateColumns
+      .split(" ")
+      .map((track) => Number.parseFloat(track));
+    const trackTotal = gridTracks.reduce((sum, track) => sum + track, 0);
+
+    return {
+      workspaceGap: workspaceStyle.columnGap,
+      detailWidth: detail.getBoundingClientRect().width,
+      headerHeight: header.getBoundingClientRect().height,
+      headerFontSize: headerStyle.fontSize,
+      rowHeight: row.getBoundingClientRect().height,
+      titleFontSize: titleStyle.fontSize,
+      titleFontWeight: titleStyle.fontWeight,
+      typeFontSize: typeStyle.fontSize,
+      urlCountFontSize: urlCountStyle.fontSize,
+      outputFontSize: outputStyle.fontSize,
+      selectedMarkerWidth: getComputedStyle(row, "::before").width,
+      firstTrackRatio: gridTracks[0]! / trackTotal,
+      detailTitleFontSize: detailTitleStyle.fontSize,
+      detailTitleFontWeight: detailTitleStyle.fontWeight,
+      detailSubtitleFontSize: detailSubtitleStyle.fontSize,
+    };
+  });
+
+  expect(measurements.workspaceGap).toBe("14px");
+  expect(measurements.detailWidth).toBeCloseTo(360, 0);
+  expect(measurements.headerHeight).toBeCloseTo(50, 0);
+  expect(measurements.headerFontSize).toBe("12px");
+  expect(measurements.rowHeight).toBeCloseTo(80, 0);
+  expect(measurements.titleFontSize).toBe("14px");
+  expect(measurements.titleFontWeight).toBe("700");
+  expect(measurements.typeFontSize).toBe("13px");
+  expect(measurements.urlCountFontSize).toBe("13px");
+  expect(measurements.outputFontSize).toBe("13px");
+  expect(measurements.selectedMarkerWidth).toBe("3px");
+  expect(measurements.firstTrackRatio).toBeCloseTo(0.39, 1);
+  expect(measurements.detailTitleFontSize).toBe("23px");
+  expect(measurements.detailTitleFontWeight).toBe("600");
+  expect(measurements.detailSubtitleFontSize).toBe("12px");
+});
+
+test("keeps the Opportunity layout usable across Artifact breakpoints", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const workspace = page.locator("[data-growth-map-opportunity-workspace]");
+  const master = page.locator("[data-growth-map-opportunity-master]");
+  const detail = page.locator("aside[data-opportunity-detail]");
+  await expect(workspace).toBeVisible();
+  await expect(detail).toBeVisible();
+  await expect
+    .poll(() => detail.evaluate((node) => node.getBoundingClientRect().width))
+    .toBeCloseTo(330, 0);
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  const stacked = await workspace.evaluate((node) => {
+    const masterNode = node.querySelector<HTMLElement>(
+      "[data-growth-map-opportunity-master]",
+    );
+    const detailNode = node.querySelector<HTMLElement>(
+      "aside[data-opportunity-detail]",
+    );
+    if (masterNode == null || detailNode == null) {
+      throw new Error("Opportunity master-detail structure is incomplete");
+    }
+    const masterRect = masterNode.getBoundingClientRect();
+    const detailRect = detailNode.getBoundingClientRect();
+    return {
+      gridTrackCount: getComputedStyle(node).gridTemplateColumns.split(" ")
+        .length,
+      detailPosition: getComputedStyle(detailNode).position,
+      detailFollowsMasterInDom:
+        [...node.children].indexOf(detailNode) >
+        [...node.children].indexOf(masterNode),
+      detailTop: detailRect.top,
+      masterBottom: masterRect.bottom,
+    };
+  });
+  expect(stacked.gridTrackCount).toBe(1);
+  expect(stacked.detailPosition).toBe("static");
+  expect(stacked.detailFollowsMasterInDom).toBe(true);
+  expect(stacked.detailTop).toBeGreaterThanOrEqual(stacked.masterBottom);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(master).toBeVisible();
+  await expect(detail).toBeVisible();
+  expect(await hasPageOverflow(page), await overflowDiagnostics(page)).toBe(
+    false,
+  );
+  expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
+});
+
 test("keeps the Opportunity ledger independent of Topic reads and scrubs cluster addresses", async ({
   page,
 }) => {

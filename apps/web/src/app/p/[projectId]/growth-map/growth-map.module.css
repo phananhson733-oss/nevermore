@@ -7825,16 +7825,121 @@ a.competitorMonitorContentUrl:hover {
   container-name: none;
 }
 
+.opportunityWorkspace {
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+}
+
 .opportunityLedgerHeader,
 .opportunityRowButton {
   grid-template-columns:
-    minmax(220px, 2fr)
-    minmax(88px, 0.68fr)
-    minmax(128px, 0.9fr)
-    minmax(66px, 0.5fr)
-    minmax(132px, 0.9fr)
-    minmax(116px, 0.78fr);
-  min-width: 830px;
+    minmax(0, 39fr)
+    minmax(0, 10fr)
+    minmax(0, 21fr)
+    minmax(0, 10fr)
+    minmax(0, 10fr)
+    minmax(0, 10fr);
+  min-width: 860px;
+}
+
+.opportunityLedgerHeader {
+  font-size: 12px;
+}
+
+.opportunityRowButton {
+  min-height: 80px;
+  padding: 14px;
+  font-size: 13px;
+}
+
+.opportunityRowButton::before {
+  width: 3px;
+}
+
+.opportunityRowButton .urlCell strong {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.opportunityRowButton .urlCell span {
+  font-size: 12px;
+}
+
+.opportunityRowButton .libraryMetricPrimary {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.opportunityRowButton .priorityPill,
+.opportunityRowButton .pageViewStatus {
+  min-height: 25px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.opportunityRowButton .priorityCell {
+  justify-content: flex-start;
+  padding-right: 0;
+}
+
+.opportunityDetailPanel .detailHeader {
+  padding: 21px;
+  background: var(--sf-surface);
+}
+
+.opportunityDetailPanel .detailEyebrow > span:first-child {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.opportunityDetailPanel .detailTitleRow {
+  margin-top: 7px;
+}
+
+.opportunityDetailPanel .detailTitleRow h2 {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.16;
+}
+
+.opportunityDetailPanel .detailTitleRow p {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.opportunityDetailPanel .detailSummary span {
+  font-size: 11px;
+}
+
+.opportunityDetailPanel .detailSummary strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opportunityDetailPanel .detailSummary > div {
+  min-height: 0;
+  padding: 11px;
+}
+
+@media (max-width: 1280px) {
+  .opportunityWorkspace {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .opportunityWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .pageViewStatus {

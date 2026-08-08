@@ -415,13 +415,14 @@
       "enter_new_markets": "进入新市场"
     },
     "editor": {
-      "eyebrow": "客户审核",
-      "title": "编辑产品画像与核心 ICP",
-      "description": "这里只保存用户实际修改的字段，并以客户声明事实写入新的版本。",
+      "eyebrow": "只保留会影响诊断、关键词与内容的字段",
+      "title": "编辑产品与 ICP",
+      "description": "修改内容会作为客户声明事实保存到新的画像版本。",
       "sections": {
         "product": "产品身份与价值",
         "market": "目标市场",
-        "icp": "核心 ICP"
+        "icp": "核心 ICP",
+        "details": "补充产品信息"
       },
       "choose": "请选择…",
       "custom": "其他 / 自定义",

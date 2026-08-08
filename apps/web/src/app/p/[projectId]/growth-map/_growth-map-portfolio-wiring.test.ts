@@ -157,7 +157,10 @@ describe("Growth Map filter and review honesty wiring", () => {
   });
 
   it("filters the complete Opportunity ledger without a pager or scope note", () => {
-    expect(source).toContain("<div className={styles.workspace}>");
+    expect(source).toContain(
+      "className={cx(styles.workspace, styles.opportunityWorkspace)}",
+    );
+    expect(source).toContain("data-growth-map-opportunity-workspace");
     expect(source).toContain('t("searchScope")');
     expect(source).not.toContain("styles.portfolioPagination");
     expect(source).not.toContain('t("portfolioFilters.clientScopeNote"');
