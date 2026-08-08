@@ -472,15 +472,16 @@ test("reviews a zero-target Opportunity inline without leaving the ledger", asyn
     body: { reviewState: "confirmed", baseRevision: 0 },
   });
 
-  // The refreshed frozen projection now carries the confirmed readiness and
-  // routes the next step to Execution instead of a second confirmation path.
+  // Confirmation re-ranks the row, but the rail must stay pinned to the
+  // Opportunity that was just reviewed: one click, one visible state flip.
+  // Jumping to the next near-identical row would read as "nothing happened".
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedOpportunityId"))
+    .toBe(E2E_COVERAGE_GAP_FINDING_ID);
   const row = page.locator(
     `[data-growth-map-opportunity-row="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
   );
   await expect(row.getByText("Confirmed", { exact: true })).toBeVisible();
-  // Confirmation re-ranks the row below the still-reviewable P1, so reselect
-  // it explicitly before asserting its rail now routes to Execution.
-  await row.getByRole("button").first().click();
   const detail = page.locator(
     `[data-opportunity-detail="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
   );
