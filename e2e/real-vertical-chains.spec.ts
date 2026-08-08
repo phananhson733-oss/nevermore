@@ -608,7 +608,11 @@ async function runDiagnosisAndConfirmFinding(
   await expect(page.getByText("No URL audit result yet")).toHaveCount(0);
 
   // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
+  await page.getByRole("tab", { name: /^By URL/ }).click();
   await page.getByRole("button").filter({ hasText: "/gone" }).first().click();
+  await page
+    .locator("[data-full-evidence-disclosure] > summary")
+    .click();
   await expect(
     page.locator('[data-detail-panel="audit-evidence"]'),
   ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });

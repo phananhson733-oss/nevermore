@@ -21,6 +21,7 @@ import type {
   GrowthMapTopicModelInsights,
   GrowthMapTopicNodeInsight,
   GrowthMapTopicInsightsCoverage,
+  GrowthOpportunity,
   GrowthMapUrlDetail,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
@@ -96,7 +97,9 @@ import {
 import { useReviewFinding } from "@/lib/api/hooks-diagnosis";
 import { ApiError } from "@/lib/api";
 import { collectAllCursorItems } from "@/lib/api/cursor-pages";
+import { getProjectOpportunities } from "@/lib/api/hooks-opportunities";
 import {
+  getGrowthMapUrls,
   getGrowthMapKeywordRelations,
   refreshGrowthMapAfterFindingReview,
   useBeginGrowthMapTopicModelDraft,
@@ -125,6 +128,7 @@ import { RunDiagnosis } from "./_run-diagnosis.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
+  GROWTH_MAP_PAGE_VIEWS,
   GROWTH_MAP_KEYWORD_SOURCE_KINDS,
   buildBeginTopicModelDraftCommand,
   buildConfirmTopicModelCommand,
@@ -141,6 +145,8 @@ import {
   buildTopicNodeSplitIntent,
   buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
+  buildGrowthMapClusterViewItems,
+  buildGrowthMapOpportunityViewItems,
   buildInternalLinkMapProjection,
   competitorDetailReadState,
   competitorMonitorDisplayState,
@@ -151,6 +157,7 @@ import {
   findMetricObservation,
   findingTargetLabelKey,
   growthMapDetailAllowsFindingReview,
+  growthMapClusterReadState,
   growthMapLocationHref,
   growthMapPageTypeFilterOptions,
   growthMapPageTypeLabel,
@@ -170,7 +177,10 @@ import {
   presentGrowthMapReviewProblem,
   rememberGrowthMapCursorPredecessor,
   resolveGrowthMapCursorPredecessor,
+  resolveGrowthMapPageView,
   resolveVisibleSitePageSelectionForFinding,
+  resolveVisibleGrowthMapClusterSelection,
+  resolveVisibleGrowthMapOpportunitySelection,
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
@@ -179,10 +189,13 @@ import {
   topicNodeAllowedParentIds,
   urlPresentation,
   type GrowthMapMetricLabelKey,
+  type GrowthMapClusterViewItem,
   type CompetitorMonitorDisplayState,
   type GrowthMapDetailState,
   type GrowthMapFindingReviewMode,
   type GrowthMapObjectMode,
+  type GrowthMapOpportunityViewItem,
+  type GrowthMapPageView,
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
   type GrowthMapCompetitorStatusFilter,
@@ -226,6 +239,84 @@ const COVERAGE_CLASS = {
 interface CompleteKeywordRelationRecord {
   readonly id: string;
   readonly relation: GrowthMapKeywordRelation;
+}
+
+interface CompleteGrowthMapUrlRecord {
+  readonly id: string;
+  readonly item: GrowthMapUrlPortfolioItem;
+}
+
+interface CompleteGrowthMapOpportunityRecord {
+  readonly id: string;
+  readonly opportunity: GrowthOpportunity;
+}
+
+class GrowthMapPageViewScopeMismatchError extends Error {
+  override readonly name = "GrowthMapPageViewScopeMismatchError";
+}
+
+/**
+ * Cluster and Opportunity views group the complete frozen inventory rather
+ * than silently treating one cursor page as the project. The shared cursor
+ * collector enforces the repository's page, item, and byte ceilings. URL and
+ * Opportunity responses are pinned to the exact Diagnostic Run chosen by the
+ * Growth Map shell; current Topic authority is labeled separately in the
+ * Cluster view.
+ */
+async function readCompleteGrowthMapUrls(
+  projectId: string,
+  diagnosticRunId: string,
+): Promise<readonly GrowthMapUrlPortfolioItem[]> {
+  const records = await collectAllCursorItems<CompleteGrowthMapUrlRecord>(
+    async (cursor) => {
+      const response = await getGrowthMapUrls(projectId, {
+        cursor,
+        limit: 100,
+        diagnosticRunId,
+      });
+      if (response.diagnosticRunId !== diagnosticRunId) {
+        throw new GrowthMapPageViewScopeMismatchError(
+          "Growth Map URL generation changed while grouping views.",
+        );
+      }
+      return {
+        data: response.data.map((item) => ({ id: item.sitePageId, item })),
+        meta: { nextCursor: response.meta.nextCursor },
+      };
+    },
+  );
+  return records.map((record) => record.item);
+}
+
+async function readCompleteGrowthMapOpportunities(
+  projectId: string,
+  diagnosticRunId: string,
+): Promise<readonly GrowthOpportunity[]> {
+  const records =
+    await collectAllCursorItems<CompleteGrowthMapOpportunityRecord>(
+      async (cursor) => {
+        const response = await getProjectOpportunities(projectId, {
+          cursor,
+          limit: 100,
+        });
+        if (response.diagnosticRunId !== diagnosticRunId) {
+          throw new GrowthMapPageViewScopeMismatchError(
+            "Growth Map Opportunity generation changed while grouping views.",
+          );
+        }
+        return {
+          data: response.data.map((opportunity) => ({
+            id:
+              opportunity.readiness === "candidate"
+                ? `candidate:${opportunity.opportunityKey}`
+                : `finding:${opportunity.primaryFindingId}`,
+            opportunity,
+          })),
+          meta: { nextCursor: response.meta.nextCursor },
+        };
+      },
+    );
+  return records.map((record) => record.opportunity);
 }
 
 /**
@@ -1383,7 +1474,7 @@ function IdentityLedger({ detail }: { readonly detail: GrowthMapUrlDetail }) {
   const tProvider = useTranslations("provider");
 
   return (
-    <details className={styles.identityLedger}>
+    <details className={styles.identityLedger} data-identity-ledger="">
       <summary>
         <span>
           <Database aria-hidden="true" size={18} />
@@ -1901,8 +1992,15 @@ function UrlDetailPanel({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap");
-  const [detailState, setDetailState] =
-    useState<GrowthMapDetailState>("audit_evidence");
+  const tPriority = useTranslations("priorityBand");
+  const tReview = useTranslations("reviewState");
+  const [detailState, setDetailState] = useState<GrowthMapDetailState>(
+    selectedFindingId === null ? "audit_evidence" : "opportunity_review",
+  );
+  const [fullDetailOpen, setFullDetailOpen] = useState(
+    selectedFindingId !== null,
+  );
+  const fullDetailRef = useRef<HTMLDetailsElement>(null);
   const url = urlPresentation(detail.normalizedUrl);
   const externalUrl = safeExternalPageUrl(detail.normalizedUrl);
   const clicks = findMetricObservation(
@@ -1918,30 +2016,43 @@ function UrlDetailPanel({
   // not the most urgent one. Rank by severity instead, then let the selected
   // Finding decide whether the primary action can leave for Execution at all.
   const primaryOpportunity = growthMapPrimaryOpportunity(detail.findings);
+  const primaryFindingId =
+    primaryOpportunity.kind === "none"
+      ? null
+      : primaryOpportunity.finding.findingId;
+  const compactFindings = useMemo(
+    () =>
+      [...detail.findings].sort((left, right) => {
+        if (left.findingId === primaryFindingId) return -1;
+        if (right.findingId === primaryFindingId) return 1;
+        return left.findingId.localeCompare(right.findingId);
+      }),
+    [detail.findings, primaryFindingId],
+  );
+
+  function openFullDetail(findingId: string | null): void {
+    if (findingId !== null) setDetailState("opportunity_review");
+    setFullDetailOpen(true);
+    window.requestAnimationFrame(() => {
+      const target =
+        findingId === null
+          ? fullDetailRef.current
+          : document.getElementById(`sf-finding-${findingId}`);
+      target?.scrollIntoView({ block: "nearest" });
+    });
+  }
 
   function reviewPrimaryOpportunity(): void {
     if (primaryOpportunity.kind === "none") return;
-    const { findingId } = primaryOpportunity.finding;
-    setDetailState("opportunity_review");
-    window.requestAnimationFrame(() => {
-      document
-        .getElementById(`sf-finding-${findingId}`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
+    openFullDetail(primaryOpportunity.finding.findingId);
   }
 
   // Every Finding on this URL is ignored or no longer active, so there is no
   // top opportunity to promote. The panel still takes the operator to the
   // closed signals rather than leaving a control that does nothing.
   function openClosedFindings(): void {
-    setDetailState("opportunity_review");
     const first = detail.findings[0];
-    if (first === undefined) return;
-    window.requestAnimationFrame(() => {
-      document
-        .getElementById(`sf-finding-${first.findingId}`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
+    openFullDetail(first?.findingId ?? null);
   }
 
   useEffect(() => {
@@ -1950,11 +2061,16 @@ function UrlDetailPanel({
       detail.findings.some((finding) => finding.findingId === selectedFindingId)
     ) {
       setDetailState("opportunity_review");
+      setFullDetailOpen(true);
     }
   }, [detail.findings, selectedFindingId]);
 
   useEffect(() => {
-    if (selectedFindingId === null || detailState !== "opportunity_review") {
+    if (
+      selectedFindingId === null ||
+      !fullDetailOpen ||
+      detailState !== "opportunity_review"
+    ) {
       return;
     }
     const frame = window.requestAnimationFrame(() => {
@@ -1963,7 +2079,7 @@ function UrlDetailPanel({
         ?.scrollIntoView({ block: "nearest" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [detailState, selectedFindingId]);
+  }, [detailState, fullDetailOpen, selectedFindingId]);
 
   return (
     <aside className={styles.detailPanel} aria-label={t("selectedUrlDetail")}>
@@ -2028,100 +2144,189 @@ function UrlDetailPanel({
         />
       )}
 
-      <div
-        className={styles.detailStateSwitch}
-        role="group"
-        aria-label={t("detailStateLabel")}
+      <section
+        className={styles.compactOpportunitySection}
+        aria-labelledby={`url-opportunities-${detail.sitePageId}`}
       >
-        <button
-          type="button"
-          data-detail-state="audit-evidence"
-          aria-pressed={detailState === "audit_evidence"}
-          className={cx(
-            styles.detailStateButton,
-            detailState === "audit_evidence" && styles.detailStateButtonActive,
-          )}
-          onClick={() => setDetailState("audit_evidence")}
-        >
-          <FileSearch aria-hidden="true" size={18} />
-          <span>
-            <strong>{t("auditEvidenceState")}</strong>
-            <small>{t("auditEvidenceStateDescription")}</small>
-          </span>
-        </button>
-        <button
-          type="button"
-          data-detail-state="opportunity-review"
-          aria-pressed={detailState === "opportunity_review"}
-          className={cx(
-            styles.detailStateButton,
-            detailState === "opportunity_review" &&
-              styles.detailStateButtonActive,
-          )}
-          onClick={() => setDetailState("opportunity_review")}
-        >
-          <CheckCircle2 aria-hidden="true" size={18} />
-          <span>
-            <strong>{t("opportunityReviewState")}</strong>
-            <small>{t("opportunityReviewStateDescription")}</small>
-          </span>
-        </button>
-      </div>
+        <div className={styles.compactOpportunityHeading}>
+          <div>
+            <span>{t("currentFindings")}</span>
+            <h3 id={`url-opportunities-${detail.sitePageId}`}>
+              {t("pageViews.url.currentOpportunities")}
+            </h3>
+          </div>
+          <strong>{detail.findings.length}</strong>
+        </div>
+        {compactFindings.length === 0 ? (
+          <p className={styles.compactOpportunityEmpty}>
+            <CheckCircle2 aria-hidden="true" size={18} />
+            {t("noUrlFindings")}
+          </p>
+        ) : (
+          <ul className={styles.compactOpportunityList}>
+            {compactFindings.map((finding) => (
+              <li key={finding.findingId}>
+                <button
+                  type="button"
+                  data-compact-finding={finding.findingId}
+                  onClick={() => openFullDetail(finding.findingId)}
+                >
+                  <span className={styles.compactOpportunityMeta}>
+                    <em
+                      className={cx(
+                        styles.priorityPill,
+                        PRIORITY_CLASS[finding.severity],
+                      )}
+                    >
+                      {PRIORITY_CODE[finding.severity]} ·
+                      {" "}{tPriority(finding.severity)}
+                    </em>
+                    <small>{tReview(finding.reviewState)}</small>
+                  </span>
+                  <strong>{finding.title}</strong>
+                  <span>
+                    {t(`targets.${findingTargetLabelKey(finding.targetRelation)}`)}
+                    <ArrowRight aria-hidden="true" size={16} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-      {detailState === "audit_evidence" ? (
-        <div data-detail-panel="audit-evidence">
-          <FindingSection
-            projectId={projectId}
-            detail={detail}
-            state="audit_evidence"
-          />
+      <details
+        ref={fullDetailRef}
+        className={styles.fullDetailDisclosure}
+        data-full-evidence-disclosure=""
+        open={fullDetailOpen}
+        onToggle={(event) => setFullDetailOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span>
+            <FileSearch aria-hidden="true" size={18} />
+            {t("pageViews.url.fullEvidence")}
+          </span>
+          <small>{t("pageViews.url.fullEvidenceDescription")}</small>
+        </summary>
+        {fullDetailOpen ? (
+          <div data-detail-panel="full-evidence-and-review">
+            <div
+              className={styles.detailStateSwitch}
+              role="group"
+              aria-label={t("detailStateLabel")}
+            >
+              <button
+                type="button"
+                data-detail-state="audit-evidence"
+                aria-pressed={detailState === "audit_evidence"}
+                className={cx(
+                  styles.detailStateButton,
+                  detailState === "audit_evidence" &&
+                    styles.detailStateButtonActive,
+                )}
+                onClick={() => setDetailState("audit_evidence")}
+              >
+                <FileSearch aria-hidden="true" size={18} />
+                <span>
+                  <strong>{t("auditEvidenceState")}</strong>
+                  <small>{t("auditEvidenceStateDescription")}</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                data-detail-state="opportunity-review"
+                aria-pressed={detailState === "opportunity_review"}
+                className={cx(
+                  styles.detailStateButton,
+                  detailState === "opportunity_review" &&
+                    styles.detailStateButtonActive,
+                )}
+                onClick={() => setDetailState("opportunity_review")}
+              >
+                <CheckCircle2 aria-hidden="true" size={18} />
+                <span>
+                  <strong>{t("opportunityReviewState")}</strong>
+                  <small>{t("opportunityReviewStateDescription")}</small>
+                </span>
+              </button>
+            </div>
 
-          <section className={styles.detailSection}>
-            <div className={styles.sectionHeading}>
-              <div>
-                <span>{t("observedMetricsEyebrow")}</span>
-                <h3>{t("observedMetrics")}</h3>
+            {detailState === "audit_evidence" ? (
+              <div data-detail-panel="audit-evidence">
+                <FindingSection
+                  projectId={projectId}
+                  detail={detail}
+                  state="audit_evidence"
+                />
+
+                <section className={styles.detailSection}>
+                  <div className={styles.sectionHeading}>
+                    <div>
+                      <span>{t("observedMetricsEyebrow")}</span>
+                      <h3>{t("observedMetrics")}</h3>
+                    </div>
+                    <BarChart3 aria-hidden="true" size={21} />
+                  </div>
+                  <p className={styles.sectionBoundaryCopy}>
+                    {t("evidenceBoundaryDescription")}
+                  </p>
+                  <MetricLedger observations={detail.metricObservations} />
+                </section>
+
+                <InternalLinkMapSection
+                  projectId={projectId}
+                  sitePageId={detail.sitePageId}
+                />
+
+                <section className={styles.comparisonStrip}>
+                  <div>
+                    <span>{t("recheckComparison")}</span>
+                    {detail.delta.availability === "available" ? (
+                      <strong>{t(`delta.${detail.delta.value}`)}</strong>
+                    ) : (
+                      <strong>{t("delta.unavailable")}</strong>
+                    )}
+                  </div>
+                  {detail.delta.availability === "available" ? (
+                    <p>{detail.delta.summary}</p>
+                  ) : (
+                    <LimitationList limitations={[detail.delta.limitation]} />
+                  )}
+                </section>
+
+                <IdentityLedger detail={detail} />
+                <footer className={styles.detailFooter}>
+                  <span>
+                    {t("ids.sitePage")}
+                    <code title={detail.sitePageId}>
+                      {truncateId(detail.sitePageId)}
+                    </code>
+                  </span>
+                  <span>
+                    {t("pageSnapshot")}
+                    {detail.pageSnapshotCapturedAt === null ? (
+                      <strong>{t("notCollected")}</strong>
+                    ) : (
+                      <time dateTime={detail.pageSnapshotCapturedAt}>
+                        {formatObservedAt(locale, detail.pageSnapshotCapturedAt)}
+                      </time>
+                    )}
+                  </span>
+                </footer>
               </div>
-              <BarChart3 aria-hidden="true" size={21} />
-            </div>
-            <p className={styles.sectionBoundaryCopy}>
-              {t("evidenceBoundaryDescription")}
-            </p>
-            <MetricLedger observations={detail.metricObservations} />
-          </section>
-
-          <InternalLinkMapSection
-            projectId={projectId}
-            sitePageId={detail.sitePageId}
-          />
-
-          <section className={styles.comparisonStrip}>
-            <div>
-              <span>{t("recheckComparison")}</span>
-              {detail.delta.availability === "available" ? (
-                <strong>{t(`delta.${detail.delta.value}`)}</strong>
-              ) : (
-                <strong>{t("delta.unavailable")}</strong>
-              )}
-            </div>
-            {detail.delta.availability === "available" ? (
-              <p>{detail.delta.summary}</p>
             ) : (
-              <LimitationList limitations={[detail.delta.limitation]} />
+              <div data-detail-panel="opportunity-review">
+                <FindingSection
+                  projectId={projectId}
+                  detail={detail}
+                  state="opportunity_review"
+                />
+              </div>
             )}
-          </section>
-
-          <IdentityLedger detail={detail} />
-        </div>
-      ) : (
-        <div data-detail-panel="opportunity-review">
-          <FindingSection
-            projectId={projectId}
-            detail={detail}
-            state="opportunity_review"
-          />
-        </div>
-      )}
+          </div>
+        ) : null}
+      </details>
 
       {primaryOpportunity.kind === "none" ? (
         primaryOpportunity.reason === "no_findings" ? null : (
@@ -2172,22 +2377,6 @@ function UrlDetailPanel({
         </div>
       )}
 
-      <footer className={styles.detailFooter}>
-        <span>
-          {t("ids.sitePage")}
-          <code title={detail.sitePageId}>{truncateId(detail.sitePageId)}</code>
-        </span>
-        <span>
-          {t("pageSnapshot")}
-          {detail.pageSnapshotCapturedAt === null ? (
-            <strong>{t("notCollected")}</strong>
-          ) : (
-            <time dateTime={detail.pageSnapshotCapturedAt}>
-              {formatObservedAt(locale, detail.pageSnapshotCapturedAt)}
-            </time>
-          )}
-        </span>
-      </footer>
     </aside>
   );
 }
@@ -2264,6 +2453,928 @@ function DetailState({
   );
 }
 
+function PageViewTabs({
+  value,
+  onChange,
+}: {
+  readonly value: GrowthMapPageView;
+  readonly onChange: (view: GrowthMapPageView) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+
+  function moveFocus(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    currentIndex: number,
+  ): void {
+    const key = event.key;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
+    event.preventDefault();
+    const last = GROWTH_MAP_PAGE_VIEWS.length - 1;
+    const nextIndex =
+      key === "Home"
+        ? 0
+        : key === "End"
+          ? last
+          : key === "ArrowRight"
+            ? (currentIndex + 1) % GROWTH_MAP_PAGE_VIEWS.length
+            : (currentIndex - 1 + GROWTH_MAP_PAGE_VIEWS.length) %
+              GROWTH_MAP_PAGE_VIEWS.length;
+    const next = GROWTH_MAP_PAGE_VIEWS[nextIndex]!;
+    onChange(next);
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>(`[data-page-view-tab="${next}"]`)
+        ?.focus();
+    });
+  }
+
+  return (
+    <div className={styles.pageViewBand}>
+      <div>
+        <span>{t("label")}</span>
+        <small>{t("defaultHint")}</small>
+      </div>
+      <div
+        className={styles.pageViewTabs}
+        role="tablist"
+        aria-label={t("label")}
+      >
+        {GROWTH_MAP_PAGE_VIEWS.map((view, index) => (
+          <button
+            key={view}
+            id={`growth-map-page-view-tab-${view}`}
+            type="button"
+            role="tab"
+            data-page-view-tab={view}
+            aria-controls="growth-map-page-view-panel"
+            aria-selected={value === view}
+            tabIndex={value === view ? 0 : -1}
+            className={cx(
+              styles.pageViewTab,
+              value === view && styles.pageViewTabActive,
+            )}
+            onClick={() => onChange(view)}
+            onKeyDown={(event) => moveFocus(event, index)}
+          >
+            <strong>{t(`${view}.label`)}</strong>
+            <small>{t(`${view}.description`)}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OpportunityPriorityPill({
+  item,
+}: {
+  readonly item: GrowthMapOpportunityViewItem;
+}) {
+  const t = useTranslations("growthMap.pageViews.opportunity");
+  const tPriority = useTranslations("priorityBand");
+  if (item.priority.availability === "unavailable") {
+    return (
+      <span className={styles.priorityUnavailable}>
+        {t("priorityUnavailable")}
+        <LimitationHint
+          label={t("priorityUnavailableHint")}
+          limitations={[item.priority.limitation]}
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cx(
+        styles.priorityPill,
+        PRIORITY_CLASS[item.priority.value],
+      )}
+    >
+      {PRIORITY_CODE[item.priority.value]} · {tPriority(item.priority.value)}
+    </span>
+  );
+}
+
+function opportunityOutputType(
+  opportunity: GrowthOpportunity,
+): string | null {
+  if (opportunity.readiness === "confirmed") {
+    return opportunity.action.artifactType;
+  }
+  if (opportunity.readiness === "reviewable") {
+    return opportunity.executionPreview?.artifactType ?? null;
+  }
+  return null;
+}
+
+function OpportunityLedger({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapOpportunityViewItem[];
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const tExecution = useTranslations("growthMap.executionPreview");
+  return (
+    <div className={cx(styles.ledger, styles.groupedLedger)}>
+      <div
+        className={cx(styles.ledgerHeader, styles.opportunityLedgerHeader)}
+        aria-hidden="true"
+      >
+        <span>{t("columns.opportunity")}</span>
+        <span>{t("columns.type")}</span>
+        <span>{t("columns.priority")}</span>
+        <span>{t("columns.urls")}</span>
+        <span>{t("columns.artifacts")}</span>
+        <span>{t("columns.status")}</span>
+      </div>
+      <ul className={styles.portfolioList} aria-label={t("opportunity.label")}>
+        {items.map((item) => {
+          const opportunity = item.opportunity;
+          const outputType = opportunityOutputType(opportunity);
+          const selected = selectedId === item.id;
+          return (
+            <li className={styles.portfolioRow} key={item.id}>
+              <div
+                className={cx(
+                  styles.rowButton,
+                  styles.opportunityRowButton,
+                  selected && styles.rowSelected,
+                )}
+                data-growth-map-opportunity-row={item.id}
+              >
+                <button
+                  type="button"
+                  className={styles.rowSelectButton}
+                  aria-pressed={selected}
+                  onClick={() => onSelect(item.id)}
+                >
+                  <span className={styles.rowSelectLabel}>
+                    {opportunity.title} — {opportunity.targetRef}
+                  </span>
+                </button>
+                <span className={styles.urlCell}>
+                  <strong>{opportunity.title}</strong>
+                  <span>{opportunity.targetRef}</span>
+                  <small>{t(`opportunity.target.${opportunity.primaryTarget}`)}</small>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {t(`opportunity.workShape.${opportunity.workShape}`)}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <OpportunityPriorityPill item={item} />
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.targetPages.length}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {outputType === null
+                      ? "—"
+                      : tExecution(`artifactTypes.${outputType}`)}
+                  </strong>
+                </span>
+                <span className={styles.priorityCell}>
+                  <span
+                    className={cx(
+                      styles.pageViewStatus,
+                      styles[`pageViewStatus${opportunity.readiness}`],
+                    )}
+                  >
+                    {t(`opportunity.readiness.${opportunity.readiness}`)}
+                  </span>
+                  <ArrowRight aria-hidden="true" size={17} />
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function OpportunityDetailPanel({
+  projectId,
+  item,
+  onOpenUrl,
+}: {
+  readonly projectId: string;
+  readonly item: GrowthMapOpportunityViewItem;
+  readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const tExecution = useTranslations("growthMap.executionPreview");
+  const tActionStatus = useTranslations("actionStatus");
+  const opportunity = item.opportunity;
+  const outputType = opportunityOutputType(opportunity);
+  const findingCount =
+    opportunity.supportingFindingIds.length +
+    (opportunity.readiness === "candidate" ? 0 : 1);
+  const firstTarget = item.targetPages[0] ?? null;
+  const primaryFindingId =
+    opportunity.readiness === "candidate"
+      ? null
+      : opportunity.primaryFindingId;
+  const nextBoundaryKey =
+    opportunity.readiness === "candidate"
+      ? "candidateBoundary"
+      : opportunity.readiness === "reviewable"
+        ? "reviewBoundary"
+        : "confirmedBoundary";
+
+  return (
+    <aside
+      className={styles.detailPanel}
+      aria-label={t("opportunity.detailLabel")}
+      data-opportunity-detail={item.id}
+    >
+      <header className={styles.detailHeader}>
+        <div className={styles.detailEyebrow}>
+          <span>
+            {t("opportunity.eyebrow")} ·
+            {" "}
+            {item.priority.availability === "available"
+              ? PRIORITY_CODE[item.priority.value]
+              : "—"}
+          </span>
+          <span
+            className={cx(
+              styles.pageViewStatus,
+              styles[`pageViewStatus${opportunity.readiness}`],
+            )}
+          >
+            {t(`opportunity.readiness.${opportunity.readiness}`)}
+          </span>
+        </div>
+        <div className={styles.detailTitleRow}>
+          <div>
+            <h2>{opportunity.title}</h2>
+            <p>
+              {t(`opportunity.workShape.${opportunity.workShape}`)} ·
+              {" "}{t(`opportunity.target.${opportunity.primaryTarget}`)}
+            </p>
+            <span>{opportunity.targetRef}</span>
+          </div>
+        </div>
+        <div className={styles.detailTags}>
+          {opportunity.lenses.map((lens) => (
+            <span key={lens}>{t(`opportunity.lenses.${lens}`)}</span>
+          ))}
+        </div>
+      </header>
+
+      <section className={styles.detailSummary}>
+        <div>
+          <span>{t("opportunity.metrics.urls")}</span>
+          <strong>{item.targetPages.length}</strong>
+        </div>
+        <div>
+          <span>{t("opportunity.metrics.findings")}</span>
+          <strong>{findingCount}</strong>
+        </div>
+        <div>
+          <span>{t("opportunity.metrics.output")}</span>
+          <strong>
+            {outputType === null
+              ? "—"
+              : tExecution(`artifactTypes.${outputType}`)}
+          </strong>
+        </div>
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("opportunity.sections.primaryFinding")}</span>
+        <h3>{opportunity.title}</h3>
+        <p>{opportunity.targetRef}</p>
+        {opportunity.readiness === "candidate" ? null : (
+          <small>{opportunity.primaryRule.ruleId}</small>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("opportunity.sections.evidence")}</span>
+        {opportunity.evidenceSummary.length === 0 ? (
+          <p>{t("opportunity.noEvidence")}</p>
+        ) : (
+          <ul className={styles.compactRailList}>
+            {opportunity.evidenceSummary.slice(0, 3).map((trace) => (
+              <li
+                key={
+                  trace.traceKind === "evidence"
+                    ? trace.evidenceId
+                    : trace.observationId
+                }
+              >
+                <strong>{trace.claim}</strong>
+                <small>{trace.sourceProvider}</small>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("opportunity.sections.targets")}</span>
+        {item.targetPages.length === 0 ? (
+          <p>{t("opportunity.noTargets")}</p>
+        ) : (
+          <ul className={styles.compactRailActions}>
+            {item.targetPages.slice(0, 5).map((page) => (
+              <li key={page.sitePageId}>
+                <button
+                  type="button"
+                  onClick={() => onOpenUrl(page.sitePageId, primaryFindingId)}
+                >
+                  <span>{urlPresentation(page.normalizedUrl).path}</span>
+                  <ArrowRight aria-hidden="true" size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("opportunity.sections.limitations")}</span>
+        {opportunity.coverageAndLimitations.length === 0 ? (
+          <p>{t("opportunity.noLimitations")}</p>
+        ) : (
+          <LimitationList limitations={opportunity.coverageAndLimitations} />
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("opportunity.sections.output")}</span>
+        {opportunity.readiness === "confirmed" ? (
+          <p>
+            {tExecution(`artifactTypes.${opportunity.action.artifactType}`)} ·
+            {" "}{tActionStatus(opportunity.action.status)}
+          </p>
+        ) : opportunity.readiness === "reviewable" &&
+          opportunity.executionPreview !== null ? (
+          <>
+            <h3 lang={opportunity.executionPreview.contentLocale}>
+              {opportunity.executionPreview.title}
+            </h3>
+            <p lang={opportunity.executionPreview.contentLocale}>
+              {opportunity.executionPreview.description}
+            </p>
+          </>
+        ) : (
+          <p>{t("opportunity.noOutput")}</p>
+        )}
+      </section>
+
+      <section className={cx(styles.compactRailSection, styles.nextDecision)}>
+        <span>{t("opportunity.sections.decision")}</span>
+        <p>{t(`opportunity.${nextBoundaryKey}`)}</p>
+        {opportunity.readiness === "confirmed" ? (
+          <Link
+            className={styles.detailPrimaryActionLink}
+            href={executionHrefForRef(projectId, {
+              actionId: opportunity.actionId,
+              artifactIds: [],
+            })}
+          >
+            {t("opportunity.openExecution")}
+            <ArrowRight aria-hidden="true" size={17} />
+          </Link>
+        ) : firstTarget === null ? null : (
+          <Button
+            type="button"
+            variant={opportunity.readiness === "reviewable" ? "primary" : "secondary"}
+            onClick={() => onOpenUrl(firstTarget.sitePageId, primaryFindingId)}
+          >
+            {t(
+              opportunity.readiness === "reviewable"
+                ? "opportunity.review"
+                : "opportunity.inspectEvidence",
+            )}
+            <ArrowRight aria-hidden="true" size={17} />
+          </Button>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function OpportunityPageView({
+  projectId,
+  items,
+  requestedId,
+  search,
+  pageTypeFilter,
+  priorityFilter,
+  onSelect,
+  onRepairSelection,
+  onOpenUrl,
+}: {
+  readonly projectId: string;
+  readonly items: readonly GrowthMapOpportunityViewItem[];
+  readonly requestedId: string | null;
+  readonly search: string;
+  readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
+  readonly priorityFilter: GrowthMapUrlPriorityFilter;
+  readonly onSelect: (id: string) => void;
+  readonly onRepairSelection: (id: string | null) => void;
+  readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
+  const visibleItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (
+          pageTypeFilter !== "all" &&
+          filterGrowthMapUrlItems(item.targetPages, {
+            pageType: pageTypeFilter,
+            priority: "all",
+          }).length === 0
+        ) {
+          return false;
+        }
+        if (
+          priorityFilter !== "all" &&
+          (item.priority.availability !== "available" ||
+            item.priority.value !== priorityFilter)
+        ) {
+          return false;
+        }
+        if (normalizedSearch.length === 0) return true;
+        const opportunity = item.opportunity;
+        return [
+          opportunity.title,
+          opportunity.targetRef,
+          opportunity.workShape,
+          opportunity.primaryTarget,
+          ...item.targetPages.map((page) => page.normalizedUrl),
+        ].some((value) =>
+          value.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
+        );
+      }),
+    [items, normalizedSearch, pageTypeFilter, priorityFilter],
+  );
+  const selectedId = resolveVisibleGrowthMapOpportunitySelection(
+    requestedId,
+    visibleItems.map((item) => item.id),
+  );
+  const selected =
+    visibleItems.find((item) => item.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (requestedId === null || requestedId === selectedId) return;
+    onRepairSelection(selectedId);
+  }, [onRepairSelection, requestedId, selectedId]);
+
+  if (visibleItems.length === 0) {
+    return (
+      <EmptyState
+        className={styles.portfolioEmpty}
+        icon={<Target size={30} />}
+        title={t("empty.opportunity")}
+        description={t("opportunity.description")}
+      />
+    );
+  }
+  return (
+    <div className={styles.workspace}>
+      <div className={styles.masterColumn}>
+        <OpportunityLedger
+          items={visibleItems}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+        <p className={styles.completeViewScope}>
+          {t("searchScope")} · {t("counts.opportunities", { count: visibleItems.length })}
+        </p>
+      </div>
+      {selected === null ? (
+        <aside className={styles.detailPlaceholder}>
+          <p>{t("select.opportunity")}</p>
+        </aside>
+      ) : (
+        <OpportunityDetailPanel
+          projectId={projectId}
+          item={selected}
+          onOpenUrl={onOpenUrl}
+        />
+      )}
+    </div>
+  );
+}
+
+function ClusterLedger({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapClusterViewItem[];
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.pageViews");
+  return (
+    <div className={cx(styles.ledger, styles.groupedLedger)}>
+      <div
+        className={cx(styles.ledgerHeader, styles.clusterLedgerHeader)}
+        aria-hidden="true"
+      >
+        <span>{t("columns.cluster")}</span>
+        <span>{t("columns.role")}</span>
+        <span>{t("columns.urls")}</span>
+        <span>{t("columns.keywords")}</span>
+        <span>{t("columns.clicks")}</span>
+        <span>{t("columns.openOpportunities")}</span>
+      </div>
+      <ul className={styles.portfolioList} aria-label={t("cluster.label")}>
+        {items.map((item) => {
+          const selected = item.id === selectedId;
+          return (
+            <li className={styles.portfolioRow} key={item.id}>
+              <div
+                className={cx(
+                  styles.rowButton,
+                  styles.clusterRowButton,
+                  selected && styles.rowSelected,
+                )}
+                data-growth-map-cluster-row={item.id}
+              >
+                <button
+                  type="button"
+                  className={styles.rowSelectButton}
+                  aria-pressed={selected}
+                  onClick={() => onSelect(item.id)}
+                >
+                  <span className={styles.rowSelectLabel}>
+                    {item.label ?? t("cluster.roles.unmapped")}
+                  </span>
+                </button>
+                <span className={styles.urlCell}>
+                  <strong>{item.label ?? t("cluster.roles.unmapped")}</strong>
+                  <small>{item.clusterKeys.join(" · ") || "—"}</small>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {t(`cluster.roles.${item.role}`)}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>{item.urlCount}</strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.keywordCount ?? "—"}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.observedClicks === null
+                      ? "—"
+                      : formatNumber(locale, item.observedClicks)}
+                  </strong>
+                  <small className={styles.libraryMetricSecondary}>
+                    {t(`cluster.clickCoverage.${item.clickCoverage}`, {
+                      observed: item.observedClickUrlCount,
+                      total: item.urlCount,
+                    })}
+                  </small>
+                </span>
+                <span className={styles.priorityCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.openOpportunityCount}
+                  </strong>
+                  <ArrowRight aria-hidden="true" size={17} />
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ClusterDetailPanel({
+  item,
+  insight,
+  onOpenUrl,
+  onOpenOpportunity,
+}: {
+  readonly item: GrowthMapClusterViewItem;
+  readonly insight: GrowthMapTopicNodeInsight | null;
+  readonly onOpenUrl: (sitePageId: string) => void;
+  readonly onOpenOpportunity: (id: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const searchQueries = Array.from(
+    new Map(
+      item.opportunities.flatMap(({ opportunity }) =>
+        opportunity.searchQueries.map(
+          (query) => [query.observationId, query] as const,
+        ),
+      ),
+    ).values(),
+  );
+  const generativeQueries = Array.from(
+    new Map(
+      item.opportunities.flatMap(({ opportunity }) =>
+        opportunity.generativeQueries.map(
+          (query) => [query.observationId, query] as const,
+        ),
+      ),
+    ).values(),
+  );
+  const topOpportunity = item.opportunities[0] ?? null;
+
+  return (
+    <aside
+      className={styles.detailPanel}
+      aria-label={t("cluster.detailLabel")}
+      data-cluster-detail={item.id}
+    >
+      <header className={styles.detailHeader}>
+        <div className={styles.detailEyebrow}>
+          <span>{t("cluster.eyebrow")}</span>
+          <span className={styles.pageViewStatus}>
+            {t(`cluster.roles.${item.role}`)}
+          </span>
+        </div>
+        <div className={styles.detailTitleRow}>
+          <div>
+            <h2>{item.label ?? t("cluster.roles.unmapped")}</h2>
+            <p>{t("cluster.role")} · {t(`cluster.roles.${item.role}`)}</p>
+            <span>{item.clusterKeys.join(" · ") || "—"}</span>
+          </div>
+        </div>
+      </header>
+
+      <section className={styles.detailSummary}>
+        <div>
+          <span>{t("cluster.metrics.pages")}</span>
+          <strong>{item.urlCount}</strong>
+        </div>
+        <div>
+          <span>{t("cluster.metrics.searchQueries")}</span>
+          <strong>{searchQueries.length}</strong>
+        </div>
+        <div>
+          <span>{t("cluster.metrics.generativeQueries")}</span>
+          <strong>{generativeQueries.length}</strong>
+        </div>
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("cluster.sections.pages")}</span>
+        {item.pages.length === 0 ? (
+          <p>{t("cluster.noPages")}</p>
+        ) : (
+          <ul className={styles.compactRailActions}>
+            {item.pages.slice(0, 6).map((page) => (
+              <li key={page.sitePageId}>
+                <button type="button" onClick={() => onOpenUrl(page.sitePageId)}>
+                  <span>{urlPresentation(page.normalizedUrl).path}</span>
+                  <ArrowRight aria-hidden="true" size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("cluster.sections.queries")}</span>
+        {searchQueries.length + generativeQueries.length === 0 ? (
+          <p>{t("cluster.noQueries")}</p>
+        ) : (
+          <div className={styles.queryChipGroups}>
+            {searchQueries.slice(0, 4).map((query) => (
+              <span key={`search:${query.observationId}`}>{query.query}</span>
+            ))}
+            {generativeQueries.slice(0, 4).map((query) => (
+              <span key={`generative:${query.observationId}`}>
+                {query.query}
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <span>{t("cluster.sections.gap")}</span>
+        {insight === null ? (
+          <p>{t("cluster.unavailable")}</p>
+        ) : insight.limitation === null ? (
+          <p>{t("cluster.covered")}</p>
+        ) : (
+          <LimitationList limitations={[insight.limitation]} />
+        )}
+      </section>
+
+      <section className={cx(styles.compactRailSection, styles.nextDecision)}>
+        <span>{t("cluster.sections.opportunity")}</span>
+        {topOpportunity === null ? (
+          <p>{t("empty.opportunity")}</p>
+        ) : (
+          <>
+            <h3>{topOpportunity.opportunity.title}</h3>
+            <p>{topOpportunity.opportunity.targetRef}</p>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => onOpenOpportunity(topOpportunity.id)}
+            >
+              {t("cluster.openOpportunity")}
+              <ArrowRight aria-hidden="true" size={17} />
+            </Button>
+          </>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function ClusterPageView({
+  projectId,
+  portfolio,
+  opportunities,
+  requestedId,
+  search,
+  pageTypeFilter,
+  priorityFilter,
+  onSelect,
+  onRepairSelection,
+  onOpenUrl,
+  onOpenOpportunity,
+}: {
+  readonly projectId: string;
+  readonly portfolio: readonly GrowthMapUrlPortfolioItem[];
+  readonly opportunities: readonly GrowthOpportunity[];
+  readonly requestedId: string | null;
+  readonly search: string;
+  readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
+  readonly priorityFilter: GrowthMapUrlPriorityFilter;
+  readonly onSelect: (id: string) => void;
+  readonly onRepairSelection: (id: string | null) => void;
+  readonly onOpenUrl: (sitePageId: string) => void;
+  readonly onOpenOpportunity: (id: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const workspaceQuery = useGrowthMapTopicModelWorkspace(projectId);
+  const insightsQuery = useGrowthMapTopicModelInsights(projectId);
+  const readState = growthMapClusterReadState({
+    workspacePending: workspaceQuery.isPending,
+    workspaceError: workspaceQuery.isError,
+    insightsPending: insightsQuery.isPending,
+    insightsError: insightsQuery.isError,
+  });
+  const confirmedTopicModelRevision =
+    workspaceQuery.data?.latestConfirmed?.topicModelRevision ?? null;
+  const currentInsights =
+    confirmedTopicModelRevision !== null &&
+    insightsQuery.data?.topicModelRevision === confirmedTopicModelRevision
+      ? insightsQuery.data
+      : null;
+  const clusters = useMemo(
+    () =>
+      buildGrowthMapClusterViewItems(
+        portfolio,
+        opportunities,
+        workspaceQuery.data ?? null,
+        insightsQuery.data ?? null,
+      ),
+    [insightsQuery.data, opportunities, portfolio, workspaceQuery.data],
+  );
+  const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
+  const filtersActive = pageTypeFilter !== "all" || priorityFilter !== "all";
+  const visibleClusters = useMemo(
+    () =>
+      clusters.filter((cluster) => {
+        if (
+          filtersActive &&
+          filterGrowthMapUrlItems(cluster.pages, {
+            pageType: pageTypeFilter,
+            priority: priorityFilter,
+          }).length === 0
+        ) {
+          return false;
+        }
+        if (normalizedSearch.length === 0) return true;
+        return [
+          cluster.label ?? "",
+          ...cluster.clusterKeys,
+          ...cluster.pages.map((page) => page.normalizedUrl),
+          ...cluster.opportunities.map((item) => item.opportunity.title),
+        ].some((value) =>
+          value.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
+        );
+      }),
+    [clusters, filtersActive, normalizedSearch, pageTypeFilter, priorityFilter],
+  );
+  const selectedId = resolveVisibleGrowthMapClusterSelection(
+    requestedId,
+    visibleClusters.map((cluster) => cluster.id),
+  );
+  const selected =
+    visibleClusters.find((cluster) => cluster.id === selectedId) ?? null;
+  const insight =
+    selected?.topicNodeId === null || selected?.topicNodeId === undefined
+      ? null
+      : currentInsights?.nodes.find(
+          (node) => node.topicNodeId === selected.topicNodeId,
+        ) ?? null;
+
+  useEffect(() => {
+    if (
+      readState !== "ready" ||
+      requestedId === null ||
+      requestedId === selectedId
+    ) {
+      return;
+    }
+    onRepairSelection(selectedId);
+  }, [
+    onRepairSelection,
+    readState,
+    requestedId,
+    selectedId,
+  ]);
+
+  if (readState === "error") {
+    const failedQuery = workspaceQuery.isError
+      ? workspaceQuery
+      : insightsQuery;
+    return (
+      <div className={styles.pageState}>
+        <ProblemNotice
+          error={failedQuery.error}
+          message={t("cluster.readError")}
+          onRetry={() => {
+            void workspaceQuery.refetch();
+            void insightsQuery.refetch();
+          }}
+          retryLabel={t("retry")}
+        />
+      </div>
+    );
+  }
+
+  if (readState === "loading") {
+    return (
+      <div className={styles.pageState} role="status">
+        <Spinner label={t("loading")} size="lg" />
+        <p>{t("loading")}</p>
+      </div>
+    );
+  }
+
+  if (visibleClusters.length === 0) {
+    return (
+      <EmptyState
+        className={styles.portfolioEmpty}
+        icon={<Network size={30} />}
+        title={t("empty.cluster")}
+        description={t("cluster.description")}
+      />
+    );
+  }
+  return (
+    <div className={styles.workspace}>
+      <div className={styles.masterColumn}>
+        <ClusterLedger
+          items={visibleClusters}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+        <p className={styles.completeViewScope}>
+          {t("cluster.scopeNote")} · {t("searchScope")} ·
+          {" "}{t("counts.urls", { count: portfolio.length })}
+        </p>
+      </div>
+      {selected === null ? (
+        <aside className={styles.detailPlaceholder}>
+          <p>{t("select.cluster")}</p>
+        </aside>
+      ) : (
+        <ClusterDetailPanel
+          item={selected}
+          insight={insight}
+          onOpenUrl={onOpenUrl}
+          onOpenOpportunity={onOpenOpportunity}
+        />
+      )}
+    </div>
+  );
+}
+
 function PortfolioPane({
   projectId,
   locationSearch,
@@ -2285,6 +3396,7 @@ function PortfolioPane({
   const canonicalMode = normalizeGrowthMapObjectMode(
     canonicalSearchParams.get("object"),
   );
+  const canonicalPageViewParam = canonicalSearchParams.get("view");
   const locationParams = useMemo(
     () => new URLSearchParams(locationSearch),
     [locationSearch],
@@ -2292,7 +3404,15 @@ function PortfolioPane({
   const querySearch = locationParams.get("q") ?? "";
   const cursor = locationParams.get("cursor");
   const selectedParam = locationParams.get("selectedSitePageId");
+  const selectedClusterParam = locationParams.get("selectedClusterId");
+  const selectedOpportunityParam = locationParams.get("selectedOpportunityId");
   const selectedFindingId = locationParams.get("findingId");
+  const pageView = resolveGrowthMapPageView(locationParams.get("view"), {
+    selectedSitePageId: selectedParam,
+    selectedFindingId,
+    selectedClusterId: selectedClusterParam,
+    selectedOpportunityId: selectedOpportunityParam,
+  });
   const canonicalSelectedParam = canonicalSearchParams.get(
     "selectedSitePageId",
   );
@@ -2306,10 +3426,36 @@ function PortfolioPane({
   const [rowDetailsOpen, setRowDetailsOpen] = useState(false);
   const [cursorHistory, setCursorHistory] = useState<readonly (string | null)[]>([]);
   const listQuery = useGrowthMapUrls(projectId, {
-    search: querySearch,
-    cursor,
+    search: pageView === "url" ? querySearch : null,
+    cursor: pageView === "url" ? cursor : null,
     limit: 50,
     diagnosticRunId,
+  });
+  const uiLocale = useLocale();
+  const completeUrlsQuery = useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "page-views",
+      diagnosticRunId,
+      "complete-urls",
+    ],
+    queryFn: () => readCompleteGrowthMapUrls(projectId, diagnosticRunId),
+    enabled: pageView !== "url",
+  });
+  const completeOpportunitiesQuery = useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "page-views",
+      diagnosticRunId,
+      "complete-opportunities",
+    ],
+    queryFn: () =>
+      readCompleteGrowthMapOpportunities(projectId, diagnosticRunId),
+    enabled: pageView !== "url",
   });
   // Reads the live library rather than the frozen generation: a keyword that
   // has been collected but not yet reviewed still belongs in this count. Pinned
@@ -2322,9 +3468,16 @@ function PortfolioPane({
     diagnosticRunId: null,
   });
   const items = listQuery.data?.data ?? [];
+  const completeUrls = completeUrlsQuery.data ?? [];
+  const completeOpportunities = completeOpportunitiesQuery.data ?? [];
   const pageTypeOptions = useMemo(
-    () => growthMapPageTypeFilterOptions(items),
-    [items],
+    () =>
+      growthMapPageTypeFilterOptions(
+        pageView === "url" || completeUrls.length === 0
+          ? items
+          : completeUrls,
+      ),
+    [completeUrls, items, pageView],
   );
   const filteredItems = useMemo(
     () =>
@@ -2334,11 +3487,22 @@ function PortfolioPane({
       }),
     [items, pageTypeFilter, priorityFilter],
   );
-  const selectedSitePageId = resolveVisibleSitePageSelectionForFinding(
-    selectedParam,
-    selectedFindingId,
-    filteredItems,
+  const opportunityViewItems = useMemo(
+    () =>
+      buildGrowthMapOpportunityViewItems(
+        completeOpportunities,
+        completeUrls,
+      ),
+    [completeOpportunities, completeUrls],
   );
+  const selectedSitePageId =
+    pageView === "url"
+      ? resolveVisibleSitePageSelectionForFinding(
+          selectedParam,
+          selectedFindingId,
+          filteredItems,
+        )
+      : null;
   const canonicalSelectedSitePageId = resolveVisibleSitePageSelectionForFinding(
     canonicalSelectedParam,
     canonicalSelectedFindingId,
@@ -2348,6 +3512,30 @@ function PortfolioPane({
   useEffect(() => {
     setSearchDraft(querySearch);
   }, [querySearch]);
+
+  useEffect(() => {
+    if (
+      navigation.isPending ||
+      locationSearch !== canonicalLocationSearch ||
+      canonicalMode !== "pages" ||
+      canonicalPageViewParam === pageView
+    ) {
+      return;
+    }
+    navigation.replaceCanonicalHref(
+      growthMapLocationHref(pathname, canonicalLocationSearch, {
+        pageView,
+      }),
+    );
+  }, [
+    canonicalLocationSearch,
+    canonicalMode,
+    canonicalPageViewParam,
+    locationSearch,
+    navigation,
+    pageView,
+    pathname,
+  ]);
 
   useEffect(() => {
     // An absent selection intentionally renders the first visible row without
@@ -2360,6 +3548,7 @@ function PortfolioPane({
       navigation.isPending ||
       locationSearch !== canonicalLocationSearch ||
       canonicalMode !== "pages" ||
+      pageView !== "url" ||
       !listQuery.isSuccess ||
       canonicalSelectedParam === null ||
       canonicalSelectedParam === canonicalSelectedSitePageId
@@ -2379,6 +3568,7 @@ function PortfolioPane({
     listQuery.isSuccess,
     locationSearch,
     navigation,
+    pageView,
     pathname,
   ]);
 
@@ -2389,6 +3579,41 @@ function PortfolioPane({
     });
   }
 
+  function selectCluster(id: string | null): void {
+    navigation.request({ selectedClusterId: id });
+  }
+
+  function selectOpportunity(id: string | null): void {
+    navigation.request({ selectedOpportunityId: id });
+  }
+
+  function switchPageView(nextView: GrowthMapPageView): void {
+    setCursorHistory([]);
+    navigation.request({ pageView: nextView });
+  }
+
+  function openUrlFromGroupedView(
+    sitePageId: string,
+    findingId: string | null = null,
+  ): void {
+    navigation.request({
+      pageView: "url",
+      search: null,
+      cursor: null,
+      selectedSitePageId: sitePageId,
+      selectedFindingId: findingId,
+    });
+  }
+
+  function openOpportunityFromCluster(id: string): void {
+    navigation.request({
+      pageView: "opportunity",
+      search: null,
+      cursor: null,
+      selectedOpportunityId: id,
+    });
+  }
+
   function submitSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     setCursorHistory([]);
@@ -2396,6 +3621,8 @@ function PortfolioPane({
       search: searchDraft,
       cursor: null,
       selectedSitePageId: null,
+      selectedClusterId: null,
+      selectedOpportunityId: null,
       selectedFindingId: null,
     });
   }
@@ -2553,6 +3780,8 @@ function PortfolioPane({
       </section>
       <LimitationList limitations={response.meta.coverage.limitations} />
 
+      <PageViewTabs value={pageView} onChange={switchPageView} />
+
       <form
         className={cx(styles.libraryToolbar, styles.portfolioToolbar)}
         role="search"
@@ -2608,22 +3837,24 @@ function PortfolioPane({
               </em>
             )}
           </button>
-          <button
-            type="button"
-            className={cx(
-              styles.portfolioToolButton,
-              rowDetailsOpen && styles.portfolioToolButtonActive,
-            )}
-            aria-pressed={rowDetailsOpen}
-            onClick={() => setRowDetailsOpen((open) => !open)}
-          >
-            <ChevronDown
-              aria-hidden="true"
-              size={17}
-              className={cx(rowDetailsOpen && styles.portfolioToolIconOpen)}
-            />
-            <span>{t("portfolioFilters.expandRowDetails")}</span>
-          </button>
+          {pageView === "url" ? (
+            <button
+              type="button"
+              className={cx(
+                styles.portfolioToolButton,
+                rowDetailsOpen && styles.portfolioToolButtonActive,
+              )}
+              aria-pressed={rowDetailsOpen}
+              onClick={() => setRowDetailsOpen((open) => !open)}
+            >
+              <ChevronDown
+                aria-hidden="true"
+                size={17}
+                className={cx(rowDetailsOpen && styles.portfolioToolIconOpen)}
+              />
+              <span>{t("portfolioFilters.expandRowDetails")}</span>
+            </button>
+          ) : null}
         </div>
         <Button type="submit" variant="primary">
           {t("searchAction")}
@@ -2659,21 +3890,27 @@ function PortfolioPane({
         ) : null}
       </form>
 
-      {clientFiltered ? (
+      {pageView === "url" && clientFiltered ? (
         <p className={styles.portfolioFilterScopeNote}>
           {t("portfolioFilters.clientScopeNote", { limit: response.meta.limit })}
         </p>
       ) : null}
 
-      {items.length === 0 ? (
-        <EmptyState
-          className={styles.portfolioEmpty}
-          icon={<Globe2 size={30} />}
-          title={querySearch ? t("noSearchResults") : t("noPagesTitle")}
-          description={querySearch ? t("noSearchResultsDescription") : t("noPagesDescription")}
-        />
-      ) : (
-        <div className={styles.workspace}>
+      <div
+        id="growth-map-page-view-panel"
+        role="tabpanel"
+        aria-labelledby={`growth-map-page-view-tab-${pageView}`}
+        data-page-view={pageView}
+      >
+        {pageView === "url" && items.length === 0 ? (
+          <EmptyState
+            className={styles.portfolioEmpty}
+            icon={<Globe2 size={30} />}
+            title={querySearch ? t("noSearchResults") : t("noPagesTitle")}
+            description={querySearch ? t("noSearchResultsDescription") : t("noPagesDescription")}
+          />
+        ) : pageView === "url" ? (
+          <div className={styles.workspace}>
           <div className={styles.masterColumn}>
             {/* The pager stays mounted even when the client-side filter empties
                 this page: the band counts above are whole-generation totals, so
@@ -2756,8 +3993,58 @@ function PortfolioPane({
             selectedFindingId={selectedFindingId}
             diagnosticRunId={diagnosticRunId}
           />
-        </div>
-      )}
+          </div>
+        ) : completeUrlsQuery.isPending || completeOpportunitiesQuery.isPending ? (
+          <div className={styles.pageState} role="status">
+            <Spinner label={t("pageViews.loading")} size="lg" />
+            <p>{t("pageViews.loading")}</p>
+          </div>
+        ) : completeUrlsQuery.isError || completeOpportunitiesQuery.isError ? (
+          <div className={styles.pageState}>
+            <ProblemState
+              error={completeUrlsQuery.error ?? completeOpportunitiesQuery.error}
+              onRetry={() => {
+                void completeUrlsQuery.refetch();
+                void completeOpportunitiesQuery.refetch();
+              }}
+              message={t(
+                completeUrlsQuery.error instanceof
+                  GrowthMapPageViewScopeMismatchError ||
+                  completeOpportunitiesQuery.error instanceof
+                    GrowthMapPageViewScopeMismatchError
+                  ? "pageViews.scopeMismatch"
+                  : "pageViews.loadError",
+              )}
+            />
+          </div>
+        ) : pageView === "opportunity" ? (
+          <OpportunityPageView
+            projectId={projectId}
+            items={opportunityViewItems}
+            requestedId={selectedOpportunityParam}
+            search={querySearch}
+            pageTypeFilter={pageTypeFilter}
+            priorityFilter={priorityFilter}
+            onSelect={selectOpportunity}
+            onRepairSelection={selectOpportunity}
+            onOpenUrl={openUrlFromGroupedView}
+          />
+        ) : (
+          <ClusterPageView
+            projectId={projectId}
+            portfolio={completeUrls}
+            opportunities={completeOpportunities}
+            requestedId={selectedClusterParam}
+            search={querySearch}
+            pageTypeFilter={pageTypeFilter}
+            priorityFilter={priorityFilter}
+            onSelect={selectCluster}
+            onRepairSelection={selectCluster}
+            onOpenUrl={(sitePageId) => openUrlFromGroupedView(sitePageId)}
+            onOpenOpportunity={openOpportunityFromCluster}
+          />
+        )}
+      </div>
     </section>
   );
 }

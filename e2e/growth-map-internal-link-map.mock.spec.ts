@@ -21,12 +21,24 @@ async function useChineseUi(page: Page): Promise<void> {
   ]);
 }
 
+async function openFullEvidenceAndReview(page: Page): Promise<void> {
+  const disclosure = page.locator("[data-full-evidence-disclosure]");
+  await expect(disclosure).toBeVisible();
+  if ((await disclosure.getAttribute("open")) === null) {
+    await page
+      .locator("[data-full-evidence-disclosure] > summary")
+      .click();
+  }
+  await expect(disclosure).toHaveAttribute("open", "");
+}
+
 async function selectUrl(page: Page, path: string): Promise<void> {
   await page
     .getByRole("button")
     .filter({ hasText: path })
     .first()
     .click();
+  await openFullEvidenceAndReview(page);
 }
 
 let api: GrowthVerticalApiState;
@@ -42,6 +54,7 @@ test("keeps Internal Link Map inside the existing URL detail and refreshes it on
   await page.goto(
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
+  await openFullEvidenceAndReview(page);
 
   const workspaceNavigation = page.getByRole("navigation", {
     name: "项目分区",
@@ -189,6 +202,7 @@ test("补链建议通过现有 Finding 审核生成任务，不绕过客户确�
   await page.goto(
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
+  await openFullEvidenceAndReview(page);
 
   const recommendation = page
     .locator("[data-link-recommendation]")

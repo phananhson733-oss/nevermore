@@ -2253,6 +2253,141 @@
       "uncoveredEmptyAction": "Import Keywords",
       "unavailable": "Unavailable"
     },
+    "pageViews": {
+      "label": "Pages and opportunities view",
+      "defaultHint": "Opportunity view is the default so the next decision stays visible first.",
+      "url": {
+        "label": "By URL",
+        "description": "Inspect each page and its current signals",
+        "currentOpportunities": "Current issues and opportunities",
+        "fullEvidence": "Full evidence and review",
+        "fullEvidenceDescription": "Metrics, lineage, link map, and Finding controls"
+      },
+      "cluster": {
+        "label": "By topic cluster",
+        "description": "See page coverage and demand as one topic",
+        "detailLabel": "Selected topic-cluster detail",
+        "eyebrow": "Topic cluster",
+        "role": "Role",
+        "roles": {
+          "root": "Root topic",
+          "pillar": "Pillar",
+          "support": "Supporting topic",
+          "unmapped": "Legacy cluster"
+        },
+        "metrics": {
+          "pages": "Existing pages",
+          "searchQueries": "Search queries",
+          "generativeQueries": "Generative queries"
+        },
+        "sections": {
+          "pages": "Existing pages and roles",
+          "queries": "Demand coverage",
+          "gap": "Coverage gap",
+          "opportunity": "Highest-priority opportunity"
+        },
+        "noPages": "No URL in the frozen portfolio is assigned to this cluster.",
+        "noQueries": "No traceable query evidence is linked to this cluster yet.",
+        "covered": "The governed Keyword set is covered by existing pages.",
+        "unavailable": "Topic coverage is unavailable; the UI will not infer it from similar labels.",
+        "readError": "The confirmed Topic structure could not be read, so clusters stay hidden instead of being relabeled as legacy data.",
+        "scopeNote": "URLs and Opportunities use the frozen audit; Topic structure and Keyword coverage use the latest confirmed Topic Model",
+        "clickCoverage": {
+          "available": "All {total} URLs observed",
+          "partial": "{observed} of {total} URLs observed",
+          "unavailable": "Clicks not observed"
+        },
+        "openUrl": "Open URL",
+        "openOpportunity": "Open opportunity"
+      },
+      "opportunity": {
+        "label": "By opportunity",
+        "description": "Start from the next review or execution decision",
+        "detailLabel": "Selected growth-opportunity detail",
+        "eyebrow": "Growth opportunity",
+        "metrics": {
+          "urls": "Target URLs",
+          "findings": "Finding evidence",
+          "output": "Execution output"
+        },
+        "sections": {
+          "primaryFinding": "Primary Finding",
+          "evidence": "Supporting evidence",
+          "targets": "Target pages",
+          "limitations": "Coverage and limitations",
+          "output": "Execution output",
+          "decision": "Next decision"
+        },
+        "readiness": {
+          "candidate": "Candidate",
+          "reviewable": "Ready for review",
+          "confirmed": "Confirmed"
+        },
+        "workShape": {
+          "fix": "Fix",
+          "improve": "Improve",
+          "create": "Create"
+        },
+        "target": {
+          "site": "Site",
+          "template": "Template",
+          "url": "URL",
+          "topic": "Topic",
+          "new_asset": "New asset"
+        },
+        "lenses": {
+          "site_health": "Site Health",
+          "search_ai_visibility": "Search & AI Visibility",
+          "demand_competition": "Demand & Competition"
+        },
+        "priorityUnavailable": "Not independently assessed",
+        "priorityUnavailableHint": "The Opportunity contract does not expose an exact independent priority for this row; the UI does not borrow a URL aggregate.",
+        "noEvidence": "No additional supporting evidence is available.",
+        "noTargets": "No exact URL target is available for this opportunity.",
+        "noLimitations": "No additional limitation is recorded.",
+        "noOutput": "No deterministic execution output is available yet.",
+        "review": "Review this Finding",
+        "openExecution": "Open execution",
+        "inspectEvidence": "Inspect evidence",
+        "candidateBoundary": "This is evidence-backed context, not a confirmable Finding.",
+        "reviewBoundary": "Reviewing opens the exact URL and one canonical Finding; supporting evidence is never confirmed in a batch.",
+        "confirmedBoundary": "A canonical Action already exists for this Finding."
+      },
+      "columns": {
+        "cluster": "Topic cluster",
+        "role": "Role",
+        "urls": "URLs",
+        "keywords": "Keywords",
+        "clicks": "Clicks",
+        "openOpportunities": "Open opportunities",
+        "opportunity": "Opportunity / target",
+        "type": "Type",
+        "priority": "Priority",
+        "artifacts": "Output",
+        "status": "Status"
+      },
+      "loading": "Building the complete frozen view…",
+      "loadError": "This view could not be built from the current frozen audit.",
+      "retry": "Try again",
+      "scopeMismatch": "The audit changed while this view was loading. Results stay hidden until every read names the same Diagnostic Run.",
+      "searchScope": "Search and filters apply to the complete frozen set in this view.",
+      "empty": {
+        "url": "No matching URL.",
+        "cluster": "No matching topic cluster.",
+        "opportunity": "No matching opportunity."
+      },
+      "select": {
+        "cluster": "Select a topic cluster to inspect its page and demand coverage.",
+        "opportunity": "Select an opportunity to inspect the Finding, targets, and next decision."
+      },
+      "counts": {
+        "urls": "{count, plural, one {# URL} other {# URLs}}",
+        "keywords": "{count, plural, one {# Keyword} other {# Keywords}}",
+        "opportunities": "{count, plural, one {# opportunity} other {# opportunities}}",
+        "findings": "{count, plural, one {# Finding} other {# Findings}}",
+        "observedClicks": "{count, plural, one {# URL observed} other {# URLs observed}}"
+      }
+    },
     "portfolioFilters": {
       "pageType": "Page type",
       "allPageTypes": "All page types",
@@ -2285,7 +2420,7 @@
     "limitations": "Limitations",
     "sourceOriginalLimitation": "Source record · original wording",
     "searchLabel": "Find a page",
-    "searchPlaceholder": "Search a full URL, domain, or path",
+    "searchPlaceholder": "Search a URL, page title, topic cluster, or opportunity",
     "searchAction": "Search",
     "portfolioLabel": "URLs and opportunities",
     "columns": {

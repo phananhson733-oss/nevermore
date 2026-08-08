@@ -111,10 +111,14 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   // ================= 2. ONE measured content Finding =======================
   await navLink(page, 1).click();
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
+  await page.getByRole("tab", { name: /^By URL/ }).click();
   await page
     .getByRole("button")
     .filter({ hasText: "/customer-onboarding" })
     .first()
+    .click();
+  await page
+    .locator("[data-full-evidence-disclosure] > summary")
     .click();
   await page.locator('[data-detail-state="opportunity-review"]').click();
 
@@ -387,10 +391,14 @@ test("one measured content Finding yields exactly one Action and exactly one con
   // above: no second confirmation path exists, and the confirmed Finding
   // reaches exactly one Action and exactly one brief.
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+  await page.getByRole("tab", { name: /^By URL/ }).click();
   await page
     .getByRole("button")
     .filter({ hasText: "/customer-onboarding" })
     .first()
+    .click();
+  await page
+    .locator("[data-full-evidence-disclosure] > summary")
     .click();
   await page.locator('[data-detail-state="opportunity-review"]').click();
 

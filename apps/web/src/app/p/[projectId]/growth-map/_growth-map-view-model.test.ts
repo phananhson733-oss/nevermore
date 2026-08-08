@@ -9,6 +9,7 @@ import type {
   GrowthMapKeywordRelation,
   GrowthMapInternalLinkMap,
   GrowthMapKeywordNumericMetric,
+  GrowthOpportunity,
   GrowthMapTopicModelInsights,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
@@ -18,6 +19,7 @@ import type {
 import { ApiError } from "@/lib/api";
 import {
   GROWTH_MAP_OBJECT_MODES,
+  GROWTH_MAP_PAGE_VIEWS,
   GROWTH_MAP_DETAIL_STATES,
   GROWTH_MAP_PAGE_TYPES,
   buildBeginTopicModelDraftCommand,
@@ -39,8 +41,11 @@ import {
   buildTopicNodeSplitIntent,
   buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
+  buildGrowthMapClusterViewItems,
+  buildGrowthMapOpportunityViewItems,
   findMetricObservation,
   growthMapLocationHref,
+  growthMapOpportunitySelectionId,
   growthMapPageTypeFilterOptions,
   growthMapPageTypeLabel,
   growthMapPageWindow,
@@ -48,6 +53,7 @@ import {
   growthMapKeywordReviewPresentation,
   GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
+  growthMapClusterReadState,
   competitorDetailReadState,
   competitorMonitorDisplayState,
   competitorLibraryReadState,
@@ -61,8 +67,12 @@ import {
   metricValueLabelKey,
   metricPresentation,
   normalizeGrowthMapObjectMode,
+  normalizeGrowthMapPageView,
   presentGrowthMapReviewProblem,
+  resolveGrowthMapPageView,
   resolveVisibleSitePageSelection,
+  resolveVisibleGrowthMapClusterSelection,
+  resolveVisibleGrowthMapOpportunitySelection,
   resolveVisibleSitePageSelectionForFinding,
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
@@ -741,7 +751,481 @@ function metric(
   } as GrowthMapUrlMetricObservation;
 }
 
+function growthOpportunity(
+  overrides: Record<string, unknown> = {},
+): GrowthOpportunity {
+  return {
+    opportunityKey: "opportunity:customer-onboarding",
+    title: "Improve customer onboarding",
+    workShape: "improve",
+    primaryTarget: "url",
+    targetRef: "https://example.test/customer-onboarding/",
+    evidenceSummary: [
+      {
+        traceKind: "observation",
+        observationId: IDS.observation,
+        snapshotId: IDS.snapshot,
+        sourceProvider: "gsc",
+        availability: "available",
+        support: "supports",
+        observedAt: "2026-07-21T08:00:00Z",
+        freshness: "current",
+        claim: "Demand is observed.",
+        limitation: "This is a bounded test observation.",
+      },
+    ],
+    searchQueries: [],
+    generativeQueries: [],
+    competitorRefs: [],
+    currentOwnedAsset: null,
+    supportingFindingIds: [],
+    lenses: ["search_ai_visibility"],
+    coverageAndLimitations: [],
+    readiness: "candidate",
+    ...overrides,
+  } as GrowthOpportunity;
+}
+
 describe("Growth Map view model", () => {
+  it("defaults unknown page-view state to the opportunity-first experience", () => {
+    expect(GROWTH_MAP_PAGE_VIEWS).toEqual([
+      "url",
+      "cluster",
+      "opportunity",
+    ]);
+    expect(normalizeGrowthMapPageView("url")).toBe("url");
+    expect(normalizeGrowthMapPageView("cluster")).toBe("cluster");
+    expect(normalizeGrowthMapPageView("opportunity")).toBe("opportunity");
+    expect(normalizeGrowthMapPageView("legacy-view")).toBe("opportunity");
+    expect(normalizeGrowthMapPageView(null)).toBe("opportunity");
+    expect(resolveGrowthMapPageView(null, {})).toBe("opportunity");
+    expect(
+      resolveGrowthMapPageView(null, { selectedSitePageId: IDS.sitePage }),
+    ).toBe("url");
+    expect(
+      resolveGrowthMapPageView(null, { selectedFindingId: IDS.finding }),
+    ).toBe("url");
+    expect(
+      resolveGrowthMapPageView(null, { selectedClusterId: IDS.topic }),
+    ).toBe("cluster");
+    expect(
+      resolveGrowthMapPageView(null, { selectedOpportunityId: IDS.action }),
+    ).toBe("opportunity");
+    expect(
+      resolveGrowthMapPageView("legacy-view", {
+        selectedSitePageId: IDS.sitePage,
+      }),
+    ).toBe("opportunity");
+  });
+
+  it("projects Opportunity rows from the complete URL inventory without guessing priority", () => {
+    const reviewable = growthOpportunity({
+      opportunityKey: "reviewable-opportunity",
+      title: "Critical onboarding issue",
+      readiness: "reviewable",
+      primaryFindingId: IDS.finding,
+      primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      executionPreview: null,
+    });
+    const candidate = growthOpportunity({
+      opportunityKey: "candidate-opportunity",
+      title: "Candidate content gap",
+      currentOwnedAsset: {
+        sitePageId: IDS.sitePageC,
+        snapshotId: IDS.snapshot,
+        url: "https://example.test/exact-owned-asset/",
+        suitableForIntent: true,
+      },
+    });
+    const confirmed = growthOpportunity({
+      opportunityKey: "confirmed-opportunity",
+      title: "Confirmed but ambiguous priority",
+      readiness: "confirmed",
+      primaryFindingId: IDS.supportingFinding,
+      primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      executionPreview: null,
+      actionId: IDS.action,
+      action: {
+        actionId: IDS.action,
+        findingId: IDS.supportingFinding,
+        status: "planned",
+        artifactType: "content_brief",
+      },
+    });
+    const exactPriority = {
+      availability: "available" as const,
+      value: "critical" as const,
+      basis: { findingIds: [IDS.finding] },
+      limitation: null,
+    };
+    const portfolio = [
+      urlPortfolioItem(IDS.sitePage, {
+        normalizedUrl: "https://example.test/customer-onboarding/",
+        findingIds: [IDS.finding],
+        priority: exactPriority as GrowthMapUrlPortfolioItem["priority"],
+      }),
+      urlPortfolioItem(IDS.sitePageB, {
+        normalizedUrl: "https://example.test/customer-onboarding-alt/",
+        findingIds: [IDS.finding],
+        priority: exactPriority as GrowthMapUrlPortfolioItem["priority"],
+      }),
+      urlPortfolioItem(IDS.sitePageC, {
+        normalizedUrl: "https://example.test/exact-owned-asset/",
+        findingIds: [IDS.supportingFinding, IDS.internalLinkFinding],
+        priority: {
+          availability: "available",
+          value: "high",
+          basis: {
+            findingIds: [IDS.supportingFinding, IDS.internalLinkFinding],
+          },
+          limitation: null,
+        } as GrowthMapUrlPortfolioItem["priority"],
+      }),
+    ];
+
+    const projected = buildGrowthMapOpportunityViewItems(
+      [confirmed, candidate, reviewable],
+      portfolio,
+    );
+
+    expect(projected.map((item) => item.id)).toEqual([
+      IDS.finding,
+      "candidate-opportunity",
+      IDS.supportingFinding,
+    ]);
+    expect(projected[0]).toMatchObject({
+      id: IDS.finding,
+      priority: { availability: "available", value: "critical" },
+    });
+    expect(projected[0]?.targetPages.map((page) => page.sitePageId)).toEqual([
+      IDS.sitePage,
+      IDS.sitePageB,
+    ]);
+    expect(projected[1]).toMatchObject({
+      id: "candidate-opportunity",
+      priority: { availability: "unavailable", value: null },
+    });
+    expect(projected[1]?.targetPages.map((page) => page.sitePageId)).toEqual([
+      IDS.sitePageC,
+    ]);
+    expect(projected[2]).toMatchObject({
+      id: IDS.supportingFinding,
+      priority: { availability: "unavailable", value: null },
+    });
+    expect(growthMapOpportunitySelectionId(reviewable)).toBe(IDS.finding);
+    expect(growthMapOpportunitySelectionId(candidate)).toBe(
+      "candidate-opportunity",
+    );
+  });
+
+  it("keeps Opportunity priority unavailable when one related URL disagrees or lacks an exact single-Finding basis", () => {
+    const opportunity = growthOpportunity({
+      readiness: "reviewable",
+      primaryFindingId: IDS.finding,
+      primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      executionPreview: null,
+    });
+    const portfolio = [
+      urlPortfolioItem(IDS.sitePage, {
+        findingIds: [IDS.finding],
+        priority: {
+          availability: "available",
+          value: "high",
+          basis: { findingIds: [IDS.finding] },
+          limitation: null,
+        } as GrowthMapUrlPortfolioItem["priority"],
+      }),
+      urlPortfolioItem(IDS.sitePageB, {
+        findingIds: [IDS.finding],
+        priority: {
+          availability: "available",
+          value: "medium",
+          basis: { findingIds: [IDS.finding] },
+          limitation: null,
+        } as GrowthMapUrlPortfolioItem["priority"],
+      }),
+    ];
+
+    expect(
+      buildGrowthMapOpportunityViewItems([opportunity], portfolio)[0]?.priority,
+    ).toMatchObject({ availability: "unavailable", value: null });
+  });
+
+  it("resolves stable clusters, preserves partial observations, and sorts open clusters first", () => {
+    const workspace = confirmedTopicWorkspace();
+    const stableWorkspace = {
+      ...workspace,
+      latestConfirmed: workspace.latestConfirmed && {
+        ...workspace.latestConfirmed,
+        nodes: [
+          ...workspace.latestConfirmed.nodes,
+          topicNode(
+            IDS.topicGrandchild,
+            IDS.topicChild,
+            "Workflow templates",
+          ),
+        ],
+        aliases: [
+          {
+            aliasId: IDS.relation,
+            projectId: IDS.project,
+            topicNodeId: IDS.topicRoot,
+            clusterKey: "customer-onboarding-legacy",
+            validFromTopicModelRevision: 1,
+            validThroughTopicModelRevision: null,
+            isCurrent: true,
+          },
+        ],
+      },
+    } as TopicModelWorkspaceProjection;
+    const rootOpportunity = growthOpportunity({
+      opportunityKey: "root-topic-opportunity",
+      primaryTarget: "topic",
+      targetRef: "customer-onboarding-legacy",
+    });
+    const childOpportunity = growthOpportunity({
+      opportunityKey: "child-url-opportunity",
+      currentOwnedAsset: {
+        sitePageId: IDS.sitePageC,
+        snapshotId: IDS.snapshot,
+        url: "https://example.test/onboarding-automation/",
+        suitableForIntent: true,
+      },
+    });
+    const portfolio = [
+      urlPortfolioItem(IDS.sitePage, {
+        clusterKey: "customer-onboarding-legacy",
+        metricObservations: [metric({ value: 9, sitePageId: IDS.sitePage })],
+      }),
+      urlPortfolioItem(IDS.sitePageB, {
+        clusterKey: "customer-onboarding-legacy",
+        metricObservations: [],
+      }),
+      urlPortfolioItem(IDS.sitePageC, {
+        normalizedUrl: "https://example.test/onboarding-automation/",
+        clusterKey: "Onboarding automation",
+        metricObservations: [],
+      }),
+      urlPortfolioItem("33333333-3333-4333-8333-333333333336", {
+        clusterKey: "legacy-unmapped-cluster",
+        metricObservations: [],
+      }),
+    ];
+
+    const projected = buildGrowthMapClusterViewItems(
+      portfolio,
+      [rootOpportunity, childOpportunity],
+      stableWorkspace,
+      topicInsights(),
+    );
+
+    expect(projected.map((item) => item.role)).toEqual([
+      "root",
+      "pillar",
+      "unmapped",
+      "support",
+    ]);
+    expect(projected[0]).toMatchObject({
+      id: IDS.topicRoot,
+      topicNodeId: IDS.topicRoot,
+      label: "Customer onboarding",
+      role: "root",
+      urlCount: 2,
+      keywordCount: 2,
+      observedClicks: 9,
+      observedClickUrlCount: 1,
+      clickCoverage: "partial",
+      openOpportunityCount: 1,
+    });
+    expect(projected[0]?.opportunities.map((item) => item.id)).toEqual([
+      "root-topic-opportunity",
+    ]);
+    expect(projected[1]).toMatchObject({
+      id: IDS.topicChild,
+      role: "pillar",
+      urlCount: 1,
+      observedClicks: null,
+      observedClickUrlCount: 0,
+      clickCoverage: "unavailable",
+      openOpportunityCount: 1,
+    });
+    expect(projected[2]).toMatchObject({
+      topicNodeId: null,
+      label: "legacy-unmapped-cluster",
+      role: "unmapped",
+      urlCount: 1,
+      keywordCount: null,
+      observedClicks: null,
+    });
+    expect(projected[3]).toMatchObject({
+      id: IDS.topicGrandchild,
+      role: "support",
+      urlCount: 0,
+      keywordCount: null,
+      observedClicks: null,
+      observedClickUrlCount: 0,
+      clickCoverage: "unavailable",
+    });
+  });
+
+  it("never treats stale Topic insights as current keyword counts", () => {
+    const workspace = confirmedTopicWorkspace();
+    const staleInsights = {
+      ...topicInsights(),
+      topicModelRevision: 2,
+      nodes: topicInsights().nodes.map((node) => ({
+        ...node,
+        topicModelRevision: 2,
+      })),
+    } as GrowthMapTopicModelInsights;
+
+    expect(
+      buildGrowthMapClusterViewItems([], [], workspace, staleInsights).map(
+        (cluster) => cluster.keywordCount,
+      ),
+    ).toEqual([null, null]);
+  });
+
+  it("falls stale cluster and Opportunity selections back to the first visible item", () => {
+    expect(
+      resolveVisibleGrowthMapClusterSelection("cluster-b", [
+        "cluster-a",
+        "cluster-b",
+      ]),
+    ).toBe("cluster-b");
+    expect(
+      resolveVisibleGrowthMapClusterSelection("stale", [
+        "cluster-a",
+        "cluster-b",
+      ]),
+    ).toBe("cluster-a");
+    expect(resolveVisibleGrowthMapClusterSelection("stale", [])).toBeNull();
+    expect(
+      resolveVisibleGrowthMapOpportunitySelection("stale", [
+        "opportunity-a",
+        "opportunity-b",
+      ]),
+    ).toBe("opportunity-a");
+    expect(resolveVisibleGrowthMapOpportunitySelection(null, [])).toBeNull();
+  });
+
+  it("fails closed when either confirmed Topic read fails", () => {
+    expect(
+      growthMapClusterReadState({
+        workspacePending: false,
+        workspaceError: true,
+        insightsPending: false,
+        insightsError: false,
+      }),
+    ).toBe("error");
+    expect(
+      growthMapClusterReadState({
+        workspacePending: false,
+        workspaceError: false,
+        insightsPending: false,
+        insightsError: true,
+      }),
+    ).toBe("error");
+    expect(
+      growthMapClusterReadState({
+        workspacePending: true,
+        workspaceError: false,
+        insightsPending: false,
+        insightsError: false,
+      }),
+    ).toBe("loading");
+    expect(
+      growthMapClusterReadState({
+        workspacePending: false,
+        workspaceError: false,
+        insightsPending: false,
+        insightsError: false,
+      }),
+    ).toBe("ready");
+  });
+
+  it("switches page views without losing search and keeps only that view's selection", () => {
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=legacy&q=pricing&cursor=opaque&selectedOpportunityId=opportunity-a",
+        { pageView: "opportunity" },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-a",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=url&q=pricing&cursor=opaque&selectedSitePageId=page-a&findingId=finding-a&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
+        { pageView: "cluster" },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=cluster&q=pricing&selectedClusterId=cluster-a",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=cluster&q=pricing&cursor=opaque&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
+        { pageView: "opportunity", selectedOpportunityId: "opportunity-b" },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-b",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-a",
+        { pageView: "url", selectedSitePageId: "page-b" },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=url&q=pricing&selectedSitePageId=page-b",
+    );
+  });
+
+  it("clears incompatible search and cursor state when drilling to an exact grouped entity", () => {
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=cluster&q=topic-only&cursor=opaque&selectedClusterId=cluster-a",
+        {
+          pageView: "opportunity",
+          search: null,
+          cursor: null,
+          selectedOpportunityId: "opportunity-b",
+        },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=opportunity&selectedOpportunityId=opportunity-b",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&view=opportunity&q=canonical&cursor=opaque&selectedOpportunityId=opportunity-a",
+        {
+          pageView: "url",
+          search: null,
+          cursor: null,
+          selectedSitePageId: "page-b",
+          selectedFindingId: "finding-b",
+        },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&view=url&selectedSitePageId=page-b&findingId=finding-b",
+    );
+  });
+
+  it("keeps every page-view tab connected to the one live dynamic tabpanel", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('aria-controls="growth-map-page-view-panel"');
+    expect(source).toContain('id="growth-map-page-view-panel"');
+    expect(source).not.toContain("growth-map-page-view-panel-${view}");
+  });
+
   it("keeps Internal Link Map inside the selected URL with real edges and Finding/Action references", () => {
     const projection = buildInternalLinkMapProjection(
       internalLinkMapFixture(),
@@ -2390,7 +2874,7 @@ describe("Growth Map view model", () => {
     expect(
       growthMapLocationHref(
         "/p/project/growth-map",
-        "q=pricing&cursor=opaque&selectedSitePageId=page-a",
+        "q=pricing&cursor=opaque&view=opportunity&selectedSitePageId=page-a&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
         { mode: "keywords" },
       ),
     ).toBe("/p/project/growth-map?object=keywords");
