@@ -274,8 +274,15 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "Content opportunity planning",
     title:
       "Map keyword opportunities from a real site and verified keyword data",
+    /*
+     * The route slug is still `hidden-keywords`, but no visitor-facing string
+     * says "hidden keywords": in English SEO usage that phrase means hiding
+     * text in the HTML, and the results for it are cloaking discussions. The
+     * page is noIndex, so the slug carries no search weight worth migrating a
+     * URL for — the copy just must not adopt the phrase.
+     */
     description:
-      "The opportunity map starts with your public site context, then validates candidate topics against a configured keyword data source before they are presented as opportunities.",
+      "Most keyword tools hand you an existing list filtered by difficulty. This one starts from what your site actually sells, works outward to candidate topics, and presents only the ones a configured keyword data source can confirm real demand for. It runs inside a GenGrowth project; there is no public, no-account version of this one yet.",
     sourceLabel: "Requires an enabled keyword data source in GenGrowth",
     sourceDetail:
       "Search-volume validation has a direct data cost. GenGrowth only presents validated opportunities when the project has an authorized provider available.",
@@ -565,7 +572,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
     eyebrow: "内容机会规划",
     title: "从真实网站和已验证数据中建立关键词机会地图",
     description:
-      "机会地图从公开网站上下文开始，只有在已配置的关键词数据源完成校验后，候选主题才会作为机会呈现。",
+      "大多数关键词工具是把一份现成词表按难度筛一遍给你。这个工具从你的网站实际在卖什么出发，反推出候选主题，并且只呈现那些已配置的关键词数据源能确认存在真实需求的。它运行在 GenGrowth 项目内部；目前还没有免登录的公开版本。",
     sourceLabel: "需要在 GenGrowth 中启用关键词数据源",
     sourceDetail:
       "搜索量校验存在直接数据成本。只有项目具备已授权的数据源时，GenGrowth 才会展示经过验证的机会。",

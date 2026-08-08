@@ -14,6 +14,17 @@ interface FaqItem {
   readonly answer: string;
 }
 
+/*
+ * 相关工具卡的名字必须和该工具自己页面上的名字一致。这里曾把 /tools/seo-audit
+ * 叫成 "Website Health Map"，而它在 2026-08-06 命名表里叫 Free site-wide SEO audit
+ * ——点进去发现名字对不上，是最廉价的信任损耗。
+ */
+interface RelatedTool {
+  readonly title: string;
+  readonly body: string;
+  readonly slug: string;
+}
+
 interface InternalLinkAuditContent {
   readonly metaTitle: string;
   readonly metaDescription: string;
@@ -96,8 +107,7 @@ interface InternalLinkAuditContent {
   readonly faqs: readonly FaqItem[];
   readonly relatedEyebrow: string;
   readonly relatedTitle: string;
-  readonly relatedAudit: string;
-  readonly relatedAuditBody: string;
+  readonly relatedItems: readonly RelatedTool[];
   readonly relatedTools: string;
   readonly readingEyebrow: string;
   readonly readingTitle: string;
@@ -150,7 +160,8 @@ const EN: InternalLinkAuditContent = {
     "Every metric below is generated from the static-HTML pages collected for the URL you entered in this request.",
   result: {
     summaryEyebrow: "Five-second answer",
-    summaryTitle: "Review observed structural findings before changing your site",
+    summaryTitle:
+      "Review observed structural findings before changing your site",
     summaryBody:
       "Use the observed evidence and its limitations to decide what to verify. This online audit never makes automatic changes to your site.",
     mappedPages: "Pages mapped",
@@ -166,7 +177,8 @@ const EN: InternalLinkAuditContent = {
     filterDeep: "Deep pages",
     filterBroken: "Unresolved targets",
     priorityTitle: "Highest-return fixes",
-    priorityBody: "Ordered by source-page strength, structural gap, and edit clarity.",
+    priorityBody:
+      "Ordered by source-page strength, structural gap, and edit clarity.",
     detailEyebrow: "Selected page",
     evidence: "Observed evidence",
     limitation: "Evidence limit",
@@ -190,12 +202,13 @@ const EN: InternalLinkAuditContent = {
     artifact: "Artifact",
     artifactBody:
       "A review-ready link brief with source URL, target URL, insertion context, anchor suggestion, evidence limit, and a re-crawl check.",
-    exportPreview: "This online tool provides a visual report; CSV export is not included.",
+    exportPreview:
+      "This online tool provides a visual report; CSV export is not included.",
   },
   howEyebrow: "How it works",
-  howTitle: "Four steps from a domain to a repair list",
+  howTitle: "How to run an internal link audit",
   howIntro:
-    "Enter a public website and receive a report based on observed static same-origin HTML.",
+    "Enter a public website and receive a report based on observed static same-origin HTML. Four steps, from a domain to a list you can review.",
   howSteps: [
     {
       title: "1. Enter your domain",
@@ -224,7 +237,7 @@ const EN: InternalLinkAuditContent = {
       body: "See a source page and observed anchor when a target was not collected. It is a follow-up check, not a claim that the target is broken.",
     },
     {
-      title: "Orphan pages — the ones nothing links to",
+      title: "Find orphan pages nothing links to",
       body: "Compare sitemap URLs with pages reached through internal HTML links. The gap is a candidate orphan, with the sitemap and rendering limits shown.",
     },
     {
@@ -236,7 +249,7 @@ const EN: InternalLinkAuditContent = {
       body: "These pages are not necessarily orphans, but they have one or fewer observed inbound HTML links in this online run.",
     },
     {
-      title: "Observed inbound relationships",
+      title: "Link equity distribution — which pages your structure supports",
       body: "Observed inbound HTML links make it easier to review which collected pages have structural support. This is not a PageRank calculation.",
     },
     {
@@ -244,20 +257,22 @@ const EN: InternalLinkAuditContent = {
       body: "For an observed relationship, the report can show the source page and recorded anchor text to support a manual review.",
     },
     {
-      title: "Observed homepage click depth",
+      title: "Crawl depth — observed clicks from the homepage",
       body: "The report computes the shortest observed static-HTML link path from the homepage. Indexable pages at four or more clicks are highlighted; sitemap seeds improve coverage but never shorten this path.",
     },
     {
-      title: "Review-ready findings",
-      body: "Each finding includes observed evidence and a limitation so you can decide what to verify before changing your site.",
+      title: "Internal linking opportunities you already have",
+      body: "For a page with little observed support, the report can name a source page already in the crawl and a suggested anchor. Each finding carries its observed evidence and its limitation, so you decide what to verify before changing your site.",
     },
     {
-      title: "A scannable page hierarchy",
+      title:
+        "Internal link visualization — the structure as a scannable hierarchy",
       body: "One shortest observed homepage path organizes each reachable page; unreachable groups and additional inbound links remain visible as separate evidence.",
     },
   ],
   methodEyebrow: "Method transparency",
-  methodTitle: "How we decide what counts as a problem",
+  methodTitle:
+    "How we check internal links and decide what counts as a problem",
   methods: [
     {
       title: "What counts as an orphan",
@@ -273,7 +288,7 @@ const EN: InternalLinkAuditContent = {
     },
   ],
   limitsEyebrow: "Honest limits",
-  limitsTitle: "What this audit will not tell you",
+  limitsTitle: "What this internal link audit will not tell you",
   limitations: [
     {
       title: "Links that exist only after JavaScript runs",
@@ -289,7 +304,8 @@ const EN: InternalLinkAuditContent = {
     },
   ],
   audienceEyebrow: "Who it is for",
-  audienceTitle: "For sites whose structure no longer fits in one person’s head",
+  audienceTitle:
+    "For sites whose structure no longer fits in one person’s head",
   audienceBody:
     "It becomes useful around dozens of pages, especially after a migration, a URL restructure, a large content batch, or template-generated publishing.",
   fitSignals: [
@@ -357,10 +373,24 @@ const EN: InternalLinkAuditContent = {
     },
   ],
   relatedEyebrow: "Continue exploring",
-  relatedTitle: "Related tool",
-  relatedAudit: "Website Health Map",
-  relatedAuditBody:
-    "Check one page’s crawlability, technical signals, on-page basics, and evidence limits.",
+  relatedTitle: "Related tools",
+  relatedItems: [
+    {
+      title: "Free site-wide SEO audit",
+      body: "A broader crawl of the same public pages — response, indexability, metadata, structure, and JSON-LD facts, with the same evidence limits.",
+      slug: "seo-audit",
+    },
+    {
+      title: "GSC Opportunity Finder",
+      body: "Search queries you already rank for that almost nobody clicks. Needs read-only Search Console; this audit does not.",
+      slug: "seo-quick-wins",
+    },
+    {
+      title: "Traffic Drop Diagnosis",
+      body: "For when traffic already fell and you need to see what changed in your own Search Console data.",
+      slug: "traffic-drop-diagnosis",
+    },
+  ],
   relatedTools: "See every free tool",
   readingEyebrow: "Editorial roadmap",
   readingTitle: "Related reading being prepared",
@@ -412,10 +442,13 @@ const ZH: InternalLinkAuditContent = {
   mockScope:
     "无需账号、无需注册。单次运行约覆盖 950 个页面：爬虫在两次请求之间至少等待 250 毫秒，以免给被审计的站点造成压力，并在四分钟处停止。按网络地址和按被审计站点各设有每小时上限，阈值远高于正常使用——因为每次运行都会从别人的服务器上取走数百个页面。",
   invalidUrl: "请输入公开域名或 HTTP(S) URL。",
-  stages: ["读取首页与 Sitemap 入口", "建立页面之间的 HTML 链接关系", "排序结构缺口"],
+  stages: [
+    "读取首页与 Sitemap 入口",
+    "建立页面之间的 HTML 链接关系",
+    "排序结构缺口",
+  ],
   demoResultLabel: "实时抓取结果",
-  demoResultBody:
-    "下方全部指标来自本次为你输入 URL 采集的静态 HTML 页面。",
+  demoResultBody: "下方全部指标来自本次为你输入 URL 采集的静态 HTML 页面。",
   result: {
     summaryEyebrow: "5 秒结论",
     summaryTitle: "改动网站前，先复核有明确边界的结构发现",
@@ -443,12 +476,10 @@ const ZH: InternalLinkAuditContent = {
     verify: "如何复验",
     selectPrompt: "请选择一个节点或问题，查看对应证据。",
     sampleLabel: "抓取范围",
-    fixedData:
-      "真实在线抓取 · 静态 HTML · 同源 · 临时共享抓取缓存",
+    fixedData: "真实在线抓取 · 静态 HTML · 同源 · 临时共享抓取缓存",
     fourPartTitle: "从发现问题到可审核的修复动作",
     observation: "Observation",
-    observationBody:
-      "结果会列出候选页面的观测入链、出链和 Sitemap 归属。",
+    observationBody: "结果会列出候选页面的观测入链、出链和 Sitemap 归属。",
     diagnosis: "Diagnosis",
     diagnosisBody:
       "Sitemap 可发现但未见 HTML 入链的页面会被标为候选；只由 JavaScript 生成的链接不在当前抓取范围内。",
@@ -461,7 +492,7 @@ const ZH: InternalLinkAuditContent = {
     exportPreview: "此在线工具仅提供临时可视化报告，暂不包含 CSV 导出。",
   },
   howEyebrow: "使用流程",
-  howTitle: "从一个域名到修复清单，只需四步",
+  howTitle: "如何做一次内链审计",
   howIntro:
     "输入公开网站后，工具会针对本次请求临时采集同源静态 HTML，并返回有明确范围的结构报告。",
   howSteps: [
@@ -491,7 +522,7 @@ const ZH: InternalLinkAuditContent = {
       body: "当某个目标未被本次抓取采集到时，展示来源页与观测锚文本。它需要复核，不等同于断链。",
     },
     {
-      title: "没有任何页面指向的孤岛",
+      title: "找出没有任何页面指向的孤岛页",
       body: "对比 Sitemap URL 与通过站内 HTML 链接到达的页面；二者差集是候选孤岛，同时显示 Sitemap 与渲染边界。",
     },
     {
@@ -503,7 +534,7 @@ const ZH: InternalLinkAuditContent = {
       body: "它们不一定是孤岛，但在本次在线运行中只有一条或没有观测到的 HTML 入链。",
     },
     {
-      title: "已观测的入链关系",
+      title: "内链权重分布——结构实际在支撑哪些页面",
       body: "观测到的 HTML 入链有助于复核哪些已采集页面获得结构支持；这不是 Google PageRank 计算。",
     },
     {
@@ -511,20 +542,20 @@ const ZH: InternalLinkAuditContent = {
       body: "对于已观测关系，报告可展示来源页及记录到的锚文本，便于人工复核。",
     },
     {
-      title: "观测到的首页点击深度",
+      title: "抓取深度——从首页数起的观测点击层数",
       body: "报告会计算从首页出发的最短已观测静态 HTML 链接路径；可索引页面需要至少 4 次点击时会被标出，Sitemap 种子只补充覆盖范围，不会缩短这条路径。",
     },
     {
-      title: "可复核的问题清单",
+      title: "你站内已经存在的内链机会",
       body: "每条发现都附有观测证据和限制条件，供你决定在改动网站前需要复核什么。",
     },
     {
-      title: "清晰可读的页面层级",
+      title: "内链结构可视化——一棵可扫读的层级树",
       body: "每个可达页面按一条最短首页路径组织；不可达分组和其他已观测入链仍作为独立证据保留。",
     },
   ],
   methodEyebrow: "方法透明",
-  methodTitle: "我们如何判断一个结构问题",
+  methodTitle: "我们如何检查内链、以及如何判断什么算问题",
   methods: [
     {
       title: "什么算孤岛",
@@ -540,7 +571,7 @@ const ZH: InternalLinkAuditContent = {
     },
   ],
   limitsEyebrow: "诚实边界",
-  limitsTitle: "这项审计不会告诉你的事",
+  limitsTitle: "这项内链审计不会告诉你的事",
   limitations: [
     {
       title: "只在 JavaScript 运行后出现的链接",
@@ -625,8 +656,23 @@ const ZH: InternalLinkAuditContent = {
   ],
   relatedEyebrow: "继续探索",
   relatedTitle: "相关工具",
-  relatedAudit: "网站健康地图",
-  relatedAuditBody: "检测一个页面的抓取、技术、页面基础和证据边界。",
+  relatedItems: [
+    {
+      title: "免费全站 SEO 审计",
+      body: "对同一批公开页面做更宽的一次抓取——响应、可索引性、元数据、结构与 JSON-LD 事实，证据边界同样如实标注。",
+      slug: "seo-audit",
+    },
+    {
+      title: "GSC Opportunity Finder",
+      body: "你已经有排名、却几乎没人点击的查询词。需要只读的 Search Console 授权，本审计不需要。",
+      slug: "seo-quick-wins",
+    },
+    {
+      title: "流量下降诊断",
+      body: "当流量已经掉了，用你自己的 Search Console 数据看清到底哪里变了。",
+      slug: "traffic-drop-diagnosis",
+    },
+  ],
   relatedTools: "查看全部免费工具",
   readingEyebrow: "内容规划",
   readingTitle: "正在准备的相关文章",

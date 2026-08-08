@@ -14,9 +14,13 @@ export function FreeAuditSection() {
   const locale = useLocale();
 
   return (
+    // overflow-hidden 不是可选的：右侧面板那圈 -right-15 的光晕会伸出容器，
+    // 而 section 是这条链上唯一能裁掉它的祖先。少了它，文档宽度被撑出视口，
+    // 1200px 以下整页可以横向拖动 28px（390px 上是 36px）。首页其余 section
+    // 都带着它，只有这里漏了。
     <section
       aria-labelledby="free-audit-title"
-      className="border-t border-brand-border bg-brand-bg-alt py-16 md:py-22"
+      className="relative overflow-hidden border-t border-brand-border bg-brand-bg-alt py-16 md:py-22"
     >
       <div className="max-w-content mx-auto grid items-center gap-9 px-6 md:px-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-14">
         <div>
@@ -32,9 +36,14 @@ export function FreeAuditSection() {
           <ul className="mt-6 space-y-2.5 text-[13.5px] text-text-dark-secondary">
             {["point1", "point2", "point3"].map((key) => (
               <li key={key} className="flex items-baseline gap-2.5">
+                {/*
+                 * 字体栈钉死 system-ui：▸ (U+25B8) 不在 IBM Plex Mono 的拉丁分片里，
+                 * 走 --font-mono 会一路落到 Noto Sans SC，为一个装饰箭头给英文页
+                 * 拉一份 7KB 的中文符号分片。和语言切换键同一个处理。
+                 */}
                 <span
                   aria-hidden="true"
-                  className="shrink-0 font-mono text-[10px] text-brand-accent"
+                  className="shrink-0 text-[10px] text-brand-accent [font-family:system-ui,sans-serif]"
                 >
                   ▸
                 </span>
@@ -42,6 +51,13 @@ export function FreeAuditSection() {
               </li>
             ))}
           </ul>
+          {/*
+           * 这条替代的是「先修哪个」——产品的 record 里刻意没有 score /
+           * severity / priority，所以方向由「属于哪一步」给，不由排序给。
+           */}
+          <p className="mt-6 border-l-2 border-brand-accent/40 pl-4 text-[13.5px] leading-[1.7] text-text-dark-secondary">
+            {t("workflowNote")}
+          </p>
         </div>
 
         <div className="relative">
@@ -68,6 +84,20 @@ export function FreeAuditSection() {
               {t("fullReport")}
               <ArrowRight aria-hidden="true" className="size-3" />
             </Link>
+            {/*
+             * 孤岛判定是 internal-link-audit 的输出（sitemap 差集），不是
+             * seo-audit 的。与其在一个结果里混两个工具的数据，不如在这里
+             * 交叉引流——更诚实，也多一次自然的工具间流转。
+             */}
+            <p className="mt-5 border-t border-brand-border pt-4 text-[12.5px] leading-[1.65] text-text-dark-secondary">
+              {t("orphanHint")}{" "}
+              <Link
+                href={localePath(locale, "/tools/internal-link-audit")}
+                className="text-brand-accent-text underline-offset-4 transition-colors hover:text-brand-accent-hover hover:underline"
+              >
+                {t("orphanHintLink")}
+              </Link>
+            </p>
           </div>
         </div>
       </div>
