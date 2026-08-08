@@ -211,6 +211,15 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
   await expect(
     opportunityDetail.getByText("0 items", { exact: true }),
   ).toBeVisible();
+  // Coverage and limitations render as visible list items, never as a
+  // collapsed icon that reads as an empty section.
+  await expect(
+    opportunityDetail
+      .locator("section")
+      .filter({ hasText: "Coverage and limitations" })
+      .locator("li")
+      .first(),
+  ).toBeVisible();
   await expect(opportunityDetail.locator("[data-finding-card]")).toHaveCount(0);
 });
 
