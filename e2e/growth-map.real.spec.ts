@@ -566,10 +566,10 @@ function trackGrowthMapRscRequests(page: Page): () => number {
   return () => count;
 }
 
-async function selectUrlPageView(page: Page): Promise<void> {
-  const tab = page.getByRole("tab", { name: /^By URL/ });
-  await tab.click();
-  await expect(tab).toHaveAttribute("aria-selected", "true");
+async function expectOpportunityLedger(page: Page): Promise<void> {
+  await expect(
+    page.getByRole("list", { name: "Growth opportunities" }),
+  ).toBeVisible();
 }
 
 async function openFullUrlDetail(detail: Locator): Promise<void> {
@@ -602,10 +602,7 @@ async function rapidObjectModeRoundTrip(page: Page): Promise<void> {
       message: "rapid object-tab round trip did not keep Pages as latest intent",
     })
     .toBe("pages");
-  await selectUrlPageView(page);
-  await expect(
-    page.getByRole("list", { name: "URLs and opportunities" }),
-  ).toBeVisible();
+  await expectOpportunityLedger(page);
 }
 
 async function rapidUrlSelectionRoundTrip(input: {
@@ -616,13 +613,28 @@ async function rapidUrlSelectionRoundTrip(input: {
   readonly findingB: GrowthMapUrlFinding;
 }): Promise<void> {
   const { page, pageA, pageB, findingA, findingB } = input;
-  const rowA = exactPortfolioRow(page, pageA.normalizedUrl);
-  const rowB = exactPortfolioRow(page, pageB.normalizedUrl);
+  const rowA = opportunityRow(page, findingA.findingId);
+  const rowB = opportunityRow(page, findingB.findingId);
 
+  // Opportunity selection is same-page query state. Exercise a rapid B -> A
+  // round trip without waiting; the address, the pressed row, and the rail
+  // must all retain the latest intent.
   await rowB.click();
   await rowA.click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedOpportunityId"))
+    .toBe(findingA.findingId);
   await expect(rowA).toHaveAttribute("aria-pressed", "true");
   await expect(rowB).toHaveAttribute("aria-pressed", "false");
+
+  const opportunityDetail = page.locator(
+    `[data-opportunity-detail="${findingA.findingId}"]`,
+  );
+  await expect(opportunityDetail).toBeVisible();
+  await opportunityDetail
+    .getByRole("button", { name: new URL(pageA.normalizedUrl).pathname })
+    .first()
+    .click();
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
   await openFullUrlDetail(detail);
   await expect(
@@ -631,15 +643,11 @@ async function rapidUrlSelectionRoundTrip(input: {
   await expect(
     detail.getByTitle(findingB.findingId, { exact: true }),
   ).toHaveCount(0);
-
-  await assertExactSelection({
-    page,
-    expected: pageA,
-    other: pageB,
-    expectedFinding: findingA,
-    otherFinding: findingB,
-    select: false,
-  });
+  await expect(
+    detail.getByTitle(pageB.sitePageId, { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to opportunities" }).click();
+  await expect(opportunityDetail).toBeVisible();
 }
 
 async function readPortfolio(
@@ -1003,14 +1011,11 @@ async function assertUrlPortfolioPresentation(input: {
   await expect(moreFilters).toHaveAttribute("aria-expanded", "false");
 }
 
-function exactPortfolioRow(page: Page, normalizedUrl: string): Locator {
-  const portfolio = page.getByRole("list", {
-    name: "URLs and opportunities",
-  });
-  return portfolio
-    .getByTitle(normalizedUrl, { exact: true })
-    .locator("xpath=ancestor::*[@data-growth-map-url-row][1]")
-    .getByRole("button");
+function opportunityRow(page: Page, findingId: string): Locator {
+  return page
+    .locator(`[data-growth-map-opportunity-row="${findingId}"]`)
+    .getByRole("button")
+    .first();
 }
 
 function exclusiveFinding(
@@ -1075,9 +1080,20 @@ async function assertExactSelection(input: {
     otherFinding,
     select = true,
   } = input;
-  const selectedRow = exactPortfolioRow(page, expected.normalizedUrl);
-  const otherRow = exactPortfolioRow(page, other.normalizedUrl);
-  if (select) await selectedRow.click();
+  const selectedRow = opportunityRow(page, expectedFinding.findingId);
+  const otherRow = opportunityRow(page, otherFinding.findingId);
+  if (select) {
+    // Select the Opportunity that owns the exclusive Finding, then drill into
+    // its exact target URL from the detail rail.
+    await selectedRow.click();
+    await expect(selectedRow).toHaveAttribute("aria-pressed", "true");
+    await expect(otherRow).toHaveAttribute("aria-pressed", "false");
+    await page
+      .locator(`[data-opportunity-detail="${expectedFinding.findingId}"]`)
+      .getByRole("button", { name: new URL(expected.normalizedUrl).pathname })
+      .first()
+      .click();
+  }
 
   await expect
     .poll(
@@ -1085,8 +1101,6 @@ async function assertExactSelection(input: {
       { message: `address did not select ${expected.sitePageId}` },
     )
     .toBe(expected.sitePageId);
-  await expect(selectedRow).toHaveAttribute("aria-pressed", "true");
-  await expect(otherRow).toHaveAttribute("aria-pressed", "false");
 
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
   // The rail keeps its landmark name while empty, loading, and failed, so its
@@ -1160,6 +1174,9 @@ async function assertExactSelection(input: {
   await expect(
     detail.getByTitle(otherFinding.findingId, { exact: true }),
   ).toHaveCount(0);
+  await expect(
+    detail.getByTitle(other.sitePageId, { exact: true }),
+  ).toHaveCount(0);
 
   const traceability = detail.locator("[data-identity-ledger]");
   if ((await traceability.getAttribute("open")) === null) {
@@ -1182,9 +1199,10 @@ async function assertExactSelection(input: {
     ).toBeVisible();
   }
 
-  // Every URL selection must remount in the read-only evidence state. Review
-  // controls may exist only after the operator explicitly enters Opportunity
-  // Review, and even there they belong to this exact canonical Finding.
+  // Drilling from an Opportunity pins its exact primary Finding, so the rail
+  // opens straight in Opportunity Review; Confirm belongs only to this exact
+  // canonical Finding. Audit Evidence stays the read-only state without any
+  // review control.
   const detailState = detail.getByRole("group", {
     name: "Selected URL detail state",
   });
@@ -1194,15 +1212,6 @@ async function assertExactSelection(input: {
   const reviewState = detailState.getByRole("button", {
     name: /^Opportunity Review/,
   });
-  await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    detail.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible();
-  await expect(
-    detail.getByRole("button", { name: "Confirm", exact: true }),
-  ).toHaveCount(0);
-
-  await reviewState.click();
   await expect(reviewState).toHaveAttribute("aria-pressed", "true");
   await expect(
     detail.locator('[data-detail-panel="opportunity-review"]'),
@@ -1219,6 +1228,22 @@ async function assertExactSelection(input: {
       reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
     ).toHaveCount(0);
   }
+
+  await evidenceState.click();
+  await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.locator('[data-detail-panel="audit-evidence"]'),
+  ).toBeVisible();
+  await expect(
+    detail.getByRole("button", { name: "Confirm", exact: true }),
+  ).toHaveCount(0);
+
+  // Leave the rail in Opportunity Review so a follow-up confirmation can act
+  // on the exact card this assertion just verified.
+  await reviewState.click();
+  await expect(
+    detail.locator('[data-detail-panel="opportunity-review"]'),
+  ).toBeVisible();
 }
 
 async function switchObjectMode(
@@ -1232,7 +1257,7 @@ async function switchObjectMode(
   await expect
     .poll(() => new URL(page.url()).searchParams.get("object"))
     .toBe(object);
-  if (object === "pages") await selectUrlPageView(page);
+  if (object === "pages") await expectOpportunityLedger(page);
 }
 
 test.describe.serial("real Growth Map selected-page identity", () => {
@@ -1407,7 +1432,7 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         name: "Find the next growth opportunity, page by real page.",
       }),
     ).toBeVisible();
-    await selectUrlPageView(page);
+    await expectOpportunityLedger(page);
     await assertUrlPortfolioPresentation({
       page,
       expectedFrozenUrlCount: portfolio.meta.summary.urlCount,
@@ -1436,9 +1461,6 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       "Competitor row selection must remain client-side query state",
     ).toBe(0);
     await switchObjectMode(page, "Pages & opportunities", "pages");
-    await expect(
-      page.getByRole("list", { name: "URLs and opportunities" }),
-    ).toBeVisible();
     await rapidObjectModeRoundTrip(page);
     await switchObjectMode(page, "Competitor library", "competitors");
     await expect(
@@ -1449,9 +1471,6 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       page.getByRole("list", { name: "Keyword list" }),
     ).toBeVisible();
     await switchObjectMode(page, "Pages & opportunities", "pages");
-    await expect(
-      page.getByRole("list", { name: "URLs and opportunities" }),
-    ).toBeVisible();
 
     await assertExactSelection({
       page,

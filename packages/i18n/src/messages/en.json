@@ -2254,56 +2254,18 @@
       "unavailable": "Unavailable"
     },
     "pageViews": {
-      "label": "Pages and opportunities view",
-      "defaultHint": "Opportunity view is the default so the next decision stays visible first.",
       "url": {
-        "label": "By URL",
-        "description": "Inspect each page and its current signals",
         "currentOpportunities": "Current issues and opportunities",
         "fullEvidence": "Full evidence and review",
         "fullEvidenceDescription": "Metrics, lineage, link map, and Finding controls"
       },
-      "cluster": {
-        "label": "By topic cluster",
-        "description": "See page coverage and demand as one topic",
-        "detailLabel": "Selected topic-cluster detail",
-        "eyebrow": "Topic cluster",
-        "role": "Role",
-        "roles": {
-          "root": "Root topic",
-          "pillar": "Pillar",
-          "support": "Supporting topic",
-          "unmapped": "Legacy cluster"
-        },
-        "metrics": {
-          "pages": "Existing pages",
-          "searchQueries": "Search queries",
-          "generativeQueries": "Generative queries"
-        },
-        "sections": {
-          "pages": "Existing pages and roles",
-          "queries": "Demand coverage",
-          "gap": "Coverage gap",
-          "opportunity": "Highest-priority opportunity"
-        },
-        "noPages": "No URL in the frozen portfolio is assigned to this cluster.",
-        "noQueries": "No traceable query evidence is linked to this cluster yet.",
-        "covered": "The governed Keyword set is covered by existing pages.",
-        "unavailable": "Topic coverage is unavailable; the UI will not infer it from similar labels.",
-        "readError": "The confirmed Topic structure could not be read, so clusters stay hidden instead of being relabeled as legacy data.",
-        "scopeNote": "URLs and Opportunities use the frozen audit; Topic structure and Keyword coverage use the latest confirmed Topic Model",
-        "clickCoverage": {
-          "available": "All {total} URLs observed",
-          "partial": "{observed} of {total} URLs observed",
-          "unavailable": "Clicks not observed"
-        },
-        "openUrl": "Open URL",
-        "openOpportunity": "Open opportunity"
-      },
       "opportunity": {
-        "label": "By opportunity",
+        "label": "Growth opportunities",
         "description": "Start from the next review or execution decision",
         "detailLabel": "Selected growth-opportunity detail",
+        "backToList": "Back to opportunities",
+        "evidenceCount": "{count} records",
+        "targetsCount": "{count} items",
         "eyebrow": "Growth opportunity",
         "metrics": {
           "urls": "Target URLs",
@@ -2354,12 +2316,7 @@
         "confirmedBoundary": "A canonical Action already exists for this Finding."
       },
       "columns": {
-        "cluster": "Topic cluster",
-        "role": "Role",
         "urls": "URLs",
-        "keywords": "Keywords",
-        "clicks": "Clicks",
-        "openOpportunities": "Open opportunities",
         "opportunity": "Opportunity / target",
         "type": "Type",
         "priority": "Priority",
@@ -2372,20 +2329,14 @@
       "scopeMismatch": "The audit changed while this view was loading. Results stay hidden until every read names the same Diagnostic Run.",
       "searchScope": "Search and filters apply to the complete frozen set in this view.",
       "empty": {
-        "url": "No matching URL.",
-        "cluster": "No matching topic cluster.",
         "opportunity": "No matching opportunity."
       },
       "select": {
-        "cluster": "Select a topic cluster to inspect its page and demand coverage.",
         "opportunity": "Select an opportunity to inspect the Finding, targets, and next decision."
       },
       "counts": {
-        "urls": "{count, plural, one {# URL} other {# URLs}}",
-        "keywords": "{count, plural, one {# Keyword} other {# Keywords}}",
         "opportunities": "{count, plural, one {# opportunity} other {# opportunities}}",
-        "findings": "{count, plural, one {# Finding} other {# Findings}}",
-        "observedClicks": "{count, plural, one {# URL observed} other {# URLs observed}}"
+        "findings": "{count, plural, one {# Finding} other {# Findings}}"
       }
     },
     "portfolioFilters": {
@@ -2395,10 +2346,7 @@
       "allPriorities": "All priorities",
       "more": "More filters",
       "moreLabel": "More filter controls",
-      "moreActiveCount": "{count} active",
-      "expandRowDetails": "Expand row details",
-      "clear": "Clear filters",
-      "clientScopeNote": "Page type and priority narrow only the {limit} URLs loaded on this page. The band counts in the cards above are whole-generation totals, so URLs in other bands can sit on other pages — use the pager to reach them."
+      "moreActiveCount": "{count} active"
     },
     "loadingPortfolio": "Reading the real URL portfolio…",
     "loadingDetail": "Reading the selected URL evidence chain…",
@@ -2441,13 +2389,6 @@
     "titleNotCollected": "Page title not collected",
     "reviewableCount": "{count, plural, one {# to review} other {# to review}}",
     "priorityUnavailable": "Not assessed",
-    "noSearchResults": "No real URL matches",
-    "noSearchResultsDescription": "Try another full URL, domain, or path. Approximate results are never added just to fill the list.",
-    "noPagesTitle": "This audit has no verifiable URLs",
-    "noPagesDescription": "Complete an audit with a Crawl PageSnapshot or a uniquely mapped page Observation first.",
-    "filteredPageEmptyTitle": "No URL on this page matches the filter",
-    "filteredPageEmptyDescription": "Page type and priority narrow only the batch loaded on this page. Page through the list to keep looking, or clear the filter.",
-    "filteredPageEmptyPriorityDescription": "This generation has {count} {code} URLs in total, none of them on this page. The list is ordered by coverage, not by priority, so page through it or clear the filter.",
     "paginationLabel": "URL list pagination",
     "previousPage": "Previous",
     "nextPage": "Next",
@@ -2686,23 +2627,13 @@
       "unclassified": "Unclassified"
     },
     "paginationStatus": "{count, plural, one {# filtered row} other {# filtered rows}} · Page {page} of {pages}",
-    "rowDetails": {
-      "label": "Row details",
-      "templateKey": "Page template",
-      "cluster": "Topic cluster",
-      "sources": "Data sources",
-      "pageSnapshot": "Page snapshot",
-      "unassigned": "Unassigned",
-      "notRecorded": "Not recorded"
-    },
     "primaryOpportunityReviewAction": "Review the highest-priority opportunity",
     "primaryOpportunityReviewHint": "This opportunity has no confirmed Action yet, so review it below first.",
     "primaryOpportunityClosedAction": "Review the closed signals",
     "primaryOpportunityClosedHint": "All {count} signals on this URL are ignored or no longer reported, so there is no highest-priority opportunity to act on.",
     "modeCount": {
       "pages": "{count, plural, one {# page} other {# pages}}"
-    },
-    "paginationStatusFiltered": "{count, plural, one {# row matches on this page} other {# rows match on this page}} · {total} in this generation · Page {page} of {pages}"
+    }
   },
   "plan": {
     "kicker": "Evidence-led roadmap · 90 days",

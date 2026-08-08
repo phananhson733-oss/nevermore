@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ArtifactType } from "./artifacts.ts";
 import { IsoDateTime, Uuid } from "./common.ts";
-import { ActionStatus } from "./diagnostics.ts";
+import { ActionStatus, PriorityBand } from "./diagnostics.ts";
 import { ExecutionPreview } from "./execution-preview.ts";
 import {
   AuditModuleId,
@@ -252,6 +252,7 @@ const ReviewableOpportunityObject = OpportunityBase.extend({
   readiness: z.literal("reviewable"),
   primaryFindingId: Uuid,
   primaryRule: OpportunityRuleReference,
+  primaryFindingSeverity: PriorityBand,
   executionPreview: ExecutionPreview.nullable(),
   actionId: z.undefined().optional(),
   action: z.undefined().optional(),
@@ -341,6 +342,7 @@ const ConfirmedOpportunityObject = OpportunityBase.extend({
   readiness: z.literal("confirmed"),
   primaryFindingId: Uuid,
   primaryRule: OpportunityRuleReference,
+  primaryFindingSeverity: PriorityBand,
   executionPreview: ExecutionPreview.nullable(),
   actionId: Uuid,
   action: OpportunityActionSummary,

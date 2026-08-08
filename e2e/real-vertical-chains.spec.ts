@@ -608,20 +608,22 @@ async function runDiagnosisAndConfirmFinding(
   await expect(page.getByText("No URL audit result yet")).toHaveCount(0);
 
   // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
-  await page.getByRole("tab", { name: /^By URL/ }).click();
-  await page.getByRole("button").filter({ hasText: "/gone" }).first().click();
   await page
-    .locator("[data-full-evidence-disclosure] > summary")
+    .locator("[data-growth-map-opportunity-row]")
+    .filter({ hasText: "/gone" })
+    .first()
+    .getByRole("button")
+    .first()
     .click();
-  await expect(
-    page.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
-
-  // Confirm renders only in Opportunity Review; the default panel is the
-  // read-only Audit Evidence state.
-  await page.locator('[data-detail-state="opportunity-review"]').click();
+  await page
+    .locator("[data-opportunity-detail]")
+    .getByRole("button", { name: "/gone" })
+    .first()
+    .click();
+  // Drilling from the Opportunity pins its primary Finding, so the full
+  // panel opens directly in the Opportunity Review state where Confirm lives.
   const review = page.locator('[data-detail-panel="opportunity-review"]');
-  await expect(review).toBeVisible();
+  await expect(review).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
   const finding = review
     .locator("[data-finding-card]")
     .filter({ hasText: "return HTTP 404" });

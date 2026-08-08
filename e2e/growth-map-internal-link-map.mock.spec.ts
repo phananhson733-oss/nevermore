@@ -32,12 +32,10 @@ async function openFullEvidenceAndReview(page: Page): Promise<void> {
   await expect(disclosure).toHaveAttribute("open", "");
 }
 
-async function selectUrl(page: Page, path: string): Promise<void> {
-  await page
-    .getByRole("button")
-    .filter({ hasText: path })
-    .first()
-    .click();
+async function selectUrl(page: Page, sitePageId: string): Promise<void> {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${sitePageId}`,
+  );
   await openFullEvidenceAndReview(page);
 }
 
@@ -113,7 +111,7 @@ test("keeps Internal Link Map inside the existing URL detail and refreshes it on
     `/p/${E2E_PROJECT_ID}/execution?actionId=${E2E_CANONICAL_ACTION_ID}`,
   );
 
-  await selectUrl(page, "/pricing");
+  await selectUrl(page, E2E_SECOND_SITE_PAGE_ID);
   await expect(page).toHaveURL(
     new RegExp(`selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`),
   );
@@ -134,13 +132,13 @@ test("keeps Internal Link Map inside the existing URL detail and refreshes it on
 
   // Repeat the round trip: selection is not a one-shot interaction. Every
   // reactivated exact SitePage re-reads its live Finding/Action references.
-  await selectUrl(page, "/customer-onboarding");
+  await selectUrl(page, E2E_ONBOARDING_SITE_PAGE_ID);
   await expect(linkMap).toHaveAttribute(
     "data-site-page-id",
     E2E_ONBOARDING_SITE_PAGE_ID,
   );
   await expect(linkMap.getByText("锚文本：Customer onboarding")).toBeVisible();
-  await selectUrl(page, "/pricing");
+  await selectUrl(page, E2E_SECOND_SITE_PAGE_ID);
   await expect(linkMap).toHaveAttribute(
     "data-site-page-id",
     E2E_SECOND_SITE_PAGE_ID,

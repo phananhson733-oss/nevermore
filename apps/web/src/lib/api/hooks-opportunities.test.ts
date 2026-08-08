@@ -77,6 +77,7 @@ function reviewableOpportunity() {
     readiness: "reviewable",
     primaryFindingId: FINDING_ID,
     primaryRule: { ruleId: "CONTENT-COVERAGE-001", ruleVersion: 1 },
+    primaryFindingSeverity: "high",
     executionPreview,
   };
 }

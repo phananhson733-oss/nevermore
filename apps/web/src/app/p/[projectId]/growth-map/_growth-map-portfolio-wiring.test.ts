@@ -42,12 +42,11 @@ describe("Growth Map URL portfolio wiring", () => {
     );
   });
 
-  it("derives the page position from the server-side preceding row count", () => {
-    expect(source).toContain("growthMapPageWindow({");
-    expect(source).toContain("precedingUrlCount: summary.precedingUrlCount,");
-    expect(source).toContain('? "paginationStatusFiltered"');
-    expect(source).toContain(': "paginationStatus",');
-    expect(source).toContain("count: clientFiltered");
+  it("reads the complete frozen Opportunity projection instead of a paged URL table", () => {
+    expect(source).toContain("readCompleteGrowthMapOpportunities(");
+    expect(source).toContain("readCompleteGrowthMapUrls(");
+    expect(source).not.toContain("growthMapPageWindow({");
+    expect(source).not.toContain('"paginationStatus"');
     expect(source).not.toContain(
       '<span>{t("loadedCount", { count: items.length })}</span>',
     );
@@ -55,7 +54,7 @@ describe("Growth Map URL portfolio wiring", () => {
 
   it("labels an unclassified page type instead of claiming it was not collected", () => {
     expect(source).not.toContain('{item.pageType ?? t("notCollected")}');
-    expect(source).toContain("{pageTypeLabel(item.pageType)}");
+    expect(source).toContain("{pageTypeLabel(pageType)}");
     expect(source).toContain(
       '<span>{t("pageType", { value: pageTypeLabel(detail.pageType) })}</span>',
     );
@@ -75,7 +74,6 @@ describe("Growth Map URL portfolio wiring", () => {
   it("keeps the priority filter in the more-filters drawer, not the main toolbar", () => {
     expect(source).toContain("styles.portfolioFilterDrawer");
     expect(source).toContain('t("portfolioFilters.more")');
-    expect(source).toContain('t("portfolioFilters.expandRowDetails")');
     const drawerStart = source.indexOf("styles.portfolioFilterDrawer");
     const priorityFilterStart = source.indexOf(
       't("portfolioFilters.priority")',
@@ -142,47 +140,11 @@ describe("Growth Map URL portfolio wiring", () => {
 describe("Growth Map filter and review honesty wiring", () => {
   const locales = [zhCN, en];
 
-  it("keeps the pager reachable when the page-local filter empties this page", () => {
-    const workspaceStart = source.indexOf("<div className={styles.workspace}>");
-    const filteredEmptyStart = source.indexOf(
-      "{filteredItems.length === 0 ? (",
-    );
-    const paginationStart = source.indexOf(
-      "className={styles.portfolioPagination}",
-    );
-
-    expect(workspaceStart).toBeGreaterThan(0);
-    expect(filteredEmptyStart).toBeGreaterThan(workspaceStart);
-    expect(paginationStart).toBeGreaterThan(filteredEmptyStart);
-
-    const filteredEmptyBlock = source.slice(
-      filteredEmptyStart,
-      paginationStart,
-    );
-    expect(filteredEmptyBlock).toContain('t("filteredPageEmptyTitle")');
-    expect(filteredEmptyBlock).toContain('t("portfolioFilters.clear")');
-    // The generation still holds rows in the filtered band, so the page must
-    // not claim "no real URL matches".
-    expect(filteredEmptyBlock).not.toContain('t("noSearchResults")');
-  });
-
-  it("states the scope gap between the generation band counts and the filter", () => {
-    expect(source).toContain('t("portfolioFilters.clientScopeNote"');
-    expect(source).toContain("total: summary.listedUrlCount,");
-    for (const messages of locales) {
-      const filters = messages.growthMap["portfolioFilters"] as Record<
-        string,
-        string
-      >;
-      expect(filters["clientScopeNote"]).toContain("{limit}");
-      expect(filters["clear"]).toBeTruthy();
-      expect(String(messages.growthMap["paginationStatusFiltered"])).toContain(
-        "{total}",
-      );
-      expect(
-        String(messages.growthMap["filteredPageEmptyPriorityDescription"]),
-      ).toContain("{count}");
-    }
+  it("filters the complete Opportunity ledger without a pager or scope note", () => {
+    expect(source).toContain("<div className={styles.workspace}>");
+    expect(source).toContain('t("searchScope")');
+    expect(source).not.toContain("styles.portfolioPagination");
+    expect(source).not.toContain('t("portfolioFilters.clientScopeNote"');
   });
 
   it("degrades the primary opportunity honestly when every Finding is closed", () => {

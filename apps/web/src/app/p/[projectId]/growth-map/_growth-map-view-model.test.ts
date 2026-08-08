@@ -19,7 +19,6 @@ import type {
 import { ApiError } from "@/lib/api";
 import {
   GROWTH_MAP_OBJECT_MODES,
-  GROWTH_MAP_PAGE_VIEWS,
   GROWTH_MAP_DETAIL_STATES,
   GROWTH_MAP_PAGE_TYPES,
   buildBeginTopicModelDraftCommand,
@@ -41,19 +40,16 @@ import {
   buildTopicNodeSplitIntent,
   buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
-  buildGrowthMapClusterViewItems,
   buildGrowthMapOpportunityViewItems,
   findMetricObservation,
   growthMapLocationHref,
   growthMapOpportunitySelectionId,
   growthMapPageTypeFilterOptions,
   growthMapPageTypeLabel,
-  growthMapPageWindow,
   growthMapPrimaryOpportunity,
   growthMapKeywordReviewPresentation,
   GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
-  growthMapClusterReadState,
   competitorDetailReadState,
   competitorMonitorDisplayState,
   competitorLibraryReadState,
@@ -67,13 +63,8 @@ import {
   metricValueLabelKey,
   metricPresentation,
   normalizeGrowthMapObjectMode,
-  normalizeGrowthMapPageView,
   presentGrowthMapReviewProblem,
-  resolveGrowthMapPageView,
-  resolveVisibleSitePageSelection,
-  resolveVisibleGrowthMapClusterSelection,
   resolveVisibleGrowthMapOpportunitySelection,
-  resolveVisibleSitePageSelectionForFinding,
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
@@ -787,44 +778,14 @@ function growthOpportunity(
 }
 
 describe("Growth Map view model", () => {
-  it("defaults unknown page-view state to the opportunity-first experience", () => {
-    expect(GROWTH_MAP_PAGE_VIEWS).toEqual([
-      "url",
-      "cluster",
-      "opportunity",
-    ]);
-    expect(normalizeGrowthMapPageView("url")).toBe("url");
-    expect(normalizeGrowthMapPageView("cluster")).toBe("cluster");
-    expect(normalizeGrowthMapPageView("opportunity")).toBe("opportunity");
-    expect(normalizeGrowthMapPageView("legacy-view")).toBe("opportunity");
-    expect(normalizeGrowthMapPageView(null)).toBe("opportunity");
-    expect(resolveGrowthMapPageView(null, {})).toBe("opportunity");
-    expect(
-      resolveGrowthMapPageView(null, { selectedSitePageId: IDS.sitePage }),
-    ).toBe("url");
-    expect(
-      resolveGrowthMapPageView(null, { selectedFindingId: IDS.finding }),
-    ).toBe("url");
-    expect(
-      resolveGrowthMapPageView(null, { selectedClusterId: IDS.topic }),
-    ).toBe("cluster");
-    expect(
-      resolveGrowthMapPageView(null, { selectedOpportunityId: IDS.action }),
-    ).toBe("opportunity");
-    expect(
-      resolveGrowthMapPageView("legacy-view", {
-        selectedSitePageId: IDS.sitePage,
-      }),
-    ).toBe("opportunity");
-  });
-
-  it("projects Opportunity rows from the complete URL inventory without guessing priority", () => {
+  it("projects Opportunity rows from the complete URL inventory with the primary Finding severity as priority", () => {
     const reviewable = growthOpportunity({
       opportunityKey: "reviewable-opportunity",
       title: "Critical onboarding issue",
       readiness: "reviewable",
       primaryFindingId: IDS.finding,
       primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      primaryFindingSeverity: "critical",
       executionPreview: null,
     });
     const candidate = growthOpportunity({
@@ -843,6 +804,7 @@ describe("Growth Map view model", () => {
       readiness: "confirmed",
       primaryFindingId: IDS.supportingFinding,
       primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      primaryFindingSeverity: "high",
       executionPreview: null,
       actionId: IDS.action,
       action: {
@@ -890,8 +852,8 @@ describe("Growth Map view model", () => {
 
     expect(projected.map((item) => item.id)).toEqual([
       IDS.finding,
-      "candidate-opportunity",
       IDS.supportingFinding,
+      "candidate-opportunity",
     ]);
     expect(projected[0]).toMatchObject({
       id: IDS.finding,
@@ -902,204 +864,72 @@ describe("Growth Map view model", () => {
       IDS.sitePageB,
     ]);
     expect(projected[1]).toMatchObject({
+      id: IDS.supportingFinding,
+      priority: { availability: "available", value: "high" },
+    });
+    expect(projected[2]).toMatchObject({
       id: "candidate-opportunity",
       priority: { availability: "unavailable", value: null },
     });
-    expect(projected[1]?.targetPages.map((page) => page.sitePageId)).toEqual([
+    expect(projected[2]?.targetPages.map((page) => page.sitePageId)).toEqual([
       IDS.sitePageC,
     ]);
-    expect(projected[2]).toMatchObject({
-      id: IDS.supportingFinding,
-      priority: { availability: "unavailable", value: null },
-    });
     expect(growthMapOpportunitySelectionId(reviewable)).toBe(IDS.finding);
     expect(growthMapOpportunitySelectionId(candidate)).toBe(
       "candidate-opportunity",
     );
   });
 
-  it("keeps Opportunity priority unavailable when one related URL disagrees or lacks an exact single-Finding basis", () => {
-    const opportunity = growthOpportunity({
-      readiness: "reviewable",
+  it("keeps the primary-Finding severity as priority after confirmation and never ranks candidates", () => {
+    const confirmedOpportunity = growthOpportunity({
+      readiness: "confirmed",
       primaryFindingId: IDS.finding,
       primaryRule: { ruleId: "SEARCH-CTR-004", ruleVersion: 1 },
+      primaryFindingSeverity: "medium",
       executionPreview: null,
+      actionId: IDS.action,
+      action: {
+        actionId: IDS.action,
+        findingId: IDS.finding,
+        status: "planned",
+        artifactType: "content_brief",
+      },
     });
+    // Confirmed Findings drop out of url_opportunity_rank.v1, so the URL no
+    // longer carries the Finding in its priority basis; the Opportunity must
+    // keep its own severity-based priority regardless.
     const portfolio = [
       urlPortfolioItem(IDS.sitePage, {
         findingIds: [IDS.finding],
         priority: {
-          availability: "available",
-          value: "high",
-          basis: { findingIds: [IDS.finding] },
-          limitation: null,
-        } as GrowthMapUrlPortfolioItem["priority"],
-      }),
-      urlPortfolioItem(IDS.sitePageB, {
-        findingIds: [IDS.finding],
-        priority: {
-          availability: "available",
-          value: "medium",
-          basis: { findingIds: [IDS.finding] },
-          limitation: null,
+          availability: "unavailable",
+          value: null,
+          basis: { findingIds: [] },
+          limitation: "No reviewable Finding remains on this URL.",
         } as GrowthMapUrlPortfolioItem["priority"],
       }),
     ];
 
     expect(
-      buildGrowthMapOpportunityViewItems([opportunity], portfolio)[0]?.priority,
+      buildGrowthMapOpportunityViewItems(
+        [confirmedOpportunity],
+        portfolio,
+      )[0]?.priority,
+    ).toMatchObject({ availability: "available", value: "medium" });
+
+    expect(
+      buildGrowthMapOpportunityViewItems([growthOpportunity()], portfolio)[0]
+        ?.priority,
     ).toMatchObject({ availability: "unavailable", value: null });
   });
 
-  it("resolves stable clusters, preserves partial observations, and sorts open clusters first", () => {
-    const workspace = confirmedTopicWorkspace();
-    const stableWorkspace = {
-      ...workspace,
-      latestConfirmed: workspace.latestConfirmed && {
-        ...workspace.latestConfirmed,
-        nodes: [
-          ...workspace.latestConfirmed.nodes,
-          topicNode(
-            IDS.topicGrandchild,
-            IDS.topicChild,
-            "Workflow templates",
-          ),
-        ],
-        aliases: [
-          {
-            aliasId: IDS.relation,
-            projectId: IDS.project,
-            topicNodeId: IDS.topicRoot,
-            clusterKey: "customer-onboarding-legacy",
-            validFromTopicModelRevision: 1,
-            validThroughTopicModelRevision: null,
-            isCurrent: true,
-          },
-        ],
-      },
-    } as TopicModelWorkspaceProjection;
-    const rootOpportunity = growthOpportunity({
-      opportunityKey: "root-topic-opportunity",
-      primaryTarget: "topic",
-      targetRef: "customer-onboarding-legacy",
-    });
-    const childOpportunity = growthOpportunity({
-      opportunityKey: "child-url-opportunity",
-      currentOwnedAsset: {
-        sitePageId: IDS.sitePageC,
-        snapshotId: IDS.snapshot,
-        url: "https://example.test/onboarding-automation/",
-        suitableForIntent: true,
-      },
-    });
-    const portfolio = [
-      urlPortfolioItem(IDS.sitePage, {
-        clusterKey: "customer-onboarding-legacy",
-        metricObservations: [metric({ value: 9, sitePageId: IDS.sitePage })],
-      }),
-      urlPortfolioItem(IDS.sitePageB, {
-        clusterKey: "customer-onboarding-legacy",
-        metricObservations: [],
-      }),
-      urlPortfolioItem(IDS.sitePageC, {
-        normalizedUrl: "https://example.test/onboarding-automation/",
-        clusterKey: "Onboarding automation",
-        metricObservations: [],
-      }),
-      urlPortfolioItem("33333333-3333-4333-8333-333333333336", {
-        clusterKey: "legacy-unmapped-cluster",
-        metricObservations: [],
-      }),
-    ];
-
-    const projected = buildGrowthMapClusterViewItems(
-      portfolio,
-      [rootOpportunity, childOpportunity],
-      stableWorkspace,
-      topicInsights(),
-    );
-
-    expect(projected.map((item) => item.role)).toEqual([
-      "root",
-      "pillar",
-      "unmapped",
-      "support",
-    ]);
-    expect(projected[0]).toMatchObject({
-      id: IDS.topicRoot,
-      topicNodeId: IDS.topicRoot,
-      label: "Customer onboarding",
-      role: "root",
-      urlCount: 2,
-      keywordCount: 2,
-      observedClicks: 9,
-      observedClickUrlCount: 1,
-      clickCoverage: "partial",
-      openOpportunityCount: 1,
-    });
-    expect(projected[0]?.opportunities.map((item) => item.id)).toEqual([
-      "root-topic-opportunity",
-    ]);
-    expect(projected[1]).toMatchObject({
-      id: IDS.topicChild,
-      role: "pillar",
-      urlCount: 1,
-      observedClicks: null,
-      observedClickUrlCount: 0,
-      clickCoverage: "unavailable",
-      openOpportunityCount: 1,
-    });
-    expect(projected[2]).toMatchObject({
-      topicNodeId: null,
-      label: "legacy-unmapped-cluster",
-      role: "unmapped",
-      urlCount: 1,
-      keywordCount: null,
-      observedClicks: null,
-    });
-    expect(projected[3]).toMatchObject({
-      id: IDS.topicGrandchild,
-      role: "support",
-      urlCount: 0,
-      keywordCount: null,
-      observedClicks: null,
-      observedClickUrlCount: 0,
-      clickCoverage: "unavailable",
-    });
-  });
-
-  it("never treats stale Topic insights as current keyword counts", () => {
-    const workspace = confirmedTopicWorkspace();
-    const staleInsights = {
-      ...topicInsights(),
-      topicModelRevision: 2,
-      nodes: topicInsights().nodes.map((node) => ({
-        ...node,
-        topicModelRevision: 2,
-      })),
-    } as GrowthMapTopicModelInsights;
-
+  it("falls stale Opportunity selections back to the first visible item", () => {
     expect(
-      buildGrowthMapClusterViewItems([], [], workspace, staleInsights).map(
-        (cluster) => cluster.keywordCount,
-      ),
-    ).toEqual([null, null]);
-  });
-
-  it("falls stale cluster and Opportunity selections back to the first visible item", () => {
-    expect(
-      resolveVisibleGrowthMapClusterSelection("cluster-b", [
-        "cluster-a",
-        "cluster-b",
+      resolveVisibleGrowthMapOpportunitySelection("opportunity-b", [
+        "opportunity-a",
+        "opportunity-b",
       ]),
-    ).toBe("cluster-b");
-    expect(
-      resolveVisibleGrowthMapClusterSelection("stale", [
-        "cluster-a",
-        "cluster-b",
-      ]),
-    ).toBe("cluster-a");
-    expect(resolveVisibleGrowthMapClusterSelection("stale", [])).toBeNull();
+    ).toBe("opportunity-b");
     expect(
       resolveVisibleGrowthMapOpportunitySelection("stale", [
         "opportunity-a",
@@ -1109,121 +939,64 @@ describe("Growth Map view model", () => {
     expect(resolveVisibleGrowthMapOpportunitySelection(null, [])).toBeNull();
   });
 
-  it("fails closed when either confirmed Topic read fails", () => {
-    expect(
-      growthMapClusterReadState({
-        workspacePending: false,
-        workspaceError: true,
-        insightsPending: false,
-        insightsError: false,
-      }),
-    ).toBe("error");
-    expect(
-      growthMapClusterReadState({
-        workspacePending: false,
-        workspaceError: false,
-        insightsPending: false,
-        insightsError: true,
-      }),
-    ).toBe("error");
-    expect(
-      growthMapClusterReadState({
-        workspacePending: true,
-        workspaceError: false,
-        insightsPending: false,
-        insightsError: false,
-      }),
-    ).toBe("loading");
-    expect(
-      growthMapClusterReadState({
-        workspacePending: false,
-        workspaceError: false,
-        insightsPending: false,
-        insightsError: false,
-      }),
-    ).toBe("ready");
-  });
-
-  it("switches page views without losing search and keeps only that view's selection", () => {
+  it("scrubs legacy view, cluster, and cursor addresses while keeping search and selection", () => {
     expect(
       growthMapLocationHref(
         "/p/project/growth-map",
-        "object=pages&view=legacy&q=pricing&cursor=opaque&selectedOpportunityId=opportunity-a",
-        { pageView: "opportunity" },
+        "object=pages&view=url&q=pricing&cursor=opaque&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
+        {},
       ),
     ).toBe(
-      "/p/project/growth-map?object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-a",
-    );
-    expect(
-      growthMapLocationHref(
-        "/p/project/growth-map",
-        "object=pages&view=url&q=pricing&cursor=opaque&selectedSitePageId=page-a&findingId=finding-a&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
-        { pageView: "cluster" },
-      ),
-    ).toBe(
-      "/p/project/growth-map?object=pages&view=cluster&q=pricing&selectedClusterId=cluster-a",
-    );
-    expect(
-      growthMapLocationHref(
-        "/p/project/growth-map",
-        "object=pages&view=cluster&q=pricing&cursor=opaque&selectedClusterId=cluster-a&selectedOpportunityId=opportunity-a",
-        { pageView: "opportunity", selectedOpportunityId: "opportunity-b" },
-      ),
-    ).toBe(
-      "/p/project/growth-map?object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-b",
+      "/p/project/growth-map?object=pages&q=pricing&selectedOpportunityId=opportunity-a",
     );
     expect(
       growthMapLocationHref(
         "/p/project/growth-map",
         "object=pages&view=opportunity&q=pricing&selectedOpportunityId=opportunity-a",
-        { pageView: "url", selectedSitePageId: "page-b" },
+        { selectedOpportunityId: "opportunity-b" },
       ),
     ).toBe(
-      "/p/project/growth-map?object=pages&view=url&q=pricing&selectedSitePageId=page-b",
+      "/p/project/growth-map?object=pages&q=pricing&selectedOpportunityId=opportunity-b",
     );
   });
 
-  it("clears incompatible search and cursor state when drilling to an exact grouped entity", () => {
+  it("keeps the Opportunity selection when drilling into an exact URL and back", () => {
     expect(
       growthMapLocationHref(
         "/p/project/growth-map",
-        "object=pages&view=cluster&q=topic-only&cursor=opaque&selectedClusterId=cluster-a",
+        "object=pages&q=canonical&selectedOpportunityId=opportunity-a",
         {
-          pageView: "opportunity",
-          search: null,
-          cursor: null,
-          selectedOpportunityId: "opportunity-b",
-        },
-      ),
-    ).toBe(
-      "/p/project/growth-map?object=pages&view=opportunity&selectedOpportunityId=opportunity-b",
-    );
-    expect(
-      growthMapLocationHref(
-        "/p/project/growth-map",
-        "object=pages&view=opportunity&q=canonical&cursor=opaque&selectedOpportunityId=opportunity-a",
-        {
-          pageView: "url",
-          search: null,
-          cursor: null,
           selectedSitePageId: "page-b",
           selectedFindingId: "finding-b",
         },
       ),
     ).toBe(
-      "/p/project/growth-map?object=pages&view=url&selectedSitePageId=page-b&findingId=finding-b",
+      "/p/project/growth-map?object=pages&q=canonical&selectedOpportunityId=opportunity-a&selectedSitePageId=page-b&findingId=finding-b",
+    );
+    expect(
+      growthMapLocationHref(
+        "/p/project/growth-map",
+        "object=pages&q=canonical&selectedOpportunityId=opportunity-a&selectedSitePageId=page-b&findingId=finding-b",
+        {
+          selectedSitePageId: null,
+          selectedFindingId: null,
+        },
+      ),
+    ).toBe(
+      "/p/project/growth-map?object=pages&q=canonical&selectedOpportunityId=opportunity-a",
     );
   });
 
-  it("keeps every page-view tab connected to the one live dynamic tabpanel", () => {
+  it("ships the Opportunity-first Pages tab without a page-view switcher", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
       "utf8",
     );
 
-    expect(source).toContain('aria-controls="growth-map-page-view-panel"');
-    expect(source).toContain('id="growth-map-page-view-panel"');
-    expect(source).not.toContain("growth-map-page-view-panel-${view}");
+    expect(source).not.toContain("data-page-view-tab");
+    expect(source).not.toContain("PageViewTabs");
+    expect(source).toContain("data-growth-map-url-drilldown");
+    expect(source).toContain('t("opportunity.backToList")');
   });
 
   it("keeps Internal Link Map inside the selected URL with real edges and Finding/Action references", () => {
@@ -2836,40 +2609,6 @@ describe("Growth Map view model", () => {
     expect(source).not.toContain("truncateId(evidence.evidenceRefId)");
   });
 
-  it("selects the visible URL that owns an exact Finding deep link", () => {
-    expect(
-      resolveVisibleSitePageSelectionForFinding(
-        null,
-        "finding-b",
-        [
-          { sitePageId: "page-a", findingIds: ["finding-a"] },
-          { sitePageId: "page-b", findingIds: ["finding-b"] },
-        ],
-      ),
-    ).toBe("page-b");
-
-    expect(
-      resolveVisibleSitePageSelectionForFinding(
-        "page-a",
-        "finding-b",
-        [
-          { sitePageId: "page-a", findingIds: ["finding-a"] },
-          { sitePageId: "page-b", findingIds: ["finding-b"] },
-        ],
-      ),
-    ).toBe("page-a");
-  });
-
-  it("never lets a stale URL selection drive detail outside the visible page", () => {
-    expect(
-      resolveVisibleSitePageSelection("page-b", ["page-a", "page-b"]),
-    ).toBe("page-b");
-    expect(
-      resolveVisibleSitePageSelection("filtered-out", ["page-a", "page-b"]),
-    ).toBe("page-a");
-    expect(resolveVisibleSitePageSelection("stale", [])).toBeNull();
-  });
-
   it("clears URL-specific state when leaving the page portfolio", () => {
     expect(
       growthMapLocationHref(
@@ -3376,58 +3115,6 @@ describe("growth map page type presentation", () => {
         urlPortfolioItem(IDS.sitePageC, { pageType: "changelog" }),
       ]),
     ).toEqual(["blog", "changelog"]);
-  });
-});
-
-describe("growth map keyset page window", () => {
-  it("derives the first page from the server-side preceding row count", () => {
-    expect(
-      growthMapPageWindow({
-        listedUrlCount: 647,
-        precedingUrlCount: 0,
-        limit: 50,
-      }),
-    ).toEqual({ page: 1, pageCount: 13 });
-  });
-
-  it("derives a deep-linked page without any client cursor history", () => {
-    expect(
-      growthMapPageWindow({
-        listedUrlCount: 647,
-        precedingUrlCount: 300,
-        limit: 50,
-      }),
-    ).toEqual({ page: 7, pageCount: 13 });
-  });
-
-  it("reports a single page for an empty filtered list", () => {
-    expect(
-      growthMapPageWindow({
-        listedUrlCount: 0,
-        precedingUrlCount: 0,
-        limit: 50,
-      }),
-    ).toEqual({ page: 1, pageCount: 1 });
-  });
-
-  it("never reports a page beyond the page count", () => {
-    expect(
-      growthMapPageWindow({
-        listedUrlCount: 12,
-        precedingUrlCount: 12,
-        limit: 50,
-      }),
-    ).toEqual({ page: 1, pageCount: 1 });
-  });
-
-  it("falls back to one page when the limit is not positive", () => {
-    expect(
-      growthMapPageWindow({
-        listedUrlCount: 12,
-        precedingUrlCount: 0,
-        limit: 0,
-      }),
-    ).toEqual({ page: 1, pageCount: 1 });
   });
 });
 

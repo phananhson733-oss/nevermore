@@ -84,6 +84,7 @@ export interface OpportunityFindingInput {
   readonly reviewState: string;
   readonly active: boolean;
   readonly title: string;
+  readonly severity: string;
 }
 
 /** Minimal FindingTarget projection input. */
@@ -717,6 +718,7 @@ export function buildOpportunity(input: {
       readiness: "confirmed",
       primaryFindingId: input.finding.id,
       primaryRule,
+      primaryFindingSeverity: input.finding.severity,
       executionPreview,
       actionId: input.action.id,
       action: buildActionSummary(input.action, ruleId),
@@ -727,6 +729,7 @@ export function buildOpportunity(input: {
       readiness: "reviewable",
       primaryFindingId: input.finding.id,
       primaryRule,
+      primaryFindingSeverity: input.finding.severity,
       executionPreview,
     };
   }

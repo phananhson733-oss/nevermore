@@ -1495,11 +1495,9 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       "02b-growth-map-internal-link-recommendation",
     );
 
-    await page
-      .getByRole("button")
-      .filter({ hasText: "/pricing" })
-      .first()
-      .click();
+    await page.goto(
+      `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`,
+    );
     await openFullEvidenceAndReview(page);
     await expect(page).toHaveURL(
       new RegExp(`selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`),
@@ -1514,11 +1512,9 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     ).toBeVisible();
     await capture(page, "03-growth-map-pages-pricing");
 
-    await page
-      .getByRole("button")
-      .filter({ hasText: "/customer-onboarding" })
-      .first()
-      .click();
+    await page.goto(
+      `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+    );
     await openFullEvidenceAndReview(page);
     await expect(linkMap).toHaveAttribute(
       "data-site-page-id",

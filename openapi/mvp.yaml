@@ -5466,11 +5466,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/GrowthOpportunityBase'
         - type: object
-          required: [readiness, primaryFindingId, primaryRule, executionPreview]
+          required: [readiness, primaryFindingId, primaryRule, primaryFindingSeverity, executionPreview]
           properties:
             readiness: { type: string, const: reviewable }
             primaryFindingId: { $ref: '#/components/schemas/Uuid' }
             primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+            primaryFindingSeverity:
+              allOf:
+                - $ref: '#/components/schemas/PriorityBand'
+              description: |
+                Severity of the primary Finding as recorded on the diagnostic run,
+                exposed so consumers can rank the Opportunity without re-deriving
+                URL-level priority bands.
             executionPreview:
               oneOf:
                 - $ref: '#/components/schemas/ExecutionPreview'
@@ -5481,11 +5488,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/GrowthOpportunityBase'
         - type: object
-          required: [readiness, primaryFindingId, primaryRule, executionPreview, actionId, action]
+          required: [readiness, primaryFindingId, primaryRule, primaryFindingSeverity, executionPreview, actionId, action]
           properties:
             readiness: { type: string, const: confirmed }
             primaryFindingId: { $ref: '#/components/schemas/Uuid' }
             primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+            primaryFindingSeverity:
+              allOf:
+                - $ref: '#/components/schemas/PriorityBand'
+              description: |
+                Severity of the primary Finding as recorded on the diagnostic run,
+                exposed so consumers can rank the Opportunity without re-deriving
+                URL-level priority bands.
             executionPreview:
               oneOf:
                 - $ref: '#/components/schemas/ExecutionPreview'

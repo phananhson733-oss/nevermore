@@ -78,12 +78,6 @@ async function selectOnboardingDetail(page: Page): Promise<void> {
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
-  await page.getByRole("tab", { name: /^By URL/ }).click();
-  await page
-    .getByRole("button")
-    .filter({ hasText: "/customer-onboarding" })
-    .first()
-    .click();
   await page
     .locator("[data-full-evidence-disclosure] > summary")
     .click();
