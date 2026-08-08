@@ -148,6 +148,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: undefined,
         executionPreview: null,
       }),
@@ -158,6 +159,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -174,6 +176,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -188,6 +191,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -209,6 +213,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: { ruleId: "TECH-FOO-999", ruleVersion: 1 },
         executionPreview: null,
@@ -219,6 +224,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: { ruleId: "GEO-CRAWLER-002", ruleVersion: 1 },
         workShape: "create",
@@ -230,6 +236,7 @@ describe("Growth Opportunity projection contracts", () => {
         ...baseOpportunity,
         readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -381,6 +388,7 @@ describe("Growth Opportunity projection contracts", () => {
       ...baseOpportunity,
       readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
       primaryFindingId: findingId,
       primaryRule: {
         ruleId: "CONTENT-COVERAGE-001",
@@ -423,6 +431,7 @@ describe("Growth Opportunity projection contracts", () => {
       ...baseOpportunity,
       readiness: "reviewable",
         primaryFindingSeverity: "high",
+        primaryFindingReviewRevision: 0,
       primaryFindingId: findingId,
       primaryRule: {
         ruleId: "CONTENT-COVERAGE-001",

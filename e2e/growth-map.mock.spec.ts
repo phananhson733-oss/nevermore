@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
+  E2E_COVERAGE_GAP_FINDING_ID,
   E2E_CTR_FINDING_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_PROJECT_ID,
@@ -134,7 +135,7 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
 
   const rows = page.locator("[data-growth-map-opportunity-row]");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   // The removed view switcher must not come back, and the address stays free
   // of the legacy `view` parameter.
   await expect(
@@ -153,11 +154,12 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
     .toEqual([null, "opportunities-opaque-page-2"]);
 
   // Priority is the primary Finding severity, so every reviewable row ranks:
-  // the high-severity canonical Finding leads as P1, the medium rows are P2,
-  // and nothing reads "Not independently assessed".
+  // both high-severity Findings lead as P1 (the zero-target coverage gap
+  // sorts first by title), the medium rows are P2, and nothing reads
+  // "Not independently assessed".
   await expect(rows.first()).toHaveAttribute(
     "data-growth-map-opportunity-row",
-    E2E_CANONICAL_FINDING_ID,
+    E2E_COVERAGE_GAP_FINDING_ID,
   );
   await expect(
     page
@@ -177,6 +179,13 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
   await expect(opportunityDetail).toBeVisible();
   await expect(
     opportunityDetail.getByText("Growth opportunity · P1", { exact: false }),
+  ).toBeVisible();
+  // The default selection is the zero-target coverage gap, whose only review
+  // surface is the inline control on this rail.
+  await expect(
+    opportunityDetail.locator(
+      `[data-opportunity-inline-review="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
+    ),
   ).toBeVisible();
   for (const section of [
     "Primary Finding",
@@ -200,7 +209,7 @@ test("defaults to the Opportunity ledger with severity-based priorities and no v
     opportunityDetail.getByText("1 records", { exact: true }),
   ).toBeVisible();
   await expect(
-    opportunityDetail.getByText("1 items", { exact: true }),
+    opportunityDetail.getByText("0 items", { exact: true }),
   ).toBeVisible();
   await expect(opportunityDetail.locator("[data-finding-card]")).toHaveCount(0);
 });
@@ -213,7 +222,7 @@ test("keeps the Opportunity ledger independent of Topic reads and scrubs cluster
     `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=stale`,
   );
 
-  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(3);
+  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(4);
   await expect
     .poll(() => new URL(page.url()).searchParams.get("view"))
     .toBeNull();
@@ -444,6 +453,42 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
   // The confirmation reused the existing Finding Review transaction only: no
   // recheck and no publish/Content-Shadow write left the browser.
   expect(api.recheckRequests).toEqual([]);
+});
+
+test("reviews a zero-target Opportunity inline without leaving the ledger", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const inline = page.locator(
+    `[data-opportunity-inline-review="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
+  );
+  await expect(inline).toBeVisible();
+  await inline.getByRole("button", { name: "Confirm" }).click();
+
+  await expect.poll(() => api.findingReviewRequests.length).toBe(1);
+  expect(api.findingReviewRequests[0]).toMatchObject({
+    findingId: E2E_COVERAGE_GAP_FINDING_ID,
+    body: { reviewState: "confirmed", baseRevision: 0 },
+  });
+
+  // The refreshed frozen projection now carries the confirmed readiness and
+  // routes the next step to Execution instead of a second confirmation path.
+  const row = page.locator(
+    `[data-growth-map-opportunity-row="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
+  );
+  await expect(row.getByText("Confirmed", { exact: true })).toBeVisible();
+  // Confirmation re-ranks the row below the still-reviewable P1, so reselect
+  // it explicitly before asserting its rail now routes to Execution.
+  await row.getByRole("button").first().click();
+  const detail = page.locator(
+    `[data-opportunity-detail="${E2E_COVERAGE_GAP_FINDING_ID}"]`,
+  );
+  await expect(detail).toBeVisible();
+  await expect(
+    detail.getByRole("link", { name: "Open execution" }),
+  ).toBeVisible();
+  await expect(detail.locator("[data-opportunity-inline-review]")).toHaveCount(0);
 });
 
 test("has no page overflow or blocking axe findings on desktop and 390px", async ({

@@ -112,7 +112,14 @@ test("proves the content vertical from URL + ICP to a reviewed revision, publish
   await navLink(page, 1).click();
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
   await page
-    .locator("[data-opportunity-detail]")
+    .locator(
+      `[data-growth-map-opportunity-row="${E2E_CANONICAL_FINDING_ID}"]`,
+    )
+    .getByRole("button")
+    .first()
+    .click();
+  await page
+    .locator(`[data-opportunity-detail="${E2E_CANONICAL_FINDING_ID}"]`)
     .getByRole("button", { name: "/customer-onboarding" })
     .first()
     .click();
@@ -388,7 +395,14 @@ test("one measured content Finding yields exactly one Action and exactly one con
   // reaches exactly one Action and exactly one brief.
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
   await page
-    .locator("[data-opportunity-detail]")
+    .locator(
+      `[data-growth-map-opportunity-row="${E2E_CANONICAL_FINDING_ID}"]`,
+    )
+    .getByRole("button")
+    .first()
+    .click();
+  await page
+    .locator(`[data-opportunity-detail="${E2E_CANONICAL_FINDING_ID}"]`)
     .getByRole("button", { name: "/customer-onboarding" })
     .first()
     .click();
