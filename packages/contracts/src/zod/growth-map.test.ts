@@ -1509,6 +1509,15 @@ function keywordLibraryResponse() {
         availability: "partial",
         limitations: ["Keyword difficulty is not connected."],
       },
+      sourceCounts: {
+        all: 1,
+        csv_import: 1,
+        dataforseo_ranked: 0,
+        gsc_top_query: 0,
+        interview_summary: 0,
+        user_review: 0,
+        manual: 0,
+      },
     },
   };
 }

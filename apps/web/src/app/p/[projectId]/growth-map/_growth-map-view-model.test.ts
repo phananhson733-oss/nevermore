@@ -2074,7 +2074,7 @@ describe("Growth Map view model", () => {
     expect(source).toContain("useRefreshGrowthMapKeywordRelations(projectId)");
     expect(source).toContain("useDecideGrowthMapKeywordRelation(projectId)");
     expect(source).toMatch(
-      /filterGrowthMapKeywordEntries\(relationProjection\.visibleItems,\s*\{\s*search: keywordSearch,\s*sourceKind: sourceFilter,/,
+      /filterGrowthMapKeywordEntries\(relationProjection\.visibleItems,\s*\{\s*search: keywordSearch,\s*sourceKind: "all",/,
     );
     expect(source).toContain("entries={filteredEntries}");
     expect(source).toContain('role="dialog"');
@@ -2553,7 +2553,7 @@ describe("Growth Map view model", () => {
       "function KeywordLibraryPane({\n  projectId,\n  locationSearch,\n  navigation,\n  diagnosticRunId,",
     );
     expect(source).toMatch(
-      /useGrowthMapKeywords\(projectId,\s*\{\s*cursor,\s*limit: 50,\s*diagnosticRunId,\s*\}\)/,
+      /useGrowthMapKeywords\(projectId,\s*\{\s*cursor,\s*limit: 50,\s*diagnosticRunId,\s*sourceKind:\s*sourceFilter === "all" \? null : sourceFilter,\s*\}\)/,
     );
     expect(source).toContain(
       "const reviewDetailQuery = useGrowthMapKeywordReviewDetail(",

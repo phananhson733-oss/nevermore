@@ -51,7 +51,10 @@ type KeywordPageMeta =
   components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
 
 type _ListQueryIncludesPublishedGeneration = Expect<
-  Equal<keyof KeywordListQuery, "limit" | "cursor" | "diagnosticRunId">
+  Equal<
+    keyof KeywordListQuery,
+    "limit" | "cursor" | "diagnosticRunId" | "sourceKind"
+  >
 >;
 type _DetailQueryIsGenerationOrReview = Expect<
   Equal<keyof KeywordDetailQuery, "diagnosticRunId" | "view">
@@ -97,7 +100,18 @@ type _KeywordPageRequiredFields = Expect<
   Equal<RequiredKeys<KeywordPage>, keyof KeywordPage>
 >;
 type _KeywordPageMetaFields = Expect<
-  Equal<keyof KeywordPageMeta, "limit" | "nextCursor" | "hasNext" | "coverage">
+  Equal<
+    keyof KeywordPageMeta,
+    "limit" | "nextCursor" | "hasNext" | "coverage" | "sourceCounts"
+  >
+>;
+type _KeywordSourceCountsIsClosed = Expect<
+  Equal<
+    string extends keyof components["schemas"]["GrowthMapKeywordSourceCounts"]
+      ? true
+      : false,
+    false
+  >
 >;
 type _KeywordPageMetaRequiredFields = Expect<
   Equal<RequiredKeys<KeywordPageMeta>, keyof KeywordPageMeta>

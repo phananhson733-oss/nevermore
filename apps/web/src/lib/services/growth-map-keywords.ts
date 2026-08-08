@@ -13,6 +13,7 @@ import {
   type GrowthMapKeywordTextMetric,
   type ReviewKeywordRequest,
   type SourceFreshness,
+  GrowthMapKeywordSourceKind,
 } from "@sf/contracts";
 import {
   MAX_KEYWORD_ENTITY_BATCH,
@@ -133,6 +134,8 @@ export interface GrowthMapKeywordListOptions {
   readonly limit: number;
   readonly cursor: string | null;
   readonly diagnosticRunId?: string | null;
+  /** Restrict the live library page to one intake source. */
+  readonly sourceKind?: GrowthMapKeywordSourceKind | null;
   /** Test/SSR clock seam; never serialized. */
   readonly now?: Date;
 }
@@ -2139,6 +2142,7 @@ async function listInSnapshot(
         nextCursor: page.nextCursor,
         hasNext: page.nextCursor !== null,
         coverage: pageCoverage(data),
+        sourceCounts: null,
       },
     });
   } catch {
@@ -2153,10 +2157,13 @@ async function listCurrentLibrary(
   options: GrowthMapKeywordListOptions,
 ): Promise<ReturnType<typeof GrowthMapKeywordLibraryResponse.parse>> {
   const scope = await loadActiveProject(exec, workspaceScope, projectId);
-  const page = await new KeywordsRepository(exec).listByProject(scope, {
+  const repository = new KeywordsRepository(exec);
+  const page = await repository.listByProject(scope, {
     limit: options.limit,
     cursor: options.cursor,
+    sourceKind: options.sourceKind ?? null,
   });
+  const sourceCounts = await repository.countBySourceKind(scope);
   const rows = await _loadProjectionRows(exec, scope, page.rows);
   const now = validNow(options.now ?? new Date());
   const data = rows.histories.map((history) =>
@@ -2171,6 +2178,7 @@ async function listCurrentLibrary(
         nextCursor: page.nextCursor,
         hasNext: page.nextCursor !== null,
         coverage: pageCoverage(data),
+        sourceCounts,
       },
     });
   } catch {
@@ -2278,11 +2286,25 @@ export async function listProjectAuditKeywords(
     throw new RangeError("Invalid Keyword Library list options");
   }
   if (options.now !== undefined) validNow(options.now);
+  if (
+    options.sourceKind != null &&
+    !GrowthMapKeywordSourceKind.options.includes(options.sourceKind)
+  ) {
+    throw new RangeError("Invalid Keyword Library source kind");
+  }
   const useLegacyLatestPublishedRead =
     options.diagnosticRunId === undefined;
   const diagnosticRunId = normalizePinnedDiagnosticRunId(
     options.diagnosticRunId,
   );
+  if (
+    options.sourceKind != null &&
+    (diagnosticRunId !== null || useLegacyLatestPublishedRead)
+  ) {
+    throw new RangeError(
+      "sourceKind is only supported for the live Keyword Library read",
+    );
+  }
   const read = (selected: Executor) =>
     diagnosticRunId === null && !useLegacyLatestPublishedRead
       ? listCurrentLibrary(selected, scope, projectId, options)

@@ -42,6 +42,7 @@ import {
   type UpdateCompetitorMonitorRequest,
   type GrowthMapKeywordRankHistory as GrowthMapKeywordRankHistoryDto,
   type GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseDto,
+  type GrowthMapKeywordSourceKind as GrowthMapKeywordSourceKindDto,
   type GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseDto,
   type GrowthMapUrlPortfolioResponse as GrowthMapUrlPortfolioResponseDto,
   type ReviewCompetitorRequest,
@@ -86,6 +87,7 @@ export interface GrowthMapKeywordsQuery {
   readonly cursor?: string | null;
   readonly limit?: number;
   readonly diagnosticRunId?: string | null;
+  readonly sourceKind?: GrowthMapKeywordSourceKindDto | null;
 }
 
 export interface GrowthMapKeywordRelationsQuery {
@@ -98,6 +100,7 @@ interface NormalizedGrowthMapKeywordsQuery {
   readonly cursor: string | null;
   readonly limit: number;
   readonly diagnosticRunId: string | null;
+  readonly sourceKind: GrowthMapKeywordSourceKindDto | null;
 }
 
 interface NormalizedGrowthMapKeywordRelationsQuery {
@@ -169,13 +172,14 @@ function normalizeGrowthMapKeywordsQuery(
   const diagnosticRunId = normalizeGrowthMapDiagnosticRunId(
     query.diagnosticRunId,
   );
+  const sourceKind = query.sourceKind ?? null;
 
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     throw new RangeError(
       "Growth Map Keyword limit must be an integer from 1 to 100.",
     );
   }
-  return { cursor, limit, diagnosticRunId };
+  return { cursor, limit, diagnosticRunId, sourceKind };
 }
 
 function normalizeGrowthMapKeywordRelationsQuery(
@@ -480,6 +484,7 @@ function growthMapKeywordsPath(
   if (query.diagnosticRunId !== null) {
     params.set("diagnosticRunId", query.diagnosticRunId);
   }
+  if (query.sourceKind !== null) params.set("sourceKind", query.sourceKind);
   return `/projects/${projectId}/audit/keywords?${params.toString()}`;
 }
 

@@ -1,4 +1,4 @@
-import { Cursor, Uuid } from "@sf/contracts";
+import { Cursor, GrowthMapKeywordSourceKind, Uuid } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
 import { operatorRoute } from "@/lib/http/handler";
 import { ok } from "@/lib/http/respond";
@@ -38,7 +38,8 @@ export const GET = operatorRoute<{ projectId: string }>(
       if (
         key !== "limit" &&
         key !== "cursor" &&
-        key !== "diagnosticRunId"
+        key !== "diagnosticRunId" &&
+        key !== "sourceKind"
       ) {
         invalidQuery(key);
       }
@@ -56,10 +57,20 @@ export const GET = operatorRoute<{ projectId: string }>(
         : CANONICAL_UUID.test(diagnosticRunIdRaw)
           ? diagnosticRunIdRaw
           : invalidQuery("diagnosticRunId");
+    const sourceKind = parseQueryValue(
+      searchParams,
+      "sourceKind",
+      GrowthMapKeywordSourceKind,
+    );
+    // The pinned frozen-generation read has no per-source membership, so the
+    // filter is a live-library-only capability rather than silently ignored.
+    if (sourceKind !== null && diagnosticRunId !== null) {
+      invalidQuery("sourceKind");
+    }
     const result = await listProjectAuditKeywords(
       { workspaceId: ctx.operator.workspaceId },
       id,
-      { limit, cursor, diagnosticRunId },
+      { limit, cursor, diagnosticRunId, sourceKind },
     );
 
     return ok(result, ctx.requestId);

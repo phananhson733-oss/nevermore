@@ -1093,25 +1093,64 @@ export type GrowthMapCanonicalObservationValuePointer = z.infer<
   typeof GrowthMapCanonicalObservationValuePointer
 >;
 
-export const GrowthMapLibraryPageMeta = z
+/**
+ * Whole-library Keyword counts per intake source, computed in the same
+ * read-only transaction as the page. A Keyword with occurrences from several
+ * sources counts once per source, so per-source counts can sum past `all`.
+ */
+export const GrowthMapKeywordSourceCounts = z
   .object({
-    limit: z.number().int().min(1).max(100),
-    nextCursor: Cursor.nullable(),
-    hasNext: z.boolean(),
-    coverage: GrowthMapCoverage,
+    all: z.number().int().min(0),
+    csv_import: z.number().int().min(0),
+    dataforseo_ranked: z.number().int().min(0),
+    gsc_top_query: z.number().int().min(0),
+    interview_summary: z.number().int().min(0),
+    user_review: z.number().int().min(0),
+    manual: z.number().int().min(0),
   })
+  .strict();
+export type GrowthMapKeywordSourceCounts = z.infer<
+  typeof GrowthMapKeywordSourceCounts
+>;
+
+const GrowthMapLibraryPageMetaShape = {
+  limit: z.number().int().min(1).max(100),
+  nextCursor: Cursor.nullable(),
+  hasNext: z.boolean(),
+  coverage: GrowthMapCoverage,
+} as const;
+
+function assertCursorAvailabilityConsistency(
+  meta: { readonly hasNext: boolean; readonly nextCursor: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (meta.hasNext !== (meta.nextCursor !== null)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["hasNext"],
+      message: "hasNext must match nextCursor availability",
+    });
+  }
+}
+
+export const GrowthMapLibraryPageMeta = z
+  .object(GrowthMapLibraryPageMetaShape)
   .strict()
-  .superRefine((meta, ctx) => {
-    if (meta.hasNext !== (meta.nextCursor !== null)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["hasNext"],
-        message: "hasNext must match nextCursor availability",
-      });
-    }
-  });
+  .superRefine(assertCursorAvailabilityConsistency);
 export type GrowthMapLibraryPageMeta = z.infer<
   typeof GrowthMapLibraryPageMeta
+>;
+
+/** Keyword Library meta: whole-library counts, null on pinned frozen reads. */
+export const GrowthMapKeywordLibraryPageMeta = z
+  .object({
+    ...GrowthMapLibraryPageMetaShape,
+    sourceCounts: GrowthMapKeywordSourceCounts.nullable(),
+  })
+  .strict()
+  .superRefine(assertCursorAvailabilityConsistency);
+export type GrowthMapKeywordLibraryPageMeta = z.infer<
+  typeof GrowthMapKeywordLibraryPageMeta
 >;
 
 export const GrowthMapKeywordQueryKind = z.enum([
@@ -1707,7 +1746,7 @@ const GrowthMapKeywordLibraryResponseObject = z
   .object({
     projectId: Uuid,
     data: z.array(GrowthMapKeywordLibraryItem).max(100),
-    meta: GrowthMapLibraryPageMeta,
+    meta: GrowthMapKeywordLibraryPageMeta,
   })
   .strict();
 

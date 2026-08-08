@@ -1106,6 +1106,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/DiagnosticRunIdPin'
+        - $ref: '#/components/parameters/KeywordSourceKindFilter'
       responses:
         '200':
           description: Current traceable Keyword Library cursor page.
@@ -2458,6 +2459,18 @@ components:
         type: string
         format: uuid
         pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    KeywordSourceKindFilter:
+      name: sourceKind
+      in: query
+      required: false
+      description: >-
+        Restrict the live Keyword Library page to Keywords holding at least one
+        occurrence of this intake source. Rejected when combined with
+        diagnosticRunId because frozen generations have no per-source
+        membership.
+      schema:
+        type: string
+        enum: [csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
     ReviewView:
       name: view
       in: query
@@ -6425,10 +6438,28 @@ components:
       description: Stable project-scoped Keyword identity. Source occurrences and canonical metric Observation references are unique and share this row's market and canonical language tag.
       x-signalframe-runtime-refinement: normalizedKeywordIdentityAndExactSourceLineage
 
+    GrowthMapKeywordSourceCounts:
+      type: object
+      additionalProperties: false
+      required: [all, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
+      properties:
+        all: { type: integer, minimum: 0 }
+        csv_import: { type: integer, minimum: 0 }
+        dataforseo_ranked: { type: integer, minimum: 0 }
+        gsc_top_query: { type: integer, minimum: 0 }
+        interview_summary: { type: integer, minimum: 0 }
+        user_review: { type: integer, minimum: 0 }
+        manual: { type: integer, minimum: 0 }
+      description: >-
+        Whole-library Keyword counts per intake source, computed in the same
+        read-only transaction as the page. A Keyword with occurrences from
+        several sources counts once per source, so per-source counts can sum
+        past `all`.
+
     GrowthMapKeywordLibraryPageMeta:
       type: object
       additionalProperties: false
-      required: [limit, nextCursor, hasNext, coverage]
+      required: [limit, nextCursor, hasNext, coverage, sourceCounts]
       properties:
         limit: { type: integer, minimum: 1, maximum: 100 }
         nextCursor:
@@ -6438,7 +6469,13 @@ components:
           pattern: '^[A-Za-z0-9_-]+$'
         hasNext: { type: boolean }
         coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
-      description: hasNext is true exactly when nextCursor is non-null.
+        sourceCounts:
+          anyOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordSourceCounts'
+            - type: 'null'
+      description: >-
+        hasNext is true exactly when nextCursor is non-null. The live Keyword
+        Library read fills sourceCounts; pinned frozen reads carry null.
       x-signalframe-runtime-refinement: cursorAvailabilityConsistency
 
     GrowthMapKeywordLibraryResponse:
@@ -6452,7 +6489,9 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/GrowthMapKeywordLibraryItem' }
         meta: { $ref: '#/components/schemas/GrowthMapKeywordLibraryPageMeta' }
-      description: Bounded project-scoped cursor page with no synthetic total or filter state.
+      description: >-
+        Bounded project-scoped cursor page. The meta block may carry exact
+        whole-library per-source counts; it never carries a synthetic total.
       x-signalframe-runtime-refinement: keywordPageScopeAndIdentityUniqueness
 
     GrowthMapKeywordDetailResponse:

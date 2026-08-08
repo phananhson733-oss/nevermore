@@ -579,6 +579,19 @@ function arrangeList(input: {
 beforeEach(() => {
   mocks.getDb.mockReset();
   mocks.loadPublishedGrowthMapGeneration.mockReset();
+  // The live library read always pairs the page with whole-library counts.
+  vi.spyOn(
+    KeywordsRepository.prototype,
+    "countBySourceKind",
+  ).mockResolvedValue({
+    all: 1,
+    csv_import: 0,
+    dataforseo_ranked: 1,
+    gsc_top_query: 0,
+    interview_summary: 0,
+    user_review: 0,
+    manual: 0,
+  });
 });
 
 afterEach(() => {
@@ -627,7 +640,7 @@ describe("Growth Map Keyword Library read service", () => {
     ]);
     expect(KeywordsRepository.prototype.listByProject).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
-      { limit: 50, cursor: null },
+      { limit: 50, cursor: null, sourceKind: null },
     );
     expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
   });
@@ -782,7 +795,7 @@ describe("Growth Map Keyword Library read service", () => {
     expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
     expect(KeywordsRepository.prototype.listByProject).toHaveBeenCalledWith(
       { workspaceId: ids.workspace, projectId: ids.project },
-      { limit: 50, cursor: null },
+      { limit: 50, cursor: null, sourceKind: null },
     );
   });
 

@@ -3559,14 +3559,25 @@ export interface components {
             metrics: components["schemas"]["GrowthMapKeywordMetrics"];
             coverage: components["schemas"]["GrowthMapCoverage"];
         };
-        /** @description hasNext is true exactly when nextCursor is non-null. */
+        /** @description Whole-library Keyword counts per intake source, computed in the same read-only transaction as the page. A Keyword with occurrences from several sources counts once per source, so per-source counts can sum past `all`. */
+        GrowthMapKeywordSourceCounts: {
+            all: number;
+            csv_import: number;
+            dataforseo_ranked: number;
+            gsc_top_query: number;
+            interview_summary: number;
+            user_review: number;
+            manual: number;
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. The live Keyword Library read fills sourceCounts; pinned frozen reads carry null. */
         GrowthMapKeywordLibraryPageMeta: {
             limit: number;
             nextCursor: string | null;
             hasNext: boolean;
             coverage: components["schemas"]["GrowthMapCoverage"];
+            sourceCounts: components["schemas"]["GrowthMapKeywordSourceCounts"] | null;
         };
-        /** @description Bounded project-scoped cursor page with no synthetic total or filter state. */
+        /** @description Bounded project-scoped cursor page. The meta block may carry exact whole-library per-source counts; it never carries a synthetic total. */
         GrowthMapKeywordLibraryResponse: {
             projectId: components["schemas"]["Uuid"];
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
@@ -5956,6 +5967,8 @@ export interface components {
          *     latest readable published generation. Repeated values are rejected.
          */
         DiagnosticRunIdPin: string;
+        /** @description Restrict the live Keyword Library page to Keywords holding at least one occurrence of this intake source. Rejected when combined with diagnosticRunId because frozen generations have no per-source membership. */
+        KeywordSourceKindFilter: "csv_import" | "dataforseo_ranked" | "gsc_top_query" | "interview_summary" | "user_review" | "manual";
         /**
          * @description Exact view=review selects the current mutable governance projection.
          *     It is available only on Keyword and Competitor detail GET operations,
@@ -7116,6 +7129,8 @@ export interface operations {
                  *     latest readable published generation. Repeated values are rejected.
                  */
                 diagnosticRunId?: components["parameters"]["DiagnosticRunIdPin"];
+                /** @description Restrict the live Keyword Library page to Keywords holding at least one occurrence of this intake source. Rejected when combined with diagnosticRunId because frozen generations have no per-source membership. */
+                sourceKind?: components["parameters"]["KeywordSourceKindFilter"];
             };
             header?: never;
             path: {
