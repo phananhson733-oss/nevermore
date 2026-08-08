@@ -74,6 +74,12 @@ type AvailableAiCitationInsight = Extract<
   AiCitationInsight,
   { availability: "available" }
 >;
+type SharedKeywordInsight =
+  components["schemas"]["GrowthMapCompetitorSharedKeywordInsight"];
+type AvailableSharedKeywordInsight = Extract<
+  SharedKeywordInsight,
+  { availability: "available" }
+>;
 
 type _ListQueryIncludesPublishedGeneration = Expect<
   Equal<keyof CompetitorListQuery, "limit" | "cursor" | "diagnosticRunId">
@@ -136,6 +142,7 @@ type _ItemFields = Expect<
     | "lastObservedAt"
     | "serpOverlap"
     | "aiCitationInsight"
+    | "sharedKeywordInsight"
     | "coverage"
   >
 >;
@@ -199,6 +206,9 @@ type _SerpAvailability = Expect<
 type _AiCitationAvailability = Expect<
   Equal<AiCitationInsight["availability"], "available" | "unavailable">
 >;
+type _SharedKeywordAvailability = Expect<
+  Equal<SharedKeywordInsight["availability"], "available" | "unavailable">
+>;
 type _UnavailableInsightFields = Expect<
   Equal<
     keyof UnavailableSerpOverlap,
@@ -215,6 +225,12 @@ type _AiCitationPointer = Expect<
   Equal<
     AvailableAiCitationInsight["valuePointer"],
     "/valueJson/aiCitationInsight"
+  >
+>;
+type _SharedKeywordPointer = Expect<
+  Equal<
+    AvailableSharedKeywordInsight["valuePointer"],
+    "/valueJson/intersections"
   >
 >;
 
@@ -301,6 +317,9 @@ describe("Competitor Library generated OpenAPI contract", () => {
     );
     expect(generated).toContain(
       'valuePointer: "/valueJson/aiCitationInsight";',
+    );
+    expect(generated).toContain(
+      'valuePointer: "/valueJson/intersections";',
     );
   });
 

@@ -1231,6 +1231,18 @@ function checkOpenApi() {
       "value",
     ],
   );
+  assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorAvailableSharedKeywordInsight",
+    [
+      "snapshotId",
+      "observationId",
+      "valuePointer",
+      "observedAt",
+      "limitation",
+      "availability",
+      "value",
+    ],
+  );
   invariant(
     competitorSchemas.GrowthMapCompetitorUnavailableInsight?.properties
       ?.availability?.const === "unavailable" &&
@@ -1246,6 +1258,10 @@ function checkOpenApi() {
     [
       "GrowthMapCompetitorAiCitationInsight",
       "GrowthMapCompetitorAvailableAiCitationInsight",
+    ],
+    [
+      "GrowthMapCompetitorSharedKeywordInsight",
+      "GrowthMapCompetitorAvailableSharedKeywordInsight",
     ],
   ]);
   for (const [unionName, availableName] of competitorInsightUnions) {
@@ -1277,7 +1293,11 @@ function checkOpenApi() {
         ?.properties?.availability?.const === "available" &&
       competitorSchemas.GrowthMapCompetitorAvailableAiCitationInsight
         .properties?.valuePointer?.const ===
-        "/valueJson/aiCitationInsight",
+        "/valueJson/aiCitationInsight" &&
+      competitorSchemas.GrowthMapCompetitorAvailableSharedKeywordInsight
+        ?.properties?.availability?.const === "available" &&
+      competitorSchemas.GrowthMapCompetitorAvailableSharedKeywordInsight
+        .properties?.valuePointer?.const === "/valueJson/intersections",
     "Growth Map Competitor available insight canonical Observation pointer drift",
   );
 
@@ -1294,6 +1314,7 @@ function checkOpenApi() {
     "lastObservedAt",
     "serpOverlap",
     "aiCitationInsight",
+    "sharedKeywordInsight",
     "coverage",
   ];
   assertClosedRequiredCompetitorSchema(

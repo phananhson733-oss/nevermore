@@ -2087,6 +2087,9 @@ function competitorItem() {
     aiCitationInsight: unavailableCompetitorInsight(
       "No canonical AI-citation Observation is available.",
     ),
+    sharedKeywordInsight: unavailableCompetitorInsight(
+      "No canonical DataForSEO competitor-domain Observation is available.",
+    ),
     coverage: {
       availability: "partial",
       limitations: ["The candidate has not been approved for analysis."],
@@ -2446,6 +2449,96 @@ describe("Growth Map Competitor Library contracts", () => {
         ],
       }).success,
     ).toBe(true);
+  });
+
+  it("allows a shared-keyword count only when one exact serp_overlap Observation backs it", () => {
+    const serpOrigin = {
+      occurrenceId: ids.competitorOccurrence2,
+      originKind: "serp_overlap",
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      observedAt: "2026-07-21T09:00:00Z",
+      evidenceRefs: [],
+    };
+    const availableSharedKeywordInsight = {
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/intersections",
+      observedAt: "2026-07-21T09:00:00Z",
+      limitation:
+        "This counts shared ranking keywords inside one ranking window, not a share.",
+    };
+    const withSharedKeywords = {
+      ...approvedCompetitorItem(),
+      originOccurrences: [productProfileOriginOccurrence(), serpOrigin],
+      lastObservedAt: "2026-07-21T09:00:00Z",
+      sharedKeywordInsight: availableSharedKeywordInsight,
+    };
+    const parseWith = (item: unknown) =>
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [item],
+      }).success;
+
+    expect(parseWith(withSharedKeywords)).toBe(true);
+
+    // The lineage must name the shared-keyword pointer; borrowing a sibling
+    // insight's pointer would let one metric impersonate another.
+    expect(
+      parseWith({
+        ...withSharedKeywords,
+        sharedKeywordInsight: {
+          ...availableSharedKeywordInsight,
+          valuePointer: "/valueJson/serpOverlap",
+        },
+      }),
+    ).toBe(false);
+    // No canonical origin at all.
+    expect(
+      parseWith({
+        ...withSharedKeywords,
+        originOccurrences: [productProfileOriginOccurrence()],
+      }),
+    ).toBe(false);
+    // Lineage that points at a different Observation or Snapshot than the one
+    // the origin recorded.
+    for (const drift of [
+      { observationId: ids.aiObservation },
+      { snapshotId: ids.aiSnapshot },
+      { observedAt: "2026-07-21T09:05:00Z" },
+    ]) {
+      expect(
+        parseWith({
+          ...withSharedKeywords,
+          sharedKeywordInsight: {
+            ...availableSharedKeywordInsight,
+            ...drift,
+          },
+        }),
+      ).toBe(false);
+    }
+    // The source only ever records domains that already share a keyword, so a
+    // zero, a negative, or a fractional intersection count is never canonical.
+    for (const value of [0, -1, 1.5]) {
+      expect(
+        parseWith({
+          ...withSharedKeywords,
+          sharedKeywordInsight: { ...availableSharedKeywordInsight, value },
+        }),
+      ).toBe(false);
+    }
+    // An unavailable insight may not smuggle lineage in beside its limitation.
+    expect(
+      parseWith({
+        ...competitorItem(),
+        sharedKeywordInsight: {
+          ...unavailableCompetitorInsight("No canonical source."),
+          snapshotId: ids.serpSnapshot,
+        },
+      }),
+    ).toBe(false);
   });
 
   it("supports every exact origin branch without treating future sources as connected", () => {

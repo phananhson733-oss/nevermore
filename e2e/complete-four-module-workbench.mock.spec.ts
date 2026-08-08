@@ -473,6 +473,11 @@ function competitor(
       value: null,
       limitation: "尚无已确认的 AI citation 观测。",
     },
+    sharedKeywordInsight: {
+      availability: "unavailable" as const,
+      value: null,
+      limitation: "尚无覆盖该域名的规范竞品域名观测。",
+    },
     coverage: { availability: "available" as const, limitations: [] },
   };
 }
@@ -1595,6 +1600,16 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(atlasRow).toContainText("数据不足");
     await expect(atlasRow).toContainText("不可用");
     await expect(atlasRow).not.toContainText("暂无可用数据");
+    // Both Competitors here carry manual origins only, so the shared-keyword
+    // cell must stay on its own fallback rather than inherit the neighbouring
+    // overlap cell's text. Scoping the assertion to the column keeps that
+    // honest: a wrong number here can no longer hide behind a row-wide match.
+    await expect(
+      atlasRow.locator('[data-column="共同关键词"]'),
+    ).toHaveText("数据不足");
+    await expect(
+      atlasRow.locator('[data-column="自然搜索重叠度"]'),
+    ).toHaveText("数据不足");
 
     // CompetitorMonitorSection moved into the full-profile drawer; open it
     // from the row arrow before asserting monitor evidence.

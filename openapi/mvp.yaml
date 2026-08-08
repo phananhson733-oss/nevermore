@@ -7174,10 +7174,33 @@ components:
           unavailable: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
           available: '#/components/schemas/GrowthMapCompetitorAvailableAiCitationInsight'
 
+    GrowthMapCompetitorAvailableSharedKeywordInsight:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, observationId, valuePointer, observedAt, limitation, availability, value]
+      properties:
+        snapshotId: { $ref: '#/components/schemas/Uuid' }
+        observationId: { $ref: '#/components/schemas/Uuid' }
+        valuePointer: { type: string, const: /valueJson/intersections }
+        observedAt: { $ref: '#/components/schemas/Timestamp' }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        availability: { type: string, const: available }
+        value: { type: integer, minimum: 1 }
+
+    GrowthMapCompetitorSharedKeywordInsight:
+      oneOf:
+        - $ref: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+        - $ref: '#/components/schemas/GrowthMapCompetitorAvailableSharedKeywordInsight'
+      discriminator:
+        propertyName: availability
+        mapping:
+          unavailable: '#/components/schemas/GrowthMapCompetitorUnavailableInsight'
+          available: '#/components/schemas/GrowthMapCompetitorAvailableSharedKeywordInsight'
+
     GrowthMapCompetitorLibraryItem:
       type: object
       additionalProperties: false
-      required: [projectId, competitorId, domain, name, reviewStatus, relationship, analysisScope, revision, originOccurrences, lastObservedAt, serpOverlap, aiCitationInsight, coverage]
+      required: [projectId, competitorId, domain, name, reviewStatus, relationship, analysisScope, revision, originOccurrences, lastObservedAt, serpOverlap, aiCitationInsight, sharedKeywordInsight, coverage]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
         competitorId: { $ref: '#/components/schemas/Uuid' }
@@ -7202,6 +7225,7 @@ components:
         lastObservedAt: { type: [string, 'null'], format: date-time }
         serpOverlap: { $ref: '#/components/schemas/GrowthMapCompetitorSerpOverlap' }
         aiCitationInsight: { $ref: '#/components/schemas/GrowthMapCompetitorAiCitationInsight' }
+        sharedKeywordInsight: { $ref: '#/components/schemas/GrowthMapCompetitorSharedKeywordInsight' }
         coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
       description: Stable project-scoped Competitor identity. Approved entries require relationship and analysisScope; candidate/excluded entries forbid both. lastObservedAt is the latest non-null origin timestamp and available insights match one exact origin Observation.
       x-signalframe-runtime-refinement: competitorReviewStateAndExactOriginInsightLineage

@@ -796,6 +796,12 @@ function competitorItem(competitorId = COMPETITOR_A) {
       limitation:
         "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.",
     },
+    sharedKeywordInsight: {
+      availability: "unavailable",
+      value: null,
+      limitation:
+        "Shared keyword counts are unavailable because no canonical competitor-domain Observation covers this domain.",
+    },
     coverage: {
       availability: "partial",
       limitations: [

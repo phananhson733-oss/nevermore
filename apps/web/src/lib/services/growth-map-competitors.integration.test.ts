@@ -1156,6 +1156,13 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           value: null,
           limitation: expect.stringMatching(/canonical.*writer/i),
         },
+        sharedKeywordInsight: {
+          availability: "unavailable",
+          value: null,
+          limitation: expect.stringMatching(
+            /competitors-domain Observation is recorded.*not a measured zero/i,
+          ),
+        },
         coverage: {
           availability: "partial",
         },
@@ -1429,6 +1436,22 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           /immutable.*source.*recorded.*no canonical derived.*ratio/i,
         ),
       });
+      // The only end-to-end proof that an available shared-keyword count is the
+      // seeded Observation's own `intersections`, reachable through the exact
+      // Snapshot/Observation/observedAt the serp_overlap origin recorded. The
+      // seed's Snapshot is `dataforseo.search_landscape.v2`, so the scope
+      // caveat must name the top-100 ranking window rather than v1's top 20.
+      expect(latest.data[0]?.sharedKeywordInsight).toEqual({
+        availability: "available",
+        value: 17,
+        snapshotId: serp.snapshotId,
+        observationId: serp.observationId,
+        valuePointer: "/valueJson/intersections",
+        observedAt: OBSERVED_AT,
+        limitation: expect.stringMatching(
+          /both rank inside the top 100 organic results/i,
+        ),
+      });
       await expect(
         getProjectAuditCompetitor(
           scope,
@@ -1464,6 +1487,13 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
           /no immutable.*source.*recorded.*no canonical derived.*ratio/i,
         ),
       });
+      expect(older.data[0]?.sharedKeywordInsight).toEqual({
+        availability: "unavailable",
+        value: null,
+        limitation: expect.stringMatching(
+          /competitors-domain Observation is recorded.*not a measured zero/i,
+        ),
+      });
 
       const review = await getProjectAuditCompetitorReviewDetail(
         scope,
@@ -1482,6 +1512,9 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         ]),
       );
       expect(review.data.serpOverlap).toEqual(latest.data[0]?.serpOverlap);
+      expect(review.data.sharedKeywordInsight).toEqual(
+        latest.data[0]?.sharedKeywordInsight,
+      );
     });
   });
 
