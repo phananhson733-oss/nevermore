@@ -3470,6 +3470,24 @@
   font-weight: 780;
 }
 
+.keywordEvidenceDialog {
+  width: min(860px, 100%);
+  max-height: min(920px, calc(100vh - 48px));
+}
+
+.keywordEvidenceBody {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.keywordEvidenceBody > section:first-child {
+  border-top: 0;
+}
+
+.keywordEvidenceBody > footer {
+  padding: 0 20px 22px;
+}
+
 .keywordReviewDialog {
   width: min(860px, 100%);
   max-height: min(920px, calc(100vh - 48px));

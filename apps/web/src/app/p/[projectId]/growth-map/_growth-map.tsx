@@ -3871,12 +3871,34 @@ function KeywordList({
   );
 }
 
+function growthMapDialogInClosedDisclosure(
+  element: HTMLElement,
+  container: HTMLElement,
+): boolean {
+  let child: HTMLElement = element;
+  let node = element.parentElement;
+  while (node !== null && node !== container) {
+    if (node instanceof HTMLDetailsElement && !node.open) {
+      const isOwnSummary =
+        child.tagName === "SUMMARY" && child.parentElement === node;
+      if (!isOwnSummary) return true;
+    }
+    child = node;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 function growthMapDialogFocusable(container: HTMLElement): HTMLElement[] {
   return Array.from(
     container.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
     ),
-  ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+  ).filter(
+    (element) =>
+      element.getAttribute("aria-hidden") !== "true" &&
+      !growthMapDialogInClosedDisclosure(element, container),
+  );
 }
 
 function GrowthMapDialogFrame({
@@ -7109,6 +7131,186 @@ function KeywordReviewDialog({
   );
 }
 
+function KeywordEvidenceDialog({
+  open,
+  detail,
+  rankHistory,
+  isRankHistoryPending,
+  rankHistoryError,
+  onRetryRankHistory,
+  onRequestClose,
+}: {
+  readonly open: boolean;
+  readonly detail: GrowthMapKeywordLibraryItem;
+  readonly rankHistory: GrowthMapKeywordRankHistory | undefined;
+  readonly isRankHistoryPending: boolean;
+  readonly rankHistoryError: unknown;
+  readonly onRetryRankHistory: () => void;
+  readonly onRequestClose: () => void;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  const id = useId();
+  const titleId = `${id}-title`;
+  const descriptionId = `${id}-description`;
+  const metricKeys = [
+    "volume",
+    "kd",
+    "currentRank",
+    "currentUrl",
+    "competitorDomain",
+    "competitorRank",
+  ] as const;
+
+  return (
+    <GrowthMapDialogFrame
+      open={open}
+      titleId={titleId}
+      descriptionId={descriptionId}
+      onRequestClose={onRequestClose}
+      className={styles.keywordEvidenceDialog}
+    >
+      <header className={styles.keywordRelationDialogHeader}>
+        <div>
+          <span>{t("sourcesEyebrow")}</span>
+          <h2 id={titleId}>{t("evidence.title")}</h2>
+          <p id={descriptionId}>
+            {t("evidence.description", { keyword: detail.displayKeyword })}
+          </p>
+        </div>
+        <button
+          type="button"
+          className={styles.keywordRelationClose}
+          aria-label={t("evidence.close")}
+          onClick={onRequestClose}
+        >
+          <X aria-hidden="true" size={21} />
+        </button>
+      </header>
+      <div className={styles.keywordEvidenceBody}>
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("classificationEyebrow")}</span>
+            <h3>{t("classificationTitle")}</h3>
+          </div>
+          <Target aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("classificationDescription")}
+        </p>
+        <dl className={styles.keywordClassificationGrid}>
+          <KeywordClassificationField
+            label={t("intent")}
+            value={detail.intent}
+            limitation={detail.classificationLimitations.intent}
+          />
+          <KeywordClassificationField
+            label={t("buyerStage")}
+            value={detail.buyerStage}
+            limitation={detail.classificationLimitations.buyerStage}
+          />
+          <KeywordClassificationField
+            label={t("cluster")}
+            value={detail.cluster?.name ?? null}
+            identity={detail.cluster?.clusterId}
+            limitation={detail.classificationLimitations.cluster}
+          />
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("columns.queryKind")}</dt>
+            <dd>
+              <strong>{t(`queryKind.${detail.queryKind}`)}</strong>
+            </dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("mappedTarget")}</dt>
+            <dd><KeywordMappedTarget target={detail.mappedTarget} /></dd>
+          </div>
+          <div className={styles.keywordClassificationField}>
+            <dt>{t("mappingReview")}</dt>
+            <dd>
+              <strong>
+                {t(`mappingReviewState.${detail.mappedTarget.reviewState}`)}
+              </strong>
+              {detail.mappedTarget.reason === null ? null : (
+                <small>{detail.mappedTarget.reason}</small>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("metricsEyebrow")}</span>
+            <h3>{t("metricsTitle")}</h3>
+          </div>
+          <BarChart3 aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("metricsDescription")}
+        </p>
+        <div className={styles.keywordMetricGrid}>
+          {metricKeys.map((metricKey) => (
+            <KeywordMetricCard
+              key={metricKey}
+              metricKey={metricKey}
+              metric={detail.metrics[metricKey]}
+              absenceLimitation={detail.metrics.limitations[metricKey]}
+            />
+          ))}
+        </div>
+      </section>
+
+      <KeywordRankHistorySection
+        keyword={detail.displayKeyword}
+        history={rankHistory}
+        isPending={isRankHistoryPending}
+        error={rankHistoryError}
+        onRetry={onRetryRankHistory}
+      />
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <span>{t("sourcesEyebrow")}</span>
+            <h3>{t("sourcesTitle")}</h3>
+          </div>
+          <ShieldCheck aria-hidden="true" size={21} />
+        </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("sourcesDescription")}
+        </p>
+        <div className={styles.keywordSourceList}>
+          {detail.sourceOccurrences.map((occurrence) => (
+            <KeywordSourceOccurrenceCard
+              key={occurrence.occurrenceId}
+              occurrence={occurrence}
+            />
+          ))}
+        </div>
+      </section>
+
+      <footer className={styles.keywordDetailFooter}>
+        <details className={styles.recordDisclosure}>
+          <summary>{t("viewRecordDetails")}</summary>
+          <div className={styles.recordDisclosureBody}>
+            <span>
+              {t("keywordId")}
+              <code title={detail.keywordId}>{detail.keywordId}</code>
+            </span>
+            <span>
+              {t("revision")}
+              <strong>{detail.revision}</strong>
+            </span>
+          </div>
+        </details>
+      </footer>
+      </div>
+    </GrowthMapDialogFrame>
+  );
+}
+
 function KeywordDetailPanel({
   projectId,
   detail,
@@ -7148,6 +7350,9 @@ function KeywordDetailPanel({
   const locale = useLocale();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const closeReview = useCallback(() => setReviewOpen(false), []);
+  const closeEvidence = useCallback(() => setEvidenceOpen(false), []);
   const latestSource = latestKeywordOccurrence(detail.sourceOccurrences);
   const clusterPeersInLoadedRange = relatedKeywords.filter(
     (keyword) =>
@@ -7160,14 +7365,6 @@ function KeywordDetailPanel({
     detail.mappedTarget.kind === "existing_page"
       ? urlPresentation(detail.mappedTarget.normalizedUrl).path
       : t(`mappingTarget.${detail.mappedTarget.kind}`);
-  const metricKeys = [
-    "volume",
-    "kd",
-    "currentRank",
-    "currentUrl",
-    "competitorDomain",
-    "competitorRank",
-  ] as const;
 
   return (
     <>
@@ -7348,14 +7545,7 @@ function KeywordDetailPanel({
       </section>
 
       <div className={styles.detailActions}>
-        <button
-          type="button"
-          onClick={() =>
-            document
-              .getElementById(`sf-keyword-sources-${detail.keywordId}`)
-              ?.scrollIntoView({ block: "start" })
-          }
-        >
+        <button type="button" onClick={() => setEvidenceOpen(true)}>
           <ShieldCheck aria-hidden="true" size={16} />
           {t("intake.viewSources")}
         </button>
@@ -7371,128 +7561,7 @@ function KeywordDetailPanel({
         </button>
       </div>
 
-      <section className={styles.keywordDetailSection}>
-        <div className={styles.keywordSectionHeading}>
-          <div>
-            <span>{t("classificationEyebrow")}</span>
-            <h3>{t("classificationTitle")}</h3>
-          </div>
-          <Target aria-hidden="true" size={21} />
-        </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("classificationDescription")}
-        </p>
-        <dl className={styles.keywordClassificationGrid}>
-          <KeywordClassificationField
-            label={t("intent")}
-            value={detail.intent}
-            limitation={detail.classificationLimitations.intent}
-          />
-          <KeywordClassificationField
-            label={t("buyerStage")}
-            value={detail.buyerStage}
-            limitation={detail.classificationLimitations.buyerStage}
-          />
-          <KeywordClassificationField
-            label={t("cluster")}
-            value={detail.cluster?.name ?? null}
-            identity={detail.cluster?.clusterId}
-            limitation={detail.classificationLimitations.cluster}
-          />
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("columns.queryKind")}</dt>
-            <dd>
-              <strong>{t(`queryKind.${detail.queryKind}`)}</strong>
-            </dd>
-          </div>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("mappedTarget")}</dt>
-            <dd><KeywordMappedTarget target={detail.mappedTarget} /></dd>
-          </div>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("mappingReview")}</dt>
-            <dd>
-              <strong>
-                {t(`mappingReviewState.${detail.mappedTarget.reviewState}`)}
-              </strong>
-              {detail.mappedTarget.reason === null ? null : (
-                <small>{detail.mappedTarget.reason}</small>
-              )}
-            </dd>
-          </div>
-        </dl>
-      </section>
 
-      <section
-        className={styles.keywordDetailSection}
-        id={`sf-keyword-sources-${detail.keywordId}`}
-      >
-        <div className={styles.keywordSectionHeading}>
-          <div>
-            <span>{t("metricsEyebrow")}</span>
-            <h3>{t("metricsTitle")}</h3>
-          </div>
-          <BarChart3 aria-hidden="true" size={21} />
-        </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("metricsDescription")}
-        </p>
-        <div className={styles.keywordMetricGrid}>
-          {metricKeys.map((metricKey) => (
-            <KeywordMetricCard
-              key={metricKey}
-              metricKey={metricKey}
-              metric={detail.metrics[metricKey]}
-              absenceLimitation={detail.metrics.limitations[metricKey]}
-            />
-          ))}
-        </div>
-      </section>
-
-      <KeywordRankHistorySection
-        keyword={detail.displayKeyword}
-        history={rankHistory}
-        isPending={isRankHistoryPending}
-        error={rankHistoryError}
-        onRetry={onRetryRankHistory}
-      />
-
-      <section className={styles.keywordDetailSection}>
-        <div className={styles.keywordSectionHeading}>
-          <div>
-            <span>{t("sourcesEyebrow")}</span>
-            <h3>{t("sourcesTitle")}</h3>
-          </div>
-          <ShieldCheck aria-hidden="true" size={21} />
-        </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("sourcesDescription")}
-        </p>
-        <div className={styles.keywordSourceList}>
-          {detail.sourceOccurrences.map((occurrence) => (
-            <KeywordSourceOccurrenceCard
-              key={occurrence.occurrenceId}
-              occurrence={occurrence}
-            />
-          ))}
-        </div>
-      </section>
-
-      <footer className={styles.keywordDetailFooter}>
-        <details className={styles.recordDisclosure}>
-          <summary>{t("viewRecordDetails")}</summary>
-          <div className={styles.recordDisclosureBody}>
-            <span>
-              {t("keywordId")}
-              <code title={detail.keywordId}>{detail.keywordId}</code>
-            </span>
-            <span>
-              {t("revision")}
-              <strong>{detail.revision}</strong>
-            </span>
-          </div>
-        </details>
-      </footer>
       </aside>
       <KeywordReviewDialog
         projectId={projectId}
@@ -7506,8 +7575,17 @@ function KeywordDetailPanel({
         isSitePagesPending={isSitePagesPending}
         sitePagesError={sitePagesError}
         sitePagesTruncated={sitePagesTruncated}
-        onRequestClose={() => setReviewOpen(false)}
+        onRequestClose={closeReview}
         onSaved={() => setReviewSaved(true)}
+      />
+      <KeywordEvidenceDialog
+        open={evidenceOpen}
+        detail={detail}
+        rankHistory={rankHistory}
+        isRankHistoryPending={isRankHistoryPending}
+        rankHistoryError={rankHistoryError}
+        onRetryRankHistory={onRetryRankHistory}
+        onRequestClose={closeEvidence}
       />
     </>
   );

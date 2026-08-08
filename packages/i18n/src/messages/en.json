@@ -1402,6 +1402,11 @@
         "currentRank": "Not covered"
       },
       "relatedVolume": "Volume {volume}",
+      "evidence": {
+        "title": "Sources and record detail",
+        "description": "Classification, metrics, rank history, and source records for {keyword}.",
+        "close": "Close sources and record detail"
+      },
       "intentLabel": {
         "informational": "Informational",
         "commercial": "Commercial",
