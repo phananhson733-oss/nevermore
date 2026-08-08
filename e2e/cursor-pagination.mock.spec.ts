@@ -442,28 +442,37 @@ test("Studio protects unsaved content and notes from editor transitions", async 
   }
   await expect(content).toHaveValue("Dirty before link navigation");
 
+  const readHistoryPosition = async (): Promise<number> => {
+    const position = await page.evaluate(
+      () => history.state?.__sfProjectHistoryPosition as unknown,
+    );
+    return typeof position === "number" ? position : -1;
+  };
+  // The URL can settle before ProjectNav's effect stamps the new entry. Wait
+  // for that stamp before issuing the next push so Back/Forward tests entries,
+  // not an inherited intermediate state.
+  const priorExecutionPosition = await readHistoryPosition();
+
   dialogPromise = page.waitForEvent("dialog");
   transitionPromise = page.getByRole("link", { name: "Results" }).click();
   dialog = await dialogPromise;
   await dialog.accept();
   await transitionPromise;
   await expect(page).toHaveURL(onProjectScreen("results"));
+  await expect.poll(readHistoryPosition).not.toBe(priorExecutionPosition);
+  const resultsPosition = await readHistoryPosition();
+  expect(resultsPosition).toBeGreaterThanOrEqual(0);
 
   await page.getByRole("link", { name: "Execution", exact: true }).click();
   await expect(page).toHaveURL(onProjectScreen("execution"));
-  const executionPosition = await page.evaluate(
-    () => history.state?.__sfProjectHistoryPosition as unknown,
-  );
-  expect(typeof executionPosition).toBe("number");
+  await expect.poll(readHistoryPosition).toBeGreaterThan(resultsPosition);
+  const executionPosition = await readHistoryPosition();
   await page.goBack();
   await expect(page).toHaveURL(onProjectScreen("results"));
-  const resultsPosition = await page.evaluate(
-    () => history.state?.__sfProjectHistoryPosition as unknown,
-  );
-  expect(typeof resultsPosition).toBe("number");
-  expect(resultsPosition as number).toBeLessThan(executionPosition as number);
+  await expect.poll(readHistoryPosition).toBe(resultsPosition);
   await page.goForward();
   await expect(page).toHaveURL(onProjectScreen("execution"));
+  await expect.poll(readHistoryPosition).toBe(executionPosition);
   await firstView.click();
   if ((await editMarkdown.count()) > 0) {
     await editMarkdown.click();
