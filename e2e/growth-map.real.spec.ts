@@ -840,7 +840,13 @@ async function assertKeywordLibraryTraceability(input: {
   await expect(detail).toContainText(item.displayKeyword, {
     timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
   });
-  const recordDetails = detail.locator("details").filter({
+  await detail
+    .getByRole("button", { name: "View sources and details" })
+    .click();
+  const evidence = page.getByRole("dialog", {
+    name: "Sources and record detail",
+  });
+  const recordDetails = evidence.locator("details").filter({
     hasText: "View record details",
   });
   await recordDetails.locator("summary").click();
@@ -858,7 +864,7 @@ async function assertKeywordLibraryTraceability(input: {
       `${item.displayKeyword} lost its exact CSV Keyword source occurrence`,
     );
   }
-  const sourceCard = detail
+  const sourceCard = evidence
     .getByTitle(occurrence.occurrenceId, { exact: true })
     .locator("xpath=ancestor::article[1]");
   await sourceCard.getByText("View source details", { exact: true }).click();
@@ -878,6 +884,9 @@ async function assertKeywordLibraryTraceability(input: {
   await expect(
     sourceCard.getByText(occurrence.sourcePointer, { exact: true }),
   ).toBeVisible();
+  await evidence
+    .getByRole("button", { name: "Close sources and record detail" })
+    .click();
 }
 
 async function assertCompetitorLibraryTraceability(input: {

@@ -549,9 +549,15 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
   expect(state.relationReads).toBe(relationReadsBeforeSave);
   const detail = page.locator('aside[aria-label="所选关键词详情"]');
   await expect(detail).toContainText("流程自动化");
-  await expect(detail).toContainText(
+  // The conversion path states the mapped page as its site path; the full
+  // normalized URL now lives in the sources-and-detail dialog.
+  await expect(detail).toContainText("/customer-onboarding/");
+  await detail.getByRole("button", { name: "查看来源与明细" }).click();
+  const evidence = page.getByRole("dialog", { name: "来源与明细" });
+  await expect(evidence).toContainText(
     "https://example.test/customer-onboarding/",
   );
+  await evidence.getByRole("button", { name: "关闭来源与明细" }).click();
   await expect(detail.getByText("审核结果已同步")).toBeVisible();
 
   // Reopening the editor reads the separately cached live review authority, so

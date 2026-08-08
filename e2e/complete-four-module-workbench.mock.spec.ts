@@ -1535,11 +1535,6 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       }),
     ).toBeVisible();
     await expect(detail.getByTitle("2,400")).toBeVisible();
-    const rankHistory = detail.getByRole("heading", {
-      name: "90 天排名趋势",
-      level: 3,
-    });
-    await expect(rankHistory).toBeVisible();
     await expect(
       page.getByText("本页 1 组候选，已收起 0 个支持词"),
     ).toBeVisible();
@@ -1561,8 +1556,18 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       .getByRole("button", { name: "关闭重复词审核" })
       .click();
 
+    await detail.getByRole("button", { name: "查看来源与明细" }).click();
+    const evidence = page.getByRole("dialog", { name: "来源与明细" });
+    const rankHistory = evidence.getByRole("heading", {
+      name: "90 天排名趋势",
+      level: 3,
+    });
+    await expect(rankHistory).toBeVisible();
     await rankHistory.scrollIntoViewIfNeeded();
     await captureCurrentViewport(page, "05-growth-map-keywords-rank-history");
+    await evidence
+      .getByRole("button", { name: "关闭来源与明细" })
+      .click();
 
     await detail.getByRole("button", { name: "审核 / 修改" }).click();
     const reviewDialog = page.getByRole("dialog");
@@ -1610,13 +1615,18 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     ).toBeVisible();
     await expect(detail.getByText("访谈摘要").first()).toBeVisible();
     await expect(detail.getByText("用户评价").first()).toBeVisible();
-    await expect(detail.getByText("暂无排名趋势")).toBeVisible();
-    const sourcesHeading = detail.getByRole("heading", {
+    await detail.getByRole("button", { name: "查看来源与明细" }).click();
+    const vocEvidence = page.getByRole("dialog", { name: "来源与明细" });
+    await expect(vocEvidence.getByText("暂无排名趋势")).toBeVisible();
+    const sourcesHeading = vocEvidence.getByRole("heading", {
       name: "来源记录",
       level: 3,
     });
     await sourcesHeading.scrollIntoViewIfNeeded();
     await captureCurrentViewport(page, "06-growth-map-keywords-voc-sources");
+    await vocEvidence
+      .getByRole("button", { name: "关闭来源与明细" })
+      .click();
   });
 
   await test.step("增长地图 / 竞品库：动态信号与 baseline 按竞品隔离", async () => {

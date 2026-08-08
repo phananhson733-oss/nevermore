@@ -354,10 +354,12 @@ test("关键词库把访谈摘要与用户评价作为两个独立内置来源�
     }),
   ).toBeVisible();
 
-  const interview = detail.locator(
+  await detail.getByRole("button", { name: "查看来源与明细" }).click();
+  const evidence = page.getByRole("dialog", { name: "来源与明细" });
+  const interview = evidence.locator(
     'article[data-source-kind="interview_summary"]',
   );
-  const review = detail.locator('article[data-source-kind="user_review"]');
+  const review = evidence.locator('article[data-source-kind="user_review"]');
   await expect(interview).toContainText("第二季度客户入职访谈摘要");
   await expect(review).toContainText("RelayOps 的 G2 公开评价语料");
   await expect(review).toContainText("G2");
@@ -388,6 +390,6 @@ test("关键词库把访谈摘要与用户评价作为两个独立内置来源�
   await expect(
     review.getByTitle(vocKeyword.sourceOccurrences[1].collectionRunId),
   ).toBeVisible();
-  await expect(detail).not.toContainText("participantName");
-  await expect(detail).not.toContainText("reviewBody");
+  await expect(evidence).not.toContainText("participantName");
+  await expect(evidence).not.toContainText("reviewBody");
 });

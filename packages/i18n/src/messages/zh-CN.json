@@ -1402,6 +1402,11 @@
         "currentRank": "未覆盖"
       },
       "relatedVolume": "搜索量 {volume}",
+      "evidence": {
+        "title": "来源与明细",
+        "description": "{keyword} 的分类、指标、排名趋势与来源记录。",
+        "close": "关闭来源与明细"
+      },
       "intentLabel": {
         "informational": "信息意图",
         "commercial": "商业意图",
