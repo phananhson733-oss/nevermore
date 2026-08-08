@@ -4,7 +4,6 @@ import {
   E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_CTR_FINDING_ID,
-  E2E_GROWTH_MAP_TOPIC_NODE_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_PROJECT_ID,
   installGrowthVerticalApi,
@@ -12,11 +11,11 @@ import {
 } from "./mock-api.ts";
 
 /**
- * Growth Map mock E2E. The default Pages and opportunities mode starts from the
- * complete frozen Opportunity projection, the same URL set can be regrouped by
- * stable Topic Node, and the URL rail stays compact until its evidence/review
- * disclosure is explicitly opened. The canonical review walkthrough still
- * proves one Finding -> one Action -> one template-fixed technical ticket.
+ * Growth Map mock E2E. Pages and opportunities has exactly one presentation:
+ * the complete frozen Opportunity projection, ranked by the primary Finding
+ * severity, with an exact-URL evidence drill-down in the same rail. The
+ * canonical review walkthrough still proves one Finding -> one Action -> one
+ * template-fixed technical ticket.
  */
 
 const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
@@ -105,12 +104,16 @@ async function blockingAxeViolations(
 async function openOnboardingDetail(page: Page): Promise<void> {
   await navLink(page, 1).click();
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
-  const urlTab = page.getByRole("tab", { name: /^By URL/ });
-  await urlTab.click();
-  await expect(urlTab).toHaveAttribute("aria-selected", "true");
   await page
-    .locator(`[data-growth-map-url-row="${E2E_ONBOARDING_SITE_PAGE_ID}"]`)
+    .locator(
+      `[data-growth-map-opportunity-row="${E2E_CANONICAL_FINDING_ID}"]`,
+    )
     .getByRole("button")
+    .first()
+    .click();
+  await page
+    .locator(`[data-opportunity-detail="${E2E_CANONICAL_FINDING_ID}"]`)
+    .getByRole("button", { name: "/customer-onboarding" })
     .first()
     .click();
   await expect(
@@ -125,43 +128,56 @@ test.beforeEach(async ({ page }) => {
   api = await installGrowthVerticalApi(page);
 });
 
-test("defaults to Opportunity and switches through stable cluster and compact URL views", async ({
+test("defaults to the Opportunity ledger with severity-based priorities and no view switcher", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
 
-  const tabs = page.getByRole("tablist", {
-    name: "Pages and opportunities view",
-  });
-  const opportunityTab = tabs.getByRole("tab", { name: /^By opportunity/ });
-  const clusterTab = tabs.getByRole("tab", { name: /^By topic cluster/ });
-  const urlTab = tabs.getByRole("tab", { name: /^By URL/ });
-
-  await expect(page).toHaveURL(/(?:\?|&)view=opportunity(?:&|$)/);
-  await expect(opportunityTab).toHaveAttribute("aria-selected", "true");
-  const opportunityView = page.locator('[data-page-view="opportunity"]');
-  await expect(opportunityView).toBeVisible();
+  const rows = page.locator("[data-growth-map-opportunity-row]");
+  await expect(rows).toHaveCount(3);
+  // The removed view switcher must not come back, and the address stays free
+  // of the legacy `view` parameter.
   await expect(
-    opportunityView.locator("[data-growth-map-opportunity-row]"),
-  ).toHaveCount(3);
+    page.getByRole("tablist", { name: "Pages and opportunities view" }),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBeNull();
+
+  // The ledger reads the complete frozen projections through every cursor page.
   await expect
     .poll(() => [...new Set(api.completeUrlPageReads)])
     .toEqual([null, "urls-opaque-page-2"]);
   await expect
     .poll(() => [...new Set(api.completeOpportunityPageReads)])
     .toEqual([null, "opportunities-opaque-page-2"]);
-  for (const tab of [opportunityTab, clusterTab, urlTab]) {
-    await expect(tab).toHaveAttribute(
-      "aria-controls",
-      "growth-map-page-view-panel",
-    );
-  }
-  await expect(page.locator("#growth-map-page-view-panel")).toHaveCount(1);
 
-  const opportunityDetail = opportunityView.getByRole("complementary", {
+  // Priority is the primary Finding severity, so every reviewable row ranks:
+  // the high-severity canonical Finding leads as P1, the medium rows are P2,
+  // and nothing reads "Not independently assessed".
+  await expect(rows.first()).toHaveAttribute(
+    "data-growth-map-opportunity-row",
+    E2E_CANONICAL_FINDING_ID,
+  );
+  await expect(
+    page
+      .locator(`[data-growth-map-opportunity-row="${E2E_CANONICAL_FINDING_ID}"]`)
+      .getByText("P1 · High"),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(`[data-growth-map-opportunity-row="${E2E_CTR_FINDING_ID}"]`)
+      .getByText("P2 · Medium"),
+  ).toBeVisible();
+  await expect(page.getByText("Not independently assessed")).toHaveCount(0);
+
+  const opportunityDetail = page.getByRole("complementary", {
     name: "Selected growth-opportunity detail",
   });
   await expect(opportunityDetail).toBeVisible();
+  await expect(
+    opportunityDetail.getByText("Growth opportunity · P1", { exact: false }),
+  ).toBeVisible();
   for (const section of [
     "Primary Finding",
     "Supporting evidence",
@@ -171,89 +187,43 @@ test("defaults to Opportunity and switches through stable cluster and compact UR
     "Next decision",
   ]) {
     await expect(
-      opportunityDetail.locator("section > span").filter({ hasText: section }),
+      opportunityDetail
+        .locator("section span")
+        .filter({ hasText: section })
+        .first(),
     ).toBeVisible();
   }
+  // The Primary Finding section names its severity, the evidence section its
+  // record count, and the target section its item count.
+  await expect(opportunityDetail.getByText("High", { exact: true })).toBeVisible();
+  await expect(
+    opportunityDetail.getByText("1 records", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    opportunityDetail.getByText("1 items", { exact: true }),
+  ).toBeVisible();
   await expect(opportunityDetail.locator("[data-finding-card]")).toHaveCount(0);
-
-  await clusterTab.click();
-  await expect(clusterTab).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveURL(/(?:\?|&)view=cluster(?:&|$)/);
-  const clusterView = page.locator('[data-page-view="cluster"]');
-  await expect(clusterView).toBeVisible();
-  await expect(
-    clusterView.locator("[data-growth-map-cluster-row]"),
-  ).toHaveCount(1);
-  await expect(clusterView.getByText("2 URLs", { exact: false })).toBeVisible();
-  await expect(clusterView.getByText("Customer onboarding").first()).toBeVisible();
-  await expect(clusterView.getByText("Root topic").first()).toBeVisible();
-
-  const clusterDetail = clusterView.getByRole("complementary", {
-    name: "Selected topic-cluster detail",
-  });
-  await expect(clusterDetail).toBeVisible();
-  for (const section of [
-    "Existing pages and roles",
-    "Demand coverage",
-    "Coverage gap",
-    "Highest-priority opportunity",
-  ]) {
-    await expect(
-      clusterDetail.locator("section > span").filter({ hasText: section }),
-    ).toBeVisible();
-  }
-  await expect(
-    clusterDetail.getByText("Customer onboarding software", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    clusterDetail.getByText("How do I automate customer onboarding?", {
-      exact: true,
-    }),
-  ).toBeVisible();
-
-  await urlTab.click();
-  await expect(urlTab).toHaveAttribute("aria-selected", "true");
-  await expect(page).toHaveURL(/(?:\?|&)view=url(?:&|$)/);
-  await expect(page.locator("[data-growth-map-url-row]")).toHaveCount(2);
-  await page
-    .locator(`[data-growth-map-url-row="${E2E_ONBOARDING_SITE_PAGE_ID}"]`)
-    .getByRole("button")
-    .first()
-    .click();
-
-  const urlDetail = page.getByRole("complementary", {
-    name: "Selected URL detail",
-  });
-  await expect(urlDetail.getByText("Current issues and opportunities")).toBeVisible();
-  await expect(urlDetail.locator("[data-compact-finding]")).toHaveCount(3);
-  await expect(
-    urlDetail.getByText("Full evidence and review", { exact: true }),
-  ).toBeVisible();
-  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
 });
 
-test("keeps Topic clusters hidden when confirmed Topic reads fail", async ({
+test("keeps the Opportunity ledger independent of Topic reads and scrubs cluster addresses", async ({
   page,
 }) => {
   api.topicModelReadsFail = true;
-  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map?view=cluster`);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=stale`,
+  );
 
-  await expect(
-    page.getByText(
-      "The confirmed Topic structure could not be read, so clusters stay hidden instead of being relabeled as legacy data.",
-      { exact: true },
-    ),
-  ).toBeVisible();
+  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(3);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBeNull();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedClusterId"))
+    .toBeNull();
   await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(0);
-  await expect(page.getByText("Legacy cluster", { exact: true })).toHaveCount(0);
-
-  api.topicModelReadsFail = false;
-  await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(1);
-  await expect(page.getByText("Customer onboarding").first()).toBeVisible();
 });
 
-test("clears a view-specific search before drilling to the exact URL", async ({
+test("keeps the search while drilling to the exact URL and back", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
@@ -272,20 +242,31 @@ test("clears a view-specific search before drilling to the exact URL", async ({
   await detail.getByRole("button", { name: "/customer-onboarding" }).click();
 
   await expect
-    .poll(() => new URL(page.url()).searchParams.get("q"))
-    .toBeNull();
-  await expect
     .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"))
     .toBe(E2E_ONBOARDING_SITE_PAGE_ID);
   await expect
     .poll(() => new URL(page.url()).searchParams.get("findingId"))
     .toBe(E2E_CANONICAL_FINDING_ID);
+  // The drill-down keeps the ledger search: leaving and returning must not
+  // silently reset the filtered scope.
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBe("canonical");
   await expect(
     page.locator(`[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`),
   ).toBeVisible();
+
+  await page.getByRole("button", { name: "Back to opportunities" }).click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"))
+    .toBeNull();
+  await expect(
+    page.locator("[data-growth-map-opportunity-row]"),
+  ).toHaveCount(1);
+  await expect(detail).toBeVisible();
 });
 
-test("canonicalizes invalid views and repairs stale grouped selections", async ({
+test("scrubs legacy view addresses and repairs stale Opportunity selections", async ({
   page,
 }) => {
   await page.goto(
@@ -294,7 +275,7 @@ test("canonicalizes invalid views and repairs stale grouped selections", async (
 
   await expect
     .poll(() => new URL(page.url()).searchParams.get("view"))
-    .toBe("opportunity");
+    .toBeNull();
   await expect
     .poll(() => new URL(page.url()).searchParams.get("selectedOpportunityId"))
     .not.toBe("stale");
@@ -307,27 +288,23 @@ test("canonicalizes invalid views and repairs stale grouped selections", async (
   ).toBeVisible();
 
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=stale`,
-  );
-  await expect
-    .poll(() => new URL(page.url()).searchParams.get("selectedClusterId"))
-    .toBe(E2E_GROWTH_MAP_TOPIC_NODE_ID);
-  await expect(
-    page.locator(
-      `[data-cluster-detail="${E2E_GROWTH_MAP_TOPIC_NODE_ID}"]`,
-    ),
-  ).toBeVisible();
-
-  await page.goto(
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
-  await expect
-    .poll(() => new URL(page.url()).searchParams.get("view"))
-    .toBe("url");
-  const urlTab = page.getByRole("tab", { name: "By URL" });
-  await expect(urlTab).toHaveAttribute("aria-selected", "true");
   await expect(
     page.getByRole("heading", { name: "/customer-onboarding" }),
+  ).toBeVisible();
+  const backButton = page.getByRole("button", {
+    name: "Back to opportunities",
+  });
+  await expect(backButton).toBeVisible();
+  await backButton.click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"))
+    .toBeNull();
+  await expect(
+    page.getByRole("complementary", {
+      name: "Selected growth-opportunity detail",
+    }),
   ).toBeVisible();
 });
 
@@ -357,20 +334,16 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
   );
   await expect(navLinks.nth(1)).toContainText("Growth Map");
 
-  // Open Growth Map and select the multi-Finding onboarding URL.
+  // Open Growth Map and drill from the canonical Opportunity into the exact
+  // multi-Finding onboarding URL. The drill-down pins the primary Finding, so
+  // the full evidence-and-review surface opens directly.
   await openOnboardingDetail(page);
 
-  // The default URL rail is concise: three inspectable signals are visible,
-  // while lineage, metrics, link map, and review controls stay in one explicit
-  // disclosure rather than overwhelming the page selection.
   const urlDetail = page.getByRole("complementary", {
     name: "Selected URL detail",
   });
   await expect(urlDetail.locator("[data-compact-finding]")).toHaveCount(3);
-  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
-  await urlDetail
-    .getByText("Full evidence and review", { exact: true })
-    .click();
+  await expect(urlDetail.locator(fullEvidencePanel)).toBeVisible();
   await urlDetail.locator('[data-detail-state="opportunity-review"]').click();
 
   // Full review still exposes three separately reviewable cards for one URL.
@@ -463,7 +436,7 @@ test("has no page overflow or blocking axe findings on desktop and 390px", async
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&view=url&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
   const urlDetail = page.getByRole("complementary", {
     name: "Selected URL detail",
@@ -504,7 +477,7 @@ test("evidence disclosure opens on Enter, closes on Escape, and returns focus", 
   page,
 }) => {
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&view=url&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}&findingId=${E2E_CANONICAL_FINDING_ID}`,
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}&findingId=${E2E_CANONICAL_FINDING_ID}`,
   );
   await expect(page.locator(fullEvidencePanel)).toBeVisible();
 

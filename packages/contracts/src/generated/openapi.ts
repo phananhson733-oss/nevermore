@@ -2975,6 +2975,12 @@ export interface components {
             readiness: "reviewable";
             primaryFindingId: components["schemas"]["Uuid"];
             primaryRule: components["schemas"]["OpportunityRuleReference"];
+            /**
+             * @description Severity of the primary Finding as recorded on the diagnostic run,
+             *     exposed so consumers can rank the Opportunity without re-deriving
+             *     URL-level priority bands.
+             */
+            primaryFindingSeverity: components["schemas"]["PriorityBand"];
             executionPreview: components["schemas"]["ExecutionPreview"] | null;
         } & {
             /**
@@ -2988,6 +2994,12 @@ export interface components {
             readiness: "confirmed";
             primaryFindingId: components["schemas"]["Uuid"];
             primaryRule: components["schemas"]["OpportunityRuleReference"];
+            /**
+             * @description Severity of the primary Finding as recorded on the diagnostic run,
+             *     exposed so consumers can rank the Opportunity without re-deriving
+             *     URL-level priority bands.
+             */
+            primaryFindingSeverity: components["schemas"]["PriorityBand"];
             executionPreview: components["schemas"]["ExecutionPreview"] | null;
             actionId: components["schemas"]["Uuid"];
             action: components["schemas"]["OpportunityActionSummary"];

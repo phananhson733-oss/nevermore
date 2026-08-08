@@ -147,6 +147,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.parse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: undefined,
         executionPreview: null,
       }),
@@ -156,6 +157,7 @@ describe("Growth Opportunity projection contracts", () => {
       GrowthOpportunity.parse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -171,6 +173,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -184,6 +187,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -204,6 +208,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: { ruleId: "TECH-FOO-999", ruleVersion: 1 },
         executionPreview: null,
@@ -213,6 +218,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: { ruleId: "GEO-CRAWLER-002", ruleVersion: 1 },
         workShape: "create",
@@ -223,6 +229,7 @@ describe("Growth Opportunity projection contracts", () => {
       ReviewableOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "reviewable",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -277,6 +284,7 @@ describe("Growth Opportunity projection contracts", () => {
     const confirmed = {
       ...baseOpportunity,
       readiness: "confirmed",
+        primaryFindingSeverity: "high",
       primaryFindingId: findingId,
       primaryRule: {
         ruleId: "CONTENT-COVERAGE-001",
@@ -330,6 +338,7 @@ describe("Growth Opportunity projection contracts", () => {
       ConfirmedOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "confirmed",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -349,6 +358,7 @@ describe("Growth Opportunity projection contracts", () => {
       ConfirmedOpportunity.safeParse({
         ...baseOpportunity,
         readiness: "confirmed",
+        primaryFindingSeverity: "high",
         primaryFindingId: findingId,
         primaryRule: {
           ruleId: "CONTENT-COVERAGE-001",
@@ -370,6 +380,7 @@ describe("Growth Opportunity projection contracts", () => {
     const reviewable = {
       ...baseOpportunity,
       readiness: "reviewable",
+        primaryFindingSeverity: "high",
       primaryFindingId: findingId,
       primaryRule: {
         ruleId: "CONTENT-COVERAGE-001",
@@ -395,6 +406,7 @@ describe("Growth Opportunity projection contracts", () => {
       ConfirmedOpportunity.safeParse({
         ...reviewable,
         readiness: "confirmed",
+        primaryFindingSeverity: "high",
         actionId,
         action: {
           actionId,
@@ -410,6 +422,7 @@ describe("Growth Opportunity projection contracts", () => {
     const reviewable = {
       ...baseOpportunity,
       readiness: "reviewable",
+        primaryFindingSeverity: "high",
       primaryFindingId: findingId,
       primaryRule: {
         ruleId: "CONTENT-COVERAGE-001",

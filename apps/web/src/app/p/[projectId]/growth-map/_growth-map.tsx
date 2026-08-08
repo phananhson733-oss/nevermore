@@ -43,7 +43,6 @@ import {
   BarChart3,
   BookOpenText,
   CheckCircle2,
-  ChevronDown,
   CircleAlert,
   CircleDashed,
   Database,
@@ -128,7 +127,6 @@ import { RunDiagnosis } from "./_run-diagnosis.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
-  GROWTH_MAP_PAGE_VIEWS,
   GROWTH_MAP_KEYWORD_SOURCE_KINDS,
   buildBeginTopicModelDraftCommand,
   buildConfirmTopicModelCommand,
@@ -145,7 +143,6 @@ import {
   buildTopicNodeSplitIntent,
   buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
-  buildGrowthMapClusterViewItems,
   buildGrowthMapOpportunityViewItems,
   buildInternalLinkMapProjection,
   competitorDetailReadState,
@@ -157,11 +154,9 @@ import {
   findMetricObservation,
   findingTargetLabelKey,
   growthMapDetailAllowsFindingReview,
-  growthMapClusterReadState,
   growthMapLocationHref,
   growthMapPageTypeFilterOptions,
   growthMapPageTypeLabel,
-  growthMapPageWindow,
   growthMapPlatformLimitationKey,
   growthMapPrimaryOpportunity,
   growthMapKeywordReviewPresentation,
@@ -177,9 +172,6 @@ import {
   presentGrowthMapReviewProblem,
   rememberGrowthMapCursorPredecessor,
   resolveGrowthMapCursorPredecessor,
-  resolveGrowthMapPageView,
-  resolveVisibleSitePageSelectionForFinding,
-  resolveVisibleGrowthMapClusterSelection,
   resolveVisibleGrowthMapOpportunitySelection,
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
@@ -189,13 +181,11 @@ import {
   topicNodeAllowedParentIds,
   urlPresentation,
   type GrowthMapMetricLabelKey,
-  type GrowthMapClusterViewItem,
   type CompetitorMonitorDisplayState,
   type GrowthMapDetailState,
   type GrowthMapFindingReviewMode,
   type GrowthMapObjectMode,
   type GrowthMapOpportunityViewItem,
-  type GrowthMapPageView,
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
   type GrowthMapCompetitorStatusFilter,
@@ -589,32 +579,6 @@ function MetricValue({
   );
 }
 
-function PriorityPill({ item }: { readonly item: GrowthMapUrlPortfolioItem }) {
-  const t = useTranslations("growthMap");
-  const tPriority = useTranslations("priorityBand");
-  if (item.priority.availability === "unavailable") {
-    return (
-      <span className={styles.priorityUnavailable}>
-        {t("priorityUnavailable")}
-        <LimitationHint
-          label={t("limitations")}
-          limitations={[item.priority.limitation]}
-        />
-      </span>
-    );
-  }
-  return (
-    <span
-      className={cx(
-        styles.priorityPill,
-        PRIORITY_CLASS[item.priority.value],
-      )}
-    >
-      {PRIORITY_CODE[item.priority.value]} · {tPriority(item.priority.value)}
-    </span>
-  );
-}
-
 /**
  * `pageType` is a read-time `page_type.v1` derivation. A null value means no
  * classification rule matched, which is not the same claim as "the page was
@@ -630,167 +594,6 @@ function usePageTypeLabel(): (pageType: string | null) => string {
       return label.kind === "known" ? t(label.slug) : label.value;
     },
     [t],
-  );
-}
-
-/**
- * Optional per-row disclosure. It only shows facts the portfolio projection
- * already carries for this URL; anything the read model does not send stays
- * absent rather than being filled in with a guess.
- */
-function PortfolioRowDetails({
-  item,
-}: {
-  readonly item: GrowthMapUrlPortfolioItem;
-}) {
-  const locale = useLocale();
-  const t = useTranslations("growthMap.rowDetails");
-  const tProvider = useTranslations("provider");
-  const providers = Array.from(
-    new Set(item.identitySources.map((source) => source.provider)),
-  );
-
-  return (
-    <dl className={styles.rowDetails} aria-label={t("label")}>
-      <div>
-        <dt>{t("templateKey")}</dt>
-        <dd>{item.templateKey ?? t("notRecorded")}</dd>
-      </div>
-      <div>
-        <dt>{t("cluster")}</dt>
-        <dd>{item.clusterKey ?? t("unassigned")}</dd>
-      </div>
-      <div>
-        <dt>{t("sources")}</dt>
-        <dd>
-          {providers.length === 0
-            ? t("notRecorded")
-            : providers.map((provider) => tProvider(provider)).join(" · ")}
-        </dd>
-      </div>
-      <div>
-        <dt>{t("pageSnapshot")}</dt>
-        <dd>
-          {item.pageSnapshotCapturedAt === null ? (
-            t("notRecorded")
-          ) : (
-            <time dateTime={item.pageSnapshotCapturedAt}>
-              {formatObservedAt(locale, item.pageSnapshotCapturedAt)}
-            </time>
-          )}
-        </dd>
-      </div>
-    </dl>
-  );
-}
-
-function PortfolioRow({
-  item,
-  selected,
-  showDetails,
-  onSelect,
-}: {
-  readonly item: GrowthMapUrlPortfolioItem;
-  readonly selected: boolean;
-  readonly showDetails: boolean;
-  readonly onSelect: (sitePageId: string) => void;
-}) {
-  const t = useTranslations("growthMap");
-  const pageTypeLabel = usePageTypeLabel();
-  const url = urlPresentation(item.normalizedUrl);
-  const clicks = findMetricObservation(
-    item.metricObservations,
-    LIST_METRICS.clicks,
-  );
-  const position = findMetricObservation(
-    item.metricObservations,
-    LIST_METRICS.position,
-  );
-
-  return (
-    <li className={styles.portfolioRow}>
-      <div
-        className={cx(styles.rowButton, selected && styles.rowSelected)}
-        data-growth-map-url-row={item.sitePageId}
-      >
-        <button
-          type="button"
-          className={styles.rowSelectButton}
-          aria-pressed={selected}
-          onClick={() => onSelect(item.sitePageId)}
-        >
-          <span className={styles.rowSelectLabel}>
-            {url.path} — {item.title ?? t("titleNotCollected")}
-          </span>
-        </button>
-        <span className={styles.urlCell}>
-          <strong title={item.normalizedUrl}>{url.path}</strong>
-          <span>{item.title ?? t("titleNotCollected")}</span>
-          <small>{url.hostname}</small>
-        </span>
-        <span className={styles.metricCell} data-column={t("columns.pageType")}>
-          <strong className={styles.libraryMetricPrimary}>
-            {pageTypeLabel(item.pageType)}
-          </strong>
-        </span>
-        <span className={styles.findingCell} data-column={t("columns.signals")}>
-          <strong>{item.findingIds.length}</strong>
-          <small>
-            {t("reviewableCount", {
-              count: item.reviewableFindingIds.length,
-            })}
-          </small>
-        </span>
-        <span className={styles.metricCell} data-column={t("columns.clicks")}>
-          <MetricValue observation={clicks} compact />
-        </span>
-        <span className={styles.metricCell} data-column={t("columns.position")}>
-          <MetricValue observation={position} compact />
-        </span>
-        <span className={styles.priorityCell} data-column={t("columns.currentState")}>
-          <PriorityPill item={item} />
-          <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
-        </span>
-      </div>
-      {showDetails ? <PortfolioRowDetails item={item} /> : null}
-    </li>
-  );
-}
-
-function PortfolioList({
-  items,
-  selectedSitePageId,
-  showRowDetails,
-  onSelect,
-}: {
-  readonly items: readonly GrowthMapUrlPortfolioItem[];
-  readonly selectedSitePageId: string | null;
-  readonly showRowDetails: boolean;
-  readonly onSelect: (sitePageId: string) => void;
-}) {
-  const t = useTranslations("growthMap");
-  return (
-    <div className={styles.ledger}>
-      <div className={styles.ledgerHeader} aria-hidden="true">
-        <span>{t("columns.url")}</span>
-        <span>{t("columns.pageType")}</span>
-        <span>{t("columns.signals")}</span>
-        <span>{t("columns.clicks")}</span>
-        <span>{t("columns.position")}</span>
-        <span>{t("columns.currentState")}</span>
-      </div>
-      <ul className={styles.portfolioList} aria-label={t("portfolioLabel")}>
-        {items.map((item) => (
-          <PortfolioRow
-            key={item.sitePageId}
-            item={item}
-            selected={selectedSitePageId === item.sitePageId}
-            showDetails={showRowDetails}
-            onSelect={onSelect}
-          />
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -2453,78 +2256,6 @@ function DetailState({
   );
 }
 
-function PageViewTabs({
-  value,
-  onChange,
-}: {
-  readonly value: GrowthMapPageView;
-  readonly onChange: (view: GrowthMapPageView) => void;
-}) {
-  const t = useTranslations("growthMap.pageViews");
-
-  function moveFocus(
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-    currentIndex: number,
-  ): void {
-    const key = event.key;
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
-    event.preventDefault();
-    const last = GROWTH_MAP_PAGE_VIEWS.length - 1;
-    const nextIndex =
-      key === "Home"
-        ? 0
-        : key === "End"
-          ? last
-          : key === "ArrowRight"
-            ? (currentIndex + 1) % GROWTH_MAP_PAGE_VIEWS.length
-            : (currentIndex - 1 + GROWTH_MAP_PAGE_VIEWS.length) %
-              GROWTH_MAP_PAGE_VIEWS.length;
-    const next = GROWTH_MAP_PAGE_VIEWS[nextIndex]!;
-    onChange(next);
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLButtonElement>(`[data-page-view-tab="${next}"]`)
-        ?.focus();
-    });
-  }
-
-  return (
-    <div className={styles.pageViewBand}>
-      <div>
-        <span>{t("label")}</span>
-        <small>{t("defaultHint")}</small>
-      </div>
-      <div
-        className={styles.pageViewTabs}
-        role="tablist"
-        aria-label={t("label")}
-      >
-        {GROWTH_MAP_PAGE_VIEWS.map((view, index) => (
-          <button
-            key={view}
-            id={`growth-map-page-view-tab-${view}`}
-            type="button"
-            role="tab"
-            data-page-view-tab={view}
-            aria-controls="growth-map-page-view-panel"
-            aria-selected={value === view}
-            tabIndex={value === view ? 0 : -1}
-            className={cx(
-              styles.pageViewTab,
-              value === view && styles.pageViewTabActive,
-            )}
-            onClick={() => onChange(view)}
-            onKeyDown={(event) => moveFocus(event, index)}
-          >
-            <strong>{t(`${view}.label`)}</strong>
-            <small>{t(`${view}.description`)}</small>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function OpportunityPriorityPill({
   item,
 }: {
@@ -2623,8 +2354,11 @@ function OpportunityLedger({
                 </span>
                 <span className={styles.metricCell}>
                   <strong className={styles.libraryMetricPrimary}>
-                    {t(`opportunity.workShape.${opportunity.workShape}`)}
+                    {t(`opportunity.lenses.${opportunity.lenses[0] ?? "site_health"}`)}
                   </strong>
+                  <small>
+                    {t(`opportunity.workShape.${opportunity.workShape}`)}
+                  </small>
                 </span>
                 <span className={styles.metricCell}>
                   <OpportunityPriorityPill item={item} />
@@ -2671,8 +2405,11 @@ function OpportunityDetailPanel({
   readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
 }) {
   const t = useTranslations("growthMap.pageViews");
+  const tRoot = useTranslations("growthMap");
   const tExecution = useTranslations("growthMap.executionPreview");
   const tActionStatus = useTranslations("actionStatus");
+  const tPriority = useTranslations("priorityBand");
+  const tProvider = useTranslations("provider");
   const opportunity = item.opportunity;
   const outputType = opportunityOutputType(opportunity);
   const findingCount =
@@ -2689,6 +2426,9 @@ function OpportunityDetailPanel({
       : opportunity.readiness === "reviewable"
         ? "reviewBoundary"
         : "confirmedBoundary";
+  const evidenceProviders = Array.from(
+    new Set(opportunity.evidenceSummary.map((trace) => trace.sourceProvider)),
+  );
 
   return (
     <aside
@@ -2718,16 +2458,15 @@ function OpportunityDetailPanel({
           <div>
             <h2>{opportunity.title}</h2>
             <p>
-              {t(`opportunity.workShape.${opportunity.workShape}`)} ·
-              {" "}{t(`opportunity.target.${opportunity.primaryTarget}`)}
+              {opportunity.lenses
+                .map((lens) => t(`opportunity.lenses.${lens}`))
+                .join(" / ")}
+              {" · "}
+              {t(`opportunity.workShape.${opportunity.workShape}`)}
+              {" · "}
+              {t(`opportunity.target.${opportunity.primaryTarget}`)}
             </p>
-            <span>{opportunity.targetRef}</span>
           </div>
-        </div>
-        <div className={styles.detailTags}>
-          {opportunity.lenses.map((lens) => (
-            <span key={lens}>{t(`opportunity.lenses.${lens}`)}</span>
-          ))}
         </div>
       </header>
 
@@ -2751,7 +2490,12 @@ function OpportunityDetailPanel({
       </section>
 
       <section className={styles.compactRailSection}>
-        <span>{t("opportunity.sections.primaryFinding")}</span>
+        <div className={styles.railSectionHeading}>
+          <span>{t("opportunity.sections.primaryFinding")}</span>
+          {opportunity.readiness === "candidate" ? null : (
+            <strong>{tPriority(opportunity.primaryFindingSeverity)}</strong>
+          )}
+        </div>
         <h3>{opportunity.title}</h3>
         <p>{opportunity.targetRef}</p>
         {opportunity.readiness === "candidate" ? null : (
@@ -2760,29 +2504,56 @@ function OpportunityDetailPanel({
       </section>
 
       <section className={styles.compactRailSection}>
-        <span>{t("opportunity.sections.evidence")}</span>
+        <div className={styles.railSectionHeading}>
+          <span>{t("opportunity.sections.evidence")}</span>
+          <strong>
+            {t("opportunity.evidenceCount", {
+              count: opportunity.evidenceSummary.length,
+            })}
+          </strong>
+        </div>
         {opportunity.evidenceSummary.length === 0 ? (
           <p>{t("opportunity.noEvidence")}</p>
         ) : (
-          <ul className={styles.compactRailList}>
-            {opportunity.evidenceSummary.slice(0, 3).map((trace) => (
-              <li
-                key={
-                  trace.traceKind === "evidence"
-                    ? trace.evidenceId
-                    : trace.observationId
-                }
-              >
-                <strong>{trace.claim}</strong>
-                <small>{trace.sourceProvider}</small>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className={styles.queryChipGroups}>
+              {evidenceProviders.map((provider) => (
+                <span key={provider}>
+                  {tProvider.has(provider) ? tProvider(provider) : provider}
+                </span>
+              ))}
+            </div>
+            <ul className={styles.compactRailList}>
+              {opportunity.evidenceSummary.slice(0, 3).map((trace) => (
+                <li
+                  key={
+                    trace.traceKind === "evidence"
+                      ? trace.evidenceId
+                      : trace.observationId
+                  }
+                >
+                  <strong>{trace.claim}</strong>
+                  <small>
+                    {tProvider.has(trace.sourceProvider)
+                      ? tProvider(trace.sourceProvider)
+                      : trace.sourceProvider}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
       <section className={styles.compactRailSection}>
-        <span>{t("opportunity.sections.targets")}</span>
+        <div className={styles.railSectionHeading}>
+          <span>{t("opportunity.sections.targets")}</span>
+          <strong>
+            {t("opportunity.targetsCount", {
+              count: item.targetPages.length,
+            })}
+          </strong>
+        </div>
         {item.targetPages.length === 0 ? (
           <p>{t("opportunity.noTargets")}</p>
         ) : (
@@ -2793,7 +2564,10 @@ function OpportunityDetailPanel({
                   type="button"
                   onClick={() => onOpenUrl(page.sitePageId, primaryFindingId)}
                 >
-                  <span>{urlPresentation(page.normalizedUrl).path}</span>
+                  <span className={styles.railTargetText}>
+                    <strong>{urlPresentation(page.normalizedUrl).path}</strong>
+                    <small>{page.title ?? tRoot("titleNotCollected")}</small>
+                  </span>
                   <ArrowRight aria-hidden="true" size={15} />
                 </button>
               </li>
@@ -2868,24 +2642,32 @@ function OpportunityDetailPanel({
 
 function OpportunityPageView({
   projectId,
+  diagnosticRunId,
   items,
   requestedId,
   search,
   pageTypeFilter,
   priorityFilter,
+  selectedSitePageId,
+  selectedFindingId,
   onSelect,
   onRepairSelection,
   onOpenUrl,
+  onCloseUrl,
 }: {
   readonly projectId: string;
+  readonly diagnosticRunId: string;
   readonly items: readonly GrowthMapOpportunityViewItem[];
   readonly requestedId: string | null;
   readonly search: string;
   readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
   readonly priorityFilter: GrowthMapUrlPriorityFilter;
+  readonly selectedSitePageId: string | null;
+  readonly selectedFindingId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onRepairSelection: (id: string | null) => void;
   readonly onOpenUrl: (sitePageId: string, findingId: string | null) => void;
+  readonly onCloseUrl: () => void;
 }) {
   const t = useTranslations("growthMap.pageViews");
   const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
@@ -2928,13 +2710,14 @@ function OpportunityPageView({
   );
   const selected =
     visibleItems.find((item) => item.id === selectedId) ?? null;
+  const urlDetailOpen = selectedSitePageId !== null;
 
   useEffect(() => {
     if (requestedId === null || requestedId === selectedId) return;
     onRepairSelection(selectedId);
   }, [onRepairSelection, requestedId, selectedId]);
 
-  if (visibleItems.length === 0) {
+  if (visibleItems.length === 0 && !urlDetailOpen) {
     return (
       <EmptyState
         className={styles.portfolioEmpty}
@@ -2947,16 +2730,45 @@ function OpportunityPageView({
   return (
     <div className={styles.workspace}>
       <div className={styles.masterColumn}>
-        <OpportunityLedger
-          items={visibleItems}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
+        {visibleItems.length === 0 ? (
+          <EmptyState
+            className={styles.portfolioEmpty}
+            icon={<Target size={30} />}
+            title={t("empty.opportunity")}
+            description={t("opportunity.description")}
+          />
+        ) : (
+          <OpportunityLedger
+            items={visibleItems}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        )}
         <p className={styles.completeViewScope}>
           {t("searchScope")} · {t("counts.opportunities", { count: visibleItems.length })}
         </p>
       </div>
-      {selected === null ? (
+      {urlDetailOpen ? (
+        <div
+          className={styles.opportunityDrilldown}
+          data-growth-map-url-drilldown={selectedSitePageId}
+        >
+          <button
+            type="button"
+            className={styles.backToOpportunities}
+            onClick={onCloseUrl}
+          >
+            <ArrowLeft aria-hidden="true" size={16} />
+            {t("opportunity.backToList")}
+          </button>
+          <DetailState
+            projectId={projectId}
+            selectedSitePageId={selectedSitePageId}
+            selectedFindingId={selectedFindingId}
+            diagnosticRunId={diagnosticRunId}
+          />
+        </div>
+      ) : selected === null ? (
         <aside className={styles.detailPlaceholder}>
           <p>{t("select.opportunity")}</p>
         </aside>
@@ -2965,410 +2777,6 @@ function OpportunityPageView({
           projectId={projectId}
           item={selected}
           onOpenUrl={onOpenUrl}
-        />
-      )}
-    </div>
-  );
-}
-
-function ClusterLedger({
-  items,
-  selectedId,
-  onSelect,
-}: {
-  readonly items: readonly GrowthMapClusterViewItem[];
-  readonly selectedId: string | null;
-  readonly onSelect: (id: string) => void;
-}) {
-  const locale = useLocale();
-  const t = useTranslations("growthMap.pageViews");
-  return (
-    <div className={cx(styles.ledger, styles.groupedLedger)}>
-      <div
-        className={cx(styles.ledgerHeader, styles.clusterLedgerHeader)}
-        aria-hidden="true"
-      >
-        <span>{t("columns.cluster")}</span>
-        <span>{t("columns.role")}</span>
-        <span>{t("columns.urls")}</span>
-        <span>{t("columns.keywords")}</span>
-        <span>{t("columns.clicks")}</span>
-        <span>{t("columns.openOpportunities")}</span>
-      </div>
-      <ul className={styles.portfolioList} aria-label={t("cluster.label")}>
-        {items.map((item) => {
-          const selected = item.id === selectedId;
-          return (
-            <li className={styles.portfolioRow} key={item.id}>
-              <div
-                className={cx(
-                  styles.rowButton,
-                  styles.clusterRowButton,
-                  selected && styles.rowSelected,
-                )}
-                data-growth-map-cluster-row={item.id}
-              >
-                <button
-                  type="button"
-                  className={styles.rowSelectButton}
-                  aria-pressed={selected}
-                  onClick={() => onSelect(item.id)}
-                >
-                  <span className={styles.rowSelectLabel}>
-                    {item.label ?? t("cluster.roles.unmapped")}
-                  </span>
-                </button>
-                <span className={styles.urlCell}>
-                  <strong>{item.label ?? t("cluster.roles.unmapped")}</strong>
-                  <small>{item.clusterKeys.join(" · ") || "—"}</small>
-                </span>
-                <span className={styles.metricCell}>
-                  <strong className={styles.libraryMetricPrimary}>
-                    {t(`cluster.roles.${item.role}`)}
-                  </strong>
-                </span>
-                <span className={styles.metricCell}>
-                  <strong className={styles.libraryMetricPrimary}>{item.urlCount}</strong>
-                </span>
-                <span className={styles.metricCell}>
-                  <strong className={styles.libraryMetricPrimary}>
-                    {item.keywordCount ?? "—"}
-                  </strong>
-                </span>
-                <span className={styles.metricCell}>
-                  <strong className={styles.libraryMetricPrimary}>
-                    {item.observedClicks === null
-                      ? "—"
-                      : formatNumber(locale, item.observedClicks)}
-                  </strong>
-                  <small className={styles.libraryMetricSecondary}>
-                    {t(`cluster.clickCoverage.${item.clickCoverage}`, {
-                      observed: item.observedClickUrlCount,
-                      total: item.urlCount,
-                    })}
-                  </small>
-                </span>
-                <span className={styles.priorityCell}>
-                  <strong className={styles.libraryMetricPrimary}>
-                    {item.openOpportunityCount}
-                  </strong>
-                  <ArrowRight aria-hidden="true" size={17} />
-                </span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function ClusterDetailPanel({
-  item,
-  insight,
-  onOpenUrl,
-  onOpenOpportunity,
-}: {
-  readonly item: GrowthMapClusterViewItem;
-  readonly insight: GrowthMapTopicNodeInsight | null;
-  readonly onOpenUrl: (sitePageId: string) => void;
-  readonly onOpenOpportunity: (id: string) => void;
-}) {
-  const t = useTranslations("growthMap.pageViews");
-  const searchQueries = Array.from(
-    new Map(
-      item.opportunities.flatMap(({ opportunity }) =>
-        opportunity.searchQueries.map(
-          (query) => [query.observationId, query] as const,
-        ),
-      ),
-    ).values(),
-  );
-  const generativeQueries = Array.from(
-    new Map(
-      item.opportunities.flatMap(({ opportunity }) =>
-        opportunity.generativeQueries.map(
-          (query) => [query.observationId, query] as const,
-        ),
-      ),
-    ).values(),
-  );
-  const topOpportunity = item.opportunities[0] ?? null;
-
-  return (
-    <aside
-      className={styles.detailPanel}
-      aria-label={t("cluster.detailLabel")}
-      data-cluster-detail={item.id}
-    >
-      <header className={styles.detailHeader}>
-        <div className={styles.detailEyebrow}>
-          <span>{t("cluster.eyebrow")}</span>
-          <span className={styles.pageViewStatus}>
-            {t(`cluster.roles.${item.role}`)}
-          </span>
-        </div>
-        <div className={styles.detailTitleRow}>
-          <div>
-            <h2>{item.label ?? t("cluster.roles.unmapped")}</h2>
-            <p>{t("cluster.role")} · {t(`cluster.roles.${item.role}`)}</p>
-            <span>{item.clusterKeys.join(" · ") || "—"}</span>
-          </div>
-        </div>
-      </header>
-
-      <section className={styles.detailSummary}>
-        <div>
-          <span>{t("cluster.metrics.pages")}</span>
-          <strong>{item.urlCount}</strong>
-        </div>
-        <div>
-          <span>{t("cluster.metrics.searchQueries")}</span>
-          <strong>{searchQueries.length}</strong>
-        </div>
-        <div>
-          <span>{t("cluster.metrics.generativeQueries")}</span>
-          <strong>{generativeQueries.length}</strong>
-        </div>
-      </section>
-
-      <section className={styles.compactRailSection}>
-        <span>{t("cluster.sections.pages")}</span>
-        {item.pages.length === 0 ? (
-          <p>{t("cluster.noPages")}</p>
-        ) : (
-          <ul className={styles.compactRailActions}>
-            {item.pages.slice(0, 6).map((page) => (
-              <li key={page.sitePageId}>
-                <button type="button" onClick={() => onOpenUrl(page.sitePageId)}>
-                  <span>{urlPresentation(page.normalizedUrl).path}</span>
-                  <ArrowRight aria-hidden="true" size={15} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className={styles.compactRailSection}>
-        <span>{t("cluster.sections.queries")}</span>
-        {searchQueries.length + generativeQueries.length === 0 ? (
-          <p>{t("cluster.noQueries")}</p>
-        ) : (
-          <div className={styles.queryChipGroups}>
-            {searchQueries.slice(0, 4).map((query) => (
-              <span key={`search:${query.observationId}`}>{query.query}</span>
-            ))}
-            {generativeQueries.slice(0, 4).map((query) => (
-              <span key={`generative:${query.observationId}`}>
-                {query.query}
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className={styles.compactRailSection}>
-        <span>{t("cluster.sections.gap")}</span>
-        {insight === null ? (
-          <p>{t("cluster.unavailable")}</p>
-        ) : insight.limitation === null ? (
-          <p>{t("cluster.covered")}</p>
-        ) : (
-          <LimitationList limitations={[insight.limitation]} />
-        )}
-      </section>
-
-      <section className={cx(styles.compactRailSection, styles.nextDecision)}>
-        <span>{t("cluster.sections.opportunity")}</span>
-        {topOpportunity === null ? (
-          <p>{t("empty.opportunity")}</p>
-        ) : (
-          <>
-            <h3>{topOpportunity.opportunity.title}</h3>
-            <p>{topOpportunity.opportunity.targetRef}</p>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => onOpenOpportunity(topOpportunity.id)}
-            >
-              {t("cluster.openOpportunity")}
-              <ArrowRight aria-hidden="true" size={17} />
-            </Button>
-          </>
-        )}
-      </section>
-    </aside>
-  );
-}
-
-function ClusterPageView({
-  projectId,
-  portfolio,
-  opportunities,
-  requestedId,
-  search,
-  pageTypeFilter,
-  priorityFilter,
-  onSelect,
-  onRepairSelection,
-  onOpenUrl,
-  onOpenOpportunity,
-}: {
-  readonly projectId: string;
-  readonly portfolio: readonly GrowthMapUrlPortfolioItem[];
-  readonly opportunities: readonly GrowthOpportunity[];
-  readonly requestedId: string | null;
-  readonly search: string;
-  readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
-  readonly priorityFilter: GrowthMapUrlPriorityFilter;
-  readonly onSelect: (id: string) => void;
-  readonly onRepairSelection: (id: string | null) => void;
-  readonly onOpenUrl: (sitePageId: string) => void;
-  readonly onOpenOpportunity: (id: string) => void;
-}) {
-  const t = useTranslations("growthMap.pageViews");
-  const workspaceQuery = useGrowthMapTopicModelWorkspace(projectId);
-  const insightsQuery = useGrowthMapTopicModelInsights(projectId);
-  const readState = growthMapClusterReadState({
-    workspacePending: workspaceQuery.isPending,
-    workspaceError: workspaceQuery.isError,
-    insightsPending: insightsQuery.isPending,
-    insightsError: insightsQuery.isError,
-  });
-  const confirmedTopicModelRevision =
-    workspaceQuery.data?.latestConfirmed?.topicModelRevision ?? null;
-  const currentInsights =
-    confirmedTopicModelRevision !== null &&
-    insightsQuery.data?.topicModelRevision === confirmedTopicModelRevision
-      ? insightsQuery.data
-      : null;
-  const clusters = useMemo(
-    () =>
-      buildGrowthMapClusterViewItems(
-        portfolio,
-        opportunities,
-        workspaceQuery.data ?? null,
-        insightsQuery.data ?? null,
-      ),
-    [insightsQuery.data, opportunities, portfolio, workspaceQuery.data],
-  );
-  const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
-  const filtersActive = pageTypeFilter !== "all" || priorityFilter !== "all";
-  const visibleClusters = useMemo(
-    () =>
-      clusters.filter((cluster) => {
-        if (
-          filtersActive &&
-          filterGrowthMapUrlItems(cluster.pages, {
-            pageType: pageTypeFilter,
-            priority: priorityFilter,
-          }).length === 0
-        ) {
-          return false;
-        }
-        if (normalizedSearch.length === 0) return true;
-        return [
-          cluster.label ?? "",
-          ...cluster.clusterKeys,
-          ...cluster.pages.map((page) => page.normalizedUrl),
-          ...cluster.opportunities.map((item) => item.opportunity.title),
-        ].some((value) =>
-          value.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
-        );
-      }),
-    [clusters, filtersActive, normalizedSearch, pageTypeFilter, priorityFilter],
-  );
-  const selectedId = resolveVisibleGrowthMapClusterSelection(
-    requestedId,
-    visibleClusters.map((cluster) => cluster.id),
-  );
-  const selected =
-    visibleClusters.find((cluster) => cluster.id === selectedId) ?? null;
-  const insight =
-    selected?.topicNodeId === null || selected?.topicNodeId === undefined
-      ? null
-      : currentInsights?.nodes.find(
-          (node) => node.topicNodeId === selected.topicNodeId,
-        ) ?? null;
-
-  useEffect(() => {
-    if (
-      readState !== "ready" ||
-      requestedId === null ||
-      requestedId === selectedId
-    ) {
-      return;
-    }
-    onRepairSelection(selectedId);
-  }, [
-    onRepairSelection,
-    readState,
-    requestedId,
-    selectedId,
-  ]);
-
-  if (readState === "error") {
-    const failedQuery = workspaceQuery.isError
-      ? workspaceQuery
-      : insightsQuery;
-    return (
-      <div className={styles.pageState}>
-        <ProblemNotice
-          error={failedQuery.error}
-          message={t("cluster.readError")}
-          onRetry={() => {
-            void workspaceQuery.refetch();
-            void insightsQuery.refetch();
-          }}
-          retryLabel={t("retry")}
-        />
-      </div>
-    );
-  }
-
-  if (readState === "loading") {
-    return (
-      <div className={styles.pageState} role="status">
-        <Spinner label={t("loading")} size="lg" />
-        <p>{t("loading")}</p>
-      </div>
-    );
-  }
-
-  if (visibleClusters.length === 0) {
-    return (
-      <EmptyState
-        className={styles.portfolioEmpty}
-        icon={<Network size={30} />}
-        title={t("empty.cluster")}
-        description={t("cluster.description")}
-      />
-    );
-  }
-  return (
-    <div className={styles.workspace}>
-      <div className={styles.masterColumn}>
-        <ClusterLedger
-          items={visibleClusters}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
-        <p className={styles.completeViewScope}>
-          {t("cluster.scopeNote")} · {t("searchScope")} ·
-          {" "}{t("counts.urls", { count: portfolio.length })}
-        </p>
-      </div>
-      {selected === null ? (
-        <aside className={styles.detailPlaceholder}>
-          <p>{t("select.cluster")}</p>
-        </aside>
-      ) : (
-        <ClusterDetailPanel
-          item={selected}
-          insight={insight}
-          onOpenUrl={onOpenUrl}
-          onOpenOpportunity={onOpenOpportunity}
         />
       )}
     </div>
@@ -3396,38 +2804,25 @@ function PortfolioPane({
   const canonicalMode = normalizeGrowthMapObjectMode(
     canonicalSearchParams.get("object"),
   );
-  const canonicalPageViewParam = canonicalSearchParams.get("view");
   const locationParams = useMemo(
     () => new URLSearchParams(locationSearch),
     [locationSearch],
   );
   const querySearch = locationParams.get("q") ?? "";
-  const cursor = locationParams.get("cursor");
-  const selectedParam = locationParams.get("selectedSitePageId");
-  const selectedClusterParam = locationParams.get("selectedClusterId");
+  const selectedSitePageId = locationParams.get("selectedSitePageId");
   const selectedOpportunityParam = locationParams.get("selectedOpportunityId");
   const selectedFindingId = locationParams.get("findingId");
-  const pageView = resolveGrowthMapPageView(locationParams.get("view"), {
-    selectedSitePageId: selectedParam,
-    selectedFindingId,
-    selectedClusterId: selectedClusterParam,
-    selectedOpportunityId: selectedOpportunityParam,
-  });
-  const canonicalSelectedParam = canonicalSearchParams.get(
-    "selectedSitePageId",
-  );
-  const canonicalSelectedFindingId = canonicalSearchParams.get("findingId");
   const [searchDraft, setSearchDraft] = useState(querySearch);
   const [pageTypeFilter, setPageTypeFilter] =
     useState<GrowthMapUrlPageTypeFilter>("all");
   const [priorityFilter, setPriorityFilter] =
     useState<GrowthMapUrlPriorityFilter>("all");
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
-  const [rowDetailsOpen, setRowDetailsOpen] = useState(false);
-  const [cursorHistory, setCursorHistory] = useState<readonly (string | null)[]>([]);
+  // Loaded for the frozen-generation summary band only; the ledger below is
+  // the complete Opportunity projection, not this bounded first page.
   const listQuery = useGrowthMapUrls(projectId, {
-    search: pageView === "url" ? querySearch : null,
-    cursor: pageView === "url" ? cursor : null,
+    search: null,
+    cursor: null,
     limit: 50,
     diagnosticRunId,
   });
@@ -3442,7 +2837,6 @@ function PortfolioPane({
       "complete-urls",
     ],
     queryFn: () => readCompleteGrowthMapUrls(projectId, diagnosticRunId),
-    enabled: pageView !== "url",
   });
   const completeOpportunitiesQuery = useQuery({
     queryKey: [
@@ -3455,7 +2849,6 @@ function PortfolioPane({
     ],
     queryFn: () =>
       readCompleteGrowthMapOpportunities(projectId, diagnosticRunId),
-    enabled: pageView !== "url",
   });
   // Reads the live library rather than the frozen generation: a keyword that
   // has been collected but not yet reviewed still belongs in this count. Pinned
@@ -3467,25 +2860,11 @@ function PortfolioPane({
     limit: 100,
     diagnosticRunId: null,
   });
-  const items = listQuery.data?.data ?? [];
   const completeUrls = completeUrlsQuery.data ?? [];
   const completeOpportunities = completeOpportunitiesQuery.data ?? [];
   const pageTypeOptions = useMemo(
-    () =>
-      growthMapPageTypeFilterOptions(
-        pageView === "url" || completeUrls.length === 0
-          ? items
-          : completeUrls,
-      ),
-    [completeUrls, items, pageView],
-  );
-  const filteredItems = useMemo(
-    () =>
-      filterGrowthMapUrlItems(items, {
-        pageType: pageTypeFilter,
-        priority: priorityFilter,
-      }),
-    [items, pageTypeFilter, priorityFilter],
+    () => growthMapPageTypeFilterOptions(completeUrls),
+    [completeUrls],
   );
   const opportunityViewItems = useMemo(
     () =>
@@ -3495,156 +2874,71 @@ function PortfolioPane({
       ),
     [completeOpportunities, completeUrls],
   );
-  const selectedSitePageId =
-    pageView === "url"
-      ? resolveVisibleSitePageSelectionForFinding(
-          selectedParam,
-          selectedFindingId,
-          filteredItems,
-        )
-      : null;
-  const canonicalSelectedSitePageId = resolveVisibleSitePageSelectionForFinding(
-    canonicalSelectedParam,
-    canonicalSelectedFindingId,
-    filteredItems,
-  );
 
   useEffect(() => {
     setSearchDraft(querySearch);
   }, [querySearch]);
 
   useEffect(() => {
+    // The Pages tab has exactly one presentation now. `view`,
+    // `selectedClusterId`, and a page cursor are addresses of the removed
+    // URL/cluster views, so an old deep link is rewritten to its canonical
+    // Opportunity-first form instead of keeping dead state in the address bar.
     if (
       navigation.isPending ||
       locationSearch !== canonicalLocationSearch ||
       canonicalMode !== "pages" ||
-      canonicalPageViewParam === pageView
+      (!canonicalSearchParams.has("view") &&
+        !canonicalSearchParams.has("selectedClusterId") &&
+        !canonicalSearchParams.has("cursor"))
     ) {
       return;
     }
     navigation.replaceCanonicalHref(
-      growthMapLocationHref(pathname, canonicalLocationSearch, {
-        pageView,
-      }),
+      growthMapLocationHref(pathname, canonicalLocationSearch, {}),
     );
   }, [
     canonicalLocationSearch,
     canonicalMode,
-    canonicalPageViewParam,
+    canonicalSearchParams,
     locationSearch,
     navigation,
-    pageView,
     pathname,
   ]);
 
-  useEffect(() => {
-    // An absent selection intentionally renders the first visible row without
-    // rewriting the address. Rewriting it here races a user's object-tab
-    // navigation when the portfolio request settles after the click, allowing
-    // this stale page-only effect to replace `?object=keywords|competitors`.
-    // We only repair an explicit, now-invalid deep link; direct row clicks are
-    // the authority that add a selected SitePage ID to the address.
-    if (
-      navigation.isPending ||
-      locationSearch !== canonicalLocationSearch ||
-      canonicalMode !== "pages" ||
-      pageView !== "url" ||
-      !listQuery.isSuccess ||
-      canonicalSelectedParam === null ||
-      canonicalSelectedParam === canonicalSelectedSitePageId
-    ) {
-      return;
-    }
-    navigation.replaceCanonicalHref(
-      growthMapLocationHref(pathname, canonicalLocationSearch, {
-        selectedSitePageId: canonicalSelectedSitePageId,
-      }),
-    );
-  }, [
-    canonicalLocationSearch,
-    canonicalMode,
-    canonicalSelectedParam,
-    canonicalSelectedSitePageId,
-    listQuery.isSuccess,
-    locationSearch,
-    navigation,
-    pageView,
-    pathname,
-  ]);
-
-  function selectUrl(sitePageId: string): void {
+  function selectOpportunity(id: string | null): void {
+    // Choosing an Opportunity always brings the rail back from an exact-URL
+    // drill-down; a hidden page selection must never keep controlling it.
     navigation.request({
-      selectedSitePageId: sitePageId,
+      selectedOpportunityId: id,
+      selectedSitePageId: null,
       selectedFindingId: null,
     });
   }
 
-  function selectCluster(id: string | null): void {
-    navigation.request({ selectedClusterId: id });
-  }
-
-  function selectOpportunity(id: string | null): void {
-    navigation.request({ selectedOpportunityId: id });
-  }
-
-  function switchPageView(nextView: GrowthMapPageView): void {
-    setCursorHistory([]);
-    navigation.request({ pageView: nextView });
-  }
-
-  function openUrlFromGroupedView(
+  function openUrlFromOpportunity(
     sitePageId: string,
     findingId: string | null = null,
   ): void {
     navigation.request({
-      pageView: "url",
-      search: null,
-      cursor: null,
       selectedSitePageId: sitePageId,
       selectedFindingId: findingId,
     });
   }
 
-  function openOpportunityFromCluster(id: string): void {
+  function closeUrlDetail(): void {
     navigation.request({
-      pageView: "opportunity",
-      search: null,
-      cursor: null,
-      selectedOpportunityId: id,
+      selectedSitePageId: null,
+      selectedFindingId: null,
     });
   }
 
   function submitSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    setCursorHistory([]);
     navigation.request({
       search: searchDraft,
-      cursor: null,
       selectedSitePageId: null,
-      selectedClusterId: null,
       selectedOpportunityId: null,
-      selectedFindingId: null,
-    });
-  }
-
-  function goNext(): void {
-    const nextCursor = listQuery.data?.meta.nextCursor ?? null;
-    if (nextCursor === null) return;
-    setCursorHistory((current) => [...current, cursor]);
-    navigation.request({
-      cursor: nextCursor,
-      selectedSitePageId: null,
-      selectedFindingId: null,
-    });
-  }
-
-  function goPrevious(): void {
-    const previous = cursorHistory.at(-1);
-    if (previous === undefined) return;
-    setCursorHistory((current) => current.slice(0, -1));
-    navigation.request({
-      cursor: previous,
-      selectedSitePageId: null,
       selectedFindingId: null,
     });
   }
@@ -3687,20 +2981,7 @@ function PortfolioPane({
   // loaded rows here is what made one Finding covering 354 URLs read as 56
   // separate signals, so the page never recomputes these.
   const summary = response.meta.summary;
-  const pageWindow = growthMapPageWindow({
-    listedUrlCount: summary.listedUrlCount,
-    precedingUrlCount: summary.precedingUrlCount,
-    limit: response.meta.limit,
-  });
   const activeMoreFilterCount = priorityFilter === "all" ? 0 : 1;
-  function clearRowFilters(): void {
-    setPageTypeFilter("all");
-    setPriorityFilter("all");
-  }
-  // Page type and priority narrow only the rows already loaded, so while either
-  // is on, the server's filtered-list total would overstate what the ledger can
-  // actually show. Say which of the two counts the number is.
-  const clientFiltered = pageTypeFilter !== "all" || priorityFilter !== "all";
   const summaryKeywords = summaryKeywordsQuery.data?.data ?? null;
   const uncoveredKeywords =
     summaryKeywords?.filter((keyword) => keyword.mappedTarget.kind === "unassigned") ??
@@ -3780,8 +3061,6 @@ function PortfolioPane({
       </section>
       <LimitationList limitations={response.meta.coverage.limitations} />
 
-      <PageViewTabs value={pageView} onChange={switchPageView} />
-
       <form
         className={cx(styles.libraryToolbar, styles.portfolioToolbar)}
         role="search"
@@ -3837,24 +3116,6 @@ function PortfolioPane({
               </em>
             )}
           </button>
-          {pageView === "url" ? (
-            <button
-              type="button"
-              className={cx(
-                styles.portfolioToolButton,
-                rowDetailsOpen && styles.portfolioToolButtonActive,
-              )}
-              aria-pressed={rowDetailsOpen}
-              onClick={() => setRowDetailsOpen((open) => !open)}
-            >
-              <ChevronDown
-                aria-hidden="true"
-                size={17}
-                className={cx(rowDetailsOpen && styles.portfolioToolIconOpen)}
-              />
-              <span>{t("portfolioFilters.expandRowDetails")}</span>
-            </button>
-          ) : null}
         </div>
         <Button type="submit" variant="primary">
           {t("searchAction")}
@@ -3890,161 +3151,46 @@ function PortfolioPane({
         ) : null}
       </form>
 
-      {pageView === "url" && clientFiltered ? (
-        <p className={styles.portfolioFilterScopeNote}>
-          {t("portfolioFilters.clientScopeNote", { limit: response.meta.limit })}
-        </p>
-      ) : null}
-
-      <div
-        id="growth-map-page-view-panel"
-        role="tabpanel"
-        aria-labelledby={`growth-map-page-view-tab-${pageView}`}
-        data-page-view={pageView}
-      >
-        {pageView === "url" && items.length === 0 ? (
-          <EmptyState
-            className={styles.portfolioEmpty}
-            icon={<Globe2 size={30} />}
-            title={querySearch ? t("noSearchResults") : t("noPagesTitle")}
-            description={querySearch ? t("noSearchResultsDescription") : t("noPagesDescription")}
-          />
-        ) : pageView === "url" ? (
-          <div className={styles.workspace}>
-          <div className={styles.masterColumn}>
-            {/* The pager stays mounted even when the client-side filter empties
-                this page: the band counts above are whole-generation totals, so
-                paging is the only way to reach the rows they promise. */}
-            {filteredItems.length === 0 ? (
-              <EmptyState
-                className={styles.libraryFilteredEmpty}
-                icon={<Search size={30} />}
-                title={t("filteredPageEmptyTitle")}
-                description={
-                  priorityFilter === "all"
-                    ? t("filteredPageEmptyDescription")
-                    : t("filteredPageEmptyPriorityDescription", {
-                        code: PRIORITY_CODE[priorityFilter],
-                        count: summary.priorityCounts[priorityFilter],
-                      })
-                }
-              >
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={clearRowFilters}
-                >
-                  {t("portfolioFilters.clear")}
-                </Button>
-              </EmptyState>
-            ) : (
-              <PortfolioList
-                items={filteredItems}
-                selectedSitePageId={selectedSitePageId}
-                showRowDetails={rowDetailsOpen}
-                onSelect={selectUrl}
-              />
+      {completeUrlsQuery.isPending || completeOpportunitiesQuery.isPending ? (
+        <div className={styles.pageState} role="status">
+          <Spinner label={t("pageViews.loading")} size="lg" />
+          <p>{t("pageViews.loading")}</p>
+        </div>
+      ) : completeUrlsQuery.isError || completeOpportunitiesQuery.isError ? (
+        <div className={styles.pageState}>
+          <ProblemState
+            error={completeUrlsQuery.error ?? completeOpportunitiesQuery.error}
+            onRetry={() => {
+              void completeUrlsQuery.refetch();
+              void completeOpportunitiesQuery.refetch();
+            }}
+            message={t(
+              completeUrlsQuery.error instanceof
+                GrowthMapPageViewScopeMismatchError ||
+                completeOpportunitiesQuery.error instanceof
+                  GrowthMapPageViewScopeMismatchError
+                ? "pageViews.scopeMismatch"
+                : "pageViews.loadError",
             )}
-            <nav
-              className={styles.portfolioPagination}
-              aria-label={t("paginationLabel")}
-            >
-              <span className={styles.portfolioPaginationStatus}>
-                {t(
-                  clientFiltered
-                    ? "paginationStatusFiltered"
-                    : "paginationStatus",
-                  {
-                    count: clientFiltered
-                      ? filteredItems.length
-                      : summary.listedUrlCount,
-                    total: summary.listedUrlCount,
-                    page: pageWindow.page,
-                    pages: pageWindow.pageCount,
-                  },
-                )}
-              </span>
-              <span className={styles.portfolioPaginationControls}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={cursorHistory.length === 0}
-                  onClick={goPrevious}
-                >
-                  <ArrowLeft aria-hidden="true" size={16} />
-                  {t("previousPage")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={!response.meta.hasNext}
-                  onClick={goNext}
-                >
-                  {t("nextPage")}
-                  <ArrowRight aria-hidden="true" size={16} />
-                </Button>
-              </span>
-            </nav>
-          </div>
-          <DetailState
-            projectId={projectId}
-            selectedSitePageId={selectedSitePageId}
-            selectedFindingId={selectedFindingId}
-            diagnosticRunId={diagnosticRunId}
           />
-          </div>
-        ) : completeUrlsQuery.isPending || completeOpportunitiesQuery.isPending ? (
-          <div className={styles.pageState} role="status">
-            <Spinner label={t("pageViews.loading")} size="lg" />
-            <p>{t("pageViews.loading")}</p>
-          </div>
-        ) : completeUrlsQuery.isError || completeOpportunitiesQuery.isError ? (
-          <div className={styles.pageState}>
-            <ProblemState
-              error={completeUrlsQuery.error ?? completeOpportunitiesQuery.error}
-              onRetry={() => {
-                void completeUrlsQuery.refetch();
-                void completeOpportunitiesQuery.refetch();
-              }}
-              message={t(
-                completeUrlsQuery.error instanceof
-                  GrowthMapPageViewScopeMismatchError ||
-                  completeOpportunitiesQuery.error instanceof
-                    GrowthMapPageViewScopeMismatchError
-                  ? "pageViews.scopeMismatch"
-                  : "pageViews.loadError",
-              )}
-            />
-          </div>
-        ) : pageView === "opportunity" ? (
-          <OpportunityPageView
-            projectId={projectId}
-            items={opportunityViewItems}
-            requestedId={selectedOpportunityParam}
-            search={querySearch}
-            pageTypeFilter={pageTypeFilter}
-            priorityFilter={priorityFilter}
-            onSelect={selectOpportunity}
-            onRepairSelection={selectOpportunity}
-            onOpenUrl={openUrlFromGroupedView}
-          />
-        ) : (
-          <ClusterPageView
-            projectId={projectId}
-            portfolio={completeUrls}
-            opportunities={completeOpportunities}
-            requestedId={selectedClusterParam}
-            search={querySearch}
-            pageTypeFilter={pageTypeFilter}
-            priorityFilter={priorityFilter}
-            onSelect={selectCluster}
-            onRepairSelection={selectCluster}
-            onOpenUrl={(sitePageId) => openUrlFromGroupedView(sitePageId)}
-            onOpenOpportunity={openOpportunityFromCluster}
-          />
-        )}
-      </div>
+        </div>
+      ) : (
+        <OpportunityPageView
+          projectId={projectId}
+          diagnosticRunId={diagnosticRunId}
+          items={opportunityViewItems}
+          requestedId={selectedOpportunityParam}
+          search={querySearch}
+          pageTypeFilter={pageTypeFilter}
+          priorityFilter={priorityFilter}
+          selectedSitePageId={selectedSitePageId}
+          selectedFindingId={selectedFindingId}
+          onSelect={selectOpportunity}
+          onRepairSelection={selectOpportunity}
+          onOpenUrl={openUrlFromOpportunity}
+          onCloseUrl={closeUrlDetail}
+        />
+      )}
     </section>
   );
 }

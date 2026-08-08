@@ -2254,56 +2254,18 @@
       "unavailable": "不可用"
     },
     "pageViews": {
-      "label": "页面与机会查看方式",
-      "defaultHint": "默认按机会呈现，让下一项决策优先可见。",
       "url": {
-        "label": "按 URL",
-        "description": "逐页查看当前信号与机会",
         "currentOpportunities": "当前问题与机会",
         "fullEvidence": "完整证据与审核",
         "fullEvidenceDescription": "指标、溯源、内链图与 Finding 操作"
       },
-      "cluster": {
-        "label": "按主题簇",
-        "description": "从主题查看页面覆盖与需求",
-        "detailLabel": "所选主题簇详情",
-        "eyebrow": "主题簇",
-        "role": "角色",
-        "roles": {
-          "root": "根主题",
-          "pillar": "支柱主题",
-          "support": "支撑主题",
-          "unmapped": "历史主题簇"
-        },
-        "metrics": {
-          "pages": "现有页面",
-          "searchQueries": "搜索查询",
-          "generativeQueries": "生成式查询"
-        },
-        "sections": {
-          "pages": "现有页面与角色",
-          "queries": "需求覆盖",
-          "gap": "覆盖缺口",
-          "opportunity": "最高优先机会"
-        },
-        "noPages": "冻结 URL 组合中没有页面分配到该主题簇。",
-        "noQueries": "该主题簇尚未关联可追溯的查询证据。",
-        "covered": "现有页面已覆盖这组受治理的关键词。",
-        "unavailable": "主题覆盖暂不可用；界面不会根据相似名称推断。",
-        "readError": "无法读取已确认的主题结构，因此界面会隐藏主题簇，不会把它们重新标记为历史数据。",
-        "scopeNote": "URL 与机会来自冻结诊断；主题结构与关键词覆盖来自最新已确认 Topic Model",
-        "clickCoverage": {
-          "available": "全部 {total} 个 URL 有观测",
-          "partial": "{total} 个 URL 中有 {observed} 个有观测",
-          "unavailable": "未观测到点击量"
-        },
-        "openUrl": "打开 URL",
-        "openOpportunity": "打开机会"
-      },
       "opportunity": {
-        "label": "按机会",
+        "label": "增长机会",
         "description": "从下一项审核或执行决策开始",
         "detailLabel": "所选增长机会详情",
+        "backToList": "返回机会列表",
+        "evidenceCount": "{count} 条记录",
+        "targetsCount": "{count} 项",
         "eyebrow": "增长机会",
         "metrics": {
           "urls": "目标 URLs",
@@ -2354,12 +2316,7 @@
         "confirmedBoundary": "这条 Finding 已经生成规范 Action。"
       },
       "columns": {
-        "cluster": "主题簇",
-        "role": "角色",
         "urls": "URLs",
-        "keywords": "关键词",
-        "clicks": "点击量",
-        "openOpportunities": "开放机会",
         "opportunity": "机会 / 目标",
         "type": "类型",
         "priority": "优先级",
@@ -2372,20 +2329,14 @@
       "scopeMismatch": "读取期间审计版本发生变化。只有所有数据指向同一 Diagnostic Run 后才会显示结果。",
       "searchScope": "搜索与筛选作用于该视图的完整冻结集合。",
       "empty": {
-        "url": "没有匹配的 URL。",
-        "cluster": "没有匹配的主题簇。",
         "opportunity": "没有匹配的机会。"
       },
       "select": {
-        "cluster": "选择一个主题簇，查看页面与需求覆盖。",
         "opportunity": "选择一个机会，查看 Finding、目标与下一步决定。"
       },
       "counts": {
-        "urls": "{count} 个 URL",
-        "keywords": "{count} 个关键词",
         "opportunities": "{count} 个机会",
-        "findings": "{count} 条 Finding",
-        "observedClicks": "{count} 个 URL 有观测"
+        "findings": "{count} 条 Finding"
       }
     },
     "portfolioFilters": {
@@ -2395,10 +2346,7 @@
       "allPriorities": "全部优先级",
       "more": "更多筛选",
       "moreLabel": "更多筛选条件",
-      "moreActiveCount": "已启用 {count} 项",
-      "expandRowDetails": "展开本页详情",
-      "clear": "清除筛选",
-      "clientScopeNote": "页面类型与优先级只筛选当前页已加载的 {limit} 条 URL；上方卡片里的分档数量是本代全量，其它分档的 URL 可能落在别的页，请翻页查看。"
+      "moreActiveCount": "已启用 {count} 项"
     },
     "loadingPortfolio": "正在读取真实 URL 组合…",
     "loadingDetail": "正在读取所选 URL 的证据链…",
@@ -2441,13 +2389,6 @@
     "titleNotCollected": "页面标题未采集",
     "reviewableCount": "{count} 项待审核",
     "priorityUnavailable": "未评估",
-    "noSearchResults": "没有匹配的真实 URL",
-    "noSearchResultsDescription": "请更换完整 URL、Domain 或路径；系统不会为了填满列表而添加近似结果。",
-    "noPagesTitle": "本次审计没有可验证的 URL",
-    "noPagesDescription": "需要先完成一次带有 Crawl PageSnapshot 或唯一页面 Observation 的审计。",
-    "filteredPageEmptyTitle": "本页没有符合筛选条件的 URL",
-    "filteredPageEmptyDescription": "页面类型与优先级只筛选当前页已加载的这一批；请翻页继续查找，或清除筛选。",
-    "filteredPageEmptyPriorityDescription": "本代共有 {count} 条 {code} 的 URL，但都不在当前页。列表按覆盖面排序而不是按优先级，请翻页继续查找，或清除筛选。",
     "paginationLabel": "URL 列表分页",
     "previousPage": "上一页",
     "nextPage": "下一页",
@@ -2686,23 +2627,13 @@
       "unclassified": "未分类"
     },
     "paginationStatus": "当前筛选 {count} 条 · 第 {page} / {pages} 页",
-    "rowDetails": {
-      "label": "本页详情",
-      "templateKey": "页面模板",
-      "cluster": "主题簇",
-      "sources": "数据来源",
-      "pageSnapshot": "页面快照",
-      "unassigned": "未分配",
-      "notRecorded": "未记录"
-    },
     "primaryOpportunityReviewAction": "先审核最高优先机会",
     "primaryOpportunityReviewHint": "这条机会还没有确认出可执行的 Action，先在下方完成审核。",
     "primaryOpportunityClosedAction": "查看已关闭的信号",
     "primaryOpportunityClosedHint": "本页的 {count} 条信号已全部被忽略或已不再出现，没有可推进的最高优先机会。",
     "modeCount": {
       "pages": "{count} 个页面"
-    },
-    "paginationStatusFiltered": "本页筛选出 {count} 条 · 全代共 {total} 条 · 第 {page} / {pages} 页"
+    }
   },
   "plan": {
     "kicker": "证据驱动的路线图 · 90 天",

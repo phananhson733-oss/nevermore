@@ -117,6 +117,7 @@ const reviewableFinding: OpportunityFindingInput = {
   reviewState: "unreviewed",
   active: true,
   title: "Make the onboarding page a citation-ready answer asset",
+  severity: "high",
 };
 
 describe("deriveOpportunityKey", () => {
@@ -354,6 +355,7 @@ describe("buildOpportunity", () => {
         reviewState: "unreviewed",
         active: true,
         title: "Return a 200 for the canonical URL",
+        severity: "high",
       },
       targets: [
         ownedUrlTarget({
@@ -373,6 +375,7 @@ describe("buildOpportunity", () => {
     expect(opportunity).toMatchObject({
       workShape: "fix",
       primaryRule: { ruleId: "TECH-HTTP-001", ruleVersion: 2 },
+      primaryFindingSeverity: "high",
       lenses: ["site_health"],
       executionPreview: {
         artifactType: "technical_ticket",
@@ -390,6 +393,7 @@ describe("buildOpportunity", () => {
         reviewState: "unreviewed",
         active: true,
         title: "Resolve the sitemap and noindex contradiction",
+        severity: "high",
       },
       targets: [ownedUrlTarget()],
       evidence: [crawlEvidence()],

@@ -1448,6 +1448,7 @@ function growthOpportunityFixture(
       ruleId: findingSpec.ruleId,
       ruleVersion: findingSpec.ruleVersion,
     },
+    primaryFindingSeverity: findingSpec.severity,
     executionPreview,
   };
 

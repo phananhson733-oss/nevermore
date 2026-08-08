@@ -7282,95 +7282,6 @@ a.competitorMonitorContentUrl:hover {
   gap: 8px;
 }
 
-.pageViewBand {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
-  align-items: stretch;
-  gap: 12px;
-  margin: 16px 0 12px;
-  padding: 10px;
-  background: color-mix(in srgb, var(--sf-surface-deep) 72%, var(--sf-surface));
-  border: 1px solid var(--sf-border);
-  border-radius: 14px;
-}
-
-.pageViewBand > div:first-child {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  padding: 4px 8px;
-}
-
-.pageViewBand > div:first-child > span {
-  color: var(--gm-ink);
-  font-size: 14px;
-  font-weight: 850;
-}
-
-.pageViewBand > div:first-child > small {
-  color: var(--sf-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.pageViewTabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-  min-width: 0;
-}
-
-.pageViewTab {
-  display: flex;
-  min-width: 0;
-  min-height: 62px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  padding: 9px 12px;
-  color: var(--sf-muted);
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.pageViewTab:hover {
-  color: var(--sf-fg);
-  background: color-mix(in srgb, var(--sf-surface) 72%, transparent);
-}
-
-.pageViewTab:focus-visible {
-  outline: 0;
-  box-shadow: var(--sf-focus-ring);
-}
-
-.pageViewTab strong {
-  color: inherit;
-  font-size: 14px;
-}
-
-.pageViewTab small {
-  overflow: hidden;
-  color: inherit;
-  font-size: 11px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pageViewTabActive,
-.pageViewTabActive:hover {
-  color: var(--gm-ink);
-  background: var(--sf-surface);
-  border-color: var(--sf-border-strong);
-  box-shadow: var(--sf-shadow-sm);
-}
-
 .groupedLedger {
   container-name: none;
 }
@@ -7385,18 +7296,6 @@ a.competitorMonitorContentUrl:hover {
     minmax(132px, 0.9fr)
     minmax(116px, 0.78fr);
   min-width: 830px;
-}
-
-.clusterLedgerHeader,
-.clusterRowButton {
-  grid-template-columns:
-    minmax(210px, 1.85fr)
-    minmax(108px, 0.72fr)
-    minmax(70px, 0.5fr)
-    minmax(78px, 0.55fr)
-    minmax(112px, 0.78fr)
-    minmax(116px, 0.78fr);
-  min-width: 804px;
 }
 
 .pageViewStatus {
@@ -7440,6 +7339,85 @@ a.competitorMonitorContentUrl:hover {
   gap: 9px;
   padding: 18px 20px;
   border-top: 1px solid var(--sf-border);
+}
+
+.railSectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.railSectionHeading > span {
+  color: var(--sf-coral-text);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.railSectionHeading > strong {
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.railTargetText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.railTargetText strong,
+.railTargetText small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railTargetText strong {
+  color: inherit;
+  font-size: 13px;
+}
+
+.railTargetText small {
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+.opportunityDrilldown {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+
+.backToOpportunities {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  color: var(--sf-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.backToOpportunities:hover {
+  color: var(--gm-ink);
+  border-color: var(--sf-border-strong);
+}
+
+.backToOpportunities:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
 }
 
 .compactRailSection > span {
@@ -7786,15 +7764,6 @@ a.competitorMonitorContentUrl:hover {
 }
 
 @media (max-width: 560px) {
-  .pageViewBand {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .pageViewTabs {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .pageViewTab small {
-    white-space: normal;
-  }
   .compactRailSection {
     padding-inline: 16px;
   }
