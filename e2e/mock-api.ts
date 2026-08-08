@@ -5,22 +5,28 @@ import {
   ConfirmedProductProfileRowDto as ConfirmedProductProfileRowSchema,
   GeoCitationEvidenceResponse as GeoCitationEvidenceResponseSchema,
   GrowthMapInternalLinkMap as GrowthMapInternalLinkMapSchema,
+  GrowthMapTopicModelInsights as GrowthMapTopicModelInsightsSchema,
   GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseSchema,
   GrowthMapUrlPortfolioResponse as GrowthMapUrlPortfolioResponseSchema,
+  GrowthOpportunity as GrowthOpportunitySchema,
   MeasurementTargetKeywordRanks as MeasurementTargetKeywordRanksSchema,
   MeasurementWindowRecentResponse as MeasurementWindowRecentResponseSchema,
   ProductProfileDraft as ProductProfileDraftSchema,
+  TopicModelWorkspaceProjection as TopicModelWorkspaceProjectionSchema,
   type ActionRecheckResultsResponse,
   type ConfirmedProductProfileRowDto,
   type GeoCitationEvidenceResponse,
   type GrowthMapInternalLinkMap,
+  type GrowthMapTopicModelInsights,
   type GrowthMapUrlDetailResponse,
   type GrowthMapUrlFinding,
   type GrowthMapUrlPortfolioItem,
   type GrowthMapUrlPortfolioResponse,
+  type GrowthOpportunity,
   type MeasurementWindow,
   type MeasurementTargetKeywordRanks,
   type MeasurementWindowRecentResponse,
+  type TopicModelWorkspaceProjection,
 } from "../packages/contracts/src/index.ts";
 
 export const E2E_PROJECT_ID = "00000000-0000-4000-8000-000000000042";
@@ -895,6 +901,20 @@ export async function installCriticalFlowApi(
       return;
     }
 
+    if (
+      method === "GET" &&
+      (path === `${BASE}/results` ||
+        path === `${BASE}/measurement-windows/recent` ||
+        path.match(
+          new RegExp(
+            `^${BASE}/measurement-windows/[^/]+/(keyword-ranks|geo-citations)$`,
+          ),
+        ) !== null)
+    ) {
+      await route.fallback();
+      return;
+    }
+
     await json(
       route,
       problem("E2E_ROUTE_MISSING", `${method} ${path} is not mocked.`, 501),
@@ -930,6 +950,20 @@ export const E2E_INTERNAL_LINK_OBSERVATION_ID =
   "00000000-0000-4000-8000-000000000807";
 export const E2E_INTERNAL_LINK_TOPIC_ID =
   "00000000-0000-4000-8000-000000000808";
+export const E2E_GROWTH_MAP_TOPIC_NODE_ID =
+  "00000000-0000-4000-8000-000000000830";
+const E2E_GROWTH_MAP_TOPIC_ALIAS_ID =
+  "00000000-0000-4000-8000-000000000831";
+const E2E_GROWTH_MAP_TOPIC_ACTOR_ID =
+  "00000000-0000-4000-8000-000000000832";
+const E2E_SEARCH_QUERY_OBSERVATION_ID =
+  "00000000-0000-4000-8000-000000000833";
+const E2E_SEARCH_QUERY_SNAPSHOT_ID =
+  "00000000-0000-4000-8000-000000000834";
+const E2E_GENERATIVE_QUERY_OBSERVATION_ID =
+  "00000000-0000-4000-8000-000000000835";
+const E2E_GENERATIVE_QUERY_SNAPSHOT_ID =
+  "00000000-0000-4000-8000-000000000836";
 
 /** Three separately reviewable Findings on one URL: one per Slice 1 artifact type. */
 export const E2E_CANONICAL_FINDING_ID = "00000000-0000-4000-8000-000000000810";
@@ -1045,6 +1079,7 @@ function onboardingPortfolioItem(input: {
   readonly findingIds: readonly string[];
   readonly reviewableFindingIds: readonly string[];
   readonly priority?: "critical" | "high" | "medium" | "low";
+  readonly clusterKey?: string | null;
 }): GrowthMapUrlPortfolioItem {
   const findingIds = [...input.findingIds];
   const hasPriority = input.priority !== undefined && findingIds.length > 0;
@@ -1069,7 +1104,7 @@ function onboardingPortfolioItem(input: {
     title: input.title,
     pageType: "documentation",
     templateKey: "guide-detail",
-    clusterKey: null,
+    clusterKey: input.clusterKey ?? null,
     ownerId: null,
     coverage: {
       availability: "partial",
@@ -1160,6 +1195,7 @@ export function growthAuditPortfolioFixture(
     findingIds: ALL_FINDING_IDS,
     reviewableFindingIds: onboardingReviewableIds(confirmedFindingIds),
     priority: "high",
+    clusterKey: "customer-onboarding",
   });
   const secondary = onboardingPortfolioItem({
     sitePageId: E2E_SECOND_SITE_PAGE_ID,
@@ -1168,6 +1204,7 @@ export function growthAuditPortfolioFixture(
     title: "Pricing overview",
     findingIds: [],
     reviewableFindingIds: [],
+    clusterKey: "customer-onboarding",
   });
   return GrowthMapUrlPortfolioResponseSchema.parse({
     projectId: E2E_PROJECT_ID,
@@ -1203,6 +1240,7 @@ export function growthAuditDetailFixture(
       title: "Pricing overview",
       findingIds: [],
       reviewableFindingIds: [],
+      clusterKey: "customer-onboarding",
     });
     return GrowthMapUrlDetailResponseSchema.parse({
       projectId: E2E_PROJECT_ID,
@@ -1223,6 +1261,7 @@ export function growthAuditDetailFixture(
     findingIds: ALL_FINDING_IDS,
     reviewableFindingIds: onboardingReviewableIds(confirmedFindingIds),
     priority: "high",
+    clusterKey: "customer-onboarding",
   });
   return GrowthMapUrlDetailResponseSchema.parse({
     projectId: E2E_PROJECT_ID,
@@ -1237,6 +1276,289 @@ export function growthAuditDetailFixture(
         onboardingFinding("content", confirmedFindingIds),
       ],
     },
+  });
+}
+
+const OPPORTUNITY_FIXTURE_BLUEPRINT = {
+  canonical: {
+    workShape: "fix",
+    lens: "site_health",
+    artifactType: "technical_ticket",
+    templateId: "fix_canonical_conflict.v1",
+    previewTitle: "Fix the conflicting canonical URL",
+    previewDescription:
+      "Align the onboarding page with one canonical destination and verify the rendered tag.",
+    expectedOutcome:
+      "The page exposes one consistent canonical URL in the next crawl.",
+    actionId: E2E_CANONICAL_ACTION_ID,
+  },
+  ctr: {
+    workShape: "improve",
+    lens: "search_ai_visibility",
+    artifactType: "metadata_rewrite",
+    templateId: "improve_search_ctr.v1",
+    previewTitle: "Improve the onboarding search snippet",
+    previewDescription:
+      "Rewrite the title and description around the observed onboarding intent.",
+    expectedOutcome:
+      "The next review can compare the exact metadata change against later observations.",
+    actionId: "00000000-0000-4000-8000-000000000837",
+  },
+  content: {
+    workShape: "improve",
+    lens: "demand_competition",
+    artifactType: "content_brief",
+    templateId: "improve_content_coverage.v1",
+    previewTitle: "Close the onboarding content coverage gap",
+    previewDescription:
+      "Expand the existing guide around the governed onboarding questions and decision criteria.",
+    expectedOutcome:
+      "The page covers the governed intent more completely without inventing a ranking outcome.",
+    actionId: "00000000-0000-4000-8000-000000000838",
+  },
+} as const satisfies Readonly<
+  Record<
+    FindingKind,
+    {
+      readonly workShape: "fix" | "improve";
+      readonly lens:
+        | "site_health"
+        | "search_ai_visibility"
+        | "demand_competition";
+      readonly artifactType:
+        | "technical_ticket"
+        | "metadata_rewrite"
+        | "content_brief";
+      readonly templateId: string;
+      readonly previewTitle: string;
+      readonly previewDescription: string;
+      readonly expectedOutcome: string;
+      readonly actionId: string;
+    }
+  >
+>;
+
+function opportunitySearchQueries(kind: FindingKind) {
+  return kind === "content"
+    ? [
+        {
+          queryKind: "search" as const,
+          observationId: E2E_SEARCH_QUERY_OBSERVATION_ID,
+          snapshotId: E2E_SEARCH_QUERY_SNAPSHOT_ID,
+          query: "Customer onboarding software",
+          marketCode: "US",
+          languageCode: "en-US",
+          sourceProvider: "dataforseo",
+          observedAt: AUDIT_OBSERVED_AT,
+          freshness: "current" as const,
+          limitation: "One immutable provider observation.",
+          metrics: {
+            monthlyVolume: 900,
+            keywordDifficulty: 42,
+            organicRank: null,
+            impressions: null,
+            clicks: null,
+          },
+        },
+      ]
+    : [];
+}
+
+function opportunityGenerativeQueries(kind: FindingKind) {
+  return kind === "content"
+    ? [
+        {
+          queryKind: "generative" as const,
+          observationId: E2E_GENERATIVE_QUERY_OBSERVATION_ID,
+          snapshotId: E2E_GENERATIVE_QUERY_SNAPSHOT_ID,
+          query: "How do I automate customer onboarding?",
+          marketCode: "US",
+          languageCode: "en-US",
+          sourceProvider: "answer-sample",
+          observedAt: AUDIT_OBSERVED_AT,
+          freshness: "current" as const,
+          limitation: "Three immutable answer samples.",
+          metrics: {
+            sampleSize: 3,
+            brandMentionCount: 1,
+            brandCitationCount: 1,
+            citedCompetitorCount: 2,
+          },
+        },
+      ]
+    : [];
+}
+
+function growthOpportunityFixture(
+  kind: FindingKind,
+  confirmedFindingIds: ReadonlySet<string>,
+): GrowthOpportunity {
+  const findingSpec = FINDING_BLUEPRINT[kind];
+  const opportunitySpec = OPPORTUNITY_FIXTURE_BLUEPRINT[kind];
+  const executionPreview = {
+    templateId: opportunitySpec.templateId,
+    templateVersion: 1 as const,
+    artifactType: opportunitySpec.artifactType,
+    effort: "medium" as const,
+    risk: "low" as const,
+    contentLocale: "en" as const,
+    title: opportunitySpec.previewTitle,
+    description: opportunitySpec.previewDescription,
+    expectedOutcome: opportunitySpec.expectedOutcome,
+  };
+  const base = {
+    opportunityKey: `url:/customer-onboarding:${findingSpec.ruleId}`,
+    title: findingSpec.title,
+    workShape: opportunitySpec.workShape,
+    primaryTarget: "url" as const,
+    targetRef: E2E_ONBOARDING_URL,
+    evidenceSummary: [
+      {
+        traceKind: "evidence" as const,
+        evidenceId: findingSpec.evidenceId,
+        diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+        snapshotId: E2E_AUDIT_CRAWL_SNAPSHOT_ID,
+        collectionRunId: CRAWL_COLLECTION_RUN_ID,
+        analysisInvocationId: null,
+        sourceProvider: "crawl",
+        availability: "available" as const,
+        support: "supports" as const,
+        observedAt: AUDIT_OBSERVED_AT,
+        freshness: "current" as const,
+        claim: findingSpec.title,
+        limitation: "One immutable crawl snapshot.",
+      },
+    ],
+    searchQueries: opportunitySearchQueries(kind),
+    generativeQueries: opportunityGenerativeQueries(kind),
+    competitorRefs: [],
+    currentOwnedAsset: {
+      sitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
+      snapshotId: E2E_ONBOARDING_PAGE_SNAPSHOT_ID,
+      url: E2E_ONBOARDING_URL,
+      suitableForIntent: true,
+    },
+    supportingFindingIds: [],
+    lenses: [opportunitySpec.lens],
+    coverageAndLimitations: [
+      "One immutable crawl snapshot; no publication or ranking outcome is inferred.",
+    ],
+    primaryFindingId: findingSpec.findingId,
+    primaryRule: {
+      ruleId: findingSpec.ruleId,
+      ruleVersion: findingSpec.ruleVersion,
+    },
+    executionPreview,
+  };
+
+  return GrowthOpportunitySchema.parse(
+    confirmedFindingIds.has(findingSpec.findingId)
+      ? {
+          ...base,
+          readiness: "confirmed",
+          actionId: opportunitySpec.actionId,
+          action: {
+            actionId: opportunitySpec.actionId,
+            findingId: findingSpec.findingId,
+            status: "planned",
+            artifactType: opportunitySpec.artifactType,
+          },
+        }
+      : {
+          ...base,
+          readiness: "reviewable",
+        },
+  );
+}
+
+/** Complete frozen Opportunity projection used by the default page view. */
+export function growthOpportunitiesFixture(
+  confirmedFindingIds: ReadonlySet<string> = new Set(),
+) {
+  return {
+    projectId: E2E_PROJECT_ID,
+    siteId: E2E_SITE_ID,
+    diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+    data: (["canonical", "ctr", "content"] as const).map((kind) =>
+      growthOpportunityFixture(kind, confirmedFindingIds),
+    ),
+    meta: { limit: 100, nextCursor: null, hasNext: false },
+  };
+}
+
+/** Confirmed Topic authority maps the legacy URL cluster key to one stable UUID. */
+export function growthMapTopicWorkspaceFixture(): TopicModelWorkspaceProjection {
+  return TopicModelWorkspaceProjectionSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    latestConfirmed: {
+      projectId: E2E_PROJECT_ID,
+      topicModelRevision: 3,
+      editRevision: 2,
+      rootTopicNodeId: E2E_GROWTH_MAP_TOPIC_NODE_ID,
+      nodes: [
+        {
+          projectId: E2E_PROJECT_ID,
+          topicNodeId: E2E_GROWTH_MAP_TOPIC_NODE_ID,
+          topicModelRevision: 3,
+          parentTopicNodeId: null,
+          label: "Customer onboarding",
+          description: "Implementation, handoffs, and time-to-value guidance.",
+          intentEnvelope: ["commercial", "informational"],
+          lifecycleState: "active",
+        },
+      ],
+      aliases: [
+        {
+          aliasId: E2E_GROWTH_MAP_TOPIC_ALIAS_ID,
+          projectId: E2E_PROJECT_ID,
+          topicNodeId: E2E_GROWTH_MAP_TOPIC_NODE_ID,
+          clusterKey: "customer-onboarding",
+          validFromTopicModelRevision: 3,
+          validThroughTopicModelRevision: null,
+          isCurrent: true,
+        },
+      ],
+      successorRelationships: [],
+      createdAt: "2026-07-17T12:00:00.000Z",
+      createdBy: E2E_GROWTH_MAP_TOPIC_ACTOR_ID,
+      state: "confirmed",
+      confirmedAt: "2026-07-18T11:00:00.000Z",
+      confirmedBy: E2E_GROWTH_MAP_TOPIC_ACTOR_ID,
+      contentHash: "e".repeat(64),
+    },
+    draft: null,
+    generatedAt: AUDIT_OBSERVED_AT,
+  });
+}
+
+export function growthMapTopicInsightsFixture(): GrowthMapTopicModelInsights {
+  return GrowthMapTopicModelInsightsSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    topicModelRevision: 3,
+    nodes: [
+      {
+        projectId: E2E_PROJECT_ID,
+        topicNodeId: E2E_GROWTH_MAP_TOPIC_NODE_ID,
+        topicModelRevision: 3,
+        label: "Customer onboarding",
+        keywordCount: 3,
+        approvedKeywordCount: 2,
+        reviewPendingKeywordCount: 1,
+        existingPageKeywordCount: 2,
+        newAssetKeywordCount: 1,
+        unassignedKeywordCount: 0,
+        mappedPageCount: 2,
+        conflictingIntentCount: 0,
+        coverageState: "partial",
+        limitation:
+          "One governed Keyword still requires a new answer asset before this Topic is fully covered.",
+      },
+    ],
+    coverage: {
+      availability: "partial",
+      limitations: ["One governed Keyword still requires a new asset."],
+    },
+    generatedAt: AUDIT_OBSERVED_AT,
   });
 }
 
@@ -2037,6 +2359,8 @@ export interface GrowthVerticalApiState {
   readonly artifactStatusPatches: unknown[];
   readonly internalLinkMapReads: string[];
   readonly geoCitationReads: string[];
+  readonly completeUrlPageReads: (string | null)[];
+  readonly completeOpportunityPageReads: (string | null)[];
   readonly confirmedFindingIds: Set<string>;
   /**
    * First-diagnosis seam (R1): while false, the audit projection answers with
@@ -2045,6 +2369,7 @@ export interface GrowthVerticalApiState {
    * to model the portfolio becoming readable after a diagnostic run.
    */
   auditProjectionAvailable: boolean;
+  topicModelReadsFail: boolean;
 }
 
 /**
@@ -2066,8 +2391,11 @@ export async function installGrowthVerticalApi(
     artifactStatusPatches: [],
     internalLinkMapReads: [],
     geoCitationReads: [],
+    completeUrlPageReads: [],
+    completeOpportunityPageReads: [],
     confirmedFindingIds: new Set<string>(),
     auditProjectionAvailable: options.auditProjectionAvailable ?? true,
+    topicModelReadsFail: false,
   };
 
   // Growth Audit projection: URL portfolio (list) and selected URL detail.
@@ -2096,8 +2424,39 @@ export async function installGrowthVerticalApi(
       return;
     }
     if (url.pathname === `${BASE}/audit/urls`) {
+      const response = growthAuditPortfolioFixture(state.confirmedFindingIds);
+      if (url.searchParams.get("limit") === "100") {
+        const cursor = url.searchParams.get("cursor");
+        state.completeUrlPageReads.push(cursor);
+        const pageIndex = cursor === null ? 0 : cursor === "urls-opaque-page-2" ? 1 : -1;
+        if (pageIndex === -1) {
+          await json(
+            route,
+            problem("VALIDATION_ERROR", "Unknown URL cursor.", 400),
+            400,
+          );
+          return;
+        }
+        await json(route, {
+          data: {
+            ...response,
+            data: response.data.slice(pageIndex, pageIndex + 1),
+            meta: {
+              ...response.meta,
+              limit: 100,
+              nextCursor: pageIndex === 0 ? "urls-opaque-page-2" : null,
+              hasNext: pageIndex === 0,
+              summary: {
+                ...response.meta.summary,
+                precedingUrlCount: pageIndex,
+              },
+            },
+          },
+        });
+        return;
+      }
       await json(route, {
-        data: growthAuditPortfolioFixture(state.confirmedFindingIds),
+        data: response,
       });
       return;
     }
@@ -2121,6 +2480,120 @@ export async function installGrowthVerticalApi(
         sitePageId,
       ),
     });
+  });
+
+  await page.route(`**${BASE}/opportunities**`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await json(
+        route,
+        problem("E2E_ROUTE_MISSING", "Opportunities are GET only", 501),
+        501,
+      );
+      return;
+    }
+    const url = new URL(route.request().url());
+    const listPath = `${BASE}/opportunities`;
+    const response = growthOpportunitiesFixture(state.confirmedFindingIds);
+    if (url.pathname === listPath) {
+      if (url.searchParams.get("limit") === "100") {
+        const cursor = url.searchParams.get("cursor");
+        state.completeOpportunityPageReads.push(cursor);
+        const pageIndex =
+          cursor === null ? 0 : cursor === "opportunities-opaque-page-2" ? 1 : -1;
+        if (pageIndex === -1) {
+          await json(
+            route,
+            problem("VALIDATION_ERROR", "Unknown Opportunity cursor.", 400),
+            400,
+          );
+          return;
+        }
+        const pageData =
+          pageIndex === 0 ? response.data.slice(0, 2) : response.data.slice(2);
+        await json(route, {
+          data: {
+            ...response,
+            data: pageData,
+            meta: {
+              ...response.meta,
+              nextCursor:
+                pageIndex === 0 ? "opportunities-opaque-page-2" : null,
+              hasNext: pageIndex === 0,
+            },
+          },
+        });
+        return;
+      }
+      await json(route, { data: response });
+      return;
+    }
+    const opportunityId = decodeURIComponent(
+      url.pathname.slice(`${listPath}/`.length),
+    );
+    const opportunity = response.data.find(
+      (item) =>
+        item.readiness !== "candidate" &&
+        item.primaryFindingId === opportunityId,
+    );
+    if (opportunity === undefined) {
+      await json(
+        route,
+        problem("NOT_FOUND", "Opportunity is not in the frozen audit.", 404),
+        404,
+      );
+      return;
+    }
+    await json(route, {
+      data: {
+        projectId: response.projectId,
+        siteId: response.siteId,
+        diagnosticRunId: response.diagnosticRunId,
+        data: opportunity,
+      },
+    });
+  });
+
+  await page.route(
+    `**${BASE}/audit/topic-model/insights`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      if (state.topicModelReadsFail) {
+        await json(
+          route,
+          problem(
+            "DEPENDENCY_UNAVAILABLE",
+            "Confirmed Topic insights are temporarily unavailable.",
+            503,
+          ),
+          503,
+        );
+        return;
+      }
+      await json(route, { data: growthMapTopicInsightsFixture() });
+    },
+  );
+
+  await page.route(`**${BASE}/audit/topic-model`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    if (state.topicModelReadsFail) {
+      await json(
+        route,
+        problem(
+          "DEPENDENCY_UNAVAILABLE",
+          "Confirmed Topic workspace is temporarily unavailable.",
+          503,
+        ),
+        503,
+      );
+      return;
+    }
+    await json(route, { data: growthMapTopicWorkspaceFixture() });
   });
 
   await page.route(`**${BASE}/audit/internal-link-map**`, async (route) => {

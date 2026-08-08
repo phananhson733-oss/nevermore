@@ -19,6 +19,7 @@ const vocKeyword = {
   languageTag: "en-US",
   queryKind: "search_query",
   status: "candidate",
+  reviewOrigin: null,
   revision: 0,
   intent: null,
   buyerStage: null,
@@ -285,7 +286,9 @@ test("增长地图三个内置对象可以反复切换", async ({ page }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
 
   const objectNav = page.getByRole("navigation", { name: "增长地图对象" });
-  const pages = objectNav.getByRole("button", { name: "页面与机会 逐 URL 查看审计与执行" });
+  const pages = objectNav.getByRole("button", {
+    name: /^页面与机会.*逐 URL 查看审计与执行$/,
+  });
   const keywords = objectNav.getByRole("button", { name: "关键词库 关键词来源、市场与映射" });
   const competitors = objectNav.getByRole("button", { name: "竞品库 竞品关系、范围与证据" });
 

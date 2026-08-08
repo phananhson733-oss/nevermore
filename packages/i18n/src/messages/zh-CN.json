@@ -2253,6 +2253,141 @@
       "uncoveredEmptyAction": "去导入关键词",
       "unavailable": "不可用"
     },
+    "pageViews": {
+      "label": "页面与机会查看方式",
+      "defaultHint": "默认按机会呈现，让下一项决策优先可见。",
+      "url": {
+        "label": "按 URL",
+        "description": "逐页查看当前信号与机会",
+        "currentOpportunities": "当前问题与机会",
+        "fullEvidence": "完整证据与审核",
+        "fullEvidenceDescription": "指标、溯源、内链图与 Finding 操作"
+      },
+      "cluster": {
+        "label": "按主题簇",
+        "description": "从主题查看页面覆盖与需求",
+        "detailLabel": "所选主题簇详情",
+        "eyebrow": "主题簇",
+        "role": "角色",
+        "roles": {
+          "root": "根主题",
+          "pillar": "支柱主题",
+          "support": "支撑主题",
+          "unmapped": "历史主题簇"
+        },
+        "metrics": {
+          "pages": "现有页面",
+          "searchQueries": "搜索查询",
+          "generativeQueries": "生成式查询"
+        },
+        "sections": {
+          "pages": "现有页面与角色",
+          "queries": "需求覆盖",
+          "gap": "覆盖缺口",
+          "opportunity": "最高优先机会"
+        },
+        "noPages": "冻结 URL 组合中没有页面分配到该主题簇。",
+        "noQueries": "该主题簇尚未关联可追溯的查询证据。",
+        "covered": "现有页面已覆盖这组受治理的关键词。",
+        "unavailable": "主题覆盖暂不可用；界面不会根据相似名称推断。",
+        "readError": "无法读取已确认的主题结构，因此界面会隐藏主题簇，不会把它们重新标记为历史数据。",
+        "scopeNote": "URL 与机会来自冻结诊断；主题结构与关键词覆盖来自最新已确认 Topic Model",
+        "clickCoverage": {
+          "available": "全部 {total} 个 URL 有观测",
+          "partial": "{total} 个 URL 中有 {observed} 个有观测",
+          "unavailable": "未观测到点击量"
+        },
+        "openUrl": "打开 URL",
+        "openOpportunity": "打开机会"
+      },
+      "opportunity": {
+        "label": "按机会",
+        "description": "从下一项审核或执行决策开始",
+        "detailLabel": "所选增长机会详情",
+        "eyebrow": "增长机会",
+        "metrics": {
+          "urls": "目标 URLs",
+          "findings": "Finding 证据",
+          "output": "执行输出"
+        },
+        "sections": {
+          "primaryFinding": "主要 Finding",
+          "evidence": "支撑证据",
+          "targets": "目标页面",
+          "limitations": "覆盖范围与限制",
+          "output": "执行输出",
+          "decision": "下一步决定"
+        },
+        "readiness": {
+          "candidate": "候选",
+          "reviewable": "待审核",
+          "confirmed": "已确认"
+        },
+        "workShape": {
+          "fix": "修复",
+          "improve": "改进",
+          "create": "创建"
+        },
+        "target": {
+          "site": "全站",
+          "template": "模板",
+          "url": "URL",
+          "topic": "主题",
+          "new_asset": "新资产"
+        },
+        "lenses": {
+          "site_health": "站点健康",
+          "search_ai_visibility": "搜索与 AI 可见性",
+          "demand_competition": "需求与竞争"
+        },
+        "priorityUnavailable": "未独立评估",
+        "priorityUnavailableHint": "Opportunity 合约没有提供该行的独立精确优先级；界面不会借用 URL 聚合优先级。",
+        "noEvidence": "当前没有更多支撑证据。",
+        "noTargets": "该机会没有可精确对应的 URL 目标。",
+        "noLimitations": "没有记录额外限制。",
+        "noOutput": "尚无确定性的执行输出。",
+        "review": "审核这条 Finding",
+        "openExecution": "打开执行中心",
+        "inspectEvidence": "查看证据",
+        "candidateBoundary": "这是有证据支撑的上下文，不是可直接确认的 Finding。",
+        "reviewBoundary": "审核会打开精确 URL 与单条规范 Finding；支撑证据绝不会被批量确认。",
+        "confirmedBoundary": "这条 Finding 已经生成规范 Action。"
+      },
+      "columns": {
+        "cluster": "主题簇",
+        "role": "角色",
+        "urls": "URLs",
+        "keywords": "关键词",
+        "clicks": "点击量",
+        "openOpportunities": "开放机会",
+        "opportunity": "机会 / 目标",
+        "type": "类型",
+        "priority": "优先级",
+        "artifacts": "交付物",
+        "status": "状态"
+      },
+      "loading": "正在构建完整冻结视图…",
+      "loadError": "无法基于当前冻结审计构建这个视图。",
+      "retry": "重试",
+      "scopeMismatch": "读取期间审计版本发生变化。只有所有数据指向同一 Diagnostic Run 后才会显示结果。",
+      "searchScope": "搜索与筛选作用于该视图的完整冻结集合。",
+      "empty": {
+        "url": "没有匹配的 URL。",
+        "cluster": "没有匹配的主题簇。",
+        "opportunity": "没有匹配的机会。"
+      },
+      "select": {
+        "cluster": "选择一个主题簇，查看页面与需求覆盖。",
+        "opportunity": "选择一个机会，查看 Finding、目标与下一步决定。"
+      },
+      "counts": {
+        "urls": "{count} 个 URL",
+        "keywords": "{count} 个关键词",
+        "opportunities": "{count} 个机会",
+        "findings": "{count} 条 Finding",
+        "observedClicks": "{count} 个 URL 有观测"
+      }
+    },
     "portfolioFilters": {
       "pageType": "页面类型",
       "allPageTypes": "全部页面类型",
@@ -2285,7 +2420,7 @@
     "limitations": "限制说明",
     "sourceOriginalLimitation": "来源记录 · 保留原文",
     "searchLabel": "查找页面",
-    "searchPlaceholder": "搜索完整 URL、Domain 或路径",
+    "searchPlaceholder": "搜索 URL、页面标题、主题簇或机会",
     "searchAction": "搜索",
     "portfolioLabel": "URL 与机会列表",
     "columns": {

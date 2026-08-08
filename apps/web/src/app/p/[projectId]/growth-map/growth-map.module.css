@@ -7282,6 +7282,466 @@ a.competitorMonitorContentUrl:hover {
   gap: 8px;
 }
 
+.pageViewBand {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  margin: 16px 0 12px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--sf-surface-deep) 72%, var(--sf-surface));
+  border: 1px solid var(--sf-border);
+  border-radius: 14px;
+}
+
+.pageViewBand > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.pageViewBand > div:first-child > span {
+  color: var(--gm-ink);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.pageViewBand > div:first-child > small {
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pageViewTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+
+.pageViewTab {
+  display: flex;
+  min-width: 0;
+  min-height: 62px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 12px;
+  color: var(--sf-muted);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pageViewTab:hover {
+  color: var(--sf-fg);
+  background: color-mix(in srgb, var(--sf-surface) 72%, transparent);
+}
+
+.pageViewTab:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.pageViewTab strong {
+  color: inherit;
+  font-size: 14px;
+}
+
+.pageViewTab small {
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageViewTabActive,
+.pageViewTabActive:hover {
+  color: var(--gm-ink);
+  background: var(--sf-surface);
+  border-color: var(--sf-border-strong);
+  box-shadow: var(--sf-shadow-sm);
+}
+
+.groupedLedger {
+  container-name: none;
+}
+
+.opportunityLedgerHeader,
+.opportunityRowButton {
+  grid-template-columns:
+    minmax(220px, 2fr)
+    minmax(88px, 0.68fr)
+    minmax(128px, 0.9fr)
+    minmax(66px, 0.5fr)
+    minmax(132px, 0.9fr)
+    minmax(116px, 0.78fr);
+  min-width: 830px;
+}
+
+.clusterLedgerHeader,
+.clusterRowButton {
+  grid-template-columns:
+    minmax(210px, 1.85fr)
+    minmax(108px, 0.72fr)
+    minmax(70px, 0.5fr)
+    minmax(78px, 0.55fr)
+    minmax(112px, 0.78fr)
+    minmax(116px, 0.78fr);
+  min-width: 804px;
+}
+
+.pageViewStatus {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 9px;
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--sf-surface-deep);
+  border-radius: 999px;
+}
+
+.pageViewStatusreviewable {
+  color: var(--sf-coral-text);
+  background: var(--sf-coral-soft);
+}
+
+.pageViewStatuscandidate {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+}
+
+.pageViewStatusconfirmed {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+}
+
+.completeViewScope {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.compactRailSection {
+  display: grid;
+  gap: 9px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.compactRailSection > span {
+  color: var(--sf-coral-text);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.compactRailSection h3 {
+  margin: 0;
+  color: var(--gm-ink);
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.compactRailSection p,
+.compactRailSection > small {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.compactRailSection > small {
+  width: fit-content;
+  padding: 4px 7px;
+  font-family: var(--sf-font-mono);
+  background: var(--sf-surface-deep);
+  border-radius: 6px;
+}
+
+.compactRailSection .limitations {
+  margin: 0;
+}
+
+.compactRailList,
+.compactRailActions {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compactRailList li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 11px;
+  background: var(--sf-surface-deep);
+  border-radius: 9px;
+}
+
+.compactRailList strong {
+  color: var(--sf-fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compactRailList small {
+  color: var(--sf-muted);
+  font-size: 11px;
+}
+
+.compactRailActions button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  color: var(--sf-fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  background: var(--sf-surface-deep);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.compactRailActions button:hover {
+  color: var(--gm-ink);
+  border-color: var(--sf-border-strong);
+}
+
+.compactRailActions button:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.compactRailActions button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queryChipGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.queryChipGroups span {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 8px;
+  color: var(--sf-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--sf-surface-deep);
+  border-radius: 999px;
+}
+
+.nextDecision {
+  gap: 11px;
+  background: color-mix(in srgb, var(--gm-mint-wash) 45%, var(--sf-surface));
+}
+
+.nextDecision > a,
+.nextDecision > button {
+  margin-top: 2px;
+}
+
+.compactOpportunitySection {
+  display: grid;
+  gap: 13px;
+  margin-top: 18px;
+  padding: 20px;
+  border-top: 1px solid var(--sf-border);
+}
+
+.compactOpportunityHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compactOpportunityHeading > div {
+  min-width: 0;
+}
+
+.compactOpportunityHeading span {
+  color: var(--sf-coral-text);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compactOpportunityHeading h3 {
+  margin-top: 4px;
+  color: var(--gm-ink);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.compactOpportunityHeading > strong {
+  display: grid;
+  min-width: 29px;
+  height: 29px;
+  padding-inline: 7px;
+  place-items: center;
+  color: var(--sf-mint-text);
+  font-size: 13px;
+  background: var(--sf-mint-soft);
+  border-radius: 999px;
+}
+
+.compactOpportunityList {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compactOpportunityList button {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  padding: 13px 14px;
+  color: var(--sf-fg);
+  font: inherit;
+  text-align: left;
+  background: color-mix(in srgb, var(--sf-surface-deep) 62%, var(--sf-surface));
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.compactOpportunityList button:hover {
+  border-color: var(--sf-border-strong);
+  transform: translateY(-1px);
+}
+
+.compactOpportunityList button:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.compactOpportunityList button > strong {
+  color: var(--gm-ink);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.compactOpportunityList button > span:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.compactOpportunityMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.compactOpportunityMeta em {
+  font-style: normal;
+}
+
+.compactOpportunityMeta small {
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compactOpportunityEmpty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 13px 14px;
+  color: var(--sf-muted);
+  font-size: 13px;
+  background: var(--sf-surface-deep);
+  border-radius: 10px;
+}
+
+.fullDetailDisclosure {
+  margin: 0 20px 20px;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.fullDetailDisclosure > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.fullDetailDisclosure > summary > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sf-fg);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.fullDetailDisclosure > summary > small {
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.fullDetailDisclosure[open] > summary {
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.fullDetailDisclosure .detailSection {
+  padding-inline: 16px;
+}
+
+.fullDetailDisclosure .comparisonStrip,
+.fullDetailDisclosure .identityLedger {
+  margin-inline: 16px;
+}
+
+.fullDetailDisclosure .detailFooter {
+  border-radius: 0;
+}
+
 .objectTabCount {
   margin-left: 7px;
   padding: 1px 7px;
@@ -7326,6 +7786,30 @@ a.competitorMonitorContentUrl:hover {
 }
 
 @media (max-width: 560px) {
+  .pageViewBand {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pageViewTabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pageViewTab small {
+    white-space: normal;
+  }
+  .compactRailSection {
+    padding-inline: 16px;
+  }
+  .compactOpportunitySection {
+    padding-inline: 16px;
+  }
+  .fullDetailDisclosure {
+    margin-inline: 16px;
+  }
+  .fullDetailDisclosure > summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fullDetailDisclosure > summary > small {
+    text-align: left;
+  }
   .portfolioToolGroup {
     flex-wrap: wrap;
   }
@@ -7339,6 +7823,12 @@ a.competitorMonitorContentUrl:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .compactOpportunityList button {
+    transition: none;
+  }
+  .compactOpportunityList button:hover {
+    transform: none;
+  }
   .detailPrimaryActionLink {
     transition: none;
   }

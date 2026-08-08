@@ -538,6 +538,20 @@ function trackGrowthMapRscRequests(page: Page): () => number {
   return () => count;
 }
 
+async function selectUrlPageView(page: Page): Promise<void> {
+  const tab = page.getByRole("tab", { name: /^By URL/ });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
+async function openFullUrlDetail(detail: Locator): Promise<void> {
+  const disclosure = detail.locator("[data-full-evidence-disclosure]");
+  if ((await disclosure.getAttribute("open")) === null) {
+    await disclosure.locator(":scope > summary").click();
+  }
+  await expect(disclosure).toHaveAttribute("open", "");
+}
+
 async function rapidObjectModeRoundTrip(page: Page): Promise<void> {
   const pages = objectModeButton(page, "Pages & opportunities");
   const keywords = objectModeButton(page, "Keyword library");
@@ -560,6 +574,7 @@ async function rapidObjectModeRoundTrip(page: Page): Promise<void> {
       message: "rapid object-tab round trip did not keep Pages as latest intent",
     })
     .toBe("pages");
+  await selectUrlPageView(page);
   await expect(
     page.getByRole("list", { name: "URLs and opportunities" }),
   ).toBeVisible();
@@ -581,6 +596,7 @@ async function rapidUrlSelectionRoundTrip(input: {
   await expect(rowA).toHaveAttribute("aria-pressed", "true");
   await expect(rowB).toHaveAttribute("aria-pressed", "false");
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
+  await openFullUrlDetail(detail);
   await expect(
     detail.getByTitle(pageA.sitePageId, { exact: true }),
   ).toBeVisible();
@@ -880,27 +896,32 @@ async function assertCompetitorLibraryTraceability(input: {
 
 async function assertUrlPortfolioPresentation(input: {
   readonly page: Page;
-  readonly expectedCount: number;
+  readonly expectedFrozenUrlCount: number;
 }): Promise<void> {
-  const { page, expectedCount } = input;
+  const { page, expectedFrozenUrlCount } = input;
   const summary = page.getByRole("region", {
-    name: "Loaded-scope summary",
+    name: "Growth Map scope summary",
   });
   await expect(summary).toBeVisible();
   await expect(summary.locator(":scope > div")).toHaveCount(4);
-  const loadedUrls = summary
-    .getByText("Loaded URLs", { exact: true })
+  const collectedPages = summary
+    .getByText("Collected pages", { exact: true })
     .locator("xpath=parent::*[1]");
-  await expect(loadedUrls.locator(":scope > strong")).toHaveText(
-    String(expectedCount),
+  await expect(collectedPages.locator(":scope > strong")).toHaveText(
+    String(expectedFrozenUrlCount),
   );
 
   await expect(
-    page.getByRole("combobox", { name: "Page type filter" }),
+    page.getByRole("combobox", { name: "Page type" }),
   ).toBeVisible();
+  const moreFilters = page.getByRole("button", { name: "More filters" });
+  await moreFilters.click();
+  await expect(moreFilters).toHaveAttribute("aria-expanded", "true");
   await expect(
-    page.getByRole("combobox", { name: "Priority filter" }),
+    page.getByRole("combobox", { name: "Priority" }),
   ).toBeVisible();
+  await moreFilters.click();
+  await expect(moreFilters).toHaveAttribute("aria-expanded", "false");
 }
 
 function exactPortfolioRow(page: Page, normalizedUrl: string): Locator {
@@ -1006,6 +1027,7 @@ async function assertExactSelection(input: {
     "title",
     expected.normalizedUrl,
   );
+  await openFullUrlDetail(detail);
   const detailTitle = detailHeading.locator("xpath=following-sibling::p[1]");
   await expect(detailTitle).toHaveText(
     expected.title ?? "Page title not collected",
@@ -1060,9 +1082,7 @@ async function assertExactSelection(input: {
     detail.getByTitle(otherFinding.findingId, { exact: true }),
   ).toHaveCount(0);
 
-  const traceability = detail.locator("details").filter({
-    hasText: "Inspect data provenance",
-  });
+  const traceability = detail.locator("[data-identity-ledger]");
   if ((await traceability.getAttribute("open")) === null) {
     await traceability.locator("summary").click();
   }
@@ -1133,6 +1153,7 @@ async function switchObjectMode(
   await expect
     .poll(() => new URL(page.url()).searchParams.get("object"))
     .toBe(object);
+  if (object === "pages") await selectUrlPageView(page);
 }
 
 test.describe.serial("real Growth Map selected-page identity", () => {
@@ -1291,9 +1312,10 @@ test.describe.serial("real Growth Map selected-page identity", () => {
         name: "Find the next growth opportunity, page by real page.",
       }),
     ).toBeVisible();
+    await selectUrlPageView(page);
     await assertUrlPortfolioPresentation({
       page,
-      expectedCount: portfolio.data.length,
+      expectedFrozenUrlCount: portfolio.meta.summary.urlCount,
     });
     const growthMapRscRequestCount = trackGrowthMapRscRequests(page);
     await switchObjectMode(page, "Keyword library", "keywords");

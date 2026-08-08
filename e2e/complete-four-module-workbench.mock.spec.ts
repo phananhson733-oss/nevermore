@@ -12,6 +12,7 @@ import {
   GrowthMapKeywordRankHistory,
 } from "../packages/contracts/src/index.ts";
 import {
+  E2E_CANONICAL_FINDING_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_PROJECT_ID,
@@ -1402,6 +1403,17 @@ async function captureCurrentViewport(page: Page, name: string): Promise<void> {
   });
 }
 
+async function openFullEvidenceAndReview(page: Page): Promise<void> {
+  const disclosure = page.locator("[data-full-evidence-disclosure]");
+  await expect(disclosure).toBeVisible();
+  if ((await disclosure.getAttribute("open")) === null) {
+    await page
+      .locator("[data-full-evidence-disclosure] > summary")
+      .click();
+  }
+  await expect(disclosure).toHaveAttribute("open", "");
+}
+
 test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离验收", async ({
   page,
 }) => {
@@ -1432,6 +1444,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await page.goto(
       `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
     );
+    await openFullEvidenceAndReview(page);
     const objectNavigation = page.getByRole("navigation", {
       name: "增长地图对象",
     });
@@ -1451,12 +1464,18 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     ).toBeVisible();
     await capture(page, "02-growth-map-pages-onboarding");
 
-    const canonicalFinding = page.getByText(
-      "客户入职页面的 canonical URL 存在冲突。",
-    );
-    const contentFinding = page.getByText(
-      "客户入职页面存在可量化的内容覆盖缺口。",
-    );
+    const canonicalFinding = page
+      .locator(`[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`)
+      .getByRole("heading", {
+      name: "客户入职页面的 canonical URL 存在冲突。",
+      exact: true,
+    });
+    const contentFinding = page
+      .locator(`[data-finding-card="${E2E_CONTENT_FINDING_ID}"]`)
+      .getByRole("heading", {
+      name: "客户入职页面存在可量化的内容覆盖缺口。",
+      exact: true,
+    });
     await expect(canonicalFinding).toBeVisible();
     await expect(contentFinding).toBeVisible();
     await contentFinding.scrollIntoViewIfNeeded();
@@ -1481,6 +1500,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       .filter({ hasText: "/pricing" })
       .first()
       .click();
+    await openFullEvidenceAndReview(page);
     await expect(page).toHaveURL(
       new RegExp(`selectedSitePageId=${E2E_SECOND_SITE_PAGE_ID}`),
     );
@@ -1499,6 +1519,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       .filter({ hasText: "/customer-onboarding" })
       .first()
       .click();
+    await openFullEvidenceAndReview(page);
     await expect(linkMap).toHaveAttribute(
       "data-site-page-id",
       E2E_ONBOARDING_SITE_PAGE_ID,

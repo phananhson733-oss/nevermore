@@ -18,6 +18,7 @@ import type {
   GrowthMapKeywordRankProvider,
   GrowthMapKeywordRelation,
   GrowthMapKeywordTextMetric,
+  GrowthOpportunity,
   GrowthMapUrlPortfolioItem,
   GrowthMapUrlFinding,
   GrowthMapUrlIdentitySource,
@@ -61,6 +62,14 @@ export const GROWTH_MAP_OBJECT_MODES = [
 ] as const;
 
 export type GrowthMapObjectMode = (typeof GROWTH_MAP_OBJECT_MODES)[number];
+
+export const GROWTH_MAP_PAGE_VIEWS = [
+  "url",
+  "cluster",
+  "opportunity",
+] as const;
+
+export type GrowthMapPageView = (typeof GROWTH_MAP_PAGE_VIEWS)[number];
 
 export const GROWTH_MAP_DETAIL_STATES = [
   "audit_evidence",
@@ -264,6 +273,35 @@ export function normalizeGrowthMapObjectMode(
     : "pages";
 }
 
+export function normalizeGrowthMapPageView(
+  value: string | null | undefined,
+): GrowthMapPageView {
+  return GROWTH_MAP_PAGE_VIEWS.includes(value as GrowthMapPageView)
+    ? (value as GrowthMapPageView)
+    : "opportunity";
+}
+
+export function resolveGrowthMapPageView(
+  value: string | null | undefined,
+  selections: {
+    readonly selectedSitePageId?: string | null | undefined;
+    readonly selectedClusterId?: string | null | undefined;
+    readonly selectedOpportunityId?: string | null | undefined;
+    readonly selectedFindingId?: string | null | undefined;
+  },
+): GrowthMapPageView {
+  if (value != null) return normalizeGrowthMapPageView(value);
+  if (
+    selections.selectedSitePageId != null ||
+    selections.selectedFindingId != null
+  ) {
+    return "url";
+  }
+  if (selections.selectedClusterId != null) return "cluster";
+  if (selections.selectedOpportunityId != null) return "opportunity";
+  return "opportunity";
+}
+
 /**
  * A selected detail must always correspond to a row in the visible bounded
  * page. Stale/filter-mismatched URL state resolves to the first visible row.
@@ -279,6 +317,416 @@ export function resolveVisibleSitePageSelection(
     return requestedSitePageId;
   }
   return visibleSitePageIds[0] ?? null;
+}
+
+function resolveVisibleGrowthMapPageViewSelection(
+  requestedId: string | null | undefined,
+  visibleIds: readonly string[],
+): string | null {
+  return requestedId != null && visibleIds.includes(requestedId)
+    ? requestedId
+    : (visibleIds[0] ?? null);
+}
+
+export function resolveVisibleGrowthMapClusterSelection(
+  requestedClusterId: string | null | undefined,
+  visibleClusterIds: readonly string[],
+): string | null {
+  return resolveVisibleGrowthMapPageViewSelection(
+    requestedClusterId,
+    visibleClusterIds,
+  );
+}
+
+export function resolveVisibleGrowthMapOpportunitySelection(
+  requestedOpportunityId: string | null | undefined,
+  visibleOpportunityIds: readonly string[],
+): string | null {
+  return resolveVisibleGrowthMapPageViewSelection(
+    requestedOpportunityId,
+    visibleOpportunityIds,
+  );
+}
+
+export type GrowthMapClusterReadState = "loading" | "error" | "ready";
+
+/**
+ * Topic authority must be readable before the cluster projection is shown.
+ * A transport failure is not equivalent to an absent confirmed Topic Model:
+ * falling through would relabel every raw cluster key as a legacy cluster.
+ */
+export function growthMapClusterReadState(input: {
+  readonly workspacePending: boolean;
+  readonly workspaceError: boolean;
+  readonly insightsPending: boolean;
+  readonly insightsError: boolean;
+}): GrowthMapClusterReadState {
+  if (input.workspaceError || input.insightsError) return "error";
+  if (input.workspacePending || input.insightsPending) return "loading";
+  return "ready";
+}
+
+type GrowthMapAvailableUrlPriority = Extract<
+  GrowthMapUrlPortfolioItem["priority"],
+  { readonly availability: "available" }
+>;
+
+export type GrowthMapOpportunityPriority =
+  | {
+      readonly availability: "available";
+      readonly value: GrowthMapAvailableUrlPriority["value"];
+      readonly limitation: null;
+    }
+  | {
+      readonly availability: "unavailable";
+      readonly value: null;
+      readonly limitation: string;
+    };
+
+export interface GrowthMapOpportunityViewItem {
+  readonly id: string;
+  readonly opportunity: GrowthOpportunity;
+  readonly targetPages: readonly GrowthMapUrlPortfolioItem[];
+  readonly priority: GrowthMapOpportunityPriority;
+}
+
+export function growthMapOpportunitySelectionId(
+  opportunity: GrowthOpportunity,
+): string {
+  return opportunity.readiness === "candidate"
+    ? opportunity.opportunityKey
+    : opportunity.primaryFindingId;
+}
+
+function growthMapOpportunityTargetPages(
+  opportunity: GrowthOpportunity,
+  portfolio: readonly GrowthMapUrlPortfolioItem[],
+): readonly GrowthMapUrlPortfolioItem[] {
+  const primaryFindingId =
+    opportunity.readiness === "candidate"
+      ? null
+      : opportunity.primaryFindingId;
+  const ownedAsset = opportunity.currentOwnedAsset;
+  return portfolio.filter(
+    (page) =>
+      (primaryFindingId !== null &&
+        page.findingIds.includes(primaryFindingId)) ||
+      (ownedAsset !== null &&
+        (page.sitePageId === ownedAsset.sitePageId ||
+          page.normalizedUrl === ownedAsset.url)),
+  );
+}
+
+function growthMapOpportunityPriority(
+  opportunity: GrowthOpportunity,
+  targetPages: readonly GrowthMapUrlPortfolioItem[],
+): GrowthMapOpportunityPriority {
+  if (opportunity.readiness === "candidate") {
+    return {
+      availability: "unavailable",
+      value: null,
+      limitation:
+        "Candidate Opportunities do not have one primary Finding priority basis.",
+    };
+  }
+  if (targetPages.length === 0) {
+    return {
+      availability: "unavailable",
+      value: null,
+      limitation: "No related URL carries the primary Finding priority basis.",
+    };
+  }
+
+  const primaryFindingId = opportunity.primaryFindingId;
+  const exactPriorities = targetPages.flatMap((page) => {
+    const priority = page.priority;
+    if (
+      priority.availability !== "available" ||
+      priority.basis.findingIds.length !== 1 ||
+      priority.basis.findingIds[0] !== primaryFindingId
+    ) {
+      return [];
+    }
+    return [priority.value];
+  });
+  if (
+    exactPriorities.length !== targetPages.length ||
+    exactPriorities.some((value) => value !== exactPriorities[0])
+  ) {
+    return {
+      availability: "unavailable",
+      value: null,
+      limitation:
+        "Related URLs do not share one exact primary-Finding priority basis.",
+    };
+  }
+
+  return {
+    availability: "available",
+    value: exactPriorities[0]!,
+    limitation: null,
+  };
+}
+
+const OPPORTUNITY_PRIORITY_RANK: Readonly<
+  Record<GrowthMapAvailableUrlPriority["value"], number>
+> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+const OPPORTUNITY_READINESS_RANK: Readonly<
+  Record<GrowthOpportunity["readiness"], number>
+> = {
+  reviewable: 0,
+  candidate: 1,
+  confirmed: 2,
+};
+
+export function buildGrowthMapOpportunityViewItems(
+  opportunities: readonly GrowthOpportunity[],
+  portfolio: readonly GrowthMapUrlPortfolioItem[],
+): readonly GrowthMapOpportunityViewItem[] {
+  return opportunities
+    .map((opportunity) => {
+      const targetPages = growthMapOpportunityTargetPages(
+        opportunity,
+        portfolio,
+      );
+      return {
+        id: growthMapOpportunitySelectionId(opportunity),
+        opportunity,
+        targetPages,
+        priority: growthMapOpportunityPriority(opportunity, targetPages),
+      } satisfies GrowthMapOpportunityViewItem;
+    })
+    .sort((left, right) => {
+      const leftPriority =
+        left.priority.availability === "available"
+          ? OPPORTUNITY_PRIORITY_RANK[left.priority.value]
+          : Number.POSITIVE_INFINITY;
+      const rightPriority =
+        right.priority.availability === "available"
+          ? OPPORTUNITY_PRIORITY_RANK[right.priority.value]
+          : Number.POSITIVE_INFINITY;
+      return (
+        leftPriority - rightPriority ||
+        OPPORTUNITY_READINESS_RANK[left.opportunity.readiness] -
+          OPPORTUNITY_READINESS_RANK[right.opportunity.readiness] ||
+        left.opportunity.title.localeCompare(right.opportunity.title) ||
+        left.id.localeCompare(right.id)
+      );
+    });
+}
+
+export type GrowthMapClusterRole =
+  | "root"
+  | "pillar"
+  | "support"
+  | "unmapped";
+
+export type GrowthMapClusterClickCoverage =
+  | "available"
+  | "partial"
+  | "unavailable";
+
+export interface GrowthMapClusterViewItem {
+  readonly id: string;
+  readonly topicNodeId: string | null;
+  readonly label: string | null;
+  readonly clusterKeys: readonly string[];
+  readonly role: GrowthMapClusterRole;
+  readonly pages: readonly GrowthMapUrlPortfolioItem[];
+  readonly urlCount: number;
+  readonly keywordCount: number | null;
+  readonly observedClicks: number | null;
+  readonly observedClickUrlCount: number;
+  readonly clickCoverage: GrowthMapClusterClickCoverage;
+  readonly opportunities: readonly GrowthMapOpportunityViewItem[];
+  readonly openOpportunityCount: number;
+}
+
+interface MutableGrowthMapClusterViewItem {
+  readonly id: string;
+  readonly topicNodeId: string | null;
+  readonly label: string | null;
+  readonly clusterKeys: Set<string>;
+  readonly role: GrowthMapClusterRole;
+  readonly pages: GrowthMapUrlPortfolioItem[];
+  readonly topicTargetRefs: Set<string>;
+}
+
+function unmappedGrowthMapClusterId(clusterKey: string | null): string {
+  return `unmapped:${clusterKey ?? ""}`;
+}
+
+function growthMapGscClicks(
+  page: GrowthMapUrlPortfolioItem,
+): number | null {
+  const observations = page.metricObservations.filter(
+    (observation) =>
+      observation.provider === "gsc" &&
+      observation.metricKey === "gsc.page.v1" &&
+      observation.valueSource.kind === "value_json" &&
+      observation.valueSource.pointer === "/current28d/clicks" &&
+      observation.availability === "available" &&
+      observation.value !== null,
+  );
+  return observations.length === 1 ? observations[0]!.value : null;
+}
+
+function isOpenGrowthMapOpportunity(
+  opportunity: GrowthOpportunity,
+): boolean {
+  return (
+    opportunity.readiness !== "confirmed" ||
+    (opportunity.action.status !== "done" &&
+      opportunity.action.status !== "dismissed")
+  );
+}
+
+export function buildGrowthMapClusterViewItems(
+  portfolio: readonly GrowthMapUrlPortfolioItem[],
+  opportunities: readonly GrowthOpportunity[],
+  workspace: TopicModelWorkspaceProjection | null,
+  insights: GrowthMapTopicModelInsights | null,
+): readonly GrowthMapClusterViewItem[] {
+  const confirmed = workspace?.latestConfirmed ?? null;
+  const activeNodes =
+    confirmed?.nodes.filter((node) => node.lifecycleState === "active") ?? [];
+  const activeNodeIds = new Set(activeNodes.map((node) => node.topicNodeId));
+  const clusters = new Map<string, MutableGrowthMapClusterViewItem>();
+  const nodeIdByAlias = new Map<string, string>();
+  const nodeIdByUniqueLabel = new Map<string, string | null>();
+
+  for (const node of activeNodes) {
+    const existing = nodeIdByUniqueLabel.get(node.label);
+    nodeIdByUniqueLabel.set(
+      node.label,
+      existing === undefined ? node.topicNodeId : null,
+    );
+    clusters.set(node.topicNodeId, {
+      id: node.topicNodeId,
+      topicNodeId: node.topicNodeId,
+      label: node.label,
+      clusterKeys: new Set<string>(),
+      role:
+        node.topicNodeId === confirmed?.rootTopicNodeId
+          ? "root"
+          : node.parentTopicNodeId === confirmed?.rootTopicNodeId
+            ? "pillar"
+            : "support",
+      pages: [],
+      topicTargetRefs: new Set([node.label]),
+    });
+  }
+  for (const alias of confirmed?.aliases ?? []) {
+    if (!alias.isCurrent || !activeNodeIds.has(alias.topicNodeId)) continue;
+    nodeIdByAlias.set(alias.clusterKey, alias.topicNodeId);
+    clusters.get(alias.topicNodeId)?.topicTargetRefs.add(alias.clusterKey);
+  }
+
+  for (const page of portfolio) {
+    const clusterKey = page.clusterKey;
+    const labelMatch =
+      clusterKey === null ? undefined : nodeIdByUniqueLabel.get(clusterKey);
+    const topicNodeId =
+      clusterKey === null
+        ? null
+        : (nodeIdByAlias.get(clusterKey) ?? labelMatch ?? null);
+    const id =
+      topicNodeId === null
+        ? unmappedGrowthMapClusterId(clusterKey)
+        : topicNodeId;
+    let cluster = clusters.get(id);
+    if (cluster === undefined) {
+      cluster = {
+        id,
+        topicNodeId: null,
+        label: clusterKey,
+        clusterKeys: new Set<string>(),
+        role: "unmapped",
+        pages: [],
+        topicTargetRefs: new Set(clusterKey === null ? [] : [clusterKey]),
+      };
+      clusters.set(id, cluster);
+    }
+    if (clusterKey !== null) cluster.clusterKeys.add(clusterKey);
+    cluster.pages.push(page);
+  }
+
+  const opportunityItems = buildGrowthMapOpportunityViewItems(
+    opportunities,
+    portfolio,
+  );
+  const currentInsightByNodeId =
+    confirmed !== null &&
+    insights?.topicModelRevision === confirmed.topicModelRevision
+      ? new Map(insights.nodes.map((node) => [node.topicNodeId, node]))
+      : new Map<string, GrowthMapTopicNodeInsight>();
+
+  return [...clusters.values()]
+    .map((cluster) => {
+      const pageIds = new Set(cluster.pages.map((page) => page.sitePageId));
+      const relatedOpportunities = opportunityItems.filter(
+        (item) =>
+          (item.opportunity.primaryTarget === "topic" &&
+            cluster.topicTargetRefs.has(item.opportunity.targetRef)) ||
+          item.targetPages.some((page) => pageIds.has(page.sitePageId)),
+      );
+      const clicks = cluster.pages
+        .map(growthMapGscClicks)
+        .filter((value): value is number => value !== null);
+      const observedClickUrlCount = clicks.length;
+      const clickCoverage: GrowthMapClusterClickCoverage =
+        observedClickUrlCount === 0
+          ? "unavailable"
+          : observedClickUrlCount === cluster.pages.length
+            ? "available"
+            : "partial";
+      const insight =
+        cluster.topicNodeId === null
+          ? null
+          : (currentInsightByNodeId.get(cluster.topicNodeId) ?? null);
+      return {
+        id: cluster.id,
+        topicNodeId: cluster.topicNodeId,
+        label: cluster.label,
+        clusterKeys: [...cluster.clusterKeys].sort((left, right) =>
+          left.localeCompare(right),
+        ),
+        role: cluster.role,
+        pages: cluster.pages
+          .slice()
+          .sort(
+            (left, right) =>
+              left.normalizedUrl.localeCompare(right.normalizedUrl) ||
+              left.sitePageId.localeCompare(right.sitePageId),
+          ),
+        urlCount: cluster.pages.length,
+        keywordCount: insight?.keywordCount ?? null,
+        observedClicks:
+          observedClickUrlCount === 0
+            ? null
+            : clicks.reduce((total, value) => total + value, 0),
+        observedClickUrlCount,
+        clickCoverage,
+        opportunities: relatedOpportunities,
+        openOpportunityCount: relatedOpportunities.filter(
+          (item) => isOpenGrowthMapOpportunity(item.opportunity),
+        ).length,
+      } satisfies GrowthMapClusterViewItem;
+    })
+    .sort(
+      (left, right) =>
+        Number(right.openOpportunityCount > 0) -
+          Number(left.openOpportunityCount > 0) ||
+        right.urlCount - left.urlCount ||
+        (left.label ?? "").localeCompare(right.label ?? "") ||
+        left.id.localeCompare(right.id),
+    );
 }
 
 /** A Keyword detail can only be driven by an entity on the visible cursor page. */
@@ -1371,7 +1819,10 @@ export function resolveVisibleSitePageSelectionForFinding(
 
 interface GrowthMapLocationPatch {
   readonly mode?: GrowthMapObjectMode;
+  readonly pageView?: GrowthMapPageView | null;
   readonly selectedSitePageId?: string | null;
+  readonly selectedClusterId?: string | null;
+  readonly selectedOpportunityId?: string | null;
   readonly selectedKeywordId?: string | null;
   readonly selectedCompetitorId?: string | null;
   readonly selectedFindingId?: string | null;
@@ -1396,7 +1847,10 @@ export function growthMapLocationHref(
     if (currentMode !== patch.mode) {
       params.delete("q");
       params.delete("cursor");
+      params.delete("view");
       params.delete("selectedSitePageId");
+      params.delete("selectedClusterId");
+      params.delete("selectedOpportunityId");
       params.delete("selectedKeywordId");
       params.delete("selectedCompetitorId");
       params.delete("findingId");
@@ -1407,7 +1861,10 @@ export function growthMapLocationHref(
 
     if (patch.mode !== "pages") {
       params.delete("q");
+      params.delete("view");
       params.delete("selectedSitePageId");
+      params.delete("selectedClusterId");
+      params.delete("selectedOpportunityId");
       params.delete("findingId");
     }
     if (patch.mode === "pages") {
@@ -1426,11 +1883,54 @@ export function growthMapLocationHref(
     }
   }
 
+  const resultingMode = normalizeGrowthMapObjectMode(params.get("object"));
+  if (resultingMode !== "pages") {
+    params.delete("view");
+    params.delete("selectedSitePageId");
+    params.delete("selectedClusterId");
+    params.delete("selectedOpportunityId");
+    params.delete("findingId");
+  } else if (patch.pageView !== undefined) {
+    const pageView = normalizeGrowthMapPageView(patch.pageView);
+    const currentPageViewParam = params.get("view");
+    params.set("view", pageView);
+    if (currentPageViewParam !== pageView) params.delete("cursor");
+
+    if (pageView === "url") {
+      params.delete("selectedClusterId");
+      params.delete("selectedOpportunityId");
+    } else if (pageView === "cluster") {
+      params.delete("selectedSitePageId");
+      params.delete("selectedOpportunityId");
+      params.delete("findingId");
+    } else {
+      params.delete("selectedSitePageId");
+      params.delete("selectedClusterId");
+      params.delete("findingId");
+    }
+  }
+
   if (patch.selectedSitePageId !== undefined) {
     if (patch.selectedSitePageId === null) {
       params.delete("selectedSitePageId");
     } else {
       params.set("selectedSitePageId", patch.selectedSitePageId);
+    }
+  }
+
+  if (patch.selectedClusterId !== undefined) {
+    if (patch.selectedClusterId === null) {
+      params.delete("selectedClusterId");
+    } else {
+      params.set("selectedClusterId", patch.selectedClusterId);
+    }
+  }
+
+  if (patch.selectedOpportunityId !== undefined) {
+    if (patch.selectedOpportunityId === null) {
+      params.delete("selectedOpportunityId");
+    } else {
+      params.set("selectedOpportunityId", patch.selectedOpportunityId);
     }
   }
 
@@ -1464,6 +1964,28 @@ export function growthMapLocationHref(
   if (patch.cursor !== undefined) {
     if (patch.cursor === null || patch.cursor === "") params.delete("cursor");
     else params.set("cursor", patch.cursor);
+  }
+
+  if (resultingMode !== "pages") {
+    params.delete("view");
+    params.delete("selectedSitePageId");
+    params.delete("selectedClusterId");
+    params.delete("selectedOpportunityId");
+    params.delete("findingId");
+  } else if (patch.pageView !== undefined) {
+    const pageView = normalizeGrowthMapPageView(patch.pageView);
+    if (pageView === "url") {
+      params.delete("selectedClusterId");
+      params.delete("selectedOpportunityId");
+    } else if (pageView === "cluster") {
+      params.delete("selectedSitePageId");
+      params.delete("selectedOpportunityId");
+      params.delete("findingId");
+    } else {
+      params.delete("selectedSitePageId");
+      params.delete("selectedClusterId");
+      params.delete("findingId");
+    }
   }
 
   const query = params.toString();

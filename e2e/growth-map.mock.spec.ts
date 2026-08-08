@@ -4,6 +4,7 @@ import {
   E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_CTR_FINDING_ID,
+  E2E_GROWTH_MAP_TOPIC_NODE_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_PROJECT_ID,
   installGrowthVerticalApi,
@@ -11,18 +12,16 @@ import {
 } from "./mock-api.ts";
 
 /**
- * Task 6 Step 5 mock E2E. Drives the four-entry Growth Map shell over a stable
- * in-browser audit projection: land Overview, open Growth Map, inspect the
- * TECH-CANONICAL-002 Audit Evidence (which exposes no Confirm control), switch
- * to Opportunity Review, confirm only the canonical Finding, and prove that one
- * canonical Action with one template-fixed technical ticket appears in
- * Execution while the related CTR and content Opportunities stay unconfirmed.
+ * Growth Map mock E2E. The default Pages and opportunities mode starts from the
+ * complete frozen Opportunity projection, the same URL set can be regrouped by
+ * stable Topic Node, and the URL rail stays compact until its evidence/review
+ * disclosure is explicitly opened. The canonical review walkthrough still
+ * proves one Finding -> one Action -> one template-fixed technical ticket.
  */
 
 const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
 const NAV_LABEL = "Project sections";
-const auditEvidencePanel = '[data-detail-panel="audit-evidence"]';
-const opportunityReviewPanel = '[data-detail-panel="opportunity-review"]';
+const fullEvidencePanel = '[data-detail-panel="full-evidence-and-review"]';
 
 async function useEnglishUi(page: Page): Promise<void> {
   await page
@@ -106,12 +105,17 @@ async function blockingAxeViolations(
 async function openOnboardingDetail(page: Page): Promise<void> {
   await navLink(page, 1).click();
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
+  const urlTab = page.getByRole("tab", { name: /^By URL/ });
+  await urlTab.click();
+  await expect(urlTab).toHaveAttribute("aria-selected", "true");
   await page
+    .locator(`[data-growth-map-url-row="${E2E_ONBOARDING_SITE_PAGE_ID}"]`)
     .getByRole("button")
-    .filter({ hasText: "/customer-onboarding" })
     .first()
     .click();
-  await expect(page.locator(auditEvidencePanel)).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Selected URL detail" }),
+  ).toBeVisible();
 }
 
 let api: GrowthVerticalApiState;
@@ -119,6 +123,212 @@ let api: GrowthVerticalApiState;
 test.beforeEach(async ({ page }) => {
   await useEnglishUi(page);
   api = await installGrowthVerticalApi(page);
+});
+
+test("defaults to Opportunity and switches through stable cluster and compact URL views", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const tabs = page.getByRole("tablist", {
+    name: "Pages and opportunities view",
+  });
+  const opportunityTab = tabs.getByRole("tab", { name: /^By opportunity/ });
+  const clusterTab = tabs.getByRole("tab", { name: /^By topic cluster/ });
+  const urlTab = tabs.getByRole("tab", { name: /^By URL/ });
+
+  await expect(page).toHaveURL(/(?:\?|&)view=opportunity(?:&|$)/);
+  await expect(opportunityTab).toHaveAttribute("aria-selected", "true");
+  const opportunityView = page.locator('[data-page-view="opportunity"]');
+  await expect(opportunityView).toBeVisible();
+  await expect(
+    opportunityView.locator("[data-growth-map-opportunity-row]"),
+  ).toHaveCount(3);
+  await expect
+    .poll(() => [...new Set(api.completeUrlPageReads)])
+    .toEqual([null, "urls-opaque-page-2"]);
+  await expect
+    .poll(() => [...new Set(api.completeOpportunityPageReads)])
+    .toEqual([null, "opportunities-opaque-page-2"]);
+  for (const tab of [opportunityTab, clusterTab, urlTab]) {
+    await expect(tab).toHaveAttribute(
+      "aria-controls",
+      "growth-map-page-view-panel",
+    );
+  }
+  await expect(page.locator("#growth-map-page-view-panel")).toHaveCount(1);
+
+  const opportunityDetail = opportunityView.getByRole("complementary", {
+    name: "Selected growth-opportunity detail",
+  });
+  await expect(opportunityDetail).toBeVisible();
+  for (const section of [
+    "Primary Finding",
+    "Supporting evidence",
+    "Target pages",
+    "Coverage and limitations",
+    "Execution output",
+    "Next decision",
+  ]) {
+    await expect(
+      opportunityDetail.locator("section > span").filter({ hasText: section }),
+    ).toBeVisible();
+  }
+  await expect(opportunityDetail.locator("[data-finding-card]")).toHaveCount(0);
+
+  await clusterTab.click();
+  await expect(clusterTab).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/(?:\?|&)view=cluster(?:&|$)/);
+  const clusterView = page.locator('[data-page-view="cluster"]');
+  await expect(clusterView).toBeVisible();
+  await expect(
+    clusterView.locator("[data-growth-map-cluster-row]"),
+  ).toHaveCount(1);
+  await expect(clusterView.getByText("2 URLs", { exact: false })).toBeVisible();
+  await expect(clusterView.getByText("Customer onboarding").first()).toBeVisible();
+  await expect(clusterView.getByText("Root topic").first()).toBeVisible();
+
+  const clusterDetail = clusterView.getByRole("complementary", {
+    name: "Selected topic-cluster detail",
+  });
+  await expect(clusterDetail).toBeVisible();
+  for (const section of [
+    "Existing pages and roles",
+    "Demand coverage",
+    "Coverage gap",
+    "Highest-priority opportunity",
+  ]) {
+    await expect(
+      clusterDetail.locator("section > span").filter({ hasText: section }),
+    ).toBeVisible();
+  }
+  await expect(
+    clusterDetail.getByText("Customer onboarding software", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    clusterDetail.getByText("How do I automate customer onboarding?", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await urlTab.click();
+  await expect(urlTab).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/(?:\?|&)view=url(?:&|$)/);
+  await expect(page.locator("[data-growth-map-url-row]")).toHaveCount(2);
+  await page
+    .locator(`[data-growth-map-url-row="${E2E_ONBOARDING_SITE_PAGE_ID}"]`)
+    .getByRole("button")
+    .first()
+    .click();
+
+  const urlDetail = page.getByRole("complementary", {
+    name: "Selected URL detail",
+  });
+  await expect(urlDetail.getByText("Current issues and opportunities")).toBeVisible();
+  await expect(urlDetail.locator("[data-compact-finding]")).toHaveCount(3);
+  await expect(
+    urlDetail.getByText("Full evidence and review", { exact: true }),
+  ).toBeVisible();
+  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
+});
+
+test("keeps Topic clusters hidden when confirmed Topic reads fail", async ({
+  page,
+}) => {
+  api.topicModelReadsFail = true;
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map?view=cluster`);
+
+  await expect(
+    page.getByText(
+      "The confirmed Topic structure could not be read, so clusters stay hidden instead of being relabeled as legacy data.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(0);
+  await expect(page.getByText("Legacy cluster", { exact: true })).toHaveCount(0);
+
+  api.topicModelReadsFail = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(1);
+  await expect(page.getByText("Customer onboarding").first()).toBeVisible();
+});
+
+test("clears a view-specific search before drilling to the exact URL", async ({
+  page,
+}) => {
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const search = page.getByRole("search");
+  await search.getByRole("searchbox", { name: "Find a page" }).fill("canonical");
+  await search.getByRole("button", { name: "Search" }).click();
+  await expect(
+    page.locator("[data-growth-map-opportunity-row]"),
+  ).toHaveCount(1);
+
+  const detail = page.locator(
+    `[data-opportunity-detail="${E2E_CANONICAL_FINDING_ID}"]`,
+  );
+  await expect(detail).toBeVisible();
+  await detail.getByRole("button", { name: "/customer-onboarding" }).click();
+
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("q"))
+    .toBeNull();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"))
+    .toBe(E2E_ONBOARDING_SITE_PAGE_ID);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("findingId"))
+    .toBe(E2E_CANONICAL_FINDING_ID);
+  await expect(
+    page.locator(`[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`),
+  ).toBeVisible();
+});
+
+test("canonicalizes invalid views and repairs stale grouped selections", async ({
+  page,
+}) => {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?view=legacy&selectedOpportunityId=stale`,
+  );
+
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBe("opportunity");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedOpportunityId"))
+    .not.toBe("stale");
+  const repairedOpportunityId = new URL(page.url()).searchParams.get(
+    "selectedOpportunityId",
+  );
+  expect(repairedOpportunityId).not.toBeNull();
+  await expect(
+    page.locator(`[data-opportunity-detail="${repairedOpportunityId}"]`),
+  ).toBeVisible();
+
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=stale`,
+  );
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedClusterId"))
+    .toBe(E2E_GROWTH_MAP_TOPIC_NODE_ID);
+  await expect(
+    page.locator(
+      `[data-cluster-detail="${E2E_GROWTH_MAP_TOPIC_NODE_ID}"]`,
+    ),
+  ).toBeVisible();
+
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+  );
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBe("url");
+  const urlTab = page.getByRole("tab", { name: "By URL" });
+  await expect(urlTab).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("heading", { name: "/customer-onboarding" }),
+  ).toBeVisible();
 });
 
 test("reviews only the canonical Opportunity and delivers one technical ticket", async ({
@@ -150,25 +360,24 @@ test("reviews only the canonical Opportunity and delivers one technical ticket",
   // Open Growth Map and select the multi-Finding onboarding URL.
   await openOnboardingDetail(page);
 
-  // Audit Evidence: the canonical conflict is inspectable but read-only.
-  const evidence = page.locator(auditEvidencePanel);
-  await expect(evidence.getByText("TECH-CANONICAL-002").first()).toBeVisible();
-  await expect(
-    evidence
-      .getByText(
-        "Audit Evidence is read-only. Switch to Opportunity Review to decide this Finding.",
-      )
-      .first(),
-  ).toBeVisible();
-  await expect(evidence.getByRole("button", { name: "Confirm" })).toHaveCount(
-    0,
-  );
+  // The default URL rail is concise: three inspectable signals are visible,
+  // while lineage, metrics, link map, and review controls stay in one explicit
+  // disclosure rather than overwhelming the page selection.
+  const urlDetail = page.getByRole("complementary", {
+    name: "Selected URL detail",
+  });
+  await expect(urlDetail.locator("[data-compact-finding]")).toHaveCount(3);
+  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
+  await urlDetail
+    .getByText("Full evidence and review", { exact: true })
+    .click();
+  await urlDetail.locator('[data-detail-state="opportunity-review"]').click();
 
-  // Opportunity Review: three separately reviewable cards for one URL.
-  await page.locator('[data-detail-state="opportunity-review"]').click();
-  const review = page.locator(opportunityReviewPanel);
+  // Full review still exposes three separately reviewable cards for one URL.
+  const review = urlDetail.locator('[data-detail-panel="opportunity-review"]');
   await expect(review).toBeVisible();
   await expect(review.locator("[data-finding-card]")).toHaveCount(3);
+  await expect(review.getByText("TECH-CANONICAL-002").first()).toBeVisible();
 
   const canonicalReview = review.locator(
     `[data-finding-review="${E2E_CANONICAL_FINDING_ID}"]`,
@@ -254,9 +463,13 @@ test("has no page overflow or blocking axe findings on desktop and 390px", async
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&view=url&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );
-  await expect(page.locator(auditEvidencePanel)).toBeVisible();
+  const urlDetail = page.getByRole("complementary", {
+    name: "Selected URL detail",
+  });
+  await expect(urlDetail).toBeVisible();
+  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
   // The document must expose exactly one `main` — the shell's
   // (`layout.tsx:187`). `blockingAxeViolations` below cannot check this: it is
   // `.include`-scoped, and even unscoped it would not report a duplicate,
@@ -271,7 +484,8 @@ test("has no page overflow or blocking axe findings on desktop and 390px", async
   expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(auditEvidencePanel)).toBeVisible();
+  await expect(urlDetail).toBeVisible();
+  await expect(urlDetail.locator(fullEvidencePanel)).toHaveCount(0);
   expect(await hasPageOverflow(page), await overflowDiagnostics(page)).toBe(
     false,
   );
@@ -290,9 +504,9 @@ test("evidence disclosure opens on Enter, closes on Escape, and returns focus", 
   page,
 }) => {
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&view=url&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}&findingId=${E2E_CANONICAL_FINDING_ID}`,
   );
-  await expect(page.locator(auditEvidencePanel)).toBeVisible();
+  await expect(page.locator(fullEvidencePanel)).toBeVisible();
 
   const card = page.locator(
     `[data-finding-card="${E2E_CANONICAL_FINDING_ID}"]`,

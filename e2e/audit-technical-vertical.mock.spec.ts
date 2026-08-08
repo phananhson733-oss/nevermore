@@ -6,6 +6,7 @@ import {
   E2E_CANONICAL_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_CTR_FINDING_ID,
+  E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_ONBOARDING_URL,
   E2E_PRIOR_AUDIT_RUN_ID,
   E2E_PROJECT_ID,
@@ -73,12 +74,18 @@ async function apiFetch(
 }
 
 async function selectOnboardingDetail(page: Page): Promise<void> {
-  await navLink(page, 1).click();
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+  );
   await expect(page.locator("[data-growth-map-page]")).toBeVisible();
+  await page.getByRole("tab", { name: /^By URL/ }).click();
   await page
     .getByRole("button")
     .filter({ hasText: "/customer-onboarding" })
     .first()
+    .click();
+  await page
+    .locator("[data-full-evidence-disclosure] > summary")
     .click();
   await expect(page.locator(auditEvidencePanel)).toBeVisible();
 }
@@ -265,7 +272,7 @@ test("proves the technical opportunity vertical without any lift claim", async (
   });
 
   // ---- Results: prior-vs-new comparison, technical condition only -----------
-  await navLink(page, 3).click();
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
   const results = page.getByRole("region", {
     name: "Technical recheck record",
   });
