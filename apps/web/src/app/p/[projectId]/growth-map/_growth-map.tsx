@@ -93,7 +93,10 @@ import {
   TextInput,
   cx,
 } from "@/components/ui";
-import { useReviewFinding } from "@/lib/api/hooks-diagnosis";
+import {
+  useReviewFinding,
+  type ReviewFindingRequest,
+} from "@/lib/api/hooks-diagnosis";
 import { ApiError } from "@/lib/api";
 import { collectAllCursorItems } from "@/lib/api/cursor-pages";
 import { getProjectOpportunities } from "@/lib/api/hooks-opportunities";
@@ -2395,6 +2398,191 @@ function OpportunityLedger({
   );
 }
 
+/**
+ * Direct review for a reviewable Opportunity whose Finding has no crawled
+ * URL target (new-asset coverage gaps). Every URL-backed Opportunity reviews
+ * through its exact page evidence instead; this inline control exists only
+ * because such Findings would otherwise have no review surface at all.
+ */
+function OpportunityInlineReview({
+  projectId,
+  opportunity,
+}: {
+  readonly projectId: string;
+  readonly opportunity: Extract<GrowthOpportunity, { readiness: "reviewable" }>;
+}) {
+  const t = useTranslations("growthMap");
+  const tCommon = useTranslations("common");
+  const uiLocale = useLocale();
+  const queryClient = useQueryClient();
+  const review = useReviewFinding(projectId);
+  const [mode, setMode] = useState<GrowthMapFindingReviewMode>("idle");
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function refreshOpportunities(): Promise<void> {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["opportunities", projectId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["growth-map", projectId, uiLocale, "page-views"],
+        refetchType: "active",
+      }),
+    ]);
+  }
+
+  async function submit(body: ReviewFindingRequest): Promise<void> {
+    setError(null);
+    setSaved(false);
+    try {
+      await review.mutateAsync({
+        findingId: opportunity.primaryFindingId,
+        body,
+      });
+      setMode("idle");
+      setText("");
+      await refreshOpportunities();
+      setSaved(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError(t("reviewConflict"));
+        try {
+          await refreshOpportunities();
+        } catch {
+          // The conflict notice already tells the operator to reload; a failed
+          // background refresh must not replace that message.
+        }
+      } else {
+        setError(t("reviewError"));
+      }
+    }
+  }
+
+  function openForm(nextMode: GrowthMapFindingReviewMode): void {
+    setMode(nextMode);
+    setText("");
+    setError(null);
+    setSaved(false);
+  }
+
+  function submitTextReview(): void {
+    const trimmed = text.trim();
+    if (trimmed.length < 3) {
+      setError(mode === "dismiss" ? t("reasonTooShort") : t("noteTooShort"));
+      return;
+    }
+    const baseRevision = opportunity.primaryFindingReviewRevision;
+    void submit(
+      mode === "dismiss"
+        ? { reviewState: "ignored", baseRevision, reason: trimmed }
+        : { reviewState: "needs_more_data", baseRevision, note: trimmed },
+    );
+  }
+
+  const busy = review.isPending;
+
+  return (
+    <div
+      className={styles.reviewPanel}
+      aria-busy={busy}
+      data-opportunity-inline-review={opportunity.primaryFindingId}
+    >
+      <div className={styles.reviewButtons}>
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          onClick={() =>
+            void submit({
+              reviewState: "confirmed",
+              baseRevision: opportunity.primaryFindingReviewRevision,
+            })
+          }
+          disabled={busy}
+        >
+          {t("confirm")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => openForm("needs_more_data")}
+          disabled={busy}
+          aria-expanded={mode === "needs_more_data"}
+        >
+          {t("needsData")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => openForm("dismiss")}
+          disabled={busy}
+          aria-expanded={mode === "dismiss"}
+        >
+          {t("dismiss")}
+        </Button>
+      </div>
+
+      {mode === "idle" ? null : (
+        <div className={styles.reviewForm}>
+          <Field
+            label={mode === "dismiss" ? t("reason") : t("note")}
+            help={mode === "dismiss" ? t("reasonHelp") : t("noteHelp")}
+            required
+            error={error ?? undefined}
+          >
+            <TextArea
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={3}
+              disabled={busy}
+            />
+          </Field>
+          <div className={styles.reviewFormActions}>
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={submitTextReview}
+              disabled={busy}
+            >
+              {busy ? t("savingReview") : t("submitReview")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => openForm("idle")}
+              disabled={busy}
+            >
+              {tCommon("cancel")}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "idle" && error !== null ? (
+        <p className={styles.reviewError} role="alert">
+          {error}
+        </p>
+      ) : null}
+      {mode === "idle" && saved ? (
+        <p className={styles.reviewSaved} role="status">
+          {t("reviewSaved")}
+        </p>
+      ) : null}
+      {busy ? (
+        <p className={styles.reviewPending} role="status">
+          {t("savingReview")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function OpportunityDetailPanel({
   projectId,
   item,
@@ -2636,7 +2824,13 @@ function OpportunityDetailPanel({
 
       <section className={cx(styles.compactRailSection, styles.nextDecision)}>
         <span>{t("opportunity.sections.decision")}</span>
-        <p>{t(`opportunity.${nextBoundaryKey}`)}</p>
+        <p>
+          {t(
+            opportunity.readiness === "reviewable" && firstTarget === null
+              ? "opportunity.reviewBoundaryNoTargets"
+              : `opportunity.${nextBoundaryKey}`,
+          )}
+        </p>
         {opportunity.readiness === "confirmed" ? (
           <Link
             className={styles.detailPrimaryActionLink}
@@ -2648,6 +2842,11 @@ function OpportunityDetailPanel({
             {t("opportunity.openExecution")}
             <ArrowRight aria-hidden="true" size={17} />
           </Link>
+        ) : opportunity.readiness === "reviewable" && firstTarget === null ? (
+          <OpportunityInlineReview
+            projectId={projectId}
+            opportunity={opportunity}
+          />
         ) : firstTarget === null ? null : (
           <Button
             type="button"

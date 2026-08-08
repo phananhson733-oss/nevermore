@@ -253,6 +253,7 @@ const ReviewableOpportunityObject = OpportunityBase.extend({
   primaryFindingId: Uuid,
   primaryRule: OpportunityRuleReference,
   primaryFindingSeverity: PriorityBand,
+  primaryFindingReviewRevision: z.number().int().min(0),
   executionPreview: ExecutionPreview.nullable(),
   actionId: z.undefined().optional(),
   action: z.undefined().optional(),

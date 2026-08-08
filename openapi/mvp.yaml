@@ -5466,11 +5466,18 @@ components:
       allOf:
         - $ref: '#/components/schemas/GrowthOpportunityBase'
         - type: object
-          required: [readiness, primaryFindingId, primaryRule, primaryFindingSeverity, executionPreview]
+          required: [readiness, primaryFindingId, primaryRule, primaryFindingSeverity, primaryFindingReviewRevision, executionPreview]
           properties:
             readiness: { type: string, const: reviewable }
             primaryFindingId: { $ref: '#/components/schemas/Uuid' }
             primaryRule: { $ref: '#/components/schemas/OpportunityRuleReference' }
+            primaryFindingReviewRevision:
+              type: integer
+              minimum: 0
+              description: |
+                Current review revision of the primary Finding, exposed so a
+                consumer can submit the compare-and-set Finding review without
+                re-reading the Finding first.
             primaryFindingSeverity:
               allOf:
                 - $ref: '#/components/schemas/PriorityBand'

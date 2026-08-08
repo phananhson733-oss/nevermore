@@ -2315,6 +2315,7 @@
         "inspectEvidence": "Inspect evidence",
         "candidateBoundary": "This is evidence-backed context, not a confirmable Finding.",
         "reviewBoundary": "Reviewing opens the exact URL and one canonical Finding; supporting evidence is never confirmed in a batch.",
+        "reviewBoundaryNoTargets": "This Opportunity has no collected page to open; review its exact canonical Finding right here. Supporting evidence is never bulk-confirmed.",
         "confirmedBoundary": "A canonical Action already exists for this Finding."
       },
       "columns": {

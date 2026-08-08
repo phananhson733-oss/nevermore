@@ -2976,6 +2976,12 @@ export interface components {
             primaryFindingId: components["schemas"]["Uuid"];
             primaryRule: components["schemas"]["OpportunityRuleReference"];
             /**
+             * @description Current review revision of the primary Finding, exposed so a
+             *     consumer can submit the compare-and-set Finding review without
+             *     re-reading the Finding first.
+             */
+            primaryFindingReviewRevision: number;
+            /**
              * @description Severity of the primary Finding as recorded on the diagnostic run,
              *     exposed so consumers can rank the Opportunity without re-deriving
              *     URL-level priority bands.

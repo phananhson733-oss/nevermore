@@ -2315,6 +2315,7 @@
         "inspectEvidence": "查看证据",
         "candidateBoundary": "这是有证据支撑的上下文，不是可直接确认的 Finding。",
         "reviewBoundary": "审核会打开精确 URL 与单条规范 Finding；支撑证据绝不会被批量确认。",
+        "reviewBoundaryNoTargets": "该机会没有可对应的已收录页面；在此直接审核这条规范 Finding。支撑证据绝不会被批量确认。",
         "confirmedBoundary": "这条 Finding 已经生成规范 Action。"
       },
       "columns": {

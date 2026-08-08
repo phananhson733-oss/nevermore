@@ -167,6 +167,7 @@ function toFindingInput(row: FindingRow): OpportunityFindingInput {
     active: row.active,
     title: row.summary,
     severity: row.severity,
+    reviewRevision: row.review_revision,
   };
 }
 

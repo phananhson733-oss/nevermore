@@ -85,6 +85,7 @@ export interface OpportunityFindingInput {
   readonly active: boolean;
   readonly title: string;
   readonly severity: string;
+  readonly reviewRevision: number;
 }
 
 /** Minimal FindingTarget projection input. */
@@ -730,6 +731,7 @@ export function buildOpportunity(input: {
       primaryFindingId: input.finding.id,
       primaryRule,
       primaryFindingSeverity: input.finding.severity,
+      primaryFindingReviewRevision: input.finding.reviewRevision,
       executionPreview,
     };
   }

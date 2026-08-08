@@ -1032,10 +1032,22 @@ const FINDING_BLUEPRINT: Readonly<
   },
 };
 
+export const E2E_COVERAGE_GAP_FINDING_ID =
+  "00000000-0000-4000-8000-000000000871";
+const E2E_COVERAGE_GAP_ACTION_ID = "00000000-0000-4000-8000-000000000872";
+const E2E_COVERAGE_GAP_EVIDENCE_ID = "00000000-0000-4000-8000-000000000873";
+
 const ALL_FINDING_IDS = [
   E2E_CANONICAL_FINDING_ID,
   E2E_CTR_FINDING_ID,
   E2E_CONTENT_FINDING_ID,
+];
+
+/** Reviewable Finding ids, including the zero-target coverage gap that
+ *  belongs to no crawled page and reviews inline on the Opportunity rail. */
+const ALL_REVIEWABLE_FINDING_IDS = [
+  ...ALL_FINDING_IDS,
+  E2E_COVERAGE_GAP_FINDING_ID,
 ];
 
 function onboardingFinding(
@@ -1468,11 +1480,83 @@ function growthOpportunityFixture(
       : {
           ...base,
           readiness: "reviewable",
+          primaryFindingReviewRevision: 0,
         },
   );
 }
 
 /** Complete frozen Opportunity projection used by the default page view. */
+/**
+ * A reviewable coverage-gap Opportunity with no crawled URL target: the
+ * Finding names a priority offer no indexable page covers, so the only
+ * review surface is the inline control on the Opportunity detail rail.
+ */
+function growthOpportunityCoverageGapFixture(
+  confirmedFindingIds: ReadonlySet<string>,
+): GrowthOpportunity {
+  const base = {
+    opportunityKey: "new_asset:offer:big-three:CONTENT-COVERAGE-001",
+    title:
+      "No indexable page covers the priority offer \u201cBig Three calculator\u201d.",
+    workShape: "create" as const,
+    primaryTarget: "new_asset" as const,
+    targetRef: "offer:big-three-calculator",
+    evidenceSummary: [
+      {
+        traceKind: "evidence" as const,
+        evidenceId: E2E_COVERAGE_GAP_EVIDENCE_ID,
+        diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+        snapshotId: E2E_AUDIT_CRAWL_SNAPSHOT_ID,
+        collectionRunId: CRAWL_COLLECTION_RUN_ID,
+        analysisInvocationId: null,
+        sourceProvider: "crawl",
+        availability: "available" as const,
+        support: "supports" as const,
+        observedAt: AUDIT_OBSERVED_AT,
+        freshness: "current" as const,
+        claim:
+          "No indexable page covers the core intent tokens of the Big Three calculator offer.",
+        limitation: "One immutable crawl snapshot.",
+      },
+    ],
+    searchQueries: [],
+    generativeQueries: [],
+    competitorRefs: [],
+    currentOwnedAsset: null,
+    supportingFindingIds: [],
+    lenses: ["demand_competition" as const],
+    coverageAndLimitations: [
+      "One immutable crawl snapshot; no publication or ranking outcome is inferred.",
+    ],
+    primaryFindingId: E2E_COVERAGE_GAP_FINDING_ID,
+    primaryRule: {
+      ruleId: "CONTENT-COVERAGE-001" as const,
+      ruleVersion: 1 as const,
+    },
+    primaryFindingSeverity: "high" as const,
+    executionPreview: null,
+  };
+  return GrowthOpportunitySchema.parse(
+    confirmedFindingIds.has(E2E_COVERAGE_GAP_FINDING_ID)
+      ? {
+          ...base,
+          readiness: "confirmed",
+          actionId: E2E_COVERAGE_GAP_ACTION_ID,
+          action: {
+            actionId: E2E_COVERAGE_GAP_ACTION_ID,
+            findingId: E2E_COVERAGE_GAP_FINDING_ID,
+            status: "planned",
+            artifactType: "content_brief",
+          },
+        }
+      : {
+          ...base,
+          readiness: "reviewable",
+          primaryFindingReviewRevision: 0,
+        },
+  );
+}
+
 export function growthOpportunitiesFixture(
   confirmedFindingIds: ReadonlySet<string> = new Set(),
 ) {
@@ -1480,9 +1564,12 @@ export function growthOpportunitiesFixture(
     projectId: E2E_PROJECT_ID,
     siteId: E2E_SITE_ID,
     diagnosticRunId: E2E_AUDIT_DIAGNOSTIC_RUN_ID,
-    data: (["canonical", "ctr", "content"] as const).map((kind) =>
-      growthOpportunityFixture(kind, confirmedFindingIds),
-    ),
+    data: [
+      growthOpportunityCoverageGapFixture(confirmedFindingIds),
+      ...(["canonical", "ctr", "content"] as const).map((kind) =>
+        growthOpportunityFixture(kind, confirmedFindingIds),
+      ),
+    ],
     meta: { limit: 100, nextCursor: null, hasNext: false },
   };
 }
@@ -2677,7 +2764,7 @@ export async function installGrowthVerticalApi(
 
   // Confirm one canonical Finding (Opportunity Review). Records the review and
   // marks the Finding confirmed so the refetched detail drops it from review.
-  for (const findingId of ALL_FINDING_IDS) {
+  for (const findingId of ALL_REVIEWABLE_FINDING_IDS) {
     await page.route(`**${BASE}/findings/${findingId}`, async (route) => {
       if (route.request().method() !== "PATCH") {
         await json(
