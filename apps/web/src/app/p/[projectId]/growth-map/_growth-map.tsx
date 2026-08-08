@@ -2570,7 +2570,7 @@ function OpportunityInlineReview({
         </div>
       )}
 
-      {mode === "idle" && error !== null ? (
+      {error !== null ? (
         <p className={styles.reviewError} role="alert">
           {error}
         </p>
