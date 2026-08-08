@@ -20,7 +20,9 @@ import {
 } from "../schema.ts";
 import { Repository, projectPredicate, type ProjectScope } from "./base.ts";
 import {
+  decodeNumericTimestampUuidCursor,
   decodeTimestampUuidCursor,
+  encodeNumericTimestampUuidCursor,
   encodeTimestampUuidCursor,
 } from "./cursor.ts";
 import {
@@ -517,6 +519,16 @@ export class KeywordsRepository extends Repository {
     return result.rows as unknown as AutoGovernanceCandidateRow[];
   }
 
+  /**
+   * The customer-facing library page orders by value, mirroring the metric
+   * projection exactly: within each Keyword's newest occurrence window, the
+   * newest CSV-import/DataForSEO observation possessing the searchVolume key
+   * decides the sort — a numeric value orders descending, an explicit null
+   * (and a Keyword with no such observation) trails in intake order, so the
+   * rendered volume and the ordering can never disagree. The cursor is a
+   * numeric+timestamp+UUID keyset over exactly that ordering. Time columns
+   * are cast to text so the raw read matches the query-builder row shape.
+   */
   async listByProject(
     scope: ProjectScope,
     options: KeywordEntityListOptions,
@@ -534,69 +546,157 @@ export class KeywordsRepository extends Repository {
       throw new RangeError("market must be an uppercase ISO alpha-2 code");
     }
     const decoded = options.cursor
-      ? decodeTimestampUuidCursor(options.cursor)
+      ? decodeNumericTimestampUuidCursor(options.cursor)
       : null;
     if (options.cursor && !decoded) return { rows: [], nextCursor: null };
-    const after = decoded
-      ? or(
-          lt(keywordEntities.created_at, decoded.timestamp),
-          and(
-            eq(keywordEntities.created_at, decoded.timestamp),
-            lt(keywordEntities.id, decoded.id),
-          ),
-        )
-      : undefined;
 
-    const rows = (await this.exec
-      .select(entitySelection)
-      .from(keywordEntities)
-      .innerJoin(
-        clientProjects,
-        and(
-          eq(clientProjects.id, keywordEntities.project_id),
-          eq(clientProjects.workspace_id, keywordEntities.workspace_id),
-        ),
+    const filters = [
+      sql`entity.project_id = ${scope.projectId}::uuid`,
+      sql`entity.workspace_id = ${scope.workspaceId}::uuid`,
+    ];
+    if (options.status) {
+      filters.push(sql`entity.status = ${options.status}`);
+    }
+    if (options.queryKind) {
+      filters.push(sql`entity.query_kind = ${options.queryKind}`);
+    }
+    if (options.market) {
+      filters.push(sql`entity.market = ${options.market}`);
+    }
+    if (options.sourceKind) {
+      filters.push(sql`exists (
+        select 1
+        from ${keywordEntitySources} filter_source
+        inner join ${keywordOccurrences} filter_occurrence
+          on filter_occurrence.id = filter_source.keyword_occurrence_id
+         and filter_occurrence.workspace_id = filter_source.workspace_id
+         and filter_occurrence.project_id = filter_source.project_id
+        where filter_source.keyword_entity_id = entity.id
+          and filter_source.workspace_id = entity.workspace_id
+          and filter_source.project_id = entity.project_id
+          and filter_occurrence.source_kind = ${options.sourceKind}
+      )`);
+    }
+
+    const pairAfter = decoded
+      ? sql`(ranked.created_at < ${decoded.timestamp}::timestamptz
+          or (ranked.created_at = ${decoded.timestamp}::timestamptz
+            and ranked.id < ${decoded.id}::uuid))`
+      : sql`true`;
+    const after = !decoded
+      ? sql`true`
+      : decoded.value === null
+        ? sql`(ranked.sort_volume is null and ${pairAfter})`
+        : sql`(ranked.sort_volume < ${decoded.value}::numeric
+            or (ranked.sort_volume = ${decoded.value}::numeric and ${pairAfter})
+            or ranked.sort_volume is null)`;
+
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with ranked as (
+        select
+          entity.id,
+          entity.workspace_id,
+          entity.project_id,
+          entity.display_keyword,
+          entity.normalized_keyword,
+          entity.market,
+          entity.language_tag,
+          entity.query_kind,
+          entity.status,
+          entity.intent,
+          entity.buyer_stage,
+          entity.cluster_key,
+          entity.mapping_decision,
+          entity.mapped_site_page_id,
+          entity.mapping_review_state,
+          entity.mapping_revision,
+          entity.first_seen_at,
+          entity.last_seen_at,
+          entity.created_at,
+          entity.updated_at,
+          volume_pick.volume as sort_volume
+        from ${keywordEntities} entity
+        inner join ${clientProjects} project
+          on project.id = entity.project_id
+         and project.workspace_id = entity.workspace_id
+         and project.archived_at is null
+        left join lateral (
+          select case
+            when jsonb_typeof(observation.value_json -> 'searchVolume') = 'number'
+            then (observation.value_json ->> 'searchVolume')::numeric
+          end as volume
+          from (
+            select
+              occurrence.id,
+              occurrence.created_at,
+              occurrence.source_kind,
+              occurrence.normalized_observation_id
+            from ${keywordEntitySources} source
+            inner join ${keywordOccurrences} occurrence
+              on occurrence.id = source.keyword_occurrence_id
+             and occurrence.workspace_id = source.workspace_id
+             and occurrence.project_id = source.project_id
+            where source.keyword_entity_id = entity.id
+              and source.workspace_id = entity.workspace_id
+              and source.project_id = entity.project_id
+            order by occurrence.created_at desc, occurrence.id desc
+            limit ${MAX_KEYWORD_OCCURRENCE_PAGE_SIZE}
+          ) recent
+          inner join ${normalizedObservations} observation
+            on observation.id = recent.normalized_observation_id
+           and observation.workspace_id = ${scope.workspaceId}::uuid
+           and observation.project_id = ${scope.projectId}::uuid
+          where recent.source_kind in ('csv_import', 'dataforseo_ranked')
+            and observation.value_json ? 'searchVolume'
+          order by recent.created_at desc, recent.id desc
+          limit 1
+        ) volume_pick on true
+        where ${sql.join(filters, sql` and `)}
       )
-      .where(
-        and(
-          projectPredicate(keywordEntities, scope),
-          activeProjectPredicate(scope),
-          options.status
-            ? eq(keywordEntities.status, options.status)
-            : undefined,
-          options.queryKind
-            ? eq(keywordEntities.query_kind, options.queryKind)
-            : undefined,
-          options.market
-            ? eq(keywordEntities.market, options.market)
-            : undefined,
-          options.sourceKind
-            ? sql`exists (
-                select 1
-                from ${keywordEntitySources} filter_source
-                inner join ${keywordOccurrences} filter_occurrence
-                  on filter_occurrence.id = filter_source.keyword_occurrence_id
-                 and filter_occurrence.workspace_id = filter_source.workspace_id
-                 and filter_occurrence.project_id = filter_source.project_id
-                where filter_source.keyword_entity_id = ${keywordEntities.id}
-                  and filter_source.workspace_id = ${keywordEntities.workspace_id}
-                  and filter_source.project_id = ${keywordEntities.project_id}
-                  and filter_occurrence.source_kind = ${options.sourceKind}
-              )`
-            : undefined,
-          after,
-        ),
-      )
-      .orderBy(desc(keywordEntities.created_at), desc(keywordEntities.id))
-      .limit(options.limit + 1)) as KeywordEntityRow[];
+      select
+        ranked.id,
+        ranked.workspace_id,
+        ranked.project_id,
+        ranked.display_keyword,
+        ranked.normalized_keyword,
+        ranked.market,
+        ranked.language_tag,
+        ranked.query_kind,
+        ranked.status,
+        ranked.intent,
+        ranked.buyer_stage,
+        ranked.cluster_key,
+        ranked.mapping_decision,
+        ranked.mapped_site_page_id,
+        ranked.mapping_review_state,
+        ranked.mapping_revision,
+        ranked.first_seen_at::text as first_seen_at,
+        ranked.last_seen_at::text as last_seen_at,
+        ranked.created_at::text as created_at,
+        ranked.updated_at::text as updated_at,
+        ranked.sort_volume::text as sort_volume_text
+      from ranked
+      where ${after}
+      order by ranked.sort_volume desc nulls last,
+        ranked.created_at desc,
+        ranked.id desc
+      limit ${options.limit + 1}
+    `);
+    const rows = result.rows as unknown as (KeywordEntityRow & {
+      readonly sort_volume_text: string | null;
+    })[];
     const hasNext = rows.length > options.limit;
     const page = hasNext ? rows.slice(0, options.limit) : rows;
     const last = page.at(-1);
     return {
-      rows: page,
+      rows: page.map(({ sort_volume_text: _sortVolumeText, ...row }) => row),
       nextCursor:
         hasNext && last
-          ? encodeTimestampUuidCursor(last.created_at, last.id)
+          ? encodeNumericTimestampUuidCursor(
+              last.sort_volume_text,
+              last.created_at,
+              last.id,
+            )
           : null,
     };
   }
