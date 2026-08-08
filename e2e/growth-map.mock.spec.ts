@@ -287,6 +287,21 @@ test("scrubs legacy view addresses and repairs stale Opportunity selections", as
     page.locator(`[data-opportunity-detail="${repairedOpportunityId}"]`),
   ).toBeVisible();
 
+  // A stale Opportunity next to a still-valid page selection: repairing the
+  // Opportunity id must not close the URL drill-down the link points at.
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedOpportunityId=stale&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
+  );
+  await expect(
+    page.getByRole("heading", { name: "/customer-onboarding" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedOpportunityId"))
+    .not.toBe("stale");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("selectedSitePageId"))
+    .toBe(E2E_ONBOARDING_SITE_PAGE_ID);
+
   await page.goto(
     `/p/${E2E_PROJECT_ID}/growth-map?object=pages&selectedSitePageId=${E2E_ONBOARDING_SITE_PAGE_ID}`,
   );

@@ -140,6 +140,22 @@ describe("Growth Map URL portfolio wiring", () => {
 describe("Growth Map filter and review honesty wiring", () => {
   const locales = [zhCN, en];
 
+  it("never renders fewer Opportunity targets than the section header claims", () => {
+    // The targets header states the full count, so the list must either show
+    // every target or expose an explicit expander for the remainder.
+    expect(source).toContain('t("opportunity.targetsCount"');
+    expect(source).toContain('t("opportunity.showAllTargets"');
+    expect(source).toContain("targetsExpanded");
+    expect(source).toContain("? item.targetPages\n");
+    for (const messages of [zhCN, en]) {
+      const pageViews = messages.growthMap["pageViews"] as {
+        opportunity: Record<string, string>;
+      };
+      expect(pageViews.opportunity["showAllTargets"]).toContain("{count}");
+      expect(pageViews.opportunity["collapseTargets"]).toBeTruthy();
+    }
+  });
+
   it("filters the complete Opportunity ledger without a pager or scope note", () => {
     expect(source).toContain("<div className={styles.workspace}>");
     expect(source).toContain('t("searchScope")');

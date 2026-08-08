@@ -2266,6 +2266,8 @@
         "backToList": "Back to opportunities",
         "evidenceCount": "{count} records",
         "targetsCount": "{count} items",
+        "showAllTargets": "Show the other {count} items",
+        "collapseTargets": "Collapse the target list",
         "eyebrow": "Growth opportunity",
         "metrics": {
           "urls": "Target URLs",
@@ -2388,11 +2390,6 @@
     "unavailable": "Unavailable",
     "titleNotCollected": "Page title not collected",
     "reviewableCount": "{count, plural, one {# to review} other {# to review}}",
-    "priorityUnavailable": "Not assessed",
-    "paginationLabel": "URL list pagination",
-    "previousPage": "Previous",
-    "nextPage": "Next",
-    "loadedCount": "{count, plural, one {# row on this page} other {# rows on this page}}",
     "portfolio": {
       "summary": {
         "loadedUrls": "Loaded URLs",
@@ -2626,7 +2623,6 @@
       "documentation": "Documentation",
       "unclassified": "Unclassified"
     },
-    "paginationStatus": "{count, plural, one {# filtered row} other {# filtered rows}} · Page {page} of {pages}",
     "primaryOpportunityReviewAction": "Review the highest-priority opportunity",
     "primaryOpportunityReviewHint": "This opportunity has no confirmed Action yet, so review it below first.",
     "primaryOpportunityClosedAction": "Review the closed signals",
