@@ -4564,17 +4564,21 @@
   scrollbar-color: var(--sf-border-strong) transparent;
 }
 
+/* 8 tracks: 竞品 / 关系 / 分析范围 / 自然搜索重叠度 / 共同关键词 / AI 引用 /
+   状态 / row-arrow. The final 44px track only reserves space: the arrow button
+   itself is absolutely positioned (see .competitorRowArrow). */
 .competitorLedgerHeader,
 .competitorRowButton {
   display: grid;
   grid-template-columns:
-    minmax(220px, 1.28fr)
-    minmax(124px, 0.82fr)
-    minmax(168px, 0.98fr)
-    minmax(128px, 0.76fr)
-    minmax(150px, 0.88fr)
-    minmax(150px, 0.88fr)
-    minmax(120px, 0.76fr);
+    minmax(220px, 1.6fr)
+    minmax(96px, 0.9fr)
+    minmax(140px, 1.2fr)
+    minmax(120px, 1fr)
+    minmax(104px, 0.9fr)
+    minmax(96px, 0.9fr)
+    minmax(96px, 0.8fr)
+    44px;
   align-items: center;
   gap: 13px;
   min-width: 1180px;
@@ -4643,8 +4647,7 @@
 
 .competitorIdentityCell,
 .competitorGovernanceCell,
-.competitorScopeCell,
-.competitorOriginSummary {
+.competitorScopeCell {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -4663,8 +4666,7 @@
 }
 
 .competitorIdentityCell small,
-.competitorGovernanceCell > span:last-child,
-.competitorOriginSummary time {
+.competitorGovernanceCell > span:last-child {
   color: var(--sf-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -4675,32 +4677,43 @@
   gap: 6px;
 }
 
+/* Fact rows: one dt/dd pair per row, borders between rows. Margin-less by
+   design so the list sits flush inside the drawer sections; the detail panel
+   context supplies its own margins below. */
 .competitorFacts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
   margin: 0;
 }
 
 .competitorFacts > div {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 6px 12px;
   min-width: 0;
-  padding: 10px 11px;
-  background: color-mix(in srgb, var(--sf-surface-deep) 56%, var(--sf-surface));
-  border: 1px solid var(--sf-border);
-  border-radius: 9px;
+  padding: 9px 0;
+}
+
+.competitorFacts > div + div {
+  border-top: 1px solid var(--sf-border);
 }
 
 .competitorFacts dt {
   color: var(--sf-muted);
   font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .competitorFacts dd {
-  margin: 4px 0 0;
+  margin: 0;
+  overflow-wrap: anywhere;
   color: var(--sf-fg);
   font-size: 13px;
   font-weight: 760;
   line-height: 1.45;
+}
+
+.competitorDetailPanel > .competitorFacts {
+  margin: 16px 20px 0;
 }
 
 .competitorStatus {
@@ -4754,41 +4767,42 @@
   border-radius: 5px;
 }
 
-.competitorOriginSummary {
-  position: relative;
-  gap: 5px;
-  padding-right: 24px;
-}
-
-.competitorOriginSummary > span {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.competitorOriginSummary small {
-  padding: 3px 6px;
-  color: var(--sf-mint-text);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.3;
-  background: var(--sf-mint-soft);
-  border-radius: 5px;
-}
-
-.competitorOriginSummary > svg {
+/* Opens the full-profile drawer. Sits above the .rowSelectButton overlay
+   (z-index 1) and the inert cells (z-index 2, pointer-events none), so the
+   selector is rooted at .competitorRowButton to outweigh the
+   `> *:not(.rowSelectButton)` reset above. */
+.competitorRowButton > .competitorRowArrow {
   position: absolute;
+  z-index: 3;
   top: 50%;
-  right: 0;
+  right: 13px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
   color: var(--sf-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  pointer-events: auto;
   transform: translateY(-50%);
-  transition: color 140ms ease, translate 140ms ease;
+  transition: color 140ms ease, background-color 140ms ease;
 }
 
-.competitorRowButton:hover .competitorOriginSummary > svg,
-.competitorRowSelected .competitorOriginSummary > svg {
+.competitorRowButton > .competitorRowArrow:hover {
   color: var(--gm-ink);
-  translate: 2px 0;
+  background: var(--sf-surface-deep);
+}
+
+.competitorRowSelected > .competitorRowArrow:hover {
+  background: var(--sf-surface);
+}
+
+.competitorRowButton > .competitorRowArrow:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
 }
 
 .competitorDetailPanel {
@@ -4841,6 +4855,90 @@
   font-weight: 780;
   background: var(--sf-violet-soft);
   border-radius: 999px;
+}
+
+/* "为什么进入竞品池" explainer card; warning variant flags unreviewed
+   candidates. Mirrors the URL panel's .routeCard family, namespaced so the
+   competitor panel can evolve independently. */
+.competitorRouteCard {
+  display: grid;
+  gap: 4px;
+  margin: 15px 20px 0;
+  padding: 14px 15px;
+  background: color-mix(in srgb, var(--sf-mint-soft) 65%, var(--sf-surface));
+  border: 1px solid color-mix(in srgb, var(--sf-mint) 32%, var(--sf-border));
+  border-radius: 11px;
+}
+
+.competitorRouteCardWarning {
+  background: color-mix(in srgb, var(--sf-amber-soft) 72%, var(--sf-surface));
+  border-color: color-mix(in srgb, var(--sf-amber-text) 26%, var(--sf-border));
+}
+
+.competitorRouteCard > span {
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.competitorRouteCard > strong {
+  color: var(--sf-fg);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.competitorRouteCard > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Four metric tiles (重叠度 / 共同关键词 / AI 引用裸数字 / 证据) in one
+   bordered container, divided by left borders; values in the display serif. */
+.competitorDetailMetricsFour {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 16px 20px 0;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.competitorDetailMetricsFour > div {
+  display: flex;
+  min-width: 0;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 13px;
+}
+
+.competitorDetailMetricsFour > div + div {
+  border-left: 1px solid var(--sf-border);
+}
+
+.competitorDetailMetricsFour span,
+.competitorDetailMetricsFour small {
+  overflow: hidden;
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competitorDetailMetricsFour strong {
+  color: var(--gm-ink);
+  font-family: var(--sf-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
 }
 
 .competitorMonitorSection {
@@ -5455,41 +5553,398 @@ a.competitorMonitorContentUrl:hover {
   text-align: right;
 }
 
-.competitorManageLink,
-.competitorInlineSourceLink {
+.competitorManageLink {
   display: inline-flex;
   width: fit-content;
+  min-height: 43px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: var(--sf-cobalt-text);
-  font-size: 14px;
-  font-weight: 780;
-  text-decoration: none;
-}
-
-.competitorManageLink {
-  min-height: 43px;
   margin-top: 20px;
   padding: 0 15px;
   color: var(--gm-ink);
+  font-size: 14px;
+  font-weight: 780;
+  text-decoration: none;
   background: var(--sf-surface);
   border: 1px solid var(--sf-border-strong);
   border-radius: 10px;
   box-shadow: var(--sf-shadow-sm);
 }
 
-.competitorInlineSourceLink {
-  margin-top: 8px;
-}
-
-.competitorManageLink:hover,
-.competitorInlineSourceLink:hover {
+.competitorManageLink:hover {
   color: var(--gm-ink);
 }
 
-.competitorManageLink:focus-visible,
-.competitorInlineSourceLink:focus-visible {
+.competitorManageLink:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+/* ------------------------------------------------------------------ *
+ * Competitor full-profile drawer. Fixed to the right edge, body       *
+ * scrolls internally. Both scrim and drawer re-declare the --gm-*     *
+ * page tokens (same values and dark-mode double override as           *
+ * .keywordRelationBackdrop) so nested widgets keep their colors even  *
+ * if the drawer is portaled outside .page. Deliberately below the     *
+ * dialog tier (.keywordRelationBackdrop, z-index 90): the review      *
+ * dialog opened from the drawer footer must stack on top of it.       *
+ * ------------------------------------------------------------------ */
+
+.competitorDrawerScrim {
+  --gm-ink: #123d32;
+  --gm-evergreen-soft: #1c5848;
+  --gm-mint-wash: #dff3ed;
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--sf-ink-950) 62%, transparent);
+  backdrop-filter: blur(5px);
+  border: 0;
+}
+
+.competitorDrawer {
+  --gm-ink: #123d32;
+  --gm-evergreen-soft: #1c5848;
+  --gm-mint-wash: #dff3ed;
+  position: fixed;
+  z-index: 81;
+  inset: 0 0 0 auto;
+  display: flex;
+  width: min(560px, 92vw);
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border-left: 1px solid var(--sf-border-strong);
+  box-shadow: var(--sf-shadow-md);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .competitorDrawerScrim,
+  :global(:root:not([data-theme="light"])) .competitorDrawer {
+    --gm-ink: #a9e7d0;
+    --gm-evergreen-soft: #7ecdb0;
+    --gm-mint-wash: #18362e;
+  }
+}
+
+:global(:root[data-theme="dark"]) .competitorDrawerScrim,
+:global(:root[data-theme="dark"]) .competitorDrawer {
+  --gm-ink: #a9e7d0;
+  --gm-evergreen-soft: #7ecdb0;
+  --gm-mint-wash: #18362e;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .competitorDrawerScrim {
+    animation: gm-drawer-fade-in 160ms ease-out;
+  }
+  .competitorDrawer {
+    animation: gm-drawer-slide-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+}
+
+@keyframes gm-drawer-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes gm-drawer-slide-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(36px);
+  }
+}
+
+.competitorDrawerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 20px 18px;
+  background:
+    linear-gradient(
+      125deg,
+      color-mix(in srgb, var(--gm-mint-wash) 74%, var(--sf-surface)),
+      var(--sf-surface) 72%
+    );
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.competitorDrawerHeader > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.competitorDrawerHeader span {
+  overflow-wrap: anywhere;
+  color: var(--sf-coral-text);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.competitorDrawerHeader h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: clamp(24px, 3.4vw, 30px);
+  line-height: 1.12;
+}
+
+.competitorDrawerHeader > button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  color: var(--sf-fg);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.competitorDrawerHeader > button:hover {
+  border-color: var(--sf-border-strong);
+}
+
+.competitorDrawerHeader > button:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+/* Body owns vertical scroll; blocks inside carry their own inline spacing so
+   the relocated CompetitorMonitorSection (self-padded 22px 20px) lines up. */
+.competitorDrawerBody {
+  min-height: 0;
+  flex: 1;
+  padding: 0 0 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sf-border-strong) transparent;
+}
+
+.competitorDrawerScoreGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 20px 2px;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.competitorDrawerScoreGrid > div {
+  display: flex;
+  min-width: 0;
+  min-height: 76px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 13px;
+}
+
+.competitorDrawerScoreGrid > div + div {
+  border-left: 1px solid var(--sf-border);
+}
+
+.competitorDrawerScoreGrid span,
+.competitorDrawerScoreGrid small {
+  overflow: hidden;
+  color: var(--sf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.competitorDrawerScoreGrid strong {
+  color: var(--gm-ink);
+  font-family: var(--sf-font-display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.competitorDrawerSection {
+  margin-top: 18px;
+  padding: 18px 20px 0;
+  border-top: 1px solid var(--sf-border);
+}
+
+.competitorDrawerSection > h3 {
+  margin: 0 0 12px;
+  color: var(--gm-ink);
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.competitorDrawerOriginRow {
+  min-width: 0;
+  padding: 12px 0;
+}
+
+.competitorDrawerOriginRow + .competitorDrawerOriginRow {
+  border-top: 1px solid var(--sf-border);
+}
+
+.competitorDrawerOriginRow > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 9px;
+}
+
+.competitorDrawerOriginRow > header > strong {
+  color: var(--sf-fg);
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.competitorDrawerOriginRow > header time {
+  margin-left: auto;
+  color: var(--sf-muted);
+  font-size: 12px;
+}
+
+.competitorDrawerOriginRow details {
+  margin-top: 8px;
+}
+
+.competitorDrawerOriginRow summary {
+  width: fit-content;
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.competitorDrawerOriginRow summary:hover {
+  color: var(--gm-ink);
+}
+
+.competitorDrawerOriginRow summary:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.competitorDrawerOriginBadge {
+  display: inline-flex;
+  min-height: 25px;
+  flex: none;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--sf-surface-deep);
+  border-radius: 999px;
+}
+
+.competitorDrawerFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 14px;
+  padding: 14px 20px;
+  background: var(--sf-surface-deep);
+  border-top: 1px solid var(--sf-border);
+}
+
+.competitorDrawerFooter > button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 15px;
+  color: var(--sf-accent-contrast);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+  background: var(--sf-accent);
+  border: 1px solid var(--sf-accent);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.competitorDrawerFooter > button:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+/* Review dialog: decision impact callout + in-dialog success view. */
+.competitorDecisionImpact {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 13px 15px;
+  background: color-mix(in srgb, var(--sf-cobalt-soft) 72%, var(--sf-surface));
+  border: 1px solid color-mix(in srgb, var(--sf-cobalt) 28%, var(--sf-border));
+  border-radius: 10px;
+}
+
+.competitorDecisionImpact strong {
+  color: var(--sf-fg);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.competitorDecisionImpact span {
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.competitorReviewSuccess {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 26px;
+}
+
+.competitorReviewSuccess h2,
+.competitorReviewSuccess h3 {
+  margin: 0;
+  color: var(--gm-ink);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.competitorReviewSuccess p {
+  max-width: 60ch;
+  margin: 0;
+  color: var(--sf-fg);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.competitorReviewSuccess > button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 18px;
+  color: var(--sf-accent-contrast);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 780;
+  background: var(--sf-accent);
+  border: 1px solid var(--sf-accent);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.competitorReviewSuccess > button:focus-visible {
   outline: 0;
   box-shadow: var(--sf-focus-ring);
 }
@@ -5620,13 +6075,14 @@ a.competitorMonitorContentUrl:hover {
   .competitorLedgerHeader,
   .competitorRowButton {
     grid-template-columns:
-      minmax(174px, 1.1fr)
-      minmax(114px, 0.78fr)
-      minmax(150px, 0.9fr)
-      minmax(118px, 0.72fr)
-      minmax(138px, 0.84fr)
-      minmax(138px, 0.84fr)
-      minmax(112px, 0.72fr);
+      minmax(176px, 1.4fr)
+      minmax(88px, 0.85fr)
+      minmax(124px, 1.05fr)
+      minmax(108px, 0.95fr)
+      minmax(96px, 0.85fr)
+      minmax(88px, 0.85fr)
+      minmax(88px, 0.75fr)
+      40px;
   }
 }
 
@@ -5763,11 +6219,25 @@ a.competitorMonitorContentUrl:hover {
     min-width: 0;
   }
   .competitorRowButton {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px 9px;
     min-height: 0;
-    padding: 16px;
+    padding: 16px 52px 16px 16px;
     min-width: 0;
+  }
+  /* Card mode keeps 竞品 / 重叠度 / AI 引用 / 状态 / 箭头. The 关系(3),
+     分析范围(4) and 共同关键词(6) cells drop out; indexes count the absolutely
+     positioned .rowSelectButton as :nth-child(1), so keep the TSX cell order
+     in sync with the column contract. */
+  .competitorRowButton > :nth-child(3),
+  .competitorRowButton > :nth-child(4),
+  .competitorRowButton > :nth-child(6) {
+    display: none;
+  }
+  .competitorRowButton > .competitorRowArrow {
+    top: 13px;
+    right: 12px;
+    transform: none;
   }
   .keywordIdentityCell {
     grid-column: 1 / -1;
@@ -5797,17 +6267,14 @@ a.competitorMonitorContentUrl:hover {
     font-weight: 700;
   }
   .competitorGovernanceCell,
-  .competitorScopeCell,
-  .competitorOriginSummary,
-  .competitorFacts {
+  .competitorScopeCell {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 5px;
   }
   .competitorGovernanceCell::before,
-  .competitorScopeCell::before,
-  .competitorOriginSummary::before {
+  .competitorScopeCell::before {
     content: attr(data-column);
     color: var(--sf-muted);
     font-size: 12px;
@@ -5843,7 +6310,6 @@ a.competitorMonitorContentUrl:hover {
   .sourceStripItems,
   .conversionPath,
   .detailActions,
-  .competitorFacts,
   .libraryToolbar {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5988,18 +6454,13 @@ a.competitorMonitorContentUrl:hover {
   .keywordKindCell,
   .keywordStatusCell,
   .competitorGovernanceCell,
-  .competitorScopeCell,
-  .competitorOriginSummary {
+  .competitorScopeCell {
     grid-column: 1 / -1;
   }
   .keywordSourceSummary {
     grid-column: 1 / -1;
   }
-  .keywordMappedTarget,
-  .competitorFacts {
-    grid-column: 1 / -1;
-  }
-  .competitorOriginSummary {
+  .keywordMappedTarget {
     grid-column: 1 / -1;
   }
   .keywordDetailHeader,
@@ -6070,6 +6531,49 @@ a.competitorMonitorContentUrl:hover {
   }
   .competitorEvidenceList li > code {
     text-align: left;
+  }
+  .competitorRouteCard {
+    margin-inline: 16px;
+  }
+  .competitorDetailPanel > .competitorFacts {
+    margin-inline: 16px;
+  }
+  .competitorFacts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+  .competitorDetailMetricsFour {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-inline: 16px;
+  }
+  .competitorDetailMetricsFour > div:nth-child(odd) {
+    border-left: 0;
+  }
+  .competitorDetailMetricsFour > div:nth-child(n + 3) {
+    border-top: 1px solid var(--sf-border);
+  }
+  .competitorDrawerHeader {
+    padding: 18px 16px 15px;
+  }
+  .competitorDrawerScoreGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-inline: 16px;
+  }
+  .competitorDrawerScoreGrid > div:nth-child(3) {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--sf-border);
+    border-left: 0;
+  }
+  .competitorDrawerSection {
+    padding-inline: 16px;
+  }
+  .competitorDrawerFooter {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 13px 16px 16px;
+  }
+  .competitorDrawerFooter > button {
+    width: 100%;
   }
   .detailHeader,
   .detailSection {

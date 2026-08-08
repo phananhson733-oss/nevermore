@@ -81,6 +81,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -149,8 +150,11 @@ import {
   buildGrowthMapOpportunityViewItems,
   buildInternalLinkMapProjection,
   competitorDetailReadState,
+  competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
   competitorLibraryReadState,
+  competitorPoolEntryReason,
+  competitorSharedKeywordDisplay,
   filterGrowthMapCompetitorItems,
   filterGrowthMapKeywordEntries,
   filterGrowthMapUrlItems,
@@ -339,24 +343,25 @@ function useCompleteGrowthMapKeywordRelations(
       normalizedKeywordIds,
     ],
     queryFn: async ({ signal }) => {
-      const records = await collectAllCursorItems<CompleteKeywordRelationRecord>(
-        async (pageCursor) => {
-          signal.throwIfAborted();
-          const page = await getGrowthMapKeywordRelations(projectId, {
-            keywordIds: normalizedKeywordIds,
-            cursor: pageCursor,
-            limit: 100,
-          });
-          signal.throwIfAborted();
-          return {
-            data: page.data.map((relation) => ({
-              id: relation.relationId,
-              relation,
-            })),
-            meta: { nextCursor: page.meta.nextCursor },
-          };
-        },
-      );
+      const records =
+        await collectAllCursorItems<CompleteKeywordRelationRecord>(
+          async (pageCursor) => {
+            signal.throwIfAborted();
+            const page = await getGrowthMapKeywordRelations(projectId, {
+              keywordIds: normalizedKeywordIds,
+              cursor: pageCursor,
+              limit: 100,
+            });
+            signal.throwIfAborted();
+            return {
+              data: page.data.map((relation) => ({
+                id: relation.relationId,
+                relation,
+              })),
+              meta: { nextCursor: page.meta.nextCursor },
+            };
+          },
+        );
       return records.map((record) => record.relation);
     },
     enabled: projectId.length > 0 && normalizedKeywordIds.length > 0,
@@ -397,9 +402,10 @@ const KEYWORD_REVIEW_BUYER_STAGES = [
   "retention",
 ] as const;
 
+// Review-dialog decision order mirrors the artifact: approve first.
 const COMPETITOR_REVIEW_STATUSES = [
-  "candidate",
   "approved",
+  "candidate",
   "excluded",
 ] as const satisfies readonly GrowthMapCompetitorReviewStatus[];
 
@@ -564,10 +570,7 @@ function MetricValue({
       <span className={styles.missingValue}>
         {t(labelKey)}
         {limitation === null ? null : (
-          <LimitationHint
-            label={t("limitations")}
-            limitations={[limitation]}
-          />
+          <LimitationHint label={t("limitations")} limitations={[limitation]} />
         )}
       </span>
     );
@@ -575,9 +578,7 @@ function MetricValue({
   return (
     <span className={cx(styles.observedValue, compact && styles.compactValue)}>
       {formatNumber(locale, presentation.value)}
-      {presentation.unit === null ? null : (
-        <small>{presentation.unit}</small>
-      )}
+      {presentation.unit === null ? null : <small>{presentation.unit}</small>}
     </span>
   );
 }
@@ -683,11 +684,16 @@ function MetricLedger({
             key={`${observation.observationId}:${sourceKey}`}
           >
             <div>
-              <span className={styles.providerMark} data-provider={observation.provider}>
+              <span
+                className={styles.providerMark}
+                data-provider={observation.provider}
+              >
                 {tProvider(observation.provider)}
               </span>
               <strong>
-                {t(`metrics.${metricLabelKey(observation)}` as `metrics.${GrowthMapMetricLabelKey}`)}
+                {t(
+                  `metrics.${metricLabelKey(observation)}` as `metrics.${GrowthMapMetricLabelKey}`,
+                )}
               </strong>
             </div>
             <MetricValue observation={observation} />
@@ -1074,7 +1080,9 @@ function FindingCard({
         <div>
           <dt>{t("affectedTarget")}</dt>
           <dd>
-            <span>{t(`targets.${findingTargetLabelKey(finding.targetRelation)}`)}</span>
+            <span>
+              {t(`targets.${findingTargetLabelKey(finding.targetRelation)}`)}
+            </span>
             <code title={finding.targetRelation.targetRef}>
               {finding.targetRelation.targetRef}
             </code>
@@ -1087,7 +1095,9 @@ function FindingCard({
         <div>
           <dt>{t("ids.finding")}</dt>
           <dd>
-            <code title={finding.findingId}>{truncateId(finding.findingId)}</code>
+            <code title={finding.findingId}>
+              {truncateId(finding.findingId)}
+            </code>
           </dd>
         </div>
       </dl>
@@ -1128,7 +1138,9 @@ function FindingCard({
           >
             <span>
               {t("openExecution")}
-              <code title={execution.actionId}>{truncateId(execution.actionId)}</code>
+              <code title={execution.actionId}>
+                {truncateId(execution.actionId)}
+              </code>
             </span>
             <ArrowRight aria-hidden="true" size={17} />
           </Link>
@@ -1137,7 +1149,8 @@ function FindingCard({
               {execution.artifactIds.map((artifactId, index) => (
                 <li key={artifactId}>
                   <span title={artifactId}>
-                    {t("artifactRef", { index: index + 1 })} · {truncateId(artifactId)}
+                    {t("artifactRef", { index: index + 1 })} ·{" "}
+                    {truncateId(artifactId)}
                   </span>
                 </li>
               ))}
@@ -1157,10 +1170,7 @@ function ExecutionPreviewPanel({
   const t = useTranslations("growthMap.executionPreview");
 
   return (
-    <section
-      className={styles.executionPreview}
-      aria-label={t("eyebrow")}
-    >
+    <section className={styles.executionPreview} aria-label={t("eyebrow")}>
       <span className={styles.executionPreviewEyebrow}>{t("eyebrow")}</span>
       {preview === null ? (
         <p className={styles.executionPreviewUnavailable}>
@@ -1228,18 +1238,10 @@ function FindingSection({
       <div className={styles.sectionHeading}>
         <div>
           <span>
-            {t(
-              reviewEnabled
-                ? "findingsEyebrow"
-                : "evidenceFindingsEyebrow",
-            )}
+            {t(reviewEnabled ? "findingsEyebrow" : "evidenceFindingsEyebrow")}
           </span>
           <h3>
-            {t(
-              reviewEnabled
-                ? "findingsTitle"
-                : "evidenceFindingsTitle",
-            )}
+            {t(reviewEnabled ? "findingsTitle" : "evidenceFindingsTitle")}
           </h3>
         </div>
         <span className={styles.sectionCount}>{detail.findings.length}</span>
@@ -1614,9 +1616,7 @@ function InternalLinkMapSection({
             aria-label={t("inbound.listLabel")}
           >
             {projection.inboundSources.map((edge) => (
-              <li
-                key={`${edge.sourceCanonicalUrl}:${edge.targetCanonicalUrl}`}
-              >
+              <li key={`${edge.sourceCanonicalUrl}:${edge.targetCanonicalUrl}`}>
                 <InternalLinkUrl normalizedUrl={edge.sourceCanonicalUrl} />
                 <ul className={styles.internalLinkFacts}>
                   {edge.facts.map((fact) => (
@@ -1892,7 +1892,8 @@ function UrlDetailPanel({
       <header className={styles.detailHeader}>
         <div className={styles.detailEyebrow}>
           <span>
-            {t("selectedUrl")} · {detail.priority.availability === "available"
+            {t("selectedUrl")} ·{" "}
+            {detail.priority.availability === "available"
               ? PRIORITY_CODE[detail.priority.value]
               : "—"}
           </span>
@@ -1984,14 +1985,16 @@ function UrlDetailPanel({
                         PRIORITY_CLASS[finding.severity],
                       )}
                     >
-                      {PRIORITY_CODE[finding.severity]} ·
-                      {" "}{tPriority(finding.severity)}
+                      {PRIORITY_CODE[finding.severity]} ·{" "}
+                      {tPriority(finding.severity)}
                     </em>
                     <small>{tReview(finding.reviewState)}</small>
                   </span>
                   <strong>{finding.title}</strong>
                   <span>
-                    {t(`targets.${findingTargetLabelKey(finding.targetRelation)}`)}
+                    {t(
+                      `targets.${findingTargetLabelKey(finding.targetRelation)}`,
+                    )}
                     <ArrowRight aria-hidden="true" size={16} />
                   </span>
                 </button>
@@ -2115,7 +2118,10 @@ function UrlDetailPanel({
                       <strong>{t("notCollected")}</strong>
                     ) : (
                       <time dateTime={detail.pageSnapshotCapturedAt}>
-                        {formatObservedAt(locale, detail.pageSnapshotCapturedAt)}
+                        {formatObservedAt(
+                          locale,
+                          detail.pageSnapshotCapturedAt,
+                        )}
                       </time>
                     )}
                   </span>
@@ -2182,7 +2188,6 @@ function UrlDetailPanel({
           )}
         </div>
       )}
-
     </aside>
   );
 }
@@ -2279,19 +2284,14 @@ function OpportunityPriorityPill({
   }
   return (
     <span
-      className={cx(
-        styles.priorityPill,
-        PRIORITY_CLASS[item.priority.value],
-      )}
+      className={cx(styles.priorityPill, PRIORITY_CLASS[item.priority.value])}
     >
       {PRIORITY_CODE[item.priority.value]} · {tPriority(item.priority.value)}
     </span>
   );
 }
 
-function opportunityOutputType(
-  opportunity: GrowthOpportunity,
-): string | null {
+function opportunityOutputType(opportunity: GrowthOpportunity): string | null {
   if (opportunity.readiness === "confirmed") {
     return opportunity.action.artifactType;
   }
@@ -2353,11 +2353,15 @@ function OpportunityLedger({
                 <span className={styles.urlCell}>
                   <strong>{opportunity.title}</strong>
                   <span>{opportunity.targetRef}</span>
-                  <small>{t(`opportunity.target.${opportunity.primaryTarget}`)}</small>
+                  <small>
+                    {t(`opportunity.target.${opportunity.primaryTarget}`)}
+                  </small>
                 </span>
                 <span className={styles.metricCell}>
                   <strong className={styles.libraryMetricPrimary}>
-                    {t(`opportunity.lenses.${opportunity.lenses[0] ?? "site_health"}`)}
+                    {t(
+                      `opportunity.lenses.${opportunity.lenses[0] ?? "site_health"}`,
+                    )}
                   </strong>
                   <small>
                     {t(`opportunity.workShape.${opportunity.workShape}`)}
@@ -2615,9 +2619,7 @@ function OpportunityDetailPanel({
     (opportunity.readiness === "candidate" ? 0 : 1);
   const firstTarget = item.targetPages[0] ?? null;
   const primaryFindingId =
-    opportunity.readiness === "candidate"
-      ? null
-      : opportunity.primaryFindingId;
+    opportunity.readiness === "candidate" ? null : opportunity.primaryFindingId;
   const nextBoundaryKey =
     opportunity.readiness === "candidate"
       ? "candidateBoundary"
@@ -2637,8 +2639,7 @@ function OpportunityDetailPanel({
       <header className={styles.detailHeader}>
         <div className={styles.detailEyebrow}>
           <span>
-            {t("opportunity.eyebrow")} ·
-            {" "}
+            {t("opportunity.eyebrow")} ·{" "}
             {item.priority.availability === "available"
               ? PRIORITY_CODE[item.priority.value]
               : "—"}
@@ -2772,7 +2773,9 @@ function OpportunityDetailPanel({
                     onClick={() => onOpenUrl(page.sitePageId, primaryFindingId)}
                   >
                     <span className={styles.railTargetText}>
-                      <strong>{urlPresentation(page.normalizedUrl).path}</strong>
+                      <strong>
+                        {urlPresentation(page.normalizedUrl).path}
+                      </strong>
                       <small>{page.title ?? tRoot("titleNotCollected")}</small>
                     </span>
                     <ArrowRight aria-hidden="true" size={15} />
@@ -2822,8 +2825,8 @@ function OpportunityDetailPanel({
         <span>{t("opportunity.sections.output")}</span>
         {opportunity.readiness === "confirmed" ? (
           <p>
-            {tExecution(`artifactTypes.${opportunity.action.artifactType}`)} ·
-            {" "}{tActionStatus(opportunity.action.status)}
+            {tExecution(`artifactTypes.${opportunity.action.artifactType}`)} ·{" "}
+            {tActionStatus(opportunity.action.status)}
           </p>
         ) : opportunity.readiness === "reviewable" &&
           opportunity.executionPreview !== null ? (
@@ -2869,7 +2872,9 @@ function OpportunityDetailPanel({
         ) : firstTarget === null ? null : (
           <Button
             type="button"
-            variant={opportunity.readiness === "reviewable" ? "primary" : "secondary"}
+            variant={
+              opportunity.readiness === "reviewable" ? "primary" : "secondary"
+            }
             onClick={() => onOpenUrl(firstTarget.sitePageId, primaryFindingId)}
           >
             {t(
@@ -2946,7 +2951,10 @@ function OpportunityPageView({
           opportunity.primaryTarget,
           ...item.targetPages.map((page) => page.normalizedUrl),
         ].some((value) =>
-          value.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
+          value
+            .normalize("NFKC")
+            .toLocaleLowerCase()
+            .includes(normalizedSearch),
         );
       }),
     [items, normalizedSearch, pageTypeFilter, priorityFilter],
@@ -2955,8 +2963,7 @@ function OpportunityPageView({
     requestedId,
     visibleItems.map((item) => item.id),
   );
-  const selected =
-    visibleItems.find((item) => item.id === selectedId) ?? null;
+  const selected = visibleItems.find((item) => item.id === selectedId) ?? null;
   const urlDetailOpen = selectedSitePageId !== null;
 
   useEffect(() => {
@@ -2992,7 +2999,8 @@ function OpportunityPageView({
           />
         )}
         <p className={styles.completeViewScope}>
-          {t("searchScope")} · {t("counts.opportunities", { count: visibleItems.length })}
+          {t("searchScope")} ·{" "}
+          {t("counts.opportunities", { count: visibleItems.length })}
         </p>
       </div>
       {urlDetailOpen ? (
@@ -3117,10 +3125,7 @@ function PortfolioPane({
   );
   const opportunityViewItems = useMemo(
     () =>
-      buildGrowthMapOpportunityViewItems(
-        completeOpportunities,
-        completeUrls,
-      ),
+      buildGrowthMapOpportunityViewItems(completeOpportunities, completeUrls),
     [completeOpportunities, completeUrls],
   );
 
@@ -3240,8 +3245,9 @@ function PortfolioPane({
   const activeMoreFilterCount = priorityFilter === "all" ? 0 : 1;
   const summaryKeywords = summaryKeywordsQuery.data?.data ?? null;
   const uncoveredKeywords =
-    summaryKeywords?.filter((keyword) => keyword.mappedTarget.kind === "unassigned") ??
-    null;
+    summaryKeywords?.filter(
+      (keyword) => keyword.mappedTarget.kind === "unassigned",
+    ) ?? null;
   const uncoveredClusterCount =
     uncoveredKeywords === null
       ? null
@@ -3339,7 +3345,9 @@ function PortfolioPane({
           <select
             value={pageTypeFilter}
             onChange={(event) =>
-              setPageTypeFilter(event.target.value as GrowthMapUrlPageTypeFilter)
+              setPageTypeFilter(
+                event.target.value as GrowthMapUrlPageTypeFilter,
+              )
             }
           >
             <option value="all">{t("portfolioFilters.allPageTypes")}</option>
@@ -3452,9 +3460,7 @@ function PortfolioPane({
   );
 }
 
-type KeywordMetric =
-  | GrowthMapKeywordNumericMetric
-  | GrowthMapKeywordTextMetric;
+type KeywordMetric = GrowthMapKeywordNumericMetric | GrowthMapKeywordTextMetric;
 
 const KEYWORD_STATUS_CLASS = {
   candidate: styles.keywordStatusCandidate,
@@ -3661,8 +3667,7 @@ function KeywordRow({
     entry.offPagePrimary !== null;
   const hasStaleRelation = entry.relations.some(
     (relation) =>
-      relation.candidateState === "stale" ||
-      relation.decisionState === "stale",
+      relation.candidateState === "stale" || relation.decisionState === "stale",
   );
 
   return (
@@ -3685,14 +3690,13 @@ function KeywordRow({
           onClick={() => onSelect(item.keywordId)}
         >
           <span className={styles.rowSelectLabel}>
-            {item.displayKeyword} — {item.cluster?.name ?? t("intake.unassignedCluster")}
+            {item.displayKeyword} —{" "}
+            {item.cluster?.name ?? t("intake.unassignedCluster")}
           </span>
         </button>
         <span className={styles.keywordIdentityCell}>
           <strong>{item.displayKeyword}</strong>
-          <small>
-            {item.cluster?.name ?? t("intake.unassignedCluster")}
-          </small>
+          <small>{item.cluster?.name ?? t("intake.unassignedCluster")}</small>
         </span>
         <span
           className={styles.keywordKindCell}
@@ -3767,7 +3771,9 @@ function KeywordRow({
           data-column={t("columns.freshness")}
         >
           {latestSource === null ? (
-            <span className={styles.libraryMetricSecondary}>{t("notAvailable")}</span>
+            <span className={styles.libraryMetricSecondary}>
+              {t("notAvailable")}
+            </span>
           ) : (
             <>
               <KeywordFreshnessPill freshness={latestSource.freshness} />
@@ -3901,25 +3907,18 @@ function growthMapDialogFocusable(container: HTMLElement): HTMLElement[] {
   );
 }
 
-function GrowthMapDialogFrame({
-  open,
-  titleId,
-  descriptionId,
-  onRequestClose,
-  className,
-  children,
-}: {
-  readonly open: boolean;
-  readonly titleId: string;
-  readonly descriptionId: string;
-  readonly onRequestClose: () => void;
-  readonly className?: string | undefined;
-  readonly children: ReactNode;
-}) {
-  const [mounted, setMounted] = useState(false);
-  const frameRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setMounted(true), []);
+/**
+ * Shared modal a11y contract for Growth Map dialogs and drawers: scroll lock,
+ * inert background, initial focus, a Tab-cycle trap, Escape to close, and
+ * focus restoration on close. Extracted verbatim from the dialog frame so the
+ * Competitor profile drawer keeps exactly the same focus management.
+ */
+function useGrowthMapModalA11y(
+  open: boolean,
+  mounted: boolean,
+  frameRef: RefObject<HTMLDivElement | null>,
+  onRequestClose: () => void,
+): void {
   useEffect(() => {
     if (!open || !mounted) return;
     const previouslyFocused =
@@ -3929,8 +3928,7 @@ function GrowthMapDialogFrame({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const background = Array.from(document.body.children).filter(
-      (element) =>
-        !element.hasAttribute("data-growth-map-dialog-backdrop"),
+      (element) => !element.hasAttribute("data-growth-map-dialog-backdrop"),
     );
     const backgroundState = background.map((element) => ({
       element,
@@ -3975,7 +3973,29 @@ function GrowthMapDialogFrame({
       });
       requestAnimationFrame(() => previouslyFocused?.focus());
     };
-  }, [mounted, onRequestClose, open]);
+  }, [frameRef, mounted, onRequestClose, open]);
+}
+
+function GrowthMapDialogFrame({
+  open,
+  titleId,
+  descriptionId,
+  onRequestClose,
+  className,
+  children,
+}: {
+  readonly open: boolean;
+  readonly titleId: string;
+  readonly descriptionId: string;
+  readonly onRequestClose: () => void;
+  readonly className?: string | undefined;
+  readonly children: ReactNode;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
+  useGrowthMapModalA11y(open, mounted, frameRef, onRequestClose);
 
   if (!mounted || !open) return null;
   return createPortal(
@@ -4013,10 +4033,9 @@ function KeywordRelationDecisionCard({
   readonly onRefresh: () => void;
 }) {
   const t = useTranslations("growthMap.keywordLibrary.relations");
-  const [decisionKind, setDecisionKind] =
-    useState<KeywordRelationDecisionKind>(
-      relation.decision?.decisionKind ?? "needs_research",
-    );
+  const [decisionKind, setDecisionKind] = useState<KeywordRelationDecisionKind>(
+    relation.decision?.decisionKind ?? "needs_research",
+  );
   const [primaryKeywordId, setPrimaryKeywordId] = useState(
     relation.decision?.primaryKeywordId ??
       relation.candidate.keywordA.keywordId,
@@ -4024,9 +4043,7 @@ function KeywordRelationDecisionCard({
   const [reason, setReason] = useState(
     relation.decision?.reason ?? t("defaultReason"),
   );
-  const [validationError, setValidationError] = useState<string | null>(
-    null,
-  );
+  const [validationError, setValidationError] = useState<string | null>(null);
   const decisionMutation = useDecideGrowthMapKeywordRelation(projectId);
   const keywordA = relation.candidate.keywordA;
   const keywordB = relation.candidate.keywordB;
@@ -4034,9 +4051,7 @@ function KeywordRelationDecisionCard({
   const candidateIsStale = relation.candidateState === "stale";
 
   useEffect(() => {
-    setDecisionKind(
-      relation.decision?.decisionKind ?? "needs_research",
-    );
+    setDecisionKind(relation.decision?.decisionKind ?? "needs_research");
     setPrimaryKeywordId(
       relation.decision?.primaryKeywordId ?? keywordA.keywordId,
     );
@@ -4092,9 +4107,7 @@ function KeywordRelationDecisionCard({
             candidateIsStale && styles.keywordRelationStateStale,
           )}
         >
-          {candidateIsStale
-            ? t("candidateStale")
-            : t("candidateCurrent")}
+          {candidateIsStale ? t("candidateStale") : t("candidateCurrent")}
         </span>
       </header>
 
@@ -4153,9 +4166,7 @@ function KeywordRelationDecisionCard({
       {relation.decision === null ? null : (
         <p className={styles.keywordRelationCurrentDecision}>
           {t("currentDecision", {
-            decision: t(
-              `decision.${relation.decision.decisionKind}.label`,
-            ),
+            decision: t(`decision.${relation.decision.decisionKind}.label`),
           })}
           <span>
             {t("revision", {
@@ -4278,17 +4289,12 @@ function KeywordRelationDecisionCard({
               aria-live="polite"
             >
               <CheckCircle2 aria-hidden="true" size={17} />
-              {decisionMutation.data.replayed
-                ? t("replayed")
-                : t("saved")}
+              {decisionMutation.data.replayed ? t("replayed") : t("saved")}
             </p>
           ) : null}
           {decisionMutation.error instanceof ApiError &&
           decisionMutation.error.status === 409 ? (
-            <p
-              className={styles.keywordRelationConflict}
-              role="alert"
-            >
+            <p className={styles.keywordRelationConflict} role="alert">
               <CircleAlert aria-hidden="true" size={17} />
               {t("conflict")}
             </p>
@@ -4562,9 +4568,7 @@ function TopicMapGateway({ projectId }: { readonly projectId: string }) {
           <div>
             <dt>{t("gateway.status")}</dt>
             <dd data-status={status}>
-              {workspaceQuery.isPending
-                ? t("loading")
-                : t(`status.${status}`)}
+              {workspaceQuery.isPending ? t("loading") : t(`status.${status}`)}
             </dd>
           </div>
           <div>
@@ -4699,8 +4703,7 @@ function TopicMapDialog({
         ...relationship,
         label:
           structure.nodes.find(
-            (node) =>
-              node.topicNodeId === relationship.successorTopicNodeId,
+            (node) => node.topicNodeId === relationship.successorTopicNodeId,
           )?.label ?? truncateId(relationship.successorTopicNodeId),
       })) ?? [];
   const draft = workspace?.draft ?? null;
@@ -4788,9 +4791,9 @@ function TopicMapDialog({
       mode === "create"
         ? (selectedNode?.topicNodeId ?? draft?.rootTopicNodeId ?? "")
         : (selectedNode?.parentTopicNodeId ??
-          selectedNode?.topicNodeId ??
-          draft?.rootTopicNodeId ??
-          ""),
+            selectedNode?.topicNodeId ??
+            draft?.rootTopicNodeId ??
+            ""),
     );
     setReason(t(`defaultReason.${mode}`));
   }
@@ -4831,8 +4834,7 @@ function TopicMapDialog({
       nextItem = items.at(-1);
     } else if (event.key === "ArrowRight") {
       nextItem = items.find(
-        (item) =>
-          item.dataset.parentTopicNodeId === target.dataset.topicNodeId,
+        (item) => item.dataset.parentTopicNodeId === target.dataset.topicNodeId,
       );
     } else if (event.key === "ArrowLeft") {
       const parentTopicNodeId = target.dataset.parentTopicNodeId;
@@ -5022,10 +5024,7 @@ function TopicMapDialog({
             event,
             selectedNode === null
               ? null
-              : buildTopicNodeRenameIntent(
-                  selectedNode.topicNodeId,
-                  label,
-                ),
+              : buildTopicNodeRenameIntent(selectedNode.topicNodeId, label),
           )
         }
         onSplit={(event) => submitIntent(event, splitIntent())}
@@ -5077,8 +5076,7 @@ function TopicMapDialog({
             workspace?.latestConfirmed !== undefined ? (
             <span className={styles.topicConfirmedBadge}>
               {t("confirmedRevision", {
-                revision:
-                  workspace.latestConfirmed.topicModelRevision,
+                revision: workspace.latestConfirmed.topicModelRevision,
               })}
             </span>
           ) : (
@@ -5086,7 +5084,9 @@ function TopicMapDialog({
               {t("status.unavailable")}
             </span>
           )}
-          <p>{draft === null ? t("publishedAuthority") : t("draftAuthority")}</p>
+          <p>
+            {draft === null ? t("publishedAuthority") : t("draftAuthority")}
+          </p>
         </div>
         <div>
           <Button
@@ -5247,13 +5247,13 @@ function TopicMapDialog({
             aria-labelledby={`${dialogId}-detail`}
           >
             {selectedNode === null ? (
-              editorPanel ?? (
+              (editorPanel ?? (
                 <div className={styles.topicMapDetailEmpty}>
                   <Network aria-hidden="true" size={27} />
                   <h3 id={`${dialogId}-detail`}>{t("selectTopicTitle")}</h3>
                   <p>{t("selectTopicDescription")}</p>
                 </div>
-              )
+              ))
             ) : (
               <>
                 <div className={styles.topicMapDetailHeader}>
@@ -5279,7 +5279,10 @@ function TopicMapDialog({
                       className={styles.topicMapNodeActions}
                       aria-label={t("actionsLabel")}
                     >
-                      <button type="button" onClick={() => openEditor("create")}>
+                      <button
+                        type="button"
+                        onClick={() => openEditor("create")}
+                      >
                         <Plus aria-hidden="true" size={15} />
                         {t("action.create")}
                       </button>
@@ -5345,9 +5348,7 @@ function TopicMapDialog({
                           ) ?? null)
                     }
                     successors={selectedSuccessors}
-                    insightsCoverage={
-                      insightsQuery.data?.coverage ?? null
-                    }
+                    insightsCoverage={insightsQuery.data?.coverage ?? null}
                   />
                 ) : (
                   editorPanel
@@ -5397,9 +5398,7 @@ function TopicNodeReadView({
           <div>
             <strong>{t("insightUnavailableTitle")}</strong>
             <p>{t("insightUnavailableDescription")}</p>
-            <LimitationList
-              limitations={insightsCoverage?.limitations ?? []}
-            />
+            <LimitationList limitations={insightsCoverage?.limitations ?? []} />
           </div>
         </div>
       ) : (
@@ -5571,28 +5570,25 @@ function TopicMapEditor({
   const t = useTranslations("growthMap.keywordLibrary.topicMap");
   const isBeginning = mode === "create" && draft === null;
   const editorKey = isBeginning ? "begin" : mode;
-  const onSubmit =
-    isBeginning
-      ? onBegin
-      : mode === "confirm"
-        ? onConfirm
-        : mode === "create"
-          ? onCreate
-          : mode === "edit"
-            ? onEdit
-            : mode === "rename"
-              ? onRename
-              : mode === "split"
-                ? onSplit
-                : mode === "merge"
-                  ? onMerge
-                  : onRetire;
+  const onSubmit = isBeginning
+    ? onBegin
+    : mode === "confirm"
+      ? onConfirm
+      : mode === "create"
+        ? onCreate
+        : mode === "edit"
+          ? onEdit
+          : mode === "rename"
+            ? onRename
+            : mode === "split"
+              ? onSplit
+              : mode === "merge"
+                ? onMerge
+                : onRetire;
   const parentOptions =
     mode === "create"
       ? activeNodes
-      : activeNodes.filter((node) =>
-          legalParentIds.includes(node.topicNodeId),
-        );
+      : activeNodes.filter((node) => legalParentIds.includes(node.topicNodeId));
   const mergeCandidates = activeNodes.filter(
     (node) => node.topicNodeId !== selectedNode?.topicNodeId,
   );
@@ -5607,7 +5603,11 @@ function TopicMapEditor({
           <h3>{t(`editor.${editorKey}.title`)}</h3>
           <p>{t(`editor.${editorKey}.description`)}</p>
         </div>
-        <button type="button" aria-label={t("editor.cancel")} onClick={onCancel}>
+        <button
+          type="button"
+          aria-label={t("editor.cancel")}
+          onClick={onCancel}
+        >
           <X aria-hidden="true" size={18} />
         </button>
       </div>
@@ -5641,11 +5641,7 @@ function TopicMapEditor({
           {draft?.rootTopicNodeId === null ? (
             <div className={styles.topicRootHint}>{t("field.firstRoot")}</div>
           ) : (
-            <Field
-              label={t("field.parent")}
-              htmlFor={parentSelectId}
-              required
-            >
+            <Field label={t("field.parent")} htmlFor={parentSelectId} required>
               <select
                 id={parentSelectId}
                 className={styles.topicSelect}
@@ -5675,9 +5671,7 @@ function TopicMapEditor({
           >
             <TextInput
               value={intentEnvelope}
-              onChange={(event) =>
-                onIntentEnvelopeChange(event.target.value)
-              }
+              onChange={(event) => onIntentEnvelopeChange(event.target.value)}
             />
           </Field>
         </>
@@ -5686,11 +5680,7 @@ function TopicMapEditor({
           {selectedNode?.topicNodeId === draft?.rootTopicNodeId ? (
             <div className={styles.topicRootHint}>{t("field.rootFixed")}</div>
           ) : (
-            <Field
-              label={t("field.parent")}
-              htmlFor={parentSelectId}
-              required
-            >
+            <Field label={t("field.parent")} htmlFor={parentSelectId} required>
               <select
                 id={parentSelectId}
                 className={styles.topicSelect}
@@ -5720,9 +5710,7 @@ function TopicMapEditor({
           >
             <TextInput
               value={intentEnvelope}
-              onChange={(event) =>
-                onIntentEnvelopeChange(event.target.value)
-              }
+              onChange={(event) => onIntentEnvelopeChange(event.target.value)}
             />
           </Field>
         </>
@@ -5745,9 +5733,7 @@ function TopicMapEditor({
             rows={4}
             value={successorLabels}
             placeholder={t("field.successorLabelsPlaceholder")}
-            onChange={(event) =>
-              onSuccessorLabelsChange(event.target.value)
-            }
+            onChange={(event) => onSuccessorLabelsChange(event.target.value)}
           />
         </Field>
       ) : mode === "merge" ? (
@@ -5792,11 +5778,7 @@ function TopicMapEditor({
         </>
       ) : null}
 
-      <Field
-        label={t("field.reason")}
-        help={t("field.reasonHelp")}
-        required
-      >
+      <Field label={t("field.reason")} help={t("field.reasonHelp")} required>
         <TextArea
           className={styles.topicReasonArea}
           rows={2}
@@ -5937,11 +5919,7 @@ function KeywordMetricCard({
           {typeof presentation.value === "number" ? (
             <strong>{formatNumber(locale, presentation.value)}</strong>
           ) : currentUrl !== null ? (
-            <a
-              href={currentUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href={currentUrl} target="_blank" rel="noreferrer">
               {presentation.value}
               <ArrowUpRight aria-hidden="true" size={14} />
             </a>
@@ -5979,7 +5957,9 @@ function KeywordMetricCard({
               </div>
               <div>
                 <dt>{t("metricPointer")}</dt>
-                <dd><code>{metric.valuePointer}</code></dd>
+                <dd>
+                  <code>{metric.valuePointer}</code>
+                </dd>
               </div>
             </dl>
           </details>
@@ -6096,7 +6076,9 @@ function KeywordSourceOccurrenceCard({
             <div>
               <dt>{t("snapshotId")}</dt>
               <dd>
-                <code title={occurrence.snapshotId}>{occurrence.snapshotId}</code>
+                <code title={occurrence.snapshotId}>
+                  {occurrence.snapshotId}
+                </code>
               </dd>
             </div>
           )}
@@ -6124,7 +6106,9 @@ function KeywordSourceOccurrenceCard({
           {occurrence.sourcePointer === null ? null : (
             <div>
               <dt>{t("sourcePointer")}</dt>
-              <dd><code>{occurrence.sourcePointer}</code></dd>
+              <dd>
+                <code>{occurrence.sourcePointer}</code>
+              </dd>
             </div>
           )}
           {occurrence.sourceKind === "csv_import" ? (
@@ -6183,7 +6167,8 @@ function KeywordRankHistorySection({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.keywordLibrary.rankHistory");
-  const model = history === undefined ? null : buildKeywordRankChartModel(history);
+  const model =
+    history === undefined ? null : buildKeywordRankChartModel(history);
   const chartId = `keyword-rank-chart-${history?.keywordId ?? "pending"}`;
 
   if (isPending) {
@@ -6614,9 +6599,8 @@ function KeywordReviewDialog({
     [topicInsights],
   );
   const selectedTopic =
-    confirmedTopicNodes.find(
-      (node) => node.topicNodeId === topicNodeId,
-    ) ?? null;
+    confirmedTopicNodes.find((node) => node.topicNodeId === topicNodeId) ??
+    null;
   const pageOptions = useMemo(
     () =>
       reviewDetail === null
@@ -6660,12 +6644,7 @@ function KeywordReviewDialog({
     setReason(reviewDetail.mappedTarget.reason ?? t("defaultReason"));
     setLocalError(null);
     setConflictCommand(null);
-  }, [
-    confirmedTopicNodes,
-    open,
-    reviewDetail,
-    t,
-  ]);
+  }, [confirmedTopicNodes, open, reviewDetail, t]);
 
   function clearPendingConfirmation(): void {
     setConflictCommand(null);
@@ -6740,8 +6719,7 @@ function KeywordReviewDialog({
       setLocalError(
         mappingDecision !== "unassigned" && topicNodeId.length === 0
           ? t("validation.topicRequired")
-          : mappingDecision === "existing_page" &&
-              mappedSitePageId.length === 0
+          : mappingDecision === "existing_page" && mappedSitePageId.length === 0
             ? t("validation.pageRequired")
             : t("validation.form"),
       );
@@ -6926,9 +6904,11 @@ function KeywordReviewDialog({
               data-testid="keyword-review-topic-summary"
             >
               <div>
-                <span>{t("confirmedTopicRevision", {
-                  revision: selectedTopic.topicModelRevision,
-                })}</span>
+                <span>
+                  {t("confirmedTopicRevision", {
+                    revision: selectedTopic.topicModelRevision,
+                  })}
+                </span>
                 <strong>{selectedTopic.label}</strong>
               </div>
               <span>{t(`coverageState.${selectedTopic.coverageState}`)}</span>
@@ -6985,8 +6965,7 @@ function KeywordReviewDialog({
                     disabled={
                       value !== "unassigned" &&
                       (topicNodeId.length === 0 ||
-                        (value === "existing_page" &&
-                          pageOptions.length === 0))
+                        (value === "existing_page" && pageOptions.length === 0))
                     }
                   >
                     {t(`mappingDecision.${value}`)}
@@ -6995,11 +6974,7 @@ function KeywordReviewDialog({
               </select>
             </Field>
             {mappingDecision === "existing_page" ? (
-              <Field
-                label={t("field.sitePage")}
-                htmlFor={sitePageId}
-                required
-              >
+              <Field label={t("field.sitePage")} htmlFor={sitePageId} required>
                 <select
                   id={sitePageId}
                   className={styles.topicSelect}
@@ -7038,11 +7013,7 @@ function KeywordReviewDialog({
         </section>
 
         <section className={styles.keywordReviewSection}>
-          <Field
-            label={t("field.reason")}
-            help={t("reasonHelp")}
-            required
-          >
+          <Field label={t("field.reason")} help={t("reasonHelp")} required>
             <TextArea
               rows={3}
               maxLength={2000}
@@ -7063,9 +7034,11 @@ function KeywordReviewDialog({
               <CircleAlert aria-hidden="true" size={20} />
               <div>
                 <strong>{t("conflictConfirmTitle")}</strong>
-                <p>{t("conflictConfirmDescription", {
-                  topic: selectedTopic?.label ?? t("unknownTopic"),
-                })}</p>
+                <p>
+                  {t("conflictConfirmDescription", {
+                    topic: selectedTopic?.label ?? t("unknownTopic"),
+                  })}
+                </p>
                 <div>
                   <Button
                     type="button"
@@ -7104,14 +7077,12 @@ function KeywordReviewDialog({
 
         <footer className={styles.keywordReviewFooter}>
           <span>
-            {t("revision", { revision: reviewDetail?.revision ?? detail.revision })}
+            {t("revision", {
+              revision: reviewDetail?.revision ?? detail.revision,
+            })}
           </span>
           <div>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onRequestClose}
-            >
+            <Button type="button" variant="secondary" onClick={onRequestClose}>
               {t("cancel")}
             </Button>
             <Button
@@ -8204,7 +8175,9 @@ function CompetitorStatusPill({
 }) {
   const t = useTranslations("growthMap.competitorLibrary.reviewStatus");
   return (
-    <span className={cx(styles.competitorStatus, COMPETITOR_STATUS_CLASS[status])}>
+    <span
+      className={cx(styles.competitorStatus, COMPETITOR_STATUS_CLASS[status])}
+    >
       {t(status)}
     </span>
   );
@@ -8217,7 +8190,9 @@ function CompetitorRelationship({
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   return (
-    <span className={relationship === null ? styles.competitorMissing : undefined}>
+    <span
+      className={relationship === null ? styles.competitorMissing : undefined}
+    >
       {relationship === null
         ? t("relationshipPending")
         : t(`relationship.${relationship}`)}
@@ -8225,17 +8200,22 @@ function CompetitorRelationship({
   );
 }
 
-function CompetitorListInsight({
+/**
+ * Organic-search overlap: only a canonical available observation renders a
+ * number (as a percentage); the unavailable state keeps the API limitation
+ * behind the ⓘ hint and never borrows 0 or a neighbouring metric.
+ */
+function CompetitorOverlapValue({
   insight,
 }: {
-  readonly insight: CompetitorInsight;
+  readonly insight: GrowthMapCompetitorSerpOverlap;
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
   if (insight.availability === "unavailable") {
     return (
       <span className={styles.libraryMetricSecondary}>
-        {t("noCanonicalObservation")}
+        {t("fallback.insufficientData")}
         <LimitationHint
           label={t("coverageLabel")}
           limitations={[insight.limitation]}
@@ -8243,14 +8223,77 @@ function CompetitorListInsight({
       </span>
     );
   }
-  const value =
-    typeof insight.value === "number"
-      ? formatNumber(locale, insight.value)
-      : insight.value;
+  const value = `${formatNumber(locale, insight.value)}%`;
   return (
-    <strong className={styles.libraryMetricPrimary} title={String(value)}>
+    <strong className={styles.libraryMetricPrimary} title={value}>
       {value}
     </strong>
+  );
+}
+
+/**
+ * Shared keywords have no canonical writer yet, so this cell only ever shows
+ * a collection state: "collecting" when a serp_overlap origin covers this
+ * domain, otherwise "no data" — never an invented count.
+ */
+function CompetitorSharedKeywordsValue({
+  item,
+}: {
+  readonly item: Pick<GrowthMapCompetitorLibraryItem, "originOccurrences">;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  const display = competitorSharedKeywordDisplay(item);
+  return (
+    <span className={styles.libraryMetricSecondary}>
+      {display === "collecting"
+        ? t("fallback.collecting")
+        : t("fallback.insufficientData")}
+      <LimitationHint
+        label={t("coverageLabel")}
+        limitations={[
+          display === "collecting"
+            ? t("sharedKeywords.pendingHint")
+            : t("sharedKeywords.noDataHint"),
+        ]}
+      />
+    </span>
+  );
+}
+
+/**
+ * AI-citation insight. The contract's available value is bounded text (not a
+ * count), so it renders verbatim and keeps an attached limitation visible;
+ * only the unavailable state shows the fallback vocabulary.
+ */
+function CompetitorAiCitationValue({
+  insight,
+}: {
+  readonly insight: GrowthMapCompetitorAiCitationInsight;
+}) {
+  const t = useTranslations("growthMap.competitorLibrary");
+  if (insight.availability === "unavailable") {
+    return (
+      <span className={styles.libraryMetricSecondary}>
+        {t("fallback.unavailable")}
+        <LimitationHint
+          label={t("coverageLabel")}
+          limitations={[insight.limitation]}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className={styles.libraryMetricSecondary}>
+      <strong className={styles.libraryMetricPrimary} title={insight.value}>
+        {insight.value}
+      </strong>
+      {insight.limitation === null ? null : (
+        <LimitationHint
+          label={t("coverageLabel")}
+          limitations={[insight.limitation]}
+        />
+      )}
+    </span>
   );
 }
 
@@ -8258,12 +8301,13 @@ function CompetitorRow({
   item,
   selected,
   onSelect,
+  onOpenProfile,
 }: {
   readonly item: GrowthMapCompetitorLibraryItem;
   readonly selected: boolean;
   readonly onSelect: (competitorId: string) => void;
+  readonly onOpenProfile: (competitorId: string) => void;
 }) {
-  const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
 
   return (
@@ -8290,7 +8334,7 @@ function CompetitorRow({
         </span>
         <span
           className={styles.competitorGovernanceCell}
-          data-column={t("relationshipLabel")}
+          data-column={t("columns.relationship")}
         >
           <CompetitorRelationship relationship={item.relationship} />
         </span>
@@ -8299,7 +8343,9 @@ function CompetitorRow({
           data-column={t("columns.analysisScope")}
         >
           {item.analysisScope.length === 0 ? (
-            <span className={styles.competitorMissing}>{t("scopePending")}</span>
+            <span className={styles.competitorMissing}>
+              {t("scopePending")}
+            </span>
           ) : (
             item.analysisScope.map((scope) => (
               <small key={scope}>{t(`analysisScope.${scope}`)}</small>
@@ -8308,41 +8354,36 @@ function CompetitorRow({
         </span>
         <span
           className={styles.libraryMetricCell}
-          data-column={t("columns.serpOverlap")}
+          data-column={t("columns.organicOverlap")}
         >
-          <CompetitorListInsight insight={item.serpOverlap} />
+          <CompetitorOverlapValue insight={item.serpOverlap} />
         </span>
         <span
           className={styles.libraryMetricCell}
-          data-column={t("columns.evidence")}
+          data-column={t("columns.sharedKeywords")}
         >
-          <strong className={styles.libraryMetricPrimary}>
-            {item.originOccurrences.length}
-          </strong>
-          {item.lastObservedAt === null ? (
-            <span className={styles.libraryMetricSecondary}>{t("notObserved")}</span>
-          ) : (
-            <time
-              className={styles.libraryMetricSecondary}
-              dateTime={item.lastObservedAt}
-            >
-              {formatObservedAt(locale, item.lastObservedAt)}
-            </time>
-          )}
+          <CompetitorSharedKeywordsValue item={item} />
         </span>
         <span
           className={styles.libraryMetricCell}
           data-column={t("columns.aiCitations")}
         >
-          <CompetitorListInsight insight={item.aiCitationInsight} />
+          <CompetitorAiCitationValue insight={item.aiCitationInsight} />
         </span>
         <span
           className={styles.competitorGovernanceCell}
-          data-column={t("reviewStatusLabel")}
+          data-column={t("columns.status")}
         >
           <CompetitorStatusPill status={item.reviewStatus} />
-          <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
+        <button
+          type="button"
+          className={styles.competitorRowArrow}
+          aria-label={t("openFullProfile")}
+          onClick={() => onOpenProfile(item.competitorId)}
+        >
+          <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
+        </button>
       </div>
     </li>
   );
@@ -8352,22 +8393,25 @@ function CompetitorList({
   items,
   selectedCompetitorId,
   onSelect,
+  onOpenProfile,
 }: {
   readonly items: readonly GrowthMapCompetitorLibraryItem[];
   readonly selectedCompetitorId: string | null;
   readonly onSelect: (competitorId: string) => void;
+  readonly onOpenProfile: (competitorId: string) => void;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   return (
     <div className={styles.competitorLedger}>
       <div className={styles.competitorLedgerHeader} aria-hidden="true">
         <span>{t("columns.competitor")}</span>
-        <span>{t("relationshipLabel")}</span>
+        <span>{t("columns.relationship")}</span>
         <span>{t("columns.analysisScope")}</span>
-        <span>{t("columns.serpOverlap")}</span>
-        <span>{t("columns.evidence")}</span>
+        <span>{t("columns.organicOverlap")}</span>
+        <span>{t("columns.sharedKeywords")}</span>
         <span>{t("columns.aiCitations")}</span>
-        <span>{t("reviewStatusLabel")}</span>
+        <span>{t("columns.status")}</span>
+        <span />
       </div>
       <ul className={styles.competitorList} aria-label={t("listLabel")}>
         {items.map((item) => (
@@ -8376,6 +8420,7 @@ function CompetitorList({
             item={item}
             selected={selectedCompetitorId === item.competitorId}
             onSelect={onSelect}
+            onOpenProfile={onOpenProfile}
           />
         ))}
       </ul>
@@ -8427,7 +8472,9 @@ function CompetitorEvidenceList({
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   if (origin.evidenceRefs.length === 0) {
-    return <p className={styles.competitorEvidenceEmpty}>{t("noEvidenceRefs")}</p>;
+    return (
+      <p className={styles.competitorEvidenceEmpty}>{t("noEvidenceRefs")}</p>
+    );
   }
   return (
     <ul className={styles.competitorEvidenceList}>
@@ -8452,9 +8499,7 @@ function CompetitorEvidenceList({
             <li key={evidence.evidenceId}>
               <span>
                 <strong>{t("evidenceKind.evidence")}</strong>
-                <code title={evidence.evidenceId}>
-                  {evidence.evidenceId}
-                </code>
+                <code title={evidence.evidenceId}>{evidence.evidenceId}</code>
               </span>
             </li>
           ))}
@@ -8462,175 +8507,80 @@ function CompetitorEvidenceList({
   );
 }
 
-function CompetitorOriginOccurrenceCard({
+/**
+ * The immutable per-origin provenance facts. Rendered inside the drawer's
+ * "why was this discovered" rows; field set is unchanged from the previous
+ * origin occurrence cards.
+ */
+function CompetitorOriginFactsDl({
   origin,
 }: {
   readonly origin: GrowthMapCompetitorOriginOccurrence;
 }) {
-  const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
   return (
-    <article className={styles.keywordSourceCard}>
-      <header>
-        <div>
-          <Database aria-hidden="true" size={18} />
-          <strong>{t(`originKind.${origin.originKind}`)}</strong>
-        </div>
-        {origin.observedAt === null ? (
-          <span className={styles.competitorObservedState}>{t("notObserved")}</span>
-        ) : (
-          <time dateTime={origin.observedAt}>
-            {formatObservedAt(locale, origin.observedAt)}
-          </time>
-        )}
-      </header>
-      <details className={styles.traceDisclosure}>
-        <summary>{t("viewOriginDetails")}</summary>
-        <dl className={styles.competitorOriginFacts}>
+    <dl className={styles.competitorOriginFacts}>
+      <CompetitorOriginFact
+        label={t("occurrenceId")}
+        value={origin.occurrenceId}
+      />
+      {origin.originKind === "product_profile" ? (
+        <>
           <CompetitorOriginFact
-            label={t("occurrenceId")}
-            value={origin.occurrenceId}
+            label={t("productProfileId")}
+            value={origin.productProfileId}
           />
-          {origin.originKind === "product_profile" ? (
-            <>
-              <CompetitorOriginFact
-                label={t("productProfileId")}
-                value={origin.productProfileId}
-              />
-              <CompetitorOriginFact
-                label={t("profileVersion")}
-                value={origin.profileVersion}
-                technical={false}
-              />
-              <CompetitorOriginFact
-                label={t("candidateId")}
-                value={origin.candidateId}
-              />
-              <CompetitorOriginFact
-                label={t("fieldProvenancePath")}
-                value={origin.fieldProvenancePath}
-              />
-            </>
-          ) : origin.originKind === "csv_keyword_gap" ? (
-            <>
-              <CompetitorOriginFact
-                label={t("snapshotId")}
-                value={origin.snapshotId}
-              />
-              <CompetitorOriginFact
-                label={t("observationId")}
-                value={origin.observationId}
-              />
-              <CompetitorOriginFact
-                label={t("sourcePointer")}
-                value={origin.sourcePointer}
-              />
-              <CompetitorOriginFact
-                label={t("importPreviewId")}
-                value={origin.importPreviewId}
-              />
-            </>
-          ) : origin.originKind === "manual" ? (
-            <CompetitorOriginFact
-              label={t("manualEntryId")}
-              value={origin.manualEntryId}
-            />
-          ) : (
-            <>
-              <CompetitorOriginFact
-                label={t("snapshotId")}
-                value={origin.snapshotId}
-              />
-              <CompetitorOriginFact
-                label={t("observationId")}
-                value={origin.observationId}
-              />
-            </>
-          )}
-        </dl>
-        <div className={styles.competitorEvidenceBlock}>
-          <strong>{t("evidenceRefs")}</strong>
-          <CompetitorEvidenceList origin={origin} />
-        </div>
-      </details>
-    </article>
-  );
-}
-
-type CompetitorInsight =
-  | GrowthMapCompetitorSerpOverlap
-  | GrowthMapCompetitorAiCitationInsight;
-
-function CompetitorInsightCard({
-  insightKind,
-  insight,
-}: {
-  readonly insightKind: "serpOverlap" | "aiCitationInsight";
-  readonly insight: CompetitorInsight;
-}) {
-  const locale = useLocale();
-  const t = useTranslations("growthMap.competitorLibrary");
-  return (
-    <article className={styles.competitorInsightCard}>
-      <header>
-        <strong>{t(`insight.${insightKind}`)}</strong>
-        <span
-          className={cx(
-            styles.competitorInsightAvailability,
-            insight.availability === "available"
-              ? styles.competitorInsightAvailable
-              : styles.competitorInsightUnavailable,
-          )}
-        >
-          {insight.availability === "available"
-            ? t("canonicalObservationAvailable")
-            : t("noCanonicalObservation")}
-        </span>
-      </header>
-      {insight.availability === "unavailable" ? (
-        <LimitationList
-          className={styles.competitorInsightLimitation}
-          limitations={[insight.limitation]}
+          <CompetitorOriginFact
+            label={t("profileVersion")}
+            value={origin.profileVersion}
+            technical={false}
+          />
+          <CompetitorOriginFact
+            label={t("candidateId")}
+            value={origin.candidateId}
+          />
+          <CompetitorOriginFact
+            label={t("fieldProvenancePath")}
+            value={origin.fieldProvenancePath}
+          />
+        </>
+      ) : origin.originKind === "csv_keyword_gap" ? (
+        <>
+          <CompetitorOriginFact
+            label={t("snapshotId")}
+            value={origin.snapshotId}
+          />
+          <CompetitorOriginFact
+            label={t("observationId")}
+            value={origin.observationId}
+          />
+          <CompetitorOriginFact
+            label={t("sourcePointer")}
+            value={origin.sourcePointer}
+          />
+          <CompetitorOriginFact
+            label={t("importPreviewId")}
+            value={origin.importPreviewId}
+          />
+        </>
+      ) : origin.originKind === "manual" ? (
+        <CompetitorOriginFact
+          label={t("manualEntryId")}
+          value={origin.manualEntryId}
         />
       ) : (
         <>
-          <div className={styles.competitorInsightValue}>
-            {typeof insight.value === "number"
-              ? formatNumber(locale, insight.value)
-              : insight.value}
-          </div>
-          <p className={styles.keywordMetricObservedAt}>
-            <span>{t("observedAt")}</span>
-            <time dateTime={insight.observedAt}>
-              {formatObservedAt(locale, insight.observedAt)}
-            </time>
-          </p>
-          <details className={styles.traceDisclosure}>
-            <summary>{t("viewInsightSourceDetails")}</summary>
-            <dl className={styles.keywordMetricMeta}>
-              <CompetitorOriginFact
-                label={t("snapshotId")}
-                value={insight.snapshotId}
-              />
-              <CompetitorOriginFact
-                label={t("observationId")}
-                value={insight.observationId}
-              />
-              <CompetitorOriginFact
-                label={t("valuePointer")}
-                value={insight.valuePointer}
-              />
-            </dl>
-          </details>
-          {insight.limitation === null ? null : (
-            <LimitationList
-              className={styles.competitorInsightLimitation}
-              limitations={[insight.limitation]}
-            />
-          )}
+          <CompetitorOriginFact
+            label={t("snapshotId")}
+            value={origin.snapshotId}
+          />
+          <CompetitorOriginFact
+            label={t("observationId")}
+            value={origin.observationId}
+          />
         </>
       )}
-    </article>
+    </dl>
   );
 }
 
@@ -8666,14 +8616,12 @@ function CompetitorMonitorSignalCard({
       ? safeExternalPageUrl(signal.url)
       : null;
   const signalAnchor = `competitor-signal-${signal.signalId}`;
-  const selected =
-    searchParams.get("competitorSignalId") === signal.signalId;
+  const selected = searchParams.get("competitorSignalId") === signal.signalId;
   const opportunityParams = new URLSearchParams(searchParams.toString());
   opportunityParams.set("object", "competitors");
   opportunityParams.set("selectedCompetitorId", signal.competitorId);
   opportunityParams.set("competitorSignalId", signal.signalId);
-  const opportunityHref =
-    `/p/${encodeURIComponent(projectId)}/growth-map?${opportunityParams.toString()}#${signalAnchor}`;
+  const opportunityHref = `/p/${encodeURIComponent(projectId)}/growth-map?${opportunityParams.toString()}#${signalAnchor}`;
 
   useEffect(() => {
     if (!selected) return;
@@ -8690,17 +8638,13 @@ function CompetitorMonitorSignalCard({
       id={signalAnchor}
       className={styles.competitorMonitorSignal}
       data-signal-kind={signal.kind}
-      data-opportunity-update-source-ref={
-        signal.opportunityUpdate.sourceRef
-      }
+      data-opportunity-update-source-ref={signal.opportunityUpdate.sourceRef}
       data-selected={selected ? "true" : "false"}
       data-testid={`competitor-monitor-signal-${signal.signalId}`}
     >
       <header className={styles.competitorMonitorSignalHeader}>
         <span>
-          {signal.kind === "rank_gain"
-            ? t("rankSignal")
-            : t("contentSignal")}
+          {signal.kind === "rank_gain" ? t("rankSignal") : t("contentSignal")}
         </span>
         <strong>
           {signal.kind === "rank_gain" ? signal.keyword : signal.topicLabel}
@@ -8775,10 +8719,7 @@ function CompetitorMonitorSignalCard({
             label={t("previousSnapshot")}
             value={signal.previousSnapshotId}
           />
-          <CompetitorOriginFact
-            label={t("signalId")}
-            value={signal.signalId}
-          />
+          <CompetitorOriginFact label={t("signalId")} value={signal.signalId} />
         </dl>
         {signal.limitation === null ? null : (
           <LimitationList
@@ -8914,11 +8855,7 @@ function CompetitorMonitorSection({
           disabled={isUpdating}
           onClick={() => onToggle(!configEnabled)}
         >
-          {isUpdating
-            ? t("saving")
-            : configEnabled
-              ? t("pause")
-              : t("enable")}
+          {isUpdating ? t("saving") : configEnabled ? t("pause") : t("enable")}
         </button>
       </div>
 
@@ -9061,13 +8998,11 @@ function CompetitorReviewDialog({
   open,
   detail,
   onRequestClose,
-  onSaved,
 }: {
   readonly projectId: string;
   readonly open: boolean;
   readonly detail: GrowthMapCompetitorLibraryItem;
   readonly onRequestClose: () => void;
-  readonly onSaved: () => void;
 }) {
   const t = useTranslations("growthMap.competitorLibrary.review");
   const dialogId = useId();
@@ -9082,21 +9017,35 @@ function CompetitorReviewDialog({
     open,
   );
   const reviewDetail = reviewDetailQuery.data?.data ?? null;
-  const mutation = useReviewGrowthMapCompetitor(
-    projectId,
-    detail.competitorId,
-  );
+  const mutation = useReviewGrowthMapCompetitor(projectId, detail.competitorId);
   const [name, setName] = useState("");
   const [reviewStatus, setReviewStatus] =
     useState<GrowthMapCompetitorReviewStatus>("candidate");
-  const [relationship, setRelationship] =
-    useState<GrowthMapCompetitorRelationship | "">("");
+  const [relationship, setRelationship] = useState<
+    GrowthMapCompetitorRelationship | ""
+  >("");
   const [analysisScope, setAnalysisScope] = useState<
     readonly ProductProfileCompetitorAnalysisScope[]
   >([]);
   const [localError, setLocalError] = useState<string | null>(null);
+  /**
+   * Set only from a confirmed mutation success while the dialog is still
+   * open; while non-null the dialog shows the recorded-decision view. The
+   * approved copy is derived from the server-returned scope so it never
+   * claims capabilities the saved authority does not establish.
+   */
+  const [successState, setSuccessState] = useState<Pick<
+    GrowthMapCompetitorLibraryItem,
+    "reviewStatus" | "analysisScope"
+  > | null>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
   const isRevisionConflict =
     mutation.error instanceof ApiError && mutation.error.status === 409;
+
+  useEffect(() => {
+    setSuccessState(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open || reviewDetail === null) return;
@@ -9113,9 +9062,7 @@ function CompetitorReviewDialog({
     mutation.reset();
   }
 
-  function changeStatus(
-    nextStatus: GrowthMapCompetitorReviewStatus,
-  ): void {
+  function changeStatus(nextStatus: GrowthMapCompetitorReviewStatus): void {
     resetFeedback();
     setReviewStatus(nextStatus);
     if (nextStatus !== "approved") {
@@ -9133,9 +9080,7 @@ function CompetitorReviewDialog({
     if (checked) selected.add(scope);
     else selected.delete(scope);
     setAnalysisScope(
-      COMPETITOR_REVIEW_ANALYSIS_SCOPES.filter((value) =>
-        selected.has(value),
-      ),
+      COMPETITOR_REVIEW_ANALYSIS_SCOPES.filter((value) => selected.has(value)),
     );
   }
 
@@ -9145,8 +9090,8 @@ function CompetitorReviewDialog({
     if (reviewDetail === null) return;
 
     let reviewedRelationship: GrowthMapCompetitorRelationship | null = null;
-    let reviewedAnalysisScope:
-      readonly ProductProfileCompetitorAnalysisScope[] = [];
+    let reviewedAnalysisScope: readonly ProductProfileCompetitorAnalysisScope[] =
+      [];
     if (reviewStatus === "approved") {
       if (relationship === "") {
         setLocalError(t("validation.relationshipRequired"));
@@ -9169,9 +9114,12 @@ function CompetitorReviewDialog({
     };
     setLocalError(null);
     mutation.mutate(command, {
-      onSuccess: () => {
-        onSaved();
-        onRequestClose();
+      onSuccess: (response) => {
+        if (!openRef.current) return;
+        setSuccessState({
+          reviewStatus: response.data.reviewStatus,
+          analysisScope: response.data.analysisScope,
+        });
       },
     });
   }
@@ -9186,17 +9134,13 @@ function CompetitorReviewDialog({
     >
       <header className={styles.keywordRelationDialogHeader}>
         <div>
-          <span>{t("eyebrow")}</span>
+          <span id={descriptionId}>
+            {reviewDetail?.name ?? detail.name ?? detail.domain} ·{" "}
+            {reviewDetail?.domain ?? detail.domain}
+          </span>
           <h2 id={titleId}>
-            {t("title", {
-              competitor:
-                reviewDetail?.name ??
-                reviewDetail?.domain ??
-                detail.name ??
-                detail.domain,
-            })}
+            {successState === null ? t("title") : t("successTitle")}
           </h2>
-          <p id={descriptionId}>{t("description")}</p>
         </div>
         <button
           type="button"
@@ -9208,20 +9152,41 @@ function CompetitorReviewDialog({
         </button>
       </header>
 
-      <form
-        className={styles.keywordReviewForm}
-        data-testid="competitor-review-form"
-        onSubmit={submit}
-      >
-        <section className={styles.keywordReviewSection}>
-          <div className={styles.keywordReviewSectionHeading}>
-            <span>01</span>
+      {successState !== null ? (
+        <div
+          className={styles.competitorReviewSuccess}
+          data-testid="competitor-review-success"
+          role="status"
+        >
+          <CheckCircle2 aria-hidden="true" size={22} />
+          <p>
+            {successState.reviewStatus === "approved"
+              ? t("success.approved", {
+                  scopes: successState.analysisScope
+                    .map((scope) => t(`analysisScope.${scope}`))
+                    .join(" · "),
+                })
+              : t(`success.${successState.reviewStatus}`)}
+          </p>
+          <footer className={styles.keywordReviewFooter}>
+            <span>
+              {t("revision", {
+                revision: reviewDetail?.revision ?? detail.revision,
+              })}
+            </span>
             <div>
-              <h3>{t("identityTitle")}</h3>
-              <p>{t("identityDescription", { domain: detail.domain })}</p>
+              <Button type="button" onClick={onRequestClose}>
+                {t("done")}
+              </Button>
             </div>
-          </div>
-
+          </footer>
+        </div>
+      ) : (
+        <form
+          className={styles.keywordReviewForm}
+          data-testid="competitor-review-form"
+          onSubmit={submit}
+        >
           {reviewDetailQuery.isPending ? (
             <div className={styles.keywordReviewAuthorityState} role="status">
               <Spinner label={t("loading")} size="sm" />
@@ -9239,114 +9204,105 @@ function CompetitorReviewDialog({
               </button>
             </div>
           ) : (
-            <Field
-              label={t("field.name")}
-              help={t("field.nameHelp")}
-              htmlFor={nameId}
-            >
-              <TextInput
-                id={nameId}
-                value={name}
-                maxLength={160}
-                onChange={(event) => {
-                  resetFeedback();
-                  setName(event.target.value);
-                }}
-              />
-            </Field>
-          )}
-        </section>
-
-        <section className={styles.keywordReviewSection}>
-          <div className={styles.keywordReviewSectionHeading}>
-            <span>02</span>
-            <div>
-              <h3>{t("governanceTitle")}</h3>
-              <p>{t("governanceDescription")}</p>
-            </div>
-          </div>
-          <div className={styles.keywordReviewGrid}>
-            <Field
-              label={t("field.status")}
-              htmlFor={statusId}
-              required
-            >
-              <select
-                id={statusId}
-                className={styles.topicSelect}
-                value={reviewStatus}
-                disabled={reviewDetail === null}
-                onChange={(event) =>
-                  changeStatus(
-                    event.target.value as GrowthMapCompetitorReviewStatus,
-                  )
-                }
-              >
-                {COMPETITOR_REVIEW_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {t(`status.${status}`)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            {reviewStatus === "approved" ? (
-              <Field
-                label={t("field.relationship")}
-                htmlFor={relationshipId}
-                required
-              >
+            <>
+              <Field label={t("decisionLabel")} htmlFor={statusId} required>
                 <select
-                  id={relationshipId}
+                  id={statusId}
                   className={styles.topicSelect}
-                  value={relationship}
+                  value={reviewStatus}
                   disabled={reviewDetail === null}
-                  onChange={(event) => {
-                    resetFeedback();
-                    setRelationship(
-                      event.target.value as
-                        | GrowthMapCompetitorRelationship
-                        | "",
-                    );
-                  }}
+                  onChange={(event) =>
+                    changeStatus(
+                      event.target.value as GrowthMapCompetitorReviewStatus,
+                    )
+                  }
                 >
-                  <option value="">{t("selectRelationship")}</option>
-                  {COMPETITOR_REVIEW_RELATIONSHIPS.map((value) => (
-                    <option key={value} value={value}>
-                      {t(`relationship.${value}`)}
+                  {COMPETITOR_REVIEW_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {t(`decision.${status}`)}
                     </option>
                   ))}
                 </select>
               </Field>
-            ) : null}
-          </div>
 
-          {reviewStatus === "approved" ? (
-            <fieldset
-              className={styles.topicMergeChoices}
-              data-testid="competitor-review-analysis-scope"
-            >
-              <legend>{t("field.analysisScope")}</legend>
-              {COMPETITOR_REVIEW_ANALYSIS_SCOPES.map((scope) => (
-                <label key={scope}>
-                  <input
-                    type="checkbox"
-                    checked={analysisScope.includes(scope)}
-                    disabled={reviewDetail === null}
-                    onChange={(event) =>
-                      toggleAnalysisScope(scope, event.target.checked)
-                    }
-                  />
-                  <span>{t(`analysisScope.${scope}`)}</span>
-                </label>
-              ))}
-            </fieldset>
-          ) : (
-            <p className={styles.keywordReviewDataNote}>
-              <CircleAlert aria-hidden="true" size={16} />
-              <span>{t("nonApprovedBoundary")}</span>
-            </p>
+              <Field
+                label={t("field.name")}
+                help={t("field.nameHelp")}
+                htmlFor={nameId}
+              >
+                <TextInput
+                  id={nameId}
+                  value={name}
+                  maxLength={160}
+                  onChange={(event) => {
+                    resetFeedback();
+                    setName(event.target.value);
+                  }}
+                />
+              </Field>
+
+              {reviewStatus === "approved" ? (
+                <>
+                  <Field
+                    label={t("field.relationship")}
+                    htmlFor={relationshipId}
+                    required
+                  >
+                    <select
+                      id={relationshipId}
+                      className={styles.topicSelect}
+                      value={relationship}
+                      disabled={reviewDetail === null}
+                      onChange={(event) => {
+                        resetFeedback();
+                        setRelationship(
+                          event.target.value as
+                            | GrowthMapCompetitorRelationship
+                            | "",
+                        );
+                      }}
+                    >
+                      <option value="">{t("selectRelationship")}</option>
+                      {COMPETITOR_REVIEW_RELATIONSHIPS.map((value) => (
+                        <option key={value} value={value}>
+                          {t(`relationship.${value}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <fieldset
+                    className={styles.topicMergeChoices}
+                    data-testid="competitor-review-analysis-scope"
+                  >
+                    <legend>{t("field.analysisScope")}</legend>
+                    {COMPETITOR_REVIEW_ANALYSIS_SCOPES.map((scope) => (
+                      <label key={scope}>
+                        <input
+                          type="checkbox"
+                          checked={analysisScope.includes(scope)}
+                          disabled={reviewDetail === null}
+                          onChange={(event) =>
+                            toggleAnalysisScope(scope, event.target.checked)
+                          }
+                        />
+                        <span>{t(`analysisScope.${scope}`)}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                </>
+              ) : (
+                <p className={styles.keywordReviewDataNote}>
+                  <CircleAlert aria-hidden="true" size={16} />
+                  <span>{t("nonApprovedBoundary")}</span>
+                </p>
+              )}
+            </>
           )}
+
+          <p className={styles.competitorDecisionImpact}>
+            <strong>{t("impactTitle")}</strong>
+            <span>{t("impactBody")}</span>
+          </p>
 
           {localError === null ? null : (
             <p className={styles.keywordReviewError} role="alert">
@@ -9358,38 +9314,256 @@ function CompetitorReviewDialog({
               {isRevisionConflict ? t("revisionConflict") : t("saveError")}
             </p>
           ) : null}
-        </section>
 
-        <footer className={styles.keywordReviewFooter}>
-          <span>
-            {t("revision", {
-              revision: reviewDetail?.revision ?? detail.revision,
-            })}
-          </span>
-          <div>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onRequestClose}
-            >
-              {t("cancel")}
-            </Button>
-            <Button
-              type="submit"
-              disabled={reviewDetail === null || mutation.isPending}
-            >
-              {mutation.isPending ? t("saving") : t("save")}
-            </Button>
-          </div>
-        </footer>
-      </form>
+          <footer className={styles.keywordReviewFooter}>
+            <span>
+              {t("revision", {
+                revision: reviewDetail?.revision ?? detail.revision,
+              })}
+            </span>
+            <div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onRequestClose}
+              >
+                {t("cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={reviewDetail === null || mutation.isPending}
+              >
+                {mutation.isPending ? t("saving") : t("submit")}
+              </Button>
+            </div>
+          </footer>
+        </form>
+      )}
     </GrowthMapDialogFrame>
+  );
+}
+
+/**
+ * The Competitor full-profile drawer. It reuses the already-fetched review
+ * detail (no extra request), carries the monitor section, origin provenance,
+ * and the record disclosure moved out of the detail panel, and mirrors the
+ * review dialog's focus management via useGrowthMapModalA11y.
+ */
+function CompetitorProfileDrawer({
+  projectId,
+  open,
+  detail,
+  onRequestClose,
+  onOpenReview,
+  monitorResponse,
+  monitorItem,
+  isMonitorPending,
+  isMonitorError,
+  onRetryMonitor,
+  isMonitorUpdating,
+  isMonitorUpdateSuccess,
+  monitorUpdateError,
+  onToggleMonitor,
+  onRefreshMonitorConfig,
+}: {
+  readonly projectId: string;
+  readonly open: boolean;
+  readonly detail: GrowthMapCompetitorLibraryItem;
+  readonly onRequestClose: () => void;
+  readonly onOpenReview: () => void;
+  readonly monitorResponse: CompetitorMonitorResponse | undefined;
+  readonly monitorItem: CompetitorMonitorItem | null;
+  readonly isMonitorPending: boolean;
+  readonly isMonitorError: boolean;
+  readonly onRetryMonitor: () => void;
+  readonly isMonitorUpdating: boolean;
+  readonly isMonitorUpdateSuccess: boolean;
+  readonly monitorUpdateError: unknown;
+  readonly onToggleMonitor: (enabled: boolean) => void;
+  readonly onRefreshMonitorConfig: () => void;
+}) {
+  const locale = useLocale();
+  const t = useTranslations("growthMap.competitorLibrary");
+  const drawerId = useId();
+  const titleId = `${drawerId}-title`;
+  const [mounted, setMounted] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
+  useGrowthMapModalA11y(open, mounted, frameRef, onRequestClose);
+
+  if (!mounted || !open) return null;
+
+  const participation = competitorKeywordGapParticipation(detail);
+  const impactKey =
+    participation === "participating"
+      ? "approved"
+      : participation === "awaiting_confirmation"
+        ? "candidate"
+        : "excluded";
+
+  return createPortal(
+    <div
+      className={styles.competitorDrawerScrim}
+      data-growth-map-dialog-backdrop=""
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onRequestClose();
+      }}
+    >
+      <div
+        ref={frameRef}
+        className={styles.competitorDrawer}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-testid="competitor-profile-drawer"
+      >
+        <header className={styles.competitorDrawerHeader}>
+          <div>
+            <span>{detail.domain}</span>
+            <h2 id={titleId}>{detail.name ?? detail.domain}</h2>
+          </div>
+          <button
+            type="button"
+            className={styles.keywordRelationClose}
+            aria-label={t("drawer.close")}
+            onClick={onRequestClose}
+          >
+            <X aria-hidden="true" size={19} />
+          </button>
+        </header>
+        <div className={styles.competitorDrawerBody}>
+          <div className={styles.competitorDrawerScoreGrid}>
+            <div>
+              <span>{t("metrics.organicOverlap")}</span>
+              <CompetitorOverlapValue insight={detail.serpOverlap} />
+            </div>
+            <div>
+              <span>{t("metrics.sharedKeywords")}</span>
+              <CompetitorSharedKeywordsValue item={detail} />
+            </div>
+            <div>
+              <span>{t("metrics.aiCitations")}</span>
+              <CompetitorAiCitationValue insight={detail.aiCitationInsight} />
+            </div>
+          </div>
+
+          <section className={styles.competitorDrawerSection}>
+            <h3>{t("drawer.scopeSection")}</h3>
+            <dl className={styles.competitorFacts}>
+              <div>
+                <dt>{t("facts.relationship")}</dt>
+                <dd>
+                  <CompetitorRelationship relationship={detail.relationship} />
+                </dd>
+              </div>
+              <div>
+                <dt>{t("facts.analysisScope")}</dt>
+                <dd>
+                  {detail.analysisScope.length === 0
+                    ? t("scopePending")
+                    : detail.analysisScope
+                        .map((scope) => t(`analysisScope.${scope}`))
+                        .join(" · ")}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("drawer.reviewStatus")}</dt>
+                <dd>
+                  <CompetitorStatusPill status={detail.reviewStatus} />
+                </dd>
+              </div>
+              <div>
+                <dt>{t("drawer.keywordGapImpact")}</dt>
+                <dd>{t(`drawer.impact.${impactKey}`)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className={styles.competitorDrawerSection}>
+            <h3>{t("drawer.discoverySection")}</h3>
+            {detail.originOccurrences.map((origin) => (
+              <article
+                key={origin.occurrenceId}
+                className={styles.competitorDrawerOriginRow}
+              >
+                <header>
+                  <span className={styles.competitorDrawerOriginBadge}>
+                    {origin.originKind === "serp_overlap" ||
+                    origin.originKind === "ai_citation"
+                      ? t("drawer.badgeSnapshot")
+                      : t("drawer.badgeManual")}
+                  </span>
+                  <strong>{t(`originKind.${origin.originKind}`)}</strong>
+                  {origin.observedAt === null ? (
+                    <span className={styles.competitorObservedState}>
+                      {t("notObserved")}
+                    </span>
+                  ) : (
+                    <time dateTime={origin.observedAt}>
+                      {formatObservedAt(locale, origin.observedAt)}
+                    </time>
+                  )}
+                </header>
+                <details className={styles.traceDisclosure}>
+                  <summary>{t("viewOriginDetails")}</summary>
+                  <CompetitorOriginFactsDl origin={origin} />
+                  <div className={styles.competitorEvidenceBlock}>
+                    <strong>{t("evidenceRefs")}</strong>
+                    <CompetitorEvidenceList origin={origin} />
+                  </div>
+                </details>
+              </article>
+            ))}
+          </section>
+
+          <CompetitorMonitorSection
+            projectId={projectId}
+            response={monitorResponse}
+            item={monitorItem}
+            isPending={isMonitorPending}
+            isError={isMonitorError}
+            onRetry={onRetryMonitor}
+            isUpdating={isMonitorUpdating}
+            isUpdateSuccess={isMonitorUpdateSuccess}
+            updateError={monitorUpdateError}
+            onToggle={onToggleMonitor}
+            onRefreshConfig={onRefreshMonitorConfig}
+          />
+        </div>
+        <footer className={styles.competitorDrawerFooter}>
+          <details className={styles.recordDisclosure}>
+            <summary>{t("viewRecordDetails")}</summary>
+            <div className={styles.recordDisclosureBody}>
+              <span>
+                {t("competitorId")}
+                <code title={detail.competitorId}>{detail.competitorId}</code>
+              </span>
+              <span>
+                {t("revision")}
+                <strong>{detail.revision}</strong>
+              </span>
+            </div>
+          </details>
+          <Button type="button" onClick={onOpenReview}>
+            <Pencil aria-hidden="true" size={16} />
+            {detail.reviewStatus === "candidate"
+              ? t("reviewScopeCandidate")
+              : t("reviewScopeApproved")}
+          </Button>
+        </footer>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
 function CompetitorDetailPanel({
   detail,
   projectId,
+  profileOpen,
+  onOpenProfile,
+  onCloseProfile,
   monitorResponse,
   monitorItem,
   isMonitorPending,
@@ -9403,6 +9577,9 @@ function CompetitorDetailPanel({
 }: {
   readonly detail: GrowthMapCompetitorLibraryItem;
   readonly projectId: string;
+  readonly profileOpen: boolean;
+  readonly onOpenProfile: () => void;
+  readonly onCloseProfile: () => void;
   readonly monitorResponse: CompetitorMonitorResponse | undefined;
   readonly monitorItem: CompetitorMonitorItem | null;
   readonly isMonitorPending: boolean;
@@ -9417,21 +9594,7 @@ function CompetitorDetailPanel({
   const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewSaved, setReviewSaved] = useState(false);
-  const originLabels = Array.from(
-    new Set(
-      detail.originOccurrences.map((origin) =>
-        t(`originKind.${origin.originKind}`),
-      ),
-    ),
-  );
-  const keywordGapParticipation =
-    detail.reviewStatus === "candidate"
-      ? "unknown"
-      : detail.reviewStatus === "approved" &&
-          detail.analysisScope.includes("keyword_gap")
-        ? "participating"
-        : "not_participating";
+  const entryReason = competitorPoolEntryReason(detail);
   return (
     <>
       <aside
@@ -9440,233 +9603,139 @@ function CompetitorDetailPanel({
       >
         <header className={styles.competitorDetailHeader}>
           <div className={styles.detailEyebrow}>
-            <span>{t("selectedCompetitor")}</span>
-            <CoveragePill coverage={detail.coverage} />
+            <span>{t("detailEyebrow")}</span>
+            <CompetitorStatusPill status={detail.reviewStatus} />
           </div>
           <h2>{detail.name ?? detail.domain}</h2>
-          <p>{detail.domain}</p>
-          <div className={styles.competitorDetailTags}>
-            <CompetitorStatusPill status={detail.reviewStatus} />
-            <CompetitorRelationship relationship={detail.relationship} />
-          </div>
-          <div className={styles.keywordReviewHeaderAction}>
-            {reviewSaved ? (
-              <span role="status">
-                <CheckCircle2 aria-hidden="true" size={15} />
-                {t("review.saved")}
-              </span>
-            ) : null}
-          </div>
+          <p>
+            {detail.domain} ·{" "}
+            {detail.relationship === null
+              ? t("relationshipPending")
+              : t(`relationship.${detail.relationship}`)}
+          </p>
         </header>
 
-      <LimitationList limitations={detail.coverage.limitations} />
+        <div className={styles.competitorDetailTags}>
+          <CoveragePill coverage={detail.coverage} />
+          <LimitationList limitations={detail.coverage.limitations} />
+        </div>
 
-      <section
-        className={cx(
-          styles.routeCard,
-          detail.reviewStatus === "candidate" && styles.routeCardWarning,
-        )}
-      >
-        <span>{t("poolEntryTitle")}</span>
-        <strong>{originLabels.join(" · ")}</strong>
-        <p>{t("poolEntryDescription")}</p>
-      </section>
-
-      <div className={styles.detailMetricsFour}>
-        <div>
-          <span>{t("insight.serpOverlap")}</span>
-          <CompetitorListInsight insight={detail.serpOverlap} />
-        </div>
-        <div>
-          <span>{t("insight.aiCitationInsight")}</span>
-          <CompetitorListInsight insight={detail.aiCitationInsight} />
-        </div>
-        <div>
-          <span>{t("originOccurrencesForCompetitor")}</span>
-          <strong>{detail.originOccurrences.length}</strong>
-        </div>
-        <div>
-          <span>{t("lastObservedAt")}</span>
-          <strong>
-            {detail.lastObservedAt === null
-              ? t("notObserved")
-              : formatObservedAt(locale, detail.lastObservedAt)}
-          </strong>
-        </div>
-      </div>
-
-      <dl className={styles.competitorFacts}>
-        <div>
-          <dt>{t("relationshipLabel")}</dt>
-          <dd><CompetitorRelationship relationship={detail.relationship} /></dd>
-        </div>
-        <div>
-          <dt>{t("analysisScopeLabel")}</dt>
-          <dd>
-            {detail.analysisScope.length === 0
-              ? t("scopePending")
-              : detail.analysisScope
-                  .map((scope) => t(`analysisScope.${scope}`))
-                  .join(" · ")}
-          </dd>
-        </div>
-        <div>
-          <dt>{t("keywordGapParticipationLabel")}</dt>
-          <dd>{t(`keywordGapParticipation.${keywordGapParticipation}`)}</dd>
-        </div>
-        <div>
-          <dt>{t("evidenceRefs")}</dt>
-          <dd>{detail.originOccurrences.length}</dd>
-        </div>
-      </dl>
-
-      <div className={styles.detailActions}>
-        <Link href={`/p/${projectId}/context`}>
-          <Globe2 aria-hidden="true" size={16} />
-          {t("openProductProfile")}
-        </Link>
-        <button
-          type="button"
-          data-testid="competitor-review-open"
-          onClick={() => {
-            setReviewSaved(false);
-            setReviewOpen(true);
-          }}
+        <section
+          className={cx(
+            styles.competitorRouteCard,
+            detail.reviewStatus === "candidate" &&
+              styles.competitorRouteCardWarning,
+          )}
         >
-          <Pencil aria-hidden="true" size={16} />
-          {t("reviewScope")}
-        </button>
-      </div>
+          <span>{t("poolEntry.title")}</span>
+          <p>
+            {entryReason === "customer_confirmed"
+              ? t("poolEntry.reasonCustomer")
+              : entryReason === "metrics" &&
+                  detail.serpOverlap.availability === "available"
+                ? t("poolEntry.reasonMetrics", {
+                    overlap: formatNumber(locale, detail.serpOverlap.value),
+                  })
+                : t("poolEntry.reasonCollection")}
+          </p>
+        </section>
 
-      <CompetitorMonitorSection
-        projectId={projectId}
-        response={monitorResponse}
-        item={monitorItem}
-        isPending={isMonitorPending}
-        isError={isMonitorError}
-        onRetry={onRetryMonitor}
-        isUpdating={isMonitorUpdating}
-        isUpdateSuccess={isMonitorUpdateSuccess}
-        updateError={monitorUpdateError}
-        onToggle={onToggleMonitor}
-        onRefreshConfig={onRefreshMonitorConfig}
-      />
-
-      <section className={styles.keywordDetailSection}>
-        <div className={styles.keywordSectionHeading}>
+        <div className={styles.competitorDetailMetricsFour}>
           <div>
-            <span>{t("governanceEyebrow")}</span>
-            <h3>{t("governanceTitle")}</h3>
+            <span>{t("metrics.organicOverlap")}</span>
+            <CompetitorOverlapValue insight={detail.serpOverlap} />
           </div>
-          <Target aria-hidden="true" size={21} />
+          <div>
+            <span>{t("metrics.sharedKeywords")}</span>
+            <CompetitorSharedKeywordsValue item={detail} />
+          </div>
+          <div>
+            <span>{t("metrics.aiCitations")}</span>
+            <CompetitorAiCitationValue insight={detail.aiCitationInsight} />
+          </div>
+          <div>
+            <span>{t("metrics.evidence")}</span>
+            <strong>{detail.originOccurrences.length}</strong>
+          </div>
         </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("governanceDescription")}
-        </p>
-        <dl className={styles.keywordClassificationGrid}>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("reviewStatusLabel")}</dt>
-            <dd><CompetitorStatusPill status={detail.reviewStatus} /></dd>
-          </div>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("relationshipLabel")}</dt>
-            <dd><strong><CompetitorRelationship relationship={detail.relationship} /></strong></dd>
-          </div>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("analysisScopeLabel")}</dt>
+
+        <dl className={styles.competitorFacts}>
+          <div>
+            <dt>{t("facts.relationship")}</dt>
             <dd>
-              {detail.analysisScope.length === 0 ? (
-                <strong className={styles.competitorMissing}>{t("scopePending")}</strong>
-              ) : (
-                <span className={styles.competitorScopeChips}>
-                  {detail.analysisScope.map((scope) => (
-                    <small key={scope}>{t(`analysisScope.${scope}`)}</small>
-                  ))}
-                </span>
+              <CompetitorRelationship relationship={detail.relationship} />
+            </dd>
+          </div>
+          <div>
+            <dt>{t("facts.analysisScope")}</dt>
+            <dd>
+              {detail.analysisScope.length === 0
+                ? t("scopePending")
+                : detail.analysisScope
+                    .map((scope) => t(`analysisScope.${scope}`))
+                    .join(" · ")}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("facts.keywordGap")}</dt>
+            <dd>
+              {t(
+                `keywordGapParticipation.${competitorKeywordGapParticipation(detail)}`,
               )}
             </dd>
           </div>
-          <div className={styles.keywordClassificationField}>
-            <dt>{t("lastObservedAt")}</dt>
+          <div>
+            <dt>{t("facts.systemEvidence")}</dt>
             <dd>
-              {detail.lastObservedAt === null ? (
-                <strong className={styles.competitorMissing}>{t("notObserved")}</strong>
-              ) : (
-                <time dateTime={detail.lastObservedAt}>
-                  {formatObservedAt(locale, detail.lastObservedAt)}
-                </time>
-              )}
+              {t("systemEvidenceCount", {
+                count: detail.originOccurrences.length,
+              })}
             </dd>
           </div>
         </dl>
-      </section>
 
-      <section className={styles.keywordDetailSection}>
-        <div className={styles.keywordSectionHeading}>
-          <div>
-            <span>{t("insightsEyebrow")}</span>
-            <h3>{t("insightsTitle")}</h3>
-          </div>
-          <BarChart3 aria-hidden="true" size={21} />
+        <div className={styles.detailActions}>
+          <button type="button" onClick={onOpenProfile}>
+            <BookOpenText aria-hidden="true" size={16} />
+            {t("viewFullProfile")}
+          </button>
+          <button
+            type="button"
+            data-testid="competitor-review-open"
+            onClick={() => setReviewOpen(true)}
+          >
+            <Pencil aria-hidden="true" size={16} />
+            {detail.reviewStatus === "candidate"
+              ? t("reviewScopeCandidate")
+              : t("reviewScopeApproved")}
+          </button>
         </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("insightsDescription")}
-        </p>
-        <div className={styles.competitorInsightGrid}>
-          <CompetitorInsightCard
-            insightKind="serpOverlap"
-            insight={detail.serpOverlap}
-          />
-          <CompetitorInsightCard
-            insightKind="aiCitationInsight"
-            insight={detail.aiCitationInsight}
-          />
-        </div>
-      </section>
-
-      <section className={styles.keywordDetailSection}>
-        <div className={styles.keywordSectionHeading}>
-          <div>
-            <span>{t("originsEyebrow")}</span>
-            <h3>{t("originsTitle")}</h3>
-          </div>
-          <ShieldCheck aria-hidden="true" size={21} />
-        </div>
-        <p className={styles.keywordSectionDescription}>
-          {t("originsDescription")}
-        </p>
-        <div className={styles.keywordSourceList}>
-          {detail.originOccurrences.map((origin) => (
-            <CompetitorOriginOccurrenceCard
-              key={origin.occurrenceId}
-              origin={origin}
-            />
-          ))}
-        </div>
-      </section>
-
-        <footer className={styles.keywordDetailFooter}>
-          <details className={styles.recordDisclosure}>
-            <summary>{t("viewRecordDetails")}</summary>
-            <div className={styles.recordDisclosureBody}>
-              <span>
-                {t("competitorId")}
-                <code title={detail.competitorId}>{detail.competitorId}</code>
-              </span>
-              <span>
-                {t("revision")}
-                <strong>{detail.revision}</strong>
-              </span>
-            </div>
-          </details>
-        </footer>
       </aside>
+      <CompetitorProfileDrawer
+        projectId={projectId}
+        open={profileOpen}
+        detail={detail}
+        onRequestClose={onCloseProfile}
+        onOpenReview={() => {
+          onCloseProfile();
+          setReviewOpen(true);
+        }}
+        monitorResponse={monitorResponse}
+        monitorItem={monitorItem}
+        isMonitorPending={isMonitorPending}
+        isMonitorError={isMonitorError}
+        onRetryMonitor={onRetryMonitor}
+        isMonitorUpdating={isMonitorUpdating}
+        isMonitorUpdateSuccess={isMonitorUpdateSuccess}
+        monitorUpdateError={monitorUpdateError}
+        onToggleMonitor={onToggleMonitor}
+        onRefreshMonitorConfig={onRefreshMonitorConfig}
+      />
       <CompetitorReviewDialog
         projectId={projectId}
         open={reviewOpen}
         detail={detail}
         onRequestClose={() => setReviewOpen(false)}
-        onSaved={() => setReviewSaved(true)}
       />
     </>
   );
@@ -9675,9 +9744,15 @@ function CompetitorDetailPanel({
 function CompetitorDetailState({
   projectId,
   selectedCompetitorId,
+  profileOpen,
+  onOpenProfile,
+  onCloseProfile,
 }: {
   readonly projectId: string;
   readonly selectedCompetitorId: string | null;
+  readonly profileOpen: boolean;
+  readonly onOpenProfile: () => void;
+  readonly onCloseProfile: () => void;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   const detailQuery = useGrowthMapCompetitorReviewDetail(
@@ -9769,6 +9844,9 @@ function CompetitorDetailState({
       key={detailQuery.data.data.competitorId}
       detail={detailQuery.data.data}
       projectId={projectId}
+      profileOpen={profileOpen}
+      onOpenProfile={onOpenProfile}
+      onCloseProfile={onCloseProfile}
       monitorResponse={monitorQuery.data}
       monitorItem={monitorItem}
       isMonitorPending={monitorQuery.isPending}
@@ -9783,11 +9861,7 @@ function CompetitorDetailState({
   );
 }
 
-function CompetitorLibraryEmpty({
-  projectId,
-}: {
-  readonly projectId: string;
-}) {
+function CompetitorLibraryEmpty({ projectId }: { readonly projectId: string }) {
   const t = useTranslations("growthMap");
   const tc = useTranslations("growthMap.competitorLibrary");
   return (
@@ -9806,7 +9880,10 @@ function CompetitorLibraryEmpty({
         <CircleAlert aria-hidden="true" size={20} />
         <p>{t("libraries.competitors.boundary")}</p>
       </div>
-      <Link className={styles.competitorManageLink} href={`/p/${projectId}/context`}>
+      <Link
+        className={styles.competitorManageLink}
+        href={`/p/${projectId}/context`}
+      >
         <Pencil aria-hidden="true" size={17} />
         {tc("editProfileCompetitors")}
       </Link>
@@ -9847,6 +9924,9 @@ function CompetitorLibraryPane({
   const [competitorSearch, setCompetitorSearch] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<GrowthMapCompetitorStatusFilter>("all");
+  // Full-profile drawer visibility lives beside the selection so both the
+  // row arrow and the detail panel action drive the same drawer.
+  const [profileOpen, setProfileOpen] = useState(false);
   const listQuery = useGrowthMapCompetitors(projectId, {
     cursor,
     limit: 50,
@@ -9913,21 +9993,31 @@ function CompetitorLibraryPane({
     navigation.request({ selectedCompetitorId: competitorId });
   }
 
+  function openCompetitorProfile(competitorId: string): void {
+    if (competitorId !== selectedCompetitorId) {
+      selectCompetitor(competitorId);
+    }
+    setProfileOpen(true);
+  }
+
   function goNext(): void {
     const nextCursor = listQuery.data?.meta.nextCursor ?? null;
     if (nextCursor === null) return;
     setCursorPredecessors((current) =>
       rememberGrowthMapCursorPredecessor(current, cursor, nextCursor),
     );
+    setProfileOpen(false);
     navigation.request({ cursor: nextCursor, selectedCompetitorId: null });
   }
 
   function goPrevious(): void {
     if (previousCursor === undefined) return;
+    setProfileOpen(false);
     navigation.request({ cursor: previousCursor, selectedCompetitorId: null });
   }
 
   function goFirst(): void {
+    setProfileOpen(false);
     navigation.request({ cursor: null, selectedCompetitorId: null });
   }
 
@@ -9959,42 +10049,49 @@ function CompetitorLibraryPane({
   }
 
   const response = listQuery.data;
-  const originCount = response.data.reduce(
-    (count, item) => count + item.originOccurrences.length,
-    0,
-  );
+  // Artifact-parity discovery grouping: customer/sales input folds
+  // product_profile and manual origins together, and the approved corpus is
+  // the csv_keyword_gap import path. One Competitor may count in several
+  // routes; counts cover only the loaded cursor range (existing algorithm).
   const discoveryItems: readonly SourceStripItem[] = [
     {
-      key: "product_profile",
-      label: t("discoverySource.product_profile"),
+      key: "customer_input",
+      label: t("discoverySource.customer_input"),
       count: items.filter((item) =>
-        item.originOccurrences.some((origin) => origin.originKind === "product_profile"),
+        item.originOccurrences.some(
+          (origin) =>
+            origin.originKind === "product_profile" ||
+            origin.originKind === "manual",
+        ),
       ).length,
       tone: "amber",
     },
     {
-      key: "serp_overlap",
-      label: t("discoverySource.serp_overlap"),
+      key: "serp_duplicate",
+      label: t("discoverySource.serp_duplicate"),
       count: items.filter((item) =>
-        item.originOccurrences.some((origin) => origin.originKind === "serp_overlap"),
+        item.originOccurrences.some(
+          (origin) => origin.originKind === "serp_overlap",
+        ),
       ).length,
       tone: "mint",
     },
     {
-      key: "ai_citation",
-      label: t("discoverySource.ai_citation"),
+      key: "ai_co_citation",
+      label: t("discoverySource.ai_co_citation"),
       count: items.filter((item) =>
-        item.originOccurrences.some((origin) => origin.originKind === "ai_citation"),
+        item.originOccurrences.some(
+          (origin) => origin.originKind === "ai_citation",
+        ),
       ).length,
       tone: "violet",
     },
     {
-      key: "csv_manual",
-      label: t("discoverySource.csv_manual"),
+      key: "approved_corpus",
+      label: t("discoverySource.approved_corpus"),
       count: items.filter((item) =>
         item.originOccurrences.some(
-          (origin) =>
-            origin.originKind === "csv_keyword_gap" || origin.originKind === "manual",
+          (origin) => origin.originKind === "csv_keyword_gap",
         ),
       ).length,
       tone: "cobalt",
@@ -10012,13 +10109,6 @@ function CompetitorLibraryPane({
           countLabel={(count) => t("discoveryCount", { count })}
         />
       </div>
-      <div className={styles.pageScopeNote}>
-        <span>{t("loadedCount", { count: response.data.length })}</span>
-        <span>{t("originOccurrencesOnPage")}: {originCount}</span>
-        <CoveragePill coverage={response.meta.coverage} />
-        <LimitationList limitations={response.meta.coverage.limitations} />
-      </div>
-
       {readState === "empty" ? (
         <CompetitorLibraryEmpty projectId={projectId} />
       ) : (
@@ -10039,7 +10129,9 @@ function CompetitorLibraryPane({
               <select
                 value={statusFilter}
                 onChange={(event) =>
-                  setStatusFilter(event.target.value as GrowthMapCompetitorStatusFilter)
+                  setStatusFilter(
+                    event.target.value as GrowthMapCompetitorStatusFilter,
+                  )
                 }
               >
                 <option value="all">{t("statusFilterAll")}</option>
@@ -10050,7 +10142,10 @@ function CompetitorLibraryPane({
                 ))}
               </select>
             </label>
-            <Link className={styles.libraryAction} href={`/p/${projectId}/context`}>
+            <Link
+              className={styles.libraryAction}
+              href={`/p/${projectId}/context`}
+            >
               <Plus aria-hidden="true" size={17} />
               {t("addCompetitor")}
             </Link>
@@ -10077,9 +10172,13 @@ function CompetitorLibraryPane({
                   items={filteredItems}
                   selectedCompetitorId={selectedCompetitorId}
                   onSelect={selectCompetitor}
+                  onOpenProfile={openCompetitorProfile}
                 />
               )}
-              <nav className={styles.pagination} aria-label={t("paginationLabel")}>
+              <nav
+                className={styles.pagination}
+                aria-label={t("paginationLabel")}
+              >
                 <Button
                   type="button"
                   variant="secondary"
@@ -10090,11 +10189,12 @@ function CompetitorLibraryPane({
                   <ArrowLeft aria-hidden="true" size={16} />
                   {t("previousPage")}
                 </Button>
-                <span>
+                <span className={styles.paginationSummary}>
                   {t("visibleCount", {
                     visible: filteredItems.length,
                     total: response.data.length,
                   })}
+                  <CoveragePill coverage={response.meta.coverage} />
                 </span>
                 <Button
                   type="button"
@@ -10111,6 +10211,9 @@ function CompetitorLibraryPane({
             <CompetitorDetailState
               projectId={projectId}
               selectedCompetitorId={selectedCompetitorId}
+              profileOpen={profileOpen}
+              onOpenProfile={() => setProfileOpen(true)}
+              onCloseProfile={() => setProfileOpen(false)}
             />
           </div>
         </>
@@ -10124,9 +10227,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const locationSearch = searchParams.toString();
-  const mode = normalizeGrowthMapObjectMode(
-    searchParams.get("object"),
-  );
+  const mode = normalizeGrowthMapObjectMode(searchParams.get("object"));
   // One unpinned URL read is the published-generation authority. Every
   // customer-visible URL, Keyword, and Competitor read below is then pinned to
   // that exact Diagnostic run, so switching tabs cannot blend generations.
@@ -10149,12 +10250,9 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
     [pathname],
   );
 
-  const replaceCanonicalHref = useCallback(
-    (href: string): void => {
-      window.history.replaceState(null, "", href);
-    },
-    [],
-  );
+  const replaceCanonicalHref = useCallback((href: string): void => {
+    window.history.replaceState(null, "", href);
+  }, []);
 
   const navigation = useMemo<GrowthMapNavigationController>(
     () => ({
@@ -10183,10 +10281,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   }
 
   return (
-    <div
-      className={styles.page}
-      data-growth-map-page=""
-    >
+    <div className={styles.page} data-growth-map-page="">
       <header className={styles.hero}>
         <div className={styles.heroText}>
           <span className={styles.eyebrow}>
@@ -10214,7 +10309,10 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           <button
             type="button"
             key={key}
-            className={cx(styles.objectTab, mode === key && styles.objectTabActive)}
+            className={cx(
+              styles.objectTab,
+              mode === key && styles.objectTabActive,
+            )}
             aria-current={mode === key ? "page" : undefined}
             aria-pressed={mode === key}
             onClick={() => switchMode(key)}

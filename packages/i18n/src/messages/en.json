@@ -2003,7 +2003,6 @@
       "libraryScopeLabel": "Competitor Library overview",
       "libraryScopeTitle": "Saved Competitors and their sources",
       "libraryScopeDescription": "See review status, sources, and latest update. Missing data is clearly labeled.",
-      "loadedOnPage": "Competitors on this page",
       "originOccurrencesOnPage": "Origin records on this page",
       "originOccurrencesForCompetitor": "Origin records for this Competitor",
       "coverageLabel": "Data coverage",
@@ -2013,22 +2012,20 @@
       "loadedCount": "{count, plural, one {# Competitor loaded on this page} other {# Competitors loaded on this page}}",
       "visibleCount": "Showing {visible} of {total} Competitors in the loaded range",
       "discoveryPathLabel": "Discovery path",
-      "discoveryPathTitle": "Build a broad Competitor pool, then confirm the analysis scope",
-      "discoveryPathDescription": "Candidate domains never enter Keyword-gap analysis automatically. Only approved records with an allowed scope participate in formal comparisons. These cards count only the loaded range.",
-      "discoveryCount": "{count, plural, one {# Competitor from this path} other {# Competitors from this path}}",
+      "discoveryPathTitle": "Build a broad Competitor pool, then let the customer confirm the analysis scope",
+      "discoveryPathDescription": "Candidate Competitors never enter Keyword-gap analysis automatically. Only approved domains with an allowed scope participate in formal comparisons.",
+      "discoveryCount": "{count, plural, one {# domain} other {# domains}}",
       "discoverySource": {
-        "all": "All discovery paths",
-        "product_profile": "Product Profile",
-        "serp_overlap": "SERP overlap",
-        "ai_citation": "AI citation",
-        "csv_manual": "CSV or manual"
+        "customer_input": "Customer and sales input",
+        "serp_duplicate": "Recurring domains in search results",
+        "ai_co_citation": "AI co-citations",
+        "approved_corpus": "Approved corpus"
       },
       "searchLabel": "Search Competitors",
-      "searchPlaceholder": "Search a Competitor name or domain",
-      "statusFilterLabel": "Status filter",
+      "searchPlaceholder": "Search a company or domain",
+      "statusFilterLabel": "Status",
       "statusFilterAll": "All statuses",
       "addCompetitor": "Add Competitor",
-      "addCompetitorHint": "Competitor intake starts from Product Profile or Sources.",
       "paginationLabel": "Competitor Library pagination",
       "previousPage": "Previous page",
       "nextPage": "Next page",
@@ -2036,15 +2033,24 @@
       "cursorPageEmptyDescription": "This page position has no records. Return to the first page to continue.",
       "firstPage": "Return to first page",
       "columns": {
-        "competitor": "Competitor / domain",
-        "governance": "Review status / relationship",
-        "serpOverlap": "SERP overlap",
-        "evidence": "Evidence",
-        "aiCitations": "AI citations",
-        "lastObserved": "Last observed",
+        "competitor": "Competitor",
+        "relationship": "Relationship",
         "analysisScope": "Analysis scope",
-        "origins": "Real origins / observed at"
+        "organicOverlap": "Organic search overlap",
+        "sharedKeywords": "Shared keywords",
+        "aiCitations": "AI citations",
+        "status": "Status"
       },
+      "fallback": {
+        "insufficientData": "Insufficient data",
+        "collecting": "Collecting",
+        "unavailable": "Unavailable"
+      },
+      "sharedKeywords": {
+        "pendingHint": "A search-results Competitor origin is recorded, but the shared-keyword count has not been derived into a formal metric yet.",
+        "noDataHint": "No search-results collection origin covers this domain yet."
+      },
+      "openFullProfile": "Open the full Competitor detail",
       "noMatchesTitle": "No matching Competitors",
       "noMatchesDescription": "Try another name, domain, or review status. The library shows only exact loaded records.",
       "reviewStatus": {
@@ -2080,23 +2086,51 @@
       "selectedCompetitor": "Selected Competitor",
       "selectCompetitorTitle": "Select a Competitor",
       "selectCompetitorDescription": "Choose a Competitor to see its review status, data, and source records.",
-      "poolEntryTitle": "Why this Competitor entered the pool",
-      "poolEntryDescription": "The pool explains the discovery path, what evidence introduced the record, and whether it is actively participating in keyword-gap analysis.",
-      "summary": {
-        "label": "Competitor summary",
-        "approved": "Approved Competitors",
-        "candidates": "Candidates awaiting review",
-        "keywordGapParticipants": "Keyword-gap participants",
-        "monitored": "Monthly monitored Competitors"
+      "detailEyebrow": "Competitor profile",
+      "poolEntry": {
+        "title": "Why this competitor is in the pool",
+        "reasonCustomer": "Customer and market signals jointly confirm this domain is relevant to the current buying scenario.",
+        "reasonCollection": "This domain comes from search-results and corpus collection; external gap metrics will be generated after the next data update.",
+        "reasonMetrics": "This domain entered the pool with {overlap}% organic search overlap."
       },
+      "metrics": {
+        "organicOverlap": "Organic search overlap",
+        "sharedKeywords": "Shared keywords",
+        "aiCitations": "AI citations",
+        "evidence": "Evidence"
+      },
+      "facts": {
+        "relationship": "Relationship",
+        "analysisScope": "Analysis scope",
+        "keywordGap": "Keyword gap",
+        "systemEvidence": "System evidence"
+      },
+      "systemEvidenceCount": "{count, plural, one {# built-in provenance evidence record} other {# built-in provenance evidence records}}",
       "keywordGapParticipationLabel": "Keyword-gap participation",
       "keywordGapParticipation": {
-        "participating": "Participating",
-        "not_participating": "Not participating",
-        "unknown": "Participation unknown"
+        "participating": "Included in formal analysis",
+        "awaiting_confirmation": "Awaiting customer confirmation",
+        "not_participating": "Not participating"
       },
       "openProductProfile": "Open Product Profile",
-      "reviewScope": "Review scope",
+      "viewFullProfile": "View full profile",
+      "reviewScopeCandidate": "Review Competitor scope",
+      "reviewScopeApproved": "Adjust analysis scope",
+      "drawer": {
+        "scopeSection": "Current analysis scope",
+        "discoverySection": "Why it was discovered",
+        "monitorSection": "Change monitoring",
+        "reviewStatus": "Review status",
+        "keywordGapImpact": "Impact on Keyword gap",
+        "impact": {
+          "approved": "Included",
+          "candidate": "Awaiting confirmation",
+          "excluded": "Not participating"
+        },
+        "badgeManual": "Manually confirmed",
+        "badgeSnapshot": "Scenario snapshot",
+        "close": "Close"
+      },
       "governanceEyebrow": "Review information",
       "governanceTitle": "Review status and analysis scope",
       "governanceDescription": "Candidate and excluded records show their status. Approved records also show relationship and analysis scope.",
@@ -2145,10 +2179,9 @@
       "competitorId": "Competitor ID",
       "revision": "Record revision",
       "review": {
-        "open": "Review Competitor",
         "saved": "Review saved; awaiting analysis refresh",
         "eyebrow": "Competitor Library review",
-        "title": "Review {competitor}",
+        "title": "Confirm Competitor scope",
         "description": "Confirm the candidate's name, relationship, and analysis use. This saves current review authority; the customer delivery view updates on the next Analysis Refresh under one Diagnostic generation.",
         "close": "Close Competitor review",
         "loading": "Reading the latest review authority…",
@@ -2161,15 +2194,17 @@
         "field": {
           "name": "Competitor name",
           "nameHelp": "Optional. Leave blank to display the canonical domain.",
-          "status": "Review status",
           "relationship": "Relationship",
           "analysisScope": "Analysis scope (select at least one)"
         },
-        "status": {
-          "candidate": "Keep as candidate",
-          "approved": "Approve for analysis",
+        "decisionLabel": "Review decision",
+        "decision": {
+          "approved": "Approve and include in analysis",
+          "candidate": "Keep as candidate Competitor",
           "excluded": "Exclude"
         },
+        "impactTitle": "This decision affects",
+        "impactBody": "Keyword gap, content comparison, the AI citation benchmark, and comparison-page evidence.",
         "relationship": {
           "direct": "Direct competitor",
           "indirect": "Indirect competitor",
@@ -2195,7 +2230,14 @@
         "revision": "Current review revision {revision}",
         "cancel": "Cancel",
         "saving": "Saving…",
-        "save": "Save review"
+        "submit": "Confirm and record",
+        "successTitle": "Review decision recorded",
+        "success": {
+          "approved": "Confirmed and included in analysis; participating scope: {scopes}.",
+          "excluded": "Excluded from the analysis scope; historical evidence is retained.",
+          "candidate": "Kept as a Competitor candidate; it does not participate in formal gap calculations."
+        },
+        "done": "Done"
       },
       "monitor": {
         "eyebrow": "Monthly changes",

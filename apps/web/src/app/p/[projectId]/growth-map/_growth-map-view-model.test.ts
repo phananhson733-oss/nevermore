@@ -4,6 +4,7 @@ import type {
   CompetitorMonitorItem,
   CompetitorMonitorResponse,
   GrowthMapCompetitorLibraryItem,
+  GrowthMapCompetitorOriginOccurrence,
   GrowthMapKeywordLibraryItem,
   GrowthMapKeywordRankHistory,
   GrowthMapKeywordRelation,
@@ -51,8 +52,11 @@ import {
   GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
+  competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
   competitorLibraryReadState,
+  competitorPoolEntryReason,
+  competitorSharedKeywordDisplay,
   growthMapPlatformLimitationKey,
   rememberGrowthMapCursorPredecessor,
   resolveGrowthMapCursorPredecessor,
@@ -393,11 +397,67 @@ function competitorItem(
   } as GrowthMapCompetitorLibraryItem;
 }
 
+function productProfileOrigin(): GrowthMapCompetitorOriginOccurrence {
+  return {
+    occurrenceId: IDS.snapshot,
+    observedAt: "2026-07-28T08:00:00.000Z",
+    originKind: "product_profile",
+    productProfileId: IDS.project,
+    profileVersion: 3,
+    candidateId: IDS.candidate,
+    fieldProvenancePath: "/competitorCandidates/0",
+    evidenceRefs: [],
+  };
+}
+
+function manualOrigin(): GrowthMapCompetitorOriginOccurrence {
+  return {
+    occurrenceId: IDS.observation,
+    observedAt: null,
+    originKind: "manual",
+    manualEntryId: IDS.evidence,
+    evidenceRefs: [],
+  };
+}
+
+function serpOverlapOrigin(): GrowthMapCompetitorOriginOccurrence {
+  return {
+    occurrenceId: IDS.relation,
+    observedAt: "2026-07-28T08:00:00.000Z",
+    originKind: "serp_overlap",
+    snapshotId: IDS.snapshot,
+    observationId: IDS.observation,
+    evidenceRefs: [],
+  };
+}
+
+function csvKeywordGapOrigin(): GrowthMapCompetitorOriginOccurrence {
+  return {
+    occurrenceId: IDS.finding,
+    observedAt: null,
+    originKind: "csv_keyword_gap",
+    snapshotId: IDS.snapshot,
+    observationId: IDS.observation,
+    sourcePointer: "/valueJson/competitorDomain",
+    importPreviewId: IDS.candidate,
+    evidenceRefs: [],
+  };
+}
+
+function availableSerpOverlap(): GrowthMapCompetitorLibraryItem["serpOverlap"] {
+  return {
+    availability: "available",
+    value: 42,
+    snapshotId: IDS.snapshot,
+    observationId: IDS.observation,
+    valuePointer: "/valueJson/overlapPct",
+    observedAt: "2026-07-28T08:00:00.000Z",
+    limitation: null,
+  };
+}
+
 function keywordRelation(): GrowthMapKeywordRelation {
-  const participant = (
-    keywordId: string,
-    displayKeyword: string,
-  ) => ({
+  const participant = (keywordId: string, displayKeyword: string) => ({
     keywordId,
     displayKeyword,
     normalizedKeyword: displayKeyword.toLowerCase(),
@@ -416,10 +476,7 @@ function keywordRelation(): GrowthMapKeywordRelation {
     candidateRevision: 1,
     ruleVersion: "keyword-relation.1.0.0" as const,
     keywordA: participant(IDS.keywordA, "Customer onboarding"),
-    keywordB: participant(
-      IDS.keywordB,
-      "Customer onboarding automation",
-    ),
+    keywordB: participant(IDS.keywordB, "Customer onboarding automation"),
     signals: {
       sameConfirmedMappedPage: true as const,
       sameReviewedIntent: true as const,
@@ -494,11 +551,7 @@ function confirmedTopicWorkspace(): TopicModelWorkspaceProjection {
       rootTopicNodeId: IDS.topicRoot,
       nodes: [
         topicNode(IDS.topicRoot, null, "Customer onboarding"),
-        topicNode(
-          IDS.topicChild,
-          IDS.topicRoot,
-          "Onboarding automation",
-        ),
+        topicNode(IDS.topicChild, IDS.topicRoot, "Onboarding automation"),
       ],
       aliases: [],
       successorRelationships: [],
@@ -524,24 +577,9 @@ function draftTopicWorkspace(): TopicModelWorkspaceProjection {
       editRevision: 4,
       rootTopicNodeId: IDS.topicRoot,
       nodes: [
-        topicNode(
-          IDS.topicRoot,
-          null,
-          "Customer operations",
-          2,
-        ),
-        topicNode(
-          IDS.topicChild,
-          IDS.topicRoot,
-          "Onboarding automation",
-          2,
-        ),
-        topicNode(
-          IDS.topicGrandchild,
-          IDS.topicChild,
-          "Workflow templates",
-          2,
-        ),
+        topicNode(IDS.topicRoot, null, "Customer operations", 2),
+        topicNode(IDS.topicChild, IDS.topicRoot, "Onboarding automation", 2),
+        topicNode(IDS.topicGrandchild, IDS.topicChild, "Workflow templates", 2),
       ],
       aliases: [],
       successorRelationships: [],
@@ -911,10 +949,8 @@ describe("Growth Map view model", () => {
     ];
 
     expect(
-      buildGrowthMapOpportunityViewItems(
-        [confirmedOpportunity],
-        portfolio,
-      )[0]?.priority,
+      buildGrowthMapOpportunityViewItems([confirmedOpportunity], portfolio)[0]
+        ?.priority,
     ).toMatchObject({ availability: "available", value: "medium" });
 
     expect(
@@ -1052,10 +1088,7 @@ describe("Growth Map view model", () => {
 
   it("never shows the first URL's Internal Link Map after a different URL is selected", () => {
     expect(
-      buildInternalLinkMapProjection(
-        internalLinkMapFixture(),
-        IDS.sitePageB,
-      ),
+      buildInternalLinkMapProjection(internalLinkMapFixture(), IDS.sitePageB),
     ).toEqual({
       kind: "selection_unavailable",
       coverage: {
@@ -1344,12 +1377,7 @@ describe("Growth Map view model", () => {
         sourceKind: "gsc_top_query",
       }).map((entry) => entry.item.keywordId),
     ).toEqual([IDS.keywordA]);
-    for (const search of [
-      "gb",
-      "en-gb",
-      "awareness",
-      "/guides/onboarding",
-    ]) {
+    for (const search of ["gb", "en-gb", "awareness", "/guides/onboarding"]) {
       expect(
         filterGrowthMapKeywordEntries(items, {
           search,
@@ -1421,6 +1449,138 @@ describe("Growth Map view model", () => {
     ).toEqual([IDS.competitorA, IDS.competitorB]);
   });
 
+  it("attributes pool entry to customer confirmation whenever a Product Profile or manual origin exists", () => {
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [productProfileOrigin()],
+        }),
+      ),
+    ).toBe("customer_confirmed");
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [manualOrigin()],
+        }),
+      ),
+    ).toBe("customer_confirmed");
+    // Customer confirmation outranks an available metric.
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [manualOrigin(), serpOverlapOrigin()],
+          serpOverlap: availableSerpOverlap(),
+        }),
+      ),
+    ).toBe("customer_confirmed");
+  });
+
+  it("falls back from collection-pending to metrics only when SERP overlap is genuinely available", () => {
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [serpOverlapOrigin()],
+        }),
+      ),
+    ).toBe("collection_pending");
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [csvKeywordGapOrigin()],
+        }),
+      ),
+    ).toBe("collection_pending");
+    expect(
+      competitorPoolEntryReason(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [serpOverlapOrigin()],
+          serpOverlap: availableSerpOverlap(),
+        }),
+      ),
+    ).toBe("metrics");
+  });
+
+  it("admits only approved keyword_gap scope into Keyword-gap participation", () => {
+    expect(
+      competitorKeywordGapParticipation(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          reviewStatus: "approved",
+          relationship: "direct",
+          analysisScope: ["keyword_gap", "content"],
+        }),
+      ),
+    ).toBe("participating");
+    expect(
+      competitorKeywordGapParticipation(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          reviewStatus: "approved",
+          relationship: "direct",
+          analysisScope: ["content"],
+        }),
+      ),
+    ).toBe("not_participating");
+    expect(
+      competitorKeywordGapParticipation(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          reviewStatus: "candidate",
+        }),
+      ),
+    ).toBe("awaiting_confirmation");
+    expect(
+      competitorKeywordGapParticipation(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          reviewStatus: "excluded",
+        }),
+      ),
+    ).toBe("not_participating");
+  });
+
+  it("shows shared keywords as collecting only when a serp_overlap origin was recorded", () => {
+    expect(
+      competitorSharedKeywordDisplay(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [serpOverlapOrigin(), manualOrigin()],
+        }),
+      ),
+    ).toBe("collecting");
+    expect(
+      competitorSharedKeywordDisplay(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [manualOrigin(), csvKeywordGapOrigin()],
+        }),
+      ),
+    ).toBe("no_data");
+    expect(
+      competitorSharedKeywordDisplay(
+        competitorItem(IDS.competitorA, "alpha.example"),
+      ),
+    ).toBe("no_data");
+  });
+
+  it("derives the review success copy from the server response and guards the closed-dialog race", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    // Approved copy lists the exact server-returned scope set; no static
+    // capability claims survive in the i18n catalogs or the component.
+    expect(source).toContain('t("success.approved", {');
+    expect(source).toMatch(
+      /successState\.analysisScope\s+\.map\(\(scope\) => t\(`analysisScope\.\$\{scope\}`\)\)\s+\.join\(" · "\)/,
+    );
+    expect(source).not.toContain("approvedScopeLimited");
+    // A late PATCH response while the dialog is closed must not resurrect
+    // the success view, and every open-state transition starts clean.
+    expect(source).toContain("if (!openRef.current) return;");
+    expect(source).toMatch(
+      /useEffect\(\(\) => \{\s+setSuccessState\(null\);\s+\}, \[open\]\);/,
+    );
+    expect(source).toMatch(
+      /setSuccessState\(\{\s+reviewStatus: response\.data\.reviewStatus,\s+analysisScope: response\.data\.analysisScope,\s+\}\);/,
+    );
+  });
+
   it("collapses only an active supporting Keyword and keeps its name under the primary row", () => {
     const projection = buildKeywordRelationPageProjection(
       [
@@ -1429,17 +1589,13 @@ describe("Growth Map view model", () => {
             { sourceKind: "csv_import" },
           ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
         }),
-        keywordItem(
-          IDS.keywordB,
-          "Customer onboarding automation",
-          {
-            sourceOccurrences: [
-              { sourceKind: "csv_import" },
-              { sourceKind: "manual" },
-              { sourceKind: "manual" },
-            ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
-          },
-        ),
+        keywordItem(IDS.keywordB, "Customer onboarding automation", {
+          sourceOccurrences: [
+            { sourceKind: "csv_import" },
+            { sourceKind: "manual" },
+            { sourceKind: "manual" },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
         keywordItem(IDS.keywordC, "Customer onboarding checklist", {
           sourceOccurrences: [
             { sourceKind: "manual" },
@@ -1452,9 +1608,7 @@ describe("Growth Map view model", () => {
     expect(
       projection.visibleItems.map((entry) => entry.item.keywordId),
     ).toEqual([IDS.keywordA, IDS.keywordC]);
-    expect(projection.collapsedSupportingKeywordIds).toEqual([
-      IDS.keywordB,
-    ]);
+    expect(projection.collapsedSupportingKeywordIds).toEqual([IDS.keywordB]);
     expect(projection.loadedSourceCounts).toEqual({
       all: 3,
       csv_import: 2,
@@ -1511,10 +1665,7 @@ describe("Growth Map view model", () => {
     const projection = buildKeywordRelationPageProjection(
       [
         keywordItem(IDS.keywordA, "Customer onboarding"),
-        keywordItem(
-          IDS.keywordB,
-          "Customer onboarding automation",
-        ),
+        keywordItem(IDS.keywordB, "Customer onboarding automation"),
       ],
       [...irrelevantFirstPage, keywordRelation()],
     );
@@ -1522,15 +1673,9 @@ describe("Growth Map view model", () => {
     expect(
       projection.visibleItems.map((entry) => entry.item.keywordId),
     ).toEqual([IDS.keywordA]);
-    expect(projection.collapsedSupportingKeywordIds).toEqual([
-      IDS.keywordB,
-    ]);
-    expect(
-      projection.relationsByKeywordId.get(IDS.keywordA),
-    ).toHaveLength(101);
-    expect(
-      projection.visibleItems[0]?.supportingKeywords,
-    ).toEqual([
+    expect(projection.collapsedSupportingKeywordIds).toEqual([IDS.keywordB]);
+    expect(projection.relationsByKeywordId.get(IDS.keywordA)).toHaveLength(101);
+    expect(projection.visibleItems[0]?.supportingKeywords).toEqual([
       {
         relationId: IDS.relation,
         keywordId: IDS.keywordB,
@@ -1554,10 +1699,7 @@ describe("Growth Map view model", () => {
     const projection = buildKeywordRelationPageProjection(
       [
         keywordItem(IDS.keywordA, "Customer onboarding"),
-        keywordItem(
-          IDS.keywordB,
-          "Customer onboarding automation",
-        ),
+        keywordItem(IDS.keywordB, "Customer onboarding automation"),
       ],
       [stale],
     );
@@ -1567,20 +1709,14 @@ describe("Growth Map view model", () => {
     ).toEqual([IDS.keywordA, IDS.keywordB]);
     expect(projection.collapsedSupportingKeywordIds).toEqual([]);
     expect(
-      projection.relationsByKeywordId.get(IDS.keywordB)?.[0]
-        ?.displayState,
+      projection.relationsByKeywordId.get(IDS.keywordB)?.[0]?.displayState,
     ).toBe("stale");
   });
 
   it("keeps a supporting row visible when its primary is outside this cursor page", () => {
     const relation = keywordRelation();
     const projection = buildKeywordRelationPageProjection(
-      [
-        keywordItem(
-          IDS.keywordB,
-          "Customer onboarding automation",
-        ),
-      ],
+      [keywordItem(IDS.keywordB, "Customer onboarding automation")],
       [relation],
     );
 
@@ -1647,12 +1783,7 @@ describe("Growth Map view model", () => {
       ),
     ).toBeNull();
     expect(
-      buildKeywordRelationDecisionCommand(
-        relation,
-        "keep_separate",
-        null,
-        " ",
-      ),
+      buildKeywordRelationDecisionCommand(relation, "keep_separate", null, " "),
     ).toBeNull();
     expect(
       buildKeywordRelationDecisionCommand(
@@ -1705,12 +1836,8 @@ describe("Growth Map view model", () => {
     expect(projection.structureAuthority).toBe("draft");
     expect(projection.confirmedInsightRevision).toBe(1);
     expect(projection.roots[0]?.node.label).toBe("Customer operations");
-    expect(projection.roots[0]?.insight?.label).toBe(
-      "Customer onboarding",
-    );
-    expect(
-      projection.roots[0]?.children[0]?.children[0]?.insight,
-    ).toBeNull();
+    expect(projection.roots[0]?.insight?.label).toBe("Customer onboarding");
+    expect(projection.roots[0]?.children[0]?.children[0]?.insight).toBeNull();
     expect(projection.summary.keywordCount).toBe(4);
   });
 
@@ -1785,9 +1912,10 @@ describe("Growth Map view model", () => {
       topicInsights(),
       IDS.topicChild,
     );
-    expect(
-      projection.activeNodes.map((node) => node.topicNodeId),
-    ).toEqual([IDS.topicRoot, IDS.topicSuccessor]);
+    expect(projection.activeNodes.map((node) => node.topicNodeId)).toEqual([
+      IDS.topicRoot,
+      IDS.topicSuccessor,
+    ]);
     expect(projection.supersededNodes).toMatchObject([
       { topicNodeId: IDS.topicChild, lifecycleState: "superseded" },
     ]);
@@ -1865,11 +1993,9 @@ describe("Growth Map view model", () => {
       reason: "Begin a reviewed revision.",
     });
     expect(
-      buildPatchTopicModelDraftCommand(
-        draft,
-        "  Retire obsolete scope.  ",
-        [retire],
-      ),
+      buildPatchTopicModelDraftCommand(draft, "  Retire obsolete scope.  ", [
+        retire,
+      ]),
     ).toEqual({
       topicModelRevision: 2,
       expectedEditRevision: 4,
@@ -1886,18 +2012,14 @@ describe("Growth Map view model", () => {
       expectedEditRevision: 4,
       reason: "Publish the reviewed structure.",
     });
-    expect(
-      buildPatchTopicModelDraftCommand(draft, " ", [retire]),
-    ).toBeNull();
+    expect(buildPatchTopicModelDraftCommand(draft, " ", [retire])).toBeNull();
     expect(buildTopicNodeUpdateIntent(IDS.topicChild, {})).toBeNull();
     expect(
       buildTopicNodeSplitIntent(IDS.topicChild, [
         { ...input, label: "Only one successor" },
       ]),
     ).toBeNull();
-    expect(
-      buildTopicNodeMergeIntent([IDS.topicChild], input),
-    ).toBeNull();
+    expect(buildTopicNodeMergeIntent([IDS.topicChild], input)).toBeNull();
   });
 
   it("keeps Topic Map as Keyword Library Step 0 inside the existing Growth Map", () => {
@@ -1943,31 +2065,21 @@ describe("Growth Map view model", () => {
     expect(source).toMatch(
       /useCompleteGrowthMapKeywordRelations\(\s*projectId,/,
     );
-    expect(source).toMatch(
-      /collectAllCursorItems(?:<[^>]+>)?\(/,
-    );
+    expect(source).toMatch(/collectAllCursorItems(?:<[^>]+>)?\(/);
     expect(source).toMatch(
       /getGrowthMapKeywordRelations\(projectId,\s*\{\s*keywordIds:\s*normalizedKeywordIds,\s*cursor:\s*pageCursor,\s*limit:\s*100,/,
     );
-    expect(source).not.toContain(
-      "useGrowthMapKeywordRelations(projectId",
-    );
+    expect(source).not.toContain("useGrowthMapKeywordRelations(projectId");
     expect(source).toContain("buildKeywordRelationPageProjection(");
-    expect(source).toContain(
-      "useRefreshGrowthMapKeywordRelations(projectId)",
-    );
-    expect(source).toContain(
-      "useDecideGrowthMapKeywordRelation(projectId)",
-    );
+    expect(source).toContain("useRefreshGrowthMapKeywordRelations(projectId)");
+    expect(source).toContain("useDecideGrowthMapKeywordRelation(projectId)");
     expect(source).toMatch(
       /filterGrowthMapKeywordEntries\(relationProjection\.visibleItems,\s*\{\s*search: keywordSearch,\s*sourceKind: sourceFilter,/,
     );
     expect(source).toContain("entries={filteredEntries}");
     expect(source).toContain('role="dialog"');
     expect(source).toContain('aria-modal="true"');
-    expect(source).toContain(
-      "buildKeywordRelationDecisionCommand(",
-    );
+    expect(source).toContain("buildKeywordRelationDecisionCommand(");
     for (const decisionKind of [
       "primary_supporting",
       "keep_separate",
@@ -1983,10 +2095,18 @@ describe("Growth Map view model", () => {
 
   it("keeps Keyword Library loading, error, empty, and real rows distinct", () => {
     expect(
-      keywordLibraryReadState({ isPending: true, isError: false, itemCount: 0 }),
+      keywordLibraryReadState({
+        isPending: true,
+        isError: false,
+        itemCount: 0,
+      }),
     ).toBe("loading");
     expect(
-      keywordLibraryReadState({ isPending: false, isError: true, itemCount: 0 }),
+      keywordLibraryReadState({
+        isPending: false,
+        isError: true,
+        itemCount: 0,
+      }),
     ).toBe("error");
     expect(
       keywordLibraryReadState({
@@ -2005,7 +2125,11 @@ describe("Growth Map view model", () => {
       }),
     ).toBe("cursor_empty");
     expect(
-      keywordLibraryReadState({ isPending: false, isError: false, itemCount: 2 }),
+      keywordLibraryReadState({
+        isPending: false,
+        isError: false,
+        itemCount: 2,
+      }),
     ).toBe("ready");
   });
 
@@ -2263,12 +2387,12 @@ describe("Growth Map view model", () => {
   it("selects monitor evidence by the exact Competitor ID without falling back to another row", () => {
     const response = competitorMonitorResponse();
 
-    expect(
-      selectCompetitorMonitorItem(response, IDS.competitorB)?.domain,
-    ).toBe("beta.example");
-    expect(
-      selectCompetitorMonitorItem(response, IDS.competitorA)?.domain,
-    ).toBe("alpha.example");
+    expect(selectCompetitorMonitorItem(response, IDS.competitorB)?.domain).toBe(
+      "beta.example",
+    );
+    expect(selectCompetitorMonitorItem(response, IDS.competitorA)?.domain).toBe(
+      "alpha.example",
+    );
     expect(
       selectCompetitorMonitorItem(
         response,
@@ -2320,9 +2444,9 @@ describe("Growth Map view model", () => {
         }),
       ),
     ).toBe("awaiting_baseline");
-    expect(
-      competitorMonitorDisplayState(ready, ready.competitors[1]!),
-    ).toBe("baseline");
+    expect(competitorMonitorDisplayState(ready, ready.competitors[1]!)).toBe(
+      "baseline",
+    );
     expect(
       competitorMonitorDisplayState(
         ready,
@@ -2437,8 +2561,12 @@ describe("Growth Map view model", () => {
     expect(source).toContain("projectId,");
     expect(source).toContain("detail.keywordId,");
     expect(source).toContain("open,");
-    expect(source).toContain("const reviewDetail = reviewDetailQuery.data?.data ?? null;");
-    expect(source).not.toContain("useGrowthMapKeywordReviewDetail(projectId, detail.keywordId, diagnosticRunId");
+    expect(source).toContain(
+      "const reviewDetail = reviewDetailQuery.data?.data ?? null;",
+    );
+    expect(source).not.toContain(
+      "useGrowthMapKeywordReviewDetail(projectId, detail.keywordId, diagnosticRunId",
+    );
     expect(source).toContain(
       "buildKeywordGovernanceReviewCommand(\n      reviewDetail,",
     );
@@ -2463,14 +2591,10 @@ describe("Growth Map view model", () => {
     expect(source).not.toMatch(
       /useGrowthMapCompetitorReviewDetail\([\s\S]{0,120}diagnosticRunId/,
     );
-    expect(source).toContain(
-      "const mutation = useReviewGrowthMapCompetitor(",
-    );
+    expect(source).toContain("const mutation = useReviewGrowthMapCompetitor(");
     expect(source).toContain('data-testid="competitor-review-open"');
     expect(source).toContain('data-testid="competitor-review-form"');
-    expect(source).toContain(
-      'data-testid="competitor-review-analysis-scope"',
-    );
+    expect(source).toContain('data-testid="competitor-review-analysis-scope"');
     expect(source).toContain("<CompetitorReviewDialog");
     expect(source).toMatch(
       /const command: ReviewCompetitorRequest = \{\s*expectedRevision: reviewDetail\.revision,\s*name: name\.trim\(\) \|\| null,\s*reviewStatus,\s*relationship: reviewedRelationship,\s*analysisScope: \[\.\.\.reviewedAnalysisScope\],/,
@@ -2511,11 +2635,9 @@ describe("Growth Map view model", () => {
       "const diagnosticRunId = generationQuery.data?.diagnosticRunId ?? null;",
     );
     expect(source).toContain(
-      "mode !== \"backlinks\" && generationQuery.isPending",
+      'mode !== "backlinks" && generationQuery.isPending',
     );
-    expect(source).toContain(
-      "diagnosticRunId={diagnosticRunId!}",
-    );
+    expect(source).toContain("diagnosticRunId={diagnosticRunId!}");
     expect(source).toContain(
       "const detailQuery = useGrowthMapUrlDetail(\n    projectId,\n    selectedSitePageId,\n    diagnosticRunId,",
     );
@@ -2528,9 +2650,7 @@ describe("Growth Map view model", () => {
     expect(source).toContain(
       "const pinnedSitePagesQuery = useGrowthMapUrls(projectId, {\n    limit: 100,\n    diagnosticRunId,",
     );
-    expect(source).not.toContain(
-      'locationParams.get("diagnosticRunId")',
-    );
+    expect(source).not.toContain('locationParams.get("diagnosticRunId")');
   });
 
   it("repairs only an explicit stale Keyword deep link after the cursor page loads", () => {
@@ -2577,11 +2697,15 @@ describe("Growth Map view model", () => {
     expect(resolveGrowthMapCursorPredecessor(predecessors, "page-3")).toBe(
       "page-2",
     );
-    expect(resolveGrowthMapCursorPredecessor(predecessors, "page-2")).toBeNull();
+    expect(
+      resolveGrowthMapCursorPredecessor(predecessors, "page-2"),
+    ).toBeNull();
     expect(
       resolveGrowthMapCursorPredecessor(predecessors, "external-page"),
     ).toBeUndefined();
-    expect(resolveGrowthMapCursorPredecessor(predecessors, null)).toBeUndefined();
+    expect(
+      resolveGrowthMapCursorPredecessor(predecessors, null),
+    ).toBeUndefined();
   });
 
   it("routes Competitor Library source management to the canonical project Sources page", () => {
@@ -2590,7 +2714,7 @@ describe("Growth Map view model", () => {
       "utf8",
     );
 
-    expect(source).toContain('href={`/p/${projectId}/sources`}');
+    expect(source).toContain("href={`/p/${projectId}/sources`}");
     expect(source).not.toContain("function UnavailableLibrary");
   });
 
@@ -2600,7 +2724,7 @@ describe("Growth Map view model", () => {
       "utf8",
     );
 
-    expect(source).toContain('<details className={styles.traceDisclosure}>');
+    expect(source).toContain("<details className={styles.traceDisclosure}>");
     expect(source).toContain('<summary>{t("viewSourceDetails")}</summary>');
     expect(source).toContain('<summary>{t("viewOriginDetails")}</summary>');
     expect(source).toContain('<summary>{t("viewRecordDetails")}</summary>');
@@ -2747,7 +2871,12 @@ describe("Growth Map view model", () => {
     });
     expect(
       keywordMetricPresentation(
-        { ...observedZero, value: null, freshness: "unknown", limitation: "The source returned no value." },
+        {
+          ...observedZero,
+          value: null,
+          freshness: "unknown",
+          limitation: "The source returned no value.",
+        },
         null,
       ),
     ).toEqual({
@@ -2791,7 +2920,8 @@ describe("Growth Map view model", () => {
           metric({
             value: 0,
             freshness: "stale",
-            limitation: "The latest connected source is outside the current window.",
+            limitation:
+              "The latest connected source is outside the current window.",
           }),
         ),
       ),
@@ -2996,10 +3126,15 @@ describe("Growth Map view model", () => {
   });
 
   it("renders mutation feedback outside the idle-only branch and clears it after a successful refresh", () => {
-    const source = readFileSync(new URL("./_growth-map.tsx", import.meta.url), "utf8");
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
 
     expect(source).not.toContain('mode === "idle" && error !== null');
-    expect(source).toContain("shouldShowGrowthMapReviewError(mode, problemError)");
+    expect(source).toContain(
+      "shouldShowGrowthMapReviewError(mode, problemError)",
+    );
     expect(source).toMatch(
       /await refreshGrowthMap\(\);\s+setError\(null\);\s+setProblemError\(null\);\s+setSaved\(true\);/,
     );
