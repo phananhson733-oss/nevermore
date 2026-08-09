@@ -163,10 +163,10 @@ describe("KeywordsRepository", () => {
       db.last("execute").args[0] as never,
     );
     expect(query.sql).toContain("order by ranked.sort_volume desc nulls last");
-    expect(query.sql).toContain("value_json ? \'searchVolume\'");
+    expect(query.sql).toContain("value_json ? 'searchVolume'");
     expect(query.sql).toContain("when jsonb_typeof");
     expect(query.sql).toContain(
-      "source_kind in (\'csv_import\', \'dataforseo_ranked\')",
+      "source_kind in ('csv_import', 'dataforseo_ranked')",
     );
     expect(query.sql).toContain("project.archived_at is null");
     expect(query.sql).toContain("created_at::text");
