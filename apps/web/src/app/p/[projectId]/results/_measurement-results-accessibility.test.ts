@@ -66,8 +66,9 @@ describe("Measurement Results customer surface", () => {
   it("provides responsive URL and metric layouts without shrinking text below customer reading size", () => {
     expect(CSS).toContain("@media (max-width: 1100px)");
     expect(CSS).toContain("@media (max-width: 760px)");
+    expect(CSS).toMatch(/\.heroLead\s*\{[\s\S]*?font-size:\s*17px;/u);
     expect(CSS).toMatch(
-      /\.measurementHeader p\s*\{[\s\S]*?font-size:\s*15px;/u,
+      /@media \(max-width:\s*760px\)[\s\S]*?\.heroLead\s*\{[\s\S]*?font-size:\s*16px;/u,
     );
   });
 });

@@ -182,7 +182,7 @@ function ResultsTimeline({
   const tSummary = useTranslations("results.measurement.summary");
 
   return (
-    <section className={styles.timelineSection}>
+    <section className={styles.timelineSection} data-results-timeline="">
       <header className={styles.summarySectionHeader}>
         <span>{tSummary("timelineEyebrow")}</span>
         <h2 className={styles.summaryHeading}>{tSummary("timelineTitle")}</h2>
@@ -254,14 +254,14 @@ export function ResultsSummary({
   const t = useTranslations("results.measurement.summary");
   return (
     <div className={styles.resultsSummary}>
-      <div className={styles.summaryGrid}>
+      <div className={styles.summaryGrid} data-results-summary-overview="">
         <TechnicalRecheck projectId={projectId} />
         <ResultBoundaries />
       </div>
       {measurement ? (
         <ResultsTimeline measurement={measurement} />
       ) : (
-        <section className={styles.timelineSection}>
+        <section className={styles.timelineSection} data-results-timeline="">
           <header className={styles.summarySectionHeader}>
             <span>{t("timelineEyebrow")}</span>
             <h2 className={styles.summaryHeading}>{t("timelineTitle")}</h2>

@@ -211,3 +211,181 @@ test("效果追踪按 URL 独立切换真实改前改后与 UTM 记录", async (
     panel.getByRole("tabpanel", { name: "Campaign / UTM" }),
   ).toContainText("pricing-intent");
 });
+
+test("效果追踪遵循 Artifact 的 KPI、标签与移动表格密度", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`/p/${E2E_PROJECT_ID}/results`);
+
+  const panel = page.getByRole("region", {
+    name: "URL 效果与 UTM 审计",
+  });
+  const hero = page.locator("[data-results-page-hero]");
+  const heroTitle = hero.locator("[data-app-page-title]");
+  const heroLead = heroTitle.locator("xpath=following-sibling::p");
+  const reportLink = hero.locator("[data-results-report-link]");
+  const kpis = panel.locator("[data-results-kpis]");
+  const firstKpi = kpis.locator(":scope > div").first();
+  const tabs = panel.locator("[data-results-tabs]");
+  const activeTab = tabs.getByRole("tab", { selected: true });
+  const summary = panel.locator("[data-results-summary-overview]");
+  const summaryHeading = summary.locator("h2").first();
+  const timeline = panel.locator("[data-results-timeline]");
+
+  await expect(hero.getByText("效果追踪", { exact: true })).toBeVisible();
+  await expect(heroTitle).toHaveText("改前、改后与归因边界");
+  await expect(reportLink).toHaveAttribute("href", "#results-report");
+
+  expect(
+    await heroTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("52px");
+  expect(
+    await heroLead.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("17px");
+  expect(
+    await kpis.evaluate((element) => ({
+      gap: getComputedStyle(element).gap,
+      columns: getComputedStyle(element).gridTemplateColumns.split(" ").length,
+      radius: getComputedStyle(element).borderRadius,
+      overflow: getComputedStyle(element).overflow,
+    })),
+  ).toEqual({ gap: "0px", columns: 4, radius: "18px", overflow: "hidden" });
+  expect(
+    await firstKpi.evaluate((element) => ({
+      padding: getComputedStyle(element).padding,
+      radius: getComputedStyle(element).borderRadius,
+    })),
+  ).toEqual({ padding: "20px 22px 19px", radius: "0px" });
+  expect(
+    await tabs.evaluate((element) => ({
+      gap: getComputedStyle(element).gap,
+      padding: getComputedStyle(element).padding,
+      borderBottomWidth: getComputedStyle(element).borderBottomWidth,
+      radius: getComputedStyle(element).borderRadius,
+    })),
+  ).toEqual({
+    gap: "6px",
+    padding: "10px",
+    borderBottomWidth: "1px",
+    radius: "0px",
+  });
+  expect(
+    await activeTab.evaluate((element) => ({
+      minHeight: getComputedStyle(element).minHeight,
+      radius: getComputedStyle(element).borderRadius,
+      borderBottomWidth: getComputedStyle(element).borderBottomWidth,
+    })),
+  ).toEqual({ minHeight: "40px", radius: "10px", borderBottomWidth: "0px" });
+  expect(
+    await summary.evaluate((element) => ({
+      gap: getComputedStyle(element).gap,
+      columns: getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    })),
+  ).toEqual({ gap: "0px", columns: 2 });
+  expect(
+    await summaryHeading.evaluate(
+      (element) => getComputedStyle(element).fontSize,
+    ),
+  ).toBe("25px");
+  expect(
+    await timeline.evaluate((element) => ({
+      borderTopWidth: getComputedStyle(element).borderTopWidth,
+      marginTop: getComputedStyle(element).marginTop,
+      padding: getComputedStyle(element).padding,
+      radius: getComputedStyle(element).borderRadius,
+    })),
+  ).toEqual({
+    borderTopWidth: "1px",
+    marginTop: "16px",
+    padding: "20px",
+    radius: "0px",
+  });
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  expect(
+    await kpis.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(4);
+  expect(
+    await summary.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(2);
+  expect(
+    await heroTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("40.96px");
+
+  await page.setViewportSize({ width: 760, height: 900 });
+  expect(
+    await kpis.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(2);
+  expect(
+    await summary.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(1);
+  expect(
+    await heroTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("37px");
+  expect(
+    await heroLead.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("16px");
+
+  await tabs.getByRole("tab", { name: "页面改前 / 改后" }).click();
+  const targetRanks = panel.getByRole("region", { name: "目标关键词排名" });
+  const targetTable = targetRanks.getByRole("table");
+  await expect(targetTable).toBeVisible();
+  expect(
+    await targetTable.locator("thead th").evaluateAll(
+      (elements) =>
+        elements.filter(
+          (element) => getComputedStyle(element).display !== "none",
+        ).length,
+    ),
+  ).toBe(4);
+  expect(
+    await targetTable.evaluate(
+      (element) => element.scrollWidth <= element.parentElement!.clientWidth,
+    ),
+  ).toBe(true);
+
+  await tabs.getByRole("tab", { name: "Campaign / UTM" }).click();
+  const campaignTable = panel
+    .getByRole("tabpanel", { name: "Campaign / UTM" })
+    .getByRole("table");
+  await expect(campaignTable).toBeVisible();
+  expect(
+    await campaignTable.locator("thead th").evaluateAll(
+      (elements) =>
+        elements.filter(
+          (element) => getComputedStyle(element).display !== "none",
+        ).length,
+    ),
+  ).toBe(3);
+  expect(
+    await campaignTable.evaluate(
+      (element) => element.scrollWidth <= element.parentElement!.clientWidth,
+    ),
+  ).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await kpis.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(2);
+  expect(
+    await tabs.evaluate((element) => getComputedStyle(element).overflowX),
+  ).toBe("auto");
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+});

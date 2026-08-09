@@ -181,7 +181,7 @@ export function ReportSection({
   );
 
   return (
-    <div className={styles.page} data-report-page="">
+    <div id="results-report" className={styles.page} data-report-page="">
       <div className={styles.workspace} data-report-workspace="">
         <ReportDocument report={query.data} />
         <aside

@@ -3450,8 +3450,10 @@
     "emptyHint": "先运行诊断并确认发现，即可生成报告。"
   },
   "results": {
-    "pageTitle": "效果追踪",
-    "pageLead": "改前、改后与归因边界。按 URL 核对固定窗口的 GSC、GA4、UTM、目标词与 AI 引用，并把技术复查、动作回执和效果观察分开呈现。",
+    "pageEyebrow": "效果追踪",
+    "pageTitle": "改前、改后与归因边界",
+    "pageLead": "按 URL 核对固定窗口的 GSC、GA4、UTM、目标词与 AI 引用，并把技术复查、动作回执和效果观察分开呈现。",
+    "openReport": "打开客户报告",
     "title": "技术复查记录",
     "lead": "这里仅复核已确认 Action 的技术条件；流量、排名与转化变化以上方固定窗口的真实观测为准。",
     "emptyTitle": "尚未复查",

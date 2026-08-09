@@ -3450,8 +3450,10 @@
     "emptyHint": "Run a diagnosis and confirm findings to produce a report."
   },
   "results": {
-    "pageTitle": "Results",
-    "pageLead": "Before, after, and attribution boundaries. Review fixed-window GSC, GA4, UTM, target Keyword, and AI-citation evidence by URL while keeping technical rechecks, action receipts, and outcome observations separate.",
+    "pageEyebrow": "Results",
+    "pageTitle": "Before, after, and attribution boundaries",
+    "pageLead": "Review fixed-window GSC, GA4, UTM, target Keyword, and AI-citation evidence by URL while keeping technical rechecks, action receipts, and outcome observations separate.",
+    "openReport": "Open client report",
     "title": "Technical recheck record",
     "lead": "This section verifies the confirmed Action's technical condition only. Traffic, rank, and conversion movement comes from the fixed-window observations above.",
     "emptyTitle": "No recheck yet",

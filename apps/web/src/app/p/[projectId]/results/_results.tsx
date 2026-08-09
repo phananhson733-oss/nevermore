@@ -27,11 +27,24 @@ export function ResultsClient({
   const t = useTranslations("results");
   return (
     <div className={styles.page} data-results-page="">
-      <header className={`${styles.hero} ${styles.screenOnly}`}>
-        <h1 className={styles.heroTitle} data-app-page-title="">
-          {t("pageTitle")}
-        </h1>
-        <p className={styles.heroLead}>{t("pageLead")}</p>
+      <header
+        className={`${styles.hero} ${styles.screenOnly}`}
+        data-results-page-hero=""
+      >
+        <div className={styles.heroText}>
+          <span className={styles.heroEyebrow}>{t("pageEyebrow")}</span>
+          <h1 className={styles.heroTitle} data-app-page-title="">
+            {t("pageTitle")}
+          </h1>
+          <p className={styles.heroLead}>{t("pageLead")}</p>
+        </div>
+        <a
+          className={styles.heroAction}
+          href="#results-report"
+          data-results-report-link=""
+        >
+          {t("openReport")}
+        </a>
       </header>
       <MeasurementResultsSection projectId={projectId} />
       <ReportSection

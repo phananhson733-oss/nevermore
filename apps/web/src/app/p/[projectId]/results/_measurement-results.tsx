@@ -130,7 +130,11 @@ function ResultKpis({
 }) {
   const t = useTranslations("results.measurement.kpi");
   return (
-    <section className={styles.resultKpiSection} aria-label={t("label")}>
+    <section
+      className={styles.resultKpiSection}
+      aria-label={t("label")}
+      data-results-kpi-strip=""
+    >
       <header>
         <span>{t("eyebrow")}</span>
         <p>{t("scope", { url: urlLabel(measurement.canonicalUrl) })}</p>
@@ -624,26 +628,21 @@ export function MeasurementResultsSection({
       className={`${styles.measurementPanel} ${styles.screenOnly}`}
       data-measurement-results-settled={query.isPending ? undefined : ""}
     >
-      <header className={styles.measurementHeader}>
-        <div>
-          <span className={styles.measurementEyebrow}>{t("eyebrow")}</span>
-          <h2>{t("title")}</h2>
-          <p>{t("lead")}</p>
-        </div>
-        {query.data ? (
-          <span className={styles.measurementCount}>
-            {t("recordCount", { count: windows.length })}
-          </span>
-        ) : null}
-      </header>
-
       <div className={styles.measurementWorkspace}>
+        {selectedView ? <ResultKpis measurement={selectedView} /> : null}
         {selectedView ? (
           <aside
             className={styles.measurementSelector}
             aria-label={t("selectorLabel")}
           >
-            <h3>{t("selectorTitle")}</h3>
+            <div className={styles.measurementSelectorHeader}>
+              <h3>{t("selectorTitle")}</h3>
+              {query.data ? (
+                <span className={styles.measurementCount}>
+                  {t("recordCount", { count: windows.length })}
+                </span>
+              ) : null}
+            </div>
             <p>{t("selectorLead")}</p>
             <div className={styles.measurementSelectorList}>
               {windows.map((window) => {
@@ -672,7 +671,6 @@ export function MeasurementResultsSection({
             </div>
           </aside>
         ) : null}
-        {selectedView ? <ResultKpis measurement={selectedView} /> : null}
         <ResultTabs
           projectId={projectId}
           measurement={selectedView}

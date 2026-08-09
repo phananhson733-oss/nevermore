@@ -848,7 +848,11 @@ function MetaStrip({
   const conversion = run.frozenInputs.firstParty.icpPrimaryConversionUrl;
 
   return (
-    <section className={styles.metaStrip} aria-label={t("stripLabel")}>
+    <section
+      className={styles.metaStrip}
+      aria-label={t("stripLabel")}
+      data-shadow-meta=""
+    >
       <div className={styles.metaCell}>
         <span className={styles.metaLabel}>{t("linkedTarget")}</span>
         <span className={styles.metaValue}>
@@ -1255,7 +1259,7 @@ export function ContentShadowSection({
       aria-labelledby="sf-shadow-title"
       data-content-shadow=""
     >
-      <header className={styles.shadowHead}>
+      <header className={styles.shadowHead} data-content-shadow-intro="">
         <span className="sf-eyebrow">{t("eyebrow")}</span>
         <h2 id="sf-shadow-title" className={styles.shadowTitle}>
           {t("title")}
@@ -1437,7 +1441,7 @@ export function ContentShadowArtifactPanel({
       aria-labelledby="sf-shadow-title"
       data-content-shadow=""
     >
-      <header className={styles.shadowHead}>
+      <header className={styles.shadowHead} data-content-shadow-intro="">
         <span className="sf-eyebrow">{t("eyebrow")}</span>
         <h2 id="sf-shadow-title" className={styles.shadowTitle}>
           {t("title")}

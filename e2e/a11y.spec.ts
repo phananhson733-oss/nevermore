@@ -245,7 +245,7 @@ test("results print media keeps only the client report document", async ({
 }) => {
   await gotoScreen(page, "results");
   const screenHeading = page.getByRole("heading", {
-    name: /Results|效果追踪/,
+    name: /Before, after|改前、改后/,
     level: 1,
   });
   const rail = page.locator("[data-report-manifest-rail]");

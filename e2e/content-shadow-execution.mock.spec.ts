@@ -359,6 +359,56 @@ test("renders the deliverable body itself, at reading size", async ({
   );
   expect(Number.parseFloat(fontSize)).toBeGreaterThanOrEqual(16);
 
+  // The Artifact uses one document headline and a dedicated 250–285px quality
+  // rail. The accessible section intro remains in the tree without consuming
+  // a second visual headline above the document.
+  const intro = page.locator("[data-content-shadow-intro]");
+  expect(
+    await intro.evaluate((element) => ({
+      position: getComputedStyle(element).position,
+      width: getComputedStyle(element).width,
+      height: getComputedStyle(element).height,
+    })),
+  ).toEqual({ position: "absolute", width: "1px", height: "1px" });
+
+  const documentPanel = page.locator("[data-shadow-doc]");
+  expect(
+    await documentPanel
+      .locator(":scope > header")
+      .evaluate((element) => getComputedStyle(element).padding),
+  ).toBe("28px 30px 23px");
+  expect(
+    await documentPanel
+      .locator(":scope > header h3")
+      .evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("34.56px");
+  const qualityRailWidth = (await page.locator("[data-qa-rail]").boundingBox())!
+    .width;
+  expect(qualityRailWidth).toBeGreaterThanOrEqual(250);
+  expect(qualityRailWidth).toBeLessThanOrEqual(285);
+
+  await page.setViewportSize({ width: 760, height: 900 });
+  expect(
+    await documentPanel
+      .locator(":scope > header")
+      .evaluate((element) => getComputedStyle(element).padding),
+  ).toBe("22px 20px 18px");
+  expect(
+    await body.evaluate((element) => ({
+      columns: getComputedStyle(element.parentElement!).gridTemplateColumns.split(
+        " ",
+      ).length,
+      padding: getComputedStyle(element).padding,
+    })),
+  ).toEqual({ columns: 1, padding: "26px 20px 34px" });
+
+  await page.setViewportSize({ width: 640, height: 900 });
+  expect(
+    await page.locator("[data-shadow-meta]").evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(1);
+
   // The page itself never scrolls sideways, whatever the body contains.
   const overflow = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,

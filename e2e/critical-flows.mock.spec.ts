@@ -849,7 +849,10 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
 
   const main = page.getByRole("main");
   await expect(
-    main.getByRole("heading", { name: "Results", level: 1 }),
+    main.getByRole("heading", {
+      name: "Before, after, and attribution boundaries",
+      level: 1,
+    }),
   ).toBeVisible();
   await expect(page.locator("[data-report-page]")).toHaveCount(1);
   const document = page.locator("[data-report-document]");
@@ -862,7 +865,9 @@ test("Results owns one h1 and the report document nests under it (D3)", async ({
   // element count stays as a cheap additional tripwire.
   const levelOneHeadings = main.getByRole("heading", { level: 1 });
   await expect(levelOneHeadings).toHaveCount(1);
-  await expect(levelOneHeadings).toHaveText("Results");
+  await expect(levelOneHeadings).toHaveText(
+    "Before, after, and attribution boundaries",
+  );
   await expect(page.locator("h1")).toHaveCount(1);
   await expect(
     main.getByRole("heading", {
@@ -945,7 +950,7 @@ test("print media keeps the report document and hides the Results screen chrome 
   await page.goto(`/p/${E2E_PROJECT_ID}/results`);
 
   const screenHeading = page.getByRole("heading", {
-    name: "Results",
+    name: "Before, after, and attribution boundaries",
     level: 1,
   });
   const recheckHeading = page.getByText("Technical recheck record", {

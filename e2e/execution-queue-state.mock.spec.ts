@@ -26,6 +26,7 @@ async function useChineseUi(page: Page): Promise<void> {
 test("执行中心队列无需点开即可看到真实阻断、进度与完成状态", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const actions = [
     overrideActionFixture(21, { title: "已完成的技术修复" }),
     overrideActionFixture(22, { title: "等待客户批准发布" }),
@@ -178,4 +179,103 @@ test("执行中心队列无需点开即可看到真实阻断、进度与完成�
   await expect(primaryNavigation).toContainText("增长地图");
   await expect(primaryNavigation).toContainText("执行中心");
   await expect(primaryNavigation).toContainText("效果追踪");
+
+  const hero = page.locator("[data-studio-page-hero]");
+  const title = hero.locator("[data-app-page-title]");
+  const subtitle = hero.locator("p").first();
+  const filterBar = page.locator("[data-studio-filter-bar]");
+  const workspace = page.locator("[data-studio-workspace]");
+  const queueTitle = queue.getByRole("heading", { name: "当前交付物" });
+  const firstRow = completedCard.locator(":scope > button");
+  const rowMark = firstRow.locator(":scope > span").nth(0);
+  const rowCopy = firstRow.locator(":scope > span").nth(1);
+  const rowHead = rowCopy.locator(":scope > span").nth(0);
+  const rowType = rowHead.locator(":scope > span").nth(0);
+  const rowAction = rowCopy.locator(":scope > strong");
+  const rowMeta = rowCopy.locator(":scope > small");
+
+  expect(
+    await title.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("52px");
+  expect(
+    await subtitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("17px");
+  expect(
+    await filterBar.evaluate((element) => getComputedStyle(element).padding),
+  ).toBe("11px 13px");
+  expect(
+    await workspace.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(2);
+  expect(
+    await workspace.evaluate((element) => getComputedStyle(element).columnGap),
+  ).toBe("16px");
+  const queueWidth = (await queue.boundingBox())!.width;
+  expect(queueWidth).toBeGreaterThanOrEqual(280);
+  expect(queueWidth).toBeLessThanOrEqual(310);
+  expect(
+    await queueTitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("23px");
+  expect((await rowMark.boundingBox())!.width).toBeCloseTo(36, 0);
+  expect(
+    await rowType.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("10px");
+  expect(
+    await rowAction.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("13px");
+  expect(
+    await rowMeta.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("10px");
+
+  const queueList = page.locator("[data-studio-queue-list]");
+  await page.setViewportSize({ width: 1024, height: 900 });
+  expect(
+    await workspace.evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
+    ),
+  ).toBe(1);
+  expect(
+    await queueList.evaluate((element) => getComputedStyle(element).display),
+  ).toBe("flex");
+  expect(
+    await queueList
+      .locator("[data-studio-artifact-id]")
+      .first()
+      .evaluate((element) => getComputedStyle(element).flexBasis),
+  ).toBe("250px");
+  await expect(blocked).toBeVisible();
+  await expect(progress).toBeVisible();
+  await expect(
+    completedCard.locator('[data-artifact-execution-state="completed"]'),
+  ).toBeVisible();
+  expect(
+    await title.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("40.96px");
+
+  await page.setViewportSize({ width: 760, height: 900 });
+  await expect(queueTitle).toBeHidden();
+  expect(
+    await queueList
+      .locator("[data-studio-artifact-id]")
+      .first()
+      .evaluate((element) => getComputedStyle(element).flexBasis),
+  ).toBe("238px");
+  await expect(blocked).toBeVisible();
+  await expect(progress).toBeVisible();
+  expect(
+    await title.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("37px");
+  expect(
+    await subtitle.evaluate((element) => getComputedStyle(element).fontSize),
+  ).toBe("16px");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
 });

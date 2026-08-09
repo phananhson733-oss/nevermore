@@ -1539,7 +1539,10 @@ test("Results keeps the recheck and report blocks independent across all four qu
     page.getByRole("button", { name: "Retry", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Results", level: 1 }),
+    page.getByRole("heading", {
+      name: "Before, after, and attribution boundaries",
+      level: 1,
+    }),
   ).toBeVisible();
 });
 

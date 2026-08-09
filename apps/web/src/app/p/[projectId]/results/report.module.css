@@ -17,6 +17,7 @@
   flex-direction: column;
   gap: 24px;
   min-width: 0;
+  scroll-margin-top: 90px;
 }
 .workspace {
   display: grid;
