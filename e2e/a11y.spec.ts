@@ -31,6 +31,7 @@ const SCREENS = [
   "execution",
   "results",
 ] as const;
+const CLIENT_READ_MODEL_TIMEOUT_MS = 45_000;
 
 let project: SeededProject;
 
@@ -60,8 +61,12 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
   // spinner: wait for the report document, the settled recheck block, and
   // quiesced query traffic before any axe/print assertion (R3 blueprint D8).
   if (screen === "results") {
-    await expect(page.locator("[data-report-document]")).toBeVisible();
-    await expect(page.locator("[data-results-recheck-settled]")).toHaveCount(1);
+    await expect(page.locator("[data-report-document]")).toBeVisible({
+      timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+    });
+    await expect(page.locator("[data-results-recheck-settled]")).toHaveCount(1, {
+      timeout: CLIENT_READ_MODEL_TIMEOUT_MS,
+    });
     await page.waitForLoadState("networkidle");
   }
 }

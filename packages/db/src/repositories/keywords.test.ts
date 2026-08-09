@@ -240,6 +240,47 @@ describe("KeywordsRepository", () => {
     );
   });
 
+  it("counts Product Profile entities from their real occurrence source", async () => {
+    const db = new FakeExecutor();
+    db.enqueueExecute({
+      rows: [
+        {
+          all_count: 23,
+          csv_import: 1,
+          dataforseo_ranked: 2,
+          gsc_top_query: 3,
+          product_profile: 20,
+          interview_summary: 4,
+          user_review: 5,
+          manual: 6,
+        },
+      ],
+    });
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(repo.countBySourceKind(scope)).resolves.toEqual({
+      all: 23,
+      csv_import: 1,
+      dataforseo_ranked: 2,
+      gsc_top_query: 3,
+      product_profile: 20,
+      interview_summary: 4,
+      user_review: 5,
+      manual: 6,
+    });
+
+    const query = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(query.sql).toContain("source_kind = 'product_profile'");
+    expect(query.params).toEqual([
+      scope.projectId,
+      scope.workspaceId,
+      scope.projectId,
+      scope.workspaceId,
+    ]);
+  });
+
   it("resumes the value-ordered keyset from an exact opaque cursor", async () => {
     const db = new FakeExecutor();
     db.enqueueExecute({ rows: [{ ...entity, sort_volume_text: null }] });

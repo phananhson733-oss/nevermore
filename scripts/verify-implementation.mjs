@@ -679,6 +679,7 @@ function checkOpenApi() {
   assertExactSet(
     Object.keys(keywordSourceOccurrence?.discriminator?.mapping ?? {}),
     [
+      "product_profile",
       "csv_import",
       "dataforseo_ranked",
       "gsc_top_query",
@@ -691,6 +692,7 @@ function checkOpenApi() {
   assertExactSet(
     (keywordSourceOccurrence?.oneOf ?? []).map((shape) => shape.$ref),
     [
+      "#/components/schemas/GrowthMapKeywordProductProfileOccurrence",
       "#/components/schemas/GrowthMapKeywordCsvImportOccurrence",
       "#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence",
       "#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence",

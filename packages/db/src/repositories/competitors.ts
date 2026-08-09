@@ -213,6 +213,7 @@ export interface CompetitorIdPageOptions {
 export const MAX_COMPETITOR_PAGE_SIZE = 100;
 export const MAX_COMPETITOR_ORIGIN_PAGE_SIZE = 100;
 export const MAX_COMPETITOR_ORIGIN_BATCH_TOTAL = 2_000;
+export const MAX_COMPETITOR_ORIGIN_UPSERT_BATCH_SIZE = 500;
 /** 500 accepted facts plus one overflow sentinel. */
 export const MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ = 501;
 
@@ -635,6 +636,35 @@ function parseUpsertResult(value: unknown): CompetitorOriginUpsertResult {
   };
 }
 
+function parseBatchUpsertResult(
+  value: unknown,
+  expectedCount: number,
+): CompetitorOriginUpsertResult[] {
+  const rows = (value as {
+    readonly rows?: readonly {
+      readonly input_ordinal?: unknown;
+      readonly occurrence_id?: unknown;
+      readonly competitor_id?: unknown;
+    }[];
+  }).rows;
+  if (!Array.isArray(rows) || rows.length !== expectedCount) {
+    throw new Error("competitor origin batch upsert returned an invalid result");
+  }
+  return rows.map((row, index) => {
+    if (
+      row.input_ordinal !== index + 1 ||
+      typeof row.occurrence_id !== "string" ||
+      typeof row.competitor_id !== "string"
+    ) {
+      throw new Error("competitor origin batch upsert returned an invalid result");
+    }
+    return {
+      occurrenceId: row.occurrence_id,
+      competitorId: row.competitor_id,
+    };
+  });
+}
+
 function originParameters(input: LegacyCompetitorOriginInput) {
   if (input.originKind === "product_profile") {
     return {
@@ -684,6 +714,52 @@ function originParameters(input: LegacyCompetitorOriginInput) {
     importPreviewId: null,
     sourcePointer: null,
     manualEntryId: input.manualEntryId,
+  };
+}
+
+function batchOriginParameters(input: CompetitorOriginInput) {
+  if (
+    input.originKind === "serp_overlap" ||
+    input.originKind === "ai_citation"
+  ) {
+    return {
+      domain: input.domain,
+      name: input.name,
+      originKind: input.originKind,
+      productProfileId: null,
+      profileVersion: null,
+      candidateId: null,
+      fieldProvenancePath: null,
+      evidenceRefs: null,
+      sourceReviewStatus: null,
+      sourceRelationship: null,
+      sourceAnalysisScope: null,
+      snapshotId: input.snapshotId,
+      observationId: input.observationId,
+      importPreviewId: null,
+      sourcePointer: input.sourcePointer,
+      manualEntryId: null,
+    };
+  }
+  const parameters = originParameters(input);
+  return {
+    domain: input.domain,
+    name: input.name,
+    originKind: input.originKind,
+    productProfileId: parameters.productProfileId,
+    profileVersion: parameters.profileVersion,
+    candidateId: parameters.candidateId,
+    fieldProvenancePath: parameters.fieldProvenancePath,
+    evidenceRefs:
+      input.originKind === "product_profile" ? [...input.evidenceRefs] : null,
+    sourceReviewStatus: parameters.sourceReviewStatus,
+    sourceRelationship: parameters.sourceRelationship,
+    sourceAnalysisScope: parameters.sourceAnalysisScope,
+    snapshotId: parameters.snapshotId,
+    observationId: parameters.observationId,
+    importPreviewId: parameters.importPreviewId,
+    sourcePointer: parameters.sourcePointer,
+    manualEntryId: parameters.manualEntryId,
   };
 }
 
@@ -794,6 +870,33 @@ export class CompetitorsRepository extends Repository {
       )
     `);
     return parseUpsertResult(result);
+  }
+
+  /** Converge one exact provider page through one atomic database call. */
+  async upsertOrigins(
+    scope: ProjectScope,
+    inputs: readonly CompetitorOriginInput[],
+  ): Promise<CompetitorOriginUpsertResult[]> {
+    if (inputs.length === 0) return [];
+    if (inputs.length > MAX_COMPETITOR_ORIGIN_UPSERT_BATCH_SIZE) {
+      throw new RangeError(
+        `inputs must contain at most ${MAX_COMPETITOR_ORIGIN_UPSERT_BATCH_SIZE} competitor origins`,
+      );
+    }
+    const payload = inputs.map((input) => {
+      assertOriginInput(input);
+      return batchOriginParameters(input);
+    });
+    const result = await this.exec.execute(sql`
+      select input_ordinal, occurrence_id, competitor_id
+      from app.upsert_competitor_origins_batch(
+        ${scope.workspaceId}::uuid,
+        ${scope.projectId}::uuid,
+        ${JSON.stringify(payload)}::jsonb
+      )
+      order by input_ordinal
+    `);
+    return parseBatchUpsertResult(result, inputs.length);
   }
 
   /**

@@ -117,14 +117,13 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   await expect(heroA).not.toContainText("Isolation Project B");
   await expect(heroB).not.toContainText("Isolation Project A");
 
-  // These two navigations were a Promise.all. Sequence both navigation AND
-  // client-readiness deliberately: `goto()` settles after the Sources document
-  // load, while its project-scoped React Query read can still be in flight.
-  // Starting the Results navigation at that point makes the two projections
-  // compete even though the first page has not become observable yet. Establish
-  // Sources readiness before navigating the sibling tab, then assert it remains
-  // visible after Results arrives. This keeps the isolation claim cross-tab
-  // without coupling it to unrelated request timing.
+  // These two navigations were a Promise.all. Sequence navigation and Sources
+  // readiness deliberately: `goto()` settles after the Sources document load,
+  // while its project-scoped React Query read can still be in flight. Establish
+  // Sources readiness before navigating the sibling tab, then assert that it
+  // remains visible after the canonical Results shell arrives. The report query
+  // may still be cold; the project-scoped request assertions below prove that
+  // the correct read was issued without coupling isolation to response timing.
   const sourceGridA = pageA.locator("[data-source-grid]");
   await pageA.goto(`/p/${projectA.projectId}/sources`);
   await expect(sourceGridA).toBeVisible({
@@ -142,7 +141,7 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
     expect(sourceGridA).toBeVisible({
       timeout: COLD_PROJECT_PROJECTION_TIMEOUT_MS,
     }),
-    expect(pageB.locator("[data-report-page]")).toBeVisible({
+    expect(pageB.locator("[data-results-page]")).toBeVisible({
       timeout: COLD_PROJECT_PROJECTION_TIMEOUT_MS,
     }),
   ]);
@@ -151,8 +150,8 @@ test("two project tabs keep URLs, queries, and rendered aggregates isolated (AC-
   expect(pageB.url()).toContain(`/p/${projectB.projectId}/results`);
 
   // `<main>` belongs to the server-rendered shell and is visible before the
-  // client queries begin. Wait for the page-specific projections above, then
-  // prove each tab requested the expected project-scoped read models. This
+  // client queries begin. Wait for the page-specific anchors above, then prove
+  // each tab requested the expected project-scoped read models. This
   // retains AC-010's negative check below while avoiding a hydration race.
   await expect.poll(() => requestsA).toEqual(
     expect.arrayContaining([

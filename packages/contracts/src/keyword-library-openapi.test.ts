@@ -43,12 +43,16 @@ type KeywordReviewRequest =
 type KeywordItem = components["schemas"]["GrowthMapKeywordLibraryItem"];
 type KeywordSourceOccurrence =
   components["schemas"]["GrowthMapKeywordSourceOccurrence"];
+type KeywordProductProfileOccurrence =
+  components["schemas"]["GrowthMapKeywordProductProfileOccurrence"];
 type KeywordMappedTarget =
   components["schemas"]["GrowthMapKeywordMappedTarget"];
 type KeywordMetrics = components["schemas"]["GrowthMapKeywordMetrics"];
 type KeywordPage = components["schemas"]["GrowthMapKeywordLibraryResponse"];
 type KeywordPageMeta =
   components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
+type KeywordSourceCounts =
+  components["schemas"]["GrowthMapKeywordSourceCounts"];
 
 type _ListQueryIncludesPublishedGeneration = Expect<
   Equal<
@@ -90,6 +94,12 @@ type _KeywordItemIsClosed = Expect<
 type _KeywordSourceOccurrenceIsClosed = Expect<
   Equal<string extends keyof KeywordSourceOccurrence ? true : false, false>
 >;
+type _KeywordProductProfileOccurrenceIsClosed = Expect<
+  Equal<
+    string extends keyof KeywordProductProfileOccurrence ? true : false,
+    false
+  >
+>;
 type _KeywordMappedTargetIsClosed = Expect<
   Equal<string extends keyof KeywordMappedTarget ? true : false, false>
 >;
@@ -113,6 +123,22 @@ type _KeywordSourceCountsIsClosed = Expect<
     false
   >
 >;
+type _KeywordSourceCountFields = Expect<
+  Equal<
+    keyof KeywordSourceCounts,
+    | "all"
+    | "product_profile"
+    | "csv_import"
+    | "dataforseo_ranked"
+    | "gsc_top_query"
+    | "interview_summary"
+    | "user_review"
+    | "manual"
+  >
+>;
+type _KeywordSourceCountsAreRequired = Expect<
+  Equal<RequiredKeys<KeywordSourceCounts>, keyof KeywordSourceCounts>
+>;
 type _KeywordPageMetaRequiredFields = Expect<
   Equal<RequiredKeys<KeywordPageMeta>, keyof KeywordPageMeta>
 >;
@@ -125,6 +151,7 @@ type _KeywordLanguageTagUsesCanonicalContract = Expect<
 type _SourceKinds = Expect<
   Equal<
     KeywordSourceOccurrence["sourceKind"],
+    | "product_profile"
     | "csv_import"
     | "dataforseo_ranked"
     | "gsc_top_query"
@@ -132,6 +159,75 @@ type _SourceKinds = Expect<
     | "user_review"
     | "manual"
   >
+>;
+type _SourceKindFilter = Expect<
+  Equal<
+    NonNullable<KeywordListQuery["sourceKind"]>,
+    | "product_profile"
+    | "csv_import"
+    | "dataforseo_ranked"
+    | "gsc_top_query"
+    | "interview_summary"
+    | "user_review"
+    | "manual"
+  >
+>;
+type _ProductProfileOccurrenceFields = Expect<
+  Equal<
+    keyof KeywordProductProfileOccurrence,
+    | "occurrenceId"
+    | "sourceKind"
+    | "productProfileId"
+    | "snapshotId"
+    | "sourceObservationId"
+    | "sourcePointer"
+    | "collectedAt"
+    | "providerDataAsOf"
+    | "freshness"
+    | "limitation"
+    | "scopeBasis"
+    | "scopeLimitation"
+    | "marketCode"
+    | "languageTag"
+  >
+>;
+type _ProductProfileOccurrenceFieldsAreRequired = Expect<
+  Equal<
+    RequiredKeys<KeywordProductProfileOccurrence>,
+    keyof KeywordProductProfileOccurrence
+  >
+>;
+type _ProductProfileSourceKind = Expect<
+  Equal<KeywordProductProfileOccurrence["sourceKind"], "product_profile">
+>;
+type _ProductProfileIdIsUuid = Expect<
+  Equal<
+    KeywordProductProfileOccurrence["productProfileId"],
+    components["schemas"]["Uuid"]
+  >
+>;
+type _ProductProfileHasNoProviderObservation = Expect<
+  Equal<
+    Pick<
+      KeywordProductProfileOccurrence,
+      | "snapshotId"
+      | "sourceObservationId"
+      | "sourcePointer"
+      | "providerDataAsOf"
+    >,
+    {
+      snapshotId: null;
+      sourceObservationId: null;
+      sourcePointer: null;
+      providerDataAsOf: null;
+    }
+  >
+>;
+type _ProductProfileFreshnessIsUnknown = Expect<
+  Equal<KeywordProductProfileOccurrence["freshness"], "unknown">
+>;
+type _ProductProfileScopeIsProjectContext = Expect<
+  Equal<KeywordProductProfileOccurrence["scopeBasis"], "project_context">
 >;
 type _MappedTargetKinds = Expect<
   Equal<
@@ -239,6 +335,7 @@ describe("Keyword Library generated OpenAPI contract", () => {
 
   it("preserves source and mapped-target discriminator wire literals", () => {
     for (const [property, literal] of [
+      ["sourceKind", "product_profile"],
       ["sourceKind", "csv_import"],
       ["sourceKind", "dataforseo_ranked"],
       ["sourceKind", "gsc_top_query"],
@@ -251,6 +348,24 @@ describe("Keyword Library generated OpenAPI contract", () => {
     ] as const) {
       expect(generated).toContain(`${property}: "${literal}";`);
     }
+  });
+
+  it("publishes confirmed Product Profile queries as exact non-provider keyword lineage", () => {
+    expect(openapi).toMatch(
+      /KeywordSourceKindFilter:[\s\S]*?enum: \[product_profile, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual\]/u,
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordProductProfileOccurrence:\s*\n\s*type: object\s*\n\s*additionalProperties: false\s*\n\s*required: \[occurrenceId, sourceKind, productProfileId, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag\][\s\S]*?sourceKind: \{ type: string, const: product_profile \}[\s\S]*?productProfileId: \{ \$ref: '#\/components\/schemas\/Uuid' \}[\s\S]*?snapshotId: \{ type: 'null' \}[\s\S]*?sourceObservationId: \{ type: 'null' \}[\s\S]*?sourcePointer: \{ type: 'null' \}[\s\S]*?providerDataAsOf: \{ type: 'null' \}[\s\S]*?freshness: \{ type: string, const: unknown \}[\s\S]*?scopeBasis: \{ type: string, const: project_context \}[\s\S]*?GrowthMapKeywordCsvImportOccurrence:/u,
+    );
+    expect(openapi).toContain(
+      "- $ref: '#/components/schemas/GrowthMapKeywordProductProfileOccurrence'",
+    );
+    expect(openapi).toContain(
+      "product_profile: '#/components/schemas/GrowthMapKeywordProductProfileOccurrence'",
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordSourceCounts:[\s\S]*?required: \[all, product_profile, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual\][\s\S]*?product_profile: \{ type: integer, minimum: 0 \}[\s\S]*?GrowthMapKeywordLibraryPageMeta:/u,
+    );
   });
 
   it("keeps interview summaries and public reviews separate without exposing raw people or review text", () => {

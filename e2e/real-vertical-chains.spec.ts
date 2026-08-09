@@ -823,7 +823,7 @@ async function verifyReportAndExport(
   if (keyboard) {
     await reportLink.focus();
     await expect(reportLink).toBeFocused();
-    await reportLink.press("Enter");
+    await page.keyboard.press("Enter");
     await page.waitForURL(`/p/${projectId}/results`);
   } else {
     await reportLink.click();

@@ -1240,9 +1240,11 @@
     "title": "从每一个真实页面，找到下一步增长机会。",
     "subtitle": "把最新一次可读取审计中的 URL、观测指标、Finding 与执行物按同一条证据链呈现。每次选择一个 URL，右侧只显示它自己的真实信息。",
     "manageSources": "管理数据来源",
-    "runDiagnosis": "运行诊断",
-    "rerunDiagnosis": "重新运行诊断",
-    "runInProgress": "诊断进行中…",
+    "runDiagnosis": "刷新全部数据并运行诊断",
+    "rerunDiagnosis": "重新刷新全部数据并运行诊断",
+    "runInProgress": "全站数据刷新并运行诊断中…",
+    "runCompletedWithLimitations": "已完成（部分数据受限）",
+    "runDiagnosisScopeNote": "会刷新全站 Crawl、GSC/GA4、DataForSEO 与 Growth Audit，不只当前选中竞品。",
     "runNeedsCrawl": "诊断前需要一次已完成的站点抓取。请先在“数据源”中采集抓取快照。",
     "runNeedsContext": "诊断前需要完整的 ICP 上下文。请先完善项目上下文。",
     "runRecheckContext": "重新检查",
@@ -1769,6 +1771,7 @@
         "unknown": "时效未知"
       },
       "sourceKind": {
+        "product_profile": "Product Profile 派生查询",
         "csv_import": "CSV 导入",
         "dataforseo_ranked": "DataForSEO 排名关键词",
         "gsc_top_query": "GSC 热门查询",
@@ -2052,6 +2055,7 @@
         "partial": "已尝试 {attempted} 个查询 · {unavailable} 个不可用"
       },
       "openFullProfile": "打开竞品完整详情",
+      "selectProfile": "查看竞品档案",
       "noMatchesTitle": "没有匹配的竞品",
       "noMatchesDescription": "请尝试其他名称、域名或审核状态。这里仅显示当前已加载到的精确记录。",
       "reviewStatus": {
@@ -2130,6 +2134,13 @@
         },
         "badgeManual": "人工确认",
         "badgeSnapshot": "场景快照",
+        "sourceSummary": {
+          "product_profile": "{count} 条已确认的 Product Profile 记录",
+          "csv_keyword_gap": "{count} 条关键词差距导入记录",
+          "manual": "{count} 条人工补充记录",
+          "serp_overlap": "{count} 条 SERP 重叠观测",
+          "ai_citation": "{count} 条 AI 共同引用观测"
+        },
         "close": "关闭"
       },
       "governanceEyebrow": "审核信息",

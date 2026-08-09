@@ -104,6 +104,46 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     await handle?.end();
   });
 
+  it("serializes equal project/provider/window collection transactions", async () => {
+    const seed = await seedProject(handle);
+    let releaseFirst!: () => void;
+    const firstRelease = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let markFirstLocked!: () => void;
+    const firstLocked = new Promise<void>((resolve) => {
+      markFirstLocked = resolve;
+    });
+
+    const first = handle.db.transaction(async (tx) => {
+      await new ProviderDiscrepanciesRepository(tx).lockCollectionWindow(
+        seed.scope,
+        "gsc",
+        WINDOW as unknown as Record<string, unknown>,
+      );
+      markFirstLocked();
+      await firstRelease;
+    });
+    await firstLocked;
+
+    let secondAcquired = false;
+    const second = handle.db.transaction(async (tx) => {
+      await new ProviderDiscrepanciesRepository(tx).lockCollectionWindow(
+        seed.scope,
+        "gsc",
+        WINDOW as unknown as Record<string, unknown>,
+      );
+      secondAcquired = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(secondAcquired).toBe(false);
+
+    releaseFirst();
+    await first;
+    await second;
+    expect(secondAcquired).toBe(true);
+  });
+
   it("records stable, de-duplicated pairs only for substantive numeric/text/json/null conflicts", async () => {
     const seed = await seedProject(handle);
     const baseline = [
@@ -165,6 +205,44 @@ describeDb("provider discrepancy persistence (spec §7.6)", () => {
     await repo.detectForSnapshot(seed.scope, changedSnapshotId);
     await repo.detectForSnapshot(seed.scope, changedSnapshotId);
     expect(await repo.listByProject(seed.scope)).toHaveLength(4);
+
+    let executeCount = 0;
+    const countedRepository = new ProviderDiscrepanciesRepository({
+      execute: async (
+        query: Parameters<typeof handle.db.execute>[0],
+      ) => {
+        executeCount += 1;
+        return handle.db.execute(query);
+      },
+    } as never);
+    const replayed = await countedRepository.detectForSnapshot(
+      seed.scope,
+      changedSnapshotId,
+    );
+    expect(executeCount).toBe(1);
+    expect(replayed).toHaveLength(4);
+    expect(
+      new Set(
+        replayed.map(
+          (discrepancy) =>
+            `${discrepancy.left_observation_id}:${discrepancy.right_observation_id}`,
+        ),
+      ).size,
+    ).toBe(4);
+    expect(
+      replayed.every(
+        (discrepancy) =>
+          discrepancy.left_observation_id < discrepancy.right_observation_id,
+      ),
+    ).toBe(true);
+    executeCount = 0;
+    await expect(
+      countedRepository.detectForSnapshot(
+        { ...seed.scope, projectId: randomUUID() },
+        changedSnapshotId,
+      ),
+    ).resolves.toEqual([]);
+    expect(executeCount).toBe(1);
 
     // Both immutable source facts remain; no average or overwrite projection is
     // introduced in place of the conflict ledger.

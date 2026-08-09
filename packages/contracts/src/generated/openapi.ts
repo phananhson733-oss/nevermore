@@ -3287,6 +3287,29 @@ export interface components {
             reason: string | null;
         };
         GrowthMapKeywordMappedTarget: components["schemas"]["GrowthMapKeywordUnassignedTarget"] | components["schemas"]["GrowthMapKeywordExistingPageTarget"] | components["schemas"]["GrowthMapKeywordNewAssetTarget"];
+        /** @description Exact confirmed Product Profile query lineage. It has no provider Snapshot or Observation and never impersonates provider evidence. */
+        GrowthMapKeywordProductProfileOccurrence: {
+            occurrenceId: components["schemas"]["Uuid"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            sourceKind: "product_profile";
+            productProfileId: components["schemas"]["Uuid"];
+            snapshotId: null;
+            sourceObservationId: null;
+            sourcePointer: null;
+            collectedAt: components["schemas"]["Timestamp"];
+            providerDataAsOf: null;
+            /** @constant */
+            freshness: "unknown";
+            limitation: string | null;
+            /** @constant */
+            scopeBasis: "project_context";
+            scopeLimitation: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+        };
         GrowthMapKeywordCsvImportOccurrence: {
             occurrenceId: components["schemas"]["Uuid"];
             /**
@@ -3436,8 +3459,8 @@ export interface components {
             marketCode: components["schemas"]["MarketCode"];
             languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
-        /** @description Exact immutable source occurrence. Interview summaries and public user reviews remain distinct source authorities. Their customer projection contains de-identified evidence labels and immutable fingerprints, never participant identities, review authors, or full source text. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
-        GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordInterviewSummaryOccurrence"] | components["schemas"]["GrowthMapKeywordUserReviewOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
+        /** @description Exact immutable source occurrence. Confirmed Product Profile queries carry explicit profile lineage without provider provenance. Interview summaries and public user reviews remain distinct source authorities. Their customer projection contains de-identified evidence labels and immutable fingerprints, never participant identities, review authors, or full source text. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation. */
+        GrowthMapKeywordSourceOccurrence: components["schemas"]["GrowthMapKeywordProductProfileOccurrence"] | components["schemas"]["GrowthMapKeywordCsvImportOccurrence"] | components["schemas"]["GrowthMapKeywordDataForSeoRankedOccurrence"] | components["schemas"]["GrowthMapKeywordGscTopQueryOccurrence"] | components["schemas"]["GrowthMapKeywordInterviewSummaryOccurrence"] | components["schemas"]["GrowthMapKeywordUserReviewOccurrence"] | components["schemas"]["GrowthMapKeywordManualOccurrence"];
         GrowthMapKeywordVolumeMetric: {
             snapshotId: components["schemas"]["Uuid"];
             observationId: components["schemas"]["Uuid"];
@@ -3562,6 +3585,7 @@ export interface components {
         /** @description Whole-library Keyword counts per intake source, computed in the same read-only transaction as the page. A Keyword with occurrences from several sources counts once per source, so per-source counts can sum past `all`. */
         GrowthMapKeywordSourceCounts: {
             all: number;
+            product_profile: number;
             csv_import: number;
             dataforseo_ranked: number;
             gsc_top_query: number;
@@ -6001,7 +6025,7 @@ export interface components {
          */
         DiagnosticRunIdPin: string;
         /** @description Restrict the live Keyword Library page to Keywords holding at least one occurrence of this intake source. Rejected when combined with diagnosticRunId because frozen generations have no per-source membership. */
-        KeywordSourceKindFilter: "csv_import" | "dataforseo_ranked" | "gsc_top_query" | "interview_summary" | "user_review" | "manual";
+        KeywordSourceKindFilter: "product_profile" | "csv_import" | "dataforseo_ranked" | "gsc_top_query" | "interview_summary" | "user_review" | "manual";
         /**
          * @description Exact view=review selects the current mutable governance projection.
          *     It is available only on Keyword and Competitor detail GET operations,

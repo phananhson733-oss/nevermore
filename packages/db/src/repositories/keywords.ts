@@ -80,6 +80,7 @@ export interface KeywordSourceCounts {
   readonly csv_import: number;
   readonly dataforseo_ranked: number;
   readonly gsc_top_query: number;
+  readonly product_profile: number;
   readonly interview_summary: number;
   readonly user_review: number;
   readonly manual: number;
@@ -828,6 +829,7 @@ export class KeywordsRepository extends Repository {
         coalesce((select keyword_count from by_kind where source_kind = 'csv_import'), 0) as csv_import,
         coalesce((select keyword_count from by_kind where source_kind = 'dataforseo_ranked'), 0) as dataforseo_ranked,
         coalesce((select keyword_count from by_kind where source_kind = 'gsc_top_query'), 0) as gsc_top_query,
+        coalesce((select keyword_count from by_kind where source_kind = 'product_profile'), 0) as product_profile,
         coalesce((select keyword_count from by_kind where source_kind = 'interview_summary'), 0) as interview_summary,
         coalesce((select keyword_count from by_kind where source_kind = 'user_review'), 0) as user_review,
         coalesce((select keyword_count from by_kind where source_kind = 'manual'), 0) as manual
@@ -848,6 +850,7 @@ export class KeywordsRepository extends Repository {
       csv_import: readCount("csv_import"),
       dataforseo_ranked: readCount("dataforseo_ranked"),
       gsc_top_query: readCount("gsc_top_query"),
+      product_profile: readCount("product_profile"),
       interview_summary: readCount("interview_summary"),
       user_review: readCount("user_review"),
       manual: readCount("manual"),

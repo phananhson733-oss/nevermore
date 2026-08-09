@@ -81,6 +81,8 @@ const UUID =
 const GSC_TOP_QUERY_POINTER =
   /^\/valueJson\/topQueries\/([0-9]+)\/query$/u;
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
+const PRODUCT_PROFILE_SOURCE_REF =
+  /^product_profile:([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})#profile-generative-query\.v1\/[A-Za-z0-9._-]+$/iu;
 const KEYWORD_EVIDENCE_FRESHNESS_DAYS = {
   interview_summary: 180,
   user_review: 90,
@@ -98,6 +100,8 @@ const OCCURRENCE_HISTORY_LIMITATION =
   "Only the most recent 100 source occurrences are included; older immutable occurrence history remains available in canonical storage.";
 const MANUAL_FRESHNESS_LIMITATION =
   "Manual input has no independent provider data-as-of timestamp.";
+const PRODUCT_PROFILE_FRESHNESS_LIMITATION =
+  "Product Profile-derived GenerativeQuery has no independent provider data-as-of timestamp.";
 const UNKNOWN_FRESHNESS_LIMITATION =
   "No provider data-as-of timestamp is available for this source occurrence.";
 const NEWER_LIVE_REVIEW_LIMITATION =
@@ -1439,6 +1443,48 @@ function projectManualOccurrence(
   };
 }
 
+function projectProductProfileOccurrence(
+  occurrence: KeywordOccurrenceRow,
+): ProjectedOccurrence {
+  const match = PRODUCT_PROFILE_SOURCE_REF.exec(occurrence.source_ref);
+  const productProfileId = occurrence.product_profile_id;
+  if (
+    occurrence.scope_basis !== "project_context" ||
+    productProfileId === null ||
+    !UUID.test(productProfileId) ||
+    occurrence.data_snapshot_id !== null ||
+    occurrence.normalized_observation_id !== null ||
+    occurrence.source_pointer !== null ||
+    occurrence.provider_data_as_of !== null ||
+    !match ||
+    match[1] !== productProfileId
+  ) {
+    return corruptKeywordLibrary();
+  }
+  return {
+    row: occurrence,
+    observation: null,
+    snapshot: null,
+    dto: {
+      occurrenceId: occurrence.id,
+      sourceKind: "product_profile",
+      productProfileId,
+      snapshotId: null,
+      sourceObservationId: null,
+      sourcePointer: null,
+      collectedAt: isoInstant(occurrence.collected_at),
+      providerDataAsOf: null,
+      freshness: "unknown",
+      limitation: PRODUCT_PROFILE_FRESHNESS_LIMITATION,
+      scopeBasis: "project_context",
+      scopeLimitation:
+        "Product Profile scope reflects the confirmed profile and the primary Site market/language, not provider collection scope.",
+      marketCode: occurrence.market,
+      languageTag: occurrence.language_tag,
+    },
+  };
+}
+
 function projectProviderOccurrence(
   occurrence: KeywordOccurrenceRow,
   entity: KeywordEntityRow,
@@ -1701,7 +1747,9 @@ function projectOccurrence(
   validateOccurrenceIdentity(occurrence, entity, scope);
   return occurrence.source_kind === "manual"
     ? projectManualOccurrence(occurrence)
-    : projectProviderOccurrence(occurrence, entity, rows, scope, now);
+    : occurrence.source_kind === "product_profile"
+      ? projectProductProfileOccurrence(occurrence)
+      : projectProviderOccurrence(occurrence, entity, rows, scope, now);
 }
 
 function mappingReviewState(

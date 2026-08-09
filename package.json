@@ -52,6 +52,7 @@
     "db:migrate": "pnpm --filter @sf/db migrate",
     "db:migrate:check": "pnpm --filter @sf/db migrate:check",
     "db:smoke": "pnpm --filter @sf/db smoke",
+    "repair:product-profile-ai-cohort": "tsx packages/db/src/product-profile-ai-cohort-repair.ts",
     "restore:drill": "node scripts/backup-restore-drill.mjs",
     "restore:drill:test": "node --test --experimental-test-coverage --test-coverage-lines=80 --test-coverage-branches=80 --test-coverage-functions=80 scripts/backup-restore-drill.test.mjs",
     "implementation:check": "node scripts/verify-implementation.mjs",

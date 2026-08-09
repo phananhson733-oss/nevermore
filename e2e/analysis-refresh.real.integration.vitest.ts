@@ -293,8 +293,8 @@ describeDb("Analysis Refresh real vertical chain", () => {
     );
     expect(dataForSeoSnapshots).toEqual([
       expect.objectContaining({
-        dataset_key: "dataforseo.search_landscape.v2",
-        method_version: "dataforseo.search_landscape.v2",
+        dataset_key: "dataforseo.search_landscape.v3",
+        method_version: "dataforseo.search_landscape.v3",
         availability: "available",
         row_count: 3,
       }),
@@ -310,7 +310,7 @@ describeDb("Analysis Refresh real vertical chain", () => {
     ).toHaveLength(1);
     expect(
       dataForSeoObservations.filter(
-        (row) => row.metric_key === "dataforseo.competitor_domain.v1",
+        (row) => row.metric_key === "dataforseo.competitor_domain.v2",
       ),
     ).toHaveLength(2);
 
@@ -1018,9 +1018,9 @@ function workerContext(
                 items: [
                   {
                     domain: "rival-one.example",
-                    avg_position: 12.25,
+                    avg_position: 49,
                     sum_position: 49,
-                    intersections: 4,
+                    intersections: 1,
                     competitor_metrics: {
                       organic: { etv: 1_850.75 },
                     },

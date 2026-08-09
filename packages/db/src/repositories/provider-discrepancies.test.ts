@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   ProviderDiscrepanciesRepository,
   type ProviderDiscrepancyRow,
@@ -143,62 +143,90 @@ describe("ProviderDiscrepanciesRepository", () => {
     );
   });
 
-  it("deduplicates candidate observation pairs before inserting", async () => {
+  it("returns only de-duplicated, canonically ordered candidate pairs", async () => {
     const fake = fakeExecutor();
     const repo = new ProviderDiscrepanciesRepository(fake.executor);
-    fake.enqueue([
-      {
-        metricKey: "gsc.clicks",
-        subjectType: "url",
-        subjectRef: "https://example.com/",
-        currentObservationId: "observation-z",
-        priorObservationId: "observation-a",
-      },
-      {
-        metricKey: "gsc.clicks",
-        subjectType: "url",
-        subjectRef: "https://example.com/",
-        currentObservationId: "observation-a",
-        priorObservationId: "observation-z",
-      },
-      {
-        metricKey: "ga4.sessions",
-        subjectType: "url",
-        subjectRef: "https://example.com/pricing",
-        currentObservationId: "observation-c",
-        priorObservationId: "observation-b",
-      },
-    ]);
-    const insert = vi
-      .spyOn(repo, "insert")
-      .mockResolvedValueOnce(row)
-      .mockResolvedValueOnce({ ...row, id: "discrepancy-2" });
+    fake.enqueue({
+      rows: [
+        row,
+        {
+          ...row,
+          id: "discrepancy-2",
+          metric_key: "ga4.sessions",
+          subject_ref: "https://example.com/pricing",
+          left_observation_id: "observation-b",
+          right_observation_id: "observation-c",
+        },
+      ],
+    });
 
-    await expect(repo.detectForSnapshot(scope, "snapshot-current")).resolves
-      .toHaveLength(2);
-    expect(insert).toHaveBeenCalledTimes(2);
-    expect(insert).toHaveBeenNthCalledWith(
+    const detected = await repo.detectForSnapshot(scope, "snapshot-current");
+    expect(detected).toHaveLength(2);
+    expect(
+      detected.every(
+        (candidate) =>
+          candidate.left_observation_id < candidate.right_observation_id,
+      ),
+    ).toBe(true);
+    expect(
+      new Set(
+        detected.map(
+          (candidate) =>
+            `${candidate.left_observation_id}:${candidate.right_observation_id}`,
+        ),
+      ).size,
+    ).toBe(2);
+
+    const duplicate = fakeExecutor();
+    duplicate.enqueue({ rows: [row, { ...row, id: "discrepancy-replay" }] });
+    await expect(
+      new ProviderDiscrepanciesRepository(
+        duplicate.executor,
+      ).detectForSnapshot(scope, "snapshot-current"),
+    ).rejects.toThrow(/duplicate pair/i);
+
+    const reversed = fakeExecutor();
+    reversed.enqueue({
+      rows: [
+        {
+          ...row,
+          left_observation_id: "observation-z",
+          right_observation_id: "observation-a",
+        },
+      ],
+    });
+    await expect(
+      new ProviderDiscrepanciesRepository(
+        reversed.executor,
+      ).detectForSnapshot(scope, "snapshot-current"),
+    ).rejects.toThrow(/non-canonical pair/i);
+  });
+
+  it("detects and writes 2376 candidate pairs with one set-based database call", async () => {
+    const fake = fakeExecutor();
+    const repo = new ProviderDiscrepanciesRepository(fake.executor);
+    fake.enqueue({
+      rows: Array.from({ length: 2_376 }, (_, index) => ({
+        ...row,
+        id: `discrepancy-${index + 1}`,
+        left_observation_id: `observation-${index + 1}-a`,
+        right_observation_id: `observation-${index + 1}-z`,
+      })),
+    });
+
+    await expect(
+      repo.detectForSnapshot(scope, "snapshot-current"),
+    ).resolves.toHaveLength(2_376);
+    expect(fake.calls.filter((call) => call.method === "execute")).toHaveLength(
       1,
-      scope,
-      expect.objectContaining({
-        leftObservationId: "observation-a",
-        rightObservationId: "observation-z",
-      }),
     );
-    expect(insert).toHaveBeenNthCalledWith(
-      2,
-      scope,
-      expect.objectContaining({
-        leftObservationId: "observation-b",
-        rightObservationId: "observation-c",
-      }),
-    );
+    expect(fake.calls.filter((call) => call.method === "select")).toHaveLength(0);
   });
 
   it("returns empty detection/list fast paths and scoped list results", async () => {
     const fake = fakeExecutor();
     const repo = new ProviderDiscrepanciesRepository(fake.executor);
-    fake.enqueue([], [row], [row]);
+    fake.enqueue({ rows: [] }, [row], [row]);
 
     await expect(repo.detectForSnapshot(scope, "snapshot-empty")).resolves.toEqual(
       [],

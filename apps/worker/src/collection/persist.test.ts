@@ -199,16 +199,21 @@ beforeEach(() => {
   ).mockResolvedValue({ rows: [], nextCursor: null });
   vi.spyOn(
     KeywordOccurrencesRepository.prototype,
-    "upsertIntoLibrary",
-  ).mockResolvedValue({
-    occurrenceId: "keyword-occurrence-1",
-    entityId: "keyword-entity-1",
-  });
+    "upsertManyIntoLibrary",
+  ).mockImplementation(async (_scope, inputs) =>
+    inputs.map(() => ({
+      occurrenceId: "keyword-occurrence-1",
+      entityId: "keyword-entity-1",
+    })),
+  );
   vi.spyOn(CollectionRunsRepository.prototype, "finalize").mockResolvedValue();
-  vi.spyOn(CompetitorsRepository.prototype, "upsertOrigin").mockResolvedValue({
-    occurrenceId: "competitor-occurrence-1",
-    competitorId: "competitor-1",
-  });
+  vi.spyOn(CompetitorsRepository.prototype, "upsertOrigins").mockImplementation(
+    async (_scope, inputs) =>
+      inputs.map(() => ({
+        occurrenceId: "competitor-occurrence-1",
+        competitorId: "competitor-1",
+      })),
+  );
   vi.spyOn(ProjectsRepository.prototype, "findByIdForUpdate").mockResolvedValue({
     id: attempt.projectId,
     workspace_id: attempt.workspaceId,
@@ -321,9 +326,9 @@ describe("persistCollectionResult transaction outcomes", () => {
       expect.objectContaining({ state: "baseline", signals: [] }),
     );
     expect(
-      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+      KeywordOccurrencesRepository.prototype.upsertManyIntoLibrary,
     ).not.toHaveBeenCalled();
-    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+    expect(CompetitorsRepository.prototype.upsertOrigins).not.toHaveBeenCalled();
     expect(
       ProviderDiscrepanciesRepository.prototype.detectForSnapshot,
     ).not.toHaveBeenCalled();
@@ -444,32 +449,34 @@ describe("persistCollectionResult transaction outcomes", () => {
     ).resolves.toBe("snapshot-1");
 
     expect(
-      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+      KeywordOccurrencesRepository.prototype.upsertManyIntoLibrary,
     ).toHaveBeenCalledWith(
       {
         workspaceId: attempt.workspaceId,
         projectId: attempt.projectId,
       },
-      expect.objectContaining({
-        dataSnapshotId: "snapshot-1",
-        normalizedObservationId:
-          "00000000-0000-4000-8000-000000000004",
-        displayKeyword: "Running Shoes",
-        normalizedKeyword: "running shoes",
-        sourceKind: "csv_import",
-        scopeBasis: "user_provided",
-        sourcePointer: "/valueJson/keyword",
-      }),
+      [
+        expect.objectContaining({
+          dataSnapshotId: "snapshot-1",
+          normalizedObservationId:
+            "00000000-0000-4000-8000-000000000004",
+          displayKeyword: "Running Shoes",
+          normalizedKeyword: "running shoes",
+          sourceKind: "csv_import",
+          scopeBasis: "user_provided",
+          sourcePointer: "/valueJson/keyword",
+        }),
+      ],
     );
     expect(
       vi.mocked(
-        KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+        KeywordOccurrencesRepository.prototype.upsertManyIntoLibrary,
       ).mock.invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
         .invocationCallOrder[0]!,
     );
-    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+    expect(CompetitorsRepository.prototype.upsertOrigins).not.toHaveBeenCalled();
   });
 
   it("projects a canonical CSV competitor origin in the completion transaction before terminalizing", async () => {
@@ -570,17 +577,19 @@ describe("persistCollectionResult transaction outcomes", () => {
       persist({ collectionRun: csvRun, datasetKey: "csv.keyword_gap.v1" }),
     ).resolves.toBe("snapshot-1");
 
-    expect(CompetitorsRepository.prototype.upsertOrigin).toHaveBeenCalledWith(
+    expect(CompetitorsRepository.prototype.upsertOrigins).toHaveBeenCalledWith(
       { workspaceId: attempt.workspaceId, projectId: attempt.projectId },
-      {
-        originKind: "csv_keyword_gap",
-        domain: "example-competitor.com",
-        name: null,
-        snapshotId: "snapshot-1",
-        observationId: "00000000-0000-4000-8000-000000000004",
-        importPreviewId: previewId,
-        sourcePointer: "/valueJson/competitorDomain",
-      },
+      [
+        {
+          originKind: "csv_keyword_gap",
+          domain: "example-competitor.com",
+          name: null,
+          snapshotId: "snapshot-1",
+          observationId: "00000000-0000-4000-8000-000000000004",
+          importPreviewId: previewId,
+          sourcePointer: "/valueJson/competitorDomain",
+        },
+      ],
     );
     expect(
       SourceConnectionsRepository.prototype.findActiveByIdForUpdate,
@@ -593,14 +602,14 @@ describe("persistCollectionResult transaction outcomes", () => {
       csvSourceConnectionId,
     );
     expect(
-      vi.mocked(CompetitorsRepository.prototype.upsertOrigin).mock
+      vi.mocked(CompetitorsRepository.prototype.upsertOrigins).mock
         .invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(CollectionRunsRepository.prototype.finalize).mock
         .invocationCallOrder[0]!,
     );
     expect(
-      vi.mocked(CompetitorsRepository.prototype.upsertOrigin).mock
+      vi.mocked(CompetitorsRepository.prototype.upsertOrigins).mock
         .invocationCallOrder[0],
     ).toBeLessThan(
       vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
@@ -652,9 +661,9 @@ describe("persistCollectionResult transaction outcomes", () => {
     ).resolves.toBe("snapshot-1");
 
     expect(
-      KeywordOccurrencesRepository.prototype.upsertIntoLibrary,
+      KeywordOccurrencesRepository.prototype.upsertManyIntoLibrary,
     ).not.toHaveBeenCalled();
-    expect(CompetitorsRepository.prototype.upsertOrigin).not.toHaveBeenCalled();
+    expect(CompetitorsRepository.prototype.upsertOrigins).not.toHaveBeenCalled();
     expect(CollectionRunsRepository.prototype.findById).not.toHaveBeenCalled();
     expect(
       ProjectsRepository.prototype.setReadyToDiagnoseIfEligible,

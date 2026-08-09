@@ -383,6 +383,7 @@ BEGIN
         'product_profile_invocation_attempts_transition_guard',
         'icp_profiles_product_profile_provenance_guard',
         'keyword_occurrences_lineage_guard',
+        'keyword_occurrences_product_profile_lineage_guard',
         'keyword_occurrences_append_only',
         'keyword_entities_mutation_guard',
         'keyword_entities_initial_review_decision',
@@ -435,8 +436,8 @@ BEGIN
         'topic_node_successors_append_only',
         'keyword_review_decisions_append_only'
       ]::text[])
-  ) <> 107 THEN
-    RAISE EXCEPTION 'expected all 107 app triggers';
+  ) <> 108 THEN
+    RAISE EXCEPTION 'expected all 108 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -450,6 +451,8 @@ BEGIN
         'mark_product_profile_invocation_outcome_unknown',
         'validate_product_profile_provenance',
         'enforce_keyword_occurrence_lineage',
+        'is_bcp47_canonical_identity',
+        'enforce_product_profile_keyword_occurrence_lineage',
         'enforce_keyword_entity_mutation',
         'initialize_keyword_review_decision',
         'enforce_keyword_entity_source_lineage',
@@ -483,8 +486,8 @@ BEGIN
         'enforce_topic_cluster_alias_retention',
         'prevent_topic_successor_cycle'
       ]::text[])
-  ) <> 39 THEN
-    RAISE EXCEPTION 'expected all 39 runtime routines';
+  ) <> 41 THEN
+    RAISE EXCEPTION 'expected all 41 runtime routines';
   END IF;
 END;
 $$;
@@ -4914,7 +4917,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0047_dataforseo_competitor_metrics' THEN
+  ) IS DISTINCT FROM '0049_product_profile_keyword_lineage' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (
@@ -5326,6 +5329,168 @@ BEGIN
   END IF;
 END;
 $$;
+
+DO $product_profile_keyword_lineage_contract$
+DECLARE
+  batch_source text;
+BEGIN
+  IF NOT app.is_bcp47_canonical_identity('en-us', 'en-US')
+     OR NOT app.is_bcp47_canonical_identity(
+       'zh-hans-cn-u-nu-hanidec',
+       'zh-Hans-CN-u-nu-hanidec'
+     )
+     OR app.is_bcp47_canonical_identity('en-US', 'en-us')
+     OR app.is_bcp47_canonical_identity('iw-IL', 'he-IL')
+     OR app.is_bcp47_canonical_identity('not_a_locale', 'not-a-locale') THEN
+    RAISE EXCEPTION 'Product Profile BCP-47 canonical identity is unsafe';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND table_name = 'keyword_occurrences'
+      AND column_name = 'product_profile_id'
+      AND data_type = 'uuid'
+      AND is_nullable = 'YES'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'Product Profile Keyword identity column is incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'app.keyword_occurrences'::regclass
+      AND constraint_row.conname = 'keyword_occurrences_product_profile_fk'
+      AND constraint_row.contype = 'f'
+      AND constraint_row.confrelid = 'app.icp_profiles'::regclass
+      AND constraint_row.confdeltype = 'r'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid) LIKE
+        'FOREIGN KEY (product_profile_id) REFERENCES %icp_profiles(id) ON DELETE RESTRICT'
+  ) THEN
+    RAISE EXCEPTION 'Product Profile Keyword FK authority is incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'app.keyword_occurrences'::regclass
+      AND constraint_row.conname = 'keyword_occurrences_source_kind_check'
+      AND constraint_row.contype = 'c'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%product_profile%'
+  ) THEN
+    RAISE EXCEPTION 'Product Profile Keyword source discriminator is absent';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_row
+    WHERE constraint_row.conrelid = 'app.keyword_occurrences'::regclass
+      AND constraint_row.conname = 'keyword_occurrences_lineage_shape_check'
+      AND constraint_row.contype = 'c'
+      AND constraint_row.convalidated
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%source_kind = ''product_profile''::text%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%scope_basis = ''project_context''::text%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%query_kind = ''generative_query''::text%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%product_profile_id IS NOT NULL%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%data_snapshot_id IS NULL%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%normalized_observation_id IS NULL%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%source_pointer IS NULL%'
+      AND pg_get_constraintdef(constraint_row.oid)
+        LIKE '%provider_data_as_of IS NULL%'
+  ) THEN
+    RAISE EXCEPTION 'Product Profile Keyword row-shape authority is incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_trigger trigger_row
+    JOIN pg_proc procedure ON procedure.oid = trigger_row.tgfoid
+    WHERE trigger_row.tgrelid = 'app.keyword_occurrences'::regclass
+      AND NOT trigger_row.tgisinternal
+      AND (
+        (
+          trigger_row.tgname = 'keyword_occurrences_lineage_guard'
+          AND procedure.proname = 'enforce_keyword_occurrence_lineage'
+          AND pg_get_triggerdef(trigger_row.oid) LIKE '%product_profile%'
+        )
+        OR (
+          trigger_row.tgname = 'keyword_occurrences_voc_lineage_guard'
+          AND procedure.proname = 'enforce_voc_keyword_occurrence_lineage'
+        )
+        OR (
+          trigger_row.tgname =
+            'keyword_occurrences_product_profile_lineage_guard'
+          AND procedure.proname =
+            'enforce_product_profile_keyword_occurrence_lineage'
+          AND pg_get_triggerdef(trigger_row.oid) LIKE '%product_profile%'
+        )
+      )
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Product Profile Keyword trigger routing is incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname = 'upsert_keyword_library_occurrence'
+  ) <> 1 OR NOT EXISTS (
+    SELECT 1
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname = 'upsert_keyword_library_occurrence'
+      AND procedure.pronargs = 17
+      AND procedure.proargnames[6] = 'selected_product_profile_id'
+  ) THEN
+    RAISE EXCEPTION 'Keyword scalar authority is not the exact 17-argument shape';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_proc procedure
+    WHERE procedure.pronamespace = 'app'::regnamespace
+      AND procedure.proname = 'upsert_keyword_library_occurrences_batch'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'Keyword batch authority has an unexpected overload';
+  END IF;
+  SELECT procedure.prosrc
+  INTO batch_source
+  FROM pg_proc procedure
+  WHERE procedure.pronamespace = 'app'::regnamespace
+    AND procedure.proname = 'upsert_keyword_library_occurrences_batch'
+    AND procedure.pronargs = 3;
+  IF batch_source IS NULL
+     OR batch_source NOT LIKE '%jsonb_object_keys(selected_input)) <> 15%'
+     OR (
+       SELECT count(*)
+       FROM unnest(ARRAY[
+         'occurrenceId',
+         'dataSnapshotId',
+         'observationId',
+         'productProfileId',
+         'displayKeyword',
+         'normalizedKeyword',
+         'market',
+         'languageTag',
+         'queryKind',
+         'sourceKind',
+         'scopeBasis',
+         'sourcePointer',
+         'sourceRef',
+         'collectedAt',
+         'providerDataAsOf'
+       ]::text[]) AS expected_key
+       WHERE position(expected_key IN batch_source) > 0
+     ) <> 15
+     OR batch_source NOT LIKE
+       '%(selected_input ->> ''productProfileId'')::uuid%' THEN
+    RAISE EXCEPTION 'Keyword batch authority is not the exact 15-key shape';
+  END IF;
+END;
+$product_profile_keyword_lineage_contract$;
 
 DO $dataforseo_backlinks_behavior$
 #variable_conflict use_variable
@@ -5773,9 +5938,12 @@ BEGIN
         'is_dataforseo_competitor_domain_v2',
         'is_dataforseo_competitor_ai_citation_v1',
         'enforce_ai_citation_competitor_origin_lineage',
-        'upsert_ai_citation_competitor_origin'
+        'upsert_ai_citation_competitor_origin',
+        'upsert_keyword_library_occurrences_batch',
+        'upsert_competitor_origins_batch',
+        'detect_provider_discrepancies_for_snapshot'
       )
-  ) <> 9 THEN
+  ) <> 12 THEN
     RAISE EXCEPTION 'DataForSEO Search Landscape routines are incomplete';
   END IF;
 END;

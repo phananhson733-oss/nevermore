@@ -25,6 +25,8 @@ import type {
   GrowthMapUrlMetricObservation,
   GrowthMapCompetitorLibraryItem,
   GrowthMapCompetitorAiCitationInsight,
+  GrowthMapCompetitorOriginKind,
+  GrowthMapCompetitorOriginOccurrence,
   GrowthMapCompetitorSerpOverlap,
   InternalLinkMapCoverage,
   InternalLinkMapEdge,
@@ -489,6 +491,7 @@ export const GROWTH_MAP_KEYWORD_SOURCE_KINDS = [
   "interview_summary",
   "user_review",
   "manual",
+  "product_profile",
 ] as const satisfies readonly Exclude<GrowthMapKeywordSourceFilter, "all">[];
 
 export interface KeywordRelationVisibleItemFilters {
@@ -625,6 +628,7 @@ export function buildKeywordRelationPageProjection(
     interview_summary: 0,
     user_review: 0,
     manual: 0,
+    product_profile: 0,
   };
   for (const item of items) {
     const sourceKinds = new Set(
@@ -1327,6 +1331,53 @@ export function competitorDetailReadState(input: {
   });
 }
 
+const COMPETITOR_ORIGIN_DISPLAY_ORDER = [
+  "product_profile",
+  "manual",
+  "serp_overlap",
+  "ai_citation",
+  "csv_keyword_gap",
+] as const satisfies readonly GrowthMapCompetitorOriginKind[];
+
+export interface CompetitorOriginSummary {
+  readonly originKind: GrowthMapCompetitorOriginKind;
+  readonly occurrenceCount: number;
+  readonly latestObservedAt: string | null;
+}
+
+/**
+ * Collapse immutable per-run lineage into customer-facing discovery routes.
+ * The underlying occurrences remain untouched in the API response; this
+ * projection prevents repeated snapshots of one source kind from becoming a
+ * long list of technical records in the Competitor profile.
+ */
+export function competitorOriginSummaries(
+  origins: readonly GrowthMapCompetitorOriginOccurrence[],
+): readonly CompetitorOriginSummary[] {
+  const summaries = new Map<
+    GrowthMapCompetitorOriginKind,
+    { occurrenceCount: number; latestObservedAt: string | null }
+  >();
+  for (const origin of origins) {
+    const current = summaries.get(origin.originKind);
+    const latestObservedAt =
+      current?.latestObservedAt === null ||
+      current?.latestObservedAt === undefined ||
+      (origin.observedAt !== null &&
+        origin.observedAt > current.latestObservedAt)
+        ? origin.observedAt
+        : current.latestObservedAt;
+    summaries.set(origin.originKind, {
+      occurrenceCount: (current?.occurrenceCount ?? 0) + 1,
+      latestObservedAt,
+    });
+  }
+  return COMPETITOR_ORIGIN_DISPLAY_ORDER.flatMap((originKind) => {
+    const summary = summaries.get(originKind);
+    return summary === undefined ? [] : [{ originKind, ...summary }];
+  });
+}
+
 export type CompetitorMonitorDisplayState =
   | "not_configured"
   | "paused"
@@ -1385,6 +1436,27 @@ export function competitorMonitorDisplayState(
   }
   if (item.evaluationState === "baseline") return "baseline";
   return item.limitation === null ? "available" : "partial";
+}
+
+/**
+ * The explicit full profile should not allocate a large monitoring card to
+ * configuration, baseline, or unavailable states. Available results remain
+ * visible when monitoring is paused so the customer can re-enable collection;
+ * all other states stay truthful in the API without becoming empty UI.
+ */
+export function shouldShowCompetitorMonitor(
+  response: CompetitorMonitorResponse | null | undefined,
+  item: CompetitorMonitorItem | null,
+): boolean {
+  if (response === null || response === undefined || item === null) return false;
+  const state = competitorMonitorDisplayState(response, item);
+  if (state === "available" || state === "partial") return true;
+  return (
+    state === "paused" &&
+    item.eligibility === "eligible" &&
+    item.collectionState === "collected" &&
+    item.evaluationState === "available"
+  );
 }
 
 export type CompetitorPoolEntryReason =

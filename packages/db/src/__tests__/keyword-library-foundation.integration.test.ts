@@ -523,6 +523,83 @@ describeDb("keyword library database foundation", () => {
     await handle?.end();
   });
 
+  it("batches duplicate/retry-safe keyword writes and rolls back a corrupted lineage atomically", async () => {
+    const fixture = await createSourceFixture(handle);
+    const scope = {
+      workspaceId: fixture.workspaceId,
+      projectId: fixture.projectId,
+    };
+    let executeCount = 0;
+    const executor = {
+      execute(query: unknown) {
+        executeCount += 1;
+        return handle.db.execute(query as never);
+      },
+    };
+    const repository = new KeywordOccurrencesRepository(
+      executor as never,
+    ) as unknown as {
+      upsertManyIntoLibrary(
+        selectedScope: typeof scope,
+        selectedInputs: readonly CanonicalKeywordOccurrenceInput[],
+      ): Promise<readonly { occurrenceId: string; entityId: string }[]>;
+    };
+
+    await expect(repository.upsertManyIntoLibrary(scope, [])).resolves.toEqual(
+      [],
+    );
+    expect(executeCount).toBe(0);
+
+    const canonical = occurrence(fixture);
+    const missingObservationId = randomUUID();
+    await expect(
+      repository.upsertManyIntoLibrary(scope, [
+        canonical,
+        occurrence(fixture, {
+          normalizedObservationId: missingObservationId,
+          sourceRef: `observation:${missingObservationId}#/valueJson/keyword`,
+        }),
+      ]),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    expect(executeCount).toBe(1);
+    const rolledBack = await handle.pool.query<{ count: string }>(
+      "SELECT count(*) FROM app.keyword_occurrences WHERE project_id = $1",
+      [fixture.projectId],
+    );
+    expect(rolledBack.rows[0]?.count).toBe("0");
+
+    executeCount = 0;
+    const first = await repository.upsertManyIntoLibrary(scope, [
+      canonical,
+      canonical,
+    ]);
+    expect(executeCount).toBe(1);
+    expect(first).toHaveLength(2);
+    expect(first[0]).toEqual(first[1]);
+    executeCount = 0;
+    await expect(
+      repository.upsertManyIntoLibrary(scope, [canonical, canonical]),
+    ).resolves.toEqual(first);
+    expect(executeCount).toBe(1);
+
+    await expect(
+      repository.upsertManyIntoLibrary(
+        { ...scope, projectId: randomUUID() },
+        [canonical],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    const counts = await handle.pool.query<{
+      occurrences: string;
+      memberships: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM app.keyword_occurrences WHERE project_id = $1) AS occurrences,
+         (SELECT count(*) FROM app.keyword_entity_sources WHERE project_id = $1) AS memberships`,
+      [fixture.projectId],
+    );
+    expect(counts.rows[0]).toEqual({ occurrences: "1", memberships: "1" });
+  });
+
   it("concurrently and idempotently creates one occurrence, stable entity and membership", async () => {
     const fixture = await createSourceFixture(handle);
     const scope = {

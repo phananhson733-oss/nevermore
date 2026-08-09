@@ -3760,6 +3760,10 @@
   gap: 8px;
 }
 
+.competitorReviewFooter {
+  justify-content: flex-end;
+}
+
 .keywordDetailSection {
   padding: 22px 20px;
   border-top: 1px solid var(--sf-border);
@@ -4546,7 +4550,7 @@
 
 .competitorWorkspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.48fr) minmax(420px, 0.95fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
   align-items: start;
   gap: 16px;
   min-width: 0;
@@ -4565,23 +4569,23 @@
 }
 
 /* 8 tracks: 竞品 / 关系 / 分析范围 / 自然搜索重叠度 / 共同关键词 / AI 引用 /
-   状态 / row-arrow. The final 44px track only reserves space: the arrow button
+   状态 / row-arrow. The final 36px track only reserves space: the arrow button
    itself is absolutely positioned (see .competitorRowArrow). */
 .competitorLedgerHeader,
 .competitorRowButton {
   display: grid;
   grid-template-columns:
-    minmax(220px, 1.6fr)
-    minmax(96px, 0.9fr)
-    minmax(140px, 1.2fr)
-    minmax(120px, 1fr)
-    minmax(104px, 0.9fr)
-    minmax(96px, 0.9fr)
-    minmax(96px, 0.8fr)
-    44px;
+    minmax(160px, 1.6fr)
+    minmax(72px, 0.75fr)
+    minmax(108px, 1.1fr)
+    minmax(100px, 1fr)
+    minmax(82px, 0.85fr)
+    minmax(76px, 0.8fr)
+    minmax(72px, 0.72fr)
+    36px;
   align-items: center;
   gap: 13px;
-  min-width: 1180px;
+  min-width: 830px;
 }
 
 .competitorLedgerHeader {
@@ -4713,7 +4717,7 @@
 }
 
 .competitorDetailPanel > .competitorFacts {
-  margin: 16px 20px 0;
+  margin: 0;
 }
 
 .competitorStatus {
@@ -4767,7 +4771,7 @@
   border-radius: 5px;
 }
 
-/* Opens the full-profile drawer. Sits above the .rowSelectButton overlay
+/* Selects the compact profile rail. Sits above the .rowSelectButton overlay
    (z-index 1) and the inert cells (z-index 2, pointer-events none), so the
    selector is rooted at .competitorRowButton to outweigh the
    `> *:not(.rowSelectButton)` reset above. */
@@ -4806,55 +4810,35 @@
 }
 
 .competitorDetailPanel {
+  top: 88px;
+  max-height: calc(100vh - 108px);
+  padding: 22px;
   scrollbar-width: thin;
   scrollbar-color: var(--sf-border-strong) transparent;
 }
 
 .competitorDetailHeader {
-  padding: 22px;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--gm-mint-wash) 72%, var(--sf-surface)),
-      var(--sf-surface) 68%
-    );
+  padding: 0 0 17px;
+  background: transparent;
   border-bottom: 1px solid var(--sf-border);
-  border-radius: 14px 14px 0 0;
+  border-radius: 0;
 }
 
 .competitorDetailHeader h2 {
-  margin-top: 14px;
+  margin: 13px 0 0;
   overflow-wrap: anywhere;
   color: var(--gm-ink);
-  font-size: clamp(27px, 2.25vw, 36px);
-  line-height: 1.12;
+  font-family: var(--sf-font-display);
+  font-size: 27px;
+  line-height: 1.16;
 }
 
 .competitorDetailHeader > p {
-  margin: 8px 0 0;
+  margin: 5px 0 0;
   overflow-wrap: anywhere;
   color: var(--sf-muted);
-  font-size: 14px;
-}
-
-.competitorDetailTags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  margin-top: 14px;
-}
-
-.competitorDetailTags > span:last-child {
-  display: inline-flex;
-  min-height: 27px;
-  align-items: center;
-  padding: 0 9px;
-  color: var(--sf-violet-text);
-  font-size: 13px;
-  font-weight: 780;
-  background: var(--sf-violet-soft);
-  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* "为什么进入竞品池" explainer card; warning variant flags unreviewed
@@ -4863,8 +4847,8 @@
 .competitorRouteCard {
   display: grid;
   gap: 4px;
-  margin: 15px 20px 0;
-  padding: 14px 15px;
+  margin: 15px 0 0;
+  padding: 13px 14px;
   background: color-mix(in srgb, var(--sf-mint-soft) 65%, var(--sf-surface));
   border: 1px solid color-mix(in srgb, var(--sf-mint) 32%, var(--sf-border));
   border-radius: 11px;
@@ -4877,7 +4861,7 @@
 
 .competitorRouteCard > span {
   color: var(--sf-muted);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4893,7 +4877,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--sf-fg);
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.55;
 }
 
@@ -4902,7 +4886,7 @@
 .competitorDetailMetricsFour {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 16px 20px 0;
+  margin: 15px 0;
   overflow: hidden;
   background: var(--sf-surface);
   border: 1px solid var(--sf-border);
@@ -4912,11 +4896,11 @@
 .competitorDetailMetricsFour > div {
   display: flex;
   min-width: 0;
-  min-height: 78px;
+  min-height: 69px;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  padding: 12px 13px;
+  padding: 11px;
 }
 
 .competitorDetailMetricsFour > div + div {
@@ -4927,7 +4911,7 @@
 .competitorDetailMetricsFour small {
   overflow: hidden;
   color: var(--sf-muted);
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4936,9 +4920,34 @@
 .competitorDetailMetricsFour strong {
   color: var(--gm-ink);
   font-family: var(--sf-font-display);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.15;
+}
+
+.competitorDetailPanel > .competitorFacts > div {
+  gap: 12px;
+  padding: 9px 0;
+}
+
+.competitorDetailPanel > .competitorFacts dt {
+  font-size: 11px;
+}
+
+.competitorDetailPanel > .competitorFacts dd {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.competitorDetailPanel > .detailActions {
+  padding-top: 19px;
+  margin: 20px 0 0;
+}
+
+.competitorDetailPanel > .detailActions > * {
+  min-height: 40px;
+  padding-inline: 10px;
+  font-size: 12px;
 }
 
 .competitorMonitorSection {
@@ -5460,99 +5469,6 @@ a.competitorMonitorContentUrl:hover {
   font-weight: 700;
 }
 
-.competitorOriginFacts {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 13px 0 0;
-}
-
-.competitorOriginFacts > div {
-  min-width: 0;
-  padding: 9px;
-  background: var(--sf-surface);
-  border-radius: 7px;
-}
-
-.competitorOriginFacts dt {
-  color: var(--sf-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.competitorOriginFacts dd {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-  color: var(--sf-fg);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.competitorOriginFacts code {
-  overflow-wrap: anywhere;
-  color: inherit;
-  font-size: inherit;
-}
-
-.competitorEvidenceBlock {
-  margin-top: 11px;
-  padding-top: 10px;
-  border-top: 1px solid var(--sf-border);
-}
-
-.competitorEvidenceBlock > strong {
-  color: var(--sf-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.competitorEvidenceEmpty {
-  margin: 5px 0 0;
-  color: var(--sf-muted);
-  font-size: 12px;
-}
-
-.competitorEvidenceList {
-  display: grid;
-  gap: 6px;
-  margin: 7px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.competitorEvidenceList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px 10px;
-  min-width: 0;
-  padding: 8px 9px;
-  background: var(--sf-surface);
-  border-radius: 7px;
-}
-
-.competitorEvidenceList li > span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.competitorEvidenceList strong {
-  color: var(--sf-fg);
-  font-size: 12px;
-}
-
-.competitorEvidenceList code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--sf-muted);
-  font-size: 11px;
-}
-
-.competitorEvidenceList li > code {
-  text-align: right;
-}
-
 .competitorManageLink {
   display: inline-flex;
   width: fit-content;
@@ -5612,13 +5528,14 @@ a.competitorMonitorContentUrl:hover {
   z-index: 81;
   inset: 0 0 0 auto;
   display: flex;
-  width: min(560px, 92vw);
+  width: min(690px, calc(100% - 20px));
   flex-direction: column;
   overflow: hidden;
   color: var(--sf-fg);
   background: var(--sf-surface);
-  border-left: 1px solid var(--sf-border-strong);
-  box-shadow: var(--sf-shadow-md);
+  border: 1px solid color-mix(in srgb, var(--sf-white) 40%, transparent);
+  border-radius: 20px 0 0 20px;
+  box-shadow: 0 30px 90px rgba(7, 24, 19, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -5662,13 +5579,8 @@ a.competitorMonitorContentUrl:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 22px 20px 18px;
-  background:
-    linear-gradient(
-      125deg,
-      color-mix(in srgb, var(--gm-mint-wash) 74%, var(--sf-surface)),
-      var(--sf-surface) 72%
-    );
+  padding: 22px 24px 18px;
+  background: var(--sf-surface);
   border-bottom: 1px solid var(--sf-border);
 }
 
@@ -5691,8 +5603,9 @@ a.competitorMonitorContentUrl:hover {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--gm-ink);
-  font-size: clamp(24px, 3.4vw, 30px);
-  line-height: 1.12;
+  font-family: var(--sf-font-display);
+  font-size: 28px;
+  line-height: 1.15;
 }
 
 .competitorDrawerHeader > button {
@@ -5718,8 +5631,7 @@ a.competitorMonitorContentUrl:hover {
   box-shadow: var(--sf-focus-ring);
 }
 
-/* Body owns vertical scroll; blocks inside carry their own inline spacing so
-   the relocated CompetitorMonitorSection (self-padded 22px 20px) lines up. */
+/* Body owns vertical scroll; blocks inside carry their own inline spacing. */
 .competitorDrawerBody {
   min-height: 0;
   flex: 1;
@@ -5730,28 +5642,28 @@ a.competitorMonitorContentUrl:hover {
   scrollbar-color: var(--sf-border-strong) transparent;
 }
 
+.competitorDrawerBody > .competitorMonitorSection {
+  padding-inline: 24px;
+}
+
 .competitorDrawerScoreGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 18px 20px 2px;
-  overflow: hidden;
-  background: var(--sf-surface);
-  border: 1px solid var(--sf-border);
-  border-radius: 11px;
+  gap: 10px;
+  margin: 24px 24px 0;
 }
 
 .competitorDrawerScoreGrid > div {
   display: flex;
   min-width: 0;
-  min-height: 76px;
+  min-height: 80px;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  padding: 12px 13px;
-}
-
-.competitorDrawerScoreGrid > div + div {
-  border-left: 1px solid var(--sf-border);
+  padding: 14px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 10px;
 }
 
 .competitorDrawerScoreGrid span,
@@ -5773,9 +5685,8 @@ a.competitorMonitorContentUrl:hover {
 }
 
 .competitorDrawerSection {
-  margin-top: 18px;
-  padding: 18px 20px 0;
-  border-top: 1px solid var(--sf-border);
+  margin-top: 24px;
+  padding: 0 24px;
 }
 
 .competitorDrawerSection > h3 {
@@ -5787,11 +5698,14 @@ a.competitorMonitorContentUrl:hover {
 
 .competitorDrawerOriginRow {
   min-width: 0;
-  padding: 12px 0;
+  padding: 14px;
+  background: var(--sf-surface-deep);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
 }
 
 .competitorDrawerOriginRow + .competitorDrawerOriginRow {
-  border-top: 1px solid var(--sf-border);
+  margin-top: 9px;
 }
 
 .competitorDrawerOriginRow > header {
@@ -5813,25 +5727,12 @@ a.competitorMonitorContentUrl:hover {
   font-size: 12px;
 }
 
-.competitorDrawerOriginRow details {
-  margin-top: 8px;
-}
-
-.competitorDrawerOriginRow summary {
-  width: fit-content;
+.competitorDrawerOriginSummary {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
   color: var(--sf-muted);
   font-size: 12px;
-  font-weight: 780;
-  cursor: pointer;
-}
-
-.competitorDrawerOriginRow summary:hover {
-  color: var(--gm-ink);
-}
-
-.competitorDrawerOriginRow summary:focus-visible {
-  outline: 0;
-  box-shadow: var(--sf-focus-ring);
+  line-height: 1.55;
 }
 
 .competitorDrawerOriginBadge {
@@ -5843,7 +5744,7 @@ a.competitorMonitorContentUrl:hover {
   color: var(--sf-muted);
   font-size: 12px;
   font-weight: 800;
-  background: var(--sf-surface-deep);
+  background: var(--sf-surface);
   border-radius: 999px;
 }
 
@@ -5851,9 +5752,9 @@ a.competitorMonitorContentUrl:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px 14px;
-  padding: 14px 20px;
+  padding: 14px 24px;
   background: var(--sf-surface-deep);
   border-top: 1px solid var(--sf-border);
 }
@@ -6070,7 +5971,7 @@ a.competitorMonitorContentUrl:hover {
     grid-template-columns: minmax(0, 1.4fr) minmax(380px, 0.9fr);
   }
   .competitorWorkspace {
-    grid-template-columns: minmax(0, 1.36fr) minmax(380px, 0.9fr);
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
   }
   .competitorLedgerHeader,
   .competitorRowButton {
@@ -6115,6 +6016,9 @@ a.competitorMonitorContentUrl:hover {
   }
   .competitorWorkspace {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .competitorDetailPanel {
+    order: -1;
   }
   .detailPanel {
     position: static;
@@ -6398,6 +6302,9 @@ a.competitorMonitorContentUrl:hover {
   .keywordReviewFooter button {
     width: 100%;
   }
+  .competitorReviewFooter > div > :only-child {
+    grid-column: 1 / -1;
+  }
   .keywordRelationPair {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -6464,9 +6371,11 @@ a.competitorMonitorContentUrl:hover {
     grid-column: 1 / -1;
   }
   .keywordDetailHeader,
-  .keywordDetailSection,
-  .competitorDetailHeader {
+  .keywordDetailSection {
     padding-inline: 16px;
+  }
+  .competitorDetailPanel {
+    padding: 19px;
   }
   .keywordDetailPanel > .limitations {
     margin-inline: 16px;
@@ -6478,7 +6387,6 @@ a.competitorMonitorContentUrl:hover {
   .keywordSourceFacts,
   .recordDisclosureBody,
   .rankHistoryLegend,
-  .competitorOriginFacts,
   .competitorMonitorFacts,
   .competitorMonitorEvidence {
     grid-template-columns: minmax(0, 1fr);
@@ -6526,17 +6434,11 @@ a.competitorMonitorContentUrl:hover {
   .keywordSourceRefs dd {
     text-align: left;
   }
-  .competitorEvidenceList li {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .competitorEvidenceList li > code {
-    text-align: left;
-  }
   .competitorRouteCard {
-    margin-inline: 16px;
+    margin-inline: 0;
   }
   .competitorDetailPanel > .competitorFacts {
-    margin-inline: 16px;
+    margin-inline: 0;
   }
   .competitorFacts > div {
     grid-template-columns: minmax(0, 1fr);
@@ -6544,7 +6446,7 @@ a.competitorMonitorContentUrl:hover {
   }
   .competitorDetailMetricsFour {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-inline: 16px;
+    margin-inline: 0;
   }
   .competitorDetailMetricsFour > div:nth-child(odd) {
     border-left: 0;
@@ -6553,24 +6455,25 @@ a.competitorMonitorContentUrl:hover {
     border-top: 1px solid var(--sf-border);
   }
   .competitorDrawerHeader {
-    padding: 18px 16px 15px;
+    padding: 18px 20px 15px;
   }
   .competitorDrawerScoreGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-inline: 16px;
+    margin-inline: 20px;
   }
   .competitorDrawerScoreGrid > div:nth-child(3) {
     grid-column: 1 / -1;
-    border-top: 1px solid var(--sf-border);
-    border-left: 0;
   }
   .competitorDrawerSection {
-    padding-inline: 16px;
+    padding-inline: 20px;
+  }
+  .competitorDrawerBody > .competitorMonitorSection {
+    padding-inline: 20px;
   }
   .competitorDrawerFooter {
     align-items: stretch;
     flex-direction: column;
-    padding: 13px 16px 16px;
+    padding: 13px 20px 16px;
   }
   .competitorDrawerFooter > button {
     width: 100%;

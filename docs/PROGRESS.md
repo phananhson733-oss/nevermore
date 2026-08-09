@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0047_dataforseo_competitor_metrics.sql` (**47 ordered migrations**)
+  `0049_product_profile_keyword_lineage.sql` (**49 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
@@ -293,7 +293,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0047`; historical proof through `0021` does not prove
+   migrations through `0049`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

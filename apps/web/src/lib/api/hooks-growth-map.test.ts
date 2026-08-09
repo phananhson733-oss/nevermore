@@ -459,6 +459,7 @@ function keywordLibraryResponse() {
       },
       sourceCounts: {
         all: 1,
+        product_profile: 0,
         csv_import: 1,
         dataforseo_ranked: 0,
         gsc_top_query: 0,

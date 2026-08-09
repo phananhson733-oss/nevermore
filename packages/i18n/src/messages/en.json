@@ -1240,9 +1240,11 @@
     "title": "Find the next growth opportunity, page by real page.",
     "subtitle": "URLs, observed metrics, Findings, and execution references from the latest readable audit stay on one evidence chain. Selecting a URL shows only facts linked to that exact page.",
     "manageSources": "Manage data sources",
-    "runDiagnosis": "Run diagnosis",
-    "rerunDiagnosis": "Re-run diagnosis",
-    "runInProgress": "Diagnosis running…",
+    "runDiagnosis": "Refresh all data and run diagnosis",
+    "rerunDiagnosis": "Refresh all data again and run diagnosis",
+    "runInProgress": "Refreshing all data across the site and running diagnosis…",
+    "runCompletedWithLimitations": "Completed (limited data)",
+    "runDiagnosisScopeNote": "Refreshes whole-site Crawl, GSC/GA4, DataForSEO, and Growth Audit, not just the selected competitor.",
     "runNeedsCrawl": "A completed site crawl is required before diagnosis. Collect a crawl snapshot in Sources first.",
     "runNeedsContext": "A complete ICP context is required before diagnosis. Finish the project context first.",
     "runRecheckContext": "Check again",
@@ -1769,6 +1771,7 @@
         "unknown": "Freshness unknown"
       },
       "sourceKind": {
+        "product_profile": "Product Profile-derived query",
         "csv_import": "CSV import",
         "dataforseo_ranked": "DataForSEO ranked Keywords",
         "gsc_top_query": "GSC top query",
@@ -2052,6 +2055,7 @@
         "partial": "{attempted} attempted · {unavailable} unavailable"
       },
       "openFullProfile": "Open the full Competitor detail",
+      "selectProfile": "Show Competitor profile",
       "noMatchesTitle": "No matching Competitors",
       "noMatchesDescription": "Try another name, domain, or review status. The library shows only exact loaded records.",
       "reviewStatus": {
@@ -2130,6 +2134,13 @@
         },
         "badgeManual": "Manually confirmed",
         "badgeSnapshot": "Scenario snapshot",
+        "sourceSummary": {
+          "product_profile": "{count, plural, one {# confirmed Product Profile record} other {# confirmed Product Profile records}}",
+          "csv_keyword_gap": "{count, plural, one {# keyword-gap import record} other {# keyword-gap import records}}",
+          "manual": "{count, plural, one {# manually added record} other {# manually added records}}",
+          "serp_overlap": "{count, plural, one {# SERP-overlap observation} other {# SERP-overlap observations}}",
+          "ai_citation": "{count, plural, one {# AI co-citation observation} other {# AI co-citation observations}}"
+        },
         "close": "Close"
       },
       "governanceEyebrow": "Review information",

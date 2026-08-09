@@ -4,6 +4,8 @@ import {
   GrowthMapCompetitorLibraryResponse,
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
+  GrowthMapKeywordSourceCounts,
+  GrowthMapKeywordSourceKind,
   GrowthMapUrlDetailResponse,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
@@ -1418,6 +1420,27 @@ function keywordSourceOccurrence() {
   };
 }
 
+function productProfileKeywordSourceOccurrence() {
+  return {
+    occurrenceId: "10000000-0000-4000-8000-000000000070",
+    sourceKind: "product_profile",
+    productProfileId: ids.productProfile,
+    snapshotId: null,
+    sourceObservationId: null,
+    sourcePointer: null,
+    collectedAt: "2026-07-21T08:04:00Z",
+    providerDataAsOf: null,
+    freshness: "unknown",
+    limitation:
+      "Product Profile-derived GenerativeQuery has no provider data-as-of timestamp.",
+    scopeBasis: "project_context",
+    scopeLimitation:
+      "Product Profile scope reflects the confirmed profile and the primary Site market/language, not provider collection scope.",
+    marketCode: "US",
+    languageTag: "en-US",
+  } as const;
+}
+
 function keywordMetric(
   valuePointer: string,
   value: number | string | null,
@@ -1511,6 +1534,7 @@ function keywordLibraryResponse() {
       },
       sourceCounts: {
         all: 1,
+        product_profile: 0,
         csv_import: 1,
         dataforseo_ranked: 0,
         gsc_top_query: 0,
@@ -1523,6 +1547,87 @@ function keywordLibraryResponse() {
 }
 
 describe("Growth Map Keyword Library contracts", () => {
+  it("exposes Product Profile as a strict source kind with a required whole-library count", () => {
+    expect(GrowthMapKeywordSourceKind.parse("product_profile")).toBe(
+      "product_profile",
+    );
+    const counts = {
+      all: 2,
+      product_profile: 1,
+      csv_import: 1,
+      dataforseo_ranked: 0,
+      gsc_top_query: 0,
+      interview_summary: 0,
+      user_review: 0,
+      manual: 0,
+    };
+    expect(GrowthMapKeywordSourceCounts.parse(counts)).toEqual(counts);
+    const { product_profile: _productProfile, ...missingProfileCount } = counts;
+    expect(GrowthMapKeywordSourceCounts.safeParse(missingProfileCount).success).toBe(
+      false,
+    );
+    expect(
+      GrowthMapKeywordSourceCounts.safeParse({ ...counts, inferred: 0 }).success,
+    ).toBe(false);
+  });
+
+  it("keeps Product Profile occurrence identity strict and provider-lineage-free", () => {
+    const base = keywordItem();
+    const occurrence = productProfileKeywordSourceOccurrence();
+    const productProfileItem = {
+      ...base,
+      queryKind: "generative_query",
+      sourceOccurrences: [occurrence],
+      metrics: {
+        volume: null,
+        kd: null,
+        currentRank: null,
+        currentUrl: null,
+        competitorDomain: null,
+        competitorRank: null,
+        limitations: {
+          volume: "No provider volume Observation is available.",
+          kd: "No provider difficulty Observation is available.",
+          currentRank: "No provider rank Observation is available.",
+          currentUrl: "No provider URL Observation is available.",
+          competitorDomain: "No provider competitor Observation is available.",
+          competitorRank: "No provider competitor rank is available.",
+        },
+      },
+    } as const;
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        data: [productProfileItem],
+      }).success,
+    ).toBe(true);
+
+    for (const invalidOccurrence of [
+      { ...occurrence, productProfileId: null },
+      { ...occurrence, snapshotId: ids.metricSnapshot },
+      { ...occurrence, sourceObservationId: ids.metricObservation },
+      { ...occurrence, sourcePointer: "/valueJson/keyword" },
+      {
+        ...occurrence,
+        providerDataAsOf: "2026-07-21T08:00:00Z",
+        freshness: "current",
+      },
+      { ...occurrence, manualEntryId: ids.keywordManualEntry },
+    ]) {
+      expect(
+        GrowthMapKeywordLibraryResponse.safeParse({
+          ...keywordLibraryResponse(),
+          data: [
+            {
+              ...productProfileItem,
+              sourceOccurrences: [invalidOccurrence],
+            },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts a strict, traceable Keyword projection and preserves observed zero", () => {
     const parsed = GrowthMapKeywordLibraryResponse.parse(
       keywordLibraryResponse(),
@@ -1761,6 +1866,7 @@ describe("Growth Map Keyword Library contracts", () => {
 
   it("requires exact bounded source occurrence provenance without raw provider data", () => {
     const base = keywordItem();
+    const profileOccurrence = productProfileKeywordSourceOccurrence();
     const manualOccurrence = {
       occurrenceId: ids.keywordManualOccurrence,
       sourceKind: "manual",
@@ -1841,6 +1947,7 @@ describe("Growth Map Keyword Library contracts", () => {
             ...base,
             sourceOccurrences: [
               keywordSourceOccurrence(),
+              profileOccurrence,
               manualOccurrence,
               csvOccurrence,
               interviewSummaryOccurrence,

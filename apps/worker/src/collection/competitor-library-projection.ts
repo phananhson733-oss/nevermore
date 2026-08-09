@@ -849,6 +849,7 @@ export async function projectCollectionSnapshotCompetitors(
       [snapshot.id],
       { limit: PROJECTION_PAGE_SIZE, cursor },
     );
+    const inputs: CompetitorOriginInput[] = [];
     for (const observation of page.rows) {
       const input =
         collectionScope === null
@@ -871,9 +872,12 @@ export async function projectCollectionSnapshotCompetitors(
                 observation,
               );
       if (input) {
-        await competitors.upsertOrigin(scope, input);
-        projected += 1;
+        inputs.push(input);
       }
+    }
+    if (inputs.length > 0) {
+      const results = await competitors.upsertOrigins(scope, inputs);
+      projected += results.length;
     }
     const nextCursor = page.nextCursor;
     if (nextCursor === null) {

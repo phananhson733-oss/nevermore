@@ -810,9 +810,9 @@ describeDb("collection runner (spec §13)", () => {
       },
     });
 
-    const upsertCompetitor = vi.spyOn(
+    const upsertCompetitors = vi.spyOn(
       CompetitorsRepository.prototype,
-      "upsertOrigin",
+      "upsertOrigins",
     );
     const terminalize = vi.spyOn(
       AsyncRunsRepository.prototype,
@@ -825,13 +825,13 @@ describeDb("collection runner (spec §13)", () => {
         projectId: seed.scope.projectId,
       });
 
-      expect(upsertCompetitor).toHaveBeenCalledOnce();
+      expect(upsertCompetitors).toHaveBeenCalledOnce();
       expect(terminalize).toHaveBeenCalledOnce();
-      expect(upsertCompetitor.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(upsertCompetitors.mock.invocationCallOrder[0]).toBeLessThan(
         terminalize.mock.invocationCallOrder[0]!,
       );
     } finally {
-      upsertCompetitor.mockRestore();
+      upsertCompetitors.mockRestore();
       terminalize.mockRestore();
     }
 

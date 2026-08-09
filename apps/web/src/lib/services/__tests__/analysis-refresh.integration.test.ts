@@ -209,6 +209,7 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
           maxCompetitors: Number(
             process.env["DATAFORSEO_MAX_COMPETITORS"] ?? "100",
           ),
+          aiCitations: { state: "disabled" },
         },
         dataForSeoBacklinks: {
           enabled:

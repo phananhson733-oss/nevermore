@@ -908,9 +908,8 @@ async function assertCompetitorLibraryTraceability(input: {
   readonly page: Page;
   readonly item: GrowthMapCompetitorLibraryItem;
   readonly expectedCount: number;
-  readonly csvSnapshotId: string;
 }): Promise<void> {
-  const { page, item, expectedCount, csvSnapshotId } = input;
+  const { page, item, expectedCount } = input;
   const discoveryPath = page
     .getByTestId("competitor-library-provenance")
     .getByRole("region", { name: "Discovery path" });
@@ -972,45 +971,31 @@ async function assertCompetitorLibraryTraceability(input: {
       exact: true,
     }),
   ).toBeVisible({ timeout: CLIENT_READ_MODEL_TIMEOUT_MS });
-  // The record disclosure and origin provenance moved into the full-profile
-  // drawer; open it through the detail panel action, assert the immutable
-  // identities there, and close it again so the library keeps handling clicks.
+  // The full profile keeps a business-facing discovery summary while raw
+  // record identifiers and source pointers remain in the internal read model.
   await detail.getByRole("button", { name: "View full profile" }).click();
   const drawer = page.getByTestId("competitor-profile-drawer");
   await expect(drawer).toBeVisible();
-  const recordDetails = drawer.locator("details").filter({
-    hasText: "View record details",
-  });
-  await recordDetails.locator("summary").click();
-  await expect(
-    recordDetails.getByTitle(item.competitorId, { exact: true }),
-  ).toBeVisible();
-
-  const origin = item.originOccurrences.find(
-    (candidate) =>
-      candidate.originKind === "csv_keyword_gap" &&
-      candidate.snapshotId === csvSnapshotId,
-  );
-  if (!origin || origin.originKind !== "csv_keyword_gap") {
+  if (
+    !item.originOccurrences.some(
+      (candidate) => candidate.originKind === "csv_keyword_gap",
+    )
+  ) {
     throw new Error(`${item.domain} lost its exact CSV Competitor origin`);
   }
-  const originCard = drawer
-    .getByTitle(origin.occurrenceId, { exact: true })
-    .locator("xpath=ancestor::article[1]");
-  await originCard.getByText("View source details", { exact: true }).click();
-  for (const identity of [
-    origin.occurrenceId,
-    origin.snapshotId,
-    origin.observationId,
-    origin.importPreviewId,
-  ]) {
-    await expect(
-      originCard.getByTitle(identity, { exact: true }),
-    ).toBeVisible();
-  }
+  const originSummary = drawer.locator(
+    '[data-origin-kind="csv_keyword_gap"]',
+  );
+  await expect(originSummary).toHaveCount(1);
   await expect(
-    originCard.getByText(origin.sourcePointer, { exact: true }),
+    originSummary.getByText("CSV keyword-gap import", { exact: true }),
   ).toBeVisible();
+  await expect(
+    drawer.getByText("View source details", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    drawer.getByText("View record details", { exact: true }),
+  ).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
 }
@@ -1485,7 +1470,6 @@ test.describe.serial("real Growth Map selected-page identity", () => {
       page,
       item: competitor,
       expectedCount: competitorLibrary.data.length,
-      csvSnapshotId: csvSnapshot.id,
     });
     expect(
       growthMapRscRequestCount(),

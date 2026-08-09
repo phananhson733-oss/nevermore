@@ -31,9 +31,11 @@ const mocks = vi.hoisted(() => ({
   profileProvenancePreflight: vi.fn(),
   activeFind: vi.fn(),
   synthesisAttemptExists: vi.fn(),
+  siteFindPrimary: vi.fn(),
   updateMarkets: vi.fn(),
   competitorUpsert: vi.fn(),
   competitorDefault: vi.fn(),
+  aiCohortBootstrap: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -65,11 +67,15 @@ vi.mock("@sf/db", async (importOriginal) => {
       hasAttemptForBaseProfile = mocks.synthesisAttemptExists;
     },
     SitesRepository: class {
+      findPrimary = mocks.siteFindPrimary;
       updatePrimaryMarketCodes = mocks.updateMarkets;
     },
     CompetitorsRepository: class {
       upsertOrigin = mocks.competitorUpsert;
       applyProductProfileDefaultGovernance = mocks.competitorDefault;
+    },
+    ProductProfileAiCohortRepository: class {
+      bootstrapConfirmedProfileGenerativeQueries = mocks.aiCohortBootstrap;
     },
   };
 });
@@ -201,6 +207,18 @@ beforeEach(() => {
     },
   }));
   mocks.updateMarkets.mockResolvedValue(undefined);
+  mocks.siteFindPrimary.mockResolvedValue({
+    id: ids.site,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    origin: "https://example.com",
+    host: "example.com",
+    market_codes: ["US", "GB"],
+    language_codes: ["en-US"],
+    is_primary: true,
+    created_at: createdAt,
+    updated_at: createdAt,
+  });
   mocks.activeFind.mockResolvedValue(null);
   mocks.synthesisAttemptExists.mockResolvedValue(false);
   mocks.competitorUpsert.mockResolvedValue({
@@ -208,6 +226,11 @@ beforeEach(() => {
     competitorId: "00000000-0000-4000-8000-000000000031",
   });
   mocks.competitorDefault.mockResolvedValue(null);
+  mocks.aiCohortBootstrap.mockResolvedValue({
+    status: "bootstrapped",
+    bootstrappedCount: 20,
+    existingQueryCount: 0,
+  });
 });
 
 describe("getProductProfileWorkspace", () => {
@@ -791,8 +814,172 @@ describe("confirmProductProfile", () => {
       { workspaceId: ids.workspace, projectId: ids.project },
       ["US", "GB"],
     );
+    expect(mocks.aiCohortBootstrap).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      expect.objectContaining({
+        confirmedProfileId: result.id,
+        confirmedProfileVersion: 4,
+        confirmedProfileContentHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        marketCode: "US",
+        languageTag: "en-US",
+      }),
+    );
     expect(mocks.setReady).toHaveBeenCalledOnce();
     expect(mocks.activeFind).not.toHaveBeenCalled();
+  });
+
+  it("treats AI cohort bootstrap skips as a non-failing confirmation side effect", async () => {
+    const current = row(completeDraft());
+    mocks.projectLock.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(current);
+    mocks.profileInsert.mockImplementation(async (values) =>
+      row(values.profile, {
+        id: "00000000-0000-4000-8000-000000000019",
+        version: values.version,
+        status: "complete",
+        hash: values.contentHash,
+      }),
+    );
+    mocks.aiCohortBootstrap.mockResolvedValueOnce({
+      status: "skipped_existing_queries",
+      bootstrappedCount: 0,
+      existingQueryCount: 19,
+    });
+
+    await expect(
+      service.confirmProductProfile(scope, ids.project, ids.actor, {
+        baseVersion: 3,
+      }),
+    ).resolves.toMatchObject({
+      id: "00000000-0000-4000-8000-000000000019",
+      status: "complete",
+    });
+    expect(mocks.setReady).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["en-us", "en-US"],
+    ["iw-IL", null],
+  ] as const)(
+    "uses only a case-equivalent canonical cohort language for historical Site tag %s",
+    async (storedLanguage, expectedLanguage) => {
+      mocks.projectLock.mockResolvedValue(project());
+      mocks.profileFind.mockResolvedValue(row(completeDraft()));
+      mocks.profileInsert.mockImplementation(async (values) =>
+        row(values.profile, {
+          id: "00000000-0000-4000-8000-000000000020",
+          version: values.version,
+          status: "complete",
+          hash: values.contentHash,
+        }),
+      );
+      mocks.siteFindPrimary.mockResolvedValueOnce({
+        id: ids.site,
+        workspace_id: ids.workspace,
+        project_id: ids.project,
+        origin: "https://example.com",
+        host: "example.com",
+        market_codes: ["US", "GB"],
+        language_codes: [storedLanguage],
+        is_primary: true,
+        created_at: createdAt,
+        updated_at: createdAt,
+      });
+
+      await expect(
+        service.confirmProductProfile(scope, ids.project, ids.actor, {
+          baseVersion: 3,
+        }),
+      ).resolves.toMatchObject({ status: "complete" });
+
+      if (expectedLanguage === null) {
+        expect(mocks.aiCohortBootstrap).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.aiCohortBootstrap).toHaveBeenCalledWith(
+          { workspaceId: ids.workspace, projectId: ids.project },
+          expect.objectContaining({ languageTag: expectedLanguage }),
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["does not contain the confirmed primary market", ["GB"], ["en-US"]],
+    ["contains only a case-shifted primary market", ["us"], ["en-US"]],
+    [
+      "does not have exactly one declared language",
+      ["US", "GB"],
+      ["en-US", "zh-CN"],
+    ],
+  ] as const)(
+    "skips AI cohort bootstrap when the primary Site %s",
+    async (_caseName, marketCodes, languageCodes) => {
+      mocks.projectLock.mockResolvedValue(project());
+      mocks.profileFind.mockResolvedValue(row(completeDraft()));
+      mocks.profileInsert.mockImplementation(async (values) =>
+        row(values.profile, {
+          id: "00000000-0000-4000-8000-000000000021",
+          version: values.version,
+          status: "complete",
+          hash: values.contentHash,
+        }),
+      );
+      mocks.siteFindPrimary.mockResolvedValueOnce({
+        id: ids.site,
+        workspace_id: ids.workspace,
+        project_id: ids.project,
+        origin: "https://example.com",
+        host: "example.com",
+        market_codes: [...marketCodes],
+        language_codes: [...languageCodes],
+        is_primary: true,
+        created_at: createdAt,
+        updated_at: createdAt,
+      });
+
+      await expect(
+        service.confirmProductProfile(scope, ids.project, ids.actor, {
+          baseVersion: 3,
+        }),
+      ).resolves.toMatchObject({ status: "complete" });
+      expect(mocks.updateMarkets).toHaveBeenCalledWith(
+        { workspaceId: ids.workspace, projectId: ids.project },
+        ["US", "GB"],
+      );
+      expect(mocks.aiCohortBootstrap).not.toHaveBeenCalled();
+      expect(mocks.setReady).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("confirms without a primary Site and skips AI cohort bootstrap", async () => {
+    mocks.projectLock.mockResolvedValue(project());
+    mocks.profileFind.mockResolvedValue(row(completeDraft()));
+    mocks.profileInsert.mockImplementation(async (values) =>
+      row(values.profile, {
+        id: "00000000-0000-4000-8000-000000000022",
+        version: values.version,
+        status: "complete",
+        hash: values.contentHash,
+      }),
+    );
+    mocks.siteFindPrimary.mockResolvedValueOnce(null);
+
+    await expect(
+      service.confirmProductProfile(scope, ids.project, ids.actor, {
+        baseVersion: 3,
+      }),
+    ).resolves.toMatchObject({
+      id: "00000000-0000-4000-8000-000000000022",
+      status: "complete",
+      isCurrent: true,
+      isConfirmed: true,
+    });
+    expect(mocks.updateMarkets).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      ["US", "GB"],
+    );
+    expect(mocks.aiCohortBootstrap).not.toHaveBeenCalled();
+    expect(mocks.setReady).toHaveBeenCalledOnce();
   });
 
   it("has no competitor-count gate but rejects an incomplete Primary ICP", async () => {

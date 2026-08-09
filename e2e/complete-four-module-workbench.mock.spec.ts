@@ -1611,11 +1611,28 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
       atlasRow.locator('[data-column="自然搜索重叠度"]'),
     ).toHaveText("数据不足");
 
-    // CompetitorMonitorSection moved into the full-profile drawer; open it
-    // from the row arrow before asserting monitor evidence.
     const drawer = page.getByTestId("competitor-profile-drawer");
     const monitor = page.getByTestId("competitor-monitor");
-    await atlasRow.getByRole("button", { name: "打开竞品完整详情" }).click();
+    const competitorDetail = page.getByTestId("competitor-detail-panel");
+
+    // The row arrow now selects the compact Artifact-aligned profile rail. It
+    // must not skip that summary and open the modal drawer implicitly.
+    await expect(drawer).toHaveCount(0);
+    await atlasRow.getByRole("button", { name: "查看竞品档案" }).click();
+    await expect(drawer).toHaveCount(0);
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("selectedCompetitorId"))
+      .toBe(COMPETITOR_A_ID);
+    await expect(
+      competitorDetail.getByRole("heading", { name: "AtlasFlow", level: 2 }),
+    ).toBeVisible();
+    await expect(competitorDetail).toContainText("为什么进入竞品池");
+
+    // The explicit rail action is the only entry into the full profile. An
+    // available monitor remains useful there and keeps its Competitor scope.
+    await competitorDetail
+      .getByRole("button", { name: "查看完整档案" })
+      .click();
     await expect(drawer).toBeVisible();
     await expect(monitor).toHaveAttribute(
       "data-competitor-id",
@@ -1628,26 +1645,30 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     // The drawer's scrim covers the ledger, so close it before switching rows.
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
-    await page
-      .getByRole("button")
-      .filter({ hasText: "BeaconPath" })
-      .first()
-      .click();
+    const beaconRow = page
+      .getByRole("listitem")
+      .filter({ hasText: "beaconpath.com" });
+    await beaconRow.getByRole("button", { name: "查看竞品档案" }).click();
+    await expect(drawer).toHaveCount(0);
     await expect(page).toHaveURL(
       new RegExp(`selectedCompetitorId=${COMPETITOR_B_ID}`),
     );
-    await page
-      .getByRole("listitem")
-      .filter({ hasText: "beaconpath.com" })
-      .getByRole("button", { name: "打开竞品完整详情" })
+    await expect(
+      competitorDetail.getByRole("heading", {
+        name: "BeaconPath",
+        level: 2,
+      }),
+    ).toBeVisible();
+    await competitorDetail
+      .getByRole("button", { name: "查看完整档案" })
       .click();
     await expect(drawer).toBeVisible();
-    await expect(monitor).toHaveAttribute(
-      "data-competitor-id",
-      COMPETITOR_B_ID,
-    );
-    await expect(monitor).toContainText("首次真实采集只用于建立基线");
-    await expect(monitor).not.toContainText("customer onboarding automation");
+    // A first-collection baseline is not a customer-facing change signal, so
+    // the unavailable monitor section is omitted instead of filling the
+    // profile with a non-actionable card.
+    await expect(monitor).toHaveCount(0);
+    await expect(drawer).not.toContainText("首次真实采集只用于建立基线");
+    await expect(drawer).not.toContainText("customer onboarding automation");
     await capture(page, "08-growth-map-competitor-beaconpath");
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);

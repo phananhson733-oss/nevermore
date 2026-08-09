@@ -434,15 +434,18 @@ export async function projectCollectionSnapshotKeywords(
       [snapshot.id],
       { limit: PROJECTION_PAGE_SIZE, cursor },
     );
+    const inputs: CanonicalKeywordOccurrenceInput[] = [];
     for (const observation of page.rows) {
-      for (const input of deriveWithConfiguration(
-        snapshot,
-        observation,
-        configuration,
-      )) {
-        await keywords.upsertIntoLibrary(scope, input);
-        projected += 1;
-      }
+      inputs.push(
+        ...deriveWithConfiguration(snapshot, observation, configuration),
+      );
+    }
+    for (let start = 0; start < inputs.length; start += PROJECTION_PAGE_SIZE) {
+      const results = await keywords.upsertManyIntoLibrary(
+        scope,
+        inputs.slice(start, start + PROJECTION_PAGE_SIZE),
+      );
+      projected += results.length;
     }
     const nextCursor = page.nextCursor;
     if (nextCursor === null) {

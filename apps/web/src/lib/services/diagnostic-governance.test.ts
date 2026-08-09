@@ -71,6 +71,7 @@ function occurrence(
     id: ids.occurrence,
     workspace_id: scope.workspaceId,
     project_id: scope.projectId,
+    product_profile_id: null,
     data_snapshot_id: ids.snapshot,
     normalized_observation_id: ids.observation,
     display_keyword: "Customer onboarding software",

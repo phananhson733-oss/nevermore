@@ -26,8 +26,34 @@ const zh = JSON.parse(
     };
   };
 };
+const en = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../../../../../packages/i18n/src/messages/en.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as typeof zh;
 
 describe("Growth Map Keyword evidence sources", () => {
+  it("labels Product Profile queries independently and renders their FK trace", () => {
+    expect(zh.growthMap.keywordLibrary.sourceKind["product_profile"]).toBe(
+      "Product Profile 派生查询",
+    );
+    expect(en.growthMap.keywordLibrary.sourceKind["product_profile"]).toBe(
+      "Product Profile-derived query",
+    );
+    expect(zh.growthMap.keywordLibrary.sourceKind["product_profile"]).not.toBe(
+      zh.growthMap.keywordLibrary.sourceKind["manual"],
+    );
+    expect(component).toContain(
+      'occurrence.sourceKind === "product_profile"',
+    );
+    expect(component).toContain('t("productProfileId")');
+    expect(component).toContain("occurrence.productProfileId");
+  });
+
   it("keeps interview summaries and public reviews as distinct Chinese-first source labels", () => {
     const messages = zh.growthMap.keywordLibrary;
     expect(messages.sourceKind["interview_summary"]).toBe("访谈摘要");

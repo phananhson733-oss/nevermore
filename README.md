@@ -18,7 +18,11 @@ Contract inventory: **79 API operations / 10 async operations / 78 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0047_dataforseo_competitor_metrics.sql` (**47 migrations**).
+`0049_product_profile_keyword_lineage.sql` (**49 migrations**). Migration 0048
+keeps the existing exact-lineage authorities while bounding Keyword,
+Competitor and provider-discrepancy collection projection round trips;
+migration 0049 adds explicit confirmed Product Profile lineage for the fixed
+GenerativeQuery Keyword cohort without inventing provider provenance.
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

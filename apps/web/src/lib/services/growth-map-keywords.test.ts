@@ -50,6 +50,7 @@ const ids = {
   actor: "10000000-0000-4000-8000-000000000011",
   topicNode: "10000000-0000-4000-8000-000000000012",
   decision: "10000000-0000-4000-8000-000000000013",
+  productProfile: "10000000-0000-4000-8000-000000000099",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -147,6 +148,7 @@ function occurrence(
     id: ids.occurrence,
     workspace_id: ids.workspace,
     project_id: ids.project,
+    product_profile_id: null,
     data_snapshot_id: ids.snapshot,
     normalized_observation_id: ids.observation,
     display_keyword: "Customer Onboarding Software",
@@ -637,6 +639,7 @@ beforeEach(() => {
     "countBySourceKind",
   ).mockResolvedValue({
     all: 1,
+    product_profile: 0,
     csv_import: 0,
     dataforseo_ranked: 1,
     gsc_top_query: 0,
@@ -1771,6 +1774,157 @@ describe("Growth Map Keyword Library read service", () => {
     // decision-origin read every projected page performs.
     expect(exec.calls).toEqual(["select", "execute"]);
   });
+
+  it("projects Product Profile-derived GenerativeQueries as a distinct truthful source kind", async () => {
+    mockProject();
+    mocks.loadPublishedGrowthMapGeneration.mockResolvedValue(null);
+    vi.mocked(
+      KeywordsRepository.prototype.countBySourceKind,
+    ).mockResolvedValueOnce({
+      all: 1,
+      product_profile: 1,
+      csv_import: 0,
+      dataforseo_ranked: 0,
+      gsc_top_query: 0,
+      interview_summary: 0,
+      user_review: 0,
+      manual: 0,
+    });
+    vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+      rows: [
+        entity({
+          query_kind: "generative_query",
+          cluster_key: null,
+          mapping_decision: "new_asset",
+          mapped_site_page_id: null,
+          mapping_review_state: "unreviewed",
+          mapping_revision: 0,
+        }),
+      ],
+      nextCursor: null,
+    });
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({
+      rows: [
+        occurrence({
+          product_profile_id: ids.productProfile,
+          data_snapshot_id: null,
+          normalized_observation_id: null,
+          query_kind: "generative_query",
+          source_kind: "product_profile",
+          scope_basis: "project_context",
+          source_pointer: null,
+          source_ref:
+            `product_profile:${ids.productProfile}#profile-generative-query.v1/what-is-product`,
+          provider_data_as_of: null,
+        }),
+      ],
+      nextCursor: null,
+    });
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    const exec = new FakeExecutor();
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: null,
+        sourceKind: "product_profile",
+      },
+      exec as never,
+    );
+
+    expect(KeywordsRepository.prototype.listByProject).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { limit: 50, cursor: null, sourceKind: "product_profile" },
+    );
+    expect(response.meta.sourceCounts).toMatchObject({ product_profile: 1 });
+    expect(response.data[0]?.sourceOccurrences).toEqual([
+      expect.objectContaining({
+        sourceKind: "product_profile",
+        productProfileId: ids.productProfile,
+        snapshotId: null,
+        sourceObservationId: null,
+        sourcePointer: null,
+        providerDataAsOf: null,
+        freshness: "unknown",
+        scopeBasis: "project_context",
+      }),
+    ]);
+    expect(exec.calls).toEqual(["execute"]);
+  });
+
+  it.each([
+    ["missing Product Profile FK", { product_profile_id: null }],
+    [
+      "sourceRef/FK mismatch",
+      {
+        product_profile_id: ids.productProfile,
+        source_ref:
+          "product_profile:10000000-0000-4000-8000-000000000098#profile-generative-query.v1/what-is-product",
+      },
+    ],
+    [
+      "invented provider lineage",
+      {
+        product_profile_id: ids.productProfile,
+        data_snapshot_id: ids.snapshot,
+        normalized_observation_id: ids.observation,
+        provider_data_as_of: capturedAt,
+      },
+    ],
+  ] satisfies readonly (readonly [string, Partial<KeywordOccurrenceRow>])[])(
+    "fails closed for Product Profile occurrences with %s",
+    async (_caseName, overrides) => {
+      mockProject();
+      vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+        rows: [
+          entity({
+            query_kind: "generative_query",
+            cluster_key: null,
+            mapping_decision: "new_asset",
+            mapped_site_page_id: null,
+            mapping_review_state: "unreviewed",
+            mapping_revision: 0,
+          }),
+        ],
+        nextCursor: null,
+      });
+      vi.spyOn(
+        KeywordOccurrencesRepository.prototype,
+        "listForEntity",
+      ).mockResolvedValue({
+        rows: [
+          occurrence({
+            data_snapshot_id: null,
+            normalized_observation_id: null,
+            query_kind: "generative_query",
+            source_kind: "product_profile",
+            scope_basis: "project_context",
+            source_pointer: null,
+            source_ref: `product_profile:${ids.productProfile}#profile-generative-query.v1/what-is-product`,
+            provider_data_as_of: null,
+            ...overrides,
+          }),
+        ],
+        nextCursor: null,
+      });
+      vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+
+      await expect(
+        listProjectAuditKeywords(
+          scope,
+          ids.project,
+          { limit: 50, cursor: null, diagnosticRunId: null },
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE" });
+    },
+  );
 
   it("fails closed for archived projects and foreign Existing Page identities", async () => {
     mockProject(false);

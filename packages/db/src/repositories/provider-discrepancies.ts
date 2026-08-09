@@ -3,7 +3,6 @@ import {
   asc,
   eq,
   inArray,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -33,6 +32,69 @@ export interface ProviderDiscrepancyRow {
   readonly right_observation_id: string;
   readonly resolution: string;
   readonly created_at: string;
+}
+
+function parseDetectionRows(value: unknown): ProviderDiscrepancyRow[] {
+  const rows = (value as { readonly rows?: readonly Record<string, unknown>[] })
+    .rows;
+  if (!Array.isArray(rows)) {
+    throw new Error("provider discrepancy detection returned an invalid result");
+  }
+  const pairs = new Set<string>();
+  return rows.map((row) => {
+    for (const key of [
+      "id",
+      "workspace_id",
+      "project_id",
+      "metric_key",
+      "subject_type",
+      "subject_ref",
+      "left_observation_id",
+      "right_observation_id",
+      "resolution",
+    ] as const) {
+      if (typeof row[key] !== "string") {
+        throw new Error(
+          "provider discrepancy detection returned an invalid result",
+        );
+      }
+    }
+    const createdAt =
+      row["created_at"] instanceof Date
+        ? row["created_at"].toISOString()
+        : row["created_at"];
+    if (typeof createdAt !== "string") {
+      throw new Error(
+        "provider discrepancy detection returned an invalid result",
+      );
+    }
+    const leftObservationId = row["left_observation_id"] as string;
+    const rightObservationId = row["right_observation_id"] as string;
+    if (leftObservationId >= rightObservationId) {
+      throw new Error(
+        "provider discrepancy detection returned a non-canonical pair",
+      );
+    }
+    const pair = `${leftObservationId}:${rightObservationId}`;
+    if (pairs.has(pair)) {
+      throw new Error(
+        "provider discrepancy detection returned a duplicate pair",
+      );
+    }
+    pairs.add(pair);
+    return {
+      id: row["id"] as string,
+      workspace_id: row["workspace_id"] as string,
+      project_id: row["project_id"] as string,
+      metric_key: row["metric_key"] as string,
+      subject_type: row["subject_type"] as string,
+      subject_ref: row["subject_ref"] as string,
+      left_observation_id: leftObservationId,
+      right_observation_id: rightObservationId,
+      resolution: row["resolution"] as string,
+      created_at: createdAt,
+    };
+  });
 }
 
 export class ProviderDiscrepanciesRepository extends Repository {
@@ -168,98 +230,25 @@ export class ProviderDiscrepanciesRepository extends Repository {
     scope: ProjectScope,
     snapshotId: string,
   ): Promise<ProviderDiscrepancyRow[]> {
-    const currentObservation = alias(
-      normalizedObservations,
-      "current_observation",
-    );
-    const priorObservation = alias(normalizedObservations, "prior_observation");
-    const currentSnapshot = alias(dataSnapshots, "current_snapshot");
-    const priorSnapshot = alias(dataSnapshots, "prior_snapshot");
-
-    const candidates = await this.exec
-      .select({
-        metricKey: currentObservation.metric_key,
-        subjectType: currentObservation.subject_type,
-        subjectRef: currentObservation.subject_ref,
-        currentObservationId: currentObservation.id,
-        priorObservationId: priorObservation.id,
-      })
-      .from(currentObservation)
-      .innerJoin(
-        currentSnapshot,
-        eq(currentSnapshot.id, currentObservation.snapshot_id),
+    const result = await this.exec.execute(sql`
+      select
+        id,
+        workspace_id,
+        project_id,
+        metric_key,
+        subject_type,
+        subject_ref,
+        left_observation_id,
+        right_observation_id,
+        resolution,
+        created_at
+      from app.detect_provider_discrepancies_for_snapshot(
+        ${scope.workspaceId}::uuid,
+        ${scope.projectId}::uuid,
+        ${snapshotId}::uuid
       )
-      .innerJoin(
-        priorObservation,
-        and(
-          eq(priorObservation.provider, currentObservation.provider),
-          eq(priorObservation.metric_key, currentObservation.metric_key),
-          eq(priorObservation.subject_type, currentObservation.subject_type),
-          eq(priorObservation.subject_ref, currentObservation.subject_ref),
-          ne(priorObservation.snapshot_id, currentObservation.snapshot_id),
-        ),
-      )
-      .innerJoin(
-        priorSnapshot,
-        and(
-          eq(priorSnapshot.id, priorObservation.snapshot_id),
-          sql`${priorSnapshot.source_window} = ${currentSnapshot.source_window}`,
-        ),
-      )
-      .where(
-        and(
-          projectPredicate(currentObservation, scope),
-          projectPredicate(currentSnapshot, scope),
-          projectPredicate(priorObservation, scope),
-          projectPredicate(priorSnapshot, scope),
-          eq(currentObservation.snapshot_id, snapshotId),
-          sql`(
-            ${priorObservation.availability} is distinct from ${currentObservation.availability}
-            or ${priorObservation.value_numeric} is distinct from ${currentObservation.value_numeric}
-            or ${priorObservation.value_text} is distinct from ${currentObservation.value_text}
-            or ${priorObservation.value_json} is distinct from ${currentObservation.value_json}
-          )`,
-        ),
-      )
-      .orderBy(
-        asc(currentObservation.metric_key),
-        asc(currentObservation.subject_type),
-        asc(currentObservation.subject_ref),
-        asc(priorObservation.id),
-        asc(currentObservation.id),
-      );
-
-    const uniquePairs = new Map<
-      string,
-      {
-        metricKey: string;
-        subjectType: string;
-        subjectRef: string;
-        leftObservationId: string;
-        rightObservationId: string;
-      }
-    >();
-    for (const candidate of candidates) {
-      const orderedObservationIds = [
-        candidate.currentObservationId,
-        candidate.priorObservationId,
-      ].sort();
-      const leftObservationId = orderedObservationIds[0]!;
-      const rightObservationId = orderedObservationIds[1]!;
-      uniquePairs.set(`${leftObservationId}:${rightObservationId}`, {
-        metricKey: candidate.metricKey,
-        subjectType: candidate.subjectType,
-        subjectRef: candidate.subjectRef,
-        leftObservationId,
-        rightObservationId,
-      });
-    }
-
-    const inserted: ProviderDiscrepancyRow[] = [];
-    for (const pair of uniquePairs.values()) {
-      inserted.push(await this.insert(scope, pair));
-    }
-    return inserted;
+    `);
+    return parseDetectionRows(result);
   }
 
   async listByProject(scope: ProjectScope): Promise<ProviderDiscrepancyRow[]> {

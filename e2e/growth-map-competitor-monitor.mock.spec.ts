@@ -461,7 +461,7 @@ function rowArrowButton(page: Page, domain: string) {
   return page
     .getByRole("listitem")
     .filter({ hasText: domain })
-    .getByRole("button", { name: "打开竞品完整详情" });
+    .getByRole("button", { name: "查看竞品档案" });
 }
 
 async function closeCompetitorDrawer(page: Page): Promise<void> {
@@ -472,6 +472,103 @@ async function closeCompetitorDrawer(page: Page): Promise<void> {
 test.beforeEach(async ({ page }) => {
   await useChineseUi(page);
   await installGrowthVerticalApi(page);
+});
+
+test("uses the row disclosure for the Artifact compact profile and keeps noisy secondary data out of the default view", async ({
+  page,
+}) => {
+  await installCompetitorApi(page);
+  await page.setViewportSize({ width: 2048, height: 1152 });
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
+  );
+
+  const detail = page.getByRole("complementary", {
+    name: "所选竞品详情",
+  });
+  await expect(
+    detail.getByRole("heading", { name: "AtlasFlow", level: 2 }),
+  ).toBeVisible();
+  await expect(
+    detail.getByTestId("competitor-detail-organic-overlap"),
+  ).toHaveText(/自然搜索重叠度\s*17%/);
+  await expect(
+    detail.getByTestId("competitor-detail-shared-keywords"),
+  ).toHaveText(/共同关键词\s*17/);
+  await expect(
+    detail.getByTestId("competitor-detail-ai-citations"),
+  ).toHaveText(/AI 引用\s*8/);
+  await expect(
+    detail.getByTestId("competitor-detail-ai-citations"),
+  ).not.toContainText("/");
+
+  await rowArrowButton(page, "beaconpath.com").click();
+  await expect(competitorDrawer(page)).toHaveCount(0);
+  await expect(page).toHaveURL(
+    new RegExp(`selectedCompetitorId=${COMPETITOR_B_ID}`),
+  );
+  const competitorList = page.getByRole("list", { name: "竞品列表" });
+  await expect
+    .poll(() =>
+      competitorList.evaluate(
+        (element) => element.parentElement?.scrollLeft ?? -1,
+      ),
+    )
+    .toBe(0);
+  await expect(
+    competitorList
+      .getByRole("listitem")
+      .filter({ hasText: "beaconpath.com" })
+      .getByText("BeaconPath", { exact: true }),
+  ).toBeInViewport();
+
+  await expect(
+    detail.getByRole("heading", { name: "BeaconPath", level: 2 }),
+  ).toBeVisible();
+  for (const label of [
+    "为什么进入竞品池",
+    "自然搜索重叠度",
+    "共同关键词",
+    "AI 引用",
+    "证据",
+    "竞争关系",
+    "分析范围",
+    "关键词缺口",
+    "系统证据",
+  ]) {
+    await expect(detail.getByText(label, { exact: true })).toBeVisible();
+  }
+  await expect(detail.getByText("可用", { exact: true })).toHaveCount(0);
+  await expect(detail.getByText("查看来源详情", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(detail.getByText("月度动态", { exact: true })).toHaveCount(0);
+
+  await detail.getByRole("button", { name: "查看完整档案" }).click();
+  const drawer = competitorDrawer(page);
+  await expect(drawer).toBeVisible();
+  await expect(
+    drawer.getByText("查看来源详情", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    drawer.getByText("查看记录详情", { exact: true }),
+  ).toHaveCount(0);
+  await expect(drawer.getByTestId("competitor-monitor")).toHaveCount(0);
+
+  await closeCompetitorDrawer(page);
+  await detail.getByTestId("competitor-review-open").click();
+  const review = page.getByRole("dialog", { name: "确认竞品范围" });
+  await expect(review).toBeVisible();
+  await expect(review.getByText(/当前审核版本/)).toHaveCount(0);
+  await expect(
+    review.getByRole("combobox", { name: "审核决定" }),
+  ).toBeVisible();
+  await expect(
+    review.getByRole("combobox", { name: "竞品关系" }),
+  ).toBeVisible();
+  await expect(
+    review.getByRole("group", { name: "分析范围（至少选择一项）" }),
+  ).toBeVisible();
 });
 
 test("keeps two Competitors isolated inside the existing four-module Growth Map and links real evidence to Execution", async ({
@@ -555,19 +652,18 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
   const detailAiCitations = selectedDetail
     .getByText("AI 引用", { exact: true })
     .locator("xpath=following-sibling::*[1]");
-  await expect(detailAiCitations).toHaveText("8/17");
+  await expect(detailAiCitations).toHaveText("8");
   await expect(
     detailAiCitations.locator("[data-limitation-hint]"),
-  ).toHaveAttribute(
-    "data-print-limitations",
-    /已尝试 20 个查询 · 3 个不可用/,
-  );
+  ).toHaveCount(0);
 
-  // Monitor evidence now lives in the full-profile drawer; open it for A via
-  // the new row arrow.
+  // The row disclosure stays in the same-page Artifact layout. Monitoring is
+  // reachable only through the explicit full-profile action.
   const drawer = competitorDrawer(page);
   const monitor = page.getByTestId("competitor-monitor");
   await rowArrowButton(page, "atlasflow.com").click();
+  await expect(drawer).toHaveCount(0);
+  await selectedDetail.getByRole("button", { name: "查看完整档案" }).click();
   await expect(drawer).toBeVisible();
   await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_A_ID);
   await expect(
@@ -630,22 +726,20 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     monitor.getByRole("link", { name: /进入执行中心/ }),
   ).toHaveAttribute("href", `/p/${E2E_PROJECT_ID}/execution`);
 
-  // The drawer's scrim covers the ledger, so close it before switching rows,
-  // then reopen it for B from B's own row arrow.
+  // A baseline without a comparable result does not allocate an empty monthly
+  // card in B's profile.
   await closeCompetitorDrawer(page);
   await competitorButton(page, "BeaconPath").click();
   await expect(page).toHaveURL(
     new RegExp(`selectedCompetitorId=${COMPETITOR_B_ID}`),
   );
-  await rowArrowButton(page, "beaconpath.com").click();
+  await expect(
+    selectedDetail.getByRole("heading", { name: "BeaconPath", level: 2 }),
+  ).toBeVisible();
+  await selectedDetail.getByRole("button", { name: "查看完整档案" }).click();
   await expect(drawer).toBeVisible();
-  await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_B_ID);
-  await expect(monitor.getByTestId("competitor-monitor-status")).toHaveText(
-    "基线已建立",
-  );
-  await expect(monitor).toContainText("首次真实采集只用于建立基线");
-  await expect(monitor).not.toContainText("customer onboarding automation");
-  await expect(monitor).not.toContainText("atlasflow.com/guides");
+  await expect(drawer.getByTestId("competitor-monitor")).toHaveCount(0);
+  await expect(drawer).not.toContainText("首次真实采集只用于建立基线");
 
   await closeCompetitorDrawer(page);
   await competitorButton(page, "AtlasFlow").click();
@@ -679,9 +773,8 @@ test("updates the only supported monthly cadence with CAS and keeps conflicts ex
     `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
   );
 
-  // The monitor settings moved into the full-profile drawer with the rest of
-  // CompetitorMonitorSection; open it before exercising CAS.
-  await rowArrowButton(page, "atlasflow.com").click();
+  // Comparable monitor results remain in the explicit full profile.
+  await page.getByRole("button", { name: "查看完整档案" }).click();
   await expect(competitorDrawer(page)).toBeVisible();
   const monitor = page.getByTestId("competitor-monitor");
   await expect(monitor).toContainText("更新频率");

@@ -21,9 +21,11 @@ import {
 } from "@sf/contracts";
 import {
   AsyncRunsRepository,
+  canonicalProductProfileSiteLanguageTag,
   canonicalUtcTimestamptz,
   contentHash,
   IcpProfilesRepository,
+  ProductProfileAiCohortRepository,
   ProductProfileRunsRepository,
   ProjectsRepository,
   SitesRepository,
@@ -754,6 +756,64 @@ async function appendOrReuseConfirmed(
     scoped,
     profile.targetMarkets.map((market) => market.marketCode),
   );
+  const primarySite = await sites.findPrimary(scoped);
+  const primaryTargetMarkets = profile.targetMarkets.filter(
+    (market) => market.priority === "primary",
+  );
+  const exactPrimaryMarket =
+    primaryTargetMarkets.length === 1
+      ? primaryTargetMarkets[0]?.marketCode.trim().toUpperCase() ?? null
+      : null;
+  const siteContainsPrimaryMarket =
+    exactPrimaryMarket !== null &&
+    primarySite !== null &&
+    primarySite.market_codes.includes(exactPrimaryMarket);
+  const exactSiteLanguage =
+    primarySite && primarySite.language_codes.length === 1
+      ? primarySite.language_codes[0]?.trim() ?? null
+      : null;
+  const exactCanonicalSiteLanguage = exactSiteLanguage
+    ? canonicalProductProfileSiteLanguageTag(exactSiteLanguage)
+    : null;
+  if (
+    exactPrimaryMarket &&
+    /^[A-Z]{2}$/u.test(exactPrimaryMarket) &&
+    siteContainsPrimaryMarket &&
+    exactCanonicalSiteLanguage
+  ) {
+    await new ProductProfileAiCohortRepository(
+      tx,
+    ).bootstrapConfirmedProfileGenerativeQueries(scoped, {
+      confirmedProfileId: row.id,
+      confirmedProfileVersion: row.version,
+      confirmedProfileContentHash: row.content_hash,
+      confirmedAt: row.created_at,
+      marketCode: exactPrimaryMarket,
+      languageTag: exactCanonicalSiteLanguage,
+      profile: {
+        productName: profile.productName,
+        category: profile.category,
+        productType: profile.productType,
+        valueProposition: profile.valueProposition,
+        coreFeatures: profile.coreFeatures,
+        targetAudiences: profile.targetAudiences.map((audience) => ({
+          reviewStatus: audience.reviewStatus,
+          targetCompanyOrAudience: audience.targetCompanyOrAudience,
+          buyerRoles: audience.buyerRoles,
+          userRoles: audience.userRoles,
+          useCases: audience.useCases,
+          triggers: audience.triggers,
+          pains: audience.pains,
+          jtbd: audience.jtbd,
+        })),
+        competitorCandidates: profile.competitorCandidates.map((competitor) => ({
+          reviewStatus: competitor.reviewStatus,
+          name: competitor.name,
+          domain: competitor.domain,
+        })),
+      },
+    });
+  }
   await projects.setReadyToDiagnoseIfEligible(scope, projectId);
   return confirmed;
 }

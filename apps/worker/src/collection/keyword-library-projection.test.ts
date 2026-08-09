@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  KeywordOccurrencesRepository,
+  ObservationsRepository,
   type DataSnapshotRow,
   type ObservationRow,
 } from "@sf/db";
@@ -9,11 +11,18 @@ import {
   createDataForSeoSearchLandscapeV2Scope,
   createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
-import { deriveKeywordOccurrenceInputs } from "./keyword-library-projection.ts";
+import {
+  deriveKeywordOccurrenceInputs,
+  projectCollectionSnapshotKeywords,
+} from "./keyword-library-projection.ts";
 
 const snapshotId = "00000000-0000-4000-8000-000000000003";
 const observationId = "00000000-0000-4000-8000-000000000004";
 const collectedAt = "2026-07-22T08:00:00.000Z";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function snapshot(
   overrides: Partial<DataSnapshotRow> = {},
@@ -403,5 +412,72 @@ describe("deriveKeywordOccurrenceInputs", () => {
         observation({ metric_key: "csv.unrelated.v1" }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("projectCollectionSnapshotKeywords", () => {
+  it("projects 200 DataForSEO keyword rows with one bounded repository batch", async () => {
+    const collectionScope = createDataForSeoSearchLandscapeV3Scope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      seeds: [],
+      aiCitations: { state: "disabled" },
+    });
+    const dataForSeoSnapshot = snapshot({
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v3",
+      schema_version: "dataforseo.search_landscape.v3",
+      method_version: "dataforseo.search_landscape.v3",
+      summary: { collectionScope },
+    });
+    const rows = Array.from({ length: 200 }, (_, index) =>
+      observation({
+        id: `00000000-0000-4000-8003-${String(index + 1).padStart(12, "0")}`,
+        provider: "dataforseo",
+        origin: "vendor_observation",
+        grade: "B",
+        value_json: {
+          ...(observation().value_json as Record<string, unknown>),
+          keyword: `Customer Onboarding Software ${index + 1}`,
+          marketCode: "US",
+          languageCode: "en",
+        },
+      }),
+    );
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIdsPage",
+    ).mockResolvedValue({ rows, nextCursor: null });
+    const batch = vi
+      .spyOn(
+        KeywordOccurrencesRepository.prototype as unknown as {
+          upsertManyIntoLibrary: (
+            selectedScope: unknown,
+            selectedInputs: readonly unknown[],
+          ) => Promise<readonly unknown[]>;
+        },
+        "upsertManyIntoLibrary",
+      )
+      .mockResolvedValue(
+        rows.map((_, index) => ({
+          occurrenceId: `10000000-0000-4000-8003-${String(index + 1).padStart(12, "0")}`,
+          entityId: `20000000-0000-4000-8003-${String(index + 1).padStart(12, "0")}`,
+        })),
+      );
+
+    await expect(
+      projectCollectionSnapshotKeywords(
+        {} as never,
+        {
+          workspaceId: dataForSeoSnapshot.workspace_id,
+          projectId: dataForSeoSnapshot.project_id,
+        },
+        dataForSeoSnapshot,
+      ),
+    ).resolves.toBe(200);
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch.mock.calls[0]?.[1]).toHaveLength(200);
   });
 });

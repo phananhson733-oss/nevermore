@@ -2470,7 +2470,7 @@ components:
         membership.
       schema:
         type: string
-        enum: [csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
+        enum: [product_profile, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
     ReviewView:
       name: view
       in: query
@@ -6093,6 +6093,27 @@ components:
           existing_page: '#/components/schemas/GrowthMapKeywordExistingPageTarget'
           new_asset: '#/components/schemas/GrowthMapKeywordNewAssetTarget'
 
+    GrowthMapKeywordProductProfileOccurrence:
+      type: object
+      additionalProperties: false
+      required: [occurrenceId, sourceKind, productProfileId, snapshotId, sourceObservationId, sourcePointer, collectedAt, providerDataAsOf, freshness, limitation, scopeBasis, scopeLimitation, marketCode, languageTag]
+      properties:
+        occurrenceId: { $ref: '#/components/schemas/Uuid' }
+        sourceKind: { type: string, const: product_profile }
+        productProfileId: { $ref: '#/components/schemas/Uuid' }
+        snapshotId: { type: 'null' }
+        sourceObservationId: { type: 'null' }
+        sourcePointer: { type: 'null' }
+        collectedAt: { $ref: '#/components/schemas/Timestamp' }
+        providerDataAsOf: { type: 'null' }
+        freshness: { type: string, const: unknown }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        scopeBasis: { type: string, const: project_context }
+        scopeLimitation: { type: string, minLength: 1, maxLength: 2000 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
+      description: Exact confirmed Product Profile query lineage. It has no provider Snapshot or Observation and never impersonates provider evidence.
+
     GrowthMapKeywordCsvImportOccurrence:
       type: object
       additionalProperties: false
@@ -6240,6 +6261,7 @@ components:
 
     GrowthMapKeywordSourceOccurrence:
       oneOf:
+        - $ref: '#/components/schemas/GrowthMapKeywordProductProfileOccurrence'
         - $ref: '#/components/schemas/GrowthMapKeywordCsvImportOccurrence'
         - $ref: '#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence'
         - $ref: '#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence'
@@ -6249,13 +6271,14 @@ components:
       discriminator:
         propertyName: sourceKind
         mapping:
+          product_profile: '#/components/schemas/GrowthMapKeywordProductProfileOccurrence'
           csv_import: '#/components/schemas/GrowthMapKeywordCsvImportOccurrence'
           dataforseo_ranked: '#/components/schemas/GrowthMapKeywordDataForSeoRankedOccurrence'
           gsc_top_query: '#/components/schemas/GrowthMapKeywordGscTopQueryOccurrence'
           interview_summary: '#/components/schemas/GrowthMapKeywordInterviewSummaryOccurrence'
           user_review: '#/components/schemas/GrowthMapKeywordUserReviewOccurrence'
           manual: '#/components/schemas/GrowthMapKeywordManualOccurrence'
-      description: Exact immutable source occurrence. Interview summaries and public user reviews remain distinct source authorities. Their customer projection contains de-identified evidence labels and immutable fingerprints, never participant identities, review authors, or full source text. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation.
+      description: Exact immutable source occurrence. Confirmed Product Profile queries carry explicit profile lineage without provider provenance. Interview summaries and public user reviews remain distinct source authorities. Their customer projection contains de-identified evidence labels and immutable fingerprints, never participant identities, review authors, or full source text. Stale or unknown freshness and absent provider data-as-of timestamps require an explicit limitation.
       x-signalframe-runtime-refinement: keywordSourceFreshnessAndCanonicalIdentity
 
     GrowthMapKeywordVolumeMetric:
@@ -6441,9 +6464,10 @@ components:
     GrowthMapKeywordSourceCounts:
       type: object
       additionalProperties: false
-      required: [all, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
+      required: [all, product_profile, csv_import, dataforseo_ranked, gsc_top_query, interview_summary, user_review, manual]
       properties:
         all: { type: integer, minimum: 0 }
+        product_profile: { type: integer, minimum: 0 }
         csv_import: { type: integer, minimum: 0 }
         dataforseo_ranked: { type: integer, minimum: 0 }
         gsc_top_query: { type: integer, minimum: 0 }

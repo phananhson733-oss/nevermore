@@ -823,6 +823,57 @@ describe("deriveSerpOverlapCompetitorOriginInput", () => {
 });
 
 describe("projectCollectionSnapshotCompetitors", () => {
+  it("projects 100 DataForSEO origins with one bounded repository batch", async () => {
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoRun());
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoConnection());
+    const rows = Array.from({ length: 100 }, (_, index) =>
+      dataForSeoObservation({
+        id: `00000000-0000-4000-8004-${String(index + 1).padStart(12, "0")}`,
+        subject_ref: `rival-${index + 1}.example`,
+        value_json: {
+          ...(dataForSeoObservation().value_json as Record<string, unknown>),
+          competitorDomain: `rival-${index + 1}.example`,
+        },
+      }),
+    );
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIdsPage",
+    ).mockResolvedValue({ rows, nextCursor: null });
+    const batch = vi
+      .spyOn(
+        CompetitorsRepository.prototype as unknown as {
+          upsertOrigins: (
+            selectedScope: unknown,
+            selectedInputs: readonly unknown[],
+          ) => Promise<readonly unknown[]>;
+        },
+        "upsertOrigins",
+      )
+      .mockResolvedValue(
+        rows.map((_, index) => ({
+          occurrenceId: `10000000-0000-4000-8004-${String(index + 1).padStart(12, "0")}`,
+          competitorId: `20000000-0000-4000-8004-${String(index + 1).padStart(12, "0")}`,
+        })),
+      );
+
+    await expect(
+      projectCollectionSnapshotCompetitors(
+        {} as never,
+        scope,
+        dataForSeoSnapshot(),
+      ),
+    ).resolves.toBe(100);
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch.mock.calls[0]?.[1]).toHaveLength(100);
+  });
+
   it("pages canonical Observations and upserts every exact CSV origin idempotently", async () => {
     vi.spyOn(
       CollectionRunsRepository.prototype,
@@ -857,11 +908,13 @@ describe("projectCollectionSnapshotCompetitors", () => {
         nextCursor: null,
       });
     const upsert = vi
-      .spyOn(CompetitorsRepository.prototype, "upsertOrigin")
-      .mockResolvedValue({
-        occurrenceId: "00000000-0000-4000-8000-000000000010",
-        competitorId: "00000000-0000-4000-8000-000000000011",
-      });
+      .spyOn(CompetitorsRepository.prototype, "upsertOrigins")
+      .mockResolvedValue([
+        {
+          occurrenceId: "00000000-0000-4000-8000-000000000010",
+          competitorId: "00000000-0000-4000-8000-000000000011",
+        },
+      ]);
 
     await expect(
       projectCollectionSnapshotCompetitors({} as never, scope, snapshot()),
@@ -893,20 +946,24 @@ describe("projectCollectionSnapshotCompetitors", () => {
     expect(upsert).toHaveBeenNthCalledWith(
       1,
       scope,
-      expect.objectContaining({
-        domain: "example-competitor.com",
-        name: null,
-        observationId,
-      }),
+      [
+        expect.objectContaining({
+          domain: "example-competitor.com",
+          name: null,
+          observationId,
+        }),
+      ],
     );
     expect(upsert).toHaveBeenNthCalledWith(
       2,
       scope,
-      expect.objectContaining({
-        domain: "second-competitor.com",
-        name: null,
-        observationId: "00000000-0000-4000-8000-000000000009",
-      }),
+      [
+        expect.objectContaining({
+          domain: "second-competitor.com",
+          name: null,
+          observationId: "00000000-0000-4000-8000-000000000009",
+        }),
+      ],
     );
   });
 
@@ -939,11 +996,13 @@ describe("projectCollectionSnapshotCompetitors", () => {
       nextCursor: null,
     });
     const upsert = vi
-      .spyOn(CompetitorsRepository.prototype, "upsertOrigin")
-      .mockResolvedValue({
-        occurrenceId: "00000000-0000-4000-8000-000000000010",
-        competitorId: "00000000-0000-4000-8000-000000000011",
-      });
+      .spyOn(CompetitorsRepository.prototype, "upsertOrigins")
+      .mockResolvedValue([
+        {
+          occurrenceId: "00000000-0000-4000-8000-000000000010",
+          competitorId: "00000000-0000-4000-8000-000000000011",
+        },
+      ]);
 
     await expect(
       projectCollectionSnapshotCompetitors(
@@ -953,14 +1012,16 @@ describe("projectCollectionSnapshotCompetitors", () => {
       ),
     ).resolves.toBe(1);
     expect(findPreview).not.toHaveBeenCalled();
-    expect(upsert).toHaveBeenCalledWith(scope, {
-      originKind: "serp_overlap",
-      domain: "rival.example",
-      name: null,
-      snapshotId,
-      observationId,
-      sourcePointer: "/valueJson/competitorDomain",
-    });
+    expect(upsert).toHaveBeenCalledWith(scope, [
+      {
+        originKind: "serp_overlap",
+        domain: "rival.example",
+        name: null,
+        snapshotId,
+        observationId,
+        sourcePointer: "/valueJson/competitorDomain",
+      },
+    ]);
   });
 
   it("projects v3 organic and AI observations through their distinct canonical origins", async () => {
@@ -985,11 +1046,17 @@ describe("projectCollectionSnapshotCompetitors", () => {
       nextCursor: null,
     });
     const upsert = vi
-      .spyOn(CompetitorsRepository.prototype, "upsertOrigin")
-      .mockResolvedValue({
-        occurrenceId: "00000000-0000-4000-8000-000000000010",
-        competitorId: "00000000-0000-4000-8000-000000000011",
-      });
+      .spyOn(CompetitorsRepository.prototype, "upsertOrigins")
+      .mockResolvedValue([
+        {
+          occurrenceId: "00000000-0000-4000-8000-000000000010",
+          competitorId: "00000000-0000-4000-8000-000000000011",
+        },
+        {
+          occurrenceId: "00000000-0000-4000-8000-000000000012",
+          competitorId: "00000000-0000-4000-8000-000000000011",
+        },
+      ]);
 
     await expect(
       projectCollectionSnapshotCompetitors(
@@ -998,19 +1065,17 @@ describe("projectCollectionSnapshotCompetitors", () => {
         dataForSeoV3Snapshot(),
       ),
     ).resolves.toBe(2);
-    expect(upsert).toHaveBeenNthCalledWith(
-      1,
-      scope,
+    expect(upsert).toHaveBeenCalledWith(scope, [
       expect.objectContaining({ originKind: "serp_overlap" }),
-    );
-    expect(upsert).toHaveBeenNthCalledWith(2, scope, {
-      originKind: "ai_citation",
-      domain: "rival.example",
-      name: null,
-      snapshotId,
-      observationId: "00000000-0000-4000-8000-000000000098",
-      sourcePointer: "/valueJson/competitorDomain",
-    });
+      {
+        originKind: "ai_citation",
+        domain: "rival.example",
+        name: null,
+        snapshotId,
+        observationId: "00000000-0000-4000-8000-000000000098",
+        sourcePointer: "/valueJson/competitorDomain",
+      },
+    ]);
   });
 
   it("never inspects or projects unrelated providers", async () => {
@@ -1024,7 +1089,7 @@ describe("projectCollectionSnapshotCompetitors", () => {
     );
     const upsert = vi.spyOn(
       CompetitorsRepository.prototype,
-      "upsertOrigin",
+      "upsertOrigins",
     );
 
     for (const provider of ["gsc", "ai_citation", "serp"]) {

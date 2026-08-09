@@ -1101,6 +1101,7 @@ export type GrowthMapCanonicalObservationValuePointer = z.infer<
 export const GrowthMapKeywordSourceCounts = z
   .object({
     all: z.number().int().min(0),
+    product_profile: z.number().int().min(0),
     csv_import: z.number().int().min(0),
     dataforseo_ranked: z.number().int().min(0),
     gsc_top_query: z.number().int().min(0),
@@ -1257,6 +1258,7 @@ const KeywordSourceOccurrenceCommonShape = {
 } as const;
 
 export const GrowthMapKeywordSourceKind = z.enum([
+  "product_profile",
   "csv_import",
   "dataforseo_ranked",
   "gsc_top_query",
@@ -1271,6 +1273,20 @@ export type GrowthMapKeywordSourceKind = z.infer<
 const GrowthMapKeywordSourceOccurrenceObject = z.discriminatedUnion(
   "sourceKind",
   [
+    z
+      .object({
+        ...KeywordSourceOccurrenceCommonShape,
+        sourceKind: z.literal("product_profile"),
+        productProfileId: Uuid,
+        snapshotId: z.null(),
+        sourceObservationId: z.null(),
+        sourcePointer: z.null(),
+        providerDataAsOf: z.null(),
+        freshness: z.literal("unknown"),
+        scopeBasis: z.literal("project_context"),
+        scopeLimitation: BoundedText,
+      })
+      .strict(),
     z
       .object({
         ...KeywordSourceOccurrenceCommonShape,
@@ -1613,6 +1629,8 @@ function keywordSourceIdentity(
   occurrence: z.infer<typeof GrowthMapKeywordSourceOccurrenceObject>,
 ): string {
   switch (occurrence.sourceKind) {
+    case "product_profile":
+      return `${occurrence.sourceKind}:${occurrence.productProfileId}:${occurrence.occurrenceId}`;
     case "csv_import":
       return `${occurrence.sourceKind}:${occurrence.importPreviewId}:${occurrence.snapshotId}:${occurrence.sourceObservationId}:${occurrence.sourcePointer}`;
     case "dataforseo_ranked":

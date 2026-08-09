@@ -8,6 +8,7 @@ import {
   type CanonicalKeywordOccurrenceInput,
   type KeywordOccurrenceInput,
   type ManualKeywordOccurrenceInput,
+  type ProductProfileKeywordOccurrenceInput,
 } from "./keyword-occurrences.ts";
 
 interface RecordedCall {
@@ -113,6 +114,32 @@ function occurrence(
   };
 }
 
+function productProfileOccurrence(
+  overrides: Partial<ProductProfileKeywordOccurrenceInput> = {},
+): ProductProfileKeywordOccurrenceInput {
+  const productProfileId =
+    overrides.productProfileId ?? "00000000-0000-4000-8000-000000000099";
+  return {
+    manualEntryId: null,
+    dataSnapshotId: null,
+    normalizedObservationId: null,
+    productProfileId,
+    displayKeyword: "best customer onboarding software for b2b saas",
+    normalizedKeyword: "best customer onboarding software for b2b saas",
+    market: "US",
+    languageTag: "en-US",
+    queryKind: "generative_query",
+    sourceKind: "product_profile",
+    scopeBasis: "project_context",
+    sourcePointer: null,
+    sourceRef:
+      `product_profile:${productProfileId}#profile-generative-query.v1/best-category-audience`,
+    collectedAt: "2026-08-09T09:30:00.000Z",
+    providerDataAsOf: null,
+    ...overrides,
+  };
+}
+
 describe("normalizeKeywordIdentity", () => {
   it("uses NFKC, collapses whitespace and lowercases without losing words", () => {
     expect(normalizeKeywordIdentity("  Ｃustomer\tONBOARDING  ")).toBe(
@@ -122,6 +149,81 @@ describe("normalizeKeywordIdentity", () => {
 });
 
 describe("KeywordOccurrencesRepository", () => {
+  it("converges 200 canonical keyword occurrences in one bounded database call", async () => {
+    const db = new FakeExecutor();
+    const inputs = Array.from({ length: 200 }, (_, index) => {
+      const observationId = `00000000-0000-4000-8001-${String(index + 1).padStart(12, "0")}`;
+      return occurrence({
+        normalizedObservationId: observationId,
+        displayKeyword: `Customer Onboarding Software ${index + 1}`,
+        normalizedKeyword: `customer onboarding software ${index + 1}`,
+        sourceRef: `observation:${observationId}#/valueJson/keyword`,
+      });
+    });
+    const rows = inputs.map((_, index) => ({
+      input_ordinal: index + 1,
+      occurrence_id: `10000000-0000-4000-8001-${String(index + 1).padStart(12, "0")}`,
+      entity_id: `20000000-0000-4000-8001-${String(index + 1).padStart(12, "0")}`,
+    }));
+    db.enqueue({ rows });
+    const repo = new KeywordOccurrencesRepository(db as never) as unknown as {
+      upsertManyIntoLibrary(
+        selectedScope: typeof scope,
+        selectedInputs: readonly CanonicalKeywordOccurrenceInput[],
+      ): Promise<readonly { occurrenceId: string; entityId: string }[]>;
+    };
+
+    await expect(repo.upsertManyIntoLibrary(scope, inputs)).resolves.toHaveLength(
+      200,
+    );
+    expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toContain(
+      "app.upsert_keyword_library_occurrences_batch",
+    );
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([scope.workspaceId, scope.projectId]),
+    );
+    const payload = JSON.parse(compiled.params[2] as string) as readonly {
+      readonly productProfileId?: unknown;
+    }[];
+    expect(payload).toHaveLength(200);
+    expect(payload.every((input) => input.productProfileId === null)).toBe(
+      true,
+    );
+  });
+
+  it("passes Product Profile ids through the exact batch JSON payload", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          input_ordinal: 1,
+          occurrence_id: "00000000-0000-4000-8000-000000000013",
+          entity_id: "00000000-0000-4000-8000-000000000014",
+        },
+      ],
+    });
+    const repo = new KeywordOccurrencesRepository(db as never);
+    const input = productProfileOccurrence();
+
+    await expect(repo.upsertManyIntoLibrary(scope, [input])).resolves.toEqual([
+      {
+        occurrenceId: "00000000-0000-4000-8000-000000000013",
+        entityId: "00000000-0000-4000-8000-000000000014",
+      },
+    ]);
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(JSON.parse(compiled.params[2] as string)).toEqual([
+      expect.objectContaining({ productProfileId: input.productProfileId }),
+    ]);
+  });
+
   it("atomically upserts an immutable occurrence, stable entity and provenance membership", async () => {
     const db = new FakeExecutor();
     db.enqueue({
@@ -148,7 +250,7 @@ describe("KeywordOccurrencesRepository", () => {
     expect(compiled.params).toContain("en-US");
     expect(compiled.params).toContain("provider_collection_scope");
     expect(compiled.params).toContain("/valueJson/keyword");
-    expect(compiled.params).toContain(null);
+    expect(compiled.params[5]).toBeNull();
   });
 
   it("uses the caller manual entry UUID as the occurrence without fake provider lineage", async () => {
@@ -192,6 +294,37 @@ describe("KeywordOccurrencesRepository", () => {
     );
   });
 
+  it("accepts Product Profile-derived GenerativeQueries without fake provider lineage", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          occurrence_id: "00000000-0000-4000-8000-000000000013",
+          entity_id: "00000000-0000-4000-8000-000000000014",
+        },
+      ],
+    });
+    const repo = new KeywordOccurrencesRepository(db as never);
+    const input = productProfileOccurrence();
+
+    await expect(repo.upsertIntoLibrary(scope, input)).resolves.toEqual({
+      occurrenceId: "00000000-0000-4000-8000-000000000013",
+      entityId: "00000000-0000-4000-8000-000000000014",
+    });
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.params[5]).toBe(input.productProfileId);
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([
+        "product_profile",
+        "project_context",
+        "product_profile:00000000-0000-4000-8000-000000000099#profile-generative-query.v1/best-category-audience",
+        null,
+      ]),
+    );
+  });
+
   it("rejects a non-canonical identity and always requires canonical Observation lineage", async () => {
     const db = new FakeExecutor();
     const repo = new KeywordOccurrencesRepository(db as never);
@@ -212,6 +345,44 @@ describe("KeywordOccurrencesRepository", () => {
       ),
     ).rejects.toThrow(/normalizedObservationId/i);
     expect(db.calls).toEqual([]);
+  });
+
+  it("rejects non-canonical Product Profile language casing before SQL", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordOccurrencesRepository(db as never);
+
+    await expect(
+      repo.upsertIntoLibrary(
+        scope,
+        productProfileOccurrence({ languageTag: "en-us" }),
+      ),
+    ).rejects.toThrow(/canonical BCP-47/i);
+    expect(db.calls).toEqual([]);
+  });
+
+  it("preserves legacy provider language-tag canonicalization", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          occurrence_id: "00000000-0000-4000-8000-000000000010",
+          entity_id: "00000000-0000-4000-8000-000000000011",
+        },
+      ],
+    });
+    const repo = new KeywordOccurrencesRepository(db as never);
+
+    await expect(
+      repo.upsertIntoLibrary(scope, occurrence({ languageTag: "en-us" })),
+    ).resolves.toEqual({
+      occurrenceId: "00000000-0000-4000-8000-000000000010",
+      entityId: "00000000-0000-4000-8000-000000000011",
+    });
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.params).toContain("en-US");
   });
 
   it("rejects a manual source reference or provider lineage that does not match its occurrence UUID", async () => {
@@ -410,6 +581,7 @@ describe("KeywordOccurrencesRepository", () => {
     const predicate = new PgDialect().sqlToQuery(
       db.last("where").args[0] as never,
     );
+    expect(db.last("select").args[0]).toHaveProperty("product_profile_id");
     expect(predicate.sql).toContain('"workspace_id" = $1');
     expect(predicate.sql).toContain('"project_id" = $2');
     expect(predicate.sql).toContain('"archived_at" is null');
@@ -447,6 +619,7 @@ describe("KeywordOccurrencesRepository", () => {
     expect(compiled.sql).toContain('"workspace_id" = $');
     expect(compiled.sql).toContain('"project_id" = $');
     expect(compiled.sql).toContain('"archived_at" is null');
+    expect(compiled.sql).toContain("product_profile_id");
     expect(compiled.params).toEqual(
       expect.arrayContaining([
         scope.workspaceId,

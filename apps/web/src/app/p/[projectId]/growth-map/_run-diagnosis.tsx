@@ -34,6 +34,7 @@ import {
   runDiagnosisButtonLabelKey,
   runDiagnosisEventFromError,
   runDiagnosisLocked,
+  runDiagnosisStatusLabelKey,
   runDiagnosisStatusPill,
   shouldRefreshAfterTerminal,
   showRunStatusReadError,
@@ -85,17 +86,37 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
 
   const polledId = runQuery.data?.id;
   const polledStatus = runQuery.data?.status;
+  const polledProgressCurrent = runQuery.data?.progress.current;
+  const polledProgressTotal = runQuery.data?.progress.total;
   useEffect(() => {
     if (state.phase !== "tracking") return;
     if (polledId === undefined || polledStatus === undefined) return;
     if (polledId !== state.trackedRunId) return;
     if (!isTerminalRunStatus(polledStatus)) return;
     const refresh = shouldRefreshAfterTerminal(state, polledId, polledStatus);
-    dispatch({ type: "runTerminal", runId: polledId, status: polledStatus });
+    dispatch({
+      type: "runTerminal",
+      runId: polledId,
+      status: polledStatus,
+      ...(polledProgressCurrent === undefined
+        ? {}
+        : { progressCurrent: polledProgressCurrent }),
+      ...(polledProgressTotal === undefined
+        ? {}
+        : { progressTotal: polledProgressTotal }),
+    });
     if (refresh) {
       void invalidateAnalysisRefreshTerminalQueries(queryClient, projectId);
     }
-  }, [state, polledId, polledStatus, queryClient, projectId]);
+  }, [
+    state,
+    polledId,
+    polledStatus,
+    polledProgressCurrent,
+    polledProgressTotal,
+    queryClient,
+    projectId,
+  ]);
 
   // Keep the existing source read/retry UX, but do not require a previously
   // collected Crawl snapshot: Analysis Refresh owns its required Crawl step.
@@ -148,9 +169,20 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
   const showSpinner =
     state.phase === "submitting" || state.phase === "tracking";
   const pillStatus = runDiagnosisStatusPill(state, polledStatus);
+  const pillLabelKey = runDiagnosisStatusLabelKey(state, polledStatus, {
+    current: polledProgressCurrent ?? 0,
+    total: polledProgressTotal ?? null,
+  });
   const labelKey = runDiagnosisButtonLabelKey(state);
+  const buttonLabel =
+    labelKey === "runInProgress"
+      ? t("runInProgress")
+      : labelKey === "rerunDiagnosis"
+        ? t("rerunDiagnosis")
+        : t("runDiagnosis");
 
-  const noteId = "sf-growth-map-run-note";
+  const scopeNoteId = "sf-growth-map-run-scope-note";
+  const noteId = "sf-growth-map-run-gate-note";
   const note =
     state.serverGate === "context" ? (
       <>
@@ -177,6 +209,8 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
     ) : sourceReadState === "error" ? (
       <>{`${tNav("sources")}: ${tCommon("error")}`}</>
     ) : null;
+  const describedBy =
+    note === null ? scopeNoteId : `${scopeNoteId} ${noteId}`;
 
   return (
     <div className={styles.runDiagnosis} data-run-diagnosis="">
@@ -186,7 +220,7 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
           className={styles.runDiagnosisButton}
           onClick={() => void onRun()}
           disabled={!canRun}
-          aria-describedby={note === null ? undefined : noteId}
+          aria-describedby={describedBy}
         >
           {showSpinner || createRun.isPending ? (
             // Decorative here: the button's visible label already announces
@@ -195,7 +229,7 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
             // default, so it wins; aria-hidden drops the node from the tree.
             <Spinner size="sm" aria-hidden="true" role="presentation" />
           ) : null}
-          {t(labelKey)}
+          {buttonLabel}
         </Button>
         {/* One stable live region (D8); the pill mounts inside it. */}
         <div
@@ -207,11 +241,16 @@ export function RunDiagnosis({ projectId }: { readonly projectId: string }) {
         >
           {pillStatus === null ? null : (
             <StatusPill tone={runStatusTone(pillStatus)}>
-              {tRun(pillStatus)}
+              {pillLabelKey === "runCompletedWithLimitations"
+                ? t("runCompletedWithLimitations")
+                : tRun(pillStatus)}
             </StatusPill>
           )}
         </div>
       </div>
+      <p id={scopeNoteId} className={styles.runDiagnosisNote}>
+        {t("runDiagnosisScopeNote")}
+      </p>
       {note === null ? null : (
         <p id={noteId} className={styles.runDiagnosisNote}>
           {note}

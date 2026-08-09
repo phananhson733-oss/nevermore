@@ -7,7 +7,6 @@ import type {
   GrowthMapCoverage,
   GrowthMapCompetitorAiCitationInsight,
   GrowthMapCompetitorLibraryItem,
-  GrowthMapCompetitorOriginOccurrence,
   GrowthMapCompetitorRelationship,
   GrowthMapCompetitorReviewStatus,
   GrowthMapCompetitorSerpOverlap,
@@ -151,6 +150,7 @@ import {
   buildInternalLinkMapProjection,
   competitorAiCitationDisplay,
   competitorDetailReadState,
+  competitorOriginSummaries,
   competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
   competitorOrganicOverlapDisplay,
@@ -186,6 +186,7 @@ import {
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   selectCompetitorMonitorItem,
+  shouldShowCompetitorMonitor,
   shouldShowGrowthMapReviewError,
   topicNodeAllowedParentIds,
   urlPresentation,
@@ -6129,6 +6130,16 @@ function KeywordSourceOccurrenceCard({
               </dd>
             </div>
           ) : null}
+          {occurrence.sourceKind === "product_profile" ? (
+            <div>
+              <dt>{t("productProfileId")}</dt>
+              <dd>
+                <code title={occurrence.productProfileId}>
+                  {occurrence.productProfileId}
+                </code>
+              </dd>
+            </div>
+          ) : null}
           {occurrence.sourceKind === "interview_summary" ||
           occurrence.sourceKind === "user_review" ? (
             <div>
@@ -7965,9 +7976,15 @@ function KeywordLibraryPane({
       count:
         librarySourceCounts?.[sourceKind] ??
         relationProjection.loadedSourceCounts[sourceKind],
-      tone: (["amber", "cobalt", "mint", "violet", "coral", "mint"] as const)[
-        index
-      ]!,
+      tone: ([
+        "amber",
+        "cobalt",
+        "mint",
+        "violet",
+        "coral",
+        "mint",
+        "violet",
+      ] as const)[index]!,
     })),
   ];
   const relationStatusText =
@@ -8215,14 +8232,6 @@ function KeywordLibraryPane({
   );
 }
 
-type ProductProfileCompetitorOrigin = Extract<
-  GrowthMapCompetitorOriginOccurrence,
-  { readonly originKind: "product_profile" }
->;
-
-type ProductProfileOriginEvidence =
-  ProductProfileCompetitorOrigin["evidenceRefs"][number];
-
 const COMPETITOR_STATUS_CLASS = {
   candidate: styles.competitorStatusCandidate,
   approved: styles.competitorStatusApproved,
@@ -8402,12 +8411,10 @@ function CompetitorRow({
   item,
   selected,
   onSelect,
-  onOpenProfile,
 }: {
   readonly item: GrowthMapCompetitorLibraryItem;
   readonly selected: boolean;
   readonly onSelect: (competitorId: string) => void;
-  readonly onOpenProfile: (competitorId: string) => void;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
 
@@ -8480,8 +8487,8 @@ function CompetitorRow({
         <button
           type="button"
           className={styles.competitorRowArrow}
-          aria-label={t("openFullProfile")}
-          onClick={() => onOpenProfile(item.competitorId)}
+          aria-label={t("selectProfile")}
+          onClick={() => onSelect(item.competitorId)}
         >
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </button>
@@ -8494,12 +8501,10 @@ function CompetitorList({
   items,
   selectedCompetitorId,
   onSelect,
-  onOpenProfile,
 }: {
   readonly items: readonly GrowthMapCompetitorLibraryItem[];
   readonly selectedCompetitorId: string | null;
   readonly onSelect: (competitorId: string) => void;
-  readonly onOpenProfile: (competitorId: string) => void;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   return (
@@ -8521,7 +8526,6 @@ function CompetitorList({
             item={item}
             selected={selectedCompetitorId === item.competitorId}
             onSelect={onSelect}
-            onOpenProfile={onOpenProfile}
           />
         ))}
       </ul>
@@ -8545,143 +8549,6 @@ function CompetitorOriginFact({
         {technical ? <code title={String(value)}>{String(value)}</code> : value}
       </dd>
     </div>
-  );
-}
-
-function productProfileEvidenceSourceId(
-  evidence: ProductProfileOriginEvidence,
-): string | null {
-  switch (evidence.kind) {
-    case "snapshot":
-      return evidence.snapshotId;
-    case "pageSnapshot":
-      return evidence.pageSnapshotId;
-    case "observation":
-      return evidence.observationId;
-    case "analysisInvocation":
-      return evidence.analysisInvocationId;
-    case "declaredHint":
-    case "userEdit":
-      return null;
-  }
-}
-
-function CompetitorEvidenceList({
-  origin,
-}: {
-  readonly origin: GrowthMapCompetitorOriginOccurrence;
-}) {
-  const t = useTranslations("growthMap.competitorLibrary");
-  if (origin.evidenceRefs.length === 0) {
-    return (
-      <p className={styles.competitorEvidenceEmpty}>{t("noEvidenceRefs")}</p>
-    );
-  }
-  return (
-    <ul className={styles.competitorEvidenceList}>
-      {origin.originKind === "product_profile"
-        ? origin.evidenceRefs.map((evidence) => {
-            const sourceId = productProfileEvidenceSourceId(evidence);
-            return (
-              <li key={evidence.evidenceRefId}>
-                <span>
-                  <strong>{t(`evidenceKind.${evidence.kind}`)}</strong>
-                  <code title={evidence.evidenceRefId}>
-                    {evidence.evidenceRefId}
-                  </code>
-                </span>
-                {sourceId === null ? null : (
-                  <code title={sourceId}>{sourceId}</code>
-                )}
-              </li>
-            );
-          })
-        : origin.evidenceRefs.map((evidence) => (
-            <li key={evidence.evidenceId}>
-              <span>
-                <strong>{t("evidenceKind.evidence")}</strong>
-                <code title={evidence.evidenceId}>{evidence.evidenceId}</code>
-              </span>
-            </li>
-          ))}
-    </ul>
-  );
-}
-
-/**
- * The immutable per-origin provenance facts. Rendered inside the drawer's
- * "why was this discovered" rows; field set is unchanged from the previous
- * origin occurrence cards.
- */
-function CompetitorOriginFactsDl({
-  origin,
-}: {
-  readonly origin: GrowthMapCompetitorOriginOccurrence;
-}) {
-  const t = useTranslations("growthMap.competitorLibrary");
-  return (
-    <dl className={styles.competitorOriginFacts}>
-      <CompetitorOriginFact
-        label={t("occurrenceId")}
-        value={origin.occurrenceId}
-      />
-      {origin.originKind === "product_profile" ? (
-        <>
-          <CompetitorOriginFact
-            label={t("productProfileId")}
-            value={origin.productProfileId}
-          />
-          <CompetitorOriginFact
-            label={t("profileVersion")}
-            value={origin.profileVersion}
-            technical={false}
-          />
-          <CompetitorOriginFact
-            label={t("candidateId")}
-            value={origin.candidateId}
-          />
-          <CompetitorOriginFact
-            label={t("fieldProvenancePath")}
-            value={origin.fieldProvenancePath}
-          />
-        </>
-      ) : origin.originKind === "csv_keyword_gap" ? (
-        <>
-          <CompetitorOriginFact
-            label={t("snapshotId")}
-            value={origin.snapshotId}
-          />
-          <CompetitorOriginFact
-            label={t("observationId")}
-            value={origin.observationId}
-          />
-          <CompetitorOriginFact
-            label={t("sourcePointer")}
-            value={origin.sourcePointer}
-          />
-          <CompetitorOriginFact
-            label={t("importPreviewId")}
-            value={origin.importPreviewId}
-          />
-        </>
-      ) : origin.originKind === "manual" ? (
-        <CompetitorOriginFact
-          label={t("manualEntryId")}
-          value={origin.manualEntryId}
-        />
-      ) : (
-        <>
-          <CompetitorOriginFact
-            label={t("snapshotId")}
-            value={origin.snapshotId}
-          />
-          <CompetitorOriginFact
-            label={t("observationId")}
-            value={origin.observationId}
-          />
-        </>
-      )}
-    </dl>
   );
 }
 
@@ -9269,12 +9136,12 @@ function CompetitorReviewDialog({
                 })
               : t(`success.${successState.reviewStatus}`)}
           </p>
-          <footer className={styles.keywordReviewFooter}>
-            <span>
-              {t("revision", {
-                revision: reviewDetail?.revision ?? detail.revision,
-              })}
-            </span>
+          <footer
+            className={cx(
+              styles.keywordReviewFooter,
+              styles.competitorReviewFooter,
+            )}
+          >
             <div>
               <Button type="button" onClick={onRequestClose}>
                 {t("done")}
@@ -9416,12 +9283,12 @@ function CompetitorReviewDialog({
             </p>
           ) : null}
 
-          <footer className={styles.keywordReviewFooter}>
-            <span>
-              {t("revision", {
-                revision: reviewDetail?.revision ?? detail.revision,
-              })}
-            </span>
+          <footer
+            className={cx(
+              styles.keywordReviewFooter,
+              styles.competitorReviewFooter,
+            )}
+          >
             <div>
               <Button
                 type="button"
@@ -9445,10 +9312,9 @@ function CompetitorReviewDialog({
 }
 
 /**
- * The Competitor full-profile drawer. It reuses the already-fetched review
- * detail (no extra request), carries the monitor section, origin provenance,
- * and the record disclosure moved out of the detail panel, and mirrors the
- * review dialog's focus management via useGrowthMapModalA11y.
+ * The explicit Competitor full-profile drawer. Immutable origin occurrences
+ * stay in the read model but are grouped into business-facing discovery routes
+ * here; technical IDs and raw per-run rows are not the default customer view.
  */
 function CompetitorProfileDrawer({
   projectId,
@@ -9502,6 +9368,11 @@ function CompetitorProfileDrawer({
       : participation === "awaiting_confirmation"
         ? "candidate"
         : "excluded";
+  const originSummaries = competitorOriginSummaries(detail.originOccurrences);
+  const showMonitor = shouldShowCompetitorMonitor(
+    monitorResponse,
+    monitorItem,
+  );
 
   return createPortal(
     <div
@@ -9583,10 +9454,11 @@ function CompetitorProfileDrawer({
 
           <section className={styles.competitorDrawerSection}>
             <h3>{t("drawer.discoverySection")}</h3>
-            {detail.originOccurrences.map((origin) => (
+            {originSummaries.map((origin) => (
               <article
-                key={origin.occurrenceId}
+                key={origin.originKind}
                 className={styles.competitorDrawerOriginRow}
+                data-origin-kind={origin.originKind}
               >
                 <header>
                   <span className={styles.competitorDrawerOriginBadge}>
@@ -9596,56 +9468,42 @@ function CompetitorProfileDrawer({
                       : t("drawer.badgeManual")}
                   </span>
                   <strong>{t(`originKind.${origin.originKind}`)}</strong>
-                  {origin.observedAt === null ? (
+                  {origin.latestObservedAt === null ? (
                     <span className={styles.competitorObservedState}>
                       {t("notObserved")}
                     </span>
                   ) : (
-                    <time dateTime={origin.observedAt}>
-                      {formatObservedAt(locale, origin.observedAt)}
+                    <time dateTime={origin.latestObservedAt}>
+                      {formatObservedAt(locale, origin.latestObservedAt)}
                     </time>
                   )}
                 </header>
-                <details className={styles.traceDisclosure}>
-                  <summary>{t("viewOriginDetails")}</summary>
-                  <CompetitorOriginFactsDl origin={origin} />
-                  <div className={styles.competitorEvidenceBlock}>
-                    <strong>{t("evidenceRefs")}</strong>
-                    <CompetitorEvidenceList origin={origin} />
-                  </div>
-                </details>
+                <p className={styles.competitorDrawerOriginSummary}>
+                  {t(`drawer.sourceSummary.${origin.originKind}`, {
+                    count: origin.occurrenceCount,
+                  })}
+                </p>
               </article>
             ))}
           </section>
 
-          <CompetitorMonitorSection
-            projectId={projectId}
-            response={monitorResponse}
-            item={monitorItem}
-            isPending={isMonitorPending}
-            isError={isMonitorError}
-            onRetry={onRetryMonitor}
-            isUpdating={isMonitorUpdating}
-            isUpdateSuccess={isMonitorUpdateSuccess}
-            updateError={monitorUpdateError}
-            onToggle={onToggleMonitor}
-            onRefreshConfig={onRefreshMonitorConfig}
-          />
+          {showMonitor ? (
+            <CompetitorMonitorSection
+              projectId={projectId}
+              response={monitorResponse}
+              item={monitorItem}
+              isPending={isMonitorPending}
+              isError={isMonitorError}
+              onRetry={onRetryMonitor}
+              isUpdating={isMonitorUpdating}
+              isUpdateSuccess={isMonitorUpdateSuccess}
+              updateError={monitorUpdateError}
+              onToggle={onToggleMonitor}
+              onRefreshConfig={onRefreshMonitorConfig}
+            />
+          ) : null}
         </div>
         <footer className={styles.competitorDrawerFooter}>
-          <details className={styles.recordDisclosure}>
-            <summary>{t("viewRecordDetails")}</summary>
-            <div className={styles.recordDisclosureBody}>
-              <span>
-                {t("competitorId")}
-                <code title={detail.competitorId}>{detail.competitorId}</code>
-              </span>
-              <span>
-                {t("revision")}
-                <strong>{detail.revision}</strong>
-              </span>
-            </div>
-          </details>
           <Button type="button" onClick={onOpenReview}>
             <Pencil aria-hidden="true" size={16} />
             {detail.reviewStatus === "candidate"
@@ -9699,11 +9557,30 @@ function CompetitorDetailPanel({
   const organicOverlapDisplay = competitorOrganicOverlapDisplay(
     detail.serpOverlap,
   );
+  const sharedKeywordDisplay = competitorSharedKeywordDisplay(detail);
+  const compactOrganicOverlapValue =
+    organicOverlapDisplay.state === "available"
+      ? `${formatNumber(locale, organicOverlapDisplay.percentage)}%`
+      : t("fallback.insufficientData");
+  const compactSharedKeywordValue =
+    sharedKeywordDisplay.state === "counted"
+      ? formatNumber(locale, sharedKeywordDisplay.value)
+      : sharedKeywordDisplay.state === "collecting"
+        ? t("fallback.collecting")
+        : t("fallback.insufficientData");
+  const compactAiCitationValue =
+    detail.aiCitationInsight.availability === "available"
+      ? formatNumber(locale, detail.aiCitationInsight.value)
+      : t("fallback.unavailable");
+  const sourceSummaryCount = competitorOriginSummaries(
+    detail.originOccurrences,
+  ).length;
   return (
     <>
       <aside
         className={cx(styles.detailPanel, styles.competitorDetailPanel)}
         aria-label={t("selectedDetailLabel")}
+        data-testid="competitor-detail-panel"
       >
         <header className={styles.competitorDetailHeader}>
           <div className={styles.detailEyebrow}>
@@ -9718,11 +9595,6 @@ function CompetitorDetailPanel({
               : t(`relationship.${detail.relationship}`)}
           </p>
         </header>
-
-        <div className={styles.competitorDetailTags}>
-          <CoveragePill coverage={detail.coverage} />
-          <LimitationList limitations={detail.coverage.limitations} />
-        </div>
 
         <section
           className={cx(
@@ -9748,21 +9620,21 @@ function CompetitorDetailPanel({
         </section>
 
         <div className={styles.competitorDetailMetricsFour}>
-          <div>
+          <div data-testid="competitor-detail-organic-overlap">
             <span>{t("metrics.organicOverlap")}</span>
-            <CompetitorOverlapValue insight={detail.serpOverlap} />
+            <strong>{compactOrganicOverlapValue}</strong>
           </div>
-          <div>
+          <div data-testid="competitor-detail-shared-keywords">
             <span>{t("metrics.sharedKeywords")}</span>
-            <CompetitorSharedKeywordsValue item={detail} />
+            <strong>{compactSharedKeywordValue}</strong>
           </div>
-          <div>
+          <div data-testid="competitor-detail-ai-citations">
             <span>{t("metrics.aiCitations")}</span>
-            <CompetitorAiCitationValue insight={detail.aiCitationInsight} />
+            <strong>{compactAiCitationValue}</strong>
           </div>
-          <div>
+          <div data-testid="competitor-detail-evidence">
             <span>{t("metrics.evidence")}</span>
-            <strong>{detail.originOccurrences.length}</strong>
+            <strong>{sourceSummaryCount}</strong>
           </div>
         </div>
 
@@ -9795,7 +9667,7 @@ function CompetitorDetailPanel({
             <dt>{t("facts.systemEvidence")}</dt>
             <dd>
               {t("systemEvidenceCount", {
-                count: detail.originOccurrences.length,
+                count: sourceSummaryCount,
               })}
             </dd>
           </div>
@@ -10031,8 +9903,8 @@ function CompetitorLibraryPane({
   const [competitorSearch, setCompetitorSearch] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<GrowthMapCompetitorStatusFilter>("all");
-  // Full-profile drawer visibility lives beside the selection so both the
-  // row arrow and the detail panel action drive the same drawer.
+  // The row disclosure only changes the selected compact profile. The full
+  // profile is a deliberate second-level action inside that profile.
   const [profileOpen, setProfileOpen] = useState(false);
   const listQuery = useGrowthMapCompetitors(projectId, {
     cursor,
@@ -10098,13 +9970,6 @@ function CompetitorLibraryPane({
 
   function selectCompetitor(competitorId: string): void {
     navigation.request({ selectedCompetitorId: competitorId });
-  }
-
-  function openCompetitorProfile(competitorId: string): void {
-    if (competitorId !== selectedCompetitorId) {
-      selectCompetitor(competitorId);
-    }
-    setProfileOpen(true);
   }
 
   function goNext(): void {
@@ -10279,7 +10144,6 @@ function CompetitorLibraryPane({
                   items={filteredItems}
                   selectedCompetitorId={selectedCompetitorId}
                   onSelect={selectCompetitor}
-                  onOpenProfile={openCompetitorProfile}
                 />
               )}
               <nav

@@ -1102,6 +1102,7 @@ export const keywordOccurrences = app.table("keyword_occurrences", {
     .references(() => clientProjects.id),
   data_snapshot_id: uuid().references(() => dataSnapshots.id),
   normalized_observation_id: uuid().references(() => normalizedObservations.id),
+  product_profile_id: uuid().references(() => icpProfiles.id),
   display_keyword: text().notNull(),
   normalized_keyword: text().notNull(),
   market: text().notNull(),

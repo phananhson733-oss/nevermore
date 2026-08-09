@@ -52,7 +52,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     lock.migrationHead,
-    "0047_dataforseo_competitor_metrics",
+    "0049_product_profile_keyword_lineage",
   );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
@@ -157,6 +157,14 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
   ]) {
     assert.match(verifier, new RegExp(invariant));
   }
+  assert.match(
+    verifier,
+    /Object\.keys\(keywordSourceOccurrence\?\.discriminator\?\.mapping \?\? \{\}\),\s*\[\s*"product_profile",\s*"csv_import",/u,
+  );
+  assert.match(
+    verifier,
+    /\(keywordSourceOccurrence\?\.oneOf \?\? \[\]\)\.map\(\(shape\) => shape\.\$ref\),\s*\[\s*"#\/components\/schemas\/GrowthMapKeywordProductProfileOccurrence",\s*"#\/components\/schemas\/GrowthMapKeywordCsvImportOccurrence",/u,
+  );
 });
 
 test("keeps the Sources read behind confirmed Product/ICP without hiding archived history", () => {

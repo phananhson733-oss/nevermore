@@ -380,6 +380,161 @@ describeDb("DataForSEO Search Landscape competitor origin authority", () => {
     await handle?.end();
   });
 
+  it("batches duplicate/retry-safe origins and rolls back one corrupted lineage atomically", async () => {
+    const project = await createProject(handle);
+    const observed = await createCompositeObservation(
+      handle,
+      project,
+      "batch-serp-rival.example",
+    );
+    const scope = {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+    };
+    let executeCount = 0;
+    const executor = {
+      execute(query: unknown) {
+        executeCount += 1;
+        return handle.db.execute(query as never);
+      },
+    };
+    const repository = new CompetitorsRepository(executor as never) as unknown as {
+      upsertOrigins(
+        selectedScope: typeof scope,
+        selectedInputs: readonly SerpOverlapCompetitorOriginInput[],
+      ): Promise<readonly { occurrenceId: string; competitorId: string }[]>;
+    };
+
+    await expect(repository.upsertOrigins(scope, [])).resolves.toEqual([]);
+    expect(executeCount).toBe(0);
+
+    const canonical = serpInput(observed);
+    await expect(
+      repository.upsertOrigins(scope, [
+        canonical,
+        { ...canonical, domain: "lineage-drift.example" },
+      ]),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    expect(executeCount).toBe(1);
+    const rolledBack = await handle.pool.query<{
+      entities: string;
+      origins: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM app.competitor_entities WHERE project_id = $1) AS entities,
+         (SELECT count(*) FROM app.competitor_origin_occurrences WHERE project_id = $1) AS origins`,
+      [project.projectId],
+    );
+    expect(rolledBack.rows[0]).toEqual({ entities: "0", origins: "0" });
+
+    await expect(
+      handle.pool.query(
+        `SELECT *
+           FROM app.upsert_competitor_origins_batch(
+             $1::uuid,
+             $2::uuid,
+             $3::jsonb
+           )`,
+        [
+          scope.workspaceId,
+          scope.projectId,
+          JSON.stringify([
+            {
+              domain: canonical.domain,
+              name: null,
+              originKind: "serp_overlap",
+              productProfileId: null,
+              profileVersion: null,
+              candidateId: null,
+              fieldProvenancePath: null,
+              evidenceRefs: null,
+              sourceReviewStatus: null,
+              sourceRelationship: null,
+              sourceAnalysisScope: null,
+              snapshotId: canonical.snapshotId,
+              observationId: canonical.observationId,
+              importPreviewId: null,
+              sourcePointer: canonical.sourcePointer,
+              manualEntryId: randomUUID(),
+            },
+          ]),
+        ],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    await expect(
+      handle.pool.query(
+        `SELECT *
+           FROM app.upsert_competitor_origins_batch(
+             $1::uuid,
+             $2::uuid,
+             $3::jsonb
+           )`,
+        [
+          scope.workspaceId,
+          scope.projectId,
+          JSON.stringify([
+            {
+              domain: "manual-batch-rival.example",
+              name: null,
+              originKind: "manual",
+              productProfileId: null,
+              profileVersion: null,
+              candidateId: null,
+              fieldProvenancePath: null,
+              evidenceRefs: null,
+              sourceReviewStatus: null,
+              sourceRelationship: null,
+              sourceAnalysisScope: "not-an-array",
+              snapshotId: null,
+              observationId: null,
+              importPreviewId: null,
+              sourcePointer: null,
+              manualEntryId: randomUUID(),
+            },
+          ]),
+        ],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    const irrelevantLineage = await handle.pool.query<{
+      entities: string;
+      origins: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM app.competitor_entities WHERE project_id = $1) AS entities,
+         (SELECT count(*) FROM app.competitor_origin_occurrences WHERE project_id = $1) AS origins`,
+      [project.projectId],
+    );
+    expect(irrelevantLineage.rows[0]).toEqual({ entities: "0", origins: "0" });
+
+    executeCount = 0;
+    const first = await repository.upsertOrigins(scope, [canonical, canonical]);
+    expect(executeCount).toBe(1);
+    expect(first).toHaveLength(2);
+    expect(first[0]).toEqual(first[1]);
+    executeCount = 0;
+    await expect(
+      repository.upsertOrigins(scope, [canonical, canonical]),
+    ).resolves.toEqual(first);
+    expect(executeCount).toBe(1);
+
+    await expect(
+      repository.upsertOrigins(
+        { ...scope, projectId: randomUUID() },
+        [canonical],
+      ),
+    ).rejects.toSatisfy((error: unknown) => pgCode(error) === "23514");
+    const counts = await handle.pool.query<{
+      entities: string;
+      origins: string;
+    }>(
+      `SELECT
+         (SELECT count(*) FROM app.competitor_entities WHERE project_id = $1) AS entities,
+         (SELECT count(*) FROM app.competitor_origin_occurrences WHERE project_id = $1) AS origins`,
+      [project.projectId],
+    );
+    expect(counts.rows[0]).toEqual({ entities: "1", origins: "1" });
+  });
+
   it("creates one candidate origin, replays idempotently, and never overwrites later governance", async () => {
     const project = await createProject(handle);
     const observed = await createCompositeObservation(

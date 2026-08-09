@@ -119,6 +119,15 @@ function analysisRefreshRunDto(id: string, status: string) {
   };
 }
 
+type MockRunStep =
+  | string
+  | { readonly failRead: true }
+  | {
+      readonly status: string;
+      readonly progressCurrent?: number;
+      readonly progressTotal?: number;
+    };
+
 /**
  * Canonical 202 Analysis Refresh acceptance. The resourceRef identifies the
  * parent plan, never a standalone diagnostic run.
@@ -174,14 +183,20 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
 async function routeRunPoll(
   page: Page,
   runId: string,
-  statuses: readonly (string | { readonly failRead: true })[],
+  statuses: readonly MockRunStep[],
   onTerminal?: () => void,
 ): Promise<{ readonly calls: string[] }> {
   const state = { calls: [] as string[], terminalNotified: false };
   await page.route(`**${BASE}/runs/${runId}`, async (route) => {
     const step = statuses[Math.min(state.calls.length, statuses.length - 1)]!;
-    state.calls.push(typeof step === "string" ? step : "failRead");
-    if (typeof step !== "string") {
+    state.calls.push(
+      typeof step === "string"
+        ? step
+        : "failRead" in step
+          ? "failRead"
+          : step.status,
+    );
+    if (typeof step !== "string" && "failRead" in step) {
       await fulfillJson(
         route,
         problemBody("DEPENDENCY_UNAVAILABLE", 503, "Status read failed."),
@@ -189,12 +204,34 @@ async function routeRunPoll(
       );
       return;
     }
-    if (TERMINAL_STATUSES.has(step) && !state.terminalNotified) {
+    const status =
+      typeof step === "string"
+        ? step
+        : "status" in step
+          ? step.status
+          : "queued";
+    if (TERMINAL_STATUSES.has(status) && !state.terminalNotified) {
       state.terminalNotified = true;
       onTerminal?.();
     }
+    const dto = analysisRefreshRunDto(runId, status);
+    const payload =
+      typeof step === "string" || !("status" in step)
+        ? dto
+        : {
+            ...dto,
+            progress: {
+              ...dto.progress,
+              ...(typeof step.progressCurrent === "number"
+                ? { current: step.progressCurrent }
+                : {}),
+              ...(typeof step.progressTotal === "number"
+                ? { total: step.progressTotal }
+                : {}),
+            },
+          };
     await fulfillJson(route, {
-      data: analysisRefreshRunDto(runId, step),
+      data: payload,
     });
   });
   return state;
@@ -234,7 +271,7 @@ async function useUi(page: Page, locale: "en" | "zh-CN"): Promise<void> {
 
 function runButton(
   page: Page,
-  name = "Run diagnosis",
+  name = "Refresh all data and run diagnosis",
 ): ReturnType<Page["getByRole"]> {
   return page.locator("[data-run-diagnosis]").getByRole("button", { name });
 }
@@ -300,9 +337,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(run).toBeDisabled();
     await expect(run).toHaveAttribute(
       "aria-describedby",
-      "sf-growth-map-run-note",
+      "sf-growth-map-run-scope-note sf-growth-map-run-gate-note",
     );
-    await expect(page.locator("#sf-growth-map-run-note")).toContainText(
+    await expect(page.locator("#sf-growth-map-run-gate-note")).toContainText(
       "Sources: Loading",
     );
 
@@ -373,7 +410,7 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await page.goto(GROWTH_MAP_URL);
     const run = runButton(page);
     await expect(run).toBeDisabled();
-    await expect(page.locator("#sf-growth-map-run-note")).toContainText(
+    await expect(page.locator("#sf-growth-map-run-gate-note")).toContainText(
       "Sources: Something went wrong",
     );
     const retry = page
@@ -435,7 +472,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect.poll(() => reads.generationReads.length).toBe(2);
     await page.waitForTimeout(500);
     expect(reads.generationReads).toHaveLength(2);
-    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    await expect(
+      runButton(page, "Refresh all data again and run diagnosis"),
+    ).toBeEnabled();
     expect(accepted.posts[0]?.body).toEqual({});
     expect(reads.snapshotReads).toEqual([]);
   });
@@ -469,7 +508,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(
       statusRegion(page).getByText("Running", { exact: true }),
     ).toBeVisible();
-    await expect(runButton(page, "Diagnosis running…")).toBeDisabled();
+    await expect(
+      runButton(page, "Refreshing all data across the site and running diagnosis…"),
+    ).toBeDisabled();
     expect(reads.runReads.every((path) => path === `${BASE}/runs/${RUN_ID}`)).toBe(
       true,
     );
@@ -479,7 +520,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
       statusRegion(page).getByText("Completed", { exact: true }),
     ).toBeVisible();
     await expect.poll(() => reads.generationReads.length).toBe(2);
-    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    await expect(
+      runButton(page, "Refresh all data again and run diagnosis"),
+    ).toBeEnabled();
     await page.waitForTimeout(500);
     expect(reads.generationReads).toHaveLength(2);
     expect(reads.snapshotReads).toEqual([]);
@@ -496,12 +539,50 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await page.goto(GROWTH_MAP_URL);
     const run = page
       .locator("[data-run-diagnosis]")
-      .getByRole("button", { name: "运行诊断" });
+      .getByRole("button", { name: "刷新全部数据并运行诊断" });
     await expect(run).toBeEnabled();
     await run.click();
     await expect.poll(() => accepted.posts.length).toBe(1);
     expect(accepted.posts[0]?.body).toEqual({});
     expect(accepted.posts[0]?.body).not.toHaveProperty("outputLocale");
+  });
+
+  test("zh-CN partial 6/6 terminal shows completed-with-limitations copy and whole-site scope", async ({
+    page,
+  }) => {
+    await useUi(page, "zh-CN");
+    await installGrowthVerticalApi(page);
+    const accepted = await routeAnalysisRefreshPost(page);
+    await routeRunPoll(page, RUN_ID, [
+      "running",
+      { status: "partial", progressCurrent: 6, progressTotal: 6 },
+    ]);
+
+    await page.goto(GROWTH_MAP_URL);
+    const run = page
+      .locator("[data-run-diagnosis]")
+      .getByRole("button", { name: "刷新全部数据并运行诊断" });
+    await expect(run).toBeEnabled();
+    await expect(page.locator("#sf-growth-map-run-scope-note")).toContainText(
+      "会刷新全站 Crawl、GSC/GA4、DataForSEO 与 Growth Audit，不只当前选中竞品。",
+    );
+
+    await run.click();
+    await expect.poll(() => accepted.posts.length).toBe(1);
+    await expect(
+      page.locator("[data-run-diagnosis-status]").getByText(
+        "已完成（部分数据受限）",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator("[data-run-diagnosis]")
+        .getByRole("button", { name: "重新刷新全部数据并运行诊断" }),
+    ).toBeEnabled();
+    await expect(
+      page.locator("[data-run-diagnosis]").getByText("部分完成", { exact: true }),
+    ).toHaveCount(0);
   });
 
   test("a same-tick double click submits exactly one Analysis Refresh parent", async ({
@@ -549,7 +630,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
       await expect(
         statusRegion(page).getByText(pillLabel, { exact: true }),
       ).toBeVisible();
-      await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+      await expect(
+        runButton(page, "Refresh all data again and run diagnosis"),
+      ).toBeEnabled();
       if (status === "failed") {
         await expect(
           page.getByText("The diagnostic run did not finish", {
@@ -586,7 +669,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
         exact: false,
       }),
     ).toBeVisible();
-    await expect(runButton(page, "Diagnosis running…")).toBeDisabled();
+    await expect(
+      runButton(page, "Refreshing all data across the site and running diagnosis…"),
+    ).toBeDisabled();
     const retry = page
       .locator("[data-run-diagnosis]")
       .getByRole("button", { name: "Retry" });
@@ -596,7 +681,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(
       statusRegion(page).getByText("Completed", { exact: true }),
     ).toBeVisible();
-    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    await expect(
+      runButton(page, "Refresh all data again and run diagnosis"),
+    ).toBeEnabled();
     expect(accepted.posts).toHaveLength(1);
   });
 
@@ -652,7 +739,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
         exact: false,
       }),
     ).toHaveCount(0);
-    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    await expect(
+      runButton(page, "Refresh all data again and run diagnosis"),
+    ).toBeEnabled();
     expect(
       reads.runReads.every(
         (path) => path === `${BASE}/runs/${ACTIVE_RUN_ID}`,
@@ -744,9 +833,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(run).toBeDisabled();
     await expect(run).toHaveAttribute(
       "aria-describedby",
-      "sf-growth-map-run-note",
+      "sf-growth-map-run-scope-note sf-growth-map-run-gate-note",
     );
-    const note = page.locator("#sf-growth-map-run-note");
+    const note = page.locator("#sf-growth-map-run-gate-note");
     await expect(note).toContainText("A complete ICP context is required");
     await expect(note.getByRole("link", { name: "Context" })).toHaveAttribute(
       "href",
@@ -797,9 +886,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(run).toBeDisabled();
     await expect(run).toHaveAttribute(
       "aria-describedby",
-      "sf-growth-map-run-note",
+      "sf-growth-map-run-scope-note sf-growth-map-run-gate-note",
     );
-    const note = page.locator("#sf-growth-map-run-note");
+    const note = page.locator("#sf-growth-map-run-gate-note");
     await expect(note).toContainText("Connect");
     await expect(note.getByRole("link", { name: "Sources" })).toHaveAttribute(
       "href",
@@ -852,7 +941,9 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(
       statusRegion(page).getByText("Running", { exact: true }),
     ).toBeVisible();
-    await expect(runButton(page, "Diagnosis running…")).toBeDisabled();
+    await expect(
+      runButton(page, "Refreshing all data across the site and running diagnosis…"),
+    ).toBeDisabled();
     expect(await regions.count()).toBe(1);
 
     await expect(
@@ -861,7 +952,7 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await expect(regions).toHaveCount(1);
   });
 
-  test("partial publishes one generation, keeps its pill, and unlocks re-run", async ({
+  test("partial terminal publishes one generation, shows completed-with-limitations, and unlocks re-run", async ({
     page,
   }) => {
     await useUi(page, "en");
@@ -877,15 +968,20 @@ test.describe("growth map Analysis Refresh trigger", () => {
     await run.click();
 
     await expect(
-      statusRegion(page).getByText("Partial", { exact: true }),
+      statusRegion(page).getByText("Completed (limited data)", { exact: true }),
     ).toBeVisible();
-    await expect(runButton(page, "Re-run diagnosis")).toBeEnabled();
+    await expect(
+      runButton(page, "Refresh all data again and run diagnosis"),
+    ).toBeEnabled();
     await expect.poll(() => reads.generationReads.length).toBe(2);
     await page.waitForTimeout(500);
     expect(reads.generationReads).toHaveLength(2);
     expect(accepted.posts).toHaveLength(1);
     await expect(
       page.locator("[data-run-diagnosis] [data-run-diagnosis-notice]"),
+    ).toHaveCount(0);
+    await expect(
+      page.locator("[data-run-diagnosis]").getByText("Partial", { exact: true }),
     ).toHaveCount(0);
   });
 

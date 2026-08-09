@@ -22,6 +22,8 @@ export type RunDiagnosisPhase =
 export interface RunDiagnosisTerminal {
   readonly runId: string;
   readonly status: RunStatus;
+  readonly progressCurrent: number | null;
+  readonly progressTotal: number | null;
 }
 
 /** Which server-side 422 precondition is holding the control shut. */
@@ -76,6 +78,8 @@ export type RunDiagnosisEvent =
       readonly type: "runTerminal";
       readonly runId: string;
       readonly status: RunStatus;
+      readonly progressCurrent?: number;
+      readonly progressTotal?: number | null;
     }
   | { readonly type: "recheckGate"; readonly gate: RunDiagnosisServerGate }
   | { readonly type: "conflictRecovery" };
@@ -145,7 +149,16 @@ export function reduceRunDiagnosis(
       return {
         ...state,
         phase: "idle",
-        terminal: { runId: event.runId, status: event.status },
+        terminal: {
+          runId: event.runId,
+          status: event.status,
+          progressCurrent:
+            typeof event.progressCurrent === "number"
+              ? event.progressCurrent
+              : null,
+          progressTotal:
+            typeof event.progressTotal === "number" ? event.progressTotal : null,
+        },
         runActiveNotice: false,
         invalidatedRunIds: invalidated,
         sessionHasTerminal: true,
@@ -221,6 +234,45 @@ export function runDiagnosisStatusPill(
 ): RunStatus | null {
   if (state.phase === "tracking") return polledStatus ?? "queued";
   return state.terminal?.status ?? null;
+}
+
+export type RunDiagnosisStatusLabelKey = RunStatus | "runCompletedWithLimitations";
+
+/**
+ * A terminal `partial` Analysis Refresh with all durable steps settled is a
+ * completed refresh with degraded provider coverage, not an in-flight partial
+ * execution. Keep the warning tone elsewhere; only the customer copy changes.
+ */
+export function runDiagnosisStatusLabelKey(
+  state: RunDiagnosisState,
+  polledStatus?: RunStatus,
+  polledProgress?: {
+    readonly current: number;
+    readonly total: number | null;
+  },
+): RunDiagnosisStatusLabelKey | null {
+  const status = runDiagnosisStatusPill(state, polledStatus);
+  if (status !== "partial") return status;
+  if (
+    state.phase === "tracking" &&
+    polledStatus === "partial" &&
+    polledProgress !== undefined &&
+    polledProgress.total !== null &&
+    polledProgress.total > 0 &&
+    polledProgress.current === polledProgress.total
+  ) {
+    return "runCompletedWithLimitations";
+  }
+  const terminal = state.terminal;
+  if (
+    terminal !== null &&
+    terminal.progressTotal !== null &&
+    terminal.progressTotal > 0 &&
+    terminal.progressCurrent === terminal.progressTotal
+  ) {
+    return "runCompletedWithLimitations";
+  }
+  return status;
 }
 
 /** Map one Analysis Refresh submission failure onto one machine event (D7). */

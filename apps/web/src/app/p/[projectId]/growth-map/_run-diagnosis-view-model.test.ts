@@ -6,6 +6,7 @@ import {
   runDiagnosisButtonLabelKey,
   runDiagnosisEventFromError,
   runDiagnosisLocked,
+  runDiagnosisStatusLabelKey,
   runDiagnosisStatusPill,
   shouldRefreshAfterTerminal,
   showRunStatusReadError,
@@ -49,7 +50,12 @@ describe("reduceRunDiagnosis submit fence", () => {
       runId: RUN_ID,
       status: "completed",
     });
-    expect(withPill.terminal).toEqual({ runId: RUN_ID, status: "completed" });
+    expect(withPill.terminal).toEqual({
+      runId: RUN_ID,
+      status: "completed",
+      progressCurrent: null,
+      progressTotal: null,
+    });
     const next = reduceRunDiagnosis(withPill, { type: "submit" });
     expect(next.phase).toBe("submitting");
     expect(next.terminal).toBeNull();
@@ -152,7 +158,12 @@ describe("reduceRunDiagnosis terminal handling", () => {
         status,
       });
       expect(state.phase).toBe("idle");
-      expect(state.terminal).toEqual({ runId: RUN_ID, status });
+      expect(state.terminal).toEqual({
+        runId: RUN_ID,
+        status,
+        progressCurrent: null,
+        progressTotal: null,
+      });
       expect(state.trackedRunId).toBe(RUN_ID);
       expect(state.sessionHasTerminal).toBe(true);
       expect(runDiagnosisLocked(state)).toBe(false);
@@ -253,7 +264,12 @@ describe("reduceRunDiagnosis terminal handling", () => {
       status: "completed",
     });
     expect(done.runActiveNotice).toBe(false);
-    expect(done.terminal).toEqual({ runId: OTHER_RUN_ID, status: "completed" });
+    expect(done.terminal).toEqual({
+      runId: OTHER_RUN_ID,
+      status: "completed",
+      progressCurrent: null,
+      progressTotal: null,
+    });
   });
 });
 
@@ -348,6 +364,32 @@ describe("view selectors", () => {
       status: "partial",
     });
     expect(runDiagnosisStatusPill(done, undefined)).toBe("partial");
+  });
+
+  it("labels a fully terminal partial refresh as completed with limitations", () => {
+    const done = reduceRunDiagnosis(tracking(), {
+      type: "runTerminal",
+      runId: RUN_ID,
+      status: "partial",
+      progressCurrent: 6,
+      progressTotal: 6,
+    });
+    expect(runDiagnosisStatusLabelKey(done)).toBe("runCompletedWithLimitations");
+  });
+
+  it("labels the live terminal poll as completed with limitations before the effect settles state", () => {
+    expect(
+      runDiagnosisStatusLabelKey(tracking(), "partial", {
+        current: 6,
+        total: 6,
+      }),
+    ).toBe("runCompletedWithLimitations");
+    expect(
+      runDiagnosisStatusLabelKey(tracking(), "partial", {
+        current: 5,
+        total: 6,
+      }),
+    ).toBe("partial");
   });
 });
 

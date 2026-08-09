@@ -157,6 +157,18 @@ export type {
   ProductProfileInvocationPreflight,
   ProductProfileInvocationReservationResult,
 } from "./repositories/product-profile-invocation-attempts.ts";
+export {
+  canonicalProductProfileSiteLanguageTag,
+  ProductProfileAiCohortRepository,
+  deriveConfirmedProductProfileGenerativeQueries,
+} from "./repositories/product-profile-ai-cohort.ts";
+export type {
+  ProductProfileAiCohortBootstrapInput,
+  ProductProfileAiCohortBootstrapResult,
+  ProductProfileGenerativeQueryAudience,
+  ProductProfileGenerativeQueryCompetitor,
+  ProductProfileGenerativeQueryProfile,
+} from "./repositories/product-profile-ai-cohort.ts";
 export { CapabilityRunsRepository } from "./repositories/capability-runs.ts";
 export type { CapabilityRunRow } from "./repositories/capability-runs.ts";
 export {

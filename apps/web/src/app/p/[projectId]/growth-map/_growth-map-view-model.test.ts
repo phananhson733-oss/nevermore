@@ -49,10 +49,12 @@ import {
   growthMapPageTypeLabel,
   growthMapPrimaryOpportunity,
   growthMapKeywordReviewPresentation,
+  GROWTH_MAP_KEYWORD_SOURCE_KINDS,
   GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
   competitorAiCitationDisplay,
+  competitorOriginSummaries,
   competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
   competitorOrganicOverlapDisplay,
@@ -75,6 +77,7 @@ import {
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
   selectCompetitorMonitorItem,
+  shouldShowCompetitorMonitor,
   shouldShowGrowthMapReviewError,
   topicNodeAllowedParentIds,
   uniqueMetricSources,
@@ -427,7 +430,10 @@ function manualOrigin(): GrowthMapCompetitorOriginOccurrence {
   };
 }
 
-function serpOverlapOrigin(): GrowthMapCompetitorOriginOccurrence {
+function serpOverlapOrigin(): Extract<
+  GrowthMapCompetitorOriginOccurrence,
+  { readonly originKind: "serp_overlap" }
+> {
   return {
     occurrenceId: IDS.relation,
     observedAt: "2026-07-28T08:00:00.000Z",
@@ -1445,6 +1451,34 @@ describe("Growth Map view model", () => {
     ]);
   });
 
+  it("counts and filters Product Profile-derived queries as their own source kind", () => {
+    const projection = buildKeywordRelationPageProjection(
+      [
+        keywordItem(IDS.keywordA, "RelayOps alternatives", {
+          sourceOccurrences: [
+            { sourceKind: "product_profile" },
+            { sourceKind: "product_profile" },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
+        keywordItem(IDS.keywordB, "Operator-entered query", {
+          sourceOccurrences: [
+            { sourceKind: "manual" },
+          ] as GrowthMapKeywordLibraryItem["sourceOccurrences"],
+        }),
+      ],
+      [],
+    );
+
+    expect(GROWTH_MAP_KEYWORD_SOURCE_KINDS).toContain("product_profile");
+    expect(projection.loadedSourceCounts.product_profile).toBe(1);
+    expect(
+      filterGrowthMapKeywordEntries(projection.visibleItems, {
+        search: "",
+        sourceKind: "product_profile",
+      }).map((entry) => entry.item.keywordId),
+    ).toEqual([IDS.keywordA]);
+  });
+
   it("treats empty Keyword relation search as pass-through", () => {
     const items = buildKeywordRelationPageProjection(
       [keywordItem(IDS.keywordA, "Customer onboarding")],
@@ -1587,6 +1621,68 @@ describe("Growth Map view model", () => {
         }),
       ),
     ).toBe("customer_confirmed");
+  });
+
+  it("collapses repeated Competitor observations into one customer-facing source summary", () => {
+    const firstSerpOrigin = serpOverlapOrigin();
+    const laterSerpOrigin: GrowthMapCompetitorOriginOccurrence = {
+      ...firstSerpOrigin,
+      occurrenceId: IDS.competitorA,
+      snapshotId: IDS.competitorB,
+      observationId: IDS.candidate,
+      observedAt: "2026-07-29T08:00:00.000Z",
+    };
+
+    expect(
+      competitorOriginSummaries([
+        firstSerpOrigin,
+        manualOrigin(),
+        laterSerpOrigin,
+      ]),
+    ).toEqual([
+      {
+        originKind: "manual",
+        occurrenceCount: 1,
+        latestObservedAt: null,
+      },
+      {
+        originKind: "serp_overlap",
+        occurrenceCount: 2,
+        latestObservedAt: "2026-07-29T08:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("shows monthly monitoring only when a comparable result exists", () => {
+    const response = competitorMonitorResponse();
+    const available = competitorMonitorItem();
+    const pausedResponse = competitorMonitorResponse({
+      config: {
+        enabled: false,
+        frequency: "monthly",
+        revision: 2,
+        updatedAt: "2026-07-28T08:00:00.000Z",
+      },
+    });
+    const baseline = competitorMonitorItem({
+      evaluationState: "baseline",
+      limitation: "One comparable monthly snapshot is still required.",
+    });
+
+    expect(shouldShowCompetitorMonitor(response, available)).toBe(true);
+    expect(shouldShowCompetitorMonitor(pausedResponse, available)).toBe(true);
+    expect(shouldShowCompetitorMonitor(response, baseline)).toBe(false);
+    expect(shouldShowCompetitorMonitor(pausedResponse, baseline)).toBe(false);
+    expect(
+      shouldShowCompetitorMonitor(
+        competitorMonitorResponse({
+          availability: "unavailable",
+          limitation: "No comparable monitor window exists.",
+        }),
+        available,
+      ),
+    ).toBe(false);
+    expect(shouldShowCompetitorMonitor(undefined, null)).toBe(false);
   });
 
   it("falls back from collection-pending to metrics only when SERP overlap is genuinely available", () => {
@@ -1764,6 +1860,7 @@ describe("Growth Map view model", () => {
       interview_summary: 0,
       user_review: 0,
       manual: 2,
+      product_profile: 0,
     });
     expect(projection.visibleItems[0]).toMatchObject({
       relations: [{ relationId: IDS.relation }],
@@ -2865,16 +2962,30 @@ describe("Growth Map view model", () => {
     expect(source).not.toContain("function UnavailableLibrary");
   });
 
-  it("keeps customer-facing source summaries visible and raw library lineage in native disclosures", () => {
+  it("keeps customer-facing source summaries while removing raw Competitor lineage from the profile", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),
       "utf8",
     );
+    const competitorProfileSource = source.slice(
+      source.indexOf("function CompetitorProfileDrawer"),
+      source.indexOf("function CompetitorDetailPanel"),
+    );
 
     expect(source).toContain("<details className={styles.traceDisclosure}>");
     expect(source).toContain('<summary>{t("viewSourceDetails")}</summary>');
-    expect(source).toContain('<summary>{t("viewOriginDetails")}</summary>');
-    expect(source).toContain('<summary>{t("viewRecordDetails")}</summary>');
+    expect(competitorProfileSource).toContain(
+      "competitorOriginSummaries(detail.originOccurrences)",
+    );
+    expect(competitorProfileSource).toContain(
+      "drawer.sourceSummary.${origin.originKind}",
+    );
+    expect(competitorProfileSource).not.toContain(
+      '<summary>{t("viewOriginDetails")}</summary>',
+    );
+    expect(competitorProfileSource).not.toContain(
+      '<summary>{t("viewRecordDetails")}</summary>',
+    );
     expect(source).not.toContain("<details open");
     expect(source).not.toContain("truncateId(occurrence.occurrenceId)");
     expect(source).not.toContain("truncateId(evidence.evidenceRefId)");

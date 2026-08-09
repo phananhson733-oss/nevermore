@@ -17,6 +17,7 @@ export type KeywordSourceKind =
   | "csv_import"
   | "dataforseo_ranked"
   | "gsc_top_query"
+  | "product_profile"
   | "interview_summary"
   | "user_review"
   | "manual";
@@ -66,6 +67,16 @@ export type CanonicalKeywordOccurrenceInput =
         }
       | {
           readonly manualEntryId: null;
+          readonly dataSnapshotId: null;
+          readonly normalizedObservationId: null;
+          readonly sourceKind: "product_profile";
+          readonly scopeBasis: "project_context";
+          readonly sourcePointer: null;
+          readonly productProfileId: string;
+          readonly providerDataAsOf: null;
+        }
+      | {
+          readonly manualEntryId: null;
           readonly dataSnapshotId: string;
           readonly normalizedObservationId: string;
           readonly sourceKind: "interview_summary";
@@ -95,6 +106,10 @@ export type ManualKeywordOccurrenceInput = KeywordOccurrenceInputCommon & {
 export type KeywordOccurrenceInput =
   | CanonicalKeywordOccurrenceInput
   | ManualKeywordOccurrenceInput;
+export type ProductProfileKeywordOccurrenceInput = Extract<
+  CanonicalKeywordOccurrenceInput,
+  { readonly sourceKind: "product_profile" }
+>;
 
 export interface KeywordOccurrenceRow {
   readonly id: string;
@@ -102,6 +117,7 @@ export interface KeywordOccurrenceRow {
   readonly project_id: string;
   readonly data_snapshot_id: string | null;
   readonly normalized_observation_id: string | null;
+  readonly product_profile_id: string | null;
   readonly display_keyword: string;
   readonly normalized_keyword: string;
   readonly market: string;
@@ -138,6 +154,7 @@ export interface KeywordLibraryUpsertResult {
 export const MAX_KEYWORD_OCCURRENCE_PAGE_SIZE = 100;
 export const MAX_KEYWORD_OCCURRENCE_BATCH_TOTAL = 10_000;
 export const MAX_KEYWORD_OCCURRENCE_ENTITY_BATCH = 5_000;
+export const MAX_KEYWORD_LIBRARY_UPSERT_BATCH_SIZE = 500;
 const MAX_KEYWORD_LENGTH = 500;
 const MAX_SOURCE_REF_LENGTH = 2048;
 const UUID =
@@ -160,7 +177,9 @@ function canonicalLanguageTag(languageTag: string): string {
   }
   try {
     const canonical = Intl.getCanonicalLocales(languageTag)[0];
-    if (!canonical) throw new RangeError("missing language tag");
+    if (!canonical) {
+      throw new RangeError("languageTag must be a canonical BCP-47 tag");
+    }
     return canonical;
   } catch {
     throw new RangeError("languageTag must be a canonical BCP-47 tag");
@@ -171,6 +190,7 @@ function assertInput(input: KeywordOccurrenceInput): {
   readonly occurrenceId: string | null;
   readonly dataSnapshotId: string | null;
   readonly observationId: string | null;
+  readonly productProfileId: string | null;
   readonly languageTag: string;
   readonly scopeBasis: KeywordScopeBasis;
   readonly sourcePointer: string | null;
@@ -225,8 +245,52 @@ function assertInput(input: KeywordOccurrenceInput): {
       occurrenceId: input.manualEntryId,
       dataSnapshotId: null,
       observationId: null,
+      productProfileId: null,
       languageTag,
       scopeBasis: "manual",
+      sourcePointer: null,
+      collectedAt,
+      providerDataAsOf: null,
+    };
+  }
+
+  if (input.sourceKind === "product_profile") {
+    if (input.languageTag !== languageTag) {
+      throw new RangeError(
+        "Product Profile languageTag must be a canonical BCP-47 tag",
+      );
+    }
+    if (!UUID.test(input.productProfileId)) {
+      throw new RangeError("productProfileId must be a UUID");
+    }
+    if (
+      input.dataSnapshotId !== null ||
+      input.normalizedObservationId !== null ||
+      input.sourcePointer !== null ||
+      input.providerDataAsOf !== null
+    ) {
+      throw new RangeError(
+        "product_profile occurrence must not invent provider lineage",
+      );
+    }
+    if (input.manualEntryId !== null) {
+      throw new RangeError(
+        "manualEntryId must be null for Product Profile lineage",
+      );
+    }
+    const prefix = `product_profile:${input.productProfileId}#profile-generative-query.v1/`;
+    if (!input.sourceRef.startsWith(prefix)) {
+      throw new RangeError(
+        "sourceRef must match the Product Profile provenance identity",
+      );
+    }
+    return {
+      occurrenceId: null,
+      dataSnapshotId: null,
+      observationId: null,
+      productProfileId: input.productProfileId,
+      languageTag,
+      scopeBasis: "project_context",
       sourcePointer: null,
       collectedAt,
       providerDataAsOf: null,
@@ -278,6 +342,7 @@ function assertInput(input: KeywordOccurrenceInput): {
     occurrenceId: null,
     dataSnapshotId: input.dataSnapshotId,
     observationId: input.normalizedObservationId,
+    productProfileId: null,
     languageTag,
     scopeBasis: expectedScopeBasis,
     sourcePointer: input.sourcePointer,
@@ -302,6 +367,35 @@ function parseUpsertResult(value: unknown): KeywordLibraryUpsertResult {
     throw new Error("keyword library upsert returned an invalid result");
   }
   return { occurrenceId: row.occurrence_id, entityId: row.entity_id };
+}
+
+function parseBatchUpsertResult(
+  value: unknown,
+  expectedCount: number,
+): KeywordLibraryUpsertResult[] {
+  const rows = (value as {
+    readonly rows?: readonly {
+      readonly input_ordinal?: unknown;
+      readonly occurrence_id?: unknown;
+      readonly entity_id?: unknown;
+    }[];
+  }).rows;
+  if (!Array.isArray(rows) || rows.length !== expectedCount) {
+    throw new Error("keyword library batch upsert returned an invalid result");
+  }
+  return rows.map((row, index) => {
+    if (
+      row.input_ordinal !== index + 1 ||
+      typeof row.occurrence_id !== "string" ||
+      typeof row.entity_id !== "string"
+    ) {
+      throw new Error("keyword library batch upsert returned an invalid result");
+    }
+    return {
+      occurrenceId: row.occurrence_id,
+      entityId: row.entity_id,
+    };
+  });
 }
 
 function assertOccurrenceBatch(
@@ -346,6 +440,53 @@ function assertOccurrenceBatch(
 
 export class KeywordOccurrencesRepository extends Repository {
   /**
+   * Converge one bounded provider page in a single database round trip. Every
+   * input is canonicalized before SQL and the database wrapper delegates each
+   * member to the existing exact-lineage scalar authority in one transaction.
+   */
+  async upsertManyIntoLibrary(
+    scope: ProjectScope,
+    inputs: readonly KeywordOccurrenceInput[],
+  ): Promise<KeywordLibraryUpsertResult[]> {
+    if (inputs.length === 0) return [];
+    if (inputs.length > MAX_KEYWORD_LIBRARY_UPSERT_BATCH_SIZE) {
+      throw new RangeError(
+        `inputs must contain at most ${MAX_KEYWORD_LIBRARY_UPSERT_BATCH_SIZE} keyword occurrences`,
+      );
+    }
+    const payload = inputs.map((input) => {
+      const canonical = assertInput(input);
+      return {
+        occurrenceId: canonical.occurrenceId,
+        dataSnapshotId: canonical.dataSnapshotId,
+        observationId: canonical.observationId,
+        productProfileId: canonical.productProfileId,
+        displayKeyword: input.displayKeyword,
+        normalizedKeyword: input.normalizedKeyword,
+        market: input.market,
+        languageTag: canonical.languageTag,
+        queryKind: input.queryKind,
+        sourceKind: input.sourceKind,
+        scopeBasis: canonical.scopeBasis,
+        sourcePointer: canonical.sourcePointer,
+        sourceRef: input.sourceRef,
+        collectedAt: canonical.collectedAt,
+        providerDataAsOf: canonical.providerDataAsOf,
+      };
+    });
+    const raw = await this.exec.execute(sql`
+      select input_ordinal, occurrence_id, entity_id
+      from app.upsert_keyword_library_occurrences_batch(
+        ${scope.workspaceId}::uuid,
+        ${scope.projectId}::uuid,
+        ${JSON.stringify(payload)}::jsonb
+      )
+      order by input_ordinal
+    `);
+    return parseBatchUpsertResult(raw, inputs.length);
+  }
+
+  /**
    * One database call atomically converges immutable occurrence provenance,
    * stable identity and entity membership under concurrent retries.
    */
@@ -362,6 +503,7 @@ export class KeywordOccurrencesRepository extends Repository {
         ${canonical.occurrenceId}::uuid,
         ${canonical.dataSnapshotId}::uuid,
         ${canonical.observationId}::uuid,
+        ${canonical.productProfileId}::uuid,
         ${input.displayKeyword}::text,
         ${input.normalizedKeyword}::text,
         ${input.market}::text,
@@ -415,6 +557,7 @@ export class KeywordOccurrencesRepository extends Repository {
         data_snapshot_id: keywordOccurrences.data_snapshot_id,
         normalized_observation_id:
           keywordOccurrences.normalized_observation_id,
+        product_profile_id: keywordOccurrences.product_profile_id,
         display_keyword: keywordOccurrences.display_keyword,
         normalized_keyword: keywordOccurrences.normalized_keyword,
         market: keywordOccurrences.market,
@@ -497,6 +640,7 @@ export class KeywordOccurrencesRepository extends Repository {
           ${keywordOccurrences.project_id} as project_id,
           ${keywordOccurrences.data_snapshot_id} as data_snapshot_id,
           ${keywordOccurrences.normalized_observation_id} as normalized_observation_id,
+          ${keywordOccurrences.product_profile_id} as product_profile_id,
           ${keywordOccurrences.display_keyword} as display_keyword,
           ${keywordOccurrences.normalized_keyword} as normalized_keyword,
           ${keywordOccurrences.market} as market,
@@ -539,6 +683,7 @@ export class KeywordOccurrencesRepository extends Repository {
         project_id,
         data_snapshot_id,
         normalized_observation_id,
+        product_profile_id,
         display_keyword,
         normalized_keyword,
         market,

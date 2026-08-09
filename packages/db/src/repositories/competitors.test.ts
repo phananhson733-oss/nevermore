@@ -138,6 +138,44 @@ const profileOrigin = (
 });
 
 describe("CompetitorsRepository", () => {
+  it("converges 100 exact competitor origins in one bounded database call", async () => {
+    const db = new FakeExecutor();
+    const inputs = Array.from({ length: 100 }, (_, index) => {
+      const observationId = `00000000-0000-4000-8002-${String(index + 1).padStart(12, "0")}`;
+      return {
+        originKind: "serp_overlap",
+        domain: `rival-${index + 1}.example`,
+        name: null,
+        snapshotId: "00000000-0000-4000-8000-000000000060",
+        observationId,
+        sourcePointer: "/valueJson/competitorDomain",
+      } as const;
+    });
+    db.enqueue({
+      rows: inputs.map((_, index) => ({
+        input_ordinal: index + 1,
+        occurrence_id: `10000000-0000-4000-8002-${String(index + 1).padStart(12, "0")}`,
+        competitor_id: `20000000-0000-4000-8002-${String(index + 1).padStart(12, "0")}`,
+      })),
+    });
+    const repo = new CompetitorsRepository(db as never) as unknown as {
+      upsertOrigins(
+        selectedScope: typeof scope,
+        selectedInputs: readonly CompetitorOriginInput[],
+      ): Promise<readonly { occurrenceId: string; competitorId: string }[]>;
+    };
+
+    await expect(repo.upsertOrigins(scope, inputs)).resolves.toHaveLength(100);
+    expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toContain("app.upsert_competitor_origins_batch");
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([scope.workspaceId, scope.projectId]),
+    );
+  });
+
   it("reads current non-excluded AI citation domains in deterministic order", async () => {
     const db = new FakeExecutor();
     const tracked = [{ id: entity.id, domain: entity.domain }];
