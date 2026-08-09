@@ -11,6 +11,7 @@ import { registerDiagnoseHandler } from "./diagnose.ts";
 import { registerMeasurementHandler } from "./measurement.ts";
 import { registerProfileSynthesizeHandler } from "./profile-synthesize.ts";
 import { registerPublicationHandler } from "./publication.ts";
+import { registerTopicModelGenerationHandler } from "./topic-model-generation.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
 // This suite verifies only pg-boss registration options and queue names. Keep
@@ -25,6 +26,9 @@ vi.mock("../content-shadow/run-content-shadow.ts", () => ({
 }));
 vi.mock("../product-profile/run-product-profile-synthesis.ts", () => ({
   runProductProfileSynthesis: vi.fn(),
+}));
+vi.mock("../topic-model/run-topic-model-generation.ts", () => ({
+  runTopicModelGeneration: vi.fn(),
 }));
 vi.mock("../measurement/run-measurement.ts", () => ({
   runMeasurement: vi.fn(),
@@ -54,13 +58,14 @@ describe("worker handler registration", () => {
     await registerCollectHandlers(ctx);
     await registerDiagnoseHandler(ctx);
     await registerProfileSynthesizeHandler(ctx);
+    await registerTopicModelGenerationHandler(ctx);
     await registerArtifactHandlers(ctx);
     await registerContentShadowHandler(ctx);
     await registerPublicationHandler(ctx, vi.fn(async () => undefined));
     await registerMeasurementHandler(ctx, vi.fn(async () => undefined));
     await registerAnalysisRefreshHandler(ctx);
 
-    expect(work).toHaveBeenCalledTimes(13);
+    expect(work).toHaveBeenCalledTimes(14);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -69,6 +74,7 @@ describe("worker handler registration", () => {
       "collect.dataforseo",
       "diagnose",
       "profile.synthesize",
+      "topic-model.generate",
       "artifact.generate",
       "export.bundle",
       "content-shadow",

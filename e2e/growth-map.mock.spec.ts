@@ -2,21 +2,27 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   E2E_CANONICAL_FINDING_ID,
+  E2E_CONTENT_ACTION_ID,
+  E2E_CONTENT_BRIEF_ARTIFACT_ID,
   E2E_CONTENT_FINDING_ID,
   E2E_COVERAGE_GAP_FINDING_ID,
+  E2E_CTR_ACTION_ID,
   E2E_CTR_FINDING_ID,
+  E2E_ENGLISH_BLOG_DRAFT_ARTIFACT_ID,
+  E2E_GROWTH_MAP_KEYWORD_IDS,
+  E2E_GROWTH_MAP_TOPIC_NODE_ID,
   E2E_ONBOARDING_SITE_PAGE_ID,
   E2E_PROJECT_ID,
+  growthMapDeliveryArtifactFixture,
   installGrowthVerticalApi,
   type GrowthVerticalApiState,
 } from "./mock-api.ts";
 
 /**
- * Growth Map mock E2E. Pages and opportunities has exactly one presentation:
- * the complete frozen Opportunity projection, ranked by the primary Finding
- * severity, with an exact-URL evidence drill-down in the same rail. The
- * canonical review walkthrough still proves one Finding -> one Action -> one
- * template-fixed technical ticket.
+ * Growth Map mock E2E. Pages and opportunities has three projections over one
+ * complete frozen inventory: URL, confirmed Topic, and Opportunity (default).
+ * The canonical review walkthrough still proves one Finding -> one Action ->
+ * one template-fixed technical ticket.
  */
 
 const OVERVIEW_URL = `/p/${E2E_PROJECT_ID}/overview`;
@@ -129,18 +135,23 @@ test.beforeEach(async ({ page }) => {
   api = await installGrowthVerticalApi(page);
 });
 
-test("defaults to the Opportunity ledger with severity-based priorities and no view switcher", async ({
+test("defaults to the Opportunity ledger and exposes the three-view switcher", async ({
   page,
 }) => {
   await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
 
   const rows = page.locator("[data-growth-map-opportunity-row]");
   await expect(rows).toHaveCount(4);
-  // The removed view switcher must not come back, and the address stays free
-  // of the legacy `view` parameter.
+  const viewSwitcher = page.getByRole("tablist", {
+    name: "Pages and opportunities view",
+  });
+  await expect(viewSwitcher).toBeVisible();
+  await expect(viewSwitcher.getByRole("tab")).toHaveCount(3);
   await expect(
-    page.getByRole("tablist", { name: "Pages and opportunities view" }),
-  ).toHaveCount(0);
+    viewSwitcher.getByRole("tab", { name: "By opportunity" }),
+  ).toHaveAttribute("aria-selected", "true");
+  // The implicit address stays canonical while still resolving to the
+  // Opportunity default.
   await expect
     .poll(() => new URL(page.url()).searchParams.get("view"))
     .toBeNull();
@@ -369,22 +380,306 @@ test("keeps the Opportunity layout usable across Artifact breakpoints", async ({
   expect(await blockingAxeViolations(page, "#main-content")).toEqual([]);
 });
 
-test("keeps the Opportunity ledger independent of Topic reads and scrubs cluster addresses", async ({
+test("labels a truncated live uncovered-Keyword headline as a lower bound", async ({
   page,
 }) => {
-  api.topicModelReadsFail = true;
+  api.liveKeywordPageHasNext = true;
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  const summary = page.getByRole("region", {
+    name: "Growth Map scope summary",
+  });
+  await expect(summary.getByText("≥ 1", { exact: true })).toBeVisible();
+  await expect(summary).toContainText(
+    "1 clusters among the first 3 Keywords · more records exist",
+  );
+});
+
+test("deep-links a confirmed Topic and keyboard-switches URL, Topic, and Opportunity views", async ({
+  page,
+}) => {
   await page.goto(
-    `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=stale`,
+    `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=${E2E_GROWTH_MAP_TOPIC_NODE_ID}`,
   );
 
-  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(4);
+  const viewSwitcher = page.getByRole("tablist", {
+    name: "Pages and opportunities view",
+  });
+  const topicTab = viewSwitcher.getByRole("tab", { name: "By Topic" });
+  await expect(topicTab).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.locator(
+      `[data-growth-map-cluster-row="${E2E_GROWTH_MAP_TOPIC_NODE_ID}"]`,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator(`[data-cluster-detail="${E2E_GROWTH_MAP_TOPIC_NODE_ID}"]`),
+  ).toContainText("Topic ownership and conversion path");
+  await expect
+    .poll(() => [...new Set(api.completeKeywordPageReads)])
+    .toEqual([null, "keywords-opaque-page-2"]);
+
+  await topicTab.focus();
+  await topicTab.press("ArrowLeft");
+  const urlTab = viewSwitcher.getByRole("tab", { name: "By URL" });
+  await expect(urlTab).toBeFocused();
+  await expect(urlTab).toHaveAttribute("aria-selected", "true");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("view"))
-    .toBeNull();
+    .toBe("url");
   await expect
     .poll(() => new URL(page.url()).searchParams.get("selectedClusterId"))
     .toBeNull();
+  await expect(page.locator("[data-growth-map-url-row]")).toHaveCount(2);
+
+  await urlTab.press("End");
+  const opportunityTab = viewSwitcher.getByRole("tab", {
+    name: "By opportunity",
+  });
+  await expect(opportunityTab).toBeFocused();
+  await expect(opportunityTab).toHaveAttribute("aria-selected", "true");
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBe("opportunity");
+  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(
+    4,
+  );
+});
+
+for (const [label, echoedRunId] of [
+  ["null", null],
+  ["a different run", E2E_PROJECT_ID],
+] as const) {
+  test(`fails the Topic view closed when a pinned Keyword page echoes ${label}`, async ({
+    page,
+  }) => {
+    api.keywordDiagnosticRunIdOverride = echoedRunId;
+    await page.goto(
+      `/p/${E2E_PROJECT_ID}/growth-map?view=cluster&selectedClusterId=${E2E_GROWTH_MAP_TOPIC_NODE_ID}`,
+    );
+
+    await expect(
+      page.getByText(
+        "The audit changed while this view was loading. Results stay hidden until every read names the same Diagnostic Run.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(0);
+    await expect.poll(() => [...new Set(api.completeKeywordPageReads)]).toEqual([
+      null,
+    ]);
+  });
+}
+
+test("keeps the Opportunity ledger independent of failed Topic reads", async ({
+  page,
+}) => {
+  api.topicModelReadsFail = true;
+  await page.goto(`/p/${E2E_PROJECT_ID}/growth-map`);
+
+  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(4);
+  await page.getByRole("tab", { name: "By Topic" }).click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get("view"))
+    .toBe("cluster");
+  await expect(
+    page.getByText("This view could not be built from the current frozen audit."),
+  ).toBeVisible();
   await expect(page.locator("[data-growth-map-cluster-row]")).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "By opportunity" }).click();
+  await expect(page.locator("[data-growth-map-opportunity-row]")).toHaveCount(4);
+});
+
+test("renders the Keyword Topic gateway, intent authority, recollection, and conversion rail", async ({
+  page,
+}) => {
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${E2E_GROWTH_MAP_KEYWORD_IDS[1]}`,
+  );
+
+  const gateway = page.getByRole("region", {
+    name: "The Topic Map decides how Keywords enter growth paths",
+  });
+  await expect(gateway).toBeVisible();
+  await expect(gateway.locator('[data-status="user_confirmed"]')).toHaveText(
+    "User confirmed",
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const gatewayNode = document.querySelector("[class*='topicMapGateway']");
+        const workspaceNode = document.querySelector("[class*='keywordWorkspace']");
+        if (gatewayNode === null || workspaceNode === null) return false;
+        return Boolean(
+          gatewayNode.compareDocumentPosition(workspaceNode) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+    )
+    .toBe(true);
+
+  const ledger = page.getByRole("list", { name: "Keyword list" });
+  await expect(ledger.getByRole("listitem")).toHaveCount(3);
+  for (const heading of [
+    "Confirmed Topic",
+    "Search intent / authority",
+    "KD",
+    "Intake path",
+    "Freshness",
+    "Content output",
+  ]) {
+    await expect(page.getByText(heading, { exact: true }).first()).toBeVisible();
+  }
+  await expect(ledger.getByText("Provider observed", { exact: true })).toHaveCount(
+    2,
+  );
+  await expect(ledger.getByText("LLM generated", { exact: true })).toBeVisible();
+
+  const detail = page.getByRole("complementary", {
+    name: "Selected Keyword detail",
+  });
+  await expect(detail).toContainText("customer onboarding checklist");
+  const recollection = detail.locator("[data-keyword-recollection]");
+  await expect(recollection).toContainText("Recollection required");
+  await expect(recollection).toContainText("Keyword difficulty");
+  await expect(recollection.getByRole("link", { name: "Go to Run Diagnosis" })).toHaveAttribute(
+    "href",
+    "#growth-map-run-diagnosis",
+  );
+  await expect(detail).toContainText("Topic cluster");
+  await expect(detail).toContainText("Mapped page");
+  await expect(detail).toContainText("CTA");
+  await expect(detail).toContainText("Not exposed");
+  await expect(detail).toContainText("Same-cluster needs in the loaded range");
+});
+
+test("projects exact mapped-page content delivery without inventing a Topic-only artifact", async ({
+  page,
+}) => {
+  const keywordUrl =
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords` +
+    `&selectedKeywordId=${E2E_GROWTH_MAP_KEYWORD_IDS[0]}`;
+  await page.goto(keywordUrl);
+
+  let detail = page.getByRole("complementary", {
+    name: "Selected Keyword detail",
+  });
+  let delivery = detail
+    .locator("section")
+    .filter({ hasText: "Mapped content delivery" });
+  await expect(delivery.locator("article")).toHaveCount(2);
+  for (const opportunity of await delivery.locator("article").all()) {
+    await expect(opportunity).toContainText("Opportunity review required");
+    await expect(opportunity.getByRole("link")).toHaveCount(0);
+  }
+
+  api.confirmedFindingIds.add(E2E_CONTENT_FINDING_ID);
+  api.confirmedFindingIds.add(E2E_CTR_FINDING_ID);
+  // Deliberately return the draft before the ready brief and across cursor
+  // pages. The view must exhaust the list and apply its stable content order.
+  api.keywordDeliveryArtifacts.push(
+    growthMapDeliveryArtifactFixture({
+      id: E2E_ENGLISH_BLOG_DRAFT_ARTIFACT_ID,
+      revisionId: "00000000-0000-4000-8000-000000000884",
+      actionId: E2E_CONTENT_ACTION_ID,
+      artifactType: "english_blog_draft",
+      status: "draft",
+      currentRevision: 4,
+    }),
+    growthMapDeliveryArtifactFixture({
+      id: E2E_CONTENT_BRIEF_ARTIFACT_ID,
+      revisionId: "00000000-0000-4000-8000-000000000883",
+      actionId: E2E_CONTENT_ACTION_ID,
+      artifactType: "content_brief",
+      status: "ready",
+      currentRevision: 2,
+    }),
+  );
+  api.completeArtifactPageReads.length = 0;
+  await page.reload();
+
+  await expect.poll(() => api.completeArtifactPageReads).toEqual([
+    null,
+    "artifacts-opaque-page-2",
+  ]);
+  const ledger = page.getByRole("list", { name: "Keyword list" });
+  const keywordRow = ledger
+    .getByRole("listitem")
+    .filter({ hasText: "customer onboarding automation" });
+  await expect(keywordRow.getByText("2 content paths", { exact: true })).toBeVisible();
+  await expect(
+    keywordRow.getByText("2 current deliverables", { exact: true }),
+  ).toBeVisible();
+
+  detail = page.getByRole("complementary", {
+    name: "Selected Keyword detail",
+  });
+  delivery = detail
+    .locator("section")
+    .filter({ hasText: "Mapped content delivery" });
+  await expect(delivery).toContainText("Page carrier: Documentation");
+  const opportunities = delivery.locator("article");
+  await expect(opportunities).toHaveCount(2);
+
+  const delivered = opportunities.nth(0);
+  await expect(delivered).toContainText(
+    "The onboarding page has a measured content coverage gap.",
+  );
+  const artifactRows = delivered.locator("li");
+  await expect(artifactRows).toHaveCount(2);
+  await expect(artifactRows.nth(0)).toContainText("Content brief");
+  await expect(artifactRows.nth(0)).toContainText("Ready");
+  await expect(artifactRows.nth(0)).toContainText("Revision 2");
+  await expect(artifactRows.nth(1)).toContainText("English blog draft");
+  await expect(artifactRows.nth(1)).toContainText("Draft");
+  await expect(artifactRows.nth(1)).toContainText("Revision 4");
+  await expect(delivered).not.toContainText("Technical ticket");
+
+  const deliveredHref = await delivered
+    .getByRole("link", {
+      name: "Open related deliverables for The onboarding page has a measured content coverage gap.",
+    })
+    .getAttribute("href");
+  expect(deliveredHref).not.toBeNull();
+  const deliveredUrl = new URL(deliveredHref!, "http://localhost");
+  expect(deliveredUrl.pathname).toBe(`/p/${E2E_PROJECT_ID}/execution`);
+  expect(deliveredUrl.searchParams.get("actionId")).toBe(E2E_CONTENT_ACTION_ID);
+  expect(deliveredUrl.searchParams.get("artifactId")).toBeNull();
+
+  const awaiting = opportunities.nth(1);
+  await expect(awaiting).toContainText(
+    "The onboarding page underperforms its impressions on click-through.",
+  );
+  await expect(awaiting).toContainText(
+    "Confirmed Action; deliverable generation has not produced an Artifact yet",
+  );
+  const awaitingHref = await awaiting
+    .getByRole("link", {
+      name: "Open related deliverables for The onboarding page underperforms its impressions on click-through.",
+    })
+    .getAttribute("href");
+  expect(awaitingHref).not.toBeNull();
+  const awaitingUrl = new URL(awaitingHref!, "http://localhost");
+  expect(awaitingUrl.pathname).toBe(`/p/${E2E_PROJECT_ID}/execution`);
+  expect(awaitingUrl.searchParams.get("actionId")).toBe(E2E_CTR_ACTION_ID);
+  expect(awaitingUrl.searchParams.get("artifactId")).toBeNull();
+  await expect(delivery.locator('a[href*="/artifacts/"]')).toHaveCount(0);
+
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords` +
+      `&selectedKeywordId=${E2E_GROWTH_MAP_KEYWORD_IDS[2]}`,
+  );
+  detail = page.getByRole("complementary", { name: "Selected Keyword detail" });
+  await expect(detail).toContainText(
+    "This Keyword targets a new asset; the current read models do not prove which deliverable will carry it.",
+  );
+  api.liveKeywordPageHasNext = true;
+  await page.reload();
+  detail = page.getByRole("complementary", { name: "Selected Keyword detail" });
+  await expect(detail).toContainText(
+    "This Keyword is not mapped to a canonical page, so no deliverable is attributed to it.",
+  );
 });
 
 test("keeps the search while drilling to the exact URL and back", async ({

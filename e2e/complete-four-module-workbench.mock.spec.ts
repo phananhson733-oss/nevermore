@@ -101,9 +101,19 @@ const seoKeyword = GrowthMapKeywordLibraryItem.parse({
   reviewOrigin: "user",
   revision: 3,
   intent: "commercial",
+  searchIntent: {
+    value: "commercial",
+    authority: "user_confirmed",
+    snapshotId: null,
+    observationId: null,
+    analysisInvocationId: null,
+    observedAt: null,
+    limitation: null,
+  },
   buyerStage: "consideration",
   cluster: {
     clusterId: SEO_KEYWORD_CLUSTER_ID,
+    topicModelRevision: 2,
     name: "Customer onboarding",
   },
   classificationLimitations: {
@@ -156,6 +166,7 @@ const seoKeyword = GrowthMapKeywordLibraryItem.parse({
       competitorRank: "当前记录是自有站点排名观测。",
     },
   },
+  recollection: null,
   coverage: {
     availability: "partial",
     limitations: ["竞品排名需要在竞品库的同市场证据中单独查看。"],
@@ -174,6 +185,15 @@ const vocKeyword = GrowthMapKeywordLibraryItem.parse({
   reviewOrigin: null,
   revision: 0,
   intent: null,
+  searchIntent: {
+    value: null,
+    authority: "unavailable",
+    snapshotId: null,
+    observationId: null,
+    analysisInvocationId: null,
+    observedAt: null,
+    limitation: "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.",
+  },
   buyerStage: null,
   cluster: null,
   classificationLimitations: {
@@ -243,6 +263,7 @@ const vocKeyword = GrowthMapKeywordLibraryItem.parse({
       competitorRank: "VOC 证据不提供竞品排名观测。",
     },
   },
+  recollection: null,
   coverage: {
     availability: "partial",
     limitations: ["VOC 来源不提供搜索量、难度或排名指标。"],
@@ -965,6 +986,7 @@ async function installArtifactApi(page: Page): Promise<void> {
     await json(route, {
       data: GrowthMapKeywordLibraryResponse.parse({
         projectId: E2E_PROJECT_ID,
+        diagnosticRunId: null,
         data: [seoKeyword, vocKeyword],
         meta: {
           limit: 50,

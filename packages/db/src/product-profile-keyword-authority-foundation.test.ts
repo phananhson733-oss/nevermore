@@ -5,7 +5,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 const migrationPath = fileURLToPath(
   new URL(
-    "../migrations/0049_product_profile_keyword_lineage.sql",
+    "../migrations/0050_product_profile_keyword_lineage.sql",
     import.meta.url,
   ),
 );
@@ -47,12 +47,12 @@ function migrationTemplateIds(): string[] {
 }
 
 describe("Product Profile Keyword Library database authority", () => {
-  it("publishes the forward-only 0049 migration head", () => {
+  it("publishes the forward-only 0050 migration head", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0049_product_profile_keyword_lineage",
+      "0050_product_profile_keyword_lineage",
     );
     expect(migration).toContain(
-      "SELECT '0049_product_profile_keyword_lineage'::text AS migration_version",
+      "SELECT '0050_product_profile_keyword_lineage'::text AS migration_version",
     );
   });
 

@@ -13,6 +13,7 @@ export * from "./zod/icp.ts";
 export * from "./zod/projects.ts";
 export * from "./zod/product-profile.ts";
 export * from "./zod/product-profile-synthesis.ts";
+export * from "./zod/topic-model-generation.ts";
 export * from "./zod/sources.ts";
 export * from "./zod/analysis-refresh.ts";
 export * from "./zod/diagnostics.ts";

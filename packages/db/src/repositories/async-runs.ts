@@ -19,7 +19,8 @@ export type RunKind =
   | "content_shadow"
   | "publication"
   | "measurement"
-  | "analysis_refresh";
+  | "analysis_refresh"
+  | "topic_model_generation";
 export type RunStatus =
   | "queued"
   | "running"
@@ -121,7 +122,8 @@ export class AsyncRunsRepository extends Repository {
           ('content_shadow'::text),
           ('publication'::text),
           ('measurement'::text),
-          ('analysis_refresh'::text)
+          ('analysis_refresh'::text),
+          ('topic_model_generation'::text)
       )
       select
         run_kinds.kind,
@@ -594,7 +596,8 @@ function runKind(value: unknown): RunKind | null {
     value === "content_shadow" ||
     value === "publication" ||
     value === "measurement" ||
-    value === "analysis_refresh"
+    value === "analysis_refresh" ||
+    value === "topic_model_generation"
     ? value
     : null;
 }

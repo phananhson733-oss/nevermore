@@ -98,10 +98,14 @@ import {
   type ReviewFindingRequest,
 } from "@/lib/api/hooks-diagnosis";
 import { ApiError } from "@/lib/api";
-import { collectAllCursorItems } from "@/lib/api/cursor-pages";
+import {
+  collectAllCursorItems,
+  uniqueCursorItems,
+} from "@/lib/api/cursor-pages";
 import { getProjectOpportunities } from "@/lib/api/hooks-opportunities";
 import {
   getGrowthMapUrls,
+  getGrowthMapKeywords,
   getGrowthMapKeywordRelations,
   refreshGrowthMapAfterFindingReview,
   useBeginGrowthMapTopicModelDraft,
@@ -124,12 +128,17 @@ import {
   useReviewGrowthMapCompetitor,
   useUpdateGrowthMapCompetitorMonitor,
 } from "@/lib/api/hooks-growth-map";
+import {
+  useProjectArtifacts,
+  type Artifact,
+} from "@/lib/api/hooks-studio";
 import { ProblemNotice, ProblemState } from "../_problem-display.tsx";
 import { EvidenceRefsDisclosure } from "./_evidence-refs-disclosure.tsx";
 import { RunDiagnosis } from "./_run-diagnosis.tsx";
 import { executionHrefForRef } from "../execution/_execution-deep-link.ts";
 import {
   GROWTH_MAP_OBJECT_MODES,
+  GROWTH_MAP_PAGE_VIEWS,
   GROWTH_MAP_KEYWORD_SOURCE_KINDS,
   buildBeginTopicModelDraftCommand,
   buildConfirmTopicModelCommand,
@@ -137,6 +146,7 @@ import {
   buildKeywordGovernanceReviewCommand,
   buildKeywordRelationDecisionCommand,
   buildKeywordRelationPageProjection,
+  buildGrowthMapKeywordDeliveryProjection,
   buildPatchTopicModelDraftCommand,
   buildTopicMapProjection,
   buildTopicNodeCreateIntent,
@@ -147,6 +157,7 @@ import {
   buildTopicNodeUpdateIntent,
   buildGrowthMapReviewCommand,
   buildGrowthMapOpportunityViewItems,
+  buildGrowthMapTopicClusterView,
   buildInternalLinkMapProjection,
   competitorAiCitationDisplay,
   competitorDetailReadState,
@@ -169,6 +180,7 @@ import {
   growthMapPlatformLimitationKey,
   growthMapPrimaryOpportunity,
   growthMapKeywordReviewPresentation,
+  growthMapUncoveredKeywordCountPresentation,
   identitySourceKey,
   keywordDetailReadState,
   keywordTopicNeedsConflictConfirmation,
@@ -178,10 +190,13 @@ import {
   metricPresentation,
   metricValueLabelKey,
   normalizeGrowthMapObjectMode,
+  normalizeGrowthMapPageView,
   presentGrowthMapReviewProblem,
   rememberGrowthMapCursorPredecessor,
   resolveGrowthMapCursorPredecessor,
   resolveVisibleGrowthMapOpportunitySelection,
+  resolveVisibleGrowthMapClusterSelection,
+  resolveVisibleGrowthMapUrlSelection,
   resolveVisibleCompetitorSelection,
   resolveVisibleKeywordSelection,
   safeExternalPageUrl,
@@ -195,7 +210,10 @@ import {
   type GrowthMapDetailState,
   type GrowthMapFindingReviewMode,
   type GrowthMapObjectMode,
+  type GrowthMapPageView,
   type GrowthMapOpportunityViewItem,
+  type GrowthMapTopicClusterViewRow,
+  type GrowthMapKeywordDeliveryProjection,
   type GrowthMapReviewProblemPresentation,
   type GrowthMapReviewIntent,
   type GrowthMapCompetitorStatusFilter,
@@ -251,8 +269,28 @@ interface CompleteGrowthMapOpportunityRecord {
   readonly opportunity: GrowthOpportunity;
 }
 
+interface CompleteGrowthMapKeywordRecord {
+  readonly id: string;
+  readonly item: GrowthMapKeywordLibraryItem;
+}
+
+interface CompleteGrowthMapKeywordInventory {
+  readonly diagnosticRunId: string;
+  readonly items: readonly GrowthMapKeywordLibraryItem[];
+}
+
 class GrowthMapPageViewScopeMismatchError extends Error {
   override readonly name = "GrowthMapPageViewScopeMismatchError";
+}
+
+function isGrowthMapPageViewScopeMismatch(error: unknown): boolean {
+  return (
+    error instanceof GrowthMapPageViewScopeMismatchError ||
+    (error instanceof Error &&
+      (error.name === "GrowthMapPageViewScopeMismatchError" ||
+        error.message ===
+          "Keyword Library diagnostic run identity does not match the requested view."))
+  );
 }
 
 /**
@@ -317,6 +355,39 @@ async function readCompleteGrowthMapOpportunities(
       },
     );
   return records.map((record) => record.opportunity);
+}
+
+async function readCompleteGrowthMapKeywords(
+  projectId: string,
+  diagnosticRunId: string,
+): Promise<CompleteGrowthMapKeywordInventory> {
+  const records = await collectAllCursorItems<CompleteGrowthMapKeywordRecord>(
+    async (cursor) => {
+      const response = await getGrowthMapKeywords(projectId, {
+        cursor,
+        limit: 100,
+        diagnosticRunId,
+      });
+      if (response.diagnosticRunId !== diagnosticRunId) {
+        throw new GrowthMapPageViewScopeMismatchError(
+          "Growth Map Keyword generation changed while grouping views.",
+        );
+      }
+      if (response.projectId !== projectId) {
+        throw new GrowthMapPageViewScopeMismatchError(
+          "Growth Map Keyword project changed while grouping views.",
+        );
+      }
+      return {
+        data: response.data.map((item) => ({ id: item.keywordId, item })),
+        meta: { nextCursor: response.meta.nextCursor },
+      };
+    },
+  );
+  return {
+    diagnosticRunId,
+    items: records.map((record) => record.item),
+  };
 }
 
 /**
@@ -2267,6 +2338,193 @@ function DetailState({
   );
 }
 
+function UrlLedger({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapUrlPortfolioItem[];
+  readonly selectedId: string | null;
+  readonly onSelect: (sitePageId: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const pageTypeLabel = usePageTypeLabel();
+  return (
+    <div className={styles.ledger}>
+      <div className={styles.ledgerHeader} aria-hidden="true">
+        <span>{t("columns.url")}</span>
+        <span>{t("columns.pageType")}</span>
+        <span>{t("columns.signals")}</span>
+        <span>{t("columns.clicks")}</span>
+        <span>{t("columns.position")}</span>
+        <span>{t("columns.priority")}</span>
+      </div>
+      <ul className={styles.portfolioList} aria-label={t("url.label")}>
+        {items.map((item) => {
+          const selected = selectedId === item.sitePageId;
+          return (
+            <li className={styles.portfolioRow} key={item.sitePageId}>
+              <div
+                className={cx(
+                  styles.rowButton,
+                  selected && styles.rowSelected,
+                )}
+                data-growth-map-url-row={item.sitePageId}
+              >
+                <button
+                  type="button"
+                  className={styles.rowSelectButton}
+                  aria-pressed={selected}
+                  onClick={() => onSelect(item.sitePageId)}
+                >
+                  <span className={styles.rowSelectLabel}>
+                    {t("url.selectAria", { url: item.normalizedUrl })}
+                  </span>
+                </button>
+                <span className={styles.urlCell}>
+                  <strong>{urlPresentation(item.normalizedUrl).path}</strong>
+                  <span>{item.title ?? t("url.titleUnavailable")}</span>
+                  <small>{item.normalizedUrl}</small>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {pageTypeLabel(item.pageType)}
+                  </strong>
+                  <small>{item.templateKey ?? t("url.templateUnavailable")}</small>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.findingIds.length}
+                  </strong>
+                  <small>{t("counts.findings", { count: item.findingIds.length })}</small>
+                </span>
+                <span className={styles.metricCell}>
+                  <MetricValue
+                    compact
+                    observation={findMetricObservation(
+                      item.metricObservations,
+                      LIST_METRICS.clicks,
+                    )}
+                  />
+                </span>
+                <span className={styles.metricCell}>
+                  <MetricValue
+                    compact
+                    observation={findMetricObservation(
+                      item.metricObservations,
+                      LIST_METRICS.position,
+                    )}
+                  />
+                </span>
+                <span className={styles.priorityCell}>
+                  {item.priority.availability === "available" ? (
+                    <span
+                      className={cx(
+                        styles.priorityPill,
+                        PRIORITY_CLASS[item.priority.value],
+                      )}
+                    >
+                      {PRIORITY_CODE[item.priority.value]}
+                    </span>
+                  ) : (
+                    <span className={styles.priorityUnavailable}>—</span>
+                  )}
+                  <ArrowRight aria-hidden="true" size={17} />
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function UrlPageView({
+  projectId,
+  diagnosticRunId,
+  items,
+  requestedId,
+  selectedFindingId,
+  search,
+  pageTypeFilter,
+  priorityFilter,
+  onSelect,
+  onRepairSelection,
+}: {
+  readonly projectId: string;
+  readonly diagnosticRunId: string;
+  readonly items: readonly GrowthMapUrlPortfolioItem[];
+  readonly requestedId: string | null;
+  readonly selectedFindingId: string | null;
+  readonly search: string;
+  readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
+  readonly priorityFilter: GrowthMapUrlPriorityFilter;
+  readonly onSelect: (sitePageId: string) => void;
+  readonly onRepairSelection: (sitePageId: string | null) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
+  const visibleItems = useMemo(
+    () =>
+      filterGrowthMapUrlItems(items, {
+        pageType: pageTypeFilter,
+        priority: priorityFilter,
+      }).filter((item) => {
+        if (normalizedSearch.length === 0) return true;
+        return [
+          item.normalizedUrl,
+          item.title,
+          item.templateKey,
+          item.clusterKey,
+        ].some((value) =>
+          value?.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
+        );
+      }),
+    [items, normalizedSearch, pageTypeFilter, priorityFilter],
+  );
+  const selectedId = resolveVisibleGrowthMapUrlSelection(
+    requestedId,
+    visibleItems.map((item) => item.sitePageId),
+  );
+
+  useEffect(() => {
+    if (requestedId === null || requestedId === selectedId) return;
+    onRepairSelection(selectedId);
+  }, [onRepairSelection, requestedId, selectedId]);
+
+  if (visibleItems.length === 0) {
+    return (
+      <EmptyState
+        className={styles.portfolioEmpty}
+        icon={<Globe2 size={30} />}
+        title={t("empty.url")}
+        description={t("url.description")}
+      />
+    );
+  }
+  return (
+    <div className={styles.workspace}>
+      <div className={styles.masterColumn}>
+        <UrlLedger
+          items={visibleItems}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+        <p className={styles.completeViewScope}>
+          {t("searchScope")} · {t("counts.urls", { count: visibleItems.length })}
+        </p>
+      </div>
+      <DetailState
+        projectId={projectId}
+        selectedSitePageId={selectedId}
+        selectedFindingId={selectedFindingId}
+        diagnosticRunId={diagnosticRunId}
+      />
+    </div>
+  );
+}
+
 function OpportunityPriorityPill({
   item,
 }: {
@@ -3049,6 +3307,442 @@ function OpportunityPageView({
   );
 }
 
+function TopicClusterLedger({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  readonly items: readonly GrowthMapTopicClusterViewRow[];
+  readonly selectedId: string | null;
+  readonly onSelect: (topicNodeId: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const uiLocale = useLocale();
+  return (
+    <div className={cx(styles.ledger, styles.clusterLedger)}>
+      <div
+        className={cx(styles.ledgerHeader, styles.clusterLedgerHeader)}
+        aria-hidden="true"
+      >
+        <span>{t("columns.topic")}</span>
+        <span>{t("columns.role")}</span>
+        <span>{t("columns.urls")}</span>
+        <span>{t("columns.keywords")}</span>
+        <span>{t("columns.volume")}</span>
+        <span>{t("columns.coverage")}</span>
+      </div>
+      <ul className={styles.portfolioList} aria-label={t("cluster.label")}>
+        {items.map((item) => {
+          const selected = selectedId === item.topicNodeId;
+          return (
+            <li className={styles.portfolioRow} key={item.topicNodeId}>
+              <div
+                className={cx(
+                  styles.rowButton,
+                  styles.clusterRowButton,
+                  selected && styles.rowSelected,
+                )}
+                data-growth-map-cluster-row={item.topicNodeId}
+              >
+                <button
+                  type="button"
+                  className={styles.rowSelectButton}
+                  aria-pressed={selected}
+                  onClick={() => onSelect(item.topicNodeId)}
+                >
+                  <span className={styles.rowSelectLabel}>
+                    {t("cluster.selectAria", { topic: item.label })}
+                  </span>
+                </button>
+                <span
+                  className={styles.urlCell}
+                  style={{ paddingInlineStart: `${item.depth * 14}px` }}
+                >
+                  <strong>{item.label}</strong>
+                  <span>{item.description ?? t("cluster.descriptionUnavailable")}</span>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.depth === 0 ? t("cluster.root") : t("cluster.child")}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.pageCount}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.keywordCount}
+                  </strong>
+                </span>
+                <span className={styles.metricCell}>
+                  <strong className={styles.libraryMetricPrimary}>
+                    {item.searchVolume.value === null
+                      ? "—"
+                      : formatNumber(uiLocale, item.searchVolume.value)}
+                  </strong>
+                  {item.searchVolume.limitation === null ? null : (
+                    <small>{t(`cluster.searchVolume.${item.searchVolume.limitation}`)}</small>
+                  )}
+                </span>
+                <span className={styles.priorityCell}>
+                  <span
+                    className={cx(
+                      styles.pageViewStatus,
+                      styles[`clusterCoverage${item.coverageState}`],
+                    )}
+                  >
+                    {t(`cluster.coverage.${item.coverageState}`)}
+                  </span>
+                  <ArrowRight aria-hidden="true" size={17} />
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function TopicClusterDetailPanel({
+  item,
+  onOpenUrl,
+  onOpenOpportunity,
+}: {
+  readonly item: GrowthMapTopicClusterViewRow;
+  readonly onOpenUrl: (sitePageId: string) => void;
+  readonly onOpenOpportunity: (opportunityId: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const uiLocale = useLocale();
+  const primaryPage = item.primaryPage;
+  const topOpportunity = item.topOpportunity;
+  return (
+    <aside
+      className={styles.detailPanel}
+      aria-label={t("cluster.detailLabel")}
+      data-cluster-detail={item.topicNodeId}
+    >
+      <header className={styles.detailHeader}>
+        <div className={styles.detailEyebrow}>
+          <span>{t("cluster.eyebrow")}</span>
+          <span
+            className={cx(
+              styles.pageViewStatus,
+              styles[`clusterCoverage${item.coverageState}`],
+            )}
+          >
+            {t(`cluster.coverage.${item.coverageState}`)}
+          </span>
+        </div>
+        <div className={styles.detailTitleRow}>
+          <div>
+            <h2>{item.label}</h2>
+            <p>{item.description ?? t("cluster.descriptionUnavailable")}</p>
+          </div>
+        </div>
+      </header>
+
+      <section className={styles.detailSummary}>
+        <div>
+          <span>{t("cluster.metrics.pages")}</span>
+          <strong>{item.pageCount}</strong>
+        </div>
+        <div>
+          <span>{t("cluster.metrics.keywords")}</span>
+          <strong>{item.keywordCount}</strong>
+        </div>
+        <div>
+          <span>{t("cluster.metrics.volume")}</span>
+          <strong>
+            {item.searchVolume.value === null
+              ? "—"
+              : formatNumber(uiLocale, item.searchVolume.value)}
+          </strong>
+        </div>
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <div className={styles.railSectionHeading}>
+          <span>{t("cluster.sections.path")}</span>
+        </div>
+        <div className={styles.clusterConversionPath}>
+          <div>
+            <span>01</span>
+            <small>{t("cluster.path.topic")}</small>
+            <strong>{item.label}</strong>
+          </div>
+          <ArrowRight aria-hidden="true" size={16} />
+          <div>
+            <span>02</span>
+            <small>{t("cluster.path.page")}</small>
+            <strong>
+              {primaryPage === null
+                ? t("cluster.noMappedPage")
+                : urlPresentation(primaryPage.normalizedUrl).path}
+            </strong>
+          </div>
+          <ArrowRight aria-hidden="true" size={16} />
+          <div>
+            <span>03</span>
+            <small>{t("cluster.path.cta")}</small>
+            <strong>{t("cluster.ctaUnavailable")}</strong>
+          </div>
+        </div>
+        <p className={styles.sectionBoundaryCopy}>
+          {t("cluster.ctaUnavailableDescription")}
+        </p>
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <div className={styles.railSectionHeading}>
+          <span>{t("cluster.sections.pages")}</span>
+          <strong>{t("cluster.itemCount", { count: item.pages.length })}</strong>
+        </div>
+        {item.pages.length === 0 ? (
+          <p>{t("cluster.noPages")}</p>
+        ) : (
+          <ul className={styles.compactRailActions}>
+            {item.pages.slice(0, 6).map((page) => (
+              <li key={page.sitePageId}>
+                <button type="button" onClick={() => onOpenUrl(page.sitePageId)}>
+                  <span className={styles.railTargetText}>
+                    <strong>{urlPresentation(page.normalizedUrl).path}</strong>
+                    <small>{page.title ?? t("url.titleUnavailable")}</small>
+                  </span>
+                  <ArrowRight aria-hidden="true" size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <div className={styles.railSectionHeading}>
+          <span>{t("cluster.sections.demand")}</span>
+          <strong>{t("cluster.queryCount", { count: item.keywords.length })}</strong>
+        </div>
+        {item.keywords.length === 0 ? (
+          <p>{t("cluster.noKeywords")}</p>
+        ) : (
+          <ul className={styles.compactRailList}>
+            {item.keywords.slice(0, 8).map((keyword) => (
+              <li key={keyword.keywordId}>
+                <strong>{keyword.displayKeyword}</strong>
+                <small>
+                  {keyword.searchIntent.value ?? t("cluster.intentUnavailable")}
+                  {" · "}
+                  {keyword.metrics.volume?.value === null ||
+                  keyword.metrics.volume?.value === undefined
+                    ? t("cluster.volumeUnavailable")
+                    : formatNumber(uiLocale, keyword.metrics.volume.value)}
+                </small>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={styles.compactRailSection}>
+        <div className={styles.railSectionHeading}>
+          <span>{t("cluster.sections.opportunity")}</span>
+        </div>
+        {topOpportunity === null ? (
+          <p>{t("cluster.noOpportunity")}</p>
+        ) : (
+          <button
+            type="button"
+            className={styles.clusterOpportunityAction}
+            onClick={() => onOpenOpportunity(topOpportunity.id)}
+          >
+            <span>
+              <strong>{topOpportunity.opportunity.title}</strong>
+              <small>{topOpportunity.opportunity.targetRef}</small>
+            </span>
+            <ArrowRight aria-hidden="true" size={16} />
+          </button>
+        )}
+        {item.coverageLimitation === null ? null : (
+          <LimitationList limitations={[item.coverageLimitation]} />
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function TopicClusterPageView({
+  items,
+  requestedId,
+  search,
+  pageTypeFilter,
+  priorityFilter,
+  onSelect,
+  onRepairSelection,
+  onOpenUrl,
+  onOpenOpportunity,
+}: {
+  readonly items: readonly GrowthMapTopicClusterViewRow[];
+  readonly requestedId: string | null;
+  readonly search: string;
+  readonly pageTypeFilter: GrowthMapUrlPageTypeFilter;
+  readonly priorityFilter: GrowthMapUrlPriorityFilter;
+  readonly onSelect: (topicNodeId: string) => void;
+  readonly onRepairSelection: (topicNodeId: string | null) => void;
+  readonly onOpenUrl: (sitePageId: string) => void;
+  readonly onOpenOpportunity: (opportunityId: string) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const normalizedSearch = search.normalize("NFKC").trim().toLocaleLowerCase();
+  const visibleItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (
+          pageTypeFilter !== "all" &&
+          !item.pages.some((page) => page.pageType === pageTypeFilter)
+        ) {
+          return false;
+        }
+        if (
+          priorityFilter !== "all" &&
+          (item.topOpportunity?.priority.availability !== "available" ||
+            item.topOpportunity.priority.value !== priorityFilter)
+        ) {
+          return false;
+        }
+        if (normalizedSearch.length === 0) return true;
+        return [
+          item.label,
+          item.description,
+          ...item.pages.map((page) => `${page.normalizedUrl} ${page.title ?? ""}`),
+          ...item.keywords.map((keyword) => keyword.displayKeyword),
+        ].some((value) =>
+          value?.normalize("NFKC").toLocaleLowerCase().includes(normalizedSearch),
+        );
+      }),
+    [items, normalizedSearch, pageTypeFilter, priorityFilter],
+  );
+  const selectedId = resolveVisibleGrowthMapClusterSelection(
+    requestedId,
+    visibleItems.map((item) => item.topicNodeId),
+  );
+  const selected = visibleItems.find((item) => item.topicNodeId === selectedId) ?? null;
+
+  useEffect(() => {
+    if (requestedId === null || requestedId === selectedId) return;
+    onRepairSelection(selectedId);
+  }, [onRepairSelection, requestedId, selectedId]);
+
+  if (visibleItems.length === 0) {
+    return (
+      <EmptyState
+        className={styles.portfolioEmpty}
+        icon={<Network size={30} />}
+        title={t("empty.cluster")}
+        description={t("cluster.description")}
+      />
+    );
+  }
+  return (
+    <div className={styles.workspace}>
+      <div className={styles.masterColumn}>
+        <TopicClusterLedger
+          items={visibleItems}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+        <p className={styles.completeViewScope}>
+          {t("searchScope")} · {t("counts.clusters", { count: visibleItems.length })}
+        </p>
+      </div>
+      {selected === null ? (
+        <aside className={styles.detailPlaceholder}>
+          <p>{t("select.cluster")}</p>
+        </aside>
+      ) : (
+        <TopicClusterDetailPanel
+          key={selected.topicNodeId}
+          item={selected}
+          onOpenUrl={onOpenUrl}
+          onOpenOpportunity={onOpenOpportunity}
+        />
+      )}
+    </div>
+  );
+}
+
+function PageViewTabs({
+  activeView,
+  onSelect,
+}: {
+  readonly activeView: GrowthMapPageView;
+  readonly onSelect: (view: GrowthMapPageView) => void;
+}) {
+  const t = useTranslations("growthMap.pageViews");
+  const tabRefs = useRef<Partial<Record<GrowthMapPageView, HTMLButtonElement>>>(
+    {},
+  );
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>): void {
+    const current = event.currentTarget.dataset.pageViewTab as
+      | GrowthMapPageView
+      | undefined;
+    if (current === undefined) return;
+    const currentIndex = GROWTH_MAP_PAGE_VIEWS.indexOf(current);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % GROWTH_MAP_PAGE_VIEWS.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      nextIndex =
+        (currentIndex - 1 + GROWTH_MAP_PAGE_VIEWS.length) %
+        GROWTH_MAP_PAGE_VIEWS.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = GROWTH_MAP_PAGE_VIEWS.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextView = GROWTH_MAP_PAGE_VIEWS[nextIndex] ?? activeView;
+    onSelect(nextView);
+    tabRefs.current[nextView]?.focus();
+  }
+
+  return (
+    <section className={styles.pageViewSwitcher}>
+      <span>{t("viewLabel")}</span>
+      <div role="tablist" aria-label={t("viewSwitcherLabel")}>
+        {GROWTH_MAP_PAGE_VIEWS.map((view) => (
+          <button
+            type="button"
+            role="tab"
+            id={`sf-growth-map-page-view-${view}`}
+            aria-controls={`sf-growth-map-page-panel-${view}`}
+            aria-selected={activeView === view}
+            tabIndex={activeView === view ? 0 : -1}
+            className={cx(
+              styles.pageViewTab,
+              activeView === view && styles.pageViewTabActive,
+            )}
+            data-page-view-tab={view}
+            key={view}
+            ref={(element) => {
+              if (element === null) delete tabRefs.current[view];
+              else tabRefs.current[view] = element;
+            }}
+            onClick={() => onSelect(view)}
+            onKeyDown={handleKeyDown}
+          >
+            {t(`view.${view}`)}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PortfolioPane({
   projectId,
   locationSearch,
@@ -3075,7 +3769,9 @@ function PortfolioPane({
     [locationSearch],
   );
   const querySearch = locationParams.get("q") ?? "";
+  const pageView = normalizeGrowthMapPageView(locationParams.get("view"));
   const selectedSitePageId = locationParams.get("selectedSitePageId");
+  const selectedClusterParam = locationParams.get("selectedClusterId");
   const selectedOpportunityParam = locationParams.get("selectedOpportunityId");
   const selectedFindingId = locationParams.get("findingId");
   const [searchDraft, setSearchDraft] = useState(querySearch);
@@ -3116,6 +3812,20 @@ function PortfolioPane({
     queryFn: () =>
       readCompleteGrowthMapOpportunities(projectId, diagnosticRunId),
   });
+  const completeKeywordsQuery = useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "page-views",
+      diagnosticRunId,
+      "complete-keywords",
+    ],
+    queryFn: () => readCompleteGrowthMapKeywords(projectId, diagnosticRunId),
+    enabled: pageView === "cluster",
+  });
+  const topicWorkspaceQuery = useGrowthMapTopicModelWorkspace(projectId);
+  const topicInsightsQuery = useGrowthMapTopicModelInsights(projectId);
   // Reads the live library rather than the frozen generation: a keyword that
   // has been collected but not yet reviewed still belongs in this count. Pinned
   // to the generation this reported zero until someone had reviewed a keyword,
@@ -3137,29 +3847,56 @@ function PortfolioPane({
       buildGrowthMapOpportunityViewItems(completeOpportunities, completeUrls),
     [completeOpportunities, completeUrls],
   );
+  const topicClusterView = useMemo(() => {
+    if (
+      pageView !== "cluster" ||
+      completeKeywordsQuery.data === undefined ||
+      topicWorkspaceQuery.data === undefined ||
+      topicInsightsQuery.data === undefined
+    ) {
+      return null;
+    }
+    return buildGrowthMapTopicClusterView({
+      diagnosticRunId,
+      keywordDiagnosticRunId: completeKeywordsQuery.data.diagnosticRunId,
+      workspace: topicWorkspaceQuery.data,
+      insights: topicInsightsQuery.data,
+      urls: completeUrls,
+      keywords: completeKeywordsQuery.data.items,
+      opportunities: completeOpportunities,
+    });
+  }, [
+    completeKeywordsQuery.data,
+    completeOpportunities,
+    completeUrls,
+    diagnosticRunId,
+    pageView,
+    topicInsightsQuery.data,
+    topicWorkspaceQuery.data,
+  ]);
 
   useEffect(() => {
     setSearchDraft(querySearch);
   }, [querySearch]);
 
   useEffect(() => {
-    // The Pages tab has exactly one presentation now. `view`,
-    // `selectedClusterId`, and a page cursor are addresses of the removed
-    // URL/cluster views, so an old deep link is rewritten to its canonical
-    // Opportunity-first form instead of keeping dead state in the address bar.
     if (
       navigation.isPending ||
       locationSearch !== canonicalLocationSearch ||
-      canonicalMode !== "pages" ||
-      (!canonicalSearchParams.has("view") &&
-        !canonicalSearchParams.has("selectedClusterId") &&
-        !canonicalSearchParams.has("cursor"))
+      canonicalMode !== "pages"
     ) {
       return;
     }
-    navigation.replaceCanonicalHref(
-      growthMapLocationHref(pathname, canonicalLocationSearch, {}),
+    const canonicalHref = growthMapLocationHref(
+      pathname,
+      canonicalLocationSearch,
+      {},
     );
+    const canonicalQuery = canonicalHref.includes("?")
+      ? (canonicalHref.split("?")[1] ?? "")
+      : "";
+    if (canonicalQuery === canonicalLocationSearch) return;
+    navigation.replaceCanonicalHref(canonicalHref);
   }, [
     canonicalLocationSearch,
     canonicalMode,
@@ -3177,6 +3914,43 @@ function PortfolioPane({
       selectedSitePageId: null,
       selectedFindingId: null,
     });
+  }
+
+  function selectUrl(sitePageId: string): void {
+    navigation.request({
+      selectedSitePageId: sitePageId,
+      selectedFindingId: null,
+    });
+  }
+
+  function repairUrlSelection(sitePageId: string | null): void {
+    navigation.request({ selectedSitePageId: sitePageId });
+  }
+
+  function selectCluster(topicNodeId: string): void {
+    navigation.request({ selectedClusterId: topicNodeId });
+  }
+
+  function repairClusterSelection(topicNodeId: string | null): void {
+    navigation.request({ selectedClusterId: topicNodeId });
+  }
+
+  function openClusterUrl(sitePageId: string): void {
+    navigation.request({
+      pageView: "url",
+      selectedSitePageId: sitePageId,
+    });
+  }
+
+  function openClusterOpportunity(opportunityId: string): void {
+    navigation.request({
+      pageView: "opportunity",
+      selectedOpportunityId: opportunityId,
+    });
+  }
+
+  function selectPageView(nextView: GrowthMapPageView): void {
+    navigation.request({ pageView: nextView });
   }
 
   function repairOpportunitySelection(id: string | null): void {
@@ -3208,6 +3982,7 @@ function PortfolioPane({
     navigation.request({
       search: searchDraft,
       selectedSitePageId: null,
+      selectedClusterId: null,
       selectedOpportunityId: null,
       selectedFindingId: null,
     });
@@ -3257,6 +4032,10 @@ function PortfolioPane({
     summaryKeywords?.filter(
       (keyword) => keyword.mappedTarget.kind === "unassigned",
     ) ?? null;
+  const uncoveredKeywordCount = growthMapUncoveredKeywordCountPresentation(
+    summaryKeywords,
+    summaryKeywordsQuery.data?.meta.hasNext === true,
+  );
   const uncoveredClusterCount =
     uncoveredKeywords === null
       ? null
@@ -3299,11 +4078,15 @@ function PortfolioPane({
         <div className={styles.businessSummaryItem}>
           <span>{t("portfolioSummary.uncoveredKeywords")}</span>
           <strong>
-            {uncoveredKeywords === null
+            {uncoveredKeywordCount.kind === "unavailable"
               ? t("portfolioSummary.unavailable")
-              : summaryKeywords !== null && summaryKeywords.length === 0
+              : uncoveredKeywordCount.kind === "empty"
                 ? "—"
-                : uncoveredKeywords.length}
+                : uncoveredKeywordCount.kind === "lower_bound"
+                  ? t("portfolioSummary.uncoveredLowerBound", {
+                      count: uncoveredKeywordCount.count,
+                    })
+                  : uncoveredKeywordCount.count}
           </strong>
           <small>
             {summaryKeywords === null || uncoveredClusterCount === null ? (
@@ -3331,6 +4114,8 @@ function PortfolioPane({
         </div>
       </section>
       <LimitationList limitations={response.meta.coverage.limitations} />
+
+      <PageViewTabs activeView={pageView} onSelect={selectPageView} />
 
       <form
         className={cx(styles.libraryToolbar, styles.portfolioToolbar)}
@@ -3424,46 +4209,112 @@ function PortfolioPane({
         ) : null}
       </form>
 
-      {completeUrlsQuery.isPending || completeOpportunitiesQuery.isPending ? (
+      {completeUrlsQuery.isPending ||
+      completeOpportunitiesQuery.isPending ||
+      (pageView === "cluster" &&
+        (completeKeywordsQuery.isPending ||
+          topicWorkspaceQuery.isPending ||
+          topicInsightsQuery.isPending)) ? (
         <div className={styles.pageState} role="status">
           <Spinner label={t("pageViews.loading")} size="lg" />
           <p>{t("pageViews.loading")}</p>
         </div>
-      ) : completeUrlsQuery.isError || completeOpportunitiesQuery.isError ? (
+      ) : completeUrlsQuery.isError ||
+        completeOpportunitiesQuery.isError ||
+        (pageView === "cluster" &&
+          (completeKeywordsQuery.isError ||
+            topicWorkspaceQuery.isError ||
+            topicInsightsQuery.isError)) ? (
         <div className={styles.pageState}>
           <ProblemState
-            error={completeUrlsQuery.error ?? completeOpportunitiesQuery.error}
+            error={
+              completeUrlsQuery.error ??
+              completeOpportunitiesQuery.error ??
+              completeKeywordsQuery.error ??
+              topicWorkspaceQuery.error ??
+              topicInsightsQuery.error
+            }
             onRetry={() => {
               void completeUrlsQuery.refetch();
               void completeOpportunitiesQuery.refetch();
+              if (pageView === "cluster") {
+                void completeKeywordsQuery.refetch();
+                void topicWorkspaceQuery.refetch();
+                void topicInsightsQuery.refetch();
+              }
             }}
             message={t(
-              completeUrlsQuery.error instanceof
-                GrowthMapPageViewScopeMismatchError ||
-                completeOpportunitiesQuery.error instanceof
-                  GrowthMapPageViewScopeMismatchError
+              isGrowthMapPageViewScopeMismatch(completeUrlsQuery.error) ||
+                isGrowthMapPageViewScopeMismatch(
+                  completeOpportunitiesQuery.error,
+                ) ||
+                isGrowthMapPageViewScopeMismatch(completeKeywordsQuery.error)
                 ? "pageViews.scopeMismatch"
                 : "pageViews.loadError",
             )}
           />
         </div>
-      ) : (
-        <OpportunityPageView
-          projectId={projectId}
-          diagnosticRunId={diagnosticRunId}
-          items={opportunityViewItems}
-          requestedId={selectedOpportunityParam}
-          search={querySearch}
-          pageTypeFilter={pageTypeFilter}
-          priorityFilter={priorityFilter}
-          selectedSitePageId={selectedSitePageId}
-          selectedFindingId={selectedFindingId}
-          onSelect={selectOpportunity}
-          onRepairSelection={repairOpportunitySelection}
-          onPinSelection={repairOpportunitySelection}
-          onOpenUrl={openUrlFromOpportunity}
-          onCloseUrl={closeUrlDetail}
+      ) : pageView === "cluster" && topicClusterView?.kind !== "ready" ? (
+        <EmptyState
+          className={styles.pageState}
+          icon={<CircleAlert size={30} />}
+          title={t("pageViews.cluster.unavailableTitle")}
+          description={t(
+            `pageViews.cluster.unavailable.${
+              topicClusterView?.reason ?? "confirmed_topic_unavailable"
+            }`,
+          )}
         />
+      ) : (
+        <div
+          id={`sf-growth-map-page-panel-${pageView}`}
+          role="tabpanel"
+          aria-labelledby={`sf-growth-map-page-view-${pageView}`}
+        >
+          {pageView === "url" ? (
+            <UrlPageView
+              projectId={projectId}
+              diagnosticRunId={diagnosticRunId}
+              items={completeUrls}
+              requestedId={selectedSitePageId}
+              selectedFindingId={selectedFindingId}
+              search={querySearch}
+              pageTypeFilter={pageTypeFilter}
+              priorityFilter={priorityFilter}
+              onSelect={selectUrl}
+              onRepairSelection={repairUrlSelection}
+            />
+          ) : pageView === "cluster" && topicClusterView?.kind === "ready" ? (
+            <TopicClusterPageView
+              items={topicClusterView.rows}
+              requestedId={selectedClusterParam}
+              search={querySearch}
+              pageTypeFilter={pageTypeFilter}
+              priorityFilter={priorityFilter}
+              onSelect={selectCluster}
+              onRepairSelection={repairClusterSelection}
+              onOpenUrl={openClusterUrl}
+              onOpenOpportunity={openClusterOpportunity}
+            />
+          ) : (
+            <OpportunityPageView
+              projectId={projectId}
+              diagnosticRunId={diagnosticRunId}
+              items={opportunityViewItems}
+              requestedId={selectedOpportunityParam}
+              search={querySearch}
+              pageTypeFilter={pageTypeFilter}
+              priorityFilter={priorityFilter}
+              selectedSitePageId={selectedSitePageId}
+              selectedFindingId={selectedFindingId}
+              onSelect={selectOpportunity}
+              onRepairSelection={repairOpportunitySelection}
+              onPinSelection={repairOpportunitySelection}
+              onOpenUrl={openUrlFromOpportunity}
+              onCloseUrl={closeUrlDetail}
+            />
+          )}
+        </div>
       )}
     </section>
   );
@@ -3512,27 +4363,11 @@ const KEYWORD_INTENT_LABEL_KEYS = [
   "navigational",
 ] as const;
 
-const KEYWORD_BUYER_STAGE_LABEL_KEYS = [
-  "awareness",
-  "consideration",
-  "decision",
-  "retention",
-] as const;
-
 function knownKeywordIntent(
   intent: string,
 ): (typeof KEYWORD_INTENT_LABEL_KEYS)[number] | null {
   return (
     KEYWORD_INTENT_LABEL_KEYS.find((candidate) => candidate === intent) ?? null
-  );
-}
-
-function knownKeywordBuyerStage(
-  stage: string,
-): (typeof KEYWORD_BUYER_STAGE_LABEL_KEYS)[number] | null {
-  return (
-    KEYWORD_BUYER_STAGE_LABEL_KEYS.find((candidate) => candidate === stage) ??
-    null
   );
 }
 
@@ -3633,6 +4468,105 @@ function KeywordStatusPill({
   );
 }
 
+interface KeywordDeliveryDescription {
+  readonly primary: string;
+  readonly secondary: string;
+}
+
+function describeKeywordDelivery(
+  projection: GrowthMapKeywordDeliveryProjection,
+  tKeyword: ReturnType<typeof useTranslations<"growthMap.keywordLibrary">>,
+  tStudio: ReturnType<typeof useTranslations<"studio">>,
+): KeywordDeliveryDescription {
+  if (projection.kind !== "ready") {
+    return {
+      primary: tKeyword("delivery.unavailablePrimary"),
+      secondary: tKeyword(`delivery.reason.${projection.reason}`),
+    };
+  }
+
+  if (projection.opportunities.length !== 1) {
+    return {
+      primary: tKeyword("delivery.contentPaths", {
+        count: projection.opportunities.length,
+      }),
+      secondary: tKeyword("delivery.currentOutputs", {
+        count: projection.artifactCount,
+      }),
+    };
+  }
+
+  const match = projection.opportunities[0]!;
+  if (match.artifacts.length === 1) {
+    const artifact = match.artifacts[0]!;
+    return {
+      primary: tStudio(`artifactType.${artifact.artifactType}`),
+      secondary: tKeyword("delivery.artifactState", {
+        status: tStudio(`status.${artifact.status}`),
+        revision: artifact.currentRevision,
+      }),
+    };
+  }
+
+  if (match.artifacts.length > 1) {
+    return {
+      primary: tKeyword("delivery.currentOutputs", {
+        count: match.artifacts.length,
+      }),
+      secondary: tKeyword("delivery.contentPaths", { count: 1 }),
+    };
+  }
+
+  if (match.opportunity.readiness === "confirmed") {
+    return {
+      primary: tStudio(`artifactType.${match.opportunity.action.artifactType}`),
+      secondary: tKeyword("delivery.awaitingGeneration"),
+    };
+  }
+
+  const previewType =
+    match.opportunity.readiness === "reviewable"
+      ? match.opportunity.executionPreview?.artifactType ?? null
+      : null;
+  return {
+    primary:
+      previewType === null
+        ? tKeyword("delivery.unavailablePrimary")
+        : tStudio(`artifactType.${previewType}`),
+    secondary: tKeyword("delivery.reviewRequired"),
+  };
+}
+
+function KeywordDeliveryBadge({
+  projection,
+}: {
+  readonly projection: GrowthMapKeywordDeliveryProjection;
+}) {
+  const tKeyword = useTranslations("growthMap.keywordLibrary");
+  const tStudio = useTranslations("studio");
+  const description = describeKeywordDelivery(
+    projection,
+    tKeyword,
+    tStudio,
+  );
+
+  return (
+    <span className={styles.keywordOutputMeta}>
+      <strong
+        className={cx(
+          styles.keywordOutputBadge,
+          projection.kind === "ready"
+            ? styles.keywordOutputBadgeReady
+            : styles.keywordOutputBadgeMuted,
+        )}
+      >
+        {description.primary}
+      </strong>
+      <small className={styles.keywordOutputStatus}>{description.secondary}</small>
+    </span>
+  );
+}
+
 function KeywordFreshnessPill({
   freshness,
 }: {
@@ -3651,13 +4585,59 @@ function KeywordFreshnessPill({
   );
 }
 
+function KeywordSearchIntentValue({
+  item,
+}: {
+  readonly item: GrowthMapKeywordLibraryItem;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary");
+  const intent = item.searchIntent.value;
+  const knownIntent = intent === null ? null : knownKeywordIntent(intent);
+  const unavailableLimitation =
+    item.searchIntent.authority === "unavailable"
+      ? item.searchIntent.limitation
+      : null;
+  return (
+    <>
+      <strong className={styles.libraryMetricPrimary}>
+        {intent === null
+          ? t("notAvailable")
+          : knownIntent === null
+            ? intent
+            : t(`intentLabel.${knownIntent}`)}
+      </strong>
+      <span className={styles.keywordIntentAuthorityLine}>
+        <small
+          className={styles.keywordIntentAuthority}
+          data-search-intent-authority={item.searchIntent.authority}
+          title={
+            unavailableLimitation === null
+              ? item.searchIntent.limitation ?? undefined
+              : undefined
+          }
+        >
+          {t(`searchIntentAuthority.${item.searchIntent.authority}`)}
+        </small>
+        {unavailableLimitation === null ? null : (
+          <LimitationHint
+            label={t("searchIntentUnavailableHint")}
+            limitations={[unavailableLimitation]}
+          />
+        )}
+      </span>
+    </>
+  );
+}
+
 function KeywordRow({
   entry,
+  deliveryProjection,
   selected,
   onSelect,
   onOpenRelations,
 }: {
   readonly entry: KeywordRelationVisibleItem;
+  readonly deliveryProjection: GrowthMapKeywordDeliveryProjection;
   readonly selected: boolean;
   readonly onSelect: (keywordId: string) => void;
   readonly onOpenRelations: (keywordId: string) => void;
@@ -3705,25 +4685,36 @@ function KeywordRow({
         </button>
         <span className={styles.keywordIdentityCell}>
           <strong>{item.displayKeyword}</strong>
-          <small>{item.cluster?.name ?? t("intake.unassignedCluster")}</small>
+          <span className={styles.keywordIdentityMeta}>
+            <small>
+              {t("marketLanguageValue", {
+                market: item.marketCode,
+                language: item.languageTag,
+              })}
+            </small>
+            <span className={styles.keywordIdentityStatus}>
+              <KeywordStatusPill item={item} showOrigin={false} />
+            </span>
+          </span>
+        </span>
+        <span
+          className={styles.keywordTopicCell}
+          data-column={t("columns.topic")}
+        >
+          <strong>{item.cluster?.name ?? t("intake.unassignedCluster")}</strong>
+          {item.cluster === null ? null : (
+            <small>
+              {t("topicRevision", {
+                revision: item.cluster.topicModelRevision,
+              })}
+            </small>
+          )}
         </span>
         <span
           className={styles.keywordKindCell}
-          data-column={t("columns.intent")}
+          data-column={t("columns.intentAuthority")}
         >
-          <strong className={styles.libraryMetricPrimary}>
-            {item.intent === null
-              ? t("notAvailable")
-              : knownKeywordIntent(item.intent) === null
-                ? item.intent
-                : t(`intentLabel.${knownKeywordIntent(item.intent)!}`)}
-          </strong>
-          <small className={styles.libraryMetricSecondary}>
-            {t("marketLanguageValue", {
-              market: item.marketCode,
-              language: item.languageTag,
-            })}
-          </small>
+          <KeywordSearchIntentValue item={item} />
         </span>
         <span
           className={styles.libraryMetricCell}
@@ -3796,10 +4787,10 @@ function KeywordRow({
           )}
         </span>
         <span
-          className={styles.keywordStatusCell}
-          data-column={t("columns.status")}
+          className={styles.keywordDeliveryCell}
+          data-column={t("columns.delivery")}
         >
-          <KeywordStatusPill item={item} showOrigin={false} />
+          <KeywordDeliveryBadge projection={deliveryProjection} />
           <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
         </span>
       </div>
@@ -3849,11 +4840,16 @@ function KeywordRow({
 
 function KeywordList({
   entries,
+  deliveriesByKeywordId,
   selectedKeywordId,
   onSelect,
   onOpenRelations,
 }: {
   readonly entries: readonly KeywordRelationVisibleItem[];
+  readonly deliveriesByKeywordId: ReadonlyMap<
+    string,
+    GrowthMapKeywordDeliveryProjection
+  >;
   readonly selectedKeywordId: string | null;
   readonly onSelect: (keywordId: string) => void;
   readonly onOpenRelations: (keywordId: string) => void;
@@ -3863,19 +4859,26 @@ function KeywordList({
     <div className={styles.keywordLedger}>
       <div className={styles.keywordLedgerHeader} aria-hidden="true">
         <span>{t("columns.keyword")}</span>
-        <span>{t("columns.intent")}</span>
+        <span>{t("columns.topic")}</span>
+        <span>{t("columns.intentAuthority")}</span>
         <span>{t("columns.volume")}</span>
         <span>{t("columns.kd")}</span>
         <span>{t("columns.rankUrl")}</span>
         <span>{t("columns.source")}</span>
         <span>{t("columns.freshness")}</span>
-        <span>{t("columns.status")}</span>
+        <span>{t("columns.delivery")}</span>
       </div>
       <ul className={styles.keywordList} aria-label={t("listLabel")}>
         {entries.map((entry) => (
           <KeywordRow
             key={entry.item.keywordId}
             entry={entry}
+            deliveryProjection={
+              deliveriesByKeywordId.get(entry.item.keywordId) ?? {
+                kind: "none",
+                reason: "published_run_unavailable",
+              }
+            }
             selected={selectedKeywordId === entry.item.keywordId}
             onSelect={onSelect}
             onOpenRelations={onOpenRelations}
@@ -4544,14 +5547,24 @@ function TopicMapGateway({ projectId }: { readonly projectId: string }) {
           ),
     [insightsQuery.data, workspaceQuery.data],
   );
+  const latestConfirmed = workspaceQuery.data?.latestConfirmed ?? null;
   const status =
-    workspaceQuery.data?.draft !== null &&
-    workspaceQuery.data?.draft !== undefined
+    workspaceQuery.isPending
+      ? "loading"
+      : workspaceQuery.isError
+        ? "read_failed"
+        : workspaceQuery.data?.draft !== null &&
+            workspaceQuery.data?.draft !== undefined
       ? "draft"
-      : workspaceQuery.data?.latestConfirmed !== null &&
-          workspaceQuery.data?.latestConfirmed !== undefined
-        ? "confirmed"
-        : "unavailable";
+      : latestConfirmed === null
+        ? "unavailable"
+        : latestConfirmed.confirmationMode === "system_auto"
+          ? "system_confirmed"
+          : latestConfirmed.confirmationMode === "user"
+            ? "user_confirmed"
+            : "legacy_confirmed";
+  const generationSummary =
+    latestConfirmed === null ? null : latestConfirmed.generationSummary;
   const gatewayTitleId = useId();
   const hasConfirmedInsights =
     projection?.confirmedInsightRevision !== null &&
@@ -4577,7 +5590,7 @@ function TopicMapGateway({ projectId }: { readonly projectId: string }) {
           <div>
             <dt>{t("gateway.status")}</dt>
             <dd data-status={status}>
-              {workspaceQuery.isPending ? t("loading") : t(`status.${status}`)}
+              {t(`status.${status}`)}
             </dd>
           </div>
           <div>
@@ -4610,7 +5623,24 @@ function TopicMapGateway({ projectId }: { readonly projectId: string }) {
             <Network aria-hidden="true" size={16} />
             {t("manage")}
           </Button>
-          <small>{t("gatewayActionHint")}</small>
+          {status === "unavailable" ? (
+            <small className={styles.topicMapGatewayUnavailableAction}>
+              <span>{t("gatewayUnavailableHint")}</span>
+              <a href="#growth-map-run-diagnosis">
+                {t("gatewayRunDiagnosis")}
+                <ArrowUpRight aria-hidden="true" size={14} />
+              </a>
+            </small>
+          ) : (
+            <small>
+              {generationSummary === null
+                ? t("gatewayActionHint")
+                : t("generationSummary", {
+                    keywords: generationSummary.keywordCount,
+                    assigned: generationSummary.assignedCount,
+                  })}
+            </small>
+          )}
         </div>
         {workspaceQuery.isError ? (
           <ProblemNotice
@@ -7191,8 +8221,11 @@ function KeywordEvidenceDialog({
         <dl className={styles.keywordClassificationGrid}>
           <KeywordClassificationField
             label={t("intent")}
-            value={detail.intent}
-            limitation={detail.classificationLimitations.intent}
+            value={detail.searchIntent.value}
+            identity={t(
+              `searchIntentAuthority.${detail.searchIntent.authority}`,
+            )}
+            limitation={detail.searchIntent.limitation}
           />
           <KeywordClassificationField
             label={t("buyerStage")}
@@ -7304,6 +8337,7 @@ function KeywordEvidenceDialog({
 function KeywordDetailPanel({
   projectId,
   detail,
+  deliveryProjection,
   rankHistory,
   isRankHistoryPending,
   rankHistoryError,
@@ -7321,6 +8355,7 @@ function KeywordDetailPanel({
 }: {
   readonly projectId: string;
   readonly detail: GrowthMapKeywordLibraryItem;
+  readonly deliveryProjection: GrowthMapKeywordDeliveryProjection;
   readonly rankHistory: GrowthMapKeywordRankHistory | undefined;
   readonly isRankHistoryPending: boolean;
   readonly rankHistoryError: unknown;
@@ -7337,7 +8372,9 @@ function KeywordDetailPanel({
   readonly onSelectKeyword: (keywordId: string) => void;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
+  const tStudio = useTranslations("studio");
   const locale = useLocale();
+  const pageTypeLabel = usePageTypeLabel();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
@@ -7355,7 +8392,6 @@ function KeywordDetailPanel({
     detail.mappedTarget.kind === "existing_page"
       ? urlPresentation(detail.mappedTarget.normalizedUrl).path
       : t(`mappingTarget.${detail.mappedTarget.kind}`);
-
   return (
     <>
       <aside
@@ -7371,11 +8407,13 @@ function KeywordDetailPanel({
         <p>
           {detail.cluster?.name ?? t("intake.unassignedCluster")}
           {" · "}
-          {detail.intent === null
+          {detail.searchIntent.value === null
             ? t("notAvailable")
-            : knownKeywordIntent(detail.intent) === null
-              ? detail.intent
-              : t(`intentLabel.${knownKeywordIntent(detail.intent)!}`)}
+            : knownKeywordIntent(detail.searchIntent.value) === null
+              ? detail.searchIntent.value
+              : t(
+                  `intentLabel.${knownKeywordIntent(detail.searchIntent.value)!}`,
+                )}
           {" · "}
           {t("marketLanguageValue", {
             market: detail.marketCode,
@@ -7383,7 +8421,24 @@ function KeywordDetailPanel({
           })}
         </p>
         <div className={styles.keywordDetailTags}>
+          <KeywordDeliveryBadge
+            projection={deliveryProjection}
+          />
           <KeywordStatusPill item={detail} />
+          <span className={styles.keywordIntentAuthorityLine}>
+            <span
+              className={styles.keywordReviewOrigin}
+              data-search-intent-authority={detail.searchIntent.authority}
+            >
+              {t(`searchIntentAuthority.${detail.searchIntent.authority}`)}
+            </span>
+            {detail.searchIntent.authority === "unavailable" ? (
+              <LimitationHint
+                label={t("searchIntentUnavailableHint")}
+                limitations={[detail.searchIntent.limitation]}
+              />
+            ) : null}
+          </span>
         </div>
         <div className={styles.keywordReviewHeaderAction}>
           {reviewSaved ? (
@@ -7451,6 +8506,30 @@ function KeywordDetailPanel({
         </p>
       </section>
 
+      {detail.recollection === null ? null : (
+        <section
+          className={cx(styles.routeCard, styles.routeCardWarning)}
+          data-keyword-recollection={detail.recollection.reason}
+        >
+          <span>{t("recollection.eyebrow")}</span>
+          <strong>{t("recollection.title")}</strong>
+          <p>
+            {t("recollection.description", {
+              fields: detail.recollection.fields
+                .map((field) => t(`recollection.field.${field}`))
+                .join(" · "),
+            })}
+          </p>
+          <a
+            className={styles.recollectionAction}
+            href="#growth-map-run-diagnosis"
+          >
+            {t("recollection.action")}
+            <ArrowUpRight aria-hidden="true" size={15} />
+          </a>
+        </section>
+      )}
+
       <section className={styles.keywordDetailSection}>
         <div className={styles.keywordSectionHeading}>
           <div>
@@ -7472,16 +8551,117 @@ function KeywordDetailPanel({
           <ArrowRight aria-hidden="true" size={16} />
           <div className={styles.conversionStep}>
             <span>03</span>
-            <small>{t("intake.pathStepBuyerStage")}</small>
-            <strong>
-              {detail.buyerStage === null
-                ? t("notAvailable")
-                : knownKeywordBuyerStage(detail.buyerStage) === null
-                  ? detail.buyerStage
-                  : t(`stageLabel.${knownKeywordBuyerStage(detail.buyerStage)!}`)}
-            </strong>
+            <small>{t("intake.pathStepCta")}</small>
+            <strong>{t("intake.ctaUnavailable")}</strong>
           </div>
         </div>
+        <p className={styles.keywordSectionDescription}>
+          {t("intake.ctaUnavailableDescription")}
+        </p>
+      </section>
+
+      <section className={styles.keywordDetailSection}>
+        <div className={styles.keywordSectionHeading}>
+          <div>
+            <h3>{t("delivery.title")}</h3>
+            <span>{t("delivery.provenance")}</span>
+          </div>
+          <span className={styles.sectionCount}>
+            {deliveryProjection.kind !== "ready"
+              ? t("delivery.sectionUnavailable")
+              : t("delivery.sectionCount", {
+                  opportunities: deliveryProjection.opportunities.length,
+                  artifacts: deliveryProjection.artifactCount,
+                })}
+          </span>
+        </div>
+        {deliveryProjection.kind !== "ready" ? (
+          <p className={styles.keywordSectionDescription}>
+            {t(`delivery.reason.${deliveryProjection.reason}`)}
+          </p>
+        ) : (
+          <>
+            <div className={styles.keywordDeliveryScope}>
+              <span>{t("delivery.mappedPage")}</span>
+              <strong>
+                {urlPresentation(deliveryProjection.mappedPage.normalizedUrl).path}
+              </strong>
+              <small>
+                {t("delivery.pageCarrier", {
+                  type: pageTypeLabel(deliveryProjection.mappedPage.pageType),
+                })}
+              </small>
+              <small>{t("delivery.scopeBoundary")}</small>
+            </div>
+            <div className={styles.keywordDeliveryList}>
+            {deliveryProjection.opportunities.map((opportunity) => {
+              const previewType =
+                opportunity.opportunity.readiness === "confirmed"
+                  ? opportunity.opportunity.action.artifactType
+                  : opportunity.opportunity.readiness === "reviewable"
+                    ? opportunity.opportunity.executionPreview?.artifactType ?? null
+                    : null;
+              return (
+                <article
+                  key={opportunity.id}
+                  className={styles.keywordDeliveryItem}
+                >
+                  <header>
+                    <span>
+                      <strong>{opportunity.opportunity.title}</strong>
+                      <small>
+                        {previewType === null
+                          ? t("delivery.unavailablePrimary")
+                          : tStudio(`artifactType.${previewType}`)}
+                      </small>
+                    </span>
+                    <small>
+                      {opportunity.opportunity.readiness === "confirmed"
+                        ? t("delivery.confirmed")
+                        : t("delivery.reviewRequired")}
+                    </small>
+                  </header>
+                  {opportunity.artifacts.length === 0 ? (
+                    <p>
+                      {opportunity.opportunity.readiness === "confirmed"
+                        ? t("delivery.awaitingGeneration")
+                        : t("delivery.reviewRequired")}
+                    </p>
+                  ) : (
+                    <ul className={styles.keywordArtifactList}>
+                      {opportunity.artifacts.map((artifact) => (
+                        <li key={artifact.id}>
+                          <strong>
+                            {tStudio(`artifactType.${artifact.artifactType}`)}
+                          </strong>
+                          <span>{tStudio(`status.${artifact.status}`)}</span>
+                          <small>
+                            {t("delivery.revision", {
+                              revision: artifact.currentRevision,
+                            })}
+                          </small>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {opportunity.executionRef === null ? null : (
+                    <Link
+                      className={styles.keywordDeliveryAction}
+                      href={executionHrefForRef(projectId, opportunity.executionRef)}
+                      aria-label={t("delivery.openExecutionFor", {
+                        title: opportunity.opportunity.title,
+                      })}
+                    >
+                      {t("delivery.openExecution")}
+                      <ArrowUpRight aria-hidden="true" size={15} />
+                    </Link>
+                  )}
+                </article>
+              );
+            })}
+            </div>
+          </>
+        )}
       </section>
 
       <section className={styles.keywordDetailSection}>
@@ -7516,11 +8696,13 @@ function KeywordDetailPanel({
                   <span>
                     <strong>{keyword.displayKeyword}</strong>
                     <small>
-                      {keyword.intent === null
+                      {keyword.searchIntent.value === null
                         ? t("notAvailable")
-                        : knownKeywordIntent(keyword.intent) === null
-                          ? keyword.intent
-                          : t(`intentLabel.${knownKeywordIntent(keyword.intent)!}`)}
+                        : knownKeywordIntent(keyword.searchIntent.value) === null
+                          ? keyword.searchIntent.value
+                          : t(
+                              `intentLabel.${knownKeywordIntent(keyword.searchIntent.value)!}`,
+                            )}
                       {volume === null
                         ? null
                         : ` · ${t("relatedVolume", { volume })}`}
@@ -7585,12 +8767,20 @@ function KeywordDetailState({
   projectId,
   selectedKeywordId,
   diagnosticRunId,
+  publishedDiagnosticRunId,
+  completeUrls,
+  completeOpportunities,
+  completeArtifacts,
   relatedKeywords,
   onSelectKeyword,
 }: {
   readonly projectId: string;
   readonly selectedKeywordId: string | null;
   readonly diagnosticRunId: string | null;
+  readonly publishedDiagnosticRunId: string;
+  readonly completeUrls: readonly GrowthMapUrlPortfolioItem[] | null;
+  readonly completeOpportunities: readonly GrowthOpportunity[] | null;
+  readonly completeArtifacts: readonly Artifact[] | null;
   readonly relatedKeywords: readonly GrowthMapKeywordLibraryItem[];
   readonly onSelectKeyword: (keywordId: string) => void;
 }) {
@@ -7668,11 +8858,19 @@ function KeywordDetailState({
       </aside>
     );
   }
+  const deliveryProjection = buildGrowthMapKeywordDeliveryProjection({
+    keyword: detailQuery.data.data,
+    publishedDiagnosticRunId,
+    urls: completeUrls,
+    opportunities: completeOpportunities,
+    artifacts: completeArtifacts,
+  });
   return (
     <KeywordDetailPanel
       key={detailQuery.data.data.keywordId}
       projectId={projectId}
       detail={detailQuery.data.data}
+      deliveryProjection={deliveryProjection}
       rankHistory={rankHistoryQuery.data}
       isRankHistoryPending={rankHistoryQuery.isPending}
       rankHistoryError={
@@ -7720,14 +8918,17 @@ function KeywordLibraryPane({
   locationSearch,
   navigation,
   diagnosticRunId,
+  publishedDiagnosticRunId,
 }: {
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
   /** null reads the live library, including keywords awaiting review. */
   readonly diagnosticRunId: string | null;
+  readonly publishedDiagnosticRunId: string;
 }) {
   const t = useTranslations("growthMap.keywordLibrary");
+  const uiLocale = useLocale();
   const pathname = usePathname();
   const canonicalSearchParams = useSearchParams();
   const canonicalLocationSearch = canonicalSearchParams.toString();
@@ -7760,9 +8961,96 @@ function KeywordLibraryPane({
     diagnosticRunId,
     sourceKind: sourceFilter === "all" ? null : sourceFilter,
   });
+  const completeUrlsQuery = useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "page-views",
+      publishedDiagnosticRunId,
+      "complete-urls",
+    ],
+    queryFn: () =>
+      readCompleteGrowthMapUrls(projectId, publishedDiagnosticRunId),
+  });
+  const completeOpportunitiesQuery = useQuery({
+    queryKey: [
+      "growth-map",
+      projectId,
+      uiLocale,
+      "page-views",
+      publishedDiagnosticRunId,
+      "complete-opportunities",
+    ],
+    queryFn: () =>
+      readCompleteGrowthMapOpportunities(
+        projectId,
+        publishedDiagnosticRunId,
+      ),
+  });
+  const artifactsQuery = useProjectArtifacts(projectId);
+  useEffect(() => {
+    if (
+      !artifactsQuery.hasNextPage ||
+      artifactsQuery.isFetchingNextPage ||
+      artifactsQuery.isFetchNextPageError
+    ) {
+      return;
+    }
+    void artifactsQuery.fetchNextPage();
+  }, [
+    artifactsQuery.fetchNextPage,
+    artifactsQuery.hasNextPage,
+    artifactsQuery.isFetchNextPageError,
+    artifactsQuery.isFetchingNextPage,
+  ]);
   const items = useMemo(
     () => listQuery.data?.data ?? [],
     [listQuery.data?.data],
+  );
+  const completeUrls = completeUrlsQuery.isSuccess
+    ? completeUrlsQuery.data
+    : null;
+  const completeOpportunities = completeOpportunitiesQuery.isSuccess
+    ? completeOpportunitiesQuery.data
+    : null;
+  const completeArtifacts = useMemo(
+    () =>
+      artifactsQuery.isSuccess &&
+      !artifactsQuery.hasNextPage &&
+      !artifactsQuery.isFetchingNextPage &&
+      !artifactsQuery.isFetchNextPageError
+        ? uniqueCursorItems(artifactsQuery.data)
+        : null,
+    [
+      artifactsQuery.data,
+      artifactsQuery.hasNextPage,
+      artifactsQuery.isFetchNextPageError,
+      artifactsQuery.isFetchingNextPage,
+      artifactsQuery.isSuccess,
+    ],
+  );
+  const deliveriesByKeywordId = useMemo(
+    () =>
+      new Map(
+        items.map((item) => [
+          item.keywordId,
+          buildGrowthMapKeywordDeliveryProjection({
+            keyword: item,
+            publishedDiagnosticRunId: publishedDiagnosticRunId,
+            urls: completeUrls,
+            opportunities: completeOpportunities,
+            artifacts: completeArtifacts,
+          }),
+        ]),
+      ),
+    [
+      completeArtifacts,
+      completeOpportunities,
+      completeUrls,
+      items,
+      publishedDiagnosticRunId,
+    ],
   );
   const keywordIds = useMemo(
     () => items.map((item) => item.keywordId),
@@ -8016,6 +9304,7 @@ function KeywordLibraryPane({
         }
         countLabel={(count) => t("intake.count", { count })}
       />
+      <TopicMapGateway projectId={projectId} />
       {readState === "empty" && sourceFilter !== "all" ? (
         <>
           <div className={styles.libraryToolbar}>
@@ -8106,6 +9395,7 @@ function KeywordLibraryPane({
               ) : (
                 <KeywordList
                   entries={filteredEntries}
+                  deliveriesByKeywordId={deliveriesByKeywordId}
                   selectedKeywordId={selectedKeywordId}
                   onSelect={selectKeyword}
                   onOpenRelations={setRelationDialogKeywordId}
@@ -8148,12 +9438,15 @@ function KeywordLibraryPane({
               projectId={projectId}
               selectedKeywordId={selectedKeywordId}
               diagnosticRunId={diagnosticRunId}
+              publishedDiagnosticRunId={publishedDiagnosticRunId}
+              completeUrls={completeUrls}
+              completeOpportunities={completeOpportunities}
+              completeArtifacts={completeArtifacts}
               relatedKeywords={items}
               onSelectKeyword={selectKeyword}
             />
           </div>
           <div className={styles.keywordGovernanceAppendix}>
-            <TopicMapGateway projectId={projectId} />
           <section
             className={styles.keywordRelationToolbar}
             aria-labelledby="keyword-relation-toolbar-title"
@@ -10267,7 +11560,13 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
             <Database aria-hidden="true" size={18} />
             {t("manageSources")}
           </Link>
-          <RunDiagnosis projectId={projectId} />
+          <div
+            id="growth-map-run-diagnosis"
+            className={styles.runDiagnosisAnchor}
+            tabIndex={-1}
+          >
+            <RunDiagnosis projectId={projectId} />
+          </div>
         </div>
       </header>
 
@@ -10346,6 +11645,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           locationSearch={locationSearch}
           navigation={navigation}
           diagnosticRunId={null}
+          publishedDiagnosticRunId={diagnosticRunId!}
         />
       ) : mode === "competitors" ? (
         <CompetitorLibraryPane

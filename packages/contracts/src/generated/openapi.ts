@@ -299,18 +299,22 @@ export interface paths {
         /**
          * Queue the server-owned durable Analysis Refresh plan
          * @description Freezes the primary Site, current confirmed ICP, and the fixed ordered
-         *     `analysis-refresh.plan.v2`: Crawl → connected GSC → connected GA4 →
+         *     `analysis-refresh.plan.v3`: Crawl → connected GSC → connected GA4 →
          *     built-in DataForSEO Search Landscape (DFS) → built-in DataForSEO
-         *     Backlinks (`dataforseo_backlinks`) → Growth Audit. The server derives
-         *     DFS target/market/language/cost caps and Backlinks target/caps from
-         *     frozen project context and server configuration. Backlinks has a
-         *     separate default-off rollout gate and freezes defaults/hard limits of
-         *     500/1000 backlink rows, 100/1000 referring domains, 500/1000 target
-         *     pages, and 20/20 selective source-page verifications. Optional
-         *     unavailable inputs are recorded as skipped steps; the client cannot
-         *     add, remove, reorder, configure, or directly invoke any step. Exact
-         *     five-step `analysis-refresh.plan.v1` parents remain readable and
-         *     resumable but new parents use v2.
+         *     Backlinks (`dataforseo_backlinks`) → internal Topic Model generation
+         *     (`topic_model`) → Growth Audit. The server derives DFS and Backlinks
+         *     scope/caps plus the Topic child's bounded frozen input from canonical
+         *     project context and server configuration. Backlinks keeps its separate
+         *     default-off rollout gate and freezes defaults/hard limits of 500/1000
+         *     backlink rows, 100/1000 referring domains, 500/1000 target pages, and
+         *     20/20 selective source-page verifications. Topic generation is an
+         *     optional internal child with a durable invocation-attempt fence; no
+         *     raw provider/model options or reservation API are exposed here.
+         *     Optional unavailable inputs are recorded as skipped steps; the client
+         *     cannot add, remove, reorder, configure, or directly invoke any step.
+         *     Exact five-step `analysis-refresh.plan.v1` and exact six-step
+         *     `analysis-refresh.plan.v2` parents remain readable and resumable; new
+         *     parents use v3.
          */
         post: operations["createAnalysisRefreshRun"];
         delete?: never;
@@ -343,7 +347,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll any collection, Analysis Refresh, Product Profile synthesis, diagnostic, artifact, or export run */
+        /** Poll any collection, Analysis Refresh, internal Topic Model generation, Product Profile synthesis, diagnostic, artifact, or export run */
         get: operations["getProjectRun"];
         put?: never;
         post?: never;
@@ -1512,8 +1516,11 @@ export interface components {
         Availability: "available" | "partial" | "unavailable";
         /** @enum {string} */
         SourceState: "connecting" | "connected" | "syncing" | "available" | "partial" | "stale" | "permission_denied" | "unavailable" | "disconnected";
-        /** @enum {string} */
-        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow" | "publication" | "measurement" | "analysis_refresh";
+        /**
+         * @description topic_model_generation is an internal Analysis Refresh child kind, not a public create command.
+         * @enum {string}
+         */
+        RunKind: "collection" | "product_profile_synthesis" | "diagnostic" | "artifact_generation" | "export" | "content_shadow" | "publication" | "measurement" | "analysis_refresh" | "topic_model_generation";
         /** @enum {string} */
         RunStatus: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
         /** @enum {string} */
@@ -2157,7 +2164,7 @@ export interface components {
             /** @enum {string} */
             operation?: "site_graph" | "search_analytics" | "organic_landing";
         };
-        /** @description Empty strict object. The server owns and freezes the complete Analysis Refresh plan. */
+        /** @description Empty strict object. The server owns and freezes the complete Analysis Refresh v3 plan and every internal child input. */
         CreateAnalysisRefreshRunRequest: Record<string, never>;
         AsyncRun: {
             id: components["schemas"]["Uuid"];
@@ -2176,7 +2183,7 @@ export interface components {
             } | null;
             resultRef: {
                 /** @enum {string} */
-                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run" | "publication_attempt" | "measurement_window" | "analysis_refresh_run";
+                type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "flow_shadow_run" | "publication_attempt" | "measurement_window" | "analysis_refresh_run" | "topic_model_generation_run";
                 id: components["schemas"]["Uuid"];
             } | null;
             queuedAt: components["schemas"]["Timestamp"];
@@ -2189,7 +2196,7 @@ export interface components {
                 statusUrl: string;
                 resourceRef: {
                     /** @enum {string} */
-                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "audit_run" | "flow_shadow_run" | "analysis_refresh_run";
+                    type: "collection_run" | "product_profile_run" | "icp_profile" | "diagnostic_run" | "artifact" | "export" | "audit_run" | "flow_shadow_run" | "analysis_refresh_run" | "topic_model_generation_run";
                     id: components["schemas"]["Uuid"];
                 } | null;
             };
@@ -3093,7 +3100,32 @@ export interface components {
             createdBy: components["schemas"]["Uuid"];
             updatedAt: components["schemas"]["Timestamp"];
         };
-        /** @description Immutable rooted Topic Map used as current Keyword classification authority. */
+        /**
+         * @description Explicit confirmation provenance. system_auto is actorless, user is a current server-resolved operator confirmation, and legacy is a known migration baseline rather than an inferred human review.
+         * @enum {string}
+         */
+        TopicModelConfirmationMode: "system_auto" | "user" | "legacy";
+        /** @description Read-only successful first-model lineage. Frozen keyword/group baselines come from the exact generation manifest. Assigned/skipped/unassigned coverage and one limitation per unmatched frozen item are derived from exact append-only decisions and cross-checked against the completed child outcome. Limitations are bounded reason codes whose presence exactly follows the corresponding non-zero gap counts; async progress is never trusted by itself. */
+        TopicModelGenerationSummary: {
+            /** @constant */
+            origin: "llm_auto_confirmed";
+            /** @constant */
+            generationVersion: "topic-model-generation.v1";
+            baseTopicModelRevision: null;
+            analysisInvocationId: components["schemas"]["Uuid"];
+            promptSetVersion: string;
+            inputHash: string;
+            generatedAt: components["schemas"]["Timestamp"];
+            keywordGroupCount: number;
+            keywordCount: number;
+            assignedCount: number;
+            unassignedGroupCount: number;
+            skippedCount: number;
+            limitations: ("keyword_assignments_skipped" | "topic_groups_unassigned")[];
+            /** @constant */
+            reason: "Initial model generated by Analysis Refresh";
+        };
+        /** @description Immutable rooted Topic Map used as current Keyword classification authority. system_auto has confirmedBy null plus exact generation lineage; user and legacy have a structural confirming actor and no generated summary. */
         TopicModelConfirmedRevision: {
             /** @constant */
             state: "confirmed";
@@ -3107,8 +3139,10 @@ export interface components {
             createdAt: components["schemas"]["Timestamp"];
             createdBy: components["schemas"]["Uuid"];
             confirmedAt: components["schemas"]["Timestamp"];
-            confirmedBy: components["schemas"]["Uuid"];
+            confirmedBy: components["schemas"]["Uuid"] | null;
+            confirmationMode: components["schemas"]["TopicModelConfirmationMode"];
             contentHash: string;
+            generationSummary: components["schemas"]["TopicModelGenerationSummary"] | null;
         };
         /** @description Confirmed authority and immediate editable successor are visible together. */
         TopicModelWorkspaceProjection: {
@@ -3548,14 +3582,78 @@ export interface components {
         };
         GrowthMapKeywordClusterRef: {
             clusterId: components["schemas"]["Uuid"];
+            topicModelRevision: number;
             name: string;
         };
+        GrowthMapKeywordRecollection: {
+            /** @constant */
+            reason: "historical_dataforseo_observation_missing_fields";
+            fields: ("keyword_difficulty" | "provider_search_intent")[];
+        };
+        /** @description Customer-readable resolved search intent, separate from the backward-compatible governed intent field. Provider and LLM values use the canonical four-value taxonomy while user and legacy governed values remain bounded strings for backward readability. Resolution precedence is user-confirmed non-null, exact provider-observed, LLM-generated with AnalysisInvocation lineage, legacy governed, then unavailable. observedAt belongs only to provider observations. Boundary whitespace is rejected without trimming or coercion. This exact-value rule does not change the backward-compatible governed intent field. llm_generated requires a successful topic_model_generation AnalysisInvocation and the exact generated decision lineage; deterministic, provider, migration, and user decisions cannot claim that invocation. A published generation resolves only its exact frozen decision and occurrence references and never reads newer facts. */
+        GrowthMapKeywordSearchIntent: {
+            value: string | null;
+            /** @enum {string} */
+            authority: "user_confirmed" | "governed_legacy" | "provider_observed" | "llm_generated" | "unavailable";
+            /** Format: uuid */
+            snapshotId: string | null;
+            /** Format: uuid */
+            observationId: string | null;
+            /** Format: uuid */
+            analysisInvocationId: string | null;
+            /** Format: date-time */
+            observedAt: string | null;
+            limitation: string | null;
+        } & ({
+            value?: string;
+            /** @constant */
+            authority?: "user_confirmed";
+            snapshotId?: null;
+            observationId?: null;
+            analysisInvocationId?: null;
+            observedAt?: null;
+        } | {
+            value?: string;
+            /** @constant */
+            authority?: "governed_legacy";
+            snapshotId?: null;
+            observationId?: null;
+            analysisInvocationId?: null;
+            observedAt?: null;
+        } | {
+            /** @enum {string} */
+            value?: "informational" | "navigational" | "commercial" | "transactional";
+            /** @constant */
+            authority?: "provider_observed";
+            snapshotId?: components["schemas"]["Uuid"];
+            observationId?: components["schemas"]["Uuid"];
+            analysisInvocationId?: null;
+            observedAt?: components["schemas"]["Timestamp"];
+        } | {
+            /** @enum {string} */
+            value?: "informational" | "navigational" | "commercial" | "transactional";
+            /** @constant */
+            authority?: "llm_generated";
+            snapshotId?: null;
+            observationId?: null;
+            analysisInvocationId?: components["schemas"]["Uuid"];
+            observedAt?: null;
+        } | {
+            value?: null;
+            /** @constant */
+            authority?: "unavailable";
+            snapshotId?: null;
+            observationId?: null;
+            analysisInvocationId?: null;
+            observedAt?: null;
+            limitation?: string;
+        });
         GrowthMapKeywordClassificationLimitations: {
             intent: string | null;
             buyerStage: string | null;
             cluster: string | null;
         };
-        /** @description Stable project-scoped Keyword identity. Source occurrences and canonical metric Observation references are unique and share this row's market and canonical language tag. */
+        /** @description Stable project-scoped Keyword identity. Source occurrences and canonical metric Observation references are unique and share this row's market and canonical language tag. Provider-observed search intent must match one exact DataForSEO occurrence. User-confirmed intent must match a user decision and the governed intent. Legacy-governed intent must match the governed intent without claiming a user-confirmed decision; reviewOrigin may be migration_baseline, system_suggestion, or null for pre-ledger provenance. Unavailable intent requires the governed intent to be null. Recollection is non-null only for exact historical DataForSEO occurrences whose immutable observation omitted one or both newly collected fields; an explicitly present null is not missing. */
         GrowthMapKeywordLibraryItem: {
             projectId: components["schemas"]["Uuid"];
             keywordId: components["schemas"]["Uuid"];
@@ -3574,12 +3672,14 @@ export interface components {
             reviewOrigin: "user" | "system_suggestion" | "migration_baseline" | null;
             revision: number;
             intent: string | null;
+            searchIntent: components["schemas"]["GrowthMapKeywordSearchIntent"];
             buyerStage: string | null;
             cluster: components["schemas"]["GrowthMapKeywordClusterRef"] | null;
             classificationLimitations: components["schemas"]["GrowthMapKeywordClassificationLimitations"];
             mappedTarget: components["schemas"]["GrowthMapKeywordMappedTarget"];
             sourceOccurrences: components["schemas"]["GrowthMapKeywordSourceOccurrence"][];
             metrics: components["schemas"]["GrowthMapKeywordMetrics"];
+            recollection: components["schemas"]["GrowthMapKeywordRecollection"] | null;
             coverage: components["schemas"]["GrowthMapCoverage"];
         };
         /** @description Whole-library Keyword counts per intake source, computed in the same read-only transaction as the page. A Keyword with occurrences from several sources counts once per source, so per-source counts can sum past `all`. */
@@ -3601,9 +3701,11 @@ export interface components {
             coverage: components["schemas"]["GrowthMapCoverage"];
             sourceCounts: components["schemas"]["GrowthMapKeywordSourceCounts"] | null;
         };
-        /** @description Bounded project-scoped cursor page. The meta block may carry exact whole-library per-source counts; it never carries a synthetic total. */
+        /** @description Bounded project-scoped cursor page. diagnosticRunId is the exact published DiagnosticRun for a frozen read and null exactly for a live read. The meta block may carry exact whole-library per-source counts; it never carries a synthetic total. */
         GrowthMapKeywordLibraryResponse: {
             projectId: components["schemas"]["Uuid"];
+            /** Format: uuid */
+            diagnosticRunId: string | null;
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
             meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
         };

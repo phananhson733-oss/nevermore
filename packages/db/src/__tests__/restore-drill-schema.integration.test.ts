@@ -71,6 +71,7 @@ describeDb("restore drill schema agreement", () => {
     );
 
     expect(describeColumns(parsed)).toEqual(describeColumns(live));
+    expect(APP_TABLES).toHaveLength(80);
     expect([...live.keys()].sort()).toEqual([...APP_TABLES].sort());
     expect(live.size).toBe(APP_TABLES.length);
   });

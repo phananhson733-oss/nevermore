@@ -640,27 +640,37 @@ async function rapidUrlSelectionRoundTrip(input: {
   const reviewState = detailState.getByRole("button", {
     name: /^Opportunity Review/,
   });
-  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    detail.locator('[data-detail-panel="opportunity-review"]'),
-  ).toBeVisible();
   const evidenceState = detailState.getByRole("button", {
     name: /^Audit Evidence/,
   });
+  const reviewPanel = detail.locator(
+    '[data-detail-panel="opportunity-review"]',
+  );
+  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(reviewPanel).toBeVisible();
+  await expect(
+    reviewPanel.getByTitle(findingA.findingId, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    reviewPanel.getByTitle(findingB.findingId, { exact: true }),
+  ).toHaveCount(0);
+
   await evidenceState.click();
   await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
+  const evidencePanel = detail.locator('[data-detail-panel="audit-evidence"]');
+  await expect(evidencePanel).toBeVisible();
   await expect(
-    detail.locator('[data-detail-panel="audit-evidence"]'),
+    evidencePanel.getByTitle(pageA.sitePageId, { exact: true }),
   ).toBeVisible();
   await expect(
-    detail.getByTitle(pageA.sitePageId, { exact: true }),
-  ).toBeVisible();
-  await expect(
-    detail.getByTitle(findingB.findingId, { exact: true }),
+    evidencePanel.getByTitle(findingB.findingId, { exact: true }),
   ).toHaveCount(0);
   await expect(
-    detail.getByTitle(pageB.sitePageId, { exact: true }),
+    evidencePanel.getByTitle(pageB.sitePageId, { exact: true }),
   ).toHaveCount(0);
+  await reviewState.click();
+  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(reviewPanel).toBeVisible();
   await page.getByRole("button", { name: "Back to opportunities" }).click();
   await expect(opportunityDetail).toBeVisible();
 }
@@ -748,6 +758,7 @@ async function warmJsonReadRoute(
 async function warmGrowthMapDetailRoutes(input: {
   readonly request: APIRequestContext;
   readonly projectId: string;
+  readonly diagnosticRunId: string;
   readonly keywordIds: readonly string[];
   readonly selectedKeywordId: string;
   readonly selectedCompetitorId: string;
@@ -756,6 +767,7 @@ async function warmGrowthMapDetailRoutes(input: {
   const {
     request,
     projectId,
+    diagnosticRunId,
     keywordIds,
     selectedKeywordId,
     selectedCompetitorId,
@@ -766,10 +778,17 @@ async function warmGrowthMapDetailRoutes(input: {
   for (const keywordId of keywordIds) {
     relationParams.append("keywordId", keywordId);
   }
+  const pinnedInventoryParams = new URLSearchParams({
+    limit: "100",
+    diagnosticRunId,
+  });
   const paths = [
     `${prefix}/topic-model`,
     `${prefix}/topic-model/insights`,
-    `${prefix}/urls?limit=100`,
+    `${prefix}/urls?${pinnedInventoryParams.toString()}`,
+    `/api/mvp/projects/${projectId}/opportunities?limit=100`,
+    `${prefix}/keywords?limit=100`,
+    `${prefix}/keywords?${pinnedInventoryParams.toString()}`,
     `${prefix}/internal-link-map?sitePageId=${encodeURIComponent(initialSitePageId)}`,
     `${prefix}/keywords/${selectedKeywordId}?view=review`,
     `${prefix}/keywords/${selectedKeywordId}/rank-history`,
@@ -805,9 +824,21 @@ async function assertKeywordLibraryTraceability(input: {
   await expect(list.locator("li button[aria-pressed]")).toHaveCount(
     expectedCount,
   );
-  await expect(
-    list.locator("xpath=preceding-sibling::*[1]").locator(":scope > span"),
-  ).toHaveCount(8);
+  const keywordHeaderCells = list
+    .locator("xpath=preceding-sibling::*[1]")
+    .locator(":scope > span");
+  await expect(keywordHeaderCells).toHaveCount(9);
+  await expect(keywordHeaderCells).toHaveText([
+    "Keyword / market and language",
+    "Confirmed Topic",
+    "Search intent / authority",
+    "Search volume",
+    "KD",
+    "Rank and URL",
+    "Intake path",
+    "Freshness",
+    "Content output",
+  ]);
 
   await sourceFilter.selectOption("csv_import");
   await expect(sourceFilter).toHaveValue("csv_import");
@@ -1159,13 +1190,36 @@ async function assertExactSelection(input: {
   const reviewState = detailState.getByRole("button", {
     name: /^Opportunity Review/,
   });
+  const reviewPanel = detail.locator(
+    '[data-detail-panel="opportunity-review"]',
+  );
   await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(reviewPanel).toBeVisible();
+  const reviewFindingId = reviewPanel.getByTitle(expectedFinding.findingId, {
+    exact: true,
+  });
+  await expect(reviewFindingId).toBeVisible();
+  const reviewFindingCard = reviewFindingId.locator(
+    "xpath=ancestor::article[1]",
+  );
   await expect(
-    detail.locator('[data-detail-panel="opportunity-review"]'),
+    reviewFindingCard.getByText(expectedFinding.ruleId, { exact: true }),
   ).toBeVisible();
-  const reviewFindingCard = detail
-    .getByTitle(expectedFinding.findingId, { exact: true })
-    .locator("xpath=ancestor::article[1]");
+  await expect(
+    reviewFindingCard.getByRole("heading", {
+      level: 4,
+      name: expectedFinding.title,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    reviewFindingCard.getByTitle(expectedFinding.targetRelation.targetRef, {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    reviewPanel.getByTitle(otherFinding.findingId, { exact: true }),
+  ).toHaveCount(0);
   if (expected.reviewableFindingIds.includes(expectedFinding.findingId)) {
     await expect(
       reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
@@ -1178,22 +1232,17 @@ async function assertExactSelection(input: {
 
   await evidenceState.click();
   await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
+  const evidencePanel = detail.locator('[data-detail-panel="audit-evidence"]');
+  await expect(evidencePanel).toBeVisible();
   await expect(
-    detail.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible();
-  await expect(
-    detail.getByRole("button", { name: "Confirm", exact: true }),
-  ).toHaveCount(0);
-
-  await expect(
-    detail.getByTitle(expected.sitePageId, { exact: true }),
+    evidencePanel.getByTitle(expected.sitePageId, { exact: true }),
   ).toBeVisible();
 
   // Keep the descendant selector relative to each candidate article. Passing
   // a locator rooted at `detail` into `filter({ has })` carries the aside
   // ancestor into Playwright's relative match and yields zero records even
   // though the real MetricLedger DOM contains `[data-provider]` descendants.
-  const metricRecords = detail.locator("article:has([data-provider])");
+  const metricRecords = evidencePanel.locator("article:has([data-provider])");
   await expect(metricRecords).toHaveCount(expected.metricObservations.length);
   for (const observation of expected.metricObservations) {
     const record = metricRecords.filter({ hasText: metricLabel(observation) });
@@ -1206,7 +1255,7 @@ async function assertExactSelection(input: {
     ).toBeVisible();
   }
 
-  const findingId = detail.getByTitle(expectedFinding.findingId, {
+  const findingId = evidencePanel.getByTitle(expectedFinding.findingId, {
     exact: true,
   });
   await expect(findingId).toBeVisible();
@@ -1227,13 +1276,13 @@ async function assertExactSelection(input: {
     }),
   ).toBeVisible();
   await expect(
-    detail.getByTitle(otherFinding.findingId, { exact: true }),
+    evidencePanel.getByTitle(otherFinding.findingId, { exact: true }),
   ).toHaveCount(0);
   await expect(
-    detail.getByTitle(other.sitePageId, { exact: true }),
+    evidencePanel.getByTitle(other.sitePageId, { exact: true }),
   ).toHaveCount(0);
 
-  const traceability = detail.locator("[data-identity-ledger]");
+  const traceability = evidencePanel.locator("[data-identity-ledger]");
   if ((await traceability.getAttribute("open")) === null) {
     await traceability.locator("summary").click();
   }
@@ -1253,13 +1302,15 @@ async function assertExactSelection(input: {
       traceability.getByTitle(sourceId, { exact: true }),
     ).toBeVisible();
   }
+  await expect(
+    detail.getByRole("button", { name: "Confirm", exact: true }),
+  ).toHaveCount(0);
 
   // Leave the rail in Opportunity Review so a follow-up confirmation can act
   // on the exact card this assertion just verified.
   await reviewState.click();
-  await expect(
-    detail.locator('[data-detail-panel="opportunity-review"]'),
-  ).toBeVisible();
+  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(reviewPanel).toBeVisible();
 }
 
 async function switchObjectMode(
@@ -1420,6 +1471,7 @@ test.describe.serial("real Growth Map selected-page identity", () => {
     await warmGrowthMapDetailRoutes({
       request,
       projectId,
+      diagnosticRunId,
       keywordIds: keywordLibrary.data.map((item) => item.keywordId),
       selectedKeywordId: keyword.keywordId,
       selectedCompetitorId: competitor.competitorId,

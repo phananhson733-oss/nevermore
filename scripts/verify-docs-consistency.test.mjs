@@ -130,7 +130,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
     specLock.tables.length,
     specLock.rules.length,
   ];
-  assert.deepEqual(expected, [79, 10, 78, 12]);
+  assert.deepEqual(expected, [79, 10, 80, 12]);
   for (const path of [
     "README.md",
     "CLAUDE.md",
@@ -146,7 +146,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 49);
+  assert.equal(migrationFiles.length, 50);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
@@ -205,7 +205,7 @@ test("current docs freeze Search Landscape v3 and default-off AI citations", () 
   }
 });
 
-test("current docs freeze bounded DataForSEO Backlinks and Analysis Refresh compatibility", () => {
+test("current docs freeze bounded DataForSEO Backlinks and exact Analysis Refresh v1/v2/v3 compatibility", () => {
   for (const path of [
     "README.md",
     "CLAUDE.md",
@@ -213,9 +213,11 @@ test("current docs freeze bounded DataForSEO Backlinks and Analysis Refresh comp
     "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
   ]) {
     const source = sources.get(path);
+    assert.match(source, /analysis-refresh\.plan\.v3/);
     assert.match(source, /analysis-refresh\.plan\.v2/);
     assert.match(source, /dataforseo_backlinks/);
     assert.match(source, /analysis-refresh\.plan\.v1/);
+    assert.match(source, /topic_model|Topic Model/);
     assert.match(source, /dataforseo_rank/);
     assert.match(source, /DATAFORSEO_BACKLINKS_ENABLED/);
     assert.match(source, /default-off|默认.*关闭|默认都为\s*`false`/s);

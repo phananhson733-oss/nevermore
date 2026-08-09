@@ -70,6 +70,8 @@ describe("notifyAnalysisRefreshParent", () => {
               id: PARENT_ID,
               kind: "analysis_refresh",
               status: "queued",
+              result_type: "analysis_refresh_run",
+              result_id: PARENT_ID,
             }),
     );
     vi.spyOn(
@@ -86,6 +88,61 @@ describe("notifyAnalysisRefreshParent", () => {
       projectId: CHILD.projectId,
       contractVersion: "2026-07-21",
     });
+  });
+
+  it("hands an exact completed Topic Model child to its active parent", async () => {
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockImplementation(
+      async (_scope, id) =>
+        id === CHILD.runId
+          ? runRow({
+              kind: "topic_model_generation",
+              status: "completed",
+              result_type: "topic_model_generation_run",
+              result_id: CHILD.runId,
+            })
+          : runRow({
+              id: PARENT_ID,
+              kind: "analysis_refresh",
+              status: "running",
+              result_type: "analysis_refresh_run",
+              result_id: PARENT_ID,
+            }),
+    );
+    vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "findParentRunIdByChildRunId",
+    ).mockResolvedValue(PARENT_ID);
+    const send = vi.fn(async () => "job-id");
+
+    await notifyAnalysisRefreshParent(context(send), CHILD);
+
+    expect(send).toHaveBeenCalledWith("refresh.analysis", {
+      runId: PARENT_ID,
+      workspaceId: CHILD.workspaceId,
+      projectId: CHILD.projectId,
+      contractVersion: "2026-07-21",
+    });
+  });
+
+  it("fails closed before lookup when a Topic Model child projection drifts", async () => {
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue(
+      runRow({
+        kind: "topic_model_generation",
+        status: "completed",
+        result_type: "topic_model_generation_run",
+        result_id: "00000000-0000-4000-8000-000000000099",
+      }),
+    );
+    const lookup = vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "findParentRunIdByChildRunId",
+    );
+    const send = vi.fn();
+
+    await notifyAnalysisRefreshParent(context(send), CHILD);
+
+    expect(lookup).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -131,6 +188,30 @@ describe("notifyAnalysisRefreshParent", () => {
               id: PARENT_ID,
               kind: "analysis_refresh",
               status: "failed",
+            }),
+    );
+    vi.spyOn(
+      AnalysisRefreshRunsRepository.prototype,
+      "findParentRunIdByChildRunId",
+    ).mockResolvedValue(PARENT_ID);
+    const send = vi.fn();
+
+    await notifyAnalysisRefreshParent(context(send), CHILD);
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("does not notify a malformed active parent projection", async () => {
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockImplementation(
+      async (_scope, id) =>
+        id === CHILD.runId
+          ? runRow({ status: "completed" })
+          : runRow({
+              id: PARENT_ID,
+              kind: "diagnostic",
+              status: "queued",
+              result_type: "analysis_refresh_run",
+              result_id: PARENT_ID,
             }),
     );
     vi.spyOn(

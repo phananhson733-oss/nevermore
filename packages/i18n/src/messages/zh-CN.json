@@ -1416,6 +1416,25 @@
         "transactional": "转化意图",
         "navigational": "导航意图"
       },
+      "searchIntentAuthority": {
+        "user_confirmed": "用户已确认",
+        "governed_legacy": "历史治理值",
+        "provider_observed": "提供方观测",
+        "llm_generated": "LLM 生成",
+        "unavailable": "权威来源不可用"
+      },
+      "searchIntentUnavailableHint": "搜索意图不可用说明",
+      "topicRevision": "Topic v{revision}",
+      "recollection": {
+        "eyebrow": "数据刷新",
+        "title": "需要重新采集",
+        "description": "这条历史 DataForSEO 记录缺少：{fields}。重新运行诊断可以采集这些字段；提供方明确返回 null 不会被当作缺字段。",
+        "action": "前往重新运行诊断",
+        "field": {
+          "keyword_difficulty": "关键词难度",
+          "provider_search_intent": "提供方搜索意图"
+        }
+      },
       "stageLabel": {
         "awareness": "问题认知",
         "consideration": "方案评估",
@@ -1440,6 +1459,9 @@
         "pathStepCluster": "主题簇",
         "pathStepPage": "映射页面",
         "pathStepBuyerStage": "购买阶段",
+        "pathStepCta": "CTA",
+        "ctaUnavailable": "未提供",
+        "ctaUnavailableDescription": "关键词合约尚未提供精确 CTA 映射，因此这里明确显示不可用，不进行推测。",
         "relatedTitle": "同主题簇需求信号",
         "relatedCount": "显示 {shown} / {total} 项",
         "viewSources": "查看来源与明细",
@@ -1463,6 +1485,8 @@
       "columns": {
         "keyword": "关键词",
         "intent": "搜索意图",
+        "topic": "已确认主题簇",
+        "intentAuthority": "搜索意图 / 权威来源",
         "volume": "搜索量",
         "kd": "KD",
         "rankUrl": "排名 / URL",
@@ -1470,7 +1494,38 @@
         "queryKind": "查询类型",
         "freshness": "数据新鲜度",
         "status": "状态",
+        "delivery": "内容产出",
         "source": "入库路径"
+      },
+      "delivery": {
+        "unavailablePrimary": "内容产出不可用",
+        "reviewRequired": "需要先审核机会",
+        "confirmed": "已确认内容承接路径",
+        "contentPaths": "{count} 条内容承接路径",
+        "currentOutputs": "{count} 个当前交付物",
+        "artifactState": "{status} · 第 {revision} 版",
+        "title": "页面承接与内容产出",
+        "provenance": "最新已发布增长地图链路 · 当前交付物状态",
+        "sectionUnavailable": "不可用",
+        "sectionCount": "{opportunities} 条路径 · {artifacts} 个交付物",
+        "mappedPage": "精确映射页面",
+        "pageCarrier": "页面承载类型：{type}",
+        "scopeBoundary": "仅纳入承载页面与当前关键词映射完全一致的内容机会。",
+        "awaitingGeneration": "Action 已确认，尚未生成可读取的交付物",
+        "revision": "第 {revision} 版",
+        "openExecution": "打开相关交付物",
+        "openExecutionFor": "打开“{title}”的相关交付物",
+        "reason": {
+          "published_run_unavailable": "当前没有可用于精确承接判断的已发布诊断版本。",
+          "url_inventory_unavailable": "还未读到该发布版本的完整页面清单，因此不会推断交付承接。",
+          "opportunity_inventory_unavailable": "还未读到该发布版本的完整机会清单，因此不会推断交付承接。",
+          "artifact_inventory_unavailable": "还未读到当前项目的完整交付物清单；不会把部分分页当成完整交付状态。",
+          "keyword_unassigned": "这个关键词还没有映射到规范页面，因此不会声明它已经被某个交付物承接。",
+          "keyword_new_asset": "这个关键词当前指向“新内容资产”；现有读模型尚不能证明最终由哪个交付物承接。",
+          "mapped_page_unavailable": "完整发布版本中没有这个映射 SitePage，因此关联会直接关闭。",
+          "inventory_scope_mismatch": "页面清单与当前项目或已发布版本不一致，因此不会混用跨版本数据。",
+          "no_content_opportunity": "没有内容类机会精确承接这个 SitePage；同主题其他页面与技术工单不会混入。"
+        }
       },
       "noMatchesTitle": "没有匹配的关键词",
       "noMatchesDescription": "请尝试其他关键词、来源、市场、语言或映射页面。这里仅显示当前已加载到的精确记录。",
@@ -1572,13 +1627,21 @@
           "conflicts": "意图冲突"
         },
         "status": {
+          "loading": "正在读取权威状态",
           "draft": "有待发布草稿",
           "confirmed": "已发布",
+          "system_confirmed": "系统已确认",
+          "user_confirmed": "用户已确认",
+          "legacy_confirmed": "历史版本已确认",
+          "read_failed": "读取失败",
           "unavailable": "尚未建立"
         },
         "loading": "正在读取话题地图…",
         "manage": "管理话题地图",
         "gatewayActionHint": "结构编辑、关键词覆盖与历史版本",
+        "gatewayUnavailableHint": "尚无已确认主题簇；重新运行诊断可以生成待审核提案。",
+        "gatewayRunDiagnosis": "重新运行诊断",
+        "generationSummary": "由 {keywords} 个关键词自动生成 · 已分配 {assigned} 个",
         "workspaceError": "无法读取话题地图工作区。",
         "insightsError": "已读取结构，但暂时无法读取关键词覆盖判断。",
         "retry": "重试",
@@ -2324,6 +2387,7 @@
       "signals": "增长信号",
       "signalsNote": "去重后共 {count} 条 Finding；同一条 Finding 可能影响多个 URL",
       "uncoveredKeywords": "未覆盖关键词",
+      "uncoveredLowerBound": "≥ {count}",
       "uncoveredNote": "已加载 {loaded} 个关键词，其中仍有 {count} 个主题簇未覆盖",
       "uncoveredNoteTruncated": "首批已加载 {loaded} 个关键词，其中仍有 {count} 个主题簇未覆盖 · 还有更多记录",
       "uncoveredEmpty": "关键词库还没有记录",
@@ -2331,10 +2395,77 @@
       "unavailable": "不可用"
     },
     "pageViews": {
+      "viewLabel": "查看方式",
+      "viewSwitcherLabel": "页面与机会查看方式",
+      "view": {
+        "url": "按 URL",
+        "cluster": "按主题簇",
+        "opportunity": "按机会"
+      },
       "url": {
+        "label": "冻结审计中的 URL",
+        "selectAria": "查看 {url}",
+        "titleUnavailable": "页面标题不可用",
+        "templateUnavailable": "模板不可用",
+        "description": "没有 URL 符合当前搜索与筛选条件。",
         "currentOpportunities": "当前问题与机会",
         "fullEvidence": "完整证据与审核",
         "fullEvidenceDescription": "指标、溯源、内链图与 Finding 操作"
+      },
+      "cluster": {
+        "label": "已确认主题簇",
+        "selectAria": "查看主题簇 {topic}",
+        "description": "没有已确认主题簇符合当前搜索与筛选条件。",
+        "descriptionUnavailable": "暂无已确认的主题说明。",
+        "root": "支柱主题",
+        "child": "子主题",
+        "detailLabel": "所选主题簇详情",
+        "eyebrow": "已确认主题簇",
+        "metrics": {
+          "pages": "映射页面",
+          "keywords": "需求信号",
+          "volume": "已观测搜索量"
+        },
+        "sections": {
+          "path": "主题承接与转化路径",
+          "pages": "映射页面",
+          "demand": "同主题簇需求信号",
+          "opportunity": "当前最高机会"
+        },
+        "path": {
+          "topic": "主题簇",
+          "page": "映射页面",
+          "cta": "CTA"
+        },
+        "noMappedPage": "无可证明的主页面",
+        "ctaUnavailable": "未提供",
+        "ctaUnavailableDescription": "冻结 Growth Map 合约尚未提供精确 CTA 映射，因此这里明确显示不可用，不进行推测。",
+        "itemCount": "{count} 个页面",
+        "queryCount": "{count} 个需求词",
+        "noPages": "该已确认主题簇尚无精确映射页面。",
+        "noKeywords": "尚无已采集关键词被分配到该已确认主题簇。",
+        "intentUnavailable": "意图不可用",
+        "volumeUnavailable": "搜索量不可用",
+        "noOpportunity": "该主题簇的映射页面尚无精确对应的 Opportunity。",
+        "searchVolume": {
+          "partial_search_volume": "部分已观测总量",
+          "unavailable": "不可用"
+        },
+        "coverage": {
+          "empty": "暂无需求",
+          "uncovered": "未覆盖",
+          "partial": "部分覆盖",
+          "covered": "已覆盖",
+          "conflict": "存在冲突"
+        },
+        "unavailableTitle": "已确认主题簇视图不可用",
+        "unavailable": {
+          "confirmed_topic_unavailable": "需要先确认 Topic 模型；草稿或仅由系统生成的提案不会被当作正式主题归属。",
+          "diagnostic_run_mismatch": "Topic 模型与当前冻结审计没有指向同一次 Diagnostic Run。",
+          "topic_revision_mismatch": "Topic 数据来自不同的已确认版本；只有版本一致后才会展示结果。",
+          "topic_reference_mismatch": "至少一个关键词或页面引用了当前精确已确认版本之外的 Topic。",
+          "inventory_reference_mismatch": "至少一个 Topic 映射无法通过完整冻结 URL 与关键词清单验证。"
+        }
       },
       "opportunity": {
         "label": "增长机会",
@@ -2396,6 +2527,16 @@
         "confirmedBoundary": "这条 Finding 已经生成规范 Action。"
       },
       "columns": {
+        "url": "URL / 页面",
+        "pageType": "页面类型",
+        "signals": "机会信号",
+        "clicks": "GSC 点击",
+        "position": "排名",
+        "topic": "主题簇",
+        "role": "层级",
+        "keywords": "关键词",
+        "volume": "搜索量",
+        "coverage": "覆盖状态",
         "urls": "URLs",
         "opportunity": "机会 / 目标",
         "type": "类型",
@@ -2409,12 +2550,17 @@
       "scopeMismatch": "读取期间审计版本发生变化。只有所有数据指向同一 Diagnostic Run 后才会显示结果。",
       "searchScope": "搜索与筛选作用于该视图的完整冻结集合。",
       "empty": {
+        "url": "没有匹配的 URL。",
+        "cluster": "没有匹配的已确认主题簇。",
         "opportunity": "没有匹配的机会。"
       },
       "select": {
+        "cluster": "选择一个已确认主题簇，查看页面、需求与转化路径。",
         "opportunity": "选择一个机会，查看 Finding、目标与下一步决定。"
       },
       "counts": {
+        "urls": "{count} 个 URL",
+        "clusters": "{count} 个主题簇",
         "opportunities": "{count} 个机会",
         "findings": "{count} 条 Finding"
       }

@@ -34,10 +34,10 @@ function invoke(query = "", selectedProjectId = projectId) {
   );
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.listProjectAuditKeywords.mockResolvedValue({
+function emptyKeywordPage(selectedDiagnosticRunId: string | null = null) {
+  return {
     projectId,
+    diagnosticRunId: selectedDiagnosticRunId,
     data: [],
     meta: {
       limit: 50,
@@ -48,7 +48,12 @@ beforeEach(() => {
         limitations: ["No canonical Keyword Library entries are available."],
       },
     },
-  });
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.listProjectAuditKeywords.mockResolvedValue(emptyKeywordPage());
 });
 
 describe("GET project Growth Map Keyword Library", () => {
@@ -110,6 +115,9 @@ describe("GET project Growth Map Keyword Library", () => {
   });
 
   it("passes a strict lowercase diagnosticRunId pin when requested", async () => {
+    mocks.listProjectAuditKeywords.mockResolvedValueOnce(
+      emptyKeywordPage(diagnosticRunId),
+    );
     const response = await invoke(`?diagnosticRunId=${diagnosticRunId}`);
 
     expect(response.status).toBe(200);
@@ -118,6 +126,9 @@ describe("GET project Growth Map Keyword Library", () => {
       projectId,
       { limit: 50, cursor: null, diagnosticRunId, sourceKind: null },
     );
+    await expect(response.json()).resolves.toEqual({
+      data: expect.objectContaining({ diagnosticRunId }),
+    });
   });
 
   it.each([

@@ -8,12 +8,14 @@ import {
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
+  TopicModelGenerationRunsRepository,
   type AsyncRunRow,
   type JobWithMetadata,
   type ProjectScope,
   type QueueName,
 } from "@sf/db";
 import { CONTRACT_VERSION } from "@sf/contracts";
+import { notifyAnalysisRefreshParent } from "../analysis-refresh/notify-parent.ts";
 import { withRunContext, type WorkerContext } from "../context.ts";
 import {
   DIAGNOSTIC_EXECUTOR_VERSION_UNSUPPORTED,
@@ -115,6 +117,7 @@ const MAX_SAFE_ERROR_SUMMARY_LENGTH = 512;
 // provider/customer-controlled text masquerade as a safe canonical summary.
 const SAFE_RETRY_SUMMARIES = new Set<string>([
   "Product Profile synthesis will be retried.",
+  "Topic Model generation will be retried.",
   "Collection was interrupted by worker shutdown; automatic retry is scheduled.",
   "Provider rate limit reached; automatic retry is scheduled.",
   "Provider request timed out; automatic retry is scheduled.",
@@ -228,6 +231,8 @@ export function queueForRun(
       return "measurement";
     case "analysis_refresh":
       return "refresh.analysis";
+    case "topic_model_generation":
+      return "topic-model.generate";
     default:
       return null;
   }
@@ -965,6 +970,17 @@ async function terminalize(
       runId: run.id,
       status: outcome.status,
     });
+    if (
+      run.kind === "collection" ||
+      run.kind === "diagnostic" ||
+      run.kind === "topic_model_generation"
+    ) {
+      await notifyAnalysisRefreshParent(ctx, {
+        runId: run.id,
+        workspaceId: run.workspace_id,
+        projectId: run.project_id,
+      });
+    }
   }
 }
 
@@ -983,7 +999,8 @@ async function reconcileCanonicalAndProjection(
   return ctx.db.transaction(async (tx) => {
     throwIfRecoveryAborted(signal);
     const runs = new AsyncRunsRepository(tx);
-    if (!(await runs.lockActiveForRecovery(scope, run.id))) return false;
+    const lockedRun = await runs.lockActiveForRecovery(scope, run.id);
+    if (!lockedRun) return false;
     throwIfRecoveryAborted(signal);
     const project = await new ProjectsRepository(tx).findByIdForUpdate(
       { workspaceId: scope.workspaceId },
@@ -993,11 +1010,39 @@ async function reconcileCanonicalAndProjection(
       throw new Error("recovery project disappeared while reconciling run");
     }
     throwIfRecoveryAborted(signal);
-    const reconciled = await runs.reconcileActiveToTerminal(
-      scope,
-      run.id,
-      values,
-    );
+    let reconciled: boolean;
+    if (run.kind === "topic_model_generation") {
+      if (
+        lockedRun.kind !== "topic_model_generation" ||
+        lockedRun.result_type !== "topic_model_generation_run" ||
+        lockedRun.result_id !== lockedRun.id
+      ) {
+        throw new Error(
+          "recovery found an invalid Topic Model generation run projection",
+        );
+      }
+      const terminalized = await new TopicModelGenerationRunsRepository(
+        tx,
+      ).terminalize(toRunAttempt(lockedRun), {
+        status: values.status,
+        resultTopicModelRevisionId: null,
+        lastErrorCode: values.lastErrorCode,
+        lastErrorSummary: values.lastErrorSummary,
+      });
+      if (terminalized.kind === "stale") return false;
+      if (terminalized.kind !== "terminalized") {
+        throw new Error(
+          "recovery could not terminalize the Topic Model generation ledger",
+        );
+      }
+      reconciled = true;
+    } else {
+      reconciled = await runs.reconcileActiveToTerminal(
+        scope,
+        run.id,
+        values,
+      );
+    }
     throwIfRecoveryAborted(signal);
     if (!reconciled) return false;
 

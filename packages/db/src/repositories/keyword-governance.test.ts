@@ -4,8 +4,11 @@ import {
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  MAX_GENERATED_TOPIC_ASSIGNMENT_BATCH,
   MAX_KEYWORD_DECISION_ORIGIN_BATCH,
   MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH,
+  type ApplyGeneratedTopicAssignmentsInput,
+  type GeneratedTopicAssignmentSkip,
   type KeywordGovernanceReviewedProjection,
   type ReviewKeywordInput,
   type SystemKeywordApprovalInput,
@@ -138,6 +141,9 @@ const ids = {
   page: "00000000-0000-4000-8000-000000000006",
   baselineDecision: "00000000-0000-4000-8000-000000000007",
   newDecision: "00000000-0000-4000-8000-000000000008",
+  invocation: "00000000-0000-4000-8000-000000000009",
+  otherKeyword: "00000000-0000-4000-8000-000000000010",
+  unknownTopic: "00000000-0000-4000-8000-000000000011",
 } as const;
 
 const scope = {
@@ -367,6 +373,7 @@ describe("KeywordGovernanceRepository", () => {
       mapped_site_page_id: ids.page,
       review_state: "confirmed",
       assignment_invalidated_by: null,
+      analysis_invocation_id: null,
       decided_by: ids.actor,
       reason: review.reason,
       decided_at: canonicalDatabaseNow,
@@ -985,6 +992,7 @@ describe("KeywordGovernanceRepository.applySystemApprovals", () => {
       mapped_site_page_id: null,
       review_state: "confirmed",
       assignment_invalidated_by: null,
+      analysis_invocation_id: null,
       decided_by: null,
       reason: approval.reason,
       decided_at: canonicalDatabaseNow,
@@ -1227,8 +1235,393 @@ describe("KeywordGovernanceRepository.applySystemApprovals", () => {
   });
 });
 
+describe("KeywordGovernanceRepository.applyGeneratedTopicAssignments", () => {
+  const group = {
+    groupKey: "group:onboarding",
+    topicNodeId: ids.topic,
+    topicModelRevision: 1,
+  } as const;
+  const providerAssignment = {
+    groupKey: group.groupKey,
+    keywordId: ids.keyword,
+    expectedGovernanceRevision: 3,
+    resolvedIntent: {
+      authority: "provider_observed",
+      value: "commercial",
+      analysisInvocationId: null,
+    },
+  } as const;
+  const generatedAssignment = {
+    ...providerAssignment,
+    resolvedIntent: {
+      authority: "llm_generated",
+      value: "informational",
+      analysisInvocationId: ids.invocation,
+    },
+  } as const;
+  const input = {
+    groups: [group],
+    assignments: [providerAssignment],
+  } as const satisfies ApplyGeneratedTopicAssignmentsInput;
+
+  function skippedCounts(
+    reason: GeneratedTopicAssignmentSkip,
+  ): Readonly<Record<GeneratedTopicAssignmentSkip, number>> {
+    return {
+      unknown_group: 0,
+      topic_revision_moved: 0,
+      topic_node_absent: 0,
+      intent_unavailable: 0,
+      keyword_absent: 0,
+      human_decision_exists: 0,
+      revision_moved: 0,
+      revision_exhausted: 0,
+      ledger_unreadable: 0,
+      conflict: 0,
+      [reason]: 1,
+    };
+  }
+
+  it("assigns the exact confirmed Topic while provider intent wins without model lineage", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [{ revision: 1 }],
+      [{
+        topic_node_id: ids.topic,
+        topic_model_revision: 1,
+        label: "Customer Onboarding",
+      }],
+      [],
+      [keyword],
+      [baseline],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+    );
+    const report = await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).applyGeneratedTopicAssignments(scope, input);
+
+    expect(report).toMatchObject({
+      assignedCount: 1,
+      skippedCount: 0,
+      outcomes: [{
+        groupKey: group.groupKey,
+        keywordId: ids.keyword,
+        applied: true,
+        skipped: null,
+        governanceRevision: 4,
+      }],
+    });
+    expect(Object.values(report.skipped).reduce((sum, count) => sum + count, 0)).toBe(0);
+    expect(db.last("set").args[0]).toMatchObject({
+      status: "approved",
+      intent: "commercial",
+      cluster_key: "Customer Onboarding",
+      mapping_review_state: "confirmed",
+      mapping_revision: 4,
+    });
+    expect(db.last("values").args[0]).toMatchObject({
+      decision_origin: "system_suggestion",
+      intent: "commercial",
+      topic_node_id: ids.topic,
+      topic_model_revision: 1,
+      cluster_key_at_decision: "Customer Onboarding",
+      analysis_invocation_id: null,
+      decided_by: null,
+      reviewed_projection: expect.objectContaining({
+        topicNodeId: ids.topic,
+        topicModelRevision: 1,
+        intent: "commercial",
+      }),
+    });
+    const topicPredicate = db
+      .all("where")
+      .map(sqlFor)
+      .find((query) => query.params.includes(ids.topic));
+    expect(topicPredicate?.params).toEqual(
+      expect.arrayContaining([
+        ids.workspace,
+        ids.project,
+        ids.topic,
+        1,
+        "active",
+        "confirmed",
+      ]),
+    );
+  });
+
+  it("persists the successful invocation on every LLM fallback and nowhere else", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [{ revision: 1 }],
+      [{
+        topic_node_id: ids.topic,
+        topic_model_revision: 1,
+        label: "Customer Onboarding",
+      }],
+      [],
+      [keyword],
+      [baseline],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+    );
+    const report = await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).applyGeneratedTopicAssignments(scope, {
+      groups: [group],
+      assignments: [generatedAssignment],
+    });
+
+    expect(report.outcomes).toMatchObject([{ applied: true }]);
+    expect(db.last("values").args[0]).toMatchObject({
+      intent: "informational",
+      analysis_invocation_id: ids.invocation,
+    });
+
+    for (const resolvedIntent of [
+      {
+        authority: "provider_observed",
+        value: "commercial",
+        analysisInvocationId: ids.invocation,
+      },
+      {
+        authority: "llm_generated",
+        value: "commercial",
+        analysisInvocationId: null,
+      },
+      {
+        authority: "user_confirmed",
+        value: "commercial",
+        analysisInvocationId: ids.invocation,
+      },
+      {
+        authority: "governed_legacy",
+        value: "commercial",
+        analysisInvocationId: null,
+      },
+    ] as const) {
+      const invalidDb = new FakeExecutor();
+      await expect(
+        new KeywordGovernanceRepository(
+          invalidDb as never,
+          clock,
+        ).applyGeneratedTopicAssignments(scope, {
+          groups: [group],
+          assignments: [{
+            ...providerAssignment,
+            resolvedIntent,
+          } as never],
+        }),
+      ).rejects.toThrow(/resolvedIntent|invocation|authority/u);
+      expect(invalidDb.calls).toEqual([]);
+    }
+  });
+
+  it("never overwrites a human decision and reports the skip", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [{ revision: 1 }],
+      [{
+        topic_node_id: ids.topic,
+        topic_model_revision: 1,
+        label: "Customer Onboarding",
+      }],
+      [{ keyword_entity_id: ids.keyword }],
+    );
+
+    await expect(
+      new KeywordGovernanceRepository(
+        db as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, input),
+    ).resolves.toEqual({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("human_decision_exists"),
+      outcomes: [{
+        groupKey: group.groupKey,
+        keywordId: ids.keyword,
+        applied: false,
+        skipped: "human_decision_exists",
+        governanceRevision: null,
+      }],
+    });
+    expect(db.all("update")).toHaveLength(0);
+    expect(db.all("insert")).toHaveLength(0);
+  });
+
+  it("counts unknown groups, unavailable intent, moved Topic revisions, and absent Topic nodes as skips", async () => {
+    const unknownGroupDb = new FakeExecutor();
+    await expect(
+      new KeywordGovernanceRepository(
+        unknownGroupDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, {
+        groups: [group],
+        assignments: [{
+          ...providerAssignment,
+          groupKey: "group:unknown",
+        }],
+      }),
+    ).resolves.toMatchObject({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("unknown_group"),
+    });
+    expect(unknownGroupDb.calls).toEqual([]);
+
+    const unavailableDb = new FakeExecutor();
+    await expect(
+      new KeywordGovernanceRepository(
+        unavailableDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, {
+        groups: [group],
+        assignments: [{ ...providerAssignment, resolvedIntent: null }],
+      }),
+    ).resolves.toMatchObject({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("intent_unavailable"),
+    });
+    expect(unavailableDb.calls).toEqual([]);
+
+    const movedDb = new FakeExecutor();
+    movedDb.enqueue([{ revision: 2 }]);
+    await expect(
+      new KeywordGovernanceRepository(
+        movedDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, input),
+    ).resolves.toMatchObject({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("topic_revision_moved"),
+    });
+    expect(movedDb.all("update")).toHaveLength(0);
+
+    const absentTopicDb = new FakeExecutor();
+    absentTopicDb.enqueue([{ revision: 1 }], []);
+    await expect(
+      new KeywordGovernanceRepository(
+        absentTopicDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, input),
+    ).resolves.toMatchObject({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("topic_node_absent"),
+    });
+    expect(absentTopicDb.all("update")).toHaveLength(0);
+  });
+
+  it("counts a moved keyword revision and a failed CAS as conflicts without appending", async () => {
+    const movedKeywordDb = new FakeExecutor();
+    movedKeywordDb.enqueue(
+      [{ revision: 1 }],
+      [{
+        topic_node_id: ids.topic,
+        topic_model_revision: 1,
+        label: "Customer Onboarding",
+      }],
+      [],
+      [{ ...keyword, mapping_revision: 4 }],
+    );
+    await expect(
+      new KeywordGovernanceRepository(
+        movedKeywordDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, input),
+    ).resolves.toMatchObject({
+      skipped: skippedCounts("revision_moved"),
+    });
+    expect(movedKeywordDb.all("insert")).toHaveLength(0);
+
+    const conflictDb = new FakeExecutor();
+    conflictDb.enqueue(
+      [{ revision: 1 }],
+      [{
+        topic_node_id: ids.topic,
+        topic_model_revision: 1,
+        label: "Customer Onboarding",
+      }],
+      [],
+      [keyword],
+      [baseline],
+      [],
+    );
+    await expect(
+      new KeywordGovernanceRepository(
+        conflictDb as never,
+        clock,
+      ).applyGeneratedTopicAssignments(scope, input),
+    ).resolves.toMatchObject({
+      assignedCount: 0,
+      skippedCount: 1,
+      skipped: skippedCounts("conflict"),
+    });
+    expect(conflictDb.all("insert")).toHaveLength(0);
+  });
+
+  it("keeps the existing evidence-only system path Topic-free and invocation-free", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [],
+      [keyword],
+      [baseline],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+    );
+    await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).applySystemApprovals(scope, [{
+      keywordId: ids.keyword,
+      expectedGovernanceRevision: 3,
+      clusterKey: "customer onboarding",
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      reason: "auto_keyword_governance.v1 approved provider evidence.",
+    }]);
+    expect(db.last("values").args[0]).toMatchObject({
+      topic_node_id: null,
+      topic_model_revision: null,
+      analysis_invocation_id: null,
+    });
+  });
+
+  it("rejects duplicate or oversized generated assignment batches before SQL", async () => {
+    const duplicateDb = new FakeExecutor();
+    const repository = new KeywordGovernanceRepository(
+      duplicateDb as never,
+      clock,
+    );
+    await expect(
+      repository.applyGeneratedTopicAssignments(scope, {
+        groups: [group],
+        assignments: [providerAssignment, providerAssignment],
+      }),
+    ).rejects.toThrow(/repeat a keywordId/u);
+    await expect(
+      repository.applyGeneratedTopicAssignments(scope, {
+        groups: [group],
+        assignments: Array.from(
+          { length: MAX_GENERATED_TOPIC_ASSIGNMENT_BATCH + 1 },
+          (_value, index) => ({
+            ...providerAssignment,
+            keywordId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          }),
+        ),
+      }),
+    ).rejects.toThrow(/at most/u);
+    expect(duplicateDb.calls).toEqual([]);
+  });
+});
+
 describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
-  const otherKeyword = "00000000-0000-4000-8000-000000000009";
+  const otherKeyword = "00000000-0000-4000-8000-000000000012";
 
   it("reads one project-scoped statement keyed by the EXACT revision", async () => {
     const db = new FakeExecutor();
@@ -1238,11 +1631,13 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
           keyword_entity_id: ids.keyword,
           governance_revision: 1,
           decision_origin: "system_suggestion",
+          analysis_invocation_id: ids.invocation,
         },
         {
           keyword_entity_id: otherKeyword,
           governance_revision: 4,
           decision_origin: "user",
+          analysis_invocation_id: null,
         },
       ],
     });
@@ -1260,11 +1655,13 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
         keywordId: ids.keyword,
         governanceRevision: 1,
         decisionOrigin: "system_suggestion",
+        analysisInvocationId: ids.invocation,
       },
       {
         keywordId: otherKeyword,
         governanceRevision: 4,
         decisionOrigin: "user",
+        analysisInvocationId: null,
       },
     ]);
     // One statement for the whole page: never one query per keyword.
@@ -1274,6 +1671,7 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
     // Project isolation lives in the same WHERE, never in memory.
     expect(query.sql).toMatch(/"project_id" = \$\d+::uuid/u);
     expect(query.sql).toContain("governance_revision");
+    expect(query.sql).toContain("analysis_invocation_id");
     expect(query.params).toEqual([
       ids.workspace,
       ids.project,
@@ -1349,6 +1747,7 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
           keyword_entity_id: otherKeyword,
           governance_revision: 1,
           decision_origin: "user",
+          analysis_invocation_id: null,
         },
       ],
     });
@@ -1368,6 +1767,7 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
           keyword_entity_id: ids.keyword,
           governance_revision: 1,
           decision_origin: "auto_pilot",
+          analysis_invocation_id: null,
         },
       ],
     });
@@ -1379,5 +1779,43 @@ describe("KeywordGovernanceRepository.listDecisionOriginsAt", () => {
         { keywordId: ids.keyword, governanceRevision: 1 },
       ]),
     ).rejects.toBeInstanceOf(KeywordGovernanceIntegrityError);
+
+    for (const row of [
+      {
+        keyword_entity_id: ids.keyword,
+        governance_revision: 1,
+        decision_origin: "user",
+        analysis_invocation_id: ids.invocation,
+      },
+      {
+        keyword_entity_id: ids.keyword,
+        governance_revision: 1,
+        decision_origin: "migration_baseline",
+        analysis_invocation_id: ids.invocation,
+      },
+      {
+        keyword_entity_id: ids.keyword,
+        governance_revision: 1,
+        decision_origin: "system_suggestion",
+        analysis_invocation_id: "not-a-uuid",
+      },
+      {
+        keyword_entity_id: ids.keyword,
+        governance_revision: 2,
+        decision_origin: "system_suggestion",
+        analysis_invocation_id: null,
+      },
+    ]) {
+      const malformed = new FakeExecutor();
+      malformed.enqueueExecute({ rows: [row] });
+      await expect(
+        new KeywordGovernanceRepository(
+          malformed as never,
+          clock,
+        ).listDecisionOriginsAt(scope, [
+          { keywordId: ids.keyword, governanceRevision: 1 },
+        ]),
+      ).rejects.toBeInstanceOf(KeywordGovernanceIntegrityError);
+    }
   });
 });

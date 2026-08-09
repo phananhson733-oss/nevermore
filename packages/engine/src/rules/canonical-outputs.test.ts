@@ -234,6 +234,8 @@ function csvKeyword(
     keyword,
     clusterKey,
     searchVolume,
+    keywordDifficulty: null,
+    providerSearchIntent: null,
     currentUrl: null,
     currentRank: null,
     competitorDomain: null,

@@ -47,12 +47,12 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.authorityVersion, "0.4.0");
   assert.equal(lock.apiOperations.length, 79);
   assert.equal(lock.asyncOperations.length, 10);
-  assert.equal(lock.tables.length, 78);
+  assert.equal(lock.tables.length, 80);
   assert.equal(lock.rules.length, 12);
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     lock.migrationHead,
-    "0049_product_profile_keyword_lineage",
+    "0050_product_profile_keyword_lineage",
   );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
@@ -76,8 +76,21 @@ test("builds the complete database inventory through the static schema catalog",
   );
   assert.match(
     verifier,
-    /database: \$\{EXPECTED_TABLES\.length\} app tables \(pg-boss excluded\)/,
+    /database: 50 migrations through \$\{EXPECTED_MIGRATION_HEAD\}, \$\{EXPECTED_TABLES\.length\} app tables \(pg-boss excluded\), 109 indexes, 157 triggers, and 82 routines in migrate-check/,
   );
+  for (const invariant of [
+    "authority schema must contain migration 0048 verbatim and exactly once",
+    "database async run kinds",
+    "database async result resource types",
+    "AnalysisInvocation tasks",
+    "Topic invocation ledger must bound budget and fence every reservation to one exact AsyncRun attempt",
+    "Topic migration must store hashes and bounded metadata, never raw prompt/provider/model output",
+    "actorless system confirmation must require the exact successful invocation and reservation lineage",
+    "Analysis Refresh plan constraint must accept exactly v1, v2, and v3 branches",
+    "internal Topic mutator EXECUTE privilege is not revoked",
+  ]) {
+    assert.match(verifier, new RegExp(invariant));
+  }
   assert.doesNotMatch(
     verifier,
     /CREATE\\s\+TABLE\\s\+IF\\s\+NOT\\s\+EXISTS\\s\+app/,
@@ -136,7 +149,11 @@ test("gates the current Supabase production authentication boundary", () => {
 test("keeps strict Growth Map Keyword and Competitor contracts", () => {
   for (const invariant of [
     "public collection provider allowlist",
-    "Analysis Refresh must own the fixed DFS Search Landscape step",
+    "Analysis Refresh must own the fixed v3 DFS/Backlinks/Topic/Growth Audit plan while retaining exact v1/v2 readability and no public model options",
+    "shared AsyncRun kinds",
+    "shared AsyncRun result resource types",
+    "shared AsyncAccepted resource types",
+    "OpenAPI must not expose Topic generation reservation, attempt, or provider-option internals",
     "Growth Map diagnosticRunId pin must remain one optional canonical lowercase UUID",
     "Growth Map review view must remain the exact optional view=review literal",
     "Growth Map Keyword list path/operationId drift",
@@ -146,6 +163,11 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",
+    "Growth Map Keyword recollection fields",
+    "Growth Map Keyword recollection required fields",
+    "Growth Map Keyword recollection must remain closed, bounded, exact, and nullable",
+    "Growth Map Keyword cursor page diagnostic run identity types",
+    "Growth Map Keyword cursor page must identify the exact frozen run and keep live reads null",
     "Growth Map Competitor list path/operationId drift",
     "Growth Map Competitor detail path/operationId drift",
     "Growth Map Competitor detail must keep review view mutually exclusive with the generation pin",

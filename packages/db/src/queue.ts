@@ -52,6 +52,7 @@ export type QueueName =
   | "collect.dataforseo"
   | "diagnose"
   | "profile.synthesize"
+  | "topic-model.generate"
   | "artifact.generate"
   | "export.bundle"
   | "content-shadow"
@@ -117,6 +118,13 @@ export const QUEUE_CONFIG: Record<QueueName, QueueConfig> = {
     heartbeatSeconds: 60,
   },
   "profile.synthesize": {
+    expireInSeconds: 300,
+    retryLimit: 2,
+    retryBackoff: true,
+    retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
+    heartbeatSeconds: 60,
+  },
+  "topic-model.generate": {
     expireInSeconds: 300,
     retryLimit: 2,
     retryBackoff: true,

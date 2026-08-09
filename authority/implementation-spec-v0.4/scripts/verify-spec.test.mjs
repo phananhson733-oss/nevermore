@@ -74,10 +74,10 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
     {
       operations: 79,
       async: 10,
-      tables: 78,
+      tables: 80,
       rules: 12,
-      migrations: 49,
-      head: "0049_product_profile_keyword_lineage",
+      migrations: 50,
+      head: "0050_product_profile_keyword_lineage",
     },
   );
 });
@@ -107,7 +107,7 @@ test("rejects hand-edited generated authority SQL", () => {
 
 test("generated schema is the exact ordered migration chain", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
-  assert.equal(migrations.length, 49);
+  assert.equal(migrations.length, 50);
   assert.equal(
     readAuthority("schema.sql"),
     renderAuthoritySchema(migrations),
@@ -125,13 +125,15 @@ test("generated schema is the exact ordered migration chain", () => {
 test("catalog recognizes CREATE TABLE with and without IF NOT EXISTS", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
   const tables = migrationTableInventory(migrations);
-  assert.equal(tables.length, 78);
+  assert.equal(tables.length, 80);
   for (const table of [
     "keyword_relation_identities",
     "action_execution_state_events",
     "competitor_monitor_signals",
     "geo_citation_occurrences",
     "backlink_facts",
+    "topic_model_generation_runs",
+    "topic_model_generation_invocation_attempts",
   ]) {
     assert.ok(tables.includes(table), `${table} is missing`);
   }

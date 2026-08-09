@@ -4,9 +4,11 @@ import {
   AsyncRunsRepository,
   CollectionRunsRepository,
   DataSnapshotsRepository,
+  KeywordsRepository,
   ObservationsRepository,
   schemaTables,
   SourceConnectionsRepository,
+  TopicModelsRepository,
   contentHash,
   type CanonicalValue,
   type DbHandle,
@@ -819,7 +821,7 @@ export async function publishDiagnosticThroughAnalysisRefresh(
     );
   }
   // The offline diagnostic manifest intentionally excludes backlink evidence,
-  // so the current six-step Analysis Refresh is always partial in this fixture.
+  // so the current Analysis Refresh is always partial in this fixture.
   const parentStatus = "partial";
 
   await db.db.transaction(async (tx) => {
@@ -928,6 +930,37 @@ export async function publishDiagnosticThroughAnalysisRefresh(
     ) {
       throw new Error(
         "Growth Map fixture could not record skipped dataforseo_backlinks step",
+      );
+    }
+    const topics = new TopicModelsRepository(tx);
+    const latestConfirmedTopic = await topics.getLatestConfirmed(scope);
+    const topicSkipReason =
+      latestConfirmedTopic !== null
+        ? "existing_confirmed_model"
+        : (await topics.getDraft(scope)) !== null
+          ? "existing_draft"
+          : (
+                await new KeywordsRepository(tx).listDiagnosticEligible(scope, {
+                  limit: 1,
+                })
+              ).length === 0
+            ? "insufficient_keyword_evidence"
+            : null;
+    if (topicSkipReason === null) {
+      throw new Error(
+        "Growth Map fixture cannot skip Topic generation when eligible Keyword evidence exists without a Topic authority",
+      );
+    }
+    if (
+      !(await plans.skipStep(
+        scope,
+        analysisRefreshRunId,
+        "topic_model",
+        topicSkipReason,
+      ))
+    ) {
+      throw new Error(
+        "Growth Map fixture could not record its evidence-backed Topic Model skip",
       );
     }
     if (

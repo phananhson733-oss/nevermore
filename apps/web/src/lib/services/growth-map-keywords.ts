@@ -8,7 +8,6 @@ import {
   type GrowthMapKeywordMappedTarget,
   type GrowthMapKeywordMetrics,
   type GrowthMapKeywordNumericMetric,
-  type GrowthMapKeywordReviewOrigin,
   type GrowthMapKeywordSourceOccurrence,
   type GrowthMapKeywordTextMetric,
   type ReviewKeywordRequest,
@@ -106,6 +105,17 @@ const UNKNOWN_FRESHNESS_LIMITATION =
   "No provider data-as-of timestamp is available for this source occurrence.";
 const NEWER_LIVE_REVIEW_LIMITATION =
   "A newer live Keyword review exists; rerun Analysis Refresh to publish it in the customer-visible Growth Map.";
+const LEGACY_SEARCH_INTENT_LIMITATION =
+  "This governed search intent predates durable provider or LLM invocation provenance; its original value is preserved as a pre-ledger classification.";
+const UNAVAILABLE_SEARCH_INTENT_LIMITATION =
+  "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.";
+
+const PROVIDER_SEARCH_INTENTS = [
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+] as const;
 
 const CLASSIFICATION_LIMITATIONS = {
   intent: "Search intent has not been classified.",
@@ -226,9 +236,9 @@ interface KeywordProjectionRows {
    * Which authority decided each keyword at the EXACT revision this projection
    * reports. A keyword absent from the map has no decision at that revision.
    */
-  readonly reviewOriginsByKeywordId: ReadonlyMap<
+  readonly reviewAuthoritiesByKeywordId: ReadonlyMap<
     string,
-    GrowthMapKeywordReviewOrigin
+    KeywordDecisionOriginRow
   >;
 }
 
@@ -242,15 +252,18 @@ interface KeywordProjectionRows {
  * confirmation from a machine's, which would present an unreviewed keyword as
  * reviewed.
  */
-async function loadReviewOrigins(
+async function loadReviewAuthorities(
   exec: Executor,
   scope: ProjectScope,
   refs: readonly { readonly keywordId: string; readonly revision: number }[],
-): Promise<ReadonlyMap<string, GrowthMapKeywordReviewOrigin>> {
-  const byKeywordId = new Map<string, GrowthMapKeywordReviewOrigin>();
+): Promise<ReadonlyMap<string, KeywordDecisionOriginRow>> {
+  const byKeywordId = new Map<string, KeywordDecisionOriginRow>();
   if (refs.length === 0) return byKeywordId;
   const repository = new KeywordGovernanceRepository(exec);
   for (const batch of batches(refs, MAX_KEYWORD_DECISION_ORIGIN_BATCH)) {
+    const requestedRevisionByKeywordId = new Map(
+      batch.map((ref) => [ref.keywordId, ref.revision] as const),
+    );
     let rows: readonly KeywordDecisionOriginRow[];
     try {
       rows = await repository.listDecisionOriginsAt(
@@ -267,8 +280,14 @@ async function loadReviewOrigins(
       throw error;
     }
     for (const row of rows) {
-      if (byKeywordId.has(row.keywordId)) return corruptKeywordLibrary();
-      byKeywordId.set(row.keywordId, row.decisionOrigin);
+      if (
+        byKeywordId.has(row.keywordId) ||
+        row.governanceRevision !==
+          requestedRevisionByKeywordId.get(row.keywordId)
+      ) {
+        return corruptKeywordLibrary();
+      }
+      byKeywordId.set(row.keywordId, row);
     }
   }
   return byKeywordId;
@@ -932,7 +951,7 @@ async function _loadProjectionRows(
   const sitePagesById = await loadSitePages(exec, scope, sitePageIds);
   // The live library reports each keyword at its current revision, so the
   // deciding authority is read at that same revision.
-  const reviewOriginsByKeywordId = await loadReviewOrigins(
+  const reviewAuthoritiesByKeywordId = await loadReviewAuthorities(
     exec,
     scope,
     entities.map((entity) => ({
@@ -946,7 +965,7 @@ async function _loadProjectionRows(
     snapshotsById,
     collectionRunsById,
     sitePagesById,
-    reviewOriginsByKeywordId,
+    reviewAuthoritiesByKeywordId,
   };
 }
 
@@ -1002,7 +1021,7 @@ async function loadFrozenProjectionRows(
   // the deciding authority is read at that exact revision too. Resolving the
   // latest decision instead would attribute a later review to an older
   // generation.
-  const reviewOriginsByKeywordId = await loadReviewOrigins(
+  const reviewAuthoritiesByKeywordId = await loadReviewAuthorities(
     exec,
     scope,
     reads.map(({ frozen }) => ({
@@ -1016,7 +1035,7 @@ async function loadFrozenProjectionRows(
     snapshotsById,
     collectionRunsById,
     sitePagesById,
-    reviewOriginsByKeywordId,
+    reviewAuthoritiesByKeywordId,
   };
 }
 
@@ -1969,6 +1988,171 @@ function projectMetrics(
   };
 }
 
+function projectRecollection(
+  projected: readonly ProjectedOccurrence[],
+  historyTruncated: boolean,
+): GrowthMapKeywordLibraryItem["recollection"] {
+  if (historyTruncated) return null;
+  const dataForSeoSources = projected.filter(
+    (source) => source.row.source_kind === "dataforseo_ranked",
+  );
+  if (dataForSeoSources.length === 0) return null;
+
+  const hasExactKey = (key: "keywordDifficulty" | "providerSearchIntent") =>
+    dataForSeoSources.some((source) => {
+      if (!source.observation || !isRecord(source.observation.value_json)) {
+        return corruptKeywordLibrary();
+      }
+      return Object.prototype.hasOwnProperty.call(
+        source.observation.value_json,
+        key,
+      );
+    });
+  const fields: Array<
+    "keyword_difficulty" | "provider_search_intent"
+  > = [];
+  if (!hasExactKey("keywordDifficulty")) {
+    fields.push("keyword_difficulty");
+  }
+  if (!hasExactKey("providerSearchIntent")) {
+    fields.push("provider_search_intent");
+  }
+  return fields.length === 0
+    ? null
+    : {
+        reason: "historical_dataforseo_observation_missing_fields",
+        fields,
+      };
+}
+
+type ProviderSearchIntent = (typeof PROVIDER_SEARCH_INTENTS)[number];
+
+interface ProviderSearchIntentCandidate {
+  readonly source: ProjectedOccurrence;
+  readonly value: ProviderSearchIntent | null;
+}
+
+function providerSearchIntentCandidate(
+  projected: readonly ProjectedOccurrence[],
+): ProviderSearchIntentCandidate | null {
+  let candidate: ProviderSearchIntentCandidate | null = null;
+  for (const source of projected) {
+    if (source.row.source_kind !== "dataforseo_ranked") continue;
+    if (!source.observation || !source.snapshot) {
+      return corruptKeywordLibrary();
+    }
+    const valueJson = source.observation.value_json;
+    if (!isRecord(valueJson)) return corruptKeywordLibrary();
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        valueJson,
+        "providerSearchIntent",
+      )
+    ) {
+      continue;
+    }
+    const raw = valueJson["providerSearchIntent"];
+    if (
+      raw !== null &&
+      (typeof raw !== "string" ||
+        !PROVIDER_SEARCH_INTENTS.includes(raw as ProviderSearchIntent))
+    ) {
+      return corruptKeywordLibrary();
+    }
+    if (candidate === null) {
+      candidate = {
+        source,
+        value: raw as ProviderSearchIntent | null,
+      };
+    }
+  }
+  return candidate;
+}
+
+function projectSearchIntent(
+  projected: readonly ProjectedOccurrence[],
+  governedIntent: string | null,
+  reviewAuthority: KeywordDecisionOriginRow | null,
+): GrowthMapKeywordLibraryItem["searchIntent"] {
+  // Validate every persisted provider-bearing row before applying authority
+  // precedence. Otherwise a user decision could mask corrupted immutable
+  // provider evidence that still ships with this projection.
+  const provider = providerSearchIntentCandidate(projected);
+  const reviewOrigin = reviewAuthority?.decisionOrigin ?? null;
+  if (reviewOrigin === "user" && governedIntent !== null) {
+    return {
+      value: governedIntent,
+      authority: "user_confirmed",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: null,
+    };
+  }
+  if (provider?.value !== null && provider?.value !== undefined) {
+    const { source, value } = provider;
+    if (!source.observation || !source.snapshot) {
+      return corruptKeywordLibrary();
+    }
+    return {
+      value,
+      authority: "provider_observed",
+      snapshotId: source.snapshot.id,
+      observationId: source.observation.id,
+      analysisInvocationId: null,
+      observedAt: isoInstant(source.observation.observed_at),
+      limitation:
+        source.dto.freshness === "current"
+          ? null
+          : source.dto.limitation ?? corruptKeywordLibrary(),
+    };
+  }
+  if (
+    reviewAuthority !== null &&
+    reviewAuthority.analysisInvocationId !== null
+  ) {
+    if (
+      reviewOrigin !== "system_suggestion" ||
+      governedIntent === null ||
+      !PROVIDER_SEARCH_INTENTS.includes(
+        governedIntent as ProviderSearchIntent,
+      )
+    ) {
+      return corruptKeywordLibrary();
+    }
+    return {
+      value: governedIntent as ProviderSearchIntent,
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: reviewAuthority.analysisInvocationId,
+      observedAt: null,
+      limitation: null,
+    };
+  }
+  if (governedIntent !== null) {
+    return {
+      value: governedIntent,
+      authority: "governed_legacy",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: LEGACY_SEARCH_INTENT_LIMITATION,
+    };
+  }
+  return {
+    value: null,
+    authority: "unavailable",
+    snapshotId: null,
+    observationId: null,
+    analysisInvocationId: null,
+    observedAt: null,
+    limitation: UNAVAILABLE_SEARCH_INTENT_LIMITATION,
+  };
+}
+
 function classificationLimitations(
   entity: KeywordEntityRow,
   governance?: CurrentKeywordGovernance,
@@ -2007,6 +2191,7 @@ function classificationLimitations(
 
 function itemCoverage(input: {
   readonly classifications: ReturnType<typeof classificationLimitations>;
+  readonly searchIntent: GrowthMapKeywordLibraryItem["searchIntent"];
   readonly metrics: GrowthMapKeywordMetrics;
   readonly occurrences: readonly ProjectedOccurrence[];
   readonly truncated: boolean;
@@ -2015,6 +2200,7 @@ function itemCoverage(input: {
   const limitations = unique(
     [
       ...Object.values(input.classifications),
+      input.searchIntent.limitation,
       ...Object.values(input.metrics.limitations),
       ...[
         input.metrics.volume,
@@ -2068,24 +2254,38 @@ function projectItem(
     frozen,
   );
   const metrics = projectMetrics(projected);
+  const recollection = projectRecollection(projected, history.truncated);
   const current = governance?.projection;
   const topicNodeId =
     frozen !== undefined ? frozen.topicNodeId : current?.topicNodeId ?? null;
+  const topicModelRevision =
+    frozen !== undefined
+      ? frozen.topicModelRevision
+      : current?.topicModelRevision ?? null;
   const clusterKey =
     frozen !== undefined
       ? frozenFact?.clusterKey ?? null
       : governance?.clusterKey ?? null;
-  if (topicNodeId !== null && clusterKey === null) {
+  if (
+    (topicNodeId === null) !== (topicModelRevision === null) ||
+    (topicNodeId !== null && clusterKey === null)
+  ) {
     return corruptKeywordLibrary();
   }
   const status =
     frozen !== undefined ? frozenFact!.status : current?.status ?? entity.status;
   // The live governance authority is definitive when the caller loaded it;
   // otherwise the page read supplies the same fact for the exact revision.
-  const reviewOrigin =
-    governance?.decision.decisionOrigin ??
-    rows.reviewOriginsByKeywordId.get(entity.id) ??
-    null;
+  const reviewAuthority =
+    rows.reviewAuthoritiesByKeywordId.get(entity.id) ?? null;
+  if (
+    governance !== undefined &&
+    (reviewAuthority === null ||
+      reviewAuthority.decisionOrigin !== governance.decision.decisionOrigin)
+  ) {
+    return corruptKeywordLibrary();
+  }
+  const reviewOrigin = reviewAuthority?.decisionOrigin ?? null;
   const revision =
     frozen !== undefined
       ? frozenFact!.revision
@@ -2096,6 +2296,11 @@ function projectItem(
     frozen !== undefined
       ? frozenFact!.buyerStage
       : current?.buyerStage ?? entity.buyer_stage;
+  const searchIntent = projectSearchIntent(
+    projected,
+    intent,
+    reviewAuthority,
+  );
   const mappedEntity =
     frozenFact === undefined
       ? entity
@@ -2122,17 +2327,22 @@ function projectItem(
     reviewOrigin,
     revision,
     intent,
+    searchIntent,
     buyerStage,
     cluster:
-      topicNodeId === null || clusterKey === null
+      topicNodeId === null ||
+      topicModelRevision === null ||
+      clusterKey === null
         ? null
-        : { clusterId: topicNodeId, name: clusterKey },
+        : { clusterId: topicNodeId, topicModelRevision, name: clusterKey },
     classificationLimitations: classifications,
     mappedTarget: mappedTarget(mappedEntity, rows, scope, governance),
     sourceOccurrences: projected.map((occurrence) => occurrence.dto),
     metrics,
+    recollection,
     coverage: itemCoverage({
       classifications,
+      searchIntent,
       metrics,
       occurrences: projected,
       truncated: history.truncated,
@@ -2208,6 +2418,7 @@ async function listInSnapshot(
   try {
     return GrowthMapKeywordLibraryResponse.parse({
       projectId,
+      diagnosticRunId: generation.run.id,
       data,
       meta: {
         limit: options.limit,
@@ -2244,6 +2455,7 @@ async function listCurrentLibrary(
   try {
     return GrowthMapKeywordLibraryResponse.parse({
       projectId,
+      diagnosticRunId: null,
       data,
       meta: {
         limit: options.limit,

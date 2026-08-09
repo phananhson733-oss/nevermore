@@ -382,6 +382,6 @@ END;
 $$;
 
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0048_projection_batch_writes'::text AS migration_version;
+  SELECT '0049_projection_batch_writes'::text AS migration_version;
 
 COMMIT;

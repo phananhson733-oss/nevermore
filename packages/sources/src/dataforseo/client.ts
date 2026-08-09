@@ -33,6 +33,12 @@ export const DATAFORSEO_DOMAIN_PAGES_LIVE_URL =
 export const DEFAULT_DATAFORSEO_LIMIT = 200;
 export const DEFAULT_DATAFORSEO_COMPETITORS_DOMAIN_LIMIT = 100;
 export const MAX_DATAFORSEO_LIMIT = 1_000;
+const DATAFORSEO_PROVIDER_SEARCH_INTENTS = [
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+] as const;
 
 export interface DataForSeoBacklinkSummaryRequest {
   readonly target: string;
@@ -159,9 +165,14 @@ export interface DataForSeoRankedKeywordsRequest {
 }
 
 /** Provider fields retained for persistence and later canonical normalization. */
+export type DataForSeoProviderSearchIntent =
+  (typeof DATAFORSEO_PROVIDER_SEARCH_INTENTS)[number];
+
 export interface DataForSeoRankedKeywordRow {
   readonly keyword: string;
   readonly searchVolume: number | null;
+  readonly keywordDifficulty: number | null;
+  readonly providerSearchIntent: DataForSeoProviderSearchIntent | null;
   readonly currentUrl: string | null;
   readonly currentRank: number | null;
 }
@@ -426,6 +437,48 @@ function nullableString(value: unknown, context: string): string | null {
   return value;
 }
 
+function nullableIntegerInRange(
+  value: unknown,
+  min: number,
+  max: number,
+  context: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain an integer from ${min} to ${max}.`,
+    );
+  }
+  const parsed = value as number;
+  if (parsed < min || parsed > max) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain an integer from ${min} to ${max}.`,
+    );
+  }
+  return parsed;
+}
+
+function nullableProviderSearchIntent(
+  value: unknown,
+  context: string,
+): DataForSeoProviderSearchIntent | null {
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value !== "string" ||
+    !DATAFORSEO_PROVIDER_SEARCH_INTENTS.includes(
+      value as DataForSeoProviderSearchIntent,
+    )
+  ) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${context} did not contain a supported provider search intent.`,
+    );
+  }
+  return value as DataForSeoProviderSearchIntent;
+}
+
 function providerStatusErrorCode(status: number): SourceErrorCode {
   if (AUTH_STATUSES.has(status)) return "AUTH_REQUIRED";
   if (QUOTA_STATUSES.has(status)) return "QUOTA_EXCEEDED";
@@ -653,6 +706,22 @@ function parseRow(value: unknown, index: number): DataForSeoRankedKeywordRow {
           keywordData.keyword_info,
           `DataForSEO item ${index}.keyword_info`,
         );
+  const keywordProperties =
+    keywordData.keyword_properties === undefined ||
+    keywordData.keyword_properties === null
+      ? null
+      : asRecord(
+          keywordData.keyword_properties,
+          `DataForSEO item ${index}.keyword_properties`,
+        );
+  const searchIntentInfo =
+    keywordData.search_intent_info === undefined ||
+    keywordData.search_intent_info === null
+      ? null
+      : asRecord(
+          keywordData.search_intent_info,
+          `DataForSEO item ${index}.search_intent_info`,
+        );
   const rankedElement =
     item.ranked_serp_element === undefined ||
     item.ranked_serp_element === null
@@ -675,6 +744,16 @@ function parseRow(value: unknown, index: number): DataForSeoRankedKeywordRow {
     searchVolume: nullableNonNegativeNumber(
       keywordInfo?.search_volume,
       `DataForSEO item ${index}.search_volume`,
+    ),
+    keywordDifficulty: nullableIntegerInRange(
+      keywordProperties?.keyword_difficulty,
+      0,
+      100,
+      `DataForSEO item ${index}.keyword_difficulty`,
+    ),
+    providerSearchIntent: nullableProviderSearchIntent(
+      searchIntentInfo?.main_intent,
+      `DataForSEO item ${index}.main_intent`,
     ),
     currentUrl: nullableString(
       serpItem?.url,

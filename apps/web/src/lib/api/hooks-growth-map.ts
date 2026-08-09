@@ -571,7 +571,13 @@ export async function getGrowthMapKeywords(
   const response = await apiGet<DataEnvelope<unknown>>(
     growthMapKeywordsPath(projectId, normalized),
   );
-  return GrowthMapKeywordLibraryResponse.parse(response.data);
+  const page = GrowthMapKeywordLibraryResponse.parse(response.data);
+  if (page.diagnosticRunId !== normalized.diagnosticRunId) {
+    throw new Error(
+      "Keyword Library diagnostic run identity does not match the requested view.",
+    );
+  }
+  return page;
 }
 
 /** Fetch and re-validate the exact selected Keyword entity projection. */

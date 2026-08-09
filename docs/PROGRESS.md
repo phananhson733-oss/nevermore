@@ -24,8 +24,9 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0049_product_profile_keyword_lineage.sql` (**49 ordered migrations**)
-- Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+  `0050_product_profile_keyword_lineage.sql` (**50 ordered migrations**), after
+  `0048_topic_model_generation.sql` and `0049_projection_batch_writes.sql`
+- Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
   `growth-audit.0.3.1` (capability version remains `0.3.0`; request/addressing
@@ -114,22 +115,35 @@ preview authority and immutable measurement windows.
 Analysis Refresh and published-generation reads are part of this same
 four-module surface:
 
-- New `createAnalysisRefreshRun` parents own the fixed six-step
-  `analysis-refresh.plan.v2`: Crawl → connected GSC → connected GA4 →
-  DataForSEO Search Landscape (DFS) → `dataforseo_backlinks` → Growth Audit.
-  Historical five-step v1 parents remain exact and resumable. The public
-  collection command remains exactly `crawl|gsc|ga4`; it cannot accept
-  DFS/Backlinks target, market, language, limits, credentials, or provider
-  queries.
+- New `createAnalysisRefreshRun` parents own the fixed seven-step
+  `analysis-refresh.plan.v3`: Crawl → connected GSC → connected GA4 →
+  DataForSEO Search Landscape (DFS) → `dataforseo_backlinks` → optional internal
+  Topic Model generation (`topic_model`) → Growth Audit. Historical five-step
+  `analysis-refresh.plan.v1` and six-step `analysis-refresh.plan.v2` parents
+  remain exact and resumable. The public collection command remains exactly
+  `crawl|gsc|ga4`; it cannot accept DFS/Backlinks/Topic targets, market,
+  language, limits, credentials, provider queries, or model options.
+- The internal Topic child freezes bounded input/resource and invocation-attempt
+  ledgers. Its model call occurs outside database transactions; a prior
+  `reserved` or `outcome_unknown` attempt blocks silent retry, and no browser
+  create/reservation/provider-options API is exposed.
 - DFS v3 runs frozen ranked-keywords and competitors-domain requests at
   positions/max-rank 1–100. Only when retained domain overlap is empty, it uses
   frozen GSC/Crawl/Product Profile seeds for at most one paid SERP Competitors
   fallback, then atomically persists one `dataforseo.search_landscape.v3`
-  Snapshot. Its separately default-off `DATAFORSEO_AI_CITATIONS_ENABLED` AI
-  citation sub-capability runs only for
-  an exact frozen cohort of 20 approved, mapping-confirmed GenerativeQuery rows;
-  19 or fewer and the 21-row overflow sentinel both skip without provider calls.
-  Partial provider success is not a published Search Landscape.
+  Snapshot with canonical organic-overlap operands/ratio and immutable
+  competitor-origin lineage. DFS v1/v2 remain exact read-only history. Its
+  separately default-off `DATAFORSEO_AI_CITATIONS_ENABLED` AI citation
+  sub-capability runs only for an exact frozen cohort of 20 approved,
+  mapping-confirmed GenerativeQuery rows; 19 or fewer and the 21-row overflow
+  sentinel both skip without provider calls. Partial provider success is not a
+  published Search Landscape.
+- Ranked-keyword observations retain DataForSEO KD only as an integer `0..100`
+  or `null`, plus canonical provider search intent or `null`; malformed present
+  values fail closed. The resolved `searchIntent` authority order is
+  user-confirmed → exact provider-observed → invocation-backed LLM-generated →
+  governed legacy → unavailable, and a published generation never reads newer
+  observation, review, or invocation lineage.
 - DataForSEO Backlinks remains separately default-off and cost-capped. When
   explicitly enabled on both Web and Worker, it writes one
   `dataforseo.backlinks.v1` Snapshot, exposes only `dataforseo_rank` on its own
@@ -141,6 +155,11 @@ four-module surface:
   lists without a pin show the current automatically projected candidate
   libraries. `view=review` exists only on Keyword/Competitor detail GETs, is
   mutually exclusive with the pin, and PATCH rejects every query parameter.
+- Keyword content delivery reads only complete inventories and joins the exact
+  mapped SitePage in the published run to content Opportunities that own that
+  page and current content Artifacts for their Actions. Topic peers,
+  Finding-only previews, and technical outputs cannot appear as Keyword
+  delivery; Artifact status remains distinct from external publication.
 
 The contextual URL-opportunity slice is part of the authenticated workbench:
 
@@ -293,7 +312,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0049`; historical proof through `0021` does not prove
+   migrations through `0050`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

@@ -16,6 +16,7 @@ const RUN_KINDS = [
   "analysis_refresh",
   "collection",
   "product_profile_synthesis",
+  "topic_model_generation",
   "diagnostic",
   "artifact_generation",
   "export",

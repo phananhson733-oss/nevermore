@@ -28,13 +28,13 @@ Current authority: **v0.4 complete four-module workbench**
 
 1. `authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md` — 当前产品模型、行为、不变量与验收边界的主权威。
 2. `authority/implementation-spec-v0.4/openapi.yaml`（实现镜像为 `openapi/mvp.yaml`）— 当前 HTTP 路径、字段与状态码的机器权威。
-3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0049_product_profile_keyword_lineage.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
+3. `authority/implementation-spec-v0.4/schema.sql`（由 `packages/db/migrations/0001_init.sql` 至 `0050_product_profile_keyword_lineage.sql` 机械生成）— 当前 PostgreSQL 表、约束与索引的机器权威。
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
-当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0049_product_profile_keyword_lineage.sql`（49 个 migration）。`0042` 以 `NOT VALID` 在短事务锁窗口安装扩展后的 rule-set 约束，`0043` 再以较低级别锁验证历史行；`0044` 在不增加表或规则的前提下加入 DataForSEO Backlinks provenance、typed authority scale、selective crawler verification 与 Analysis Refresh v2/v1 兼容约束；`0045` 保留原始 Provider link identity，并允许同一站点 domain family 内的 DataForSEO target lineage，同时继续拒绝外域和带 credentials 的目标；`0046` 为 spec §1.6 的自助注册加上 workspace `plan_tier`，以 metadata-only 的 ADD COLUMN DEFAULT 回填既有行为 `internal`、再把默认值切到 `free`，全程零行改写；`0047` 加入 DataForSEO Search Landscape v3、canonical organic-overlap operand/ratio、fixed-20 AI citation aggregate 与 immutable competitor origin lineage，同时保留 v1/v2 只读兼容；`0048` 在不改变这些 lineage authority 的前提下，把 Keyword/Competitor 投影和 provider discrepancy 收敛改为有界批量/集合式数据库写入；`0049` 为 fixed-20 GenerativeQuery Keyword cohort 增加显式 confirmed Product Profile lineage，且不伪造 provider provenance。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
+当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0050_product_profile_keyword_lineage.sql`（50 个 migration）。`0042` 以 `NOT VALID` 在短事务锁窗口安装扩展后的 rule-set 约束，`0043` 再以较低级别锁验证历史行；`0044` 在不增加表或规则的前提下加入 DataForSEO Backlinks provenance、typed authority scale、selective crawler verification 与 Analysis Refresh v2/v1 兼容约束；`0045` 保留原始 Provider link identity，并允许同一站点 domain family 内的 DataForSEO target lineage，同时继续拒绝外域和带 credentials 的目标；`0046` 为 spec §1.6 的自助注册加上 workspace `plan_tier`，以 metadata-only 的 ADD COLUMN DEFAULT 回填既有行为 `internal`、再把默认值切到 `free`，全程零行改写；`0047` 加入 DataForSEO Search Landscape v3、canonical organic-overlap operand/ratio、fixed-20 AI citation aggregate 与 immutable competitor origin lineage，同时保留 v1/v2 只读兼容；`0048` 加入 bounded Topic Model generation child、invocation-attempt fence 与 Analysis Refresh v3，同时保留 v1/v2 exact historical readability；`0049` 在不改变这些 lineage authority 的前提下，把 Keyword/Competitor 投影和 provider discrepancy 收敛改为有界批量/集合式数据库写入；`0050` 为 fixed-20 GenerativeQuery Keyword cohort 增加显式 confirmed Product Profile lineage，且不伪造 provider provenance。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
 
 任何冲突都是合同缺陷：先保护规格的安全边界与证据诚实性，再回改机器合同并让 `pnpm verify:spec` 通过，**不得在业务代码里暗藏兼容猜测**。旧 PRD / draft specs / mock Artifact 只作背景与视觉参考。
 
@@ -73,9 +73,9 @@ docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm verify:docs           # 文档版本、authority、79/10/78/12、四路由与发布边界一致性
+pnpm verify:docs           # 文档版本、authority、79/10/80/12、四路由与发布边界一致性
 pnpm verify:authority      # repository-owned active v0.4 authority 自校验
-pnpm verify:spec           # v0.4 lock：79 operationId / 10 shared async / 78 表 / 12 规则 + 哈希一致性
+pnpm verify:spec           # v0.4 lock：79 operationId / 10 shared async / 80 表 / 12 规则 + 哈希一致性
 pnpm implementation:check # 实现 surface 与 v0.4 machine authority 一致
 pnpm openapi:lint          # AC-002：Redocly lint openapi/mvp.yaml
 pnpm contracts:generate    # 从 openapi/mvp.yaml 重新生成 packages/contracts/src/generated/openapi.ts
@@ -91,8 +91,8 @@ pnpm vendor:check          # AC-048：比对旧 signalframe 仓 baseline，证�
                            # 本机预检，CI 跑不了：它按绝对路径读旧仓，runner 上不存在（旧仓缺失时 exit 1）
 
 # 数据库（需 DATABASE_URL；本地默认 postgres://wzb@localhost:5432/signalframe_mvp_dev）
-pnpm db:migrate            # 按序应用 0001–0044（幂等，第二次为 no-op）
-pnpm db:migrate:check      # 断言 78 张 app 表 + 必需索引与 append-only trigger
+pnpm db:migrate            # 按序应用 0001–0050（幂等，第二次为 no-op）
+pnpm db:migrate:check      # 断言 80 张 app 表 + 必需索引与 append-only trigger
 pnpm db:smoke              # 约束 smoke test（fixtures 最终 ROLLBACK）
 ```
 
@@ -108,12 +108,13 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 
 - JSON camelCase ↔ DB snake_case，repository 显式 mapping。成功 `{data, meta?}`；错误 `application/problem+json`（`type,title,status,code,detail,requestId,errors?`）。每响应带 `X-Request-Id`。
 - **原子 enqueue（AC-006）**：每个异步 POST 在同一 PostgreSQL 事务内校验 idempotency/硬门 → 插 AsyncRun + domain resource → 用 pg-boss 的 Drizzle adapter（`enqueueRunInTx`，`fromDrizzle(tx, sql)`）在**同一连接**入队 → 存 idempotency response → commit 后返 202。绝不先 commit 再入队或反之。
-- **Analysis Refresh / DataForSEO**：新 `createAnalysisRefreshRun` 冻结六步 `analysis-refresh.plan.v2`（Crawl → GSC → GA4 → DFS → `dataforseo_backlinks` → Growth Audit）；历史五步 `analysis-refresh.plan.v1` 只按 exact manifest/hash 读取与恢复。DataForSEO Search Landscape（DFS）v3 从冻结 Site/market/language 与服务端 row cap 查询 positions 1–100，并仅在 domain overlap 为空时使用带来源的 GSC/Crawl/Product Profile 种子追加一次 SERP Competitors fallback；v1/v2 继续精确只读兼容。v3 的 `DATAFORSEO_AI_CITATIONS_ENABLED` 付费子能力独立且默认关闭，只有同市场/语言中恰好 20 条 current approved、mapping-confirmed GenerativeQuery 与一个服务端固定 model 时才执行，19 条或 21-row overflow 都跳过且不发请求。DataForSEO Backlinks 以 `dataforseo.backlinks.v1` 原子写 provider Snapshot，authority metric 只能是 `dataforseo_rank`；cap 内 source page verification 复用 SSRF-safe、DNS/IP-pinned transport，且不改写 provider fact。独立 `DATAFORSEO_BACKLINKS_ENABLED` rollout 默认关闭；backlink/referring-domain/target-page/source-verification 默认 cap 为 500/100/500/20，硬上限为 1000/1000/1000/20。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS/Backlinks scope、limit 或凭据。
+- **Analysis Refresh / DataForSEO**：新 `createAnalysisRefreshRun` 冻结七步 `analysis-refresh.plan.v3`（Crawl → GSC → GA4 → DFS → `dataforseo_backlinks` → optional internal Topic Model generation → Growth Audit）；历史五步 `analysis-refresh.plan.v1` 与六步 `analysis-refresh.plan.v2` 只按各自 exact manifest/hash/ordinal 读取与恢复。Topic child 冻结 bounded input/resource ledger 和 invocation-attempt ledger，模型调用必须在数据库事务外，`reserved/outcome_unknown` 会阻断静默重试；它没有浏览器 create/reservation/provider-options API。DataForSEO Search Landscape（DFS）v3 从冻结 Site/market/language 与服务端 row cap 查询 positions 1–100，并仅在 canonical organic overlap 为空时使用带来源的 GSC/Crawl/Product Profile 种子追加一次 SERP Competitors fallback；v1/v2 继续精确只读兼容。v3 的 `DATAFORSEO_AI_CITATIONS_ENABLED` 付费子能力独立且默认关闭，只有同市场/语言中恰好 20 条 current approved、mapping-confirmed GenerativeQuery 与一个服务端固定 model 时才执行，19 条或 21-row overflow 都跳过且不发请求。DataForSEO Backlinks 以 `dataforseo.backlinks.v1` 原子写 provider Snapshot，authority metric 只能是 `dataforseo_rank`；cap 内 source page verification 复用 SSRF-safe、DNS/IP-pinned transport，且不改写 provider fact。独立 `DATAFORSEO_BACKLINKS_ENABLED` rollout 默认关闭；backlink/referring-domain/target-page/source-verification 默认 cap 为 500/100/500/20，硬上限为 1000/1000/1000/20。公开 `createCollectionRun` 只能触发 `crawl|gsc|ga4`，不得接受 DFS/Backlinks/Topic scope、limit、凭据、provider query 或 model option。
 - **Growth Map generation read**：URL/Keyword/Competitor list/detail GET 可用 canonical `diagnosticRunId` 固定一个已发布 generation；Keyword/Competitor list 省略 pin 时读取当前资料库，URL 默认 latest generation。只有 Keyword/Competitor detail GET 允许互斥的 `view=review` 读取当前 governance。Keyword/Competitor PATCH 拒绝全部 query。
+- **Keyword truth 与 content delivery**：DataForSEO ranked-keyword KD 只能是 `0..100` integer 或 `null`，provider search intent 只能是 canonical four-value taxonomy 或 `null`；present malformed value 必须 fail closed，不能把缺失值猜成 `0`。`searchIntent` 固定按 user-confirmed → exact provider-observed → invocation-backed LLM-generated → governed legacy → unavailable 解析，published pin 不得读取更新 lineage。Keyword delivery 只能从 complete inventories 连接 exact published-run mapped SitePage、拥有该页的 content Opportunity 与当前 content Artifact；Topic peer、Finding-only preview 和 technical output 不得冒充交付，Artifact 状态也不是 external publication authority。
 - **Contextual diagnostic boundary**：当前 `mvp.rules.0.2.4` run 的 exact-key、hash-covered manifest 必须冻结 `contextProjection.v1`。它只从 immutable confirmed Profile 与创建时 exact Site 语言编译显式事实；Product Profile 0.3.0 与 legacy ICP generation 不相互借字段；provider/mode/permission、workflow、mutable priority/risk/ROI/cadence 与模型推断禁止进入。Site language 逐项按 RFC 5646 验证并原样、按序冻结；`[]` 是 unknown，不回退 delivery locale。
 - **Indexability + preview boundary**：`TECH-INDEXABILITY-006@1` 仅对 exact Crawl lineage 中 `page.status` exact 2xx、`sitemapMember=true`、`robotsIndexable=false` 产出；redirect source、non-2xx 与 lineage 缺失/歧义不得误报。nullable `executionPreview` 只由当前 ActionTemplate + Project delivery locale 投影只读文案，不是 replay、identity、Action、状态、发布或 measurement authority。
 - **Growth Audit generation boundary**：latest 只选择 `growth-audit.0.3.1`；精确 pin 可由自己的 validator 读取已知 `growth-audit.0.3.0`，不得回填或重解释。Capability version 保持 `0.3.0`；request/addressing contract 与 `capabilityContractVersion` literal 保持 `growth-audit.0.3.0`。Public Tools 继续 facts-only、无 Profile、原 quota 且不写 canonical 产品表。
-- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。78 张 app 表不含任何 pg-boss 表。
+- **pg-boss 独立 schema（AC-004）**：`pgboss` schema 由库在 `startBoss()` 创建，绝不镜像进 Drizzle migration。80 张 app 表不含任何 pg-boss 表。
 - **active-run 唯一**：`async_runs_one_active_key_idx` partial unique index 保证每项目/activeKey 只有一个 queued/running；冲突 409 `RUN_ALREADY_ACTIVE`。
 
 ### 隔离与安全边界（AC-005）

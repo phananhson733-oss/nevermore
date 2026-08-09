@@ -6,7 +6,7 @@ customer-facing brand, and its approved production origin is
 contract `2026-07-21`, backed by
 `authority/implementation-spec-v0.4/`.
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0049_product_profile_keyword_lineage.sql` (**49 ordered migrations**)
+Migration range: `0001_init.sql` through `0050_product_profile_keyword_lineage.sql` (**50 ordered migrations**); `0048_topic_model_generation.sql` is followed by `0049_projection_batch_writes.sql` and the `0050` head.
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0049` are hosted; every release must back up,
+v0.4 migrations through `0050` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 
@@ -164,16 +164,26 @@ self-healing retry states.
    GenerativeQuery rows in its exact market/language scope. Smaller cohorts and
    the 21-row overflow sentinel skip without issuing AI provider requests.
    DataForSEO Search Landscape (DFS) is invoked only by the server-owned
-   Analysis Refresh plan. v3 queries positions 1–100 and can issue one paid
-   SERP Competitors fallback only when domain overlap is empty and frozen
-   GSC/Crawl/Product Profile seeds exist. The public collection API remains
-   limited to Crawl, GSC, and GA4; no client request may supply DFS/Backlinks
-   target, market, language, limits, credentials, or provider queries. New
-   Analysis Refresh parents use six-step `analysis-refresh.plan.v2`; exact
-   five-step v1 parents remain recoverable. The Backlinks step freezes defaults
-   500/100/500/20 and hard caps 1000/1000/1000/20 for backlink rows,
-   referring domains, target pages, and selective SSRF-safe source-page
-   verifications respectively.
+   Analysis Refresh plan. v3 queries positions 1–100, persists canonical
+   organic-overlap operands/ratio plus immutable competitor-origin lineage, and
+   can issue one paid SERP Competitors fallback only when retained domain
+   overlap is empty and frozen GSC/Crawl/Product Profile seeds exist. DFS v1/v2
+   remain exact read-only history. Ranked-keyword observations retain strict
+   nullable KD (`0..100`) and canonical nullable provider intent; malformed
+   present values fail closed. The public collection API remains limited to
+   Crawl, GSC, and GA4; no client request may supply DFS/Backlinks/Topic target,
+   market, language, limits, credentials, provider queries, or model options. New
+   Analysis Refresh parents use seven-step `analysis-refresh.plan.v3`, adding
+   optional internal Topic Model generation (`topic_model`) before Growth Audit;
+   exact five-step `analysis-refresh.plan.v1` and six-step
+   `analysis-refresh.plan.v2` parents remain recoverable. The internal Topic
+   child freezes bounded input/resource and invocation-attempt ledgers, performs
+   its provider call outside database transactions, blocks silent retry after
+   `reserved` or `outcome_unknown`, and exposes no browser
+   reservation/provider-options API. The Backlinks step freezes defaults
+   500/100/500/20 and hard caps 1000/1000/1000/20 for backlink rows, referring
+   domains, target pages, and selective SSRF-safe source-page verifications
+   respectively.
 6. Confirm sanitized startup logs report `<release SHA>`, the recovery sweep
    completes, pg-boss starts and the worker holds its readiness lease. Logs must
    not expose environment values, provider bodies, model output or customer

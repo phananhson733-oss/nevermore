@@ -42,7 +42,7 @@ ALTER TABLE app.keyword_occurrences
   );
 
 -- Replace the anonymous 0018 row-shape check. No historical backfill is
--- needed: every pre-0049 row takes one of the existing branches with a null
+-- needed: every pre-0050 row takes one of the existing branches with a null
 -- product_profile_id, while new Product Profile rows carry no invented
 -- Snapshot, Observation, pointer, provider timestamp, or manual identity.
 ALTER TABLE app.keyword_occurrences
@@ -287,8 +287,8 @@ CREATE TRIGGER keyword_occurrences_product_profile_lineage_guard
   EXECUTE FUNCTION app.enforce_product_profile_keyword_occurrence_lineage();
 
 -- PostgreSQL cannot replace a function while changing its input arity. Remove
--- the dependent 0048 Keyword batch wrapper first, then replace the old scalar
--- authority so no permissive 16-argument overload survives migration 0049.
+-- the dependent 0049 Keyword batch wrapper first, then replace the old scalar
+-- authority so no permissive 16-argument overload survives migration 0050.
 DROP FUNCTION app.upsert_keyword_library_occurrences_batch(uuid, uuid, jsonb);
 DROP FUNCTION IF EXISTS app.upsert_keyword_library_occurrence(
   uuid,
@@ -490,7 +490,7 @@ BEGIN
 END;
 $$;
 
--- Replace 0048's exact 14-key wrapper with one exact 15-key contract. Every
+-- Replace 0049's exact 14-key wrapper with one exact 15-key contract. Every
 -- member carries productProfileId (null for all legacy sources), and direct SQL
 -- callers cannot smuggle missing, extra, or non-scalar lineage fields through
 -- JSON normalization before the scalar authority sees them.
@@ -595,6 +595,6 @@ END;
 $$;
 
 CREATE OR REPLACE VIEW app.schema_migration_version AS
-  SELECT '0049_product_profile_keyword_lineage'::text AS migration_version;
+  SELECT '0050_product_profile_keyword_lineage'::text AS migration_version;
 
 COMMIT;

@@ -5,15 +5,15 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 const migration = readFileSync(
   fileURLToPath(
-    new URL("../migrations/0048_projection_batch_writes.sql", import.meta.url),
+    new URL("../migrations/0049_projection_batch_writes.sql", import.meta.url),
   ),
   "utf8",
 );
 
 describe("bounded collection projection writes", () => {
-  it("keeps 0048 below the forward-only 0049 application migration head", () => {
+  it("keeps 0049 below the forward-only 0050 application migration head", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0049_product_profile_keyword_lineage",
+      "0050_product_profile_keyword_lineage",
     );
   });
 

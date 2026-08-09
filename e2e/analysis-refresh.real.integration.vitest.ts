@@ -41,12 +41,17 @@ import {
   vi,
 } from "vitest";
 import {
+  TOPIC_MODEL_PROMPT_SET_VERSION,
+  prepareTopicModelGeneration,
+  type TopicModelGenerationInput,
+  type TopicModelGenerationResult,
+} from "../packages/artifacts/src/index.ts";
+import {
   AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
   CompetitorsRepository,
   contentHash,
   DataSnapshotsRepository,
-  KeywordGovernanceRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
   ObservationsRepository,
@@ -54,6 +59,7 @@ import {
   SitesRepository,
   SourceConnectionsRepository,
   SourceCredentialsRepository,
+  TopicModelGenerationRunsRepository,
   TopicModelsRepository,
   type DbHandle,
   type PgBoss,
@@ -94,6 +100,7 @@ import {
 } from "../apps/worker/src/collection/run-collection.ts";
 import { runDiagnostic } from "../apps/worker/src/diagnostic/run-diagnostic.ts";
 import { runAnalysisRefresh } from "../apps/worker/src/analysis-refresh/run-analysis-refresh.ts";
+import { runTopicModelGeneration } from "../apps/worker/src/topic-model/run-topic-model-generation.ts";
 
 const webQueue = vi.hoisted(() => ({
   send: vi.fn(async () => randomUUID()),
@@ -166,9 +173,14 @@ describeDb("Analysis Refresh real vertical chain", () => {
     );
   });
 
-  it("runs the server-owned Crawl → GSC → GA4 → composite DFS → Growth Audit plan and publishes one coherent generation", async () => {
+  it("runs the exact v3 plan, generates one Topic Model offline, and skips a second model call", async () => {
     const fixture = await seedProject(handle);
     const context = workerContext(handle, fixture);
+    const generateTopicModel = vi.fn(
+      async (
+        input: TopicModelGenerationInput,
+      ): Promise<TopicModelGenerationResult> => topicModelResult(input),
+    );
     const accepted = await createAnalysisRefreshRun(
       { workspaceId: fixture.scope.workspaceId },
       fixture.scope.projectId,
@@ -215,7 +227,7 @@ describeDb("Analysis Refresh real vertical chain", () => {
         projectId: fixture.scope.projectId,
       });
       if (stepKey === "dataforseo") {
-        await approveProjectedGovernance(handle, fixture);
+        await approveProjectedCompetitors(handle, fixture);
       }
       await runAnalysisRefresh(context, parentJob, {
         now: () => FIXED_NOW,
@@ -234,6 +246,83 @@ describeDb("Analysis Refresh real vertical chain", () => {
       now: () => FIXED_NOW,
       continuationDelayMs: 0,
     });
+    const topicStep = await stepByKey(
+      handle,
+      fixture.scope,
+      accepted.run.id,
+      "topic_model",
+    );
+    expect(topicStep).toMatchObject({
+      ordinal: 6,
+      state: "running",
+      child_async_run_id: expect.any(String),
+    });
+    const topicChildRunId = topicStep.child_async_run_id!;
+    await runTopicModelGeneration(
+      context,
+      {
+        runId: topicChildRunId,
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+      },
+      {
+        createClient: () => ({ generateTopicModel }),
+      },
+    );
+    expect(generateTopicModel).toHaveBeenCalledOnce();
+    expect(blockedGlobalFetch).not.toHaveBeenCalled();
+
+    const topicLedger = await new TopicModelGenerationRunsRepository(
+      handle.db,
+    ).findById(fixture.scope, topicChildRunId);
+    expect(topicLedger).toMatchObject({
+      id: topicChildRunId,
+      analysis_refresh_run_id: accepted.run.id,
+      generation_version: "topic-model-generation.v1",
+      prompt_set_version: TOPIC_MODEL_PROMPT_SET_VERSION,
+      result_topic_model_revision_id: expect.any(String),
+    });
+    await expect(
+      new TopicModelsRepository(handle.db).getLatestConfirmed(fixture.scope),
+    ).resolves.toMatchObject({
+      state: "confirmed",
+      topicModelRevision: 1,
+      confirmationMode: "system_auto",
+      confirmedBy: null,
+      generationSummary: {
+        generationVersion: "topic-model-generation.v1",
+        promptSetVersion: TOPIC_MODEL_PROMPT_SET_VERSION,
+      },
+    });
+    await expect(
+      new AsyncRunsRepository(handle.db).findById(
+        fixture.scope,
+        topicChildRunId,
+      ),
+    ).resolves.toMatchObject({
+      kind: "topic_model_generation",
+      status: "completed",
+      result_type: "topic_model_generation_run",
+      result_id: topicChildRunId,
+    });
+
+    await runAnalysisRefresh(context, parentJob, {
+      now: () => FIXED_NOW,
+      continuationDelayMs: 0,
+    });
+    await expect(
+      stepByKey(handle, fixture.scope, accepted.run.id, "topic_model"),
+    ).resolves.toMatchObject({
+      ordinal: 6,
+      state: "completed",
+      child_async_run_id: topicChildRunId,
+      result_snapshot_id: null,
+    });
+
+    await runAnalysisRefresh(context, parentJob, {
+      now: () => FIXED_NOW,
+      continuationDelayMs: 0,
+    });
     const auditStep = await stepByKey(
       handle,
       fixture.scope,
@@ -241,6 +330,7 @@ describeDb("Analysis Refresh real vertical chain", () => {
       "growth_audit",
     );
     expect(auditStep).toMatchObject({
+      ordinal: 7,
       state: "running",
       child_async_run_id: expect.any(String),
     });
@@ -454,6 +544,58 @@ describeDb("Analysis Refresh real vertical chain", () => {
     expect(competitorDetail.data.competitorId).toBe(
       selectedCompetitor.competitorId,
     );
+
+    const second = await createAnalysisRefreshRun(
+      { workspaceId: fixture.scope.workspaceId },
+      fixture.scope.projectId,
+      fixture.actorId,
+      randomUUID(),
+      {},
+    );
+    const secondParentJob = {
+      runId: second.run.id,
+      workspaceId: fixture.scope.workspaceId,
+      projectId: fixture.scope.projectId,
+      contractVersion: CONTRACT_VERSION,
+    };
+    for (const stepKey of ["crawl", "gsc", "ga4", "dataforseo"] as const) {
+      await runAnalysisRefresh(context, secondParentJob, {
+        now: () => FIXED_NOW,
+        continuationDelayMs: 0,
+      });
+      const started = await stepByKey(
+        handle,
+        fixture.scope,
+        second.run.id,
+        stepKey,
+      );
+      expect(started).toMatchObject({
+        state: "running",
+        child_async_run_id: expect.any(String),
+      });
+      await runCollection(context, {
+        runId: started.child_async_run_id!,
+        workspaceId: fixture.scope.workspaceId,
+        projectId: fixture.scope.projectId,
+      });
+      await runAnalysisRefresh(context, secondParentJob, {
+        now: () => FIXED_NOW,
+        continuationDelayMs: 0,
+      });
+    }
+    await runAnalysisRefresh(context, secondParentJob, {
+      now: () => FIXED_NOW,
+      continuationDelayMs: 0,
+    });
+    await expect(
+      stepByKey(handle, fixture.scope, second.run.id, "topic_model"),
+    ).resolves.toMatchObject({
+      ordinal: 6,
+      state: "skipped",
+      skip_reason: "existing_confirmed_model",
+      child_async_run_id: null,
+    });
+    expect(generateTopicModel).toHaveBeenCalledOnce();
     expect(blockedGlobalFetch).not.toHaveBeenCalled();
   });
 
@@ -522,6 +664,18 @@ describeDb("Analysis Refresh real vertical chain", () => {
       result_snapshot_id: null,
     });
 
+    await runAnalysisRefresh(context, parentJob, {
+      now: () => FIXED_NOW,
+      continuationDelayMs: 0,
+    });
+    await expect(
+      stepByKey(handle, fixture.scope, accepted.run.id, "topic_model"),
+    ).resolves.toMatchObject({
+      ordinal: 6,
+      state: "skipped",
+      skip_reason: "insufficient_keyword_evidence",
+      child_async_run_id: null,
+    });
     await runAnalysisRefresh(context, parentJob, {
       now: () => FIXED_NOW,
       continuationDelayMs: 0,
@@ -623,75 +777,55 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
 }
 
-async function approveProjectedGovernance(
+function topicModelResult(
+  input: TopicModelGenerationInput,
+): TopicModelGenerationResult {
+  const groupKeys = input.groups.map((group) => group.groupKey);
+  return {
+    rootIntent: {
+      kind: "create_root",
+      topicKey: "growth",
+      label: "Growth",
+      description: "Growth topics generated by the offline fixture.",
+      intentEnvelope: [],
+    },
+    childIntents: [
+      {
+        kind: "create_child",
+        topicKey: "search-demand",
+        parentTopicKey: "growth",
+        label: "Search Demand",
+        description: "Demand captured by the frozen keyword groups.",
+        intentEnvelope: ["informational"],
+      },
+    ],
+    groupAssignments: groupKeys.map((groupKey) => ({
+      groupKey,
+      topicKey: "search-demand",
+      generatedIntent: "informational" as const,
+    })),
+    unassignedGroupKeys: [],
+    invocation: {
+      task: "topic_model_generation",
+      provider: "openai",
+      model: "gpt-test",
+      promptSetVersion: TOPIC_MODEL_PROMPT_SET_VERSION,
+      inputHash: prepareTopicModelGeneration(input).inputHash,
+      outputHash: contentHash({ fixture: "topic-model", groupKeys }),
+      status: "succeeded",
+      inputTokens: 120,
+      outputTokens: 60,
+      costUsd: null,
+      latencyMs: 25,
+      errorCode: null,
+    },
+  };
+}
+
+async function approveProjectedCompetitors(
   handle: DbHandle,
   fixture: Fixture,
 ): Promise<void> {
-  const keywordPage = await new KeywordsRepository(handle.db).listByProject(
-    fixture.scope,
-    { limit: 20, cursor: null },
-  );
-  const dataForSeoKeyword = keywordPage.rows.find(
-    (keyword) => keyword.normalized_keyword === "enterprise seo platform",
-  );
-  if (!dataForSeoKeyword) {
-    throw new Error("DataForSEO Keyword projection was not available to review");
-  }
-
-  const topics = new TopicModelsRepository(handle.db);
-  const draft = await topics.beginDraftFromLatestConfirmed(
-    fixture.scope,
-    fixture.actorId,
-    {
-      expectedLatestConfirmedRevision: 0,
-      reason: "Create the reviewed Topic for the Analysis Refresh fixture.",
-    },
-  );
-  const edited = await topics.patchDraft(fixture.scope, fixture.actorId, {
-    topicModelRevision: draft.topicModelRevision,
-    expectedEditRevision: draft.editRevision,
-    reason: "Add the projected DataForSEO Keyword to a governed Topic.",
-    intents: [
-      {
-        kind: "create",
-        parentTopicNodeId: null,
-        label: "Enterprise SEO",
-        description:
-          "Confirmed Topic for the Analysis Refresh vertical integration.",
-        intentEnvelope: ["Commercial"],
-      },
-    ],
-  });
-  const confirmed = await topics.confirmDraft(
-    fixture.scope,
-    fixture.actorId,
-    {
-      topicModelRevision: edited.topicModelRevision,
-      expectedEditRevision: edited.editRevision,
-      reason: "Confirm the Topic before freezing the Growth Audit generation.",
-    },
-  );
-  if (confirmed.rootTopicNodeId === null) {
-    throw new Error("Analysis Refresh fixture did not produce a Topic root");
-  }
-  await new KeywordGovernanceRepository(handle.db).reviewKeyword(
-    fixture.scope,
-    dataForSeoKeyword.id,
-    fixture.actorId,
-    {
-      expectedGovernanceRevision: 0,
-      status: "approved",
-      intent: "commercial",
-      buyerStage: "consideration",
-      topicNodeId: confirmed.rootTopicNodeId,
-      topicModelRevision: confirmed.topicModelRevision,
-      mappingDecision: "new_asset",
-      mappedSitePageId: null,
-      reason:
-        "Approve the projected Keyword before freezing this diagnostic generation.",
-    },
-  );
-
   const competitors = new CompetitorsRepository(handle.db);
   const competitorPage = await competitors.listByProject(fixture.scope, {
     limit: 20,
@@ -1103,6 +1237,7 @@ async function stepByKey(
     | "ga4"
     | "dataforseo"
     | "dataforseo_backlinks"
+    | "topic_model"
     | "growth_audit",
 ) {
   const steps = await new AnalysisRefreshRunsRepository(handle.db).listSteps(

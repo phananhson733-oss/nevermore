@@ -268,6 +268,7 @@ async function seedDataForSeoKeyword(
       clusterKey: normalizedKeyword.replaceAll(" ", "-"),
       searchVolume: 0,
       keywordDifficulty: 0,
+      providerSearchIntent: "commercial",
       currentRank: 12.5,
       currentUrl: `https://${target}/customer-onboarding/`,
       competitorDomain: "confirmed-competitor.example",
@@ -498,6 +499,15 @@ describeDb("Growth Map Keyword Library real Postgres projection", () => {
         // Read at the EXACT frozen revision: ingestion wrote the r0 baseline
         // decision, and no human has touched this keyword.
         reviewOrigin: "system_suggestion",
+        searchIntent: {
+          value: "commercial",
+          authority: "provider_observed",
+          snapshotId: local.snapshotId,
+          observationId: local.observationId,
+          analysisInvocationId: null,
+          observedAt: CAPTURED_AT,
+          limitation: expect.any(String),
+        },
         sourceOccurrences: [
           {
             occurrenceId: local.occurrenceId,

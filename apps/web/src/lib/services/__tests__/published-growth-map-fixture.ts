@@ -80,6 +80,7 @@ export async function publishDiagnosticGeneration(
     readonly diagnosticRunId: string;
     readonly actorId: string;
     readonly completedAt: string;
+    readonly topicModelOutcome?: "skipped" | "failed";
   },
 ): Promise<{
   readonly analysisRefreshRunId: string;
@@ -270,6 +271,34 @@ export async function publishDiagnosticGeneration(
       throw new Error(`could not publish fixture ${stepKey} step`);
     }
   }
+  const topicModelOutcome = input.topicModelOutcome ?? "skipped";
+  if (topicModelOutcome === "skipped") {
+    if (
+      !(await refreshes.skipStep(
+        input.scope,
+        analysisRefreshRunId,
+        "topic_model",
+        "insufficient_keyword_evidence",
+      ))
+    ) {
+      throw new Error("could not skip fixture Topic Model step");
+    }
+  } else if (
+    !(await refreshes.failStep(
+      input.scope,
+      analysisRefreshRunId,
+      "topic_model",
+      {
+        childAsyncRunId: null,
+        error: {
+          code: "TOPIC_MODEL_GENERATION_FIXTURE_FAILED",
+          summary: "The deterministic Topic Model fixture failed.",
+        },
+      },
+    ))
+  ) {
+    throw new Error("could not fail fixture Topic Model step");
+  }
   if (
     !(await refreshes.startStep(
       input.scope,
@@ -292,7 +321,8 @@ export async function publishDiagnosticGeneration(
 
   const parentStatus =
     canonicalRun.status === "partial" ||
-    OPTIONAL_STEP_KEYS.some((stepKey) => !snapshotByProvider.has(stepKey))
+    OPTIONAL_STEP_KEYS.some((stepKey) => !snapshotByProvider.has(stepKey)) ||
+    topicModelOutcome === "failed"
       ? "partial"
       : "completed";
   await exec

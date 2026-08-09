@@ -40,7 +40,15 @@ function successEnvelope(): unknown {
               {
                 keyword_data: {
                   keyword: "seo platform",
-                  keyword_info: { search_volume: 500 },
+                  keyword_info: {
+                    search_volume: 500,
+                  },
+                  keyword_properties: {
+                    keyword_difficulty: 18,
+                  },
+                  search_intent_info: {
+                    main_intent: "commercial",
+                  },
                 },
                 ranked_serp_element: {
                   serp_item: {
@@ -55,6 +63,45 @@ function successEnvelope(): unknown {
                   keyword_info: { search_volume: null },
                 },
                 ranked_serp_element: { serp_item: null },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function singleKeywordMetricsEnvelope(
+  keywordDataFields: Record<string, unknown>,
+): unknown {
+  return {
+    status_code: 20_000,
+    status_message: "Ok.",
+    cost: 0.011,
+    tasks: [
+      {
+        status_code: 20_000,
+        status_message: "Ok.",
+        cost: 0.011,
+        result_count: 1,
+        result: [
+          {
+            total_count: 1,
+            items_count: 1,
+            items: [
+              {
+                keyword_data: {
+                  keyword: "provider metrics keyword",
+                  keyword_info: { search_volume: 90 },
+                  ...keywordDataFields,
+                },
+                ranked_serp_element: {
+                  serp_item: {
+                    url: "https://example.com/provider-metrics",
+                    rank_group: 3,
+                  },
+                },
               },
             ],
           },
@@ -112,12 +159,16 @@ describe("HttpDataForSeoClient", () => {
         {
           keyword: "seo platform",
           searchVolume: 500,
+          keywordDifficulty: 18,
+          providerSearchIntent: "commercial",
           currentUrl: "https://example.com/seo",
           currentRank: 6,
         },
         {
           keyword: "seo reporting",
           searchVolume: null,
+          keywordDifficulty: null,
+          providerSearchIntent: null,
           currentUrl: null,
           currentRank: null,
         },
@@ -232,6 +283,105 @@ describe("HttpDataForSeoClient", () => {
       login: "fixture-login",
       password: "fixture-password",
       fetchImpl: async () => jsonResponse(payload),
+    });
+
+    await expect(client.rankedKeywords(REQUEST)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+  });
+
+  it.each([0, 100])(
+    "retains keyword difficulty boundary %s without truthiness loss",
+    async (keywordDifficulty) => {
+      const client = new HttpDataForSeoClient({
+        login: "fixture-login",
+        password: "fixture-password",
+        fetchImpl: async () =>
+          jsonResponse(
+            singleKeywordMetricsEnvelope({
+              keyword_properties: {
+                keyword_difficulty: keywordDifficulty,
+              },
+            }),
+          ),
+      });
+
+      await expect(client.rankedKeywords(REQUEST)).resolves.toMatchObject({
+        rows: [
+          {
+            keywordDifficulty,
+            providerSearchIntent: null,
+          },
+        ],
+      });
+    },
+  );
+
+  it.each([
+    "informational",
+    "navigational",
+    "commercial",
+    "transactional",
+  ] as const)("retains supported provider search intent %s", async (intent) => {
+    const client = new HttpDataForSeoClient({
+      login: "fixture-login",
+      password: "fixture-password",
+      fetchImpl: async () =>
+        jsonResponse(
+          singleKeywordMetricsEnvelope({
+            search_intent_info: { main_intent: intent },
+          }),
+        ),
+    });
+
+    await expect(client.rankedKeywords(REQUEST)).resolves.toMatchObject({
+      rows: [
+        {
+          keywordDifficulty: null,
+          providerSearchIntent: intent,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    [12.5, "fractional"],
+    ["12", "non-number"],
+    [-1, "negative"],
+    [101, "above 100"],
+  ] as const)(
+    "rejects %s keyword difficulty at the provider boundary (%s)",
+    async (keywordDifficulty, _description) => {
+      const client = new HttpDataForSeoClient({
+        login: "fixture-login",
+        password: "fixture-password",
+        fetchImpl: async () =>
+          jsonResponse(
+            singleKeywordMetricsEnvelope({
+              keyword_properties: {
+                keyword_difficulty: keywordDifficulty,
+              },
+            }),
+          ),
+      });
+
+      await expect(client.rankedKeywords(REQUEST)).rejects.toMatchObject({
+        code: "INVALID_RESPONSE",
+      });
+    },
+  );
+
+  it("rejects an unknown provider search intent independently of keyword difficulty", async () => {
+    const client = new HttpDataForSeoClient({
+      login: "fixture-login",
+      password: "fixture-password",
+      fetchImpl: async () =>
+        jsonResponse(
+          singleKeywordMetricsEnvelope({
+            keyword_properties: { keyword_difficulty: 42 },
+            search_intent_info: { main_intent: "unknown_intent" },
+          }),
+        ),
     });
 
     await expect(client.rankedKeywords(REQUEST)).rejects.toMatchObject({

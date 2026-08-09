@@ -14,7 +14,7 @@ Authority 版本：**0.4.0**
 `authority/index.json` 指向本目录与 `scripts/spec-v0.4-lock.json`；v0.3
 保留为历史快照，不再约束当前实现。
 
-当前机器面精确包含 **79 个 operation、10 个 shared async operation、78 张应用表、12 条规则**。
+当前机器面精确包含 **79 个 operation、10 个 shared async operation、80 张应用表、12 条规则**。
 第十一个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
 `MeasurementWindowAcceptedHttpResponse`，不冒充共享 `AsyncAccepted`；verifier
 会同时冻结这条例外。规则集为 `mvp.rules.0.2.4`，其中
@@ -27,7 +27,7 @@ Authority 版本：**0.4.0**
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
 2. [openapi.yaml](openapi.yaml)：当前 79 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 49 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+3. [schema.sql](schema.sql)：由 50 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -40,7 +40,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0049_product_profile_keyword_lineage.sql`，验证每个 migration 的事务框架与
+`0050_product_profile_keyword_lineage.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -86,11 +86,14 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
   已确认的 GenerativeQuery 执行固定模型的 annotation-only AI citation 采集；不足
   或超过 20 条都跳过且不发起付费请求。公共 `createCollectionRun` 只接受
   Crawl/GSC/GA4，且不接受 DFS/Backlinks scope、limit、凭据或 API key。
-- 新 Analysis Refresh 父 run 冻结六步 `analysis-refresh.plan.v2`：required Crawl、
+- 新 Analysis Refresh 父 run 冻结七步 `analysis-refresh.plan.v3`：required Crawl、
   optional connected GSC、optional connected GA4、optional DFS、optional
-  `dataforseo_backlinks`、required Growth Audit。历史五步
-  `analysis-refresh.plan.v1` 只按自己的 exact manifest/hash 读取和恢复，不会被
-  就地升级或补插 Backlinks step。
+  `dataforseo_backlinks`、optional internal `topic_model` generation、required
+  Growth Audit。Topic child 的 bounded input/resource ledger 与 invocation-attempt
+  ledger 只保存结构化 metadata 和 hash；provider call 在事务外执行，旧
+  `reserved/outcome_unknown` attempt 会阻断静默重试。历史五步
+  `analysis-refresh.plan.v1` 与六步 `analysis-refresh.plan.v2` 只按各自 exact
+  manifest/hash/ordinal 读取和恢复，不会被就地升级或补插 Topic step。
 - DataForSEO Backlinks 使用 `dataforseo.backlinks.v1` immutable Snapshot，并作为
   `provider_import` 投影到现有 Backlink Growth Map。其 authority scale 只能是
   `dataforseo_rank`，不得冒充 Ahrefs DR 或 Moz DA。cap 内选中的 provider-discovered

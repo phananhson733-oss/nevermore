@@ -73,6 +73,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'app' AND table_type = 'BASE TABLE'`,
     );
+    expect(APP_TABLES).toHaveLength(80);
     expect(appTables.rows.map((row) => row.table_name).sort()).toEqual(
       [...APP_TABLES].sort(),
     );

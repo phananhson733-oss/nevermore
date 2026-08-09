@@ -66,7 +66,7 @@ async function withMaintenanceClient(
 }
 
 async function applyMigration(
-  client: pg.Client,
+  client: pg.Client | pg.Pool,
   migrationFile: string,
 ): Promise<void> {
   await client.query(
@@ -75,6 +75,20 @@ async function applyMigration(
       "utf8",
     ),
   );
+}
+
+async function applyMigrationsAfter(
+  client: pg.Client | pg.Pool,
+  migrationFile: string,
+): Promise<void> {
+  const migrationFiles = listMigrationFiles();
+  const migrationIndex = migrationFiles.indexOf(migrationFile);
+  if (migrationIndex < 0) {
+    throw new Error(`migration is not in the ordered set: ${migrationFile}`);
+  }
+  for (const remainingMigration of migrationFiles.slice(migrationIndex + 1)) {
+    await applyMigration(client, remainingMigration);
+  }
 }
 
 interface ProjectFixture {
@@ -1633,6 +1647,24 @@ describeDb("0024 keyword governance foundation", () => {
 
   it("runs begin, CAS patch, split invalidation, alias isolation, and confirmation atomically", async () => {
     const project = await createProject(handle);
+    const keyword = await createLegacyKeyword(handle, project, {
+      displayKeyword: "customer onboarding automation platform",
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "decision",
+      clusterKey: "customer-onboarding",
+      mappingDecision: "new_asset",
+      mappedSitePageId: null,
+      reviewState: "confirmed",
+      mappingRevision: 0,
+    });
+
+    // The assertions above intentionally exercise the authentic 0024 schema.
+    // Current repository code must instead run against the complete ordered
+    // production schema; seed this non-default legacy row before 0032 installs
+    // the initial-candidate trigger, then upgrade through the current head.
+    await applyMigrationsAfter(handle.pool, MIGRATION_FILE);
+
     const scope = {
       workspaceId: project.workspaceId,
       projectId: project.projectId,
@@ -1730,17 +1762,6 @@ describeDb("0024 keyword governance foundation", () => {
       topicModelRevision: 1,
     });
 
-    const keyword = await createLegacyKeyword(handle, project, {
-      displayKeyword: "customer onboarding automation platform",
-      status: "approved",
-      intent: "commercial",
-      buyerStage: "decision",
-      clusterKey: "customer-onboarding",
-      mappingDecision: "new_asset",
-      mappedSitePageId: null,
-      reviewState: "confirmed",
-      mappingRevision: 0,
-    });
     await handle.pool.query(
       `INSERT INTO app.keyword_review_decisions (
          id, workspace_id, project_id, keyword_entity_id,

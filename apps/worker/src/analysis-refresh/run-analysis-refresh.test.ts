@@ -6,6 +6,7 @@ import {
   CapabilityRunsRepository,
   CollectionRunsRepository,
   CompetitorsRepository,
+  contentHash,
   DataSnapshotsRepository,
   DiagnosticRunsRepository,
   IcpProfilesRepository,
@@ -18,16 +19,26 @@ import {
   SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
+  TopicModelGenerationRunsRepository,
+  TopicModelsRepository,
   type AnalysisRefreshStepRow,
   type AsyncRunRow,
   type CollectionRunRow,
   type DataSnapshotRow,
+  type KeywordEntityRow,
+  type KeywordOccurrenceForEntityRow,
+  type ObservationRow,
   type PgBoss,
   type ProjectRow,
   type SiteRow,
   type SourceConnectionRow,
+  type TopicModelGenerationRunRow,
 } from "@sf/db";
-import { CONTRACT_VERSION } from "@sf/contracts";
+import {
+  CONTRACT_VERSION,
+  parseTopicModelGenerationInputManifest,
+  type TopicModelGenerationInputManifest,
+} from "@sf/contracts";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -53,6 +64,9 @@ const IDS = {
   dataForSeoSnapshot: "00000000-0000-4000-8000-000000000015",
   dataForSeoBacklinksSnapshot: "00000000-0000-4000-8000-000000000016",
   keyword: "00000000-0000-4000-8000-000000000017",
+  topicGenerationChild: "00000000-0000-4000-8000-000000000018",
+  providerObservation: "00000000-0000-4000-8000-000000000019",
+  topicModelRevision: "00000000-0000-4000-8000-000000000020",
 } as const;
 
 const NOW = new Date("2026-07-29T04:00:00.000Z");
@@ -124,6 +138,20 @@ const CURRENT_PLAN_MANIFEST = {
 } as const;
 const CURRENT_PLAN_HASH =
   "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65";
+const V3_PLAN_MANIFEST = {
+  version: "analysis-refresh.plan.v3",
+  steps: [
+    { ordinal: 1, stepKey: "crawl", required: true },
+    { ordinal: 2, stepKey: "gsc", required: false },
+    { ordinal: 3, stepKey: "ga4", required: false },
+    { ordinal: 4, stepKey: "dataforseo", required: false },
+    { ordinal: 5, stepKey: "dataforseo_backlinks", required: false },
+    { ordinal: 6, stepKey: "topic_model", required: false },
+    { ordinal: 7, stepKey: "growth_audit", required: true },
+  ],
+} as const;
+const V3_PLAN_HASH =
+  "fc527bb7203d61ce126625a0b2bb4bffb59fe5999d9f6b78e5aa05409918368b";
 const LEGACY_PROFILE = {
   productName: "Acme",
   oneLineDescription: "Ship faster",
@@ -182,6 +210,313 @@ describe("runAnalysisRefresh", () => {
         lastErrorCode: "ANALYSIS_REFRESH_PROJECTION_INVALID",
       }),
     );
+  });
+
+  it("skips the exact v3 Topic step without creating a child when a confirmed model exists", async () => {
+    const harness = createHarness({ v3Plan: true });
+    harness.state.steps = [
+      step("crawl", 1, true, {
+        state: "completed",
+        childId: IDS.collectionChild,
+        snapshotId: IDS.crawlSnapshot,
+      }),
+      step("gsc", 2, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("ga4", 3, false, {
+        state: "skipped",
+        skipReason: "source_not_connected",
+      }),
+      step("dataforseo", 4, false, {
+        state: "skipped",
+        skipReason: "feature_disabled",
+      }),
+      step("dataforseo_backlinks", 5, false, {
+        state: "skipped",
+        skipReason: "feature_disabled",
+      }),
+      step("topic_model", 6, false),
+      step("growth_audit", 7, true),
+    ];
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "getLatestConfirmed",
+    ).mockResolvedValue({ state: "confirmed" } as never);
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "skipped",
+      skip_reason: "existing_confirmed_model",
+      child_async_run_id: null,
+    });
+    expect(harness.state.steps[6]?.state).toBe("pending");
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+  });
+
+  it("skips the exact v3 Topic step without creating a child when a draft exists", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installReadyTopicPlan(harness);
+    vi.mocked(TopicModelsRepository.prototype.getDraft).mockResolvedValue({
+      state: "draft",
+    } as never);
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "skipped",
+      skip_reason: "existing_draft",
+      child_async_run_id: null,
+    });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+  });
+
+  it("keeps Topic unavailable without creating a child when no eligible keyword evidence exists", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installReadyTopicPlan(harness);
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "skipped",
+      skip_reason: "insufficient_keyword_evidence",
+      child_async_run_id: null,
+    });
+    expect(AsyncRunsRepository.prototype.insertQueued).not.toHaveBeenCalled();
+    expect(
+      TopicModelGenerationRunsRepository.prototype.insertPlaceholder,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("freezes one strict manifest and atomically enqueues one typed Topic generation child", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installReadyTopicPlan(harness, { dataForSeoCompleted: true });
+    vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    ).mockResolvedValue([topicKeyword()]);
+    vi.mocked(
+      KeywordOccurrencesRepository.prototype.listForEntityIds,
+    ).mockResolvedValue([topicOccurrence()]);
+    vi.mocked(ObservationsRepository.prototype.listBySnapshotIds).mockResolvedValue([
+      {
+        ...topicObservation(),
+        observed_at: "2026-07-29 12:00:00+08",
+      },
+    ]);
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    const child = [...harness.state.children.values()].find(
+      (candidate) => candidate.kind === "topic_model_generation",
+    );
+    expect(child).toMatchObject({
+      status: "queued",
+      result_type: "topic_model_generation_run",
+      result_id: expect.any(String),
+      request_payload: {
+        analysisRefreshRunId: IDS.parent,
+        inputSchemaVersion: "topic-model-generation-input.v1",
+      },
+    });
+    expect(child?.result_id).toBe(child?.id);
+    expect(child?.request_payload).not.toHaveProperty("provider");
+    expect(child?.request_payload).not.toHaveProperty("model");
+    expect(child?.request_payload).not.toHaveProperty("temperature");
+
+    const insert = vi.mocked(
+      TopicModelGenerationRunsRepository.prototype.insertPlaceholder,
+    );
+    expect(insert).toHaveBeenCalledTimes(1);
+    const frozen = insert.mock.calls[0]?.[0];
+    expect(frozen).toMatchObject({
+      runId: child?.id,
+      workspaceId: IDS.workspace,
+      projectId: IDS.project,
+      analysisRefreshRunId: IDS.parent,
+      generationVersion: "topic-model-generation.v1",
+      promptSetVersion: "topic-model.prompt.v1",
+      inputHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
+    const manifest = parseTopicModelGenerationInputManifest(
+      frozen?.inputManifest,
+    );
+    expect(manifest).toEqual({
+      schemaVersion: "topic-model-generation-input.v1",
+      analysisRefreshRunId: IDS.parent,
+      projectId: IDS.project,
+      market: "US",
+      language: "en-US",
+      groups: [
+        {
+          groupKey: "group-001",
+          representativeKeywords: ["customer onboarding software"],
+          keywordCount: 1,
+          aggregateSearchVolume: 720,
+          providerIntentDistribution: {
+            informational: 0,
+            navigational: 0,
+            commercial: 1,
+            transactional: 0,
+          },
+          urls: ["https://example.test/customer-onboarding"],
+        },
+      ],
+      productProfile: null,
+      icp: null,
+      keywords: [
+        {
+          keywordId: IDS.keyword,
+          expectedGovernanceRevision: 1,
+          groupKey: "group-001",
+          providerSearchIntent: {
+            value: "commercial",
+            snapshotId: IDS.dataForSeoSnapshot,
+            observationId: IDS.providerObservation,
+            observedAt: NOW.toISOString(),
+          },
+        },
+      ],
+    } satisfies TopicModelGenerationInputManifest);
+    expect(frozen?.inputHash).toBe(contentHash(manifest));
+    expect(harness.send).toHaveBeenCalledWith(
+      "topic-model.generate",
+      expect.objectContaining({ runId: child?.id }),
+      expect.objectContaining({ id: child?.id }),
+    );
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "running",
+      child_async_run_id: child?.id,
+    });
+    expect(harness.state.steps[6]?.state).toBe("pending");
+  });
+
+  it("completes Topic only from the exact successful typed child lineage", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installRunningTopicChild(harness, "completed");
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "completed",
+      child_async_run_id: IDS.topicGenerationChild,
+      result_snapshot_id: null,
+    });
+    expect(harness.state.steps[6]?.state).toBe("pending");
+  });
+
+  it("fails an outcome-unknown Topic child as an optional limitation and still starts Growth Audit", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installRunningTopicChild(harness, "failed");
+    harness.state.children.set(IDS.topicGenerationChild, {
+      ...harness.state.children.get(IDS.topicGenerationChild)!,
+      last_error_code: "TOPIC_MODEL_GENERATION_INVOCATION_OUTCOME_UNKNOWN",
+      last_error_summary:
+        "Topic Model generation stopped because provider outcome is unknown.",
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "failed",
+      child_async_run_id: IDS.topicGenerationChild,
+      error: {
+        code: "ANALYSIS_REFRESH_TOPIC_MODEL_OUTCOME_UNKNOWN",
+      },
+    });
+    expect(harness.state.steps[6]?.state).toBe("pending");
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(DiagnosticRunsRepository.prototype.insert).toHaveBeenCalledTimes(1);
+    expect(harness.state.steps[6]).toMatchObject({
+      step_key: "growth_audit",
+      state: "running",
+      child_async_run_id: expect.any(String),
+    });
+    const auditChildId = harness.state.steps[6]!.child_async_run_id!;
+    harness.state.children.set(auditChildId, {
+      ...harness.state.children.get(auditChildId)!,
+      status: "completed",
+      result_type: "diagnostic_run",
+      result_id: auditChildId,
+      completed_at: NOW.toISOString(),
+    });
+    harness.state.auditChildren.set(auditChildId, {
+      id: auditChildId,
+      workspace_id: IDS.workspace,
+      project_id: IDS.project,
+      diagnostic_run_id: auditChildId,
+      capability_run_id: auditChildId,
+      scope_kind: "site",
+      scope_key: IDS.site,
+      projection_version: "growth-audit.0.3.1",
+      created_at: NOW.toISOString(),
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[6]?.state).toBe("completed");
+    expect(harness.state.parentStatus).toBe("partial");
+  });
+
+  it("records an exact superseded Topic limitation without overwriting the concurrent model and still starts Growth Audit", async () => {
+    const harness = createHarness({ v3Plan: true });
+    const materialize = vi.spyOn(
+      TopicModelsRepository.prototype,
+      "materializeSystemConfirmedFirstRevision",
+    );
+    installRunningTopicChild(harness, "cancelled");
+    harness.state.children.set(IDS.topicGenerationChild, {
+      ...harness.state.children.get(IDS.topicGenerationChild)!,
+      last_error_code: "TOPIC_MODEL_GENERATION_SUPERSEDED",
+      last_error_summary: "Topic Model generation was superseded.",
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "failed",
+      child_async_run_id: IDS.topicGenerationChild,
+      error: {
+        code: "ANALYSIS_REFRESH_TOPIC_MODEL_SUPERSEDED",
+      },
+    });
+    expect(materialize).not.toHaveBeenCalled();
+    expect(harness.state.steps[6]?.state).toBe("pending");
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(DiagnosticRunsRepository.prototype.insert).toHaveBeenCalledTimes(1);
+    expect(harness.state.steps[6]).toMatchObject({
+      step_key: "growth_audit",
+      state: "running",
+      child_async_run_id: expect.any(String),
+    });
+  });
+
+  it("fails closed when a completed Topic child points at another parent lineage", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installRunningTopicChild(harness, "completed");
+    harness.state.generationRuns.set(IDS.topicGenerationChild, {
+      ...harness.state.generationRuns.get(IDS.topicGenerationChild)!,
+      analysis_refresh_run_id: IDS.external,
+    });
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_TOPIC_MODEL_RESULT_INVALID" },
+    });
+    expect(harness.state.steps[6]?.state).toBe("pending");
   });
 
   it("starts a legacy-profile Crawl without a deep seed and never duplicates the child on a continuation", async () => {
@@ -1292,6 +1627,7 @@ describe("runAnalysisRefresh", () => {
 interface HarnessState {
   steps: AnalysisRefreshStepRow[];
   children: Map<string, AsyncRunRow>;
+  generationRuns: Map<string, TopicModelGenerationRunRow>;
   collections: Map<string, CollectionRunRow>;
   snapshots: Map<string, DataSnapshotRow>;
   auditChildren: Map<string, Awaited<ReturnType<AuditRunsRepository["findByDiagnosticRunId"]>>>;
@@ -1312,6 +1648,7 @@ function createHarness(options: {
   readonly requestPayload?: Record<string, unknown>;
   readonly dataForSeo?: NonNullable<WorkerContext["dataForSeo"]>;
   readonly legacyPlan?: boolean;
+  readonly v3Plan?: boolean;
 } = {}): Harness {
   const state: HarnessState = {
     steps: options.legacyPlan
@@ -1322,7 +1659,17 @@ function createHarness(options: {
           step("dataforseo", 4, false),
           step("growth_audit", 5, true),
         ]
-      : [
+      : options.v3Plan
+        ? [
+            step("crawl", 1, true),
+            step("gsc", 2, false),
+            step("ga4", 3, false),
+            step("dataforseo", 4, false),
+            step("dataforseo_backlinks", 5, false),
+            step("topic_model", 6, false),
+            step("growth_audit", 7, true),
+          ]
+        : [
           step("crawl", 1, true),
           step("gsc", 2, false),
           step("ga4", 3, false),
@@ -1332,6 +1679,7 @@ function createHarness(options: {
         ],
     parentStatus: "queued",
     children: new Map(),
+    generationRuns: new Map(),
     collections: new Map(),
     snapshots: new Map(),
     auditChildren: new Map(),
@@ -1356,8 +1704,14 @@ function createHarness(options: {
     icp_profile_id: IDS.profile,
     plan_manifest: options.legacyPlan
       ? LEGACY_PLAN_MANIFEST
-      : CURRENT_PLAN_MANIFEST,
-    plan_hash: options.legacyPlan ? LEGACY_PLAN_HASH : CURRENT_PLAN_HASH,
+      : options.v3Plan
+        ? V3_PLAN_MANIFEST
+        : CURRENT_PLAN_MANIFEST,
+    plan_hash: options.legacyPlan
+      ? LEGACY_PLAN_HASH
+      : options.v3Plan
+        ? V3_PLAN_HASH
+        : CURRENT_PLAN_HASH,
     created_at: NOW.toISOString(),
   };
   const site = siteRow();
@@ -1387,6 +1741,10 @@ function createHarness(options: {
         activeKey: values.activeKey,
         status: "queued",
         requestPayload: values.requestPayload ?? {},
+        ...(values.resultType === undefined
+          ? {}
+          : { resultType: values.resultType }),
+        ...(values.resultId === undefined ? {} : { resultId: values.resultId }),
       });
       state.children.set(id, child);
       return child;
@@ -1496,6 +1854,10 @@ function createHarness(options: {
     ProjectsRepository.prototype,
     "findConfirmedIcpProfile",
   ).mockResolvedValue(null);
+  vi.spyOn(TopicModelsRepository.prototype, "getLatestConfirmed").mockResolvedValue(
+    null,
+  );
+  vi.spyOn(TopicModelsRepository.prototype, "getDraft").mockResolvedValue(null);
   vi.spyOn(
     ObservationsRepository.prototype,
     "listBySnapshotIds",
@@ -1536,6 +1898,7 @@ function createHarness(options: {
     created_at: NOW.toISOString(),
     updated_at: NOW.toISOString(),
   });
+  vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
 
   vi.spyOn(
     CollectionRunsRepository.prototype,
@@ -1579,6 +1942,36 @@ function createHarness(options: {
         const found = state.snapshots.get(id);
         return found ? [found] : [];
       }),
+  );
+
+  vi.spyOn(
+    TopicModelGenerationRunsRepository.prototype,
+    "insertPlaceholder",
+  ).mockImplementation(async (values) => {
+    const manifest = parseTopicModelGenerationInputManifest(
+      values.inputManifest,
+    );
+    const row: TopicModelGenerationRunRow = {
+      id: values.runId,
+      workspace_id: values.workspaceId,
+      project_id: values.projectId,
+      analysis_refresh_run_id: values.analysisRefreshRunId,
+      generation_version: values.generationVersion,
+      prompt_set_version: values.promptSetVersion,
+      input_manifest: manifest,
+      input_hash: values.inputHash,
+      prompt_input_hash: null,
+      result_topic_model_revision_id: null,
+      created_at: NOW.toISOString(),
+    };
+    state.generationRuns.set(row.id, row);
+    return row;
+  });
+  vi.spyOn(
+    TopicModelGenerationRunsRepository.prototype,
+    "findById",
+  ).mockImplementation(
+    async (_scope, id) => state.generationRuns.get(id) ?? null,
   );
 
   vi.spyOn(KeywordsRepository.prototype, "listDiagnosticEligible").mockResolvedValue(
@@ -1702,6 +2095,90 @@ function prepareDataForSeoStep(harness: Harness): void {
   harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
 }
 
+function installReadyTopicPlan(
+  harness: Harness,
+  options: { readonly dataForSeoCompleted?: boolean } = {},
+): void {
+  harness.state.steps = [
+    step("crawl", 1, true, {
+      state: "completed",
+      childId: IDS.collectionChild,
+      snapshotId: IDS.crawlSnapshot,
+    }),
+    step("gsc", 2, false, {
+      state: "skipped",
+      skipReason: "source_not_connected",
+    }),
+    step("ga4", 3, false, {
+      state: "skipped",
+      skipReason: "source_not_connected",
+    }),
+    options.dataForSeoCompleted
+      ? step("dataforseo", 4, false, {
+          state: "completed",
+          childId: IDS.gscChild,
+          snapshotId: IDS.dataForSeoSnapshot,
+        })
+      : step("dataforseo", 4, false, {
+          state: "skipped",
+          skipReason: "feature_disabled",
+        }),
+    step("dataforseo_backlinks", 5, false, {
+      state: "skipped",
+      skipReason: "feature_disabled",
+    }),
+    step("topic_model", 6, false),
+    step("growth_audit", 7, true),
+  ];
+  harness.state.snapshots.set(IDS.crawlSnapshot, crawlSnapshot());
+  if (options.dataForSeoCompleted) {
+    harness.state.snapshots.set(
+      IDS.dataForSeoSnapshot,
+      dataForSeoSnapshot(
+        IDS.gscChild,
+        sourceConnection("dataforseo").id,
+      ),
+    );
+  }
+}
+
+function installRunningTopicChild(
+  harness: Harness,
+  status: "completed" | "failed" | "cancelled",
+): void {
+  installReadyTopicPlan(harness);
+  harness.state.steps[5] = step("topic_model", 6, false, {
+    state: "running",
+    childId: IDS.topicGenerationChild,
+  });
+  harness.state.children.set(
+    IDS.topicGenerationChild,
+    asyncRun({
+      id: IDS.topicGenerationChild,
+      kind: "topic_model_generation",
+      activeKey: "topic-model:generation",
+      status,
+      resultType: "topic_model_generation_run",
+      resultId: IDS.topicGenerationChild,
+    }),
+  );
+  const manifest = topicGenerationManifest();
+  harness.state.generationRuns.set(IDS.topicGenerationChild, {
+    id: IDS.topicGenerationChild,
+    workspace_id: IDS.workspace,
+    project_id: IDS.project,
+    analysis_refresh_run_id: IDS.parent,
+    generation_version: "topic-model-generation.v1",
+    prompt_set_version: "topic-model.prompt.v1",
+    input_manifest: manifest,
+    input_hash: contentHash(manifest),
+    prompt_input_hash: "b".repeat(64),
+    result_topic_model_revision_id:
+      status === "completed" ? IDS.topicModelRevision : null,
+    created_at: NOW.toISOString(),
+  });
+}
+
 function prepareDataForSeoBacklinksStep(harness: Harness): void {
   harness.state.steps = [
     step("crawl", 1, true, {
@@ -1781,6 +2258,9 @@ function cloneState(state: HarnessState): HarnessState {
     children: new Map(
       [...state.children].map(([id, row]) => [id, structuredClone(row)]),
     ),
+    generationRuns: new Map(
+      [...state.generationRuns].map(([id, row]) => [id, structuredClone(row)]),
+    ),
     collections: new Map(
       [...state.collections].map(([id, row]) => [id, structuredClone(row)]),
     ),
@@ -1798,6 +2278,7 @@ function cloneState(state: HarnessState): HarnessState {
 function restoreState(target: HarnessState, source: HarnessState): void {
   target.steps = source.steps;
   target.children = source.children;
+  target.generationRuns = source.generationRuns;
   target.collections = source.collections;
   target.snapshots = source.snapshots;
   target.auditChildren = source.auditChildren;
@@ -2048,6 +2529,127 @@ function dataForSeoBacklinksSnapshot(
     limitation:
       "DataForSEO live backlink index with bounded source-page verification.",
   };
+}
+
+function topicKeyword(): KeywordEntityRow {
+  return {
+    id: IDS.keyword,
+    workspace_id: IDS.workspace,
+    project_id: IDS.project,
+    display_keyword: "customer onboarding software",
+    normalized_keyword: "customer onboarding software",
+    market: "US",
+    language_tag: "en-US",
+    query_kind: "search_query",
+    status: "approved",
+    intent: null,
+    buyer_stage: null,
+    cluster_key: "customer onboarding",
+    mapping_decision: "unassigned",
+    mapped_site_page_id: null,
+    mapping_review_state: "confirmed",
+    mapping_revision: 1,
+    first_seen_at: NOW.toISOString(),
+    last_seen_at: NOW.toISOString(),
+    created_at: NOW.toISOString(),
+    updated_at: NOW.toISOString(),
+  };
+}
+
+function topicOccurrence(): KeywordOccurrenceForEntityRow {
+  return {
+    id: IDS.providerObservation,
+    keyword_entity_id: IDS.keyword,
+    workspace_id: IDS.workspace,
+    project_id: IDS.project,
+    data_snapshot_id: IDS.dataForSeoSnapshot,
+    normalized_observation_id: IDS.providerObservation,
+    product_profile_id: null,
+    display_keyword: "customer onboarding software",
+    normalized_keyword: "customer onboarding software",
+    market: "US",
+    language_tag: "en-US",
+    query_kind: "search_query",
+    source_kind: "dataforseo_ranked",
+    scope_basis: "provider_collection_scope",
+    source_pointer: "/valueJson/keyword",
+    source_ref: `observation:${IDS.providerObservation}`,
+    collected_at: NOW.toISOString(),
+    provider_data_as_of: NOW.toISOString(),
+    created_at: NOW.toISOString(),
+  };
+}
+
+function topicObservation(): ObservationRow {
+  return {
+    id: IDS.providerObservation,
+    workspace_id: IDS.workspace,
+    project_id: IDS.project,
+    snapshot_id: IDS.dataForSeoSnapshot,
+    site_page_id: null,
+    provider: "dataforseo",
+    metric_key: "csv.keyword_gap.v1",
+    subject_type: "keyword_cluster",
+    subject_ref: "customer onboarding",
+    observed_at: NOW.toISOString(),
+    availability: "available",
+    value_numeric: null,
+    value_text: null,
+    value_json: {
+      keyword: "customer onboarding software",
+      clusterKey: "customer onboarding",
+      searchVolume: 720,
+      keywordDifficulty: 37,
+      providerSearchIntent: "commercial",
+      currentUrl: "https://example.test/customer-onboarding",
+      currentRank: 4,
+      competitorDomain: null,
+      competitorRank: null,
+      marketCode: "US",
+      languageCode: "en-US",
+    },
+    unit: null,
+    origin: "provider",
+    method: "observed",
+    grade: "A",
+    support: "fixture",
+    limitation: "fixture",
+  };
+}
+
+function topicGenerationManifest(): TopicModelGenerationInputManifest {
+  return parseTopicModelGenerationInputManifest({
+    schemaVersion: "topic-model-generation-input.v1",
+    analysisRefreshRunId: IDS.parent,
+    projectId: IDS.project,
+    market: "US",
+    language: "en-US",
+    groups: [
+      {
+        groupKey: "group-001",
+        representativeKeywords: ["customer onboarding software"],
+        keywordCount: 1,
+        aggregateSearchVolume: null,
+        providerIntentDistribution: {
+          informational: 0,
+          navigational: 0,
+          commercial: 0,
+          transactional: 0,
+        },
+        urls: [],
+      },
+    ],
+    productProfile: null,
+    icp: null,
+    keywords: [
+      {
+        keywordId: IDS.keyword,
+        expectedGovernanceRevision: 1,
+        groupKey: "group-001",
+        providerSearchIntent: null,
+      },
+    ],
+  });
 }
 
 const NOOP = (): void => undefined;

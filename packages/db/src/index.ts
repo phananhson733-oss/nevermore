@@ -91,11 +91,15 @@ export {
   ANALYSIS_REFRESH_LEGACY_PLAN_STEPS,
   ANALYSIS_REFRESH_LEGACY_PLAN_VERSION,
   ANALYSIS_REFRESH_PLAN_STEPS,
+  ANALYSIS_REFRESH_PLAN_V2_STEPS,
+  ANALYSIS_REFRESH_PLAN_V2_VERSION,
   ANALYSIS_REFRESH_PLAN_VERSION,
   analysisRefreshPlanHash,
   analysisRefreshPlanManifest,
+  analysisRefreshPlanV2Manifest,
   AnalysisRefreshRunsRepository,
   legacyAnalysisRefreshPlanManifest,
+  readAnalysisRefreshPlanManifest,
 } from "./repositories/analysis-refresh-runs.ts";
 export type {
   AnalysisRefreshPlanManifest,
@@ -169,6 +173,23 @@ export type {
   ProductProfileGenerativeQueryCompetitor,
   ProductProfileGenerativeQueryProfile,
 } from "./repositories/product-profile-ai-cohort.ts";
+export { TopicModelGenerationRunsRepository } from "./repositories/topic-model-generation-runs.ts";
+export type {
+  TopicModelGenerationRunRow,
+  TopicModelGenerationTerminalInput,
+  TopicModelGenerationTerminalizeResult,
+  TopicModelGenerationTerminalStatus,
+} from "./repositories/topic-model-generation-runs.ts";
+export { TopicModelGenerationInvocationAttemptsRepository } from "./repositories/topic-model-generation-invocation-attempts.ts";
+export type {
+  TopicModelGenerationInvocationAttemptRow,
+  TopicModelGenerationInvocationAttemptStatus,
+  TopicModelGenerationInvocationFinalizeResult,
+  TopicModelGenerationInvocationMetadata,
+  TopicModelGenerationInvocationOutcomeUnknownResult,
+  TopicModelGenerationInvocationPreflight,
+  TopicModelGenerationInvocationReservationResult,
+} from "./repositories/topic-model-generation-invocation-attempts.ts";
 export { CapabilityRunsRepository } from "./repositories/capability-runs.ts";
 export type { CapabilityRunRow } from "./repositories/capability-runs.ts";
 export {

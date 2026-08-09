@@ -8,6 +8,7 @@ import {
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
+  TopicModelGenerationRunsRepository,
   type AsyncRunRow,
   type DiagnosticRunRow,
   type JobWithMetadata,
@@ -18,6 +19,7 @@ import {
   RULE_SET_VERSION,
 } from "@sf/engine";
 import type { Logger } from "@sf/observability";
+import { notifyAnalysisRefreshParent } from "../analysis-refresh/notify-parent.ts";
 import type { WorkerContext } from "../context.ts";
 import {
   isRunRecoveryAbortError,
@@ -27,6 +29,10 @@ import {
   runRecoverySweep,
   startRunRecoveryLoop,
 } from "./recovery.ts";
+
+vi.mock("../analysis-refresh/notify-parent.ts", () => ({
+  notifyAnalysisRefreshParent: vi.fn(async () => undefined),
+}));
 
 const PAYLOAD = {
   runId: "00000000-0000-4000-8000-000000000001",
@@ -38,6 +44,7 @@ const SOURCE_CONNECTION_ID = "00000000-0000-4000-8000-000000000005";
 const LEGACY_RULE_SET_VERSION = "mvp.rules.0.2.1";
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.spyOn(
     DiagnosticRunsRepository.prototype,
     "findById",
@@ -89,6 +96,9 @@ describe("queueForRun", () => {
     expect(queueForRun(run("measurement", {}))).toBe("measurement");
     expect(queueForRun(run("analysis_refresh", {}))).toBe(
       "refresh.analysis",
+    );
+    expect(queueForRun(run("topic_model_generation", {}))).toBe(
+      "topic-model.generate",
     );
   });
 
@@ -554,6 +564,52 @@ describe("prepareRunDelivery", () => {
       },
     });
     expect(JSON.stringify(lines)).not.toContain("provider raw secret");
+  });
+
+  it("preserves the bounded Topic Model root cause when queue retries are exhausted", async () => {
+    const topicRun = {
+      ...run("topic_model_generation", {}),
+      result_type: "topic_model_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(topicRun);
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...topicRun,
+      last_error_code: "TOPIC_MODEL_PROVIDER_UNAVAILABLE",
+      last_error_summary: "Topic Model generation will be retried.",
+    });
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(topicRun);
+    const terminalize = vi
+      .spyOn(TopicModelGenerationRunsRepository.prototype, "terminalize")
+      .mockResolvedValue({ kind: "terminalized", run: {} as never });
+    const failure = new Error("provider raw secret");
+
+    await expect(
+      prepareRunDelivery(context(), metadataJob(2, 2), async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+
+    expect(terminalize).toHaveBeenCalledWith(
+      {
+        workspaceId: topicRun.workspace_id,
+        projectId: topicRun.project_id,
+        runId: topicRun.id,
+        attemptCount: topicRun.attempt_count,
+      },
+      {
+        status: "failed",
+        resultTopicModelRevisionId: null,
+        lastErrorCode: "TOPIC_MODEL_PROVIDER_UNAVAILABLE",
+        lastErrorSummary:
+          "Topic Model generation will be retried. Queue retries exhausted before the run completed.",
+      },
+    );
   });
 
   it("does not preserve a canonical retry summary that may contain a secret", async () => {
@@ -1521,6 +1577,63 @@ describe("reconcileActiveRuns", () => {
       expect.objectContaining({ lastErrorCode: "QUEUE_MAPPING_INVALID" }),
     );
     expect(getJobById).toHaveBeenCalledTimes(2);
+  });
+
+  it("terminalizes a missing Topic Model job through its exact attempt-fenced ledger", async () => {
+    const row = {
+      ...run("topic_model_generation", {}),
+      result_type: "topic_model_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(row);
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const topicTerminal = vi
+      .spyOn(TopicModelGenerationRunsRepository.prototype, "terminalize")
+      .mockResolvedValue({ kind: "terminalized", run: {} as never });
+    const getJobById = vi.fn(async () => null);
+    const ctx = contextWithBoss({
+      getJobById,
+      findJobs: vi.fn(async () => []),
+    });
+
+    await reconcileActiveRuns(
+      ctx,
+      {
+        now: new Date("2026-07-19T12:00:00.000Z"),
+        missingAfterMs: 1,
+      },
+    );
+
+    expect(getJobById).toHaveBeenCalledWith("topic-model.generate", row.id);
+    expect(topicTerminal).toHaveBeenCalledWith(
+      {
+        workspaceId: row.workspace_id,
+        projectId: row.project_id,
+        runId: row.id,
+        attemptCount: row.attempt_count,
+      },
+      {
+        status: "failed",
+        resultTopicModelRevisionId: null,
+        lastErrorCode: "QUEUE_JOB_MISSING",
+        lastErrorSummary: "No queue job could be found for this active run.",
+      },
+    );
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(notifyAnalysisRefreshParent).toHaveBeenCalledWith(ctx, {
+      runId: row.id,
+      workspaceId: row.workspace_id,
+      projectId: row.project_id,
+    });
   });
 
   it("leaves a run active when public queue lookup fails and logs no raw error", async () => {
