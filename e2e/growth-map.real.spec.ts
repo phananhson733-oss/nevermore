@@ -634,6 +634,24 @@ async function rapidUrlSelectionRoundTrip(input: {
     .click();
   const detail = page.locator('aside[aria-label="Selected URL detail"]');
   await openFullUrlDetail(detail);
+  const detailState = detail.getByRole("group", {
+    name: "Selected URL detail state",
+  });
+  const reviewState = detailState.getByRole("button", {
+    name: /^Opportunity Review/,
+  });
+  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.locator('[data-detail-panel="opportunity-review"]'),
+  ).toBeVisible();
+  const evidenceState = detailState.getByRole("button", {
+    name: /^Audit Evidence/,
+  });
+  await evidenceState.click();
+  await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.locator('[data-detail-panel="audit-evidence"]'),
+  ).toBeVisible();
   await expect(
     detail.getByTitle(pageA.sitePageId, { exact: true }),
   ).toBeVisible();
@@ -1142,6 +1160,46 @@ async function assertExactSelection(input: {
       name: "Open the live page in a new tab",
     }),
   ).toHaveAttribute("href", expected.normalizedUrl);
+
+  // Drilling from an Opportunity pins its exact primary Finding, so the rail
+  // opens straight in Opportunity Review; Confirm belongs only to this exact
+  // canonical Finding. Audit Evidence stays the read-only state without any
+  // review control.
+  const detailState = detail.getByRole("group", {
+    name: "Selected URL detail state",
+  });
+  const evidenceState = detailState.getByRole("button", {
+    name: /^Audit Evidence/,
+  });
+  const reviewState = detailState.getByRole("button", {
+    name: /^Opportunity Review/,
+  });
+  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.locator('[data-detail-panel="opportunity-review"]'),
+  ).toBeVisible();
+  const reviewFindingCard = detail
+    .getByTitle(expectedFinding.findingId, { exact: true })
+    .locator("xpath=ancestor::article[1]");
+  if (expected.reviewableFindingIds.includes(expectedFinding.findingId)) {
+    await expect(
+      reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
+    ).toBeVisible();
+  } else {
+    await expect(
+      reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
+    ).toHaveCount(0);
+  }
+
+  await evidenceState.click();
+  await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.locator('[data-detail-panel="audit-evidence"]'),
+  ).toBeVisible();
+  await expect(
+    detail.getByRole("button", { name: "Confirm", exact: true }),
+  ).toHaveCount(0);
+
   await expect(
     detail.getByTitle(expected.sitePageId, { exact: true }),
   ).toBeVisible();
@@ -1210,45 +1268,6 @@ async function assertExactSelection(input: {
       traceability.getByTitle(sourceId, { exact: true }),
     ).toBeVisible();
   }
-
-  // Drilling from an Opportunity pins its exact primary Finding, so the rail
-  // opens straight in Opportunity Review; Confirm belongs only to this exact
-  // canonical Finding. Audit Evidence stays the read-only state without any
-  // review control.
-  const detailState = detail.getByRole("group", {
-    name: "Selected URL detail state",
-  });
-  const evidenceState = detailState.getByRole("button", {
-    name: /^Audit Evidence/,
-  });
-  const reviewState = detailState.getByRole("button", {
-    name: /^Opportunity Review/,
-  });
-  await expect(reviewState).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    detail.locator('[data-detail-panel="opportunity-review"]'),
-  ).toBeVisible();
-  const reviewFindingCard = detail
-    .getByTitle(expectedFinding.findingId, { exact: true })
-    .locator("xpath=ancestor::article[1]");
-  if (expected.reviewableFindingIds.includes(expectedFinding.findingId)) {
-    await expect(
-      reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
-    ).toBeVisible();
-  } else {
-    await expect(
-      reviewFindingCard.getByRole("button", { name: "Confirm", exact: true }),
-    ).toHaveCount(0);
-  }
-
-  await evidenceState.click();
-  await expect(evidenceState).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    detail.locator('[data-detail-panel="audit-evidence"]'),
-  ).toBeVisible();
-  await expect(
-    detail.getByRole("button", { name: "Confirm", exact: true }),
-  ).toHaveCount(0);
 
   // Leave the rail in Opportunity Review so a follow-up confirmation can act
   // on the exact card this assertion just verified.

@@ -9,6 +9,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { GrowthOpportunity } from "../packages/contracts/src/index.ts";
 import { createDbHandle, type DbHandle } from "../packages/db/src/index.ts";
 import type { WorkerShutdownResult } from "../apps/worker/src/shutdown-coordinator.ts";
 import {
@@ -607,10 +608,29 @@ async function runDiagnosisAndConfirmFinding(
   });
   await expect(page.getByText("No URL audit result yet")).toHaveCount(0);
 
-  // Select the URL that carries the TECH-HTTP-001 Finding (the /gone page).
+  const opportunitiesResponse = await request.get(
+    `/api/mvp/projects/${projectId}/opportunities?limit=100`,
+    { headers: { cookie: "sf_ui_locale=en" } },
+  );
+  const opportunities = await responseJson<
+    DataEnvelope<{ readonly data: readonly unknown[] }>
+  >(opportunitiesResponse, "Growth Map opportunities");
+  const httpOpportunity = opportunities.data.data
+    .map((item) => GrowthOpportunity.parse(item))
+    .find(
+      (item) =>
+        item.readiness !== "candidate" &&
+        item.primaryRule.ruleId === "TECH-HTTP-001",
+    );
+  if (!httpOpportunity || httpOpportunity.readiness === "candidate") {
+    throw new Error("Growth Map omitted the TECH-HTTP-001 Opportunity");
+  }
+
+  // Select the TECH-HTTP-001 Opportunity; its target page is /gone.
   await page
-    .locator("[data-growth-map-opportunity-row]")
-    .filter({ hasText: "/gone" })
+    .locator(
+      `[data-growth-map-opportunity-row="${httpOpportunity.primaryFindingId}"]`,
+    )
     .first()
     .getByRole("button")
     .first()
