@@ -5,7 +5,10 @@ import {
   ANALYSIS_REFRESH_PLAN_VERSION,
   analysisRefreshPlanHash,
   analysisRefreshPlanManifest,
+  analysisRefreshPlanV2Manifest,
   AnalysisRefreshRunsRepository,
+  legacyAnalysisRefreshPlanManifest,
+  readAnalysisRefreshPlanManifest,
 } from "./analysis-refresh-runs.ts";
 
 interface RecordedCall {
@@ -113,12 +116,53 @@ function fixture(): {
 }
 
 describe("AnalysisRefreshRunsRepository", () => {
-  it("freezes the exact server-owned six-step plan and stable hash", () => {
+  it("freezes the exact server-owned seven-step v3 plan and stable hash", () => {
     const first = analysisRefreshPlanManifest();
     const second = analysisRefreshPlanManifest();
 
     expect(first).toEqual({
-      version: ANALYSIS_REFRESH_PLAN_VERSION,
+      version: "analysis-refresh.plan.v3",
+      steps: [
+        { ordinal: 1, stepKey: "crawl", required: true },
+        { ordinal: 2, stepKey: "gsc", required: false },
+        { ordinal: 3, stepKey: "ga4", required: false },
+        { ordinal: 4, stepKey: "dataforseo", required: false },
+        {
+          ordinal: 5,
+          stepKey: "dataforseo_backlinks",
+          required: false,
+        },
+        { ordinal: 6, stepKey: "topic_model", required: false },
+        { ordinal: 7, stepKey: "growth_audit", required: true },
+      ],
+    });
+    expect(ANALYSIS_REFRESH_PLAN_VERSION).toBe("analysis-refresh.plan.v3");
+    expect(first.steps).toEqual(ANALYSIS_REFRESH_PLAN_STEPS);
+    expect(analysisRefreshPlanHash(first)).toBe(
+      "fc527bb7203d61ce126625a0b2bb4bffb59fe5999d9f6b78e5aa05409918368b",
+    );
+    expect(analysisRefreshPlanHash(first)).toBe(
+      analysisRefreshPlanHash(second),
+    );
+    expect(first).not.toBe(second);
+    expect(first.steps).not.toBe(second.steps);
+  });
+
+  it("retains exact v1 and v2 constructors and hashes", () => {
+    const v1 = legacyAnalysisRefreshPlanManifest();
+    const v2 = analysisRefreshPlanV2Manifest();
+    expect(v1).toEqual({
+      version: "analysis-refresh.plan.v1",
+      steps: [
+        { ordinal: 1, stepKey: "crawl", required: true },
+        { ordinal: 2, stepKey: "gsc", required: false },
+        { ordinal: 3, stepKey: "ga4", required: false },
+        { ordinal: 4, stepKey: "dataforseo", required: false },
+        { ordinal: 5, stepKey: "growth_audit", required: true },
+      ],
+    });
+    expect(v2).toEqual({
+      version: "analysis-refresh.plan.v2",
       steps: [
         { ordinal: 1, stepKey: "crawl", required: true },
         { ordinal: 2, stepKey: "gsc", required: false },
@@ -132,18 +176,59 @@ describe("AnalysisRefreshRunsRepository", () => {
         { ordinal: 6, stepKey: "growth_audit", required: true },
       ],
     });
-    expect(first.steps).toEqual(ANALYSIS_REFRESH_PLAN_STEPS);
-    expect(analysisRefreshPlanHash(first)).toBe(
+    expect(analysisRefreshPlanHash(v1)).toBe(
+      "d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af",
+    );
+    expect(analysisRefreshPlanHash(v2)).toBe(
       "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65",
     );
-    expect(analysisRefreshPlanHash(first)).toBe(
-      analysisRefreshPlanHash(second),
-    );
-    expect(first).not.toBe(second);
-    expect(first.steps).not.toBe(second.steps);
   });
 
-  it("inserts one immutable parent and all six pending steps", async () => {
+  it("reads only exact known plan manifests with their matching hashes", () => {
+    const v1 = legacyAnalysisRefreshPlanManifest();
+    const v2 = analysisRefreshPlanV2Manifest();
+    const v3 = analysisRefreshPlanManifest();
+    for (const manifest of [v1, v2, v3]) {
+      const read = readAnalysisRefreshPlanManifest(
+        manifest,
+        analysisRefreshPlanHash(manifest),
+      );
+      expect(read).toEqual(manifest);
+      expect(read).not.toBe(manifest);
+      expect(read?.steps).not.toBe(manifest.steps);
+    }
+
+    const driftedV2 = {
+      ...v2,
+      steps: v2.steps.map((step) =>
+        step.stepKey === "dataforseo_backlinks"
+          ? { ...step, required: true }
+          : { ...step },
+      ),
+    };
+    const unknownV4 = {
+      ...v3,
+      version: "analysis-refresh.plan.v4",
+    };
+    expect(
+      readAnalysisRefreshPlanManifest(
+        driftedV2,
+        analysisRefreshPlanHash(driftedV2 as never),
+      ),
+    ).toBeNull();
+    expect(
+      readAnalysisRefreshPlanManifest(
+        unknownV4,
+        analysisRefreshPlanHash(unknownV4 as never),
+      ),
+    ).toBeNull();
+    expect(readAnalysisRefreshPlanManifest(v3, "0".repeat(64))).toBeNull();
+    expect(
+      readAnalysisRefreshPlanManifest(null, analysisRefreshPlanHash(v3)),
+    ).toBeNull();
+  });
+
+  it("inserts one immutable parent and all seven pending steps", async () => {
     const { db, repo } = fixture();
     const manifest = analysisRefreshPlanManifest();
     const parent = {

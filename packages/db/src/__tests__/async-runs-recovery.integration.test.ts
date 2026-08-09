@@ -206,6 +206,7 @@ describeDb("async run delivery recovery", () => {
       "measurement",
       "product_profile_synthesis",
       "publication",
+      "topic_model_generation",
     ]);
     expect(metrics.find(({ kind }) => kind === "diagnostic")).toMatchObject({
       queuedDepth: expect.any(Number),

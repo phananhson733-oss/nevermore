@@ -488,6 +488,70 @@ export const productProfileInvocationAttempts = app.table(
 );
 
 // ---------------------------------------------------------------------------
+// 12c. topic_model_generation_runs  (id shares async_runs.id)
+// ---------------------------------------------------------------------------
+export const topicModelGenerationRuns = app.table(
+  "topic_model_generation_runs",
+  {
+    id: uuid()
+      .primaryKey()
+      .references(() => asyncRuns.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    analysis_refresh_run_id: uuid()
+      .notNull()
+      .references(() => analysisRefreshRuns.id),
+    generation_version: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_manifest: jsonb().$type<JsonObject>().notNull(),
+    input_hash: text().notNull(),
+    prompt_input_hash: text(),
+    result_topic_model_revision_id: uuid().references(
+      (): AnyPgColumn => topicModelRevisions.id,
+    ),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 12d. topic_model_generation_invocation_attempts
+// ---------------------------------------------------------------------------
+export const topicModelGenerationInvocationAttempts = app.table(
+  "topic_model_generation_invocation_attempts",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    topic_model_generation_run_id: uuid()
+      .notNull()
+      .references(() => topicModelGenerationRuns.id),
+    ordinal: smallint().notNull(),
+    async_attempt_count: integer().notNull(),
+    provider: text().notNull(),
+    model: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_hash: text().notNull(),
+    planned_analysis_invocation_id: uuid().notNull(),
+    status: text().notNull().default("reserved"),
+    analysis_invocation_id: uuid().references(
+      (): AnyPgColumn => analysisInvocations.id,
+    ),
+    terminal_error_code: text(),
+    reserved_at: tz().notNull().defaultNow(),
+    provider_returned_at: tz(),
+    finalized_at: tz(),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // 13. normalized_observations  (append-only)
 // ---------------------------------------------------------------------------
 export const normalizedObservations = app.table("normalized_observations", {
@@ -1877,6 +1941,7 @@ export const topicModelRevisions = app.table("topic_model_revisions", {
   created_by: uuid().notNull(),
   created_at: tz().notNull().defaultNow(),
   updated_at: tz().notNull().defaultNow(),
+  // SQL permits NULL only for an exact, successfully fenced system generation.
   confirmed_by: uuid(),
   confirmed_at: tz(),
 });
@@ -1998,6 +2063,7 @@ export const keywordReviewDecisions = app.table("keyword_review_decisions", {
   mapped_site_page_id: uuid().references(() => sitePages.id),
   review_state: text().notNull(),
   assignment_invalidated_by: text(),
+  analysis_invocation_id: uuid().references(() => analysisInvocations.id),
   decided_by: uuid(),
   reason: text().notNull(),
   decided_at: tz().notNull(),
@@ -2540,6 +2606,8 @@ export const schema = {
   dataSnapshots,
   productProfileRuns,
   productProfileInvocationAttempts,
+  topicModelGenerationRuns,
+  topicModelGenerationInvocationAttempts,
   normalizedObservations,
   providerDiscrepancies,
   diagnosticRuns,

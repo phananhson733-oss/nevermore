@@ -50,6 +50,7 @@ const ids = {
   actor: "10000000-0000-4000-8000-000000000011",
   topicNode: "10000000-0000-4000-8000-000000000012",
   decision: "10000000-0000-4000-8000-000000000013",
+  analysisInvocation: "10000000-0000-4000-8000-000000000017",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -197,6 +198,21 @@ function dataForSeoObservation(overrides: Record<string, unknown> = {}) {
     limitation: "Provider rows are bounded by the frozen collection scope.",
     ...overrides,
   };
+}
+
+function dataForSeoIntentObservation(
+  providerSearchIntent: unknown,
+  overrides: Record<string, unknown> = {},
+) {
+  const base = dataForSeoObservation();
+  return dataForSeoObservation({
+    value_json: {
+      ...base.value_json,
+      keywordDifficulty: 0,
+      providerSearchIntent,
+    },
+    ...overrides,
+  });
 }
 
 function dataForSeoSnapshot(overrides: Record<string, unknown> = {}) {
@@ -628,6 +644,54 @@ function arrangeList(input: {
   return exec;
 }
 
+function arrangeCurrentList(input: {
+  entity?: KeywordEntityRow;
+  occurrences?: readonly KeywordOccurrenceRow[];
+  occurrenceNextCursor?: string | null;
+  observations?: readonly unknown[];
+  snapshots?: readonly unknown[];
+  collectionRuns?: readonly unknown[];
+  reviewOrigin?: "user" | "system_suggestion" | "migration_baseline" | null;
+  analysisInvocationId?: string | null;
+} = {}) {
+  mockProject();
+  const keyword = input.entity ?? entity();
+  vi.spyOn(KeywordsRepository.prototype, "listByProject").mockResolvedValue({
+    rows: [keyword],
+    nextCursor: null,
+  });
+  vi.spyOn(
+    KeywordOccurrencesRepository.prototype,
+    "listForEntity",
+  ).mockResolvedValue({
+    rows: [...(input.occurrences ?? [occurrence()])],
+    nextCursor: input.occurrenceNextCursor ?? null,
+  });
+  vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue(
+    keyword.mapped_site_page_id === null ? [] : ([sitePage()] as never),
+  );
+  if (input.reviewOrigin !== undefined && input.reviewOrigin !== null) {
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockResolvedValue([
+      {
+        keywordId: keyword.id,
+        governanceRevision: keyword.mapping_revision,
+        decisionOrigin: input.reviewOrigin,
+        analysisInvocationId: input.analysisInvocationId ?? null,
+      },
+    ]);
+  }
+  const exec = new FakeExecutor();
+  exec.enqueue(
+    input.observations ?? [dataForSeoObservation()],
+    input.snapshots ?? [dataForSeoSnapshot()],
+    input.collectionRuns ?? [collectionRun()],
+  );
+  return exec;
+}
+
 beforeEach(() => {
   mocks.getDb.mockReset();
   mocks.loadPublishedGrowthMapGeneration.mockReset();
@@ -683,6 +747,7 @@ describe("Growth Map Keyword Library read service", () => {
       exec as never,
     );
 
+    expect(response.diagnosticRunId).toBeNull();
     expect(response.data).toEqual([
       expect.objectContaining({
         keywordId: ids.keyword,
@@ -729,6 +794,7 @@ describe("Growth Map Keyword Library read service", () => {
           keywordId: ids.keyword,
           governanceRevision: 1,
           decisionOrigin: "system_suggestion",
+          analysisInvocationId: null,
         },
       ]);
     const exec = new FakeExecutor();
@@ -875,6 +941,7 @@ describe("Growth Map Keyword Library read service", () => {
       exec as never,
     );
 
+    expect(response.diagnosticRunId).toBe(ids.publishedRun);
     expect(response.data).toEqual([]);
     expect(response.meta).toMatchObject({
       hasNext: false,
@@ -945,8 +1012,577 @@ describe("Growth Map Keyword Library read service", () => {
           kd: expect.stringMatching(/keywordDifficulty/),
         }),
       },
+      recollection: {
+        reason: "historical_dataforseo_observation_missing_fields",
+        fields: ["keyword_difficulty", "provider_search_intent"],
+      },
     });
     expect(JSON.stringify(response)).not.toContain("must-not-leak");
+  });
+
+  it("does not request recollection when DataForSEO explicitly observed null fields", async () => {
+    const base = dataForSeoObservation();
+    const exec = arrangeList({
+      observations: [
+        dataForSeoObservation({
+          value_json: {
+            ...base.value_json,
+            keywordDifficulty: null,
+            providerSearchIntent: null,
+          },
+        }),
+      ],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.publishedRun,
+      },
+      exec as never,
+    );
+
+    expect(response.data[0]?.recollection).toBeNull();
+    expect(response.data[0]?.metrics.kd).toMatchObject({ value: null });
+  });
+
+  it("does not assert historical field absence from truncated live occurrence history", async () => {
+    const exec = arrangeCurrentList({
+      occurrenceNextCursor: "opaque-earlier-occurrence",
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.sourceOccurrences).toHaveLength(1);
+    expect(response.data[0]?.coverage.limitations).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/older immutable occurrence history/i),
+      ]),
+    );
+    expect(response.data[0]?.recollection).toBeNull();
+  });
+
+  it("keeps a frozen historical gap pinned while a newer live occurrence clears recollection", async () => {
+    const frozenExec = arrangeList();
+    const frozen = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        diagnosticRunId: ids.publishedRun,
+      },
+      frozenExec as never,
+    );
+    expect(frozen.data[0]?.recollection?.fields).toEqual([
+      "keyword_difficulty",
+      "provider_search_intent",
+    ]);
+
+    const newerOccurrenceId = "10000000-0000-4000-8000-000000000014";
+    const newerSnapshotId = "10000000-0000-4000-8000-000000000015";
+    const newerObservationId = "10000000-0000-4000-8000-000000000016";
+    const base = dataForSeoObservation();
+    const liveExec = arrangeCurrentList({
+      occurrences: [
+        occurrence(),
+        occurrence({
+          id: newerOccurrenceId,
+          data_snapshot_id: newerSnapshotId,
+          normalized_observation_id: newerObservationId,
+          source_ref: `observation:${newerObservationId}#/valueJson/keyword`,
+        }),
+      ],
+      observations: [
+        dataForSeoObservation(),
+        dataForSeoObservation({
+          id: newerObservationId,
+          snapshot_id: newerSnapshotId,
+          value_json: {
+            ...base.value_json,
+            keywordDifficulty: 18,
+            providerSearchIntent: "commercial",
+          },
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot(),
+        dataForSeoSnapshot({ id: newerSnapshotId }),
+      ],
+      collectionRuns: [collectionRun()],
+    });
+
+    const live = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      liveExec as never,
+    );
+
+    expect(live.data[0]?.recollection).toBeNull();
+  });
+
+  it("prefers an exact provider intent over non-user governed legacy intent and preserves KD zero lineage", async () => {
+    const exec = arrangeList({
+      governance: frozenGovernance({
+        fact: { intent: "legacy mixed research intent" },
+      }),
+      observations: [dataForSeoIntentObservation("commercial")],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.publishedRun },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      intent: "legacy mixed research intent",
+      searchIntent: {
+        value: "commercial",
+        authority: "provider_observed",
+        snapshotId: ids.snapshot,
+        observationId: ids.observation,
+        analysisInvocationId: null,
+        observedAt: capturedAt,
+        limitation: expect.any(String),
+      },
+      metrics: {
+        kd: {
+          value: 0,
+          snapshotId: ids.snapshot,
+          observationId: ids.observation,
+          valuePointer: "/valueJson/keywordDifficulty",
+        },
+      },
+    });
+    expect(response.data[0]?.searchIntent.authority).not.toBe("llm_generated");
+  });
+
+  it("lets a user-confirmed intent win a conflicting valid provider candidate", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: "transactional", mapping_revision: 2 }),
+      observations: [dataForSeoIntentObservation("informational")],
+      reviewOrigin: "user",
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.searchIntent).toEqual({
+      value: "transactional",
+      authority: "user_confirmed",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: null,
+    });
+  });
+
+  it("projects a live generated intent from the exact decision invocation when the provider explicitly observed null", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: "commercial", mapping_revision: 3 }),
+      observations: [dataForSeoIntentObservation(null)],
+      reviewOrigin: "system_suggestion",
+      analysisInvocationId: ids.analysisInvocation,
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.searchIntent).toEqual({
+      value: "commercial",
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: ids.analysisInvocation,
+      observedAt: null,
+      limitation: null,
+    });
+  });
+
+  it("does not invent generated lineage from provider explicit null without an invocation", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: "commercial", mapping_revision: 3 }),
+      observations: [dataForSeoIntentObservation(null)],
+      reviewOrigin: "system_suggestion",
+      analysisInvocationId: null,
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.searchIntent).toMatchObject({
+      value: "commercial",
+      authority: "governed_legacy",
+      analysisInvocationId: null,
+    });
+  });
+
+  it("keeps exact provider authority ahead of invocation-backed generated intent", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: "commercial", mapping_revision: 3 }),
+      observations: [dataForSeoIntentObservation("informational")],
+      reviewOrigin: "system_suggestion",
+      analysisInvocationId: ids.analysisInvocation,
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.searchIntent).toMatchObject({
+      value: "informational",
+      authority: "provider_observed",
+      analysisInvocationId: null,
+    });
+  });
+
+  it("still fails closed on malformed provider intent hidden behind a user decision", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: "commercial", mapping_revision: 2 }),
+      observations: [dataForSeoIntentObservation(" commercial ")],
+      reviewOrigin: "user",
+    });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE", status: 503 });
+  });
+
+  it.each([
+    "system_suggestion",
+    "migration_baseline",
+    null,
+  ] as const)(
+    "preserves arbitrary bounded %s governed intent as legacy without invented model lineage",
+    async (reviewOrigin) => {
+      const legacyIntent = "comparison with implementation research";
+      const exec = arrangeCurrentList({
+        entity: entity({ intent: legacyIntent, mapping_revision: 2 }),
+        reviewOrigin,
+      });
+
+      const response = await listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      );
+
+      expect(response.data[0]?.searchIntent).toMatchObject({
+        value: legacyIntent,
+        authority: "governed_legacy",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: expect.stringMatching(/pre-ledger|provenance/i),
+      });
+      expect(response.data[0]?.searchIntent.authority).not.toBe("llm_generated");
+    },
+  );
+
+  it("reports unavailable search intent explicitly and includes its limitation in coverage", async () => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: null }),
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      intent: null,
+      classificationLimitations: {
+        intent: "Search intent has not been classified.",
+      },
+      searchIntent: {
+        value: null,
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: expect.any(String),
+      },
+      coverage: {
+        availability: "partial",
+        limitations: expect.arrayContaining([
+          "Search intent has not been classified.",
+          expect.stringMatching(/provider-observed|search intent/i),
+        ]),
+      },
+    });
+  });
+
+  it.each([
+    undefined,
+    " commercial ",
+    "unknown",
+    1,
+    [],
+    {},
+  ])("fails closed on malformed persisted provider search intent %#", async (value) => {
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: null }),
+      observations: [dataForSeoIntentObservation(value)],
+    });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE", status: 503 });
+  });
+
+  it("lets newest explicit provider null block fallback to an older non-null provider value", async () => {
+    const older = {
+      occurrenceId: "10000000-0000-4000-8000-000000000020",
+      snapshotId: "10000000-0000-4000-8000-000000000021",
+      observationId: "10000000-0000-4000-8000-000000000022",
+      collectionRunId: "10000000-0000-4000-8000-000000000023",
+    } as const;
+    const olderOccurrence = occurrence({
+      id: older.occurrenceId,
+      data_snapshot_id: older.snapshotId,
+      normalized_observation_id: older.observationId,
+      source_ref: `observation:${older.observationId}#/valueJson/keyword`,
+      collected_at: "2026-07-21T08:00:00.000Z",
+      created_at: "2026-07-21T08:00:00.000Z",
+    });
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: null }),
+      occurrences: [occurrence(), olderOccurrence],
+      observations: [
+        dataForSeoIntentObservation(null),
+        dataForSeoIntentObservation("informational", {
+          id: older.observationId,
+          snapshot_id: older.snapshotId,
+          observed_at: "2026-07-21T08:00:00.000Z",
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot(),
+        dataForSeoSnapshot({
+          id: older.snapshotId,
+          collection_run_id: older.collectionRunId,
+          captured_at: "2026-07-21T08:00:00.000Z",
+          summary: {
+            ...dataForSeoSnapshot().summary,
+            timing: {
+              collectedAt: "2026-07-21T08:00:00.000Z",
+              dataAsOf: null,
+              observedAt: null,
+              freshness: "unknown",
+            },
+          },
+        }),
+      ],
+      collectionRuns: [
+        collectionRun(),
+        collectionRun({ id: older.collectionRunId }),
+      ],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.searchIntent).toMatchObject({
+      value: null,
+      authority: "unavailable",
+    });
+  });
+
+  it("validates older provider-bearing rows even after newest explicit null fixes the candidate", async () => {
+    const older = {
+      occurrenceId: "10000000-0000-4000-8000-000000000024",
+      snapshotId: "10000000-0000-4000-8000-000000000025",
+      observationId: "10000000-0000-4000-8000-000000000026",
+      collectionRunId: "10000000-0000-4000-8000-000000000027",
+    } as const;
+    const exec = arrangeCurrentList({
+      entity: entity({ intent: null }),
+      occurrences: [
+        occurrence(),
+        occurrence({
+          id: older.occurrenceId,
+          data_snapshot_id: older.snapshotId,
+          normalized_observation_id: older.observationId,
+          source_ref: `observation:${older.observationId}#/valueJson/keyword`,
+          collected_at: "2026-07-21T08:00:00.000Z",
+          created_at: "2026-07-21T08:00:00.000Z",
+        }),
+      ],
+      observations: [
+        dataForSeoIntentObservation(null),
+        dataForSeoIntentObservation("not-a-provider-intent", {
+          id: older.observationId,
+          snapshot_id: older.snapshotId,
+          observed_at: "2026-07-21T08:00:00.000Z",
+        }),
+      ],
+      snapshots: [
+        dataForSeoSnapshot(),
+        dataForSeoSnapshot({
+          id: older.snapshotId,
+          collection_run_id: older.collectionRunId,
+          captured_at: "2026-07-21T08:00:00.000Z",
+          summary: {
+            ...dataForSeoSnapshot().summary,
+            timing: {
+              collectedAt: "2026-07-21T08:00:00.000Z",
+              dataAsOf: null,
+              observedAt: null,
+              freshness: "unknown",
+            },
+          },
+        }),
+      ],
+      collectionRuns: [
+        collectionRun(),
+        collectionRun({ id: older.collectionRunId }),
+      ],
+    });
+
+    await expect(
+      listProjectAuditKeywords(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UNAVAILABLE", status: 503 });
+  });
+
+  it("pins search intent to the frozen decision and occurrence instead of newer live state", async () => {
+    const exec = arrangeList({
+      entity: entity({
+        intent: "transactional",
+        mapping_revision: 9,
+      }),
+      governance: frozenGovernance({
+        fact: { intent: "frozen pre-ledger intent", revision: 2 },
+      }),
+      observations: [dataForSeoIntentObservation("informational")],
+    });
+    const liveOccurrences = vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    );
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockResolvedValue([
+      {
+        keywordId: ids.keyword,
+        governanceRevision: 2,
+        decisionOrigin: "system_suggestion",
+        analysisInvocationId: ids.analysisInvocation,
+      },
+    ]);
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.publishedRun },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      revision: 2,
+      intent: "frozen pre-ledger intent",
+      reviewOrigin: "system_suggestion",
+      searchIntent: {
+        value: "informational",
+        authority: "provider_observed",
+        snapshotId: ids.snapshot,
+        observationId: ids.observation,
+        observedAt: capturedAt,
+      },
+    });
+    expect(liveOccurrences).not.toHaveBeenCalled();
+  });
+
+  it("pins invocation-backed generated intent to the exact frozen decision revision", async () => {
+    const exec = arrangeList({
+      entity: entity({ intent: "transactional", mapping_revision: 9 }),
+      governance: frozenGovernance({
+        fact: { intent: "commercial", revision: 2 },
+      }),
+      observations: [dataForSeoIntentObservation(null)],
+    });
+    const origins = vi
+      .spyOn(KeywordGovernanceRepository.prototype, "listDecisionOriginsAt")
+      .mockResolvedValue([
+        {
+          keywordId: ids.keyword,
+          governanceRevision: 2,
+          decisionOrigin: "system_suggestion",
+          analysisInvocationId: ids.analysisInvocation,
+        },
+      ]);
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.publishedRun },
+      exec as never,
+    );
+
+    expect(origins).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      [{ keywordId: ids.keyword, governanceRevision: 2 }],
+    );
+    expect(response.data[0]?.searchIntent).toEqual({
+      value: "commercial",
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: ids.analysisInvocation,
+      observedAt: null,
+      limitation: null,
+    });
   });
 
   it("fails closed when a DataForSEO occurrence points at the legacy CSV dataset key", async () => {
@@ -1813,6 +2449,7 @@ describe("Growth Map Keyword Library read service", () => {
           keywordId: ids.keyword,
           governanceRevision: 2,
           decisionOrigin: "user",
+          analysisInvocationId: null,
         },
       ]);
 
@@ -1849,7 +2486,7 @@ describe("Growth Map Keyword Library read service", () => {
             revision: 3,
           },
           clusterTopicNodeId: ids.topicNode,
-          clusterTopicModelRevision: 3,
+          clusterTopicModelRevision: 2,
         }),
       ),
     );
@@ -1891,6 +2528,7 @@ describe("Growth Map Keyword Library read service", () => {
       buyerStage: "consideration",
       cluster: {
         clusterId: ids.topicNode,
+        topicModelRevision: 2,
         name: "Customer Onboarding",
       },
       classificationLimitations: { cluster: null },
@@ -2075,6 +2713,17 @@ describe("Growth Map Keyword Library read service", () => {
       "findCurrent",
     ).mockResolvedValue(liveGovernance);
     vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockImplementation(async (_scope, refs) =>
+      refs.map((ref) => ({
+        keywordId: ref.keywordId,
+        governanceRevision: ref.governanceRevision,
+        decisionOrigin: "user" as const,
+        analysisInvocationId: null,
+      })),
+    );
+    vi.spyOn(
       KeywordOccurrencesRepository.prototype,
       "listForEntity",
     ).mockResolvedValue({
@@ -2250,6 +2899,17 @@ describe("Growth Map Keyword governance review service", () => {
       KeywordGovernanceRepository.prototype,
       "findCurrent",
     ).mockResolvedValue(reviewedGovernance());
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockImplementation(async (_scope, refs) =>
+      refs.map((ref) => ({
+        keywordId: ref.keywordId,
+        governanceRevision: ref.governanceRevision,
+        decisionOrigin: "user" as const,
+        analysisInvocationId: null,
+      })),
+    );
     vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
       entity({
         status: "approved",
@@ -2322,6 +2982,7 @@ describe("Growth Map Keyword governance review service", () => {
         buyerStage: "consideration",
         cluster: {
           clusterId: ids.topicNode,
+          topicModelRevision: 3,
           name: "Customer Onboarding",
         },
         mappedTarget: {

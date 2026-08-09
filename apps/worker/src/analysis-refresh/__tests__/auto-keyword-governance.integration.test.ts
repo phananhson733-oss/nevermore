@@ -544,11 +544,13 @@ describeDb("automated keyword governance against a real PostgreSQL", () => {
           keywordId: dfs.entityId,
           governanceRevision: 1,
           decisionOrigin: "system_suggestion",
+          analysisInvocationId: null,
         },
         {
           keywordId: gscRanked.entityId,
           governanceRevision: 1,
           decisionOrigin: "system_suggestion",
+          analysisInvocationId: null,
         },
       ].sort((left, right) => left.keywordId.localeCompare(right.keywordId)),
     );
@@ -575,6 +577,7 @@ describeDb("automated keyword governance against a real PostgreSQL", () => {
         keywordId: dfs.entityId,
         governanceRevision: 1,
         decisionOrigin: "system_suggestion",
+        analysisInvocationId: null,
       },
     ]);
     await expect(
@@ -586,6 +589,7 @@ describeDb("automated keyword governance against a real PostgreSQL", () => {
         keywordId: dfs.entityId,
         governanceRevision: 2,
         decisionOrigin: "user",
+        analysisInvocationId: null,
       },
     ]);
 

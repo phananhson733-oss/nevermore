@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseTopicModelGenerationInputManifest } from "@sf/contracts";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type Db, type DbHandle } from "../client.ts";
@@ -29,6 +30,7 @@ import { CollectionRunsRepository } from "./collection-runs.ts";
 import { DataSnapshotsRepository } from "./data-snapshots.ts";
 import { GrowthMapReadRepository } from "./growth-map.ts";
 import { SourceConnectionsRepository } from "./source-connections.ts";
+import { TopicModelGenerationRunsRepository } from "./topic-model-generation-runs.ts";
 
 const DATABASE_URL = process.env["DATABASE_URL"];
 if (DATABASE_URL) {
@@ -59,6 +61,11 @@ type CollectionStepKey =
 type PlannedStepState =
   | "pending"
   | "completed"
+  | "fabricated_completed"
+  | "skipped"
+  | "failed";
+type TopicStepState =
+  | "pending"
   | "fabricated_completed"
   | "skipped"
   | "failed";
@@ -351,6 +358,7 @@ async function createRefreshParent(
     readonly stepStates?: Partial<
       Readonly<Record<CollectionStepKey, PlannedStepState>>
     >;
+    readonly topicStepState?: TopicStepState;
     readonly legacyPlan?: boolean;
   },
 ): Promise<string> {
@@ -466,6 +474,112 @@ async function createRefreshParent(
       throw new Error(
         `Growth Map integration fixture could not fail ${stepKey} step`,
       );
+    }
+  }
+  if (!input.legacyPlan) {
+    const topicState = input.topicStepState ?? "skipped";
+    if (topicState === "skipped") {
+      if (
+        !(await plans.skipStep(
+          scope,
+          id,
+          "topic_model",
+          "insufficient_keyword_evidence",
+        ))
+      ) {
+        throw new Error(
+          "Growth Map integration fixture could not skip Topic Model step",
+        );
+      }
+    } else if (topicState === "failed") {
+      if (
+        !(await plans.failStep(scope, id, "topic_model", {
+          childAsyncRunId: null,
+          error: {
+            code: "TOPIC_MODEL_GENERATION_FIXTURE_FAILED",
+            summary: "The deterministic Topic Model fixture failed.",
+          },
+        }))
+      ) {
+        throw new Error(
+          "Growth Map integration fixture could not fail Topic Model step",
+        );
+      }
+    } else if (topicState === "fabricated_completed") {
+      const topicModelGenerationRunId = randomUUID();
+      const inputManifest = parseTopicModelGenerationInputManifest({
+        schemaVersion: "topic-model-generation-input.v1",
+        analysisRefreshRunId: id,
+        projectId: fixture.projectId,
+        market: "US",
+        language: "en",
+        groups: [
+          {
+            groupKey: "group-001",
+            representativeKeywords: ["fixture keyword"],
+            keywordCount: 1,
+            aggregateSearchVolume: null,
+            providerIntentDistribution: {
+              informational: 0,
+              navigational: 0,
+              commercial: 0,
+              transactional: 0,
+            },
+            urls: [],
+          },
+        ],
+        productProfile: null,
+        icp: null,
+        keywords: [
+          {
+            keywordId: randomUUID(),
+            expectedGovernanceRevision: 0,
+            groupKey: "group-001",
+            providerSearchIntent: null,
+          },
+        ],
+      });
+      await db.insert(asyncRuns).values({
+        id: topicModelGenerationRunId,
+        workspace_id: fixture.workspaceId,
+        project_id: fixture.projectId,
+        kind: "topic_model_generation",
+        status: "running",
+        result_type: "topic_model_generation_run",
+        result_id: topicModelGenerationRunId,
+        initiated_by: fixture.actorId,
+        queued_at: input.createdAt,
+        started_at: input.createdAt,
+        completed_at: null,
+        created_at: input.createdAt,
+        updated_at: input.createdAt,
+      });
+      await new TopicModelGenerationRunsRepository(db).insertPlaceholder({
+        runId: topicModelGenerationRunId,
+        workspaceId: fixture.workspaceId,
+        projectId: fixture.projectId,
+        analysisRefreshRunId: id,
+        generationVersion: "topic-model-generation.v1",
+        promptSetVersion: "topic-model.prompt.v1",
+        inputManifest,
+        inputHash: contentHash(inputManifest),
+      });
+      if (
+        !(await plans.startStep(
+          scope,
+          id,
+          "topic_model",
+          topicModelGenerationRunId,
+        )) ||
+        !(await plans.completeStep(scope, id, "topic_model", {
+          childAsyncRunId: topicModelGenerationRunId,
+          resultSnapshotId: null,
+        }))
+      ) {
+        throw new Error(
+          "Growth Map integration fixture could not fabricate Topic Model completion",
+        );
+      }
     }
   }
   const started = await plans.startStep(
@@ -682,8 +796,32 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       stepStates: { dataforseo: "failed" },
     });
 
-    const fabricatedCollection = await createDiagnostic(handle.db, fixture, {
+    const failedTopic = await createDiagnostic(handle.db, fixture, {
+      createdAt: timestamp(57),
+      publishAudit: true,
+    });
+    const failedTopicParent = await createRefreshParent(handle.db, fixture, {
+      status: "partial",
+      createdAt: timestamp(56),
+      completedAt: timestamp(13),
+      childDiagnosticRunId: failedTopic,
+      topicStepState: "failed",
+    });
+
+    const fabricatedTopic = await createDiagnostic(handle.db, fixture, {
       createdAt: timestamp(58),
+      publishAudit: true,
+    });
+    await createRefreshParent(handle.db, fixture, {
+      status: "completed",
+      createdAt: timestamp(57),
+      completedAt: timestamp(62),
+      childDiagnosticRunId: fabricatedTopic,
+      topicStepState: "fabricated_completed",
+    });
+
+    const fabricatedCollection = await createDiagnostic(handle.db, fixture, {
+      createdAt: timestamp(59),
       publishAudit: true,
     });
     await createRefreshParent(handle.db, fixture, {
@@ -758,10 +896,24 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       run_status: "completed",
     });
     await expect(
+      repository.findReadableRunById(projectScope, failedTopic),
+    ).resolves.toMatchObject({
+      id: failedTopic,
+      project_id: fixture.projectId,
+      site_id: fixture.siteId,
+      run_status: "completed",
+    });
+    await expect(
       handle.db
         .select({ status: asyncRuns.status })
         .from(asyncRuns)
         .where(eq(asyncRuns.id, failedOptionalParent)),
+    ).resolves.toEqual([{ status: "partial" }]);
+    await expect(
+      handle.db
+        .select({ status: asyncRuns.status })
+        .from(asyncRuns)
+        .where(eq(asyncRuns.id, failedTopicParent)),
     ).resolves.toEqual([{ status: "partial" }]);
     for (const nonPublishableOrForeignId of [
       legacy,
@@ -773,6 +925,7 @@ describeDb("GrowthMapReadRepository publishable Analysis Refresh lineage", () =>
       wrongSiteProjection,
       incompletePlan,
       pendingOptional,
+      fabricatedTopic,
       fabricatedCollection,
       foreignPublished,
     ]) {

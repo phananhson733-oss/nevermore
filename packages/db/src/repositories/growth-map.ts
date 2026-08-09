@@ -14,8 +14,15 @@ import {
   normalizedObservations,
   pageSnapshots,
   sitePages,
+  topicModelGenerationRuns,
 } from "../schema.ts";
 import type { ActionRow } from "./actions.ts";
+import {
+  analysisRefreshPlanHash,
+  analysisRefreshPlanManifest,
+  analysisRefreshPlanV2Manifest,
+  legacyAnalysisRefreshPlanManifest,
+} from "./analysis-refresh-runs.ts";
 import {
   GROWTH_AUDIT_PROJECTION_VERSION,
   LEGACY_GROWTH_AUDIT_PROJECTION_VERSION,
@@ -35,6 +42,25 @@ export const MAX_GROWTH_MAP_URL_PAGE_SIZE = 100;
 export const MAX_GROWTH_MAP_SEARCH_LENGTH = 256;
 export const MAX_GROWTH_MAP_SNAPSHOT_LOOKUP = 20;
 export const MAX_GROWTH_MAP_ENTITY_LOOKUP = 200;
+
+function publishedAnalysisRefreshPlan(
+  manifest: ReturnType<typeof analysisRefreshPlanManifest>,
+) {
+  return {
+    manifestJson: JSON.stringify(manifest),
+    planHash: analysisRefreshPlanHash(manifest),
+  };
+}
+
+const PUBLISHED_PLAN_V1 = publishedAnalysisRefreshPlan(
+  legacyAnalysisRefreshPlanManifest(),
+);
+const PUBLISHED_PLAN_V2 = publishedAnalysisRefreshPlan(
+  analysisRefreshPlanV2Manifest(),
+);
+const PUBLISHED_PLAN_V3 = publishedAnalysisRefreshPlan(
+  analysisRefreshPlanManifest(),
+);
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -610,6 +636,27 @@ function publishedGrowthAuditRuns(
             and result_snapshot.method_version = 'dataforseo.backlinks.v1'
           )
         )
+    ), canonical_completed_topic_model_steps as (
+      select topic_step.analysis_refresh_run_id
+      from ${analysisRefreshSteps} as topic_step
+      inner join ${asyncRuns} as topic_child
+        on topic_child.id = topic_step.child_async_run_id
+       and topic_child.workspace_id = ${scope.workspaceId}
+       and topic_child.project_id = ${scope.projectId}
+       and topic_child.kind = 'topic_model_generation'
+       and topic_child.status = 'completed'
+       and topic_child.result_type = 'topic_model_generation_run'
+       and topic_child.result_id = topic_child.id
+       and topic_child.completed_at is not null
+      inner join ${topicModelGenerationRuns} as topic_model_run
+        on topic_model_run.id = topic_child.id
+       and topic_model_run.workspace_id = ${scope.workspaceId}
+       and topic_model_run.project_id = ${scope.projectId}
+       and topic_model_run.analysis_refresh_run_id = topic_step.analysis_refresh_run_id
+      where topic_step.workspace_id = ${scope.workspaceId}
+        and topic_step.project_id = ${scope.projectId}
+        and topic_step.step_key = 'topic_model'
+        and topic_step.state = 'completed'
     ), publishable_analysis_refreshes as (
       select
         ${asyncRuns.id} as id,
@@ -705,7 +752,8 @@ function publishedGrowthAuditRuns(
         )
         and (
           (
-            publication_plan.plan_manifest ->> 'version' = 'analysis-refresh.plan.v1'
+            publication_plan.plan_manifest = ${PUBLISHED_PLAN_V1.manifestJson}::jsonb
+            and publication_plan.plan_hash = ${PUBLISHED_PLAN_V1.planHash}
             and exists (
               select 1
               from ${analysisRefreshSteps}
@@ -719,7 +767,8 @@ function publishedGrowthAuditRuns(
             )
           )
           or (
-            publication_plan.plan_manifest ->> 'version' = 'analysis-refresh.plan.v2'
+            publication_plan.plan_manifest = ${PUBLISHED_PLAN_V2.manifestJson}::jsonb
+            and publication_plan.plan_hash = ${PUBLISHED_PLAN_V2.planHash}
             and exists (
               select 1
               from ${analysisRefreshSteps}
@@ -747,6 +796,60 @@ function publishedGrowthAuditRuns(
                 and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
                 and ${analysisRefreshSteps.project_id} = ${scope.projectId}
                 and ${analysisRefreshSteps.ordinal} = 6
+                and ${analysisRefreshSteps.step_key} = 'growth_audit'
+                and ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} = 'completed'
+            )
+          )
+          or (
+            publication_plan.plan_manifest = ${PUBLISHED_PLAN_V3.manifestJson}::jsonb
+            and publication_plan.plan_hash = ${PUBLISHED_PLAN_V3.planHash}
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 5
+                and ${analysisRefreshSteps.step_key} = 'dataforseo_backlinks'
+                and not ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+                and (
+                  ${analysisRefreshSteps.state} <> 'completed'
+                  or exists (
+                    select 1
+                    from canonical_completed_collection_steps
+                    where canonical_completed_collection_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                      and canonical_completed_collection_steps.step_key = 'dataforseo_backlinks'
+                  )
+                )
+            )
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 6
+                and ${analysisRefreshSteps.step_key} = 'topic_model'
+                and not ${analysisRefreshSteps.required}
+                and ${analysisRefreshSteps.state} in ('completed', 'skipped', 'failed')
+                and (
+                  ${analysisRefreshSteps.state} <> 'completed'
+                  or exists (
+                    select 1
+                    from canonical_completed_topic_model_steps
+                    where canonical_completed_topic_model_steps.analysis_refresh_run_id = ${asyncRuns.id}
+                  )
+                )
+            )
+            and exists (
+              select 1
+              from ${analysisRefreshSteps}
+              where ${analysisRefreshSteps.analysis_refresh_run_id} = ${asyncRuns.id}
+                and ${analysisRefreshSteps.workspace_id} = ${scope.workspaceId}
+                and ${analysisRefreshSteps.project_id} = ${scope.projectId}
+                and ${analysisRefreshSteps.ordinal} = 7
                 and ${analysisRefreshSteps.step_key} = 'growth_audit'
                 and ${analysisRefreshSteps.required}
                 and ${analysisRefreshSteps.state} = 'completed'

@@ -13,7 +13,8 @@ export type AnalysisInvocationTask =
   | "finding_summary"
   | "artifact_generation"
   | "product_profile_synthesis"
-  | "content_shadow_draft";
+  | "content_shadow_draft"
+  | "topic_model_generation";
 
 export class AnalysisInvocationsRepository extends Repository {
   /**

@@ -1,7 +1,6 @@
 import type pg from "pg";
 
-export const LATEST_APP_MIGRATION =
-  "0047_dataforseo_competitor_metrics" as const;
+export const LATEST_APP_MIGRATION = "0048_topic_model_generation" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

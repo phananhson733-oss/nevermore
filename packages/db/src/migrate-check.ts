@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 78 app tables plus every named index, trigger, and callable routine
+ * exactly 80 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -49,6 +49,8 @@ const EXPECTED_TABLES = [
   "page_snapshots",
   "product_profile_runs",
   "product_profile_invocation_attempts",
+  "topic_model_generation_runs",
+  "topic_model_generation_invocation_attempts",
   "keyword_occurrences",
   "keyword_entities",
   "keyword_entity_sources",
@@ -138,6 +140,10 @@ const REQUIRED_INDEXES = [
   "product_profile_runs_result_profile_idx",
   "product_profile_invocation_attempts_project_idx",
   "product_profile_invocation_attempts_unresolved_idx",
+  "topic_model_generation_runs_project_created_idx",
+  "topic_model_generation_runs_result_revision_idx",
+  "topic_model_generation_invocation_attempts_project_idx",
+  "topic_model_generation_invocation_attempts_unresolved_idx",
   "keyword_occurrences_project_collected_idx",
   "keyword_entities_project_created_idx",
   "keyword_entities_project_review_idx",
@@ -267,6 +273,10 @@ const REQUIRED_TRIGGERS = [
   "async_runs_product_profile_result_guard",
   "product_profile_invocation_attempts_transition_guard",
   "icp_profiles_product_profile_provenance_guard",
+  "topic_model_generation_runs_provenance_guard",
+  "topic_model_generation_runs_frozen_input_guard",
+  "async_runs_topic_model_generation_result_guard",
+  "topic_model_generation_invocation_attempts_transition_guard",
   "keyword_occurrences_lineage_guard",
   "keyword_occurrences_voc_lineage_guard",
   "keyword_occurrences_append_only",
@@ -311,6 +321,7 @@ const REQUIRED_TRIGGERS = [
   "measurement_ga4_campaigns_lineage_guard",
   "measurement_ga4_campaigns_append_only",
   "keyword_review_decisions_projection_guard",
+  "keyword_review_decisions_analysis_invocation_guard",
   "topic_model_revisions_mutation_guard",
   "topic_model_revisions_topology_guard",
   "topic_node_identities_creation_guard",
@@ -362,6 +373,15 @@ const REQUIRED_ROUTINES = [
   "finalize_product_profile_invocation_attempt",
   "mark_product_profile_invocation_outcome_unknown",
   "validate_product_profile_provenance",
+  "enforce_topic_model_generation_run_provenance",
+  "enforce_topic_model_generation_run_frozen_input",
+  "enforce_topic_model_generation_async_result",
+  "enforce_topic_model_generation_invocation_attempt_transition",
+  "reserve_topic_model_generation_invocation_attempt",
+  "finalize_topic_model_generation_invocation_attempt",
+  "mark_topic_model_generation_invocation_outcome_unknown",
+  "terminalize_topic_model_generation_run",
+  "enforce_keyword_review_analysis_invocation",
   "enforce_keyword_occurrence_lineage",
   "enforce_keyword_entity_mutation",
   "initialize_keyword_review_decision",
@@ -426,7 +446,7 @@ const REQUIRED_ROUTINES = [
   "enforce_backlink_page_metric_insert",
 ] as const;
 
-const REQUIRED_COLUMNS = [
+const REQUIRED_NON_NULL_TEXT_COLUMNS = [
   ["publication_attempts", "approved_artifact_content_hash"],
   ["publication_attempts", "preview_checksum"],
   ["publication_attempts", "content_checksum"],
@@ -445,6 +465,23 @@ const REQUIRED_COLUMNS = [
   ["backlink_authority_snapshots", "checksum"],
   ["backlink_facts", "source_ref"],
   ["backlink_facts", "verification_status"],
+  ["topic_model_generation_runs", "generation_version"],
+  ["topic_model_generation_runs", "prompt_set_version"],
+  ["topic_model_generation_runs", "input_hash"],
+  ["topic_model_generation_invocation_attempts", "provider"],
+  ["topic_model_generation_invocation_attempts", "model"],
+  ["topic_model_generation_invocation_attempts", "prompt_set_version"],
+  ["topic_model_generation_invocation_attempts", "input_hash"],
+  ["topic_model_generation_invocation_attempts", "status"],
+] as const;
+
+const REQUIRED_TYPED_COLUMNS = [
+  {
+    table: "keyword_review_decisions",
+    column: "analysis_invocation_id",
+    dataType: "uuid",
+    isNullable: "YES",
+  },
 ] as const;
 
 const REQUIRED_DIGEST_SIGNATURES = [
@@ -490,7 +527,7 @@ export async function checkMigrations(
          FROM information_schema.columns
         WHERE table_schema = 'app'`,
     );
-    const columnSet = new Set(
+    const nonNullTextColumnSet = new Set(
       columns.rows
         .filter(
           (row) =>
@@ -498,10 +535,34 @@ export async function checkMigrations(
         )
         .map((row) => `${row.table_name}.${row.column_name}`),
     );
-    for (const [table, column] of REQUIRED_COLUMNS) {
+    for (const [table, column] of REQUIRED_NON_NULL_TEXT_COLUMNS) {
       const qualified = `${table}.${column}`;
-      if (!columnSet.has(qualified)) {
+      if (!nonNullTextColumnSet.has(qualified)) {
         problems.push(`missing required non-null text column app.${qualified}`);
+      }
+    }
+    const columnsByName = new Map(
+      columns.rows.map((row) => [
+        `${row.table_name}.${row.column_name}`,
+        row,
+      ]),
+    );
+    for (const {
+      table,
+      column,
+      dataType,
+      isNullable,
+    } of REQUIRED_TYPED_COLUMNS) {
+      const qualified = `${table}.${column}`;
+      const actual = columnsByName.get(qualified);
+      if (
+        actual?.data_type !== dataType ||
+        actual.is_nullable !== isNullable
+      ) {
+        const nullability = isNullable === "YES" ? "nullable" : "non-null";
+        problems.push(
+          `missing required ${nullability} ${dataType} column app.${qualified}`,
+        );
       }
     }
 
@@ -757,7 +818,8 @@ async function main(): Promise<void> {
   }
   console.log(
     `Migration check passed: ${EXPECTED_TABLES.length} app tables, ` +
-      `${REQUIRED_COLUMNS.length} authority hash columns, ` +
+      `${REQUIRED_NON_NULL_TEXT_COLUMNS.length} required non-null text columns, ` +
+      `${REQUIRED_TYPED_COLUMNS.length} typed lineage columns, ` +
       `${REQUIRED_INDEXES.length} indexes, ${REQUIRED_TRIGGERS.length} triggers, and ` +
       `${REQUIRED_ROUTINES.length} routines present.`,
   );

@@ -12,6 +12,7 @@ import {
   dataforseoAdapter,
   DATAFORSEO_METHOD_VERSION,
   DATAFORSEO_ROW_CAP_STOP_REASON,
+  normalizeDataForSeoRankedKeywordMetrics,
   type DataForSeoCollectionLocation,
   type DataForSeoRaw,
   type DataForSeoRawRequest,
@@ -734,6 +735,10 @@ function sanitizeRankedRows(
             row.searchVolume,
             `DataForSEO ranked-keywords row ${index} searchVolume`,
           );
+    const keywordMetrics = normalizeDataForSeoRankedKeywordMetrics(
+      row,
+      `DataForSEO ranked-keywords row ${index}`,
+    );
     const currentUrl =
       row.currentUrl === null
         ? null
@@ -755,6 +760,7 @@ function sanitizeRankedRows(
     return {
       keyword: row.keyword.trim(),
       searchVolume,
+      ...keywordMetrics,
       currentUrl,
       currentRank,
     };

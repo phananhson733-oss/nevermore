@@ -50,6 +50,17 @@ describe("pg-boss queue contract", () => {
     });
   });
 
+  it("registers Topic Model generation as a bounded internal model queue", () => {
+    expect(QUEUE_NAMES).toContain("topic-model.generate");
+    expect(QUEUE_CONFIG["topic-model.generate"]).toEqual({
+      expireInSeconds: 300,
+      retryLimit: 2,
+      retryBackoff: true,
+      retryDelay: TRANSIENT_RETRY_DELAY_SECONDS,
+      heartbeatSeconds: 60,
+    });
+  });
+
   it("gives publication a bounded non-replaying external-write window", () => {
     expect(QUEUE_NAMES).toContain("publication");
     expect(QUEUE_CONFIG.publication).toEqual({

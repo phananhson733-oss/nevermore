@@ -684,6 +684,8 @@ function csvObservations(
         keyword: `${fixture.keywordPhrase} ${index + 1}`,
         clusterKey: fixture.keywordCluster,
         searchVolume: 100,
+        keywordDifficulty: null,
+        providerSearchIntent: null,
         currentUrl: null,
         currentRank: null,
         competitorDomain: "fixture-competitor.example",

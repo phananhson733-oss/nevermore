@@ -137,6 +137,15 @@ export interface CsvKeywordProjection {
   readonly clusterKey: string;
   /** null when the source cell was empty (spec §7.5); never 0. */
   readonly searchVolume: number | null;
+  /** null when the provider omitted or could not supply keyword difficulty. */
+  readonly keywordDifficulty: number | null;
+  /** null when the provider omitted or could not supply search intent. */
+  readonly providerSearchIntent:
+    | "informational"
+    | "navigational"
+    | "commercial"
+    | "transactional"
+    | null;
   readonly currentUrl: string | null;
   readonly currentRank: number | null;
   readonly competitorDomain: string | null;

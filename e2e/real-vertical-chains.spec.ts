@@ -635,11 +635,11 @@ async function runDiagnosisAndConfirmFinding(
     .getByRole("button")
     .first()
     .click();
-  await page
+  const goneTarget = page
     .locator("[data-opportunity-detail]")
-    .getByRole("button", { name: "/gone" })
-    .first()
-    .click();
+    .getByRole("button", { name: /^\/gone\b/ });
+  await expect(goneTarget).toHaveCount(1);
+  await goneTarget.click();
   // Drilling from the Opportunity pins its primary Finding, so the full
   // panel opens directly in the Opportunity Review state where Confirm lives.
   const review = page.locator('[data-detail-panel="opportunity-review"]');

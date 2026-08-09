@@ -5,6 +5,7 @@ import {
   ConfirmedProductProfileRowDto as ConfirmedProductProfileRowSchema,
   GeoCitationEvidenceResponse as GeoCitationEvidenceResponseSchema,
   GrowthMapInternalLinkMap as GrowthMapInternalLinkMapSchema,
+  GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseSchema,
   GrowthMapTopicModelInsights as GrowthMapTopicModelInsightsSchema,
   GrowthMapUrlDetailResponse as GrowthMapUrlDetailResponseSchema,
   GrowthMapUrlPortfolioResponse as GrowthMapUrlPortfolioResponseSchema,
@@ -17,6 +18,8 @@ import {
   type ConfirmedProductProfileRowDto,
   type GeoCitationEvidenceResponse,
   type GrowthMapInternalLinkMap,
+  type GrowthMapKeywordLibraryItem,
+  type GrowthMapKeywordLibraryResponse,
   type GrowthMapTopicModelInsights,
   type GrowthMapUrlDetailResponse,
   type GrowthMapUrlFinding,
@@ -956,6 +959,11 @@ const E2E_GROWTH_MAP_TOPIC_ALIAS_ID =
   "00000000-0000-4000-8000-000000000831";
 const E2E_GROWTH_MAP_TOPIC_ACTOR_ID =
   "00000000-0000-4000-8000-000000000832";
+export const E2E_GROWTH_MAP_KEYWORD_IDS = [
+  "00000000-0000-4000-8000-000000000840",
+  "00000000-0000-4000-8000-000000000841",
+  "00000000-0000-4000-8000-000000000842",
+] as const;
 const E2E_SEARCH_QUERY_OBSERVATION_ID =
   "00000000-0000-4000-8000-000000000833";
 const E2E_SEARCH_QUERY_SNAPSHOT_ID =
@@ -986,6 +994,41 @@ export const E2E_ONBOARDING_URL = "https://example.test/customer-onboarding";
 export const E2E_CANONICAL_ACTION_ID = action.id;
 /** The technical-ticket Artifact promoted to `ready` when work is marked done. */
 export const E2E_ARTIFACT_ID = artifact.id;
+export const E2E_CTR_ACTION_ID = "00000000-0000-4000-8000-000000000837";
+export const E2E_CONTENT_ACTION_ID = "00000000-0000-4000-8000-000000000838";
+export const E2E_CONTENT_BRIEF_ARTIFACT_ID =
+  "00000000-0000-4000-8000-000000000881";
+export const E2E_ENGLISH_BLOG_DRAFT_ARTIFACT_ID =
+  "00000000-0000-4000-8000-000000000882";
+
+export function growthMapDeliveryArtifactFixture(input: {
+  readonly id: string;
+  readonly revisionId: string;
+  readonly actionId: string;
+  readonly artifactType:
+    | "content_brief"
+    | "english_blog_draft"
+    | "metadata_rewrite";
+  readonly status: "draft" | "ready";
+  readonly currentRevision: number;
+}) {
+  return {
+    ...artifact,
+    id: input.id,
+    actionId: input.actionId,
+    artifactType: input.artifactType,
+    status: input.status,
+    generationMode: "structured_llm" as const,
+    currentRevision: input.currentRevision,
+    current: {
+      ...artifact.current,
+      id: input.revisionId,
+      revision: input.currentRevision,
+      content: `Current ${input.artifactType} fixture.`,
+      contentHash: `sha256:e2e-${input.id}`,
+    },
+  };
+}
 
 const AUDIT_OBSERVED_AT = NOW;
 const RECHECK_OBSERVED_AT = "2026-07-21T09:00:00.000Z";
@@ -1314,7 +1357,7 @@ const OPPORTUNITY_FIXTURE_BLUEPRINT = {
       "Rewrite the title and description around the observed onboarding intent.",
     expectedOutcome:
       "The next review can compare the exact metadata change against later observations.",
-    actionId: "00000000-0000-4000-8000-000000000837",
+    actionId: E2E_CTR_ACTION_ID,
   },
   content: {
     workShape: "improve",
@@ -1326,7 +1369,7 @@ const OPPORTUNITY_FIXTURE_BLUEPRINT = {
       "Expand the existing guide around the governed onboarding questions and decision criteria.",
     expectedOutcome:
       "The page covers the governed intent more completely without inventing a ranking outcome.",
-    actionId: "00000000-0000-4000-8000-000000000838",
+    actionId: E2E_CONTENT_ACTION_ID,
   },
 } as const satisfies Readonly<
   Record<
@@ -1612,7 +1655,9 @@ export function growthMapTopicWorkspaceFixture(): TopicModelWorkspaceProjection 
       state: "confirmed",
       confirmedAt: "2026-07-18T11:00:00.000Z",
       confirmedBy: E2E_GROWTH_MAP_TOPIC_ACTOR_ID,
+      confirmationMode: "user",
       contentHash: "e".repeat(64),
+      generationSummary: null,
     },
     draft: null,
     generatedAt: AUDIT_OBSERVED_AT,
@@ -1647,6 +1692,223 @@ export function growthMapTopicInsightsFixture(): GrowthMapTopicModelInsights {
       limitations: ["One governed Keyword still requires a new asset."],
     },
     generatedAt: AUDIT_OBSERVED_AT,
+  });
+}
+
+function growthMapKeywordItemFixture(
+  index: 0 | 1 | 2,
+): GrowthMapKeywordLibraryItem {
+  const displayKeywords = [
+    "customer onboarding automation",
+    "customer onboarding checklist",
+    "AI customer onboarding assistant",
+  ] as const;
+  const searchIntents = [
+    "commercial",
+    "informational",
+    "transactional",
+  ] as const;
+  const volumes = [720, 480, null] as const;
+  const difficulties = [27, null, 31] as const;
+  const snapshotId = measurementFixtureId(900 + index * 3);
+  const observationId = measurementFixtureId(901 + index * 3);
+  const occurrenceId = measurementFixtureId(902 + index * 3);
+  const metric = (
+    valuePointer:
+      | "/valueJson/searchVolume"
+      | "/valueJson/keywordDifficulty",
+    value: number,
+  ) => ({
+    snapshotId,
+    observationId,
+    valuePointer,
+    observedAt: AUDIT_OBSERVED_AT,
+    freshness: "unknown" as const,
+    limitation:
+      "DataForSEO did not expose a separate provider data-as-of timestamp.",
+    value,
+  });
+  const mappedTarget =
+    index === 0
+      ? {
+          kind: "existing_page" as const,
+          reviewState: "approved" as const,
+          revision: 2,
+          reason: "Confirmed against the exact onboarding page.",
+          sitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
+          normalizedUrl: "https://relayops.com/customer-onboarding/",
+        }
+      : index === 1
+        ? {
+            kind: "existing_page" as const,
+            reviewState: "approved" as const,
+            revision: 2,
+            reason: "Confirmed against the exact automation guide.",
+            sitePageId: E2E_SECOND_SITE_PAGE_ID,
+            normalizedUrl:
+              "https://relayops.com/blog/customer-onboarding-automation/",
+          }
+        : {
+            kind: "new_asset" as const,
+            reviewState: "approved" as const,
+            revision: 2,
+            reason: "No exact collected page answers this governed demand.",
+          };
+
+  return {
+    projectId: E2E_PROJECT_ID,
+    keywordId: E2E_GROWTH_MAP_KEYWORD_IDS[index],
+    displayKeyword: displayKeywords[index],
+    normalizedKeyword: displayKeywords[index].toLowerCase(),
+    marketCode: "US",
+    languageTag: "en-US",
+    queryKind: "search_query",
+    status: "approved",
+    reviewOrigin: "system_suggestion",
+    revision: 2,
+    intent: searchIntents[index],
+    searchIntent:
+      index === 2
+        ? {
+            value: searchIntents[index],
+            authority: "llm_generated",
+            snapshotId: null,
+            observationId: null,
+            analysisInvocationId: measurementFixtureId(920),
+            observedAt: null,
+            limitation:
+              "Generated intent is reviewable and does not replace missing provider evidence.",
+          }
+        : {
+            value: searchIntents[index],
+            authority: "provider_observed",
+            snapshotId,
+            observationId,
+            analysisInvocationId: null,
+            observedAt: AUDIT_OBSERVED_AT,
+            limitation: "Provider classification from the exact normalized row.",
+          },
+    buyerStage: "consideration",
+    cluster: {
+      clusterId: E2E_GROWTH_MAP_TOPIC_NODE_ID,
+      topicModelRevision: 3,
+      name: "Customer onboarding",
+    },
+    recollection:
+      index === 1
+        ? {
+            reason: "historical_dataforseo_observation_missing_fields",
+            fields: ["keyword_difficulty"],
+          }
+        : index === 2
+          ? {
+              reason: "historical_dataforseo_observation_missing_fields",
+              fields: ["provider_search_intent"],
+            }
+          : null,
+    classificationLimitations: {
+      intent: null,
+      buyerStage: null,
+      cluster: null,
+    },
+    mappedTarget,
+    sourceOccurrences: [
+      {
+        occurrenceId,
+        sourceKind: "dataforseo_ranked",
+        snapshotId,
+        sourceObservationId: observationId,
+        sourcePointer: "/valueJson/keyword",
+        collectedAt: AUDIT_OBSERVED_AT,
+        providerDataAsOf: null,
+        freshness: "unknown",
+        limitation:
+          "DataForSEO did not expose a separate provider data-as-of timestamp.",
+        scopeBasis: "provider_collection_scope",
+        scopeLimitation:
+          "Observed within the frozen relayops.com US en-US ranked-keyword scope.",
+        marketCode: "US",
+        languageTag: "en-US",
+      },
+    ],
+    metrics: {
+      volume:
+        volumes[index] === null
+          ? null
+          : metric("/valueJson/searchVolume", volumes[index]),
+      kd:
+        difficulties[index] === null
+          ? null
+          : metric("/valueJson/keywordDifficulty", difficulties[index]),
+      currentRank: null,
+      currentUrl: null,
+      competitorDomain: null,
+      competitorRank: null,
+      limitations: {
+        volume:
+          volumes[index] === null
+            ? "The normalized historical row did not expose search volume."
+            : null,
+        kd:
+          difficulties[index] === null
+            ? "The normalized historical row did not expose keyword difficulty."
+            : null,
+        currentRank: "No exact rank observation is available for this row.",
+        currentUrl: "No exact ranking URL observation is available for this row.",
+        competitorDomain:
+          "No exact competitor-domain observation is available for this row.",
+        competitorRank:
+          "No exact competitor-rank observation is available for this row.",
+      },
+    },
+    coverage: {
+      availability: "partial",
+      limitations: [
+        "Provider data-as-of is unavailable and some optional metrics are absent.",
+      ],
+    },
+  };
+}
+
+function growthMapKeywordLibraryFixture(input?: {
+  readonly data?: readonly GrowthMapKeywordLibraryItem[];
+  readonly diagnosticRunId?: string | null;
+  readonly nextCursor?: string | null;
+  readonly live?: boolean;
+}): GrowthMapKeywordLibraryResponse {
+  const data = input?.data ?? ([0, 1, 2] as const).map(growthMapKeywordItemFixture);
+  const nextCursor = input?.nextCursor ?? null;
+  return GrowthMapKeywordLibraryResponseSchema.parse({
+    projectId: E2E_PROJECT_ID,
+    diagnosticRunId:
+      input?.diagnosticRunId !== undefined
+        ? input.diagnosticRunId
+        : input?.live
+          ? null
+          : E2E_AUDIT_DIAGNOSTIC_RUN_ID,
+    data,
+    meta: {
+      limit: 100,
+      nextCursor,
+      hasNext: nextCursor !== null,
+      coverage: {
+        availability: "partial",
+        limitations: [
+          "Provider data-as-of is unavailable and some optional metrics are absent.",
+        ],
+      },
+      sourceCounts: input?.live
+        ? {
+            all: 3,
+            csv_import: 0,
+            dataforseo_ranked: 3,
+            gsc_top_query: 0,
+            interview_summary: 0,
+            user_review: 0,
+            manual: 0,
+          }
+        : null,
+    },
   });
 }
 
@@ -2448,7 +2710,12 @@ export interface GrowthVerticalApiState {
   readonly internalLinkMapReads: string[];
   readonly geoCitationReads: string[];
   readonly completeUrlPageReads: (string | null)[];
+  readonly completeKeywordPageReads: (string | null)[];
   readonly completeOpportunityPageReads: (string | null)[];
+  readonly completeArtifactPageReads: (string | null)[];
+  readonly keywordDeliveryArtifacts: ReturnType<
+    typeof growthMapDeliveryArtifactFixture
+  >[];
   readonly confirmedFindingIds: Set<string>;
   /**
    * First-diagnosis seam (R1): while false, the audit projection answers with
@@ -2458,6 +2725,8 @@ export interface GrowthVerticalApiState {
    */
   auditProjectionAvailable: boolean;
   topicModelReadsFail: boolean;
+  keywordDiagnosticRunIdOverride: string | null | undefined;
+  liveKeywordPageHasNext: boolean;
 }
 
 /**
@@ -2480,11 +2749,53 @@ export async function installGrowthVerticalApi(
     internalLinkMapReads: [],
     geoCitationReads: [],
     completeUrlPageReads: [],
+    completeKeywordPageReads: [],
     completeOpportunityPageReads: [],
+    completeArtifactPageReads: [],
+    keywordDeliveryArtifacts: [],
     confirmedFindingIds: new Set<string>(),
     auditProjectionAvailable: options.auditProjectionAvailable ?? true,
     topicModelReadsFail: false,
+    keywordDiagnosticRunIdOverride: undefined,
+    liveKeywordPageHasNext: false,
   };
+
+  await page.route(`**${BASE}/artifacts**`, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() !== "GET" || url.pathname !== `${BASE}/artifacts`) {
+      await route.fallback();
+      return;
+    }
+
+    const cursor = url.searchParams.get("cursor");
+    state.completeArtifactPageReads.push(cursor);
+    const items = [artifact, ...state.keywordDeliveryArtifacts];
+    if (cursor === null) {
+      const hasNext = items.length > 2;
+      await json(route, {
+        data: items.slice(0, 2),
+        meta: {
+          limit: 100,
+          nextCursor: hasNext ? "artifacts-opaque-page-2" : null,
+          hasNext,
+        },
+      });
+      return;
+    }
+    if (cursor === "artifacts-opaque-page-2") {
+      await json(route, {
+        data: items.slice(2),
+        meta: { limit: 100, nextCursor: null, hasNext: false },
+      });
+      return;
+    }
+    await json(
+      route,
+      problem("VALIDATION_ERROR", "Unknown Artifact cursor.", 400),
+      400,
+    );
+  });
 
   // Growth Audit projection: URL portfolio (list) and selected URL detail.
   await page.route(`**${BASE}/audit/urls**`, async (route) => {
@@ -2639,6 +2950,134 @@ export async function installGrowthVerticalApi(
         data: opportunity,
       },
     });
+  });
+
+  await page.route(`**${BASE}/audit/keywords**`, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const listPath = `${BASE}/audit/keywords`;
+    if (
+      request.method() === "GET" &&
+      url.pathname.startsWith(`${listPath}/`)
+    ) {
+      if (url.pathname.endsWith("/rank-history")) {
+        await json(
+          route,
+          problem(
+            "NOT_FOUND",
+            "No canonical rank history is available for this Keyword.",
+            404,
+          ),
+          404,
+        );
+        return;
+      }
+      const keywordId = decodeURIComponent(
+        url.pathname.slice(`${listPath}/`.length),
+      );
+      const keywordIndex = E2E_GROWTH_MAP_KEYWORD_IDS.indexOf(
+        keywordId as (typeof E2E_GROWTH_MAP_KEYWORD_IDS)[number],
+      );
+      if (keywordIndex < 0 || keywordIndex > 2) {
+        await json(route, problem("NOT_FOUND", "Keyword not found.", 404), 404);
+        return;
+      }
+      const item = growthMapKeywordItemFixture(keywordIndex as 0 | 1 | 2);
+      await json(route, {
+        data: {
+          projectId: E2E_PROJECT_ID,
+          data:
+            state.liveKeywordPageHasNext && keywordIndex === 2
+              ? {
+                  ...item,
+                  mappedTarget: {
+                    kind: "unassigned",
+                    reviewState: "unreviewed",
+                    revision: item.mappedTarget.revision,
+                    reason: "Awaiting an exact page-mapping decision.",
+                  },
+                }
+              : item,
+        },
+      });
+      return;
+    }
+    if (
+      request.method() !== "GET" ||
+      url.pathname !== listPath
+    ) {
+      await route.fallback();
+      return;
+    }
+
+    const pinnedRunId = url.searchParams.get("diagnosticRunId");
+    if (pinnedRunId === null) {
+      const liveData = ([0, 1, 2] as const).map(growthMapKeywordItemFixture);
+      if (state.liveKeywordPageHasNext) {
+        const last = liveData[2]!;
+        liveData[2] = {
+          ...last,
+          mappedTarget: {
+            kind: "unassigned",
+            reviewState: "unreviewed",
+            revision: last.mappedTarget.revision,
+            reason: "Awaiting an exact page-mapping decision.",
+          },
+        };
+      }
+      await json(route, {
+        data: growthMapKeywordLibraryFixture({
+          data: liveData,
+          live: true,
+          nextCursor: state.liveKeywordPageHasNext
+            ? "keywords-live-opaque-page-2"
+            : null,
+        }),
+      });
+      return;
+    }
+    if (pinnedRunId !== E2E_AUDIT_DIAGNOSTIC_RUN_ID) {
+      await json(
+        route,
+        problem("NOT_FOUND", "Keyword inventory is not in this frozen audit.", 404),
+        404,
+      );
+      return;
+    }
+
+    const cursor = url.searchParams.get("cursor");
+    const responseDiagnosticRunId =
+      state.keywordDiagnosticRunIdOverride === undefined
+        ? pinnedRunId
+        : state.keywordDiagnosticRunIdOverride;
+    state.completeKeywordPageReads.push(cursor);
+    if (cursor === null) {
+      await json(route, {
+        data: growthMapKeywordLibraryFixture({
+          data: [growthMapKeywordItemFixture(0)],
+          diagnosticRunId: responseDiagnosticRunId,
+          nextCursor: "keywords-opaque-page-2",
+        }),
+      });
+      return;
+    }
+    if (cursor === "keywords-opaque-page-2") {
+      await json(route, {
+        data: growthMapKeywordLibraryFixture({
+          data: [
+            growthMapKeywordItemFixture(1),
+            growthMapKeywordItemFixture(2),
+          ],
+          diagnosticRunId: responseDiagnosticRunId,
+        }),
+      });
+      return;
+    }
+    await json(
+      route,
+      problem("VALIDATION_ERROR", "Unknown Keyword cursor.", 400),
+      400,
+    );
   });
 
   await page.route(

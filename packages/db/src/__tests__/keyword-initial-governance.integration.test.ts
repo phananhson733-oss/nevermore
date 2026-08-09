@@ -94,6 +94,20 @@ async function applyMigration(
   );
 }
 
+async function applyMigrationsAfter(
+  client: pg.Client | pg.Pool,
+  migrationFile: string,
+): Promise<void> {
+  const migrationFiles = listMigrationFiles();
+  const migrationIndex = migrationFiles.indexOf(migrationFile);
+  if (migrationIndex < 0) {
+    throw new Error(`migration is not in the ordered set: ${migrationFile}`);
+  }
+  for (const remainingMigration of migrationFiles.slice(migrationIndex + 1)) {
+    await applyMigration(client, remainingMigration);
+  }
+}
+
 async function waitForRelationLock(
   observer: pg.Client,
   backendPid: number,
@@ -218,6 +232,24 @@ describeDb("0032 initial Keyword Review authority", () => {
 
     await applyMigration(handle.pool, MIGRATION_FILE);
     await applyMigration(handle.pool, MIGRATION_FILE);
+    await handle.pool.query(
+      `INSERT INTO app.keyword_entities (
+         id, workspace_id, project_id, display_keyword, normalized_keyword,
+         market, language_tag, query_kind, first_seen_at, last_seen_at,
+         created_at, updated_at
+       ) VALUES (
+         $1,$2,$3,'Future Governed Candidate','future governed candidate',
+         'US','en-US','search_query',
+         '2026-07-28T08:00:00.000Z','2026-07-28T08:00:00.000Z',
+         $4,$4
+       )`,
+      [
+        futureKeywordId,
+        workspaceId,
+        projectId,
+        futureGovernedInstant,
+      ],
+    );
   });
 
   afterAll(async () => {
@@ -308,28 +340,13 @@ describeDb("0032 initial Keyword Review authority", () => {
         },
       },
     ]);
-    await expect(
-      new KeywordGovernanceRepository(handle.db).findCurrent(
-        { workspaceId, projectId },
-        defaultKeywordId,
-      ),
-    ).resolves.toMatchObject({
-      decision: {
-        governanceRevision: 0,
-        decisionOrigin: "system_suggestion",
-        decidedBy: null,
-      },
-      reviewedProjection: {
-        earlierHistoryAvailable: false,
-      },
-    });
   });
 
   it.each([
     ["nonzero", nonzeroKeywordId],
     ["nondefault", nondefaultKeywordId],
   ])(
-    "leaves the corrupt %s missing-ledger state visible to fail-closed readers",
+    "leaves the corrupt %s missing-ledger state unbackfilled",
     async (_label, keywordId) => {
       const rows = await handle.pool.query<{ count: string }>(
         `SELECT count(*)::text AS count
@@ -340,14 +357,6 @@ describeDb("0032 initial Keyword Review authority", () => {
         [workspaceId, projectId, keywordId],
       );
       expect(rows.rows).toEqual([{ count: "0" }]);
-      await expect(
-        new KeywordGovernanceRepository(handle.db).findCurrent(
-          { workspaceId, projectId },
-          keywordId,
-        ),
-      ).rejects.toMatchObject(
-        new KeywordGovernanceIntegrityError("CURRENT_DECISION_MISSING"),
-      );
     },
   );
 
@@ -388,25 +397,7 @@ describeDb("0032 initial Keyword Review authority", () => {
     ]);
   });
 
-  it("uses one DB-authoritative instant for concurrent and successive reviews even when the prior instant is in the future", async () => {
-    await handle.pool.query(
-      `INSERT INTO app.keyword_entities (
-         id, workspace_id, project_id, display_keyword, normalized_keyword,
-         market, language_tag, query_kind, first_seen_at, last_seen_at,
-         created_at, updated_at
-       ) VALUES (
-         $1,$2,$3,'Future Governed Candidate','future governed candidate',
-         'US','en-US','search_query',
-         '2026-07-28T08:00:00.000Z','2026-07-28T08:00:00.000Z',
-         $4,$4
-       )`,
-      [
-        futureKeywordId,
-        workspaceId,
-        projectId,
-        futureGovernedInstant,
-      ],
-    );
+  it("keeps exact 0032 decisions readable by the current repository and uses one DB-authoritative review instant", async () => {
     await expect(
       handle.pool.query(
         `UPDATE app.keyword_entities
@@ -418,7 +409,38 @@ describeDb("0032 initial Keyword Review authority", () => {
       ),
     ).rejects.toMatchObject({ code: "23514" });
 
+    // Every direct 0032 backfill, trigger, and mirror-guard assertion above ran
+    // against the authentic historical schema. Current repository code below
+    // runs only after the same database follows the ordered path to schema head.
+    await applyMigrationsAfter(handle.pool, MIGRATION_FILE);
+
     const scope = { workspaceId, projectId };
+    await expect(
+      new KeywordGovernanceRepository(handle.db).findCurrent(
+        scope,
+        defaultKeywordId,
+      ),
+    ).resolves.toMatchObject({
+      decision: {
+        governanceRevision: 0,
+        decisionOrigin: "system_suggestion",
+        decidedBy: null,
+      },
+      reviewedProjection: {
+        earlierHistoryAvailable: false,
+      },
+    });
+    for (const keywordId of [nonzeroKeywordId, nondefaultKeywordId]) {
+      await expect(
+        new KeywordGovernanceRepository(handle.db).findCurrent(
+          scope,
+          keywordId,
+        ),
+      ).rejects.toMatchObject(
+        new KeywordGovernanceIntegrityError("CURRENT_DECISION_MISSING"),
+      );
+    }
+
     const initialReview = {
       expectedGovernanceRevision: 0,
       status: "excluded",
@@ -751,6 +773,11 @@ describeDb("0031 to 0032 Keyword ingestion upgrade fence", () => {
 
     const readHandle = createDbHandle(upgradeDatabaseUrl());
     try {
+      // The lock assertions above prove the live 0031 -> 0032 fence. Upgrade
+      // through the ordered head before asking the current repository to read
+      // the resulting historical decisions.
+      await applyMigrationsAfter(readHandle.pool, MIGRATION_FILE);
+
       const repository = new KeywordGovernanceRepository(readHandle.db);
       for (const keywordId of [
         beforeFenceKeywordId,

@@ -1040,6 +1040,16 @@ async function seedPublishedCompetitorGeneration(
     throw new Error("Could not skip the fixture dataforseo backlinks step.");
   }
   if (
+    !(await refreshes.skipStep(
+      projectScope,
+      analysisRefreshRunId,
+      "topic_model",
+      "insufficient_keyword_evidence",
+    ))
+  ) {
+    throw new Error("Could not skip the fixture Topic Model step.");
+  }
+  if (
     !(await refreshes.startStep(
       projectScope,
       analysisRefreshRunId,

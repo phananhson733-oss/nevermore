@@ -1193,6 +1193,103 @@ export type GrowthMapKeywordReviewOrigin = z.infer<
   typeof GrowthMapKeywordReviewOrigin
 >;
 
+export const GrowthMapKeywordSearchIntentAuthority = z.enum([
+  "user_confirmed",
+  "governed_legacy",
+  "provider_observed",
+  "llm_generated",
+  "unavailable",
+]);
+export type GrowthMapKeywordSearchIntentAuthority = z.infer<
+  typeof GrowthMapKeywordSearchIntentAuthority
+>;
+
+const CanonicalGeneratedSearchIntent = z.enum([
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+]);
+const ExactSearchIntentValue = z
+  .string()
+  .min(1)
+  .max(500)
+  .refine((value) => value === value.trim(), {
+    message: "Search intent value cannot have boundary whitespace",
+  });
+const ExactSearchIntentLimitation = z
+  .string()
+  .min(1)
+  .max(2000)
+  .refine((value) => value === value.trim(), {
+    message: "Search intent limitation cannot have boundary whitespace",
+  });
+const NullableExactSearchIntentLimitation =
+  ExactSearchIntentLimitation.nullable();
+const NullSearchIntentLineage = {
+  snapshotId: z.null(),
+  observationId: z.null(),
+  analysisInvocationId: z.null(),
+  observedAt: z.null(),
+} as const;
+
+/**
+ * Customer-readable search intent plus the exact authority that supplied it.
+ * `observedAt` belongs only to provider observations; user, legacy, and model
+ * decisions use their own durable decision/invocation lineage instead.
+ */
+export const GrowthMapKeywordSearchIntent = z.discriminatedUnion("authority", [
+  z
+    .object({
+      value: ExactSearchIntentValue,
+      authority: z.literal("user_confirmed"),
+      ...NullSearchIntentLineage,
+      limitation: NullableExactSearchIntentLimitation,
+    })
+    .strict(),
+  z
+    .object({
+      value: ExactSearchIntentValue,
+      authority: z.literal("governed_legacy"),
+      ...NullSearchIntentLineage,
+      limitation: NullableExactSearchIntentLimitation,
+    })
+    .strict(),
+  z
+    .object({
+      value: CanonicalGeneratedSearchIntent,
+      authority: z.literal("provider_observed"),
+      snapshotId: Uuid,
+      observationId: Uuid,
+      analysisInvocationId: z.null(),
+      observedAt: IsoDateTime,
+      limitation: NullableExactSearchIntentLimitation,
+    })
+    .strict(),
+  z
+    .object({
+      value: CanonicalGeneratedSearchIntent,
+      authority: z.literal("llm_generated"),
+      snapshotId: z.null(),
+      observationId: z.null(),
+      analysisInvocationId: Uuid,
+      observedAt: z.null(),
+      limitation: NullableExactSearchIntentLimitation,
+    })
+    .strict(),
+  z
+    .object({
+      value: z.null(),
+      authority: z.literal("unavailable"),
+      ...NullSearchIntentLineage,
+      limitation: ExactSearchIntentLimitation,
+    })
+    .strict(),
+]);
+export type GrowthMapKeywordSearchIntent = z.infer<
+  typeof GrowthMapKeywordSearchIntent
+>;
+
 export const GrowthMapKeywordMappingReviewState = z.enum([
   "unreviewed",
   "approved",
@@ -1590,11 +1687,26 @@ export type GrowthMapKeywordMetrics = z.infer<
 export const GrowthMapKeywordClusterRef = z
   .object({
     clusterId: Uuid,
+    topicModelRevision: z.number().int().positive().max(2_147_483_647),
     name: BoundedLabel,
   })
   .strict();
 export type GrowthMapKeywordClusterRef = z.infer<
   typeof GrowthMapKeywordClusterRef
+>;
+
+export const GrowthMapKeywordRecollection = z
+  .object({
+    reason: z.literal("historical_dataforseo_observation_missing_fields"),
+    fields: z
+      .array(z.enum(["keyword_difficulty", "provider_search_intent"]))
+      .min(1)
+      .max(2)
+      .refine(isUnique, "Recollection fields must be unique"),
+  })
+  .strict();
+export type GrowthMapKeywordRecollection = z.infer<
+  typeof GrowthMapKeywordRecollection
 >;
 
 const GrowthMapKeywordClassificationLimitations = z
@@ -1641,6 +1753,7 @@ const GrowthMapKeywordLibraryItemObject = z
     reviewOrigin: GrowthMapKeywordReviewOrigin.nullable(),
     revision: z.number().int().nonnegative(),
     intent: BoundedLabel.nullable(),
+    searchIntent: GrowthMapKeywordSearchIntent,
     buyerStage: BoundedLabel.nullable(),
     cluster: GrowthMapKeywordClusterRef.nullable(),
     classificationLimitations: GrowthMapKeywordClassificationLimitations,
@@ -1650,6 +1763,7 @@ const GrowthMapKeywordLibraryItemObject = z
       .min(1)
       .max(100),
     metrics: GrowthMapKeywordMetrics,
+    recollection: GrowthMapKeywordRecollection.nullable(),
     coverage: GrowthMapCoverage,
   })
   .strict();
@@ -1713,6 +1827,83 @@ export const GrowthMapKeywordLibraryItem =
       }
     });
 
+    if (
+      item.recollection !== null &&
+      !item.sourceOccurrences.some(
+        (occurrence) => occurrence.sourceKind === "dataforseo_ranked",
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recollection"],
+        message:
+          "Historical DataForSEO recollection requires a canonical DataForSEO occurrence",
+      });
+    }
+
+    const searchIntent = item.searchIntent;
+    if (
+      item.reviewOrigin === "user" &&
+      item.intent !== null &&
+      searchIntent.authority !== "user_confirmed"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "authority"],
+        message:
+          "A non-null user-governed intent must resolve as user-confirmed",
+      });
+    }
+    if (searchIntent.authority === "provider_observed") {
+      const hasExactProviderOccurrence = item.sourceOccurrences.some(
+        (occurrence) =>
+          occurrence.sourceKind === "dataforseo_ranked" &&
+          occurrence.snapshotId === searchIntent.snapshotId &&
+          occurrence.sourceObservationId === searchIntent.observationId,
+      );
+      if (!hasExactProviderOccurrence) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["searchIntent", "observationId"],
+          message:
+            "Provider search intent must reference one exact DataForSEO occurrence",
+        });
+      }
+    } else if (searchIntent.authority === "user_confirmed") {
+      if (item.reviewOrigin !== "user") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["searchIntent", "authority"],
+          message: "User-confirmed search intent requires a user review decision",
+        });
+      }
+      if (item.intent !== searchIntent.value) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["searchIntent", "value"],
+          message: "User-confirmed search intent must match governed intent",
+        });
+      }
+    } else if (searchIntent.authority === "governed_legacy") {
+      if (item.reviewOrigin === "user" || item.intent !== searchIntent.value) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["searchIntent", "authority"],
+          message:
+            "Legacy search intent must match a non-user governed intent",
+        });
+      }
+    } else if (
+      searchIntent.authority === "unavailable" &&
+      item.intent !== null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "authority"],
+        message: "Search intent cannot be unavailable when governed intent exists",
+      });
+    }
+
     for (const field of [
       "volume",
       "kd",
@@ -1745,6 +1936,7 @@ export type GrowthMapKeywordLibraryItem = z.infer<
 const GrowthMapKeywordLibraryResponseObject = z
   .object({
     projectId: Uuid,
+    diagnosticRunId: Uuid.nullable(),
     data: z.array(GrowthMapKeywordLibraryItem).max(100),
     meta: GrowthMapKeywordLibraryPageMeta,
   })

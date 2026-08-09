@@ -402,6 +402,9 @@ function validProjectionFor(
         keyword: "widget pricing",
         clusterKey: "widget pricing",
         searchVolume: 100,
+        keywordDifficulty: fixture.provider === "dataforseo" ? 37 : null,
+        providerSearchIntent:
+          fixture.provider === "dataforseo" ? "commercial" : null,
         currentUrl: `${SITE_ORIGIN}/fixture`,
         currentRank: 4,
         competitorDomain: null,
@@ -1102,6 +1105,8 @@ async function runGovernedContentGapFixture(
           keyword: `project management workflow ${index}`,
           clusterKey: "project management",
           searchVolume: 100,
+          keywordDifficulty: 37,
+          providerSearchIntent: "commercial",
           currentUrl: `${SITE_ORIGIN}/rank-${index}`,
           currentRank: index + 1,
           competitorDomain: null,
@@ -3459,6 +3464,45 @@ describe("diagnostic frozen snapshot validation", () => {
       );
       expect(result.transaction).toHaveBeenCalledOnce();
       expect(result.terminal).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["fractional KD", { keywordDifficulty: 1.5 }],
+    ["negative KD", { keywordDifficulty: -1 }],
+    ["above-100 KD", { keywordDifficulty: 101 }],
+    ["non-numeric KD", { keywordDifficulty: "37" }],
+    ["unknown provider intent", { providerSearchIntent: "research" }],
+  ] as const)(
+    "rejects DataForSEO keyword projection with %s before Context",
+    async (_label, patch) => {
+      const fixture = OBSERVATION_FIXTURES[6];
+      const result = await runObservationValidationFixture(
+        fixture.provider,
+        availableObservationRow(fixture, {
+          value_json: { ...validProjectionFor(fixture), ...patch },
+        }),
+      );
+
+      expect(result.contextBuild).not.toHaveBeenCalled();
+      expect(result.transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["keywordDifficulty", "providerSearchIntent"] as const)(
+    "requires DataForSEO keyword projection field %s",
+    async (field) => {
+      const fixture = OBSERVATION_FIXTURES[6];
+      const valueJson = validProjectionFor(fixture);
+      delete valueJson[field];
+
+      const result = await runObservationValidationFixture(
+        fixture.provider,
+        availableObservationRow(fixture, { value_json: valueJson }),
+      );
+
+      expect(result.contextBuild).not.toHaveBeenCalled();
+      expect(result.transaction).not.toHaveBeenCalled();
     },
   );
 });

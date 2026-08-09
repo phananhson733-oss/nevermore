@@ -14,11 +14,12 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
+Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0047_dataforseo_competitor_metrics.sql` (**47 migrations**).
+`0048_topic_model_generation.sql` (**48 migrations**), immediately after
+`0047_dataforseo_competitor_metrics.sql`.
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and
@@ -92,20 +93,26 @@ lineage, and immutable measurement windows. It does not yet include an external
 publication-attempt HTTP operation or a GitHub/WordPress provider write.
 
 `createAnalysisRefreshRun` is the server-owned full refresh command. Its fixed
-`analysis-refresh.plan.v2` runs required Crawl, optional connected GSC, optional
+`analysis-refresh.plan.v3` runs required Crawl, optional connected GSC, optional
 connected GA4, optional DataForSEO Search Landscape (DFS), optional
-`dataforseo_backlinks`, then required Growth Audit. Historical five-step
-`analysis-refresh.plan.v1` parents remain readable and resumable under their
-exact manifest; new parents use v2. Public
+`dataforseo_backlinks`, optional internal Topic Model generation, then required
+Growth Audit. Historical five-step `analysis-refresh.plan.v1` and six-step
+`analysis-refresh.plan.v2` parents remain readable and resumable only under
+their exact manifest/hash/ordinal; new parents use v3. Public
 `createCollectionRun` remains limited to `crawl`, `gsc`, and `ga4`; customers
-cannot submit DFS/Backlinks targets, market, language, limits, credentials, or
-provider queries. DFS v3 queries organic positions 1–100 and, only when domain overlap
-is empty, may use frozen GSC/Crawl/Product Profile seeds for one paid SERP
-Competitors fallback while preserving each seed's real source. Its optional AI
-citation sub-capability (`DATAFORSEO_AI_CITATIONS_ENABLED=false`) is independently
-default-off and only runs against an
-exact frozen cohort of 20 approved, mapping-confirmed GenerativeQuery rows under
-a server-pinned model; smaller or overflow cohorts make no paid AI request.
+cannot submit DFS/Backlinks/Topic targets, market, language, limits, credentials,
+provider queries, or model options. The internal Topic child freezes bounded
+input/resource and invocation-attempt ledgers, calls the model outside database
+transactions, and blocks silent retry after `reserved` or `outcome_unknown`.
+DFS v3 queries organic positions 1–100, persists canonical organic-overlap
+operands/ratio and immutable competitor-origin lineage, and, only when retained
+domain overlap is empty, may use frozen GSC/Crawl/Product Profile seeds for one
+paid SERP Competitors fallback while preserving each seed's real source. DFS
+v1/v2 remain exact read-only history. The optional AI citation sub-capability
+(`DATAFORSEO_AI_CITATIONS_ENABLED=false`) is independently default-off and only
+runs against an exact frozen cohort of 20 approved, mapping-confirmed
+GenerativeQuery rows under a server-pinned model; smaller or overflow cohorts
+make no paid AI request.
 
 DataForSEO Backlinks is a separate default-off rollout
 (`DATAFORSEO_BACKLINKS_ENABLED=false`) on top of the global DataForSEO gate. Its
@@ -129,6 +136,20 @@ candidate libraries; URL reads remain latest-generation. Only Keyword and
 Competitor detail GETs accept `view=review` for current governance, and that view
 is mutually exclusive with the generation pin. Keyword and Competitor PATCH
 commands reject every query parameter.
+
+Ranked-keyword observations retain DataForSEO keyword difficulty as an integer
+from 0 through 100 or `null`, plus canonical provider search intent or `null`;
+malformed present values fail closed, and missing KD is never presented as zero.
+The provenance-bearing `searchIntent` projection resolves user-confirmed,
+exact provider-observed, invocation-backed LLM-generated, governed legacy, then
+unavailable authority, without allowing a published pin to read newer lineage.
+
+Keyword content delivery is a read-only Growth Map projection over complete
+inventories: the exact mapped SitePage in the published run, content
+Opportunities that own that page, and current content Artifacts for their
+Actions. Topic peers, Finding-only previews, and technical outputs do not count
+as Keyword delivery; a current Artifact status is not external publication or
+live-change authority.
 
 Current authenticated diagnostics freeze an exact-key, hash-covered
 `contextProjection.v1` from the immutable confirmed Product Profile/legacy ICP

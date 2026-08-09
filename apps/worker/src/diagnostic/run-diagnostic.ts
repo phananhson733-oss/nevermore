@@ -928,6 +928,15 @@ const keywordGapProjectionSchema = z
       .min(1)
       .refine((value) => value.trim() === value),
     searchVolume: finiteNonnegative.nullable(),
+    keywordDifficulty: z.number().int().min(0).max(100).nullable(),
+    providerSearchIntent: z
+      .enum([
+        "informational",
+        "navigational",
+        "commercial",
+        "transactional",
+      ])
+      .nullable(),
     currentUrl: absoluteHttpUrlSchema.nullable(),
     currentRank: finiteNonnegative.nullable(),
     competitorDomain: competitorDomainSchema.nullable(),
