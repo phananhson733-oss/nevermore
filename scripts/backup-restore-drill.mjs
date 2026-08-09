@@ -710,7 +710,7 @@ function postgresProcessFailure(tool, code, termination, details = {}) {
   });
 }
 
-function runPostgresProcess({
+export function runPostgresProcess({
   tool,
   args,
   environment,
@@ -746,18 +746,21 @@ function runPostgresProcess({
       if (output !== "ignore") {
         child.stdout.on("data", (value) => {
           const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
-          outputBytes += chunk.length;
-          if (outputBytes > MAX_POSTGRES_OUTPUT_BYTES) {
-            outputLimitExceeded = true;
-            try {
-              child.kill("SIGKILL");
-            } catch {
-              // The close/error event still settles the process state.
+          if (hash) {
+            hash.update(chunk);
+          } else {
+            outputBytes += chunk.length;
+            if (outputBytes > MAX_POSTGRES_OUTPUT_BYTES) {
+              outputLimitExceeded = true;
+              try {
+                child.kill("SIGKILL");
+              } catch {
+                // The close/error event still settles the process state.
+              }
+              return;
             }
-            return;
+            chunks.push(chunk);
           }
-          if (hash) hash.update(chunk);
-          else chunks.push(chunk);
         });
         child.stdout.once("error", () => {
           fail(
