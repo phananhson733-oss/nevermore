@@ -224,7 +224,7 @@ type _SerpPointer = Expect<
 type _AiCitationPointer = Expect<
   Equal<
     AvailableAiCitationInsight["valuePointer"],
-    "/valueJson/aiCitationInsight"
+    "/valueJson/citedQueries"
   >
 >;
 type _SharedKeywordPointer = Expect<
@@ -316,7 +316,7 @@ describe("Competitor Library generated OpenAPI contract", () => {
       'valuePointer: "/valueJson/serpOverlap";',
     );
     expect(generated).toContain(
-      'valuePointer: "/valueJson/aiCitationInsight";',
+      'valuePointer: "/valueJson/citedQueries";',
     );
     expect(generated).toContain(
       'valuePointer: "/valueJson/intersections";',

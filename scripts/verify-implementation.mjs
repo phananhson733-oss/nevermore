@@ -1229,6 +1229,15 @@ function checkOpenApi() {
       "limitation",
       "availability",
       "value",
+      "attemptedQueries",
+      "observedQueries",
+      "unavailableQueries",
+      "cohortCoverage",
+      "querySetHash",
+      "platform",
+      "model",
+      "marketCode",
+      "languageTag",
     ],
   );
   assertClosedRequiredCompetitorSchema(
@@ -1293,7 +1302,7 @@ function checkOpenApi() {
         ?.properties?.availability?.const === "available" &&
       competitorSchemas.GrowthMapCompetitorAvailableAiCitationInsight
         .properties?.valuePointer?.const ===
-        "/valueJson/aiCitationInsight" &&
+        "/valueJson/citedQueries" &&
       competitorSchemas.GrowthMapCompetitorAvailableSharedKeywordInsight
         ?.properties?.availability?.const === "available" &&
       competitorSchemas.GrowthMapCompetitorAvailableSharedKeywordInsight

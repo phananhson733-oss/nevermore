@@ -3,15 +3,21 @@ import { z } from "zod";
 import {
   AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
+  CompetitorsRepository,
   contentHash,
   enqueueRunInTx,
   IcpProfilesRepository,
   IdempotencyRepository,
+  KeywordsRepository,
+  MAX_AI_CITATION_COHORT_CANDIDATE_READ,
+  MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
   ProjectsRepository,
   SitesRepository,
   SourceConnectionsRepository,
   type Executor,
+  type AiCitationCohortCandidateRow,
   type ProjectRow,
+  type SiteRow,
   type WorkspaceScope,
 } from "@sf/db";
 import {
@@ -20,7 +26,11 @@ import {
   type CreateAnalysisRefreshRunRequest,
 } from "@sf/contracts";
 import { ProblemError } from "@sf/observability";
-import { MAX_DATAFORSEO_SOURCE_VERIFICATIONS } from "@sf/sources";
+import {
+  DATAFORSEO_AI_CITATION_MAX_OUTPUT_TOKENS,
+  dataForSeoAiCitationQuerySetHash,
+  MAX_DATAFORSEO_SOURCE_VERIFICATIONS,
+} from "@sf/sources";
 import { getEnv } from "@/env";
 import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
@@ -30,6 +40,175 @@ import { runStatusUrl, toAsyncRunDto, type AsyncRunDto } from "./runs";
 const IDEMPOTENCY_SCOPE = "createAnalysisRefreshRun";
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_KEY = "analysis_refresh";
+const DATAFORSEO_AI_CITATION_COHORT_SIZE = 20;
+const NORMALIZED_COMPETITOR_DOMAIN =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+
+interface FrozenAiCitationQuery {
+  readonly entityId: string;
+  readonly revision: number;
+  readonly query: string;
+  readonly normalizedQuery: string;
+  readonly marketCode: string;
+  readonly languageTag: string;
+}
+
+export type FrozenDataForSeoAiCitationPolicy =
+  | { readonly state: "disabled" }
+  | {
+      readonly state: "skipped_insufficient_query_cohort";
+      readonly eligibleQueryCount: number;
+    }
+  | {
+      readonly state: "enabled";
+      readonly platform: "chat_gpt";
+      readonly requestedModel: string;
+      readonly attemptedQueries: 20;
+      readonly maxOutputTokens: typeof DATAFORSEO_AI_CITATION_MAX_OUTPUT_TOKENS;
+      readonly webSearch: true;
+      readonly querySetHash: string;
+      readonly queries: readonly FrozenAiCitationQuery[];
+      readonly trackedCompetitorDomains: readonly string[];
+    };
+
+const FrozenAiCitationQuerySchema = z
+  .object({
+    entityId: z.uuid(),
+    revision: z.number().int().positive(),
+    query: z.string().min(1).max(500),
+    normalizedQuery: z.string().min(1).max(500),
+    marketCode: z.string().regex(/^[A-Z]{2}$/u),
+    languageTag: z.string().min(1).max(35),
+  })
+  .strict();
+
+const FrozenDataForSeoAiCitationPolicySchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("disabled") }).strict(),
+  z
+    .object({
+      state: z.literal("skipped_insufficient_query_cohort"),
+      eligibleQueryCount: z.number().int().min(0).max(21),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("enabled"),
+      platform: z.literal("chat_gpt"),
+      requestedModel: z.string().regex(/^\S{1,100}$/u),
+      attemptedQueries: z.literal(20),
+      maxOutputTokens: z.literal(DATAFORSEO_AI_CITATION_MAX_OUTPUT_TOKENS),
+      webSearch: z.literal(true),
+      querySetHash: z.string().regex(/^[a-f0-9]{64}$/u),
+      queries: z.array(FrozenAiCitationQuerySchema).length(20),
+      trackedCompetitorDomains: z.array(
+        z.string().regex(NORMALIZED_COMPETITOR_DOMAIN),
+      ),
+    })
+    .strict(),
+]);
+
+/**
+ * Freeze the optional paid AI-citation sub-capability from canonical rows.
+ * The 21st row is an overflow sentinel: neither fewer nor more than the exact
+ * 20-query cohort may be silently padded, truncated, or synthesized.
+ */
+export function freezeDataForSeoAiCitationPolicy(input: {
+  readonly enabled: boolean;
+  readonly requestedModel: string | null;
+  readonly marketCode: string | null;
+  readonly languageTag: string | null;
+  readonly queries: readonly AiCitationCohortCandidateRow[];
+  readonly trackedCompetitorDomains: readonly string[];
+}): FrozenDataForSeoAiCitationPolicy {
+  if (!input.enabled) return { state: "disabled" };
+  if (
+    typeof input.requestedModel !== "string" ||
+    !/^\S{1,100}$/u.test(input.requestedModel)
+  ) {
+    throw new TypeError(
+      "DataForSEO AI citation collection requires one server-pinned model",
+    );
+  }
+  if (input.queries.length > DATAFORSEO_AI_CITATION_COHORT_SIZE + 1) {
+    throw new RangeError("DataForSEO AI citation cohort read exceeded its sentinel");
+  }
+  const marketCode = input.marketCode;
+  const languageTag = input.languageTag;
+  if (marketCode === null || languageTag === null) {
+    if (input.queries.length !== 0) {
+      throw new TypeError(
+        "DataForSEO AI citation queries require exact Site market and language",
+      );
+    }
+    return {
+      state: "skipped_insufficient_query_cohort",
+      eligibleQueryCount: 0,
+    };
+  }
+
+  const rows = [...input.queries].sort(
+    (left, right) =>
+      left.normalizedQuery.localeCompare(right.normalizedQuery, "en") ||
+      left.entityId.localeCompare(right.entityId, "en"),
+  );
+  for (const row of rows) {
+    if (
+      row.marketCode !== marketCode ||
+      row.languageTag !== languageTag ||
+      !Number.isSafeInteger(row.revision) ||
+      row.revision < 1 ||
+      row.query.length === 0 ||
+      row.query.length > 500 ||
+      row.normalizedQuery.length === 0 ||
+      row.normalizedQuery.length > 500
+    ) {
+      throw new TypeError(
+        "DataForSEO AI citation cohort contains a non-canonical keyword",
+      );
+    }
+  }
+  if (rows.length !== DATAFORSEO_AI_CITATION_COHORT_SIZE) {
+    return {
+      state: "skipped_insufficient_query_cohort",
+      eligibleQueryCount: rows.length,
+    };
+  }
+
+  const queries = rows.map((row) => ({ ...row }));
+  const trackedCompetitorDomains = [...input.trackedCompetitorDomains].sort(
+    (left, right) => left.localeCompare(right, "en"),
+  );
+  if (
+    trackedCompetitorDomains.length > 500 ||
+    new Set(trackedCompetitorDomains).size !== trackedCompetitorDomains.length ||
+    trackedCompetitorDomains.some(
+      (domain) =>
+        domain !== domain.trim() ||
+        domain !== domain.toLowerCase() ||
+        !NORMALIZED_COMPETITOR_DOMAIN.test(domain),
+    )
+  ) {
+    throw new TypeError(
+      "DataForSEO AI citation tracked competitor domains are not canonical",
+    );
+  }
+  return {
+    state: "enabled",
+    platform: "chat_gpt",
+    requestedModel: input.requestedModel,
+    attemptedQueries: DATAFORSEO_AI_CITATION_COHORT_SIZE,
+    maxOutputTokens: DATAFORSEO_AI_CITATION_MAX_OUTPUT_TOKENS,
+    webSearch: true,
+    querySetHash: dataForSeoAiCitationQuerySetHash({
+      model: input.requestedModel,
+      marketCode,
+      languageTag,
+      queries,
+    }),
+    queries,
+    trackedCompetitorDomains,
+  };
+}
 
 /**
  * Secret-free, immutable parent command payload consumed by the
@@ -60,6 +239,7 @@ export const AnalysisRefreshRequestPayloadSchema = z
         enabled: z.boolean(),
         maxKeywords: z.number().int().min(1).max(1_000),
         maxCompetitors: z.number().int().min(1).max(1_000),
+        aiCitations: FrozenDataForSeoAiCitationPolicySchema,
       })
       .strict(),
     dataForSeoBacklinks: z
@@ -101,12 +281,33 @@ export interface AnalysisRefreshAcceptedResult {
 interface FrozenAdmissionInputs {
   readonly project: ProjectRow;
   readonly siteId: string;
+  readonly siteMarketCode: string | null;
+  readonly siteLanguageTag: string | null;
   readonly confirmedIcpProfileId: string;
   readonly confirmedIcpProfileVersion: number;
   readonly confirmedIcpProfileContentHash: string;
   readonly crawlConnectionId: string;
   readonly gscConnectionId: string | null;
   readonly ga4ConnectionId: string | null;
+}
+
+function exactAiCitationSiteContext(
+  site: Pick<SiteRow, "market_codes" | "language_codes">,
+): { readonly marketCode: string; readonly languageTag: string } | null {
+  if (site.market_codes.length !== 1 || site.language_codes.length !== 1) {
+    return null;
+  }
+  const marketCode = site.market_codes[0]?.trim().toUpperCase();
+  const rawLanguageTag = site.language_codes[0]?.trim();
+  if (!marketCode || !/^[A-Z]{2}$/u.test(marketCode) || !rawLanguageTag) {
+    return null;
+  }
+  try {
+    const languageTag = Intl.getCanonicalLocales(rawLanguageTag)[0];
+    return languageTag ? { marketCode, languageTag } : null;
+  } catch {
+    return null;
+  }
 }
 
 function assertProjectEligible(
@@ -205,10 +406,13 @@ async function loadAdmissionInputs(
   // not valid inputs for this primary-Site plan; record them as unavailable.
   const gsc = gscCandidate?.site_id === site.id ? gscCandidate : null;
   const ga4 = ga4Candidate?.site_id === site.id ? ga4Candidate : null;
+  const aiCitationSiteContext = exactAiCitationSiteContext(site);
 
   return {
     project,
     siteId: site.id,
+    siteMarketCode: aiCitationSiteContext?.marketCode ?? null,
+    siteLanguageTag: aiCitationSiteContext?.languageTag ?? null,
     confirmedIcpProfileId: profile.id,
     confirmedIcpProfileVersion: profile.version,
     confirmedIcpProfileContentHash: profile.content_hash,
@@ -216,6 +420,76 @@ async function loadAdmissionInputs(
     gscConnectionId: gsc?.id ?? null,
     ga4ConnectionId: ga4?.id ?? null,
   };
+}
+
+async function freezeAiCitationAdmissionPolicy(
+  exec: Executor,
+  scope: { readonly workspaceId: string; readonly projectId: string },
+  inputs: Pick<
+    FrozenAdmissionInputs,
+    "siteMarketCode" | "siteLanguageTag"
+  >,
+  policy: {
+    readonly enabled: boolean;
+    readonly requestedModel: string | null;
+  },
+): Promise<FrozenDataForSeoAiCitationPolicy> {
+  if (!policy.enabled) {
+    return freezeDataForSeoAiCitationPolicy({
+      enabled: false,
+      requestedModel: null,
+      marketCode: inputs.siteMarketCode,
+      languageTag: inputs.siteLanguageTag,
+      queries: [],
+      trackedCompetitorDomains: [],
+    });
+  }
+  if (inputs.siteMarketCode === null || inputs.siteLanguageTag === null) {
+    return freezeDataForSeoAiCitationPolicy({
+      enabled: true,
+      requestedModel: policy.requestedModel,
+      marketCode: null,
+      languageTag: null,
+      queries: [],
+      trackedCompetitorDomains: [],
+    });
+  }
+  const queries = await new KeywordsRepository(
+    exec,
+  ).listAiCitationCohortCandidates(scope, {
+    market: inputs.siteMarketCode,
+    languageTag: inputs.siteLanguageTag,
+    limit: MAX_AI_CITATION_COHORT_CANDIDATE_READ,
+  });
+  if (queries.length !== DATAFORSEO_AI_CITATION_COHORT_SIZE) {
+    return freezeDataForSeoAiCitationPolicy({
+      enabled: true,
+      requestedModel: policy.requestedModel,
+      marketCode: inputs.siteMarketCode,
+      languageTag: inputs.siteLanguageTag,
+      queries,
+      trackedCompetitorDomains: [],
+    });
+  }
+  const tracked = await new CompetitorsRepository(
+    exec,
+  ).listAiCitationTrackedDomains(scope, {
+    limit: MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
+  });
+  if (tracked.length === MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ) {
+    throw new ProblemError(
+      "CONTEXT_INCOMPLETE",
+      "AI citation collection cannot freeze more than 500 current non-excluded competitors.",
+    );
+  }
+  return freezeDataForSeoAiCitationPolicy({
+    enabled: true,
+    requestedModel: policy.requestedModel,
+    marketCode: inputs.siteMarketCode,
+    languageTag: inputs.siteLanguageTag,
+    queries,
+    trackedCompetitorDomains: tracked.map((row) => row.domain),
+  });
 }
 
 function replay(
@@ -277,6 +551,7 @@ function frozenPayload(
     readonly enabled: boolean;
     readonly maxKeywords: number;
     readonly maxCompetitors: number;
+    readonly aiCitations: FrozenDataForSeoAiCitationPolicy;
   },
   dataForSeoBacklinks: {
     readonly enabled: boolean;
@@ -303,6 +578,7 @@ function frozenPayload(
       enabled: dataForSeo.enabled,
       maxKeywords: dataForSeo.maxKeywords,
       maxCompetitors: dataForSeo.maxCompetitors,
+      aiCitations: dataForSeo.aiCitations,
     },
     dataForSeoBacklinks: {
       enabled: dataForSeoBacklinks.enabled,
@@ -363,14 +639,19 @@ export async function createAnalysisRefreshRun(
   }
 
   const env = getEnv();
-  const dataForSeo = {
+  const dataForSeoPolicy = {
     enabled: env.DATAFORSEO_ENABLED === "true",
     maxKeywords: env.DATAFORSEO_MAX_KEYWORDS,
     maxCompetitors: env.DATAFORSEO_MAX_COMPETITORS,
+    aiCitationsEnabled:
+      env.DATAFORSEO_ENABLED === "true" &&
+      env.DATAFORSEO_AI_CITATIONS_ENABLED === "true",
+    aiCitationModel: env.DATAFORSEO_AI_CITATION_MODEL ?? null,
   };
   const dataForSeoBacklinks = {
     enabled:
-      dataForSeo.enabled && env.DATAFORSEO_BACKLINKS_ENABLED === "true",
+      dataForSeoPolicy.enabled &&
+      env.DATAFORSEO_BACKLINKS_ENABLED === "true",
     maxBacklinks: env.DATAFORSEO_MAX_BACKLINKS,
     maxReferringDomains: env.DATAFORSEO_MAX_REFERRING_DOMAINS,
     maxBacklinkPages: env.DATAFORSEO_MAX_BACKLINK_PAGES,
@@ -416,9 +697,23 @@ export async function createAnalysisRefreshRun(
           currentProject,
           true,
         );
+        const aiCitations = await freezeAiCitationAdmissionPolicy(
+          tx,
+          projectScope,
+          inputs,
+          {
+            enabled: dataForSeoPolicy.aiCitationsEnabled,
+            requestedModel: dataForSeoPolicy.aiCitationModel,
+          },
+        );
         const requestPayload = frozenPayload(
           inputs,
-          dataForSeo,
+          {
+            enabled: dataForSeoPolicy.enabled,
+            maxKeywords: dataForSeoPolicy.maxKeywords,
+            maxCompetitors: dataForSeoPolicy.maxCompetitors,
+            aiCitations,
+          },
           dataForSeoBacklinks,
         );
         const run = await new AsyncRunsRepository(tx).insertQueued({
@@ -466,7 +761,7 @@ export async function createAnalysisRefreshRun(
         if (inputs.ga4ConnectionId === null) {
           await skip("ga4", "source_not_connected");
         }
-        if (!dataForSeo.enabled) {
+        if (!dataForSeoPolicy.enabled) {
           await skip("dataforseo", "feature_disabled");
         }
         if (!dataForSeoBacklinks.enabled) {

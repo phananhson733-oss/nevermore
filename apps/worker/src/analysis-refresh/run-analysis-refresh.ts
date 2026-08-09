@@ -53,6 +53,8 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import { keywordAutoGovernanceEnabled } from "../env.ts";
@@ -157,9 +159,9 @@ const COLLECTION_IDENTITY = {
   },
   dataforseo: {
     provider: "dataforseo",
-    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
-    schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
-    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+    datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+    schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+    methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   },
   dataforseo_backlinks: {
     provider: "dataforseo",
@@ -176,12 +178,20 @@ const LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_IDENTITY = {
   methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
 } as const satisfies CollectionIdentity;
 
+const LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_V2_IDENTITY = {
+  provider: "dataforseo",
+  datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
+  schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+} as const satisfies CollectionIdentity;
+
 function collectionIdentitiesForStep(
   stepKey: CollectionStepKey,
 ): readonly CollectionIdentity[] {
   return stepKey === "dataforseo"
     ? [
         LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_IDENTITY,
+        LEGACY_DATAFORSEO_SEARCH_LANDSCAPE_V2_IDENTITY,
         COLLECTION_IDENTITY.dataforseo,
       ]
     : [COLLECTION_IDENTITY[stepKey]];
@@ -890,6 +900,7 @@ function dataForSeoRuntimeAvailable(
   payload: AnalysisRefreshRequestPayload,
 ): boolean {
   const runtime = ctx.dataForSeo;
+  const aiCitations = payload.dataForSeo.aiCitations;
   return (
     payload.dataForSeo.enabled &&
     runtime?.enabled === true &&
@@ -900,7 +911,10 @@ function dataForSeoRuntimeAvailable(
     Number.isSafeInteger(runtime.maxKeywords) &&
     payload.dataForSeo.maxKeywords <= runtime.maxKeywords &&
     Number.isSafeInteger(runtime.maxCompetitors) &&
-    payload.dataForSeo.maxCompetitors <= runtime.maxCompetitors
+    payload.dataForSeo.maxCompetitors <= runtime.maxCompetitors &&
+    (aiCitations?.state !== "enabled" ||
+      (runtime.aiCitationsEnabled === true &&
+        runtime.aiCitationModel === aiCitations.requestedModel))
   );
 }
 
@@ -990,6 +1004,7 @@ async function startDataForSeoStep(
           parent.payload.dataForSeo.maxKeywords,
           parent.payload.dataForSeo.maxCompetitors,
           seeds,
+          parent.payload.dataForSeo.aiCitations,
         )
       : null;
   if (!site || !collectionScope) {
@@ -1061,7 +1076,7 @@ async function startDataForSeoStep(
       provider: "dataforseo",
       operation: config.operation,
       queue: config.queue,
-      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
       connection: source,
       requestPayload: {
         provider: "dataforseo",

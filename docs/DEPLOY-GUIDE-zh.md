@@ -144,6 +144,10 @@ Worker，不能回退到 Next.js Web CMD。
 - `DATAFORSEO_ENABLED=true`、`DATAFORSEO_MAX_KEYWORDS=200`
 - `DATAFORSEO_BACKLINKS_ENABLED=false`（独立 rollout 默认关闭；获批后 Web/Worker
   必须同时改为 `true`）
+- `DATAFORSEO_AI_CITATIONS_ENABLED=false`（付费 AI citation 独立 rollout 默认关闭；
+  启用时 Web/Worker 必须同时为 `true`，并设置同一个非秘密、服务端固定的
+  `DATAFORSEO_AI_CITATION_MODEL`，且该模型必须由 DataForSEO Models contract 标明
+  支持 web search 与 country scope；关闭时保持 model 未设置）
 - `DATAFORSEO_MAX_BACKLINKS=500`、`DATAFORSEO_MAX_REFERRING_DOMAINS=100`、
   `DATAFORSEO_MAX_BACKLINK_PAGES=500`、
   `DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS=20`（对应硬上限
@@ -196,6 +200,9 @@ Production 环境至少需要：
 - `DATAFORSEO_ENABLED=true`、`DATAFORSEO_MAX_KEYWORDS=200`、`LOG_LEVEL=info`
 - `DATAFORSEO_BACKLINKS_ENABLED=false`，以及与 Worker 完全一致的四个 Backlinks
   非秘密 cap；只有独立 rollout 获批后才在两个服务同时开启
+- `DATAFORSEO_AI_CITATIONS_ENABLED=false`，并与 Worker 保持相同的可选固定
+  `DATAFORSEO_AI_CITATION_MODEL`；只有付费 rollout 获批且精确 20 条治理查询可用时
+  才在两个服务同时开启
 
 **不要设置 `NEXT_PUBLIC_BASE_PATH=/app`。** 本次应用直接服务于
 `https://app.gengrowth.ai` 根路径。也不要在 Vercel 设置 Worker-only LLM 变量、

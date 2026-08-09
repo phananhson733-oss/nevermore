@@ -11,12 +11,14 @@ import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
   createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import {
   collectionSnapshotIdentity,
   resolveFrozenDataForSeoCollectionScope,
   resolveFrozenDataForSeoSearchLandscapeScope,
   resolveFrozenDataForSeoSearchLandscapeV2Scope,
+  resolveFrozenDataForSeoSearchLandscapeV3Scope,
   runCollection,
   type CollectionWorkerContext,
 } from "./run-collection.ts";
@@ -227,6 +229,16 @@ describe("DataForSEO worker gates", () => {
     expect(
       collectionSnapshotIdentity({
         provider: "dataforseo",
+        operation: "search_landscape",
+        method_version: "dataforseo.search_landscape.v3",
+      }),
+    ).toEqual({
+      datasetKey: "dataforseo.search_landscape.v3",
+      schemaVersion: "dataforseo.search_landscape.v3",
+    });
+    expect(
+      collectionSnapshotIdentity({
+        provider: "dataforseo",
         operation: "backlinks",
         method_version: "dataforseo.backlinks.v1",
       }),
@@ -422,6 +434,89 @@ describe("DataForSEO worker gates", () => {
         16,
       ),
     ).toThrow(/worker caps/i);
+  });
+
+  it("validates the exact v3 scope, identity, hash, caps, and pinned AI runtime", () => {
+    const queryRows = Array.from({ length: 20 }, (_, index) => ({
+      entityId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      revision: index + 1,
+      query: `Which onboarding platform fits team ${index + 1}?`,
+      normalizedQuery: `which onboarding platform fits team ${String(index + 1).padStart(2, "0")}?`,
+      marketCode: "US",
+      languageTag: "en-US",
+    }));
+    const collectionScope = createDataForSeoSearchLandscapeV3Scope({
+      target: "accepted.example",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      rankedKeywordsLimit: 37,
+      competitorsDomainLimit: 19,
+      serpCompetitorsLimit: 17,
+      seeds: [],
+      aiCitations: {
+        state: "enabled",
+        requestedModel: "gpt-5",
+        queries: queryRows,
+        trackedCompetitorDomains: ["rival.example"],
+      },
+    });
+    const run = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      method_version: "dataforseo.search_landscape.v3",
+      site_id: "00000000-0000-4000-8000-000000000005",
+      source_connection_id: "00000000-0000-4000-8000-000000000006",
+      parameters_hash: contentHash({
+        provider: "dataforseo",
+        operation: "search_landscape",
+        siteId: "00000000-0000-4000-8000-000000000005",
+        collectionScope: collectionScope as never,
+      }),
+    };
+    const requestPayload = {
+      provider: "dataforseo",
+      operation: "search_landscape",
+      sourceConnectionId: run.source_connection_id,
+      collectionScope,
+    };
+
+    expect(
+      resolveFrozenDataForSeoSearchLandscapeV3Scope(
+        run as never,
+        requestPayload,
+        {
+          maxKeywords: 100,
+          maxCompetitors: 50,
+          aiCitationsEnabled: true,
+          aiCitationModel: "gpt-5",
+        },
+      ),
+    ).toEqual(collectionScope);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeV3Scope(
+        run as never,
+        requestPayload,
+        {
+          maxKeywords: 100,
+          maxCompetitors: 50,
+          aiCitationsEnabled: false,
+          aiCitationModel: "gpt-5",
+        },
+      ),
+    ).toThrow(/AI citation.*runtime/i);
+    expect(() =>
+      resolveFrozenDataForSeoSearchLandscapeV3Scope(
+        run as never,
+        requestPayload,
+        {
+          maxKeywords: 100,
+          maxCompetitors: 50,
+          aiCitationsEnabled: true,
+          aiCitationModel: "gpt-5-mini",
+        },
+      ),
+    ).toThrow(/AI citation.*runtime/i);
   });
 
   it("validates the exact composite scope, hash, and both worker caps", () => {

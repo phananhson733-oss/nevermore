@@ -136,6 +136,7 @@ export type {
 } from "./dataforseo/adapter.ts";
 export {
   HttpDataForSeoClient,
+  DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL,
   DATAFORSEO_BACKLINK_SUMMARY_LIVE_URL,
   DATAFORSEO_BACKLINKS_LIVE_URL,
   DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL,
@@ -148,6 +149,9 @@ export {
   MAX_DATAFORSEO_LIMIT,
 } from "./dataforseo/client.ts";
 export type {
+  DataForSeoAiCitationClient,
+  DataForSeoAiCitationRequest,
+  DataForSeoAiCitationResponse,
   DataForSeoBacklinkListRequest,
   DataForSeoBacklinkRow,
   DataForSeoBacklinksClient,
@@ -171,6 +175,7 @@ export type {
   DataForSeoReferringDomainsResponse,
   DataForSeoSearchLandscapeClient,
   DataForSeoSearchLandscapeV2Client,
+  DataForSeoSearchLandscapeV3Client,
   DataForSeoSerpCompetitorRow,
   DataForSeoSerpCompetitorsClient,
   DataForSeoSerpCompetitorsRequest,
@@ -231,6 +236,39 @@ export {
   MAX_DATAFORSEO_SERP_COMPETITOR_SEEDS,
   METRIC_DATAFORSEO_SERP_COMPETITOR,
 } from "./dataforseo/search-landscape-v2.ts";
+export {
+  createDataForSeoSearchLandscapeV3Adapter,
+  createDataForSeoSearchLandscapeV3Scope,
+  dataForSeoAiCitationQuerySetHash,
+  dataForSeoOrganicOverlapRatio,
+  dataForSeoSearchLandscapeV3SnapshotSummary,
+  dataforseoSearchLandscapeV3Adapter,
+  parseDataForSeoSearchLandscapeV3Scope,
+  DATAFORSEO_AI_CITATION_COHORT_SIZE,
+  DATAFORSEO_AI_CITATION_MAX_CONCURRENCY,
+  DATAFORSEO_AI_CITATION_MAX_OUTPUT_TOKENS,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_PARTIAL_STOP_REASON,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_QUERY_KIND,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_SCOPE_VERSION,
+  METRIC_DATAFORSEO_COMPETITOR_AI_CITATION,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2,
+} from "./dataforseo/search-landscape-v3.ts";
+export type {
+  DataForSeoAiCitationQuerySetHashInput,
+  DataForSeoAiCitationRaw,
+  DataForSeoAiCitationRawOutcome,
+  DataForSeoAiCitationsScope,
+  DataForSeoGenerativeQuery,
+  DataForSeoSearchLandscapeV3Adapter,
+  DataForSeoSearchLandscapeV3AdapterOptions,
+  DataForSeoSearchLandscapeV3Capability,
+  DataForSeoSearchLandscapeV3Raw,
+  DataForSeoSearchLandscapeV3Scope,
+  DataForSeoSearchLandscapeV3ScopeInput,
+} from "./dataforseo/search-landscape-v3.ts";
 export type {
   DataForSeoSearchLandscapeSeed,
   DataForSeoSearchLandscapeSeedKind,

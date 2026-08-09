@@ -38,6 +38,8 @@ export interface WorkerContext {
     readonly maxKeywords: number;
     readonly maxCompetitors: number;
     readonly backlinksEnabled?: boolean;
+    readonly aiCitationsEnabled?: boolean;
+    readonly aiCitationModel?: string | null;
     readonly maxBacklinks?: number;
     readonly maxReferringDomains?: number;
     readonly maxBacklinkPages?: number;
@@ -133,6 +135,10 @@ export function buildWorkerContext(input: {
       backlinksEnabled:
         input.env.DATAFORSEO_ENABLED === "true" &&
         input.env.DATAFORSEO_BACKLINKS_ENABLED === "true",
+      aiCitationsEnabled:
+        input.env.DATAFORSEO_ENABLED === "true" &&
+        input.env.DATAFORSEO_AI_CITATIONS_ENABLED === "true",
+      aiCitationModel: input.env.DATAFORSEO_AI_CITATION_MODEL ?? null,
       maxBacklinks: input.env.DATAFORSEO_MAX_BACKLINKS,
       maxReferringDomains: input.env.DATAFORSEO_MAX_REFERRING_DOMAINS,
       maxBacklinkPages: input.env.DATAFORSEO_MAX_BACKLINK_PAGES,

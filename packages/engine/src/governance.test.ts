@@ -282,6 +282,25 @@ describe("parseGovernanceProjectionV1", () => {
     ]);
   });
 
+  it("accepts exact canonical lineage for ai_citation competitor origins", () => {
+    const input = projection();
+    const competitors = input["competitors"] as Array<{
+      originRefs: Record<string, unknown>[];
+    }>;
+    competitors[0]!.originRefs[0]!["originKind"] = "ai_citation";
+
+    const parsed = parseGovernanceProjectionV1(input);
+
+    expect(parsed.competitors[1]?.originRefs).toEqual([
+      {
+        occurrenceId: "00000000-0000-4000-8000-000000000601",
+        originKind: "ai_citation",
+        snapshotId: "00000000-0000-4000-8000-000000000401",
+        observationId: "00000000-0000-4000-8000-000000000501",
+      },
+    ]);
+  });
+
   it("fails closed when serp_overlap lineage is missing or partial", () => {
     const missingLineage = projection();
     const missingCompetitors = missingLineage["competitors"] as Array<{

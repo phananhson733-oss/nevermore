@@ -386,7 +386,7 @@ describe("runAnalysisRefresh", () => {
       expect.objectContaining({
         provider: "dataforseo",
         operation: "search_landscape",
-        methodVersion: "dataforseo.search_landscape.v2",
+        methodVersion: "dataforseo.search_landscape.v3",
       }),
     );
     expect(collectionChildren[0]?.request_payload).toEqual({
@@ -394,7 +394,7 @@ describe("runAnalysisRefresh", () => {
       operation: "search_landscape",
       sourceConnectionId: sourceConnection("dataforseo").id,
       collectionScope: expect.objectContaining({
-        schemaVersion: "dataforseo.search-landscape-scope.v2",
+        schemaVersion: "dataforseo.search-landscape-scope.v3",
         queryKind: "search_landscape",
         target: "example.test",
         rankedKeywords: expect.objectContaining({ limit: 87 }),
@@ -408,6 +408,10 @@ describe("runAnalysisRefresh", () => {
           fallbackWhenDomainOverlapEmpty: true,
           seeds: [],
         }),
+        aiCitations: {
+          state: "disabled",
+          attemptedQueries: 0,
+        },
       }),
     });
     expect(
@@ -450,7 +454,11 @@ describe("runAnalysisRefresh", () => {
     }
     harness.state.snapshots.set(
       IDS.dataForSeoSnapshot,
-      dataForSeoSnapshot(child.id, collection.source_connection_id),
+      dataForSeoSnapshot(
+        child.id,
+        collection.source_connection_id,
+        collection.method_version,
+      ),
     );
 
     await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });

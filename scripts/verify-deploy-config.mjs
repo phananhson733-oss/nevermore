@@ -62,6 +62,7 @@ assert.doesNotMatch(
 );
 for (const [name, expected] of [
   ["DATAFORSEO_BACKLINKS_ENABLED", "false"],
+  ["DATAFORSEO_AI_CITATIONS_ENABLED", "false"],
   ["DATAFORSEO_MAX_BACKLINKS", "500"],
   ["DATAFORSEO_MAX_REFERRING_DOMAINS", "100"],
   ["DATAFORSEO_MAX_BACKLINK_PAGES", "500"],
@@ -77,6 +78,16 @@ for (const [name, expected] of [
     workerEnvironment,
     declaration,
     `the Worker template must freeze ${name}=${expected}`,
+  );
+}
+for (const [service, environment] of [
+  ["Vercel", vercelEnvironment],
+  ["Worker", workerEnvironment],
+]) {
+  assert.match(
+    environment,
+    /^# DATAFORSEO_AI_CITATION_MODEL=\s*$/m,
+    `${service} must expose only a blank, commented AI citation model placeholder while the capability is disabled`,
   );
 }
 

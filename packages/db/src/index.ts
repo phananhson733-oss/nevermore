@@ -264,11 +264,14 @@ export type { TopicClusterSupportingFindingRow } from "./repositories/topic-clus
 export {
   KeywordsRepository,
   LegacyKeywordReviewDisabledError,
+  MAX_AI_CITATION_COHORT_CANDIDATE_READ,
   MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ,
   MAX_KEYWORD_ENTITY_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
 } from "./repositories/keywords.ts";
 export type {
+  AiCitationCohortCandidateReadOptions,
+  AiCitationCohortCandidateRow,
   DiagnosticKeywordEntityReadOptions,
   KeywordEntityListOptions,
   KeywordEntityListPage,
@@ -293,6 +296,8 @@ export {
   MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
 } from "./repositories/competitors.ts";
 export type {
+  AiCitationCompetitorOriginInput,
+  AiCitationTrackedDomainRow,
   CompetitorAnalysisScope,
   CompetitorEntityRow,
   CompetitorListOptions,

@@ -52,10 +52,13 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   canonicalizeUrl,
   parseDataForSeoCollectionScope,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
+  parseDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import { and, asc, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
@@ -1129,7 +1132,8 @@ function providerOccurrenceLineage(
 type DataForSeoRankedLineageKind =
   | "legacy_ranked"
   | "search_landscape_v1"
-  | "search_landscape_v2";
+  | "search_landscape_v2"
+  | "search_landscape_v3";
 
 function exactDataForSeoRankedLineage(
   snapshot: CanonicalSnapshotRow,
@@ -1177,6 +1181,18 @@ function exactDataForSeoRankedLineage(
   ) {
     return "search_landscape_v2";
   }
+  if (
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    collectionRun.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+    collectionRun.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION
+  ) {
+    return "search_landscape_v3";
+  }
   return null;
 }
 
@@ -1188,7 +1204,8 @@ function validateDataForSeoSummary(
   let collectionScope:
     | ReturnType<typeof parseDataForSeoCollectionScope>
     | ReturnType<typeof parseDataForSeoSearchLandscapeScope>
-    | ReturnType<typeof parseDataForSeoSearchLandscapeV2Scope>;
+    | ReturnType<typeof parseDataForSeoSearchLandscapeV2Scope>
+    | ReturnType<typeof parseDataForSeoSearchLandscapeV3Scope>;
   try {
     collectionScope =
       lineageKind === "legacy_ranked"
@@ -1199,9 +1216,13 @@ function validateDataForSeoSummary(
           ? parseDataForSeoSearchLandscapeScope(
               snapshot.summary["collectionScope"],
             )
-          : parseDataForSeoSearchLandscapeV2Scope(
-              snapshot.summary["collectionScope"],
-            );
+          : lineageKind === "search_landscape_v2"
+            ? parseDataForSeoSearchLandscapeV2Scope(
+                snapshot.summary["collectionScope"],
+              )
+            : parseDataForSeoSearchLandscapeV3Scope(
+                snapshot.summary["collectionScope"],
+              );
   } catch {
     return corruptKeywordLibrary();
   }
@@ -1226,7 +1247,7 @@ function validateDataForSeoSummary(
     collectionScope.queryKind === "ranked_keywords"
       ? `capped at ${collectionScope.limit} rows`
       : "serpCompetitors" in collectionScope
-        ? `search_landscape v2 capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows, ${collectionScope.competitorsDomain.limit} competitor-domain rows, and at most ${collectionScope.serpCompetitors.limit} paid fallback rows from ${collectionScope.serpCompetitors.seeds.length} frozen seed(s)`
+        ? `search_landscape ${lineageKind === "search_landscape_v3" ? "v3" : "v2"} capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows, ${collectionScope.competitorsDomain.limit} competitor-domain rows, and at most ${collectionScope.serpCompetitors.limit} paid fallback rows from ${collectionScope.serpCompetitors.seeds.length} frozen seed(s)`
         : `search_landscape capped at ${collectionScope.rankedKeywords.limit} ranked-keyword rows and ${collectionScope.competitorsDomain.limit} competitor-domain rows`;
   return boundedText(
     `DataForSEO ${snapshot.dataset_key} scope is target ${collectionScope.target}, market ${collectionScope.marketCode}, language ${collectionScope.languageTag}, ${location}, ${scopeDetail}; it is not the complete keyword universe.`,

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION } from "@sf/contracts";
 import {
   clientProjects,
@@ -29,7 +29,8 @@ export type CompetitorOriginKind =
   | "product_profile"
   | "csv_keyword_gap"
   | "manual"
-  | "serp_overlap";
+  | "serp_overlap"
+  | "ai_citation";
 
 interface EvidenceRefIdentity {
   readonly evidenceRefId: string;
@@ -96,16 +97,30 @@ export interface SerpOverlapCompetitorOriginInput extends CompetitorOriginCommon
   readonly sourcePointer: "/valueJson/competitorDomain";
 }
 
+export interface AiCitationCompetitorOriginInput extends CompetitorOriginCommon {
+  readonly originKind: "ai_citation";
+  readonly name: null;
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly sourcePointer: "/valueJson/competitorDomain";
+}
+
 export type CompetitorOriginInput =
   | ProductProfileCompetitorOriginInput
   | CsvKeywordGapCompetitorOriginInput
   | ManualCompetitorOriginInput
-  | SerpOverlapCompetitorOriginInput;
+  | SerpOverlapCompetitorOriginInput
+  | AiCitationCompetitorOriginInput;
 
 type LegacyCompetitorOriginInput = Exclude<
   CompetitorOriginInput,
-  SerpOverlapCompetitorOriginInput
+  SerpOverlapCompetitorOriginInput | AiCitationCompetitorOriginInput
 >;
+
+export interface AiCitationTrackedDomainRow {
+  readonly id: string;
+  readonly domain: string;
+}
 
 export interface CompetitorOriginUpsertResult {
   readonly occurrenceId: string;
@@ -518,6 +533,7 @@ function assertOriginInput(input: CompetitorOriginInput): void {
       assertUuid(input.manualEntryId, "manualEntryId");
       return;
     case "serp_overlap":
+    case "ai_citation":
       assertUuid(input.snapshotId, "snapshotId");
       assertUuid(input.observationId, "observationId");
       if (
@@ -525,7 +541,7 @@ function assertOriginInput(input: CompetitorOriginInput): void {
         input.sourcePointer !== "/valueJson/competitorDomain"
       ) {
         throw new RangeError(
-          "SERP overlap origin requires the canonical competitorDomain pointer and no inferred name",
+          `${input.originKind === "serp_overlap" ? "SERP overlap" : "AI citation"} origin requires the canonical competitorDomain pointer and no inferred name`,
         );
       }
       return;
@@ -672,6 +688,34 @@ function originParameters(input: LegacyCompetitorOriginInput) {
 }
 
 export class CompetitorsRepository extends Repository {
+  /** Current candidate/approved domains admitted to the optional AI cohort. */
+  async listAiCitationTrackedDomains(
+    scope: ProjectScope,
+    options: { readonly limit: number },
+  ): Promise<AiCitationTrackedDomainRow[]> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ}`,
+      );
+    }
+    return (await this.exec
+      .select({ id: competitorEntities.id, domain: competitorEntities.domain })
+      .from(competitorEntities)
+      .where(
+        and(
+          projectPredicate(competitorEntities, scope),
+          activeProjectPredicate(scope),
+          ne(competitorEntities.review_status, "excluded"),
+        ),
+      )
+      .orderBy(asc(competitorEntities.domain), asc(competitorEntities.id))
+      .limit(options.limit)) as AiCitationTrackedDomainRow[];
+  }
+
   async listDiagnosticEligible(
     scope: ProjectScope,
     options: { readonly limit: number },
@@ -704,10 +748,17 @@ export class CompetitorsRepository extends Repository {
     input: CompetitorOriginInput,
   ): Promise<CompetitorOriginUpsertResult> {
     assertOriginInput(input);
-    if (input.originKind === "serp_overlap") {
+    if (
+      input.originKind === "serp_overlap" ||
+      input.originKind === "ai_citation"
+    ) {
+      const upsertFunction =
+        input.originKind === "serp_overlap"
+          ? sql`app.upsert_serp_overlap_competitor_origin`
+          : sql`app.upsert_ai_citation_competitor_origin`;
       const result = await this.exec.execute(sql`
         select occurrence_id, competitor_id
-        from app.upsert_serp_overlap_competitor_origin(
+        from ${upsertFunction}(
           ${scope.workspaceId}::uuid,
           ${scope.projectId}::uuid,
           ${input.domain}::text,

@@ -253,6 +253,33 @@ describe("KeywordRankHistoryRepository", () => {
     ]);
   });
 
+  it("accepts ranked-keyword facts from the exact v3 search-landscape lineage", async () => {
+    const db = fixtureExecutor();
+    db.enqueue([
+      dataForSeoRow({
+        dataset_key: "dataforseo.search_landscape.v3",
+        snapshot_schema_version: "dataforseo.search_landscape.v3",
+        snapshot_method_version: "dataforseo.search_landscape.v3",
+        collection_operation: "search_landscape",
+        collection_method_version: "dataforseo.search_landscape.v3",
+      }),
+    ]);
+
+    await expect(
+      new KeywordRankHistoryRepository(db.executor).listRankObservations(
+        scope,
+        ids.keyword,
+        window,
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        provider: "dataforseo",
+        metric: "absolute_rank",
+        value: 12,
+      }),
+    ]);
+  });
+
   it.each([
     {
       drift: "legacy dataset with composite operation",

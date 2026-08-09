@@ -17,6 +17,9 @@ export const DATAFORSEO_COMPETITORS_DOMAIN_LIVE_URL =
 /** Official Google Labs endpoint for seed-keyword SERP competitor discovery. */
 export const DATAFORSEO_SERP_COMPETITORS_LIVE_URL =
   "https://api.dataforseo.com/v3/dataforseo_labs/google/serp_competitors/live";
+/** Official AI Optimization endpoint used for citation-host observations. */
+export const DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL =
+  "https://api.dataforseo.com/v3/ai_optimization/chat_gpt/llm_responses/live";
 /** Official Backlinks API endpoints used by the backlink-growth source. */
 export const DATAFORSEO_BACKLINK_SUMMARY_LIVE_URL =
   "https://api.dataforseo.com/v3/backlinks/summary/live";
@@ -264,12 +267,44 @@ export interface DataForSeoSerpCompetitorsClient {
   ): Promise<DataForSeoSerpCompetitorsResponse>;
 }
 
+/** One credential-free, server-governed ChatGPT live request. */
+export interface DataForSeoAiCitationRequest {
+  readonly userPrompt: string;
+  readonly modelName: string;
+  readonly maxOutputTokens: number;
+  readonly webSearch: true;
+  readonly webSearchCountryIsoCode: string;
+}
+
+/** Sanitized citation evidence; provider answer prose is intentionally absent. */
+export type DataForSeoAiCitationResponse = Readonly<{
+  readonly availability: "available" | "unavailable";
+  readonly requestedModel: string;
+  readonly resolvedModel: string | null;
+  readonly observedAt: string | null;
+  readonly sourceUrls: readonly string[];
+  readonly costUsd: number;
+  readonly providerStatusCode: number;
+  readonly taskStatusCode: number;
+  readonly limitation: string | null;
+}>;
+
+export interface DataForSeoAiCitationClient {
+  aiCitation(
+    request: DataForSeoAiCitationRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoAiCitationResponse>;
+}
+
 /** The two narrow operations required by the composite landscape adapter. */
 export type DataForSeoSearchLandscapeClient = DataForSeoRankedKeywordsClient &
   DataForSeoCompetitorsDomainClient;
 
 export type DataForSeoSearchLandscapeV2Client =
   DataForSeoSearchLandscapeClient & DataForSeoSerpCompetitorsClient;
+
+export type DataForSeoSearchLandscapeV3Client =
+  DataForSeoSearchLandscapeV2Client & DataForSeoAiCitationClient;
 
 /** Minimal injectable fetch seam; production still uses the fixed official URL. */
 export type DataForSeoFetch = (
@@ -437,6 +472,7 @@ function transportError(
     | "ranked-keywords"
     | "competitors-domain"
     | "serp-competitors"
+    | "ai-citation"
     | "backlink-summary"
     | "backlinks"
     | "referring-domains"
@@ -1152,6 +1188,330 @@ function parseSerpCompetitorsResponse(
   };
 }
 
+function normalizeAiCitationRequest(
+  value: DataForSeoAiCitationRequest,
+): DataForSeoAiCitationRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO AI-citation request must be an object.",
+    );
+  }
+  const userPrompt =
+    typeof value.userPrompt === "string"
+      ? value.userPrompt.normalize("NFKC").trim()
+      : null;
+  const modelName =
+    typeof value.modelName === "string" ? value.modelName.trim() : null;
+  const country =
+    typeof value.webSearchCountryIsoCode === "string"
+      ? value.webSearchCountryIsoCode.trim().toUpperCase()
+      : null;
+  if (
+    userPrompt === null ||
+    userPrompt.length < 1 ||
+    userPrompt.length > 500
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO AI-citation userPrompt must contain 1 to 500 characters.",
+    );
+  }
+  if (
+    modelName === null ||
+    modelName.length < 1 ||
+    modelName.length > 100
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO AI-citation modelName must contain 1 to 100 characters.",
+    );
+  }
+  if (
+    !Number.isSafeInteger(value.maxOutputTokens) ||
+    value.maxOutputTokens < 16 ||
+    value.maxOutputTokens > 4_096
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO AI-citation maxOutputTokens must be an integer from 16 to 4096.",
+    );
+  }
+  if (value.webSearch !== true || country === null || !/^[A-Z]{2}$/.test(country)) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "DataForSEO AI citations require web search and a two-letter country code.",
+    );
+  }
+  return {
+    userPrompt,
+    modelName,
+    maxOutputTokens: value.maxOutputTokens,
+    webSearch: true,
+    webSearchCountryIsoCode: country,
+  };
+}
+
+function toAiCitationProviderTask(
+  request: DataForSeoAiCitationRequest,
+): JsonRecord {
+  const normalized = normalizeAiCitationRequest(request);
+  return {
+    user_prompt: normalized.userPrompt,
+    model_name: normalized.modelName,
+    max_output_tokens: normalized.maxOutputTokens,
+    web_search: true,
+    web_search_country_iso_code: normalized.webSearchCountryIsoCode,
+  };
+}
+
+function unavailableAiCitationResponse(
+  requestedModel: string,
+  providerStatusCode: number,
+  taskStatusCode: number,
+  costUsd: number,
+  limitation = "The provider returned no observable answer.",
+): DataForSeoAiCitationResponse {
+  return {
+    availability: "unavailable",
+    requestedModel,
+    resolvedModel: null,
+    observedAt: null,
+    sourceUrls: [],
+    costUsd,
+    providerStatusCode,
+    taskStatusCode,
+    limitation,
+  };
+}
+
+function canonicalObservedAt(value: unknown): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation result omitted its observation time.",
+    );
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation result contained an invalid observation time.",
+    );
+  }
+  return parsed.toISOString();
+}
+
+function annotationSourceUrls(value: JsonRecord): readonly string[] {
+  const rawItems = value.items;
+  if (rawItems === null || rawItems === undefined) return [];
+  if (!Array.isArray(rawItems)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation result items was not an array.",
+    );
+  }
+  const urls = new Set<string>();
+  for (const [itemIndex, rawItem] of rawItems.entries()) {
+    const item = asRecord(
+      rawItem,
+      `DataForSEO AI-citation item ${itemIndex}`,
+    );
+    const rawSections = item.sections;
+    if (rawSections === null || rawSections === undefined) continue;
+    if (!Array.isArray(rawSections)) {
+      throw new SourceError(
+        "INVALID_RESPONSE",
+        `DataForSEO AI-citation item ${itemIndex} sections was not an array.`,
+      );
+    }
+    for (const [sectionIndex, rawSection] of rawSections.entries()) {
+      const section = asRecord(
+        rawSection,
+        `DataForSEO AI-citation item ${itemIndex} section ${sectionIndex}`,
+      );
+      const rawAnnotations = section.annotations;
+      if (rawAnnotations === null || rawAnnotations === undefined) continue;
+      if (!Array.isArray(rawAnnotations)) {
+        throw new SourceError(
+          "INVALID_RESPONSE",
+          `DataForSEO AI-citation item ${itemIndex} section ${sectionIndex} annotations was not an array.`,
+        );
+      }
+      for (const [annotationIndex, rawAnnotation] of rawAnnotations.entries()) {
+        const annotation = asRecord(
+          rawAnnotation,
+          `DataForSEO AI-citation annotation ${annotationIndex}`,
+        );
+        if (
+          annotation.type !== undefined &&
+          annotation.type !== "url_citation"
+        ) {
+          continue;
+        }
+        if (typeof annotation.url !== "string") {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "DataForSEO AI-citation URL annotation omitted its URL.",
+          );
+        }
+        let url: URL;
+        try {
+          url = new URL(annotation.url);
+        } catch {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "DataForSEO AI-citation URL annotation was invalid.",
+          );
+        }
+        if (
+          (url.protocol !== "http:" && url.protocol !== "https:") ||
+          url.username !== "" ||
+          url.password !== ""
+        ) {
+          throw new SourceError(
+            "INVALID_RESPONSE",
+            "DataForSEO AI-citation URL annotation was not a public web URL.",
+          );
+        }
+        urls.add(url.href);
+      }
+    }
+  }
+  return [...urls].sort((left, right) => left.localeCompare(right, "en"));
+}
+
+function parseAiCitationResponse(
+  payload: unknown,
+  requestedModel: string,
+): DataForSeoAiCitationResponse {
+  const envelope = asRecord(payload, "DataForSEO response");
+  const providerStatusCode = asStatusCode(
+    envelope.status_code,
+    "DataForSEO response",
+  );
+  if (
+    providerStatusCode !== SUCCESS_STATUS &&
+    providerStatusCode !== EMPTY_RESULT_STATUS &&
+    !RETRYABLE_RATE_LIMIT_STATUSES.has(providerStatusCode)
+  ) {
+    throwProviderStatus(providerStatusCode, "request");
+  }
+  const envelopeCost =
+    RETRYABLE_RATE_LIMIT_STATUSES.has(providerStatusCode) &&
+    (envelope.cost === null || envelope.cost === undefined)
+      ? 0
+      : asNonNegativeNumber(envelope.cost, "DataForSEO response cost");
+  if (RETRYABLE_RATE_LIMIT_STATUSES.has(providerStatusCode)) {
+    return unavailableAiCitationResponse(
+      requestedModel,
+      providerStatusCode,
+      providerStatusCode,
+      envelopeCost,
+      "The provider rate limit made this query unavailable.",
+    );
+  }
+  if (providerStatusCode === EMPTY_RESULT_STATUS) {
+    return unavailableAiCitationResponse(
+      requestedModel,
+      providerStatusCode,
+      EMPTY_RESULT_STATUS,
+      envelopeCost,
+    );
+  }
+  if (!Array.isArray(envelope.tasks) || envelope.tasks.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO response did not contain exactly one task.",
+    );
+  }
+  const task = asRecord(envelope.tasks[0], "DataForSEO task");
+  const taskStatusCode = asStatusCode(task.status_code, "DataForSEO task");
+  if (RETRYABLE_RATE_LIMIT_STATUSES.has(taskStatusCode)) {
+    const rateLimitedCost =
+      task.cost === null || task.cost === undefined
+        ? 0
+        : asNonNegativeNumber(task.cost, "DataForSEO task cost");
+    return unavailableAiCitationResponse(
+      requestedModel,
+      providerStatusCode,
+      taskStatusCode,
+      rateLimitedCost,
+      "The provider rate limit made this query unavailable.",
+    );
+  }
+  if (
+    taskStatusCode !== SUCCESS_STATUS &&
+    taskStatusCode !== EMPTY_RESULT_STATUS
+  ) {
+    throwProviderStatus(taskStatusCode, "task");
+  }
+  const costUsd = asNonNegativeNumber(task.cost, "DataForSEO task cost");
+  if (taskStatusCode === EMPTY_RESULT_STATUS) {
+    return unavailableAiCitationResponse(
+      requestedModel,
+      providerStatusCode,
+      taskStatusCode,
+      costUsd,
+    );
+  }
+  if (task.result === null || task.result === undefined) {
+    if (task.result_count === 0) {
+      return unavailableAiCitationResponse(
+        requestedModel,
+        providerStatusCode,
+        EMPTY_RESULT_STATUS,
+        costUsd,
+      );
+    }
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO task omitted its AI-citation result.",
+    );
+  }
+  if (!Array.isArray(task.result) || task.result.length !== 1) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation task did not contain exactly one result.",
+    );
+  }
+  if (
+    task.result_count !== null &&
+    task.result_count !== undefined &&
+    asNonNegativeInteger(
+      task.result_count,
+      "DataForSEO AI-citation task result_count",
+    ) !== 1
+  ) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation task result_count was contradictory.",
+    );
+  }
+  const result = asRecord(task.result[0], "DataForSEO AI-citation result");
+  const resolvedModel = nullableString(
+    result.model_name,
+    "DataForSEO AI-citation result model_name",
+  );
+  if (resolvedModel === null) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      "DataForSEO AI-citation result omitted its resolved model.",
+    );
+  }
+  return {
+    availability: "available",
+    requestedModel,
+    resolvedModel,
+    observedAt: canonicalObservedAt(result.datetime),
+    sourceUrls: annotationSourceUrls(result),
+    costUsd,
+    providerStatusCode,
+    taskStatusCode,
+    limitation: null,
+  };
+}
+
 interface ParsedBacklinksTask {
   readonly providerStatusCode: number;
   readonly taskStatusCode: number;
@@ -1824,6 +2184,7 @@ export class HttpDataForSeoClient
     DataForSeoClient,
     DataForSeoCompetitorsDomainClient,
     DataForSeoSerpCompetitorsClient,
+    DataForSeoAiCitationClient,
     DataForSeoBacklinksClient
 {
   private readonly authorization: string;
@@ -1975,6 +2336,50 @@ export class HttpDataForSeoClient
       return parseSerpCompetitorsResponse(payload);
     } catch (error) {
       throw transportError(error, "serp-competitors");
+    } finally {
+      abortScope.cleanup();
+    }
+  }
+
+  async aiCitation(
+    request: DataForSeoAiCitationRequest,
+    signal?: AbortSignal,
+  ): Promise<DataForSeoAiCitationResponse> {
+    const normalized = normalizeAiCitationRequest(request);
+    const abortScope = createRequestAbortScope(this.requestTimeoutMs, [
+      this.signal,
+      signal,
+    ]);
+    try {
+      const response = await this.fetchImpl(
+        DATAFORSEO_CHAT_GPT_LLM_RESPONSES_LIVE_URL,
+        {
+          method: "POST",
+          headers: {
+            Authorization: this.authorization,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify([toAiCitationProviderTask(normalized)]),
+          redirect: "error",
+          signal: abortScope.signal,
+        },
+      );
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        throw new SourceError(
+          httpErrorCode(response.status),
+          `DataForSEO AI-citation request failed with HTTP ${response.status}.`,
+        );
+      }
+      const payload = await readBoundedJson(
+        response,
+        this.maxResponseBytes,
+        "DataForSEO AI-citation response",
+        abortScope.signal,
+      );
+      return parseAiCitationResponse(payload, normalized.modelName);
+    } catch (error) {
+      throw transportError(error, "ai-citation");
     } finally {
       abortScope.cleanup();
     }

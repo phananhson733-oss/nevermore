@@ -63,10 +63,15 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2,
   METRIC_DATAFORSEO_SERP_COMPETITOR,
+  dataForSeoOrganicOverlapRatio,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
+  parseDataForSeoSearchLandscapeV3Scope,
   type CrawlPageProjection,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
@@ -508,6 +513,9 @@ function validateCompetitorDiscoveryObservation(
   const value = objectRecord(row?.value_json);
   const isSerp =
     "sourceKind" in frozen && frozen.sourceKind === "serp_competitor";
+  const isV3Organic =
+    !isSerp &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
   const expectedKeys = isSerp
     ? [
         "targetDomain",
@@ -523,7 +531,20 @@ function validateCompetitorDiscoveryObservation(
         "marketCode",
         "languageCode",
       ]
-    : [
+    : isV3Organic
+      ? [
+          "targetDomain",
+          "competitorDomain",
+          "intersections",
+          "targetOrganicKeywordCount",
+          "serpOverlap",
+          "averagePosition",
+          "summedPosition",
+          "organicEstimatedTrafficVolume",
+          "marketCode",
+          "languageCode",
+        ]
+      : [
         "targetDomain",
         "competitorDomain",
         "intersections",
@@ -546,7 +567,9 @@ function validateCompetitorDiscoveryObservation(
     row.metric_key !==
       (isSerp
         ? METRIC_DATAFORSEO_SERP_COMPETITOR
-        : METRIC_DATAFORSEO_COMPETITOR_DOMAIN) ||
+        : isV3Organic
+          ? METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2
+          : METRIC_DATAFORSEO_COMPETITOR_DOMAIN) ||
     row.subject_type !== "site" ||
     row.subject_ref !== frozen.domain ||
     !sameTimestamptzInstant(row.observed_at, frozen.observedAt) ||
@@ -587,6 +610,26 @@ function validateCompetitorDiscoveryObservation(
   ) {
     invalidInput();
   }
+  if (isV3Organic) {
+    const targetOrganicKeywordCount = value["targetOrganicKeywordCount"];
+    const intersections = value["intersections"];
+    if (
+      typeof targetOrganicKeywordCount !== "number" ||
+      !Number.isSafeInteger(targetOrganicKeywordCount) ||
+      targetOrganicKeywordCount < 1 ||
+      typeof intersections !== "number" ||
+      !Number.isSafeInteger(intersections) ||
+      intersections < 1 ||
+      intersections > targetOrganicKeywordCount ||
+      value["serpOverlap"] !==
+        dataForSeoOrganicOverlapRatio(
+          intersections,
+          targetOrganicKeywordCount,
+        )
+    ) {
+      invalidInput();
+    }
+  }
 }
 
 function validateCompetitorDiscovery(
@@ -610,11 +653,22 @@ function validateCompetitorDiscovery(
     snapshot.schema_version ===
       DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
     snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+  const isV3 =
+    snapshot?.provider === "dataforseo" &&
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    snapshot.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
   let collectionScope:
     | ReturnType<typeof parseDataForSeoSearchLandscapeScope>
-    | ReturnType<typeof parseDataForSeoSearchLandscapeV2Scope>;
+    | ReturnType<typeof parseDataForSeoSearchLandscapeV2Scope>
+    | ReturnType<typeof parseDataForSeoSearchLandscapeV3Scope>;
   try {
-    collectionScope = isV2
+    collectionScope = isV3
+      ? parseDataForSeoSearchLandscapeV3Scope(
+          snapshot?.summary["collectionScope"],
+        )
+      : isV2
       ? parseDataForSeoSearchLandscapeV2Scope(
           snapshot?.summary["collectionScope"],
         )
@@ -632,7 +686,7 @@ function validateCompetitorDiscovery(
     snapshot.collection_run_id !== frozen.collectionRunId ||
     snapshot.source_connection_id !== frozen.sourceConnectionId ||
     snapshot.provider !== "dataforseo" ||
-    (!isV1 && !isV2) ||
+    (!isV1 && !isV2 && !isV3) ||
     snapshot.dataset_key !== frozen.datasetKey ||
     snapshot.schema_version !== frozen.schemaVersion ||
     snapshot.method_version !== frozen.methodVersion ||
@@ -650,6 +704,7 @@ function validateCompetitorDiscovery(
   const competitorRows = observations.filter(
     (row) =>
       row.metric_key === METRIC_DATAFORSEO_COMPETITOR_DOMAIN ||
+      row.metric_key === METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2 ||
       row.metric_key === METRIC_DATAFORSEO_SERP_COMPETITOR,
   );
   const rowsById = new Map(competitorRows.map((row) => [row.id, row]));

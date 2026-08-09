@@ -95,6 +95,21 @@ export interface DiagnosticKeywordEntityReadOptions {
   readonly limit: number;
 }
 
+export interface AiCitationCohortCandidateReadOptions {
+  readonly market: string;
+  readonly languageTag: string;
+  readonly limit: number;
+}
+
+export interface AiCitationCohortCandidateRow {
+  readonly entityId: string;
+  readonly revision: number;
+  readonly query: string;
+  readonly normalizedQuery: string;
+  readonly marketCode: string;
+  readonly languageTag: string;
+}
+
 export interface KeywordReviewMappingInput {
   readonly expectedRevision: number;
   readonly status: KeywordStatus;
@@ -175,6 +190,8 @@ export interface AutoGovernanceCandidateReadOptions {
 export const MAX_KEYWORD_ENTITY_PAGE_SIZE = 100;
 /** 5,000 accepted facts plus one overflow sentinel. */
 export const MAX_DIAGNOSTIC_KEYWORD_ENTITY_READ = 5_001;
+/** Exactly 20 admitted queries plus one overflow sentinel. */
+export const MAX_AI_CITATION_COHORT_CANDIDATE_READ = 21;
 /**
  * Automated governance runs inside the already-open Growth Audit transaction,
  * so its read and its two bulk writes stay bounded well below the diagnostic
@@ -233,7 +250,80 @@ function activeProjectPredicate(scope: ProjectScope) {
   );
 }
 
+function canonicalLanguageTag(languageTag: string): string {
+  if (languageTag.trim() !== languageTag || languageTag.length > 255) {
+    throw new RangeError("languageTag must be a canonical BCP-47 tag");
+  }
+  try {
+    const canonical = Intl.getCanonicalLocales(languageTag)[0];
+    if (!canonical || canonical !== languageTag) {
+      throw new RangeError("languageTag must be a canonical BCP-47 tag");
+    }
+    return canonical;
+  } catch {
+    throw new RangeError("languageTag must be a canonical BCP-47 tag");
+  }
+}
+
 export class KeywordsRepository extends Repository {
+  /**
+   * Admission read for the optional paid AI-citation sub-capability. Reading
+   * one overflow sentinel lets the caller distinguish exactly 20 eligible
+   * queries from a larger cohort without silently selecting a preferred 20.
+   */
+  async listAiCitationCohortCandidates(
+    scope: ProjectScope,
+    options: AiCitationCohortCandidateReadOptions,
+  ): Promise<AiCitationCohortCandidateRow[]> {
+    if (
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > MAX_AI_CITATION_COHORT_CANDIDATE_READ
+    ) {
+      throw new RangeError(
+        `limit must be between 1 and ${MAX_AI_CITATION_COHORT_CANDIDATE_READ}`,
+      );
+    }
+    if (!MARKET.test(options.market)) {
+      throw new RangeError("market must be an uppercase ISO alpha-2 code");
+    }
+    const languageTag = canonicalLanguageTag(options.languageTag);
+    const selection = {
+      entityId: keywordEntities.id,
+      revision: keywordEntities.mapping_revision,
+      query: keywordEntities.display_keyword,
+      normalizedQuery: keywordEntities.normalized_keyword,
+      marketCode: keywordEntities.market,
+      languageTag: keywordEntities.language_tag,
+    } as const;
+    return (await this.exec
+      .select(selection)
+      .from(keywordEntities)
+      .innerJoin(
+        clientProjects,
+        and(
+          eq(clientProjects.id, keywordEntities.project_id),
+          eq(clientProjects.workspace_id, keywordEntities.workspace_id),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          activeProjectPredicate(scope),
+          eq(keywordEntities.status, "approved"),
+          eq(keywordEntities.mapping_review_state, "confirmed"),
+          eq(keywordEntities.query_kind, "generative_query"),
+          eq(keywordEntities.market, options.market),
+          eq(keywordEntities.language_tag, languageTag),
+        ),
+      )
+      .orderBy(
+        asc(keywordEntities.normalized_keyword),
+        asc(keywordEntities.id),
+      )
+      .limit(options.limit)) as AiCitationCohortCandidateRow[];
+  }
+
   async listDiagnosticEligible(
     scope: ProjectScope,
     options: DiagnosticKeywordEntityReadOptions,

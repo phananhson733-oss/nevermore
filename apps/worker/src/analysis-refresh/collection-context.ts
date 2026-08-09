@@ -6,13 +6,14 @@ import {
 import { ProductProfileDraft, type ProductProfileDraft as ProductProfileDraftValue } from "@sf/contracts";
 import {
   createDataForSeoBacklinksScope,
-  createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
   DATAFORSEO_BACKLINKS_OPERATION,
-  DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_OPERATION,
   resolveDataForSeoMarket,
   type DataForSeoSearchLandscapeSeed,
-  type DataForSeoSearchLandscapeV2Scope,
+  type DataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
+import type { AnalysisRefreshRequestPayload } from "./payload.ts";
 
 /**
  * ISO 3166-1 alpha-2 assignments. `Intl.DisplayNames` also recognizes reserved
@@ -43,7 +44,7 @@ export const ANALYSIS_REFRESH_COLLECTION_CONFIG = {
   },
   dataforseo: {
     provider: "dataforseo",
-    operation: DATAFORSEO_SEARCH_LANDSCAPE_V2_OPERATION,
+    operation: DATAFORSEO_SEARCH_LANDSCAPE_V3_OPERATION,
     queue: "collect.dataforseo",
   },
   dataforseo_backlinks: {
@@ -238,16 +239,19 @@ export function dataForSeoSearchLandscapeScopeForSite(
   maxKeywords: number,
   maxCompetitors: number,
   seeds: readonly DataForSeoSearchLandscapeSeed[] = [],
-): DataForSeoSearchLandscapeV2Scope | null {
+  aiCitations: AnalysisRefreshRequestPayload["dataForSeo"]["aiCitations"] = {
+    state: "disabled",
+  },
+): DataForSeoSearchLandscapeV3Scope | null {
   if (site.market_codes.length !== 1 || site.language_codes.length !== 1) {
     return null;
   }
   const marketCode = site.market_codes[0]?.trim().toUpperCase();
-  const languageTag = site.language_codes[0]?.trim();
+  const rawLanguageTag = site.language_codes[0]?.trim();
   if (
     !marketCode ||
     !ISO_3166_ALPHA2_MARKET_CODES.has(marketCode) ||
-    !languageTag
+    !rawLanguageTag
   ) {
     return null;
   }
@@ -257,18 +261,48 @@ export function dataForSeoSearchLandscapeScopeForSite(
   // set. The site's configured language is honoured when Labs actually has
   // that database, and otherwise gives way to the market's own — sending an
   // unserved language is rejected with task status 40501.
+  let languageTag: string;
+  try {
+    languageTag = Intl.getCanonicalLocales(rawLanguageTag)[0] ?? "";
+  } catch {
+    return null;
+  }
+  if (!languageTag) return null;
   const market = resolveDataForSeoMarket(marketCode, languageTag);
   if (!market) return null;
   try {
-    return createDataForSeoSearchLandscapeV2Scope({
+    const aiCitationInput =
+      aiCitations?.state === "enabled"
+        ? {
+            state: "enabled" as const,
+            requestedModel: aiCitations.requestedModel,
+            querySetHash: aiCitations.querySetHash,
+            queries: aiCitations.queries,
+            trackedCompetitorDomains:
+              aiCitations.trackedCompetitorDomains,
+          }
+        : aiCitations?.state === "skipped_insufficient_query_cohort"
+          ? {
+              state: aiCitations.state,
+              eligibleQueryCount: aiCitations.eligibleQueryCount,
+            }
+          : { state: "disabled" as const };
+    const providerLanguageMatchesSite =
+      languageTag.split("-")[0]?.toLowerCase() === market.languageCode;
+    if (aiCitations?.state === "enabled" && !providerLanguageMatchesSite) {
+      return null;
+    }
+    return createDataForSeoSearchLandscapeV3Scope({
       target: site.host,
       marketCode,
       locationCode: market.locationCode,
-      languageTag: market.languageCode,
+      languageTag:
+        aiCitations?.state === "enabled" ? languageTag : market.languageCode,
       rankedKeywordsLimit: maxKeywords,
       competitorsDomainLimit: maxCompetitors,
       serpCompetitorsLimit: maxCompetitors,
       seeds,
+      aiCitations: aiCitationInput,
     });
   } catch {
     return null;
@@ -300,7 +334,7 @@ export function dataForSeoBacklinksScopeForSite(
 }
 
 export function dataForSeoConnectionConfig(
-  scope: DataForSeoSearchLandscapeV2Scope,
+  scope: DataForSeoSearchLandscapeV3Scope,
 ): DataForSeoConnectionConfig {
   // A scope may address the provider by code or by name. Only the customer-
   // readable name belongs in the connection config, so recover it from the
@@ -326,7 +360,7 @@ export function dataForSeoConnectionConfig(
 export function dataForSeoLimitation(
   config: DataForSeoConnectionConfig,
 ): string {
-  return `DataForSEO search-landscape v2 observations for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}; ranked keywords at positions 1–100 are capped at ${config.maxKeywords}, organic competitor domains at ${config.maxCompetitors}, and the conditional SERP Competitors fallback at ${config.maxSerpCompetitors} per collection. GSC, Crawler, and Product Profile phrases remain declared seeds, never DataForSEO evidence. Every intersections value is an integer keyword-intersection count, not a percentage; no competitor name or business relationship is inferred.`;
+  return `DataForSEO search-landscape v3 observations for ${config.target}; market ${config.marketCode} (${config.locationName}), language ${config.languageCode}; ranked keywords at positions 1–100 are capped at ${config.maxKeywords}, organic competitor domains at ${config.maxCompetitors}, and the conditional SERP Competitors fallback at ${config.maxSerpCompetitors} per collection. GSC, Crawler, and Product Profile phrases remain declared seeds, never DataForSEO evidence. Every intersections value is an integer keyword-intersection count, not a percentage; no competitor name or business relationship is inferred.`;
 }
 
 export function dataForSeoBacklinksConnectionConfig(

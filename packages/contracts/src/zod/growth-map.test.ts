@@ -2134,6 +2134,102 @@ function competitorLibraryResponse() {
 }
 
 describe("Growth Map Competitor Library contracts", () => {
+  it("accepts only exact canonical organic-overlap operands and fixed-cohort AI citation counts", () => {
+    const serpOrigin = {
+      occurrenceId: ids.competitorOccurrence,
+      originKind: "serp_overlap",
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      observedAt: "2026-07-21T09:00:00Z",
+      evidenceRefs: [],
+    };
+    const aiOrigin = {
+      occurrenceId: ids.competitorOccurrence2,
+      originKind: "ai_citation",
+      snapshotId: ids.aiSnapshot,
+      observationId: ids.aiObservation,
+      observedAt: "2026-07-21T09:05:00Z",
+      evidenceRefs: [],
+    };
+    const item = {
+      ...approvedCompetitorItem(),
+      originOccurrences: [serpOrigin, aiOrigin],
+      lastObservedAt: "2026-07-21T09:05:00Z",
+      serpOverlap: {
+        availability: "available",
+        value: 0.17,
+        snapshotId: ids.serpSnapshot,
+        observationId: ids.serpObservation,
+        valuePointer: "/valueJson/serpOverlap",
+        observedAt: "2026-07-21T09:00:00Z",
+        limitation:
+          "Organic positions 1-100 in one exact US/en provider snapshot.",
+      },
+      aiCitationInsight: {
+        availability: "available",
+        value: 8,
+        attemptedQueries: 20,
+        observedQueries: 17,
+        unavailableQueries: 3,
+        cohortCoverage: "partial",
+        querySetHash: "a".repeat(64),
+        platform: "chat_gpt",
+        model: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        snapshotId: ids.aiSnapshot,
+        observationId: ids.aiObservation,
+        valuePointer: "/valueJson/citedQueries",
+        observedAt: "2026-07-21T09:05:00Z",
+        limitation:
+          "17 of 20 fixed prompts were observed; 3 were unavailable.",
+      },
+    };
+    const parse = (candidate: unknown) =>
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...competitorLibraryResponse(),
+        data: [candidate],
+      }).success;
+
+    expect(parse(item)).toBe(true);
+    expect(
+      parse({
+        ...item,
+        serpOverlap: { ...item.serpOverlap, value: 0.18 },
+      }),
+    ).toBe(true);
+    expect(
+      parse({
+        ...item,
+        aiCitationInsight: {
+          ...item.aiCitationInsight,
+          unavailableQueries: 2,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      parse({
+        ...item,
+        aiCitationInsight: {
+          ...item.aiCitationInsight,
+          value: 18,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      parse({
+        ...item,
+        aiCitationInsight: {
+          ...item.aiCitationInsight,
+          observedQueries: 20,
+          unavailableQueries: 0,
+          cohortCoverage: "complete",
+          limitation: null,
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("accepts strict candidate and approved competitor projections without Action state", () => {
     const parsed = GrowthMapCompetitorLibraryResponse.parse(
       competitorLibraryResponse(),
@@ -2337,7 +2433,7 @@ describe("Growth Map Competitor Library contracts", () => {
     };
     const availableSerpOverlap = {
       availability: "available",
-      value: 0,
+      value: 0.17,
       snapshotId: ids.serpSnapshot,
       observationId: ids.serpObservation,
       valuePointer: "/valueJson/serpOverlap",
@@ -2438,12 +2534,21 @@ describe("Growth Map Competitor Library contracts", () => {
             lastObservedAt: "2026-07-21T09:05:00Z",
             aiCitationInsight: {
               availability: "available",
-              value: "The competitor was cited for implementation guidance.",
+              value: 8,
+              attemptedQueries: 20,
+              observedQueries: 20,
+              unavailableQueries: 0,
+              cohortCoverage: "complete",
+              querySetHash: "b".repeat(64),
+              platform: "chat_gpt",
+              model: "gpt-5",
+              marketCode: "US",
+              languageTag: "en-US",
               snapshotId: ids.aiSnapshot,
               observationId: ids.aiObservation,
-              valuePointer: "/valueJson/aiCitationInsight",
+              valuePointer: "/valueJson/citedQueries",
               observedAt: "2026-07-21T09:05:00Z",
-              limitation: "One observed answer is not market-wide share.",
+              limitation: null,
             },
           },
         ],

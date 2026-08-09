@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0046_workspace_plan_tier.sql` (**46 ordered migrations**)
+Migration range: `0001_init.sql` through `0047_dataforseo_competitor_metrics.sql` (**47 ordered migrations**)
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0045` are hosted; every release must back up,
+v0.4 migrations through `0047` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 
@@ -156,8 +156,15 @@ self-healing retry states.
    login/password. Keep `DATAFORSEO_BACKLINKS_ENABLED=false` on both services by
    default; enabling it requires the same reviewed value and caps on Web and
    Worker while global `DATAFORSEO_ENABLED=true` remains a prerequisite.
+   Keep `DATAFORSEO_AI_CITATIONS_ENABLED=false` on both services by default.
+   Enabling it requires the same reviewed value on Web and Worker plus a
+   non-secret, server-pinned `DATAFORSEO_AI_CITATION_MODEL` that the provider's
+   Models contract reports as supporting web search and country scope; collection runs
+   only when the site has exactly 20 current approved, mapping-confirmed
+   GenerativeQuery rows in its exact market/language scope. Smaller cohorts and
+   the 21-row overflow sentinel skip without issuing AI provider requests.
    DataForSEO Search Landscape (DFS) is invoked only by the server-owned
-   Analysis Refresh plan. v2 queries positions 1–100 and can issue one paid
+   Analysis Refresh plan. v3 queries positions 1–100 and can issue one paid
    SERP Competitors fallback only when domain overlap is empty and frozen
    GSC/Crawl/Product Profile seeds exist. The public collection API remains
    limited to Crawl, GSC, and GA4; no client request may supply DFS/Backlinks

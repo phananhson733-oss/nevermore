@@ -254,7 +254,8 @@ function assertCompetitorOrigin(
   }
   if (
     row.origin_kind === "csv_keyword_gap" ||
-    row.origin_kind === "serp_overlap"
+    row.origin_kind === "serp_overlap" ||
+    row.origin_kind === "ai_citation"
       ? !hasSnapshot
       : hasSnapshot
   ) {

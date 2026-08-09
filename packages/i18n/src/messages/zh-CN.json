@@ -2047,6 +2047,10 @@
         "collecting": "采集中",
         "unavailable": "不可用"
       },
+      "aiCitationCohort": {
+        "coverageLabel": "AI 引用查询覆盖",
+        "partial": "已尝试 {attempted} 个查询 · {unavailable} 个不可用"
+      },
       "openFullProfile": "打开竞品完整详情",
       "noMatchesTitle": "没有匹配的竞品",
       "noMatchesDescription": "请尝试其他名称、域名或审核状态。这里仅显示当前已加载到的精确记录。",

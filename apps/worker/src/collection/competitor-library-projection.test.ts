@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CollectionRunsRepository,
@@ -16,8 +17,10 @@ import {
 import {
   createDataForSeoSearchLandscapeScope,
   createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import {
+  deriveAiCitationCompetitorOriginInput,
   deriveCsvCompetitorOriginInput,
   deriveSerpOverlapCompetitorOriginInput,
   projectCollectionSnapshotCompetitors,
@@ -202,6 +205,29 @@ const searchLandscapeV2Scope = createDataForSeoSearchLandscapeV2Scope({
   ],
 });
 
+const aiQueryRows = Array.from({ length: 20 }, (_, index) => ({
+  entityId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  revision: index + 1,
+  query: `Which onboarding platform fits team ${index + 1}?`,
+  normalizedQuery: `which onboarding platform fits team ${String(index + 1).padStart(2, "0")}?`,
+  marketCode: "US",
+  languageTag: "en-US",
+}));
+
+const searchLandscapeV3Scope = createDataForSeoSearchLandscapeV3Scope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "en-US",
+  seeds: [],
+  aiCitations: {
+    state: "enabled",
+    requestedModel: "gpt-5",
+    queries: aiQueryRows,
+    trackedCompetitorDomains: ["rival.example"],
+  },
+});
+
 function dataForSeoSnapshot(
   overrides: Partial<DataSnapshotRow> = {},
 ): DataSnapshotRow {
@@ -310,6 +336,90 @@ function dataForSeoV2Run(
       siteId,
       collectionScope: searchLandscapeV2Scope as unknown as CanonicalValue,
     } as CanonicalValue),
+    ...overrides,
+  });
+}
+
+function dataForSeoV3Snapshot(
+  overrides: Partial<DataSnapshotRow> = {},
+): DataSnapshotRow {
+  return dataForSeoSnapshot({
+    dataset_key: "dataforseo.search_landscape.v3",
+    schema_version: "dataforseo.search_landscape.v3",
+    method_version: "dataforseo.search_landscape.v3",
+    summary: { collectionScope: searchLandscapeV3Scope },
+    ...overrides,
+  });
+}
+
+function dataForSeoV3Run(
+  overrides: Partial<CollectionRunRow> = {},
+): CollectionRunRow {
+  return dataForSeoRun({
+    method_version: "dataforseo.search_landscape.v3",
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "search_landscape",
+      siteId,
+      collectionScope: searchLandscapeV3Scope as unknown as CanonicalValue,
+    } as CanonicalValue),
+    ...overrides,
+  });
+}
+
+function dataForSeoV3OrganicObservation(
+  overrides: Partial<ObservationRow> = {},
+): ObservationRow {
+  return dataForSeoObservation({
+    metric_key: "dataforseo.competitor_domain.v2",
+    value_json: {
+      targetDomain: "example.com",
+      competitorDomain: "rival.example",
+      intersections: 4,
+      targetOrganicKeywordCount: 20,
+      serpOverlap: 0.2,
+      averagePosition: 12.25,
+      summedPosition: 49,
+      organicEstimatedTrafficVolume: 1_850.75,
+      marketCode: "US",
+      languageCode: "en",
+    },
+    ...overrides,
+  });
+}
+
+function dataForSeoAiCitationObservation(
+  overrides: Partial<ObservationRow> = {},
+): ObservationRow {
+  const queryOutcomes = aiQueryRows.map((query, index) => ({
+    queryEntityId: query.entityId,
+    queryRevision: query.revision,
+    queryHash: createHash("sha256")
+      .update(query.normalizedQuery)
+      .digest("hex"),
+    availability: index < 8 ? "available" : "unavailable",
+    cited: index < 3,
+  }));
+  return dataForSeoObservation({
+    metric_key: "dataforseo.competitor_ai_citation.v1",
+    value_json: {
+      targetDomain: "example.com",
+      competitorDomain: "rival.example",
+      attemptedQueries: 20,
+      observedQueries: 8,
+      citedQueries: 3,
+      unavailableQueries: 12,
+      cohortCoverage: "partial",
+      querySetHash:
+        searchLandscapeV3Scope.aiCitations.state === "enabled"
+          ? searchLandscapeV3Scope.aiCitations.querySetHash
+          : "",
+      platform: "chat_gpt",
+      model: "gpt-5",
+      marketCode: "US",
+      languageTag: "en-US",
+      queryOutcomes,
+    },
     ...overrides,
   });
 }
@@ -542,6 +652,97 @@ describe("deriveSerpOverlapCompetitorOriginInput", () => {
     });
   });
 
+  it("projects the v3 organic-overlap metric as canonical SERP lineage", () => {
+    expect(
+      deriveSerpOverlapCompetitorOriginInput(
+        dataForSeoV3Snapshot(),
+        dataForSeoV3Run(),
+        dataForSeoV3OrganicObservation(),
+      ),
+    ).toEqual({
+      originKind: "serp_overlap",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+  });
+
+  it("projects only available, observed v3 AI aggregates as ai_citation lineage", () => {
+    expect(
+      deriveAiCitationCompetitorOriginInput(
+        dataForSeoV3Snapshot(),
+        dataForSeoV3Run(),
+        dataForSeoAiCitationObservation(),
+      ),
+    ).toEqual({
+      originKind: "ai_citation",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+    expect(
+      deriveAiCitationCompetitorOriginInput(
+        dataForSeoV3Snapshot(),
+        dataForSeoV3Run(),
+        dataForSeoAiCitationObservation({
+          availability: "unavailable",
+          value_json: null,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      deriveAiCitationCompetitorOriginInput(
+        dataForSeoV3Snapshot(),
+        dataForSeoV3Run(),
+        dataForSeoAiCitationObservation({
+          value_json: (() => {
+            const value = dataForSeoAiCitationObservation()
+              .value_json as Record<string, unknown>;
+            return {
+              ...value,
+            observedQueries: 0,
+              citedQueries: 0,
+              unavailableQueries: 20,
+              queryOutcomes: (value["queryOutcomes"] as Array<
+                Record<string, unknown>
+              >).map((outcome) => ({
+                ...outcome,
+                availability: "unavailable",
+                cited: false,
+              })),
+            };
+          })(),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects an AI queryHash that does not bind to the frozen normalized query", () => {
+    const value = dataForSeoAiCitationObservation()
+      .value_json as Record<string, unknown>;
+    const outcomes = value["queryOutcomes"] as Array<Record<string, unknown>>;
+
+    expect(() =>
+      deriveAiCitationCompetitorOriginInput(
+        dataForSeoV3Snapshot(),
+        dataForSeoV3Run(),
+        dataForSeoAiCitationObservation({
+          value_json: {
+            ...value,
+            queryOutcomes: [
+              { ...outcomes[0], queryHash: "f".repeat(64) },
+              ...outcomes.slice(1),
+            ],
+          },
+        }),
+      ),
+    ).toThrow(/query outcome.*frozen cohort/i);
+  });
+
   it("rejects a v2 SERP fallback that lies about its frozen seed count", () => {
     expect(() =>
       deriveSerpOverlapCompetitorOriginInput(
@@ -758,6 +959,56 @@ describe("projectCollectionSnapshotCompetitors", () => {
       name: null,
       snapshotId,
       observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    });
+  });
+
+  it("projects v3 organic and AI observations through their distinct canonical origins", async () => {
+    vi.spyOn(
+      CollectionRunsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoV3Run());
+    vi.spyOn(
+      SourceConnectionsRepository.prototype,
+      "findById",
+    ).mockResolvedValue(dataForSeoConnection());
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIdsPage",
+    ).mockResolvedValue({
+      rows: [
+        dataForSeoV3OrganicObservation(),
+        dataForSeoAiCitationObservation({
+          id: "00000000-0000-4000-8000-000000000098",
+        }),
+      ],
+      nextCursor: null,
+    });
+    const upsert = vi
+      .spyOn(CompetitorsRepository.prototype, "upsertOrigin")
+      .mockResolvedValue({
+        occurrenceId: "00000000-0000-4000-8000-000000000010",
+        competitorId: "00000000-0000-4000-8000-000000000011",
+      });
+
+    await expect(
+      projectCollectionSnapshotCompetitors(
+        {} as never,
+        scope,
+        dataForSeoV3Snapshot(),
+      ),
+    ).resolves.toBe(2);
+    expect(upsert).toHaveBeenNthCalledWith(
+      1,
+      scope,
+      expect.objectContaining({ originKind: "serp_overlap" }),
+    );
+    expect(upsert).toHaveBeenNthCalledWith(2, scope, {
+      originKind: "ai_citation",
+      domain: "rival.example",
+      name: null,
+      snapshotId,
+      observationId: "00000000-0000-4000-8000-000000000098",
       sourcePointer: "/valueJson/competitorDomain",
     });
   });

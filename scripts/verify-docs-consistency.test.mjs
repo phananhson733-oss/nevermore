@@ -146,7 +146,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 46);
+  assert.equal(migrationFiles.length, 47);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
@@ -185,6 +185,23 @@ test("current docs freeze server-owned DFS and published-generation reads", () =
       source,
       /(?:crawl|Crawl)[\s\S]{0,100}(?:gsc|GSC)[\s\S]{0,100}(?:ga4|GA4)/,
     );
+  }
+});
+
+test("current docs freeze Search Landscape v3 and default-off AI citations", () => {
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/PROGRESS.md",
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/README.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /(?:Search Landscape|DFS)[\s\S]{0,80}v3/i);
+    assert.match(source, /DATAFORSEO_AI_CITATIONS_ENABLED/);
+    assert.match(source, /(?:exact(?:ly)?|恰好|精确)[\s\S]{0,40}20/i);
+    assert.match(source, /default-off|by default|默认.*关闭/s);
   }
 });
 

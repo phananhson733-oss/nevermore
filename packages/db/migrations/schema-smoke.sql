@@ -4914,7 +4914,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0046_workspace_plan_tier' THEN
+  ) IS DISTINCT FROM '0047_dataforseo_competitor_metrics' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (
@@ -5689,6 +5689,16 @@ BEGIN
     RAISE EXCEPTION 'DataForSEO Search Landscape dataset is absent';
   END IF;
   IF position(
+    '''dataforseo.search_landscape.v3''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid = 'app.data_snapshots'::regclass
+        AND constraint_row.conname = 'data_snapshots_dataset_key_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'DataForSEO Search Landscape v3 dataset is absent';
+  END IF;
+  IF position(
     '''serp_overlap''' IN (
       SELECT pg_get_constraintdef(constraint_row.oid)
       FROM pg_constraint constraint_row
@@ -5699,6 +5709,18 @@ BEGIN
     )
   ) = 0 THEN
     RAISE EXCEPTION 'SERP overlap origin discriminator is absent';
+  END IF;
+  IF position(
+    '''ai_citation''' IN (
+      SELECT pg_get_constraintdef(constraint_row.oid)
+      FROM pg_constraint constraint_row
+      WHERE constraint_row.conrelid =
+        'app.competitor_origin_occurrences'::regclass
+        AND constraint_row.conname =
+          'competitor_origin_occurrences_origin_kind_check'
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'AI citation origin discriminator is absent';
   END IF;
   IF (
     SELECT count(*)
@@ -5712,6 +5734,16 @@ BEGIN
   END IF;
   IF (
     SELECT count(*)
+    FROM pg_indexes
+    WHERE schemaname = 'app'
+      AND indexname = 'competitor_origins_ai_citation_identity_idx'
+      AND indexdef LIKE '%normalized_observation_id, source_pointer%'
+      AND indexdef LIKE '%origin_kind = ''ai_citation''%'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'AI citation stable partial identity index is incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
     FROM pg_trigger trigger_row
     JOIN pg_class relation ON relation.oid = trigger_row.tgrelid
     JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
@@ -5722,9 +5754,10 @@ BEGIN
         'data_snapshots_dataforseo_provenance_guard',
         'normalized_observations_dataforseo_provenance_guard',
         'competitor_origins_serp_lineage_guard',
+        'competitor_origins_ai_citation_lineage_guard',
         'competitor_origins_delete_guard'
       )
-  ) <> 5 THEN
+  ) <> 6 THEN
     RAISE EXCEPTION 'DataForSEO Search Landscape triggers are incomplete';
   END IF;
   IF (
@@ -5736,9 +5769,13 @@ BEGIN
         'enforce_dataforseo_data_snapshot_provenance',
         'enforce_dataforseo_observation_provenance',
         'enforce_serp_overlap_competitor_origin_lineage',
-        'upsert_serp_overlap_competitor_origin'
+        'upsert_serp_overlap_competitor_origin',
+        'is_dataforseo_competitor_domain_v2',
+        'is_dataforseo_competitor_ai_citation_v1',
+        'enforce_ai_citation_competitor_origin_lineage',
+        'upsert_ai_citation_competitor_origin'
       )
-  ) <> 5 THEN
+  ) <> 9 THEN
     RAISE EXCEPTION 'DataForSEO Search Landscape routines are incomplete';
   END IF;
 END;

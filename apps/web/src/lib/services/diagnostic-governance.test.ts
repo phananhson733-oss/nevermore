@@ -285,6 +285,34 @@ describe("freezeDiagnosticGovernance", () => {
     ]);
   });
 
+  it("freezes exact canonical lineage for ai_citation competitor origins", async () => {
+    mockLibraryReads({
+      origins: new Map([
+        [
+          ids.competitor,
+          [
+            origin({
+              origin_kind: "ai_citation",
+              import_preview_id: null,
+              source_pointer: "/valueJson/competitorDomain",
+            }),
+          ],
+        ],
+      ]),
+    });
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(projection.competitors[0]?.originRefs).toEqual([
+      {
+        occurrenceId: ids.competitorOrigin,
+        originKind: "ai_citation",
+        snapshotId: ids.competitorSnapshot,
+        observationId: ids.competitorObservation,
+      },
+    ]);
+  });
+
   it("fails closed when serp_overlap lineage is missing or partial", async () => {
     mockLibraryReads({
       origins: new Map([

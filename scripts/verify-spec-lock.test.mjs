@@ -243,6 +243,11 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/0046_workspace_plan_tier.sql",
     fixtureMigration("0046_workspace_plan_tier"),
   );
+  write(
+    root,
+    "packages/db/migrations/0047_dataforseo_competitor_metrics.sql",
+    fixtureMigration("0047_dataforseo_competitor_metrics"),
+  );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
     write(
@@ -316,7 +321,7 @@ function makeFixture(t, options = {}) {
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0046_workspace_plan_tier",
+    migrationHead: "0047_dataforseo_competitor_metrics",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -352,7 +357,10 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.tables.length, 78);
   assert.equal(activeLock.rules.length, 12);
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
-  assert.equal(activeLock.migrationHead, "0046_workspace_plan_tier");
+  assert.equal(
+    activeLock.migrationHead,
+    "0047_dataforseo_competitor_metrics",
+  );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
   assert.equal(activeLock.ruleVersions["TECH-INDEXABILITY-006"], 1);

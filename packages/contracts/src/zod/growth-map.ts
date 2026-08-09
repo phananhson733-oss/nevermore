@@ -2293,7 +2293,7 @@ const AvailableCompetitorSerpOverlap = z
   .object({
     ...CompetitorInsightLineageShape,
     availability: z.literal("available"),
-    value: z.number().finite().nonnegative(),
+    value: z.number().finite().positive().max(1),
   })
   .strict();
 
@@ -2309,9 +2309,64 @@ const AvailableCompetitorAiCitationInsight = z
   .object({
     ...CompetitorInsightLineageShape,
     availability: z.literal("available"),
-    value: BoundedText,
+    value: z.number().int().nonnegative(),
+    attemptedQueries: z.literal(20),
+    observedQueries: z.number().int().min(1).max(20),
+    unavailableQueries: z.number().int().min(0).max(19),
+    cohortCoverage: z.enum(["complete", "partial"]),
+    querySetHash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/u, "Must be a lowercase SHA-256 hex digest"),
+    platform: z.literal("chat_gpt"),
+    model: BoundedLabel,
+    marketCode: MarketCode,
+    languageTag: GrowthMapLibraryLanguageTag,
   })
-  .strict();
+  .strict()
+  .superRefine((insight, ctx) => {
+    if (insight.value > insight.observedQueries) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "Cited queries cannot exceed observed queries",
+      });
+    }
+    if (
+      insight.unavailableQueries !==
+      insight.attemptedQueries - insight.observedQueries
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["unavailableQueries"],
+        message:
+          "Unavailable queries must equal attempted queries minus observed queries",
+      });
+    }
+    const complete = insight.observedQueries === insight.attemptedQueries;
+    if (
+      insight.cohortCoverage !== (complete ? "complete" : "partial")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cohortCoverage"],
+        message: "AI citation cohort coverage does not match its query counts",
+      });
+    }
+    if (complete && insight.limitation !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["limitation"],
+        message: "A complete AI citation cohort cannot carry a partiality limitation",
+      });
+    }
+    if (!complete && insight.limitation === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["limitation"],
+        message: "A partial AI citation cohort requires a limitation",
+      });
+    }
+  });
 
 export const GrowthMapCompetitorAiCitationInsight = z.discriminatedUnion(
   "availability",
@@ -2481,7 +2536,7 @@ export const GrowthMapCompetitorLibraryItem =
     if (item.aiCitationInsight.availability === "available") {
       const aiCitationInsight = item.aiCitationInsight;
       if (
-        aiCitationInsight.valuePointer !== "/valueJson/aiCitationInsight"
+        aiCitationInsight.valuePointer !== "/valueJson/citedQueries"
       ) {
         ctx.addIssue({
           code: "custom",

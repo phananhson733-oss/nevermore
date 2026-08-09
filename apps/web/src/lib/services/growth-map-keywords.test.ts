@@ -15,6 +15,7 @@ import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
   createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -329,6 +330,57 @@ function searchLandscapeV2CollectionRun(
   return collectionRun({
     operation: "search_landscape",
     method_version: "dataforseo.search_landscape.v2",
+    ...overrides,
+  });
+}
+
+function dataForSeoSearchLandscapeV3Snapshot(
+  overrides: Record<string, unknown> = {},
+) {
+  const collectionScope = createDataForSeoSearchLandscapeV3Scope({
+    target: "example.com",
+    marketCode: "US",
+    languageTag: "en-US",
+    locationCode: 2840,
+    rankedKeywordsLimit: 200,
+    competitorsDomainLimit: 100,
+    serpCompetitorsLimit: 100,
+    seeds: [
+      {
+        keyword: "customer onboarding software",
+        sourceKind: "gsc_top_query",
+        sourceRef: `observation:${ids.observation}#/valueJson/query`,
+      },
+    ],
+    aiCitations: {
+      state: "skipped_insufficient_query_cohort",
+      eligibleQueryCount: 12,
+    },
+  });
+  return dataForSeoSnapshot({
+    dataset_key: "dataforseo.search_landscape.v3",
+    schema_version: "dataforseo.search_landscape.v3",
+    method_version: "dataforseo.search_landscape.v3",
+    summary: {
+      collectionScope,
+      timing: {
+        collectedAt: capturedAt,
+        dataAsOf: null,
+        observedAt: null,
+        freshness: "unknown",
+      },
+      privateRawTaskId: "must-not-leak",
+    },
+    ...overrides,
+  });
+}
+
+function searchLandscapeV3CollectionRun(
+  overrides: Record<string, unknown> = {},
+) {
+  return collectionRun({
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v3",
     ...overrides,
   });
 }
@@ -988,6 +1040,46 @@ describe("Growth Map Keyword Library read service", () => {
     expect(JSON.stringify(response)).not.toContain("must-not-leak");
   });
 
+  it("projects unchanged ranked-keyword evidence from the exact v3 lineage", async () => {
+    const exec = arrangeList({
+      snapshots: [dataForSeoSearchLandscapeV3Snapshot()],
+      collectionRuns: [searchLandscapeV3CollectionRun()],
+    });
+
+    const response = await listProjectAuditKeywords(
+      scope,
+      ids.project,
+      {
+        limit: 50,
+        cursor: null,
+        now: new Date("2026-07-22T09:00:00.000Z"),
+      },
+      exec as never,
+    );
+
+    expect(response.data[0]).toMatchObject({
+      sourceOccurrences: [
+        expect.objectContaining({
+          sourceKind: "dataforseo_ranked",
+          snapshotId: ids.snapshot,
+          sourceObservationId: ids.observation,
+          scopeLimitation: expect.stringMatching(
+            /search_landscape v3.*200.*100.*100.*1 frozen seed/is,
+          ),
+        }),
+      ],
+      metrics: {
+        currentRank: expect.objectContaining({
+          snapshotId: ids.snapshot,
+          observationId: ids.observation,
+          valuePointer: "/valueJson/currentRank",
+          value: 12,
+        }),
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain("must-not-leak");
+  });
+
   it.each([
     {
       drift: "legacy Snapshot with composite CollectionRun",
@@ -1007,6 +1099,11 @@ describe("Growth Map Keyword Library read service", () => {
           method_version: "dataforseo.ranked_keywords.v1",
         }),
       ],
+    },
+    {
+      drift: "v3 Snapshot with a v2 CollectionRun",
+      snapshots: [dataForSeoSearchLandscapeV3Snapshot()],
+      collectionRuns: [searchLandscapeV2CollectionRun()],
     },
   ])("fails closed on $drift", async ({ snapshots, collectionRuns }) => {
     const exec = arrangeList({ snapshots, collectionRuns });

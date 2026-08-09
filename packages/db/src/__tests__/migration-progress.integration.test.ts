@@ -151,6 +151,7 @@ describe("ordered migration progress", () => {
         "0044_dataforseo_backlinks.sql",
         "0045_dataforseo_backlink_target_lineage.sql",
         "0046_workspace_plan_tier.sql",
+        "0047_dataforseo_competitor_metrics.sql",
       ]);
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,

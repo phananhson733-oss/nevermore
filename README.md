@@ -18,7 +18,7 @@ Contract inventory: **79 API operations / 10 async operations / 78 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0046_workspace_plan_tier.sql` (**46 migrations**).
+`0047_dataforseo_competitor_metrics.sql` (**47 migrations**).
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and
@@ -99,9 +99,13 @@ connected GA4, optional DataForSEO Search Landscape (DFS), optional
 exact manifest; new parents use v2. Public
 `createCollectionRun` remains limited to `crawl`, `gsc`, and `ga4`; customers
 cannot submit DFS/Backlinks targets, market, language, limits, credentials, or
-provider queries. DFS v2 queries organic positions 1–100 and, only when domain overlap
+provider queries. DFS v3 queries organic positions 1–100 and, only when domain overlap
 is empty, may use frozen GSC/Crawl/Product Profile seeds for one paid SERP
-Competitors fallback while preserving each seed's real source.
+Competitors fallback while preserving each seed's real source. Its optional AI
+citation sub-capability (`DATAFORSEO_AI_CITATIONS_ENABLED=false`) is independently
+default-off and only runs against an
+exact frozen cohort of 20 approved, mapping-confirmed GenerativeQuery rows under
+a server-pinned model; smaller or overflow cohorts make no paid AI request.
 
 DataForSEO Backlinks is a separate default-off rollout
 (`DATAFORSEO_BACKLINKS_ENABLED=false`) on top of the global DataForSEO gate. Its

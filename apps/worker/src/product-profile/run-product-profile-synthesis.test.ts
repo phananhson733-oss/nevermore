@@ -53,6 +53,7 @@ import type { Logger } from "@sf/observability";
 import {
   createDataForSeoSearchLandscapeScope,
   createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -345,6 +346,40 @@ const fallbackDiscoveryObservation = {
     languageCode: "zh",
   },
   limitation: fallbackDiscoverySnapshot.limitation,
+} satisfies ObservationRow;
+const v3DiscoveryScope = createDataForSeoSearchLandscapeV3Scope({
+  target: "example.com",
+  marketCode: "US",
+  locationName: "United States",
+  languageTag: "zh-CN",
+  rankedKeywordsLimit: 200,
+  competitorsDomainLimit: 100,
+  serpCompetitorsLimit: 100,
+  seeds: [
+    {
+      keyword: "revenue automation software",
+      sourceKind: "product_profile",
+      sourceRef: `icp_profile:${IDS.baseProfile}#/productName`,
+    },
+  ],
+  aiCitations: { state: "disabled" },
+});
+const v3DiscoverySnapshot = {
+  ...fallbackDiscoverySnapshot,
+  dataset_key: "dataforseo.search_landscape.v3",
+  schema_version: "dataforseo.search_landscape.v3",
+  method_version: "dataforseo.search_landscape.v3",
+  summary: { collectionScope: v3DiscoveryScope },
+} satisfies DataSnapshotRow;
+const v3DiscoveryOrganicObservation = {
+  ...discoveryObservation,
+  metric_key: "dataforseo.competitor_domain.v2",
+  value_json: {
+    ...discoveryObservation.value_json,
+    targetOrganicKeywordCount: 24,
+    serpOverlap: 0.5,
+  },
+  limitation: v3DiscoverySnapshot.limitation,
 } satisfies ObservationRow;
 const pageRow = {
   page_snapshot_id: IDS.pageSnapshot,
@@ -1072,6 +1107,121 @@ describe("runProductProfileSynthesis", () => {
       }),
     );
     expect(JSON.stringify(inserted?.profile)).not.toMatch(/keyword intersection/iu);
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("accepts frozen v3 SERP fallback evidence with the same grounded competitor shape", async () => {
+    const manifestWithV3Fallback: ProductProfileSynthesisInputManifest = {
+      ...manifest,
+      competitorDiscovery: {
+        snapshotId: IDS.discoverySnapshot,
+        collectionRunId: IDS.discoveryCollectionRun,
+        sourceConnectionId: IDS.discoverySource,
+        datasetKey: "dataforseo.search_landscape.v3",
+        schemaVersion: "dataforseo.search_landscape.v3",
+        methodVersion: "dataforseo.search_landscape.v3",
+        capturedAt,
+        checksum: v3DiscoverySnapshot.checksum,
+        availability: "available",
+        rowCount: 1,
+        limitation: v3DiscoverySnapshot.limitation,
+        targetDomain: "example.com",
+        marketCode: "US",
+        languageCode: "zh",
+        observations: [
+          {
+            sourceKind: "serp_competitor",
+            observationId: IDS.discoveryObservation,
+            domain: "rival.example",
+            rating: 92,
+            keywordsCount: 18,
+            relevantSerpItems: 6,
+            organicEstimatedTrafficVolume: 850,
+            observedAt: capturedAt,
+          },
+        ],
+      },
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      input_manifest: manifestWithV3Fallback,
+      input_hash: contentHash(manifestWithV3Fallback),
+    });
+    vi.mocked(DataSnapshotsRepository.prototype.findById)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(v3DiscoverySnapshot);
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    ).mockResolvedValueOnce([fallbackDiscoveryObservation]);
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("accepts frozen v3 organic-overlap evidence without dropping Product Profile discovery", async () => {
+    const manifestWithV3Organic: ProductProfileSynthesisInputManifest = {
+      ...manifest,
+      competitorDiscovery: {
+        snapshotId: IDS.discoverySnapshot,
+        collectionRunId: IDS.discoveryCollectionRun,
+        sourceConnectionId: IDS.discoverySource,
+        datasetKey: "dataforseo.search_landscape.v3",
+        schemaVersion: "dataforseo.search_landscape.v3",
+        methodVersion: "dataforseo.search_landscape.v3",
+        capturedAt,
+        checksum: v3DiscoverySnapshot.checksum,
+        availability: "available",
+        rowCount: 1,
+        limitation: v3DiscoverySnapshot.limitation,
+        targetDomain: "example.com",
+        marketCode: "US",
+        languageCode: "zh",
+        observations: [
+          {
+            observationId: IDS.discoveryObservation,
+            domain: "rival.example",
+            intersections: 12,
+            organicEstimatedTrafficVolume: 850,
+            observedAt: capturedAt,
+          },
+        ],
+      },
+    };
+    vi.mocked(
+      ProductProfileRunsRepository.prototype.findById,
+    ).mockResolvedValueOnce({
+      ...ledger,
+      input_manifest: manifestWithV3Organic,
+      input_hash: contentHash(manifestWithV3Organic),
+    });
+    vi.mocked(DataSnapshotsRepository.prototype.findById)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(v3DiscoverySnapshot);
+    vi.spyOn(
+      ObservationsRepository.prototype,
+      "listBySnapshotIds",
+    ).mockResolvedValueOnce([v3DiscoveryOrganicObservation]);
+
+    await runProductProfileSynthesis(
+      ctx,
+      { runId: IDS.run, ...scope },
+      dependencies,
+    );
+
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
       attempt,
       expect.objectContaining({ status: "completed" }),

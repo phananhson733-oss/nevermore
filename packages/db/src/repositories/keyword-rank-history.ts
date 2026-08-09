@@ -200,10 +200,19 @@ function exactDataForSeoRankedLineage(
     row.collection_operation === "search_landscape" &&
     row.collection_method_version ===
       "dataforseo.search_landscape.v2";
+  const compositeV3 =
+    row.dataset_key === "dataforseo.search_landscape.v3" &&
+    row.snapshot_schema_version ===
+      "dataforseo.search_landscape.v3" &&
+    row.snapshot_method_version ===
+      "dataforseo.search_landscape.v3" &&
+    row.collection_operation === "search_landscape" &&
+    row.collection_method_version ===
+      "dataforseo.search_landscape.v3";
   return (
     row.snapshot_provider === "dataforseo" &&
     row.collection_provider === "dataforseo" &&
-    (legacy || composite || compositeV2)
+    (legacy || composite || compositeV2 || compositeV3)
   );
 }
 

@@ -16,12 +16,15 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   METRIC_CSV_KEYWORD_GAP,
   METRIC_GSC_PAGE,
   SourceError,
   parseDataForSeoCollectionScope,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
+  parseDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 
 const CSV_DATASET_KEY = "csv.keyword_gap.v1";
@@ -215,10 +218,17 @@ function projectionConfiguration(
         DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
       snapshot.method_version ===
         DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+    const isSearchLandscapeV3 =
+      snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY &&
+      snapshot.schema_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+      snapshot.method_version ===
+        DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
     if (
       !isLegacyRankedKeywords &&
       !isSearchLandscapeV1 &&
-      !isSearchLandscapeV2
+      !isSearchLandscapeV2 &&
+      !isSearchLandscapeV3
     ) {
       throw invalidProjection(
         "DataForSEO Keyword Library projection requires an exact ranked-keywords or search-landscape Snapshot dataset/method identity.",
@@ -226,8 +236,12 @@ function projectionConfiguration(
     }
     let scope;
     try {
-      scope = isSearchLandscapeV2
-        ? parseDataForSeoSearchLandscapeV2Scope(
+      scope = isSearchLandscapeV3
+        ? parseDataForSeoSearchLandscapeV3Scope(
+            snapshot.summary["collectionScope"],
+          )
+        : isSearchLandscapeV2
+          ? parseDataForSeoSearchLandscapeV2Scope(
             snapshot.summary["collectionScope"],
           )
         : isSearchLandscapeV1

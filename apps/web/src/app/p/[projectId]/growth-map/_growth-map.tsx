@@ -149,9 +149,11 @@ import {
   buildGrowthMapReviewCommand,
   buildGrowthMapOpportunityViewItems,
   buildInternalLinkMapProjection,
+  competitorAiCitationDisplay,
   competitorDetailReadState,
   competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
+  competitorOrganicOverlapDisplay,
   competitorLibraryReadState,
   competitorPoolEntryReason,
   competitorSharedKeywordDisplay,
@@ -8271,22 +8273,31 @@ function CompetitorOverlapValue({
 }) {
   const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
-  if (insight.availability === "unavailable") {
+  const display = competitorOrganicOverlapDisplay(insight);
+  if (display.state === "unavailable") {
     return (
       <span className={styles.libraryMetricSecondary}>
         {t("fallback.insufficientData")}
         <LimitationHint
           label={t("coverageLabel")}
-          limitations={[insight.limitation]}
+          limitations={[display.limitation]}
         />
       </span>
     );
   }
-  const value = `${formatNumber(locale, insight.value)}%`;
+  const value = `${formatNumber(locale, display.percentage)}%`;
   return (
-    <strong className={styles.libraryMetricPrimary} title={value}>
-      {value}
-    </strong>
+    <span className={styles.libraryMetricSecondary}>
+      <strong className={styles.libraryMetricPrimary} title={value}>
+        {value}
+      </strong>
+      {display.limitation === null ? null : (
+        <LimitationHint
+          label={t("coverageLabel")}
+          limitations={[display.limitation]}
+        />
+      )}
+    </span>
   );
 }
 
@@ -8338,9 +8349,9 @@ function CompetitorSharedKeywordsValue({
 }
 
 /**
- * AI-citation insight. The contract's available value is bounded text (not a
- * count), so it renders verbatim and keeps an attached limitation visible;
- * only the unavailable state shows the fallback vocabulary.
+ * AI citations use the canonical cohort formatter in every surface. Complete
+ * cohorts show cited/20; partial cohorts show cited/observed and keep the
+ * attempted/unavailable counts accessible behind the compact limitation hint.
  */
 function CompetitorAiCitationValue({
   insight,
@@ -8348,26 +8359,39 @@ function CompetitorAiCitationValue({
   readonly insight: GrowthMapCompetitorAiCitationInsight;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
-  if (insight.availability === "unavailable") {
+  const display = competitorAiCitationDisplay(insight);
+  if (display.state === "unavailable") {
     return (
       <span className={styles.libraryMetricSecondary}>
         {t("fallback.unavailable")}
         <LimitationHint
           label={t("coverageLabel")}
-          limitations={[insight.limitation]}
+          limitations={[display.limitation]}
         />
       </span>
     );
   }
+  const limitations =
+    display.cohortCoverage === "partial"
+      ? [
+          t("aiCitationCohort.partial", {
+            attempted: display.attemptedQueries,
+            unavailable: display.unavailableQueries,
+          }),
+          ...(display.limitation === null ? [] : [display.limitation]),
+        ]
+      : display.limitation === null
+        ? []
+        : [display.limitation];
   return (
     <span className={styles.libraryMetricSecondary}>
-      <strong className={styles.libraryMetricPrimary} title={insight.value}>
-        {insight.value}
+      <strong className={styles.libraryMetricPrimary} title={display.primary}>
+        {display.primary}
       </strong>
-      {insight.limitation === null ? null : (
+      {limitations.length === 0 ? null : (
         <LimitationHint
-          label={t("coverageLabel")}
-          limitations={[insight.limitation]}
+          label={t("aiCitationCohort.coverageLabel")}
+          limitations={limitations}
         />
       )}
     </span>
@@ -9672,6 +9696,9 @@ function CompetitorDetailPanel({
   const t = useTranslations("growthMap.competitorLibrary");
   const [reviewOpen, setReviewOpen] = useState(false);
   const entryReason = competitorPoolEntryReason(detail);
+  const organicOverlapDisplay = competitorOrganicOverlapDisplay(
+    detail.serpOverlap,
+  );
   return (
     <>
       <aside
@@ -9709,9 +9736,12 @@ function CompetitorDetailPanel({
             {entryReason === "customer_confirmed"
               ? t("poolEntry.reasonCustomer")
               : entryReason === "metrics" &&
-                  detail.serpOverlap.availability === "available"
+                  organicOverlapDisplay.state === "available"
                 ? t("poolEntry.reasonMetrics", {
-                    overlap: formatNumber(locale, detail.serpOverlap.value),
+                    overlap: formatNumber(
+                      locale,
+                      organicOverlapDisplay.percentage,
+                    ),
                   })
                 : t("poolEntry.reasonCollection")}
           </p>

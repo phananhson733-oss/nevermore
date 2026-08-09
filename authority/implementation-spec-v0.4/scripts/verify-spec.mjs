@@ -175,7 +175,7 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.equal(
     lock.migrationHead,
-    "0046_workspace_plan_tier",
+    "0047_dataforseo_competitor_metrics",
   );
 
   assert.match(readme, /状态：\*\*active\*\*/);
@@ -209,7 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
-  assert.equal(migrations.length, 46, "v0.4 must freeze 46 migrations");
+  assert.equal(migrations.length, 47, "v0.4 must freeze 47 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),

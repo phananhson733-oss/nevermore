@@ -112,6 +112,38 @@ describe("ProductProfileSynthesisInputManifest", () => {
     ).toBe(false);
   });
 
+  it.each([
+    "dataforseo.search_landscape.v1",
+    "dataforseo.search_landscape.v2",
+    "dataforseo.search_landscape.v3",
+  ] as const)("accepts exact %s competitor discovery identity", (identity) => {
+    const valid = manifest();
+    const competitorDiscovery = {
+      snapshotId: ids.otherSnapshot,
+      collectionRunId: ids.collectionRun,
+      sourceConnectionId: ids.sourceConnection,
+      datasetKey: identity,
+      schemaVersion: identity,
+      methodVersion: identity,
+      capturedAt: CAPTURED_AT,
+      checksum: SHA_B,
+      availability: "available",
+      rowCount: 1,
+      limitation: "Provider rows are bounded by the frozen collection scope.",
+      targetDomain: "relayops.com",
+      marketCode: "US",
+      languageCode: "en-US",
+      observations: [],
+    } as const;
+
+    expect(
+      ProductProfileSynthesisInputManifest.safeParse({
+        ...valid,
+        competitorDiscovery,
+      }).success,
+    ).toBe(true);
+  });
+
   it("continues to parse frozen legacy manifests without adding locale data", () => {
     const current = manifest();
     const {

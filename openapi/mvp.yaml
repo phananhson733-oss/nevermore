@@ -7139,7 +7139,12 @@ components:
         observedAt: { $ref: '#/components/schemas/Timestamp' }
         limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         availability: { type: string, const: available }
-        value: { type: number, minimum: 0 }
+        value:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1
+          description: Canonical organic-search overlap from the same immutable provider snapshot and scope.
+      description: Canonical organic-search overlap.
 
     GrowthMapCompetitorSerpOverlap:
       oneOf:
@@ -7154,15 +7159,32 @@ components:
     GrowthMapCompetitorAvailableAiCitationInsight:
       type: object
       additionalProperties: false
-      required: [snapshotId, observationId, valuePointer, observedAt, limitation, availability, value]
+      required: [snapshotId, observationId, valuePointer, observedAt, limitation, availability, value, attemptedQueries, observedQueries, unavailableQueries, cohortCoverage, querySetHash, platform, model, marketCode, languageTag]
       properties:
         snapshotId: { $ref: '#/components/schemas/Uuid' }
         observationId: { $ref: '#/components/schemas/Uuid' }
-        valuePointer: { type: string, const: /valueJson/aiCitationInsight }
+        valuePointer: { type: string, const: /valueJson/citedQueries }
         observedAt: { $ref: '#/components/schemas/Timestamp' }
         limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         availability: { type: string, const: available }
-        value: { type: string, minLength: 1, maxLength: 2000 }
+        value:
+          type: integer
+          minimum: 0
+          description: Number of observed cohort queries whose provider annotations cite this competitor domain or a subdomain.
+        attemptedQueries: { type: integer, const: 20 }
+        observedQueries: { type: integer, minimum: 1, maximum: 20 }
+        unavailableQueries: { type: integer, minimum: 0, maximum: 19 }
+        cohortCoverage: { type: string, enum: [complete, partial] }
+        querySetHash:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Lowercase SHA-256 digest of the frozen 20-query cohort.
+        platform: { type: string, const: chat_gpt }
+        model: { type: string, minLength: 1, maxLength: 500 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
+      description: Fixed 20-query AI-citation cohort. value cannot exceed observedQueries; unavailableQueries equals 20 minus observedQueries; complete means 20 observed with null limitation, while partial requires a non-null limitation.
+      x-signalframe-runtime-refinement: competitorAiCitationFixedCohortArithmeticAndLimitation
 
     GrowthMapCompetitorAiCitationInsight:
       oneOf:

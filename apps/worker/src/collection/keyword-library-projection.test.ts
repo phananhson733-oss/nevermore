@@ -7,6 +7,7 @@ import {
   createDataForSeoCollectionScope,
   createDataForSeoSearchLandscapeScope,
   createDataForSeoSearchLandscapeV2Scope,
+  createDataForSeoSearchLandscapeV3Scope,
 } from "@sf/sources";
 import { deriveKeywordOccurrenceInputs } from "./keyword-library-projection.ts";
 
@@ -256,6 +257,39 @@ describe("deriveKeywordOccurrenceInputs", () => {
     expect(
       deriveKeywordOccurrenceInputs(
         v2Snapshot,
+        observation({ provider: "dataforseo" }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        displayKeyword: "Customer Onboarding Software",
+        market: "US",
+        languageTag: "en-US",
+        sourceKind: "dataforseo_ranked",
+        scopeBasis: "provider_collection_scope",
+      }),
+    ]);
+  });
+
+  it("projects ranked keywords from Search Landscape v3 without changing occurrence semantics", () => {
+    const collectionScope = createDataForSeoSearchLandscapeV3Scope({
+      target: "example.com",
+      marketCode: "US",
+      locationName: "United States",
+      languageTag: "en-US",
+      seeds: [],
+      aiCitations: { state: "disabled" },
+    });
+    const v3Snapshot = snapshot({
+      provider: "dataforseo",
+      dataset_key: "dataforseo.search_landscape.v3",
+      schema_version: "dataforseo.search_landscape.v3",
+      method_version: "dataforseo.search_landscape.v3",
+      summary: { collectionScope },
+    });
+
+    expect(
+      deriveKeywordOccurrenceInputs(
+        v3Snapshot,
         observation({ provider: "dataforseo" }),
       ),
     ).toEqual([

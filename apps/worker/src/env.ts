@@ -140,6 +140,10 @@ export function createWorkerEnvSchema(environment: string | undefined) {
       DATAFORSEO_BACKLINKS_ENABLED: z
         .enum(["true", "false"])
         .default("false"),
+      DATAFORSEO_AI_CITATIONS_ENABLED: z
+        .enum(["true", "false"])
+        .default("false"),
+      DATAFORSEO_AI_CITATION_MODEL: providerConfigValue().optional(),
       // Credentials are global provider secrets, never persisted in connection
       // config or job payloads. They become mandatory only when rollout is on.
       DATAFORSEO_LOGIN: z
@@ -243,6 +247,24 @@ export function createWorkerEnvSchema(environment: string | undefined) {
             path: ["DATAFORSEO_PASSWORD"],
             message:
               "DATAFORSEO_PASSWORD is required when DataForSEO is enabled.",
+          });
+        }
+      }
+      if (env.DATAFORSEO_AI_CITATIONS_ENABLED === "true") {
+        if (env.DATAFORSEO_ENABLED !== "true") {
+          ctx.addIssue({
+            code: "custom",
+            path: ["DATAFORSEO_AI_CITATIONS_ENABLED"],
+            message:
+              "DataForSEO AI citations require DATAFORSEO_ENABLED=true.",
+          });
+        }
+        if (!env.DATAFORSEO_AI_CITATION_MODEL) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["DATAFORSEO_AI_CITATION_MODEL"],
+            message:
+              "DATAFORSEO_AI_CITATION_MODEL is required when AI citations are enabled.",
           });
         }
       }

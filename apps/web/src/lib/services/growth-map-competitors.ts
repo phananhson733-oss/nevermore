@@ -1,12 +1,15 @@
 import {
   GrowthMapCompetitorDetailResponse,
   GrowthMapCompetitorLibraryResponse,
+  GrowthMapLibraryLanguageTag,
   KeywordGovernanceRevisionConflict,
   ProductProfileCompetitorCandidate,
   ProductProfileFieldProvenance,
   ReviewCompetitorRequest as ReviewCompetitorRequestSchema,
+  type GrowthMapCompetitorAiCitationInsight,
   type GrowthMapCompetitorLibraryItem,
   type GrowthMapCompetitorOriginOccurrence,
+  type GrowthMapCompetitorSerpOverlap,
   type GrowthMapCompetitorSharedKeywordInsight,
   type GrowthMapCoverage,
   type ProductProfileEvidenceRef,
@@ -59,6 +62,8 @@ const SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION =
   "The immutable DataForSEO competitor source is recorded in originOccurrences, but no canonical derived SERP-overlap ratio is defined.";
 const SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION =
   "No immutable DataForSEO competitor source is recorded for this Competitor, and no canonical derived SERP-overlap ratio is defined.";
+const AI_CITATION_SOURCE_ABSENT_LIMITATION =
+  "No immutable DataForSEO AI-citation aggregate is recorded for this Competitor; absence is not a measured zero.";
 const SHARED_KEYWORD_VALUE_POINTER = "/valueJson/intersections";
 const SHARED_KEYWORD_SOURCE_ABSENT_LIMITATION =
   "No immutable DataForSEO competitors-domain Observation is recorded for this Competitor, so no canonical shared-keyword count exists. That source lists only domains that already share at least one ranking keyword with this site, so a missing record is not a measured zero.";
@@ -68,8 +73,8 @@ const SHARED_KEYWORD_TOP_20_BASIS_LIMITATION =
   "This counts the keywords where this Competitor and the analysed site both rank inside the top 20 organic results; it is a count, not a share of either site's keywords. It covers one market and one search language, organic results only, and the vendor refreshes this source weekly without publishing an exact data timestamp.";
 const SHARED_KEYWORD_TOP_100_BASIS_LIMITATION =
   "This counts the keywords where this Competitor and the analysed site both rank inside the top 100 organic results; it is a count, not a share of either site's keywords. It covers one market and one search language, organic results only, and the vendor refreshes this source weekly without publishing an exact data timestamp.";
-const AI_CITATION_WRITER_LIMITATION =
-  "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.";
+const SERP_OVERLAP_VALUE_POINTER = "/valueJson/serpOverlap";
+const AI_CITATION_VALUE_POINTER = "/valueJson/citedQueries";
 const DISPLAY_NAME_NOT_FROZEN_LIMITATION =
   "Competitor display name is unavailable because this published generation froze only canonical domain identity, not a reviewed name.";
 const CANDIDATE_LIMITATION =
@@ -118,6 +123,7 @@ interface CanonicalObservationRow {
   readonly method: string;
   readonly grade: string;
   readonly support: string;
+  readonly limitation: string;
 }
 
 interface CanonicalSnapshotRow {
@@ -288,6 +294,11 @@ const DATAFORSEO_COMPETITOR_VALUE_KEYS = [
   "marketCode",
   "languageCode",
 ] as const;
+const DATAFORSEO_COMPETITOR_V2_VALUE_KEYS = [
+  ...DATAFORSEO_COMPETITOR_VALUE_KEYS,
+  "targetOrganicKeywordCount",
+  "serpOverlap",
+] as const;
 const DATAFORSEO_SERP_COMPETITOR_VALUE_KEYS = [
   "targetDomain",
   "competitorDomain",
@@ -301,6 +312,28 @@ const DATAFORSEO_SERP_COMPETITOR_VALUE_KEYS = [
   "seedCount",
   "marketCode",
   "languageCode",
+] as const;
+const DATAFORSEO_AI_CITATION_VALUE_KEYS = [
+  "targetDomain",
+  "competitorDomain",
+  "attemptedQueries",
+  "observedQueries",
+  "citedQueries",
+  "unavailableQueries",
+  "cohortCoverage",
+  "querySetHash",
+  "platform",
+  "model",
+  "marketCode",
+  "languageTag",
+  "queryOutcomes",
+] as const;
+const DATAFORSEO_AI_CITATION_OUTCOME_KEYS = [
+  "queryEntityId",
+  "queryRevision",
+  "queryHash",
+  "availability",
+  "cited",
 ] as const;
 
 function isCanonicalDomain(value: unknown): value is string {
@@ -322,6 +355,30 @@ function isNonNegativeFiniteNumber(value: unknown): value is number {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function canonicalSerpOverlap(
+  intersections: number,
+  targetOrganicKeywordCount: number,
+): number {
+  const scale = 1_000_000_000_000n;
+  const denominator = BigInt(targetOrganicKeywordCount);
+  const scaledNumerator = BigInt(intersections) * scale;
+  const quotient = scaledNumerator / denominator;
+  const remainder = scaledNumerator % denominator;
+  const rounded = quotient + (remainder * 2n >= denominator ? 1n : 0n);
+  return Number(rounded) / Number(scale);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const keys = Object.keys(value);
+  return (
+    keys.length === expected.length &&
+    expected.every((key) => Object.hasOwn(value, key))
+  );
 }
 
 function isExactDataForSeoCompetitorValue(
@@ -354,6 +411,138 @@ function isExactDataForSeoCompetitorValue(
     /^[A-Z]{2}$/u.test(value["marketCode"]) &&
     typeof value["languageCode"] === "string" &&
     /^[a-z]{2,3}$/u.test(value["languageCode"])
+  );
+}
+
+function isExactDataForSeoCompetitorV2Value(
+  value: unknown,
+  domain: string,
+): value is Record<
+  (typeof DATAFORSEO_COMPETITOR_V2_VALUE_KEYS)[number],
+  unknown
+> {
+  if (!isRecord(value) || !hasExactKeys(value, DATAFORSEO_COMPETITOR_V2_VALUE_KEYS)) {
+    return false;
+  }
+  const targetDomain = value["targetDomain"];
+  const intersections = value["intersections"];
+  const targetOrganicKeywordCount = value["targetOrganicKeywordCount"];
+  const serpOverlap = value["serpOverlap"];
+  return (
+    isCanonicalDomain(targetDomain) &&
+    targetDomain !== domain &&
+    value["competitorDomain"] === domain &&
+    isPositiveInteger(intersections) &&
+    isNonNegativeFiniteNumber(value["averagePosition"]) &&
+    isNonNegativeFiniteNumber(value["summedPosition"]) &&
+    isNonNegativeFiniteNumber(value["organicEstimatedTrafficVolume"]) &&
+    typeof value["marketCode"] === "string" &&
+    /^[A-Z]{2}$/u.test(value["marketCode"]) &&
+    typeof value["languageCode"] === "string" &&
+    /^[a-z]{2,3}$/u.test(value["languageCode"]) &&
+    isPositiveInteger(targetOrganicKeywordCount) &&
+    intersections <= targetOrganicKeywordCount &&
+    typeof serpOverlap === "number" &&
+    Number.isFinite(serpOverlap) &&
+    serpOverlap > 0 &&
+    serpOverlap <= 1 &&
+    serpOverlap ===
+      canonicalSerpOverlap(intersections, targetOrganicKeywordCount)
+  );
+}
+
+function isExactAiCitationOutcome(
+  value: unknown,
+): value is Record<
+  (typeof DATAFORSEO_AI_CITATION_OUTCOME_KEYS)[number],
+  unknown
+> {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, DATAFORSEO_AI_CITATION_OUTCOME_KEYS)
+  ) {
+    return false;
+  }
+  const availability = value["availability"];
+  const cited = value["cited"];
+  if (
+    typeof value["queryEntityId"] !== "string" ||
+    !UUID.test(value["queryEntityId"]) ||
+    value["queryEntityId"] !== value["queryEntityId"].toLowerCase() ||
+    !isPositiveInteger(value["queryRevision"]) ||
+    value["queryRevision"] > 2_147_483_647 ||
+    typeof value["queryHash"] !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(value["queryHash"]) ||
+    (availability !== "available" && availability !== "unavailable") ||
+    typeof cited !== "boolean"
+  ) {
+    return false;
+  }
+  return availability === "available" || !cited;
+}
+
+function isExactDataForSeoAiCitationValue(
+  value: unknown,
+  domain: string,
+): value is Record<
+  (typeof DATAFORSEO_AI_CITATION_VALUE_KEYS)[number],
+  unknown
+> {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, DATAFORSEO_AI_CITATION_VALUE_KEYS)
+  ) {
+    return false;
+  }
+
+  const targetDomain = value["targetDomain"];
+  const attemptedQueries = value["attemptedQueries"];
+  const observedQueries = value["observedQueries"];
+  const citedQueries = value["citedQueries"];
+  const unavailableQueries = value["unavailableQueries"];
+  const cohortCoverage = value["cohortCoverage"];
+  const outcomes = value["queryOutcomes"];
+  if (
+    !isCanonicalDomain(targetDomain) ||
+    targetDomain === domain ||
+    value["competitorDomain"] !== domain ||
+    attemptedQueries !== 20 ||
+    !isPositiveInteger(observedQueries) ||
+    observedQueries > attemptedQueries ||
+    !isNonNegativeInteger(citedQueries) ||
+    citedQueries > observedQueries ||
+    !isNonNegativeInteger(unavailableQueries) ||
+    unavailableQueries !== attemptedQueries - observedQueries ||
+    cohortCoverage !==
+      (observedQueries === attemptedQueries ? "complete" : "partial") ||
+    typeof value["querySetHash"] !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(value["querySetHash"]) ||
+    value["platform"] !== "chat_gpt" ||
+    typeof value["model"] !== "string" ||
+    value["model"] !== value["model"].trim() ||
+    value["model"].length < 1 ||
+    value["model"].length > 160 ||
+    typeof value["marketCode"] !== "string" ||
+    !/^[A-Z]{2}$/u.test(value["marketCode"]) ||
+    !GrowthMapLibraryLanguageTag.safeParse(value["languageTag"]).success ||
+    !Array.isArray(outcomes) ||
+    outcomes.length !== attemptedQueries ||
+    !outcomes.every((outcome) => isExactAiCitationOutcome(outcome))
+  ) {
+    return false;
+  }
+
+  const observedOutcomes = outcomes.filter(
+    (outcome) => outcome["availability"] === "available",
+  );
+  return (
+    new Set(outcomes.map((outcome) => outcome["queryEntityId"])).size ===
+      attemptedQueries &&
+    new Set(outcomes.map((outcome) => outcome["queryHash"])).size ===
+      attemptedQueries &&
+    observedOutcomes.length === observedQueries &&
+    outcomes.filter((outcome) => outcome["cited"] === true).length ===
+      citedQueries
   );
 }
 
@@ -637,6 +826,7 @@ async function loadObservations(
         method: normalizedObservations.method,
         grade: normalizedObservations.grade,
         support: normalizedObservations.support,
+        limitation: normalizedObservations.limitation,
       })
       .from(normalizedObservations)
       .where(
@@ -1139,12 +1329,23 @@ function projectSerpOverlapOrigin(
     snapshot.method_version === "dataforseo.search_landscape.v2" &&
     run?.operation === "search_landscape" &&
     run.method_version === "dataforseo.search_landscape.v2";
+  const isV3Identity =
+    snapshot?.dataset_key === "dataforseo.search_landscape.v3" &&
+    snapshot.schema_version === "dataforseo.search_landscape.v3" &&
+    snapshot.method_version === "dataforseo.search_landscape.v3" &&
+    run?.operation === "search_landscape" &&
+    run.method_version === "dataforseo.search_landscape.v3";
   const hasExactProviderValue =
     observation?.metric_key === "dataforseo.competitor_domain.v1"
       ? isExactDataForSeoCompetitorValue(
           observation.value_json,
           entity.domain,
         )
+      : observation?.metric_key === "dataforseo.competitor_domain.v2"
+        ? isExactDataForSeoCompetitorV2Value(
+            observation.value_json,
+            entity.domain,
+          )
       : observation?.metric_key === "dataforseo.serp_competitor.v1"
         ? isExactDataForSeoSerpCompetitorValue(
             observation.value_json,
@@ -1161,6 +1362,7 @@ function projectSerpOverlapOrigin(
     observation.site_page_id !== null ||
     observation.provider !== "dataforseo" ||
     (observation.metric_key !== "dataforseo.competitor_domain.v1" &&
+      observation.metric_key !== "dataforseo.competitor_domain.v2" &&
       observation.metric_key !== "dataforseo.serp_competitor.v1") ||
     observation.subject_type !== "site" ||
     observation.subject_ref !== entity.domain ||
@@ -1176,9 +1378,15 @@ function projectSerpOverlapOrigin(
     snapshot.workspace_id !== entity.workspace_id ||
     snapshot.project_id !== entity.project_id ||
     snapshot.provider !== "dataforseo" ||
-    (!isV1Identity && !isV2Identity) ||
+    (!isV1Identity && !isV2Identity && !isV3Identity) ||
     (isV1Identity &&
       observation.metric_key !== "dataforseo.competitor_domain.v1") ||
+    (isV2Identity &&
+      observation.metric_key === "dataforseo.competitor_domain.v2") ||
+    (isV3Identity &&
+      observation.metric_key === "dataforseo.competitor_domain.v1") ||
+    (observation.metric_key === "dataforseo.competitor_domain.v2" &&
+      observation.limitation.trim().length === 0) ||
     snapshot.source_connection_id === null ||
     !["available", "partial"].includes(snapshot.availability) ||
     run.workspace_id !== entity.workspace_id ||
@@ -1197,6 +1405,96 @@ function projectSerpOverlapOrigin(
   return {
     occurrenceId: origin.id,
     originKind: "serp_overlap",
+    snapshotId: snapshot.id,
+    observationId: observation.id,
+    evidenceRefs: [],
+    observedAt: isoInstant(origin.observed_at),
+  };
+}
+
+function projectAiCitationOrigin(
+  origin: CompetitorOriginRow,
+  entity: CompetitorEntityRow,
+  rows: OriginProjectionRows,
+): GrowthMapCompetitorOriginOccurrence {
+  if (
+    origin.source_name !== null ||
+    origin.product_profile_id !== null ||
+    origin.profile_version !== null ||
+    origin.candidate_id !== null ||
+    origin.field_provenance_path !== null ||
+    origin.evidence_refs !== null ||
+    origin.source_review_status !== null ||
+    origin.source_relationship !== null ||
+    origin.source_analysis_scope !== null ||
+    origin.data_snapshot_id === null ||
+    origin.normalized_observation_id === null ||
+    origin.import_preview_id !== null ||
+    origin.source_pointer !== "/valueJson/competitorDomain" ||
+    origin.manual_entry_id !== null ||
+    origin.observed_at === null
+  ) {
+    return corruptCompetitorLibrary();
+  }
+
+  const observation = rows.observationsById.get(
+    origin.normalized_observation_id,
+  );
+  const snapshot = rows.snapshotsById.get(origin.data_snapshot_id);
+  const run = snapshot
+    ? rows.collectionRunsById.get(snapshot.collection_run_id)
+    : undefined;
+  if (
+    !observation ||
+    !snapshot ||
+    !run ||
+    observation.workspace_id !== entity.workspace_id ||
+    observation.project_id !== entity.project_id ||
+    observation.snapshot_id !== snapshot.id ||
+    observation.site_page_id !== null ||
+    observation.provider !== "dataforseo" ||
+    observation.metric_key !== "dataforseo.competitor_ai_citation.v1" ||
+    observation.subject_type !== "site" ||
+    observation.subject_ref !== entity.domain ||
+    observation.availability !== "available" ||
+    observation.value_numeric !== null ||
+    observation.value_text !== null ||
+    observation.unit !== null ||
+    observation.origin !== "vendor_observation" ||
+    observation.method !== "observed" ||
+    observation.grade !== "B" ||
+    observation.support !== "supports" ||
+    observation.limitation.trim().length === 0 ||
+    !isExactDataForSeoAiCitationValue(
+      observation.value_json,
+      entity.domain,
+    ) ||
+    snapshot.workspace_id !== entity.workspace_id ||
+    snapshot.project_id !== entity.project_id ||
+    snapshot.provider !== "dataforseo" ||
+    snapshot.dataset_key !== "dataforseo.search_landscape.v3" ||
+    snapshot.schema_version !== "dataforseo.search_landscape.v3" ||
+    snapshot.method_version !== "dataforseo.search_landscape.v3" ||
+    snapshot.source_connection_id === null ||
+    !["available", "partial"].includes(snapshot.availability) ||
+    run.workspace_id !== entity.workspace_id ||
+    run.project_id !== entity.project_id ||
+    run.id !== snapshot.collection_run_id ||
+    run.site_id !== snapshot.site_id ||
+    run.source_connection_id !== snapshot.source_connection_id ||
+    run.provider !== "dataforseo" ||
+    run.operation !== "search_landscape" ||
+    run.method_version !== "dataforseo.search_landscape.v3" ||
+    run.import_preview_id !== null ||
+    !sameTimestamptzInstant(observation.observed_at, snapshot.captured_at) ||
+    !sameTimestamptzInstant(observation.observed_at, origin.observed_at)
+  ) {
+    return corruptCompetitorLibrary();
+  }
+
+  return {
+    occurrenceId: origin.id,
+    originKind: "ai_citation",
     snapshotId: snapshot.id,
     observationId: observation.id,
     evidenceRefs: [],
@@ -1248,6 +1546,8 @@ function projectOrigin(
       return projectCsvOrigin(origin, entity, rows);
     case "serp_overlap":
       return projectSerpOverlapOrigin(origin, entity, rows);
+    case "ai_citation":
+      return projectAiCitationOrigin(origin, entity, rows);
     case "manual":
       return projectManualOrigin(origin);
     default:
@@ -1273,6 +1573,7 @@ function sharedKeywordBasisLimitation(methodVersion: string): string | null {
     case "dataforseo.search_landscape.v1":
       return SHARED_KEYWORD_TOP_20_BASIS_LIMITATION;
     case "dataforseo.search_landscape.v2":
+    case "dataforseo.search_landscape.v3":
       return SHARED_KEYWORD_TOP_100_BASIS_LIMITATION;
     default:
       return null;
@@ -1280,8 +1581,8 @@ function sharedKeywordBasisLimitation(methodVersion: string): string | null {
 }
 
 /**
- * Only "dataforseo.competitor_domain.v1" Observations carry the shared-keyword
- * intersection count. A v2 Snapshot also emits "dataforseo.serp_competitor.v1"
+ * Only "dataforseo.competitor_domain.v1/v2" Observations carry the shared-keyword
+ * intersection count. A v2/v3 Snapshot can also emit "dataforseo.serp_competitor.v1"
  * against the same domain and the same observedAt, whose keywordsCount is the
  * Competitor's own ranking-keyword total, not an overlap with this site. The
  * origin row carries no metric_key, so the Observation must be re-read and
@@ -1304,7 +1605,8 @@ function sharedKeywordCandidates(
     observation.id !== origin.observationId ||
     observation.snapshot_id !== origin.snapshotId ||
     snapshot.id !== origin.snapshotId ||
-    observation.metric_key !== "dataforseo.competitor_domain.v1" ||
+    (observation.metric_key !== "dataforseo.competitor_domain.v1" &&
+      observation.metric_key !== "dataforseo.competitor_domain.v2") ||
     !isRecord(observation.value_json)
   ) {
     return [];
@@ -1366,12 +1668,219 @@ function projectSharedKeywordInsight(
   };
 }
 
+interface SerpOverlapCandidate {
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly value: number;
+  readonly limitation: string;
+}
+
+function serpOverlapCandidates(
+  origin: GrowthMapCompetitorOriginOccurrence,
+  domain: string,
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): SerpOverlapCandidate[] {
+  if (origin.originKind !== "serp_overlap" || origin.observedAt === null) {
+    return [];
+  }
+  const observation = observationsById.get(origin.observationId);
+  const snapshot = snapshotsById.get(origin.snapshotId);
+  if (
+    !observation ||
+    !snapshot ||
+    observation.id !== origin.observationId ||
+    observation.snapshot_id !== origin.snapshotId ||
+    observation.subject_ref !== domain ||
+    observation.metric_key !== "dataforseo.competitor_domain.v2" ||
+    snapshot.id !== origin.snapshotId ||
+    snapshot.method_version !== "dataforseo.search_landscape.v3" ||
+    !sameTimestamptzInstant(observation.observed_at, origin.observedAt) ||
+    observation.limitation.trim().length === 0 ||
+    !isExactDataForSeoCompetitorV2Value(observation.value_json, domain)
+  ) {
+    return [];
+  }
+  return [
+    {
+      snapshotId: origin.snapshotId,
+      observationId: origin.observationId,
+      observedAt: origin.observedAt,
+      value: observation.value_json["serpOverlap"] as number,
+      limitation: observation.limitation,
+    },
+  ];
+}
+
+function projectSerpOverlapInsight(
+  origins: readonly GrowthMapCompetitorOriginOccurrence[],
+  domain: string,
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): GrowthMapCompetitorSerpOverlap {
+  const selected = origins
+    .flatMap((origin) =>
+      serpOverlapCandidates(
+        origin,
+        domain,
+        observationsById,
+        snapshotsById,
+      ),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.observedAt) - Date.parse(left.observedAt) ||
+        (left.observationId < right.observationId
+          ? -1
+          : left.observationId > right.observationId
+            ? 1
+            : 0),
+    )[0];
+  if (selected !== undefined) {
+    return {
+      availability: "available",
+      value: selected.value,
+      snapshotId: selected.snapshotId,
+      observationId: selected.observationId,
+      valuePointer: SERP_OVERLAP_VALUE_POINTER,
+      observedAt: selected.observedAt,
+      limitation: selected.limitation,
+    };
+  }
+  return {
+    availability: "unavailable",
+    value: null,
+    limitation: origins.some((origin) => origin.originKind === "serp_overlap")
+      ? SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION
+      : SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION,
+  };
+}
+
+interface AiCitationCandidate {
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly citedQueries: number;
+  readonly attemptedQueries: 20;
+  readonly observedQueries: number;
+  readonly unavailableQueries: number;
+  readonly cohortCoverage: "complete" | "partial";
+  readonly querySetHash: string;
+  readonly platform: "chat_gpt";
+  readonly model: string;
+  readonly marketCode: string;
+  readonly languageTag: string;
+  readonly limitation: string | null;
+}
+
+function aiCitationCandidates(
+  origin: GrowthMapCompetitorOriginOccurrence,
+  domain: string,
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): AiCitationCandidate[] {
+  if (origin.originKind !== "ai_citation" || origin.observedAt === null) {
+    return [];
+  }
+  const observation = observationsById.get(origin.observationId);
+  const snapshot = snapshotsById.get(origin.snapshotId);
+  if (
+    !observation ||
+    !snapshot ||
+    observation.id !== origin.observationId ||
+    observation.snapshot_id !== origin.snapshotId ||
+    observation.subject_ref !== domain ||
+    observation.metric_key !== "dataforseo.competitor_ai_citation.v1" ||
+    snapshot.id !== origin.snapshotId ||
+    snapshot.method_version !== "dataforseo.search_landscape.v3" ||
+    !sameTimestamptzInstant(observation.observed_at, origin.observedAt) ||
+    observation.limitation.trim().length === 0 ||
+    !isExactDataForSeoAiCitationValue(observation.value_json, domain)
+  ) {
+    return [];
+  }
+  const value = observation.value_json;
+  const cohortCoverage = value["cohortCoverage"] as "complete" | "partial";
+  return [
+    {
+      snapshotId: origin.snapshotId,
+      observationId: origin.observationId,
+      observedAt: origin.observedAt,
+      citedQueries: value["citedQueries"] as number,
+      attemptedQueries: 20,
+      observedQueries: value["observedQueries"] as number,
+      unavailableQueries: value["unavailableQueries"] as number,
+      cohortCoverage,
+      querySetHash: value["querySetHash"] as string,
+      platform: "chat_gpt",
+      model: value["model"] as string,
+      marketCode: value["marketCode"] as string,
+      languageTag: value["languageTag"] as string,
+      limitation:
+        cohortCoverage === "complete" ? null : observation.limitation,
+    },
+  ];
+}
+
+function projectAiCitationInsight(
+  origins: readonly GrowthMapCompetitorOriginOccurrence[],
+  domain: string,
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): GrowthMapCompetitorAiCitationInsight {
+  const selected = origins
+    .flatMap((origin) =>
+      aiCitationCandidates(
+        origin,
+        domain,
+        observationsById,
+        snapshotsById,
+      ),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.observedAt) - Date.parse(left.observedAt) ||
+        (left.observationId < right.observationId
+          ? -1
+          : left.observationId > right.observationId
+            ? 1
+            : 0),
+    )[0];
+  if (selected !== undefined) {
+    return {
+      availability: "available",
+      value: selected.citedQueries,
+      attemptedQueries: selected.attemptedQueries,
+      observedQueries: selected.observedQueries,
+      unavailableQueries: selected.unavailableQueries,
+      cohortCoverage: selected.cohortCoverage,
+      querySetHash: selected.querySetHash,
+      platform: selected.platform,
+      model: selected.model,
+      marketCode: selected.marketCode,
+      languageTag: selected.languageTag,
+      snapshotId: selected.snapshotId,
+      observationId: selected.observationId,
+      valuePointer: AI_CITATION_VALUE_POINTER,
+      observedAt: selected.observedAt,
+      limitation: selected.limitation,
+    };
+  }
+  return {
+    availability: "unavailable",
+    value: null,
+    limitation: AI_CITATION_SOURCE_ABSENT_LIMITATION,
+  };
+}
+
 function itemCoverage(
   entity: CompetitorEntityRow,
   hasApprovedProductProfileSource: boolean,
   truncated: boolean,
-  serpLimitation: string,
+  serpLimitation: string | null,
   sharedKeywordLimitation: string | null,
+  aiCitationLimitation: string | null,
 ): GrowthMapCoverage {
   const governance =
     entity.review_status === "candidate"
@@ -1382,9 +1891,9 @@ function itemCoverage(
   return {
     availability: "partial",
     limitations: unique([
-      serpLimitation,
+      ...(serpLimitation === null ? [] : [serpLimitation]),
       ...(sharedKeywordLimitation === null ? [] : [sharedKeywordLimitation]),
-      AI_CITATION_WRITER_LIMITATION,
+      ...(aiCitationLimitation === null ? [] : [aiCitationLimitation]),
       ...(truncated ? [ORIGIN_HISTORY_LIMITATION] : []),
       ...(governance ? [governance] : []),
       ...(entity.review_status === "candidate" &&
@@ -1397,8 +1906,9 @@ function itemCoverage(
 
 function frozenItemCoverage(
   fact: GovernanceCompetitorFactV1,
-  serpLimitation: string,
+  serpLimitation: string | null,
   sharedKeywordLimitation: string | null,
+  aiCitationLimitation: string | null,
 ): GrowthMapCoverage {
   const governance =
     fact.reviewStatus === "candidate"
@@ -1409,9 +1919,9 @@ function frozenItemCoverage(
   return {
     availability: "partial",
     limitations: unique([
-      serpLimitation,
+      ...(serpLimitation === null ? [] : [serpLimitation]),
       ...(sharedKeywordLimitation === null ? [] : [sharedKeywordLimitation]),
-      AI_CITATION_WRITER_LIMITATION,
+      ...(aiCitationLimitation === null ? [] : [aiCitationLimitation]),
       DISPLAY_NAME_NOT_FROZEN_LIMITATION,
       ...(governance ? [governance] : []),
     ]),
@@ -1442,11 +1952,18 @@ function projectItem(
   ) {
     return corruptCompetitorLibrary();
   }
-  const serpLimitation = origins.some(
-    (origin) => origin.originKind === "serp_overlap",
-  )
-    ? SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION
-    : SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION;
+  const serpOverlap = projectSerpOverlapInsight(
+    origins,
+    history.entity.domain,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
+  const aiCitationInsight = projectAiCitationInsight(
+    origins,
+    history.entity.domain,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
   const sharedKeywordInsight = projectSharedKeywordInsight(
     origins,
     rows.observationsById,
@@ -1463,23 +1980,16 @@ function projectItem(
     revision: history.entity.revision,
     originOccurrences: origins,
     lastObservedAt,
-    serpOverlap: {
-      availability: "unavailable",
-      value: null,
-      limitation: serpLimitation,
-    },
-    aiCitationInsight: {
-      availability: "unavailable",
-      value: null,
-      limitation: AI_CITATION_WRITER_LIMITATION,
-    },
+    serpOverlap,
+    aiCitationInsight,
     sharedKeywordInsight,
     coverage: itemCoverage(
       history.entity,
       history.hasApprovedProductProfileSource,
       history.truncated,
-      serpLimitation,
+      serpOverlap.limitation,
       sharedKeywordInsight.limitation,
+      aiCitationInsight.limitation,
     ),
   };
 }
@@ -1495,11 +2005,18 @@ function projectFrozenItem(
   const observedTimes = origins
     .flatMap((origin) => (origin.observedAt === null ? [] : [origin.observedAt]))
     .sort((left, right) => Date.parse(right) - Date.parse(left));
-  const serpLimitation = origins.some(
-    (origin) => origin.originKind === "serp_overlap",
-  )
-    ? SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION
-    : SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION;
+  const serpOverlap = projectSerpOverlapInsight(
+    origins,
+    history.fact.domain,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
+  const aiCitationInsight = projectAiCitationInsight(
+    origins,
+    history.fact.domain,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
   const sharedKeywordInsight = projectSharedKeywordInsight(
     origins,
     rows.observationsById,
@@ -1516,21 +2033,14 @@ function projectFrozenItem(
     revision: history.fact.revision,
     originOccurrences: origins,
     lastObservedAt: observedTimes[0] ?? null,
-    serpOverlap: {
-      availability: "unavailable",
-      value: null,
-      limitation: serpLimitation,
-    },
-    aiCitationInsight: {
-      availability: "unavailable",
-      value: null,
-      limitation: AI_CITATION_WRITER_LIMITATION,
-    },
+    serpOverlap,
+    aiCitationInsight,
     sharedKeywordInsight,
     coverage: frozenItemCoverage(
       history.fact,
-      serpLimitation,
+      serpOverlap.limitation,
       sharedKeywordInsight.limitation,
+      aiCitationInsight.limitation,
     ),
   };
 }

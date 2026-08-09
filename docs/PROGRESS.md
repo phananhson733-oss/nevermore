@@ -24,7 +24,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0046_workspace_plan_tier.sql` (**46 ordered migrations**)
+  `0047_dataforseo_competitor_metrics.sql` (**47 ordered migrations**)
 - Contract inventory: **79 API operations / 10 async operations / 78 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
@@ -121,11 +121,15 @@ four-module surface:
   collection command remains exactly `crawl|gsc|ga4`; it cannot accept
   DFS/Backlinks target, market, language, limits, credentials, or provider
   queries.
-- DFS v2 runs frozen ranked-keywords and competitors-domain requests at
+- DFS v3 runs frozen ranked-keywords and competitors-domain requests at
   positions/max-rank 1–100. Only when retained domain overlap is empty, it uses
   frozen GSC/Crawl/Product Profile seeds for at most one paid SERP Competitors
-  fallback, then atomically persists one `dataforseo.search_landscape.v2`
-  Snapshot. Partial provider success is not a published Search Landscape.
+  fallback, then atomically persists one `dataforseo.search_landscape.v3`
+  Snapshot. Its separately default-off `DATAFORSEO_AI_CITATIONS_ENABLED` AI
+  citation sub-capability runs only for
+  an exact frozen cohort of 20 approved, mapping-confirmed GenerativeQuery rows;
+  19 or fewer and the 21-row overflow sentinel both skip without provider calls.
+  Partial provider success is not a published Search Landscape.
 - DataForSEO Backlinks remains separately default-off and cost-capped. When
   explicitly enabled on both Web and Worker, it writes one
   `dataforseo.backlinks.v1` Snapshot, exposes only `dataforseo_rank` on its own
@@ -289,7 +293,7 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0044`; historical proof through `0021` does not prove
+   migrations through `0047`; historical proof through `0021` does not prove
    the active v0.4 migration head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live

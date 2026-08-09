@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AnalysisRefreshRunsRepository,
   AsyncRunsRepository,
+  CompetitorsRepository,
   contentHash,
   IcpProfilesRepository,
   IdempotencyRepository,
+  KeywordsRepository,
   ProjectsRepository,
   SitesRepository,
   SourceConnectionsRepository,
@@ -39,6 +41,8 @@ const mocks = vi.hoisted(() => {
     getEnv: vi.fn(() => ({
       DATAFORSEO_ENABLED: "true" as "true" | "false",
       DATAFORSEO_BACKLINKS_ENABLED: "true" as "true" | "false",
+      DATAFORSEO_AI_CITATIONS_ENABLED: "false" as "true" | "false",
+      DATAFORSEO_AI_CITATION_MODEL: undefined as string | undefined,
       DATAFORSEO_MAX_KEYWORDS: 350,
       DATAFORSEO_MAX_COMPETITORS: 75,
       DATAFORSEO_MAX_BACKLINKS: 500,
@@ -59,6 +63,7 @@ vi.mock("@/env", () => ({ getEnv: mocks.getEnv }));
 
 const {
   createAnalysisRefreshRun,
+  freezeDataForSeoAiCitationPolicy,
   parseAnalysisRefreshRequestPayload,
 } = await import("../analysis-refresh.ts");
 
@@ -78,6 +83,7 @@ const profile = {
 };
 const site = {
   id: ids.site,
+  market_codes: [],
   // Analysis Refresh must not require an operator-declared Site language.
   language_codes: [],
 };
@@ -191,6 +197,8 @@ beforeEach(() => {
   mocks.getEnv.mockReturnValue({
     DATAFORSEO_ENABLED: "true",
     DATAFORSEO_BACKLINKS_ENABLED: "true",
+    DATAFORSEO_AI_CITATIONS_ENABLED: "false",
+    DATAFORSEO_AI_CITATION_MODEL: undefined,
     DATAFORSEO_MAX_KEYWORDS: 350,
     DATAFORSEO_MAX_COMPETITORS: 75,
     DATAFORSEO_MAX_BACKLINKS: 500,
@@ -270,6 +278,7 @@ describe("createAnalysisRefreshRun", () => {
           enabled: true,
           maxKeywords: 350,
           maxCompetitors: 75,
+          aiCitations: { state: "disabled" },
         },
         dataForSeoBacklinks: {
           enabled: true,
@@ -328,6 +337,8 @@ describe("createAnalysisRefreshRun", () => {
     mocks.getEnv.mockReturnValue({
       DATAFORSEO_ENABLED: "false",
       DATAFORSEO_BACKLINKS_ENABLED: "true",
+      DATAFORSEO_AI_CITATIONS_ENABLED: "false",
+      DATAFORSEO_AI_CITATION_MODEL: undefined,
       DATAFORSEO_MAX_KEYWORDS: 200,
       DATAFORSEO_MAX_COMPETITORS: 100,
       DATAFORSEO_MAX_BACKLINKS: 300,
@@ -363,6 +374,7 @@ describe("createAnalysisRefreshRun", () => {
         enabled: false,
         maxKeywords: 200,
         maxCompetitors: 100,
+        aiCitations: { state: "disabled" },
       },
       dataForSeoBacklinks: {
         enabled: false,
@@ -384,6 +396,8 @@ describe("createAnalysisRefreshRun", () => {
     mocks.getEnv.mockReturnValue({
       DATAFORSEO_ENABLED: "true",
       DATAFORSEO_BACKLINKS_ENABLED: "false",
+      DATAFORSEO_AI_CITATIONS_ENABLED: "false",
+      DATAFORSEO_AI_CITATION_MODEL: undefined,
       DATAFORSEO_MAX_KEYWORDS: 200,
       DATAFORSEO_MAX_COMPETITORS: 100,
       DATAFORSEO_MAX_BACKLINKS: 300,
@@ -423,6 +437,131 @@ describe("createAnalysisRefreshRun", () => {
       ["dataforseo_backlinks", "feature_disabled"],
     ]);
   });
+
+  it("admits exactly 20 current approved and mapping-confirmed GenerativeQueries into the v3 payload", async () => {
+    mocks.getEnv.mockReturnValue({
+      DATAFORSEO_ENABLED: "true",
+      DATAFORSEO_BACKLINKS_ENABLED: "false",
+      DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+      DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+      DATAFORSEO_MAX_KEYWORDS: 200,
+      DATAFORSEO_MAX_COMPETITORS: 100,
+      DATAFORSEO_MAX_BACKLINKS: 500,
+      DATAFORSEO_MAX_REFERRING_DOMAINS: 100,
+      DATAFORSEO_MAX_BACKLINK_PAGES: 500,
+      DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 20,
+    });
+    mockHappyPath();
+    vi.mocked(SitesRepository.prototype.findPrimary).mockResolvedValue({
+      ...site,
+      market_codes: ["US"],
+      language_codes: ["en-US"],
+    } as never);
+    const queryRows = generativeQueryRows(20);
+    vi.spyOn(
+      KeywordsRepository.prototype,
+      "listAiCitationCohortCandidates",
+    ).mockResolvedValue(queryRows);
+    vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listAiCitationTrackedDomains",
+    ).mockResolvedValue([
+      { id: ids.winner, domain: "semrush.com" },
+      { id: ids.idem, domain: "ahrefs.com" },
+    ]);
+    const insertQueued = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "insertQueued",
+    );
+
+    await createAnalysisRefreshRun(
+      { workspaceId: ids.workspace },
+      ids.project,
+      ids.actor,
+      "refresh-ai-enabled",
+      {},
+    );
+
+    expect(
+      KeywordsRepository.prototype.listAiCitationCohortCandidates,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { market: "US", languageTag: "en-US", limit: 21 },
+    );
+    expect(
+      CompetitorsRepository.prototype.listAiCitationTrackedDomains,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { limit: 501 },
+    );
+    expect(insertQueued.mock.calls[0]?.[0].requestPayload).toMatchObject({
+      dataForSeo: {
+        aiCitations: {
+          state: "enabled",
+          platform: "chat_gpt",
+          requestedModel: "gpt-5",
+          attemptedQueries: 20,
+          querySetHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+          queries: queryRows,
+          trackedCompetitorDomains: ["ahrefs.com", "semrush.com"],
+        },
+      },
+    });
+  });
+
+  it.each([19, 21])(
+    "freezes %s eligible GenerativeQueries as skipped and never reads paid target domains",
+    async (eligibleQueryCount) => {
+      mocks.getEnv.mockReturnValue({
+        DATAFORSEO_ENABLED: "true",
+        DATAFORSEO_BACKLINKS_ENABLED: "false",
+        DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+        DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+        DATAFORSEO_MAX_KEYWORDS: 200,
+        DATAFORSEO_MAX_COMPETITORS: 100,
+        DATAFORSEO_MAX_BACKLINKS: 500,
+        DATAFORSEO_MAX_REFERRING_DOMAINS: 100,
+        DATAFORSEO_MAX_BACKLINK_PAGES: 500,
+        DATAFORSEO_MAX_BACKLINK_SOURCE_VERIFICATIONS: 20,
+      });
+      mockHappyPath();
+      vi.mocked(SitesRepository.prototype.findPrimary).mockResolvedValue({
+        ...site,
+        market_codes: ["US"],
+        language_codes: ["en-US"],
+      } as never);
+      vi.spyOn(
+        KeywordsRepository.prototype,
+        "listAiCitationCohortCandidates",
+      ).mockResolvedValue(generativeQueryRows(eligibleQueryCount));
+      const domains = vi.spyOn(
+        CompetitorsRepository.prototype,
+        "listAiCitationTrackedDomains",
+      );
+      const insertQueued = vi.spyOn(
+        AsyncRunsRepository.prototype,
+        "insertQueued",
+      );
+
+      await createAnalysisRefreshRun(
+        { workspaceId: ids.workspace },
+        ids.project,
+        ids.actor,
+        `refresh-ai-skip-${eligibleQueryCount}`,
+        {},
+      );
+
+      expect(domains).not.toHaveBeenCalled();
+      expect(insertQueued.mock.calls[0]?.[0].requestPayload).toMatchObject({
+        dataForSeo: {
+          aiCitations: {
+            state: "skipped_insufficient_query_cohort",
+            eligibleQueryCount,
+          },
+        },
+      });
+    },
+  );
 
   it("does not freeze optional connections that belong to another Site", async () => {
     mockHappyPath({
@@ -773,6 +912,7 @@ describe("parseAnalysisRefreshRequestPayload", () => {
       enabled: false,
       maxKeywords: 200,
       maxCompetitors: 100,
+      aiCitations: { state: "disabled" },
     },
     dataForSeoBacklinks: {
       enabled: false,
@@ -812,5 +952,166 @@ describe("parseAnalysisRefreshRequestPayload", () => {
         providerCredential: "redacted",
       }),
     ).toThrow();
+  });
+});
+
+function generativeQueryRows(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    entityId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    revision: index + 1,
+    query: `Which onboarding platform is best for team ${index + 1}?`,
+    normalizedQuery: `which onboarding platform is best for team ${String(index + 1).padStart(2, "0")}?`,
+    marketCode: "US",
+    languageTag: "en-US",
+  }));
+}
+
+describe("freezeDataForSeoAiCitationPolicy", () => {
+  it("freezes an exact deterministic 20-query cohort and current non-excluded domains", () => {
+    const rows = generativeQueryRows(20);
+    const input = {
+      enabled: true,
+      requestedModel: "gpt-5",
+      marketCode: "US",
+      languageTag: "en-US",
+      queries: [...rows].reverse(),
+      trackedCompetitorDomains: ["semrush.com", "ahrefs.com"],
+    } as const;
+
+    const frozen = freezeDataForSeoAiCitationPolicy(input);
+    const repeated = freezeDataForSeoAiCitationPolicy({
+      ...input,
+      queries: rows,
+      trackedCompetitorDomains: ["ahrefs.com", "semrush.com"],
+    });
+
+    expect(frozen).toEqual({
+      state: "enabled",
+      platform: "chat_gpt",
+      requestedModel: "gpt-5",
+      attemptedQueries: 20,
+      maxOutputTokens: 1_024,
+      webSearch: true,
+      querySetHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
+      queries: rows.map((row) => ({
+        entityId: row.entityId,
+        revision: row.revision,
+        query: row.query,
+        normalizedQuery: row.normalizedQuery,
+        marketCode: "US",
+        languageTag: "en-US",
+      })),
+      trackedCompetitorDomains: ["ahrefs.com", "semrush.com"],
+    });
+    expect(repeated).toEqual(frozen);
+    expect(frozen.state === "enabled" ? frozen.querySetHash : null).toBe(
+      contentHash({
+        schemaVersion: "dataforseo.ai-citation-query-set.v1",
+        platform: "chat_gpt",
+        model: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        queries: rows.map(
+          ({ entityId, revision, query, normalizedQuery }) => ({
+            entityId,
+            revision,
+            query,
+            normalizedQuery,
+          }),
+        ),
+      }),
+    );
+  });
+
+  it("rejects a query over the provider user_prompt limit without truncating it", () => {
+    const [first, ...rest] = generativeQueryRows(20);
+    expect(() =>
+      freezeDataForSeoAiCitationPolicy({
+        enabled: true,
+        requestedModel: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        queries: [{ ...first!, query: "q".repeat(501) }, ...rest],
+        trackedCompetitorDomains: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects revision zero before freezing a cohort the source cannot collect", () => {
+    const [first, ...rest] = generativeQueryRows(20);
+    expect(() =>
+      freezeDataForSeoAiCitationPolicy({
+        enabled: true,
+        requestedModel: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        queries: [{ ...first!, revision: 0 }, ...rest],
+        trackedCompetitorDomains: [],
+      }),
+    ).toThrow();
+  });
+
+  it.each([" gpt-5", "gpt-5 ", "gpt 5", "x".repeat(101)])(
+    "rejects the non-canonical server-pinned model %j",
+    (requestedModel) => {
+      expect(() =>
+        freezeDataForSeoAiCitationPolicy({
+          enabled: true,
+          requestedModel,
+          marketCode: "US",
+          languageTag: "en-US",
+          queries: generativeQueryRows(20),
+          trackedCompetitorDomains: [],
+        }),
+      ).toThrow();
+    },
+  );
+
+  it.each([19, 21])(
+    "freezes %s eligible rows as a typed skip instead of selecting or synthesizing 20",
+    (eligibleQueryCount) => {
+      expect(
+        freezeDataForSeoAiCitationPolicy({
+          enabled: true,
+          requestedModel: "gpt-5",
+          marketCode: "US",
+          languageTag: "en-US",
+          queries: generativeQueryRows(eligibleQueryCount),
+          trackedCompetitorDomains: ["ahrefs.com"],
+        }),
+      ).toEqual({
+        state: "skipped_insufficient_query_cohort",
+        eligibleQueryCount,
+      });
+    },
+  );
+
+  it("freezes disabled without retaining a provider model or query text", () => {
+    expect(
+      freezeDataForSeoAiCitationPolicy({
+        enabled: false,
+        requestedModel: null,
+        marketCode: "US",
+        languageTag: "en-US",
+        queries: generativeQueryRows(20),
+        trackedCompetitorDomains: ["ahrefs.com"],
+      }),
+    ).toEqual({ state: "disabled" });
+  });
+
+  it("rejects the 501st tracked competitor sentinel instead of truncating scope", () => {
+    expect(() =>
+      freezeDataForSeoAiCitationPolicy({
+        enabled: true,
+        requestedModel: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        queries: generativeQueryRows(20),
+        trackedCompetitorDomains: Array.from(
+          { length: 501 },
+          (_, index) => `rival-${index + 1}.example.com`,
+        ),
+      }),
+    ).toThrow(/tracked competitor/i);
   });
 });

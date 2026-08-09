@@ -4,6 +4,7 @@ import { createDbHandle, type DbHandle } from "../client.ts";
 import { contentHash } from "../hash.ts";
 import {
   CompetitorsRepository,
+  type AiCitationCompetitorOriginInput,
   type SerpOverlapCompetitorOriginInput,
 } from "../repositories/competitors.ts";
 import { requireSafeTestDatabaseUrl } from "../test-database-safety.ts";
@@ -25,6 +26,11 @@ interface CompositeObservationFixture {
   readonly snapshotId: string;
   readonly observationId: string;
   readonly domain: string;
+}
+
+interface V3SnapshotFixture {
+  readonly runId: string;
+  readonly snapshotId: string;
 }
 
 function pgCode(error: unknown): string | undefined {
@@ -226,6 +232,111 @@ async function createCompositeObservation(
   return { runId, snapshotId, observationId, domain };
 }
 
+async function createV3Snapshot(
+  handle: DbHandle,
+  project: ProjectFixture,
+): Promise<V3SnapshotFixture> {
+  const runId = await createCollectionRun(
+    handle,
+    project,
+    "search_landscape",
+    "dataforseo.search_landscape.v3",
+  );
+  const snapshotId = randomUUID();
+  await handle.pool.query(
+    `INSERT INTO app.data_snapshots (
+       id, workspace_id, project_id, site_id, collection_run_id,
+       source_connection_id, provider, dataset_key, schema_version,
+       method_version, captured_at, source_window, availability,
+       limitation, row_count, checksum, summary
+     ) VALUES (
+       $1,$2,$3,$4,$5,$6,'dataforseo',
+       'dataforseo.search_landscape.v3',
+       'dataforseo.search_landscape.v3',
+       'dataforseo.search_landscape.v3',
+       $7,'{"start":null,"end":null}'::jsonb,'available',
+       'Provider data is bounded to one immutable collection scope.',2,$8,$9
+     )`,
+    [
+      snapshotId,
+      project.workspaceId,
+      project.projectId,
+      project.siteId,
+      runId,
+      project.sourceConnectionId,
+      CAPTURED_AT,
+      contentHash({ snapshotId }),
+      {
+        collectionScope: {
+          target: `${project.projectId}.search-landscape.example`,
+          marketCode: "US",
+          languageTag: "en-US",
+        },
+      },
+    ],
+  );
+  return { runId, snapshotId };
+}
+
+function aiAggregate(project: ProjectFixture, domain: string) {
+  const queryOutcomes = Array.from({ length: 20 }, (_, index) => ({
+    queryEntityId: randomUUID(),
+    queryRevision: index + 1,
+    queryHash: contentHash({ domain, query: index }),
+    availability: "available",
+    cited: index < 8,
+  }));
+  return {
+    targetDomain: `${project.projectId}.search-landscape.example`,
+    competitorDomain: domain,
+    attemptedQueries: 20,
+    observedQueries: 20,
+    citedQueries: 8,
+    unavailableQueries: 0,
+    cohortCoverage: "complete",
+    querySetHash: contentHash(queryOutcomes.map((outcome) => outcome.queryHash)),
+    platform: "chat_gpt",
+    model: "gpt-5",
+    marketCode: "US",
+    languageTag: "en-US",
+    queryOutcomes,
+  } as const;
+}
+
+async function insertV3Observation(
+  handle: DbHandle,
+  project: ProjectFixture,
+  snapshotId: string,
+  metricKey: string,
+  domain: string,
+  value: unknown,
+  limitation: string | null,
+): Promise<string> {
+  const observationId = randomUUID();
+  await handle.pool.query(
+    `INSERT INTO app.normalized_observations (
+       id, workspace_id, project_id, snapshot_id, provider,
+       metric_key, subject_type, subject_ref, observed_at,
+       availability, value_json, origin, grade, support, limitation
+     ) VALUES (
+       $1,$2,$3,$4,'dataforseo',$5,'site',$6,$7,'available',$8,
+       'vendor_observation','B','supports',$9
+     )`,
+    [
+      observationId,
+      project.workspaceId,
+      project.projectId,
+      snapshotId,
+      metricKey,
+      domain,
+      CAPTURED_AT,
+      value,
+      limitation,
+    ],
+  );
+  return observationId;
+}
+
 function serpInput(
   fixture: CompositeObservationFixture,
 ): SerpOverlapCompetitorOriginInput {
@@ -235,6 +346,21 @@ function serpInput(
     name: null,
     snapshotId: fixture.snapshotId,
     observationId: fixture.observationId,
+    sourcePointer: "/valueJson/competitorDomain",
+  };
+}
+
+function aiInput(
+  domain: string,
+  snapshotId: string,
+  observationId: string,
+): AiCitationCompetitorOriginInput {
+  return {
+    originKind: "ai_citation",
+    domain,
+    name: null,
+    snapshotId,
+    observationId,
     sourcePointer: "/valueJson/competitorDomain",
   };
 }
@@ -443,6 +569,134 @@ describeDb("DataForSEO Search Landscape competitor origin authority", () => {
           project.sourceConnectionId,
           contentHash({ runId }),
         ],
+      ),
+      "23514",
+    );
+  });
+
+  it("accepts rounded organic v2 facts and observed fixed-20 AI origins", async () => {
+    const project = await createProject(handle);
+    const snapshot = await createV3Snapshot(handle, project);
+    const domain = "v3-rival.example";
+    await insertV3Observation(
+      handle,
+      project,
+      snapshot.snapshotId,
+      "dataforseo.competitor_domain.v2",
+      domain,
+      {
+        targetDomain: `${project.projectId}.search-landscape.example`,
+        competitorDomain: domain,
+        intersections: 2,
+        targetOrganicKeywordCount: 3,
+        serpOverlap: 0.666666666667,
+        averagePosition: 8.5,
+        summedPosition: 17,
+        organicEstimatedTrafficVolume: 901.25,
+        marketCode: "US",
+        languageCode: "en",
+      },
+      "Provider competitor-domain data is updated weekly.",
+    );
+    const aiObservationId = await insertV3Observation(
+      handle,
+      project,
+      snapshot.snapshotId,
+      "dataforseo.competitor_ai_citation.v1",
+      domain,
+      aiAggregate(project, domain),
+      "20 of 20 pinned ChatGPT queries returned observable answers.",
+    );
+    const repository = new CompetitorsRepository(handle.db);
+    const scope = {
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+    };
+
+    const first = await repository.upsertOrigin(
+      scope,
+      aiInput(domain, snapshot.snapshotId, aiObservationId),
+    );
+    await expect(
+      repository.upsertOrigin(
+        scope,
+        aiInput(domain, snapshot.snapshotId, aiObservationId),
+      ),
+    ).resolves.toEqual(first);
+    await expect(repository.listOrigins(scope, first.competitorId, 10)).resolves
+      .toEqual([
+        expect.objectContaining({
+          id: first.occurrenceId,
+          origin_kind: "ai_citation",
+          data_snapshot_id: snapshot.snapshotId,
+          normalized_observation_id: aiObservationId,
+          source_pointer: "/valueJson/competitorDomain",
+          observed_at: CAPTURED_AT,
+        }),
+      ]);
+  });
+
+  it("rejects adjacent organic rounding, aggregate arithmetic drift, and mixed AI lineage", async () => {
+    const project = await createProject(handle);
+    const first = await createV3Snapshot(handle, project);
+    const second = await createV3Snapshot(handle, project);
+    const domain = "invalid-v3-rival.example";
+
+    await expectPgCode(
+      insertV3Observation(
+        handle,
+        project,
+        first.snapshotId,
+        "dataforseo.competitor_domain.v2",
+        domain,
+        {
+          targetDomain: `${project.projectId}.search-landscape.example`,
+          competitorDomain: domain,
+          intersections: 2,
+          targetOrganicKeywordCount: 3,
+          serpOverlap: 0.666666666666,
+          averagePosition: 1,
+          summedPosition: 2,
+          organicEstimatedTrafficVolume: 3,
+          marketCode: "US",
+          languageCode: "en",
+        },
+        "Invalid adjacent rounded value.",
+      ),
+      "23514",
+    );
+
+    const malformed = aiAggregate(project, domain);
+    await expectPgCode(
+      insertV3Observation(
+        handle,
+        project,
+        first.snapshotId,
+        "dataforseo.competitor_ai_citation.v1",
+        domain,
+        { ...malformed, citedQueries: 9 },
+        "Invalid aggregate arithmetic fixture.",
+      ),
+      "23514",
+    );
+
+    const observationId = await insertV3Observation(
+      handle,
+      project,
+      first.snapshotId,
+      "dataforseo.competitor_ai_citation.v1",
+      domain,
+      malformed,
+      "20 of 20 pinned ChatGPT queries returned observable answers.",
+    );
+    const repository = new CompetitorsRepository(handle.db);
+    await expectPgCode(
+      repository.upsertOrigin(
+        {
+          workspaceId: project.workspaceId,
+          projectId: project.projectId,
+        },
+        aiInput(domain, second.snapshotId, observationId),
       ),
       "23514",
     );

@@ -64,11 +64,15 @@ function origin(
     source_relationship: null,
     source_analysis_scope: null,
     data_snapshot_id:
-      originKind === "csv_keyword_gap" || originKind === "serp_overlap"
+      originKind === "csv_keyword_gap" ||
+      originKind === "serp_overlap" ||
+      originKind === "ai_citation"
         ? ids.snapshot
         : null,
     normalized_observation_id:
-      originKind === "csv_keyword_gap" || originKind === "serp_overlap"
+      originKind === "csv_keyword_gap" ||
+      originKind === "serp_overlap" ||
+      originKind === "ai_citation"
         ? ids.observation
         : null,
     import_preview_id:
@@ -76,7 +80,9 @@ function origin(
         ? "71000000-0000-4000-8000-000000000007"
         : null,
     source_pointer:
-      originKind === "csv_keyword_gap" || originKind === "serp_overlap"
+      originKind === "csv_keyword_gap" ||
+      originKind === "serp_overlap" ||
+      originKind === "ai_citation"
         ? "/valueJson/competitorDomain"
         : null,
     manual_entry_id:
@@ -84,7 +90,9 @@ function origin(
         ? "71000000-0000-4000-8000-000000000008"
         : null,
     observed_at:
-      originKind === "csv_keyword_gap" || originKind === "serp_overlap"
+      originKind === "csv_keyword_gap" ||
+      originKind === "serp_overlap" ||
+      originKind === "ai_citation"
         ? instant
         : null,
     created_at: instant,
@@ -231,6 +239,21 @@ describe("freezeDiagnosticGovernance (analysis refresh)", () => {
       {
         occurrenceId: ids.origin,
         originKind: "serp_overlap",
+        snapshotId: ids.snapshot,
+        observationId: ids.observation,
+      },
+    ]);
+  });
+
+  it("freezes exact canonical lineage for ai_citation competitor origins", async () => {
+    mockLibraryReads(origin("ai_citation"));
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(projection.competitors[0]?.originRefs).toEqual([
+      {
+        occurrenceId: ids.origin,
+        originKind: "ai_citation",
         snapshotId: ids.snapshot,
         observationId: ids.observation,
       },

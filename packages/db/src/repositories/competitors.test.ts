@@ -138,6 +138,28 @@ const profileOrigin = (
 });
 
 describe("CompetitorsRepository", () => {
+  it("reads current non-excluded AI citation domains in deterministic order", async () => {
+    const db = new FakeExecutor();
+    const tracked = [{ id: entity.id, domain: entity.domain }];
+    db.enqueue(tracked);
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(
+      repo.listAiCitationTrackedDomains(scope, { limit: 501 }),
+    ).resolves.toEqual(tracked);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $');
+    expect(predicate.sql).toContain('"project_id" = $');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.sql).toContain('"review_status" <> $');
+    expect(predicate.params).toContain("excluded");
+    expect(db.last("orderBy").args).toHaveLength(2);
+    expect(db.last("limit").args).toEqual([501]);
+  });
+
   it("accepts the UUIDv8 identity a Product Profile actually derives", async () => {
     // Every identity a Product Profile mints is UUIDv8: candidateId and
     // evidenceRefId are derived from the profile's own content so that
@@ -332,6 +354,48 @@ describe("CompetitorsRepository", () => {
     expect(compiled.params).not.toContain("keyword_gap_import");
   });
 
+  it("persists an AI citation origin only through its exact aggregate Observation pointer", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          occurrence_id: "00000000-0000-4000-8000-000000000033",
+          competitor_id: entity.id,
+        },
+      ],
+    });
+    const repo = new CompetitorsRepository(db as never);
+    const aiCitation = {
+      originKind: "ai_citation",
+      domain: "example-competitor.com",
+      name: null,
+      snapshotId: "00000000-0000-4000-8000-000000000070",
+      observationId: "00000000-0000-4000-8000-000000000071",
+      sourcePointer: "/valueJson/competitorDomain",
+    } as const;
+
+    await expect(
+      repo.upsertOrigin(scope, aiCitation as unknown as CompetitorOriginInput),
+    ).resolves.toEqual({
+      occurrenceId: "00000000-0000-4000-8000-000000000033",
+      competitorId: entity.id,
+    });
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toContain(
+      "app.upsert_ai_citation_competitor_origin",
+    );
+    expect(compiled.params).toEqual([
+      scope.workspaceId,
+      scope.projectId,
+      aiCitation.domain,
+      aiCitation.snapshotId,
+      aiCitation.observationId,
+      "/valueJson/competitorDomain",
+    ]);
+  });
+
   it("rejects noncanonical domains and incomplete or invented source lineage before SQL", async () => {
     const db = new FakeExecutor();
     const repo = new CompetitorsRepository(db as never);
@@ -357,6 +421,14 @@ describe("CompetitorsRepository", () => {
         snapshotId: "00000000-0000-4000-8000-000000000060",
         observationId: "00000000-0000-4000-8000-000000000061",
         sourcePointer: "/valueJson/intersections",
+      } as unknown as CompetitorOriginInput,
+      {
+        originKind: "ai_citation",
+        domain: "example-competitor.com",
+        name: null,
+        snapshotId: "00000000-0000-4000-8000-000000000070",
+        observationId: "00000000-0000-4000-8000-000000000071",
+        sourcePointer: "/valueJson/citedQueries",
       } as unknown as CompetitorOriginInput,
     ]) {
       await expect(repo.upsertOrigin(scope, input)).rejects.toThrow();

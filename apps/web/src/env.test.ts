@@ -71,6 +71,8 @@ describe("web production URL environment policy", () => {
     const parsed = production.parse(withoutFlag);
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_AI_CITATIONS_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_AI_CITATION_MODEL).toBeUndefined();
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
     expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(100);
   });
@@ -86,6 +88,34 @@ describe("web production URL environment policy", () => {
     expect(parsed.DATAFORSEO_ENABLED).toBe("true");
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(350);
     expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(125);
+  });
+
+  it("requires a server-pinned model and base Search Landscape rollout for AI citations", () => {
+    expect(
+      production.parse({
+        ...BASE,
+        DATAFORSEO_ENABLED: "true",
+        DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+        DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+      }),
+    ).toMatchObject({
+      DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+      DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+    });
+    expect(
+      production.safeParse({
+        ...BASE,
+        DATAFORSEO_ENABLED: "true",
+        DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+      }).success,
+    ).toBe(false);
+    expect(
+      production.safeParse({
+        ...BASE,
+        DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+        DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+      }).success,
+    ).toBe(false);
   });
 
   it.each(["0", "1001", "1.5", "not-a-number"])(

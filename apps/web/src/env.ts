@@ -67,6 +67,17 @@ export function createWebEnvSchema(environment: string | undefined) {
     DATAFORSEO_BACKLINKS_ENABLED: z
       .enum(["true", "false"])
       .default("false"),
+    DATAFORSEO_AI_CITATIONS_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
+    DATAFORSEO_AI_CITATION_MODEL: z
+      .string()
+      .min(1)
+      .max(100)
+      .refine((value) => value === value.trim() && !/\s/u.test(value), {
+        message: "must be one whitespace-free server-pinned model identifier",
+      })
+      .optional(),
     DATAFORSEO_MAX_KEYWORDS: z.coerce
       .number()
       .int()
@@ -110,6 +121,24 @@ export function createWebEnvSchema(environment: string | undefined) {
     SF_BLOB_BACKEND: z.enum(["local", "supabase"]).optional(),
     SF_BLOB_DIR: z.string().min(1).optional(),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  }).superRefine((env, ctx) => {
+    if (env.DATAFORSEO_AI_CITATIONS_ENABLED !== "true") return;
+    if (env.DATAFORSEO_ENABLED !== "true") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DATAFORSEO_AI_CITATIONS_ENABLED"],
+        message:
+          "DataForSEO AI citations require DATAFORSEO_ENABLED=true.",
+      });
+    }
+    if (!env.DATAFORSEO_AI_CITATION_MODEL) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DATAFORSEO_AI_CITATION_MODEL"],
+        message:
+          "DATAFORSEO_AI_CITATION_MODEL is required when AI citations are enabled.",
+      });
+    }
   });
 }
 

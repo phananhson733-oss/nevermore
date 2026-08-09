@@ -24,6 +24,8 @@ import type {
   GrowthMapUrlIdentitySource,
   GrowthMapUrlMetricObservation,
   GrowthMapCompetitorLibraryItem,
+  GrowthMapCompetitorAiCitationInsight,
+  GrowthMapCompetitorSerpOverlap,
   InternalLinkMapCoverage,
   InternalLinkMapEdge,
   InternalLinkMapExecutionRef,
@@ -1436,6 +1438,72 @@ export function competitorKeywordGapParticipation(
   }
   if (item.reviewStatus === "candidate") return "awaiting_confirmation";
   return "not_participating";
+}
+
+export type CompetitorOrganicOverlapDisplay =
+  | {
+      readonly state: "available";
+      readonly percentage: number;
+      readonly limitation: string | null;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly limitation: string;
+    };
+
+/**
+ * Convert the persisted canonical overlap ratio into its display percentage.
+ * This boundary deliberately has no cohort denominator: the 20-query cohort
+ * belongs only to AI citations and must never leak into organic overlap.
+ */
+export function competitorOrganicOverlapDisplay(
+  insight: GrowthMapCompetitorSerpOverlap,
+): CompetitorOrganicOverlapDisplay {
+  if (insight.availability === "unavailable") {
+    return { state: "unavailable", limitation: insight.limitation };
+  }
+  return {
+    state: "available",
+    percentage: insight.value * 100,
+    limitation: insight.limitation,
+  };
+}
+
+export type CompetitorAiCitationDisplay =
+  | {
+      readonly state: "available";
+      readonly primary: string;
+      readonly attemptedQueries: 20;
+      readonly observedQueries: number;
+      readonly unavailableQueries: number;
+      readonly cohortCoverage: "complete" | "partial";
+      readonly limitation: string | null;
+    }
+  | {
+      readonly state: "unavailable";
+      readonly limitation: string;
+    };
+
+/**
+ * Show citations over observed answers. A partial provider cohort therefore
+ * reads 8/17, while the separate attempted/unavailable fields keep the fixed
+ * 20-query denominator explicit instead of treating missing answers as zero.
+ */
+export function competitorAiCitationDisplay(
+  insight: GrowthMapCompetitorAiCitationInsight,
+): CompetitorAiCitationDisplay {
+  if (insight.availability === "unavailable") {
+    return { state: "unavailable", limitation: insight.limitation };
+  }
+  return {
+    state: "available",
+    primary: `${insight.value}/${insight.observedQueries}`,
+    attemptedQueries: insight.attemptedQueries,
+    observedQueries: insight.observedQueries,
+    unavailableQueries: insight.unavailableQueries,
+    cohortCoverage: insight.cohortCoverage,
+    limitation: insight.limitation,
+  };
 }
 
 export type CompetitorSharedKeywordDisplay =

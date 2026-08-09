@@ -52,7 +52,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     lock.migrationHead,
-    "0046_workspace_plan_tier",
+    "0047_dataforseo_competitor_metrics",
   );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);

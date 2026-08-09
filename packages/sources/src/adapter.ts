@@ -24,6 +24,7 @@ export type DatasetKey =
   | "dataforseo.ranked_keywords.v1"
   | "dataforseo.search_landscape.v1"
   | "dataforseo.search_landscape.v2"
+  | "dataforseo.search_landscape.v3"
   | "dataforseo.backlinks.v1";
 
 export type Availability = "available" | "partial" | "unavailable";

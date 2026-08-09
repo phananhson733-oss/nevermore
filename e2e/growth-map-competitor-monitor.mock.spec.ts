@@ -38,6 +38,8 @@ function competitor(
 ): GrowthMapCompetitorLibraryItem {
   const sharedKeywordSnapshotId = `44000000-0000-4000-8000-0000000000${suffix}`;
   const sharedKeywordObservationId = `45000000-0000-4000-8000-0000000000${suffix}`;
+  const aiCitationSnapshotId = `47000000-0000-4000-8000-0000000000${suffix}`;
+  const aiCitationObservationId = `48000000-0000-4000-8000-0000000000${suffix}`;
   return {
     projectId: E2E_PROJECT_ID,
     competitorId,
@@ -66,19 +68,58 @@ function competitor(
               observationId: sharedKeywordObservationId,
               evidenceRefs: [],
             },
+            {
+              occurrenceId: `49000000-0000-4000-8000-0000000000${suffix}`,
+              observedAt: OBSERVED_AT,
+              originKind: "ai_citation" as const,
+              snapshotId: aiCitationSnapshotId,
+              observationId: aiCitationObservationId,
+              evidenceRefs: [],
+            },
           ]),
     ],
     lastObservedAt: OBSERVED_AT,
-    serpOverlap: {
-      availability: "unavailable",
-      value: null,
-      limitation: "尚无已确认的 SERP overlap 观测。",
-    },
-    aiCitationInsight: {
-      availability: "unavailable",
-      value: null,
-      limitation: "尚无已确认的 AI citation 观测。",
-    },
+    serpOverlap:
+      sharedKeywordCount === null
+        ? {
+            availability: "unavailable",
+            value: null,
+            limitation: "尚无已确认的 SERP overlap 观测。",
+          }
+        : {
+            availability: "available",
+            value: sharedKeywordCount / 100,
+            snapshotId: sharedKeywordSnapshotId,
+            observationId: sharedKeywordObservationId,
+            valuePointer: "/valueJson/serpOverlap",
+            observedAt: OBSERVED_AT,
+            limitation: null,
+          },
+    aiCitationInsight:
+      sharedKeywordCount === null
+        ? {
+            availability: "unavailable",
+            value: null,
+            limitation: "尚无已确认的 AI citation 观测。",
+          }
+        : {
+            availability: "available",
+            value: 8,
+            attemptedQueries: 20,
+            observedQueries: 17,
+            unavailableQueries: 3,
+            cohortCoverage: "partial",
+            querySetHash: "a".repeat(64),
+            platform: "chat_gpt",
+            model: "gpt-5",
+            marketCode: "US",
+            languageTag: "en-US",
+            snapshotId: aiCitationSnapshotId,
+            observationId: aiCitationObservationId,
+            valuePointer: "/valueJson/citedQueries",
+            observedAt: OBSERVED_AT,
+            limitation: "3 个供应商回答不可用，比例仅基于 17 个已观测回答。",
+          },
     sharedKeywordInsight:
       sharedKeywordCount === null
         ? {
@@ -103,7 +144,7 @@ function competitor(
   };
 }
 
-const COMPETITOR_A_SHARED_KEYWORDS = 342;
+const COMPETITOR_A_SHARED_KEYWORDS = 17;
 const COMPETITOR_A = competitor(
   COMPETITOR_A_ID,
   "AtlasFlow",
@@ -398,6 +439,24 @@ function sharedKeywordCell(page: Page, domain: string) {
     .locator('[data-column="共同关键词"]');
 }
 
+function organicOverlapCell(
+  page: Page,
+  domain: string,
+  column = "自然搜索重叠度",
+) {
+  return page
+    .getByRole("listitem")
+    .filter({ hasText: domain })
+    .locator(`[data-column="${column}"]`);
+}
+
+function aiCitationCell(page: Page, domain: string, column = "AI 引用") {
+  return page
+    .getByRole("listitem")
+    .filter({ hasText: domain })
+    .locator(`[data-column="${column}"]`);
+}
+
 function rowArrowButton(page: Page, domain: string) {
   return page
     .getByRole("listitem")
@@ -466,6 +525,44 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     String(COMPETITOR_A_SHARED_KEYWORDS),
   );
 
+  // Organic overlap is the persisted ratio rendered as a percentage. AI
+  // citations use cited/observed for a partial cohort and disclose the fixed
+  // attempted count separately, so the three unavailable responses never
+  // become implicit zero-citation responses.
+  await expect(organicOverlapCell(page, "atlasflow.com")).toHaveText("17%");
+  const atlasAiCitations = aiCitationCell(page, "atlasflow.com");
+  await expect(atlasAiCitations).toHaveText("8/17");
+  await expect(
+    atlasAiCitations.locator("[data-limitation-hint]"),
+  ).toHaveAttribute(
+    "data-print-limitations",
+    /已尝试 20 个查询 · 3 个不可用/,
+  );
+  await expect(organicOverlapCell(page, "beaconpath.com")).toHaveText(
+    "数据不足",
+  );
+  await expect(aiCitationCell(page, "beaconpath.com")).toHaveText("不可用");
+  await expect(aiCitationCell(page, "beaconpath.com")).not.toContainText("0");
+
+  const selectedDetail = page.getByRole("complementary", {
+    name: "所选竞品详情",
+  });
+  await expect(
+    selectedDetail
+      .getByText("自然搜索重叠度", { exact: true })
+      .locator("xpath=following-sibling::*[1]"),
+  ).toHaveText("17%");
+  const detailAiCitations = selectedDetail
+    .getByText("AI 引用", { exact: true })
+    .locator("xpath=following-sibling::*[1]");
+  await expect(detailAiCitations).toHaveText("8/17");
+  await expect(
+    detailAiCitations.locator("[data-limitation-hint]"),
+  ).toHaveAttribute(
+    "data-print-limitations",
+    /已尝试 20 个查询 · 3 个不可用/,
+  );
+
   // Monitor evidence now lives in the full-profile drawer; open it for A via
   // the new row arrow.
   const drawer = competitorDrawer(page);
@@ -478,6 +575,21 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
       .getByText("共同关键词", { exact: true })
       .locator("xpath=following-sibling::*[1]"),
   ).toHaveText(String(COMPETITOR_A_SHARED_KEYWORDS));
+  await expect(
+    drawer
+      .getByText("自然搜索重叠度", { exact: true })
+      .locator("xpath=following-sibling::*[1]"),
+  ).toHaveText("17%");
+  const drawerAiCitations = drawer
+    .getByText("AI 引用", { exact: true })
+    .locator("xpath=following-sibling::*[1]");
+  await expect(drawerAiCitations).toHaveText("8/17");
+  await expect(
+    drawerAiCitations.locator("[data-limitation-hint]"),
+  ).toHaveAttribute(
+    "data-print-limitations",
+    /已尝试 20 个查询 · 3 个不可用/,
+  );
   await expect(monitor.getByTestId("competitor-monitor-status")).toHaveText(
     "本期可比较",
   );
@@ -625,6 +737,40 @@ test("updates the only supported monthly cadence with CAS and keeps conflicts ex
       frequency: "monthly",
     },
   ]);
+});
+
+test("localizes partial AI cohort evidence in English without changing metric arithmetic", async ({
+  page,
+}) => {
+  await page.context().addCookies([
+    {
+      name: "sf_ui_locale",
+      value: "en",
+      domain: "localhost",
+      path: "/",
+    },
+  ]);
+  await installCompetitorApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=competitors&selectedCompetitorId=${COMPETITOR_A_ID}`,
+  );
+
+  await expect(
+    organicOverlapCell(
+      page,
+      "atlasflow.com",
+      "Organic search overlap",
+    ),
+  ).toHaveText("17%");
+  const citations = aiCitationCell(page, "atlasflow.com", "AI citations");
+  await expect(citations).toHaveText("8/17");
+  await expect(citations.locator("[data-limitation-hint]")).toHaveAttribute(
+    "data-print-limitations",
+    /20 attempted · 3 unavailable/,
+  );
+  await expect(
+    aiCitationCell(page, "beaconpath.com", "AI citations"),
+  ).toHaveText("Unavailable");
 });
 
 test("routes the empty Competitor Library to product-profile completion instead of source connections", async ({

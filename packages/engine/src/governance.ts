@@ -88,7 +88,8 @@ export type GovernanceCompetitorOriginKind =
   | "product_profile"
   | "csv_keyword_gap"
   | "manual"
-  | "serp_overlap";
+  | "serp_overlap"
+  | "ai_citation";
 
 export interface GovernanceCompetitorOriginRefV1 {
   readonly occurrenceId: string;
@@ -156,6 +157,7 @@ const COMPETITOR_ORIGIN_KINDS = [
   "csv_keyword_gap",
   "manual",
   "serp_overlap",
+  "ai_citation",
 ] as const satisfies readonly GovernanceCompetitorOriginKind[];
 
 const MARKET_CODE = /^[A-Z]{2}$/u;
@@ -707,7 +709,9 @@ function parseCompetitorOriginRef(
   const hasCanonicalObservation =
     snapshotId !== null && observationId !== null;
   const requiresCanonicalObservation =
-    originKind === "csv_keyword_gap" || originKind === "serp_overlap";
+    originKind === "csv_keyword_gap" ||
+    originKind === "serp_overlap" ||
+    originKind === "ai_citation";
   if ((snapshotId === null) !== (observationId === null)) {
     throw invalid(
       `${path}.snapshotId and ${path}.observationId must be supplied together`,

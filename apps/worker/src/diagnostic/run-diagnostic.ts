@@ -73,7 +73,11 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2,
+  METRIC_DATAFORSEO_COMPETITOR_AI_CITATION,
   METRIC_DATAFORSEO_SERP_COMPETITOR,
   METRIC_CRAWL_PAGE,
   METRIC_CRAWL_ROBOTS,
@@ -84,6 +88,7 @@ import {
   canonicalizeUrl,
   clusterKey,
   normalizeSiteOrigin,
+  dataForSeoOrganicOverlapRatio,
 } from "@sf/sources";
 import { z } from "zod";
 import { exactCandidatesForCanonicalSubject } from "../collection/observation-site-page-lineage.ts";
@@ -543,6 +548,27 @@ const OBSERVATION_SOURCE_REGISTRY: ReadonlyMap<
       ]),
     },
   ],
+  [
+    observationSourceContractKey(
+      "dataforseo",
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+    ),
+    {
+      provider: "dataforseo",
+      datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+      schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+      methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+      origin: "vendor_observation",
+      grade: "B",
+      subjectTypeByMetric: new Map([
+        [METRIC_CSV_KEYWORD_GAP, "keyword_cluster"],
+        [METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2, "site"],
+        [METRIC_DATAFORSEO_SERP_COMPETITOR, "site"],
+        [METRIC_DATAFORSEO_COMPETITOR_AI_CITATION, "site"],
+      ]),
+    },
+  ],
 ]);
 
 function registeredObservationSource(
@@ -592,6 +618,96 @@ const dataForSeoCompetitorDomainProjectionSchema = z
     languageCode: z.string().regex(/^[a-z]{2,8}$/u),
   })
   .strict();
+const dataForSeoCompetitorDomainV2ProjectionSchema = z
+  .object({
+    targetDomain: dataForSeoDomain,
+    competitorDomain: dataForSeoDomain,
+    intersections: positiveSafeInteger,
+    targetOrganicKeywordCount: positiveSafeInteger,
+    serpOverlap: z.number().finite().min(0).max(1),
+    averagePosition: finiteNonnegative,
+    summedPosition: finiteNonnegative,
+    organicEstimatedTrafficVolume: finiteNonnegative,
+    marketCode: z.string().regex(/^[A-Z]{2}$/u),
+    languageCode: z.string().regex(/^[a-z]{2,8}$/u),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.intersections > value.targetOrganicKeywordCount ||
+      value.serpOverlap !==
+        dataForSeoOrganicOverlapRatio(
+          value.intersections,
+          value.targetOrganicKeywordCount,
+        )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "organic overlap operands are contradictory",
+      });
+    }
+  });
+const dataForSeoAiCitationOutcomeSchema = z
+  .object({
+    queryEntityId: z.uuid(),
+    queryRevision: positiveSafeInteger,
+    queryHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    availability: z.enum(["available", "unavailable"]),
+    cited: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.availability === "unavailable" && value.cited) {
+      context.addIssue({
+        code: "custom",
+        message: "an unavailable query cannot be cited",
+      });
+    }
+  });
+const dataForSeoAiCitationProjectionSchema = z
+  .object({
+    targetDomain: dataForSeoDomain,
+    competitorDomain: dataForSeoDomain,
+    attemptedQueries: z.literal(20),
+    observedQueries: positiveSafeInteger.max(20),
+    citedQueries: nonnegativeInteger.max(20),
+    unavailableQueries: nonnegativeInteger.max(20),
+    cohortCoverage: z.enum(["complete", "partial"]),
+    querySetHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    platform: z.literal("chat_gpt"),
+    model: z.string().regex(/^\S{1,100}$/u),
+    marketCode: z.string().regex(/^[A-Z]{2}$/u),
+    languageTag: z.string().min(1).max(64),
+    queryOutcomes: z.array(dataForSeoAiCitationOutcomeSchema).length(20),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const observed = value.queryOutcomes.filter(
+      (outcome) => outcome.availability === "available",
+    ).length;
+    const cited = value.queryOutcomes.filter((outcome) => outcome.cited).length;
+    const entityIds = new Set(
+      value.queryOutcomes.map((outcome) => outcome.queryEntityId),
+    );
+    const queryHashes = new Set(
+      value.queryOutcomes.map((outcome) => outcome.queryHash),
+    );
+    if (
+      value.observedQueries + value.unavailableQueries !== 20 ||
+      value.citedQueries > value.observedQueries ||
+      observed !== value.observedQueries ||
+      cited !== value.citedQueries ||
+      entityIds.size !== 20 ||
+      queryHashes.size !== 20 ||
+      value.cohortCoverage !==
+        (value.unavailableQueries === 0 ? "complete" : "partial")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "AI citation aggregate is contradictory",
+      });
+    }
+  });
 const dataForSeoSerpCompetitorProjectionSchema = z
   .object({
     targetDomain: dataForSeoDomain,
@@ -1116,7 +1232,15 @@ function exactDataForSeoCollectionIdentity(
       DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION &&
     run.operation === "search_landscape" &&
     run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
-  return legacy || composite || compositeV2;
+  const compositeV3 =
+    snapshot.dataset_key === DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY &&
+    snapshot.schema_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    snapshot.method_version ===
+      DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION &&
+    run.operation === "search_landscape" &&
+    run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
+  return legacy || composite || compositeV2 || compositeV3;
 }
 
 async function validateFrozenCollectionLineage(
@@ -1328,6 +1452,34 @@ function validateAvailableObservationValue(
     }
     case METRIC_DATAFORSEO_COMPETITOR_DOMAIN: {
       const parsed = dataForSeoCompetitorDomainProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        parsed.data.targetDomain !== dataForSeoTargetForOrigin(siteOrigin) ||
+        parsed.data.competitorDomain !== observation.subject_ref ||
+        parsed.data.targetDomain === parsed.data.competitorDomain
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    case METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2: {
+      const parsed = dataForSeoCompetitorDomainV2ProjectionSchema.safeParse(
+        observation.value_json,
+      );
+      if (
+        !parsed.success ||
+        parsed.data.targetDomain !== dataForSeoTargetForOrigin(siteOrigin) ||
+        parsed.data.competitorDomain !== observation.subject_ref ||
+        parsed.data.targetDomain === parsed.data.competitorDomain
+      ) {
+        invalidFrozenObservation();
+      }
+      return;
+    }
+    case METRIC_DATAFORSEO_COMPETITOR_AI_CITATION: {
+      const parsed = dataForSeoAiCitationProjectionSchema.safeParse(
         observation.value_json,
       );
       if (
@@ -1868,6 +2020,8 @@ async function computeAndPersist(
   const diagnosticObservationRows = observationRows.filter(
     (observation) =>
       observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN &&
+      observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2 &&
+      observation.metric_key !== METRIC_DATAFORSEO_COMPETITOR_AI_CITATION &&
       observation.metric_key !== METRIC_DATAFORSEO_SERP_COMPETITOR,
   );
   const observations = await loadObservationViews(

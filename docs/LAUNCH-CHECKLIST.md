@@ -118,6 +118,8 @@ Deploy the worker before the web promotion gate.
   LLM configuration. Set `DATAFORSEO_ENABLED=true`, the reviewed row cap, and
   `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` only in Railway. Keep
   `DATAFORSEO_BACKLINKS_ENABLED=false` until its separate rollout is approved;
+  keep `DATAFORSEO_AI_CITATIONS_ENABLED=false` until its separate paid rollout
+  is approved, and leave `DATAFORSEO_AI_CITATION_MODEL` unset while disabled;
   set the bounded Backlinks defaults to 500 backlink rows, 100 referring
   domains, 500 target pages, and 20 source-page verifications **[Owner]**
 - [ ] Leave `APP_BUILD_SHA` unset so `RAILWAY_GIT_COMMIT_SHA` reports the actual
@@ -141,8 +143,9 @@ probe.
   `APP_ORIGIN=https://app.gengrowth.ai`, session-mode `DATABASE_URL`,
   `DB_POOL_MAX=1`, the same Supabase/OAuth/encryption/bucket settings,
   `SUPABASE_ANON_KEY`, `SF_BLOB_BACKEND=supabase`, `DATAFORSEO_ENABLED=true`,
-  `DATAFORSEO_BACKLINKS_ENABLED=false`, and the same non-secret DataForSEO and
-  Backlinks caps as the Worker **[Owner]**
+  `DATAFORSEO_BACKLINKS_ENABLED=false`,
+  `DATAFORSEO_AI_CITATIONS_ENABLED=false`, and the same non-secret DataForSEO,
+  Backlinks, and optional pinned AI model settings as the Worker **[Owner]**
 - [ ] Leave `NEXT_PUBLIC_BASE_PATH` unset. Do not set `/app`; this release serves
   the root of `app.gengrowth.ai` **[Owner]**
 - [ ] Do not set `SF_DEV_AUTH`, `SF_BLOB_DIR`, worker-only LLM values, or

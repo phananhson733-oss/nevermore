@@ -52,8 +52,10 @@ import {
   GROWTH_MAP_KEYWORD_REVIEW_ORIGINS,
   growthMapDetailAllowsFindingReview,
   competitorDetailReadState,
+  competitorAiCitationDisplay,
   competitorKeywordGapParticipation,
   competitorMonitorDisplayState,
+  competitorOrganicOverlapDisplay,
   competitorLibraryReadState,
   competitorPoolEntryReason,
   competitorSharedKeywordDisplay,
@@ -452,12 +454,44 @@ function csvKeywordGapOrigin(): GrowthMapCompetitorOriginOccurrence {
 function availableSerpOverlap(): GrowthMapCompetitorLibraryItem["serpOverlap"] {
   return {
     availability: "available",
-    value: 42,
+    value: 0.17,
     snapshotId: IDS.snapshot,
     observationId: IDS.observation,
-    valuePointer: "/valueJson/overlapPct",
+    valuePointer: "/valueJson/serpOverlap",
     observedAt: "2026-07-28T08:00:00.000Z",
     limitation: null,
+  };
+}
+
+function availableAiCitationInsight(
+  overrides: Partial<
+    Extract<
+      GrowthMapCompetitorLibraryItem["aiCitationInsight"],
+      { availability: "available" }
+    >
+  > = {},
+): Extract<
+  GrowthMapCompetitorLibraryItem["aiCitationInsight"],
+  { availability: "available" }
+> {
+  return {
+    availability: "available",
+    value: 8,
+    attemptedQueries: 20,
+    observedQueries: 20,
+    unavailableQueries: 0,
+    cohortCoverage: "complete",
+    querySetHash: "a".repeat(64),
+    platform: "chat_gpt",
+    model: "gpt-5",
+    marketCode: "US",
+    languageTag: "en-US",
+    snapshotId: IDS.snapshot,
+    observationId: IDS.observation,
+    valuePointer: "/valueJson/citedQueries",
+    observedAt: "2026-07-28T08:00:00.000Z",
+    limitation: null,
+    ...overrides,
   };
 }
 
@@ -1467,6 +1501,66 @@ describe("Growth Map view model", () => {
         reviewStatus: "all",
       }).map((item) => item.competitorId),
     ).toEqual([IDS.competitorA, IDS.competitorB]);
+  });
+
+  it("formats canonical organic overlap as a percentage and never as a cohort count", () => {
+    expect(competitorOrganicOverlapDisplay(availableSerpOverlap())).toEqual({
+      state: "available",
+      percentage: 17,
+      limitation: null,
+    });
+    expect(
+      competitorOrganicOverlapDisplay({
+        availability: "unavailable",
+        value: null,
+        limitation: "No canonical organic-overlap observation is available.",
+      }),
+    ).toEqual({
+      state: "unavailable",
+      limitation: "No canonical organic-overlap observation is available.",
+    });
+  });
+
+  it("formats complete and partial AI citation cohorts without turning unavailable queries into zeroes", () => {
+    expect(
+      competitorAiCitationDisplay(availableAiCitationInsight()),
+    ).toEqual({
+      state: "available",
+      primary: "8/20",
+      attemptedQueries: 20,
+      observedQueries: 20,
+      unavailableQueries: 0,
+      cohortCoverage: "complete",
+      limitation: null,
+    });
+    expect(
+      competitorAiCitationDisplay(
+        availableAiCitationInsight({
+          observedQueries: 17,
+          unavailableQueries: 3,
+          cohortCoverage: "partial",
+          limitation: "Three provider responses were unavailable.",
+        }),
+      ),
+    ).toEqual({
+      state: "available",
+      primary: "8/17",
+      attemptedQueries: 20,
+      observedQueries: 17,
+      unavailableQueries: 3,
+      cohortCoverage: "partial",
+      limitation: "Three provider responses were unavailable.",
+    });
+    expect(
+      competitorAiCitationDisplay({
+        availability: "unavailable",
+        value: null,
+        limitation: "No observed AI responses are available.",
+      }),
+    ).toEqual({
+      state: "unavailable",
+      limitation: "No observed AI responses are available.",
+    });
   });
 
   it("attributes pool entry to customer confirmation whenever a Product Profile or manual origin exists", () => {

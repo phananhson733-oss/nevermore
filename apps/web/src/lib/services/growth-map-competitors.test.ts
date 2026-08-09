@@ -61,6 +61,10 @@ const ids = {
   olderSerpSnapshot: "09000000-0000-4000-8000-000000000031",
   olderSerpObservation: "09000000-0000-4000-8000-000000000032",
   olderSerpCollectionRun: "09000000-0000-4000-8000-000000000033",
+  aiOrigin: "10000000-0000-4000-8000-000000000034",
+  aiSnapshot: "10000000-0000-4000-8000-000000000035",
+  aiObservation: "10000000-0000-4000-8000-000000000036",
+  aiCollectionRun: "10000000-0000-4000-8000-000000000037",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -96,7 +100,8 @@ const governance: {
         | "product_profile"
         | "csv_keyword_gap"
         | "manual"
-        | "serp_overlap";
+        | "serp_overlap"
+        | "ai_citation";
       snapshotId: string | null;
       observationId: string | null;
     }>;
@@ -180,6 +185,20 @@ function serpOriginRef(
     originKind: "serp_overlap",
     snapshotId: ids.serpSnapshot,
     observationId: ids.serpObservation,
+    ...overrides,
+  };
+}
+
+function aiCitationOriginRef(
+  overrides: Partial<
+    (typeof governance.competitors)[number]["originRefs"][number]
+  > = {},
+): (typeof governance.competitors)[number]["originRefs"][number] {
+  return {
+    occurrenceId: ids.aiOrigin,
+    originKind: "ai_citation",
+    snapshotId: ids.aiSnapshot,
+    observationId: ids.aiObservation,
     ...overrides,
   };
 }
@@ -372,6 +391,35 @@ function serpOrigin(
     source_analysis_scope: null,
     data_snapshot_id: ids.serpSnapshot,
     normalized_observation_id: ids.serpObservation,
+    import_preview_id: null,
+    source_pointer: "/valueJson/competitorDomain",
+    manual_entry_id: null,
+    observed_at: capturedAt,
+    created_at: capturedAt,
+    ...overrides,
+  };
+}
+
+function aiCitationOrigin(
+  overrides: Partial<CompetitorOriginRow> = {},
+): CompetitorOriginRow {
+  return {
+    id: ids.aiOrigin,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    competitor_id: ids.competitor,
+    origin_kind: "ai_citation",
+    source_name: null,
+    product_profile_id: null,
+    profile_version: null,
+    candidate_id: null,
+    field_provenance_path: null,
+    evidence_refs: null,
+    source_review_status: null,
+    source_relationship: null,
+    source_analysis_scope: null,
+    data_snapshot_id: ids.aiSnapshot,
+    normalized_observation_id: ids.aiObservation,
     import_preview_id: null,
     source_pointer: "/valueJson/competitorDomain",
     manual_entry_id: null,
@@ -623,6 +671,85 @@ function fallbackSerpSnapshot(overrides: Record<string, unknown> = {}) {
 function fallbackSerpCollectionRun(overrides: Record<string, unknown> = {}) {
   return serpCollectionRun({
     method_version: "dataforseo.search_landscape.v2",
+    ...overrides,
+  });
+}
+
+function canonicalOverlapObservation(overrides: Record<string, unknown> = {}) {
+  return serpObservation({
+    metric_key: "dataforseo.competitor_domain.v2",
+    value_json: {
+      ...serpObservation().value_json,
+      targetOrganicKeywordCount: 100,
+      serpOverlap: 0.17,
+    },
+    limitation:
+      "Organic positions 1-100 in one exact US/en provider snapshot.",
+    ...overrides,
+  });
+}
+
+function searchLandscapeV3Snapshot(overrides: Record<string, unknown> = {}) {
+  return serpSnapshot({
+    dataset_key: "dataforseo.search_landscape.v3",
+    schema_version: "dataforseo.search_landscape.v3",
+    method_version: "dataforseo.search_landscape.v3",
+    ...overrides,
+  });
+}
+
+function searchLandscapeV3CollectionRun(
+  overrides: Record<string, unknown> = {},
+) {
+  return serpCollectionRun({
+    method_version: "dataforseo.search_landscape.v3",
+    ...overrides,
+  });
+}
+
+function aiCitationObservation(overrides: Record<string, unknown> = {}) {
+  return serpObservation({
+    id: ids.aiObservation,
+    snapshot_id: ids.aiSnapshot,
+    metric_key: "dataforseo.competitor_ai_citation.v1",
+    value_json: {
+      targetDomain: "relayops.example",
+      competitorDomain: "example-competitor.com",
+      attemptedQueries: 20,
+      observedQueries: 17,
+      citedQueries: 8,
+      unavailableQueries: 3,
+      cohortCoverage: "partial",
+      querySetHash: "a".repeat(64),
+      platform: "chat_gpt",
+      model: "gpt-5",
+      marketCode: "US",
+      languageTag: "en-US",
+      queryOutcomes: Array.from({ length: 20 }, (_, index) => ({
+        queryEntityId: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        queryRevision: index + 1,
+        queryHash: String(index + 1).padStart(64, "0"),
+        availability: index < 17 ? "available" : "unavailable",
+        cited: index < 8,
+      })),
+    },
+    limitation:
+      "17 of 20 fixed prompts were observed; 3 were unavailable.",
+    ...overrides,
+  });
+}
+
+function aiCitationSnapshot(overrides: Record<string, unknown> = {}) {
+  return searchLandscapeV3Snapshot({
+    id: ids.aiSnapshot,
+    collection_run_id: ids.aiCollectionRun,
+    ...overrides,
+  });
+}
+
+function aiCitationCollectionRun(overrides: Record<string, unknown> = {}) {
+  return searchLandscapeV3CollectionRun({
+    id: ids.aiCollectionRun,
     ...overrides,
   });
 }
@@ -969,7 +1096,9 @@ describe("Growth Map Competitor Library read service", () => {
       aiCitationInsight: {
         availability: "unavailable",
         value: null,
-        limitation: expect.stringMatching(/canonical.*writer/i),
+        limitation: expect.stringMatching(
+          /no immutable.*ai-citation aggregate.*not a measured zero/i,
+        ),
       },
       coverage: { availability: "partial" },
     });
@@ -1080,7 +1209,9 @@ describe("Growth Map Competitor Library read service", () => {
       aiCitationInsight: {
         availability: "unavailable",
         value: null,
-        limitation: expect.stringMatching(/canonical.*writer/i),
+        limitation: expect.stringMatching(
+          /no immutable.*ai-citation aggregate.*not a measured zero/i,
+        ),
       },
     });
     expect(
@@ -1091,6 +1222,351 @@ describe("Growth Map Competitor Library read service", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(response)).not.toMatch(/no canonical serp-overlap writer/i);
+  });
+
+  it("projects organic overlap only from the exact persisted v2 operands and ratio", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [canonicalOverlapObservation()],
+        [searchLandscapeV3Snapshot()],
+        [searchLandscapeV3CollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.data[0]?.serpOverlap).toEqual({
+      availability: "available",
+      value: 0.17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/serpOverlap",
+      observedAt: capturedAt,
+      limitation:
+        "Organic positions 1-100 in one exact US/en provider snapshot.",
+    });
+    expect(response.data[0]?.sharedKeywordInsight).toMatchObject({
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+    });
+  });
+
+  it("accepts the canonical positive half-up 12-decimal organic overlap ratio", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      queryResults: [
+        [
+          canonicalOverlapObservation({
+            value_json: {
+              ...canonicalOverlapObservation().value_json,
+              intersections: 2,
+              targetOrganicKeywordCount: 3,
+              serpOverlap: 0.666666666667,
+            },
+          }),
+        ],
+        [searchLandscapeV3Snapshot()],
+        [searchLandscapeV3CollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.serpOverlap).toMatchObject({
+      availability: "available",
+      value: 0.666666666667,
+    });
+  });
+
+  it.each([
+    [
+      "a ratio that does not equal its frozen operands",
+      { value_json: { ...canonicalOverlapObservation().value_json, serpOverlap: 0.18 } },
+    ],
+    [
+      "a shared-keyword numerator above its frozen denominator",
+      {
+        value_json: {
+          ...canonicalOverlapObservation().value_json,
+          intersections: 101,
+          serpOverlap: 1.01,
+        },
+      },
+    ],
+    ["a foreign competitor domain", { subject_ref: "other.example" }],
+    ["a different Snapshot", { snapshot_id: ids.aiSnapshot }],
+    [
+      "a captured/observed mismatch",
+      { observed_at: "2026-07-22T08:00:01.000Z" },
+    ],
+  ])("fails closed for canonical organic overlap with %s", async (_label, observationDrift) => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      queryResults: [
+        [canonicalOverlapObservation(observationDrift)],
+        [searchLandscapeV3Snapshot()],
+        [searchLandscapeV3CollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("projects the exact persisted fixed-20 AI citation aggregate and its partiality limitation", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [aiCitationOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [aiCitationOriginRef()] }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [aiCitationObservation()],
+        [aiCitationSnapshot()],
+        [aiCitationCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.data[0]?.originOccurrences).toEqual([
+      {
+        occurrenceId: ids.aiOrigin,
+        originKind: "ai_citation",
+        snapshotId: ids.aiSnapshot,
+        observationId: ids.aiObservation,
+        evidenceRefs: [],
+        observedAt: capturedAt,
+      },
+    ]);
+    expect(response.data[0]?.aiCitationInsight).toEqual({
+      availability: "available",
+      value: 8,
+      attemptedQueries: 20,
+      observedQueries: 17,
+      unavailableQueries: 3,
+      cohortCoverage: "partial",
+      querySetHash: "a".repeat(64),
+      platform: "chat_gpt",
+      model: "gpt-5",
+      marketCode: "US",
+      languageTag: "en-US",
+      snapshotId: ids.aiSnapshot,
+      observationId: ids.aiObservation,
+      valuePointer: "/valueJson/citedQueries",
+      observedAt: capturedAt,
+      limitation:
+        "17 of 20 fixed prompts were observed; 3 were unavailable.",
+    });
+  });
+
+  it("projects a complete AI citation cohort from current immutable lineage with no partiality limitation", async () => {
+    const baseValue = aiCitationObservation().value_json as Record<
+      string,
+      unknown
+    >;
+    const queryOutcomes = (
+      baseValue["queryOutcomes"] as Array<Record<string, unknown>>
+    ).map((outcome, index) => ({
+      ...outcome,
+      availability: "available",
+      cited: index < 8,
+    }));
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [aiCitationOrigin()],
+      queryResults: [
+        [
+          aiCitationObservation({
+            value_json: {
+              ...baseValue,
+              observedQueries: 20,
+              unavailableQueries: 0,
+              cohortCoverage: "complete",
+              queryOutcomes,
+            },
+            limitation:
+              "Complete fixed-20 ChatGPT web-search cohort in US/en-US.",
+          }),
+        ],
+        [aiCitationSnapshot({ availability: "available" })],
+        [aiCitationCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      aiCitationOrigin(),
+    ]);
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(mocks.loadPublishedGrowthMapGeneration).not.toHaveBeenCalled();
+    expect(response.data[0]?.aiCitationInsight).toMatchObject({
+      availability: "available",
+      value: 8,
+      attemptedQueries: 20,
+      observedQueries: 20,
+      unavailableQueries: 0,
+      cohortCoverage: "complete",
+      limitation: null,
+    });
+  });
+
+  it("reports a persisted measured AI-citation zero only when at least one fixed-cohort query was observed", async () => {
+    const baseValue = aiCitationObservation().value_json as Record<
+      string,
+      unknown
+    >;
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [aiCitationOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [aiCitationOriginRef()] }),
+      ],
+      queryResults: [
+        [
+          aiCitationObservation({
+            value_json: {
+              ...baseValue,
+              citedQueries: 0,
+              queryOutcomes: (
+                baseValue["queryOutcomes"] as Array<Record<string, unknown>>
+              ).map((outcome) => ({ ...outcome, cited: false })),
+            },
+          }),
+        ],
+        [aiCitationSnapshot()],
+        [aiCitationCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.aiCitationInsight).toMatchObject({
+      availability: "available",
+      value: 0,
+      attemptedQueries: 20,
+      observedQueries: 17,
+      unavailableQueries: 3,
+    });
+  });
+
+  it.each([
+    [
+      "zero observed queries",
+      {
+        observedQueries: 0,
+        citedQueries: 0,
+        unavailableQueries: 20,
+        cohortCoverage: "partial",
+      },
+    ],
+    ["inconsistent query arithmetic", { unavailableQueries: 2 }],
+    ["citations above observed answers", { citedQueries: 18 }],
+    ["a noncanonical language tag", { languageTag: "EN-us" }],
+    [
+      "duplicate frozen query hashes",
+      {
+        queryOutcomes: (
+          (aiCitationObservation().value_json as Record<string, unknown>)[
+            "queryOutcomes"
+          ] as Array<Record<string, unknown>>
+        ).map((outcome, index) => ({
+          ...outcome,
+          queryHash: index < 2 ? "f".repeat(64) : outcome["queryHash"],
+        })),
+      },
+    ],
+  ])("fails closed for an AI citation aggregate with %s", async (_label, valueDrift) => {
+    const baseValue = aiCitationObservation().value_json as Record<
+      string,
+      unknown
+    >;
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [aiCitationOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [aiCitationOriginRef()] }),
+      ],
+      queryResults: [
+        [
+          aiCitationObservation({
+            value_json: { ...baseValue, ...valueDrift },
+          }),
+        ],
+        [aiCitationSnapshot()],
+        [aiCitationCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
   });
 
   it("projects one exact v2 paid SERP-competitor origin without claiming domain overlap", async () => {
@@ -1948,7 +2424,9 @@ describe("Growth Map Competitor Library read service", () => {
     ).toBe(true);
     expect(
       response.data[0]?.coverage.limitations.some((limitation) =>
-        /canonical.*writer/i.test(limitation),
+        /no immutable.*ai-citation aggregate.*not a measured zero/i.test(
+          limitation,
+        ),
       ),
     ).toBe(true);
   });

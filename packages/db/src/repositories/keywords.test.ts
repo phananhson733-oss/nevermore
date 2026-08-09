@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_KEYWORD_OCCURRENCE_PAGE_SIZE } from "./keyword-occurrences.ts";
 import { encodeNumericTimestampUuidCursor } from "./cursor.ts";
 import {
+  MAX_AI_CITATION_COHORT_CANDIDATE_READ,
   MAX_FROZEN_KEYWORD_ENTITY_BATCH,
   KeywordsRepository,
   LegacyKeywordReviewDisabledError,
@@ -134,6 +135,63 @@ const entity = {
 } as const satisfies KeywordEntityRow;
 
 describe("KeywordsRepository", () => {
+  it("reads only the exact approved and confirmed GenerativeQuery cohort with one overflow sentinel", async () => {
+    const db = new FakeExecutor();
+    const candidate = {
+      entityId: entity.id,
+      revision: 4,
+      query: "Which customer onboarding platform is best?",
+      normalizedQuery: "which customer onboarding platform is best?",
+      marketCode: "US",
+      languageTag: "en-US",
+    } as const;
+    db.enqueue([candidate]);
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listAiCitationCohortCandidates(scope, {
+        market: "US",
+        languageTag: "en-US",
+        limit: MAX_AI_CITATION_COHORT_CANDIDATE_READ,
+      }),
+    ).resolves.toEqual([candidate]);
+
+    const predicate = new PgDialect().sqlToQuery(
+      db.last("where").args[0] as never,
+    );
+    expect(predicate.sql).toContain('"workspace_id" = $');
+    expect(predicate.sql).toContain('"project_id" = $');
+    expect(predicate.sql).toContain('"archived_at" is null');
+    expect(predicate.params).toEqual(
+      expect.arrayContaining([
+        "approved",
+        "confirmed",
+        "generative_query",
+        "US",
+        "en-US",
+      ]),
+    );
+    const ordering = db.last("orderBy").args;
+    expect(ordering).toHaveLength(2);
+    expect(db.last("limit").args).toEqual([
+      MAX_AI_CITATION_COHORT_CANDIDATE_READ,
+    ]);
+  });
+
+  it("rejects a client attempt to expand the fixed AI citation cohort read", async () => {
+    const db = new FakeExecutor();
+    const repo = new KeywordsRepository(db as never);
+
+    await expect(
+      repo.listAiCitationCohortCandidates(scope, {
+        market: "US",
+        languageTag: "en-US",
+        limit: MAX_AI_CITATION_COHORT_CANDIDATE_READ + 1,
+      }),
+    ).rejects.toThrow(/limit/iu);
+    expect(db.calls).toEqual([]);
+  });
+
   it("lists the customer library ordered by newest canonical search volume", async () => {
     const db = new FakeExecutor();
     db.enqueueExecute({

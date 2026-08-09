@@ -3905,6 +3905,7 @@ export interface components {
             value: null;
             limitation: string;
         };
+        /** @description Canonical organic-search overlap. */
         GrowthMapCompetitorAvailableSerpOverlap: {
             snapshotId: components["schemas"]["Uuid"];
             observationId: components["schemas"]["Uuid"];
@@ -3917,14 +3918,16 @@ export interface components {
              * @enum {string}
              */
             availability: "available";
+            /** @description Canonical organic-search overlap from the same immutable provider snapshot and scope. */
             value: number;
         };
         GrowthMapCompetitorSerpOverlap: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableSerpOverlap"];
+        /** @description Fixed 20-query AI-citation cohort. value cannot exceed observedQueries; unavailableQueries equals 20 minus observedQueries; complete means 20 observed with null limitation, while partial requires a non-null limitation. */
         GrowthMapCompetitorAvailableAiCitationInsight: {
             snapshotId: components["schemas"]["Uuid"];
             observationId: components["schemas"]["Uuid"];
             /** @constant */
-            valuePointer: "/valueJson/aiCitationInsight";
+            valuePointer: "/valueJson/citedQueries";
             observedAt: components["schemas"]["Timestamp"];
             limitation: string | null;
             /**
@@ -3932,7 +3935,21 @@ export interface components {
              * @enum {string}
              */
             availability: "available";
-            value: string;
+            /** @description Number of observed cohort queries whose provider annotations cite this competitor domain or a subdomain. */
+            value: number;
+            /** @constant */
+            attemptedQueries: 20;
+            observedQueries: number;
+            unavailableQueries: number;
+            /** @enum {string} */
+            cohortCoverage: "complete" | "partial";
+            /** @description Lowercase SHA-256 digest of the frozen 20-query cohort. */
+            querySetHash: string;
+            /** @constant */
+            platform: "chat_gpt";
+            model: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
         };
         GrowthMapCompetitorAiCitationInsight: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableAiCitationInsight"];
         GrowthMapCompetitorAvailableSharedKeywordInsight: {

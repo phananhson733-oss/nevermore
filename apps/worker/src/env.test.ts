@@ -189,6 +189,8 @@ describe("worker production URL environment policy", () => {
     const parsed = production.parse(withoutFlag);
 
     expect(parsed.DATAFORSEO_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_AI_CITATIONS_ENABLED).toBe("false");
+    expect(parsed.DATAFORSEO_AI_CITATION_MODEL).toBeUndefined();
     expect(parsed.DATAFORSEO_MAX_KEYWORDS).toBe(200);
     expect(parsed.DATAFORSEO_MAX_COMPETITORS).toBe(100);
     expect(parsed.DATAFORSEO_LOGIN).toBeUndefined();
@@ -214,6 +216,34 @@ describe("worker production URL environment policy", () => {
     );
     expect(
       production.safeParse({ ...enabled, DATAFORSEO_PASSWORD: "   " }).success,
+    ).toBe(false);
+  });
+
+  it("requires a server-pinned model and base DataForSEO rollout for AI citations", () => {
+    const enabled = {
+      ...BASE,
+      DATAFORSEO_ENABLED: "true",
+      DATAFORSEO_LOGIN: "dfs-login",
+      DATAFORSEO_PASSWORD: "dfs-password",
+      DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+      DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+    };
+    expect(production.parse(enabled)).toMatchObject({
+      DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+      DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+    });
+    expect(
+      production.safeParse({
+        ...enabled,
+        DATAFORSEO_AI_CITATION_MODEL: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      production.safeParse({
+        ...BASE,
+        DATAFORSEO_AI_CITATIONS_ENABLED: "true",
+        DATAFORSEO_AI_CITATION_MODEL: "gpt-5",
+      }).success,
     ).toBe(false);
   });
 

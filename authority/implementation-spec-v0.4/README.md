@@ -40,7 +40,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0045_dataforseo_backlink_target_lineage.sql`，验证每个 migration 的事务框架与
+`0047_dataforseo_competitor_metrics.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash
@@ -77,11 +77,14 @@ canonical repository 或显式 `unavailable/no_data` 状态；生产界面不得
   全部跳过。只有精确的同项目 `setup-sources` OAuth return path 可在画像确认前
   创建只读连接；普通 Sources 读模型仍要求确认画像，实际采集由确认后的自动
   Analysis Refresh 使用完整上下文发起。
-- DataForSEO Search Landscape（DFS）v2 是 Analysis Refresh worker 的内置、
+- DataForSEO Search Landscape（DFS）v3 是 Analysis Refresh worker 的内置、
   成本受限复合步骤，不是客户连接器。ranked-keyword 与 competitor-domain 查询
   覆盖 1–100；仅在 domain overlap 为空时，使用保留 GSC/Crawl/Product Profile
   来源的冻结种子追加一次 SERP Competitors fallback，并原子写入一个
-  `dataforseo.search_landscape.v2` Snapshot。公共 `createCollectionRun` 只接受
+  `dataforseo.search_landscape.v3` Snapshot。v3 还可在独立默认关闭的
+  `DATAFORSEO_AI_CITATIONS_ENABLED` gate 下，对同站点市场/语言中恰好 20 条已批准、
+  已确认的 GenerativeQuery 执行固定模型的 annotation-only AI citation 采集；不足
+  或超过 20 条都跳过且不发起付费请求。公共 `createCollectionRun` 只接受
   Crawl/GSC/GA4，且不接受 DFS/Backlinks scope、limit、凭据或 API key。
 - 新 Analysis Refresh 父 run 冻结六步 `analysis-refresh.plan.v2`：required Crawl、
   optional connected GSC、optional connected GA4、optional DFS、optional

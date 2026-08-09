@@ -117,14 +117,17 @@ export const ProductProfileSynthesisCompetitorDiscovery = z
     datasetKey: z.enum([
       "dataforseo.search_landscape.v1",
       "dataforseo.search_landscape.v2",
+      "dataforseo.search_landscape.v3",
     ]),
     schemaVersion: z.enum([
       "dataforseo.search_landscape.v1",
       "dataforseo.search_landscape.v2",
+      "dataforseo.search_landscape.v3",
     ]),
     methodVersion: z.enum([
       "dataforseo.search_landscape.v1",
       "dataforseo.search_landscape.v2",
+      "dataforseo.search_landscape.v3",
     ]),
     capturedAt: IsoDateTime,
     checksum: Sha256Hex,

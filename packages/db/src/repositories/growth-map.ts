@@ -593,6 +593,12 @@ function publishedGrowthAuditRuns(
                 and result_snapshot.schema_version = 'dataforseo.search_landscape.v2'
                 and result_snapshot.method_version = 'dataforseo.search_landscape.v2'
               )
+              or (
+                collection_run.method_version = 'dataforseo.search_landscape.v3'
+                and result_snapshot.dataset_key = 'dataforseo.search_landscape.v3'
+                and result_snapshot.schema_version = 'dataforseo.search_landscape.v3'
+                and result_snapshot.method_version = 'dataforseo.search_landscape.v3'
+              )
             )
           )
           or (

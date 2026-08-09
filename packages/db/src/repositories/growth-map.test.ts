@@ -257,6 +257,18 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain(
       "result_snapshot.method_version = 'dataforseo.search_landscape.v2'",
     );
+    expect(query.sql).toContain(
+      "collection_run.method_version = 'dataforseo.search_landscape.v3'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.dataset_key = 'dataforseo.search_landscape.v3'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.schema_version = 'dataforseo.search_landscape.v3'",
+    );
+    expect(query.sql).toContain(
+      "result_snapshot.method_version = 'dataforseo.search_landscape.v3'",
+    );
     expect(query.sql).toMatch(
       /collection_run\.method_version = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.dataset_key = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.schema_version = 'dataforseo\.search_landscape\.v1'\s+and result_snapshot\.method_version = 'dataforseo\.search_landscape\.v1'\s+\)\s+or\s+\(\s+collection_run\.method_version = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.dataset_key = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.schema_version = 'dataforseo\.search_landscape\.v2'\s+and result_snapshot\.method_version = 'dataforseo\.search_landscape\.v2'/u,
     );

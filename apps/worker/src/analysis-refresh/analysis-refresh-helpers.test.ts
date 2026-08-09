@@ -121,7 +121,7 @@ describe("Analysis Refresh frozen helpers", () => {
       31,
     );
     expect(scope).toMatchObject({
-      schemaVersion: "dataforseo.search-landscape-scope.v2",
+      schemaVersion: "dataforseo.search-landscape-scope.v3",
       queryKind: "search_landscape",
       target: "example.test",
       marketCode: "US",
@@ -139,6 +139,10 @@ describe("Analysis Refresh frozen helpers", () => {
         limit: 31,
         fallbackWhenDomainOverlapEmpty: true,
         seeds: [],
+      },
+      aiCitations: {
+        state: "disabled",
+        attemptedQueries: 0,
       },
     });
     expect(scope?.location).toEqual({ kind: "code", code: 2840 });

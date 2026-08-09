@@ -118,18 +118,68 @@ Analysis Refresh worker 的内置 provider 步骤，客户不能通过 collectio
 lineage，也不阻止 server-owned Analysis Refresh 运行其成本受限的可选步骤。
 
 DataForSEO Search Landscape（DFS）当前 server-owned 身份为
-`dataforseo.search_landscape.v2`：服务端从冻结 primary Site 的 host、单一
-market、canonical language、服务端 row cap 与有真实来源的种子生成固定请求。
+`dataforseo.search_landscape.v3`；v1/v2 Snapshot 继续只读兼容。服务端从冻结
+primary Site 的 host、单一 market、canonical language、服务端 row cap 与有真实
+来源的种子生成固定请求。
 ranked-keywords 查询 positions 1–100，competitors-domain 查询 max rank group 100；
 当且仅当规范化后的 domain overlap 为空且存在冻结种子时，最多追加一次
 SERP Competitors paid fallback。种子只可来自 GSC top query、Crawl 页面文本或
 confirmed/current Product Profile，并在 scope 中保存 `sourceKind/sourceRef`；种子
 不会被重标为 DataForSEO Observation。所有实际发起的请求共享同一
-target/market/language 作用域，并原子形成一个 v2 Snapshot；任何 required call
-失败都不能发布半个 Search Landscape。v1 与 legacy Snapshot 继续只读兼容。
+target/market/language 作用域，并原子形成一个 v3 Snapshot；任何 required Labs
+call 失败都不能发布半个 Search Landscape。
+
+v3 把自然搜索重叠度写成新的 canonical
+`dataforseo.competitor_domain.v2` Observation，而不是重新解释旧的 intersection
+count。其分子是该 competitor-domain 行的正整数 `intersections`；分母只能是同一
+Snapshot、同一 target/market/language、同一 organic positions 1–100 policy 的
+ranked-keywords `total_count`。不得使用返回行数、ranked-keywords `items_count`、
+competitors-domain `total_count` 或 SERP Competitors `keywordsCount` 作为分母。
+Observation 同时持久化分子、分母与 `serpOverlap = intersections / total_count`，并
+要求 `0 < intersections <= total_count`、`0 < serpOverlap <= 1`。为使 JavaScript 与
+PostgreSQL 对循环小数保持同一 wire value，ratio 必须使用正数 half-up 规则规范到小数
+点后 12 位；不得依赖任一运行时的默认浮点/`numeric` 除法精度。旧 v1 metric 或缺少
+任一 canonical operand 时 overlap 仍为 unavailable；`intersections` 继续独立公开为
+共同关键词数，不能被重标为比例或相似度。
+
+v3 还可在独立 `DATAFORSEO_AI_CITATIONS_ENABLED` rollout gate 下执行 bounded AI
+citation 子能力。Analysis Refresh command 必须在同一 admission transaction 从当前
+Keyword Library 选择与 Site exact market/language 一致、`query_kind =
+'generative_query'`、approved 且 mapping-confirmed 的记录，按
+`normalized_keyword, id` 确定性排序。eligible 总数必须恰好为 20（不足或多于 20 都
+不得擅自选取子集），并冻结这 20 条的 entity id、revision、原文、market、language、
+平台和 server-pinned model 后才允许付费请求；开关关闭或数量不等于 20 必须把子能力
+冻结为 typed skipped state，不发起调用、不补写合成问题。query-set hash 必须覆盖这
+20 条 exact identity/text、平台、model、market 与 language；客户端不能提交或改写
+其中任何字段。
+
+AI citation 使用 DataForSEO ChatGPT LLM Responses 的 server-owned live policy，固定
+`web_search=true` 与 `max_output_tokens=1024`（同时满足 provider 当前 reasoning /
+non-reasoning model 的边界），market 只映射到 provider 的 country scope；部署时固定
+的 model 必须由 provider Models contract 证明支持 web search 与 country scope。一个 query 只有在
+provider 成功返回可观察回答时才进入 observed denominator；provider 的 no-result
+成为该 query 的 unavailable state。20 个 paid live request 必须以固定最大并发 1
+顺序执行，不能用整批 fan-out 试探账户的 simultaneous-query quota；provider
+`40202` / `40209` 只把对应 query 记为 typed unavailable 并保留脱敏 status，不能
+重放已经完成的 sibling requests。AI 子能力的 partial/unavailable 只影响它自己的
+raw evidence、aggregate 与 limitation；不得把完整的 ranked-keyword 或 organic
+competitor-domain Observation、Snapshot coverage、limitation 降级为 partial。
+competitor citation 只由响应
+`items[].sections[].annotations[].url` 的 canonical HTTP(S) hostname 与 competitor
+domain（自身或其 subdomain）匹配得出；答案文本中的名称或域名提及绝不能计为
+citation。每个 competitor aggregate 必须持久化 `attemptedQueries=20`、
+`observedQueries`、`citedQueries`、`unavailableQueries`、`querySetHash`、平台、请求
+model、market、language 与 20 条 bounded query outcome lineage。`observedQueries=0`
+时不得写 available aggregate 或 origin；完整 cohort 显示 `citedQueries/20`，partial
+cohort 显示 `citedQueries/observedQueries` 并同时披露 20 次尝试和 unavailable 数。
+只有至少一个 query 被真实观察时，显式 `citedQueries=0` 才是可公开的 measured zero。
+
 DFS 自动把 ranked Keyword occurrence 与两类有区别的 competitor origin
 （domain overlap / seed SERP）投影进当前资料库，不创建第五模块，也不接受客户
-提交 target、location、language、limit 或 provider credential。
+提交 target、location、language、limit、GenerativeQuery cohort、model 或 provider
+credential。v3 同一 Snapshot 中通过上述校验的 AI aggregate 以独立 `ai_citation`
+origin 追加；后续代码版本不得在读取旧 published generation 时重新计算这两个
+metric，读模型只可投影冻结 origin 指向的 exact versioned Observation。
 
 DataForSEO Backlinks 的 server-owned identity 为 `dataforseo.backlinks.v1`。服务端
 只从冻结 primary Site host 与部署策略形成 exact scope，并分别冻结 live backlink、
@@ -254,6 +304,11 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
   AI citation 等来源以 typed origin occurrence 追加。domain intersection count
   与 SERP rating 必须保持不同 metric/shape，不得解释为百分比、相似度或已确认
   竞争关系；确定性规则只形成可编辑的直接/间接草稿。
+- 自然搜索重叠度只读取 `dataforseo.competitor_domain.v2` 已持久化的 exact
+  numerator/denominator/ratio；共同关键词继续读取其独立 `intersections` pointer。
+  AI 引用只读取 `dataforseo.competitor_ai_citation.v1` 已持久化的 fixed-20 cohort
+  aggregate。缺少 exact Observation、版本、market/language/model/query-set lineage
+  或算术不一致时必须 fail closed 为 unavailable，不能在 read time 猜测或重算。
 - 采集完成后自动 upsert 当前 Competitor Library；已发布诊断仍通过冻结的 origin
   refs 保持可追溯，后续资料库编辑不得改写旧 generation。
 - candidate/approved/excluded、relationship 和 analysis scope 都有独立 revision；

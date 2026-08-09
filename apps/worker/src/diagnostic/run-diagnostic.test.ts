@@ -51,7 +51,11 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   METRIC_DATAFORSEO_COMPETITOR_DOMAIN,
+  METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2,
+  METRIC_DATAFORSEO_COMPETITOR_AI_CITATION,
   METRIC_DATAFORSEO_SERP_COMPETITOR,
   METRIC_CSV_KEYWORD_GAP,
 } from "@sf/sources";
@@ -792,7 +796,9 @@ async function runObservationValidationFixture(
         (source.snapshot.dataset_key ===
           DATAFORSEO_SEARCH_LANDSCAPE_DATASET_KEY ||
         source.snapshot.dataset_key ===
-          DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY
+          DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY ||
+        source.snapshot.dataset_key ===
+          DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY
           ? "search_landscape"
           : "keyword_gap_import"),
       method_version: source.snapshot.method_version,
@@ -2763,6 +2769,149 @@ describe("diagnostic frozen snapshot validation", () => {
         metricKey: METRIC_CSV_KEYWORD_GAP,
         provider: "dataforseo",
       }),
+    ]);
+  });
+
+  it("accepts v3 ranked-keyword observations and excludes AI-citation rows from DiagnosticContext", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const aiCitation = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000034",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_AI_CITATION,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "rival.example",
+        attemptedQueries: 20,
+        observedQueries: 17,
+        citedQueries: 8,
+        unavailableQueries: 3,
+        cohortCoverage: "partial",
+        querySetHash: "e".repeat(64),
+        platform: "chat_gpt",
+        model: "gpt-4.1",
+        marketCode: "US",
+        languageTag: "en-US",
+        queryOutcomes: Array.from({ length: 20 }, (_, index) => ({
+          queryEntityId: `00000000-0000-4000-8000-${(1000 + index).toString().padStart(12, "0")}`,
+          queryRevision: 1,
+          queryHash: `${index.toString(16).padStart(2, "0")}${"f".repeat(62)}`,
+          availability: index < 17 ? "available" : "unavailable",
+          cited: index < 8,
+        })),
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+        },
+        observations: [ranked, aiCitation],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild.mock.calls[0]?.[0].observations).toEqual([
+      expect.objectContaining({
+        observationId: ranked.id,
+        metricKey: METRIC_CSV_KEYWORD_GAP,
+        provider: "dataforseo",
+      }),
+    ]);
+  });
+
+  it("accepts v3 ranked-keyword observations without dropping existing diagnostic evidence", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+        },
+        observations: [ranked],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild.mock.calls[0]?.[0].observations).toEqual([
+      expect.objectContaining({
+        observationId: ranked.id,
+        metricKey: METRIC_CSV_KEYWORD_GAP,
+        provider: "dataforseo",
+      }),
+    ]);
+  });
+
+  it("validates and excludes v3 competitor metrics without dropping ranked evidence", async () => {
+    const ranked = availableObservationRow(OBSERVATION_FIXTURES[6]);
+    const organic = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000034",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_DOMAIN_V2,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "rival.example",
+        intersections: 4,
+        targetOrganicKeywordCount: 20,
+        serpOverlap: 0.2,
+        averagePosition: 8.5,
+        summedPosition: 34,
+        organicEstimatedTrafficVolume: 1_250,
+        marketCode: "US",
+        languageCode: "en",
+      },
+    });
+    const aiCitation = observationRow("dataforseo", {
+      id: "00000000-0000-4000-8000-000000000035",
+      metric_key: METRIC_DATAFORSEO_COMPETITOR_AI_CITATION,
+      subject_type: "site",
+      subject_ref: "rival.example",
+      availability: "available",
+      value_json: {
+        targetDomain: "example.com",
+        competitorDomain: "rival.example",
+        attemptedQueries: 20,
+        observedQueries: 8,
+        citedQueries: 3,
+        unavailableQueries: 12,
+        cohortCoverage: "partial",
+        querySetHash: "a".repeat(64),
+        platform: "chat_gpt",
+        model: "gpt-5",
+        marketCode: "US",
+        languageTag: "en-US",
+        queryOutcomes: Array.from({ length: 20 }, (_, index) => ({
+          queryEntityId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          queryRevision: index + 1,
+          queryHash: String(index + 1).padStart(64, "0"),
+          availability: index < 8 ? "available" : "unavailable",
+          cited: index < 3,
+        })),
+      },
+    });
+    const result = await runObservationValidationFixture(
+      "dataforseo",
+      ranked,
+      {
+        source: {
+          datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+          methodVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+        },
+        observations: [ranked, organic, aiCitation],
+      },
+    );
+
+    expect(result.contextBuild).toHaveBeenCalledOnce();
+    expect(result.contextBuild.mock.calls[0]?.[0].observations).toEqual([
+      expect.objectContaining({ observationId: ranked.id }),
     ]);
   });
 

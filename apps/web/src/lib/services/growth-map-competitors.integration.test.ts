@@ -1154,7 +1154,9 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
         aiCitationInsight: {
           availability: "unavailable",
           value: null,
-          limitation: expect.stringMatching(/canonical.*writer/i),
+          limitation: expect.stringMatching(
+            /no immutable.*AI-citation aggregate.*not a measured zero/i,
+          ),
         },
         sharedKeywordInsight: {
           availability: "unavailable",

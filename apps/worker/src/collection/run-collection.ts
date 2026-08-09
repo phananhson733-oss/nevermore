@@ -28,10 +28,12 @@ import {
   createDataForSeoBacklinksAdapter,
   createDataForSeoSearchLandscapeAdapter,
   createDataForSeoSearchLandscapeV2Adapter,
+  createDataForSeoSearchLandscapeV3Adapter,
   dataForSeoParamsFromCollectionScope,
   dataForSeoBacklinksSnapshotSummary,
   dataForSeoSearchLandscapeSnapshotSummary,
   dataForSeoSearchLandscapeV2SnapshotSummary,
+  dataForSeoSearchLandscapeV3SnapshotSummary,
   dataForSeoSnapshotSummary,
   createGa4Adapter,
   createGscAdapter,
@@ -48,6 +50,7 @@ import {
   parseDataForSeoBacklinksScope,
   parseDataForSeoSearchLandscapeScope,
   parseDataForSeoSearchLandscapeV2Scope,
+  parseDataForSeoSearchLandscapeV3Scope,
   InvalidBlobObjectKeyError,
   isTransient,
   shouldRefreshCredential,
@@ -65,6 +68,8 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_OPERATION,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+  DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
   DEFAULT_CRAWL_USER_AGENT,
   type CollectionContext,
   type CollectionResult,
@@ -76,6 +81,7 @@ import {
   type DataForSeoBacklinksScope,
   type DataForSeoSearchLandscapeScope,
   type DataForSeoSearchLandscapeV2Scope,
+  type DataForSeoSearchLandscapeV3Scope,
   type GoogleTokenFetch,
   type NormalizedObservation,
   type NormalizeContext,
@@ -145,6 +151,15 @@ export function collectionSnapshotIdentity(
       return {
         datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V2_DATASET_KEY,
         schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
+      };
+    }
+    if (
+      run.operation === DATAFORSEO_SEARCH_LANDSCAPE_OPERATION &&
+      run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION
+    ) {
+      return {
+        datasetKey: DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
+        schemaVersion: DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
       };
     }
     if (
@@ -1027,6 +1042,9 @@ async function collectByProvider(
       const isSearchLandscapeV2 =
         isSearchLandscape &&
         run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION;
+      const isSearchLandscapeV3 =
+        isSearchLandscape &&
+        run.method_version === DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION;
       const collectionScope = isBacklinks
         ? resolveFrozenDataForSeoBacklinksScope(run, acceptedRequestPayload, {
             maxBacklinks: runtime.maxBacklinks ?? Number.NaN,
@@ -1036,6 +1054,17 @@ async function collectByProvider(
             maxSourceVerifications:
               runtime.maxSourceVerifications ?? Number.NaN,
           })
+        : isSearchLandscapeV3
+          ? resolveFrozenDataForSeoSearchLandscapeV3Scope(
+              run,
+              acceptedRequestPayload,
+              {
+                maxKeywords: runtime.maxKeywords,
+                maxCompetitors: runtime.maxCompetitors,
+                aiCitationsEnabled: runtime.aiCitationsEnabled === true,
+                aiCitationModel: runtime.aiCitationModel ?? null,
+              },
+            )
         : isSearchLandscapeV2
           ? resolveFrozenDataForSeoSearchLandscapeV2Scope(
               run,
@@ -1102,6 +1131,26 @@ async function collectByProvider(
           outcome: {
             ...toOutcome(result),
             summary: dataForSeoSearchLandscapeV2SnapshotSummary(
+              searchLandscapeScope,
+              result.capturedAt,
+            ),
+          },
+          observations,
+        };
+      }
+      if (isSearchLandscapeV3) {
+        const searchLandscapeScope =
+          collectionScope as DataForSeoSearchLandscapeV3Scope;
+        const adapter = createDataForSeoSearchLandscapeV3Adapter(client);
+        const result = await adapter.collect(searchLandscapeScope, adapterCtx);
+        const observations = await drain(
+          adapter.normalize(result.raw, normalizeCtx(result.capturedAt)),
+          adapterCtx.signal,
+        );
+        return {
+          outcome: {
+            ...toOutcome(result),
+            summary: dataForSeoSearchLandscapeV3SnapshotSummary(
               searchLandscapeScope,
               result.capturedAt,
             ),
@@ -1503,6 +1552,81 @@ export function resolveFrozenDataForSeoSearchLandscapeV2Scope(
     throw new SourceError(
       "INVALID_CONFIGURATION",
       "The frozen DataForSEO search-landscape v2 scope does not match the accepted command.",
+    );
+  }
+  return collectionScope;
+}
+
+/** Validate v3's organic caps and the exact server-pinned paid-AI runtime. */
+export function resolveFrozenDataForSeoSearchLandscapeV3Scope(
+  run: Pick<
+    CollectionRunRow,
+    | "provider"
+    | "operation"
+    | "method_version"
+    | "site_id"
+    | "source_connection_id"
+    | "parameters_hash"
+  >,
+  requestPayload: Record<string, unknown>,
+  workerRuntime: {
+    readonly maxKeywords: number;
+    readonly maxCompetitors: number;
+    readonly aiCitationsEnabled: boolean;
+    readonly aiCitationModel: string | null;
+  },
+): DataForSeoSearchLandscapeV3Scope {
+  if (
+    run.provider !== "dataforseo" ||
+    run.operation !== DATAFORSEO_SEARCH_LANDSCAPE_OPERATION ||
+    run.method_version !== DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION ||
+    requestPayload["provider"] !== run.provider ||
+    requestPayload["operation"] !== run.operation ||
+    requestPayload["sourceConnectionId"] !== run.source_connection_id
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape v3 command identity is incomplete or inconsistent.",
+    );
+  }
+  const collectionScope = parseDataForSeoSearchLandscapeV3Scope(
+    requestPayload["collectionScope"],
+  );
+  if (
+    !Number.isSafeInteger(workerRuntime.maxKeywords) ||
+    workerRuntime.maxKeywords < 1 ||
+    collectionScope.rankedKeywords.limit > workerRuntime.maxKeywords ||
+    !Number.isSafeInteger(workerRuntime.maxCompetitors) ||
+    workerRuntime.maxCompetitors < 1 ||
+    collectionScope.competitorsDomain.limit > workerRuntime.maxCompetitors ||
+    collectionScope.serpCompetitors.limit > workerRuntime.maxCompetitors
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape v3 limits exceed the current worker caps.",
+    );
+  }
+  if (
+    collectionScope.aiCitations.state === "enabled" &&
+    (!workerRuntime.aiCitationsEnabled ||
+      workerRuntime.aiCitationModel !==
+        collectionScope.aiCitations.requestedModel)
+  ) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO AI citation policy does not match the current worker runtime.",
+    );
+  }
+  const expectedParametersHash = contentHash({
+    provider: run.provider,
+    operation: run.operation,
+    siteId: run.site_id,
+    collectionScope: collectionScope as unknown as CanonicalValue,
+  });
+  if (run.parameters_hash !== expectedParametersHash) {
+    throw new SourceError(
+      "INVALID_CONFIGURATION",
+      "The frozen DataForSEO search-landscape v3 scope does not match the accepted command.",
     );
   }
   return collectionScope;
