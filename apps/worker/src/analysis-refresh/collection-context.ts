@@ -271,8 +271,12 @@ export function dataForSeoSearchLandscapeScopeForSite(
   const market = resolveDataForSeoMarket(marketCode, languageTag);
   if (!market) return null;
   try {
+    const providerLanguageMatchesSite =
+      languageTag.split("-")[0]?.toLowerCase() === market.languageCode;
+    const aiCitationsEnabled =
+      aiCitations?.state === "enabled" && providerLanguageMatchesSite;
     const aiCitationInput =
-      aiCitations?.state === "enabled"
+      aiCitationsEnabled
         ? {
             state: "enabled" as const,
             requestedModel: aiCitations.requestedModel,
@@ -287,17 +291,11 @@ export function dataForSeoSearchLandscapeScopeForSite(
               eligibleQueryCount: aiCitations.eligibleQueryCount,
             }
           : { state: "disabled" as const };
-    const providerLanguageMatchesSite =
-      languageTag.split("-")[0]?.toLowerCase() === market.languageCode;
-    if (aiCitations?.state === "enabled" && !providerLanguageMatchesSite) {
-      return null;
-    }
     return createDataForSeoSearchLandscapeV3Scope({
       target: site.host,
       marketCode,
       locationCode: market.locationCode,
-      languageTag:
-        aiCitations?.state === "enabled" ? languageTag : market.languageCode,
+      languageTag: aiCitationsEnabled ? languageTag : market.languageCode,
       rankedKeywordsLimit: maxKeywords,
       competitorsDomainLimit: maxCompetitors,
       serpCompetitorsLimit: maxCompetitors,

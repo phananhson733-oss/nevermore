@@ -236,6 +236,50 @@ describe("Analysis Refresh frozen helpers", () => {
     ).toBeNull();
   });
 
+  it("keeps organic DataForSEO collection when enabled AI citations cannot use the site language", () => {
+    const scope = dataForSeoSearchLandscapeScopeForSite(
+      {
+        host: "www.example.test",
+        market_codes: ["US"],
+        language_codes: ["zh-CN"],
+      },
+      87,
+      31,
+      [],
+      {
+        state: "enabled",
+        platform: "chat_gpt",
+        requestedModel: "gpt-5",
+        attemptedQueries: 20,
+        maxOutputTokens: 1_024,
+        webSearch: true,
+        querySetHash: "b".repeat(64),
+        queries: Array.from({ length: 20 }, (_, index) => ({
+          entityId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          revision: index + 1,
+          query: `Which onboarding platform is best for team ${index + 1}?`,
+          normalizedQuery: `which onboarding platform is best for team ${index + 1}?`,
+          marketCode: "US",
+          languageTag: "zh-CN",
+        })),
+        trackedCompetitorDomains: ["competitor.test"],
+      },
+    );
+
+    expect(scope).toMatchObject({
+      languageTag: "en",
+      providerLanguageCode: "en",
+      rankedKeywords: { limit: 87 },
+      competitorsDomain: { limit: 31 },
+      serpCompetitors: { limit: 31 },
+      aiCitations: {
+        state: "disabled",
+        attemptedQueries: 0,
+      },
+    });
+    expect(scope?.aiCitations).not.toHaveProperty("queries");
+  });
+
   it("orders GSC seeds by real demand and retains Crawler provenance without relabelling it", () => {
     const seeds = deriveDataForSeoSearchLandscapeSeeds({
       observations: [
