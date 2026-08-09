@@ -28,6 +28,7 @@ import {
   parseSourceDatabaseUrl,
   pendingMigrationPaths,
   redactSensitiveText,
+  runPostgresProcess,
   runRestoreDrill,
 } from "./backup-restore-drill.mjs";
 import {
@@ -1107,6 +1108,47 @@ test("default PostgreSQL process adapters run through a private fake client tool
   } finally {
     await rm(fake.root, { recursive: true, force: true });
   }
+});
+
+test("PostgreSQL output handling streams oversized hashes but bounds buffers", async (t) => {
+  const outputBytes = 17 * 1024 * 1024;
+  const chunk = Buffer.alloc(1024 * 1024, 0x61);
+  const args = [
+    "--eval",
+    [
+      `const chunk = Buffer.alloc(${chunk.length}, 0x61);`,
+      `for (let written = 0; written < ${outputBytes}; written += chunk.length) {`,
+      "  process.stdout.write(chunk);",
+      "}",
+    ].join("\n"),
+  ];
+  const request = {
+    tool: process.execPath,
+    args,
+    environment: {},
+  };
+
+  await t.test("hash output can exceed the buffer limit", async () => {
+    const expectedHash = createHash("sha256");
+    for (let written = 0; written < outputBytes; written += chunk.length) {
+      expectedHash.update(chunk);
+    }
+
+    assert.equal(
+      await runPostgresProcess({ ...request, output: "hash" }),
+      expectedHash.digest("hex"),
+    );
+  });
+
+  await t.test("buffer output still fails at the fixed limit", async () => {
+    const caught = await capturedFailure(() =>
+      runPostgresProcess({ ...request, output: "buffer" }),
+    );
+
+    assert.match(caught.message, /code=PG_TOOL_OUTPUT_LIMIT/);
+    assert.match(caught.message, /termination=output_limit/);
+    assert.ok(caught.message.length < 512);
+  });
 });
 
 test("non-zero PostgreSQL exits use fixed evidence and discard raw stderr", async () => {
