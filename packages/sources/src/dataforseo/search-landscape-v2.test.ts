@@ -38,6 +38,8 @@ function ranked(
       {
         keyword: "seo automation",
         searchVolume: 300,
+        keywordDifficulty: null,
+        providerSearchIntent: null,
         currentUrl: "https://example.com/features",
         currentRank: 88,
       },
@@ -270,6 +272,77 @@ describe("DataForSEO search-landscape v2", () => {
       competitorDomain: "semrush.com",
       seedCount: 2,
     });
+  });
+
+  it("retains ranked-keyword difficulty and provider intent through the v2 wrapper", async () => {
+    const client = new FixtureClient(
+      ranked({
+        rows: [
+          {
+            keyword: "seo automation",
+            searchVolume: 300,
+            keywordDifficulty: 64,
+            providerSearchIntent: "commercial",
+            currentUrl: "https://example.com/features",
+            currentRank: 88,
+          },
+        ],
+      }),
+      domains(),
+    );
+    const adapter = createDataForSeoSearchLandscapeV2Adapter(client, {
+      now: () => new Date("2026-08-03T01:00:00.000Z"),
+    });
+
+    const result = await adapter.collect(scope(), collectionContext);
+    expect(result.raw.rankedKeywords.rows).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: 64,
+        providerSearchIntent: "commercial",
+      }),
+    ]);
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeContext,
+    )) {
+      observations.push(observation);
+    }
+    expect(
+      observations.find(
+        (observation) => observation.metricKey === "csv.keyword_gap.v1",
+      )?.valueJson,
+    ).toMatchObject({
+      keywordDifficulty: 64,
+      providerSearchIntent: "commercial",
+    });
+  });
+
+  it("normalizes missing ranked-keyword metrics through the v2 wrapper", async () => {
+    const client = new FixtureClient(
+      ranked({
+        rows: [
+          {
+            keyword: "seo automation",
+            searchVolume: 300,
+            currentUrl: "https://example.com/features",
+            currentRank: 88,
+          } as unknown as DataForSeoRankedKeywordsResponse["rows"][number],
+        ],
+      }),
+      domains(),
+    );
+    const adapter = createDataForSeoSearchLandscapeV2Adapter(client);
+
+    const result = await adapter.collect(scope(), collectionContext);
+
+    expect(result.raw.rankedKeywords.rows).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+    ]);
   });
 
   it("does not spend on fallback when no eligible seed is frozen", async () => {

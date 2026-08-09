@@ -19,6 +19,7 @@ import {
   DEFAULT_DATAFORSEO_LIMIT,
   MAX_DATAFORSEO_LIMIT,
   type DataForSeoClient,
+  type DataForSeoProviderSearchIntent,
   type DataForSeoRankedKeywordRow,
   type DataForSeoRankedKeywordsRequest,
 } from "./client.ts";
@@ -570,6 +571,70 @@ function safeAbsoluteUrl(value: string | null): string | null {
   }
 }
 
+function normalizeKeywordDifficulty(
+  value: unknown,
+  label: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value)) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${label} must be an integer from 0 to 100.`,
+    );
+  }
+  const parsed = value as number;
+  if (parsed < 0 || parsed > 100) {
+    throw new SourceError(
+      "INVALID_RESPONSE",
+      `${label} must be an integer from 0 to 100.`,
+    );
+  }
+  return parsed;
+}
+
+function normalizeProviderSearchIntent(
+  value: unknown,
+  label: string,
+): DataForSeoProviderSearchIntent | null {
+  if (value === undefined || value === null) return null;
+  switch (value) {
+    case "informational":
+    case "navigational":
+    case "commercial":
+    case "transactional":
+      return value as DataForSeoProviderSearchIntent;
+    default:
+      throw new SourceError(
+        "INVALID_RESPONSE",
+        `${label} must be a supported provider search intent.`,
+      );
+  }
+}
+
+/** Internal runtime boundary shared by direct and composite ranked adapters. */
+export function normalizeDataForSeoRankedKeywordMetrics(
+  row: unknown,
+  label: string,
+): Pick<
+  DataForSeoRankedKeywordRow,
+  "keywordDifficulty" | "providerSearchIntent"
+> {
+  if (typeof row !== "object" || row === null || Array.isArray(row)) {
+    throw new SourceError("INVALID_RESPONSE", `${label} must be an object.`);
+  }
+  const fields = row as Record<string, unknown>;
+  return {
+    keywordDifficulty: normalizeKeywordDifficulty(
+      fields.keywordDifficulty,
+      `${label} keywordDifficulty`,
+    ),
+    providerSearchIntent: normalizeProviderSearchIntent(
+      fields.providerSearchIntent,
+      `${label} providerSearchIntent`,
+    ),
+  };
+}
+
 export function createDataForSeoAdapter(
   client: DataForSeoClient,
   options: DataForSeoAdapterOptions = {},
@@ -605,18 +670,31 @@ export function createDataForSeoAdapter(
               limit: config.limit,
             };
       const response = await client.rankedKeywords(request, ctx.signal);
+      const rows = response.rows.map((row, index) => {
+        const keywordMetrics = normalizeDataForSeoRankedKeywordMetrics(
+          row,
+          `DataForSEO ranked-keywords row ${index}`,
+        );
+        return {
+          keyword: row.keyword,
+          searchVolume: row.searchVolume,
+          ...keywordMetrics,
+          currentUrl: row.currentUrl,
+          currentRank: row.currentRank,
+        };
+      });
       const capturedAt = (
         params.now ??
         options.now?.() ??
         new Date()
       ).toISOString();
       const availability: Availability =
-        response.totalCount > response.rows.length ? "partial" : "available";
+        response.totalCount > rows.length ? "partial" : "available";
       const stopReason =
         availability === "partial" ? DATAFORSEO_ROW_CAP_STOP_REASON : null;
       const limitation = limitationFor(
         config,
-        response.rows.length,
+        rows.length,
         response.totalCount,
       );
       const rawRequest: DataForSeoRawRequest = {
@@ -627,7 +705,7 @@ export function createDataForSeoAdapter(
       const raw: DataForSeoRaw = {
         schemaVersion: DATAFORSEO_METHOD_VERSION,
         request: rawRequest,
-        rows: response.rows,
+        rows,
         totalCount: response.totalCount,
         itemsCount: response.itemsCount,
         costUsd: response.costUsd,
@@ -643,11 +721,11 @@ export function createDataForSeoAdapter(
         raw,
         capturedAt,
         sourceWindow: { start: null, end: null },
-        rowCount: response.rows.length,
+        rowCount: rows.length,
         stopReason,
         providerUsage: {
           apiCalls: 1,
-          rowsReturned: response.rows.length,
+          rowsReturned: rows.length,
           costUsd: response.costUsd,
         },
         limitation,
@@ -670,6 +748,8 @@ export function createDataForSeoAdapter(
           keyword: row.keyword,
           clusterKey: cluster,
           searchVolume: row.searchVolume,
+          keywordDifficulty: row.keywordDifficulty,
+          providerSearchIntent: row.providerSearchIntent,
           currentUrl: safeAbsoluteUrl(row.currentUrl),
           currentRank: row.currentRank,
           competitorDomain: null,

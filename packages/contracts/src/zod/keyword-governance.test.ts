@@ -70,7 +70,9 @@ const confirmedModel = {
   createdBy: ids.actor,
   confirmedAt: "2026-07-27T08:30:00Z",
   confirmedBy: ids.actor,
+  confirmationMode: "user",
   contentHash: "a".repeat(64),
+  generationSummary: null,
 } as const;
 
 const draftModel = {

@@ -4,6 +4,7 @@ import {
   GrowthMapCompetitorLibraryResponse,
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
+  GrowthMapKeywordSearchIntent,
   GrowthMapUrlDetailResponse,
   GrowthMapUrlFinding,
   GrowthMapUrlMetricObservation,
@@ -55,6 +56,7 @@ const ids = {
   serpObservation: "10000000-0000-4000-8000-000000000041",
   aiSnapshot: "10000000-0000-4000-8000-000000000042",
   aiObservation: "10000000-0000-4000-8000-000000000043",
+  analysisInvocation: "10000000-0000-4000-8000-000000000044",
 } as const;
 
 function comparisonBasis() {
@@ -1449,9 +1451,19 @@ function keywordItem() {
     reviewOrigin: null,
     revision: 1,
     intent: null,
+    searchIntent: {
+      value: "commercial",
+      authority: "provider_observed",
+      snapshotId: ids.metricSnapshot,
+      observationId: ids.metricObservation,
+      analysisInvocationId: null,
+      observedAt: "2026-07-21T08:00:00Z",
+      limitation: null,
+    },
     buyerStage: "consideration",
     cluster: {
       clusterId: ids.cluster,
+      topicModelRevision: 3,
       name: "customer onboarding",
     },
     classificationLimitations: {
@@ -1487,6 +1499,7 @@ function keywordItem() {
         competitorRank: "This occurrence is for the project's own domain.",
       },
     },
+    recollection: null,
     coverage: {
       availability: "partial",
       limitations: [
@@ -1500,6 +1513,7 @@ function keywordItem() {
 function keywordLibraryResponse() {
   return {
     projectId: ids.project,
+    diagnosticRunId: ids.currentRun,
     data: [keywordItem()],
     meta: {
       limit: 50,
@@ -1523,6 +1537,86 @@ function keywordLibraryResponse() {
 }
 
 describe("Growth Map Keyword Library contracts", () => {
+  it("requires every canonical cluster reference to carry its exact Topic Model revision", () => {
+    const base = keywordItem();
+    const {
+      topicModelRevision: _omitted,
+      ...clusterWithoutRevision
+    } = base.cluster!;
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          cluster: { ...base.cluster!, topicModelRevision: 2 },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: { ...base, cluster: clusterWithoutRevision },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("bounds historical DataForSEO recollection fields and requires a provider occurrence", () => {
+    const base = keywordItem();
+    const recollection = {
+      reason: "historical_dataforseo_observation_missing_fields" as const,
+      fields: [
+        "keyword_difficulty",
+        "provider_search_intent",
+      ] as const,
+    };
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: { ...base, recollection },
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          recollection: {
+            ...recollection,
+            fields: ["keyword_difficulty", "keyword_difficulty"],
+          },
+        },
+      }).success,
+    ).toBe(false);
+
+    const providerOccurrence = base.sourceOccurrences[0]!;
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          searchIntent: {
+            value: null,
+            authority: "unavailable",
+            snapshotId: null,
+            observationId: null,
+            analysisInvocationId: null,
+            observedAt: null,
+            limitation: "No provider search intent is available.",
+          },
+          sourceOccurrences: [
+            {
+              ...providerOccurrence,
+              sourceKind: "csv_import",
+              scopeBasis: "user_provided",
+              importPreviewId: ids.action,
+            },
+          ],
+          recollection,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a strict, traceable Keyword projection and preserves observed zero", () => {
     const parsed = GrowthMapKeywordLibraryResponse.parse(
       keywordLibraryResponse(),
@@ -1540,6 +1634,32 @@ describe("Growth Map Keyword Library contracts", () => {
       GrowthMapKeywordLibraryResponse.safeParse({
         ...keywordLibraryResponse(),
         confirmActionId: ids.action,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires the exact published diagnostic run identity while keeping live pages explicit", () => {
+    const { diagnosticRunId: _omitted, ...withoutRunIdentity } =
+      keywordLibraryResponse();
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse(withoutRunIdentity).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        diagnosticRunId: ids.currentRun,
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        diagnosticRunId: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordLibraryResponse.safeParse({
+        ...keywordLibraryResponse(),
+        diagnosticRunId: "not-a-run-id",
       }).success,
     ).toBe(false);
   });
@@ -1575,6 +1695,308 @@ describe("Growth Map Keyword Library contracts", () => {
         data: { ...keywordItem(), reviewOrigin: "auto_pilot" },
       }).success,
     ).toBe(false);
+  });
+
+  it("requires a closed search-intent projection with authority-specific lineage", () => {
+    const base = keywordItem();
+    const validSearchIntents = [
+      {
+        value: "commercial investigation",
+        authority: "user_confirmed",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: null,
+      },
+      {
+        value: "legacy evaluation intent",
+        authority: "governed_legacy",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: "Field-level provenance predates this contract.",
+      },
+      base.searchIntent,
+      {
+        value: "transactional",
+        authority: "llm_generated",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: ids.analysisInvocation,
+        observedAt: null,
+        limitation: null,
+      },
+      {
+        value: null,
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: "No governed, provider-observed, or generated intent exists.",
+      },
+    ] as const;
+
+    for (const searchIntent of validSearchIntents) {
+      const governance =
+        searchIntent.authority === "user_confirmed"
+          ? { intent: searchIntent.value, reviewOrigin: "user" }
+          : searchIntent.authority === "governed_legacy"
+            ? {
+                intent: searchIntent.value,
+                reviewOrigin: "migration_baseline",
+              }
+            : {};
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: { ...base, ...governance, searchIntent },
+        }).success,
+      ).toBe(true);
+    }
+
+    const { searchIntent: _omitted, ...withoutSearchIntent } = base;
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: withoutSearchIntent,
+      }).success,
+    ).toBe(false);
+
+    for (const searchIntent of [
+      { ...base.searchIntent, value: null },
+      { ...base.searchIntent, snapshotId: null },
+      { ...base.searchIntent, observationId: null },
+      { ...base.searchIntent, observedAt: null },
+      { ...base.searchIntent, analysisInvocationId: ids.analysisInvocation },
+      {
+        ...validSearchIntents[3],
+        analysisInvocationId: null,
+      },
+      { ...validSearchIntents[3], snapshotId: ids.metricSnapshot },
+      { ...validSearchIntents[3], observationId: ids.metricObservation },
+      { ...validSearchIntents[3], observedAt: "2026-07-21T08:00:00Z" },
+      { ...validSearchIntents[3], value: null },
+      { ...validSearchIntents[4], value: "commercial" },
+      { ...validSearchIntents[4], limitation: null },
+      { ...validSearchIntents[4], snapshotId: ids.metricSnapshot },
+      { ...validSearchIntents[4], observedAt: "2026-07-21T08:00:00Z" },
+      { ...validSearchIntents[0], value: null },
+      { ...validSearchIntents[0], snapshotId: ids.metricSnapshot },
+      { ...validSearchIntents[0], observedAt: "2026-07-21T08:00:00Z" },
+      { ...validSearchIntents[1], observationId: ids.metricObservation },
+      { ...validSearchIntents[1], analysisInvocationId: ids.analysisInvocation },
+      { ...validSearchIntents[0], value: "   " },
+      { ...validSearchIntents[0], value: "x".repeat(501) },
+      { ...base.searchIntent, value: "commercial investigation" },
+      { ...validSearchIntents[3], value: "commercial investigation" },
+      { ...base.searchIntent, value: " commercial " },
+      { ...validSearchIntents[3], value: " transactional " },
+      { ...base.searchIntent, authority: "model_guess" },
+      { ...base.searchIntent, confidence: 0.9 },
+    ]) {
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: { ...base, searchIntent },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("ties provider-observed intent to one exact DataForSEO occurrence", () => {
+    const base = keywordItem();
+    const gscOccurrence = {
+      occurrenceId: ids.keywordManualOccurrence,
+      sourceKind: "gsc_top_query",
+      snapshotId: ids.gscOnlySnapshot,
+      sourceObservationId: ids.gscOnlyObservation,
+      sourcePointer: "/valueJson/topQueries/0/query",
+      collectedAt: "2026-07-21T08:05:00Z",
+      providerDataAsOf: "2026-07-20T00:00:00Z",
+      freshness: "current",
+      limitation: null,
+      scopeBasis: "project_context",
+      scopeLimitation:
+        "GSC query scope comes from the confirmed project market and language.",
+      marketCode: "US",
+      languageTag: "en-US",
+    };
+    const sourceOccurrences = [...base.sourceOccurrences, gscOccurrence];
+
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: { ...base, sourceOccurrences },
+      }).success,
+    ).toBe(true);
+
+    for (const searchIntent of [
+      { ...base.searchIntent, snapshotId: ids.gscOnlySnapshot },
+      { ...base.searchIntent, observationId: ids.gscOnlyObservation },
+      {
+        ...base.searchIntent,
+        snapshotId: ids.gscOnlySnapshot,
+        observationId: ids.gscOnlyObservation,
+      },
+    ]) {
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: { ...base, sourceOccurrences, searchIntent },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps governed search-intent authority coherent with the item decision", () => {
+    const base = keywordItem();
+    const userConfirmed = {
+      value: "commercial investigation",
+      authority: "user_confirmed",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: null,
+    };
+    const governedLegacy = {
+      ...userConfirmed,
+      value: "legacy evaluation intent",
+      authority: "governed_legacy",
+    };
+    const unavailable = {
+      ...userConfirmed,
+      value: null,
+      authority: "unavailable",
+      limitation: "No resolved search intent is available.",
+    };
+
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          intent: governedLegacy.value,
+          reviewOrigin: null,
+          searchIntent: governedLegacy,
+        },
+      }).success,
+    ).toBe(true);
+
+    for (const invalid of [
+      {
+        ...base,
+        intent: "commercial",
+        reviewOrigin: "user",
+        searchIntent: base.searchIntent,
+      },
+      {
+        ...base,
+        intent: "transactional",
+        reviewOrigin: "user",
+        searchIntent: {
+          value: "transactional",
+          authority: "llm_generated",
+          snapshotId: null,
+          observationId: null,
+          analysisInvocationId: ids.analysisInvocation,
+          observedAt: null,
+          limitation: null,
+        },
+      },
+      { ...base, intent: userConfirmed.value, searchIntent: userConfirmed },
+      {
+        ...base,
+        intent: "different intent",
+        reviewOrigin: "user",
+        searchIntent: userConfirmed,
+      },
+      {
+        ...base,
+        intent: "different intent",
+        reviewOrigin: "migration_baseline",
+        searchIntent: governedLegacy,
+      },
+      {
+        ...base,
+        intent: governedLegacy.value,
+        reviewOrigin: "user",
+        searchIntent: governedLegacy,
+      },
+      { ...base, intent: "commercial", searchIntent: unavailable },
+    ]) {
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects search-intent boundary whitespace instead of trimming authority facts", () => {
+    const base = keywordItem();
+    const invalidCases = [
+      {
+        item: {
+          ...base,
+          intent: "commercial investigation",
+          reviewOrigin: "user",
+        },
+        searchIntent: {
+          value: " commercial investigation",
+          authority: "user_confirmed",
+          snapshotId: null,
+          observationId: null,
+          analysisInvocationId: null,
+          observedAt: null,
+          limitation: null,
+        },
+      },
+      {
+        item: {
+          ...base,
+          intent: "legacy evaluation intent",
+          reviewOrigin: null,
+        },
+        searchIntent: {
+          value: "legacy evaluation intent ",
+          authority: "governed_legacy",
+          snapshotId: null,
+          observationId: null,
+          analysisInvocationId: null,
+          observedAt: null,
+          limitation: "Field-level provenance predates this contract.",
+        },
+      },
+      {
+        item: base,
+        searchIntent: {
+          value: null,
+          authority: "unavailable",
+          snapshotId: null,
+          observationId: null,
+          analysisInvocationId: null,
+          observedAt: null,
+          limitation: " No resolved search intent is available. ",
+        },
+      },
+    ] as const;
+
+    for (const { item, searchIntent } of invalidCases) {
+      expect(GrowthMapKeywordSearchIntent.safeParse(searchIntent).success).toBe(
+        false,
+      );
+      expect(
+        GrowthMapKeywordDetailResponse.safeParse({
+          projectId: ids.project,
+          data: { ...item, searchIntent },
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("requires a stable normalized identity and accepts canonical BCP-47 without a region", () => {
@@ -1883,12 +2305,22 @@ describe("Growth Map Keyword Library contracts", () => {
       marketCode: "US",
       languageTag: "en-US",
     };
+    const unavailableSearchIntent = {
+      value: null,
+      authority: "unavailable",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: "The GSC occurrence does not classify search intent.",
+    };
     expect(
       GrowthMapKeywordLibraryResponse.safeParse({
         ...keywordLibraryResponse(),
         data: [
           {
             ...base,
+            searchIntent: unavailableSearchIntent,
             sourceOccurrences: [gscOccurrence],
             metrics: unavailableMetrics,
           },
@@ -1897,6 +2329,7 @@ describe("Growth Map Keyword Library contracts", () => {
             keywordId: ids.keyword2,
             displayKeyword: "Customer Onboarding Automation",
             normalizedKeyword: "customer onboarding automation",
+            searchIntent: unavailableSearchIntent,
             sourceOccurrences: [
               {
                 ...gscOccurrence,

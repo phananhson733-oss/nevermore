@@ -13,7 +13,7 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
-shared async operation**，**44 个 ordered migrations** 精确声明 **78 张应用表**，引擎
+shared async operation**，**47 个 ordered migrations** 精确声明 **80 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -208,7 +208,7 @@ required step。command transaction 创建 `analysis_refresh` async run，并以
 `analysis_refresh_run` resource identity 冻结 primary Site、confirmed ICP、
 完整 plan manifest 与 plan hash；queue 名为 `refresh.analysis`。
 
-新建父 run 固定冻结 `analysis-refresh.plan.v2` 六步，并持久化全部六行：
+新建父 run 固定冻结 `analysis-refresh.plan.v3` 七步，并持久化全部七行：
 
 1. Crawl（required）；
 2. connected GSC（optional；未连接时明确 skipped）；
@@ -217,11 +217,56 @@ required step。command transaction 创建 `analysis_refresh` async run，并以
    disabled/unavailable 时明确 skipped）；
 5. built-in DataForSEO Backlinks（`dataforseo_backlinks`，optional；独立 rollout
    disabled/unavailable 时明确 skipped）；
-6. Growth Audit（required）。
+6. Topic Model generation（`topic_model`，optional internal child）；
+7. Growth Audit（required）。
 
-历史 `analysis-refresh.plan.v1` 的 exact 五步 manifest 与 hash 继续只读、可恢复；
-它只能按原有 Crawl/GSC/GA4/DFS/Growth Audit 顺序继续，不能在恢复时插入 Backlinks
-或升级为 v2。新 run 不得再创建 v1 manifest。
+Topic step 只在 confirmed Topic Model 与 draft 都不存在且有 eligible Keyword evidence
+时创建一个 `kind=topic_model_generation`、
+`result_type=topic_model_generation_run` 的 internal child；existing confirmed、existing
+draft 或 insufficient evidence 必须以 typed skip reason 结束，不调用模型，也不创建
+空 confirmed model。该 child 没有浏览器 create endpoint、provider option 或 reservation
+API；客户仍只提交 Analysis Refresh 的空 strict object。
+
+Topic generation 使用两个职责分离的 durable ledger：
+`topic_model_generation_runs` 以 child `async_runs.id` 为主键，冻结 workspace、project、
+parent refresh、bounded `topic-model-generation-input.v1` manifest、generation/prompt
+version 与 hash；`topic_model_generation_invocation_attempts` 冻结每次实际 delivery 的
+ordinal、`async_runs.attempt_count`、provider/model/config/hash、预算与一次性 terminal
+outcome。两表及 immutable `AnalysisInvocation(task=topic_model_generation)` 只保存 bounded
+metadata、hash、token/cost/latency 与 error code，绝不保存 raw prompt、raw provider
+response、model output text 或客户秘密。
+
+每次模型调用严格分为短事务内 freeze/reserve → 释放事务 → outside-transaction
+structured provider call → 短事务内 persist immutable AnalysisInvocation/finalize → 原子
+materialize。reservation 必须与 exact run attempt、provider、model、prompt set 与 input
+hash 匹配；旧 attempt 的 `reserved` 或 `outcome_unknown` 会阻断静默重试，最多三次的
+budget 由 ledger 分配。provider 已返回但结果是否被可靠持久化不明时只能一次性进入
+`outcome_unknown`，不得把可能已计费的调用当作从未发生。
+
+只有 revision 1 的 exact 九键 `llm_auto_confirmed` generation basis、同 scope 的
+successful Topic `AnalysisInvocation`、matching successful reservation 与同一个 running
+child 全部成立时，Topic Model 才允许 `confirmed_by=null` 的 `system_auto` confirmation；
+其他 confirmed revision 仍要求 human actor，且任何 malformed/unknown lineage 都 fail
+closed。generated Keyword fallback 只能是 canonical approved `system_suggestion`，必须
+指向该 successful invocation、exact confirmed Topic revision 与非空 Topic node；
+provider-observed、deterministic suggestion、migration baseline 与 user decision 必须保持
+`analysis_invocation_id=null`，不得伪造模型 lineage。
+
+历史兼容性按完整形状而不是 version 字符串猜测：
+
+- `analysis-refresh.plan.v1` exact 五步 hash 为
+  `d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af`；
+- `analysis-refresh.plan.v2` exact 六步 hash 为
+  `3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65`；
+- `analysis-refresh.plan.v3` exact 七步 hash 为
+  `fc527bb7203d61ce126625a0b2bb4bffb59fe5999d9f6b78e5aa05409918368b`。
+
+v1 只能按原有 Crawl/GSC/GA4/DFS/Growth Audit ordinals 恢复；v2 只能按
+Crawl/GSC/GA4/DFS/Backlinks/Growth Audit ordinals 恢复；v3 的 Topic/Growth Audit
+必须分别保持 ordinal 6/7。published-generation reader 只接受上述 exact
+manifest/hash/ordinal，保留 v1/v2/v3 readability；未知版本、已知版本的 shape drift、
+错误 hash 或缺失 canonical child lineage 一律不可发布。历史 parent 不重写、不重分类，
+新 run 不得再创建 v1/v2 manifest。
 
 父 lifecycle 只来自 `async_runs`。step execution state 只能是
 pending/running/completed/skipped/failed；optional failure/skip 不得伪装成功，
@@ -294,6 +339,32 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
   relation candidate/decision 与 rank history 都是稳定、可追溯的治理面。
 - volume、KD、current rank、competitor rank 等各自保留 Observation pointer；
   缺失字段独立 unavailable。
+- 现有 `intent` 继续表示可治理的分类值并保持向后兼容；客户展示使用独立、必填的
+  `searchIntent` 投影，明确携带 `value`、`authority`、Snapshot/Observation、
+  AnalysisInvocation、`observedAt` 与 limitation。其解析优先级固定为：非空的
+  user-confirmed 值 > exact provider-observed 值 > 带非空 AnalysisInvocation 的
+  LLM-generated 值 > legacy governed 值 > unavailable。契约可以保留
+  `llm_generated` wire literal，但只能输出带 exact successful
+  `topic_model_generation` AnalysisInvocation lineage 的 generated decision。
+- `provider_observed` 必须同时带 exact Snapshot、Observation 与 `observedAt`，且
+  不得伪造 AnalysisInvocation；`llm_generated` 只能带 AnalysisInvocation；
+  `user_confirmed`、`governed_legacy` 与 `unavailable` 不得携带 provider/model
+  lineage，`observedAt` 也只能用于 provider observation。unavailable 必须保持
+  `value=null` 并解释 limitation。
+- `searchIntent.value` 与任何非空 limitation 必须是原样的 bounded string；首尾
+  空白直接验证失败，不得通过 trim 或其他 coercion 改写后接受。该 exact 规则不
+  改变既有顶层 governed `intent` 的向后兼容解析。
+- provider-observed 与 LLM-generated 值只能是 `informational`、
+  `navigational`、`commercial` 或 `transactional`；user-confirmed 与 legacy
+  governed 仍允许向后兼容的 bounded 非空字符串。provider lineage 必须命中同一
+  Keyword item 内一个 exact `dataforseo_ranked` occurrence。user-confirmed 必须
+  对应 `reviewOrigin=user` 且值与 governed `intent` 一致；legacy governed 必须
+  与 governed `intent` 一致且不得声称 user-confirmed；`reviewOrigin` 可为
+  `migration_baseline`、`system_suggestion` 或 `null`，其中 `null` 表示该字段值及其
+  provenance 早于 decision ledger/本契约；`unavailable` 只允许在
+  `intent=null` 时出现。
+- 已发布 generation 只从其冻结的 exact keyword decision 与 occurrence refs 解析
+  `searchIntent`；不得读取或回退到更新的治理 decision、Observation 或模型调用。
 - relation refresh 只产生候选；人工 decision 通过 optimistic revision 追加，
   不覆盖历史。
 
@@ -516,8 +587,8 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 10. 冻结数据库 inventory
 
-以下 78 张应用表来自 `0001_init.sql` 至
-`0045_dataforseo_backlink_target_lineage.sql` 的 45 个 ordered migrations 与
+以下 80 张应用表来自 `0001_init.sql` 至
+`0048_topic_model_generation.sql` 的 48 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->
@@ -558,6 +629,8 @@ static schema catalog；pg-boss 自有表不计入。
 - `page_snapshots`
 - `product_profile_runs`
 - `product_profile_invocation_attempts`
+- `topic_model_generation_runs`
+- `topic_model_generation_invocation_attempts`
 - `finding_targets`
 - `keyword_occurrences`
 - `keyword_entities`

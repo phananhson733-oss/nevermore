@@ -15,6 +15,7 @@ import {
 } from "./adapter.ts";
 import type {
   DataForSeoClient,
+  DataForSeoRankedKeywordRow,
   DataForSeoRankedKeywordsRequest,
   DataForSeoRankedKeywordsResponse,
 } from "./client.ts";
@@ -41,6 +42,8 @@ function fixtureResponse(
       {
         keyword: "enterprise seo platform",
         searchVolume: 720,
+        keywordDifficulty: 24,
+        providerSearchIntent: "commercial",
         currentUrl: "https://example.com/platform",
         currentRank: 7,
       },
@@ -350,6 +353,8 @@ describe("DataForSEO ranked-keywords adapter", () => {
           keyword: "enterprise seo platform",
           clusterKey: "enterprise seo",
           searchVolume: 720,
+          keywordDifficulty: 24,
+          providerSearchIntent: "commercial",
           currentUrl: "https://example.com/platform",
           currentRank: 7,
           competitorDomain: null,
@@ -359,6 +364,221 @@ describe("DataForSEO ranked-keywords adapter", () => {
         },
       }),
     ]);
+  });
+
+  it("preserves explicit null keyword difficulty and provider intent in normalized observations", async () => {
+    const adapter = createDataForSeoAdapter(
+      new FixtureClient(
+        fixtureResponse({
+          rows: [
+            {
+              keyword: "enterprise seo reporting",
+              searchVolume: null,
+              keywordDifficulty: null,
+              providerSearchIntent: null,
+              currentUrl: null,
+              currentRank: null,
+            },
+          ],
+        }),
+      ),
+    );
+    const result = await adapter.collect(
+      {
+        target: "example.com",
+        marketCode: "CA",
+        locationName: "Canada",
+        languageCode: "fr-CA",
+        now: new Date("2026-07-20T09:30:00.000Z"),
+      },
+      collectCtx,
+    );
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeCtx,
+    )) {
+      observations.push(observation);
+    }
+
+    expect(observations).toEqual([
+      expect.objectContaining({
+        valueJson: expect.objectContaining({
+          keyword: "enterprise seo reporting",
+          searchVolume: null,
+          keywordDifficulty: null,
+          providerSearchIntent: null,
+          currentUrl: null,
+          currentRank: null,
+        }),
+      }),
+    ]);
+  });
+
+  it("normalizes missing and undefined keyword metrics before raw persistence", async () => {
+    const rows = [
+      {
+        keyword: "missing provider metrics",
+        searchVolume: 40,
+        currentUrl: null,
+        currentRank: null,
+      },
+      {
+        keyword: "undefined provider metrics",
+        searchVolume: 30,
+        keywordDifficulty: undefined,
+        providerSearchIntent: undefined,
+        currentUrl: null,
+        currentRank: null,
+      },
+    ] as unknown as readonly DataForSeoRankedKeywordRow[];
+    const adapter = createDataForSeoAdapter(
+      new FixtureClient(
+        fixtureResponse({ rows, totalCount: 2, itemsCount: 2 }),
+      ),
+    );
+
+    const result = await adapter.collect(
+      {
+        target: "example.com",
+        marketCode: "CA",
+        locationName: "Canada",
+        languageCode: "fr-CA",
+      },
+      collectCtx,
+    );
+
+    expect(result.raw.rows).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+    ]);
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeCtx,
+    )) {
+      observations.push(observation);
+    }
+    expect(observations.map((observation) => observation.valueJson)).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+    ]);
+  });
+
+  it("strips extra custom-client fields before raw persistence and normalization", async () => {
+    const smuggledRow = {
+      keyword: "secret-free provider metrics",
+      searchVolume: 50,
+      keywordDifficulty: 21,
+      providerSearchIntent: "informational",
+      currentUrl: "https://example.com/secret-free",
+      currentRank: 8,
+      password: "must-not-persist",
+      authorization: "must-not-persist",
+    } as DataForSeoRankedKeywordRow & {
+      readonly password: string;
+      readonly authorization: string;
+    };
+    const adapter = createDataForSeoAdapter(
+      new FixtureClient(fixtureResponse({ rows: [smuggledRow] })),
+    );
+
+    const result = await adapter.collect(
+      {
+        target: "example.com",
+        marketCode: "CA",
+        locationName: "Canada",
+        languageCode: "fr-CA",
+      },
+      collectCtx,
+    );
+
+    expect(result.raw.rows).toEqual([
+      {
+        keyword: "secret-free provider metrics",
+        searchVolume: 50,
+        keywordDifficulty: 21,
+        providerSearchIntent: "informational",
+        currentUrl: "https://example.com/secret-free",
+        currentRank: 8,
+      },
+    ]);
+    expect(JSON.stringify(result.raw.rows)).not.toMatch(
+      /password|authorization|must-not-persist/i,
+    );
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeCtx,
+    )) {
+      observations.push(observation);
+    }
+    expect(JSON.stringify(observations)).not.toMatch(
+      /password|authorization|must-not-persist/i,
+    );
+  });
+
+  it.each([
+    {
+      label: "fractional keyword difficulty",
+      fields: { keywordDifficulty: 12.5 },
+    },
+    {
+      label: "non-number keyword difficulty",
+      fields: { keywordDifficulty: "12" },
+    },
+    {
+      label: "negative keyword difficulty",
+      fields: { keywordDifficulty: -1 },
+    },
+    {
+      label: "keyword difficulty above 100",
+      fields: { keywordDifficulty: 101 },
+    },
+    {
+      label: "unknown provider search intent",
+      fields: { providerSearchIntent: "unknown_intent" },
+    },
+  ])("rejects $label from a custom ranked client", async ({ fields }) => {
+    const malformedRow = {
+      keyword: "malformed provider metrics",
+      searchVolume: 20,
+      keywordDifficulty: null,
+      providerSearchIntent: null,
+      currentUrl: null,
+      currentRank: null,
+      ...fields,
+    } as unknown as DataForSeoRankedKeywordRow;
+    const adapter = createDataForSeoAdapter(
+      new FixtureClient(fixtureResponse({ rows: [malformedRow] })),
+    );
+
+    await expect(
+      adapter.collect(
+        {
+          target: "example.com",
+          marketCode: "CA",
+          locationName: "Canada",
+          languageCode: "fr-CA",
+        },
+        collectCtx,
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   });
 
   it("keeps a true empty result available and never invents zero-valued facts", async () => {

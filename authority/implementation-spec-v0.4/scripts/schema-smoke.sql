@@ -131,8 +131,8 @@ $pgcrypto_contract$;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 78 THEN
-    RAISE EXCEPTION 'expected exactly 78 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 80 THEN
+    RAISE EXCEPTION 'expected exactly 80 app tables';
   END IF;
   IF (
     SELECT count(*)
@@ -145,6 +145,49 @@ BEGIN
       AND table_type = 'BASE TABLE'
   ) <> 2 THEN
     RAISE EXCEPTION 'Analysis Refresh orchestration tables are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'topic_model_generation_runs',
+        'topic_model_generation_invocation_attempts'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'Topic Model generation ledgers are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.columns
+    WHERE table_schema = 'app'
+      AND table_name = 'keyword_review_decisions'
+      AND column_name = 'analysis_invocation_id'
+      AND data_type = 'uuid'
+      AND is_nullable = 'YES'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'generated Keyword intent invocation lineage is incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_def
+    WHERE constraint_def.conrelid = 'app.topic_model_revisions'::regclass
+      AND constraint_def.conname = 'topic_model_revisions_state_check'
+      AND position(
+        'confirmed_by IS NULL'
+        IN pg_get_constraintdef(constraint_def.oid)
+      ) > 0
+      AND position(
+        'llm_auto_confirmed'
+        IN pg_get_constraintdef(constraint_def.oid)
+      ) > 0
+      AND position(
+        'analysisInvocationId'
+        IN pg_get_constraintdef(constraint_def.oid)
+      ) > 0
+  ) THEN
+    RAISE EXCEPTION 'Topic Model system-confirm state contract is incomplete';
   END IF;
   IF (
     SELECT count(*)
@@ -275,6 +318,10 @@ BEGIN
         'product_profile_runs_result_profile_idx',
         'product_profile_invocation_attempts_project_idx',
         'product_profile_invocation_attempts_unresolved_idx',
+        'topic_model_generation_runs_project_created_idx',
+        'topic_model_generation_runs_result_revision_idx',
+        'topic_model_generation_invocation_attempts_project_idx',
+        'topic_model_generation_invocation_attempts_unresolved_idx',
         'keyword_occurrences_project_collected_idx',
         'keyword_entities_project_created_idx',
         'keyword_entities_project_review_idx',
@@ -316,8 +363,8 @@ BEGIN
         'keyword_review_decisions_project_decided_idx',
         'keyword_review_decisions_topic_idx'
       ]::text[])
-  ) <> 81 THEN
-    RAISE EXCEPTION 'expected all 81 named app indexes';
+  ) <> 85 THEN
+    RAISE EXCEPTION 'expected all 85 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -382,6 +429,10 @@ BEGIN
         'async_runs_product_profile_result_guard',
         'product_profile_invocation_attempts_transition_guard',
         'icp_profiles_product_profile_provenance_guard',
+        'topic_model_generation_runs_provenance_guard',
+        'topic_model_generation_runs_frozen_input_guard',
+        'async_runs_topic_model_generation_result_guard',
+        'topic_model_generation_invocation_attempts_transition_guard',
         'keyword_occurrences_lineage_guard',
         'keyword_occurrences_append_only',
         'keyword_entities_mutation_guard',
@@ -423,6 +474,7 @@ BEGIN
         'measurement_ga4_campaigns_lineage_guard',
         'measurement_ga4_campaigns_append_only',
         'keyword_review_decisions_projection_guard',
+        'keyword_review_decisions_analysis_invocation_guard',
         'topic_model_revisions_mutation_guard',
         'topic_model_revisions_topology_guard',
         'topic_node_identities_creation_guard',
@@ -435,8 +487,8 @@ BEGIN
         'topic_node_successors_append_only',
         'keyword_review_decisions_append_only'
       ]::text[])
-  ) <> 107 THEN
-    RAISE EXCEPTION 'expected all 107 app triggers';
+  ) <> 112 THEN
+    RAISE EXCEPTION 'expected all 112 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -449,6 +501,15 @@ BEGIN
         'finalize_product_profile_invocation_attempt',
         'mark_product_profile_invocation_outcome_unknown',
         'validate_product_profile_provenance',
+        'enforce_topic_model_generation_run_provenance',
+        'enforce_topic_model_generation_run_frozen_input',
+        'enforce_topic_model_generation_async_result',
+        'enforce_topic_model_generation_invocation_attempt_transition',
+        'reserve_topic_model_generation_invocation_attempt',
+        'finalize_topic_model_generation_invocation_attempt',
+        'mark_topic_model_generation_invocation_outcome_unknown',
+        'terminalize_topic_model_generation_run',
+        'enforce_keyword_review_analysis_invocation',
         'enforce_keyword_occurrence_lineage',
         'enforce_keyword_entity_mutation',
         'initialize_keyword_review_decision',
@@ -483,8 +544,8 @@ BEGIN
         'enforce_topic_cluster_alias_retention',
         'prevent_topic_successor_cycle'
       ]::text[])
-  ) <> 39 THEN
-    RAISE EXCEPTION 'expected all 39 runtime routines';
+  ) <> 48 THEN
+    RAISE EXCEPTION 'expected all 48 runtime routines';
   END IF;
 END;
 $$;
@@ -4914,7 +4975,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0047_dataforseo_competitor_metrics' THEN
+  ) IS DISTINCT FROM '0048_topic_model_generation' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

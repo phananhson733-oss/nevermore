@@ -39,12 +39,29 @@ export async function notifyAnalysisRefreshParent(
     const childRun = await runs.findById(scope, child.runId);
     // Only a settled child hands off; a retrying child keeps its active claim.
     if (!childRun || !TERMINAL_CHILD_STATUSES.has(childRun.status)) return;
+    if (
+      childRun.workspace_id !== child.workspaceId ||
+      childRun.project_id !== child.projectId ||
+      (childRun.kind === "topic_model_generation" &&
+        (childRun.result_type !== "topic_model_generation_run" ||
+          childRun.result_id !== childRun.id))
+    ) {
+      return;
+    }
     const parentRunId = await new AnalysisRefreshRunsRepository(
       ctx.db,
     ).findParentRunIdByChildRunId(scope, child.runId);
     if (!parentRunId) return;
     const parent = await runs.findById(scope, parentRunId);
-    if (!parent || (parent.status !== "queued" && parent.status !== "running")) {
+    if (
+      !parent ||
+      parent.kind !== "analysis_refresh" ||
+      parent.result_type !== "analysis_refresh_run" ||
+      parent.result_id !== parent.id ||
+      parent.workspace_id !== child.workspaceId ||
+      parent.project_id !== child.projectId ||
+      (parent.status !== "queued" && parent.status !== "running")
+    ) {
       return;
     }
     await ctx.boss.send("refresh.analysis", {

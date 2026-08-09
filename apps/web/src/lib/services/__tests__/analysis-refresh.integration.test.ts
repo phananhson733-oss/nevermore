@@ -209,6 +209,7 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
           maxCompetitors: Number(
             process.env["DATAFORSEO_MAX_COMPETITORS"] ?? "100",
           ),
+          aiCitations: { state: "disabled" },
         },
         dataForSeoBacklinks: {
           enabled:
@@ -274,6 +275,7 @@ describeDb("createAnalysisRefreshRun real transaction", () => {
         state: "skipped",
         skipReason: "feature_disabled",
       },
+      { stepKey: "topic_model", state: "pending", skipReason: null },
       { stepKey: "growth_audit", state: "pending", skipReason: null },
     ]);
     expect(queue.send).toHaveBeenCalledTimes(1);

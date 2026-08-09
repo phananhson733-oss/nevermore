@@ -45,6 +45,8 @@ function rankedResponse(
       {
         keyword: "enterprise seo platform",
         searchVolume: 720,
+        keywordDifficulty: null,
+        providerSearchIntent: null,
         currentUrl: "https://example.com/platform",
         currentRank: 7,
       },
@@ -348,12 +350,16 @@ describe("DataForSEO search-landscape adapter", () => {
           {
             keyword: "first keyword",
             searchVolume: 10,
+            keywordDifficulty: null,
+            providerSearchIntent: null,
             currentUrl: null,
             currentRank: 5,
           },
           {
             keyword: "second keyword",
             searchVolume: 20,
+            keywordDifficulty: null,
+            providerSearchIntent: null,
             currentUrl: null,
             currentRank: 6,
           },
@@ -426,6 +432,8 @@ describe("DataForSEO search-landscape adapter", () => {
       {
         keyword: "enterprise seo platform",
         searchVolume: 720,
+        keywordDifficulty: null,
+        providerSearchIntent: null,
         currentUrl: "https://example.com/platform",
         currentRank: 7,
         password: "smuggled-ranked-secret",
@@ -600,6 +608,123 @@ describe("DataForSEO search-landscape adapter", () => {
     expect(serialized).not.toMatch(
       /name|relationship|similarity|similarityPercent|percent/i,
     );
+  });
+
+  it("retains ranked-keyword difficulty and provider intent through the composite adapter", async () => {
+    const client = new FixtureSearchLandscapeClient(
+      rankedResponse({
+        rows: [
+          {
+            keyword: "enterprise seo platform",
+            searchVolume: 720,
+            keywordDifficulty: 37,
+            providerSearchIntent: "transactional",
+            currentUrl: "https://example.com/platform",
+            currentRank: 7,
+          },
+        ],
+      }),
+      competitorsResponse(),
+    );
+    const adapter = createDataForSeoSearchLandscapeAdapter(client, {
+      now: () => new Date("2026-07-29T08:00:00.000Z"),
+    });
+
+    const result = await adapter.collect(scope(), collectCtx);
+    expect(result.raw.rankedKeywords.rows).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: 37,
+        providerSearchIntent: "transactional",
+      }),
+    ]);
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeCtx,
+    )) {
+      observations.push(observation);
+    }
+    expect(observations[0]?.valueJson).toMatchObject({
+      keywordDifficulty: 37,
+      providerSearchIntent: "transactional",
+    });
+  });
+
+  it("normalizes missing composite keyword metrics to explicit nulls", async () => {
+    const rowWithoutMetrics = {
+      keyword: "enterprise seo platform",
+      searchVolume: 720,
+      currentUrl: "https://example.com/platform",
+      currentRank: 7,
+    } as unknown as DataForSeoRankedKeywordRow;
+    const client = new FixtureSearchLandscapeClient(
+      rankedResponse({ rows: [rowWithoutMetrics] }),
+      competitorsResponse(),
+    );
+    const adapter = createDataForSeoSearchLandscapeAdapter(client);
+
+    const result = await adapter.collect(scope(), collectCtx);
+    expect(result.raw.rankedKeywords.rows).toEqual([
+      expect.objectContaining({
+        keywordDifficulty: null,
+        providerSearchIntent: null,
+      }),
+    ]);
+
+    const observations = [];
+    for await (const observation of adapter.normalize(
+      result.raw,
+      normalizeCtx,
+    )) {
+      observations.push(observation);
+    }
+    expect(observations[0]?.valueJson).toMatchObject({
+      keywordDifficulty: null,
+      providerSearchIntent: null,
+    });
+  });
+
+  it.each([
+    {
+      label: "fractional keyword difficulty",
+      fields: { keywordDifficulty: 12.5 },
+    },
+    {
+      label: "non-number keyword difficulty",
+      fields: { keywordDifficulty: "12" },
+    },
+    {
+      label: "negative keyword difficulty",
+      fields: { keywordDifficulty: -1 },
+    },
+    {
+      label: "keyword difficulty above 100",
+      fields: { keywordDifficulty: 101 },
+    },
+    {
+      label: "unknown provider search intent",
+      fields: { providerSearchIntent: "unknown_intent" },
+    },
+  ])("rejects $label from the composite client seam", async ({ fields }) => {
+    const malformedRow = {
+      keyword: "enterprise seo platform",
+      searchVolume: 720,
+      keywordDifficulty: null,
+      providerSearchIntent: null,
+      currentUrl: "https://example.com/platform",
+      currentRank: 7,
+      ...fields,
+    } as unknown as DataForSeoRankedKeywordRow;
+    const client = new FixtureSearchLandscapeClient(
+      rankedResponse({ rows: [malformedRow] }),
+      competitorsResponse(),
+    );
+    const adapter = createDataForSeoSearchLandscapeAdapter(client);
+
+    await expect(adapter.collect(scope(), collectCtx)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
   });
 
   it("keeps two honest empty results available without fabricated observations", async () => {

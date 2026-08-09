@@ -110,6 +110,8 @@ export interface KeywordDecisionOriginRow {
   readonly keywordId: string;
   readonly governanceRevision: number;
   readonly decisionOrigin: KeywordDecisionOrigin;
+  /** Non-null only for a generated fallback proven by the DB lineage guard. */
+  readonly analysisInvocationId: string | null;
 }
 
 /**
@@ -126,6 +128,103 @@ export const MAX_SYSTEM_KEYWORD_GOVERNANCE_BATCH = 500;
  * write MUST bump this literal (spec §"版本化字面量").
  */
 export const AUTO_KEYWORD_GOVERNANCE_VERSION = "auto_keyword_governance.v1";
+
+/** One bounded internal Topic-generation materialization batch. */
+export const MAX_GENERATED_TOPIC_ASSIGNMENT_BATCH = 500;
+const MAX_GENERATED_TOPIC_GROUPS = 100;
+const GENERATED_TOPIC_ASSIGNMENT_REASON =
+  "topic-model-generation.v1 assigned this keyword to the first system-confirmed Topic Model.";
+const GENERATED_SEARCH_INTENTS = new Set([
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+] as const);
+const GENERATED_AUTHORITY_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const GENERATED_ASSIGNMENT_INPUT_KEYS = ["groups", "assignments"] as const;
+const GENERATED_GROUP_KEYS = [
+  "groupKey",
+  "topicNodeId",
+  "topicModelRevision",
+] as const;
+const GENERATED_KEYWORD_ASSIGNMENT_KEYS = [
+  "groupKey",
+  "keywordId",
+  "expectedGovernanceRevision",
+  "resolvedIntent",
+] as const;
+const GENERATED_RESOLVED_INTENT_KEYS = [
+  "authority",
+  "value",
+  "analysisInvocationId",
+] as const;
+
+export type GeneratedSearchIntent =
+  | "informational"
+  | "navigational"
+  | "commercial"
+  | "transactional";
+
+export type GeneratedTopicResolvedIntent =
+  | {
+      readonly authority: "provider_observed";
+      readonly value: GeneratedSearchIntent;
+      readonly analysisInvocationId: null;
+    }
+  | {
+      readonly authority: "llm_generated";
+      readonly value: GeneratedSearchIntent;
+      readonly analysisInvocationId: string;
+    };
+
+export interface GeneratedTopicAssignmentGroupInput {
+  readonly groupKey: string;
+  readonly topicNodeId: string;
+  readonly topicModelRevision: number;
+}
+
+export interface GeneratedTopicKeywordAssignmentInput {
+  readonly groupKey: string;
+  readonly keywordId: string;
+  readonly expectedGovernanceRevision: number;
+  /** Null means no provider fact or valid generated fallback was available. */
+  readonly resolvedIntent: GeneratedTopicResolvedIntent | null;
+}
+
+export interface ApplyGeneratedTopicAssignmentsInput {
+  readonly groups: readonly GeneratedTopicAssignmentGroupInput[];
+  readonly assignments: readonly GeneratedTopicKeywordAssignmentInput[];
+}
+
+export type GeneratedTopicAssignmentSkip =
+  | "unknown_group"
+  | "topic_revision_moved"
+  | "topic_node_absent"
+  | "intent_unavailable"
+  | "keyword_absent"
+  | "human_decision_exists"
+  | "revision_moved"
+  | "revision_exhausted"
+  | "ledger_unreadable"
+  | "conflict";
+
+export interface GeneratedTopicAssignmentOutcome {
+  readonly groupKey: string;
+  readonly keywordId: string;
+  readonly applied: boolean;
+  readonly skipped: GeneratedTopicAssignmentSkip | null;
+  readonly governanceRevision: number | null;
+}
+
+export interface GeneratedTopicAssignmentReport {
+  readonly assignedCount: number;
+  readonly skippedCount: number;
+  readonly skipped: Readonly<
+    Record<GeneratedTopicAssignmentSkip, number>
+  >;
+  readonly outcomes: readonly GeneratedTopicAssignmentOutcome[];
+}
 
 /**
  * One automated approval the caller has already justified from immutable
@@ -378,8 +477,11 @@ const decisionSelection = {
   created_at: keywordReviewDecisions.created_at,
 } as const;
 
-function assertUuid(value: string, label: string): void {
-  if (!UUID.test(value)) {
+function assertUuid(
+  value: unknown,
+  label: string,
+): asserts value is string {
+  if (typeof value !== "string" || !UUID.test(value)) {
     throw new RangeError(`${label} must be a canonical UUID`);
   }
 }
@@ -560,6 +662,196 @@ function canonicalSystemApproval(
     throw new RangeError("reason must contain 3 to 2000 trimmed characters");
   }
   return { ...input };
+}
+
+function assertExactPlainRecord(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): asserts value is Record<string, unknown> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    (Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null)
+  ) {
+    throw new RangeError(`${label} must be a plain object`);
+  }
+  const ownKeys = Reflect.ownKeys(value);
+  if (
+    ownKeys.length !== keys.length ||
+    !keys.every((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      return descriptor?.enumerable === true && "value" in descriptor;
+    })
+  ) {
+    throw new RangeError(`${label} only accepts its documented fields`);
+  }
+}
+
+function assertGeneratedGroupKey(
+  value: unknown,
+  label: string,
+): asserts value is string {
+  if (
+    typeof value !== "string" ||
+    value.length < 1 ||
+    value.length > 128 ||
+    value.trim() !== value ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(value)
+  ) {
+    throw new RangeError(`${label} must be a canonical bounded group key`);
+  }
+}
+
+function canonicalGeneratedResolvedIntent(
+  value: unknown,
+  label: string,
+): GeneratedTopicResolvedIntent | null {
+  if (value === null) return null;
+  assertExactPlainRecord(value, GENERATED_RESOLVED_INTENT_KEYS, label);
+  const authority = value["authority"];
+  const intent = value["value"];
+  const invocationId = value["analysisInvocationId"];
+  if (
+    typeof intent !== "string" ||
+    !GENERATED_SEARCH_INTENTS.has(intent as GeneratedSearchIntent)
+  ) {
+    throw new RangeError(`${label}.value is not a canonical search intent`);
+  }
+  if (authority === "provider_observed") {
+    if (invocationId !== null) {
+      throw new RangeError(
+        `${label} provider authority cannot carry an invocation`,
+      );
+    }
+    return {
+      authority,
+      value: intent as GeneratedSearchIntent,
+      analysisInvocationId: null,
+    };
+  }
+  if (authority === "llm_generated") {
+    if (
+      typeof invocationId !== "string" ||
+      !GENERATED_AUTHORITY_UUID.test(invocationId)
+    ) {
+      throw new RangeError(
+        `${label} LLM authority requires a successful invocation UUID`,
+      );
+    }
+    return {
+      authority,
+      value: intent as GeneratedSearchIntent,
+      analysisInvocationId: invocationId,
+    };
+  }
+  throw new RangeError(`${label}.authority is not writable here`);
+}
+
+function canonicalGeneratedTopicAssignmentInput(
+  input: ApplyGeneratedTopicAssignmentsInput,
+): ApplyGeneratedTopicAssignmentsInput {
+  assertExactPlainRecord(
+    input,
+    GENERATED_ASSIGNMENT_INPUT_KEYS,
+    "generated assignment input",
+  );
+  if (
+    !Array.isArray(input.groups) ||
+    input.groups.length > MAX_GENERATED_TOPIC_GROUPS
+  ) {
+    throw new RangeError(
+      `groups must contain at most ${MAX_GENERATED_TOPIC_GROUPS} entries`,
+    );
+  }
+  if (
+    !Array.isArray(input.assignments) ||
+    input.assignments.length > MAX_GENERATED_TOPIC_ASSIGNMENT_BATCH
+  ) {
+    throw new RangeError(
+      `assignments must contain at most ${MAX_GENERATED_TOPIC_ASSIGNMENT_BATCH} keywords`,
+    );
+  }
+  const groups = input.groups.map((group, index) => {
+    assertExactPlainRecord(
+      group,
+      GENERATED_GROUP_KEYS,
+      `groups[${index}]`,
+    );
+    assertGeneratedGroupKey(group.groupKey, `groups[${index}].groupKey`);
+    if (
+      typeof group.topicNodeId !== "string" ||
+      !GENERATED_AUTHORITY_UUID.test(group.topicNodeId)
+    ) {
+      throw new RangeError(`groups[${index}].topicNodeId must be a UUID`);
+    }
+    const revision = group.topicModelRevision;
+    if (
+      typeof revision !== "number" ||
+      !Number.isSafeInteger(revision) ||
+      revision < 1 ||
+      revision > MAX_POSTGRES_INTEGER_REVISION
+    ) {
+      throw new RangeError(
+        `groups[${index}].topicModelRevision must be a positive PostgreSQL integer`,
+      );
+    }
+    return {
+      groupKey: group.groupKey,
+      topicNodeId: group.topicNodeId,
+      topicModelRevision: revision,
+    };
+  });
+  if (new Set(groups.map((group) => group.groupKey)).size !== groups.length) {
+    throw new RangeError("groups must not repeat a groupKey");
+  }
+  if (
+    new Set(groups.map((group) => group.topicModelRevision)).size > 1
+  ) {
+    throw new RangeError("groups must target one exact Topic Model revision");
+  }
+
+  const assignments = input.assignments.map((assignment, index) => {
+    assertExactPlainRecord(
+      assignment,
+      GENERATED_KEYWORD_ASSIGNMENT_KEYS,
+      `assignments[${index}]`,
+    );
+    assertGeneratedGroupKey(
+      assignment.groupKey,
+      `assignments[${index}].groupKey`,
+    );
+    assertUuid(assignment.keywordId, `assignments[${index}].keywordId`);
+    const revision = assignment.expectedGovernanceRevision;
+    if (
+      typeof revision !== "number" ||
+      !Number.isSafeInteger(revision) ||
+      revision < 0 ||
+      revision > MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
+    ) {
+      throw new RangeError(
+        `assignments[${index}].expectedGovernanceRevision is outside the incrementable range`,
+      );
+    }
+    return {
+      groupKey: assignment.groupKey,
+      keywordId: assignment.keywordId,
+      expectedGovernanceRevision: revision,
+      resolvedIntent: canonicalGeneratedResolvedIntent(
+        assignment.resolvedIntent,
+        `assignments[${index}].resolvedIntent`,
+      ),
+    };
+  });
+  if (
+    new Set(assignments.map((assignment) => assignment.keywordId)).size !==
+    assignments.length
+  ) {
+    throw new RangeError("assignments must not repeat a keywordId");
+  }
+  return { groups, assignments };
 }
 
 function activeProjectPredicate(scope: ProjectScope) {
@@ -852,6 +1144,64 @@ function exactReplay(
   );
 }
 
+const GENERATED_TOPIC_ASSIGNMENT_SKIPS = [
+  "unknown_group",
+  "topic_revision_moved",
+  "topic_node_absent",
+  "intent_unavailable",
+  "keyword_absent",
+  "human_decision_exists",
+  "revision_moved",
+  "revision_exhausted",
+  "ledger_unreadable",
+  "conflict",
+] as const satisfies readonly GeneratedTopicAssignmentSkip[];
+
+function skippedGeneratedAssignment(
+  input: GeneratedTopicKeywordAssignmentInput,
+  reason: GeneratedTopicAssignmentSkip,
+): GeneratedTopicAssignmentOutcome {
+  return {
+    groupKey: input.groupKey,
+    keywordId: input.keywordId,
+    applied: false,
+    skipped: reason,
+    governanceRevision: null,
+  };
+}
+
+function generatedAssignmentReport(
+  outcomes: readonly (GeneratedTopicAssignmentOutcome | undefined)[],
+): GeneratedTopicAssignmentReport {
+  if (outcomes.some((outcome) => outcome === undefined)) {
+    throw new KeywordGovernanceIntegrityError("SERVER_FACT_INVALID");
+  }
+  const complete = outcomes as readonly GeneratedTopicAssignmentOutcome[];
+  const skipped = Object.fromEntries(
+    GENERATED_TOPIC_ASSIGNMENT_SKIPS.map((reason) => [reason, 0]),
+  ) as Record<GeneratedTopicAssignmentSkip, number>;
+  let assignedCount = 0;
+  for (const outcome of complete) {
+    if (outcome.applied) {
+      assignedCount += 1;
+    } else if (outcome.skipped !== null) {
+      skipped[outcome.skipped] += 1;
+    }
+  }
+  return {
+    assignedCount,
+    skippedCount: complete.length - assignedCount,
+    skipped,
+    outcomes: complete,
+  };
+}
+
+interface ConfirmedGeneratedTopicRow {
+  readonly topic_node_id: string;
+  readonly topic_model_revision: number;
+  readonly label: string;
+}
+
 type TransactionalExecutor = Executor & {
   transaction?: <T>(
     run: (tx: DbTx) => Promise<T>,
@@ -925,13 +1275,12 @@ export class KeywordGovernanceRepository extends Repository {
         `refs must contain at most ${MAX_KEYWORD_DECISION_ORIGIN_BATCH} keywords`,
       );
     }
-    const seen = new Set<string>();
+    const requestedRevisionByKeywordId = new Map<string, number>();
     for (const ref of refs) {
       assertUuid(ref.keywordId, "keywordId");
-      if (seen.has(ref.keywordId)) {
+      if (requestedRevisionByKeywordId.has(ref.keywordId)) {
         throw new RangeError("refs must not repeat a keywordId");
       }
-      seen.add(ref.keywordId);
       if (
         !Number.isSafeInteger(ref.governanceRevision) ||
         ref.governanceRevision < 0 ||
@@ -941,13 +1290,18 @@ export class KeywordGovernanceRepository extends Repository {
           `governanceRevision must be between 0 and ${MAX_POSTGRES_INTEGER_REVISION}`,
         );
       }
+      requestedRevisionByKeywordId.set(
+        ref.keywordId,
+        ref.governanceRevision,
+      );
     }
 
     const result = await this.exec.execute<Record<string, unknown>>(sql`
       select
         ${keywordReviewDecisions.keyword_entity_id} as keyword_entity_id,
         ${keywordReviewDecisions.governance_revision} as governance_revision,
-        ${keywordReviewDecisions.decision_origin} as decision_origin
+        ${keywordReviewDecisions.decision_origin} as decision_origin,
+        ${keywordReviewDecisions.analysis_invocation_id} as analysis_invocation_id
       from ${keywordReviewDecisions}
       where ${keywordReviewDecisions.workspace_id} = ${scope.workspaceId}::uuid
         and ${keywordReviewDecisions.project_id} = ${scope.projectId}::uuid
@@ -971,13 +1325,20 @@ export class KeywordGovernanceRepository extends Repository {
       const keywordId = raw["keyword_entity_id"];
       const governanceRevision = raw["governance_revision"];
       const decisionOrigin = raw["decision_origin"];
+      const analysisInvocationId = raw["analysis_invocation_id"];
       if (
         typeof keywordId !== "string" ||
-        !seen.has(keywordId) ||
+        governanceRevision !==
+          requestedRevisionByKeywordId.get(keywordId) ||
         returned.has(keywordId) ||
         typeof governanceRevision !== "number" ||
         typeof decisionOrigin !== "string" ||
-        !DECISION_ORIGINS.has(decisionOrigin as never)
+        !DECISION_ORIGINS.has(decisionOrigin as never) ||
+        (analysisInvocationId !== null &&
+          (decisionOrigin !== "system_suggestion" ||
+            typeof analysisInvocationId !== "string" ||
+            analysisInvocationId.toLowerCase() !== analysisInvocationId ||
+            !UUID.test(analysisInvocationId)))
       ) {
         throw new KeywordGovernanceIntegrityError(
           "CURRENT_DECISION_DIVERGED",
@@ -988,6 +1349,7 @@ export class KeywordGovernanceRepository extends Repository {
         keywordId,
         governanceRevision,
         decisionOrigin: decisionOrigin as KeywordDecisionOrigin,
+        analysisInvocationId: analysisInvocationId as string | null,
       });
     }
     return rows;
@@ -1298,6 +1660,7 @@ export class KeywordGovernanceRepository extends Repository {
       mapped_site_page_id: input.mappedSitePageId,
       review_state: "confirmed",
       assignment_invalidated_by: null,
+      analysis_invocation_id: null,
       decided_by: actorId,
       reason: input.reason,
       decided_at: decidedAt,
@@ -1342,6 +1705,368 @@ export class KeywordGovernanceRepository extends Repository {
     return {
       ...stateFromRows(updatedKeyword, insertedDecision),
       replayed: false,
+    };
+  }
+
+  /**
+   * Internal sibling of `applySystemApprovals` for the first generated Topic
+   * Model. Prompt-local group keys resolve to exact repository-owned Topic
+   * identities, while every keyword keeps its own expected governance CAS.
+   * Human authority always wins and is never overwritten.
+   */
+  async applyGeneratedTopicAssignments(
+    scope: ProjectScope,
+    input: ApplyGeneratedTopicAssignmentsInput,
+  ): Promise<GeneratedTopicAssignmentReport> {
+    assertUuid(scope.workspaceId, "workspaceId");
+    assertUuid(scope.projectId, "projectId");
+    const canonical = canonicalGeneratedTopicAssignmentInput(input);
+    if (canonical.assignments.length === 0) {
+      return generatedAssignmentReport([]);
+    }
+
+    const groups = new Map(
+      canonical.groups.map((group) => [group.groupKey, group]),
+    );
+    const outcomes: Array<GeneratedTopicAssignmentOutcome | undefined> =
+      canonical.assignments.map((assignment) =>
+        groups.has(assignment.groupKey)
+          ? assignment.resolvedIntent === null
+            ? skippedGeneratedAssignment(
+                assignment,
+                "intent_unavailable",
+              )
+            : undefined
+          : skippedGeneratedAssignment(assignment, "unknown_group"),
+      );
+    if (outcomes.every((outcome) => outcome !== undefined)) {
+      return generatedAssignmentReport(outcomes);
+    }
+
+    const transactional = this.exec as TransactionalExecutor;
+    const run = (exec: Executor) =>
+      this.applyGeneratedTopicAssignmentsWithExecutor(
+        exec,
+        scope,
+        canonical,
+        outcomes,
+      );
+    if (typeof transactional.transaction === "function") {
+      return transactional.transaction((tx) => run(tx));
+    }
+    return run(this.exec);
+  }
+
+  private async applyGeneratedTopicAssignmentsWithExecutor(
+    exec: Executor,
+    scope: ProjectScope,
+    input: ApplyGeneratedTopicAssignmentsInput,
+    outcomes: Array<GeneratedTopicAssignmentOutcome | undefined>,
+  ): Promise<GeneratedTopicAssignmentReport> {
+    await acquireTopicGovernanceProjectWriterLock(exec, scope);
+    const expectedTopicRevision = input.groups[0]?.topicModelRevision ?? null;
+    const latestRows = await exec
+      .select({ revision: topicModelRevisions.revision })
+      .from(topicModelRevisions)
+      .where(
+        and(
+          projectPredicate(topicModelRevisions, scope),
+          eq(topicModelRevisions.status, "confirmed"),
+        ),
+      )
+      .orderBy(desc(topicModelRevisions.revision))
+      .limit(1)
+      .for("update");
+    const latestRevision = latestRows[0]?.revision ?? null;
+    if (
+      expectedTopicRevision === null ||
+      latestRevision !== expectedTopicRevision
+    ) {
+      input.assignments.forEach((assignment, index) => {
+        if (outcomes[index] === undefined) {
+          outcomes[index] = skippedGeneratedAssignment(
+            assignment,
+            "topic_revision_moved",
+          );
+        }
+      });
+      return generatedAssignmentReport(outcomes);
+    }
+
+    const candidateGroupKeys = new Set(
+      input.assignments.flatMap((assignment, index) =>
+        outcomes[index] === undefined ? [assignment.groupKey] : [],
+      ),
+    );
+    const candidateGroups = input.groups.filter((group) =>
+      candidateGroupKeys.has(group.groupKey),
+    );
+    const topicRows = (await exec
+      .select({
+        topic_node_id: topicNodeRevisions.topic_node_id,
+        topic_model_revision: topicNodeRevisions.topic_model_revision,
+        label: topicNodeRevisions.label,
+      })
+      .from(topicNodeRevisions)
+      .innerJoin(
+        topicModelRevisions,
+        and(
+          eq(
+            topicModelRevisions.workspace_id,
+            topicNodeRevisions.workspace_id,
+          ),
+          eq(
+            topicModelRevisions.project_id,
+            topicNodeRevisions.project_id,
+          ),
+          eq(
+            topicModelRevisions.revision,
+            topicNodeRevisions.topic_model_revision,
+          ),
+        ),
+      )
+      .where(
+        and(
+          projectPredicate(topicNodeRevisions, scope),
+          inArray(
+            topicNodeRevisions.topic_node_id,
+            candidateGroups.map((group) => group.topicNodeId),
+          ),
+          eq(
+            topicNodeRevisions.topic_model_revision,
+            expectedTopicRevision,
+          ),
+          eq(topicNodeRevisions.lifecycle_state, "active"),
+          projectPredicate(topicModelRevisions, scope),
+          eq(topicModelRevisions.revision, expectedTopicRevision),
+          eq(topicModelRevisions.status, "confirmed"),
+        ),
+      )) as ConfirmedGeneratedTopicRow[];
+    const topicById = new Map(
+      topicRows.map((row) => [row.topic_node_id, row]),
+    );
+    const topicByGroup = new Map<string, ConfirmedGeneratedTopicRow>();
+    for (const group of candidateGroups) {
+      const topic = topicById.get(group.topicNodeId);
+      if (topic?.topic_model_revision === group.topicModelRevision) {
+        topicByGroup.set(group.groupKey, topic);
+      }
+    }
+    input.assignments.forEach((assignment, index) => {
+      if (
+        outcomes[index] === undefined &&
+        !topicByGroup.has(assignment.groupKey)
+      ) {
+        outcomes[index] = skippedGeneratedAssignment(
+          assignment,
+          "topic_node_absent",
+        );
+      }
+    });
+
+    const writableAssignments = input.assignments.filter(
+      (_assignment, index) => outcomes[index] === undefined,
+    );
+    if (writableAssignments.length === 0) {
+      return generatedAssignmentReport(outcomes);
+    }
+    const humanRows = (await exec
+      .select({
+        keyword_entity_id: keywordReviewDecisions.keyword_entity_id,
+      })
+      .from(keywordReviewDecisions)
+      .where(
+        and(
+          projectPredicate(keywordReviewDecisions, scope),
+          eq(keywordReviewDecisions.decision_origin, "user"),
+          inArray(
+            keywordReviewDecisions.keyword_entity_id,
+            writableAssignments.map((assignment) => assignment.keywordId),
+          ),
+        ),
+      )) as { readonly keyword_entity_id: string }[];
+    const humanDecided = new Set(
+      humanRows.map((row) => row.keyword_entity_id),
+    );
+
+    for (const [index, assignment] of input.assignments.entries()) {
+      if (outcomes[index] !== undefined) continue;
+      outcomes[index] = await this.applyOneGeneratedTopicAssignment(
+        exec,
+        scope,
+        assignment,
+        assignment.resolvedIntent as GeneratedTopicResolvedIntent,
+        topicByGroup.get(assignment.groupKey)!,
+        humanDecided,
+      );
+    }
+    return generatedAssignmentReport(outcomes);
+  }
+
+  private async applyOneGeneratedTopicAssignment(
+    exec: Executor,
+    scope: ProjectScope,
+    input: GeneratedTopicKeywordAssignmentInput,
+    intent: GeneratedTopicResolvedIntent,
+    topic: ConfirmedGeneratedTopicRow,
+    humanDecided: ReadonlySet<string>,
+  ): Promise<GeneratedTopicAssignmentOutcome> {
+    if (humanDecided.has(input.keywordId)) {
+      return skippedGeneratedAssignment(
+        input,
+        "human_decision_exists",
+      );
+    }
+    const keyword = await this.findKeyword(
+      exec,
+      scope,
+      input.keywordId,
+      true,
+    );
+    if (!keyword) {
+      return skippedGeneratedAssignment(input, "keyword_absent");
+    }
+    if (keyword.mapping_revision !== input.expectedGovernanceRevision) {
+      return skippedGeneratedAssignment(input, "revision_moved");
+    }
+    if (
+      keyword.mapping_revision >=
+      MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
+    ) {
+      return skippedGeneratedAssignment(input, "revision_exhausted");
+    }
+    const current = await this.findLatestDecision(
+      exec,
+      scope,
+      input.keywordId,
+    );
+    if (!current) {
+      return skippedGeneratedAssignment(input, "ledger_unreadable");
+    }
+    if (current.decision_origin === "user") {
+      return skippedGeneratedAssignment(
+        input,
+        "human_decision_exists",
+      );
+    }
+    if (current.governance_revision !== input.expectedGovernanceRevision) {
+      return skippedGeneratedAssignment(input, "revision_moved");
+    }
+    if (
+      current.decision_origin === "migration_baseline" &&
+      current.review_state === "confirmed"
+    ) {
+      return skippedGeneratedAssignment(
+        input,
+        "human_decision_exists",
+      );
+    }
+    let currentState: CurrentKeywordGovernance;
+    try {
+      currentState = stateFromRows(keyword, current);
+    } catch (error) {
+      if (error instanceof KeywordGovernanceIntegrityError) {
+        return skippedGeneratedAssignment(input, "ledger_unreadable");
+      }
+      throw error;
+    }
+    const decisionId = this.clock.newId();
+    if (!UUID.test(decisionId)) {
+      throw new KeywordGovernanceIntegrityError("SERVER_FACT_INVALID");
+    }
+    const governanceRevision = input.expectedGovernanceRevision + 1;
+    const reviewedProjection: KeywordGovernanceReviewedProjection = {
+      projectId: scope.projectId,
+      keywordId: input.keywordId,
+      governanceRevision,
+      status: "approved",
+      intent: intent.value,
+      buyerStage: keyword.buyer_stage,
+      topicNodeId: topic.topic_node_id,
+      topicModelRevision: topic.topic_model_revision,
+      clusterKey: topic.label,
+      mappingDecision:
+        keyword.mapping_decision as KeywordReviewDecision["mappingDecision"],
+      mappedSitePageId: keyword.mapped_site_page_id,
+      mappingReviewState: "confirmed",
+      assignmentInvalidatedBy: null,
+      earlierHistoryAvailable:
+        currentState.reviewedProjection.earlierHistoryAvailable,
+    };
+    const updatedRows = await exec
+      .update(keywordEntities)
+      .set({
+        status: "approved",
+        intent: intent.value,
+        cluster_key: topic.label,
+        mapping_review_state: "confirmed",
+        mapping_revision: governanceRevision,
+        updated_at: sql`greatest(
+          clock_timestamp(),
+          ${keywordEntities.updated_at} + interval '1 microsecond'
+        )`,
+      })
+      .where(
+        and(
+          projectPredicate(keywordEntities, scope),
+          eq(keywordEntities.id, input.keywordId),
+          eq(
+            keywordEntities.mapping_revision,
+            input.expectedGovernanceRevision,
+          ),
+          sql`exists (
+            select 1
+            from ${clientProjects}
+            where ${clientProjects.id} = ${scope.projectId}
+              and ${clientProjects.workspace_id} = ${scope.workspaceId}
+              and ${clientProjects.archived_at} is null
+          )`,
+        ),
+      )
+      .returning({
+        mapping_revision: keywordEntities.mapping_revision,
+        updated_at: keywordEntities.updated_at,
+      });
+    const updated = updatedRows[0];
+    if (!updated) {
+      return skippedGeneratedAssignment(input, "conflict");
+    }
+    if (
+      updated.mapping_revision !== governanceRevision ||
+      !isTimestamptzInstant(updated.updated_at)
+    ) {
+      throw new KeywordGovernanceIntegrityError("CAS_UPDATE_FAILED");
+    }
+    const decidedAt = canonicalUtcTimestamptz(updated.updated_at);
+    await exec.insert(keywordReviewDecisions).values({
+      id: decisionId,
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      keyword_entity_id: input.keywordId,
+      governance_revision: governanceRevision,
+      decision_origin: "system_suggestion",
+      status: "approved",
+      intent: intent.value,
+      buyer_stage: keyword.buyer_stage,
+      topic_node_id: topic.topic_node_id,
+      topic_model_revision: topic.topic_model_revision,
+      cluster_key_at_decision: topic.label,
+      mapping_decision: keyword.mapping_decision,
+      mapped_site_page_id: keyword.mapped_site_page_id,
+      review_state: "confirmed",
+      assignment_invalidated_by: null,
+      analysis_invocation_id: intent.analysisInvocationId,
+      decided_by: null,
+      reason: GENERATED_TOPIC_ASSIGNMENT_REASON,
+      decided_at: decidedAt,
+      reviewed_projection: { ...reviewedProjection },
+    });
+    return {
+      groupKey: input.groupKey,
+      keywordId: input.keywordId,
+      applied: true,
+      skipped: null,
+      governanceRevision,
     };
   }
 
@@ -1627,6 +2352,7 @@ export class KeywordGovernanceRepository extends Repository {
       mapped_site_page_id: input.mappedSitePageId,
       review_state: "confirmed",
       assignment_invalidated_by: null,
+      analysis_invocation_id: null,
       // An automated decision has no human decision maker. Migration 0032
       // relaxed the actor CHECK exactly so this can stay honestly NULL.
       decided_by: null,

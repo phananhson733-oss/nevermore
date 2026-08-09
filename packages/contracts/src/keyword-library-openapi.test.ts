@@ -41,6 +41,12 @@ type KeywordDetailHttpResponse =
 type KeywordReviewRequest =
   KeywordReviewOperation["requestBody"]["content"]["application/json"];
 type KeywordItem = components["schemas"]["GrowthMapKeywordLibraryItem"];
+type KeywordSearchIntent =
+  components["schemas"]["GrowthMapKeywordSearchIntent"];
+type KeywordClusterRef =
+  components["schemas"]["GrowthMapKeywordClusterRef"];
+type KeywordRecollection =
+  components["schemas"]["GrowthMapKeywordRecollection"];
 type KeywordSourceOccurrence =
   components["schemas"]["GrowthMapKeywordSourceOccurrence"];
 type KeywordMappedTarget =
@@ -87,6 +93,77 @@ type _DetailMatchesRuntimeContract = Expect<
 type _KeywordItemIsClosed = Expect<
   Equal<string extends keyof KeywordItem ? true : false, false>
 >;
+type _KeywordItemFields = Expect<
+  Equal<
+    keyof KeywordItem,
+    | "projectId"
+    | "keywordId"
+    | "displayKeyword"
+    | "normalizedKeyword"
+    | "marketCode"
+    | "languageTag"
+    | "queryKind"
+    | "status"
+    | "reviewOrigin"
+    | "revision"
+    | "intent"
+    | "searchIntent"
+    | "buyerStage"
+    | "cluster"
+    | "classificationLimitations"
+    | "mappedTarget"
+    | "sourceOccurrences"
+    | "metrics"
+    | "recollection"
+    | "coverage"
+  >
+>;
+type _KeywordIntentRemainsBackwardCompatible = Expect<
+  Equal<KeywordItem["intent"], string | null>
+>;
+type _KeywordClusterRefUsesExactTopicRevision = Expect<
+  Equal<keyof KeywordClusterRef, "clusterId" | "topicModelRevision" | "name">
+>;
+type _KeywordRecollectionReasonIsClosed = Expect<
+  Equal<
+    KeywordRecollection["reason"],
+    "historical_dataforseo_observation_missing_fields"
+  >
+>;
+type _KeywordRecollectionFieldsAreClosed = Expect<
+  Equal<
+    KeywordRecollection["fields"][number],
+    "keyword_difficulty" | "provider_search_intent"
+  >
+>;
+type _KeywordSearchIntentIsClosed = Expect<
+  Equal<string extends keyof KeywordSearchIntent ? true : false, false>
+>;
+type _KeywordSearchIntentFields = Expect<
+  Equal<
+    keyof KeywordSearchIntent,
+    | "value"
+    | "authority"
+    | "snapshotId"
+    | "observationId"
+    | "analysisInvocationId"
+    | "observedAt"
+    | "limitation"
+  >
+>;
+type _KeywordSearchIntentValue = Expect<
+  Equal<KeywordSearchIntent["value"], string | null>
+>;
+type _KeywordSearchIntentAuthority = Expect<
+  Equal<
+    KeywordSearchIntent["authority"],
+    | "user_confirmed"
+    | "governed_legacy"
+    | "provider_observed"
+    | "llm_generated"
+    | "unavailable"
+  >
+>;
 type _KeywordSourceOccurrenceIsClosed = Expect<
   Equal<string extends keyof KeywordSourceOccurrence ? true : false, false>
 >;
@@ -94,7 +171,10 @@ type _KeywordMappedTargetIsClosed = Expect<
   Equal<string extends keyof KeywordMappedTarget ? true : false, false>
 >;
 type _KeywordPageFields = Expect<
-  Equal<keyof KeywordPage, "projectId" | "data" | "meta">
+  Equal<keyof KeywordPage, "projectId" | "diagnosticRunId" | "data" | "meta">
+>;
+type _KeywordPageRunIdentity = Expect<
+  Equal<KeywordPage["diagnosticRunId"], string | null>
 >;
 type _KeywordPageRequiredFields = Expect<
   Equal<RequiredKeys<KeywordPage>, keyof KeywordPage>
@@ -217,6 +297,13 @@ const openapi = readFileSync(
   new URL("../../../openapi/mvp.yaml", import.meta.url),
   "utf8",
 );
+const implementationSpec = readFileSync(
+  new URL(
+    "../../../authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("Keyword Library generated OpenAPI contract", () => {
   it("publishes the implemented cursor read, detail read, and governed review", () => {
@@ -234,6 +321,9 @@ describe("Keyword Library generated OpenAPI contract", () => {
     );
     expect(generated).toContain(
       'patch: operations["reviewProjectAuditKeyword"];',
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordLibraryResponse:\s*\n\s*type: object[\s\S]*?required: \[projectId, diagnosticRunId, data, meta\][\s\S]*?diagnosticRunId: \{ type: \[string, 'null'\], format: uuid \}[\s\S]*?x-signalframe-runtime-refinement: keywordPageScopeRunIdentityAndItemUniqueness/u,
     );
   });
 
@@ -282,6 +372,50 @@ describe("Keyword Library generated OpenAPI contract", () => {
     ]) {
       expect(generated).toContain(`valuePointer: "${pointer}";`);
     }
+  });
+
+  it("publishes a separate, required provenance-bearing search intent without widening intent", () => {
+    const searchIntentSchema = openapi.slice(
+      openapi.indexOf("    GrowthMapKeywordSearchIntent:"),
+      openapi.indexOf("    GrowthMapKeywordClassificationLimitations:"),
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordSearchIntent:\s*\n\s*type: object[\s\S]*?authority:\s*\n\s*type: string\s*\n\s*enum: \[user_confirmed, governed_legacy, provider_observed, llm_generated, unavailable\][\s\S]*?analysisInvocationId:[\s\S]*?GrowthMapKeywordClassificationLimitations:/u,
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordLibraryItem:[\s\S]*?required: \[[^\]]*intent, searchIntent, buyerStage[^\]]*\][\s\S]*?intent: \{ type: \[string, 'null'\], minLength: 1, maxLength: 500 \}\s*\n\s*searchIntent: \{ \$ref: '#\/components\/schemas\/GrowthMapKeywordSearchIntent' \}/u,
+    );
+    for (const title of [
+      "Provider-observed search intent",
+      "LLM-generated search intent",
+    ]) {
+      expect(openapi).toMatch(
+        new RegExp(
+          `title: ${title}[\\s\\S]*?value: \\{ type: string, enum: \\[informational, navigational, commercial, transactional\\] \\}`,
+          "u",
+        ),
+      );
+    }
+    expect(generated).toContain(
+      "searchIntent: components[\"schemas\"][\"GrowthMapKeywordSearchIntent\"];",
+    );
+    expect(generated).toContain(
+      "authority: \"user_confirmed\" | \"governed_legacy\" | \"provider_observed\" | \"llm_generated\" | \"unavailable\";",
+    );
+    expect(openapi).toContain(
+      "reviewOrigin may be migration_baseline, system_suggestion, or null for pre-ledger provenance.",
+    );
+    expect(implementationSpec).toMatch(
+      /`reviewOrigin` 可为\s+`migration_baseline`、`system_suggestion` 或 `null`/u,
+    );
+    expect(
+      searchIntentSchema.match(
+        /pattern: '\^\\S\(\?:\[\\s\\S\]\*\\S\)\?\$'/gu,
+      ),
+    ).toHaveLength(2);
+    expect(searchIntentSchema).toContain(
+      "Boundary whitespace is rejected without trimming or coercion.",
+    );
   });
 
   it("keeps Keyword CAS input incrementable inside PostgreSQL integer storage", () => {

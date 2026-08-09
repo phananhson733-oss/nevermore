@@ -60,6 +60,8 @@ function ranked(
       {
         keyword: "onboarding automation",
         searchVolume: 300,
+        keywordDifficulty: null,
+        providerSearchIntent: null,
         currentUrl: "https://example.com/features",
         currentRank: 8,
       },

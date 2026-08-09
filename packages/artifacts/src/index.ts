@@ -53,6 +53,35 @@ export type {
   ProductProfileSynthesisPreflight,
   ProductProfileSynthesisResult,
 } from "./llm/product-profile-client.ts";
+export {
+  OpenAITopicModelClient,
+  createOpenAITopicModelClient,
+  prepareTopicModelGeneration,
+  TOPIC_MODEL_PROMPT_SET_VERSION,
+  MAX_TOPIC_MODEL_CHILDREN,
+  MAX_TOPIC_MODEL_DESCRIPTION_CHARS,
+  MAX_TOPIC_MODEL_GROUPS,
+  MAX_TOPIC_MODEL_LABEL_CHARS,
+  MAX_TOPIC_MODEL_REPRESENTATIVE_KEYWORDS,
+  MAX_TOPIC_MODEL_RESPONSE_CHARS,
+  MAX_TOPIC_MODEL_URLS_PER_GROUP,
+} from "./llm/topic-model-client.ts";
+export type {
+  TopicModelCanonicalGroup,
+  TopicModelChildIntent,
+  TopicModelClientOptions,
+  TopicModelGenerationClient,
+  TopicModelGenerationInput,
+  TopicModelGenerationPreflight,
+  TopicModelGenerationResult,
+  TopicModelGroupAssignment,
+  TopicModelIcpFacts,
+  TopicModelProductProfileFacts,
+  TopicModelProviderIntentDistribution,
+  TopicModelRootIntent,
+  TopicModelSearchIntent,
+  TopicModelTransport,
+} from "./llm/topic-model-client.ts";
 export { buildProductProfileDraft } from "./product-profile-draft.ts";
 export type { BuildProductProfileDraftInput } from "./product-profile-draft.ts";
 export { discoverProductProfileCompetitors } from "./product-profile-competitor-discovery.ts";

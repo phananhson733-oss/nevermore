@@ -83,6 +83,46 @@ const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 
 const EXPECTED_OPENAPI_OPERATIONS = ACTIVE_LOCK.apiOperations;
 const EXPECTED_ASYNC_OPERATIONS = ACTIVE_LOCK.asyncOperations;
+const EXPECTED_MIGRATION_HEAD = "0048_topic_model_generation";
+
+const ANALYSIS_REFRESH_PLAN_CONTRACTS = [
+  {
+    version: "analysis-refresh.plan.v1",
+    hash: "d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af",
+    steps: [
+      { ordinal: 1, stepKey: "crawl", required: true },
+      { ordinal: 2, stepKey: "gsc", required: false },
+      { ordinal: 3, stepKey: "ga4", required: false },
+      { ordinal: 4, stepKey: "dataforseo", required: false },
+      { ordinal: 5, stepKey: "growth_audit", required: true },
+    ],
+  },
+  {
+    version: "analysis-refresh.plan.v2",
+    hash: "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65",
+    steps: [
+      { ordinal: 1, stepKey: "crawl", required: true },
+      { ordinal: 2, stepKey: "gsc", required: false },
+      { ordinal: 3, stepKey: "ga4", required: false },
+      { ordinal: 4, stepKey: "dataforseo", required: false },
+      { ordinal: 5, stepKey: "dataforseo_backlinks", required: false },
+      { ordinal: 6, stepKey: "growth_audit", required: true },
+    ],
+  },
+  {
+    version: "analysis-refresh.plan.v3",
+    hash: "fc527bb7203d61ce126625a0b2bb4bffb59fe5999d9f6b78e5aa05409918368b",
+    steps: [
+      { ordinal: 1, stepKey: "crawl", required: true },
+      { ordinal: 2, stepKey: "gsc", required: false },
+      { ordinal: 3, stepKey: "ga4", required: false },
+      { ordinal: 4, stepKey: "dataforseo", required: false },
+      { ordinal: 5, stepKey: "dataforseo_backlinks", required: false },
+      { ordinal: 6, stepKey: "topic_model", required: false },
+      { ordinal: 7, stepKey: "growth_audit", required: true },
+    ],
+  },
+];
 
 const EXPECTED_ASYNC_ROUTE_IMPLEMENTATIONS = [
   {
@@ -214,6 +254,38 @@ function assertExactOrder(actual, expected, label) {
   invariant(
     actual.every((value, index) => value === expected[index]),
     `${label} order drift (expected ${expected.join(" -> ")}; got ${actual.join(" -> ")})`,
+  );
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeWhitespace(value) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s*([(),=])\s*/g, "$1")
+    .trim();
+}
+
+function analysisRefreshPlanSql({ version, hash, steps }) {
+  const sqlSteps = steps
+    .map(
+      ({ ordinal, stepKey, required }) =>
+        `jsonb_build_object('ordinal', ${ordinal}, 'stepKey', '${stepKey}', 'required', ${String(required)})`,
+    )
+    .join(", ");
+  return normalizeWhitespace(
+    `plan_manifest = jsonb_build_object('version', '${version}', 'steps', jsonb_build_array(${sqlSteps})) AND plan_hash = '${hash}'`,
   );
 }
 
@@ -414,8 +486,9 @@ function checkOpenApi() {
     analysisRefreshRequest?.type === "object" &&
       analysisRefreshRequest.additionalProperties === false &&
       analysisRefreshRequest.maxProperties === 0 &&
-      Object.keys(analysisRefreshRequest.properties ?? {}).length === 0,
-    "Analysis Refresh request must remain a strict empty object",
+      Object.keys(analysisRefreshRequest.properties ?? {}).length === 0 &&
+      /Analysis Refresh v3/.test(analysisRefreshRequest.description ?? ""),
+    "Analysis Refresh request must remain a strict empty v3 command",
   );
   invariant(
     analysisRefresh?.requestBody?.required === false &&
@@ -425,8 +498,63 @@ function checkOpenApi() {
       typeof analysisRefresh.description === "string" &&
       /DataForSEO Search\s+Landscape \(DFS\)/.test(
         analysisRefresh.description,
+      ) &&
+      /analysis-refresh\.plan\.v3/.test(analysisRefresh.description) &&
+      /internal Topic Model generation/.test(analysisRefresh.description) &&
+      /analysis-refresh\.plan\.v1/.test(analysisRefresh.description) &&
+      /analysis-refresh\.plan\.v2/.test(analysisRefresh.description) &&
+      /no\s+raw provider\/model options or reservation API/.test(
+        analysisRefresh.description,
       ),
-    "Analysis Refresh must own the fixed DFS Search Landscape step",
+    "Analysis Refresh must own the fixed v3 DFS/Backlinks/Topic/Growth Audit plan while retaining exact v1/v2 readability and no public model options",
+  );
+  invariant(
+    !Object.keys(document.paths ?? {}).some((pathName) =>
+      /topic-model-generation|invocation-attempt|reservation/i.test(pathName),
+    ),
+    "Topic generation child reservation and provider options must remain internal with no public path",
+  );
+
+  const runKind = document.components?.schemas?.RunKind;
+  assertExactSet(
+    runKind?.enum ?? [],
+    [
+      "collection",
+      "product_profile_synthesis",
+      "diagnostic",
+      "artifact_generation",
+      "export",
+      "content_shadow",
+      "publication",
+      "measurement",
+      "analysis_refresh",
+      "topic_model_generation",
+    ],
+    "shared AsyncRun kinds",
+  );
+  invariant(
+    /internal Analysis Refresh child kind/.test(runKind?.description ?? ""),
+    "topic_model_generation must remain documented as an internal child kind",
+  );
+  const asyncRunResultTypes =
+    document.components?.schemas?.AsyncRun?.properties?.resultRef?.properties
+      ?.type?.enum;
+  assertExactSet(
+    asyncRunResultTypes ?? [],
+    [
+      "collection_run",
+      "product_profile_run",
+      "icp_profile",
+      "diagnostic_run",
+      "artifact",
+      "export",
+      "flow_shadow_run",
+      "publication_attempt",
+      "measurement_window",
+      "analysis_refresh_run",
+      "topic_model_generation_run",
+    ],
+    "shared AsyncRun result resource types",
   );
 
   const diagnosticRunIdPin =
@@ -757,6 +885,8 @@ function checkOpenApi() {
     "GrowthMapKeywordMetricLimitations",
     "GrowthMapKeywordMetrics",
     "GrowthMapKeywordClusterRef",
+    "GrowthMapKeywordRecollection",
+    "GrowthMapKeywordSearchIntent",
     "GrowthMapKeywordClassificationLimitations",
     "GrowthMapKeywordLibraryItem",
     "GrowthMapKeywordLibraryPageMeta",
@@ -787,12 +917,14 @@ function checkOpenApi() {
       "reviewOrigin",
       "revision",
       "intent",
+      "searchIntent",
       "buyerStage",
       "cluster",
       "classificationLimitations",
       "mappedTarget",
       "sourceOccurrences",
       "metrics",
+      "recollection",
       "coverage",
     ],
     "Growth Map Keyword item fields",
@@ -801,6 +933,132 @@ function checkOpenApi() {
     keywordItem?.required ?? [],
     Object.keys(keywordItem?.properties ?? {}),
     "Growth Map Keyword item required fields",
+  );
+  const keywordSearchIntent = keywordSchemas.GrowthMapKeywordSearchIntent;
+  const keywordRecollection = keywordSchemas.GrowthMapKeywordRecollection;
+  assertExactSet(
+    Object.keys(keywordRecollection?.properties ?? {}),
+    ["reason", "fields"],
+    "Growth Map Keyword recollection fields",
+  );
+  assertExactSet(
+    keywordRecollection?.required ?? [],
+    ["reason", "fields"],
+    "Growth Map Keyword recollection required fields",
+  );
+  const recollectionFields = keywordRecollection?.properties?.fields;
+  const recollectionBranches =
+    keywordItem?.properties?.recollection?.oneOf ?? [];
+  invariant(
+    keywordRecollection?.properties?.reason?.const ===
+      "historical_dataforseo_observation_missing_fields" &&
+      recollectionFields?.type === "array" &&
+      recollectionFields.minItems === 1 &&
+      recollectionFields.maxItems === 2 &&
+      recollectionFields.uniqueItems === true &&
+      recollectionFields.items?.type === "string" &&
+      recollectionFields.items?.enum?.length === 2 &&
+      recollectionFields.items.enum.includes("keyword_difficulty") &&
+      recollectionFields.items.enum.includes("provider_search_intent") &&
+      recollectionBranches.length === 2 &&
+      recollectionBranches.some(
+        (branch) =>
+          branch.$ref ===
+          "#/components/schemas/GrowthMapKeywordRecollection",
+      ) &&
+      recollectionBranches.some((branch) => branch.type === "null"),
+    "Growth Map Keyword recollection must remain closed, bounded, exact, and nullable",
+  );
+  const searchIntentFields = [
+    "value",
+    "authority",
+    "snapshotId",
+    "observationId",
+    "analysisInvocationId",
+    "observedAt",
+    "limitation",
+  ];
+  const searchIntentAuthorities = [
+    "user_confirmed",
+    "governed_legacy",
+    "provider_observed",
+    "llm_generated",
+    "unavailable",
+  ];
+  assertExactSet(
+    Object.keys(keywordSearchIntent?.properties ?? {}),
+    searchIntentFields,
+    "Growth Map Keyword search intent fields",
+  );
+  assertExactSet(
+    keywordSearchIntent?.required ?? [],
+    searchIntentFields,
+    "Growth Map Keyword search intent required fields",
+  );
+  assertExactSet(
+    keywordSearchIntent?.properties?.authority?.enum ?? [],
+    searchIntentAuthorities,
+    "Growth Map Keyword search intent authorities",
+  );
+  assertExactSet(
+    keywordSearchIntent?.properties?.value?.type ?? [],
+    ["string", "null"],
+    "Growth Map Keyword search intent value types",
+  );
+  invariant(
+    keywordSearchIntent?.properties?.value?.minLength === 1 &&
+      keywordSearchIntent.properties.value.maxLength === 500 &&
+      keywordSearchIntent.properties.value.pattern ===
+        "^\\S(?:[\\s\\S]*\\S)?$",
+    "Growth Map Keyword search intent value must remain a bounded backward-readable string",
+  );
+  assertExactSet(
+    keywordSearchIntent?.properties?.limitation?.type ?? [],
+    ["string", "null"],
+    "Growth Map Keyword search intent limitation types",
+  );
+  invariant(
+    keywordSearchIntent?.properties?.limitation?.minLength === 1 &&
+      keywordSearchIntent.properties.limitation.maxLength === 2000 &&
+      keywordSearchIntent.properties.limitation.pattern ===
+        "^\\S(?:[\\s\\S]*\\S)?$",
+    "Growth Map Keyword search intent limitation must remain exact and bounded",
+  );
+  const searchIntentBranches = new Map(
+    (keywordSearchIntent?.oneOf ?? []).map((branch) => [
+      branch.properties?.authority?.const,
+      branch,
+    ]),
+  );
+  assertExactSet(
+    [...searchIntentBranches.keys()],
+    searchIntentAuthorities,
+    "Growth Map Keyword search intent authority branches",
+  );
+  const canonicalGeneratedIntents = [
+    "informational",
+    "navigational",
+    "commercial",
+    "transactional",
+  ];
+  for (const authority of ["provider_observed", "llm_generated"]) {
+    assertExactSet(
+      searchIntentBranches.get(authority)?.properties?.value?.enum ?? [],
+      canonicalGeneratedIntents,
+      `Growth Map Keyword ${authority} values`,
+    );
+  }
+  invariant(
+    keywordSearchIntent?.["x-signalframe-runtime-refinement"] ===
+      "searchIntentAuthorityLineage" &&
+      /successful topic_model_generation AnalysisInvocation/.test(
+        keywordSearchIntent.description ?? "",
+      ) &&
+      keywordItem?.properties?.searchIntent?.$ref ===
+        "#/components/schemas/GrowthMapKeywordSearchIntent" &&
+      keywordItem?.["x-signalframe-runtime-refinement"] ===
+        "normalizedKeywordIdentityExactSourceSearchIntentAndRecollectionLineage",
+    "Growth Map Keyword search intent must retain authority, item, and exact-lineage runtime refinements",
   );
   invariant(
     keywordItem?.properties?.sourceOccurrences?.minItems === 1 &&
@@ -862,13 +1120,24 @@ function checkOpenApi() {
   const keywordPageMeta = keywordSchemas.GrowthMapKeywordLibraryPageMeta;
   assertExactSet(
     Object.keys(keywordPage?.properties ?? {}),
-    ["projectId", "data", "meta"],
+    ["projectId", "diagnosticRunId", "data", "meta"],
     "Growth Map Keyword cursor page fields",
   );
   assertExactSet(
     keywordPage?.required ?? [],
     Object.keys(keywordPage?.properties ?? {}),
     "Growth Map Keyword cursor page required fields",
+  );
+  assertExactSet(
+    keywordPage?.properties?.diagnosticRunId?.type ?? [],
+    ["string", "null"],
+    "Growth Map Keyword cursor page diagnostic run identity types",
+  );
+  invariant(
+    keywordPage?.properties?.diagnosticRunId?.format === "uuid" &&
+      keywordPage?.["x-signalframe-runtime-refinement"] ===
+        "keywordPageScopeRunIdentityAndItemUniqueness",
+    "Growth Map Keyword cursor page must identify the exact frozen run and keep live reads null",
   );
   assertExactSet(
     Object.keys(keywordPageMeta?.properties ?? {}),
@@ -1439,6 +1708,30 @@ function checkOpenApi() {
       asyncData.properties.statusUrl.pattern.includes("/runs/"),
     "AsyncAcceptedResponse.statusUrl must point to the canonical run endpoint",
   );
+  assertExactSet(
+    asyncData?.properties?.resourceRef?.properties?.type?.enum ?? [],
+    [
+      "collection_run",
+      "product_profile_run",
+      "icp_profile",
+      "diagnostic_run",
+      "artifact",
+      "export",
+      "audit_run",
+      "flow_shadow_run",
+      "analysis_refresh_run",
+      "topic_model_generation_run",
+    ],
+    "shared AsyncAccepted resource types",
+  );
+  invariant(
+    !Object.keys(document.components?.schemas ?? {}).some((schemaName) =>
+      /TopicModelGeneration(?:Reservation|InvocationAttempt|ProviderOptions)/.test(
+        schemaName,
+      ),
+    ),
+    "OpenAPI must not expose Topic generation reservation, attempt, or provider-option internals",
+  );
 
   const readableBundleSchemaVersions =
     document.components?.schemas?.ExportBundle?.properties?.schemaVersion?.enum;
@@ -1956,6 +2249,16 @@ function stripSqlComments(sql) {
     .replace(/--[^\n\r]*/g, "");
 }
 
+function sourceStringArray(source, name) {
+  const block = new RegExp(
+    `const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\]\\s+as\\s+const;`,
+  ).exec(source)?.[1];
+  invariant(block !== undefined, `${name} inventory is missing`);
+  return [...block.matchAll(/^\s*"([^"]+)",?\s*$/gm)].map(
+    (match) => match[1],
+  );
+}
+
 function checkDatabaseContract() {
   const migrationsDirectory = fromRoot("packages/db/migrations");
   const migrationFiles = readdirSync(migrationsDirectory)
@@ -1969,6 +2272,37 @@ function checkDatabaseContract() {
     name: fileName,
     sql: read(`packages/db/migrations/${fileName}`),
   }));
+  invariant(
+    ACTIVE_LOCK.migrationHead === EXPECTED_MIGRATION_HEAD,
+    `active lock migration head must be ${EXPECTED_MIGRATION_HEAD}`,
+  );
+  invariant(
+    migrationFiles.length === 48 &&
+      migrationFiles.at(-1) === `${EXPECTED_MIGRATION_HEAD}.sql`,
+    `ordered migrations must contain exactly 48 files through ${EXPECTED_MIGRATION_HEAD}.sql`,
+  );
+  const topicModelGenerationMigration = migrationSources.find(
+    ({ name }) => name === `${EXPECTED_MIGRATION_HEAD}.sql`,
+  )?.sql;
+  invariant(
+    typeof topicModelGenerationMigration === "string",
+    "Topic Model generation migration source is missing",
+  );
+  const authoritySchema = read(
+    "authority/implementation-spec-v0.4/schema.sql",
+  );
+  const topicMigrationBegin =
+    "-- BEGIN EXACT ORDERED MIGRATION 0048_topic_model_generation.sql";
+  const topicMigrationEnd =
+    "-- END EXACT ORDERED MIGRATION 0048_topic_model_generation.sql";
+  invariant(
+    authoritySchema.split(topicMigrationBegin).length === 2 &&
+      authoritySchema.split(topicMigrationEnd).length === 2 &&
+      authoritySchema.includes(
+        `${topicMigrationBegin}\n${topicModelGenerationMigration.trimEnd()}\n${topicMigrationEnd}`,
+      ),
+    "authority schema must contain migration 0047 verbatim and exactly once",
+  );
   const migration = stripSqlComments(
     migrationSources.map(({ sql }) => sql).join("\n"),
   );
@@ -2030,6 +2364,280 @@ function checkDatabaseContract() {
       ),
     "analysis_refresh_steps must freeze unique ordered step identity and the complete execution state vocabulary",
   );
+
+  const topicMigration = stripSqlComments(topicModelGenerationMigration);
+  const constraintLiterals = (constraintName) => {
+    const body = new RegExp(
+      `ADD\\s+CONSTRAINT\\s+${constraintName}\\s+CHECK\\s*\\([\\s\\S]*?IN\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*;`,
+      "i",
+    ).exec(topicMigration)?.[1];
+    invariant(body !== undefined, `${constraintName} is missing from migration 0047`);
+    return [...body.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  };
+  assertExactSet(
+    constraintLiterals("async_runs_kind_check"),
+    [
+      "collection",
+      "diagnostic",
+      "artifact_generation",
+      "export",
+      "product_profile_synthesis",
+      "content_shadow",
+      "publication",
+      "measurement",
+      "analysis_refresh",
+      "topic_model_generation",
+    ],
+    "database async run kinds",
+  );
+  assertExactSet(
+    constraintLiterals("async_runs_result_type_check"),
+    [
+      "collection_run",
+      "diagnostic_run",
+      "artifact",
+      "export",
+      "icp_profile",
+      "flow_shadow_run",
+      "publication_attempt",
+      "measurement_window",
+      "analysis_refresh_run",
+      "topic_model_generation_run",
+    ],
+    "database async result resource types",
+  );
+  assertExactSet(
+    constraintLiterals("analysis_invocations_task_check"),
+    [
+      "finding_summary",
+      "artifact_generation",
+      "product_profile_synthesis",
+      "content_shadow_draft",
+      "topic_model_generation",
+    ],
+    "AnalysisInvocation tasks",
+  );
+
+  const topicGenerationRuns = tableDefinition("topic_model_generation_runs");
+  invariant(
+    /id\s+uuid\s+PRIMARY KEY\s+REFERENCES\s+app\.async_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+      topicGenerationRuns,
+    ) &&
+      /analysis_refresh_run_id\s+uuid\s+NOT NULL[\s\S]*?REFERENCES\s+app\.analysis_refresh_runs\(id\)\s+ON DELETE RESTRICT/i.test(
+        topicGenerationRuns,
+      ) &&
+      /input_manifest\s+jsonb\s+NOT NULL[\s\S]*?octet_length\(input_manifest::text\)\s*<=\s*262144[\s\S]*?topic-model-generation-input\.v1/i.test(
+        topicGenerationRuns,
+      ) &&
+      /input_hash\s+text\s+NOT NULL[\s\S]*?\^\[a-f0-9\]\{64\}\$/i.test(
+        topicGenerationRuns,
+      ) &&
+      /UNIQUE\s*\(analysis_refresh_run_id\)/i.test(topicGenerationRuns),
+    "Topic generation resource ledger must share AsyncRun identity and freeze one bounded parent-scoped input manifest/hash",
+  );
+  const topicInvocationAttempts = tableDefinition(
+    "topic_model_generation_invocation_attempts",
+  );
+  invariant(
+    /ordinal\s+smallint\s+NOT NULL\s+CHECK\s*\(ordinal\s+BETWEEN\s+1\s+AND\s+3\)/i.test(
+      topicInvocationAttempts,
+    ) &&
+      /async_attempt_count\s+integer\s+NOT NULL\s+CHECK\s*\(async_attempt_count\s*>=\s*1\)/i.test(
+        topicInvocationAttempts,
+      ) &&
+      /status\s+text\s+NOT NULL\s+DEFAULT\s+'reserved'[\s\S]*?'succeeded'[\s\S]*?'failed'[\s\S]*?'rejected'[\s\S]*?'outcome_unknown'/i.test(
+        topicInvocationAttempts,
+      ) &&
+      /UNIQUE\s*\(topic_model_generation_run_id,\s*ordinal\)/i.test(
+        topicInvocationAttempts,
+      ) &&
+      /UNIQUE\s*\(topic_model_generation_run_id,\s*async_attempt_count\)/i.test(
+        topicInvocationAttempts,
+      ),
+    "Topic invocation ledger must bound budget and fence every reservation to one exact AsyncRun attempt",
+  );
+  invariant(
+    !/raw_prompt|raw_output|raw_response|prompt_text|response_text/i.test(
+      topicModelGenerationMigration,
+    ),
+    "Topic migration must store hashes and bounded metadata, never raw prompt/provider/model output",
+  );
+  invariant(
+    /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+analysis_invocation_id\s+uuid/i.test(
+      topicMigration,
+    ) &&
+      /keyword_review_decisions_analysis_invocation_shape_check[\s\S]*?decision_origin\s*=\s*'system_suggestion'[\s\S]*?status\s*=\s*'approved'[\s\S]*?decided_by\s+IS\s+NULL/i.test(
+        topicMigration,
+      ) &&
+      /generated Keyword intent lacks matching successful Topic invocation/i.test(
+        topicModelGenerationMigration,
+      ),
+    "generated Keyword intent must carry only exact successful Topic invocation lineage",
+  );
+  invariant(
+    /actorless Topic Model confirmation lacks successful generation lineage/i.test(
+      topicModelGenerationMigration,
+    ) &&
+      /manual Topic Model confirmation requires a human actor/i.test(
+        topicModelGenerationMigration,
+      ) &&
+      /attempt\.status\s*=\s*'succeeded'[\s\S]*?invocation\.status\s*=\s*'succeeded'/i.test(
+        topicMigration,
+      ),
+    "actorless system confirmation must require the exact successful invocation and reservation lineage",
+  );
+
+  const planConstraintStart = topicMigration.indexOf(
+    "ADD CONSTRAINT analysis_refresh_runs_plan_contract_check CHECK",
+  );
+  const planConstraintEnd = topicMigration.indexOf(
+    ") NOT VALID;",
+    planConstraintStart,
+  );
+  invariant(
+    planConstraintStart >= 0 && planConstraintEnd > planConstraintStart,
+    "Analysis Refresh exact manifest/hash constraint is missing",
+  );
+  const planConstraint = normalizeWhitespace(
+    topicMigration.slice(planConstraintStart, planConstraintEnd),
+  );
+  invariant(
+    (planConstraint.match(/plan_manifest=/g) ?? []).length === 3 &&
+      (planConstraint.match(/plan_hash=/g) ?? []).length === 3,
+    "Analysis Refresh plan constraint must accept exactly v1, v2, and v3 branches",
+  );
+  for (const contract of ANALYSIS_REFRESH_PLAN_CONTRACTS) {
+    const calculatedHash = createHash("sha256")
+      .update(
+        canonicalJson({ version: contract.version, steps: contract.steps }),
+      )
+      .digest("hex");
+    invariant(
+      calculatedHash === contract.hash,
+      `${contract.version} frozen manifest hash drift`,
+    );
+    invariant(
+      planConstraint.includes(analysisRefreshPlanSql(contract)),
+      `${contract.version} exact manifest/hash branch is missing or shape-drifted`,
+    );
+    invariant(
+      (topicModelGenerationMigration.match(new RegExp(contract.hash, "g")) ?? [])
+        .length === 1,
+      `${contract.version} hash must occur exactly once in migration 0047`,
+    );
+  }
+
+  const topicIndexes = [
+    "topic_model_generation_runs_project_created_idx",
+    "topic_model_generation_runs_result_revision_idx",
+    "topic_model_generation_invocation_attempts_project_idx",
+    "topic_model_generation_invocation_attempts_unresolved_idx",
+  ];
+  const topicTriggers = [
+    "topic_model_generation_runs_provenance_guard",
+    "topic_model_generation_runs_frozen_input_guard",
+    "async_runs_topic_model_generation_result_guard",
+    "topic_model_generation_invocation_attempts_transition_guard",
+    "keyword_review_decisions_analysis_invocation_guard",
+  ];
+  const topicRoutines = [
+    "enforce_topic_model_generation_run_provenance",
+    "enforce_topic_model_generation_run_frozen_input",
+    "enforce_topic_model_generation_async_result",
+    "enforce_topic_model_generation_invocation_attempt_transition",
+    "reserve_topic_model_generation_invocation_attempt",
+    "finalize_topic_model_generation_invocation_attempt",
+    "mark_topic_model_generation_invocation_outcome_unknown",
+    "terminalize_topic_model_generation_run",
+    "enforce_keyword_review_analysis_invocation",
+  ];
+  for (const indexName of topicIndexes) {
+    invariant(
+      new RegExp(
+        `CREATE\\s+(?:UNIQUE\\s+)?INDEX\\s+IF NOT EXISTS\\s+${indexName}\\b`,
+        "i",
+      ).test(topicMigration),
+      `required Topic generation index is missing: ${indexName}`,
+    );
+  }
+  for (const triggerName of topicTriggers) {
+    invariant(
+      new RegExp(`CREATE\\s+TRIGGER\\s+${triggerName}\\b`, "i").test(
+        topicMigration,
+      ),
+      `required Topic generation trigger is missing: ${triggerName}`,
+    );
+  }
+  for (const routineName of topicRoutines) {
+    invariant(
+      new RegExp(
+        `CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+(?:app\\.)?${routineName}\\b`,
+        "i",
+      ).test(topicMigration),
+      `required Topic generation routine is missing: ${routineName}`,
+    );
+  }
+  for (const tableName of [
+    "topic_model_generation_runs",
+    "topic_model_generation_invocation_attempts",
+  ]) {
+    for (const role of ["PUBLIC", "anon", "authenticated"]) {
+      invariant(
+        new RegExp(
+          `REVOKE\\s+ALL\\s+ON\\s+app\\.${tableName}\\s+FROM\\s+${role}`,
+          "i",
+        ).test(topicMigration),
+        `internal Topic ledger privilege is not revoked: ${tableName} from ${role}`,
+      );
+    }
+  }
+  const topicPrivilegeContract = normalizeWhitespace(
+    topicMigration,
+  ).toLowerCase();
+  for (const signature of [
+    "reserve_topic_model_generation_invocation_attempt(uuid,uuid,uuid,integer,text,text,text,text)",
+    "finalize_topic_model_generation_invocation_attempt(uuid,uuid,uuid,integer,uuid,text,text,text,text,text,text,integer,integer,numeric,integer,text)",
+    "mark_topic_model_generation_invocation_outcome_unknown(uuid,uuid,uuid,integer,uuid,text)",
+    "terminalize_topic_model_generation_run(uuid,uuid,uuid,integer,text,uuid,text,text)",
+  ]) {
+    for (const role of ["public", "anon", "authenticated"]) {
+      invariant(
+        topicPrivilegeContract.includes(
+          normalizeWhitespace(
+            `REVOKE ALL ON FUNCTION app.${signature} FROM ${role}`,
+          ).toLowerCase(),
+        ),
+        `internal Topic mutator EXECUTE privilege is not revoked: ${signature} from ${role}`,
+      );
+    }
+  }
+
+  const migrateCheck = read("packages/db/src/migrate-check.ts");
+  const migrateCheckInventories = [
+    ["EXPECTED_TABLES", 80],
+    ["REQUIRED_INDEXES", 109],
+    ["REQUIRED_TRIGGERS", 156],
+    ["REQUIRED_ROUTINES", 79],
+  ];
+  for (const [inventoryName, expectedCount] of migrateCheckInventories) {
+    const inventory = sourceStringArray(migrateCheck, inventoryName);
+    invariant(
+      inventory.length === expectedCount,
+      `${inventoryName} must contain exactly ${expectedCount} entries, found ${inventory.length}`,
+    );
+  }
+  for (const requiredName of [
+    "topic_model_generation_runs",
+    "topic_model_generation_invocation_attempts",
+    ...topicIndexes,
+    ...topicTriggers,
+    ...topicRoutines,
+  ]) {
+    invariant(
+      migrateCheck.includes(`"${requiredName}"`),
+      `migrate-check inventory is missing ${requiredName}`,
+    );
+  }
 
   const auditRuns = tableDefinition("audit_runs");
   invariant(
@@ -2181,10 +2789,27 @@ function checkDatabaseContract() {
 
   const smoke = read("packages/db/migrations/schema-smoke.sql");
   invariant(
+    smoke ===
+      read("authority/implementation-spec-v0.4/scripts/schema-smoke.sql"),
+    "authority schema smoke must be byte-identical to the implementation smoke",
+  );
+  for (const [pattern, label] of [
+    [/expected exactly 80 app tables/, "80 app tables"],
+    [/expected all 85 named app indexes/, "85 named smoke indexes"],
+    [/expected all 112 app triggers/, "112 named smoke triggers"],
+    [/expected all 48 runtime routines/, "48 runtime smoke routines"],
+    [
+      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0048_topic_model_generation'/i,
+      "0048 migration head",
+    ],
+  ]) {
+    invariant(pattern.test(smoke), `schema smoke must freeze ${label}`);
+  }
+  invariant(
     /\bROLLBACK\s*;\s*$/.test(smoke),
     "schema-smoke.sql must finish with ROLLBACK",
   );
-  return `database: ${EXPECTED_TABLES.length} app tables (pg-boss excluded)`;
+  return `database: 48 migrations through ${EXPECTED_MIGRATION_HEAD}, ${EXPECTED_TABLES.length} app tables (pg-boss excluded), 109 indexes, 156 triggers, and 79 routines in migrate-check`;
 }
 
 async function importSource(relativePath) {

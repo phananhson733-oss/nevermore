@@ -22,6 +22,16 @@ const vocKeyword = {
   reviewOrigin: null,
   revision: 0,
   intent: null,
+  searchIntent: {
+    value: null,
+    authority: "unavailable",
+    snapshotId: null,
+    observationId: null,
+    analysisInvocationId: null,
+    observedAt: null,
+    limitation:
+      "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.",
+  },
   buyerStage: null,
   cluster: null,
   classificationLimitations: {
@@ -93,6 +103,7 @@ const vocKeyword = {
       competitorRank: "该证据来源没有竞品排名观测。",
     },
   },
+  recollection: null,
   coverage: {
     availability: "partial",
     limitations: ["VOC 来源不提供搜索量、难度或排名指标。"],
@@ -118,7 +129,8 @@ async function fulfillJson(page: Page): Promise<void> {
   await page.route(
     `**/api/mvp/projects/${E2E_PROJECT_ID}/audit/keywords**`,
     async (route) => {
-      const pathname = new URL(route.request().url()).pathname;
+      const requestUrl = new URL(route.request().url());
+      const pathname = requestUrl.pathname;
       if (pathname.endsWith(`/${VOC_KEYWORD_ID}/rank-history`)) {
         await route.fulfill({
           status: 404,
@@ -151,6 +163,7 @@ async function fulfillJson(page: Page): Promise<void> {
         body: JSON.stringify({
           data: {
             projectId: E2E_PROJECT_ID,
+            diagnosticRunId: requestUrl.searchParams.get("diagnosticRunId"),
             data: [vocKeyword],
             meta: {
               limit: 50,
@@ -212,7 +225,9 @@ async function fulfillJson(page: Page): Promise<void> {
               state: "confirmed",
               confirmedAt: "2026-07-21T00:00:00.000Z",
               confirmedBy: TOPIC_ACTOR_ID,
+              confirmationMode: "user",
               contentHash: "c".repeat(64),
+              generationSummary: null,
             },
             draft: null,
             generatedAt: "2026-07-22T00:00:00.000Z",

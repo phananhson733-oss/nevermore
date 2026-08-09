@@ -12,6 +12,7 @@ const mocked = vi.hoisted(() => ({
   registerCollectHandlers: vi.fn(),
   registerDiagnoseHandler: vi.fn(),
   registerProfileSynthesizeHandler: vi.fn(),
+  registerTopicModelGenerationHandler: vi.fn(),
   registerArtifactHandlers: vi.fn(),
   registerContentShadowHandler: vi.fn(),
   registerPublicationHandler: vi.fn(),
@@ -46,6 +47,10 @@ vi.mock("./handlers/diagnose.ts", () => ({
 }));
 vi.mock("./handlers/profile-synthesize.ts", () => ({
   registerProfileSynthesizeHandler: mocked.registerProfileSynthesizeHandler,
+}));
+vi.mock("./handlers/topic-model-generation.ts", () => ({
+  registerTopicModelGenerationHandler:
+    mocked.registerTopicModelGenerationHandler,
 }));
 vi.mock("./handlers/content-shadow.ts", () => ({
   registerContentShadowHandler: mocked.registerContentShadowHandler,
@@ -152,6 +157,9 @@ function configureSuccessfulBoot(order: string[]) {
   mocked.registerProfileSynthesizeHandler.mockImplementation(async () => {
     order.push("profile.synthesize");
   });
+  mocked.registerTopicModelGenerationHandler.mockImplementation(async () => {
+    order.push("topic-model.generate");
+  });
   mocked.registerArtifactHandlers.mockImplementation(async () => {
     order.push("artifact");
   });
@@ -229,6 +237,7 @@ describe("worker bootstrap lifecycle", () => {
       "collect",
       "diagnose",
       "profile.synthesize",
+      "topic-model.generate",
       "artifact",
       "content-shadow",
       "publication",
@@ -553,6 +562,9 @@ describe("worker bootstrap lifecycle", () => {
       expect(mocked.registerCollectHandlers).not.toHaveBeenCalled();
       expect(mocked.registerDiagnoseHandler).not.toHaveBeenCalled();
       expect(mocked.registerProfileSynthesizeHandler).not.toHaveBeenCalled();
+      expect(
+        mocked.registerTopicModelGenerationHandler,
+      ).not.toHaveBeenCalled();
       expect(mocked.registerArtifactHandlers).not.toHaveBeenCalled();
       expect(mocked.registerContentShadowHandler).not.toHaveBeenCalled();
       expect(mocked.registerPublicationHandler).not.toHaveBeenCalled();

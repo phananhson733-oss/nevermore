@@ -8,6 +8,120 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("adds a durable Topic Model generation child with fenced model lineage", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0048_topic_model_generation.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe("0048_topic_model_generation");
+    expect(migration).toMatch(
+      /kind\s+IN\s*\([\s\S]*?'topic_model_generation'/iu,
+    );
+    expect(migration).toMatch(
+      /result_type\s+IS\s+NULL\s+OR\s+result_type\s+IN\s*\([\s\S]*?'topic_model_generation_run'/iu,
+    );
+    expect(migration).toMatch(
+      /task\s+IN\s*\([\s\S]*?'topic_model_generation'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.topic_model_generation_runs[\s\S]*?analysis_refresh_run_id[\s\S]*?input_manifest[\s\S]*?input_hash[\s\S]*?prompt_input_hash[\s\S]*?result_topic_model_revision_id/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+app\.topic_model_generation_invocation_attempts[\s\S]*?'reserved'[\s\S]*?'outcome_unknown'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.reserve_topic_model_generation_invocation_attempt/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.finalize_topic_model_generation_invocation_attempt/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.mark_topic_model_generation_invocation_outcome_unknown/iu,
+    );
+    const finalizeFunction = migration.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.finalize_topic_model_generation_invocation_attempt[\s\S]*?\n\$\$;/iu,
+    )?.[0];
+    const markOutcomeUnknownFunction = migration.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.mark_topic_model_generation_invocation_outcome_unknown[\s\S]*?\n\$\$;/iu,
+    )?.[0];
+    for (const fencedFunction of [
+      finalizeFunction,
+      markOutcomeUnknownFunction,
+    ]) {
+      expect(fencedFunction).toMatch(
+        /FROM\s+app\.async_runs\s+run[\s\S]*?run\.status\s*=\s*'running'[\s\S]*?run\.attempt_count\s*=\s*p_async_attempt_count[\s\S]*?FOR\s+UPDATE(?:\s+OF\s+run)?/iu,
+      );
+    }
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.terminalize_topic_model_generation_run/iu,
+    );
+    expect(migration).toMatch(
+      /ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+analysis_invocation_id\s+uuid/iu,
+    );
+    expect(migration).toMatch(
+      /keyword_review_decisions[\s\S]*?analysis_invocation_id[\s\S]*?topic_model_generation[\s\S]*?status\s*=\s*'succeeded'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_keyword_review_analysis_invocation\(\)[\s\S]*?IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+app\.analysis_invocations\s+invocation\s+WHERE\s+invocation\.id\s*=\s*NEW\.analysis_invocation_id\s*\)\s+THEN\s+RETURN\s+NEW;[\s\S]*?topic_model_generation_invocation_attempts/iu,
+    );
+    expect(migration).toMatch(
+      /DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+topic_model_revisions_state_check[\s\S]*?ADD\s+CONSTRAINT\s+topic_model_revisions_state_check/iu,
+    );
+    expect(migration).toMatch(
+      /confirmed_by\s+IS\s+NULL[\s\S]*?origin'[\s\S]*?'llm_auto_confirmed'[\s\S]*?'generationVersion'[\s\S]*?'promptSetVersion'[\s\S]*?'inputHash'[\s\S]*?'analysisInvocationId'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+app\.enforce_topic_model_revision_mutation[\s\S]*?topic_model_generation_invocation_attempts[\s\S]*?attempt\.status\s*=\s*'succeeded'[\s\S]*?invocation\.status\s*=\s*'succeeded'/iu,
+    );
+    expect(migration).toMatch(
+      /'version'\s*,\s*'analysis-refresh\.plan\.v1'[\s\S]*?'version'\s*,\s*'analysis-refresh\.plan\.v2'[\s\S]*?'version'\s*,\s*'analysis-refresh\.plan\.v3'[\s\S]*?'stepKey'\s*,\s*'topic_model'[\s\S]*?'stepKey'\s*,\s*'growth_audit'/iu,
+    );
+    expect(migration).toMatch(
+      /REVOKE\s+ALL\s+ON\s+app\.topic_model_generation_runs\s+FROM\s+anon/iu,
+    );
+    expect(migration).toMatch(
+      /REVOKE\s+ALL\s+ON\s+app\.topic_model_generation_invocation_attempts\s+FROM\s+authenticated/iu,
+    );
+    expect(migration).not.toMatch(/raw_prompt|raw_response|prompt_text|response_text/iu);
+    expect(migration).toMatch(
+      /SELECT\s+'0048_topic_model_generation'::text\s+AS\s+migration_version/iu,
+    );
+
+    const migrateCheck = readFileSync(
+      fileURLToPath(new URL("./migrate-check.ts", import.meta.url)),
+      "utf8",
+    );
+    const schemaSmoke = readFileSync(
+      fileURLToPath(new URL("../migrations/schema-smoke.sql", import.meta.url)),
+      "utf8",
+    );
+    const requiredNonNullTextColumns = migrateCheck.match(
+      /const\s+REQUIRED_NON_NULL_TEXT_COLUMNS\s*=\s*\[[\s\S]*?\]\s+as\s+const;/u,
+    )?.[0];
+    expect(requiredNonNullTextColumns).toBeDefined();
+    expect(requiredNonNullTextColumns ?? "").not.toMatch(
+      /keyword_review_decisions["',\s]+analysis_invocation_id/u,
+    );
+    expect(migrateCheck).toMatch(
+      /const\s+REQUIRED_TYPED_COLUMNS\s*=\s*\[[\s\S]*?table:\s*"keyword_review_decisions"[\s\S]*?column:\s*"analysis_invocation_id"[\s\S]*?dataType:\s*"uuid"[\s\S]*?isNullable:\s*"YES"[\s\S]*?\]\s+as\s+const;/u,
+    );
+    expect(migrateCheck).toMatch(
+      /missing required \$\{nullability\} \$\{dataType\} column app\.\$\{qualified\}/u,
+    );
+    expect(migrateCheck).toMatch(
+      /for\s*\(const\s*\{[\s\S]*?dataType[\s\S]*?isNullable[\s\S]*?\}\s+of\s+REQUIRED_TYPED_COLUMNS\)[\s\S]*?actual\?\.data_type\s*!==\s*dataType[\s\S]*?actual\.is_nullable\s*!==\s*isNullable/iu,
+    );
+    expect(schemaSmoke).toMatch(
+      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0048_topic_model_generation'/iu,
+    );
+  });
+
   it("guards contextual indexability diagnostics before a low-lock validation migration", () => {
     const migration = readFileSync(
       fileURLToPath(

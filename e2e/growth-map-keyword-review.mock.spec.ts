@@ -82,6 +82,16 @@ function keywordFixture(
     reviewOrigin: null,
     revision: 0,
     intent: null,
+    searchIntent: {
+      value: null,
+      authority: "unavailable" as const,
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation:
+        "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.",
+    },
     buyerStage: null,
     cluster: null,
     classificationLimitations: {
@@ -97,6 +107,7 @@ function keywordFixture(
     },
     sourceOccurrences: [manualOccurrence(offset)],
     metrics: emptyMetrics(),
+    recollection: null,
     coverage: {
       availability: "partial" as const,
       limitations: ["当前仅有人工关键词来源，暂无搜索量或排名观测。"],
@@ -139,7 +150,9 @@ function topicWorkspace() {
       state: "confirmed",
       confirmedAt: "2026-07-28T00:00:00.000Z",
       confirmedBy: TOPIC_ACTOR,
+      confirmationMode: "user",
       contentHash: "a".repeat(64),
+      generationSummary: null,
     },
     draft: null,
     generatedAt: "2026-07-28T00:05:00.000Z",
@@ -219,9 +232,13 @@ function reviewedKeyword(
 ): KeywordFixture {
   const selectedTopic =
     body.topicNodeId === ROOT_TOPIC
-      ? { clusterId: ROOT_TOPIC, name: "客户入职" }
+      ? { clusterId: ROOT_TOPIC, topicModelRevision: 7, name: "客户入职" }
       : body.topicNodeId === CONFLICT_TOPIC
-        ? { clusterId: CONFLICT_TOPIC, name: "流程自动化" }
+        ? {
+            clusterId: CONFLICT_TOPIC,
+            topicModelRevision: 7,
+            name: "流程自动化",
+          }
         : null;
   const mappedTarget =
     body.mappingDecision === "existing_page" &&
@@ -250,8 +267,30 @@ function reviewedKeyword(
   return {
     ...current,
     status: body.status,
+    reviewOrigin: "user",
     revision,
     intent: body.intent,
+    searchIntent:
+      body.intent === null
+        ? {
+            value: null,
+            authority: "unavailable",
+            snapshotId: null,
+            observationId: null,
+            analysisInvocationId: null,
+            observedAt: null,
+            limitation:
+              "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.",
+          }
+        : {
+            value: body.intent,
+            authority: "user_confirmed",
+            snapshotId: null,
+            observationId: null,
+            analysisInvocationId: null,
+            observedAt: null,
+            limitation: null,
+          },
     buyerStage: body.buyerStage,
     cluster: selectedTopic,
     classificationLimitations: {
@@ -289,8 +328,22 @@ async function installKeywordReviewApi(
       status: "parked",
       revision: 3,
       intent: "informational",
+      searchIntent: {
+        value: "informational",
+        authority: "governed_legacy",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation:
+          "This governed search intent predates durable provider or LLM invocation provenance; its original value is preserved as a pre-ledger classification.",
+      },
       buyerStage: "awareness",
-      cluster: { clusterId: ROOT_TOPIC, name: "客户入职" },
+      cluster: {
+        clusterId: ROOT_TOPIC,
+        topicModelRevision: 7,
+        name: "客户入职",
+      },
       classificationLimitations: {
         intent: null,
         buyerStage: null,
@@ -379,6 +432,7 @@ async function installKeywordReviewApi(
     await json(route, {
       data: {
         projectId: E2E_PROJECT_ID,
+        diagnosticRunId: url.searchParams.get("diagnosticRunId"),
         data: [keywordA, keywordB],
         meta: {
           limit: 50,

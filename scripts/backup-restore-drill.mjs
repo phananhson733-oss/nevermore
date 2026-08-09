@@ -141,6 +141,8 @@ export const APP_TABLES = [
   "backlink_page_metrics",
   "analysis_refresh_runs",
   "analysis_refresh_steps",
+  "topic_model_generation_runs",
+  "topic_model_generation_invocation_attempts",
 ];
 
 /**

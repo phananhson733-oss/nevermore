@@ -49,6 +49,58 @@ const runId = "00000000-0000-4000-8000-000000000003";
 const uuidV7RunId = "7a000000-0000-7000-8000-00000000000a";
 const pageId = "00000000-0000-4000-8000-000000000004";
 const secondPageId = "00000000-0000-4000-8000-000000000005";
+const publishedPlanFixtures = [
+  {
+    manifest: {
+      version: "analysis-refresh.plan.v1",
+      steps: [
+        { ordinal: 1, stepKey: "crawl", required: true },
+        { ordinal: 2, stepKey: "gsc", required: false },
+        { ordinal: 3, stepKey: "ga4", required: false },
+        { ordinal: 4, stepKey: "dataforseo", required: false },
+        { ordinal: 5, stepKey: "growth_audit", required: true },
+      ],
+    },
+    hash: "d725c90b76edf0bd7747a8d3dcf18754dfa9c5356f66ca765acbaa4145e405af",
+  },
+  {
+    manifest: {
+      version: "analysis-refresh.plan.v2",
+      steps: [
+        { ordinal: 1, stepKey: "crawl", required: true },
+        { ordinal: 2, stepKey: "gsc", required: false },
+        { ordinal: 3, stepKey: "ga4", required: false },
+        { ordinal: 4, stepKey: "dataforseo", required: false },
+        {
+          ordinal: 5,
+          stepKey: "dataforseo_backlinks",
+          required: false,
+        },
+        { ordinal: 6, stepKey: "growth_audit", required: true },
+      ],
+    },
+    hash: "3049a718f77263f766e47d0d7318a9414520d07c8ab92960f50c85b864977c65",
+  },
+  {
+    manifest: {
+      version: "analysis-refresh.plan.v3",
+      steps: [
+        { ordinal: 1, stepKey: "crawl", required: true },
+        { ordinal: 2, stepKey: "gsc", required: false },
+        { ordinal: 3, stepKey: "ga4", required: false },
+        { ordinal: 4, stepKey: "dataforseo", required: false },
+        {
+          ordinal: 5,
+          stepKey: "dataforseo_backlinks",
+          required: false,
+        },
+        { ordinal: 6, stepKey: "topic_model", required: false },
+        { ordinal: 7, stepKey: "growth_audit", required: true },
+      ],
+    },
+    hash: "fc527bb7203d61ce126625a0b2bb4bffb59fe5999d9f6b78e5aa05409918368b",
+  },
+] as const;
 
 function repository() {
   const db = fakeExecutor();
@@ -211,15 +263,23 @@ describe("GrowthMapReadRepository", () => {
     await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
   });
 
-  it("recognizes exact five-step v1 and six-step v2 publication lineage", async () => {
+  it("recognizes only exact v1, v2, and v3 publication lineage", async () => {
     const { db, repo } = repository();
     db.enqueue([]);
 
     await expect(repo.findLatestReadableRun(scope)).resolves.toBeNull();
 
     const query = db.lastSql();
-    expect(query.sql).toContain("analysis-refresh.plan.v1");
-    expect(query.sql).toContain("analysis-refresh.plan.v2");
+    expect(query.sql.match(/publication_plan\.plan_manifest = \$/gu)).toHaveLength(
+      3,
+    );
+    expect(query.sql.match(/publication_plan\.plan_hash = \$/gu)).toHaveLength(3);
+    expect(query.sql).not.toContain("plan_manifest ->> 'version'");
+    for (const fixture of publishedPlanFixtures) {
+      expect(query.params).toContain(JSON.stringify(fixture.manifest));
+      expect(query.params).toContain(fixture.hash);
+    }
+    expect(query.params).not.toContain("analysis-refresh.plan.v4");
     expect(query.sql).toContain(
       "collection_step.step_key = 'dataforseo_backlinks'",
     );
@@ -284,6 +344,46 @@ describe("GrowthMapReadRepository", () => {
     expect(query.sql).toContain(
       '"app"."analysis_refresh_steps"."ordinal" = 6',
     );
+    expect(query.sql).toContain(
+      '"app"."analysis_refresh_steps"."ordinal" = 7',
+    );
+    expect(query.sql).toContain("canonical_completed_topic_model_steps as");
+    expect(query.sql).toContain("topic_step.step_key = 'topic_model'");
+    expect(query.sql).toContain("topic_child.kind = 'topic_model_generation'");
+    expect(query.sql).toContain(
+      "topic_child.result_type = 'topic_model_generation_run'",
+    );
+    expect(query.sql).toContain("topic_child.result_id = topic_child.id");
+    expect(query.sql).toContain(
+      "topic_child.status = 'completed'",
+    );
+    expect(query.sql).toContain(
+      'inner join "app"."topic_model_generation_runs" as topic_model_run',
+    );
+    expect(query.sql).toContain("topic_model_run.id = topic_child.id");
+    expect(query.sql).toContain(
+      'topic_model_run.workspace_id = $',
+    );
+    expect(query.sql).toContain(
+      'topic_model_run.project_id = $',
+    );
+    expect(query.sql).toContain(
+      "topic_model_run.analysis_refresh_run_id = topic_step.analysis_refresh_run_id",
+    );
+    expect(query.sql).not.toContain('"app"."topic_model_revisions"');
+    expect(query.sql).not.toContain('"app"."keyword_review_decisions"');
+
+    const v1Branch = query.params.indexOf(
+      JSON.stringify(publishedPlanFixtures[0].manifest),
+    );
+    const v2Branch = query.params.indexOf(
+      JSON.stringify(publishedPlanFixtures[1].manifest),
+    );
+    const v3Branch = query.params.indexOf(
+      JSON.stringify(publishedPlanFixtures[2].manifest),
+    );
+    expect(v1Branch).toBeLessThan(v2Branch);
+    expect(v2Branch).toBeLessThan(v3Branch);
   });
 
   it("admits only known current or legacy projections for an exact diagnostic pin", async () => {

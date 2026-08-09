@@ -191,6 +191,8 @@ function normalizeRow(
     keyword,
     clusterKey: cluster,
     searchVolume: parseSearchVolume(cell(mapping.searchVolume)),
+    keywordDifficulty: null,
+    providerSearchIntent: null,
     currentUrl: normalizeAbsoluteUrl(cell(mapping.currentUrl)),
     currentRank: parseRank(cell(mapping.currentRank)),
     competitorDomain: normalizeHostname(cell(mapping.competitorDomain)),

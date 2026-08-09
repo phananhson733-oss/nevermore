@@ -108,6 +108,7 @@ describe("startWorkerHealthSnapshotLoop", () => {
             failureCount24h: 8,
           },
           zeroMetric("product_profile_synthesis"),
+          zeroMetric("topic_model_generation"),
           zeroMetric("diagnostic"),
           zeroMetric("artifact_generation"),
           {

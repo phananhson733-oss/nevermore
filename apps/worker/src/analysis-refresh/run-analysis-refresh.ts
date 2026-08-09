@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { TOPIC_MODEL_PROMPT_SET_VERSION } from "@sf/artifacts";
 import {
   AnalysisRefreshRunsRepository,
   analysisRefreshPlanHash,
   analysisRefreshPlanManifest,
+  analysisRefreshPlanV2Manifest,
   AsyncRunsRepository,
   AuditRunsRepository,
   CapabilityRunsRepository,
+  canonicalUtcTimestamptz,
   collectionRunParametersHash,
   CollectionRunsRepository,
   contentHash,
@@ -22,6 +25,8 @@ import {
   SitePagesRepository,
   SitesRepository,
   SourceConnectionsRepository,
+  TopicModelGenerationRunsRepository,
+  TopicModelsRepository,
   toRunAttempt,
   type AnalysisRefreshRunRow,
   type AnalysisRefreshStepKey,
@@ -32,16 +37,27 @@ import {
   type CanonicalValue,
   type DataSnapshotRow,
   type DbTx,
+  type ObservationRow,
   type ProjectScope,
   type QueueName,
   type RunAttempt,
+  type SitePageRow,
   type SiteRow,
   type SourceConnectionRow,
 } from "@sf/db";
 import {
   CONTRACT_VERSION,
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
+  MAX_TOPIC_MODEL_GENERATION_GROUPS,
+  MAX_TOPIC_MODEL_GENERATION_KEYWORDS,
   ProductProfileDraft,
+  TOPIC_MODEL_GENERATION_INPUT_SCHEMA_VERSION,
+  parseTopicModelGenerationInputManifest,
+  type TopicModelGenerationIcpFacts,
+  type TopicModelGenerationInputManifest,
+  type TopicModelGenerationProductProfileFacts,
+  type TopicModelGenerationProviderSearchIntent,
+  type TopicModelGenerationSearchIntent,
 } from "@sf/contracts";
 import { PROMPT_SET_VERSION, RULE_SET_VERSION } from "@sf/engine";
 import {
@@ -55,6 +71,7 @@ import {
   DATAFORSEO_SEARCH_LANDSCAPE_V2_METHOD_VERSION,
   DATAFORSEO_SEARCH_LANDSCAPE_V3_DATASET_KEY,
   DATAFORSEO_SEARCH_LANDSCAPE_V3_METHOD_VERSION,
+  METRIC_CSV_KEYWORD_GAP,
 } from "@sf/sources";
 import type { WorkerContext } from "../context.ts";
 import { keywordAutoGovernanceEnabled } from "../env.ts";
@@ -131,6 +148,22 @@ type OptionalStepKey = Exclude<
 
 const TERMINAL_STEP_STATES = new Set(["completed", "skipped", "failed"]);
 const SUCCESSFUL_CHILD_STATES = new Set(["completed", "partial"]);
+const TOPIC_MODEL_ACTIVE_KEY = "topic-model:generation";
+const TOPIC_MODEL_GENERATION_VERSION = "topic-model-generation.v1" as const;
+const TOPIC_MODEL_QUEUE = "topic-model.generate" as const;
+const TOPIC_MODEL_OUTCOME_UNKNOWN_CODE =
+  "TOPIC_MODEL_GENERATION_INVOCATION_OUTCOME_UNKNOWN";
+const TOPIC_MODEL_REPRESENTATIVE_KEYWORD_LIMIT = 12;
+const TOPIC_MODEL_URL_LIMIT = 8;
+const TOPIC_MODEL_FACT_ITEM_LIMIT = 20;
+const TOPIC_MODEL_FACT_CHARACTER_LIMIT = 500;
+const TOPIC_MODEL_KEYWORD_CHARACTER_LIMIT = 240;
+const TOPIC_MODEL_SEARCH_INTENTS = [
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+] as const satisfies readonly TopicModelGenerationSearchIntent[];
 interface CollectionIdentity {
   readonly provider: CollectionProvider;
   readonly datasetKey: string;
@@ -247,6 +280,28 @@ const SAFE_FAILURES = {
     code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE",
     summary: "The required Growth Audit result is unusable.",
   },
+  topicInputInvalid: {
+    code: "ANALYSIS_REFRESH_TOPIC_MODEL_INPUT_INVALID",
+    summary: "The bounded Topic Model generation input is invalid.",
+  },
+  topicChildFailed: {
+    code: "ANALYSIS_REFRESH_TOPIC_MODEL_CHILD_FAILED",
+    summary: "The optional Topic Model generation child failed.",
+  },
+  topicSuperseded: {
+    code: "ANALYSIS_REFRESH_TOPIC_MODEL_SUPERSEDED",
+    summary:
+      "The optional Topic Model generation was superseded by concurrent Topic authority.",
+  },
+  topicOutcomeUnknown: {
+    code: "ANALYSIS_REFRESH_TOPIC_MODEL_OUTCOME_UNKNOWN",
+    summary:
+      "The optional Topic Model generation provider outcome is unknown.",
+  },
+  topicResultInvalid: {
+    code: "ANALYSIS_REFRESH_TOPIC_MODEL_RESULT_INVALID",
+    summary: "The Topic Model generation result has invalid lineage.",
+  },
 } as const;
 
 interface ParentContext {
@@ -309,15 +364,21 @@ function assertDurablePlan(
   payload: AnalysisRefreshRequestPayload,
 ): asserts parent is AnalysisRefreshRunRow {
   const currentManifest = analysisRefreshPlanManifest();
+  const v2Manifest = analysisRefreshPlanV2Manifest();
   const legacyManifest = legacyAnalysisRefreshPlanManifest();
   const currentMatches =
     parent?.plan_hash === analysisRefreshPlanHash(currentManifest) &&
     isDeepStrictEqual(parent.plan_manifest, currentManifest);
+  const v2Matches =
+    parent?.plan_hash === analysisRefreshPlanHash(v2Manifest) &&
+    isDeepStrictEqual(parent.plan_manifest, v2Manifest);
   const legacyMatches =
     parent?.plan_hash === analysisRefreshPlanHash(legacyManifest) &&
     isDeepStrictEqual(parent.plan_manifest, legacyManifest);
   const expectedManifest = currentMatches
     ? currentManifest
+    : v2Matches
+      ? v2Manifest
     : legacyMatches
       ? legacyManifest
       : null;
@@ -333,7 +394,7 @@ function assertDurablePlan(
     parent.site_id !== payload.siteId ||
     parent.icp_profile_id !== payload.icpProfile.id ||
     steps.length !== expectedManifest.steps.length ||
-    (currentMatches && payload.dataForSeoBacklinks === undefined)
+    ((currentMatches || v2Matches) && payload.dataForSeoBacklinks === undefined)
   ) {
     throw new Error("Analysis Refresh parent projection is invalid");
   }
@@ -1228,6 +1289,577 @@ async function startDataForSeoBacklinksStep(
   );
 }
 
+type TopicKeywordFact = Awaited<
+  ReturnType<typeof freezeDiagnosticGovernance>
+>["keywordClusters"][number]["keywords"][number];
+
+interface TopicProviderEvidence {
+  readonly providerSearchIntent: TopicModelGenerationProviderSearchIntent;
+  readonly searchVolume: number | null;
+  readonly currentUrl: string | null;
+}
+
+interface TopicGenerationGroupSeed {
+  readonly groupKey: string;
+  readonly sourceClusterKey: string;
+  readonly keywords: readonly TopicKeywordFact[];
+}
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function boundedFact(value: string | null): string | null {
+  return value !== null &&
+    value === value.trim() &&
+    value.length >= 1 &&
+    value.length <= TOPIC_MODEL_FACT_CHARACTER_LIMIT
+    ? value
+    : null;
+}
+
+function boundedFacts(values: readonly string[]): string[] {
+  return [...new Set(values)]
+    .filter(
+      (value) =>
+        value === value.trim() &&
+        value.length >= 1 &&
+        value.length <= TOPIC_MODEL_FACT_CHARACTER_LIMIT,
+    )
+    .slice(0, TOPIC_MODEL_FACT_ITEM_LIMIT);
+}
+
+function topicProfileFacts(profileValue: unknown, siteId: string): {
+  readonly productProfile: TopicModelGenerationProductProfileFacts | null;
+  readonly icp: TopicModelGenerationIcpFacts | null;
+} {
+  const parsed = ProductProfileDraft.safeParse(profileValue);
+  if (!parsed.success) {
+    if (
+      plainRecord(profileValue) &&
+      typeof profileValue["profileSchemaVersion"] === "string" &&
+      profileValue["profileSchemaVersion"].startsWith("product-profile.")
+    ) {
+      throw new Error("Topic Model Product Profile shape is invalid");
+    }
+    return { productProfile: null, icp: null };
+  }
+  if (parsed.data.sourceSiteId !== siteId) {
+    throw new Error("Topic Model Product Profile Site lineage is invalid");
+  }
+  const primaryAudience =
+    parsed.data.targetAudiences.find(
+      (audience) => audience.reviewStatus === "primary",
+    ) ?? null;
+  return {
+    productProfile: {
+      productName: boundedFact(parsed.data.productName),
+      oneLiner: boundedFact(parsed.data.oneLiner),
+      category: boundedFact(parsed.data.category),
+      valueProposition: boundedFact(parsed.data.valueProposition),
+      coreFeatures: boundedFacts(parsed.data.coreFeatures),
+    },
+    icp: {
+      targetCompanyOrAudience: boundedFact(
+        primaryAudience?.targetCompanyOrAudience ?? null,
+      ),
+      buyerRoles: boundedFacts(primaryAudience?.buyerRoles ?? []),
+      userRoles: boundedFacts(primaryAudience?.userRoles ?? []),
+      useCases: boundedFacts(primaryAudience?.useCases ?? []),
+      pains: boundedFacts(primaryAudience?.pains ?? []),
+      outcomes: boundedFacts(primaryAudience?.outcomes ?? []),
+    },
+  };
+}
+
+function exactTopicProviderEvidence(
+  parent: ParentContext,
+  keyword: TopicKeywordFact,
+  sourceClusterKey: string,
+  snapshotId: string | null,
+  observations: ReadonlyMap<string, ObservationRow>,
+): TopicProviderEvidence | null {
+  if (snapshotId === null) return null;
+  const occurrence = keyword.occurrenceRefs.find(
+    (candidate) =>
+      candidate.snapshotId === snapshotId && candidate.observationId !== null,
+  );
+  if (!occurrence?.observationId) return null;
+  const observation = observations.get(occurrence.observationId);
+  if (!observation) {
+    throw new Error("Topic Model provider occurrence is missing");
+  }
+  if (
+    observation.workspace_id !== parent.scope.workspaceId ||
+    observation.project_id !== parent.scope.projectId ||
+    observation.snapshot_id !== snapshotId ||
+    observation.id !== occurrence.observationId ||
+    observation.provider !== "dataforseo" ||
+    observation.metric_key !== METRIC_CSV_KEYWORD_GAP ||
+    observation.subject_type !== "keyword_cluster" ||
+    observation.availability !== "available" ||
+    !plainRecord(observation.value_json)
+  ) {
+    throw new Error("Topic Model provider occurrence lineage is invalid");
+  }
+  const value = observation.value_json;
+  if (
+    value["keyword"] !== keyword.displayKeyword ||
+    value["marketCode"] !== keyword.marketCode ||
+    value["languageCode"] !== keyword.languageTag ||
+    value["clusterKey"] !== sourceClusterKey ||
+    !Object.hasOwn(value, "searchVolume") ||
+    !Object.hasOwn(value, "providerSearchIntent") ||
+    !Object.hasOwn(value, "currentUrl")
+  ) {
+    throw new Error("Topic Model provider occurrence value is invalid");
+  }
+  const searchVolume = value["searchVolume"];
+  const providerSearchIntent = value["providerSearchIntent"];
+  const currentUrl = value["currentUrl"];
+  if (
+    (searchVolume !== null &&
+      (typeof searchVolume !== "number" ||
+        !Number.isSafeInteger(searchVolume) ||
+        searchVolume < 0)) ||
+    (providerSearchIntent !== null &&
+      !TOPIC_MODEL_SEARCH_INTENTS.includes(
+        providerSearchIntent as TopicModelGenerationSearchIntent,
+      )) ||
+    (currentUrl !== null && typeof currentUrl !== "string")
+  ) {
+    throw new Error("Topic Model provider occurrence metrics are invalid");
+  }
+  return {
+    providerSearchIntent: {
+      value:
+        providerSearchIntent as TopicModelGenerationSearchIntent | null,
+      snapshotId,
+      observationId: observation.id,
+      observedAt: canonicalUtcTimestamptz(observation.observed_at),
+    },
+    searchVolume: searchVolume as number | null,
+    currentUrl,
+  };
+}
+
+async function exactTopicProviderObservations(
+  tx: DbTx,
+  parent: ParentContext,
+  steps: readonly AnalysisRefreshStepRow[],
+): Promise<{
+  readonly snapshotId: string | null;
+  readonly observations: ReadonlyMap<string, ObservationRow>;
+}> {
+  const step = steps.find((candidate) => candidate.step_key === "dataforseo");
+  if (step?.state !== "completed") {
+    return { snapshotId: null, observations: new Map() };
+  }
+  if (step.child_async_run_id === null || step.result_snapshot_id === null) {
+    throw new Error("Topic Model provider Snapshot lineage is incomplete");
+  }
+  const snapshots = await new DataSnapshotsRepository(tx).findByIds(
+    parent.scope,
+    [step.result_snapshot_id],
+  );
+  const snapshot = snapshots[0];
+  if (
+    snapshots.length !== 1 ||
+    !snapshot ||
+    snapshot.workspace_id !== parent.scope.workspaceId ||
+    snapshot.project_id !== parent.scope.projectId ||
+    snapshot.site_id !== parent.payload.siteId ||
+    snapshot.collection_run_id !== step.child_async_run_id ||
+    !collectionIdentitiesForStep("dataforseo").some((identity) =>
+      snapshotMatchesIdentity(snapshot, identity),
+    )
+  ) {
+    throw new Error("Topic Model provider Snapshot lineage is invalid");
+  }
+  const rows = await new ObservationsRepository(tx).listBySnapshotIds(
+    parent.scope,
+    [snapshot.id],
+  );
+  const observations = new Map<string, ObservationRow>();
+  for (const row of rows) {
+    if (
+      row.workspace_id !== parent.scope.workspaceId ||
+      row.project_id !== parent.scope.projectId ||
+      row.snapshot_id !== snapshot.id ||
+      observations.has(row.id)
+    ) {
+      throw new Error("Topic Model provider Observation set is invalid");
+    }
+    observations.set(row.id, row);
+  }
+  return { snapshotId: snapshot.id, observations };
+}
+
+function selectTopicGenerationGroups(
+  governance: Awaited<ReturnType<typeof freezeDiagnosticGovernance>>,
+): {
+  readonly market: string;
+  readonly language: string;
+  readonly groups: readonly TopicGenerationGroupSeed[];
+} | null {
+  const localeCounts = new Map<string, {
+    readonly market: string;
+    readonly language: string;
+    count: number;
+  }>();
+  for (const cluster of governance.keywordClusters) {
+    for (const keyword of cluster.keywords) {
+      const key = `${keyword.marketCode}\u0000${keyword.languageTag}`;
+      const current = localeCounts.get(key) ?? {
+        market: keyword.marketCode,
+        language: keyword.languageTag,
+        count: 0,
+      };
+      current.count += 1;
+      localeCounts.set(key, current);
+    }
+  }
+  const locale = [...localeCounts.values()].sort(
+    (left, right) =>
+      right.count - left.count ||
+      compareAscii(left.market, right.market) ||
+      compareAscii(left.language, right.language),
+  )[0];
+  if (!locale) return null;
+
+  const groups: TopicGenerationGroupSeed[] = [];
+  let remaining = MAX_TOPIC_MODEL_GENERATION_KEYWORDS;
+  for (const cluster of governance.keywordClusters) {
+    if (
+      groups.length >= MAX_TOPIC_MODEL_GENERATION_GROUPS ||
+      remaining === 0
+    ) {
+      break;
+    }
+    const keywords = cluster.keywords
+      .filter(
+        (keyword) =>
+          keyword.marketCode === locale.market &&
+          keyword.languageTag === locale.language,
+      )
+      .slice(0, remaining);
+    if (keywords.length === 0) continue;
+    groups.push({
+      groupKey: `group-${String(groups.length + 1).padStart(3, "0")}`,
+      sourceClusterKey: cluster.clusterKey,
+      keywords,
+    });
+    remaining -= keywords.length;
+  }
+  return groups.length === 0
+    ? null
+    : { market: locale.market, language: locale.language, groups };
+}
+
+async function buildTopicGenerationManifest(
+  tx: DbTx,
+  parent: ParentContext,
+  steps: readonly AnalysisRefreshStepRow[],
+): Promise<TopicModelGenerationInputManifest | null> {
+  const governance = await freezeDiagnosticGovernance(tx, parent.scope);
+  const selected = selectTopicGenerationGroups(governance);
+  if (!selected) return null;
+
+  const profile = await new IcpProfilesRepository(tx).findById(
+    parent.scope,
+    parent.payload.icpProfile.id,
+  );
+  if (
+    !profile ||
+    profile.id !== parent.payload.icpProfile.id ||
+    profile.workspace_id !== parent.scope.workspaceId ||
+    profile.project_id !== parent.scope.projectId ||
+    profile.status !== "complete" ||
+    profile.version !== parent.payload.icpProfile.version ||
+    profile.content_hash !== parent.payload.icpProfile.contentHash
+  ) {
+    throw new Error("Topic Model Product Profile lineage is invalid");
+  }
+  const facts = topicProfileFacts(profile.profile, parent.payload.siteId);
+  const provider = await exactTopicProviderObservations(
+    tx,
+    parent,
+    steps,
+  );
+  const providerByKeyword = new Map<string, TopicProviderEvidence | null>();
+  for (const group of selected.groups) {
+    for (const keyword of group.keywords) {
+      providerByKeyword.set(
+        keyword.keywordEntityId,
+        exactTopicProviderEvidence(
+          parent,
+          keyword,
+          group.sourceClusterKey,
+          provider.snapshotId,
+          provider.observations,
+        ),
+      );
+    }
+  }
+
+  const pageIds = selected.groups.flatMap((group) =>
+    group.keywords.flatMap((keyword) =>
+      keyword.mappedSitePageId === null ? [] : [keyword.mappedSitePageId],
+    ),
+  );
+  const pages = await new SitePagesRepository(tx).findByIds(
+    parent.scope,
+    pageIds,
+  );
+  const pagesById = new Map<string, SitePageRow>();
+  for (const page of pages) {
+    if (
+      page.workspace_id !== parent.scope.workspaceId ||
+      page.project_id !== parent.scope.projectId ||
+      page.site_id !== parent.payload.siteId ||
+      pagesById.has(page.id)
+    ) {
+      throw new Error("Topic Model mapped page lineage is invalid");
+    }
+    pagesById.set(page.id, page);
+  }
+  if ([...new Set(pageIds)].some((id) => !pagesById.has(id))) {
+    throw new Error("Topic Model mapped page is missing");
+  }
+
+  const groups = selected.groups.map((group) => {
+    const representatives = [
+      ...new Set(group.keywords.map((keyword) => keyword.displayKeyword)),
+    ]
+      .filter(
+        (keyword) =>
+          keyword === keyword.trim() &&
+          keyword.length >= 1 &&
+          keyword.length <= TOPIC_MODEL_KEYWORD_CHARACTER_LIMIT,
+      )
+      .slice(0, TOPIC_MODEL_REPRESENTATIVE_KEYWORD_LIMIT);
+    const evidence = group.keywords.map(
+      (keyword) => providerByKeyword.get(keyword.keywordEntityId) ?? null,
+    );
+    const volumes = evidence.flatMap((item) =>
+      item?.searchVolume === null || item === null ? [] : [item.searchVolume],
+    );
+    const aggregateSearchVolume =
+      volumes.length === 0 ? null : volumes.reduce((sum, value) => sum + value, 0);
+    if (
+      aggregateSearchVolume !== null &&
+      !Number.isSafeInteger(aggregateSearchVolume)
+    ) {
+      throw new Error("Topic Model aggregate Search Volume is unsafe");
+    }
+    const providerIntentDistribution = {
+      informational: 0,
+      navigational: 0,
+      commercial: 0,
+      transactional: 0,
+    } satisfies Record<TopicModelGenerationSearchIntent, number>;
+    for (const item of evidence) {
+      if (item?.providerSearchIntent.value !== null && item !== null) {
+        providerIntentDistribution[item.providerSearchIntent.value] += 1;
+      }
+    }
+    const urls = [
+      ...new Set(
+        group.keywords.flatMap((keyword) => {
+          const mapped =
+            keyword.mappedSitePageId === null
+              ? null
+              : pagesById.get(keyword.mappedSitePageId)?.normalized_url ?? null;
+          const ranked = providerByKeyword.get(keyword.keywordEntityId)?.currentUrl ?? null;
+          return [mapped, ranked].filter(
+            (value): value is string => value !== null,
+          );
+        }),
+      ),
+    ]
+      .sort(compareAscii)
+      .slice(0, TOPIC_MODEL_URL_LIMIT);
+    return {
+      groupKey: group.groupKey,
+      representativeKeywords: representatives,
+      keywordCount: group.keywords.length,
+      aggregateSearchVolume,
+      providerIntentDistribution,
+      urls,
+    };
+  });
+  return parseTopicModelGenerationInputManifest({
+    schemaVersion: TOPIC_MODEL_GENERATION_INPUT_SCHEMA_VERSION,
+    analysisRefreshRunId: parent.job.runId,
+    projectId: parent.scope.projectId,
+    market: selected.market,
+    language: selected.language,
+    groups,
+    ...facts,
+    keywords: selected.groups.flatMap((group) =>
+      group.keywords.map((keyword) => ({
+        keywordId: keyword.keywordEntityId,
+        expectedGovernanceRevision: keyword.revision,
+        groupKey: group.groupKey,
+        providerSearchIntent:
+          providerByKeyword.get(keyword.keywordEntityId)?.providerSearchIntent ??
+          null,
+      })),
+    ),
+  });
+}
+
+async function startTopicModelStep(
+  ctx: WorkerContext,
+  tx: DbTx,
+  parent: ParentContext,
+  steps: readonly AnalysisRefreshStepRow[],
+  step: AnalysisRefreshStepRow,
+  runtime: AnalysisRefreshRuntime,
+): Promise<void> {
+  const topics = new TopicModelsRepository(tx);
+  if (await topics.getLatestConfirmed(parent.scope)) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "topic_model",
+      "existing_confirmed_model",
+      runtime,
+    );
+    return;
+  }
+  if (await topics.getDraft(parent.scope)) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "topic_model",
+      "existing_draft",
+      runtime,
+    );
+    return;
+  }
+  if (
+    await new AsyncRunsRepository(tx).findActive(
+      parent.scope,
+      TOPIC_MODEL_ACTIVE_KEY,
+    )
+  ) {
+    await scheduleContinuationInTx(
+      ctx,
+      tx,
+      parent,
+      steps,
+      "analysisRefresh.topic_model.waitingForActiveRun",
+      runtime,
+      "poll",
+    );
+    return;
+  }
+
+  try {
+    await runAutoKeywordGovernance(tx, parent.scope, {
+      enabled: keywordAutoGovernanceEnabled(),
+    });
+  } catch (error) {
+    const report = autoKeywordGovernanceFailureReport(error);
+    ctx.logger.error("analysis_refresh_topic_auto_keyword_governance_failed", {
+      analysisRefreshRunId: parent.job.runId,
+      code: report.failure?.code ?? null,
+      limitation: report.failure?.summary ?? null,
+      error: error instanceof Error ? error.name : "unknown",
+    });
+  }
+
+  let manifest: TopicModelGenerationInputManifest | null;
+  try {
+    manifest = await buildTopicGenerationManifest(tx, parent, steps);
+  } catch {
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.topicInputInvalid,
+      runtime,
+    );
+    return;
+  }
+  if (manifest === null) {
+    await skipOptionalStepInTx(
+      ctx,
+      tx,
+      parent,
+      "topic_model",
+      "insufficient_keyword_evidence",
+      runtime,
+    );
+    return;
+  }
+
+  const runId = randomUUID();
+  const child = await new AsyncRunsRepository(tx).insertQueued({
+    runId,
+    workspaceId: parent.scope.workspaceId,
+    projectId: parent.scope.projectId,
+    kind: "topic_model_generation",
+    activeKey: TOPIC_MODEL_ACTIVE_KEY,
+    initiatedBy: parent.claimed.initiated_by,
+    contractVersion: CONTRACT_VERSION,
+    requestPayload: {
+      analysisRefreshRunId: parent.job.runId,
+      inputSchemaVersion: TOPIC_MODEL_GENERATION_INPUT_SCHEMA_VERSION,
+    },
+    resultType: "topic_model_generation_run",
+    resultId: runId,
+  });
+  const inputHash = contentHash(manifest as unknown as CanonicalValue);
+  await new TopicModelGenerationRunsRepository(tx).insertPlaceholder({
+    runId: child.id,
+    workspaceId: parent.scope.workspaceId,
+    projectId: parent.scope.projectId,
+    analysisRefreshRunId: parent.job.runId,
+    generationVersion: TOPIC_MODEL_GENERATION_VERSION,
+    promptSetVersion: TOPIC_MODEL_PROMPT_SET_VERSION,
+    inputManifest: manifest,
+    inputHash,
+  });
+  await enqueueRunInTx(ctx.boss, tx, TOPIC_MODEL_QUEUE, {
+    runId: child.id,
+    workspaceId: parent.scope.workspaceId,
+    projectId: parent.scope.projectId,
+    contractVersion: CONTRACT_VERSION,
+  });
+  if (
+    !(await new AnalysisRefreshRunsRepository(tx).startStep(
+      parent.scope,
+      parent.job.runId,
+      "topic_model",
+      child.id,
+    ))
+  ) {
+    throw new Error("Analysis Refresh Topic Model step could not start");
+  }
+  const currentSteps = await new AnalysisRefreshRunsRepository(tx).listSteps(
+    parent.scope,
+    parent.job.runId,
+  );
+  await scheduleContinuationInTx(
+    ctx,
+    tx,
+    parent,
+    currentSteps,
+    "analysisRefresh.topic_model.running",
+    runtime,
+    "poll",
+  );
+}
+
 function validateExactAuditSnapshots(
   parent: ParentContext,
   steps: readonly AnalysisRefreshStepRow[],
@@ -1563,6 +2195,9 @@ async function advancePendingStep(
         runtime,
       );
       return;
+    case "topic_model":
+      await startTopicModelStep(ctx, tx, parent, steps, step, runtime);
+      return;
     case "growth_audit":
       await startGrowthAuditStep(ctx, tx, parent, steps, step, runtime);
       return;
@@ -1764,6 +2399,131 @@ async function observeCollectionChildInTx(
   );
 }
 
+async function observeTopicModelChildInTx(
+  ctx: WorkerContext,
+  tx: DbTx,
+  parent: ParentContext,
+  step: AnalysisRefreshStepRow,
+  child: AsyncRunRow,
+  runtime: AnalysisRefreshRuntime,
+): Promise<void> {
+  if (child.status === "queued" || child.status === "running") {
+    const steps = await new AnalysisRefreshRunsRepository(tx).listSteps(
+      parent.scope,
+      parent.job.runId,
+    );
+    await scheduleContinuationInTx(
+      ctx,
+      tx,
+      parent,
+      steps,
+      "analysisRefresh.topic_model.waiting",
+      runtime,
+      "poll",
+    );
+    return;
+  }
+  if (child.status === "failed" || child.status === "cancelled") {
+    const superseded =
+      child.status === "cancelled" &&
+      child.kind === "topic_model_generation" &&
+      child.result_type === "topic_model_generation_run" &&
+      child.result_id === child.id &&
+      child.last_error_code === "TOPIC_MODEL_GENERATION_SUPERSEDED";
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      superseded
+        ? SAFE_FAILURES.topicSuperseded
+        : child.last_error_code === TOPIC_MODEL_OUTCOME_UNKNOWN_CODE
+        ? SAFE_FAILURES.topicOutcomeUnknown
+        : SAFE_FAILURES.topicChildFailed,
+      runtime,
+    );
+    return;
+  }
+  if (
+    child.status !== "completed" ||
+    child.kind !== "topic_model_generation" ||
+    child.result_type !== "topic_model_generation_run" ||
+    child.result_id !== child.id
+  ) {
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.topicResultInvalid,
+      runtime,
+    );
+    return;
+  }
+
+  const ledger = await new TopicModelGenerationRunsRepository(tx).findById(
+    parent.scope,
+    child.id,
+  );
+  let manifest: TopicModelGenerationInputManifest | null = null;
+  try {
+    manifest = ledger
+      ? parseTopicModelGenerationInputManifest(ledger.input_manifest)
+      : null;
+  } catch {
+    manifest = null;
+  }
+  if (
+    !ledger ||
+    !manifest ||
+    ledger.id !== child.id ||
+    ledger.workspace_id !== parent.scope.workspaceId ||
+    ledger.project_id !== parent.scope.projectId ||
+    ledger.analysis_refresh_run_id !== parent.job.runId ||
+    ledger.generation_version !== TOPIC_MODEL_GENERATION_VERSION ||
+    ledger.prompt_set_version !== TOPIC_MODEL_PROMPT_SET_VERSION ||
+    manifest.analysisRefreshRunId !== parent.job.runId ||
+    manifest.projectId !== parent.scope.projectId ||
+    contentHash(manifest as unknown as CanonicalValue) !== ledger.input_hash ||
+    ledger.result_topic_model_revision_id === null
+  ) {
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.topicResultInvalid,
+      runtime,
+    );
+    return;
+  }
+
+  const plans = new AnalysisRefreshRunsRepository(tx);
+  if (
+    !(await plans.completeStep(
+      parent.scope,
+      parent.job.runId,
+      "topic_model",
+      {
+        childAsyncRunId: child.id,
+        resultSnapshotId: null,
+      },
+    ))
+  ) {
+    throw new Error("Analysis Refresh Topic Model step could not complete");
+  }
+  const steps = await plans.listSteps(parent.scope, parent.job.runId);
+  await scheduleContinuationInTx(
+    ctx,
+    tx,
+    parent,
+    steps,
+    "analysisRefresh.topic_model.completed",
+    runtime,
+    "advance",
+  );
+}
+
 async function observeAuditChildInTx(
   ctx: WorkerContext,
   tx: DbTx,
@@ -1895,6 +2655,17 @@ async function observeRunningStep(
 
   if (step.step_key === "growth_audit") {
     await observeAuditChildInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      child,
+      runtime,
+    );
+    return;
+  }
+  if (step.step_key === "topic_model") {
+    await observeTopicModelChildInTx(
       ctx,
       tx,
       parent,

@@ -383,6 +383,15 @@ function keywordItem(keywordId = KEYWORD_A) {
     reviewOrigin: null,
     revision: 0,
     intent: null,
+    searchIntent: {
+      value: null,
+      authority: "unavailable",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: null,
+      observedAt: null,
+      limitation: "No governed or provider-observed search intent is available.",
+    },
     buyerStage: null,
     cluster: null,
     classificationLimitations: {
@@ -438,6 +447,7 @@ function keywordItem(keywordId = KEYWORD_A) {
         competitorRank: "No competitor-rank observation is available.",
       },
     },
+    recollection: null,
     coverage: {
       availability: "partial",
       limitations: ["Classification and several canonical metrics are unavailable."],
@@ -448,6 +458,7 @@ function keywordItem(keywordId = KEYWORD_A) {
 function keywordLibraryResponse() {
   return {
     projectId: PROJECT_ID,
+    diagnosticRunId: null,
     data: [keywordItem()],
     meta: {
       limit: 50,
@@ -653,7 +664,9 @@ function confirmedTopicModel() {
     state: "confirmed",
     confirmedAt: "2026-07-21T00:00:00.000Z",
     confirmedBy: TOPIC_ACTOR,
+    confirmationMode: "user",
     contentHash: "b".repeat(64),
+    generationSummary: null,
   } as const;
 }
 
@@ -670,7 +683,9 @@ function draftTopicModel(editRevision = 2) {
     updatedAt: "2026-07-22T00:00:00.000Z",
     confirmedAt: undefined,
     confirmedBy: undefined,
+    confirmationMode: undefined,
     contentHash: undefined,
+    generationSummary: undefined,
   } as const;
 }
 
@@ -1340,7 +1355,12 @@ describe("Growth Map browser API boundary", () => {
   });
 
   it("includes a normalized diagnosticRunId pin in the published Keyword list key and path", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(ok(keywordLibraryResponse()));
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        ...keywordLibraryResponse(),
+        diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const options = buildGrowthMapKeywordsQueryOptions(
@@ -1351,7 +1371,7 @@ describe("Growth Map browser API boundary", () => {
         diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
       },
     );
-    await getGrowthMapKeywords(PROJECT_ID, {
+    const page = await getGrowthMapKeywords(PROJECT_ID, {
       cursor: "",
       diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
     });
@@ -1372,6 +1392,134 @@ describe("Growth Map browser API boundary", () => {
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords?limit=50&diagnosticRunId=${KEYWORD_DIAGNOSTIC_RUN}`,
       expect.any(Object),
     );
+    expect(page.diagnosticRunId).toBe(KEYWORD_DIAGNOSTIC_RUN);
+  });
+
+  it.each([
+    [KEYWORD_DIAGNOSTIC_RUN, null],
+    [null, KEYWORD_DIAGNOSTIC_RUN],
+  ] as const)(
+    "fails closed when requested Keyword run %s resolves response run %s",
+    async (requestedRunId, responseRunId) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        ok({
+          ...keywordLibraryResponse(),
+          diagnosticRunId: responseRunId,
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        getGrowthMapKeywords(PROJECT_ID, {
+          diagnosticRunId: requestedRunId,
+        }),
+      ).rejects.toThrow(/diagnostic run identity/i);
+    },
+  );
+
+  it("propagates the complete Keyword search-intent authority through list and detail reads", async () => {
+    const providerOccurrence = {
+      occurrenceId: KEYWORD_OCCURRENCE,
+      collectedAt: "2026-07-21T02:00:00.000Z",
+      providerDataAsOf: null,
+      freshness: "unknown" as const,
+      limitation: "DataForSEO does not expose a provider data-as-of timestamp.",
+      scopeBasis: "provider_collection_scope" as const,
+      scopeLimitation: "DataForSEO ranked-keyword scope is bounded.",
+      marketCode: "US",
+      languageTag: "en-US",
+      sourceKind: "dataforseo_ranked" as const,
+      snapshotId: KEYWORD_SNAPSHOT,
+      sourceObservationId: KEYWORD_OBSERVATION,
+      sourcePointer: "/valueJson/keyword" as const,
+    };
+    const searchIntent = {
+      value: "commercial" as const,
+      authority: "provider_observed" as const,
+      snapshotId: KEYWORD_SNAPSHOT,
+      observationId: KEYWORD_OBSERVATION,
+      analysisInvocationId: null,
+      observedAt: OBSERVED_AT,
+      limitation: null,
+    };
+    const recollection = {
+      reason: "historical_dataforseo_observation_missing_fields" as const,
+      fields: ["keyword_difficulty"] as const,
+    };
+    const item = {
+      ...keywordItem(),
+      sourceOccurrences: [providerOccurrence],
+      searchIntent,
+      recollection,
+    };
+    const list = {
+      ...keywordLibraryResponse(),
+      data: [item],
+    };
+    const detail = { projectId: PROJECT_ID, data: item };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(list))
+      .mockResolvedValueOnce(ok(detail));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const listResponse = await getGrowthMapKeywords(PROJECT_ID);
+    const detailResponse = await getGrowthMapKeywordDetail(
+      PROJECT_ID,
+      KEYWORD_A,
+    );
+
+    expect(listResponse.data[0]?.searchIntent).toEqual(searchIntent);
+    expect(detailResponse.data.searchIntent).toEqual(searchIntent);
+    expect(listResponse.data[0]?.recollection).toEqual(recollection);
+    expect(detailResponse.data.recollection).toEqual(recollection);
+  });
+
+  it("fails closed when a Keyword response forges provider search-intent lineage", async () => {
+    const item = keywordItem();
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        ...keywordLibraryResponse(),
+        data: [
+          {
+            ...item,
+            searchIntent: {
+              value: "commercial",
+              authority: "provider_observed",
+              snapshotId: KEYWORD_SNAPSHOT,
+              observationId: "00000000-0000-4000-8000-000000000099",
+              analysisInvocationId: null,
+              observedAt: OBSERVED_AT,
+              limitation: null,
+            },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getGrowthMapKeywords(PROJECT_ID)).rejects.toThrow();
+  });
+
+  it("fails closed instead of trimming an invalid search-intent limitation", async () => {
+    const item = keywordItem();
+    const fetchMock = vi.fn().mockResolvedValue(
+      ok({
+        projectId: PROJECT_ID,
+        data: {
+          ...item,
+          searchIntent: {
+            ...item.searchIntent,
+            limitation: " padded provenance limitation ",
+          },
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getGrowthMapKeywordDetail(PROJECT_ID, KEYWORD_A),
+    ).rejects.toThrow();
   });
 
   it("keys Keyword detail by exact id and active UI locale", () => {
@@ -1548,11 +1696,22 @@ describe("Growth Map browser API boundary", () => {
         data: {
           ...keywordItem(),
           status: "approved",
+          reviewOrigin: "user",
           revision: 1,
           intent: "commercial",
+          searchIntent: {
+            value: "commercial",
+            authority: "user_confirmed",
+            snapshotId: null,
+            observationId: null,
+            analysisInvocationId: null,
+            observedAt: null,
+            limitation: null,
+          },
           buyerStage: "consideration",
           cluster: {
             clusterId: TOPIC_NODE_CHILD,
+            topicModelRevision: 1,
             name: "Onboarding automation",
           },
           classificationLimitations: {
@@ -1591,6 +1750,10 @@ describe("Growth Map browser API boundary", () => {
     );
 
     expect(response.data.revision).toBe(1);
+    expect(response.data.cluster).toMatchObject({
+      clusterId: TOPIC_NODE_CHILD,
+      topicModelRevision: 1,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}`,
       expect.objectContaining({
@@ -1926,6 +2089,55 @@ describe("Growth Map browser API boundary", () => {
     ]);
   });
 
+  it("preserves an exact system-auto Topic generation summary at the browser boundary", async () => {
+    const systemWorkspace = {
+      ...topicWorkspace(),
+      latestConfirmed: {
+        ...confirmedTopicModel(),
+        confirmedBy: null,
+        confirmationMode: "system_auto" as const,
+        generationSummary: {
+          origin: "llm_auto_confirmed" as const,
+          generationVersion: "topic-model-generation.v1" as const,
+          baseTopicModelRevision: null,
+          analysisInvocationId:
+            "00000000-0000-4000-8000-000000000071",
+          promptSetVersion: "topic-model.prompt.v1" as const,
+          inputHash: "c".repeat(64),
+          generatedAt: "2026-07-20T23:59:00.000Z",
+          keywordGroupCount: 2,
+          keywordCount: 3,
+          assignedCount: 2,
+          unassignedGroupCount: 1,
+          skippedCount: 1,
+          limitations: [
+            "keyword_assignments_skipped",
+            "topic_groups_unassigned",
+          ] as const,
+          reason: "Initial model generated by Analysis Refresh" as const,
+        },
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok(systemWorkspace)));
+
+    await expect(
+      getGrowthMapTopicModelWorkspace(PROJECT_ID),
+    ).resolves.toMatchObject({
+      latestConfirmed: {
+        confirmedBy: null,
+        confirmationMode: "system_auto",
+        generationSummary: {
+          assignedCount: 2,
+          skippedCount: 1,
+          limitations: [
+            "keyword_assignments_skipped",
+            "topic_groups_unassigned",
+          ],
+        },
+      },
+    });
+  });
+
   it("sends strict begin, retire-patch, and confirm Topic Model CAS commands", async () => {
     const fetchMock = vi
       .fn()
@@ -1984,6 +2196,51 @@ describe("Growth Map browser API boundary", () => {
       } as never),
     ).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects server-owned Topic confirmation provenance before fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const serverOwnedFields = [
+      { confirmedBy: TOPIC_ACTOR },
+      { confirmationMode: "user" },
+      { generationSummary: null },
+    ] as const;
+
+    for (const forbidden of serverOwnedFields) {
+      await expect(
+        beginGrowthMapTopicModelDraft(PROJECT_ID, {
+          expectedLatestConfirmedRevision: 1,
+          reason: "Start a reviewed Topic Map revision.",
+          ...forbidden,
+        } as never),
+      ).rejects.toThrow();
+      await expect(
+        patchGrowthMapTopicModelDraft(PROJECT_ID, {
+          topicModelRevision: 2,
+          expectedEditRevision: 2,
+          reason: "Rename a Topic.",
+          intents: [
+            {
+              kind: "rename",
+              topicNodeId: TOPIC_NODE_CHILD,
+              label: "Automation strategy",
+            },
+          ],
+          ...forbidden,
+        } as never),
+      ).rejects.toThrow();
+      await expect(
+        confirmGrowthMapTopicModelDraft(PROJECT_ID, {
+          topicModelRevision: 2,
+          expectedEditRevision: 3,
+          reason: "Publish the reviewed Topic Map revision.",
+          ...forbidden,
+        } as never),
+      ).rejects.toThrow();
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps draft invalidation isolated and refreshes confirmed consumers only after publication", async () => {

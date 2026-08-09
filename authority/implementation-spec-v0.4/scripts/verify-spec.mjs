@@ -175,7 +175,7 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.equal(
     lock.migrationHead,
-    "0047_dataforseo_competitor_metrics",
+    "0048_topic_model_generation",
   );
 
   assert.match(readme, /状态：\*\*active\*\*/);
@@ -209,7 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
-  assert.equal(migrations.length, 47, "v0.4 must freeze 47 migrations");
+  assert.equal(migrations.length, 48, "v0.4 must freeze 48 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),
@@ -223,7 +223,7 @@ export function verifyAuthoritySourceSet({
 
   const tables = migrationTableInventory(migrations);
   exactSet(tables, lock.tables, "application table inventory");
-  assert.equal(tables.length, 78, "v0.4 must freeze exactly 78 app tables");
+  assert.equal(tables.length, 80, "v0.4 must freeze exactly 80 app tables");
   assert.ok(
     !tables.some((table) => table === "job" || table.startsWith("pgboss")),
     "pg-boss tables are not part of the app inventory",
@@ -305,18 +305,18 @@ export function verifyAuthoritySourceSet({
   );
   assert.match(
     authorityOpenApi,
-    /analysis-refresh\.plan\.v2[\s\S]*dataforseo_backlinks[\s\S]*Growth Audit/,
-    "new Analysis Refresh parents must freeze the six-step v2 plan",
+    /analysis-refresh\.plan\.v3[\s\S]*dataforseo_backlinks[\s\S]*topic_model[\s\S]*Growth Audit/,
+    "new Analysis Refresh parents must freeze the seven-step v3 plan",
   );
   assert.match(
     authorityOpenApi,
-    /default-off rollout gate[\s\S]*500\/1000 backlink rows[\s\S]*20\/20 selective source-page verifications/,
+    /default-off rollout gate[\s\S]*500\/1000\s+backlink rows[\s\S]*20\/20 selective source-page verifications/,
     "DataForSEO Backlinks must retain a default-off bounded rollout",
   );
   assert.match(
     authorityOpenApi,
-    /analysis-refresh\.plan\.v1[\s\S]*readable and[\s\S]*resumable/,
-    "legacy five-step Analysis Refresh v1 parents must remain readable and resumable",
+    /five-step `analysis-refresh\.plan\.v1` and exact six-step[\s\S]*`analysis-refresh\.plan\.v2` parents remain readable and resumable; new[\s\S]*parents use v3/,
+    "exact Analysis Refresh v1 and v2 parents must remain readable and resumable while new parents use v3",
   );
   const backlinkAuthorityMetric = componentBlock(
     authorityOpenApi,
@@ -489,7 +489,7 @@ export function verifyAuthoritySourceSet({
   for (const [label, expected, patterns] of [
     ["operations", 79, [/79 个 operation/g]],
     ["shared async operations", 10, [/10 个 shared async operation/g]],
-    ["tables", 78, [/78 张应用表/g]],
+    ["tables", 80, [/80 张应用表/g]],
     ["rules", 12, [/12 条规则/g]],
   ]) {
     const count = patterns.reduce(

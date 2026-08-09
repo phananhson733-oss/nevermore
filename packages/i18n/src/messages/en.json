@@ -1414,6 +1414,25 @@
         "transactional": "Transactional",
         "navigational": "Navigational"
       },
+      "searchIntentAuthority": {
+        "user_confirmed": "User confirmed",
+        "governed_legacy": "Governed legacy value",
+        "provider_observed": "Provider observed",
+        "llm_generated": "LLM generated",
+        "unavailable": "Authority unavailable"
+      },
+      "searchIntentUnavailableHint": "Search intent limitation",
+      "topicRevision": "Topic v{revision}",
+      "recollection": {
+        "eyebrow": "Data refresh",
+        "title": "Recollection required",
+        "description": "This historical DataForSEO row omitted: {fields}. A new diagnosis can collect the fields; explicit provider null values are not treated as missing.",
+        "action": "Go to Run Diagnosis",
+        "field": {
+          "keyword_difficulty": "Keyword difficulty",
+          "provider_search_intent": "Provider search intent"
+        }
+      },
       "stageLabel": {
         "awareness": "Awareness",
         "consideration": "Consideration",
@@ -1438,6 +1457,9 @@
         "pathStepCluster": "Topic cluster",
         "pathStepPage": "Mapped page",
         "pathStepBuyerStage": "Buyer stage",
+        "pathStepCta": "CTA",
+        "ctaUnavailable": "Not exposed",
+        "ctaUnavailableDescription": "The Keyword contract does not expose an exact CTA mapping, so the UI leaves this step unavailable instead of inferring one.",
         "relatedTitle": "Same-cluster needs in the loaded range",
         "relatedCount": "Showing {shown} of {total} related needs in the loaded range",
         "viewSources": "View sources and details",
@@ -1461,6 +1483,8 @@
       "columns": {
         "keyword": "Keyword / market and language",
         "intent": "Intent",
+        "topic": "Confirmed Topic",
+        "intentAuthority": "Search intent / authority",
         "volume": "Search volume",
         "kd": "KD",
         "rankUrl": "Rank and URL",
@@ -1468,7 +1492,38 @@
         "queryKind": "Query type",
         "freshness": "Freshness",
         "status": "Status",
+        "delivery": "Content output",
         "source": "Intake path"
+      },
+      "delivery": {
+        "unavailablePrimary": "Content output unavailable",
+        "reviewRequired": "Opportunity review required",
+        "confirmed": "Confirmed content path",
+        "contentPaths": "{count, plural, one {# content path} other {# content paths}}",
+        "currentOutputs": "{count, plural, one {# current deliverable} other {# current deliverables}}",
+        "artifactState": "{status} · revision {revision}",
+        "title": "Mapped content delivery",
+        "provenance": "Latest published Growth Map lineage · current deliverable state",
+        "sectionUnavailable": "Unavailable",
+        "sectionCount": "{opportunities} paths · {artifacts} deliverables",
+        "mappedPage": "Exact mapped page",
+        "pageCarrier": "Page carrier: {type}",
+        "scopeBoundary": "Only content Opportunities whose carrier page exactly matches this Keyword mapping are included.",
+        "awaitingGeneration": "Confirmed Action; deliverable generation has not produced an Artifact yet",
+        "revision": "Revision {revision}",
+        "openExecution": "Open related deliverables",
+        "openExecutionFor": "Open related deliverables for {title}",
+        "reason": {
+          "published_run_unavailable": "No published diagnostic run is available for an exact delivery projection.",
+          "url_inventory_unavailable": "The complete page inventory for this published run is unavailable, so delivery is not inferred.",
+          "opportunity_inventory_unavailable": "The complete Opportunity inventory for this published run is unavailable, so delivery is not inferred.",
+          "artifact_inventory_unavailable": "The complete current Artifact inventory is unavailable, so partial pages are not presented as delivery truth.",
+          "keyword_unassigned": "This Keyword is not mapped to a canonical page, so no deliverable is attributed to it.",
+          "keyword_new_asset": "This Keyword targets a new asset; the current read models do not prove which deliverable will carry it.",
+          "mapped_page_unavailable": "The mapped SitePage is absent from the complete published-run inventory, so the join fails closed.",
+          "inventory_scope_mismatch": "The page inventory does not match this project and published run, so cross-run data is not joined.",
+          "no_content_opportunity": "No content Opportunity owns this exact mapped SitePage. Topic peers and technical work are excluded."
+        }
       },
       "noMatchesTitle": "No matching Keywords",
       "noMatchesDescription": "Try another Keyword, source, market, language, or mapped page. The library shows only exact loaded records.",
@@ -1570,13 +1625,21 @@
           "conflicts": "Intent conflicts"
         },
         "status": {
+          "loading": "Reading authority",
           "draft": "Draft awaiting publication",
           "confirmed": "Published",
+          "system_confirmed": "System confirmed",
+          "user_confirmed": "User confirmed",
+          "legacy_confirmed": "Legacy confirmed",
+          "read_failed": "Read failed",
           "unavailable": "Not established"
         },
         "loading": "Loading the Topic Map…",
         "manage": "Manage Topic Map",
         "gatewayActionHint": "Structure editing, Keyword coverage, and version history",
+        "gatewayUnavailableHint": "No confirmed Topic Map exists. A diagnosis can generate a reviewable proposal.",
+        "gatewayRunDiagnosis": "Run diagnosis",
+        "generationSummary": "Auto-generated from {keywords} Keywords · {assigned} assigned",
         "workspaceError": "The Topic Map workspace could not be read.",
         "insightsError": "The structure is available, but Keyword coverage insights could not be read.",
         "retry": "Retry",
@@ -2313,6 +2376,7 @@
       "signals": "Growth signals",
       "signalsNote": "{count, plural, one {# deduplicated Finding; one Finding can affect many URLs} other {# deduplicated Findings; one Finding can affect many URLs}}",
       "uncoveredKeywords": "Uncovered Keywords",
+      "uncoveredLowerBound": "≥ {count}",
       "uncoveredNote": "{count} clusters among {loaded} loaded Keywords",
       "uncoveredNoteTruncated": "{count} clusters among the first {loaded} Keywords · more records exist",
       "uncoveredEmpty": "The Keyword library has no records yet",
@@ -2320,10 +2384,77 @@
       "unavailable": "Unavailable"
     },
     "pageViews": {
+      "viewLabel": "View",
+      "viewSwitcherLabel": "Pages and opportunities view",
+      "view": {
+        "url": "By URL",
+        "cluster": "By Topic",
+        "opportunity": "By opportunity"
+      },
       "url": {
+        "label": "URLs in the frozen audit",
+        "selectAria": "Inspect {url}",
+        "titleUnavailable": "Page title unavailable",
+        "templateUnavailable": "Template unavailable",
+        "description": "No URL matches the current search and filters.",
         "currentOpportunities": "Current issues and opportunities",
         "fullEvidence": "Full evidence and review",
         "fullEvidenceDescription": "Metrics, lineage, link map, and Finding controls"
+      },
+      "cluster": {
+        "label": "Confirmed Topic clusters",
+        "selectAria": "Inspect Topic cluster {topic}",
+        "description": "No confirmed Topic cluster matches the current search and filters.",
+        "descriptionUnavailable": "No confirmed Topic description is available.",
+        "root": "Pillar",
+        "child": "Subtopic",
+        "detailLabel": "Selected Topic-cluster detail",
+        "eyebrow": "Confirmed Topic cluster",
+        "metrics": {
+          "pages": "Mapped pages",
+          "keywords": "Demand signals",
+          "volume": "Observed volume"
+        },
+        "sections": {
+          "path": "Topic ownership and conversion path",
+          "pages": "Mapped pages",
+          "demand": "Demand in this Topic",
+          "opportunity": "Highest current opportunity"
+        },
+        "path": {
+          "topic": "Topic cluster",
+          "page": "Mapped page",
+          "cta": "CTA"
+        },
+        "noMappedPage": "No exact primary page",
+        "ctaUnavailable": "Not exposed",
+        "ctaUnavailableDescription": "The frozen Growth Map contract does not expose an exact CTA mapping, so this step stays explicitly unavailable instead of being inferred.",
+        "itemCount": "{count, plural, one {# page} other {# pages}}",
+        "queryCount": "{count, plural, one {# query} other {# queries}}",
+        "noPages": "No exact page is mapped to this confirmed Topic.",
+        "noKeywords": "No collected Keyword is assigned to this confirmed Topic.",
+        "intentUnavailable": "Intent unavailable",
+        "volumeUnavailable": "Volume unavailable",
+        "noOpportunity": "No exact Opportunity targets a mapped page in this Topic.",
+        "searchVolume": {
+          "partial_search_volume": "Partial observed total",
+          "unavailable": "Unavailable"
+        },
+        "coverage": {
+          "empty": "No demand",
+          "uncovered": "Uncovered",
+          "partial": "Partial",
+          "covered": "Covered",
+          "conflict": "Conflict"
+        },
+        "unavailableTitle": "The confirmed Topic view is unavailable",
+        "unavailable": {
+          "confirmed_topic_unavailable": "A confirmed Topic model is required. Draft or generated proposals are never shown as production ownership.",
+          "diagnostic_run_mismatch": "The Topic model and this frozen audit do not name the same Diagnostic Run.",
+          "topic_revision_mismatch": "Topic data was read from different confirmed revisions. Results stay hidden until the revision is consistent.",
+          "topic_reference_mismatch": "At least one Keyword or page references a Topic outside the exact confirmed revision.",
+          "inventory_reference_mismatch": "At least one Topic mapping cannot be proved against the complete frozen URL and Keyword inventory."
+        }
       },
       "opportunity": {
         "label": "Growth opportunities",
@@ -2385,6 +2516,16 @@
         "confirmedBoundary": "A canonical Action already exists for this Finding."
       },
       "columns": {
+        "url": "URL / page",
+        "pageType": "Page type",
+        "signals": "Signals",
+        "clicks": "GSC clicks",
+        "position": "Position",
+        "topic": "Topic cluster",
+        "role": "Role",
+        "keywords": "Keywords",
+        "volume": "Volume",
+        "coverage": "Coverage",
         "urls": "URLs",
         "opportunity": "Opportunity / target",
         "type": "Type",
@@ -2398,12 +2539,17 @@
       "scopeMismatch": "The audit changed while this view was loading. Results stay hidden until every read names the same Diagnostic Run.",
       "searchScope": "Search and filters apply to the complete frozen set in this view.",
       "empty": {
+        "url": "No matching URL.",
+        "cluster": "No matching confirmed Topic cluster.",
         "opportunity": "No matching opportunity."
       },
       "select": {
+        "cluster": "Select a confirmed Topic cluster to inspect its pages, demand, and conversion path.",
         "opportunity": "Select an opportunity to inspect the Finding, targets, and next decision."
       },
       "counts": {
+        "urls": "{count, plural, one {# URL} other {# URLs}}",
+        "clusters": "{count, plural, one {# Topic cluster} other {# Topic clusters}}",
         "opportunities": "{count, plural, one {# opportunity} other {# opportunities}}",
         "findings": "{count, plural, one {# Finding} other {# Findings}}"
       }
