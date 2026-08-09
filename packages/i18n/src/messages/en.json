@@ -2047,10 +2047,6 @@
         "collecting": "Collecting",
         "unavailable": "Unavailable"
       },
-      "sharedKeywords": {
-        "pendingHint": "A search-results Competitor origin is recorded, but the shared-keyword count has not been derived into a formal metric yet.",
-        "noDataHint": "No search-results collection origin covers this domain yet."
-      },
       "openFullProfile": "Open the full Competitor detail",
       "noMatchesTitle": "No matching Competitors",
       "noMatchesDescription": "Try another name, domain, or review status. The library shows only exact loaded records.",

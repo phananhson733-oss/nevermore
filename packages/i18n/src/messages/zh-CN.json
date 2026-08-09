@@ -2047,10 +2047,6 @@
         "collecting": "采集中",
         "unavailable": "不可用"
       },
-      "sharedKeywords": {
-        "pendingHint": "已记录搜索结果竞品来源，共同关键词计数尚未派生为正式指标。",
-        "noDataHint": "尚无搜索结果采集来源覆盖该域名。"
-      },
       "openFullProfile": "打开竞品完整详情",
       "noMatchesTitle": "没有匹配的竞品",
       "noMatchesDescription": "请尝试其他名称、域名或审核状态。这里仅显示当前已加载到的精确记录。",

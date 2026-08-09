@@ -8291,29 +8291,47 @@ function CompetitorOverlapValue({
 }
 
 /**
- * Shared keywords have no canonical writer yet, so this cell only ever shows
- * a collection state: "collecting" when a serp_overlap origin covers this
- * domain, otherwise "no data" — never an invented count.
+ * Shared keywords: only an available canonical insight renders a count, and
+ * its scope limitation stays behind the ⓘ hint. An unavailable insight keeps
+ * the API's own limitation — the cell only picks the fallback vocabulary,
+ * "collecting" when a serp_overlap origin already covers this domain and
+ * "insufficient data" otherwise — and never invents or borrows a number.
  */
 function CompetitorSharedKeywordsValue({
   item,
 }: {
-  readonly item: Pick<GrowthMapCompetitorLibraryItem, "originOccurrences">;
+  readonly item: Pick<
+    GrowthMapCompetitorLibraryItem,
+    "originOccurrences" | "sharedKeywordInsight"
+  >;
 }) {
+  const locale = useLocale();
   const t = useTranslations("growthMap.competitorLibrary");
   const display = competitorSharedKeywordDisplay(item);
+  if (display.state === "counted") {
+    const value = formatNumber(locale, display.value);
+    return (
+      <span className={styles.libraryMetricSecondary}>
+        <strong className={styles.libraryMetricPrimary} title={value}>
+          {value}
+        </strong>
+        {display.limitation === null ? null : (
+          <LimitationHint
+            label={t("coverageLabel")}
+            limitations={[display.limitation]}
+          />
+        )}
+      </span>
+    );
+  }
   return (
     <span className={styles.libraryMetricSecondary}>
-      {display === "collecting"
+      {display.state === "collecting"
         ? t("fallback.collecting")
         : t("fallback.insufficientData")}
       <LimitationHint
         label={t("coverageLabel")}
-        limitations={[
-          display === "collecting"
-            ? t("sharedKeywords.pendingHint")
-            : t("sharedKeywords.noDataHint"),
-        ]}
+        limitations={[display.limitation]}
       />
     </span>
   );

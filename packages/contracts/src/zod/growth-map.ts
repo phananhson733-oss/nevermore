@@ -2321,6 +2321,23 @@ export type GrowthMapCompetitorAiCitationInsight = z.infer<
   typeof GrowthMapCompetitorAiCitationInsight
 >;
 
+const AvailableCompetitorSharedKeywordInsight = z
+  .object({
+    ...CompetitorInsightLineageShape,
+    availability: z.literal("available"),
+    value: z.number().int().positive(),
+  })
+  .strict();
+
+export const GrowthMapCompetitorSharedKeywordInsight =
+  z.discriminatedUnion("availability", [
+    UnavailableCompetitorInsight,
+    AvailableCompetitorSharedKeywordInsight,
+  ]);
+export type GrowthMapCompetitorSharedKeywordInsight = z.infer<
+  typeof GrowthMapCompetitorSharedKeywordInsight
+>;
+
 function competitorOriginIdentity(
   origin: z.infer<typeof GrowthMapCompetitorOriginOccurrence>,
 ): string {
@@ -2357,6 +2374,7 @@ const GrowthMapCompetitorLibraryItemObject = z
     lastObservedAt: IsoDateTime.nullable(),
     serpOverlap: GrowthMapCompetitorSerpOverlap,
     aiCitationInsight: GrowthMapCompetitorAiCitationInsight,
+    sharedKeywordInsight: GrowthMapCompetitorSharedKeywordInsight,
     coverage: GrowthMapCoverage,
   })
   .strict();
@@ -2485,6 +2503,32 @@ export const GrowthMapCompetitorLibraryItem =
           path: ["aiCitationInsight", "observationId"],
           message:
             "Available AI citation insight requires one exact canonical origin Observation",
+        });
+      }
+    }
+    if (item.sharedKeywordInsight.availability === "available") {
+      const sharedKeywordInsight = item.sharedKeywordInsight;
+      if (sharedKeywordInsight.valuePointer !== "/valueJson/intersections") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sharedKeywordInsight", "valuePointer"],
+          message:
+            "Shared keyword insight must use its canonical normalized Observation pointer",
+        });
+      }
+      const source = item.originOccurrences.some(
+        (origin) =>
+          origin.originKind === "serp_overlap" &&
+          origin.snapshotId === sharedKeywordInsight.snapshotId &&
+          origin.observationId === sharedKeywordInsight.observationId &&
+          origin.observedAt === sharedKeywordInsight.observedAt,
+      );
+      if (!source) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sharedKeywordInsight", "observationId"],
+          message:
+            "Available shared keyword insight requires one exact canonical origin Observation",
         });
       }
     }

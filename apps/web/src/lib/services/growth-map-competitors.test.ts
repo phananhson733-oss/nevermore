@@ -55,6 +55,12 @@ const ids = {
   serpObservation: "10000000-0000-4000-8000-000000000025",
   serpCollectionRun: "10000000-0000-4000-8000-000000000026",
   serpSource: "10000000-0000-4000-8000-000000000027",
+  serpFallbackOrigin: "10000000-0000-4000-8000-000000000028",
+  serpFallbackObservation: "10000000-0000-4000-8000-000000000029",
+  olderSerpOrigin: "09000000-0000-4000-8000-000000000030",
+  olderSerpSnapshot: "09000000-0000-4000-8000-000000000031",
+  olderSerpObservation: "09000000-0000-4000-8000-000000000032",
+  olderSerpCollectionRun: "09000000-0000-4000-8000-000000000033",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -160,6 +166,20 @@ function governanceCompetitor(
         observationId: null,
       },
     ],
+    ...overrides,
+  };
+}
+
+function serpOriginRef(
+  overrides: Partial<
+    (typeof governance.competitors)[number]["originRefs"][number]
+  > = {},
+): (typeof governance.competitors)[number]["originRefs"][number] {
+  return {
+    occurrenceId: ids.serpOrigin,
+    originKind: "serp_overlap",
+    snapshotId: ids.serpSnapshot,
+    observationId: ids.serpObservation,
     ...overrides,
   };
 }
@@ -1123,6 +1143,305 @@ describe("Growth Map Competitor Library read service", () => {
       ],
     });
     expect(JSON.stringify(response)).not.toMatch(/17|intersections/iu);
+  });
+
+  it("projects the exact DataForSEO competitors-domain count as the shared-keyword insight", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [serpObservation()],
+        [serpSnapshot()],
+        [serpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    const item = response.data[0]!;
+    expect(item.sharedKeywordInsight).toEqual({
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/intersections",
+      observedAt: capturedAt,
+      limitation: expect.stringMatching(/top 20 organic results/iu),
+    });
+    expect(item.originOccurrences).toContainEqual(
+      expect.objectContaining({
+        originKind: "serp_overlap",
+        snapshotId: ids.serpSnapshot,
+        observationId: ids.serpObservation,
+        observedAt: capturedAt,
+      }),
+    );
+    expect(item.coverage.limitations).toContain(
+      item.sharedKeywordInsight.limitation,
+    );
+  });
+
+  it("projects the shared-keyword insight from the live review detail", async () => {
+    activeProject(null);
+    vi.spyOn(CompetitorsRepository.prototype, "findById").mockResolvedValue(
+      entity({ name: null, origin_count: 1 }),
+    );
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      serpOrigin(),
+    ]);
+    const exec = new FakeExecutor();
+    exec.enqueue([serpObservation()], [serpSnapshot()], [serpCollectionRun()]);
+
+    const response = await getProjectAuditCompetitorReviewDetail(
+      scope,
+      ids.project,
+      ids.competitor,
+      exec as never,
+    );
+
+    expect(response.data.sharedKeywordInsight).toEqual({
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/intersections",
+      observedAt: capturedAt,
+      limitation: expect.stringMatching(/top 20 organic results/iu),
+    });
+    expect(response.data.coverage.limitations).toContain(
+      response.data.sharedKeywordInsight.limitation,
+    );
+  });
+
+  it("keeps the shared-keyword insight unavailable when only a v2 SERP-competitor Observation is recorded", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [fallbackSerpObservation()],
+        [fallbackSerpSnapshot()],
+        [fallbackSerpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.data[0]?.sharedKeywordInsight).toEqual({
+      availability: "unavailable",
+      value: null,
+      limitation: expect.stringMatching(
+        /none of its Observations carries a readable competitors-domain shared-keyword count/iu,
+      ),
+    });
+    const serialized = JSON.stringify(response);
+    expect(serialized).not.toContain("keywordsCount");
+    expect(serialized).not.toMatch(/17|intersections/iu);
+  });
+
+  it("selects the competitors-domain Observation when one v2 Snapshot records both SERP origins", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 2 }),
+      origins: [
+        serpOrigin({
+          id: ids.serpFallbackOrigin,
+          normalized_observation_id: ids.serpFallbackObservation,
+        }),
+        serpOrigin(),
+      ],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            serpOriginRef({
+              occurrenceId: ids.serpFallbackOrigin,
+              observationId: ids.serpFallbackObservation,
+            }),
+            serpOriginRef(),
+          ],
+        }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [
+          fallbackSerpObservation({ id: ids.serpFallbackObservation }),
+          serpObservation(),
+        ],
+        [fallbackSerpSnapshot()],
+        [fallbackSerpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.data[0]?.sharedKeywordInsight).toEqual({
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/intersections",
+      observedAt: capturedAt,
+      limitation: expect.stringMatching(/top 100 organic results/iu),
+    });
+    expect(JSON.stringify(response)).not.toContain("keywordsCount");
+  });
+
+  it("projects the newest readable shared-keyword Observation when several were collected", async () => {
+    const olderCapturedAt = "2026-07-15T08:00:00.000Z";
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 2 }),
+      origins: [
+        serpOrigin({
+          id: ids.olderSerpOrigin,
+          data_snapshot_id: ids.olderSerpSnapshot,
+          normalized_observation_id: ids.olderSerpObservation,
+          observed_at: olderCapturedAt,
+        }),
+        serpOrigin(),
+      ],
+      governanceCompetitors: [
+        governanceCompetitor({
+          originRefs: [
+            serpOriginRef({
+              occurrenceId: ids.olderSerpOrigin,
+              snapshotId: ids.olderSerpSnapshot,
+              observationId: ids.olderSerpObservation,
+            }),
+            serpOriginRef(),
+          ],
+        }),
+      ],
+      generationRunId: ids.olderRun,
+      queryResults: [
+        [
+          serpObservation({
+            id: ids.olderSerpObservation,
+            snapshot_id: ids.olderSerpSnapshot,
+            observed_at: olderCapturedAt,
+            value_json: {
+              ...serpObservation().value_json,
+              intersections: 5,
+            },
+          }),
+          serpObservation(),
+        ],
+        [
+          serpSnapshot({
+            id: ids.olderSerpSnapshot,
+            collection_run_id: ids.olderSerpCollectionRun,
+            captured_at: olderCapturedAt,
+          }),
+          serpSnapshot(),
+        ],
+        [
+          serpCollectionRun({ id: ids.olderSerpCollectionRun }),
+          serpCollectionRun(),
+        ],
+      ],
+      confirmedProfileId: null,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.data[0]?.sharedKeywordInsight).toEqual({
+      availability: "available",
+      value: 17,
+      snapshotId: ids.serpSnapshot,
+      observationId: ids.serpObservation,
+      valuePointer: "/valueJson/intersections",
+      observedAt: capturedAt,
+      limitation: expect.stringMatching(/top 20 organic results/iu),
+    });
+  });
+
+  it("reports the shared-keyword insight as unavailable when no DataForSEO competitors-domain source exists", async () => {
+    const exec = arrangeList();
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null },
+      exec as never,
+    );
+
+    const item = response.data[0]!;
+    expect(item.sharedKeywordInsight).toEqual({
+      availability: "unavailable",
+      value: null,
+      limitation: expect.stringMatching(
+        /no immutable dataforseo competitors-domain observation is recorded/iu,
+      ),
+    });
+    expect(item.sharedKeywordInsight.limitation).toMatch(
+      /not a measured zero/iu,
+    );
+    expect(item.coverage.limitations).toContain(
+      item.sharedKeywordInsight.limitation,
+    );
+  });
+
+  it("fails closed instead of reporting a zero shared-keyword count", async () => {
+    const exec = arrangeList({
+      entity: entity({ name: null, origin_count: 1 }),
+      origins: [serpOrigin()],
+      governanceCompetitors: [
+        governanceCompetitor({ originRefs: [serpOriginRef()] }),
+      ],
+      queryResults: [
+        [
+          serpObservation({
+            value_json: {
+              ...serpObservation().value_json,
+              intersections: 0,
+            },
+          }),
+        ],
+        [serpSnapshot()],
+        [serpCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
   });
 
   it("projects the exact DataForSEO origin in the live review detail without widening it into a derived insight", async () => {

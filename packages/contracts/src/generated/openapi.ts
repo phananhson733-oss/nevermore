@@ -3935,6 +3935,21 @@ export interface components {
             value: string;
         };
         GrowthMapCompetitorAiCitationInsight: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableAiCitationInsight"];
+        GrowthMapCompetitorAvailableSharedKeywordInsight: {
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            /** @constant */
+            valuePointer: "/valueJson/intersections";
+            observedAt: components["schemas"]["Timestamp"];
+            limitation: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            availability: "available";
+            value: number;
+        };
+        GrowthMapCompetitorSharedKeywordInsight: components["schemas"]["GrowthMapCompetitorUnavailableInsight"] | components["schemas"]["GrowthMapCompetitorAvailableSharedKeywordInsight"];
         /** @description Stable project-scoped Competitor identity. Approved entries require relationship and analysisScope; candidate/excluded entries forbid both. lastObservedAt is the latest non-null origin timestamp and available insights match one exact origin Observation. */
         GrowthMapCompetitorLibraryItem: {
             projectId: components["schemas"]["Uuid"];
@@ -3950,6 +3965,7 @@ export interface components {
             lastObservedAt: string | null;
             serpOverlap: components["schemas"]["GrowthMapCompetitorSerpOverlap"];
             aiCitationInsight: components["schemas"]["GrowthMapCompetitorAiCitationInsight"];
+            sharedKeywordInsight: components["schemas"]["GrowthMapCompetitorSharedKeywordInsight"];
             coverage: components["schemas"]["GrowthMapCoverage"];
         };
         /** @description hasNext is true exactly when nextCursor is non-null. */

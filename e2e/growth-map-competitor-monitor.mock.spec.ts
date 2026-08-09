@@ -22,12 +22,22 @@ const CONTENT_KEYWORD_ID = "41000000-0000-4000-8000-000000000009";
 const CONTENT_KEYWORD_ID_B = "41000000-0000-4000-8000-000000000010";
 const OBSERVED_AT = "2026-07-28T08:00:00.000Z";
 
+/**
+ * `sharedKeywordCount` mirrors the canonical DataForSEO competitor-domain
+ * projection: passing a count also seeds the exact `serp_overlap` origin the
+ * contract requires as its lineage, so the available insight stays traceable.
+ * Passing `null` keeps the competitor on manual-only origins and an honest
+ * unavailable insight.
+ */
 function competitor(
   competitorId: string,
   name: string,
   domain: string,
   suffix: string,
+  sharedKeywordCount: number | null = null,
 ): GrowthMapCompetitorLibraryItem {
+  const sharedKeywordSnapshotId = `44000000-0000-4000-8000-0000000000${suffix}`;
+  const sharedKeywordObservationId = `45000000-0000-4000-8000-0000000000${suffix}`;
   return {
     projectId: E2E_PROJECT_ID,
     competitorId,
@@ -45,6 +55,18 @@ function competitor(
         manualEntryId: `43000000-0000-4000-8000-0000000000${suffix}`,
         evidenceRefs: [],
       },
+      ...(sharedKeywordCount === null
+        ? []
+        : [
+            {
+              occurrenceId: `46000000-0000-4000-8000-0000000000${suffix}`,
+              observedAt: OBSERVED_AT,
+              originKind: "serp_overlap" as const,
+              snapshotId: sharedKeywordSnapshotId,
+              observationId: sharedKeywordObservationId,
+              evidenceRefs: [],
+            },
+          ]),
     ],
     lastObservedAt: OBSERVED_AT,
     serpOverlap: {
@@ -57,6 +79,23 @@ function competitor(
       value: null,
       limitation: "尚无已确认的 AI citation 观测。",
     },
+    sharedKeywordInsight:
+      sharedKeywordCount === null
+        ? {
+            availability: "unavailable",
+            value: null,
+            limitation: "尚无覆盖该域名的规范竞品域名观测。",
+          }
+        : {
+            availability: "available",
+            value: sharedKeywordCount,
+            snapshotId: sharedKeywordSnapshotId,
+            observationId: sharedKeywordObservationId,
+            valuePointer: "/valueJson/intersections",
+            observedAt: OBSERVED_AT,
+            limitation:
+              "共同关键词为交集计数（非比率），口径为单市场、单搜索语言、仅自然结果的排名窗口，供应商每周刷新且不提供精确数据时间。",
+          },
     coverage: {
       availability: "available",
       limitations: [],
@@ -64,11 +103,13 @@ function competitor(
   };
 }
 
+const COMPETITOR_A_SHARED_KEYWORDS = 342;
 const COMPETITOR_A = competitor(
   COMPETITOR_A_ID,
   "AtlasFlow",
   "atlasflow.com",
   "11",
+  COMPETITOR_A_SHARED_KEYWORDS,
 );
 const COMPETITOR_B = competitor(
   COMPETITOR_B_ID,
@@ -350,6 +391,13 @@ function competitorDrawer(page: Page) {
   return page.getByTestId("competitor-profile-drawer");
 }
 
+function sharedKeywordCell(page: Page, domain: string) {
+  return page
+    .getByRole("listitem")
+    .filter({ hasText: domain })
+    .locator('[data-column="共同关键词"]');
+}
+
 function rowArrowButton(page: Page, domain: string) {
   return page
     .getByRole("listitem")
@@ -400,6 +448,24 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
     competitorProvenance.getByRole("link", { name: "管理数据来源" }),
   ).toHaveCount(0);
 
+  // Shared keywords render the canonical intersections count only for the
+  // Competitor whose serp_overlap origin backs it. The count is the exact
+  // contract value, its scope caveat stays reachable behind the coverage hint,
+  // and the Competitor without that origin keeps the honest fallback instead
+  // of borrowing a neighbouring metric or a zero.
+  const atlasSharedKeywords = sharedKeywordCell(page, "atlasflow.com");
+  await expect(atlasSharedKeywords).toHaveText(
+    String(COMPETITOR_A_SHARED_KEYWORDS),
+  );
+  await expect(
+    atlasSharedKeywords.locator("[data-limitation-hint]"),
+  ).toHaveAttribute("data-print-limitations", /交集计数/);
+  const beaconSharedKeywords = sharedKeywordCell(page, "beaconpath.com");
+  await expect(beaconSharedKeywords).toHaveText("数据不足");
+  await expect(beaconSharedKeywords).not.toContainText(
+    String(COMPETITOR_A_SHARED_KEYWORDS),
+  );
+
   // Monitor evidence now lives in the full-profile drawer; open it for A via
   // the new row arrow.
   const drawer = competitorDrawer(page);
@@ -407,6 +473,11 @@ test("keeps two Competitors isolated inside the existing four-module Growth Map 
   await rowArrowButton(page, "atlasflow.com").click();
   await expect(drawer).toBeVisible();
   await expect(monitor).toHaveAttribute("data-competitor-id", COMPETITOR_A_ID);
+  await expect(
+    drawer
+      .getByText("共同关键词", { exact: true })
+      .locator("xpath=following-sibling::*[1]"),
+  ).toHaveText(String(COMPETITOR_A_SHARED_KEYWORDS));
   await expect(monitor.getByTestId("competitor-monitor-status")).toHaveText(
     "本期可比较",
   );

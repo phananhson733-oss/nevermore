@@ -29,7 +29,10 @@ export {
   LATEST_APP_MIGRATION,
   readMigrationVersion,
 } from "./migration-version.ts";
-export { isTimestampUuidCursorValid } from "./repositories/cursor.ts";
+export {
+  isNumericTimestampUuidCursorValid,
+  isTimestampUuidCursorValid,
+} from "./repositories/cursor.ts";
 export {
   Repository,
   workspacePredicate,

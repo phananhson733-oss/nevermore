@@ -7,6 +7,7 @@ import {
   ReviewCompetitorRequest as ReviewCompetitorRequestSchema,
   type GrowthMapCompetitorLibraryItem,
   type GrowthMapCompetitorOriginOccurrence,
+  type GrowthMapCompetitorSharedKeywordInsight,
   type GrowthMapCoverage,
   type ProductProfileEvidenceRef,
   type ReviewCompetitorRequest,
@@ -58,6 +59,15 @@ const SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION =
   "The immutable DataForSEO competitor source is recorded in originOccurrences, but no canonical derived SERP-overlap ratio is defined.";
 const SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION =
   "No immutable DataForSEO competitor source is recorded for this Competitor, and no canonical derived SERP-overlap ratio is defined.";
+const SHARED_KEYWORD_VALUE_POINTER = "/valueJson/intersections";
+const SHARED_KEYWORD_SOURCE_ABSENT_LIMITATION =
+  "No immutable DataForSEO competitors-domain Observation is recorded for this Competitor, so no canonical shared-keyword count exists. That source lists only domains that already share at least one ranking keyword with this site, so a missing record is not a measured zero.";
+const SHARED_KEYWORD_OBSERVATION_UNREADABLE_LIMITATION =
+  "An immutable DataForSEO search-landscape source is recorded for this Competitor, but none of its Observations carries a readable competitors-domain shared-keyword count. That source lists only domains that already share at least one ranking keyword with this site, so a missing count is not a measured zero.";
+const SHARED_KEYWORD_TOP_20_BASIS_LIMITATION =
+  "This counts the keywords where this Competitor and the analysed site both rank inside the top 20 organic results; it is a count, not a share of either site's keywords. It covers one market and one search language, organic results only, and the vendor refreshes this source weekly without publishing an exact data timestamp.";
+const SHARED_KEYWORD_TOP_100_BASIS_LIMITATION =
+  "This counts the keywords where this Competitor and the analysed site both rank inside the top 100 organic results; it is a count, not a share of either site's keywords. It covers one market and one search language, organic results only, and the vendor refreshes this source weekly without publishing an exact data timestamp.";
 const AI_CITATION_WRITER_LIMITATION =
   "AI citation insight is unavailable because Competitor Library v1 has no canonical AI-citation writer.";
 const DISPLAY_NAME_NOT_FROZEN_LIMITATION =
@@ -1245,11 +1255,123 @@ function projectOrigin(
   }
 }
 
+interface SharedKeywordCandidate {
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly observedAt: string;
+  readonly value: number;
+  readonly limitation: string;
+}
+
+/**
+ * The measured window differs per collection method, so the basis is read from
+ * the frozen Snapshot rather than assumed. An unknown method_version yields no
+ * basis, which keeps the insight unavailable instead of stating a wrong window.
+ */
+function sharedKeywordBasisLimitation(methodVersion: string): string | null {
+  switch (methodVersion) {
+    case "dataforseo.search_landscape.v1":
+      return SHARED_KEYWORD_TOP_20_BASIS_LIMITATION;
+    case "dataforseo.search_landscape.v2":
+      return SHARED_KEYWORD_TOP_100_BASIS_LIMITATION;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Only "dataforseo.competitor_domain.v1" Observations carry the shared-keyword
+ * intersection count. A v2 Snapshot also emits "dataforseo.serp_competitor.v1"
+ * against the same domain and the same observedAt, whose keywordsCount is the
+ * Competitor's own ranking-keyword total, not an overlap with this site. The
+ * origin row carries no metric_key, so the Observation must be re-read and
+ * filtered by metric here; borrowing the neighbouring metric would misstate
+ * the number.
+ */
+function sharedKeywordCandidates(
+  origin: GrowthMapCompetitorOriginOccurrence,
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): SharedKeywordCandidate[] {
+  if (origin.originKind !== "serp_overlap" || origin.observedAt === null) {
+    return [];
+  }
+  const observation = observationsById.get(origin.observationId);
+  const snapshot = snapshotsById.get(origin.snapshotId);
+  if (
+    !observation ||
+    !snapshot ||
+    observation.id !== origin.observationId ||
+    observation.snapshot_id !== origin.snapshotId ||
+    snapshot.id !== origin.snapshotId ||
+    observation.metric_key !== "dataforseo.competitor_domain.v1" ||
+    !isRecord(observation.value_json)
+  ) {
+    return [];
+  }
+  const value = observation.value_json["intersections"];
+  const limitation = sharedKeywordBasisLimitation(snapshot.method_version);
+  if (!isPositiveInteger(value) || limitation === null) return [];
+  return [
+    {
+      snapshotId: origin.snapshotId,
+      observationId: origin.observationId,
+      observedAt: origin.observedAt,
+      value,
+      limitation,
+    },
+  ];
+}
+
+/**
+ * Projects the newest readable shared-keyword count, tie-broken by
+ * observationId so one input always yields one lineage. The source only ever
+ * records domains with at least one shared keyword, so an unreadable or absent
+ * Observation is reported as unavailable and never as a zero.
+ */
+function projectSharedKeywordInsight(
+  origins: readonly GrowthMapCompetitorOriginOccurrence[],
+  observationsById: ReadonlyMap<string, CanonicalObservationRow>,
+  snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
+): GrowthMapCompetitorSharedKeywordInsight {
+  const candidates = origins.flatMap((origin) =>
+    sharedKeywordCandidates(origin, observationsById, snapshotsById),
+  );
+  const selected = candidates.sort(
+    (left, right) =>
+      Date.parse(right.observedAt) - Date.parse(left.observedAt) ||
+      (left.observationId < right.observationId
+        ? -1
+        : left.observationId > right.observationId
+          ? 1
+          : 0),
+  )[0];
+  if (selected !== undefined) {
+    return {
+      availability: "available",
+      value: selected.value,
+      snapshotId: selected.snapshotId,
+      observationId: selected.observationId,
+      valuePointer: SHARED_KEYWORD_VALUE_POINTER,
+      observedAt: selected.observedAt,
+      limitation: selected.limitation,
+    };
+  }
+  return {
+    availability: "unavailable",
+    value: null,
+    limitation: origins.some((origin) => origin.originKind === "serp_overlap")
+      ? SHARED_KEYWORD_OBSERVATION_UNREADABLE_LIMITATION
+      : SHARED_KEYWORD_SOURCE_ABSENT_LIMITATION,
+  };
+}
+
 function itemCoverage(
   entity: CompetitorEntityRow,
   hasApprovedProductProfileSource: boolean,
   truncated: boolean,
   serpLimitation: string,
+  sharedKeywordLimitation: string | null,
 ): GrowthMapCoverage {
   const governance =
     entity.review_status === "candidate"
@@ -1261,6 +1383,7 @@ function itemCoverage(
     availability: "partial",
     limitations: unique([
       serpLimitation,
+      ...(sharedKeywordLimitation === null ? [] : [sharedKeywordLimitation]),
       AI_CITATION_WRITER_LIMITATION,
       ...(truncated ? [ORIGIN_HISTORY_LIMITATION] : []),
       ...(governance ? [governance] : []),
@@ -1275,6 +1398,7 @@ function itemCoverage(
 function frozenItemCoverage(
   fact: GovernanceCompetitorFactV1,
   serpLimitation: string,
+  sharedKeywordLimitation: string | null,
 ): GrowthMapCoverage {
   const governance =
     fact.reviewStatus === "candidate"
@@ -1286,6 +1410,7 @@ function frozenItemCoverage(
     availability: "partial",
     limitations: unique([
       serpLimitation,
+      ...(sharedKeywordLimitation === null ? [] : [sharedKeywordLimitation]),
       AI_CITATION_WRITER_LIMITATION,
       DISPLAY_NAME_NOT_FROZEN_LIMITATION,
       ...(governance ? [governance] : []),
@@ -1322,6 +1447,11 @@ function projectItem(
   )
     ? SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION
     : SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION;
+  const sharedKeywordInsight = projectSharedKeywordInsight(
+    origins,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
   return {
     projectId: scope.projectId,
     competitorId: history.entity.id,
@@ -1343,11 +1473,13 @@ function projectItem(
       value: null,
       limitation: AI_CITATION_WRITER_LIMITATION,
     },
+    sharedKeywordInsight,
     coverage: itemCoverage(
       history.entity,
       history.hasApprovedProductProfileSource,
       history.truncated,
       serpLimitation,
+      sharedKeywordInsight.limitation,
     ),
   };
 }
@@ -1368,6 +1500,11 @@ function projectFrozenItem(
   )
     ? SERP_SOURCE_RECORDED_NO_RATIO_LIMITATION
     : SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION;
+  const sharedKeywordInsight = projectSharedKeywordInsight(
+    origins,
+    rows.observationsById,
+    rows.snapshotsById,
+  );
   return {
     projectId: scope.projectId,
     competitorId: history.fact.competitorEntityId,
@@ -1389,7 +1526,12 @@ function projectFrozenItem(
       value: null,
       limitation: AI_CITATION_WRITER_LIMITATION,
     },
-    coverage: frozenItemCoverage(history.fact, serpLimitation),
+    sharedKeywordInsight,
+    coverage: frozenItemCoverage(
+      history.fact,
+      serpLimitation,
+      sharedKeywordInsight.limitation,
+    ),
   };
 }
 

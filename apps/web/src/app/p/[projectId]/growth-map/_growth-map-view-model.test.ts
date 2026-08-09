@@ -389,6 +389,11 @@ function competitorItem(
       value: null,
       limitation: "AI citation insight is unavailable.",
     },
+    sharedKeywordInsight: {
+      availability: "unavailable",
+      value: null,
+      limitation: "Shared keyword counts are unavailable.",
+    },
     coverage: {
       availability: "available",
       limitations: [],
@@ -453,6 +458,21 @@ function availableSerpOverlap(): GrowthMapCompetitorLibraryItem["serpOverlap"] {
     valuePointer: "/valueJson/overlapPct",
     observedAt: "2026-07-28T08:00:00.000Z",
     limitation: null,
+  };
+}
+
+const SHARED_KEYWORD_SCOPE_LIMITATION =
+  "Count of shared ranking keywords over the top-20 window for one market and one search language.";
+
+function availableSharedKeywordInsight(): GrowthMapCompetitorLibraryItem["sharedKeywordInsight"] {
+  return {
+    availability: "available",
+    value: 17,
+    snapshotId: IDS.snapshot,
+    observationId: IDS.observation,
+    valuePointer: "/valueJson/intersections",
+    observedAt: "2026-07-28T08:00:00.000Z",
+    limitation: SHARED_KEYWORD_SCOPE_LIMITATION,
   };
 }
 
@@ -1535,25 +1555,58 @@ describe("Growth Map view model", () => {
     ).toBe("not_participating");
   });
 
-  it("shows shared keywords as collecting only when a serp_overlap origin was recorded", () => {
+  it("counts shared keywords only from an available insight and otherwise keeps the API limitation", () => {
+    // The count and its scope note both come from the contract insight; the
+    // cell never derives either from the origins.
     expect(
       competitorSharedKeywordDisplay(
         competitorItem(IDS.competitorA, "alpha.example", {
           originOccurrences: [serpOverlapOrigin(), manualOrigin()],
+          sharedKeywordInsight: availableSharedKeywordInsight(),
         }),
       ),
-    ).toBe("collecting");
+    ).toEqual({
+      state: "counted",
+      value: 17,
+      limitation: SHARED_KEYWORD_SCOPE_LIMITATION,
+    });
+    // A serp_overlap origin alone proves collection covers the domain, not
+    // that a count was observed: still no number, and the limitation is the
+    // server's own sentence rather than a front-end guess.
+    expect(
+      competitorSharedKeywordDisplay(
+        competitorItem(IDS.competitorA, "alpha.example", {
+          originOccurrences: [serpOverlapOrigin(), manualOrigin()],
+          sharedKeywordInsight: {
+            availability: "unavailable",
+            value: null,
+            limitation: "No readable competitor-domain observation is attached.",
+          },
+        }),
+      ),
+    ).toEqual({
+      state: "collecting",
+      limitation: "No readable competitor-domain observation is attached.",
+    });
     expect(
       competitorSharedKeywordDisplay(
         competitorItem(IDS.competitorA, "alpha.example", {
           originOccurrences: [manualOrigin(), csvKeywordGapOrigin()],
+          sharedKeywordInsight: {
+            availability: "unavailable",
+            value: null,
+            limitation: "No search-results collection origin covers this domain.",
+          },
         }),
       ),
-    ).toBe("no_data");
+    ).toEqual({
+      state: "no_data",
+      limitation: "No search-results collection origin covers this domain.",
+    });
     expect(
       competitorSharedKeywordDisplay(
         competitorItem(IDS.competitorA, "alpha.example"),
-      ),
+      ).state,
     ).toBe("no_data");
   });
 

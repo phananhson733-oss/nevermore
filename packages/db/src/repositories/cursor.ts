@@ -111,3 +111,60 @@ export function isTimestampUuidCursorValid(
 ): boolean {
   return decodeTimestampUuidCursor(cursor, separator) !== null;
 }
+
+const DECIMAL = /^-?\d+(\.\d+)?$/;
+
+export interface NumericTimestampUuidKeyset {
+  /** Decimal text kept byte-for-byte for SQL binding; null sorts last. */
+  readonly value: string | null;
+  readonly timestamp: string;
+  readonly id: string;
+}
+
+/**
+ * Encode the three-part value-ordered keyset (numeric, timestamp, UUID). The
+ * numeric segment is the row's sort value as PostgreSQL numeric text, or empty
+ * when the row has no value and sorts in the trailing NULLS LAST region.
+ */
+export function encodeNumericTimestampUuidCursor(
+  value: string | null,
+  timestamp: string,
+  id: string,
+): string {
+  return Buffer.from(
+    `${value ?? ""}|${timestamp} ${id}`,
+    "utf8",
+  ).toString("base64url");
+}
+
+/** Decode and validate an opaque numeric+timestamp+UUID cursor. */
+export function decodeNumericTimestampUuidCursor(
+  cursor: string,
+): NumericTimestampUuidKeyset | null {
+  if (!cursor || !CANONICAL_BASE64URL.test(cursor)) return null;
+  try {
+    const bytes = Buffer.from(cursor, "base64url");
+    if (bytes.toString("base64url") !== cursor) return null;
+    const raw = bytes.toString("utf8");
+    const split = raw.indexOf("|");
+    if (split < 0) return null;
+    const valueText = raw.slice(0, split);
+    if (valueText.length > 0 && !DECIMAL.test(valueText)) return null;
+    const rest = decodeTimestampUuidCursor(
+      Buffer.from(raw.slice(split + 1), "utf8").toString("base64url"),
+    );
+    if (rest === null) return null;
+    return {
+      value: valueText.length > 0 ? valueText : null,
+      timestamp: rest.timestamp,
+      id: rest.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Public semantic guard for value-ordered list cursors. */
+export function isNumericTimestampUuidCursorValid(cursor: string): boolean {
+  return decodeNumericTimestampUuidCursor(cursor) !== null;
+}
