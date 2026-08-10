@@ -402,6 +402,30 @@ describe("buildKeywordOpportunityResult funnel", () => {
     expect(result.funnel.alreadyCovered).toBeNull();
   });
 
+  it("keeps the covered count absent even when every candidate matched a page", () => {
+    // The hole in deriving this from the rows: a run where every candidate
+    // happens to match a crawled page carries no `gsc_query_sample_not_read`
+    // row at all, and inference from the rows would hand back a confident zero
+    // for a sample nobody fetched. The stage list is the fact; the rows are a
+    // lossy projection of it.
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: observations.map((observation) => ({
+          ...observation,
+          coverage: "related_coverage_unverified" as const,
+        })),
+        unavailableStages: ["gsc_coverage"],
+      }),
+    );
+
+    // No row carries the unread state, so an inference from the rows would
+    // have produced a number here.
+    expect(
+      result.rows.every((row) => row.coverage !== "gsc_query_sample_not_read"),
+    ).toBe(true);
+    expect(result.funnel.alreadyCovered).toBeNull();
+  });
+
   it("reports shown as exactly the number of rows it handed back", () => {
     // A funnel whose last number disagrees with the table underneath it is the
     // one number a reader cannot check, so it must be derived from the rows.

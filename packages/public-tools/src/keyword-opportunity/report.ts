@@ -7,7 +7,10 @@ import { createPublicToolResult } from "../contract.ts";
 import { clusterKeywords, keywordClusterIndex } from "./cluster.ts";
 import { isKeywordAlreadyCovered } from "./coverage.ts";
 import { keywordNextChecks } from "./next-checks.ts";
-import { KEYWORD_OPPORTUNITY_SCHEMA_VERSION } from "./types.ts";
+import {
+  KEYWORD_OPPORTUNITY_SCHEMA_VERSION,
+  KEYWORD_STAGE_GSC_COVERAGE,
+} from "./types.ts";
 import { isKeywordWinnable } from "./winnability.ts";
 import type {
   KeywordOpportunityAvailability,
@@ -122,12 +125,12 @@ function countFunnel(
     volumePositive: availability("available"),
     explicitZero: availability("explicit_zero"),
     providerNoData: availability("provider_no_data"),
-    // Derived from the observations rather than from `unavailableStages`, so
-    // there is one source of truth: a row can only be `gsc_query_sample_not_read`
-    // if nothing was read for it, and the count is meaningless then.
-    alreadyCovered: observations.some(
-      (o) => o.coverage === "gsc_query_sample_not_read",
-    )
+    // Read off the stage list, which is the fact, rather than inferred from
+    // the rows, which are a lossy projection of it: a run where every
+    // candidate happened to match a crawled page carries no
+    // `gsc_query_sample_not_read` row at all, and inferring from the rows
+    // would hand back a confident zero for a sample nobody fetched.
+    alreadyCovered: input.unavailableStages.includes(KEYWORD_STAGE_GSC_COVERAGE)
       ? null
       : observations.filter((o) => isKeywordAlreadyCovered(o.coverage)).length,
     serpSampled: observations.filter(

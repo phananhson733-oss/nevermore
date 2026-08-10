@@ -11,6 +11,7 @@ import {
   keywordCoverageProperty,
   keywordTokens,
   keywordValidationFor,
+  KEYWORD_STAGE_GSC_COVERAGE,
   keywordVolumeKey,
   observeKeywordCoverage,
   resolveKeywordValidations,
@@ -674,7 +675,7 @@ export async function handleKeywordOpportunitiesRequest(
     // no property whose queries we may fetch.
     const property = keywordCoverageProperty(token.siteUrl, grant.properties);
     if (property === null) {
-      unavailableStages.push("gsc_coverage");
+      unavailableStages.push(KEYWORD_STAGE_GSC_COVERAGE);
       console.error(
         JSON.stringify({
           tool: "keyword_opportunity",
@@ -695,7 +696,7 @@ export async function handleKeywordOpportunitiesRequest(
         // weaker claim, not a wrong one. It is named so the result reads
         // `partial` — and logged, because the first live run degraded here on
         // every request and left nothing in the trace to explain it.
-        unavailableStages.push("gsc_coverage");
+        unavailableStages.push(KEYWORD_STAGE_GSC_COVERAGE);
         console.error(
           JSON.stringify({
             tool: "keyword_opportunity",

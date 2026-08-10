@@ -250,6 +250,15 @@ export interface KeywordOpportunityCluster {
  * The counts are the honesty mechanism: a run that shows two rows out of two
  * hundred candidates has to show where the other 198 went.
  */
+/**
+ * The stage name the Search Console read reports itself under.
+ *
+ * Named here rather than spelled at each site because two modules have to
+ * agree on it: the handler writes it into `unavailableStages`, and the report
+ * reads it to decide whether the covered count means anything.
+ */
+export const KEYWORD_STAGE_GSC_COVERAGE = "gsc_coverage";
+
 export interface KeywordOpportunityFunnel {
   readonly generated: number;
   readonly deduplicated: number;
