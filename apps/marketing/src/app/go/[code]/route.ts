@@ -3,8 +3,10 @@
 // @pos    -- Public clean short-link entrypoint for GenGrowth attribution
 // once this file is updated, update header comments and _DIR.md in this folder
 import { NextResponse } from "next/server";
+import { notFound } from "next/navigation";
 // Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
 // apps/web only, so an aliased import here would not resolve in route.test.ts.
+import { createAdminSupabaseClient } from "../../../lib/supabase/admin";
 import {
   findShortLink,
   normalizeOwnedDestination,
@@ -27,21 +29,34 @@ type RouteContext = {
  * the requested URL, recrawls it, and spends budget on a page that was never
  * ours. A 404 spends the same request once and ends it.
  *
- * A failed lookup is deliberately NOT a 404: the link may well exist and the
- * database is simply unreachable. Telling a crawler "gone" during an outage
- * would drop URLs that are real, so those answer 503 and invite a retry.
+ * The two ways a lookup can fail are deliberately NOT the same answer:
+ *
+ * - No credentials configured. This deployment has no short-link storage at
+ *   all, so no short link can exist and every code is genuinely absent. It is
+ *   also a standing state, not a blip — answering "try again later" forever
+ *   would be a lie a crawler keeps acting on. 404.
+ * - The query itself failed. Storage exists and is momentarily unreachable,
+ *   so the link may well be real. Telling a crawler "gone" here would drop
+ *   URLs we deliberately published. 503, with a retry hint.
  */
 export async function GET(_request: Request, context: RouteContext) {
   const params = await Promise.resolve(context.params);
   const code = normalizeShortLinkCode(params.code);
 
   if (!code) {
-    return notFound();
+    notFound();
+  }
+
+  let admin: ReturnType<typeof createAdminSupabaseClient>;
+  try {
+    admin = createAdminSupabaseClient();
+  } catch {
+    notFound();
   }
 
   let record: Awaited<ReturnType<typeof findShortLink>>;
   try {
-    record = await findShortLink(code);
+    record = await findShortLink(code, admin);
   } catch {
     return unavailable();
   }
@@ -50,17 +65,10 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!destination) {
     // Either no row, or a row whose destination is no longer one of ours. Both
     // mean there is nothing here to send anyone to.
-    return notFound();
+    notFound();
   }
 
   return NextResponse.redirect(destination, record?.redirect_status ?? 302);
-}
-
-function notFound(): NextResponse {
-  return new NextResponse(null, {
-    status: 404,
-    headers: { "cache-control": "no-store" },
-  });
 }
 
 function unavailable(): NextResponse {

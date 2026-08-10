@@ -1,10 +1,13 @@
-// @input  — GET from ./route.ts with a stubbed findShortLink
+// @input  — GET from ./route.ts with a stubbed findShortLink + admin client
 // @output — regression tests pinning unknown short codes to 404, outages to 503
 // @pos    — short-link entrypoint boundary tests (soft-404 regression guard)
 // once this file is updated, update header comments and _DIR.md in this folder
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const findShortLink = vi.hoisted(() => vi.fn());
+const createAdminSupabaseClient = vi.hoisted(() => vi.fn(() => ({}) as never));
+
+vi.mock("../../../lib/supabase/admin", () => ({ createAdminSupabaseClient }));
 
 vi.mock("../../../lib/link-attribution/short-links", async (importOriginal) => {
   // normalizeShortLinkCode and normalizeOwnedDestination stay real: they are
@@ -19,14 +22,34 @@ vi.mock("../../../lib/link-attribution/short-links", async (importOriginal) => {
 
 import { GET } from "./route";
 
-function get(code: string | undefined) {
-  return GET(new Request(`https://gengrowth.ai/go/${code ?? ""}`), {
-    params: { code },
-  });
+/**
+ * `notFound()` signals a 404 by throwing, so a test cannot read a status off a
+ * returned Response. Next tags the thrown error, and asserting on that tag is
+ * what distinguishes "this route answered 404" from "this route crashed".
+ */
+async function status(code: string | undefined): Promise<number | string> {
+  try {
+    const response = await GET(new Request(`https://gengrowth.ai/go/${code ?? ""}`), {
+      params: { code },
+    });
+    return response.status;
+  } catch (error) {
+    const digest = (error as { digest?: unknown })?.digest;
+    if (typeof digest === "string" && digest.startsWith("NEXT_HTTP_ERROR_FALLBACK")) {
+      return 404;
+    }
+    throw error;
+  }
+}
+
+function get(code: string) {
+  return GET(new Request(`https://gengrowth.ai/go/${code}`), { params: { code } });
 }
 
 afterEach(() => {
   findShortLink.mockReset();
+  createAdminSupabaseClient.mockReset();
+  createAdminSupabaseClient.mockReturnValue({} as never);
 });
 
 /**
@@ -39,10 +62,7 @@ describe("GET /go/[code] when nothing is registered", () => {
   it("answers 404 instead of redirecting an unknown code to the homepage", async () => {
     findShortLink.mockResolvedValue(null);
 
-    const response = await get("free-seo-audit");
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("location")).toBeNull();
+    expect(await status("free-seo-audit")).toBe(404);
   });
 
   it.each(["abcdef", "seo-tools", "random-word-here", "a".repeat(80)])(
@@ -50,14 +70,12 @@ describe("GET /go/[code] when nothing is registered", () => {
     async (code) => {
       findShortLink.mockResolvedValue(null);
 
-      expect((await get(code)).status).toBe(404);
+      expect(await status(code)).toBe(404);
     },
   );
 
   it("answers 404 for a code shaped wrongly enough to never be looked up", async () => {
-    const response = await get("Not A Code");
-
-    expect(response.status).toBe(404);
+    expect(await status("Not A Code")).toBe(404);
     expect(findShortLink).not.toHaveBeenCalled();
   });
 
@@ -68,20 +86,27 @@ describe("GET /go/[code] when nothing is registered", () => {
       redirect_status: 301,
     });
 
-    const response = await get("leftover");
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("location")).toBeNull();
+    expect(await status("leftover")).toBe(404);
   });
 });
 
 /**
- * An outage is not the same answer as "gone". Telling a crawler 404 while the
- * database is unreachable would drop short links that really do exist, so a
- * failed lookup asks for a retry instead.
+ * The two ways a lookup can fail are not the same answer, and the difference
+ * is not academic: a deployment without Supabase credentials answered every
+ * unknown path 503, which tells a crawler to come back forever for a route
+ * that will never work.
  */
-describe("GET /go/[code] when the lookup itself fails", () => {
-  it("answers 503 with a retry hint rather than 404 or a homepage redirect", async () => {
+describe("GET /go/[code] when the lookup cannot happen", () => {
+  it("answers 404, not 503, when this deployment has no short-link storage", async () => {
+    createAdminSupabaseClient.mockImplementation(() => {
+      throw new Error("Missing Supabase admin credentials.");
+    });
+
+    expect(await status("abcdef")).toBe(404);
+    expect(findShortLink).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 with a retry hint when the query itself fails", async () => {
     findShortLink.mockRejectedValue(new Error("connection terminated"));
 
     const response = await get("realcode");
@@ -121,8 +146,8 @@ describe("GET /go/[code] for links that do exist", () => {
   it("looks the code up in its normalized lower-case form", async () => {
     findShortLink.mockResolvedValue(null);
 
-    await get("MixedCase");
+    await status("MixedCase");
 
-    expect(findShortLink).toHaveBeenCalledWith("mixedcase");
+    expect(findShortLink).toHaveBeenCalledWith("mixedcase", expect.anything());
   });
 });
