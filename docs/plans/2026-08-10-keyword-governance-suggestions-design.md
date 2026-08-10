@@ -205,13 +205,28 @@ lineage, conflict, and required-field checks.
 
 ## 5. Suggestion authority
 
-### 5.1 New durable record
+### 5.1 Durable suggestion and generation records
 
-Add one table, provisionally named `app.keyword_review_suggestions`, in ordered
-migration `0051_keyword_review_suggestions.sql`.
+Add three narrowly scoped tables in ordered migration
+`0051_keyword_review_suggestions.sql`:
 
-The row contains immutable suggestion content plus a tightly constrained
-resolution transition:
+- `app.keyword_review_suggestions` stores immutable, customer-reviewable
+  suggestions and their one legal terminal resolution;
+- `app.keyword_governance_suggestion_generation_runs` extends one canonical
+  `async_runs` row with a bounded frozen input manifest and generation hashes;
+- `app.keyword_governance_suggestion_invocation_attempts` reserves each paid
+  model attempt and records `reserved | succeeded | failed | rejected |
+  outcome_unknown` before a retry can occur.
+
+The run and attempt tables deliberately mirror the proven Topic Model
+generation fence without reusing its task identity or tables. A single
+suggestion table is insufficient for production because a process or network
+failure after the provider accepts a request can make the call outcome
+unknown; retrying without a durable attempt fence could silently duplicate a
+paid call.
+
+Each suggestion row contains immutable suggestion content plus a tightly
+constrained resolution transition:
 
 - stable suggestion UUID;
 - workspace, project, and Keyword entity scope;
@@ -228,6 +243,18 @@ resolution transition:
 - terminal resolution mode `accepted | edited` when approved;
 - final `keyword_review_decision_id` when resolved;
 - superseding suggestion identity when replaced.
+
+Each generation run freezes the exact workspace/project scope, generation and
+prompt-set versions, ordered candidate identities and revisions, confirmed
+Product Profile/Topic authority, bounded Page candidates, deterministic
+provider facts, and input hashes. Lifecycle truth stays solely in
+`async_runs`; the extension row contains no competing status column.
+
+Each invocation-attempt row binds the generation run, async delivery attempt,
+provider/model/config, prompt and input hashes, planned AnalysisInvocation ID,
+token/cost limits, timestamps, terminal error code, and final successful
+AnalysisInvocation ID. It is append-only apart from one guarded terminal
+transition.
 
 Suggestion content is immutable after insert. A database guard permits only one
 legal transition from `pending` to `approved` or `superseded`, with the required
