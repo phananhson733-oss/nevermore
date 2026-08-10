@@ -98,7 +98,10 @@ import {
   GROWTH_AUDIT_CAPABILITY_VERSION,
   growthAuditCapabilityManifestHash,
 } from "./frozen-input.ts";
-import { freezeDiagnosticGovernance } from "./governance.ts";
+import {
+  DiagnosticGovernanceCapacityError,
+  freezeDiagnosticGovernance,
+} from "./governance.ts";
 import {
   parseAnalysisRefreshRequestPayload,
   type AnalysisRefreshRequestPayload,
@@ -2035,7 +2038,25 @@ async function startGrowthAuditStep(
     ...autoGovernance,
   });
 
-  const governance = await freezeDiagnosticGovernance(tx, parent.scope);
+  let governance: Awaited<ReturnType<typeof freezeDiagnosticGovernance>>;
+  try {
+    governance = await freezeDiagnosticGovernance(tx, parent.scope);
+  } catch (error) {
+    if (!(error instanceof DiagnosticGovernanceCapacityError)) throw error;
+    ctx.logger.error("analysis_refresh_governance_projection_unusable", {
+      analysisRefreshRunId: parent.job.runId,
+      error: error.name,
+    });
+    await failStepInTx(
+      ctx,
+      tx,
+      parent,
+      step,
+      SAFE_FAILURES.auditUnusable,
+      runtime,
+    );
+    return;
+  }
   const frozen = buildAnalysisRefreshDiagnosticFrozenInput({
     projectId: parent.scope.projectId,
     siteId: parent.payload.siteId,

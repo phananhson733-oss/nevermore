@@ -121,7 +121,9 @@ function mockLibraryReads(row: CompetitorOriginRow): void {
 
 const keywordEntityId = "71000000-0000-4000-8000-000000000010";
 
-function keywordEntity(): KeywordEntityRow {
+function keywordEntity(
+  overrides: Partial<KeywordEntityRow> = {},
+): KeywordEntityRow {
   return {
     id: keywordEntityId,
     workspace_id: scope.workspaceId,
@@ -143,6 +145,7 @@ function keywordEntity(): KeywordEntityRow {
     last_seen_at: instant,
     created_at: instant,
     updated_at: instant,
+    ...overrides,
   } as unknown as KeywordEntityRow;
 }
 
@@ -153,6 +156,7 @@ function keywordOccurrence(index: number): KeywordOccurrenceForEntityRow {
     id: `71000000-0000-4000-9000-${suffix}`,
     workspace_id: scope.workspaceId,
     project_id: scope.projectId,
+    product_profile_id: null,
     data_snapshot_id: `71000000-0000-4000-a000-${suffix}`,
     normalized_observation_id: `71000000-0000-4000-b000-${suffix}`,
     display_keyword: "www.astrologywiki.com",
@@ -170,13 +174,46 @@ function keywordOccurrence(index: number): KeywordOccurrenceForEntityRow {
   } as unknown as KeywordOccurrenceForEntityRow;
 }
 
+function libraryKeywordEntity(index: number): KeywordEntityRow {
+  const suffix = index.toString(16).padStart(12, "0");
+  return {
+    ...keywordEntity(),
+    id: `71000000-0000-4000-8001-${suffix}`,
+    display_keyword: `keyword ${index}`,
+    normalized_keyword: `keyword ${index}`,
+    cluster_key: `cluster-${index}`,
+  };
+}
+
+function libraryKeywordOccurrence(
+  entity: KeywordEntityRow,
+  ordinal: number,
+): KeywordOccurrenceForEntityRow {
+  const suffix = ordinal.toString(16).padStart(12, "0");
+  const observationId = `71000000-0000-4000-b001-${suffix}`;
+  return {
+    ...keywordOccurrence(1),
+    keyword_entity_id: entity.id,
+    id: `71000000-0000-4000-9001-${suffix}`,
+    data_snapshot_id: `71000000-0000-4000-a001-${suffix}`,
+    normalized_observation_id: observationId,
+    display_keyword: entity.display_keyword,
+    normalized_keyword: entity.normalized_keyword,
+    market: entity.market,
+    language_tag: entity.language_tag,
+    query_kind: entity.query_kind,
+    source_ref: `observation:${observationId}#/valueJson/topQueries/0/query`,
+  } as KeywordOccurrenceForEntityRow;
+}
+
 function mockKeywordReads(
   occurrences: readonly KeywordOccurrenceForEntityRow[],
+  entity: KeywordEntityRow = keywordEntity(),
 ): void {
   vi.spyOn(
     KeywordsRepository.prototype,
     "listDiagnosticEligible",
-  ).mockResolvedValue([keywordEntity()]);
+  ).mockResolvedValue([entity]);
   vi.spyOn(
     KeywordOccurrencesRepository.prototype,
     "listForEntityIds",
@@ -196,6 +233,98 @@ afterEach(() => {
 });
 
 describe("freezeDiagnosticGovernance (analysis refresh)", () => {
+  it("accepts exact Product Profile keyword lineage without invented provider evidence", async () => {
+    const profileId = "71000000-0000-4000-8000-000000000011";
+    const entity = keywordEntity({ query_kind: "generative_query" });
+    mockKeywordReads(
+      [
+        {
+          ...keywordOccurrence(1),
+          product_profile_id: profileId,
+          data_snapshot_id: null,
+          normalized_observation_id: null,
+          query_kind: "generative_query",
+          source_kind: "product_profile",
+          scope_basis: "project_context",
+          source_pointer: null,
+          source_ref: `product_profile:${profileId}#profile-generative-query.v1/what-is-product`,
+          provider_data_as_of: null,
+        },
+      ],
+      entity,
+    );
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(projection.keywordClusters[0]?.keywords[0]?.occurrenceRefs).toEqual([
+      {
+        occurrenceId: "71000000-0000-4000-9000-000000000001",
+        snapshotId: null,
+        observationId: null,
+      },
+    ]);
+  });
+
+  it("preserves exact bounded lineage for a healthy 11,242-ref keyword library", async () => {
+    const entities = Array.from({ length: 1_248 }, (_, index) =>
+      libraryKeywordEntity(index + 1),
+    );
+    vi.spyOn(
+      KeywordsRepository.prototype,
+      "listDiagnosticEligible",
+    ).mockResolvedValue(entities);
+    const occurrenceRead = vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntityIds",
+    );
+    occurrenceRead.mockImplementation(async (_scope, entityIds, options) => {
+      const byId = new Map(entities.map((entity) => [entity.id, entity]));
+      const rows: KeywordOccurrenceForEntityRow[] = [];
+      for (const [entityIndex, entityId] of entityIds.entries()) {
+        const entity = byId.get(entityId);
+        if (!entity) throw new Error("test fixture entity is missing");
+        const productionShapedCount =
+          entityIndex === 0 ? 100 : entityIndex <= 1_166 ? 9 : 8;
+        for (
+          let index = 0;
+          index < Math.min(options.limitPerEntity, productionShapedCount);
+          index += 1
+        ) {
+          rows.push(
+            libraryKeywordOccurrence(
+              entity,
+              entityIndex * 100 + index + 1,
+            ),
+          );
+        }
+      }
+      return rows.slice(0, options.totalLimit + 1);
+    });
+    vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listDiagnosticEligible",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      CompetitorsRepository.prototype,
+      "listOriginsForCompetitorIds",
+    ).mockResolvedValue([]);
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(occurrenceRead).toHaveBeenCalledWith(
+      scope,
+      entities.map((entity) => entity.id),
+      { limitPerEntity: 100, totalLimit: 20_000 },
+    );
+    const facts = projection.keywordClusters.flatMap(
+      (cluster) => cluster.keywords,
+    );
+    expect(facts).toHaveLength(entities.length);
+    expect(
+      facts.reduce((total, fact) => total + fact.occurrenceRefs.length, 0),
+    ).toBe(11_241);
+  });
+
   it("keeps the newest per-entity window when a head keyword overflows the occurrence cap", async () => {
     // Regression: the brand query of a www site reached 135 distinct GSC
     // sources (1 of 1186 entities) and the overflow was treated as fatal,

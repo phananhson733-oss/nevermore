@@ -2675,6 +2675,12 @@ function competitorLibraryResponse() {
       limit: 50,
       nextCursor: null,
       hasNext: false,
+      discoveryCounts: {
+        customer_input: 2,
+        serp_duplicate: 1,
+        ai_co_citation: 0,
+        approved_corpus: 1,
+      },
       coverage: {
         availability: "partial",
         limitations: ["SERP-overlap and AI-citation sources are unavailable."],
@@ -2684,6 +2690,38 @@ function competitorLibraryResponse() {
 }
 
 describe("Growth Map Competitor Library contracts", () => {
+  it("requires exact whole-library discovery counts or an explicit frozen null", () => {
+    const response = competitorLibraryResponse();
+    expect(GrowthMapCompetitorLibraryResponse.safeParse(response).success).toBe(
+      true,
+    );
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...response,
+        meta: { ...response.meta, discoveryCounts: null },
+      }).success,
+    ).toBe(true);
+    const { discoveryCounts: _omitted, ...missingCountsMeta } = response.meta;
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...response,
+        meta: missingCountsMeta,
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapCompetitorLibraryResponse.safeParse({
+        ...response,
+        meta: {
+          ...response.meta,
+          discoveryCounts: {
+            ...response.meta.discoveryCounts,
+            ai_co_citation: -1,
+          },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts only exact canonical organic-overlap operands and fixed-cohort AI citation counts", () => {
     const serpOrigin = {
       occurrenceId: ids.competitorOccurrence,

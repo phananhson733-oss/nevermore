@@ -11172,7 +11172,7 @@ function CompetitorLibraryPane({
   readonly projectId: string;
   readonly locationSearch: string;
   readonly navigation: GrowthMapNavigationController;
-  readonly diagnosticRunId: string;
+  readonly diagnosticRunId: null;
 }) {
   const t = useTranslations("growthMap.competitorLibrary");
   const pathname = usePathname();
@@ -11317,48 +11317,57 @@ function CompetitorLibraryPane({
   // Artifact-parity discovery grouping: customer/sales input folds
   // product_profile and manual origins together, and the approved corpus is
   // the csv_keyword_gap import path. One Competitor may count in several
-  // routes; counts cover only the loaded cursor range (existing algorithm).
+  // routes. Current-library responses carry whole-library counts; immutable
+  // published responses explicitly fall back to the loaded cursor page.
+  const loadedDiscoveryCounts = {
+    customer_input: items.filter((item) =>
+      item.originOccurrences.some(
+        (origin) =>
+          origin.originKind === "product_profile" ||
+          origin.originKind === "manual",
+      ),
+    ).length,
+    serp_duplicate: items.filter((item) =>
+      item.originOccurrences.some(
+        (origin) => origin.originKind === "serp_overlap",
+      ),
+    ).length,
+    ai_co_citation: items.filter(
+      (item) =>
+        item.aiCitationInsight.availability === "available" &&
+        item.aiCitationInsight.value > 0,
+    ).length,
+    approved_corpus: items.filter((item) =>
+      item.originOccurrences.some(
+        (origin) => origin.originKind === "csv_keyword_gap",
+      ),
+    ).length,
+  };
+  const discoveryCounts =
+    response.meta.discoveryCounts ?? loadedDiscoveryCounts;
   const discoveryItems: readonly SourceStripItem[] = [
     {
       key: "customer_input",
       label: t("discoverySource.customer_input"),
-      count: items.filter((item) =>
-        item.originOccurrences.some(
-          (origin) =>
-            origin.originKind === "product_profile" ||
-            origin.originKind === "manual",
-        ),
-      ).length,
+      count: discoveryCounts.customer_input,
       tone: "amber",
     },
     {
       key: "serp_duplicate",
       label: t("discoverySource.serp_duplicate"),
-      count: items.filter((item) =>
-        item.originOccurrences.some(
-          (origin) => origin.originKind === "serp_overlap",
-        ),
-      ).length,
+      count: discoveryCounts.serp_duplicate,
       tone: "mint",
     },
     {
       key: "ai_co_citation",
       label: t("discoverySource.ai_co_citation"),
-      count: items.filter((item) =>
-        item.originOccurrences.some(
-          (origin) => origin.originKind === "ai_citation",
-        ),
-      ).length,
+      count: discoveryCounts.ai_co_citation,
       tone: "violet",
     },
     {
       key: "approved_corpus",
       label: t("discoverySource.approved_corpus"),
-      count: items.filter((item) =>
-        item.originOccurrences.some(
-          (origin) => origin.originKind === "csv_keyword_gap",
-        ),
-      ).length,
+      count: discoveryCounts.approved_corpus,
       tone: "cobalt",
     },
   ];
@@ -11492,9 +11501,10 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
   const searchParams = useSearchParams();
   const locationSearch = searchParams.toString();
   const mode = normalizeGrowthMapObjectMode(searchParams.get("object"));
-  // One unpinned URL read is the published-generation authority. Every
-  // customer-visible URL, Keyword, and Competitor read below is then pinned to
-  // that exact Diagnostic run, so switching tabs cannot blend generations.
+  // One unpinned URL read is the published-generation authority for frozen URL
+  // evidence and derived views. Keyword and Competitor libraries remain the
+  // current review authorities, so newly materialized provider facts do not
+  // disappear behind an older published Diagnostic generation.
   const generationQuery = useGrowthMapUrls(projectId, { limit: 1 });
   const diagnosticRunId = generationQuery.data?.diagnosticRunId ?? null;
 
@@ -11652,7 +11662,7 @@ export function GrowthMapClient({ projectId }: { readonly projectId: string }) {
           projectId={projectId}
           locationSearch={locationSearch}
           navigation={navigation}
-          diagnosticRunId={diagnosticRunId!}
+          diagnosticRunId={null}
         />
       ) : (
         <BacklinkGrowthPath projectId={projectId} />

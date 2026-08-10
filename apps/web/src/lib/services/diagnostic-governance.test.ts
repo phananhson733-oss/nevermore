@@ -192,6 +192,68 @@ afterEach(() => {
 });
 
 describe("freezeDiagnosticGovernance", () => {
+  it("accepts exact Product Profile keyword lineage without invented provider evidence", async () => {
+    const profileId = "70000000-0000-4000-8000-000000000012";
+    mockLibraryReads({
+      keywords: [keyword({ query_kind: "generative_query" })],
+      occurrences: new Map([
+        [
+          ids.keyword,
+          [
+            occurrence({
+              product_profile_id: profileId,
+              data_snapshot_id: null,
+              normalized_observation_id: null,
+              query_kind: "generative_query",
+              source_kind: "product_profile",
+              scope_basis: "project_context",
+              source_pointer: null,
+              source_ref: `product_profile:${profileId}#profile-generative-query.v1/what-is-product`,
+              provider_data_as_of: null,
+            }),
+          ],
+        ],
+      ]),
+      competitors: [],
+      origins: new Map(),
+    });
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    expect(projection.keywordClusters[0]?.keywords[0]?.occurrenceRefs).toEqual([
+      {
+        occurrenceId: ids.occurrence,
+        snapshotId: null,
+        observationId: null,
+      },
+    ]);
+  });
+
+  it("keeps the newest per-keyword lineage window when healthy source history grows", async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => {
+      const suffix = (index + 1).toString(16).padStart(12, "0");
+      const observationId = `70000000-0000-4000-b001-${suffix}`;
+      return occurrence({
+        id: `70000000-0000-4000-9001-${suffix}`,
+        data_snapshot_id: `70000000-0000-4000-a001-${suffix}`,
+        normalized_observation_id: observationId,
+        source_ref: `observation:${observationId}#/valueJson/keyword`,
+      });
+    });
+    mockLibraryReads({
+      occurrences: new Map([[ids.keyword, rows]]),
+      competitors: [],
+      origins: new Map(),
+    });
+
+    const projection = await freezeDiagnosticGovernance({} as never, scope);
+
+    const fact = projection.keywordClusters[0]?.keywords[0];
+    expect(fact?.occurrenceRefs).toHaveLength(99);
+    expect(fact?.occurrenceRefs[0]?.occurrenceId).toBe(rows[0]?.id);
+    expect(fact?.occurrenceRefs[98]?.occurrenceId).toBe(rows[98]?.id);
+  });
+
   it("freezes only persisted identities, revisions, and canonical lineage refs", async () => {
     mockLibraryReads();
 

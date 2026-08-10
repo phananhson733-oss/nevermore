@@ -7440,10 +7440,26 @@ components:
       description: Stable project-scoped Competitor identity. Approved entries require relationship and analysisScope; candidate/excluded entries forbid both. lastObservedAt is the latest non-null origin timestamp and available insights match one exact origin Observation.
       x-signalframe-runtime-refinement: competitorReviewStateAndExactOriginInsightLineage
 
+    GrowthMapCompetitorDiscoveryCounts:
+      type: object
+      additionalProperties: false
+      required: [customer_input, serp_duplicate, ai_co_citation, approved_corpus]
+      properties:
+        customer_input: { type: integer, minimum: 0 }
+        serp_duplicate: { type: integer, minimum: 0 }
+        ai_co_citation: { type: integer, minimum: 0 }
+        approved_corpus: { type: integer, minimum: 0 }
+      description: >-
+        Whole-library Competitor counts per discovery route, computed in the
+        same read-only transaction as the page. One Competitor may count in
+        several routes. ai_co_citation counts only the latest exact available
+        fixed-cohort aggregate per Competitor when citedQueries is positive;
+        a newer measured zero supersedes historical positive measurements.
+
     GrowthMapCompetitorLibraryPageMeta:
       type: object
       additionalProperties: false
-      required: [limit, nextCursor, hasNext, coverage]
+      required: [limit, nextCursor, hasNext, coverage, discoveryCounts]
       properties:
         limit: { type: integer, minimum: 1, maximum: 100 }
         nextCursor:
@@ -7453,7 +7469,14 @@ components:
           pattern: '^[A-Za-z0-9_-]+$'
         hasNext: { type: boolean }
         coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
-      description: hasNext is true exactly when nextCursor is non-null.
+        discoveryCounts:
+          anyOf:
+            - $ref: '#/components/schemas/GrowthMapCompetitorDiscoveryCounts'
+            - type: 'null'
+      description: >-
+        hasNext is true exactly when nextCursor is non-null. The live
+        Competitor Library read fills exact whole-library discoveryCounts;
+        pinned frozen reads carry null.
       x-signalframe-runtime-refinement: cursorAvailabilityConsistency
 
     GrowthMapCompetitorLibraryResponse:
@@ -7467,7 +7490,7 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryItem' }
         meta: { $ref: '#/components/schemas/GrowthMapCompetitorLibraryPageMeta' }
-      description: Bounded project-scoped cursor page with no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit.
+      description: Bounded project-scoped cursor page with exact whole-library discovery counts but no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit.
       x-signalframe-runtime-refinement: competitorPageScopeAndIdentityUniqueness
 
     GrowthMapCompetitorDetailResponse:

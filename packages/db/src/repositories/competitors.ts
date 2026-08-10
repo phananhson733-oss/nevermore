@@ -210,10 +210,18 @@ export interface CompetitorIdPageOptions {
   readonly cursor: string | null;
 }
 
+export interface CompetitorDiscoveryOriginCounts {
+  readonly customer_input: number;
+  readonly serp_duplicate: number;
+  readonly approved_corpus: number;
+}
+
 export const MAX_COMPETITOR_PAGE_SIZE = 100;
 export const MAX_COMPETITOR_ORIGIN_PAGE_SIZE = 100;
 export const MAX_COMPETITOR_ORIGIN_BATCH_TOTAL = 2_000;
 export const MAX_COMPETITOR_ORIGIN_UPSERT_BATCH_SIZE = 500;
+/** Bounded raw-candidate ceiling; callers fail closed on the overflow sentinel. */
+export const MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ = 50_000;
 /** 500 accepted facts plus one overflow sentinel. */
 export const MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ = 501;
 
@@ -665,6 +673,46 @@ function parseBatchUpsertResult(
   });
 }
 
+function parseDiscoveryCount(value: unknown, label: string): number {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^(?:0|[1-9][0-9]*)$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`competitor ${label} discovery count is invalid`);
+  }
+  return parsed;
+}
+
+function parseDiscoveryOriginCounts(
+  value: unknown,
+): CompetitorDiscoveryOriginCounts {
+  const rows = (
+    value as {
+      readonly rows?: readonly Record<string, unknown>[];
+    }
+  ).rows;
+  if (!Array.isArray(rows) || rows.length !== 1 || !rows[0]) {
+    throw new Error("competitor discovery counts returned an invalid result");
+  }
+  return {
+    customer_input: parseDiscoveryCount(
+      rows[0]["customer_input"],
+      "customer_input",
+    ),
+    serp_duplicate: parseDiscoveryCount(
+      rows[0]["serp_duplicate"],
+      "serp_duplicate",
+    ),
+    approved_corpus: parseDiscoveryCount(
+      rows[0]["approved_corpus"],
+      "approved_corpus",
+    ),
+  };
+}
+
 function originParameters(input: LegacyCompetitorOriginInput) {
   if (input.originKind === "product_profile") {
     return {
@@ -1001,6 +1049,124 @@ export class CompetitorsRepository extends Repository {
           ? encodeTimestampUuidCursor(last.created_at, last.id)
           : null,
     };
+  }
+
+  /** Exact full-library counts for discovery routes that depend on origin kind. */
+  async countDiscoveryOrigins(
+    scope: ProjectScope,
+  ): Promise<CompetitorDiscoveryOriginCounts> {
+    const result = await this.exec.execute(sql`
+      select
+        count(distinct ${competitorOriginOccurrences.competitor_id}) filter (
+          where ${competitorOriginOccurrences.origin_kind}
+            in ('product_profile', 'manual')
+        )::text as customer_input,
+        count(distinct ${competitorOriginOccurrences.competitor_id}) filter (
+          where ${competitorOriginOccurrences.origin_kind} = 'serp_overlap'
+        )::text as serp_duplicate,
+        count(distinct ${competitorOriginOccurrences.competitor_id}) filter (
+          where ${competitorOriginOccurrences.origin_kind} = 'csv_keyword_gap'
+        )::text as approved_corpus
+      from ${competitorOriginOccurrences}
+      inner join ${competitorEntities}
+        on ${competitorEntities.id} = ${competitorOriginOccurrences.competitor_id}
+       and ${competitorEntities.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+       and ${competitorEntities.project_id} = ${competitorOriginOccurrences.project_id}
+      inner join ${clientProjects}
+        on ${clientProjects.id} = ${competitorOriginOccurrences.project_id}
+       and ${clientProjects.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+      where ${competitorOriginOccurrences.workspace_id} = ${scope.workspaceId}
+        and ${competitorOriginOccurrences.project_id} = ${scope.projectId}
+        and ${clientProjects.archived_at} is null
+    `);
+    return parseDiscoveryOriginCounts(result);
+  }
+
+  /**
+   * Bounded full-library AI candidates from each entity's canonical top-100
+   * origin window. Selection of the effective latest measurement remains in
+   * the application projector so exact lineage and its observation-id
+   * tie-break cannot drift into permissive JSON SQL.
+   */
+  async listAiCitationDiscoveryOrigins(
+    scope: ProjectScope,
+  ): Promise<CompetitorOriginRow[]> {
+    const result = await this.exec.execute<Record<string, unknown>>(sql`
+      with ranked_competitor_origins as (
+        select
+          ${competitorOriginOccurrences.id} as id,
+          ${competitorOriginOccurrences.workspace_id} as workspace_id,
+          ${competitorOriginOccurrences.project_id} as project_id,
+          ${competitorOriginOccurrences.competitor_id} as competitor_id,
+          ${competitorOriginOccurrences.origin_kind} as origin_kind,
+          ${competitorOriginOccurrences.source_name} as source_name,
+          ${competitorOriginOccurrences.product_profile_id} as product_profile_id,
+          ${competitorOriginOccurrences.profile_version} as profile_version,
+          ${competitorOriginOccurrences.candidate_id} as candidate_id,
+          ${competitorOriginOccurrences.field_provenance_path} as field_provenance_path,
+          ${competitorOriginOccurrences.evidence_refs} as evidence_refs,
+          ${competitorOriginOccurrences.source_review_status} as source_review_status,
+          ${competitorOriginOccurrences.source_relationship} as source_relationship,
+          ${competitorOriginOccurrences.source_analysis_scope} as source_analysis_scope,
+          ${competitorOriginOccurrences.data_snapshot_id} as data_snapshot_id,
+          ${competitorOriginOccurrences.normalized_observation_id} as normalized_observation_id,
+          ${competitorOriginOccurrences.import_preview_id} as import_preview_id,
+          ${competitorOriginOccurrences.source_pointer} as source_pointer,
+          ${competitorOriginOccurrences.manual_entry_id} as manual_entry_id,
+          ${competitorOriginOccurrences.observed_at}::text as observed_at,
+          ${competitorOriginOccurrences.created_at}::text as created_at,
+          row_number() over (
+            partition by ${competitorOriginOccurrences.competitor_id}
+            order by
+              ${competitorOriginOccurrences.observed_at} desc nulls last,
+              ${competitorOriginOccurrences.created_at} desc,
+              ${competitorOriginOccurrences.id} desc
+          ) as entity_row_number
+        from ${competitorOriginOccurrences}
+        inner join ${competitorEntities}
+          on ${competitorEntities.id} = ${competitorOriginOccurrences.competitor_id}
+         and ${competitorEntities.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+         and ${competitorEntities.project_id} = ${competitorOriginOccurrences.project_id}
+        inner join ${clientProjects}
+          on ${clientProjects.id} = ${competitorOriginOccurrences.project_id}
+         and ${clientProjects.workspace_id} = ${competitorOriginOccurrences.workspace_id}
+        where ${competitorOriginOccurrences.workspace_id} = ${scope.workspaceId}
+          and ${competitorOriginOccurrences.project_id} = ${scope.projectId}
+          and ${clientProjects.archived_at} is null
+      )
+      select
+        id,
+        workspace_id,
+        project_id,
+        competitor_id,
+        origin_kind,
+        source_name,
+        product_profile_id,
+        profile_version,
+        candidate_id,
+        field_provenance_path,
+        evidence_refs,
+        source_review_status,
+        source_relationship,
+        source_analysis_scope,
+        data_snapshot_id,
+        normalized_observation_id,
+        import_preview_id,
+        source_pointer,
+        manual_entry_id,
+        observed_at,
+        created_at
+      from ranked_competitor_origins
+      where entity_row_number <= ${MAX_COMPETITOR_ORIGIN_PAGE_SIZE}
+        and origin_kind = 'ai_citation'
+      order by
+        competitor_id asc,
+        observed_at desc nulls last,
+        normalized_observation_id asc,
+        id asc
+      limit ${MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ + 1}
+    `);
+    return result.rows as unknown as CompetitorOriginRow[];
   }
 
   async findById(

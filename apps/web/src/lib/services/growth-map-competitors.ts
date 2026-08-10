@@ -7,6 +7,7 @@ import {
   ProductProfileFieldProvenance,
   ReviewCompetitorRequest as ReviewCompetitorRequestSchema,
   type GrowthMapCompetitorAiCitationInsight,
+  type GrowthMapCompetitorDiscoveryCounts,
   type GrowthMapCompetitorLibraryItem,
   type GrowthMapCompetitorOriginOccurrence,
   type GrowthMapCompetitorSerpOverlap,
@@ -18,6 +19,7 @@ import {
 import { type GovernanceCompetitorFactV1 } from "@sf/engine";
 import {
   CompetitorsRepository,
+  MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ,
   MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
   MAX_COMPETITOR_PAGE_SIZE,
   ProjectsRepository,
@@ -64,6 +66,8 @@ const SERP_SOURCE_ABSENT_NO_RATIO_LIMITATION =
   "No immutable DataForSEO competitor source is recorded for this Competitor, and no canonical derived SERP-overlap ratio is defined.";
 const AI_CITATION_SOURCE_ABSENT_LIMITATION =
   "No immutable DataForSEO AI-citation aggregate is recorded for this Competitor; absence is not a measured zero.";
+const AI_CITATION_SOURCE_UNREADABLE_LIMITATION =
+  "The latest immutable DataForSEO AI-citation aggregate recorded for this Competitor is unreadable; an older measurement is not substituted.";
 const SHARED_KEYWORD_VALUE_POINTER = "/valueJson/intersections";
 const SHARED_KEYWORD_SOURCE_ABSENT_LIMITATION =
   "No immutable DataForSEO competitors-domain Observation is recorded for this Competitor, so no canonical shared-keyword count exists. That source lists only domains that already share at least one ranking keyword with this site, so a missing record is not a measured zero.";
@@ -1465,10 +1469,6 @@ function projectAiCitationOrigin(
     observation.grade !== "B" ||
     observation.support !== "supports" ||
     observation.limitation.trim().length === 0 ||
-    !isExactDataForSeoAiCitationValue(
-      observation.value_json,
-      entity.domain,
-    ) ||
     snapshot.workspace_id !== entity.workspace_id ||
     snapshot.project_id !== entity.project_id ||
     snapshot.provider !== "dataforseo" ||
@@ -1829,14 +1829,15 @@ function projectAiCitationInsight(
   observationsById: ReadonlyMap<string, CanonicalObservationRow>,
   snapshotsById: ReadonlyMap<string, CanonicalSnapshotRow>,
 ): GrowthMapCompetitorAiCitationInsight {
-  const selected = origins
-    .flatMap((origin) =>
-      aiCitationCandidates(
+  const latestOrigin = origins
+    .filter(
+      (
         origin,
-        domain,
-        observationsById,
-        snapshotsById,
-      ),
+      ): origin is Extract<
+        GrowthMapCompetitorOriginOccurrence,
+        { originKind: "ai_citation" }
+      > & { observedAt: string } =>
+        origin.originKind === "ai_citation" && origin.observedAt !== null,
     )
     .sort(
       (left, right) =>
@@ -1847,6 +1848,14 @@ function projectAiCitationInsight(
             ? 1
             : 0),
     )[0];
+  const selected = latestOrigin
+    ? aiCitationCandidates(
+        latestOrigin,
+        domain,
+        observationsById,
+        snapshotsById,
+      )[0]
+    : undefined;
   if (selected !== undefined) {
     return {
       availability: "available",
@@ -1870,7 +1879,10 @@ function projectAiCitationInsight(
   return {
     availability: "unavailable",
     value: null,
-    limitation: AI_CITATION_SOURCE_ABSENT_LIMITATION,
+    limitation:
+      latestOrigin === undefined
+        ? AI_CITATION_SOURCE_ABSENT_LIMITATION
+        : AI_CITATION_SOURCE_UNREADABLE_LIMITATION,
   };
 }
 
@@ -2060,6 +2072,117 @@ function pageCoverage(
   };
 }
 
+async function loadCompetitorDiscoveryCounts(
+  exec: Executor,
+  scope: ProjectScope,
+): Promise<GrowthMapCompetitorDiscoveryCounts> {
+  const repository = new CompetitorsRepository(exec);
+  const originCounts = await repository.countDiscoveryOrigins(scope);
+  const aiOrigins = await repository.listAiCitationDiscoveryOrigins(scope);
+  if (aiOrigins.length > MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ) {
+    return corruptCompetitorLibrary();
+  }
+  if (aiOrigins.length === 0) {
+    return { ...originCounts, ai_co_citation: 0 };
+  }
+
+  const originIds = new Set<string>();
+  const competitorIds: string[] = [];
+  const seenCompetitorIds = new Set<string>();
+  for (const origin of aiOrigins) {
+    if (
+      originIds.has(origin.id) ||
+      origin.origin_kind !== "ai_citation" ||
+      origin.workspace_id !== scope.workspaceId ||
+      origin.project_id !== scope.projectId
+    ) {
+      return corruptCompetitorLibrary();
+    }
+    originIds.add(origin.id);
+    if (!seenCompetitorIds.has(origin.competitor_id)) {
+      seenCompetitorIds.add(origin.competitor_id);
+      competitorIds.push(origin.competitor_id);
+    }
+  }
+
+  const entitiesById = new Map<string, CompetitorEntityRow>();
+  for (const batch of batches(competitorIds)) {
+    const entities = await repository.listByIds(scope, batch);
+    if (entities.length !== batch.length) return corruptCompetitorLibrary();
+    for (const entity of entities) {
+      if (
+        !batch.includes(entity.id) ||
+        entitiesById.has(entity.id)
+      ) {
+        return corruptCompetitorLibrary();
+      }
+      validateEntity(entity, scope);
+      entitiesById.set(entity.id, entity);
+    }
+  }
+  if (entitiesById.size !== competitorIds.length) {
+    return corruptCompetitorLibrary();
+  }
+
+  const observationsById = await loadObservations(
+    exec,
+    scope,
+    aiOrigins.flatMap((origin) =>
+      origin.normalized_observation_id === null
+        ? []
+        : [origin.normalized_observation_id],
+    ),
+  );
+  const snapshotsById = await loadSnapshots(
+    exec,
+    scope,
+    aiOrigins.flatMap((origin) =>
+      origin.data_snapshot_id === null ? [] : [origin.data_snapshot_id],
+    ),
+  );
+  const collectionRunsById = await loadCollectionRuns(
+    exec,
+    scope,
+    [...snapshotsById.values()].map((snapshot) => snapshot.collection_run_id),
+  );
+  const projectionRows: OriginProjectionRows = {
+    profilesById: new Map(),
+    observationsById,
+    snapshotsById,
+    collectionRunsById,
+    importPreviewsById: new Map(),
+  };
+  const projectedByEntity = new Map<
+    string,
+    GrowthMapCompetitorOriginOccurrence[]
+  >();
+  for (const origin of aiOrigins) {
+    const entity = entitiesById.get(origin.competitor_id);
+    if (!entity) return corruptCompetitorLibrary();
+    validateOriginIdentity(origin, entity, scope);
+    const projected = projectAiCitationOrigin(origin, entity, projectionRows);
+    const existing = projectedByEntity.get(entity.id);
+    if (existing) existing.push(projected);
+    else projectedByEntity.set(entity.id, [projected]);
+  }
+
+  let aiCoCitation = 0;
+  for (const [competitorId, origins] of projectedByEntity) {
+    const entity = entitiesById.get(competitorId);
+    if (!entity) return corruptCompetitorLibrary();
+    const insight = projectAiCitationInsight(
+      origins,
+      entity.domain,
+      observationsById,
+      snapshotsById,
+    );
+    if (insight.availability === "available" && insight.value > 0) {
+      aiCoCitation += 1;
+    }
+  }
+  return { ...originCounts, ai_co_citation: aiCoCitation };
+}
+
 async function listPublishedInSnapshot(
   exec: Executor,
   workspaceScope: WorkspaceScope,
@@ -2119,6 +2242,7 @@ async function listPublishedInSnapshot(
         limit: options.limit,
         nextCursor: page.nextCursor,
         hasNext: page.nextCursor !== null,
+        discoveryCounts: null,
         coverage: pageCoverage(data),
       },
     });
@@ -2143,6 +2267,7 @@ async function listCurrentLibrary(
   const data = rows.histories.map((history) =>
     projectItem(history, rows, scope),
   );
+  const discoveryCounts = await loadCompetitorDiscoveryCounts(exec, scope);
   try {
     return GrowthMapCompetitorLibraryResponse.parse({
       projectId,
@@ -2151,6 +2276,7 @@ async function listCurrentLibrary(
         limit: options.limit,
         nextCursor: page.nextCursor,
         hasNext: page.nextCursor !== null,
+        discoveryCounts,
         coverage: pageCoverage(data),
       },
     });

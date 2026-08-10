@@ -4111,14 +4111,22 @@ export interface components {
             sharedKeywordInsight: components["schemas"]["GrowthMapCompetitorSharedKeywordInsight"];
             coverage: components["schemas"]["GrowthMapCoverage"];
         };
-        /** @description hasNext is true exactly when nextCursor is non-null. */
+        /** @description Whole-library Competitor counts per discovery route, computed in the same read-only transaction as the page. One Competitor may count in several routes. ai_co_citation counts only the latest exact available fixed-cohort aggregate per Competitor when citedQueries is positive; a newer measured zero supersedes historical positive measurements. */
+        GrowthMapCompetitorDiscoveryCounts: {
+            customer_input: number;
+            serp_duplicate: number;
+            ai_co_citation: number;
+            approved_corpus: number;
+        };
+        /** @description hasNext is true exactly when nextCursor is non-null. The live Competitor Library read fills exact whole-library discoveryCounts; pinned frozen reads carry null. */
         GrowthMapCompetitorLibraryPageMeta: {
             limit: number;
             nextCursor: string | null;
             hasNext: boolean;
             coverage: components["schemas"]["GrowthMapCoverage"];
+            discoveryCounts: components["schemas"]["GrowthMapCompetitorDiscoveryCounts"] | null;
         };
-        /** @description Bounded project-scoped cursor page with no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit. */
+        /** @description Bounded project-scoped cursor page with exact whole-library discovery counts but no synthetic total or filter state. Competitor IDs, domains, occurrence IDs, and canonical origin identities are page-unique and page length cannot exceed meta.limit. */
         GrowthMapCompetitorLibraryResponse: {
             projectId: components["schemas"]["Uuid"];
             data: components["schemas"]["GrowthMapCompetitorLibraryItem"][];

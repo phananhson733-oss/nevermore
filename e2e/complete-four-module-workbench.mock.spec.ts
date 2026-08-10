@@ -464,7 +464,10 @@ function competitor(
   name: string,
   domain: string,
   suffix: string,
+  aiCitationValue: number | null = null,
 ) {
+  const aiCitationSnapshotId = `52200000-0000-4000-8000-0000000000${suffix}`;
+  const aiCitationObservationId = `52300000-0000-4000-8000-0000000000${suffix}`;
   return {
     projectId: E2E_PROJECT_ID,
     competitorId,
@@ -482,6 +485,18 @@ function competitor(
         manualEntryId: `52100000-0000-4000-8000-0000000000${suffix}`,
         evidenceRefs: [],
       },
+      ...(aiCitationValue === null
+        ? []
+        : [
+            {
+              occurrenceId: `52400000-0000-4000-8000-0000000000${suffix}`,
+              observedAt: "2026-07-28T08:00:00.000Z",
+              originKind: "ai_citation" as const,
+              snapshotId: aiCitationSnapshotId,
+              observationId: aiCitationObservationId,
+              evidenceRefs: [],
+            },
+          ]),
     ],
     lastObservedAt: "2026-07-28T08:00:00.000Z",
     serpOverlap: {
@@ -489,11 +504,31 @@ function competitor(
       value: null,
       limitation: "尚无已确认的 SERP overlap 观测。",
     },
-    aiCitationInsight: {
-      availability: "unavailable" as const,
-      value: null,
-      limitation: "尚无已确认的 AI citation 观测。",
-    },
+    aiCitationInsight:
+      aiCitationValue === null
+        ? {
+            availability: "unavailable" as const,
+            value: null,
+            limitation: "尚无已确认的 AI citation 观测。",
+          }
+        : {
+            availability: "available" as const,
+            value: aiCitationValue,
+            attemptedQueries: 20 as const,
+            observedQueries: 20,
+            unavailableQueries: 0,
+            cohortCoverage: "complete" as const,
+            querySetHash: "a".repeat(64),
+            platform: "chat_gpt" as const,
+            model: "gpt-5",
+            marketCode: "US",
+            languageTag: "en-US",
+            snapshotId: aiCitationSnapshotId,
+            observationId: aiCitationObservationId,
+            valuePointer: "/valueJson/citedQueries" as const,
+            observedAt: "2026-07-28T08:00:00.000Z",
+            limitation: null,
+          },
     sharedKeywordInsight: {
       availability: "unavailable" as const,
       value: null,
@@ -505,9 +540,10 @@ function competitor(
 
 const competitorA = competitor(
   COMPETITOR_A_ID,
-  "AtlasFlow",
-  "atlasflow.com",
+  "Astro Seek",
+  "astro-seek.com",
   "11",
+  0,
 );
 const competitorB = competitor(
   COMPETITOR_B_ID,
@@ -524,6 +560,12 @@ const competitorLibrary = GrowthMapCompetitorLibraryResponse.parse({
     nextCursor: null,
     hasNext: false,
     coverage: { availability: "available", limitations: [] },
+    discoveryCounts: {
+      customer_input: 2,
+      serp_duplicate: 0,
+      ai_co_citation: 1,
+      approved_corpus: 0,
+    },
   },
 });
 
@@ -545,8 +587,8 @@ const competitorMonitor = CompetitorMonitorResponse.parse({
   competitors: [
     {
       competitorId: COMPETITOR_A_ID,
-      domain: "atlasflow.com",
-      name: "AtlasFlow",
+      domain: "astro-seek.com",
+      name: "Astro Seek",
       relationship: "direct",
       analysisScopes: ["content", "serp_visibility"],
       eligibility: "eligible",
@@ -788,7 +830,10 @@ async function useChineseUi(page: Page): Promise<void> {
   ]);
 }
 
-async function installArtifactApi(page: Page): Promise<void> {
+async function installArtifactApi(page: Page): Promise<{
+  readonly competitorGetUrls: string[];
+}> {
+  const competitorGetUrls: string[] = [];
   const overview = overviewWorkspaceFixture();
   const project = {
     ...overview.project,
@@ -1132,8 +1177,12 @@ async function installArtifactApi(page: Page): Promise<void> {
   );
 
   await page.route(`**${API_BASE}/audit/competitors**`, async (route) => {
-    const pathname = new URL(route.request().url()).pathname;
+    const requestUrl = route.request().url();
+    const pathname = new URL(requestUrl).pathname;
     const listPath = `${API_BASE}/audit/competitors`;
+    if (route.request().method() === "GET") {
+      competitorGetUrls.push(requestUrl);
+    }
     if (pathname === listPath) {
       await json(route, { data: competitorLibrary });
       return;
@@ -1345,6 +1394,8 @@ async function installArtifactApi(page: Page): Promise<void> {
     }
     await route.fallback();
   });
+
+  return { competitorGetUrls };
 }
 
 async function capture(
@@ -1396,7 +1447,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
   await page.emulateMedia({ reducedMotion: "reduce" });
   await useChineseUi(page);
   await installGrowthVerticalApi(page);
-  await installArtifactApi(page);
+  const artifactApi = await installArtifactApi(page);
 
   await test.step("概览：四模块外壳与客户当前优先事项", async () => {
     await page.goto(`/p/${E2E_PROJECT_ID}/overview`);
@@ -1616,21 +1667,30 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     await expect(ledgerHeader).toContainText("自然搜索重叠度");
     await expect(ledgerHeader).toContainText("共同关键词");
     await expect(ledgerHeader).toContainText("AI 引用");
-    const atlasRow = page
-      .getByRole("listitem")
-      .filter({ hasText: "atlasflow.com" });
-    await expect(atlasRow).toContainText("数据不足");
-    await expect(atlasRow).toContainText("不可用");
-    await expect(atlasRow).not.toContainText("暂无可用数据");
-    // Both Competitors here carry manual origins only, so the shared-keyword
-    // cell must stay on its own fallback rather than inherit the neighbouring
-    // overlap cell's text. Scoping the assertion to the column keeps that
-    // honest: a wrong number here can no longer hide behind a row-wide match.
+    const discoveryPath = page
+      .getByTestId("competitor-library-provenance")
+      .getByRole("region", { name: "发现路径" });
     await expect(
-      atlasRow.locator('[data-column="共同关键词"]'),
+      discoveryPath
+        .getByText("AI 共同引用", { exact: true })
+        .locator("xpath=parent::*"),
+    ).toContainText("1 个域名");
+
+    const astroRow = page
+      .getByRole("listitem")
+      .filter({ hasText: "astro-seek.com" });
+    await expect(astroRow).toContainText("数据不足");
+    await expect(astroRow).not.toContainText("暂无可用数据");
+    // A measured zero is data, not missing data. The whole-library discovery
+    // total above may still be positive because it covers unloaded pages.
+    await expect(astroRow.locator('[data-column="AI 引用"]')).toHaveText(
+      "0/20",
+    );
+    await expect(
+      astroRow.locator('[data-column="共同关键词"]'),
     ).toHaveText("数据不足");
     await expect(
-      atlasRow.locator('[data-column="自然搜索重叠度"]'),
+      astroRow.locator('[data-column="自然搜索重叠度"]'),
     ).toHaveText("数据不足");
 
     const drawer = page.getByTestId("competitor-profile-drawer");
@@ -1640,15 +1700,35 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     // The row arrow now selects the compact Artifact-aligned profile rail. It
     // must not skip that summary and open the modal drawer implicitly.
     await expect(drawer).toHaveCount(0);
-    await atlasRow.getByRole("button", { name: "查看竞品档案" }).click();
+    await astroRow.getByRole("button", { name: "查看竞品档案" }).click();
     await expect(drawer).toHaveCount(0);
     await expect
       .poll(() => new URL(page.url()).searchParams.get("selectedCompetitorId"))
       .toBe(COMPETITOR_A_ID);
     await expect(
-      competitorDetail.getByRole("heading", { name: "AtlasFlow", level: 2 }),
+      competitorDetail.getByRole("heading", { name: "Astro Seek", level: 2 }),
     ).toBeVisible();
     await expect(competitorDetail).toContainText("为什么进入竞品池");
+    const compactAiCitations = competitorDetail.getByTestId(
+      "competitor-detail-ai-citations",
+    );
+    await expect(
+      compactAiCitations.getByText("AI 引用", { exact: true }),
+    ).toBeVisible();
+    await expect(compactAiCitations.locator("strong")).toHaveText("0");
+    await expect(compactAiCitations).not.toContainText("不可用");
+    expect(artifactApi.competitorGetUrls.length).toBeGreaterThan(0);
+    expect(
+      artifactApi.competitorGetUrls.some(
+        (requestUrl) =>
+          new URL(requestUrl).pathname === `${API_BASE}/audit/competitors`,
+      ),
+    ).toBe(true);
+    for (const requestUrl of artifactApi.competitorGetUrls) {
+      expect(new URL(requestUrl).searchParams.has("diagnosticRunId")).toBe(
+        false,
+      );
+    }
 
     // The explicit rail action is the only entry into the full profile. An
     // available monitor remains useful there and keeps its Competitor scope.
@@ -1662,7 +1742,7 @@ test("完整四模块工作台：实际 Next 应用中文可视化与 URL 隔离
     );
     await expect(monitor).toContainText("customer onboarding automation");
     await expect(monitor).toContainText("排名 18 → 9，提升 9 位");
-    await capture(page, "07-growth-map-competitor-atlasflow");
+    await capture(page, "07-growth-map-competitor-astro-seek");
 
     // The drawer's scrim covers the ledger, so close it before switching rows.
     await page.keyboard.press("Escape");

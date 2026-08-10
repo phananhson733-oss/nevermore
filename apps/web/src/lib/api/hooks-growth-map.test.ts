@@ -836,6 +836,12 @@ function competitorLibraryResponse() {
       limit: 50,
       nextCursor: null,
       hasNext: false,
+      discoveryCounts: {
+        customer_input: 1,
+        serp_duplicate: 0,
+        ai_co_citation: 0,
+        approved_corpus: 1,
+      },
       coverage: {
         availability: "partial",
         limitations: competitorItem().coverage.limitations,
@@ -2569,7 +2575,7 @@ describe("Growth Map browser API boundary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("updates only live Competitor review cache after a successful review", async () => {
+  it("updates live Competitor review and invalidates only current Competitor lists", async () => {
     const publishedDetail = competitorDetailResponse();
     const publishedList = competitorLibraryResponse();
     const updated = {
@@ -2611,12 +2617,16 @@ describe("Growth Map browser API boundary", () => {
       UI_LOCALE,
       { limit: 50, diagnosticRunId: DIAGNOSTIC_RUN_ID },
     );
+    const currentListKey = growthMapCompetitorsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      { cursor: "next-cursor", limit: 25 },
+    );
     client.setQueryData(reviewKey, publishedDetail);
     client.setQueryData(publishedDetailKey, publishedDetail);
     client.setQueryData(publishedListKey, publishedList);
-    const invalidate = vi
-      .spyOn(client, "invalidateQueries")
-      .mockResolvedValue(undefined);
+    client.setQueryData(currentListKey, publishedList);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
     const observer = new MutationObserver(
       client,
       buildReviewGrowthMapCompetitorMutationOptions(
@@ -2632,7 +2642,19 @@ describe("Growth Map browser API boundary", () => {
     expect(client.getQueryData(reviewKey)).toEqual(updated);
     expect(client.getQueryData(publishedDetailKey)).toEqual(publishedDetail);
     expect(client.getQueryData(publishedListKey)).toEqual(publishedList);
-    expect(invalidate).not.toHaveBeenCalled();
+    expect(client.getQueryState(currentListKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(publishedListKey)?.isInvalidated).toBe(false);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [
+        "growth-map",
+        PROJECT_ID,
+        UI_LOCALE,
+        "competitors",
+        { diagnosticRunId: null },
+      ],
+      refetchType: "active",
+    });
   });
 
   it("invalidates only live Competitor review cache after a CAS conflict", async () => {
