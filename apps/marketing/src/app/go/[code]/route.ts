@@ -5,7 +5,6 @@
 import { NextResponse } from "next/server";
 // Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
 // apps/web only, so an aliased import here would not resolve in route.test.ts.
-import { createAdminSupabaseClient } from "../../../lib/supabase/admin";
 import {
   findShortLink,
   normalizeOwnedDestination,
@@ -19,6 +18,27 @@ type RouteContext = {
 };
 
 /**
+ * Whether this deployment serves short links at all.
+ *
+ * Declared, never inferred. The earlier version read "no credentials" and
+ * "no such table" as proof that no short link could exist, which conflates two
+ * different facts: whether the data exists, and whether this particular
+ * instance can currently reach it. A rotated key, a half-populated environment, or a
+ * migration mid-flight would then have answered a stable 404 for links that
+ * are real and published — the one answer a crawler acts on irreversibly.
+ *
+ * Off by default, which is the truth today: `link_redirects` is one of the
+ * marketing tables that exist only in the suspended Agents project and have
+ * never been created in production (docs/INFRASTRUCTURE.md), and the only
+ * writer has no callers. Off also means unknown paths never touch the database
+ * at all, which matters because the proxy routes the site's whole root
+ * namespace through here.
+ */
+function shortLinksEnabled(): boolean {
+  return process.env.MARKETING_SHORT_LINKS_ENABLED === "true";
+}
+
+/**
  * A code that resolves to nothing is a page that does not exist.
  *
  * The proxy rewrites every unreserved single-segment path of 6+ characters
@@ -28,15 +48,8 @@ type RouteContext = {
  * the requested URL, recrawls it, and spends budget on a page that was never
  * ours. A 404 spends the same request once and ends it.
  *
- * The two ways a lookup can fail are deliberately NOT the same answer:
- *
- * - No credentials configured. This deployment has no short-link storage at
- *   all, so no short link can exist and every code is genuinely absent. It is
- *   also a standing state, not a blip — answering "try again later" forever
- *   would be a lie a crawler keeps acting on. 404.
- * - The query itself failed. Storage exists and is momentarily unreachable,
- *   so the link may well be real. Telling a crawler "gone" here would drop
- *   URLs we deliberately published. 503, with a retry hint.
+ * Once short links ARE enabled, every failure below is a 503 instead. A link
+ * that exists must never be reported gone because we could not look it up.
  */
 export async function GET(_request: Request, context: RouteContext) {
   const params = await Promise.resolve(context.params);
@@ -46,29 +59,45 @@ export async function GET(_request: Request, context: RouteContext) {
     return missing();
   }
 
-  let admin: ReturnType<typeof createAdminSupabaseClient>;
-  try {
-    admin = createAdminSupabaseClient();
-  } catch {
+  // No short-link feature here: nothing to look up, so nothing exists.
+  if (!shortLinksEnabled()) {
     return missing();
   }
 
   let record: Awaited<ReturnType<typeof findShortLink>>;
   try {
-    record = await findShortLink(code, admin);
+    record = await findShortLink(code);
   } catch {
+    // Enabled but unreachable. The link may be real; say "try again", not "gone".
     return unavailable();
   }
 
-  const destination = normalizeOwnedDestination(record?.destination_url);
-  if (!destination) {
-    // Either no row, or a row whose destination is no longer one of ours. Both
-    // mean there is nothing here to send anyone to.
+  if (!record) {
     return missing();
   }
 
-  return NextResponse.redirect(destination, record?.redirect_status ?? 302);
+  const destination = normalizeOwnedDestination(record.destination_url);
+  if (!destination) {
+    // A row whose destination is no longer one of ours. Nothing to send anyone
+    // to, and not something a retry fixes.
+    return missing();
+  }
+
+  const status = REDIRECT_STATUSES.has(record.redirect_status)
+    ? record.redirect_status
+    : null;
+  if (status === null) {
+    // NextResponse.redirect throws on anything outside the redirect range, and
+    // an uncaught throw here is a 500 on a published link. A row we cannot act
+    // on is an operational problem, so report one.
+    return unavailable();
+  }
+
+  return NextResponse.redirect(destination, status);
 }
+
+/** The only statuses NextResponse.redirect accepts. */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
  * A 404 with a page on it, built by hand rather than through `notFound()`.

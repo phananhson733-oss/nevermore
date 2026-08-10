@@ -53,21 +53,6 @@ export function normalizeOwnedDestination(rawUrl: unknown): string | null {
   }
 }
 
-/**
- * Postgres and PostgREST both have a way of saying "that table is not here".
- *
- * `link_redirects` is one of the eight marketing tables that live only in the
- * suspended Agents project and have never existed in the production database
- * (docs/INFRASTRUCTURE.md). So on production this is not a hypothetical error
- * path — it is the only path, and it has to mean "no such short link" rather
- * than "the database is having a moment".
- */
-const MISSING_TABLE_CODES = new Set([
-  "42P01", // Postgres: undefined_table
-  "PGRST205", // PostgREST: table not found in the schema cache
-  "PGRST202", // PostgREST: schema not found in the schema cache
-]);
-
 export async function findShortLink(
   code: string,
   admin: AdminClient = createAdminSupabaseClient(),
@@ -79,10 +64,11 @@ export async function findShortLink(
     .maybeSingle();
 
   if (error) {
-    // A deployment with no short-link table has no short links, which is an
-    // answer, not a failure. Every other error stays an error: the caller
-    // distinguishes "there is nothing here" from "we could not look".
-    if (MISSING_TABLE_CODES.has(error.code)) return null;
+    // Every error is an error. Whether this deployment serves short links at
+    // all is declared by the caller, not guessed at from a Postgres code: a
+    // missing table can equally mean a rolled-back migration, the wrong
+    // project, or a schema that stopped being exposed, and answering "no such
+    // link" to any of those retires a published URL for good.
     throw new Error(error.message);
   }
 

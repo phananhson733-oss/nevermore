@@ -1,13 +1,10 @@
-// @input  — GET from ./route.ts with a stubbed findShortLink + admin client
-// @output — regression tests pinning unknown short codes to 404, outages to 503
+// @input  — GET from ./route.ts with a stubbed findShortLink
+// @output — regression tests pinning unknown codes to 404 and outages to 503
 // @pos    — short-link entrypoint boundary tests (soft-404 regression guard)
 // once this file is updated, update header comments and _DIR.md in this folder
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findShortLink = vi.hoisted(() => vi.fn());
-const createAdminSupabaseClient = vi.hoisted(() => vi.fn(() => ({}) as never));
-
-vi.mock("../../../lib/supabase/admin", () => ({ createAdminSupabaseClient }));
 
 vi.mock("../../../lib/link-attribution/short-links", async (importOriginal) => {
   // normalizeShortLinkCode and normalizeOwnedDestination stay real: they are
@@ -32,10 +29,13 @@ async function status(code: string | undefined): Promise<number> {
   return (await get(code)).status;
 }
 
+beforeEach(() => {
+  process.env.MARKETING_SHORT_LINKS_ENABLED = "true";
+});
+
 afterEach(() => {
+  delete process.env.MARKETING_SHORT_LINKS_ENABLED;
   findShortLink.mockReset();
-  createAdminSupabaseClient.mockReset();
-  createAdminSupabaseClient.mockReturnValue({} as never);
 });
 
 /**
@@ -94,22 +94,34 @@ describe("GET /go/[code] when nothing is registered", () => {
 });
 
 /**
- * The two ways a lookup can fail are not the same answer, and the difference
- * is not academic: a deployment without Supabase credentials answered every
- * unknown path 503, which tells a crawler to come back forever for a route
- * that will never work.
+ * Whether this deployment serves short links is declared, never inferred.
+ *
+ * Reading "no credentials" or "no such table" as proof that no link exists
+ * conflates two different facts — whether the data exists, and whether this
+ * instance can currently reach it. A rotated key or a mid-flight migration
+ * would then retire published URLs permanently.
  */
-describe("GET /go/[code] when the lookup cannot happen", () => {
-  it("answers 404, not 503, when this deployment has no short-link storage", async () => {
-    createAdminSupabaseClient.mockImplementation(() => {
-      throw new Error("Missing Supabase admin credentials.");
-    });
+describe("GET /go/[code] on a deployment without the feature", () => {
+  it("answers 404 without touching the database at all", async () => {
+    delete process.env.MARKETING_SHORT_LINKS_ENABLED;
 
-    expect(await status("abcdef")).toBe(404);
+    expect(await status("free-seo-audit")).toBe(404);
     expect(findShortLink).not.toHaveBeenCalled();
   });
 
-  it("answers 503 with a retry hint when the query itself fails", async () => {
+  it.each(["false", "1", "yes", ""])(
+    "stays off for the non-affirmative value %p",
+    async (value) => {
+      process.env.MARKETING_SHORT_LINKS_ENABLED = value;
+
+      expect(await status("abcdef")).toBe(404);
+      expect(findShortLink).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("GET /go/[code] when the feature is on but the lookup fails", () => {
+  it("answers 503 rather than retiring a link that may be real", async () => {
     findShortLink.mockRejectedValue(new Error("connection terminated"));
 
     const response = await get("realcode");
@@ -117,6 +129,18 @@ describe("GET /go/[code] when the lookup cannot happen", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("retry-after")).toBe("60");
     expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("answers 503 when the table is missing, not 404", async () => {
+    // Enabled but no table is a configuration fault, not evidence that the
+    // link is gone. 404 here would be irreversible for a published URL.
+    findShortLink.mockRejectedValue(
+      Object.assign(new Error('relation "link_redirects" does not exist'), {
+        code: "42P01",
+      }),
+    );
+
+    expect(await status("campaign-a")).toBe(503);
   });
 });
 
@@ -136,21 +160,39 @@ describe("GET /go/[code] for links that do exist", () => {
     );
   });
 
-  it("honors a stored permanent redirect status", async () => {
-    findShortLink.mockResolvedValue({
-      code: "moved",
-      destination_url: "https://gengrowth.ai/pricing",
-      redirect_status: 301,
-    });
+  it.each([301, 302, 303, 307, 308])(
+    "honors the stored redirect status %i",
+    async (redirect_status) => {
+      findShortLink.mockResolvedValue({
+        code: "moved",
+        destination_url: "https://gengrowth.ai/pricing",
+        redirect_status,
+      });
 
-    expect((await get("moved")).status).toBe(301);
-  });
+      expect(await status("moved")).toBe(redirect_status);
+    },
+  );
+
+  it.each([200, 204, 300, 304, 305, 309, 999, 0, -1])(
+    "answers 503 instead of throwing on the unusable stored status %i",
+    async (redirect_status) => {
+      // NextResponse.redirect throws outside the redirect range, and an
+      // uncaught throw here is a 500 on a published link.
+      findShortLink.mockResolvedValue({
+        code: "broken",
+        destination_url: "https://gengrowth.ai/pricing",
+        redirect_status,
+      });
+
+      expect(await status("broken")).toBe(503);
+    },
+  );
 
   it("looks the code up in its normalized lower-case form", async () => {
     findShortLink.mockResolvedValue(null);
 
     await status("MixedCase");
 
-    expect(findShortLink).toHaveBeenCalledWith("mixedcase", expect.anything());
+    expect(findShortLink).toHaveBeenCalledWith("mixedcase");
   });
 });

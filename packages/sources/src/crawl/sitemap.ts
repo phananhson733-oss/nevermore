@@ -42,25 +42,42 @@ const XML_NAMED: Readonly<Record<string, string>> = {
   apos: "'",
 };
 
-function decodeXml(value: string): string {
-  return value.replace(XML_ENTITY, (match, numeric?: string, name?: string) => {
-    if (name) return XML_NAMED[name.toLowerCase()] ?? match;
-    if (!numeric) return match;
+/**
+ * Decodes, or refuses.
+ *
+ * An earlier version turned an out-of-range or surrogate reference into
+ * U+FFFD, which quietly promoted malformed input into a brand-new same-origin
+ * URL. A sitemap could then declare thousands of distinct invalid suffixes and
+ * have every one of them enter the frontier, filling MAX_SITEMAP_URLS and
+ * spending the crawl's budget on targets the site never had. Bad input is not
+ * something to repair into a crawlable page: the `<loc>` is dropped instead.
+ */
+function decodeXml(value: string): string | null {
+  let rejected = false;
+  const decoded = value.replace(
+    XML_ENTITY,
+    (match, numeric?: string, name?: string): string => {
+      if (name) return XML_NAMED[name.toLowerCase()] ?? match;
+      if (!numeric) return match;
 
-    const isHex = numeric.toLowerCase().startsWith("x");
-    const code = Number.parseInt(
-      isHex ? numeric.slice(1) : numeric,
-      isHex ? 16 : 10,
-    );
-    // Same hostile-input posture as the page parser: an out-of-range or
-    // surrogate code point degrades to U+FFFD rather than throwing mid-crawl.
-    const validScalar =
-      Number.isSafeInteger(code) &&
-      code > 0 &&
-      code <= 0x10ffff &&
-      (code < 0xd800 || code > 0xdfff);
-    return validScalar ? String.fromCodePoint(code) : "�";
-  });
+      const isHex = numeric.toLowerCase().startsWith("x");
+      const code = Number.parseInt(
+        isHex ? numeric.slice(1) : numeric,
+        isHex ? 16 : 10,
+      );
+      const validScalar =
+        Number.isSafeInteger(code) &&
+        code > 0 &&
+        code <= 0x10ffff &&
+        (code < 0xd800 || code > 0xdfff);
+      if (!validScalar) {
+        rejected = true;
+        return "";
+      }
+      return String.fromCodePoint(code);
+    },
+  );
+  return rejected ? null : decoded;
 }
 
 export interface SitemapDocument {
@@ -77,7 +94,7 @@ export function parseSitemapXml(xml: string): SitemapDocument {
   for (const match of xml.matchAll(
     /<(?:\w+:)?loc\b[^>]*>([\s\S]*?)<\/(?:\w+:)?loc\s*>/gi,
   )) {
-    const url = decodeXml(match[1] ?? "").trim();
+    const url = decodeXml(match[1] ?? "")?.trim();
     if (url) seen.add(url);
   }
   return { isIndex, locs: [...seen] };

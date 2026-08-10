@@ -53,12 +53,19 @@ describe("parseSitemapXml entity decoding", () => {
     expect(document.locs).toEqual(["https://example.com/a?x=&#38;"]);
   });
 
-  it("degrades a hostile numeric reference instead of throwing mid-crawl", () => {
+  it("drops a loc with a hostile numeric reference rather than inventing a URL", () => {
+    // Replacing the bad reference with U+FFFD manufactured a new same-origin
+    // URL, so a sitemap could mint thousands of distinct invalid suffixes and
+    // spend the whole crawl budget on targets the site never had.
     const document = parseSitemapXml(
-      `<urlset><url><loc>https://example.com/a?x=&#xD800;&#999999999;</loc></url></urlset>`,
+      `<urlset>
+        <url><loc>https://example.com/a?x=&#xD800;</loc></url>
+        <url><loc>https://example.com/b?x=&#999999999;</loc></url>
+        <url><loc>https://example.com/good</loc></url>
+      </urlset>`,
     );
 
-    expect(document.locs).toEqual(["https://example.com/a?x=��"]);
+    expect(document.locs).toEqual(["https://example.com/good"]);
   });
 
   it("leaves an unknown named entity alone rather than dropping it", () => {
@@ -140,6 +147,17 @@ describe("sitemap and page-parser decoding agree", () => {
     ["&quot;", "/q?s=&quot;x&quot;"],
     ["decimal", "/a?x=1&#38;y=2"],
     ["hex", "/a?x=1&#x26;y=2"],
+    // Nested escapes are where the two parsers last diverged: a chain of
+    // replaces decodes its own output, so `&amp;lt;` became `<` on the href
+    // side while the sitemap's single scan correctly stopped at `&lt;`. The
+    // single-layer cases above all passed while this was broken, which is
+    // exactly the false confidence a guard is supposed to prevent.
+    ["nested &amp;lt;", "/a?x=&amp;lt;"],
+    ["nested &amp;apos;", "/a?x=&amp;apos;"],
+    ["nested &amp;quot;", "/a?x=&amp;quot;"],
+    ["nested &amp;#x3C;", "/a?x=&amp;#x3C;"],
+    ["nested &amp;#38;", "/a?x=&amp;#38;"],
+    ["double-nested &amp;amp;lt;", "/a?x=&amp;amp;lt;"],
   ])(
     "resolves the %s form to one subject from either entrance",
     (_label, path) => {

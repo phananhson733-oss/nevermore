@@ -76,33 +76,57 @@ function firstTag(html: string, pattern: RegExp): string | undefined {
   return html.match(pattern)?.[0];
 }
 
+/**
+ * The named references this parser resolves, plus numeric ones.
+ *
+ * `&apos;` is here because HTML5 defines it and every browser resolves it: a
+ * path written `/o&apos;neill` in a link has to reach the same subject URL as
+ * the same path declared in a sitemap.
+ */
+const HTML_NAMED: Readonly<Record<string, string>> = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * One pass, not a chain of replaces.
+ *
+ * A chain decodes its own output: `&amp;lt;` became `&lt;` after the ampersand
+ * step and then `<` after the less-than step, handing back a character the
+ * document never wrote. That is wrong on its own terms, and it also split URLs
+ * in two. The sitemap parser decodes in a single scan, so the same escape in a
+ * href and in a `<loc>` canonicalized to different subject URLs and the
+ * sitemap copy looked like a page nothing links to.
+ *
+ * A single scan cannot revisit what it has already written.
+ */
+const HTML_ENTITY = /&(?:#(-?(?:x[0-9a-f]+|\d+))|(nbsp|amp|lt|gt|quot|apos));/gi;
+
 function decodeHtml(value: string): string {
-  return (
-    value
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'")
-      // &apos; is HTML5-valid and every browser resolves it, but this chain used
-      // to skip it — so a path written `/o&apos;neill` in a link and `/o&apos;neill`
-      // in the sitemap resolved to two different subject URLs, and the sitemap
-      // one looked like a page nothing links to.
-      .replace(/&apos;/gi, "'")
-      .replace(/&#(-?(?:x[0-9a-f]+|\d+));/gi, (_match, raw: string) => {
-        const number = raw.toLowerCase().startsWith("x")
-          ? Number.parseInt(raw.slice(1), 16)
-          : Number.parseInt(raw, 10);
-        const validScalar =
-          Number.isSafeInteger(number) &&
-          number > 0 &&
-          number <= 0x10ffff &&
-          (number < 0xd800 || number > 0xdfff);
-        return validScalar ? String.fromCodePoint(number) : "\ufffd";
-      })
+  return value.replace(
+    HTML_ENTITY,
+    (match: string, numeric?: string, name?: string): string => {
+      if (name) return HTML_NAMED[name.toLowerCase()] ?? match;
+      if (!numeric) return match;
+
+      const isHex = numeric.toLowerCase().startsWith("x");
+      const number = isHex
+        ? Number.parseInt(numeric.slice(1), 16)
+        : Number.parseInt(numeric, 10);
+      const validScalar =
+        Number.isSafeInteger(number) &&
+        number > 0 &&
+        number <= 0x10ffff &&
+        (number < 0xd800 || number > 0xdfff);
+      return validScalar ? String.fromCodePoint(number) : "\ufffd";
+    },
   );
 }
+
 
 /**
  * Extract stable visible body text: remove chrome/executable content, strip
