@@ -183,6 +183,34 @@ export type {
   HttpDataForSeoClientOptions,
 } from "./dataforseo/client.ts";
 export {
+  createDataForSeoKeywordMetricsClient,
+  dataForSeoKeywordKey,
+  DATAFORSEO_BULK_RANKS_LIVE_URL,
+  DATAFORSEO_KEYWORD_OVERVIEW_LIVE_URL,
+  DATAFORSEO_SERP_ORGANIC_LIVE_URL,
+  DEFAULT_DATAFORSEO_SERP_ORGANIC_DEPTH,
+  MAX_DATAFORSEO_BULK_RANKS_BATCH,
+  MAX_DATAFORSEO_BULK_RANKS_TARGETS,
+  MAX_DATAFORSEO_DOMAIN_RANK,
+  MAX_DATAFORSEO_KEYWORD_OVERVIEW_BATCH,
+  MAX_DATAFORSEO_KEYWORD_OVERVIEW_KEYWORDS,
+  MAX_DATAFORSEO_SERP_ORGANIC_DEPTH,
+} from "./dataforseo/keyword-metrics.ts";
+export type {
+  DataForSeoBulkRankRow,
+  DataForSeoBulkRanksRequest,
+  DataForSeoBulkRanksResponse,
+  DataForSeoKeywordMainIntent,
+  DataForSeoKeywordMetricsClient,
+  DataForSeoKeywordMetricsClientOptions,
+  DataForSeoKeywordOverviewRequest,
+  DataForSeoKeywordOverviewResponse,
+  DataForSeoKeywordOverviewRow,
+  DataForSeoSerpOrganicRequest,
+  DataForSeoSerpOrganicResponse,
+  DataForSeoSerpOrganicRow,
+} from "./dataforseo/keyword-metrics.ts";
+export {
   createDataForSeoBacklinksAdapter,
   createDataForSeoBacklinksScope,
   dataForSeoBacklinksSnapshotSummary,
@@ -312,6 +340,41 @@ export {
   PUBLIC_PREVIEW_CRAWL_USER_AGENT,
 } from "./crawl/public-preview.ts";
 export type { PublicPreviewCrawlOptions } from "./crawl/public-preview.ts";
+// Page-value-ordered context crawl (P0-5 Keyword Opportunity Map data source).
+export {
+  PAGE_VALUE_DEPTH_PENALTY_STEP,
+  PAGE_VALUE_FOREIGN_LOCALE_PENALTY,
+  PAGE_VALUE_MIN_CRAWLABLE_SCORE,
+  PAGE_VALUE_OFF_TOPIC_PENALTY,
+  PAGE_VALUE_PRODUCT_SCORE_THRESHOLD,
+  pageValueBreakdown,
+  pageValueIsCrawlable,
+  pageValueIsProductPage,
+  pageValueScore,
+} from "./crawl/page-value.ts";
+export type {
+  PageValueBreakdown,
+  PageValueOptions,
+} from "./crawl/page-value.ts";
+export {
+  assertContextProfileSufficient,
+  crawlSiteContextProfile,
+  ContextProfileError,
+  CONTEXT_PROFILE_CRAWL_BUDGET,
+  CONTEXT_PROFILE_MAX_TEXT_CHARS,
+  CONTEXT_PROFILE_MIN_PAGES,
+  CONTEXT_PROFILE_SITEMAP_LIMITS,
+  CONTEXT_PROFILE_USER_AGENT,
+} from "./crawl/context-profile.ts";
+export type {
+  ContextProfileErrorCode,
+  ContextProfileFetch,
+  ContextProfileHeadings,
+  ContextProfileOptions,
+  ContextProfilePage,
+  ContextProfileResult,
+  ContextProfileStopReason,
+} from "./crawl/context-profile.ts";
 export { parsePage, directivesIndexable } from "./crawl/parse-page.ts";
 export type { ParsedPage } from "./crawl/parse-page.ts";
 export {
