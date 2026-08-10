@@ -818,6 +818,12 @@ function checkOpenApi() {
     ] === "keywordSuggestionReadinessProvenanceAndExcludedAssignment",
     "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
   );
+  assertExactSet(
+    keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.intent?.enum ??
+      [],
+    ["informational", "navigational", "commercial", "transactional", null],
+    "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
+  );
   invariant(
     Array.isArray(keywordDetailResponse?.oneOf) &&
       keywordDetailResponse.oneOf.length === 2 &&

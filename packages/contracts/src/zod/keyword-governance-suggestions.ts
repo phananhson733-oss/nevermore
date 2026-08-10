@@ -10,6 +10,12 @@ const Text = z.string().trim().min(1).max(2_000);
 const Hash = z.string().regex(/^[0-9a-f]{64}$/u);
 const KeywordStatus = z.enum(["candidate", "approved", "excluded", "parked"]);
 const MappingDecision = z.enum(["unassigned", "existing_page", "new_asset"]);
+const CanonicalIntent = z.enum([
+  "informational",
+  "navigational",
+  "commercial",
+  "transactional",
+]);
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 
 export const KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS = [
@@ -47,7 +53,7 @@ const Candidate = z.object({
   deterministicEvidence: z.object({
     sourceOccurrenceIds: z.array(Uuid).min(1).max(100).refine(unique),
     providerSearchIntent: z.object({
-      value: ShortLabel,
+      value: CanonicalIntent,
       snapshotId: Uuid,
       observationId: Uuid,
       observedAt: IsoDateTime,
@@ -91,7 +97,7 @@ export type KeywordGovernanceSuggestionInputManifest = z.infer<typeof KeywordGov
 
 const StructuredSuggestion = z.object({
   keywordKey: z.string().regex(/^keyword-[a-z0-9-]+$/u), status: KeywordStatus,
-  intent: ShortLabel.nullable(), buyerStage: ShortLabel.nullable(),
+  intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
   topicKey: z.string().regex(/^topic-[a-z0-9-]+$/u).nullable(),
   mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: Text,
 }).strict().superRefine((item, ctx) => {
@@ -127,7 +133,7 @@ const IntentLineage = z.discriminatedUnion("authority", [
 ]);
 export const KeywordGovernancePendingSuggestion = z.object({
   suggestionId: Uuid, suggestionVersion: KeywordGovernanceSuggestionVersion, state: KeywordGovernanceSuggestionState,
-  expectedGovernanceRevision: IncrementableRevision, status: KeywordStatus.nullable(), intent: ShortLabel.nullable(), buyerStage: ShortLabel.nullable(),
+  expectedGovernanceRevision: IncrementableRevision, status: KeywordStatus.nullable(), intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
   topicNodeId: Uuid.nullable(), topicModelRevision: PositiveRevision.nullable(), topicLabel: Label.nullable(), mappingDecision: MappingDecision.nullable(),
   mappedSitePageId: Uuid.nullable(), mappedSitePageTitle: Label.nullable(), reason: Text.nullable(),
   readinessReason: z.enum(["all_authorities_confirmed", "generation_in_progress", "insufficient_authority", "governance_revision_changed", "authority_unavailable"]), limitation: Text.nullable(),

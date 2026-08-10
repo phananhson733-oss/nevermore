@@ -229,6 +229,23 @@ describe("Keyword governance suggestion contracts", () => {
     expect(
       KeywordGovernanceSuggestionInputManifest.safeParse({
         ...manifest,
+        candidates: [
+          {
+            ...manifest.candidates[0],
+            deterministicEvidence: {
+              ...manifest.candidates[0].deterministicEvidence,
+              providerSearchIntent: {
+                ...manifest.candidates[0].deterministicEvidence.providerSearchIntent,
+                value: "awareness",
+              },
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernanceSuggestionInputManifest.safeParse({
+        ...manifest,
         rawProviderPayload: {},
       }).success,
     ).toBe(false);
@@ -288,11 +305,35 @@ describe("Keyword governance suggestion contracts", () => {
         ...output,
         suggestions: [{ ...output.suggestions[0], intent: "transactional" }],
       },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], intent: "awareness" }],
+      },
     ]) {
       expect(() =>
         parseKeywordGovernanceSuggestionStructuredOutput(invalid, manifest),
       ).toThrow();
     }
+    expect(() =>
+      parseKeywordGovernanceSuggestionStructuredOutput(
+        {
+          ...output,
+          suggestions: [{ ...output.suggestions[0], intent: "awareness" }],
+        },
+        {
+          ...manifest,
+          candidates: [
+            {
+              ...manifest.candidates[0],
+              deterministicEvidence: {
+                ...manifest.candidates[0].deterministicEvidence,
+                providerSearchIntent: null,
+              },
+            },
+          ],
+        },
+      ),
+    ).toThrow();
   });
 
   it("rejects DB identities, provider facts, actors and timestamps from model output", () => {

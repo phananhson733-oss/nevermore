@@ -1541,7 +1541,7 @@ function pendingKeywordSuggestion() {
     state: "pending_ready" as const,
     expectedGovernanceRevision: 4,
     status: "approved" as const,
-    intent: "commercial investigation",
+    intent: "commercial",
     buyerStage: "consideration",
     topicNodeId: ids.cluster,
     topicModelRevision: 2,

@@ -6727,7 +6727,7 @@ components:
         state: { type: string, enum: [generating, pending_ready, pending_needs_review, stale, unavailable] }
         expectedGovernanceRevision: { type: integer, minimum: 0, maximum: 2147483646 }
         status: { type: [string, 'null'], enum: [candidate, approved, excluded, parked, null] }
-        intent: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        intent: { type: [string, 'null'], enum: [informational, navigational, commercial, transactional, null] }
         buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 100 }
         topicNodeId: { type: [string, 'null'], format: uuid }
         topicModelRevision: { type: [integer, 'null'], minimum: 1, maximum: 2147483647 }

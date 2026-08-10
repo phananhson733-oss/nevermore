@@ -166,6 +166,7 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Keyword governance suggestion generation must remain an exact internal async identity with no public model/config selector",
     "Keyword suggestion manifest field inventory",
     "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
+    "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",

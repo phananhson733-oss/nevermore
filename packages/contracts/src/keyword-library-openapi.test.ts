@@ -445,6 +445,12 @@ describe("Keyword Library generated OpenAPI contract", () => {
     expect(generated).toContain(
       'intentLineage: components["schemas"]["KeywordGovernanceSuggestionIntentLineage"] | null;',
     );
+    expect(openapi).toMatch(
+      /KeywordGovernancePendingSuggestion:[\s\S]*?intent: \{ type: \[string, 'null'\], enum: \[informational, navigational, commercial, transactional, null\] \}/u,
+    );
+    expect(generated).toContain(
+      'intent: "informational" | "navigational" | "commercial" | "transactional" | null;',
+    );
     expect(openapi).toContain(
       "x-signalframe-runtime-refinement: keywordSuggestionReadinessProvenanceAndExcludedAssignment",
     );

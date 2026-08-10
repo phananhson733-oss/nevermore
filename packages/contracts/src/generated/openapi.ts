@@ -3741,7 +3741,8 @@ export interface components {
             expectedGovernanceRevision: number;
             /** @enum {string|null} */
             status: "candidate" | "approved" | "excluded" | "parked" | null;
-            intent: string | null;
+            /** @enum {string|null} */
+            intent: "informational" | "navigational" | "commercial" | "transactional" | null;
             buyerStage: string | null;
             /** Format: uuid */
             topicNodeId: string | null;
