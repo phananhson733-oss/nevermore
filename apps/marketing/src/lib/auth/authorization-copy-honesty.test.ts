@@ -71,7 +71,7 @@ describe("public tool copy about what is stored", () => {
       // tokens after 7 days. Any duration in visitor-facing copy would be a
       // promise about someone else's system.
       const messages = bundle(locale, namespace);
-      for (const key of ["connectBody", "connectTrust", "unverifiedScope"]) {
+      for (const key of ["connectBody", "connectTrust"]) {
         const value = messages[key] ?? "";
         expect(value, `${locale}.${namespace}.${key}`).not.toMatch(
           /\b(?:7|30|90)\s*(?:days?|天)/i,
@@ -90,6 +90,25 @@ describe("public tool copy about what is stored", () => {
  * the i18n bundles and the page content object, and that file is neither.
  * Every surface a visitor reads about storage on now runs the same list.
  */
+function retiredConsentClaims(locale: "en" | "zh"): readonly RegExp[] {
+  return locale === "en"
+    ? [
+        /has(?:n't| not) (?:finished )?verif/i,
+        /still verifying this app/i,
+        /app isn.t verified/i,
+        // The instructions are the sharpest tell: they name a control path
+        // through a screen that does not exist for this flow.
+        /click\s+.?Advanced/i,
+      ]
+    : [
+        /未经\s*Google\s*验证/,
+        /此应用未经验证/,
+        /验证队列/,
+        /尚未完成验证/,
+        /点\s*「?高级」?/,
+      ];
+}
+
 function forbiddenStorageClaims(locale: "en" | "zh"): readonly RegExp[] {
   return locale === "en"
     ? [
@@ -108,6 +127,46 @@ function forbiddenStorageClaims(locale: "en" | "zh"): readonly RegExp[] {
         /不保存任何/,
       ];
 }
+
+/**
+ * Google shows its "app isn't verified" interstitial when a request carries a
+ * sensitive or restricted scope that has not been approved. This flow asks for
+ * `openid email profile webmasters.readonly`, all of which this project's
+ * consent screen lists as non-sensitive, so no visitor meets that screen.
+ *
+ * Copy describing it was worse than merely stale. It told visitors to expect a
+ * page that never appears and gave click-by-click directions ("click Advanced,
+ * then Go to gengrowth.ai") for buttons that are not there, so the reader's
+ * own successful authorization reads as the thing that went wrong.
+ */
+describe("consent-screen copy for screens this flow does not produce", () => {
+  it.each(CASES)(
+    "does not describe an unverified-app interstitial in %s tools.%s",
+    (locale, namespace) => {
+      const text = JSON.stringify(bundle(locale, namespace));
+
+      for (const pattern of retiredConsentClaims(locale)) {
+        expect(text, `${locale}.${namespace} matches ${pattern}`).not.toMatch(
+          pattern,
+        );
+      }
+    },
+  );
+
+  it.each(CASES)(
+    "does not blame a sensitive-scope review for the %s tools.%s testing gate",
+    (locale, namespace) => {
+      // The tester-list gate is real when the screen is in Testing; the reason
+      // given for it was not. Naming a review that is not running invents a
+      // deadline we do not control and cannot report progress against.
+      const body = bundle(locale, namespace).inviteOnlyBody ?? "";
+
+      expect(body).not.toMatch(
+        locale === "en" ? /\bsensitive\b/i : /敏感(范围|权限)/,
+      );
+    },
+  );
+});
 
 describe("connected tool page copy about what is stored", () => {
   it.each(LOCALES)("qualifies every storage claim in %s", (locale) => {

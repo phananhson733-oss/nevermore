@@ -2,7 +2,9 @@
 // @output -- validation + persistence helpers for owned GenGrowth short links
 // @pos    -- Link attribution domain layer shared by API registration and /go redirects
 // once this file is updated, update header comments and _DIR.md in this folder
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+// Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
+// apps/web only, so an aliased import here would not resolve from a unit test.
+import { createAdminSupabaseClient } from "../supabase/admin";
 
 const OWNED_SHORT_LINK_HOSTS = new Set(["gengrowth.ai", "www.gengrowth.ai"]);
 const SHORT_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
@@ -79,7 +81,8 @@ export async function registerShortLink(
       ok: false,
       status: 400,
       code: "INVALID_CODE",
-      message: "Short-link code must use 1-80 lowercase letters, numbers, or hyphens.",
+      message:
+        "Short-link code must use 1-80 lowercase letters, numbers, or hyphens.",
     };
   }
 

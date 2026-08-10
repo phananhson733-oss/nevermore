@@ -121,34 +121,13 @@ export function GscConnectPanel({
             ) : null}
           </div>
         </div>
-      ) : consentNotice === "unverified" ? (
-        /*
-         * Published, but Google has not finished verifying the sensitive
-         * scope, so everyone passes an "app isn't verified" interstitial.
-         * Anyone can get through, so the button stays primary — but the
-         * screen they are about to meet is described first. Being surprised
-         * by that page is what loses people; being told about it beforehand
-         * mostly does not.
-         */
-        <div className="mt-5 space-y-4">
-          <div className="rounded-[10px] border border-brand-warning/30 bg-brand-warning/[0.08] p-4">
-            <p className="text-[13px] font-semibold text-text-dark-primary">
-              {t("unverifiedTitle")}
-            </p>
-            <p className="mt-1.5 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
-              {t("unverifiedBody")}
-            </p>
-            <p className="mt-2 max-w-xl text-[13px] leading-[1.6] text-text-dark-secondary">
-              {t("unverifiedScope")}
-            </p>
-          </div>
-          <ConnectCta
-            href={authorizeHref}
-            cta={t("connectCta")}
-            trust={t("connectTrust")}
-          />
-        </div>
       ) : (
+        /*
+         * Nothing unusual on the way through, so nothing is prepended to the
+         * button. A warning block here used to describe Google's "app isn't
+         * verified" interstitial; that screen only appears for unapproved
+         * sensitive scopes, which this flow does not request.
+         */
         <div className="mt-5">
           <ConnectCta
             href={authorizeHref}

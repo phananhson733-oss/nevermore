@@ -38,8 +38,7 @@ export interface TrafficDropSession {
   /**
    * Whether the Google grant flow is open in this environment.
    *
-   * The `webmasters.readonly` scope is a Google-sensitive scope and cannot ship
-   * until the consent screen passes verification. Until then the page says so
+   * Off by default so an environment without working OAuth credentials says so
    * plainly rather than offering a button that leads nowhere.
    */
   readonly connectEnabled: boolean;
@@ -57,12 +56,21 @@ export interface TrafficDropSession {
 /**
  * - `invite_only` — the consent screen is in Testing, so only accounts on its
  *   tester list can authorize and everyone else is hard-blocked.
- * - `unverified` — published, but Google has not finished verifying the
- *   sensitive scope, so every visitor passes an "app isn't verified"
- *   interstitial they must click through.
- * - `none` — published and verified; the flow is unremarkable.
+ * - `none` — nothing unusual happens on the way through.
+ *
+ * There used to be an `unverified` state for the "Google hasn't verified this
+ * app" interstitial. It was removed because the condition that produces that
+ * screen does not hold here: Google shows it when a request carries a
+ * sensitive or restricted scope that has not been approved, and this flow asks
+ * only for `openid email profile webmasters.readonly` — all of which this
+ * project's consent screen lists as non-sensitive. Describing a screen the
+ * visitor will never meet is worse than saying nothing: it also hands them
+ * click-by-click instructions for buttons that are not there.
+ *
+ * Re-add the state, do not repurpose this one, if the flow ever requests a
+ * scope Google does classify as sensitive.
  */
-export type GoogleConsentNotice = "invite_only" | "unverified" | "none";
+export type GoogleConsentNotice = "invite_only" | "none";
 
 /** Server-side flag; there is deliberately no NEXT_PUBLIC_ variant of this. */
 export function isGoogleConnectEnabled(): boolean {
@@ -70,16 +78,25 @@ export function isGoogleConnectEnabled(): boolean {
 }
 
 /**
- * Defaults to the most restrictive notice.
+ * Defaults to no notice, because that is what this consent screen actually
+ * does today.
  *
- * The safe direction is to over-warn: a visitor who reads a warning that did
- * not apply loses a few seconds, while a visitor sent unprepared into Google's
- * block page cannot recover at all. Both `unverified` and `none` therefore
- * have to be set deliberately, as the consent screen actually advances.
+ * This used to default to `invite_only` on an over-warn argument: a visitor
+ * who reads a warning that did not apply loses a few seconds, while a visitor
+ * stopped by Google unprepared cannot recover. That reasoning held while the
+ * screen's real state was unknown. It is known now — published, external, and
+ * requesting only non-sensitive scopes — so `invite_only` is no longer the
+ * cautious default but a false statement: it tells everyone they are probably
+ * not on a tester list that is not gating anything, and demotes the authorize
+ * link that in fact works for them.
+ *
+ * `invite_only` therefore has to be set deliberately, and must be, the moment
+ * the consent screen is moved back to Testing.
  */
 export function readGoogleConsentNotice(): GoogleConsentNotice {
-  const value = process.env.MARKETING_GSC_CONSENT_NOTICE;
-  return value === "none" || value === "unverified" ? value : "invite_only";
+  return process.env.MARKETING_GSC_CONSENT_NOTICE === "invite_only"
+    ? "invite_only"
+    : "none";
 }
 
 /**
