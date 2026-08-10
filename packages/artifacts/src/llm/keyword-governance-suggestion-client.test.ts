@@ -203,6 +203,9 @@ describe("keyword governance suggestion structured client", () => {
       "buyerStage must be awareness, consideration, decision, retention, or null.",
     );
     expect(messages.user).toContain(
+      '"intent":"informational | navigational | commercial | transactional | null"',
+    );
+    expect(messages.user).toContain(
       '"buyerStage":"awareness | consideration | decision | retention | null"',
     );
 

@@ -334,7 +334,8 @@ const OUTPUT_SHAPE = {
     {
       keywordKey: "supplied-keyword-key",
       status: "candidate | approved | excluded | parked",
-      intent: "short classification or null",
+      intent:
+        "informational | navigational | commercial | transactional | null",
       buyerStage: "awareness | consideration | decision | retention | null",
       topicKey: "supplied-topic-key or null",
       mappingDecision: "unassigned | existing_page | new_asset",
