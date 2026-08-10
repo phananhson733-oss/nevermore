@@ -3,9 +3,11 @@ import {
   KeywordGovernanceSuggestionInputManifest,
   type KeywordGovernanceSuggestionInputManifest as SuggestionManifest,
 } from "@sf/contracts";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDbHandle, type DbHandle } from "../client.ts";
 import { contentHash, type CanonicalValue } from "../hash.ts";
+import { scheduleKeywordGovernanceSuggestions } from "../keyword-governance-suggestion-scheduler.ts";
 import { runMigrations } from "../migrate.ts";
 import {
   AsyncRunsRepository,
@@ -250,6 +252,49 @@ describeDb("Keyword review suggestion durable authority", () => {
       workspaceId: project.workspaceId,
       projectId: project.projectId,
     };
+  }
+
+  async function waitForProjectAdvisoryWaiter(
+    project: ProjectFixture,
+    holderPid: number,
+  ): Promise<void> {
+    const lockKey =
+      `topic-governance:${project.workspaceId}:${project.projectId}`;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const blocked = await handle.pool.query<{ blocked: number }>(
+        `WITH target_lock AS (
+           SELECT hashtextextended($2::text, 0) AS lock_key
+         )
+         SELECT count(*)::integer AS blocked
+           FROM pg_locks waiter
+           JOIN pg_locks holder
+             ON holder.locktype = waiter.locktype
+            AND holder.database IS NOT DISTINCT FROM waiter.database
+            AND holder.classid IS NOT DISTINCT FROM waiter.classid
+            AND holder.objid IS NOT DISTINCT FROM waiter.objid
+            AND holder.objsubid IS NOT DISTINCT FROM waiter.objsubid
+            AND holder.pid <> waiter.pid
+            AND holder.granted
+           CROSS JOIN target_lock
+          WHERE waiter.locktype = 'advisory'
+            AND NOT waiter.granted
+            AND holder.pid = $1
+            AND holder.classid = (
+              (target_lock.lock_key >> 32) & 4294967295::bigint
+            )::oid
+            AND holder.objid = (
+              target_lock.lock_key & 4294967295::bigint
+            )::oid
+            AND holder.objsubid = 1
+            AND waiter.database = (
+              SELECT oid FROM pg_database WHERE datname = current_database()
+            )`,
+        [holderPid, lockKey],
+      );
+      if ((blocked.rows[0]?.blocked ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("concurrent writer did not wait on the project authority lock");
   }
 
   async function createProject(): Promise<ProjectFixture> {
@@ -820,6 +865,49 @@ describeDb("Keyword review suggestion durable authority", () => {
     }));
   }
 
+  async function createPendingSuggestionFixture(
+    project: ProjectFixture,
+    topic: TopicFixture,
+  ) {
+    await createCsvOccurrence(project);
+    const runs = new KeywordGovernanceSuggestionGenerationRunsRepository(
+      handle.db,
+    );
+    const authority = await runs.readPrimaryFreezeAuthority(scope(project));
+    if (authority.kind !== "ready" || authority.authority.keywords.length !== 1) {
+      throw new Error("single pending suggestion authority missing");
+    }
+    const generation = await createGeneration(
+      project,
+      freezeManifest(authority.authority),
+      `keyword-suggestion-lock-race:${randomUUID()}`,
+    );
+    const outputHash = contentHash({ run: generation.runId, output: "race" });
+    const invocation = await successfulInvocation(generation, outputHash);
+    const inserted = await new KeywordReviewSuggestionsRepository(
+      handle.db,
+    ).insertBatch(scope(project), {
+      generationRunId: generation.runId,
+      inputHash: generation.inputHash,
+      outputHash,
+      analysisInvocationId: invocation.invocationId,
+      suggestions: suggestionsFor(generation, topic, project),
+    });
+    if (inserted.kind !== "inserted" || inserted.suggestions.length !== 1) {
+      throw new Error("single pending suggestion insert missing");
+    }
+    await runs.terminalize(generation.attempt, {
+      status: "completed",
+      resultOutputHash: outputHash,
+      lastErrorCode: null,
+      lastErrorSummary: null,
+    });
+    return {
+      candidate: generation.manifest.candidates[0]!,
+      suggestion: inserted.suggestions[0]!,
+    };
+  }
+
   async function rawBatch(
     project: ProjectFixture,
     generation: GenerationFixture,
@@ -1130,6 +1218,315 @@ describeDb("Keyword review suggestion durable authority", () => {
       user_decisions: "0",
     });
   });
+
+  it("serializes approved and stale-sweep outcomes in both project-lock orders", async () => {
+    const approvedFirstProject = await createProject();
+    const approvedFirstTopic = await createConfirmedTopic(approvedFirstProject);
+    const approvedFirst = await createPendingSuggestionFixture(
+      approvedFirstProject,
+      approvedFirstTopic,
+    );
+    let approvalBackendPid: number | undefined;
+    let releaseApproval!: () => void;
+    const approvalRelease = new Promise<void>((resolve) => {
+      releaseApproval = resolve;
+    });
+    let markApprovalApplied!: () => void;
+    const approvalApplied = new Promise<void>((resolve) => {
+      markApprovalApplied = resolve;
+    });
+    const approval = handle.db.transaction(async (tx) => {
+      const backend = await tx.execute(sql<{ backend_pid: number }>`
+        select pg_backend_pid()::integer as backend_pid
+      `);
+      const backendPid = backend.rows[0]?.backend_pid;
+      if (typeof backendPid !== "number" || !Number.isSafeInteger(backendPid)) {
+        throw new Error("approval backend pid missing");
+      }
+      approvalBackendPid = backendPid;
+      const result = await new KeywordGovernanceRepository(tx).approveSuggestion(
+        scope(approvedFirstProject),
+        approvedFirst.candidate.keywordId,
+        approvedFirst.suggestion.id,
+        approvedFirstProject.actorId,
+        {
+          expectedGovernanceRevision: 0,
+          suggestionVersion: "keyword-governance-suggestion.v1",
+        },
+      );
+      markApprovalApplied();
+      await approvalRelease;
+      return result;
+    });
+    void approval.catch(() => {
+      markApprovalApplied();
+    });
+    await approvalApplied;
+    if (approvalBackendPid === undefined) {
+      releaseApproval();
+      await approval;
+      throw new Error("approval backend pid missing after barrier");
+    }
+    const approvedFirstSweep = handle.pool.query<{ changed: number }>(
+      `SELECT app.supersede_stale_pending_keyword_review_suggestions(
+         $1::uuid, $2::uuid
+       ) AS changed`,
+      [approvedFirstProject.workspaceId, approvedFirstProject.projectId],
+    );
+    let approvalFirstBlockingFailure: unknown;
+    try {
+      await waitForProjectAdvisoryWaiter(
+        approvedFirstProject,
+        approvalBackendPid,
+      );
+    } catch (error) {
+      approvalFirstBlockingFailure = error;
+    } finally {
+      releaseApproval();
+    }
+    const [approved, approvedSweep] = await Promise.all([
+      approval,
+      approvedFirstSweep,
+    ]);
+    if (approvalFirstBlockingFailure !== undefined) {
+      throw approvalFirstBlockingFailure;
+    }
+    expect(approved).toMatchObject({
+      replayed: false,
+      decision: { governanceRevision: 1, decisionOrigin: "user" },
+    });
+    expect(approvedSweep.rows[0]?.changed).toBe(0);
+    await expect(
+      new KeywordReviewSuggestionsRepository(handle.db).findById(
+        scope(approvedFirstProject),
+        approvedFirst.suggestion.id,
+      ),
+    ).resolves.toMatchObject({ status: "approved", resolution_mode: "accepted" });
+
+    const sweepFirstProject = await createProject();
+    const sweepFirstTopic = await createConfirmedTopic(sweepFirstProject);
+    const sweepFirst = await createPendingSuggestionFixture(
+      sweepFirstProject,
+      sweepFirstTopic,
+    );
+    await new KeywordOccurrencesRepository(handle.db).upsertIntoLibrary(
+      scope(sweepFirstProject),
+      manualOccurrence(
+        sweepFirst.candidate.displayKeyword,
+        "2026-08-10T06:00:00.000Z",
+      ),
+    );
+    const sweepClient = await handle.pool.connect();
+    let sweepTransactionOpen = false;
+    let staleApproval:
+      | Promise<unknown>
+      | undefined;
+    try {
+      await sweepClient.query("BEGIN");
+      sweepTransactionOpen = true;
+      const sweepBackendPid = (
+        await sweepClient.query<{ backend_pid: number }>(
+          "SELECT pg_backend_pid()::integer AS backend_pid",
+        )
+      ).rows[0]?.backend_pid;
+      if (sweepBackendPid === undefined) {
+        throw new Error("stale sweep backend pid missing");
+      }
+      const swept = await sweepClient.query<{ changed: number }>(
+        `SELECT app.supersede_stale_pending_keyword_review_suggestions(
+           $1::uuid, $2::uuid
+         ) AS changed`,
+        [sweepFirstProject.workspaceId, sweepFirstProject.projectId],
+      );
+      expect(swept.rows[0]?.changed).toBe(1);
+      staleApproval = new KeywordGovernanceRepository(
+        handle.db,
+      ).approveSuggestion(
+        scope(sweepFirstProject),
+        sweepFirst.candidate.keywordId,
+        sweepFirst.suggestion.id,
+        sweepFirstProject.actorId,
+        {
+          expectedGovernanceRevision: 0,
+          suggestionVersion: "keyword-governance-suggestion.v1",
+        },
+      ).catch((error: unknown) => error);
+      await waitForProjectAdvisoryWaiter(sweepFirstProject, sweepBackendPid);
+      await sweepClient.query("COMMIT");
+      sweepTransactionOpen = false;
+    } finally {
+      if (sweepTransactionOpen) {
+        await sweepClient.query("ROLLBACK").catch(() => undefined);
+      }
+      sweepClient.release();
+    }
+    if (staleApproval === undefined) {
+      throw new Error("stale approval race did not start");
+    }
+    const staleApprovalResult = await staleApproval;
+    expect(staleApprovalResult).toBeInstanceOf(KeywordGovernanceConflictError);
+    expect((staleApprovalResult as KeywordGovernanceConflictError).code).toBe(
+      "REVISION_CONFLICT",
+    );
+    await expect(
+      new KeywordReviewSuggestionsRepository(handle.db).findById(
+        scope(sweepFirstProject),
+        sweepFirst.suggestion.id,
+      ),
+    ).resolves.toMatchObject({ status: "superseded" });
+  }, 120_000);
+
+  it("atomically supersedes only stale pending authority before scheduling one regenerated batch", async () => {
+    const project = await createProject();
+    const topic = await createConfirmedTopic(project);
+    await createCsvOccurrence(project);
+    const occurrences = new KeywordOccurrencesRepository(handle.db);
+    await occurrences.upsertIntoLibrary(
+      scope(project),
+      manualOccurrence("Onboarding Automation", "2026-08-10T04:00:00.000Z"),
+    );
+    const generationRuns =
+      new KeywordGovernanceSuggestionGenerationRunsRepository(handle.db);
+    const initialAuthority = await generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    );
+    expect(initialAuthority.kind).toBe("ready");
+    if (initialAuthority.kind !== "ready") {
+      throw new Error("initial regeneration authority missing");
+    }
+    expect(initialAuthority.authority.keywords).toHaveLength(2);
+    const initialGeneration = await createGeneration(
+      project,
+      freezeManifest(initialAuthority.authority),
+      `keyword-suggestion-regeneration-source:${randomUUID()}`,
+    );
+    const initialOutputHash = contentHash({
+      run: initialGeneration.runId,
+      output: "regeneration-source",
+    });
+    const initialInvocation = await successfulInvocation(
+      initialGeneration,
+      initialOutputHash,
+    );
+    const suggestions = new KeywordReviewSuggestionsRepository(handle.db);
+    const inserted = await suggestions.insertBatch(scope(project), {
+      generationRunId: initialGeneration.runId,
+      inputHash: initialGeneration.inputHash,
+      outputHash: initialOutputHash,
+      analysisInvocationId: initialInvocation.invocationId,
+      suggestions: suggestionsFor(initialGeneration, topic, project),
+    });
+    expect(inserted.kind).toBe("inserted");
+    if (inserted.kind !== "inserted") {
+      throw new Error("initial regeneration suggestions missing");
+    }
+    await expect(generationRuns.terminalize(initialGeneration.attempt, {
+      status: "completed",
+      resultOutputHash: initialOutputHash,
+      lastErrorCode: null,
+      lastErrorSummary: null,
+    })).resolves.toMatchObject({ kind: "terminalized" });
+    await expect(generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    )).resolves.toEqual({ kind: "no_candidates" });
+
+    const staleCandidate = initialGeneration.manifest.candidates[0]!;
+    const currentCandidate = initialGeneration.manifest.candidates[1]!;
+    await occurrences.upsertIntoLibrary(
+      scope(project),
+      manualOccurrence(
+        staleCandidate.displayKeyword,
+        "2026-08-10T05:00:00.000Z",
+      ),
+    );
+
+    const firstRunId = randomUUID();
+    const secondRunId = randomUUID();
+    let firstBackendPid: number | undefined;
+    let releaseFirstEnqueue!: () => void;
+    const firstEnqueueRelease = new Promise<void>((resolve) => {
+      releaseFirstEnqueue = resolve;
+    });
+    let markFirstEnqueueEntered!: () => void;
+    const firstEnqueueEntered = new Promise<void>((resolve) => {
+      markFirstEnqueueEntered = resolve;
+    });
+    const enqueue = async (
+      _boss: never,
+      _tx: never,
+      _queue: string,
+      payload: { readonly runId: string },
+    ) => payload.runId;
+    const firstSchedule = scheduleKeywordGovernanceSuggestions(
+      { db: handle.db, boss: {} as never },
+      { scope: scope(project), initiatedBy: project.actorId },
+      {
+        createRunId: () => firstRunId,
+        enqueueRunInTx: async (_boss, tx, _queue, payload) => {
+          const backend = await tx.execute(sql<{ backend_pid: number }>`
+            select pg_backend_pid()::integer as backend_pid
+          `);
+          const backendPid = backend.rows[0]?.backend_pid;
+          if (typeof backendPid !== "number" || !Number.isSafeInteger(backendPid)) {
+            throw new Error("first scheduler backend pid missing");
+          }
+          firstBackendPid = backendPid;
+          markFirstEnqueueEntered();
+          await firstEnqueueRelease;
+          return payload.runId;
+        },
+      },
+    );
+    await firstEnqueueEntered;
+    const secondSchedule = scheduleKeywordGovernanceSuggestions(
+      { db: handle.db, boss: {} as never },
+      { scope: scope(project), initiatedBy: project.actorId },
+      { createRunId: () => secondRunId, enqueueRunInTx: enqueue as never },
+    );
+
+    let blockingFailure: unknown;
+    try {
+      if (firstBackendPid === undefined) {
+        throw new Error("first scheduler backend pid missing after barrier");
+      }
+      await waitForProjectAdvisoryWaiter(project, firstBackendPid);
+    } catch (error) {
+      blockingFailure = error;
+    } finally {
+      releaseFirstEnqueue();
+    }
+
+    const results = await Promise.all([firstSchedule, secondSchedule]);
+    if (blockingFailure !== undefined) throw blockingFailure;
+    expect(results.map((result) => result.kind).sort()).toEqual([
+      "active",
+      "queued",
+    ]);
+    const queued = results.find((result) => result.kind === "queued");
+    expect(queued).toMatchObject({ kind: "queued", candidateCount: 1 });
+
+    const oldStatuses = await handle.pool.query<{
+      keyword_entity_id: string;
+      status: string;
+    }>(
+      `SELECT keyword_entity_id, status
+         FROM app.keyword_review_suggestions
+        WHERE generation_run_id = $1
+        ORDER BY keyword_entity_id`,
+      [initialGeneration.runId],
+    );
+    expect(oldStatuses.rows).toEqual(expect.arrayContaining([
+      { keyword_entity_id: staleCandidate.keywordId, status: "superseded" },
+      { keyword_entity_id: currentCandidate.keywordId, status: "pending" },
+    ]));
+    const queuedRunId = queued?.kind === "queued" ? queued.runId : null;
+    const regenerated = queuedRunId === null
+      ? null
+      : await generationRuns.findById(scope(project), queuedRunId);
+    expect(regenerated?.input_manifest.candidates).toMatchObject([
+      { keywordId: staleCandidate.keywordId },
+    ]);
+  }, 120_000);
 
   it("enforces the complete real-PG generation, paid-call, batch, and human resolution lifecycle", async () => {
     const project = await createProject();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTRACT_VERSION } from "@sf/contracts";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db, PgBoss } from "./index.ts";
 import { AsyncRunsRepository, type AsyncRunRow } from "./repositories/async-runs.ts";
 import { KeywordGovernanceSuggestionGenerationRunsRepository } from "./repositories/keyword-governance-suggestion-generation-runs.ts";
@@ -152,6 +153,10 @@ function installReadyDefaults(): void {
     KeywordReviewSuggestionsRepository.prototype,
     "findCurrentReusableCompletedBatch",
   ).mockResolvedValue({ kind: "not_found" });
+  vi.spyOn(
+    KeywordReviewSuggestionsRepository.prototype,
+    "supersedeStalePendingForProject",
+  ).mockResolvedValue(0);
   vi.spyOn(AsyncRunsRepository.prototype, "insertQueued").mockResolvedValue(
     queuedRun,
   );
@@ -264,6 +269,109 @@ describe("Keyword governance suggestion scheduler", () => {
 
     expect(h.execute).toHaveBeenCalledOnce();
     expect(order).toEqual(["lock", "active"]);
+    const lockCall = h.execute.mock.calls.at(0);
+    expect(lockCall).toBeDefined();
+    if (!lockCall) {
+      throw new Error("scheduler lock call missing");
+    }
+    const [lockStatement] = lockCall as readonly unknown[];
+    const lock = new PgDialect().sqlToQuery(lockStatement as never);
+    expect(lock.sql).toContain("pg_advisory_xact_lock(");
+    expect(lock.sql).toMatch(/hashtextextended\(\s*\$1,\s*0\s*\)/u);
+    expect(lock.params).toEqual([
+      `topic-governance:${scope.workspaceId}:${scope.projectId}`,
+    ]);
+  });
+
+  it("supersedes stale pending suggestions after the active probe and before freezing", async () => {
+    installReadyDefaults();
+    const order: string[] = [];
+    const h = harness();
+    h.execute.mockReset().mockImplementation(async () => {
+      order.push("lock");
+      return [];
+    });
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockImplementationOnce(
+      async () => {
+        order.push("active");
+        return null;
+      },
+    );
+    vi.mocked(
+      KeywordReviewSuggestionsRepository.prototype
+        .supersedeStalePendingForProject,
+    ).mockImplementationOnce(async () => {
+      order.push("supersede");
+      return 1;
+    });
+    vi.mocked(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype
+        .readPrimaryFreezeAuthority,
+    ).mockImplementationOnce(async () => {
+      order.push("freeze");
+      return { kind: "ready", authority, hasMore: false };
+    });
+
+    await scheduleKeywordGovernanceSuggestions(
+      h.ctx,
+      { scope, initiatedBy: IDS.actor },
+      { createRunId: h.createRunId, enqueueRunInTx: h.enqueue },
+    );
+
+    expect(order).toEqual(["lock", "active", "supersede", "freeze"]);
+    expect(
+      KeywordReviewSuggestionsRepository.prototype
+        .supersedeStalePendingForProject,
+    ).toHaveBeenCalledWith(scope);
+  });
+
+  it("drains the bounded stale-pending sentinel before freezing authority", async () => {
+    installReadyDefaults();
+    const order: string[] = [];
+    const h = harness();
+    h.execute.mockImplementationOnce(async () => {
+      order.push("lock");
+      return [];
+    });
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockImplementationOnce(
+      async () => {
+        order.push("active");
+        return null;
+      },
+    );
+    vi.mocked(
+      KeywordReviewSuggestionsRepository.prototype
+        .supersedeStalePendingForProject,
+    )
+      .mockImplementationOnce(async () => {
+        order.push("supersede:100");
+        return 100;
+      })
+      .mockImplementationOnce(async () => {
+        order.push("supersede:1");
+        return 1;
+      });
+    vi.mocked(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype
+        .readPrimaryFreezeAuthority,
+    ).mockImplementationOnce(async () => {
+      order.push("freeze");
+      return { kind: "ready", authority, hasMore: false };
+    });
+
+    await scheduleKeywordGovernanceSuggestions(
+      h.ctx,
+      { scope, initiatedBy: IDS.actor },
+      { createRunId: h.createRunId, enqueueRunInTx: h.enqueue },
+    );
+
+    expect(order).toEqual([
+      "lock",
+      "active",
+      "supersede:100",
+      "supersede:1",
+      "freeze",
+    ]);
   });
 
   it("returns the active owner for caller ACK without freezing another batch", async () => {

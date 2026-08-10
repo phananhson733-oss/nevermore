@@ -360,4 +360,30 @@ describe("KeywordReviewSuggestionsRepository", () => {
       "app.supersede_keyword_review_suggestions_for_project",
     );
   });
+
+  it("delegates bounded stale-pending invalidation to the authority routine", async () => {
+    const fake = fakeExecutor();
+    fake.enqueue({ rows: [{ changed: 1 }] });
+    const repo = new KeywordReviewSuggestionsRepository(fake.executor);
+
+    await expect(
+      repo.supersedeStalePendingForProject(scope),
+    ).resolves.toBe(1);
+
+    const compiled = new PgDialect().sqlToQuery(
+      last(fake.calls, "execute").args[0] as never,
+    );
+    expect(compiled.sql).toContain(
+      "app.supersede_stale_pending_keyword_review_suggestions",
+    );
+    expect(compiled.params).toEqual([scope.workspaceId, scope.projectId]);
+
+    const malformed = fakeExecutor();
+    malformed.enqueue({ rows: [{ changed: 101 }] });
+    await expect(
+      new KeywordReviewSuggestionsRepository(
+        malformed.executor,
+      ).supersedeStalePendingForProject(scope),
+    ).rejects.toThrow(/bounded stale-pending/u);
+  });
 });

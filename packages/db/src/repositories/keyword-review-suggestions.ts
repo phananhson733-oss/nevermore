@@ -828,6 +828,21 @@ export class KeywordReviewSuggestionsRepository extends Repository {
     `));
   }
 
+  async supersedeStalePendingForProject(
+    scope: ProjectScope,
+  ): Promise<number> {
+    const changed = parseChangedCount(await this.exec.execute(sql`
+      select app.supersede_stale_pending_keyword_review_suggestions(
+        ${scope.workspaceId}::uuid,
+        ${scope.projectId}::uuid
+      ) as changed
+    `));
+    if (changed > 100) {
+      throw new Error("invalid bounded stale-pending invalidation count");
+    }
+    return changed;
+  }
+
   async findById(
     scope: ProjectScope,
     suggestionId: string,

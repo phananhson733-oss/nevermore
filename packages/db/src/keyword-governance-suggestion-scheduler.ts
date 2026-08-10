@@ -24,6 +24,7 @@ export const KEYWORD_GOVERNANCE_SUGGESTION_QUEUE =
   "keyword-governance-suggestion.generate" as const;
 export const KEYWORD_GOVERNANCE_SUGGESTION_ACTIVE_KEY =
   "keyword-governance-suggestion:generation" as const;
+const STALE_PENDING_SWEEP_LIMIT = 100;
 
 export type ScheduleKeywordGovernanceSuggestionsResult =
   | {
@@ -148,13 +149,14 @@ async function lockSchedulerScope(
   tx: DbTx,
   scope: ProjectScope,
 ): Promise<void> {
-  // Serialize producers for this project so a winning generation cannot finish
-  // between another producer's reuse probe and active-run insert.
+  // Share the authority-writer lock used by Topic, governance, occurrence,
+  // and suggestion writes. Cleanup, freeze, and queue creation therefore see
+  // one locked authority state while concurrent schedulers serialize.
   await tx.execute(sql`
-    select pg_advisory_xact_lock(
-      hashtext(${scope.workspaceId}),
-      hashtext(${scope.projectId})
-    )
+    select pg_advisory_xact_lock(hashtextextended(
+      ${`topic-governance:${scope.workspaceId}:${scope.projectId}`},
+      0
+    ))
   `);
 }
 
@@ -172,6 +174,15 @@ async function scheduleInTransaction(
   );
   if (active !== null) return activeResult(active, input.scope);
 
+  const suggestions = new KeywordReviewSuggestionsRepository(tx);
+  // The database routine mutates at most 100 rows. An exact-limit result is a
+  // has-more sentinel, so drain it under this same authority lock before
+  // deciding that no eligible candidate exists.
+  let superseded: number;
+  do {
+    superseded = await suggestions.supersedeStalePendingForProject(input.scope);
+  } while (superseded === STALE_PENDING_SWEEP_LIMIT);
+
   const generationRuns =
     new KeywordGovernanceSuggestionGenerationRunsRepository(tx);
   const authority = await generationRuns.readPrimaryFreezeAuthority(
@@ -181,7 +192,6 @@ async function scheduleInTransaction(
     return { kind: "authority_unavailable" };
   }
 
-  const suggestions = new KeywordReviewSuggestionsRepository(tx);
   if (authority.kind === "no_candidates") {
     const current = await suggestions.findCurrentReusableCompletedBatch(
       input.scope,
