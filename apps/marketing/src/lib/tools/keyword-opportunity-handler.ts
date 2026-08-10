@@ -27,14 +27,25 @@ import { open, seal } from "../auth/sealed-cookie.ts";
 import {
   estimateBulkRanksCostUsd,
   estimateSerpSampleCostUsd,
+  consumeKeywordDailyBudget,
   keywordBudgetRefusal,
   reportKeywordRunCost,
   type KeywordBudgetOutcome,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
-import type { CrawlGateResult } from "./crawl-gate.ts";
-import type { GscGateResult } from "./gsc-gate.ts";
+import { cookies } from "next/headers";
+import {
+  identitySubFrom,
+  type GrantResolution,
+} from "../auth/grant-cookie.ts";
+import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
+import {
+  openGscGate,
+  refuseWithoutGrant,
+  type GscGateResult,
+} from "./gsc-gate.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
+import { resolveTrafficDropGrant } from "./traffic-drop-session.ts";
 
 /** Room for a URL, a market pair and up to ten seed terms. */
 const CONTEXT_BODY_LIMIT_BYTES = 4_096;
@@ -171,10 +182,21 @@ export interface KeywordOpportunityDependencies {
   readonly resolveDomainRanks: (
     domains: readonly string[],
   ) => Promise<ReadonlyMap<string, number>>;
+  /**
+   * Produce the Search Console access token for this request.
+   *
+   * A thunk, and called only after the gate has admitted the request. It can
+   * spend two outbound Google calls against a shared OAuth client and a
+   * per-project quota, so resolving it earlier would put a limiter behind the
+   * thing it is supposed to limit.
+   */
+  readonly resolveGrant: () => Promise<GrantResolution>;
   /** Offline test seam. The visitor's own Search Console queries. */
-  readonly readCoverageQueries: (
-    siteUrl: string,
-  ) => Promise<readonly KeywordCoverageQueryRow[]>;
+  readonly readCoverageQueries: (input: {
+    readonly siteUrl: string;
+    /** From this request's resolution; never captured at module scope. */
+    readonly accessToken: string;
+  }) => Promise<readonly KeywordCoverageQueryRow[]>;
   /**
    * The account-wide daily breaker, consulted before anything billable runs.
    *
@@ -471,6 +493,16 @@ export async function handleKeywordOpportunitiesRequest(
     return refusal;
   }
 
+  // Resolved inside the gate, after the breaker: the coverage read is what
+  // makes this tool honest about terms the site already serves, and a visitor
+  // whose authorization has lapsed needs the route back to the consent screen
+  // rather than a report with a silently missing stage.
+  const grant = await dependencies.resolveGrant();
+  if (grant.kind !== "grant") {
+    gate.release();
+    return refuseWithoutGrant(grant);
+  }
+
   const unavailableStages: string[] = [];
   try {
     const drafts = await dependencies.expandCandidates({
@@ -511,7 +543,10 @@ export async function handleKeywordOpportunitiesRequest(
 
     let coverageRows: readonly KeywordCoverageQueryRow[] = [];
     try {
-      coverageRows = await dependencies.readCoverageQueries(token.siteUrl);
+      coverageRows = await dependencies.readCoverageQueries({
+        siteUrl: token.siteUrl,
+        accessToken: grant.accessToken,
+      });
     } catch {
       // Coverage is the one stage whose absence must not stop the run: without
       // it the tool cannot say a term is already served, which is a weaker
@@ -657,3 +692,30 @@ export async function handleKeywordOpportunitiesRequest(
     gate.release();
   }
 }
+
+/**
+ * Everything that does not depend on this request's access token.
+ *
+ * The token-bound reader is built by the route, inside the gate, for the same
+ * reason the sibling tools build theirs there: a reader constructed at module
+ * scope would outlive the grant it was made from.
+ */
+export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
+  KeywordOpportunityDependencies,
+  | "readIdentity"
+  | "resolveGrant"
+  | "openCrawlGate"
+  | "openGscGate"
+  | "consumeDailyBudget"
+  | "now"
+> = {
+  readIdentity: async () => {
+    const sub = identitySubFrom((await cookies()).get("gg_id")?.value);
+    return sub === null ? null : { sub };
+  },
+  resolveGrant: resolveTrafficDropGrant,
+  openCrawlGate: (clientIp, targetHost) => openCrawlGate(clientIp, targetHost),
+  openGscGate: (clientIp) => openGscGate(clientIp),
+  consumeDailyBudget: () => consumeKeywordDailyBudget(),
+  now: () => new Date(),
+};

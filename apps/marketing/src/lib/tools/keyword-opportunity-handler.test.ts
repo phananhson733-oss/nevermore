@@ -140,6 +140,13 @@ function deps(
     // spent yet"; the cases that care override them.
     consumeDailyBudget: () =>
       Promise.resolve({ kind: "allowed", runsToday: 1 }),
+    resolveGrant: () =>
+      Promise.resolve({
+        kind: "grant",
+        accessToken: "ya29.test",
+        properties: [SITE_URL],
+        propertyTotal: 1,
+      }),
     costs: createKeywordCostAccumulator(),
     readIdentity: () => Promise.resolve({ sub: SUB }),
     openCrawlGate: () =>
@@ -728,6 +735,44 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(parsed.data.result.withheld.map((entry) => entry.reason)).toEqual(
       DRAFTS.map(() => "serp_sample_budget_exhausted"),
     );
+  });
+
+  it("does not resolve the grant for a request the gate turned away", async () => {
+    // Resolving it costs two outbound Google calls against a shared OAuth
+    // client and a per-project Search Console quota. Doing that before
+    // admission puts the limiter behind the thing it limits.
+    const resolveGrant = vi.fn();
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        openGscGate: () =>
+          Promise.resolve({ ok: false, response: refusal(429) }),
+        resolveGrant,
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(resolveGrant).not.toHaveBeenCalled();
+  });
+
+  it("sends a lapsed authorization back to the consent screen instead of reporting a gap", async () => {
+    // Coverage is what keeps the tool from recommending pages the site already
+    // has. A visitor whose grant expired needs the route back, not a report
+    // with one stage quietly missing.
+    const validateVolumes = vi.fn();
+    const release = vi.fn();
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        openGscGate: () => Promise.resolve({ ok: true, release }),
+        resolveGrant: () => Promise.resolve({ kind: "revoked" }),
+        validateVolumes,
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(validateVolumes).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("refuses the whole run once the account's daily budget is spent, before paying for anything", async () => {
