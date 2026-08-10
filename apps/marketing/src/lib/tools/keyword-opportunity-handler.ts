@@ -6,12 +6,14 @@
 import {
   buildKeywordOpportunityPayload,
   buildKeywordCoverageIndex,
+  isKeywordAlreadyCovered,
   createPublicToolError,
   judgeKeywordWinnability,
   keywordCoverageProperty,
   keywordTokens,
   keywordValidationFor,
   KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_SERP_SAMPLE,
   keywordVolumeKey,
   observeKeywordCoverage,
   resolveKeywordValidations,
@@ -161,11 +163,18 @@ export interface KeywordContextToken {
    * words — too thin to recognise the page that answers a question. The body
    * text does NOT travel: it would blow the sealed token past the request
    * limit, and headings carry the same signal at a fraction of the size.
+   *
+   * `headings` is optional because this shape describes a token that arrived,
+   * not one we built. `open()` decrypts and asserts a type; it does not check
+   * a schema. A token minted by the previously deployed version has no
+   * `headings` key, its TTL is ten minutes, and stage two must survive that
+   * window rather than throw on a spread after the visitor has already been
+   * charged for the run.
    */
   readonly pages: readonly {
     readonly url: string;
     readonly title: string;
-    readonly headings: readonly string[];
+    readonly headings?: readonly string[];
   }[];
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
@@ -476,18 +485,23 @@ export async function handleKeywordContextRequest(
     }
 
     if (keywordByteLength(contextToken) > KEYWORD_CONTEXT_TOKEN_MAX_BYTES) {
-      // Nothing left to drop: what remains is propositions and URLs, and
-      // truncating those would change what stage two analyses rather than how
-      // much of it. Logged so the 413 the visitor is about to hit is
-      // diagnosable instead of a mystery.
+      // The ladder bounds headings; propositions, titles and up to fourteen
+      // URLs are not bounded by anything here, so the last rung can still be
+      // over. Answering 200 with this token would be a success the handler has
+      // already proved is unusable: the surface would post it to stage two,
+      // which rejects it at the body limit before it is ever opened, and
+      // retrying cannot help because the token is the thing that is too big.
+      // Failing here at least names the problem where it was created.
       console.error(
         JSON.stringify({
           tool: "keyword_opportunity",
           stage: "context",
-          code: "context_token_oversized",
+          code: "payload_too_large",
+          reason: "context_token_oversized",
           bytes: keywordByteLength(contextToken),
         }),
       );
+      return json(createPublicToolError("payload_too_large"), 413);
     }
 
     return json(
@@ -712,7 +726,14 @@ export async function handleKeywordOpportunitiesRequest(
     const coveragePages: readonly KeywordCoveragePage[] = token.pages.map(
       (page) => ({
         url: page.url,
-        tokens: keywordTokens([page.title, ...page.headings].join(" ")),
+        // `?? []` is not defensive noise: `open()` is a decrypt plus a type
+        // assertion, not a schema check, and a token minted by the version
+        // running right now has pages with no `headings` at all. Its TTL is
+        // ten minutes, so every deployment of this change has a ten-minute
+        // window where spreading `undefined` would throw — after admission,
+        // after the daily budget, and after this run has already paid for
+        // expansion and volume validation.
+        tokens: keywordTokens([page.title, ...(page.headings ?? [])].join(" ")),
       }),
     );
     // Every URL the crawl actually reached. The generator's attribution is
@@ -721,9 +742,19 @@ export async function handleKeywordOpportunitiesRequest(
     // this request and an out-of-range or drifted one must resolve to nothing
     // rather than to a page that was never fetched.
     const crawledUrls = new Set(token.pages.map((page) => page.url));
-    const attributedPage = (index: number | null): string | null => {
-      if (index === null) return null;
-      const sourceUrl = token.propositions[index]?.sourceUrl;
+    const attributedPage = (
+      candidate: KeywordCandidateDraft,
+    ): string | null => {
+      // Only the proposition lane may claim one. The generator is told that
+      // every `site_proposition` item must carry a valid index and that every
+      // expansion item must carry none, so an expansion candidate arriving
+      // with an index is the model contradicting its own instructions — and
+      // honouring it would let one inconsistent field alone put a row in front
+      // of the reader.
+      if (candidate.discoveryBasis !== "site_proposition") return null;
+      if (candidate.propositionIndex === null) return null;
+      const sourceUrl =
+        token.propositions[candidate.propositionIndex]?.sourceUrl;
       return sourceUrl !== undefined && crawledUrls.has(sourceUrl)
         ? sourceUrl
         : null;
@@ -736,7 +767,7 @@ export async function handleKeywordOpportunitiesRequest(
         candidate.keyword,
         coverageIndex,
         coveragePages,
-        attributedPage(candidate.propositionIndex),
+        attributedPage(candidate),
       ),
     }));
 
@@ -744,12 +775,15 @@ export async function handleKeywordOpportunitiesRequest(
       .filter(
         (row) =>
           row.validation.availability === "available" &&
-          // Both states mean "not known to be served": the sample said so, or
-          // there was no sample. Spelled out rather than "not covered" so a
-          // future coverage state has to be classified here on purpose — page
-          // one is the expensive stage and what it samples is the whole cost.
-          (row.coverage.state === "not_observed_in_gsc_query_sample" ||
-            row.coverage.state === "gsc_query_sample_not_read"),
+          // Anything not MEASURED as covered is eligible, which is the same
+          // line `isKeywordAlreadyCovered` draws. The filter used to name only
+          // the not-observed state, which quietly excluded
+          // `related_coverage_unverified` — a lexical guess — from sampling.
+          // An unsampled SEO row can never be winnable and is therefore
+          // withheld, so title overlap was acting as the hard filter that
+          // `coverage.ts` explicitly promises it is not, and the headings
+          // added here would have made it fire far more often.
+          !isKeywordAlreadyCovered(row.coverage.state),
       )
       .sort((a, b) =>
         serpSampleOrder(
@@ -794,7 +828,7 @@ export async function handleKeywordOpportunitiesRequest(
         // Without page one no term may be called winnable, so the run reports
         // the gap rather than falling back to the difficulty score — that
         // fallback is exactly what misled the team's own selection.
-        unavailableStages.push("serp_sample");
+        unavailableStages.push(KEYWORD_STAGE_SERP_SAMPLE);
       }
     }
     const samplesByKeyword = new Map(

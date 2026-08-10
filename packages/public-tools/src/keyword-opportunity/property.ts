@@ -28,8 +28,11 @@ function hostOf(value: string): string | null {
 function normalizeDomain(domain: string): string | null {
   // A domain property holds a host and nothing else. Rejecting the separators
   // first matters because the URL parser would quietly discard whatever
-  // follows them rather than refuse the string.
-  if (domain === "" || /[/?#@:]/.test(domain)) return null;
+  // follows them rather than refuse the string — a backslash is a path
+  // separator to the parser just as a slash is, and surrounding whitespace is
+  // trimmed rather than rejected, so both would turn a malformed entry into a
+  // confident match on the host that happened to be left.
+  if (domain === "" || /[/\\?#@:\s]/.test(domain)) return null;
   return hostOf(`https://${domain}`);
 }
 
@@ -60,13 +63,12 @@ function prefixCovers(property: URL, site: URL): boolean {
   if (property.host.replace(/\.$/, "") !== site.host.replace(/\.$/, "")) {
     return false;
   }
-  const propertyPath = property.pathname.endsWith("/")
-    ? property.pathname
-    : `${property.pathname}/`;
-  const sitePath = site.pathname.endsWith("/")
-    ? site.pathname
-    : `${site.pathname}/`;
-  return sitePath.startsWith(propertyPath);
+  return sitePath(site).startsWith(sitePath(property));
+}
+
+/** A path in directory form, so `/blog` and `/blog/` compare as one place. */
+function sitePath(url: URL): string {
+  return url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
 }
 
 /**
@@ -124,12 +126,33 @@ export function keywordCoverageProperty(
 
     if (hostOf(property) === null) continue;
     const propertyUrl = new URL(property);
+    // A property identifier is an origin and a path. One carrying credentials,
+    // a query or a fragment is not one Search Console issued, and it is
+    // returned to the caller verbatim — so accepting it means a narrow
+    // malformed entry can beat a valid domain property and turn a working read
+    // into a failed one.
     if (
-      prefixCovers(propertyUrl, site) &&
-      propertyUrl.pathname.length > prefixLength
+      propertyUrl.username !== "" ||
+      propertyUrl.password !== "" ||
+      propertyUrl.search !== "" ||
+      propertyUrl.hash !== ""
     ) {
+      continue;
+    }
+    if (!prefixCovers(propertyUrl, site)) continue;
+    // Exact wins over merely containing. When a grant holds both
+    // `/blog` and `/blog/`, the longer path is not the better answer for a
+    // request about `/blog`: that property's scope starts below the URL asked
+    // about, so it would answer with the descendants' queries instead.
+    // Compared raw, not in directory form: the whole point is to tell `/blog`
+    // from `/blog/`, and normalizing first would call both of them exact.
+    const exact = propertyUrl.pathname === site.pathname;
+    const score = exact
+      ? Number.POSITIVE_INFINITY
+      : propertyUrl.pathname.length;
+    if (score > prefixLength) {
       prefixMatch = property;
-      prefixLength = propertyUrl.pathname.length;
+      prefixLength = score;
     }
   }
 

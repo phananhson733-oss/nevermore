@@ -90,6 +90,38 @@ describe("keywordCoverageProperty", () => {
     ).toBe("https://acme.com/blog/");
   });
 
+  it("prefers the property that is the site over one that starts beneath it", () => {
+    // `/blog/` and `/blog` are both granted and both cover a request about
+    // `/blog`, but the longer one's scope begins below the URL asked about —
+    // reading it would answer with the descendants' queries. Longest-path
+    // alone picks exactly the wrong one.
+    expect(
+      keywordCoverageProperty("https://acme.com/blog", [
+        "https://acme.com/blog/",
+        "https://acme.com/blog",
+      ]),
+    ).toBe("https://acme.com/blog");
+  });
+
+  it("refuses a URL-prefix property carrying credentials, a query or a fragment", () => {
+    // Not something Search Console issues, and the string is handed back
+    // verbatim — so accepting one lets a malformed narrow entry beat a valid
+    // domain property and turn a working read into a failed one.
+    for (const property of [
+      "https://user:pass@acme.com/",
+      "https://acme.com/?utm=1",
+      "https://acme.com/#top",
+    ]) {
+      expect(
+        keywordCoverageProperty("https://acme.com/", [
+          property,
+          "sc-domain:acme.com",
+        ]),
+        property,
+      ).toBe("sc-domain:acme.com");
+    }
+  });
+
   it("picks the longest URL prefix that still contains the site", () => {
     expect(
       keywordCoverageProperty("https://acme.com/blog/post", [
@@ -193,6 +225,11 @@ describe("keywordCoverageProperty", () => {
       "sc-domain:acme.com/blog",
       "sc-domain:acme.com:8443",
       "sc-domain:user@acme.com",
+      // The parser treats a backslash as a path separator and trims
+      // surrounding whitespace, so both would otherwise reduce to `acme.com`
+      // and match.
+      "sc-domain:acme.com\\evil",
+      "sc-domain:acme.com ",
     ]) {
       expect(
         keywordCoverageProperty("https://acme.com/", [property]),

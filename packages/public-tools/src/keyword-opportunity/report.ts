@@ -10,6 +10,7 @@ import { keywordNextChecks } from "./next-checks.ts";
 import {
   KEYWORD_OPPORTUNITY_SCHEMA_VERSION,
   KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_SERP_SAMPLE,
 } from "./types.ts";
 import { isKeywordWinnable } from "./winnability.ts";
 import type {
@@ -99,14 +100,21 @@ function isShown(observation: KeywordOpportunityObservation): boolean {
  */
 function withheldReason(
   observation: KeywordOpportunityObservation,
+  unavailableStages: readonly string[],
 ): KeywordOpportunityWithheld["reason"] {
   if (isKeywordAlreadyCovered(observation.coverage)) return "already_covered";
   if (observation.lane === "geo") return "no_supporting_page";
   if (observation.validation.availability !== "available") {
     return "no_measured_demand";
   }
-  return observation.serp.verdict === "contested_evidence"
-    ? "page_one_contested"
+  if (observation.serp.verdict === "contested_evidence") {
+    return "page_one_contested";
+  }
+  // A stage that failed and a budget that ran out are different facts, and
+  // only the first is worth retrying unchanged. Reporting the second for both
+  // told a reader to narrow a run that was never the problem.
+  return unavailableStages.includes(KEYWORD_STAGE_SERP_SAMPLE)
+    ? "serp_sample_unavailable"
     : "serp_sample_budget_exhausted";
 }
 
@@ -212,7 +220,7 @@ export function buildKeywordOpportunityResult(
     .map((observation) => ({
       keyword: observation.keyword,
       discoveryBasis: observation.discoveryBasis,
-      reason: withheldReason(observation),
+      reason: withheldReason(observation, input.unavailableStages),
     }));
 
   return {

@@ -99,7 +99,16 @@ export type KeywordOpportunityWithheldReason =
   | "no_measured_demand"
   | "already_covered"
   | "page_one_contested"
+  /** The run's sample budget ran out before reaching this term. */
   | "serp_sample_budget_exhausted"
+  /**
+   * The sampling stage itself did not run.
+   *
+   * Distinct from the budget above for the reason this whole union is split:
+   * a term the budget never reached is worth a narrower re-run, while a stage
+   * that failed is worth retrying unchanged. Both used to say "budget".
+   */
+  | "serp_sample_unavailable"
   /** GEO lane only: nothing on the crawled site answers the question. */
   | "no_supporting_page";
 
@@ -116,7 +125,26 @@ export type KeywordOpportunityAvailability =
  * member breaks at runtime on whichever member nobody wrote copy for — and
  * only for the visitors whose data happens to produce it. These lists let a
  * copy-completeness test find the hole first.
+ *
+ * `as const satisfies readonly Union[]` on each list proves every ENTRY is a
+ * member. It does not prove the list is COMPLETE — a union member nobody added
+ * here type-checks fine and silently shrinks every test that iterates the
+ * list. `AssertComplete` below closes that direction.
  */
+
+/**
+ * Fails to compile when `Values` misses a member of `Union`.
+ *
+ * `Exclude` leaves exactly the members that are not in the list; when that is
+ * empty the conditional resolves to `true` and the assignment holds. When it
+ * is not, the type is the missing member itself and `true` is not assignable
+ * to it — so the error names what was forgotten.
+ */
+type AssertComplete<Union extends string, Values extends readonly string[]> =
+  Exclude<Union, Values[number]> extends never
+    ? true
+    : Exclude<Union, Values[number]>;
+
 export const KEYWORD_OPPORTUNITY_BASES = [
   "site_proposition",
   "traditional_expansion",
@@ -152,6 +180,7 @@ export const KEYWORD_OPPORTUNITY_WITHHELD_REASONS = [
   "already_covered",
   "page_one_contested",
   "serp_sample_budget_exhausted",
+  "serp_sample_unavailable",
   "no_supporting_page",
 ] as const satisfies readonly KeywordOpportunityWithheldReason[];
 
@@ -161,6 +190,40 @@ export const KEYWORD_OPPORTUNITY_AVAILABILITY_STATES = [
   "insufficient_evidence",
   "unavailable",
 ] as const satisfies readonly KeywordOpportunityAvailability[];
+
+/**
+ * Compile-time proof that each list above covers its whole union.
+ *
+ * Add a union member without adding it here and this file stops compiling,
+ * naming the member you forgot. Without it, the omission is invisible: every
+ * test that iterates a list keeps passing, having silently stopped covering
+ * the new case.
+ */
+const UNION_LISTS_ARE_COMPLETE: readonly [
+  AssertComplete<KeywordOpportunityBasis, typeof KEYWORD_OPPORTUNITY_BASES>,
+  AssertComplete<KeywordOpportunityLane, typeof KEYWORD_OPPORTUNITY_LANES>,
+  AssertComplete<
+    KeywordOpportunityVolumeAvailability,
+    typeof KEYWORD_OPPORTUNITY_VOLUME_STATES
+  >,
+  AssertComplete<
+    KeywordOpportunityWinnability,
+    typeof KEYWORD_OPPORTUNITY_WINNABILITY_STATES
+  >,
+  AssertComplete<
+    KeywordOpportunityCoverage,
+    typeof KEYWORD_OPPORTUNITY_COVERAGE_STATES
+  >,
+  AssertComplete<
+    KeywordOpportunityWithheldReason,
+    typeof KEYWORD_OPPORTUNITY_WITHHELD_REASONS
+  >,
+  AssertComplete<
+    KeywordOpportunityAvailability,
+    typeof KEYWORD_OPPORTUNITY_AVAILABILITY_STATES
+  >,
+] = [true, true, true, true, true, true, true];
+void UNION_LISTS_ARE_COMPLETE;
 
 /** A selling point read off the site, with the crawled URL that shows it. */
 export interface KeywordOpportunityProposition {
@@ -258,6 +321,9 @@ export interface KeywordOpportunityCluster {
  * reads it to decide whether the covered count means anything.
  */
 export const KEYWORD_STAGE_GSC_COVERAGE = "gsc_coverage";
+
+/** The stage name page-one sampling reports itself under when it fails. */
+export const KEYWORD_STAGE_SERP_SAMPLE = "serp_sample";
 
 export interface KeywordOpportunityFunnel {
   readonly generated: number;
