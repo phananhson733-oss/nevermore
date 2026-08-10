@@ -35,6 +35,7 @@ import {
   type TopicModelGenerationInvocationMetadata,
   type TopicModelGenerationRunRow,
 } from "@sf/db";
+import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import { z } from "zod";
 import type { WorkerContext } from "../context.ts";
 import {
@@ -90,6 +91,7 @@ export interface TopicModelGenerationDependencies {
   readonly createClient?: (
     options: TopicModelClientOptions,
   ) => TopicModelGenerationClient;
+  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
 }
 
 const JobPayloadSchema = z
@@ -967,6 +969,24 @@ export async function runTopicModelGeneration(
       result,
     );
     if (committed === "completed") {
+      try {
+        const scheduleSuggestions =
+          dependencies.scheduleKeywordGovernanceSuggestions ??
+          scheduleKeywordGovernanceSuggestions;
+        await scheduleSuggestions(
+          { db: ctx.db, boss: ctx.boss },
+          { scope, initiatedBy: claimed.initiated_by },
+        );
+      } catch {
+        try {
+          ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
+            code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
+            source: "topic_model_confirmation",
+          });
+        } catch {
+          // Topic confirmation is already committed.
+        }
+      }
       try {
         ctx.logger.info("topic_model_generation_completed", {
           status: "completed",

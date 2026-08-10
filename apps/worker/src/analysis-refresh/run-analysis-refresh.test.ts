@@ -1671,6 +1671,9 @@ describe("runAnalysisRefresh", () => {
 
   it("terminalizes partial when the required audit succeeds partially and optional inputs were skipped", async () => {
     const harness = createHarness();
+    const scheduleSuggestions = vi.fn(async () => {
+      throw new Error("suggestion scheduler unavailable");
+    });
     installCompletedCollectionPlan(harness);
     harness.state.steps[5] = step("growth_audit", 6, true, {
       state: "running",
@@ -1699,7 +1702,12 @@ describe("runAnalysisRefresh", () => {
       created_at: NOW.toISOString(),
     });
 
-    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, {
+        now: () => NOW,
+        scheduleKeywordGovernanceSuggestions: scheduleSuggestions,
+      }),
+    ).resolves.toBeUndefined();
 
     expect(harness.state.steps[5]?.state).toBe("completed");
     expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
@@ -1714,6 +1722,13 @@ describe("runAnalysisRefresh", () => {
       (call) => call[0] === "refresh.analysis",
     );
     expect(continuationCalls).toHaveLength(0);
+    expect(scheduleSuggestions).toHaveBeenCalledWith(
+      { db: harness.ctx.db, boss: harness.ctx.boss },
+      {
+        scope: { workspaceId: IDS.workspace, projectId: IDS.project },
+        initiatedBy: IDS.actor,
+      },
+    );
   });
 });
 
@@ -1844,7 +1859,17 @@ function createHarness(options: {
     },
   );
   vi.spyOn(AsyncRunsRepository.prototype, "findById").mockImplementation(
-    async (_scope, id) => state.children.get(id) ?? null,
+    async (_scope, id) =>
+      id === IDS.parent
+        ? {
+            ...parentRun,
+            status: state.parentStatus,
+            completed_at:
+              state.parentStatus === "queued" || state.parentStatus === "running"
+                ? null
+                : NOW.toISOString(),
+          }
+        : state.children.get(id) ?? null,
   );
   vi.spyOn(AsyncRunsRepository.prototype, "setProgress").mockResolvedValue(true);
   vi.spyOn(AsyncRunsRepository.prototype, "resetToQueued").mockImplementation(

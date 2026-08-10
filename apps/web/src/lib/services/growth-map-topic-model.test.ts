@@ -5,7 +5,22 @@ import {
   TopicModelsRepository,
   type Executor,
 } from "@sf/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const serviceMocks = vi.hoisted(() => ({
+  transaction: vi.fn(),
+  getBoss: vi.fn(),
+  scheduleKeywordGovernanceSuggestions: vi.fn(),
+}));
+
+vi.mock("@/lib/db", () => ({
+  getDb: () => ({ db: { transaction: serviceMocks.transaction } }),
+}));
+vi.mock("@/lib/boss", () => ({ getBoss: serviceMocks.getBoss }));
+vi.mock("@sf/db/keyword-governance-suggestion-scheduler", () => ({
+  scheduleKeywordGovernanceSuggestions:
+    serviceMocks.scheduleKeywordGovernanceSuggestions,
+}));
 import {
   beginProjectAuditTopicModelDraft,
   confirmProjectAuditTopicModelDraft,
@@ -127,6 +142,16 @@ const confirmedV2 = {
   confirmedAt: "2026-07-22T11:00:00.000Z",
   contentHash: "b".repeat(64),
 };
+
+beforeEach(() => {
+  serviceMocks.transaction.mockReset().mockImplementation(
+    async (callback: (tx: Executor) => Promise<unknown>) => callback(exec),
+  );
+  serviceMocks.getBoss.mockReset().mockResolvedValue({ name: "boss" });
+  serviceMocks.scheduleKeywordGovernanceSuggestions
+    .mockReset()
+    .mockResolvedValue({ kind: "no_candidates" });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -605,6 +630,47 @@ describe("Growth Map Topic Model draft lifecycle", () => {
       },
       draft: null,
     });
+  });
+
+  it("best-effort schedules suggestions after the default confirmation transaction commits", async () => {
+    activeProject();
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "confirmDraft",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "getLatestConfirmed",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(TopicModelsRepository.prototype, "getDraft").mockResolvedValue(
+      null,
+    );
+    serviceMocks.scheduleKeywordGovernanceSuggestions.mockRejectedValueOnce(
+      new Error("suggestion scheduler unavailable"),
+    );
+
+    await expect(
+      confirmProjectAuditTopicModelDraft(mutationScope, ids.project, {
+        topicModelRevision: 2,
+        expectedEditRevision: 1,
+        reason: "Confirm the reviewed customer Topic Map.",
+      }),
+    ).resolves.toMatchObject({
+      latestConfirmed: { topicModelRevision: 2 },
+      draft: null,
+    });
+
+    expect(serviceMocks.transaction).toHaveBeenCalledOnce();
+    expect(serviceMocks.getBoss).toHaveBeenCalledOnce();
+    expect(
+      serviceMocks.scheduleKeywordGovernanceSuggestions,
+    ).toHaveBeenCalledWith(
+      { db: expect.any(Object), boss: { name: "boss" } },
+      {
+        scope: { workspaceId: ids.workspace, projectId: ids.project },
+        initiatedBy: ids.actor,
+      },
+    );
   });
 
   it("fails closed if a mutation re-read does not form one coherent workspace", async () => {

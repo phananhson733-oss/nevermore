@@ -369,6 +369,9 @@ const generateTopicModel = vi.fn(
 );
 const dependencies = {
   createClient: vi.fn(() => ({ generateTopicModel })),
+  scheduleKeywordGovernanceSuggestions: vi.fn(async () => ({
+    kind: "no_candidates" as const,
+  })),
 };
 
 beforeEach(() => {
@@ -377,6 +380,9 @@ beforeEach(() => {
   transactionDepth = 0;
   generateTopicModel.mockReset().mockImplementation(async () => modelResult);
   dependencies.createClient.mockClear();
+  dependencies.scheduleKeywordGovernanceSuggestions.mockReset().mockResolvedValue({
+    kind: "no_candidates",
+  });
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
@@ -442,6 +448,34 @@ beforeEach(() => {
 });
 
 describe("runTopicModelGeneration", () => {
+  it("best-effort schedules Keyword governance suggestions after the system Topic commit", async () => {
+    dependencies.scheduleKeywordGovernanceSuggestions.mockImplementationOnce(
+      async () => {
+        expect(transactionDepth).toBe(0);
+        throw new Error("suggestion scheduler unavailable");
+      },
+    );
+
+    await expect(
+      runTopicModelGeneration(ctx, { runId: IDS.run, ...scope }, dependencies),
+    ).resolves.toBeUndefined();
+
+    expect(dependencies.scheduleKeywordGovernanceSuggestions).toHaveBeenCalledWith(
+      { db: ctx.db, boss: ctx.boss },
+      { scope, initiatedBy: IDS.actor },
+    );
+    expect(
+      TopicModelGenerationRunsRepository.prototype.terminalize,
+    ).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ status: "completed" }),
+    );
+    expect(
+      TopicModelGenerationInvocationAttemptsRepository.prototype
+        .markOutcomeUnknown,
+    ).not.toHaveBeenCalled();
+  });
+
   it("calls the provider outside transactions then atomically finalizes, materializes, assigns, records coverage, and terminalizes", async () => {
     const order: string[] = [];
     vi.mocked(
@@ -614,6 +648,9 @@ describe("runTopicModelGeneration", () => {
     expect(
       TopicModelGenerationInvocationAttemptsRepository.prototype
         .markOutcomeUnknown,
+    ).not.toHaveBeenCalled();
+    expect(
+      dependencies.scheduleKeywordGovernanceSuggestions,
     ).not.toHaveBeenCalled();
   });
 

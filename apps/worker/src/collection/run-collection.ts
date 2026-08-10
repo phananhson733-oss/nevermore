@@ -18,6 +18,7 @@ import {
   type SourceConnectionRow,
   type SourceCredentialRow,
 } from "@sf/db";
+import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import {
   BlobObjectAlreadyExistsError,
   BlobObjectNotFoundError,
@@ -394,6 +395,7 @@ export interface CrawlRuntime {
 export type CollectionWorkerContext = Omit<WorkerContext, "googleOAuth"> & {
   readonly googleOAuth: GoogleOAuthRuntime;
   readonly crawl?: CrawlRuntime;
+  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
 };
 
 interface CollectProduct {
@@ -640,6 +642,29 @@ export async function runCollection(
       emitProviderMetric(ctx, providerMetrics, "stale_attempt", "NONE");
       ctx.logger.info("collection_skip_stale_attempt", { runId });
       return;
+    }
+    if (
+      collectionRun.provider === "csv" &&
+      collectionRun.operation === "keyword_gap_import"
+    ) {
+      try {
+        const scheduleSuggestions =
+          ctx.scheduleKeywordGovernanceSuggestions ??
+          scheduleKeywordGovernanceSuggestions;
+        await scheduleSuggestions(
+          { db: ctx.db, boss: ctx.boss },
+          { scope, initiatedBy: claimed.initiated_by },
+        );
+      } catch {
+        try {
+          ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
+            code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
+            source: "csv_keyword_gap_import",
+          });
+        } catch {
+          // The CSV Snapshot and Keyword occurrences are already committed.
+        }
+      }
     }
     emitProviderMetric(ctx, providerMetrics, "success", "NONE");
     ctx.logger.info("collection_done", {

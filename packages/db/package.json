@@ -7,7 +7,17 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
     "./client": "./src/client.ts",
-    "./queue": "./src/queue.ts"
+    "./queue": "./src/queue.ts",
+    "./keyword-governance-suggestion-scheduler": {
+      "types": "./src/keyword-governance-suggestion-scheduler.ts",
+      "browser": null,
+      "default": "./src/keyword-governance-suggestion-scheduler.ts"
+    },
+    "./keyword-governance-suggestion-freezer": {
+      "types": "./src/keyword-governance-suggestion-freezer.ts",
+      "browser": null,
+      "default": "./src/keyword-governance-suggestion-freezer.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -45,6 +45,7 @@ import {
   type SiteRow,
   type SourceConnectionRow,
 } from "@sf/db";
+import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import {
   CONTRACT_VERSION,
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
@@ -117,6 +118,7 @@ export interface AnalysisRefreshJobPayload {
 export interface AnalysisRefreshRuntime {
   readonly now?: () => Date;
   readonly continuationDelayMs?: number;
+  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
 }
 
 /**
@@ -2845,4 +2847,39 @@ export async function runAnalysisRefresh(
     }
     await observeRunningStep(ctx, tx, parent, step.step_key, runtime);
   });
+
+  try {
+    const committedParent = await new AsyncRunsRepository(ctx.db).findById(
+      scope,
+      job.runId,
+    );
+    if (
+      committedParent === null ||
+      (committedParent.status !== "completed" &&
+        committedParent.status !== "partial") ||
+      committedParent.workspace_id !== scope.workspaceId ||
+      committedParent.project_id !== scope.projectId ||
+      committedParent.kind !== "analysis_refresh" ||
+      committedParent.result_type !== "analysis_refresh_run" ||
+      committedParent.result_id !== job.runId
+    ) {
+      return;
+    }
+    const scheduleSuggestions =
+      runtime.scheduleKeywordGovernanceSuggestions ??
+      scheduleKeywordGovernanceSuggestions;
+    await scheduleSuggestions(
+      { db: ctx.db, boss: ctx.boss },
+      { scope, initiatedBy: committedParent.initiated_by },
+    );
+  } catch {
+    try {
+      ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
+        code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
+        source: "analysis_refresh",
+      });
+    } catch {
+      // Analysis Refresh terminal state is already committed.
+    }
+  }
 }

@@ -18,7 +18,9 @@ import {
   type ProjectScope,
   type WorkspaceScope,
 } from "@sf/db";
+import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import { ProblemError } from "@sf/observability";
+import { getBoss } from "@/lib/boss";
 import { getDb } from "@/lib/db";
 
 type DraftTopicModel = Extract<TopicModelRevision, { state: "draft" }>;
@@ -360,7 +362,20 @@ export async function confirmProjectAuditTopicModelDraft(
   if (exec) {
     return confirmDraftInTransaction(exec, scope, projectId, parsed.data);
   }
-  return getDb().db.transaction((tx) =>
+  const db = getDb().db;
+  const workspace = await db.transaction((tx) =>
     confirmDraftInTransaction(tx, scope, projectId, parsed.data),
   );
+  try {
+    await scheduleKeywordGovernanceSuggestions(
+      { db, boss: await getBoss() },
+      {
+        scope: { workspaceId: scope.workspaceId, projectId },
+        initiatedBy: scope.actorId,
+      },
+    );
+  } catch {
+    // The manual Topic confirmation is authoritative and already committed.
+  }
+  return workspace;
 }
