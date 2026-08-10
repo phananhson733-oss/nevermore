@@ -890,7 +890,7 @@
       "connectPending": "本站的 Search Console 连接尚未开放。诊断引擎已经就绪，开放当天即可运行 —— 在那之前，下面两个工具完全不需要连接。",
       "inviteOnlyTitle": "内测中 · 仅受邀账号可授权",
       "inviteOnlyBody": "我们的 Google 同意屏幕目前处于测试状态，只有测试名单中的账号能完成授权 —— 其他账号会被 Google 拦下，而不是被我们拦下。所以我们在这里说明，而不是让你到 Google 的页面上才发现。",
-      "inviteOnlyCta": "我已受邀，去授权",
+      "inviteOnlyCta": "我在测试名单里，去授权",
       "inviteOnlyRequest": "申请加入内测",
       "signedInNoGrant": "你已登录，但这个工具还需要 Search Console 的只读授权。",
       "propertyLabel": "站点",

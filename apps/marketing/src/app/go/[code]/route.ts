@@ -3,7 +3,6 @@
 // @pos    -- Public clean short-link entrypoint for GenGrowth attribution
 // once this file is updated, update header comments and _DIR.md in this folder
 import { NextResponse } from "next/server";
-import { notFound } from "next/navigation";
 // Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
 // apps/web only, so an aliased import here would not resolve in route.test.ts.
 import { createAdminSupabaseClient } from "../../../lib/supabase/admin";
@@ -44,14 +43,14 @@ export async function GET(_request: Request, context: RouteContext) {
   const code = normalizeShortLinkCode(params.code);
 
   if (!code) {
-    notFound();
+    return missing();
   }
 
   let admin: ReturnType<typeof createAdminSupabaseClient>;
   try {
     admin = createAdminSupabaseClient();
   } catch {
-    notFound();
+    return missing();
   }
 
   let record: Awaited<ReturnType<typeof findShortLink>>;
@@ -65,10 +64,59 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!destination) {
     // Either no row, or a row whose destination is no longer one of ours. Both
     // mean there is nothing here to send anyone to.
-    notFound();
+    return missing();
   }
 
   return NextResponse.redirect(destination, record?.redirect_status ?? 302);
+}
+
+/**
+ * A 404 with a page on it, built by hand rather than through `notFound()`.
+ *
+ * `notFound()` looks like the idiomatic call, but a Route Handler has no
+ * render boundary above it: Next answers the thrown signal with a bare
+ * `Response(null, { status })`, so the visitor gets a blank window with the
+ * mistyped URL still in the address bar. The proxy sends every unreserved
+ * single-segment path of 6+ characters here, which makes that blank page the
+ * answer to every typo in the site's entire root namespace.
+ *
+ * Inlined rather than sharing `[locale]/not-found.tsx`, which is a client
+ * component a Route Handler cannot render. Kept deliberately small; it is a
+ * dead end, not a page to maintain.
+ */
+const NOT_FOUND_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Page Not Found</title>
+<style>
+html{color-scheme:dark}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0A0F14;color:#E6EDF3;text-align:center;padding:0 24px;
+font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+p.code{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+font-size:64px;line-height:1;letter-spacing:.04em;color:#3DDC97}
+h1{margin:24px 0 0;font-size:26px;font-weight:600}
+p.msg{margin:12px auto 0;max-width:28rem;font-size:15.5px;line-height:1.65;color:#9FB0C0}
+a{display:inline-flex;align-items:center;height:48px;margin-top:32px;padding:0 26px;
+border-radius:10px;background:linear-gradient(90deg,#3DDC97,#4CC3FA);color:#06231A;
+font-size:14.5px;font-weight:600;text-decoration:none}
+</style></head><body><div>
+<p class="code">404</p>
+<h1>Page Not Found</h1>
+<p class="msg">The page you are looking for does not exist or has been moved.</p>
+<a href="/">Back to Home</a>
+</div></body></html>
+`;
+
+function missing(): NextResponse {
+  return new NextResponse(NOT_FOUND_HTML, {
+    status: 404,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
 }
 
 function unavailable(): NextResponse {

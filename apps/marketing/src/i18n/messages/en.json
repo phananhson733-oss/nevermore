@@ -890,7 +890,7 @@
       "connectPending": "Search Console connection is not open on this site yet. The diagnosis engine is live and runs the moment it is — until then, the two tools below need no connection at all.",
       "inviteOnlyTitle": "Invite-only while this is in testing",
       "inviteOnlyBody": "Our Google consent screen is in testing right now, so only accounts on its tester list can authorize — anyone else would be stopped by Google rather than by us, which is why we say so here instead of letting you find out on their page.",
-      "inviteOnlyCta": "I have an invite — authorize",
+      "inviteOnlyCta": "I'm on the tester list — authorize",
       "inviteOnlyRequest": "Ask to join the beta",
       "signedInNoGrant": "You are signed in, but this tool still needs read-only Search Console access.",
       "propertyLabel": "Property",

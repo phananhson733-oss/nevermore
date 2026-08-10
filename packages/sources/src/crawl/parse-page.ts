@@ -77,24 +77,31 @@ function firstTag(html: string, pattern: RegExp): string | undefined {
 }
 
 function decodeHtml(value: string): string {
-  return value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&#(-?(?:x[0-9a-f]+|\d+));/gi, (_match, raw: string) => {
-      const number = raw.toLowerCase().startsWith("x")
-        ? Number.parseInt(raw.slice(1), 16)
-        : Number.parseInt(raw, 10);
-      const validScalar =
-        Number.isSafeInteger(number) &&
-        number > 0 &&
-        number <= 0x10ffff &&
-        (number < 0xd800 || number > 0xdfff);
-      return validScalar ? String.fromCodePoint(number) : "\ufffd";
-    });
+  return (
+    value
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      // &apos; is HTML5-valid and every browser resolves it, but this chain used
+      // to skip it — so a path written `/o&apos;neill` in a link and `/o&apos;neill`
+      // in the sitemap resolved to two different subject URLs, and the sitemap
+      // one looked like a page nothing links to.
+      .replace(/&apos;/gi, "'")
+      .replace(/&#(-?(?:x[0-9a-f]+|\d+));/gi, (_match, raw: string) => {
+        const number = raw.toLowerCase().startsWith("x")
+          ? Number.parseInt(raw.slice(1), 16)
+          : Number.parseInt(raw, 10);
+        const validScalar =
+          Number.isSafeInteger(number) &&
+          number > 0 &&
+          number <= 0x10ffff &&
+          (number < 0xd800 || number > 0xdfff);
+        return validScalar ? String.fromCodePoint(number) : "\ufffd";
+      })
+  );
 }
 
 /**

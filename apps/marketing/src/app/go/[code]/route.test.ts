@@ -22,28 +22,14 @@ vi.mock("../../../lib/link-attribution/short-links", async (importOriginal) => {
 
 import { GET } from "./route";
 
-/**
- * `notFound()` signals a 404 by throwing, so a test cannot read a status off a
- * returned Response. Next tags the thrown error, and asserting on that tag is
- * what distinguishes "this route answered 404" from "this route crashed".
- */
-async function status(code: string | undefined): Promise<number | string> {
-  try {
-    const response = await GET(new Request(`https://gengrowth.ai/go/${code ?? ""}`), {
-      params: { code },
-    });
-    return response.status;
-  } catch (error) {
-    const digest = (error as { digest?: unknown })?.digest;
-    if (typeof digest === "string" && digest.startsWith("NEXT_HTTP_ERROR_FALLBACK")) {
-      return 404;
-    }
-    throw error;
-  }
+function get(code: string | undefined) {
+  return GET(new Request(`https://gengrowth.ai/go/${code ?? ""}`), {
+    params: { code },
+  });
 }
 
-function get(code: string) {
-  return GET(new Request(`https://gengrowth.ai/go/${code}`), { params: { code } });
+async function status(code: string | undefined): Promise<number> {
+  return (await get(code)).status;
 }
 
 afterEach(() => {
@@ -77,6 +63,23 @@ describe("GET /go/[code] when nothing is registered", () => {
   it("answers 404 for a code shaped wrongly enough to never be looked up", async () => {
     expect(await status("Not A Code")).toBe(404);
     expect(findShortLink).not.toHaveBeenCalled();
+  });
+
+  it("serves an actual page with the 404, not a blank window", async () => {
+    // A Route Handler has no render boundary, so notFound() would answer with
+    // an empty body — and the proxy routes every typo in the root namespace
+    // through here, which would make a blank page the site's answer to all of
+    // them. The address bar still shows the mistyped URL, so there has to be
+    // something on the page saying where to go.
+    findShortLink.mockResolvedValue(null);
+
+    const response = await get("free-seo-audit");
+    const body = await response.text();
+
+    expect(response.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(body).toContain('href="/"');
+    expect(body).toMatch(/Page Not Found/i);
+    expect(body).toContain('name="robots" content="noindex"');
   });
 
   it("answers 404 when a row exists but its destination is no longer ours", async () => {

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -82,14 +83,28 @@ describe("public tool copy about what is stored", () => {
 });
 
 /**
- * The unqualified-claim patterns, in one place.
+ * Claims about a Google process that is not running.
  *
- * They were duplicated per describe block, which is how the long-form article
- * came to carry "Nothing is stored, so the export is the copy that survives"
- * on the very page whose connect copy had been requalified: the guard scanned
- * the i18n bundles and the page content object, and that file is neither.
- * Every surface a visitor reads about storage on now runs the same list.
+ * The consent screen is published, external, and requests only scopes this
+ * project lists as non-sensitive; no verification has been submitted and no
+ * review is under way. Copy that says otherwise promises a state change we
+ * cannot deliver or report on.
  */
+function unfoundedReviewClaims(locale: "en" | "zh"): readonly RegExp[] {
+  return locale === "en"
+    ? [
+        /\bsensitive\b/i,
+        /google (?:is )?(?:still )?review/i,
+        /while google reviews/i,
+        /review .{0,24}(?:under way|underway|in progress)/i,
+      ]
+    : [
+        /敏感(?:范围|权限|范畴)/,
+        /Google\s*(?:仍在|还在|正在)?\s*审核/,
+        /审核\s*(?:正在进行|进行中)/,
+      ];
+}
+
 function retiredConsentClaims(locale: "en" | "zh"): readonly RegExp[] {
   return locale === "en"
     ? [
@@ -109,6 +124,15 @@ function retiredConsentClaims(locale: "en" | "zh"): readonly RegExp[] {
       ];
 }
 
+/**
+ * The unqualified-claim patterns, in one place.
+ *
+ * They were duplicated per describe block, which is how the long-form article
+ * came to carry "Nothing is stored, so the export is the copy that survives"
+ * on the very page whose connect copy had been requalified: the guard scanned
+ * the i18n bundles and the page content object, and that file is neither.
+ * Every surface a visitor reads about storage on now runs the same list.
+ */
 function forbiddenStorageClaims(locale: "en" | "zh"): readonly RegExp[] {
   return locale === "en"
     ? [
@@ -154,16 +178,59 @@ describe("consent-screen copy for screens this flow does not produce", () => {
   );
 
   it.each(CASES)(
-    "does not blame a sensitive-scope review for the %s tools.%s testing gate",
+    "does not blame a review that is not running for the %s tools.%s testing gate",
     (locale, namespace) => {
-      // The tester-list gate is real when the screen is in Testing; the reason
-      // given for it was not. Naming a review that is not running invents a
+      // The tester-list gate is real when the screen is in Testing; the reasons
+      // given for it were not. Two separate inventions had to go: that the
+      // scope is Google-sensitive (it is listed non-sensitive), and that a
+      // review is under way (nothing has been submitted). Either one invents a
       // deadline we do not control and cannot report progress against.
-      const body = bundle(locale, namespace).inviteOnlyBody ?? "";
+      //
+      // Every inviteOnly* key, not just the body: the title carried "while
+      // Google reviews this app" while the body carried the sensitive-scope
+      // claim, so a guard reading one of them would have passed the other.
+      const messages = bundle(locale, namespace);
+      const inviteCopy = Object.entries(messages)
+        .filter(([key]) => key.startsWith("inviteOnly"))
+        .map(([, value]) => value)
+        .join(" ");
 
-      expect(body).not.toMatch(
-        locale === "en" ? /\bsensitive\b/i : /敏感(范围|权限)/,
+      expect(inviteCopy.length).toBeGreaterThan(0);
+      for (const pattern of unfoundedReviewClaims(locale)) {
+        expect(
+          inviteCopy,
+          `${locale}.${namespace} matches ${pattern}`,
+        ).not.toMatch(pattern);
+      }
+    },
+  );
+
+  /**
+   * The bundles are not the only place this copy lived.
+   *
+   * A published post still told readers to expect the interstitial, months
+   * after the panel copy would have been fixed — the same failure this file's
+   * storage guard was widened for at lines 84-92, repeated on a surface nobody
+   * had thought to scan. Long-form content outlives UI copy and is read by
+   * more people, so it gets the same guard.
+   */
+  it.each(LOCALES)(
+    "does not describe that screen anywhere in the published %s posts",
+    (locale) => {
+      const dir = fileURLToPath(
+        new URL(`../../../content/blog/${locale}`, import.meta.url),
       );
+      const posts = readdirSync(dir).filter((name) => name.endsWith(".md"));
+
+      expect(posts.length).toBeGreaterThan(0);
+      for (const post of posts) {
+        const text = readFileSync(join(dir, post), "utf8");
+        for (const pattern of retiredConsentClaims(locale)) {
+          expect(text, `${locale}/${post} matches ${pattern}`).not.toMatch(
+            pattern,
+          );
+        }
+      }
     },
   );
 });

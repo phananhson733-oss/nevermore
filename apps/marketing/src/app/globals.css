@@ -344,8 +344,12 @@
 
 /*
  * 动效偏好由 CSS 自己兜住。framer-motion 那边有 MotionConfig
- * reducedMotion="user"，CSS 动画不经过它，所以这里必须自己关——而且是关成
- * 「直接是终态」，不是「不播」：没有 fill 的话元素会停在 from 帧，也就是全透明。
+ * reducedMotion="user"，CSS 动画不经过它，所以这里必须自己关。
+ *
+ * 关法是整条 shorthand 置 none：animation-name 与 fill-mode 一起被清掉，关键帧
+ * 一帧都不应用，元素直接落在自然值（opacity:1 / transform:none）。**不能**只
+ * 把时长压到 0 —— 那样 fill-mode: both 仍然生效，元素会在 delay 期间被按在
+ * from 帧上，也就是全透明。首屏最长的那个 delay 是 0.45s。
  */
 @media (prefers-reduced-motion: reduce) {
   .animate-hero-fade-in-up {

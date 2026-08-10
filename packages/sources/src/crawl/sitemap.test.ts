@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { collectSitemap, parseSitemapXml } from "./sitemap.ts";
+import { parsePage } from "./parse-page.ts";
+import { canonicalizeUrl } from "../canonical-url.ts";
 
 /**
  * A sitemap escape that survives parsing becomes a URL nothing links to, and
@@ -121,4 +123,44 @@ describe("collectSitemap exact fetch identities", () => {
       subjectUrl: "https://example.com/docs",
     });
   });
+});
+
+/**
+ * The sitemap and the page parser have to agree on what a URL is.
+ *
+ * They are two entrances to the same frontier: a URL declared in the sitemap
+ * and the same URL written as a link must canonicalize to one subject. When
+ * they disagree, the sitemap copy looks like a page nothing links to — which
+ * is exactly the false orphan_candidate this decoding work set out to remove.
+ */
+describe("sitemap and page-parser decoding agree", () => {
+  it.each([
+    ["&apos;", "/o&apos;neill"],
+    ["&amp;", "/a?x=1&amp;y=2"],
+    ["&quot;", "/q?s=&quot;x&quot;"],
+    ["decimal", "/a?x=1&#38;y=2"],
+    ["hex", "/a?x=1&#x26;y=2"],
+  ])(
+    "resolves the %s form to one subject from either entrance",
+    (_label, path) => {
+      // parseSitemapXml hands back the raw loc; collectSitemap is what runs it
+      // through canonicalizeUrl. Compare the canonical forms, which is what the
+      // frontier and every finding are keyed on.
+      const fromSitemap = canonicalizeUrl(
+        parseSitemapXml(
+          `<urlset><url><loc>https://e.com${path}</loc></url></urlset>`,
+        ).locs[0]!,
+        "https://e.com/",
+      )?.subjectUrl;
+      const fromHref = JSON.stringify(
+        parsePage(
+          `<html><body><a href="${path}">x</a></body></html>`,
+          "https://e.com/",
+        ),
+      ).match(/https:\/\/e\.com\/[^"\\]*/)?.[0];
+
+      expect(fromSitemap).toBeDefined();
+      expect(fromHref).toBe(fromSitemap);
+    },
+  );
 });
