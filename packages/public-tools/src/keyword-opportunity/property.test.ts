@@ -117,6 +117,33 @@ describe("keywordCoverageProperty", () => {
     ).toBeNull();
   });
 
+  it("keeps a URL-prefix match when the site URL carries a root-label dot", () => {
+    // The parser strips a trailing dot from a bare domain but leaves it on a
+    // URL's host. Without normalizing both, this site would lose its exact
+    // prefix match and fall through to the broader domain property — the
+    // direction that over-reports coverage and deletes rows.
+    expect(
+      keywordCoverageProperty("https://acme.com./blog/post", [
+        "sc-domain:acme.com",
+        "https://acme.com/blog/",
+      ]),
+    ).toBe("https://acme.com/blog/");
+  });
+
+  it("does not let a URL-prefix property claim a site on another port", () => {
+    // A URL-prefix property is bound to its origin, port included.
+    expect(
+      keywordCoverageProperty("https://acme.com:8443/", ["https://acme.com/"]),
+    ).toBeNull();
+  });
+
+  it("still matches a domain property regardless of the site's port", () => {
+    // A domain property covers the host, and a port is not part of a host.
+    expect(
+      keywordCoverageProperty("https://acme.com:8443/", ["sc-domain:acme.com"]),
+    ).toBe("sc-domain:acme.com");
+  });
+
   it("returns null when the grant covers no property for the site", () => {
     // Also the ownership check: without a match there is no property whose
     // queries we are entitled to read, and the caller must report the stage as

@@ -51,7 +51,15 @@ function coversHost(domain: string, host: string): boolean {
  */
 function prefixCovers(property: URL, site: URL): boolean {
   if (property.protocol !== site.protocol) return false;
-  if (property.host !== site.host) return false;
+  // `host` carries the port, which a URL-prefix property is bound to, but the
+  // parser leaves a root-label trailing dot in place. Stripping it on both
+  // sides keeps this consistent with the domain branch, which strips it via
+  // `hostOf` — otherwise `https://acme.com./x` would lose its exact prefix
+  // match and fall through to a broader domain property, which is the
+  // direction that deletes rows.
+  if (property.host.replace(/\.$/, "") !== site.host.replace(/\.$/, "")) {
+    return false;
+  }
   const propertyPath = property.pathname.endsWith("/")
     ? property.pathname
     : `${property.pathname}/`;
