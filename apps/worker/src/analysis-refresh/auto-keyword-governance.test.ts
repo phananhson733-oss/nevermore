@@ -518,6 +518,16 @@ describe("runAutoKeywordGovernance", () => {
 });
 
 describe("freezeBudget", () => {
+  it("keeps bounded headroom for the production-shaped 11,242-ref library", () => {
+    expect(
+      freezeBudget({ eligibleEntities: 1_248, occurrenceRefs: 11_242 }),
+    ).toMatchObject({
+      eligibleEntities: 1_248,
+      occurrenceRefs: 11_242,
+      occurrenceHeadroom: 8_258,
+    });
+  });
+
   it("never reports negative headroom for an already-overflowing library", () => {
     expect(
       freezeBudget({

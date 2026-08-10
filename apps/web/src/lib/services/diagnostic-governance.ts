@@ -118,6 +118,7 @@ function assertOccurrenceMatchesEntity(
   }
   const hasSnapshot = row.data_snapshot_id !== null;
   const hasObservation = row.normalized_observation_id !== null;
+  const hasProductProfile = row.product_profile_id !== null;
   if (hasSnapshot !== hasObservation) {
     corruptGovernance(
       "keyword occurrence has incomplete snapshot/observation lineage",
@@ -126,9 +127,21 @@ function assertOccurrenceMatchesEntity(
   if (
     row.source_kind === "manual"
       ? hasSnapshot ||
+        hasProductProfile ||
         row.source_pointer !== null ||
         !row.source_ref.startsWith("manual:")
-      : !hasSnapshot ||
+      : row.source_kind === "product_profile"
+        ? !hasProductProfile ||
+          hasSnapshot ||
+          row.source_pointer !== null ||
+          row.provider_data_as_of !== null ||
+          row.scope_basis !== "project_context" ||
+          row.query_kind !== "generative_query" ||
+          !row.source_ref.startsWith(
+            `product_profile:${row.product_profile_id}#profile-generative-query.v1/`,
+          )
+        : hasProductProfile ||
+          !hasSnapshot ||
         row.source_pointer === null ||
         !row.source_ref.startsWith("observation:")
   ) {
@@ -142,17 +155,14 @@ function keywordFact(
   rows: readonly KeywordOccurrenceForEntityRow[],
   seenOccurrenceIds: Set<string>,
 ): GovernanceKeywordFactV1 {
-  if (
+  const bounded =
     rows.length > DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity
-  ) {
-    governanceTooLarge(
-      `more than ${DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity} occurrences for keyword ${entity.id}`,
-    );
-  }
-  if (rows.length === 0) {
+      ? rows.slice(0, DIAGNOSTIC_GOVERNANCE_LIMITS.keywordOccurrencesPerEntity)
+      : rows;
+  if (bounded.length === 0) {
     corruptGovernance("eligible keyword entity has no immutable occurrence");
   }
-  const occurrenceRefs = rows.map((row) => {
+  const occurrenceRefs = bounded.map((row) => {
     if (row.keyword_entity_id !== entity.id) {
       corruptGovernance(
         "keyword occurrence batch does not match its entity identity",

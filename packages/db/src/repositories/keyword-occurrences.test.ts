@@ -633,6 +633,27 @@ describe("KeywordOccurrencesRepository", () => {
     expect(db.calls.filter((call) => call.method === "execute")).toHaveLength(1);
   });
 
+  it("admits a production-sized 11,242-row batch with one overflow sentinel", async () => {
+    const db = new FakeExecutor();
+    const entityId = "00000000-0000-4000-8000-000000000020";
+    db.enqueue({ rows: [] });
+    const repo = new KeywordOccurrencesRepository(db as never);
+
+    await expect(
+      repo.listForEntityIds(scope, [entityId], {
+        limitPerEntity: MAX_KEYWORD_OCCURRENCE_PAGE_SIZE,
+        totalLimit: 11_242,
+      }),
+    ).resolves.toEqual([]);
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([11_243]),
+    );
+  });
+
   it("fails closed on invalid cursors and oversized pages before SQL", async () => {
     const db = new FakeExecutor();
     const repo = new KeywordOccurrencesRepository(db as never);
