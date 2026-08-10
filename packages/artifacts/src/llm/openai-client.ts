@@ -369,7 +369,7 @@ export class OpenAIChatCompletionsTransport {
   private readonly fetchImpl: FetchLike;
   private readonly url: string;
   private readonly authScheme: "bearer" | "api-key";
-  private readonly temperature: number;
+  private readonly temperature: number | undefined;
   private readonly timeoutMs: number;
   private readonly externalSignal: AbortSignal | undefined;
 
@@ -379,7 +379,9 @@ export class OpenAIChatCompletionsTransport {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.url = options.baseUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
     this.authScheme = options.authScheme ?? "bearer";
-    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    this.temperature =
+      options.temperature ??
+      (this.authScheme === "api-key" ? undefined : DEFAULT_TEMPERATURE);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.externalSignal = options.signal;
   }
@@ -387,7 +389,9 @@ export class OpenAIChatCompletionsTransport {
   async complete(messages: OpenAIChatMessages): Promise<OpenAIChatCompletion> {
     const body = JSON.stringify({
       model: this.model,
-      temperature: this.temperature,
+      ...(this.temperature === undefined
+        ? {}
+        : { temperature: this.temperature }),
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: messages.system },

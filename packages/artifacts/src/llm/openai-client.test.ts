@@ -582,6 +582,28 @@ describe("OpenAIClient.generateArtifact (spec §10.2, §14.4)", () => {
     expect(result.content.contentFormat).toBe("markdown");
   });
 
+  it("omits temperature for Azure-hosted deployments unless a deployment-compatible value is explicit", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(chatResponse(VALID_MARKDOWN));
+    const azureUrl =
+      "https://res.openai.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-03-01-preview";
+    const client = createOpenAIClient({
+      apiKey: "azure-key",
+      model: "gpt-4.1-mini",
+      baseUrl: azureUrl,
+      authScheme: "api-key",
+      fetchImpl,
+    });
+
+    await client.generateArtifact(makeInput());
+
+    const call = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const sentBody = JSON.parse(call[1].body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(sentBody).not.toHaveProperty("temperature");
+  });
+
   it("fails on the first redirect hop and never follows an OpenAI credential-bearing request", async () => {
     await withRedirectServer(async (baseUrl, hits) => {
       const client = createOpenAIClient({

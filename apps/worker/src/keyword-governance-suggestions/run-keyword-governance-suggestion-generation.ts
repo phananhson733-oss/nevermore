@@ -41,6 +41,7 @@ export const KEYWORD_GOVERNANCE_SUGGESTION_GENERATION_VERSION =
 export const KEYWORD_GOVERNANCE_SUGGESTION_GENERATION_OUTCOME_SCHEMA_VERSION =
   "keyword-governance-suggestion-generation-outcome.v1" as const;
 export const KEYWORD_GOVERNANCE_SUGGESTION_REQUEST_TIMEOUT_MS = 45_000;
+const DEFAULT_HOSTED_OPENAI_TEMPERATURE = 0.2;
 
 export interface KeywordGovernanceSuggestionGenerationJobPayload {
   readonly runId: string;
@@ -674,11 +675,14 @@ export async function runKeywordGovernanceSuggestionGeneration(
   const createClient =
     dependencies.createClient ?? createOpenAIKeywordGovernanceSuggestionClient;
   let client: KeywordGovernanceSuggestionGenerationClient;
+  const omitTemperature =
+    ctx.openai.authScheme === "api-key" &&
+    ctx.openai.temperature === DEFAULT_HOSTED_OPENAI_TEMPERATURE;
   try {
     client = createClient({
       apiKey: ctx.openai.apiKey,
       model: ctx.openai.model,
-      ...(ctx.openai.temperature === undefined
+      ...(ctx.openai.temperature === undefined || omitTemperature
         ? {}
         : { temperature: ctx.openai.temperature }),
       ...(ctx.openai.baseUrl ? { baseUrl: ctx.openai.baseUrl } : {}),

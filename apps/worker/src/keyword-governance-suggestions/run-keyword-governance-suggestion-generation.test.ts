@@ -1568,4 +1568,47 @@ describe("runKeywordGovernanceSuggestionGeneration", () => {
       lastErrorSummary: "Keyword governance suggestion generation failed.",
     });
   });
+
+  it("omits the default temperature when routing the suggestion client through Azure OpenAI", async () => {
+    const azureCtx = {
+      ...ctx,
+      openai: {
+        apiKey: "azure-key",
+        model: "gpt-test",
+        temperature: 0.2,
+        baseUrl:
+          "https://res.openai.azure.com/openai/deployments/gpt-test/chat/completions?api-version=2024-10-21",
+        authScheme: "api-key" as const,
+      },
+    } as WorkerContext;
+
+    await expect(
+      runKeywordGovernanceSuggestionGeneration(
+        azureCtx,
+        { runId: IDS.run, workspaceId: IDS.workspace, projectId: IDS.project },
+        dependencies,
+      ),
+    ).resolves.toEqual({
+      kind: "completed",
+      requestNextBatch: true,
+      initiatedBy: IDS.actor,
+    });
+
+    expect(dependencies.createClient).toHaveBeenCalledOnce();
+    const createClientCall = dependencies.createClient.mock.calls.at(0);
+    expect(createClientCall).toBeDefined();
+    if (!createClientCall) {
+      throw new Error("Azure suggestion client call was missing");
+    }
+    const [options] = createClientCall as readonly [Record<string, unknown>];
+    expect(options).toMatchObject({
+      apiKey: "azure-key",
+      model: "gpt-test",
+      baseUrl:
+        "https://res.openai.azure.com/openai/deployments/gpt-test/chat/completions?api-version=2024-10-21",
+      authScheme: "api-key",
+      timeoutMs: 45_000,
+    });
+    expect(options).not.toHaveProperty("temperature");
+  });
 });
