@@ -44,15 +44,42 @@ describe("keywordCoverageProperty", () => {
     ).toBe("sc-domain:blog.acme.com");
   });
 
-  it("prefers a domain property over a URL-prefix one for the same site", () => {
-    // A domain property is a strict superset — both schemes, every subdomain —
-    // so it yields the fuller query sample for the same read.
+  it("prefers a URL-prefix property over a domain one covering the same site", () => {
+    // The coverage read asks for queries with no page filter, so the property
+    // named decides the scope of the answer. A domain property also carries
+    // http and every subdomain, and a query another scope served would come
+    // back looking like this site already serves it — which does not mislabel
+    // the row, it deletes it. Narrow beats broad.
     expect(
       keywordCoverageProperty("https://acme.com/", [
-        "https://acme.com/",
         "sc-domain:acme.com",
+        "https://acme.com/",
       ]),
-    ).toBe("sc-domain:acme.com");
+    ).toBe("https://acme.com/");
+  });
+
+  it("does not answer a subdomain question out of the parent domain's property when a narrower one exists", () => {
+    expect(
+      keywordCoverageProperty("https://blog.acme.com/", [
+        "sc-domain:acme.com",
+        "https://blog.acme.com/",
+      ]),
+    ).toBe("https://blog.acme.com/");
+  });
+
+  it("keeps path comparison case-sensitive while the host stays case-insensitive", () => {
+    // Paths are case-sensitive per the URL standard: `/Blog/` is a different
+    // resource from `/blog/`, and its queries are not in that property.
+    expect(
+      keywordCoverageProperty("https://acme.com/Blog/post", [
+        "https://acme.com/blog/",
+      ]),
+    ).toBeNull();
+    expect(
+      keywordCoverageProperty("https://ACME.com/blog/post", [
+        "https://acme.com/blog/",
+      ]),
+    ).toBe("https://acme.com/blog/");
   });
 
   it("falls back to a URL-prefix property when no domain property covers the site", () => {

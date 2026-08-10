@@ -39,6 +39,29 @@ function coversHost(domain: string, host: string): boolean {
 }
 
 /**
+ * Whether a URL-prefix property contains the site, per the URL standard.
+ *
+ * Scheme, host and port are compared case-insensitively because the parser has
+ * already normalized them; the PATH is compared case-sensitively, because
+ * paths are. Lowercasing the whole URL — which this did at first — lets a
+ * property verified at `/blog/` claim `/Blog/x`, a different resource whose
+ * queries are not in that property.
+ *
+ * The boundary is a trailing slash, so `/blog` cannot claim `/blogging`.
+ */
+function prefixCovers(property: URL, site: URL): boolean {
+  if (property.protocol !== site.protocol) return false;
+  if (property.host !== site.host) return false;
+  const propertyPath = property.pathname.endsWith("/")
+    ? property.pathname
+    : `${property.pathname}/`;
+  const sitePath = site.pathname.endsWith("/")
+    ? site.pathname
+    : `${site.pathname}/`;
+  return sitePath.startsWith(propertyPath);
+}
+
+/**
  * Pick the property to read this site's Search Console queries from.
  *
  * Search Console is addressed by property identifier — `sc-domain:acme.com`
@@ -47,12 +70,18 @@ function coversHost(domain: string, host: string): boolean {
  * straight through, so every read was refused and the coverage stage went
  * silently unavailable on every run.
  *
- * Domain properties are preferred over URL-prefix ones covering the same site
- * because a domain property is a strict superset: it carries http, https and
- * every subdomain, so it yields the fuller query sample. Within each kind the
- * most specific match wins — a grant holding both `sc-domain:acme.com` and
- * `sc-domain:blog.acme.com` should read the blog's own property for a blog
- * URL rather than the parent's mixed traffic.
+ * The NARROWEST covering property wins, and that is the whole judgement here.
+ * The coverage read asks for `dimensions: ["query"]` with no page filter, so
+ * whatever property is named returns every query that property serves. A
+ * domain property covers both schemes and every subdomain, so reading
+ * `sc-domain:acme.com` to answer a question about `blog.acme.com` attributes
+ * the main site's queries to the blog — and coverage that reads as "already
+ * served" does not merely mislabel a row, it deletes it from the table. An
+ * over-broad property is therefore worse than a narrow one, not richer.
+ *
+ * So URL-prefix properties are preferred over domain properties, and within
+ * each kind the most specific match wins: the longest matching prefix, or the
+ * most specific domain a grant holds for the host.
  *
  * Returning null is the honest answer for "this visitor's grant covers no
  * property for this site", which is also the ownership check: without a match
@@ -66,6 +95,7 @@ export function keywordCoverageProperty(
 ): string | null {
   const host = hostOf(siteUrl);
   if (host === null) return null;
+  const site = new URL(siteUrl);
 
   let domainMatch: string | null = null;
   let domainLength = -1;
@@ -84,25 +114,16 @@ export function keywordCoverageProperty(
       continue;
     }
 
-    // A URL-prefix property covers exactly the URLs beginning with it, scheme
-    // and all. Compared on a trailing slash so `https://acme.com/blog` cannot
-    // claim `https://acme.com/blogging`.
-    const propertyUrl = hostOf(property) === null ? null : property;
-    if (propertyUrl === null) continue;
-    const normalizedProperty = propertyUrl.endsWith("/")
-      ? propertyUrl
-      : `${propertyUrl}/`;
-    const normalizedSite = siteUrl.endsWith("/") ? siteUrl : `${siteUrl}/`;
+    if (hostOf(property) === null) continue;
+    const propertyUrl = new URL(property);
     if (
-      normalizedSite
-        .toLowerCase()
-        .startsWith(normalizedProperty.toLowerCase()) &&
-      normalizedProperty.length > prefixLength
+      prefixCovers(propertyUrl, site) &&
+      propertyUrl.pathname.length > prefixLength
     ) {
       prefixMatch = property;
-      prefixLength = normalizedProperty.length;
+      prefixLength = propertyUrl.pathname.length;
     }
   }
 
-  return domainMatch ?? prefixMatch;
+  return prefixMatch ?? domainMatch;
 }
