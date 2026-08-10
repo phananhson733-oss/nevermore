@@ -11,9 +11,23 @@ const MODEL = {
   apiKey: "sk-test",
   model: "test-model",
   authScheme: "bearer",
-  temperature: 0.4,
+  temperature: null,
+  jsonMode: true,
   url: "https://model.test/v1/chat/completions",
 } as const;
+
+/** One chat-completion response body, with the fields `complete` reads. */
+function completion(
+  content: string,
+  finishReason: string | null = "stop",
+): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content }, finish_reason: finishReason }],
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
 
 function html(title: string, description: string): Response {
   return new Response(
@@ -92,19 +106,28 @@ describe("createDraftDependencies", () => {
     // Absent configuration is a supported state: the evidence table does not
     // depend on a model, and the run skips two Search Console reads entirely.
     expect(
-      createDraftDependencies({ property: "sc-domain:example.com", model: null }),
+      createDraftDependencies({
+        property: "sc-domain:example.com",
+        remainingMs: () => 30_000,
+        model: null,
+      }),
     ).toBeNull();
   });
 
   it("returns null when the property allows no origin", () => {
     expect(
-      createDraftDependencies({ property: "http://example.com/", model: MODEL }),
+      createDraftDependencies({
+        property: "http://example.com/",
+        remainingMs: () => 30_000,
+        model: MODEL,
+      }),
     ).toBeNull();
   });
 
   it("reads a page's title and description", async () => {
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () => html("A Title", "A description."),
     });
@@ -121,6 +144,7 @@ describe("createDraftDependencies", () => {
     const fetchImpl = vi.fn(async () => html("t", "d"));
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl,
     });
@@ -135,13 +159,18 @@ describe("createDraftDependencies", () => {
     const deps = (body: Response) =>
       createDraftDependencies({
         property: "sc-domain:example.com",
+        remainingMs: () => 30_000,
         model: MODEL,
         fetchImpl: async () => body,
       })!;
 
     await expect(
-      deps(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }))
-        .fetchPageMeta("https://example.com/a"),
+      deps(
+        new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ).fetchPageMeta("https://example.com/a"),
     ).resolves.toBeNull();
 
     await expect(
@@ -156,20 +185,82 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (url, init) => {
         seenUrl = String(url);
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return completion("reply");
       },
     });
 
-    await expect(deps!.complete("the prompt")).resolves.toBe("reply");
+    await expect(deps!.complete("the prompt")).resolves.toEqual({
+      text: "reply",
+      truncated: false,
+    });
     expect(seenUrl).toBe(MODEL.url);
     expect(seenBody["model"]).toBe(MODEL.model);
+  });
+
+  it("reports a reply that hit the token ceiling as truncated", async () => {
+    // The caller has to be able to tell "the model wrote something we cannot
+    // read" from "we cut the model off mid-sentence". Those have different
+    // fixes and only one of them is the model's fault.
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async () => completion('{"title":"half a dr', "length"),
+    });
+
+    await expect(deps!.complete("p")).resolves.toEqual({
+      text: '{"title":"half a dr',
+      truncated: true,
+    });
+  });
+
+  it("reports a budget-exhausted reply with no content as truncated", async () => {
+    // A reasoning model can spend the whole allowance thinking and emit no
+    // visible text at all. The reply then carries finish_reason "length" with
+    // null content — the purest truncation there is. Throwing here would
+    // report it as `model_unavailable`, sending whoever reads the surface to
+    // check an endpoint that answered fine.
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "length" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(deps!.complete("p")).resolves.toEqual({
+      text: "",
+      truncated: true,
+    });
+  });
+
+  it("still throws on missing content when the model claims it finished", async () => {
+    // No content and finish_reason "stop" is a broken response, not a budget
+    // problem, and it must not be laundered into a truncation notice.
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "stop" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(deps!.complete("p")).rejects.toThrow();
   });
 
   it("caps the reply with the field reasoning models accept", async () => {
@@ -179,35 +270,52 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return completion("reply");
       },
     });
 
     await deps!.complete("p");
 
-    expect(seenBody["max_completion_tokens"]).toBe(400);
+    // Measured on the real deployment: a draft costs ~250 completion tokens,
+    // of which ~200 are reasoning the reply never shows. The old cap of 400
+    // left barely a third of that as headroom, and a reply cut off at the
+    // ceiling arrives as half a JSON object.
+    expect(seenBody["max_completion_tokens"]).toBeGreaterThanOrEqual(1000);
     expect(seenBody).not.toHaveProperty("max_tokens");
   });
 
-  it("sends the configured temperature rather than a fixed one", async () => {
-    // The Azure gpt-5.6-luna deployment accepts exactly 1 and refuses the
-    // whole request otherwise.
+  it("omits temperature entirely when the deployment has not set one", async () => {
+    // Sending 0.4 to a reasoning model is a 400 for the whole request, not a
+    // nudge it ignores. Omitting the field is accepted everywhere.
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async (_url, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return completion("reply");
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenBody).not.toHaveProperty("temperature");
+  });
+
+  it("sends the configured temperature when there is one", async () => {
+    let seenBody: Record<string, unknown> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, temperature: 1 },
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return completion("reply");
       },
     });
 
@@ -216,19 +324,104 @@ describe("createDraftDependencies", () => {
     expect(seenBody["temperature"]).toBe(1);
   });
 
-  it("uses the api-key header for Azure and never the bearer form", async () => {
-    // Azure OpenAI rejects `Authorization: Bearer` with an API key. Sending
-    // both would leak the credential into a header the endpoint ignores.
+  it("asks for a JSON object so the model does not wrap it in a sentence", async () => {
+    let seenBody: Record<string, unknown> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async (_url, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return completion("reply");
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenBody["response_format"]).toEqual({ type: "json_object" });
+  });
+
+  it("omits the JSON-mode field when the deployment turned it off", async () => {
+    let seenBody: Record<string, unknown> = {};
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: { ...MODEL, jsonMode: false },
+      fetchImpl: async (_url, init) => {
+        seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return completion("reply");
+      },
+    });
+
+    await deps!.complete("p");
+
+    expect(seenBody).not.toHaveProperty("response_format");
+  });
+
+  it("retries once without JSON mode when the endpoint refuses the field", async () => {
+    // Not every gateway supports `response_format`. Turning drafts off
+    // entirely for a deployment that only refuses one optional field would
+    // trade the bug we are fixing for a worse one, so the first 400 costs one
+    // extra call and the run continues.
+    const bodies: Record<string, unknown>[] = [];
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: MODEL,
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (bodies.length === 1) {
+          return new Response(
+            JSON.stringify({
+              error: { message: "Unsupported parameter: 'response_format'" },
+            }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          );
+        }
+        return completion("reply");
+      },
+    });
+
+    await expect(deps!.complete("p")).resolves.toEqual({
+      text: "reply",
+      truncated: false,
+    });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toHaveProperty("response_format");
+    expect(bodies[1]).not.toHaveProperty("response_format");
+  });
+
+  it("does not retry a 400 it was not already sending JSON mode for", async () => {
+    // A 400 with no optional field to drop is a real rejection. Retrying the
+    // identical request would just pay for the same answer twice.
+    let calls = 0;
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
+      model: { ...MODEL, jsonMode: false },
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("bad request", { status: 400 });
+      },
+    });
+
+    await expect(deps!.complete("p")).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
+  it("uses the api-key header for Azure and sends only one credential", async () => {
+    // Azure accepts both header forms for a resource key — measured against
+    // the live gpt-5.6-luna deployment, the bearer form authenticates fine.
+    // The switch stays because sending both would put the credential in a
+    // header the endpoint has no reason to read.
     let seenHeaders: Record<string, string> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, authScheme: "api-key" },
       fetchImpl: async (_url, init) => {
         seenHeaders = init?.headers as Record<string, string>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return completion("reply");
       },
     });
 
@@ -242,13 +435,11 @@ describe("createDraftDependencies", () => {
     let seenHeaders: Record<string, string> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenHeaders = init?.headers as Record<string, string>;
-        return new Response(
-          JSON.stringify({ choices: [{ message: { content: "reply" } }] }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return completion("reply");
       },
     });
 
@@ -263,6 +454,7 @@ describe("createDraftDependencies", () => {
     // the evidence table untouched.
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () => new Response("nope", { status: 500 }),
     });
@@ -273,6 +465,7 @@ describe("createDraftDependencies", () => {
   it("throws when the model returns no message content", async () => {
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () =>
         new Response(JSON.stringify({ choices: [] }), {

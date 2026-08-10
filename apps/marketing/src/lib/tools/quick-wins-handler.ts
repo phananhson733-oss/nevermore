@@ -14,6 +14,7 @@ import {
   type GscGateResult,
 } from "./gsc-gate.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
+import { REQUEST_BUDGET_MS } from "./quick-wins-reader.ts";
 import {
   readTrafficDropSession,
   resolveTrafficDropGrant,
@@ -60,6 +61,8 @@ export interface QuickWinsHandlerDependencies {
     readonly brandTerms: readonly string[];
     /** From this request's resolution; never captured at module scope. */
     readonly accessToken: string;
+    /** Milliseconds left before the route must answer. See the call site. */
+    readonly remainingMs: () => number;
   }) => Promise<QuickWinsEnvelope>;
   readonly now: () => Date;
   readonly extractClientIp: (headers: Headers) => string;
@@ -146,6 +149,16 @@ export async function handleQuickWinsRequest(
   const input = parseInput(body.value);
   if (!input.ok) return json(createPublicToolError("invalid_request"), 400);
 
+  // ONE clock for the whole route, started here rather than inside the report.
+  // Everything the budget is meant to bound — the Search Console reads, the
+  // draft crawls, the model calls — runs after `resolveGrant`, which can
+  // itself refresh an OAuth token and re-list properties. A clock started at
+  // the first read hands a full budget to a request that has already spent a
+  // third of the platform's limit, and the report then overruns `maxDuration`
+  // — which costs the finished envelope, not just the slow part of it.
+  const deadlineAt = dependencies.now().getTime() + REQUEST_BUDGET_MS;
+  const remainingMs = (): number => deadlineAt - dependencies.now().getTime();
+
   // Off the cookie, so this costs nothing and can safely run before the gate.
   const session = await dependencies.readSession();
   if (session.properties === null) {
@@ -177,6 +190,7 @@ export async function handleQuickWinsRequest(
       property: input.value.property,
       brandTerms: input.value.brandTerms,
       accessToken: grant.accessToken,
+      remainingMs,
     });
     return json({ data: envelope }, 200);
   } catch {

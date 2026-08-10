@@ -15,6 +15,8 @@ import {
   KEYWORD_CANDIDATE_CAP,
   KEYWORD_CONTEXT_TTL_SECONDS,
   KEYWORD_SERP_SAMPLE_CAP,
+  OPPORTUNITIES_BODY_LIMIT_BYTES,
+  trimKeywordContextHeadings,
   type KeywordCandidateDraft,
   type KeywordContextToken,
   type KeywordOpportunityDependencies,
@@ -38,15 +40,14 @@ const COMPLETED_AT = "2026-08-10T12:00:00.000Z";
  * the SERP sample — a case that reads as a broken cap rather than as coverage.
  */
 const PAGES = [
-  { url: "https://acme.example/", title: "Overview" },
-  { url: "https://acme.example/pricing", title: "Pricing" },
-  { url: "https://acme.example/docs", title: "Docs" },
+  { url: "https://acme.example/", title: "Overview", headings: [] },
+  { url: "https://acme.example/pricing", title: "Pricing", headings: [] },
+  { url: "https://acme.example/docs", title: "Docs", headings: [] },
 ] as const;
 
 const CRAWL = {
   pages: PAGES.map((page, index) => ({
     ...page,
-    headings: [],
     text: "",
     score: 10 - index,
   })),
@@ -226,6 +227,9 @@ interface OpportunitiesBody {
       readonly unavailableStages: readonly string[];
       readonly rows: readonly {
         readonly keyword: string;
+        readonly lane: string;
+        readonly coverage: string;
+        readonly supportingPageUrl: string | null;
         readonly serp: { readonly verdict: string };
       }[];
       readonly withheld: readonly {
@@ -463,6 +467,168 @@ describe("handleKeywordContextRequest", () => {
     expect(buckets).toContain(crawlTargetBucket("acme.example"));
   });
 
+  it("keeps the sealed token inside the limit stage two will accept", async () => {
+    // Headings started travelling in the token so the coverage check can see
+    // more than a four-word title. Fourteen heading-rich pages is a realistic
+    // crawl, and an unbounded token would 413 at stage two — breaking the tool
+    // for exactly the sites with the most content, and only in production,
+    // where real pages have real headings.
+    const heavy = {
+      ...CRAWL,
+      pages: Array.from({ length: 14 }, (_, index) => ({
+        url: `https://acme.example/page-${String(index)}`,
+        title: `Page ${String(index)}`,
+        headings: Array.from(
+          { length: 40 },
+          (_, n) =>
+            `A long section heading about clinic billing workflows number ${String(n)} with padding`,
+        ),
+        text: "",
+        score: 5,
+      })),
+    };
+
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({ crawlContext: () => Promise.resolve(heavy) }),
+    );
+    const parsed = (await response.json()) as {
+      readonly data: { readonly contextToken: string };
+    };
+
+    const body = JSON.stringify({ contextToken: parsed.data.contextToken });
+    expect(new TextEncoder().encode(body).length).toBeLessThan(
+      OPPORTUNITIES_BODY_LIMIT_BYTES,
+    );
+  });
+
+  it("keeps the sealed token inside the limit for a site written in CJK", async () => {
+    // The budget is spent in bytes because the limit is a byte limit, and one
+    // CJK character is three of them. A character budget would let this site
+    // spend triple and 413 at stage two — which every ASCII fixture above is
+    // blind to.
+    const heavy = {
+      ...CRAWL,
+      pages: Array.from({ length: 14 }, (_, index) => ({
+        url: `https://acme.example/page-${String(index)}`,
+        title: `ページ ${String(index)}`,
+        headings: Array.from(
+          { length: 40 },
+          (_, n) =>
+            `診療所の請求ワークフローに関する長い見出し番号${String(n)}`,
+        ),
+        text: "",
+        score: 5,
+      })),
+    };
+
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({ crawlContext: () => Promise.resolve(heavy) }),
+    );
+    const parsed = (await response.json()) as {
+      readonly data: { readonly contextToken: string };
+    };
+
+    const body = JSON.stringify({ contextToken: parsed.data.contextToken });
+    expect(new TextEncoder().encode(body).length).toBeLessThan(
+      OPPORTUNITIES_BODY_LIMIT_BYTES,
+    );
+  });
+
+  it("carries a real heading through the seal and into stage two's matching", async () => {
+    // Both size tests above prove only that the token is small — an
+    // implementation that always seals `headings: []` passes them, and that is
+    // precisely the regression this feature exists to undo. This one takes the
+    // token stage one actually minted, feeds it to stage two, and asserts on a
+    // match that is only possible if a heading survived: the page title shares
+    // nothing with the candidate.
+    const context = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        crawlContext: () =>
+          Promise.resolve({
+            ...CRAWL,
+            pages: [
+              {
+                url: "https://acme.example/claims",
+                title: "Acme",
+                headings: ["Insurance claim tracking"],
+                text: "",
+                score: 9,
+              },
+            ],
+          }),
+      }),
+    );
+    const minted = (await context.json()) as {
+      readonly data: { readonly contextToken: string };
+    };
+
+    const response = await handleKeywordOpportunitiesRequest(
+      request({ contextToken: minted.data.contextToken }, "opportunities"),
+      deps(),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.keyword === "insurance claim tracking",
+    );
+    expect(row?.supportingPageUrl).toBe("https://acme.example/claims");
+  });
+
+  it("refuses rather than handing back a token it has proved stage two will reject", async () => {
+    // The ladder bounds headings; propositions and URLs are not bounded here,
+    // so its last rung can still be over the limit. Answering 200 with that
+    // token is a success the handler already knows is unusable — the surface
+    // would post it and get a body-limit rejection that retrying cannot fix.
+    const huge = {
+      ...CRAWL,
+      pages: Array.from({ length: 14 }, (_, index) => ({
+        url: `https://acme.example/${"segment/".repeat(120)}${String(index)}`,
+        title: "x",
+        headings: [],
+        text: "",
+        score: 5,
+      })),
+    };
+
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({ crawlContext: () => Promise.resolve(huge) }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "payload_too_large" },
+    });
+  });
+
+  it("spends the heading budget on the pages the crawl valued most", async () => {
+    // Crawl order is page-value order, so a site that exhausts the budget
+    // should lose its tail, not its front page.
+    const trimmed = trimKeywordContextHeadings(
+      [
+        { url: "https://acme.example/", headings: ["alpha", "beta"] },
+        { url: "https://acme.example/last", headings: ["gamma"] },
+      ],
+      9,
+    );
+
+    expect(trimmed).toEqual([["alpha", "beta"], []]);
+  });
+
+  it("counts a heading budget in bytes rather than characters", async () => {
+    // Nine bytes is three CJK characters, so the second heading does not fit
+    // even though six characters would suggest it does.
+    expect(
+      trimKeywordContextHeadings(
+        [{ url: "https://acme.example/", headings: ["見出し", "番号一"] }],
+        9,
+      ),
+    ).toEqual([["見出し"]]);
+  });
+
   it("returns the crawl summary sealed to the identity that asked for it", async () => {
     const response = await handleKeywordContextRequest(
       request(CONTEXT_BODY),
@@ -618,6 +784,26 @@ describe("handleKeywordOpportunitiesRequest", () => {
     });
   });
 
+  it("accepts a token minted before headings existed instead of throwing on it", async () => {
+    // `open()` decrypts and asserts a type; it does not validate a schema. For
+    // ten minutes after this ships, live tokens have pages of `{url, title}`
+    // and no `headings` key at all — and spreading `undefined` throws AFTER
+    // admission, after the daily budget, and after this run has already paid
+    // for expansion and volume validation. The visitor would see a 502 for a
+    // deploy they had no part in.
+    const legacyPages = PAGES.map((page) => ({
+      url: page.url,
+      title: page.title,
+    })) as unknown as KeywordContextToken["pages"];
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body({ contextToken: contextToken({ pages: legacyPages }) }),
+      deps(),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   it("refuses a valid token that was issued to somebody else", async () => {
     // Without this the token is a bearer credential for the expensive half of
     // the pipeline: one sign-in could mint tokens and hand them out, and every
@@ -766,6 +952,279 @@ describe("handleKeywordOpportunitiesRequest", () => {
     // Named, so the run can never read as a clean one.
     expect(parsed.data.result.availability).not.toBe("available");
     expect(parsed.data.result.availability).toBe("partial");
+    // And no row may claim the sample said anything. The first live run put
+    // `not_observed_in_gsc_query_sample` on all eight of its rows after a read
+    // that never returned — a positive statement about a sample nobody
+    // fetched, which is the same failure the withheld reasons are split to
+    // avoid.
+    // The exact state, not merely "not the wrong one": a `not.toBe` passes for
+    // any other wrong answer, and is vacuous if the fixture shows no rows.
+    expect(parsed.data.result.rows.length).toBeGreaterThan(0);
+    for (const row of parsed.data.result.rows) {
+      expect(row.coverage).toBe("gsc_query_sample_not_read");
+    }
+  });
+
+  it("reads Search Console by property identifier, not by the site URL", async () => {
+    // The shipped bug: the visitor's typed URL went straight to the Search
+    // Console client, which addresses properties only. Every read was refused
+    // and the coverage stage — the reason this tool asks for authorization at
+    // all — was unavailable on every single run.
+    const seen: string[] = [];
+    await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        resolveGrant: () =>
+          Promise.resolve({
+            kind: "grant",
+            accessToken: "ya29.test",
+            properties: ["sc-domain:acme.example"],
+            propertyTotal: 1,
+          }),
+        readCoverageQueries: ({ property }) => {
+          seen.push(property);
+          return Promise.resolve([]);
+        },
+      }),
+    );
+
+    expect(seen).toEqual(["sc-domain:acme.example"]);
+  });
+
+  it("reports coverage unread, and spends nothing on it, when the grant covers another site", async () => {
+    // No property for this site means no queries we are entitled to read. The
+    // honest answer is the unread state — not an empty sample, which would
+    // read as "your site serves none of these".
+    const readCoverageQueries = vi.fn(() => Promise.resolve([]));
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        resolveGrant: () =>
+          Promise.resolve({
+            kind: "grant",
+            accessToken: "ya29.test",
+            properties: ["sc-domain:somebody-else.example"],
+            propertyTotal: 1,
+          }),
+        readCoverageQueries,
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(readCoverageQueries).not.toHaveBeenCalled();
+    expect(parsed.data.result.unavailableStages).toContain("gsc_coverage");
+    for (const row of parsed.data.result.rows) {
+      expect(row.coverage).toBe("gsc_query_sample_not_read");
+    }
+  });
+
+  it("shows a GEO question on the page its proposition came from", async () => {
+    // The GEO lane produced nothing at all on the first live run: 44 of 142
+    // candidates were question-form, and every one was withheld for
+    // `no_supporting_page`. Token overlap cannot carry a question — most of
+    // its words are grammar — but the generator already said which
+    // proposition each one came from, and every proposition carries the URL it
+    // was read off.
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            ...DRAFTS,
+            draft("can i submit an insurance claim the same day", {
+              discoveryBasis: "site_proposition",
+              questionForm: true,
+              propositionIndex: 0,
+            }),
+          ]),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    const geo = parsed.data.result.rows.find((row) => row.lane === "geo");
+    expect(geo?.keyword).toBe("can i submit an insurance claim the same day");
+    expect(geo?.supportingPageUrl).toBe("https://acme.example/");
+    // Attribution says where the claim came from. It is not evidence the site
+    // ranks, so the coverage state must stay exactly where the sample left it.
+    expect(geo?.coverage).toBe("not_observed_in_gsc_query_sample");
+  });
+
+  it("ignores an attribution from a candidate that is not on the proposition lane", async () => {
+    // The generator is told every `site_proposition` item must carry a valid
+    // index and every expansion item must carry none. An expansion candidate
+    // arriving with one is the model contradicting its own instructions, and
+    // honouring it would let a single inconsistent field put a GEO row in
+    // front of the reader on the strength of nothing.
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            ...DRAFTS,
+            draft("what does the pricing page say", {
+              discoveryBasis: "traditional_expansion",
+              questionForm: true,
+              propositionIndex: 0,
+            }),
+          ]),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(parsed.data.result.rows.some((row) => row.lane === "geo")).toBe(
+      false,
+    );
+    expect(
+      parsed.data.result.withheld.find(
+        (row) => row.keyword === "what does the pricing page say",
+      )?.reason,
+    ).toBe("no_supporting_page");
+  });
+
+  it("refuses an attributed page the crawl never reached", async () => {
+    // The index arrives on this request while the pages were sealed on the
+    // last one. An index pointing outside the crawl must resolve to nothing
+    // rather than put a URL nobody fetched in front of the reader as a link.
+    const response = await handleKeywordOpportunitiesRequest(
+      body({
+        contextToken: contextToken({
+          propositions: [
+            {
+              statement: "Claimed off a page we never saw",
+              sourceUrl: "https://acme.example/ghost",
+            },
+          ],
+        }),
+      }),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            ...DRAFTS,
+            draft("what does the ghost page say", {
+              discoveryBasis: "site_proposition",
+              questionForm: true,
+              propositionIndex: 0,
+            }),
+          ]),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(parsed.data.result.rows.some((row) => row.lane === "geo")).toBe(
+      false,
+    );
+    expect(
+      parsed.data.result.withheld.find(
+        (row) => row.keyword === "what does the ghost page say",
+      )?.reason,
+    ).toBe("no_supporting_page");
+  });
+
+  it("matches a candidate against the crawled headings, not the title alone", async () => {
+    // Titles are three or four words. The page-similarity half of coverage
+    // reads whatever stage one sealed into the token, and sealing only the
+    // title left it almost blind — the crawl had the headings all along. The
+    // title here shares nothing with the candidate, so a match can only have
+    // come from the heading.
+    const response = await handleKeywordOpportunitiesRequest(
+      body({
+        contextToken: contextToken({
+          pages: [
+            {
+              url: "https://acme.example/claims",
+              title: "Acme",
+              headings: ["Insurance claim tracking for clinics"],
+            },
+          ],
+        }),
+      }),
+      deps({
+        expandCandidates: () =>
+          Promise.resolve([
+            ...DRAFTS,
+            draft("claim tracking for clinics", { questionForm: true }),
+          ]),
+      }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.lane === "geo",
+    );
+    expect(row?.coverage).toBe("related_coverage_unverified");
+    expect(row?.supportingPageUrl).toBe("https://acme.example/claims");
+  });
+
+  it("still samples page one for terms whose coverage could not be checked", async () => {
+    // The expensive stage keys off "not known to be served". An unread sample
+    // must not be read as "covered", or a failed Search Console call would
+    // silently empty the only table the tool produces.
+    const sampleSerp = vi.fn(
+      ({ keywords }: { readonly keywords: readonly string[] }) =>
+        Promise.resolve(
+          keywords.map((keyword) => ({
+            keyword,
+            domains: ["small-blog.example"],
+          })),
+        ),
+    );
+    await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        readCoverageQueries: () => Promise.reject(new Error("403")),
+        sampleSerp,
+      }),
+    );
+
+    // Every priced candidate, named. "At least one was sampled" passed the
+    // original broken implementation too — it classified everything as
+    // not-observed, which was already eligible — and it would keep passing if
+    // a subset were silently dropped.
+    const sampled = sampleSerp.mock.calls[0]?.[0].keywords ?? [];
+    expect([...sampled].sort()).toEqual(
+      [...DRAFTS.map((candidate) => candidate.keyword)].sort(),
+    );
+  });
+
+  it("samples a term whose only coverage signal is a lexical page match", async () => {
+    // `related_coverage_unverified` is deliberately NOT "already covered", but
+    // it used to be excluded from sampling — and an unsampled SEO row can
+    // never be winnable, so it was withheld anyway. Title overlap was acting
+    // as the hard filter `coverage.ts` promises it is not, and carrying
+    // headings in the token makes that state far more common.
+    const sampleSerp = vi.fn(
+      ({ keywords }: { readonly keywords: readonly string[] }) =>
+        Promise.resolve(
+          keywords.map((keyword) => ({
+            keyword,
+            domains: ["small-blog.example"],
+          })),
+        ),
+    );
+    const response = await handleKeywordOpportunitiesRequest(
+      body({
+        contextToken: contextToken({
+          pages: [
+            {
+              url: "https://acme.example/claims",
+              title: "Acme",
+              headings: ["Insurance claim tracking"],
+            },
+          ],
+        }),
+      }),
+      deps({ sampleSerp }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(sampleSerp.mock.calls[0]?.[0].keywords).toContain(
+      "insurance claim tracking",
+    );
+    const row = parsed.data.result.rows.find(
+      (candidate) => candidate.keyword === "insurance claim tracking",
+    );
+    expect(row?.coverage).toBe("related_coverage_unverified");
+    expect(row?.serp.verdict).toBe("winnable_evidence");
   });
 
   it("calls nothing winnable when page one was never sampled", async () => {
@@ -782,10 +1241,32 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(parsed.data.result.unavailableStages).toContain("serp_sample");
     expect(parsed.data.result.funnel["winnableEvidence"]).toBe(0);
     expect(parsed.data.result.rows).toEqual([]);
-    // And the withheld reason is the true one — nobody looked, rather than the
-    // page came back contested. Only the first is worth re-running.
+    // The provider threw, so the stage did not run. This used to report
+    // `serp_sample_budget_exhausted` — and this assertion pinned it, which is
+    // how a test locks in a false label instead of catching one. A budget that
+    // ran out tells the reader to narrow the run; a stage that failed tells
+    // them to try the same run again.
     expect(parsed.data.result.withheld.map((entry) => entry.reason)).toEqual(
-      DRAFTS.map(() => "serp_sample_budget_exhausted"),
+      DRAFTS.map(() => "serp_sample_unavailable"),
+    );
+  });
+
+  it("still says budget exhausted when the sample ran and simply did not reach a term", async () => {
+    // The other side of the split: nothing failed here, the cap bit. Reporting
+    // a failed stage for this would send the reader to retry rather than to
+    // narrow, which is the wrong action.
+    const many = Array.from({ length: KEYWORD_SERP_SAMPLE_CAP + 3 }, (_, i) =>
+      draft(`dental billing variant ${String(i)}`),
+    );
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({ expandCandidates: () => Promise.resolve(many) }),
+    );
+    const parsed = (await response.json()) as OpportunitiesBody;
+
+    expect(parsed.data.result.unavailableStages).not.toContain("serp_sample");
+    expect(parsed.data.result.withheld.map((entry) => entry.reason)).toContain(
+      "serp_sample_budget_exhausted",
     );
   });
 

@@ -74,11 +74,12 @@ describe("runQuickWins with draft dependencies", () => {
       now: NOW,
       brandTerms: [],
       draftDependencies: {
+        remainingMs: () => 60_000,
         fetchPageMeta: async (url) => ({
           title: url === COMPARABLE ? "Strong Page: What You Get" : "Weak Page",
           metaDescription: "something",
         }),
-        complete: async () => DRAFT_REPLY,
+        complete: async () => ({ text: DRAFT_REPLY, truncated: false }),
       },
     });
 
@@ -123,6 +124,7 @@ describe("runQuickWins with draft dependencies", () => {
       now: NOW,
       brandTerms: [],
       draftDependencies: {
+        remainingMs: () => 60_000,
         fetchPageMeta: async () => ({ title: "t", metaDescription: "d" }),
         complete: async () => {
           throw new Error("no api key");
@@ -142,8 +144,9 @@ describe("runQuickWins with draft dependencies", () => {
       now: NOW,
       brandTerms: [],
       draftDependencies: {
+        remainingMs: () => 60_000,
         fetchPageMeta: async () => null,
-        complete: async () => DRAFT_REPLY,
+        complete: async () => ({ text: DRAFT_REPLY, truncated: false }),
       },
     });
 

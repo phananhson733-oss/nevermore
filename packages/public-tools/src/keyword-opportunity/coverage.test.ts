@@ -241,7 +241,9 @@ describe("observeKeywordCoverage", () => {
 
   it("accepts a title carrying exactly the required share of the candidate's tokens", () => {
     // Four of five tokens is 0.8 on the nose; the threshold is inclusive.
-    const pages = [page("https://example.com/crm", "Best CRM software for you")];
+    const pages = [
+      page("https://example.com/crm", "Best CRM software for you"),
+    ];
 
     expect(
       observeKeywordCoverage(
@@ -297,12 +299,68 @@ describe("observeKeywordCoverage", () => {
   it("says nothing was observed when there is neither a query row nor a page", () => {
     // Spelled out in full because Search Console anonymises a large share of
     // queries: this is "we did not see it", not "the site does not rank".
-    expect(
-      observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES),
-    ).toEqual({
+    expect(observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES)).toEqual({
       state: "not_observed_in_gsc_query_sample",
       supportingPageUrl: null,
     });
+  });
+
+  it("separates a sample that was read and came back empty from one never read", () => {
+    // The dishonesty the first live run shipped: the Search Console read
+    // failed on every request and every row still said "not observed in the
+    // sample" — a positive claim about a sample nobody fetched. An empty map
+    // is a real answer (a property that served nothing); null is the absence
+    // of one, and the two must never collapse.
+    expect(
+      observeKeywordCoverage("best crm", EMPTY_INDEX, NO_PAGES).state,
+    ).toBe("not_observed_in_gsc_query_sample");
+    expect(observeKeywordCoverage("best crm", null, NO_PAGES).state).toBe(
+      "gsc_query_sample_not_read",
+    );
+  });
+
+  it("still reads the crawled pages when the query sample was never read", () => {
+    // Page similarity comes from the crawl, not Search Console, so losing one
+    // must not silently disable the other — the GEO lane is judged on it.
+    const pages = [page("https://example.com/crm", "Best CRM")];
+
+    expect(observeKeywordCoverage("best crm", null, pages)).toEqual({
+      state: "related_coverage_unverified",
+      supportingPageUrl: "https://example.com/crm",
+    });
+  });
+
+  it("names the page a candidate was attributed to without claiming coverage", () => {
+    // A question is mostly grammar, so token overlap finds nothing for it —
+    // the first live run matched none of its 44 question-form candidates. The
+    // generator already said which page the claim came from, and that is a
+    // supporting page. It is NOT evidence the site ranks, so the state stays
+    // exactly where the absence of evidence left it.
+    expect(
+      observeKeywordCoverage(
+        "can i audit a website without owning it",
+        EMPTY_INDEX,
+        [page("https://example.com/audit", "Free SEO audit")],
+        "https://example.com/audit",
+      ),
+    ).toEqual({
+      state: "not_observed_in_gsc_query_sample",
+      supportingPageUrl: "https://example.com/audit",
+    });
+  });
+
+  it("prefers what a page says over what the generator attributed", () => {
+    // Overlap is computed from the page's own words; attribution is an
+    // assertion about where a claim came from. When both are available the
+    // measured one wins.
+    expect(
+      observeKeywordCoverage(
+        "best crm",
+        EMPTY_INDEX,
+        [page("https://example.com/crm", "Best CRM")],
+        "https://example.com/somewhere-else",
+      ).supportingPageUrl,
+    ).toBe("https://example.com/crm");
   });
 
   it("survives a candidate with no tokens instead of dividing by zero", () => {
@@ -319,9 +377,9 @@ describe("observeKeywordCoverage", () => {
   it("survives a crawled page with an empty token set", () => {
     const pages = [page("https://example.com/empty", "---")];
 
-    expect(
-      observeKeywordCoverage("best crm", EMPTY_INDEX, pages).state,
-    ).toBe("not_observed_in_gsc_query_sample");
+    expect(observeKeywordCoverage("best crm", EMPTY_INDEX, pages).state).toBe(
+      "not_observed_in_gsc_query_sample",
+    );
   });
 });
 

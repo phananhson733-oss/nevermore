@@ -7,7 +7,10 @@ import type {
   GscPageRow,
   GscQueryPageRow,
 } from "../gsc-analytics/page-reader.ts";
-import { selectComparablePage } from "./comparable-page.ts";
+import {
+  buildComparablePageIndex,
+  selectComparablePageFrom,
+} from "./comparable-page.ts";
 import type { QuickWinEvidenceRow } from "./types.ts";
 
 /**
@@ -78,21 +81,29 @@ export function planDrafts(input: DraftPlanInput): DraftPlan {
     })
     .sort((a, b) => b.clickGap - a.clickGap || a.query.localeCompare(b.query));
 
-  for (const row of candidates) {
-    if (tasks.length >= MAX_DRAFT_ROWS) {
-      skipped.set(row.query, "beyond_draft_cap");
-      continue;
-    }
+  // Built once. The comparable search runs for every candidate, including rows
+  // already past the cap — it fetches nothing, so the run's network cost is
+  // still fixed by MAX_DRAFT_ROWS, and what it buys is an honest reason:
+  // checking the cap first labelled every remaining row "beyond the per-run
+  // cap", including rows with no comparable page, which reads as "raise the
+  // cap and you get a draft" for rows that would produce nothing at any cap.
+  // Deriving the index per row instead would be the same answer at N times the
+  // cost, and a property may bring 100,000 rows.
+  const index = buildComparablePageIndex(input.pages, input.queryPages);
 
-    const selection = selectComparablePage({
+  for (const row of candidates) {
+    const selection = selectComparablePageFrom(index, {
       query: row.query,
-      pages: input.pages,
-      queryPages: input.queryPages,
       coverage: input.coverage.get(row.query) ?? null,
     });
 
     if (selection.kind !== "found") {
       skipped.set(row.query, selection.kind);
+      continue;
+    }
+
+    if (tasks.length >= MAX_DRAFT_ROWS) {
+      skipped.set(row.query, "beyond_draft_cap");
       continue;
     }
 

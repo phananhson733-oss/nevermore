@@ -3,7 +3,11 @@
 // @pos    -- the only place drafts touch the network
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import type { DraftRunDependencies, PageMeta } from "@sf/public-tools";
+import type {
+  DraftCompletion,
+  DraftRunDependencies,
+  PageMeta,
+} from "@sf/public-tools";
 import { parsePage } from "@sf/sources";
 // The switch itself lives in a module with no imports, so the landing page can
 // ask "are drafts on" without pulling the crawler in behind it.
@@ -14,13 +18,120 @@ import {
 
 export { draftModelFromEnv, type DraftModelConfig };
 
-/** The model call is the last thing in a run; it does not get to be slow. */
-const MODEL_TIMEOUT_MS = 20_000;
+/**
+ * Per-call deadline.
+ *
+ * The calls run concurrently (see `runDrafts`), so this is the drafts' whole
+ * share of the wall clock rather than one slice of a sequence. Measured on the
+ * deployment this points at, a draft takes 4.5-11 seconds depending on how
+ * much the model reasons; 30 seconds leaves room for the tail without putting
+ * the route's 60-second budget at risk.
+ */
+const MODEL_TIMEOUT_MS = 30_000;
 
 /** Per-page fetch deadline. Drafts must never be the reason a run times out. */
 const PAGE_FETCH_TIMEOUT_MS = 6_000;
 /** A page whose head we cannot read in this much HTML is not worth more. */
 const MAX_PAGE_BYTES = 512 * 1024;
+
+/**
+ * Ceiling on one reply.
+ *
+ * Set from measurement against the real deployment, using a prompt built from
+ * live pages rather than a short synthetic one. Reasoning dominates and it is
+ * not stable: over repeated runs of the same prompt it ranged from 280 to over
+ * 1200 tokens, with the visible draft always under 80 of them.
+ *
+ * That range is why the two earlier values were both wrong. At 400, five of
+ * six replies hit the ceiling and came back with `finish_reason: "length"` and
+ * an EMPTY string for content — which `JSON.parse` rejects, so the surface
+ * reported "the draft came back in a format we cannot use". That was the live
+ * bug. At 1200 it was one in six, which is better and still not right. At 4000
+ * the same prompt completed eight times out of eight, so 3000 sits above the
+ * observed tail with room and still bounds a runaway reply.
+ *
+ * The cap is not a cost lever. A draft that stops early is paid for in full
+ * and then discarded, so a ceiling below what the work costs buys nothing.
+ */
+const MAX_COMPLETION_TOKENS = 3_000;
+
+/** What one HTTP attempt produced, before any judgement about the content. */
+interface CompletionAttempt {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly content: unknown;
+  readonly finishReason: unknown;
+}
+
+async function attempt(
+  prompt: string,
+  config: DraftModelConfig,
+  fetchImpl: typeof fetch,
+  jsonMode: boolean,
+  timeoutMs: number,
+): Promise<CompletionAttempt> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(config.url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        // Both forms authenticate against Azure; see DraftAuthScheme for why
+        // the switch is still here.
+        ...(config.authScheme === "api-key"
+          ? { "api-key": config.apiKey }
+          : { authorization: `Bearer ${config.apiKey}` }),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: "user", content: prompt }],
+        // `max_completion_tokens`, not `max_tokens`: the older field is
+        // refused by reasoning models, which is most of what this would be
+        // pointed at now.
+        max_completion_tokens: MAX_COMPLETION_TOKENS,
+        // Omitted unless configured. A reasoning model refuses the whole
+        // request over a temperature it did not want, so the safe default is
+        // to let the endpoint use its own.
+        ...(config.temperature === null
+          ? {}
+          : { temperature: config.temperature }),
+        // The reason drafts came back "in a format we cannot use": asked for
+        // JSON in prose alone, a chatty model wraps it in a sentence.
+        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      // Drain the body so the connection is released. It is only useful for
+      // logs this module does not keep.
+      await response.text().catch(() => "");
+      return {
+        ok: false,
+        status: response.status,
+        content: undefined,
+        finishReason: undefined,
+      };
+    }
+
+    const body = (await response.json()) as {
+      choices?: readonly {
+        message?: { content?: unknown };
+        finish_reason?: unknown;
+      }[];
+    };
+    const choice = body.choices?.[0];
+    return {
+      ok: true,
+      status: response.status,
+      content: choice?.message?.content,
+      finishReason: choice?.finish_reason,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * One chat completion.
@@ -34,47 +145,56 @@ async function complete(
   prompt: string,
   config: DraftModelConfig,
   fetchImpl: typeof fetch,
-): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
-  try {
-    const response = await fetchImpl(config.url, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        // Azure rejects the bearer form outright; see DraftAuthScheme.
-        ...(config.authScheme === "api-key"
-          ? { "api-key": config.apiKey }
-          : { authorization: `Bearer ${config.apiKey}` }),
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: "user", content: prompt }],
-        // `max_completion_tokens`, not `max_tokens`: the older field is
-        // refused by reasoning models, which is most of what this would be
-        // pointed at now. The cap itself stays — the validator rejects
-        // anything longer anyway, and this stops a runaway reply from being
-        // paid for and then discarded. Reasoning tokens count against it, so
-        // it is generous relative to a title and a description.
-        max_completion_tokens: 400,
-        temperature: config.temperature,
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`draft model responded ${response.status}`);
-    }
-    const body = (await response.json()) as {
-      choices?: readonly { message?: { content?: unknown } }[];
-    };
-    const content = body.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      throw new Error("draft model returned no message content");
-    }
-    return content;
-  } finally {
-    clearTimeout(timer);
+  remainingMs: () => number,
+): Promise<DraftCompletion> {
+  // ONE deadline for the whole call, not one per attempt. The retry below
+  // used to get its own full timeout, so a "per-call deadline" of 30 seconds
+  // actually permitted 60 — more than the route's entire budget from a single
+  // row. Clamped to what the request has left, because overrunning does not
+  // cost a draft, it costs the finished evidence table the handler is holding.
+  const deadlineAt = Date.now() + Math.min(MODEL_TIMEOUT_MS, remainingMs());
+  const timeLeft = (): number => deadlineAt - Date.now();
+
+  let result = await attempt(
+    prompt,
+    config,
+    fetchImpl,
+    config.jsonMode,
+    timeLeft(),
+  );
+
+  // A 400 while asking for a JSON object is the one rejection worth a second
+  // call: `response_format` is the only optional field in the request, and a
+  // gateway that does not know it refuses everything. Dropping the field for
+  // a deployment that never configured the switch costs one wasted call per
+  // draft; not dropping it costs every draft.
+  if (!result.ok && result.status === 400 && config.jsonMode) {
+    // Only if there is time for it. Out of time, the 400 stands and the row
+    // degrades on its own.
+    if (timeLeft() <= 0) throw new Error("draft model responded 400");
+    result = await attempt(prompt, config, fetchImpl, false, timeLeft());
   }
+
+  if (!result.ok) {
+    throw new Error(`draft model responded ${result.status}`);
+  }
+
+  // The model stopped because it ran out of budget rather than because it was
+  // done. `runDrafts` reports that as its own reason instead of blaming the
+  // formatting.
+  const truncated = result.finishReason === "length";
+
+  if (typeof result.content !== "string") {
+    // A reasoning model can burn the whole budget before emitting any visible
+    // text, and then the reply carries `finish_reason: "length"` with no
+    // content at all. That is the truncation case in its purest form, so it
+    // must not be thrown as "the model is unavailable" — the model answered,
+    // we just did not pay for enough of it.
+    if (truncated) return { text: "", truncated: true };
+    throw new Error("draft model returned no message content");
+  }
+
+  return { text: result.content, truncated };
 }
 
 /**
@@ -163,10 +283,18 @@ async function readPageMeta(
  */
 export function createDraftDependencies(options: {
   readonly property: string;
+  /**
+   * Milliseconds left in the request, from the reader's one absolute deadline.
+   *
+   * The same clock the Search Console reads run against, so the drafts cannot
+   * quietly spend budget those reads were counting on.
+   */
+  readonly remainingMs: () => number;
   readonly fetchImpl?: typeof fetch;
   readonly model?: DraftModelConfig | null;
 }): DraftRunDependencies | null {
-  const model = options.model === undefined ? draftModelFromEnv() : options.model;
+  const model =
+    options.model === undefined ? draftModelFromEnv() : options.model;
   if (model === null) return null;
 
   const allowedOrigins = allowedDraftOrigins(options.property);
@@ -177,6 +305,8 @@ export function createDraftDependencies(options: {
   return {
     fetchPageMeta: (url: string) =>
       readPageMeta(url, allowedOrigins, fetchImpl),
-    complete: (prompt: string) => complete(prompt, model, fetchImpl),
+    complete: (prompt: string) =>
+      complete(prompt, model, fetchImpl, options.remainingMs),
+    remainingMs: options.remainingMs,
   };
 }
