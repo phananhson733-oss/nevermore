@@ -69,6 +69,73 @@ function ctrOf(row: GscPageRow): number | null {
   return row.clicks / row.impressions;
 }
 
+/** A page that already cleared the impression floor, with its rate. */
+interface RankedPage {
+  readonly page: string;
+  readonly ctr: number;
+}
+
+/**
+ * The page rows arranged so one query's answer costs a lookup, not a scan.
+ *
+ * Built once per run and reused for every row. Deriving it per row is the
+ * same answer at N times the cost: the planner asks this question for every
+ * evidence row with a shortfall, and a property is allowed to bring 100,000
+ * rows, so a per-row rebuild turns planning quadratic and can spend the
+ * request's whole budget before anything is fetched.
+ */
+export interface ComparablePageIndex {
+  /** The page carrying most of each query's impressions. */
+  readonly subjectByQuery: ReadonlyMap<string, string>;
+  readonly pagesByUrl: ReadonlyMap<string, GscPageRow>;
+  /**
+   * Eligible pages per band, highest rate first.
+   *
+   * Sorted rather than searched because the winner is always the highest rate
+   * that is not the subject: the advantage test is a threshold, so if the best
+   * candidate fails it, every lower one fails it too.
+   */
+  readonly rankedByBucket: ReadonlyMap<string, readonly RankedPage[]>;
+}
+
+export function buildComparablePageIndex(
+  pages: readonly GscPageRow[],
+  queryPages: readonly GscQueryPageRow[],
+): ComparablePageIndex {
+  const subjectByQuery = new Map<string, string>();
+  const bestImpressions = new Map<string, number>();
+  for (const row of queryPages) {
+    if (!Number.isFinite(row.impressions)) continue;
+    // Strictly greater, so ties keep the first row seen — the same page the
+    // single-pass version picked.
+    if (row.impressions > (bestImpressions.get(row.query) ?? -1)) {
+      bestImpressions.set(row.query, row.impressions);
+      subjectByQuery.set(row.query, row.page);
+    }
+  }
+
+  const pagesByUrl = new Map<string, GscPageRow>();
+  const byBucket = new Map<string, RankedPage[]>();
+  for (const row of pages) {
+    pagesByUrl.set(row.page, row);
+
+    if (row.impressions < MIN_COMPARABLE_PAGE_IMPRESSIONS) continue;
+    const ctr = ctrOf(row);
+    if (ctr === null) continue;
+    const bucket = bucketForPosition(row.position);
+    if (bucket === null) continue;
+
+    const group = byBucket.get(bucket.id);
+    if (group === undefined) byBucket.set(bucket.id, [{ page: row.page, ctr }]);
+    else group.push({ page: row.page, ctr });
+  }
+  // Array.prototype.sort is stable, so equal rates stay in the order the rows
+  // arrived — again matching the single-pass version's tie-break.
+  for (const group of byBucket.values()) group.sort((a, b) => b.ctr - a.ctr);
+
+  return { subjectByQuery, pagesByUrl, rankedByBucket: byBucket };
+}
+
 /**
  * Find the page a draft for this query may be modelled on.
  *
@@ -86,6 +153,24 @@ function ctrOf(row: GscPageRow): number | null {
 export function selectComparablePage(
   input: ComparablePageInput,
 ): ComparablePageResult {
+  return selectComparablePageFrom(
+    buildComparablePageIndex(input.pages, input.queryPages),
+    input,
+  );
+}
+
+/**
+ * The same three gates, answered against an index built once for the run.
+ *
+ * Callers asking for one query keep `selectComparablePage`. Callers asking for
+ * many — the planner asks for every row with a shortfall — build the index
+ * once and come here, so the page rows are walked a fixed number of times
+ * rather than once per row.
+ */
+export function selectComparablePageFrom(
+  index: ComparablePageIndex,
+  input: { readonly query: string; readonly coverage: number | null },
+): ComparablePageResult {
   if (
     input.coverage === null ||
     !Number.isFinite(input.coverage) ||
@@ -96,20 +181,10 @@ export function selectComparablePage(
 
   // The page carrying most of the query's impressions is the one a rewrite
   // would land on.
-  let subjectUrl: string | null = null;
-  let subjectImpressions = -1;
-  for (const row of input.queryPages) {
-    if (row.query !== input.query) continue;
-    if (!Number.isFinite(row.impressions)) continue;
-    if (row.impressions > subjectImpressions) {
-      subjectImpressions = row.impressions;
-      subjectUrl = row.page;
-    }
-  }
-  if (subjectUrl === null) return { kind: "no_subject_page" };
+  const subjectUrl = index.subjectByQuery.get(input.query);
+  if (subjectUrl === undefined) return { kind: "no_subject_page" };
 
-  const byUrl = new Map(input.pages.map((p) => [p.page, p]));
-  const subject = byUrl.get(subjectUrl);
+  const subject = index.pagesByUrl.get(subjectUrl);
   if (subject === undefined) return { kind: "no_subject_page" };
 
   const subjectCtr = ctrOf(subject);
@@ -118,30 +193,24 @@ export function selectComparablePage(
     return { kind: "no_comparable_high_ctr_page" };
   }
 
-  let best: { page: GscPageRow; ctr: number } | null = null;
-  for (const candidate of input.pages) {
-    if (candidate.page === subjectUrl) continue;
-    if (candidate.impressions < MIN_COMPARABLE_PAGE_IMPRESSIONS) continue;
-    if (bucketForPosition(candidate.position)?.id !== subjectBucket.id) continue;
+  // Highest rate in the band that is not the subject itself. Nothing below it
+  // can clear a threshold it fails.
+  const best = index.rankedByBucket
+    .get(subjectBucket.id)
+    ?.find((candidate) => candidate.page !== subjectUrl);
+  if (best === undefined) return { kind: "no_comparable_high_ctr_page" };
 
-    const ctr = ctrOf(candidate);
-    if (ctr === null) continue;
-    // A subject earning nothing has no meaningful multiple; require the
-    // candidate to clear the floor on its own instead of dividing by zero.
-    const clearsAdvantage =
-      subjectCtr > 0 ? ctr >= subjectCtr * MIN_CTR_ADVANTAGE : ctr > 0;
-    if (!clearsAdvantage) continue;
-
-    if (best === null || ctr > best.ctr) best = { page: candidate, ctr };
-  }
-
-  if (best === null) return { kind: "no_comparable_high_ctr_page" };
+  // A subject earning nothing has no meaningful multiple; require the
+  // candidate to clear the floor on its own instead of dividing by zero.
+  const clearsAdvantage =
+    subjectCtr > 0 ? best.ctr >= subjectCtr * MIN_CTR_ADVANTAGE : best.ctr > 0;
+  if (!clearsAdvantage) return { kind: "no_comparable_high_ctr_page" };
 
   return {
     kind: "found",
     subjectPage: subjectUrl,
     subjectCtr,
-    comparablePage: best.page.page,
+    comparablePage: best.page,
     comparableCtr: best.ctr,
     bucketId: subjectBucket.id,
   };

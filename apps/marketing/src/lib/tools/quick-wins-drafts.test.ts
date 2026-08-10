@@ -212,6 +212,48 @@ describe("createDraftDependencies", () => {
     });
   });
 
+  it("reports a budget-exhausted reply with no content as truncated", async () => {
+    // A reasoning model can spend the whole allowance thinking and emit no
+    // visible text at all. The reply then carries finish_reason "length" with
+    // null content — the purest truncation there is. Throwing here would
+    // report it as `model_unavailable`, sending whoever reads the surface to
+    // check an endpoint that answered fine.
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: MODEL,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "length" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(deps!.complete("p")).resolves.toEqual({
+      text: "",
+      truncated: true,
+    });
+  });
+
+  it("still throws on missing content when the model claims it finished", async () => {
+    // No content and finish_reason "stop" is a broken response, not a budget
+    // problem, and it must not be laundered into a truncation notice.
+    const deps = createDraftDependencies({
+      property: "sc-domain:example.com",
+      model: MODEL,
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "stop" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+
+    await expect(deps!.complete("p")).rejects.toThrow();
+  });
+
   it("caps the reply with the field reasoning models accept", async () => {
     // `max_tokens` is refused outright by reasoning models, which is most of
     // what this gets pointed at. Dropping the cap instead would mean paying

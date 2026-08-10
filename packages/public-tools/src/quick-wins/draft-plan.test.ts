@@ -173,6 +173,29 @@ describe("planDrafts", () => {
     expect(plan.skipped.get("lonely")).toBe("no_comparable_high_ctr_page");
   });
 
+  it("stays linear when the property brings a lot of rows", () => {
+    // Asking the comparable question for every row (rather than only up to the
+    // cap) is what makes the skip reasons honest, and it is only affordable
+    // because the page rows are indexed once. Deriving the index per row is
+    // the same answer at N times the cost: at 10k rows that measured around
+    // seven seconds, inside a request with a 60-second platform ceiling, and
+    // the readers allow ten times this many rows.
+    const queries = Array.from({ length: 10_000 }, (_, i) => `q${i}`);
+    const { pages, queryPages } = healthyPages(queries);
+    const rows = queries.map((q, i) => row(q, i + 1));
+    const coverage = new Map(queries.map((q) => [q, 1]));
+
+    const startedAt = performance.now();
+    const plan = planDrafts({ rows, pages, queryPages, coverage });
+    const elapsed = performance.now() - startedAt;
+
+    expect(plan.tasks).toHaveLength(MAX_DRAFT_ROWS);
+    expect(plan.skipped.size).toBe(queries.length - MAX_DRAFT_ROWS);
+    // Generous on purpose: the indexed version lands two orders of magnitude
+    // under this, and the version it replaced could not have.
+    expect(elapsed).toBeLessThan(3_000);
+  });
+
   it("returns an empty plan for an empty table rather than throwing", () => {
     const plan = planDrafts({
       rows: [],

@@ -142,17 +142,23 @@ async function complete(
   if (!result.ok) {
     throw new Error(`draft model responded ${result.status}`);
   }
+
+  // The model stopped because it ran out of budget rather than because it was
+  // done. `runDrafts` reports that as its own reason instead of blaming the
+  // formatting.
+  const truncated = result.finishReason === "length";
+
   if (typeof result.content !== "string") {
+    // A reasoning model can burn the whole budget before emitting any visible
+    // text, and then the reply carries `finish_reason: "length"` with no
+    // content at all. That is the truncation case in its purest form, so it
+    // must not be thrown as "the model is unavailable" — the model answered,
+    // we just did not pay for enough of it.
+    if (truncated) return { text: "", truncated: true };
     throw new Error("draft model returned no message content");
   }
 
-  return {
-    text: result.content,
-    // The model stopped because it ran out of budget rather than because it
-    // was done. `runDrafts` reports that as its own reason instead of
-    // blaming the formatting.
-    truncated: result.finishReason === "length",
-  };
+  return { text: result.content, truncated };
 }
 
 /**
