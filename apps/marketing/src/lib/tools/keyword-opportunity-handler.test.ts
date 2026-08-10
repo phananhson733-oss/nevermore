@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { KeywordOpportunityProviderRow } from "@sf/public-tools";
 import { open, seal } from "../auth/sealed-cookie.ts";
+import { createKeywordCostAccumulator } from "./keyword-cost-guard.ts";
 import {
   handleKeywordContextRequest,
   handleKeywordOpportunitiesRequest,
@@ -135,6 +136,11 @@ function deps(
   overrides: Partial<KeywordOpportunityDependencies> = {},
 ): KeywordOpportunityDependencies {
   return {
+    // The breaker and the accumulator default to "budget is fine, nothing
+    // spent yet"; the cases that care override them.
+    consumeDailyBudget: () =>
+      Promise.resolve({ kind: "allowed", runsToday: 1 }),
+    costs: createKeywordCostAccumulator(),
     readIdentity: () => Promise.resolve({ sub: SUB }),
     openCrawlGate: () =>
       Promise.resolve({ ok: true, kind: "crawl", release: () => {} }),
@@ -423,10 +429,15 @@ describe("handleKeywordContextRequest", () => {
     expect(opened?.marketCode).toBe("GB");
   });
 
-  it("names the reason a site could not be read instead of answering 500", async () => {
+  it("names the reason a site could not be read, with the status the sibling crawl tools use", async () => {
     // A quarter of real sites answer a crawler with a challenge page. Which
     // wall was hit is the one thing the visitor can act on differently, so the
     // code is carried through and the run is logged for the operator.
+    //
+    // 422, matching the `robots_disallowed` answer from the internal-link and
+    // SEO audits: the request was well-formed and the service worked, but the
+    // target would not be read. This used to answer 200, which made
+    // `response.ok` true for a response carrying no report.
     const blocked = Object.assign(new Error("cf challenge"), {
       code: "bot_protection_blocked",
     });
@@ -435,7 +446,7 @@ describe("handleKeywordContextRequest", () => {
       deps({ crawlContext: () => Promise.reject(blocked) }),
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(422);
     await expect(response.json()).resolves.toEqual({
       error: { code: "bot_protection_blocked" },
     });
@@ -446,6 +457,21 @@ describe("handleKeywordContextRequest", () => {
         code: "bot_protection_blocked",
       }),
     ]);
+  });
+
+  it("keeps an unknown crawl failure at 502 rather than blaming the target", async () => {
+    // 422 says the target refused us. A failure we cannot name is not evidence
+    // about the target at all, so it stays in the range that means "ours or
+    // unknown" — the same place the sibling tools put `scan_failed`.
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({ crawlContext: () => Promise.reject(new Error("socket hang up")) }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "site_unreachable" },
+    });
   });
 
   it("releases the crawl gate after a successful read", async () => {
@@ -702,6 +728,77 @@ describe("handleKeywordOpportunitiesRequest", () => {
     expect(parsed.data.result.withheld.map((entry) => entry.reason)).toEqual(
       DRAFTS.map(() => "serp_sample_budget_exhausted"),
     );
+  });
+
+  it("refuses the whole run once the account's daily budget is spent, before paying for anything", async () => {
+    // The breaker guards a prepaid balance the paid analysis pipeline also
+    // spends from, so an exhausted day must stop the run at the door rather
+    // than let it buy one more report. 503 with Retry-After, and not one
+    // provider call.
+    const validateVolumes = vi.fn();
+    const expandCandidates = vi.fn();
+    const release = vi.fn();
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        consumeDailyBudget: () =>
+          Promise.resolve({ kind: "exhausted", retryAfterSeconds: 1800 }),
+        openGscGate: () => Promise.resolve({ ok: true, release }),
+        expandCandidates,
+        validateVolumes,
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("1800");
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "keyword_source_unavailable" },
+    });
+    expect(expandCandidates).not.toHaveBeenCalled();
+    expect(validateVolumes).not.toHaveBeenCalled();
+    // The admission slot is handed back; a refused run must not leave this IP
+    // wedged for the rest of the isolate's life.
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a counter that cannot answer exactly like an exhausted day", async () => {
+    // Fail closed. A paid endpoint with no working limiter is an open tap, and
+    // a tool that is briefly unavailable is the cheaper failure.
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({
+        consumeDailyBudget: () =>
+          Promise.resolve({ kind: "unavailable", reason: "quota store down" }),
+      }),
+    );
+
+    expect(response.status).toBe(503);
+  });
+
+  it("degrades to partial when the per-run ceiling cannot fit page-one sampling", async () => {
+    // The earlier stages are billed whether or not sampling happens, so the
+    // ceiling must cut the optional stage and keep the run — throwing here
+    // would discard work that was already paid for. And the result has to say
+    // the stage was cut: a run that came in cheap because it was truncated
+    // looks identical in the totals to a genuinely cheap one.
+    const sampleSerp = vi.fn();
+    const costs = createKeywordCostAccumulator();
+    // Book the ceiling as already spent, which is what a long expansion does.
+    costs.record("keyword_overview", 0.25);
+
+    const response = await handleKeywordOpportunitiesRequest(
+      body(),
+      deps({ costs, sampleSerp }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(sampleSerp).not.toHaveBeenCalled();
+    const parsed = (await response.json()) as OpportunitiesBody;
+    expect(parsed.data.result.unavailableStages).toContain(
+      "serp_sample_cost_capped",
+    );
+    expect(parsed.data.result.availability).not.toBe("available");
+    expect(costs.capped()).toBe(true);
   });
 
   it("samples no more pages of results than the run's cap", async () => {

@@ -18,11 +18,20 @@ import {
   type KeywordCoverageQueryRow,
   type KeywordOpportunityBasis,
   type KeywordOpportunityContext,
+  type KeywordOpportunityErrorCode,
   type KeywordOpportunityObservation,
   type KeywordOpportunityProposition,
   type KeywordOpportunityProviderRow,
 } from "@sf/public-tools";
 import { open, seal } from "../auth/sealed-cookie.ts";
+import {
+  estimateBulkRanksCostUsd,
+  estimateSerpSampleCostUsd,
+  keywordBudgetRefusal,
+  reportKeywordRunCost,
+  type KeywordBudgetOutcome,
+  type KeywordCostAccumulator,
+} from "./keyword-cost-guard.ts";
 import type { CrawlGateResult } from "./crawl-gate.ts";
 import type { GscGateResult } from "./gsc-gate.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
@@ -166,6 +175,21 @@ export interface KeywordOpportunityDependencies {
   readonly readCoverageQueries: (
     siteUrl: string,
   ) => Promise<readonly KeywordCoverageQueryRow[]>;
+  /**
+   * The account-wide daily breaker, consulted before anything billable runs.
+   *
+   * Separate from the per-IP gates: those keep one caller from monopolising
+   * the tool, this one keeps the whole tool from draining a prepaid balance
+   * that the paid analysis pipeline also spends from.
+   */
+  readonly consumeDailyBudget: () => Promise<KeywordBudgetOutcome>;
+  /**
+   * Books provider spend and answers whether the next stage still fits.
+   *
+   * Passed in rather than created here so the route's provider adapters can
+   * record into the same accumulator the orchestration reads.
+   */
+  readonly costs: KeywordCostAccumulator;
   readonly now: () => Date;
   readonly extractClientIp: (headers: Headers) => string;
 }
@@ -181,6 +205,31 @@ function json(
     headers: { "Cache-Control": "no-store, private", ...extraHeaders },
   });
 }
+
+/**
+ * How a stage-one failure is reported, matching the two sibling crawl tools.
+ *
+ * `422` is the interesting one and it is deliberate: the request was
+ * well-formed and the service worked, but the target would not let itself be
+ * read. That is the same class as the `robots_disallowed` the internal-link
+ * audit and the SEO audit already answer 422 for, and it is what a Cloudflare
+ * challenge, a rate limit from the target, and a refused protocol downgrade
+ * all are. `502` stays for the failures that are genuinely ours or unknown.
+ *
+ * The earlier shape answered 200 with an error envelope on the grounds that
+ * the failure reason is itself the product. The reason is — it is in the code
+ * — but the status is not the place to say so: a 200 makes `response.ok` true
+ * for a response carrying no report, which every client reads as success.
+ */
+const CONTEXT_ERROR_STATUS: Readonly<
+  Partial<Record<KeywordOpportunityErrorCode, number>>
+> = {
+  bot_protection_blocked: 422,
+  rate_limited_by_target: 422,
+  protocol_downgrade_rejected: 422,
+  too_few_pages: 422,
+  site_unreachable: 502,
+};
 
 function hostOf(siteUrl: string): string | null {
   try {
@@ -315,14 +364,16 @@ export async function handleKeywordContextRequest(
         ? (error as { readonly code: unknown }).code
         : undefined,
     );
-    // The failure reason is the product here: a Cloudflare challenge, a rate
-    // limit from the target, and a protocol downgrade the URL guard refused
-    // are three different things the visitor can act on differently. A quarter
-    // of real sites hit one of them.
+    // The reason still matters — a Cloudflare challenge, a rate limit from the
+    // target and a protocol downgrade the URL guard refused are three things a
+    // visitor acts on differently, and a quarter of real sites hit one — so it
+    // travels in the code. But it travels with an honest status: this response
+    // carries no report, and answering 200 made `response.ok` true for a
+    // request that produced nothing.
     console.error(
       JSON.stringify({ tool: "keyword_opportunity", stage: "context", code }),
     );
-    return json(createPublicToolError(code), 200);
+    return json(createPublicToolError(code), CONTEXT_ERROR_STATUS[code] ?? 502);
   } finally {
     gate.release();
   }
@@ -409,6 +460,17 @@ export async function handleKeywordOpportunitiesRequest(
   );
   if (!gate.ok) return gate.response;
 
+  // The daily breaker comes after admission and before the first billable
+  // call. Before the gate it would spend a quota slot on requests the gate was
+  // about to turn away; after any provider call it would be reporting a
+  // ceiling the run had already crossed.
+  const budget = await dependencies.consumeDailyBudget();
+  const refusal = keywordBudgetRefusal(budget);
+  if (refusal !== null) {
+    gate.release();
+    return refusal;
+  }
+
   const unavailableStages: string[] = [];
   try {
     const drafts = await dependencies.expandCandidates({
@@ -493,7 +555,20 @@ export async function handleKeywordOpportunitiesRequest(
 
     let samples: readonly KeywordSerpSampleResult[] = [];
     let domainRanks: ReadonlyMap<string, number> = new Map();
-    if (sampleTargets.length > 0) {
+    // Sampling and its rank lookup are the priciest stage and the only optional
+    // one, so the per-run ceiling is checked here. Asked before spending, not
+    // after: the earlier stages are already billed either way, and cutting this
+    // one degrades the run to `partial` rather than losing what was paid for.
+    const serpEstimate =
+      estimateSerpSampleCostUsd(sampleTargets.length) +
+      estimateBulkRanksCostUsd(sampleTargets.length * 10);
+    const serpAdmitted =
+      sampleTargets.length > 0 &&
+      dependencies.costs.admitStage("serp_sample", serpEstimate);
+    if (sampleTargets.length > 0 && !serpAdmitted) {
+      unavailableStages.push("serp_sample_cost_capped");
+    }
+    if (serpAdmitted) {
       try {
         samples = await dependencies.sampleSerp({
           keywords: sampleTargets.map((row) => row.candidate.keyword),
@@ -557,6 +632,15 @@ export async function handleKeywordOpportunitiesRequest(
       observations,
       unavailableStages,
       completedAt: dependencies.now().toISOString(),
+    });
+
+    // The run's only cost record. There is no ledger table and the provider
+    // gives no per-tool breakdown, so a run missing this line is invisible in
+    // the invoice.
+    reportKeywordRunCost({
+      costs: dependencies.costs,
+      candidateCount: candidates.length,
+      serpSampled: samples.length,
     });
 
     return json({ data: payload }, 200);
