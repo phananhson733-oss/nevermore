@@ -121,6 +121,7 @@ import {
   useGrowthMapTopicModelWorkspace,
   useGrowthMapUrlDetail,
   useGrowthMapUrls,
+  useApproveGrowthMapKeywordReviewSuggestion,
   useDecideGrowthMapKeywordRelation,
   usePatchGrowthMapTopicModelDraft,
   useRefreshGrowthMapKeywordRelations,
@@ -183,6 +184,7 @@ import {
   growthMapUncoveredKeywordCountPresentation,
   identitySourceKey,
   keywordDetailReadState,
+  keywordSuggestionReviewDraft,
   keywordTopicNeedsConflictConfirmation,
   keywordLibraryReadState,
   keywordMetricPresentation,
@@ -475,6 +477,16 @@ const KEYWORD_REVIEW_BUYER_STAGES = [
   "decision",
   "retention",
 ] as const;
+
+function keywordSuggestionBuyerStageTranslationKey(
+  value: string,
+): `buyerStage.${(typeof KEYWORD_REVIEW_BUYER_STAGES)[number]}` | null {
+  return KEYWORD_REVIEW_BUYER_STAGES.includes(
+    value as (typeof KEYWORD_REVIEW_BUYER_STAGES)[number],
+  )
+    ? `buyerStage.${value as (typeof KEYWORD_REVIEW_BUYER_STAGES)[number]}`
+    : null;
+}
 
 // Review-dialog decision order mirrors the artifact: approve first.
 const COMPETITOR_REVIEW_STATUSES = [
@@ -7615,6 +7627,7 @@ function KeywordReviewDialog({
   const dialogId = useId();
   const titleId = `${dialogId}-title`;
   const descriptionId = `${dialogId}-description`;
+  const editPanelId = `${dialogId}-edit-panel`;
   const statusId = `${dialogId}-status`;
   const intentId = `${dialogId}-intent`;
   const buyerStageId = `${dialogId}-buyer-stage`;
@@ -7627,7 +7640,14 @@ function KeywordReviewDialog({
     open,
   );
   const reviewDetail = reviewDetailQuery.data?.data ?? null;
+  const pendingSuggestion = reviewDetail?.pendingSuggestion ?? null;
   const mutation = useReviewGrowthMapKeyword(projectId, detail.keywordId);
+  const approvalMutation = useApproveGrowthMapKeywordReviewSuggestion(
+    projectId,
+    detail.keywordId,
+    pendingSuggestion?.suggestionId ?? "",
+  );
+  const [isEditExpanded, setIsEditExpanded] = useState(false);
   const [status, setStatus] = useState<GrowthMapKeywordStatus>("candidate");
   const [intent, setIntent] = useState("");
   const [buyerStage, setBuyerStage] = useState("");
@@ -7671,29 +7691,56 @@ function KeywordReviewDialog({
     confirmedTopicNodes.length > 0;
   const isRevisionConflict =
     mutation.error instanceof ApiError && mutation.error.status === 409;
+  const isApprovalConflict =
+    approvalMutation.error instanceof ApiError &&
+    approvalMutation.error.status === 409;
+  const suggestionDraft = keywordSuggestionReviewDraft(pendingSuggestion);
+  const isReadySuggestion = suggestionDraft !== null;
+  const suggestionBuyerStageTranslationKey =
+    pendingSuggestion?.buyerStage === null ||
+    pendingSuggestion?.buyerStage === undefined
+      ? null
+      : keywordSuggestionBuyerStageTranslationKey(
+          pendingSuggestion.buyerStage,
+        );
 
   useEffect(() => {
     if (!open || reviewDetail === null) return;
-    setStatus(reviewDetail.status);
-    setIntent(reviewDetail.intent ?? "");
-    setBuyerStage(reviewDetail.buyerStage ?? "");
+    const readyDraft = keywordSuggestionReviewDraft(
+      reviewDetail.pendingSuggestion,
+    );
+    setStatus(readyDraft?.status ?? reviewDetail.status);
+    setIntent(readyDraft?.intent ?? reviewDetail.intent ?? "");
+    setBuyerStage(readyDraft?.buyerStage ?? reviewDetail.buyerStage ?? "");
     setTopicNodeId(
-      confirmedTopicNodes.some(
-        (node) => node.topicNodeId === reviewDetail.cluster?.clusterId,
-      )
-        ? (reviewDetail.cluster?.clusterId ?? "")
-        : "",
+      readyDraft?.topicNodeId ??
+        (confirmedTopicNodes.some(
+          (node) => node.topicNodeId === reviewDetail.cluster?.clusterId,
+        )
+          ? (reviewDetail.cluster?.clusterId ?? "")
+          : ""),
     );
-    setMappingDecision(reviewDetail.mappedTarget.kind);
+    setMappingDecision(
+      readyDraft?.mappingDecision ?? reviewDetail.mappedTarget.kind,
+    );
     setMappedSitePageId(
-      reviewDetail.mappedTarget.kind === "existing_page"
-        ? reviewDetail.mappedTarget.sitePageId
-        : "",
+      readyDraft?.mappedSitePageId ??
+        (reviewDetail.mappedTarget.kind === "existing_page"
+          ? reviewDetail.mappedTarget.sitePageId
+          : ""),
     );
-    setReason(reviewDetail.mappedTarget.reason ?? t("defaultReason"));
+    setReason(
+      readyDraft?.reason ??
+        reviewDetail.mappedTarget.reason ??
+        t("defaultReason"),
+    );
     setLocalError(null);
     setConflictCommand(null);
   }, [confirmedTopicNodes, open, reviewDetail, t]);
+
+  useEffect(() => {
+    if (!open) setIsEditExpanded(false);
+  }, [open]);
 
   function clearPendingConfirmation(): void {
     setConflictCommand(null);
@@ -7753,6 +7800,25 @@ function KeywordReviewDialog({
         onRequestClose();
       },
     });
+  }
+
+  function approveSuggestion(): void {
+    if (!isReadySuggestion || pendingSuggestion === null) return;
+    approvalMutation.reset();
+    approvalMutation.mutate(
+      {
+        expectedGovernanceRevision:
+          pendingSuggestion.expectedGovernanceRevision,
+        suggestionVersion: pendingSuggestion.suggestionVersion,
+      },
+      {
+        onSuccess: () => {
+          setLocalError(null);
+          onSaved();
+          onRequestClose();
+        },
+      },
+    );
   }
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -7816,6 +7882,128 @@ function KeywordReviewDialog({
       </header>
 
       <form className={styles.keywordReviewForm} onSubmit={submit}>
+        {reviewDetailQuery.isPending ? (
+          <div className={styles.keywordSuggestionSummary} role="status">
+            <div className={styles.keywordSuggestionState}>
+              <Spinner label={t("suggestion.detailLoading")} size="sm" />
+              <span>{t("suggestion.detailLoading")}</span>
+            </div>
+          </div>
+        ) : reviewDetailQuery.isError ? (
+          <div className={styles.keywordSuggestionSummary}>
+            <div className={styles.keywordSuggestionState} role="alert">
+              <CircleAlert aria-hidden="true" size={18} />
+              <span>{t("suggestion.detailError")}</span>
+            </div>
+          </div>
+        ) : (
+          <section
+            className={styles.keywordSuggestionSummary}
+            aria-labelledby={`${dialogId}-suggestion-title`}
+          >
+            <div className={styles.keywordSuggestionHeading}>
+              <div>
+                <h3 id={`${dialogId}-suggestion-title`}>
+                  {t("suggestion.title")}
+                </h3>
+                <p>{t("suggestion.description")}</p>
+              </div>
+            </div>
+
+            {pendingSuggestion === null ? null : (
+              <dl className={styles.keywordSuggestionFacts}>
+                {pendingSuggestion.status === null ? null : (
+                  <div className={styles.keywordSuggestionFact}>
+                    <dt>{t("field.status")}</dt>
+                    <dd>{t(`status.${pendingSuggestion.status}`)}</dd>
+                  </div>
+                )}
+                {pendingSuggestion.intent === null ? null : (
+                  <div className={styles.keywordSuggestionFact}>
+                    <dt>{t("field.intent")}</dt>
+                    <dd>{t(`intent.${pendingSuggestion.intent}`)}</dd>
+                  </div>
+                )}
+                {pendingSuggestion.buyerStage === null ? null : (
+                  <div className={styles.keywordSuggestionFact}>
+                    <dt>{t("field.buyerStage")}</dt>
+                    <dd>
+                      {suggestionBuyerStageTranslationKey === null
+                        ? pendingSuggestion.buyerStage
+                        : t(suggestionBuyerStageTranslationKey)}
+                    </dd>
+                  </div>
+                )}
+                {pendingSuggestion.topicLabel === null ? null : (
+                  <div className={styles.keywordSuggestionFact}>
+                    <dt>{t("field.topic")}</dt>
+                    <dd>{pendingSuggestion.topicLabel}</dd>
+                  </div>
+                )}
+                {pendingSuggestion.mappingDecision === null ? null : (
+                  <div className={styles.keywordSuggestionFact}>
+                    <dt>{t("field.mappingDecision")}</dt>
+                    <dd>
+                      {t(
+                        `mappingDecision.${pendingSuggestion.mappingDecision}`,
+                      )}
+                      {pendingSuggestion.mappedSitePageTitle === null
+                        ? null
+                        : ` · ${pendingSuggestion.mappedSitePageTitle}`}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
+
+            {pendingSuggestion?.reason === null ||
+            pendingSuggestion?.reason === undefined ? null : (
+              <div className={styles.keywordSuggestionReason}>
+                <span>{t("suggestion.reasonLabel")}</span>
+                <p>{pendingSuggestion.reason}</p>
+              </div>
+            )}
+
+            {isReadySuggestion ? null : (
+              <div
+                className={styles.keywordSuggestionState}
+                role={
+                  pendingSuggestion?.state === "generating"
+                    ? "status"
+                    : "alert"
+                }
+              >
+                {pendingSuggestion?.state === "generating" ? (
+                  <CircleDashed aria-hidden="true" size={18} />
+                ) : (
+                  <CircleAlert aria-hidden="true" size={18} />
+                )}
+                <span>
+                  <strong>
+                    {pendingSuggestion === null
+                      ? t("suggestion.state.unavailable")
+                      : t(`suggestion.state.${pendingSuggestion.state}`)}
+                  </strong>
+                  {pendingSuggestion?.limitation === null ||
+                  pendingSuggestion?.limitation === undefined
+                    ? null
+                    : ` · ${pendingSuggestion.limitation}`}
+                </span>
+              </div>
+            )}
+
+            {approvalMutation.isError ? (
+              <p className={styles.keywordReviewError} role="alert">
+                {isApprovalConflict
+                  ? t("suggestion.approvalConflict")
+                  : t("suggestion.approvalError")}
+              </p>
+            ) : null}
+          </section>
+        )}
+
+        {reviewDetail !== null && isEditExpanded ? (
+          <div id={editPanelId} className={styles.keywordSuggestionEditPanel}>
         <section className={styles.keywordReviewSection}>
           <div className={styles.keywordReviewSectionHeading}>
             <span>01</span>
@@ -8124,16 +8312,36 @@ function KeywordReviewDialog({
           ) : null}
         </section>
 
-        <footer className={styles.keywordReviewFooter}>
+        <footer
+          className={cx(
+            styles.keywordReviewFooter,
+            styles.keywordSuggestionFooter,
+          )}
+        >
           <span>
             {t("revision", {
               revision: reviewDetail?.revision ?? detail.revision,
             })}
           </span>
-          <div>
+          <div className={styles.keywordSuggestionFooterActions}>
             <Button type="button" variant="secondary" onClick={onRequestClose}>
               {t("cancel")}
             </Button>
+            <button
+              type="button"
+              className={styles.keywordSuggestionEditToggle}
+              aria-expanded="true"
+              aria-controls={editPanelId}
+              onClick={() => {
+                setIsEditExpanded(false);
+                setConflictCommand(null);
+                setLocalError(null);
+                mutation.reset();
+              }}
+            >
+              <Pencil aria-hidden="true" size={15} />
+              {t("suggestion.collapseEdit")}
+            </button>
             <Button
               type="submit"
               disabled={
@@ -8146,6 +8354,68 @@ function KeywordReviewDialog({
             </Button>
           </div>
         </footer>
+          </div>
+        ) : null}
+
+        {isEditExpanded ? null : (
+          <footer
+            className={cx(
+              styles.keywordReviewFooter,
+              styles.keywordSuggestionFooter,
+            )}
+          >
+            <span>
+              {t("revision", {
+                revision: reviewDetail?.revision ?? detail.revision,
+              })}
+            </span>
+            <div className={styles.keywordSuggestionFooterActions}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onRequestClose}
+              >
+                {t("cancel")}
+              </Button>
+              {reviewDetailQuery.isError ? (
+                <button
+                  type="button"
+                  className={styles.keywordSuggestionEditToggle}
+                  onClick={() => void reviewDetailQuery.refetch()}
+                >
+                  <RefreshCw aria-hidden="true" size={15} />
+                  {t("retry")}
+                </button>
+              ) : reviewDetail === null ? null : (
+                <button
+                  type="button"
+                  className={styles.keywordSuggestionEditToggle}
+                  aria-expanded="false"
+                  aria-controls={editPanelId}
+                  onClick={() => {
+                    setIsEditExpanded(true);
+                    setLocalError(null);
+                    mutation.reset();
+                  }}
+                >
+                  <Pencil aria-hidden="true" size={15} />
+                  {t("suggestion.expandEdit")}
+                </button>
+              )}
+              {isReadySuggestion && pendingSuggestion !== null ? (
+                <Button
+                  type="button"
+                  disabled={approvalMutation.isPending}
+                  onClick={approveSuggestion}
+                >
+                  {approvalMutation.isPending
+                    ? t("suggestion.approving")
+                    : t("suggestion.approve")}
+                </Button>
+              ) : null}
+            </div>
+          </footer>
+        )}
       </form>
     </GrowthMapDialogFrame>
   );

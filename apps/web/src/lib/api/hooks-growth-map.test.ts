@@ -22,6 +22,7 @@ import {
   buildGrowthMapUrlDetailQueryOptions,
   buildGrowthMapUrlsQueryOptions,
   beginGrowthMapTopicModelDraft,
+  approveGrowthMapKeywordReviewSuggestion,
   confirmGrowthMapTopicModelDraft,
   decideGrowthMapKeywordRelation,
   getGrowthMapCompetitorDetail,
@@ -111,6 +112,10 @@ const KEYWORD_RELATION_PAGE =
   "00000000-0000-4000-8000-000000000037";
 const KEYWORD_RELATION_TOPIC =
   "00000000-0000-4000-8000-000000000038";
+const KEYWORD_SUGGESTION =
+  "00000000-0000-4000-8000-000000000048";
+const KEYWORD_SUGGESTION_INVOCATION =
+  "00000000-0000-4000-8000-000000000049";
 const TOPIC_NODE_ROOT = "00000000-0000-4000-8000-000000000039";
 const TOPIC_NODE_CHILD = "00000000-0000-4000-8000-000000000040";
 const TOPIC_ACTOR = "00000000-0000-4000-8000-000000000041";
@@ -485,7 +490,46 @@ function keywordLibraryResponse() {
 function keywordDetailResponse(keywordId = KEYWORD_A) {
   return {
     projectId: PROJECT_ID,
-    data: keywordItem(keywordId),
+    diagnosticRunId: null,
+    data: {
+      ...keywordItem(keywordId),
+      pendingSuggestion: null,
+    },
+  } as const;
+}
+
+function readyKeywordSuggestion() {
+  return {
+    suggestionId: KEYWORD_SUGGESTION,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+    state: "pending_ready",
+    expectedGovernanceRevision: 0,
+    status: "approved",
+    intent: "commercial",
+    buyerStage: "consideration",
+    topicNodeId: TOPIC_NODE_CHILD,
+    topicModelRevision: 1,
+    topicLabel: "Onboarding automation",
+    mappingDecision: "existing_page",
+    mappedSitePageId: SITE_PAGE_A,
+    mappedSitePageTitle: "Customer onboarding",
+    reason: "The confirmed Product Profile, Topic, and page support this suggestion.",
+    readinessReason: "all_authorities_confirmed",
+    limitation: null,
+    lineage: {
+      generationVersion: "keyword-governance-suggestion-generation.v1",
+      promptSetVersion: "keyword-governance-suggestion.prompt.v1",
+      authority: "llm_generated",
+      analysisInvocationId: KEYWORD_SUGGESTION_INVOCATION,
+    },
+    intentLineage: {
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: KEYWORD_SUGGESTION_INVOCATION,
+      observedAt: null,
+    },
+    createdAt: "2026-08-10T08:00:00.000Z",
   } as const;
 }
 
@@ -1463,7 +1507,11 @@ describe("Growth Map browser API boundary", () => {
       ...keywordLibraryResponse(),
       data: [item],
     };
-    const detail = { projectId: PROJECT_ID, data: item };
+    const detail = {
+      projectId: PROJECT_ID,
+      diagnosticRunId: null,
+      data: { ...item, pendingSuggestion: null },
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(ok(list))
@@ -1672,6 +1720,39 @@ describe("Growth Map browser API boundary", () => {
     );
   });
 
+  it("parses a current pending suggestion while keeping a pinned detail suggestion-free", async () => {
+    const current = {
+      ...keywordDetailResponse(KEYWORD_A),
+      data: {
+        ...keywordDetailResponse(KEYWORD_A).data,
+        pendingSuggestion: readyKeywordSuggestion(),
+      },
+    };
+    const pinned = {
+      ...keywordDetailResponse(KEYWORD_A),
+      diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN,
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(current))
+      .mockResolvedValueOnce(ok(pinned));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const review = await getGrowthMapKeywordReviewDetail(
+      PROJECT_ID,
+      KEYWORD_A,
+    );
+    const published = await getGrowthMapKeywordDetail(
+      PROJECT_ID,
+      KEYWORD_A,
+      KEYWORD_DIAGNOSTIC_RUN,
+    );
+
+    expect(review.data.pendingSuggestion?.state).toBe("pending_ready");
+    expect(published.diagnosticRunId).toBe(KEYWORD_DIAGNOSTIC_RUN);
+    expect(published.data.pendingSuggestion).toBeNull();
+  });
+
   it("never adds diagnosticRunId to the live review detail path", async () => {
     const fetchMock = vi
       .fn()
@@ -1700,6 +1781,7 @@ describe("Growth Map browser API boundary", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       ok({
         projectId: PROJECT_ID,
+        diagnosticRunId: null,
         data: {
           ...keywordItem(),
           status: "approved",
@@ -1734,6 +1816,7 @@ describe("Growth Map browser API boundary", () => {
             sitePageId: SITE_PAGE_A,
             normalizedUrl: "https://example.test/customer-onboarding/",
           },
+          pendingSuggestion: null,
         },
       }),
     );
@@ -1770,11 +1853,103 @@ describe("Growth Map browser API boundary", () => {
     );
   });
 
-  it("refreshes only the live review-detail cache after a review conflict", async () => {
+  it("approves one exact pending suggestion with only revision and version in the POST body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok(keywordDetailResponse(KEYWORD_A)));
+    vi.stubGlobal("fetch", fetchMock);
+    const body = {
+      expectedGovernanceRevision: 0,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+    } as const;
+
+    await approveGrowthMapKeywordReviewSuggestion(
+      PROJECT_ID,
+      KEYWORD_A,
+      KEYWORD_SUGGESTION,
+      body,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/mvp/projects/${PROJECT_ID}/audit/keywords/${KEYWORD_A}/review-suggestions/${KEYWORD_SUGGESTION}/approve`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      expectedGovernanceRevision: 0,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+    });
+  });
+
+  it("rejects client-owned approval fields before constructing a request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      approveGrowthMapKeywordReviewSuggestion(
+        PROJECT_ID,
+        KEYWORD_A,
+        KEYWORD_SUGGESTION,
+        {
+          expectedGovernanceRevision: 0,
+          suggestionVersion: "keyword-governance-suggestion.v1",
+          actorId: KEYWORD_RELATION_ACTOR,
+        } as never,
+      ),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes every current Keyword governance cache without invalidating pinned history", async () => {
     const client = new QueryClient();
-    const invalidate = vi
-      .spyOn(client, "invalidateQueries")
-      .mockResolvedValue(undefined);
+    const currentListKey = growthMapKeywordsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      { limit: 25 },
+    );
+    const pinnedListKey = growthMapKeywordsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      { diagnosticRunId: KEYWORD_DIAGNOSTIC_RUN },
+    );
+    const currentDetailKey = growthMapKeywordDetailQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+    );
+    const pinnedDetailKey = growthMapKeywordDetailQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+      KEYWORD_DIAGNOSTIC_RUN,
+    );
+    const reviewKey = growthMapKeywordReviewDetailQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      KEYWORD_A,
+    );
+    const topicKey = growthMapTopicModelInsightsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+    );
+    const relationKey = growthMapKeywordRelationsQueryKey(
+      PROJECT_ID,
+      UI_LOCALE,
+      { keywordIds: [KEYWORD_A] },
+    );
+    for (const key of [
+      currentListKey,
+      pinnedListKey,
+      currentDetailKey,
+      pinnedDetailKey,
+      reviewKey,
+      topicKey,
+      relationKey,
+    ]) {
+      client.setQueryData(key, { cached: true });
+    }
 
     await invalidateGrowthMapAfterKeywordReview(
       client,
@@ -1783,15 +1958,13 @@ describe("Growth Map browser API boundary", () => {
       KEYWORD_A,
     );
 
-    expect(invalidate).toHaveBeenCalledTimes(1);
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: growthMapKeywordReviewDetailQueryKey(
-        PROJECT_ID,
-        UI_LOCALE,
-        KEYWORD_A,
-      ),
-      refetchType: "active",
-    });
+    expect(client.getQueryState(currentListKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(currentDetailKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(reviewKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(topicKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(relationKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(pinnedListKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(pinnedDetailKey)?.isInvalidated).toBe(false);
   });
 
   it("fetches and validates the selected Keyword's fixed 90-day rank history", async () => {

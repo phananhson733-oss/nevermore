@@ -3614,6 +3614,23 @@ describe("Growth Map view model", () => {
     );
   });
 
+  it("falls back to the source buyer-stage label for legacy suggestion DTOs", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "function keywordSuggestionBuyerStageTranslationKey(",
+    );
+    expect(source).toMatch(
+      /keywordSuggestionBuyerStageTranslationKey\(\s*pendingSuggestion\.buyerStage,\s*\)/,
+    );
+    expect(source).toMatch(
+      /suggestionBuyerStageTranslationKey === null\s*\? pendingSuggestion\.buyerStage\s*: t\(suggestionBuyerStageTranslationKey\)/,
+    );
+  });
+
   it("wires an accessible Competitor review dialog to live governance without mutating the published generation", () => {
     const source = readFileSync(
       new URL("./_growth-map.tsx", import.meta.url),

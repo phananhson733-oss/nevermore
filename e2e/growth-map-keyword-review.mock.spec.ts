@@ -1,6 +1,9 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import type {
+  ApproveKeywordReviewSuggestionRequest,
   GrowthMapKeywordLibraryItem,
+  KeywordGovernancePendingSuggestion,
+  KeywordGovernanceSuggestionState,
   ReviewKeywordRequest,
 } from "../packages/contracts/src/index.ts";
 
@@ -16,15 +19,98 @@ const KEYWORD_B = "41000000-0000-4000-8000-000000000002";
 const ROOT_TOPIC = "41000000-0000-4000-8000-000000000003";
 const CONFLICT_TOPIC = "41000000-0000-4000-8000-000000000004";
 const TOPIC_ACTOR = "41000000-0000-4000-8000-000000000005";
+const SUGGESTION_A = "41000000-0000-4000-8000-000000000006";
+const SUGGESTION_B = "41000000-0000-4000-8000-000000000007";
+const SUGGESTION_INVOCATION = "41000000-0000-4000-8000-000000000008";
 
 type KeywordFixture = GrowthMapKeywordLibraryItem;
 
 interface KeywordReviewApiState {
   readonly patchBodies: ReviewKeywordRequest[];
+  readonly approveBodies: ApproveKeywordReviewSuggestionRequest[];
   keywordDetailReads: number;
   topicInsightReads: number;
   relationReads: number;
   forceRevisionConflict: boolean;
+  forceApprovalConflict: boolean;
+  readonly setSuggestionState: (
+    state: KeywordGovernanceSuggestionState | null,
+  ) => void;
+}
+
+function keywordSuggestion(
+  state: KeywordGovernanceSuggestionState = "pending_ready",
+  expectedGovernanceRevision = 0,
+  suggestionId = SUGGESTION_A,
+): KeywordGovernancePendingSuggestion {
+  if (state !== "pending_ready") {
+    const readinessReason = {
+      generating: "generation_in_progress",
+      pending_needs_review: "insufficient_authority",
+      stale: "governance_revision_changed",
+      unavailable: "authority_unavailable",
+    } as const;
+    return {
+      suggestionId,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+      state,
+      expectedGovernanceRevision,
+      status: null,
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      topicLabel: null,
+      mappingDecision: null,
+      mappedSitePageId: null,
+      mappedSitePageTitle: null,
+      reason: null,
+      readinessReason: readinessReason[state],
+      limitation:
+        state === "generating"
+          ? "系统正在基于已确认权威生成建议。"
+          : state === "pending_needs_review"
+            ? "页面映射仍需人工判断。"
+            : state === "stale"
+              ? "关键词治理版本已变化。"
+              : "当前缺少生成建议所需的权威。",
+      lineage: null,
+      intentLineage: null,
+      createdAt: "2026-08-10T08:00:00.000Z",
+    };
+  }
+  return {
+    suggestionId,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+    state,
+    expectedGovernanceRevision,
+    status: "approved",
+    intent: "commercial",
+    buyerStage: "consideration",
+    topicNodeId: ROOT_TOPIC,
+    topicModelRevision: 7,
+    topicLabel: "客户入职",
+    mappingDecision: "existing_page",
+    mappedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
+    mappedSitePageTitle: "Customer onboarding",
+    reason: "已确认的产品画像、Topic 与规范页面共同支持这条建议。",
+    readinessReason: "all_authorities_confirmed",
+    limitation: null,
+    lineage: {
+      generationVersion: "keyword-governance-suggestion-generation.v1",
+      promptSetVersion: "keyword-governance-suggestion.prompt.v1",
+      authority: "llm_generated",
+      analysisInvocationId: SUGGESTION_INVOCATION,
+    },
+    intentLineage: {
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: SUGGESTION_INVOCATION,
+      observedAt: null,
+    },
+    createdAt: "2026-08-10T08:00:00.000Z",
+  };
 }
 
 function manualOccurrence(offset: number) {
@@ -308,12 +394,22 @@ async function installKeywordReviewApi(
   page: Page,
 ): Promise<KeywordReviewApiState> {
   await installGrowthVerticalApi(page);
+  let currentSuggestion: KeywordGovernancePendingSuggestion | null =
+    keywordSuggestion();
   const state: KeywordReviewApiState = {
     patchBodies: [],
+    approveBodies: [],
     keywordDetailReads: 0,
     topicInsightReads: 0,
     relationReads: 0,
     forceRevisionConflict: false,
+    forceApprovalConflict: false,
+    setSuggestionState: (suggestionState) => {
+      currentSuggestion =
+        suggestionState === null
+          ? null
+          : keywordSuggestion(suggestionState, keywordA.revision);
+    },
   };
   let keywordA = keywordFixture(
     KEYWORD_A,
@@ -361,6 +457,11 @@ async function installKeywordReviewApi(
   await page.route(`**${BASE}/audit/keywords**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    const approvalMatch = url.pathname.match(
+      new RegExp(
+        `^${BASE}/audit/keywords/([^/]+)/review-suggestions/([^/]+)/approve$`,
+      ),
+    );
     const detailMatch = url.pathname.match(
       new RegExp(`^${BASE}/audit/keywords/([^/]+)$`),
     );
@@ -373,6 +474,58 @@ async function installKeywordReviewApi(
         code: "NOT_FOUND",
         detail: "No canonical rank history is available.",
       }, 404);
+      return;
+    }
+
+    if (approvalMatch !== null && request.method() === "POST") {
+      const keywordId = decodeURIComponent(approvalMatch[1] ?? "");
+      const suggestionId = decodeURIComponent(approvalMatch[2] ?? "");
+      const body = request.postDataJSON() as ApproveKeywordReviewSuggestionRequest;
+      state.approveBodies.push(body);
+      if (
+        keywordId !== KEYWORD_A ||
+        currentSuggestion === null ||
+        currentSuggestion.state !== "pending_ready" ||
+        suggestionId !== currentSuggestion.suggestionId
+      ) {
+        await json(route, problem409(), 409);
+        return;
+      }
+      if (state.forceApprovalConflict) {
+        state.forceApprovalConflict = false;
+        keywordA = { ...keywordA, revision: 4 };
+        currentSuggestion = keywordSuggestion(
+          "pending_ready",
+          4,
+          SUGGESTION_B,
+        );
+        await json(route, problem409(), 409);
+        return;
+      }
+      keywordA = reviewedKeyword(
+        keywordA,
+        {
+          expectedGovernanceRevision:
+            currentSuggestion.expectedGovernanceRevision,
+          status: currentSuggestion.status ?? "candidate",
+          intent: currentSuggestion.intent,
+          buyerStage: currentSuggestion.buyerStage,
+          topicNodeId: currentSuggestion.topicNodeId,
+          topicModelRevision: currentSuggestion.topicModelRevision,
+          mappingDecision: currentSuggestion.mappingDecision ?? "unassigned",
+          mappedSitePageId: currentSuggestion.mappedSitePageId,
+          reason: currentSuggestion.reason ?? "批准系统建议。",
+        },
+        currentSuggestion.expectedGovernanceRevision + 1,
+      );
+      currentSuggestion = null;
+      await json(route, {
+        data: {
+          projectId: E2E_PROJECT_ID,
+          diagnosticRunId: null,
+          data: { ...keywordA, pendingSuggestion: null },
+        },
+      });
       return;
     }
 
@@ -398,6 +551,7 @@ async function installKeywordReviewApi(
             },
             4,
           );
+          currentSuggestion = null;
           await json(route, problem409(), 409);
           return;
         }
@@ -414,9 +568,14 @@ async function installKeywordReviewApi(
             body.expectedGovernanceRevision + 1,
           );
         }
+        if (keywordId === KEYWORD_A) currentSuggestion = null;
         const selected = keywordId === KEYWORD_A ? keywordA : keywordB;
         await json(route, {
-          data: { projectId: E2E_PROJECT_ID, data: selected },
+          data: {
+            projectId: E2E_PROJECT_ID,
+            diagnosticRunId: null,
+            data: { ...selected, pendingSuggestion: null },
+          },
         });
         return;
       }
@@ -424,7 +583,15 @@ async function installKeywordReviewApi(
       state.keywordDetailReads += 1;
       const selected = keywordId === KEYWORD_A ? keywordA : keywordB;
       await json(route, {
-        data: { projectId: E2E_PROJECT_ID, data: selected },
+        data: {
+          projectId: E2E_PROJECT_ID,
+          diagnosticRunId: null,
+          data: {
+            ...selected,
+            pendingSuggestion:
+              keywordId === KEYWORD_A ? currentSuggestion : null,
+          },
+        },
       });
       return;
     }
@@ -507,6 +674,13 @@ async function openKeywordReview(page: Page, keyword: string) {
   return dialog;
 }
 
+async function expandKeywordReview(
+  dialog: Awaited<ReturnType<typeof openKeywordReview>>,
+): Promise<void> {
+  await dialog.getByRole("button", { name: "展开修改" }).click();
+  await expect(dialog.getByLabel("关键词状态")).toBeVisible();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.context().addCookies([
     {
@@ -516,6 +690,193 @@ test.beforeEach(async ({ page }) => {
       path: "/",
     },
   ]);
+});
+
+test("ready 系统建议默认只显示结论，一次批准发送严格两字段 POST", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const dialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  await expect(dialog.getByRole("heading", { name: "系统建议" })).toBeVisible();
+  await expect(dialog.getByText("建议依据")).toBeVisible();
+  await expect(dialog.getByText("客户入职", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("关键词状态")).toHaveCount(0);
+  await expect(dialog.getByLabel("搜索意图")).toHaveCount(0);
+  await expect(dialog.getByLabel("购买阶段")).toHaveCount(0);
+  await expect(dialog.getByLabel("已发布 Topic")).toHaveCount(0);
+  await expect(dialog.getByLabel("页面映射决定")).toHaveCount(0);
+  await expect(dialog.getByLabel("审核说明")).toHaveCount(0);
+  await expect(dialog.locator('input[type="checkbox"]')).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "批准系统建议" }),
+  ).toHaveCount(1);
+
+  await dialog.getByRole("button", { name: "批准系统建议" }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => state.approveBodies.length).toBe(1);
+  expect(state.approveBodies[0]).toEqual({
+    expectedGovernanceRevision: 0,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+  });
+  expect(Object.keys(state.approveBodies[0] ?? {}).sort()).toEqual([
+    "expectedGovernanceRevision",
+    "suggestionVersion",
+  ]);
+  expect(state.patchBodies).toHaveLength(0);
+});
+
+test("移动端默认与展开后的三项审核操作都可见可用", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await installKeywordReviewApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const dialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  for (const action of ["取消", "展开修改", "批准系统建议"]) {
+    await expect(dialog.getByRole("button", { name: action })).toBeVisible();
+  }
+
+  await expandKeywordReview(dialog);
+  for (const action of ["取消", "收起修改", "保存审核"]) {
+    await expect(dialog.getByRole("button", { name: action })).toBeVisible();
+  }
+});
+
+test("展开修改才挂载预填表单，并继续使用人工 PATCH 保存例外", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const dialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  await expandKeywordReview(dialog);
+  await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
+  await expect(dialog.getByLabel("搜索意图")).toHaveValue("commercial");
+  await expect(dialog.getByLabel("购买阶段")).toHaveValue("consideration");
+  await expect(dialog.getByLabel("已发布 Topic")).toHaveValue(ROOT_TOPIC);
+  await expect(dialog.getByLabel("页面映射决定")).toHaveValue(
+    "existing_page",
+  );
+  await expect(dialog.getByLabel("规范页面")).toHaveValue(
+    E2E_ONBOARDING_SITE_PAGE_ID,
+  );
+  await expect(dialog.getByLabel("审核说明")).toHaveValue(
+    "已确认的产品画像、Topic 与规范页面共同支持这条建议。",
+  );
+
+  await dialog.getByLabel("购买阶段").selectOption("decision");
+  await dialog
+    .getByLabel("审核说明")
+    .fill("客户确认建议，但把购买阶段调整为购买决策。");
+  await dialog.getByRole("button", { name: "保存审核" }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => state.patchBodies.length).toBe(1);
+  expect(state.patchBodies[0]).toMatchObject({
+    expectedGovernanceRevision: 0,
+    status: "approved",
+    intent: "commercial",
+    buyerStage: "decision",
+    topicNodeId: ROOT_TOPIC,
+    topicModelRevision: 7,
+    mappingDecision: "existing_page",
+    mappedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
+    reason: "客户确认建议，但把购买阶段调整为购买决策。",
+  });
+  expect(state.approveBodies).toHaveLength(0);
+});
+
+test("一键批准发生 CAS 冲突时刷新并呈现新的可审核建议", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  state.forceApprovalConflict = true;
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const dialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  const readsBeforeApproval = state.keywordDetailReads;
+  await dialog.getByRole("button", { name: "批准系统建议" }).click();
+
+  await expect(
+    dialog.getByText(
+      "关键词或建议已更新；系统已重新加载最新建议，请核对后再批准。",
+    ),
+  ).toBeVisible();
+  await expect.poll(() => state.keywordDetailReads).toBeGreaterThan(
+    readsBeforeApproval,
+  );
+  await expect(dialog.getByText("当前治理版本 4")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "批准系统建议" }),
+  ).toBeVisible();
+  expect(state.approveBodies[0]).toEqual({
+    expectedGovernanceRevision: 0,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+  });
+});
+
+test("非 ready 与无建议状态可访问且不会出现一键批准", async ({ page }) => {
+  const state = await installKeywordReviewApi(page);
+  const cases = [
+    ["generating", "系统正在生成建议"],
+    ["pending_needs_review", "这条建议仍需人工补充"],
+    ["stale", "建议已过期"],
+    ["unavailable", "当前无法生成可批准建议"],
+  ] as const;
+
+  for (const [suggestionState, label] of cases) {
+    state.setSuggestionState(suggestionState);
+    await page.goto(
+      `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}&state=${suggestionState}`,
+    );
+    const dialog = await openKeywordReview(
+      page,
+      "customer onboarding automation",
+    );
+    await expect(dialog.getByText(label, { exact: true })).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "批准系统建议" }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("button", { name: "展开修改" }),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "关闭关键词审核" }).click();
+  }
+
+  state.setSuggestionState(null);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}&diagnosticRunId=41000000-0000-4000-8000-000000000099`,
+  );
+  const pinnedDialog = await openKeywordReview(
+    page,
+    "customer onboarding automation",
+  );
+  await expect(
+    pinnedDialog.getByText("当前无法生成可批准建议", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    pinnedDialog.getByRole("button", { name: "批准系统建议" }),
+  ).toHaveCount(0);
 });
 
 test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态且不篡改已发布代际", async ({
@@ -530,6 +891,7 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     page,
     "customer onboarding automation",
   );
+  await expandKeywordReview(dialog);
   await dialog.getByLabel("关键词状态").selectOption("approved");
   await dialog.getByLabel("搜索意图").selectOption("commercial");
   await dialog.getByRole("button", { name: "关闭关键词审核" }).click();
@@ -540,6 +902,7 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     .first()
     .click();
   dialog = await openKeywordReview(page, "customer onboarding workflow");
+  await expandKeywordReview(dialog);
   await expect(dialog.getByLabel("关键词状态")).toHaveValue("parked");
   await expect(dialog.getByLabel("搜索意图")).toHaveValue("informational");
   await dialog.getByRole("button", { name: "关闭关键词审核" }).click();
@@ -553,8 +916,12 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     page,
     "customer onboarding automation",
   );
-  await expect(dialog.getByLabel("关键词状态")).toHaveValue("candidate");
-  await expect(dialog.getByLabel("搜索意图")).toHaveValue("");
+  await expandKeywordReview(dialog);
+  // Reopening discards the unsaved local draft and deterministically restores
+  // the durable ready suggestion, not the previous component state.
+  await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
+  await expect(dialog.getByLabel("搜索意图")).toHaveValue("commercial");
+  await expect(dialog.getByLabel("购买阶段")).toHaveValue("consideration");
 
   await dialog.getByLabel("关键词状态").selectOption("approved");
   await dialog.getByLabel("搜索意图").selectOption("commercial");
@@ -596,12 +963,14 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     mappedSitePageId: E2E_ONBOARDING_SITE_PAGE_ID,
     reason: "确认冲突范围后，仍将该词映射到核心客户入职页面。",
   });
-  // Review writes update the live governance authority shown by the current
-  // Keyword Library. Frozen Topic insights and relation projections remain
-  // pinned to the published Analysis Refresh generation until a later refresh
-  // publishes a new generation.
-  expect(state.topicInsightReads).toBe(topicReadsBeforeSave);
-  expect(state.relationReads).toBe(relationReadsBeforeSave);
+  // A current governance write refreshes current Topic coverage and relation
+  // eligibility. Historical diagnosticRunId caches remain separate.
+  await expect.poll(() => state.topicInsightReads).toBeGreaterThan(
+    topicReadsBeforeSave,
+  );
+  await expect.poll(() => state.relationReads).toBeGreaterThan(
+    relationReadsBeforeSave,
+  );
   const detail = page.locator('aside[aria-label="所选关键词详情"]');
   await expect(detail).toContainText("流程自动化");
   // The conversion path states the mapped page as its site path; the full
@@ -622,6 +991,7 @@ test("关键词审核要求 conflict Topic 二次确认，A→B→A 不串状态
     page,
     "customer onboarding automation",
   );
+  await expandKeywordReview(dialog);
   await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
   await expect(dialog.getByLabel("搜索意图")).toHaveValue("commercial");
   await expect(dialog.getByLabel("购买阶段")).toHaveValue("consideration");
@@ -648,6 +1018,7 @@ test("关键词 CAS 冲突会刷新最新 revision、提示用户并用新版本
     page,
     "customer onboarding automation",
   );
+  await expandKeywordReview(dialog);
   await dialog.getByLabel("关键词状态").selectOption("approved");
   await dialog.getByLabel("搜索意图").selectOption("commercial");
   await dialog.getByLabel("购买阶段").selectOption("consideration");

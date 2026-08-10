@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ApproveKeywordReviewSuggestionRequest as ApproveKeywordReviewSuggestionRequestSchema,
   BeginTopicModelDraftRequest as BeginTopicModelDraftRequestSchema,
   CompetitorMonitorConfig as CompetitorMonitorConfigSchema,
   CompetitorMonitorResponse as CompetitorMonitorResponseSchema,
@@ -24,6 +25,7 @@ import {
   GrowthMapUrlPortfolioResponse,
   ReviewCompetitorRequest as ReviewCompetitorRequestSchema,
   type BeginTopicModelDraftRequest,
+  type ApproveKeywordReviewSuggestionRequest,
   type CompetitorMonitorConfig as CompetitorMonitorConfigDto,
   type CompetitorMonitorResponse as CompetitorMonitorResponseDto,
   type ConfirmTopicModelRequest,
@@ -632,6 +634,32 @@ export async function reviewGrowthMapKeyword(
   const response = await apiSend<DataEnvelope<unknown>>(
     "PATCH",
     `/projects/${projectId}/audit/keywords/${encodeURIComponent(keywordId)}`,
+    { body },
+  );
+  return GrowthMapKeywordDetailResponse.parse(response.data);
+}
+
+/** Approve one immutable system suggestion without accepting client lineage. */
+export async function approveGrowthMapKeywordReviewSuggestion(
+  projectId: string,
+  keywordId: string,
+  suggestionId: string,
+  input: ApproveKeywordReviewSuggestionRequest,
+): Promise<GrowthMapKeywordDetailResponseDto> {
+  if (keywordId.length === 0) {
+    throw new Error(
+      "A keywordId is required to approve a Growth Map Keyword suggestion.",
+    );
+  }
+  if (suggestionId.length === 0) {
+    throw new Error(
+      "A suggestionId is required to approve a Growth Map Keyword suggestion.",
+    );
+  }
+  const body = ApproveKeywordReviewSuggestionRequestSchema.parse(input);
+  const response = await apiSend<DataEnvelope<unknown>>(
+    "POST",
+    `/projects/${projectId}/audit/keywords/${encodeURIComponent(keywordId)}/review-suggestions/${encodeURIComponent(suggestionId)}/approve`,
     { body },
   );
   return GrowthMapKeywordDetailResponse.parse(response.data);
@@ -1277,14 +1305,39 @@ export async function invalidateGrowthMapAfterKeywordReview(
   uiLocale: string,
   keywordId: string,
 ): Promise<void> {
-  await queryClient.invalidateQueries({
-    queryKey: growthMapKeywordReviewDetailQueryKey(
-      projectId,
-      uiLocale,
-      keywordId,
-    ),
-    refetchType: "active",
-  });
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: growthMapKeywordReviewDetailQueryKey(
+        projectId,
+        uiLocale,
+        keywordId,
+      ),
+      refetchType: "active",
+    }),
+    queryClient.invalidateQueries({
+      queryKey: [
+        "growth-map",
+        projectId,
+        uiLocale,
+        "keywords",
+        { diagnosticRunId: null },
+      ],
+      refetchType: "active",
+    }),
+    queryClient.invalidateQueries({
+      queryKey: growthMapKeywordDetailQueryKey(
+        projectId,
+        uiLocale,
+        keywordId,
+      ),
+      refetchType: "active",
+    }),
+    queryClient.invalidateQueries({
+      queryKey: growthMapTopicModelInsightsQueryKey(projectId, uiLocale),
+      refetchType: "active",
+    }),
+    invalidateGrowthMapKeywordRelations(queryClient, projectId, uiLocale),
+  ]);
 }
 
 export function useReviewGrowthMapKeyword(
@@ -1300,7 +1353,7 @@ export function useReviewGrowthMapKeyword(
   return useMutation({
     mutationFn: (input) =>
       reviewGrowthMapKeyword(projectId, keywordId, input),
-    onSuccess: (result) =>
+    onSuccess: (result) => {
       queryClient.setQueryData(
         growthMapKeywordReviewDetailQueryKey(
           projectId,
@@ -1308,7 +1361,77 @@ export function useReviewGrowthMapKeyword(
           keywordId,
         ),
         result,
+      );
+      queryClient.setQueryData(
+        growthMapKeywordDetailQueryKey(
+          projectId,
+          uiLocale,
+          keywordId,
+        ),
+        result,
+      );
+      return invalidateGrowthMapAfterKeywordReview(
+        queryClient,
+        projectId,
+        uiLocale,
+        keywordId,
+      );
+    },
+    onError: (error) =>
+      error.status === 409
+        ? invalidateGrowthMapAfterKeywordReview(
+            queryClient,
+            projectId,
+            uiLocale,
+            keywordId,
+          )
+        : undefined,
+  });
+}
+
+export function useApproveGrowthMapKeywordReviewSuggestion(
+  projectId: string,
+  keywordId: string,
+  suggestionId: string,
+): UseMutationResult<
+  GrowthMapKeywordDetailResponseDto,
+  ApiError,
+  ApproveKeywordReviewSuggestionRequest
+> {
+  const uiLocale = useLocale();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      approveGrowthMapKeywordReviewSuggestion(
+        projectId,
+        keywordId,
+        suggestionId,
+        input,
       ),
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        growthMapKeywordReviewDetailQueryKey(
+          projectId,
+          uiLocale,
+          keywordId,
+        ),
+        result,
+      );
+      queryClient.setQueryData(
+        growthMapKeywordDetailQueryKey(
+          projectId,
+          uiLocale,
+          keywordId,
+        ),
+        result,
+      );
+      return invalidateGrowthMapAfterKeywordReview(
+        queryClient,
+        projectId,
+        uiLocale,
+        keywordId,
+      );
+    },
     onError: (error) =>
       error.status === 409
         ? invalidateGrowthMapAfterKeywordReview(
