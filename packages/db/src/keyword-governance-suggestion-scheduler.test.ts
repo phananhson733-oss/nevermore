@@ -117,7 +117,8 @@ function harness(options: {
   readonly transactionError?: unknown;
   readonly runId?: string;
 } = {}) {
-  const tx = { marker: "tx" };
+  const execute = vi.fn(async () => []);
+  const tx = { marker: "tx", execute };
   const db = {
     transaction: vi.fn(async (operation: (executor: unknown) => unknown) => {
       if (options.transactionError !== undefined) {
@@ -131,6 +132,7 @@ function harness(options: {
     ctx: { db, boss: { marker: "boss" } as unknown as PgBoss },
     db,
     tx,
+    execute,
     enqueue,
     createRunId: vi.fn(() => options.runId ?? IDS.run),
   };
@@ -237,6 +239,31 @@ describe("Keyword governance suggestion scheduler", () => {
         contractVersion: CONTRACT_VERSION,
       },
     );
+  });
+
+  it("serializes each project scheduler transaction before probing active or reusable work", async () => {
+    installReadyDefaults();
+    const order: string[] = [];
+    const h = harness();
+    h.execute.mockImplementationOnce(async () => {
+      order.push("lock");
+      return [];
+    });
+    vi.mocked(AsyncRunsRepository.prototype.findActive).mockImplementationOnce(
+      async () => {
+        order.push("active");
+        return null;
+      },
+    );
+
+    await scheduleKeywordGovernanceSuggestions(
+      h.ctx,
+      { scope, initiatedBy: IDS.actor },
+      { createRunId: h.createRunId, enqueueRunInTx: h.enqueue },
+    );
+
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(order).toEqual(["lock", "active"]);
   });
 
   it("returns the active owner for caller ACK without freezing another batch", async () => {

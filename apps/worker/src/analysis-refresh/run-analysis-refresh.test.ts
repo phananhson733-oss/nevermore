@@ -1730,6 +1730,21 @@ describe("runAnalysisRefresh", () => {
       },
     );
   });
+
+  it("does not resignal suggestions when a terminal parent was not claimed by this delivery", async () => {
+    const harness = createHarness();
+    harness.state.parentStatus = "partial";
+    const scheduleSuggestions = vi.fn();
+
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, {
+        now: () => NOW,
+        scheduleKeywordGovernanceSuggestions: scheduleSuggestions,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(scheduleSuggestions).not.toHaveBeenCalled();
+  });
 });
 
 interface HarnessState {

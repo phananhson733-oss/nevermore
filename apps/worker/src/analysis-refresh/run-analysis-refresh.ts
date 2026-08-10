@@ -2647,7 +2647,7 @@ async function observeRunningStep(
   parent: ParentContext,
   stepKey: AnalysisRefreshStepKey,
   runtime: AnalysisRefreshRuntime,
-): Promise<void> {
+): Promise<boolean> {
   await lockParentAttempt(tx, parent.attempt);
   await lockProject(tx, parent.scope);
   const plans = new AnalysisRefreshRunsRepository(tx);
@@ -2673,10 +2673,12 @@ async function observeRunningStep(
       SAFE_FAILURES.childInvalid,
       runtime,
     );
-    return;
+    return false;
   }
 
   if (step.step_key === "growth_audit") {
+    const childIsTerminal =
+      child.status !== "queued" && child.status !== "running";
     await observeAuditChildInTx(
       ctx,
       tx,
@@ -2685,7 +2687,7 @@ async function observeRunningStep(
       child,
       runtime,
     );
-    return;
+    return childIsTerminal;
   }
   if (step.step_key === "topic_model") {
     await observeTopicModelChildInTx(
@@ -2696,7 +2698,7 @@ async function observeRunningStep(
       child,
       runtime,
     );
-    return;
+    return false;
   }
   await observeCollectionChildInTx(
     ctx,
@@ -2706,6 +2708,7 @@ async function observeRunningStep(
     child,
     runtime,
   );
+  return false;
 }
 
 async function finalizeAlreadyTerminalPlan(
@@ -2780,7 +2783,7 @@ export async function runAnalysisRefresh(
   // so the pg-boss redelivery was swallowed and the whole run was orphaned.
   // Inside the transaction any death rolls the claim back to `queued`, and the
   // redelivery replays the tick from the start.
-  await ctx.db.transaction(async (tx) => {
+  const committedTerminalCandidate = await ctx.db.transaction(async (tx) => {
     const runs = new AsyncRunsRepository(tx);
     const claimed = await runs.claim(scope, job.runId);
     if (!claimed) {
@@ -2788,7 +2791,7 @@ export async function runAnalysisRefresh(
         code: "CANONICAL_RUN_NOT_QUEUED",
         runId: job.runId,
       });
-      return;
+      return false;
     }
     const attempt = toRunAttempt(claimed);
 
@@ -2806,7 +2809,7 @@ export async function runAnalysisRefresh(
         code: SAFE_FAILURES.payloadInvalid.code,
         runId: job.runId,
       });
-      return;
+      return false;
     }
 
     const plans = new AnalysisRefreshRunsRepository(tx);
@@ -2825,7 +2828,7 @@ export async function runAnalysisRefresh(
         code: SAFE_FAILURES.projectionInvalid.code,
         runId: job.runId,
       });
-      return;
+      return false;
     }
 
     const parent: ParentContext = {
@@ -2839,14 +2842,16 @@ export async function runAnalysisRefresh(
     const step = nextUnfinishedStep(steps);
     if (!step) {
       await finalizeAlreadyTerminalPlan(ctx, tx, parent);
-      return;
+      return true;
     }
     if (step.state === "pending") {
       await advancePendingStep(ctx, tx, parent, step.step_key, runtime);
-      return;
+      return false;
     }
-    await observeRunningStep(ctx, tx, parent, step.step_key, runtime);
+    return observeRunningStep(ctx, tx, parent, step.step_key, runtime);
   });
+
+  if (!committedTerminalCandidate) return;
 
   try {
     const committedParent = await new AsyncRunsRepository(ctx.db).findById(

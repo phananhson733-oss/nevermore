@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CONTRACT_VERSION } from "@sf/contracts";
+import { sql } from "drizzle-orm";
 import type { Db, DbTx } from "./client.ts";
 import {
   freezeKeywordGovernanceSuggestionInput,
@@ -143,12 +144,27 @@ function assertSchedulerInput(
   }
 }
 
+async function lockSchedulerScope(
+  tx: DbTx,
+  scope: ProjectScope,
+): Promise<void> {
+  // Serialize producers for this project so a winning generation cannot finish
+  // between another producer's reuse probe and active-run insert.
+  await tx.execute(sql`
+    select pg_advisory_xact_lock(
+      hashtext(${scope.workspaceId}),
+      hashtext(${scope.projectId})
+    )
+  `);
+}
+
 async function scheduleInTransaction(
   ctx: KeywordGovernanceSuggestionSchedulerContext,
   tx: DbTx,
   input: ScheduleKeywordGovernanceSuggestionsInput,
   dependencies: Required<KeywordGovernanceSuggestionSchedulerDependencies>,
 ): Promise<ScheduleKeywordGovernanceSuggestionsResult> {
+  await lockSchedulerScope(tx, input.scope);
   const runs = new AsyncRunsRepository(tx);
   const active = await runs.findActive(
     input.scope,
