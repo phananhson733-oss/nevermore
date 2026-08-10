@@ -82,6 +82,22 @@ export type {
   TopicModelSearchIntent,
   TopicModelTransport,
 } from "./llm/topic-model-client.ts";
+export {
+  OpenAIKeywordGovernanceSuggestionClient,
+  createOpenAIKeywordGovernanceSuggestionClient,
+  prepareKeywordGovernanceSuggestionGeneration,
+  parseSafeKeywordGovernanceSuggestionOutput,
+  KEYWORD_GOVERNANCE_SUGGESTION_CANONICAL_INTENTS,
+  KEYWORD_GOVERNANCE_SUGGESTION_PROMPT_SET_VERSION,
+  MAX_KEYWORD_GOVERNANCE_SUGGESTION_RESPONSE_CHARS,
+} from "./llm/keyword-governance-suggestion-client.ts";
+export type {
+  KeywordGovernanceSuggestionClientOptions,
+  KeywordGovernanceSuggestionGenerationClient,
+  KeywordGovernanceSuggestionGenerationPreflight,
+  KeywordGovernanceSuggestionGenerationResult,
+  KeywordGovernanceSuggestionTransport,
+} from "./llm/keyword-governance-suggestion-client.ts";
 export { buildProductProfileDraft } from "./product-profile-draft.ts";
 export type { BuildProductProfileDraftInput } from "./product-profile-draft.ts";
 export { discoverProductProfileCompetitors } from "./product-profile-competitor-discovery.ts";

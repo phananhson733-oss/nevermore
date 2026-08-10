@@ -65,6 +65,7 @@ export const ANALYSIS_INVOCATION_TASKS = [
   "finding_summary",
   "product_profile_synthesis",
   "topic_model_generation",
+  "keyword_governance_suggestion_generation",
   // The Content Shadow English draft call. It uses the same pinned markdown
   // envelope as artifact generation but belongs to a different, shadow-mode
   // pipeline, so its invocations stay separately auditable (Slice 2 D4).
