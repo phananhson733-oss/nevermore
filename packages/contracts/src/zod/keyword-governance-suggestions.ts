@@ -55,6 +55,7 @@ export const KeywordGovernanceSuggestionInputManifest = z.object({
   schemaVersion: z.literal("keyword-governance-suggestion-input.v1"),
   generationVersion: z.literal("keyword-governance-suggestion-generation.v1"),
   promptSetVersion: z.literal("keyword-governance-suggestion.prompt.v1"),
+  workspaceId: Uuid,
   projectId: Uuid,
   marketCode: MarketCode,
   languageTag: z.string().trim().min(2).max(35),
@@ -69,7 +70,6 @@ export const KeywordGovernanceSuggestionInputManifest = z.object({
   topicAllowlist: z.array(z.object({ topicKey: z.string().regex(/^topic-[a-z0-9-]+$/u), topicNodeId: Uuid, topicModelRevision: PositiveRevision, label: Label }).strict()).max(100).refine((items) => unique(items.map((item) => item.topicKey))),
   pageAllowlist: z.array(z.object({ pageKey: z.string().regex(/^page-[a-z0-9-]+$/u), sitePageId: Uuid, normalizedUrl: z.string().url().max(2048), title: Label }).strict()).max(100).refine((items) => unique(items.map((item) => item.pageKey))),
   candidates: z.array(Candidate).min(1).max(100),
-  inputHash: Hash,
 }).strict().superRefine((manifest, ctx) => {
   const topicKeys = new Set(manifest.topicAllowlist.map((item) => item.topicKey));
   const pageKeys = new Set(manifest.pageAllowlist.map((item) => item.pageKey));
@@ -90,6 +90,7 @@ const StructuredSuggestion = z.object({
   mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: Text,
 }).strict().superRefine((item, ctx) => {
   if ((item.mappingDecision === "existing_page") !== (item.pageKey !== null)) ctx.addIssue({ code: "custom", path: ["pageKey"], message: "Existing Page requires exactly one prompt-local Page key" });
+  if (item.status === "excluded" && (item.topicKey !== null || item.pageKey !== null || item.mappingDecision !== "unassigned")) ctx.addIssue({ code: "custom", path: ["status"], message: "Excluded Keywords must not retain a Topic or Page assignment" });
 });
 export const KeywordGovernanceSuggestionStructuredOutput = z.object({ schemaVersion: z.literal("keyword-governance-suggestion-output.v1"), suggestions: z.array(StructuredSuggestion).min(1).max(100) }).strict();
 export type KeywordGovernanceSuggestionStructuredOutput = z.infer<typeof KeywordGovernanceSuggestionStructuredOutput>;
@@ -105,6 +106,8 @@ export function parseKeywordGovernanceSuggestionStructuredOutput(value: unknown,
     if (!keywords.has(item.keywordKey) || seen.has(item.keywordKey)) throw new Error("Structured output contains an unresolved or duplicate Keyword key");
     if (item.topicKey !== null && !topics.has(item.topicKey)) throw new Error("Structured output contains an unresolved Topic key");
     if (item.pageKey !== null && !pages.has(item.pageKey)) throw new Error("Structured output contains an unresolved Page key");
+    const candidate = manifest.candidates.find((entry) => entry.keywordKey === item.keywordKey);
+    if (candidate?.deterministicEvidence.providerSearchIntent !== null && item.intent !== null) throw new Error("Provider search intent is frozen authority and cannot be overridden by the model");
     seen.add(item.keywordKey);
   }
   return output;

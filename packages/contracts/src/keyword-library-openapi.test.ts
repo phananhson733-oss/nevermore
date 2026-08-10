@@ -7,10 +7,7 @@ import type {
   operations,
   paths,
 } from "./generated/openapi.ts";
-import type {
-  GrowthMapKeywordDetailResponse as GrowthMapKeywordDetailResponseZod,
-  GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseZod,
-} from "./zod/growth-map.ts";
+import type { GrowthMapKeywordLibraryResponse as GrowthMapKeywordLibraryResponseZod } from "./zod/growth-map.ts";
 import type { ReviewKeywordRequest as ReviewKeywordRequestZod } from "./zod/keyword-governance.ts";
 
 type Equal<Left, Right> =
@@ -89,10 +86,21 @@ type _ListMatchesRuntimeContract = Expect<
     ? true
     : false
 >;
-type _DetailMatchesRuntimeContract = Expect<
-  KeywordDetailHttpResponse["data"] extends GrowthMapKeywordDetailResponseZod
+type _DetailCurrentSuggestionIsNullable = Expect<
+  Extract<
+    KeywordDetailHttpResponse["data"],
+    { diagnosticRunId: null }
+  >["data"]["pendingSuggestion"] extends
+    | components["schemas"]["KeywordGovernancePendingSuggestion"]
+    | null
     ? true
     : false
+>;
+type _DetailPinnedSuggestionIsNull = Expect<
+  Extract<
+    KeywordDetailHttpResponse["data"],
+    { diagnosticRunId: string }
+  >["data"]["pendingSuggestion"] extends null ? true : false
 >;
 type _KeywordItemIsClosed = Expect<
   Equal<string extends keyof KeywordItem ? true : false, false>
@@ -408,6 +416,31 @@ describe("Keyword Library generated OpenAPI contract", () => {
     );
     expect(generated).toContain(
       'post: operations["approveProjectAuditKeywordReviewSuggestion"];',
+    );
+  });
+
+  it("keeps current detail suggestions nullable and pinned detail suggestions literal-null", () => {
+    expect(openapi).toMatch(
+      /GrowthMapKeywordDetailItem:[\s\S]*?pendingSuggestion:[\s\S]*?KeywordGovernancePendingSuggestion/u,
+    );
+    expect(generated).toContain("pendingSuggestion: components[\"schemas\"][\"KeywordGovernancePendingSuggestion\"] | null;");
+  });
+
+  it("publishes concrete pending-suggestion lineage unions and a satisfiable closed detail item", () => {
+    expect(openapi).toMatch(
+      /KeywordGovernanceSuggestionLlmLineage:[\s\S]*?required: \[generationVersion, promptSetVersion, authority, analysisInvocationId\]/u,
+    );
+    expect(openapi).toMatch(
+      /KeywordGovernanceSuggestionIntentLineage:[\s\S]*?discriminator:[\s\S]*?propertyName: authority/u,
+    );
+    expect(openapi).toMatch(
+      /GrowthMapKeywordDetailItem:[\s\S]*?additionalProperties: false[\s\S]*?pendingSuggestion:/u,
+    );
+    expect(openapi).not.toMatch(
+      /GrowthMapKeywordLibraryItem'\s*\n\s*- type: object[\s\S]{0,200}pendingSuggestion/u,
+    );
+    expect(generated).toContain(
+      'intentLineage: components["schemas"]["KeywordGovernanceSuggestionIntentLineage"] | null;',
     );
   });
 

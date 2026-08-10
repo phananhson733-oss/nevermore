@@ -14,7 +14,7 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
+Contract inventory: **80 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is

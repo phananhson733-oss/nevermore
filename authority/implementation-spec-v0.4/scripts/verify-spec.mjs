@@ -231,7 +231,7 @@ export function verifyAuthoritySourceSet({
 
   const operations = extractOpenApiOperations(authorityOpenApi);
   exactSet(operations, lock.apiOperations, "OpenAPI operation inventory");
-  assert.equal(operations.length, 79, "v0.4 must freeze exactly 79 operations");
+  assert.equal(operations.length, 80, "v0.4 must freeze exactly 80 operations");
   const markerOperations = listMarkerValues(
     spec,
     "<!-- API_OPERATIONS_BEGIN -->",
@@ -487,7 +487,7 @@ export function verifyAuthoritySourceSet({
   );
 
   for (const [label, expected, patterns] of [
-    ["operations", 79, [/79 个 operation/g]],
+    ["operations", 80, [/80 个 operation/g]],
     ["shared async operations", 10, [/10 个 shared async operation/g]],
     ["tables", 80, [/80 张应用表/g]],
     ["rules", 12, [/12 条规则/g]],

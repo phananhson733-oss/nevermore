@@ -32,7 +32,7 @@ Current authority: **v0.4 complete four-module workbench**
 4. `scripts/spec-v0.4-lock.json` — authority/product/contract 版本、inventory 及 authority/implementation 哈希的激活锁。
 5. `schemas/service-bundle-manifest.schema.json` — 导出 ZIP `manifest.json` 的 JSON Schema 权威。
 
-Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
+Contract inventory: **80 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
 当前确定性版本为 `mvp.rules.0.2.4` / `mvp.prompts.0.2.0`，ordered migration head 为 `0050_product_profile_keyword_lineage.sql`（50 个 migration）。`0042` 以 `NOT VALID` 在短事务锁窗口安装扩展后的 rule-set 约束，`0043` 再以较低级别锁验证历史行；`0044` 在不增加表或规则的前提下加入 DataForSEO Backlinks provenance、typed authority scale、selective crawler verification 与 Analysis Refresh v2/v1 兼容约束；`0045` 保留原始 Provider link identity，并允许同一站点 domain family 内的 DataForSEO target lineage，同时继续拒绝外域和带 credentials 的目标；`0046` 为 spec §1.6 的自助注册加上 workspace `plan_tier`，以 metadata-only 的 ADD COLUMN DEFAULT 回填既有行为 `internal`、再把默认值切到 `free`，全程零行改写；`0047` 加入 DataForSEO Search Landscape v3、canonical organic-overlap operand/ratio、fixed-20 AI citation aggregate 与 immutable competitor origin lineage，同时保留 v1/v2 只读兼容；`0048` 加入 bounded Topic Model generation child、invocation-attempt fence 与 Analysis Refresh v3，同时保留 v1/v2 exact historical readability；`0049` 在不改变这些 lineage authority 的前提下，把 Keyword/Competitor 投影和 provider discrepancy 收敛改为有界批量/集合式数据库写入；`0050` 为 fixed-20 GenerativeQuery Keyword cohort 增加显式 confirmed Product Profile lineage，且不伪造 provider provenance。Growth Audit 当前 read-model projection 是 `growth-audit.0.3.1`，但 capability version 仍为 `0.3.0`，request/addressing shape 与 `capabilityContractVersion` literal 仍为 `growth-audit.0.3.0`。
 
@@ -73,9 +73,9 @@ docs/vendor              vendor-copy provenance manifest + 旧仓 baseline（AC-
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm verify:docs           # 文档版本、authority、79/10/80/12、四路由与发布边界一致性
+pnpm verify:docs           # 文档版本、authority、80/10/80/12、四路由与发布边界一致性
 pnpm verify:authority      # repository-owned active v0.4 authority 自校验
-pnpm verify:spec           # v0.4 lock：79 operationId / 10 shared async / 80 表 / 12 规则 + 哈希一致性
+pnpm verify:spec           # v0.4 lock：80 operationId / 10 shared async / 80 表 / 12 规则 + 哈希一致性
 pnpm implementation:check # 实现 surface 与 v0.4 machine authority 一致
 pnpm openapi:lint          # AC-002：Redocly lint openapi/mvp.yaml
 pnpm contracts:generate    # 从 openapi/mvp.yaml 重新生成 packages/contracts/src/generated/openapi.ts
@@ -145,7 +145,7 @@ Stage 是**服务端维护的可重建 projection**，不接受客户端提交�
 ## 核心原则（本仓库特有，优先于通用规则）
 
 - **规格是唯一权威，零开放实现决策**：状态/枚举/API/规则/表/路由/输出格式已冻结。不得扩大范围；某项客观无法实现时以 failing test + 具体阻塞事实回报，不替换架构。
-- **边界必须带版本**：v0.4 已允许 Content Shadow、execution state、approval、publication preview/rollback preview、receipt lineage 和 Measurement Window 的内部 canonical 写入，但当前 79 个 operation 仍没有 GitHub、WordPress、CMS、Vercel、Cloudflare 或客户生产站点 external-write command。GitHub PR / WordPress Draft 只产生 `delivery receipt`，绝不等于已发布；只有验证 merge/publish 完成且包含 live canonical URL 的独立 `change receipt` 才能锚定 attribution。preview、approval 或 Artifact status 不得渲染为已发布。
+- **边界必须带版本**：v0.4 已允许 Content Shadow、execution state、approval、publication preview/rollback preview、receipt lineage 和 Measurement Window 的内部 canonical 写入，但当前 80 个 operation 仍没有 GitHub、WordPress、CMS、Vercel、Cloudflare 或客户生产站点 external-write command。GitHub PR / WordPress Draft 只产生 `delivery receipt`，绝不等于已发布；只有验证 merge/publish 完成且包含 live canonical URL 的独立 `change receipt` 才能锚定 attribution。preview、approval 或 Artifact status 不得渲染为已发布。
 - **仍在 v0.4 范围外**：RBAC/成员/席位/客户 Portal、Billing/pricing/subscription、Ahrefs/Semrush API 深接、PDF/PPT/Word、公共 API/Webhook、单一“SEO 总分”或排名/收入保证、多 Workspace/硬删除、浏览器渲染 crawler、无证据的模型答案可见性监控，以及真正的 GitHub/WordPress publication-attempt external write。DataForSEO 继续受 feature flag、row cap、成本与证据诚实性约束。
 - **对旧仓零依赖 + vendor-copy 可追溯**：对 `/Users/wzb/Code/signalframe` 零运行时/构建时依赖；只 vendor-copy 规格明列的 crawler/rule/OAuth 模式，每次复制在 `docs/vendor/signalframe-manifest.json` 记录源 commit、源路径、目标路径、复制时 sha256、改造说明。**绝不修改旧仓**（`pnpm vendor:check`，AC-048）。**注意它不是 CI 门**：脚本按 `docs/vendor/old-repo-baseline.json` 里的绝对路径读旧仓，GitHub runner 上没有该路径，加进 CI 会让 CI 永久红（已实测：路径缺失时 exit 1，fail-closed）。**因此这条红线只在本工作站上被执行**，换台机器改了旧仓没有任何自动检查会发现。
 - **诚实性硬约束**：unavailable 不是 0；不承诺结果/排名/收入；客户投影必须带 `limitation`；secret 不落库明文（Google token AES-256-GCM，OAuth state 存 hash + 加密 verifier）。

@@ -3731,13 +3731,101 @@ export interface components {
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
             meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
         };
-        /** @description The selected Keyword item's projectId exactly matches the response scope. Current review reads carry a nullable pendingSuggestion; pinned reads always carry null. */
+        KeywordGovernancePendingSuggestion: {
+            suggestionId: components["schemas"]["Uuid"];
+            /** @constant */
+            suggestionVersion: "keyword-governance-suggestion.v1";
+            /** @enum {string} */
+            state: "generating" | "pending_ready" | "pending_needs_review" | "stale" | "unavailable";
+            expectedGovernanceRevision: number;
+            /** @enum {string|null} */
+            status: "candidate" | "approved" | "excluded" | "parked" | null;
+            intent: string | null;
+            buyerStage: string | null;
+            /** Format: uuid */
+            topicNodeId: string | null;
+            topicModelRevision: number | null;
+            topicLabel: string | null;
+            /** @enum {string|null} */
+            mappingDecision: "unassigned" | "existing_page" | "new_asset" | null;
+            /** Format: uuid */
+            mappedSitePageId: string | null;
+            mappedSitePageTitle: string | null;
+            reason: string | null;
+            /** @enum {string} */
+            readinessReason: "all_authorities_confirmed" | "generation_in_progress" | "insufficient_authority" | "governance_revision_changed" | "authority_unavailable";
+            limitation: string | null;
+            lineage: components["schemas"]["KeywordGovernanceSuggestionLlmLineage"] | null;
+            intentLineage: components["schemas"]["KeywordGovernanceSuggestionIntentLineage"] | null;
+            createdAt: components["schemas"]["Timestamp"];
+        };
+        KeywordGovernanceSuggestionLlmLineage: {
+            /** @constant */
+            generationVersion: "keyword-governance-suggestion-generation.v1";
+            /** @constant */
+            promptSetVersion: "keyword-governance-suggestion.prompt.v1";
+            /** @constant */
+            authority: "llm_generated";
+            analysisInvocationId: components["schemas"]["Uuid"];
+        };
+        KeywordGovernanceSuggestionIntentLineage: {
+            /** @constant */
+            authority: "provider_observed";
+            snapshotId: components["schemas"]["Uuid"];
+            observationId: components["schemas"]["Uuid"];
+            analysisInvocationId: null;
+            observedAt: components["schemas"]["Timestamp"];
+        } | {
+            /** @constant */
+            authority: "llm_generated";
+            snapshotId: null;
+            observationId: null;
+            analysisInvocationId: components["schemas"]["Uuid"];
+            observedAt: null;
+        } | {
+            /** @constant */
+            authority: "unavailable";
+            snapshotId: null;
+            observationId: null;
+            analysisInvocationId: null;
+            observedAt: null;
+        };
+        GrowthMapKeywordDetailItem: {
+            projectId: components["schemas"]["Uuid"];
+            keywordId: components["schemas"]["Uuid"];
+            displayKeyword: string;
+            normalizedKeyword: string;
+            marketCode: components["schemas"]["MarketCode"];
+            languageTag: components["schemas"]["GrowthMapLibraryLanguageTag"];
+            /** @enum {string} */
+            queryKind: "search_query" | "generative_query";
+            /** @enum {string} */
+            status: "candidate" | "approved" | "excluded" | "parked";
+            /** @enum {string|null} */
+            reviewOrigin: "user" | "system_suggestion" | "migration_baseline" | null;
+            revision: number;
+            intent: string | null;
+            searchIntent: components["schemas"]["GrowthMapKeywordSearchIntent"];
+            buyerStage: string | null;
+            cluster: components["schemas"]["GrowthMapKeywordClusterRef"] | null;
+            classificationLimitations: components["schemas"]["GrowthMapKeywordClassificationLimitations"];
+            mappedTarget: components["schemas"]["GrowthMapKeywordMappedTarget"];
+            sourceOccurrences: components["schemas"]["GrowthMapKeywordSourceOccurrence"][];
+            metrics: components["schemas"]["GrowthMapKeywordMetrics"];
+            recollection: components["schemas"]["GrowthMapKeywordRecollection"] | null;
+            coverage: components["schemas"]["GrowthMapCoverage"];
+            pendingSuggestion: components["schemas"]["KeywordGovernancePendingSuggestion"] | null;
+        };
+        /** @description Current details carry a required nullable pendingSuggestion. Pinned details require literal null. */
         GrowthMapKeywordDetailResponse: {
             projectId: components["schemas"]["Uuid"];
-            /** Format: uuid */
-            diagnosticRunId: string | null;
-            data: components["schemas"]["GrowthMapKeywordLibraryItem"] & {
-                pendingSuggestion: null;
+            diagnosticRunId: null;
+            data: components["schemas"]["GrowthMapKeywordDetailItem"];
+        } | {
+            projectId: components["schemas"]["Uuid"];
+            diagnosticRunId: components["schemas"]["Uuid"];
+            data: components["schemas"]["GrowthMapKeywordDetailItem"] & {
+                pendingSuggestion?: null;
             };
         };
         GrowthMapKeywordLibraryHttpResponse: {

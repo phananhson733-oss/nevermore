@@ -45,7 +45,7 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
     /diagnostics: 11 executable frozen rules in canonical order/,
   );
   assert.equal(lock.authorityVersion, "0.4.0");
-  assert.equal(lock.apiOperations.length, 79);
+  assert.equal(lock.apiOperations.length, 80);
   assert.equal(lock.asyncOperations.length, 10);
   assert.equal(lock.tables.length, 80);
   assert.equal(lock.rules.length, 12);
@@ -163,6 +163,8 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Growth Map Keyword suggestion approval path/operationId drift",
     "Growth Map Keyword suggestion approval request must remain a strict two-field compare-and-swap command",
     "Growth Map Keyword pinned detail must never expose a current pending suggestion",
+    "Keyword governance suggestion generation must remain an exact internal async identity with no public model/config selector",
+    "Keyword suggestion manifest must contain exact workspaceId/projectId authority and no self-embedded inputHash",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",

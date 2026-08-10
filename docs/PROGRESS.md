@@ -26,7 +26,7 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Migration range: `0001_init.sql` through
   `0050_product_profile_keyword_lineage.sql` (**50 ordered migrations**), after
   `0048_topic_model_generation.sql` and `0049_projection_batch_writes.sql`
-- Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
+- Contract inventory: **80 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
   `growth-audit.0.3.1` (capability version remains `0.3.0`; request/addressing
@@ -74,7 +74,7 @@ Current v0.4 external-write boundary: **no external writes**
 The active v0.4 contract has no GitHub, WordPress, CMS, Vercel, Cloudflare, or
 customer-production-site write and no post-publication attribution. Internal
 Content Shadow, approval, publication-preview and Measurement Window persistence
-are implemented; the current 79 operations still do not execute an external
+are implemented; the current 80 operations still do not execute an external
 provider write. A preview or Delivery Receipt is not a live change. Only a
 verified Change Receipt with a live canonical URL may anchor observation.
 

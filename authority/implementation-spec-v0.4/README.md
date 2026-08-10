@@ -14,7 +14,7 @@ Authority 版本：**0.4.0**
 `authority/index.json` 指向本目录与 `scripts/spec-v0.4-lock.json`；v0.3
 保留为历史快照，不再约束当前实现。
 
-当前机器面精确包含 **79 个 operation、10 个 shared async operation、80 张应用表、12 条规则**。
+当前机器面精确包含 **80 个 operation、10 个 shared async operation、80 张应用表、12 条规则**。
 第十一个返回 `202` 的 `createProjectMeasurementWindow` 使用专用、强类型的
 `MeasurementWindowAcceptedHttpResponse`，不冒充共享 `AsyncAccepted`；verifier
 会同时冻结这条例外。规则集为 `mvp.rules.0.2.4`，其中
@@ -26,7 +26,7 @@ Authority 版本：**0.4.0**
 按冲突优先级读取：
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
-2. [openapi.yaml](openapi.yaml)：当前 79 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
+2. [openapi.yaml](openapi.yaml)：当前 80 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
 3. [schema.sql](schema.sql)：由 50 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。

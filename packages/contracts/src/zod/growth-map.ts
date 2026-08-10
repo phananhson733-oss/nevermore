@@ -1988,14 +1988,9 @@ export type GrowthMapKeywordLibraryItem = z.infer<
   typeof GrowthMapKeywordLibraryItem
 >;
 
-const NullablePendingKeywordGovernanceSuggestion = z.preprocess(
-  (value) => (value === undefined ? null : value),
-  KeywordGovernancePendingSuggestion.nullable(),
-);
-
 const GrowthMapKeywordDetailItemObject = GrowthMapKeywordLibraryItemObject.extend(
   {
-    pendingSuggestion: NullablePendingKeywordGovernanceSuggestion,
+    pendingSuggestion: KeywordGovernancePendingSuggestion.nullable(),
   },
 ).strict();
 

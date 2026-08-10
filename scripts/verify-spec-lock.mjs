@@ -276,7 +276,7 @@ assert.equal(
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
 const operations = extractOpenApiOperations(openapi);
 exactSet(operations, lock.apiOperations, "OpenAPI operations");
-assert.equal(operations.length, 79, "v0.4 must freeze 79 OpenAPI operations");
+assert.equal(operations.length, 80, "v0.4 must freeze 80 OpenAPI operations");
 exactSet(
   lock.asyncOperations,
   [

@@ -6717,21 +6717,137 @@ components:
         it never carries a synthetic total.
       x-signalframe-runtime-refinement: keywordPageScopeRunIdentityAndItemUniqueness
 
-    GrowthMapKeywordDetailResponse:
+    KeywordGovernancePendingSuggestion:
       type: object
       additionalProperties: false
-      required: [projectId, diagnosticRunId, data]
+      required: [suggestionId, suggestionVersion, state, expectedGovernanceRevision, status, intent, buyerStage, topicNodeId, topicModelRevision, topicLabel, mappingDecision, mappedSitePageId, mappedSitePageTitle, reason, readinessReason, limitation, lineage, intentLineage, createdAt]
+      properties:
+        suggestionId: { $ref: '#/components/schemas/Uuid' }
+        suggestionVersion: { type: string, const: keyword-governance-suggestion.v1 }
+        state: { type: string, enum: [generating, pending_ready, pending_needs_review, stale, unavailable] }
+        expectedGovernanceRevision: { type: integer, minimum: 0, maximum: 2147483646 }
+        status: { type: [string, 'null'], enum: [candidate, approved, excluded, parked, null] }
+        intent: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        topicNodeId: { type: [string, 'null'], format: uuid }
+        topicModelRevision: { type: [integer, 'null'], minimum: 1, maximum: 2147483647 }
+        topicLabel: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        mappingDecision: { type: [string, 'null'], enum: [unassigned, existing_page, new_asset, null] }
+        mappedSitePageId: { type: [string, 'null'], format: uuid }
+        mappedSitePageTitle: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        readinessReason: { type: string, enum: [all_authorities_confirmed, generation_in_progress, insufficient_authority, governance_revision_changed, authority_unavailable] }
+        limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        lineage:
+          oneOf:
+            - $ref: '#/components/schemas/KeywordGovernanceSuggestionLlmLineage'
+            - type: 'null'
+        intentLineage:
+          oneOf:
+            - $ref: '#/components/schemas/KeywordGovernanceSuggestionIntentLineage'
+            - type: 'null'
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    KeywordGovernanceSuggestionLlmLineage:
+      type: object
+      additionalProperties: false
+      required: [generationVersion, promptSetVersion, authority, analysisInvocationId]
+      properties:
+        generationVersion: { type: string, const: keyword-governance-suggestion-generation.v1 }
+        promptSetVersion: { type: string, const: keyword-governance-suggestion.prompt.v1 }
+        authority: { type: string, const: llm_generated }
+        analysisInvocationId: { $ref: '#/components/schemas/Uuid' }
+
+    KeywordGovernanceSuggestionIntentLineage:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [authority, snapshotId, observationId, analysisInvocationId, observedAt]
+          properties:
+            authority: { type: string, const: provider_observed }
+            snapshotId: { $ref: '#/components/schemas/Uuid' }
+            observationId: { $ref: '#/components/schemas/Uuid' }
+            analysisInvocationId: { type: 'null' }
+            observedAt: { $ref: '#/components/schemas/Timestamp' }
+        - type: object
+          additionalProperties: false
+          required: [authority, snapshotId, observationId, analysisInvocationId, observedAt]
+          properties:
+            authority: { type: string, const: llm_generated }
+            snapshotId: { type: 'null' }
+            observationId: { type: 'null' }
+            analysisInvocationId: { $ref: '#/components/schemas/Uuid' }
+            observedAt: { type: 'null' }
+        - type: object
+          additionalProperties: false
+          required: [authority, snapshotId, observationId, analysisInvocationId, observedAt]
+          properties:
+            authority: { type: string, const: unavailable }
+            snapshotId: { type: 'null' }
+            observationId: { type: 'null' }
+            analysisInvocationId: { type: 'null' }
+            observedAt: { type: 'null' }
+      discriminator:
+        propertyName: authority
+
+    GrowthMapKeywordDetailItem:
+      type: object
+      additionalProperties: false
+      required: [projectId, keywordId, displayKeyword, normalizedKeyword, marketCode, languageTag, queryKind, status, reviewOrigin, revision, intent, searchIntent, buyerStage, cluster, classificationLimitations, mappedTarget, sourceOccurrences, metrics, recollection, coverage, pendingSuggestion]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
-        diagnosticRunId: { type: [string, 'null'], format: uuid }
-        data:
-          allOf:
-            - $ref: '#/components/schemas/GrowthMapKeywordLibraryItem'
-            - type: object
-              required: [pendingSuggestion]
-              properties:
-                pendingSuggestion: { type: 'null' }
-      description: The selected Keyword item's projectId exactly matches the response scope. Current review reads carry a nullable pendingSuggestion; pinned reads always carry null.
+        keywordId: { $ref: '#/components/schemas/Uuid' }
+        displayKeyword: { type: string, minLength: 1, maxLength: 500 }
+        normalizedKeyword: { type: string, minLength: 1, maxLength: 500 }
+        marketCode: { $ref: '#/components/schemas/MarketCode' }
+        languageTag: { $ref: '#/components/schemas/GrowthMapLibraryLanguageTag' }
+        queryKind: { type: string, enum: [search_query, generative_query] }
+        status: { type: string, enum: [candidate, approved, excluded, parked] }
+        reviewOrigin: { type: [string, 'null'], enum: [user, system_suggestion, migration_baseline, null] }
+        revision: { type: integer, minimum: 0 }
+        intent: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        searchIntent: { $ref: '#/components/schemas/GrowthMapKeywordSearchIntent' }
+        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 500 }
+        cluster:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordClusterRef'
+            - type: 'null'
+        classificationLimitations: { $ref: '#/components/schemas/GrowthMapKeywordClassificationLimitations' }
+        mappedTarget: { $ref: '#/components/schemas/GrowthMapKeywordMappedTarget' }
+        sourceOccurrences: { type: array, minItems: 1, maxItems: 100, items: { $ref: '#/components/schemas/GrowthMapKeywordSourceOccurrence' } }
+        metrics: { $ref: '#/components/schemas/GrowthMapKeywordMetrics' }
+        recollection:
+          oneOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordRecollection'
+            - type: 'null'
+        coverage: { $ref: '#/components/schemas/GrowthMapCoverage' }
+        pendingSuggestion:
+          oneOf:
+            - $ref: '#/components/schemas/KeywordGovernancePendingSuggestion'
+            - type: 'null'
+
+    GrowthMapKeywordDetailResponse:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [projectId, diagnosticRunId, data]
+          properties:
+            projectId: { $ref: '#/components/schemas/Uuid' }
+            diagnosticRunId: { type: 'null' }
+            data: { $ref: '#/components/schemas/GrowthMapKeywordDetailItem' }
+        - type: object
+          additionalProperties: false
+          required: [projectId, diagnosticRunId, data]
+          properties:
+            projectId: { $ref: '#/components/schemas/Uuid' }
+            diagnosticRunId: { $ref: '#/components/schemas/Uuid' }
+            data:
+              allOf:
+                - $ref: '#/components/schemas/GrowthMapKeywordDetailItem'
+                - type: object
+                  properties:
+                    pendingSuggestion: { type: 'null' }
+      description: Current details carry a required nullable pendingSuggestion. Pinned details require literal null.
       x-signalframe-runtime-refinement: keywordDetailScopeCurrentSuggestionOnly
 
     GrowthMapKeywordLibraryHttpResponse:

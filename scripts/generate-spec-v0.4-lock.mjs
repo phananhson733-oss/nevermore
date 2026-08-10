@@ -177,7 +177,7 @@ assert.equal(promptSetVersion, "mvp.prompts.0.2.0");
 
 const openapi = read("openapi/mvp.yaml");
 const apiOperations = extractOpenApiOperations(openapi);
-assert.equal(apiOperations.length, 79, "reviewed v0.4 operation count drift");
+assert.equal(apiOperations.length, 80, "reviewed v0.4 operation count drift");
 for (const operationId of asyncOperations) {
   assert.ok(
     apiOperations.includes(operationId),

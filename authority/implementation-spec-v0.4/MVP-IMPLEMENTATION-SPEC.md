@@ -12,7 +12,7 @@ prompt_set_version: mvp.prompts.0.2.0
 
 ## 0. 规范范围
 
-本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **79 个 operation 与 10 个
+本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **80 个 operation 与 10 个
 shared async operation**，**47 个 ordered migrations** 精确声明 **80 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
@@ -338,6 +338,13 @@ the Keyword and suggestion identity and carries exactly
 client cannot submit suggested governance fields, actor identity, provider
 facts, model configuration, or lineage.
 
+`keyword_governance_suggestion_generation` is an internal async operation,
+not a public selector: model, provider, prompt, and runtime configuration stay
+server-owned. Its frozen manifest contains `workspaceId` and `projectId` and is
+the canonical SHA-256 preimage; it contains no self-referential `inputHash`.
+The generation-run envelope/row stores `sha256(canonicalJson(manifest))`
+separately.
+
 - 来源包括 GSC top query、DataForSEO Search Landscape ranked observation、
   competitor/content gap、VOC/manual/CSV；每条 occurrence 保留来源、scope
   和时间。
@@ -456,7 +463,7 @@ live canonical URL 验证的 Change Receipt 才能成为 Measurement Window anch
 
 Current v0.4 external-write boundary: **no external writes**
 
-当前 79 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
+当前 80 个 operation 不包含真正执行 GitHub PR/merge 或 WordPress publish 的
 publication-attempt command。production UI 必须把这类能力显示为
 unavailable/尚未连接，而不能写“已发布”。新增外部写入必须原子加入 provider
 adapter、worker handler、idempotency、remote precondition、rollback、
@@ -494,7 +501,7 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 9. 冻结 API inventory
 
-以下列表必须与 OpenAPI 的 79 个 operationId 完全一致。
+以下列表必须与 OpenAPI 的 80 个 operationId 完全一致。
 
 <!-- API_OPERATIONS_BEGIN -->
 - `listProjects`
@@ -538,6 +545,7 @@ reconciliation、route/OpenAPI 与测试。
 - `listProjectAuditKeywords`
 - `getProjectAuditKeyword`
 - `reviewProjectAuditKeyword`
+- `approveProjectAuditKeywordReviewSuggestion`
 - `getProjectAuditKeywordRankHistory`
 - `listProjectAuditKeywordRelations`
 - `refreshProjectAuditKeywordRelations`

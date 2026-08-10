@@ -813,10 +813,25 @@ function checkOpenApi() {
   const keywordSchemas = document.components?.schemas ?? {};
   const keywordDetailResponse = keywordSchemas.GrowthMapKeywordDetailResponse;
   invariant(
-    keywordDetailResponse?.required?.includes("diagnosticRunId") &&
+    Array.isArray(keywordDetailResponse?.oneOf) &&
+      keywordDetailResponse.oneOf.length === 2 &&
       keywordDetailResponse?.["x-signalframe-runtime-refinement"] ===
         "keywordDetailScopeCurrentSuggestionOnly",
     "Growth Map Keyword pinned detail must never expose a current pending suggestion",
+  );
+  invariant(
+    read("authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md").includes(
+      "keyword_governance_suggestion_generation",
+    ),
+    "Keyword governance suggestion generation must remain an exact internal async identity with no public model/config selector",
+  );
+  const keywordSuggestionContract = read(
+    "packages/contracts/src/zod/keyword-governance-suggestions.ts",
+  );
+  invariant(
+    /KeywordGovernanceSuggestionInputManifest[\s\S]*?workspaceId: Uuid,[\s\S]*?projectId: Uuid,/u.test(keywordSuggestionContract) &&
+      !/KeywordGovernanceSuggestionInputManifest[\s\S]{0,200}inputHash:/u.test(keywordSuggestionContract),
+    "Keyword suggestion manifest must contain exact workspaceId/projectId authority and no self-embedded inputHash",
   );
   const canonicalLibraryLanguageTag =
     keywordSchemas.GrowthMapLibraryLanguageTag;
@@ -922,7 +937,6 @@ function checkOpenApi() {
     "GrowthMapKeywordLibraryItem",
     "GrowthMapKeywordLibraryPageMeta",
     "GrowthMapKeywordLibraryResponse",
-    "GrowthMapKeywordDetailResponse",
     "GrowthMapKeywordLibraryHttpResponse",
     "GrowthMapKeywordDetailHttpResponse",
   ];
@@ -932,6 +946,12 @@ function checkOpenApi() {
       `Growth Map Keyword schema must be closed: ${schemaName}`,
     );
   }
+  invariant(
+    keywordSchemas.GrowthMapKeywordDetailResponse?.oneOf?.every(
+      (branch) => branch.additionalProperties === false,
+    ),
+    "Growth Map Keyword detail branches must remain closed",
+  );
 
   const keywordItem = keywordSchemas.GrowthMapKeywordLibraryItem;
   assertExactSet(

@@ -6,7 +6,7 @@ customer-facing brand, and its approved production origin is
 contract `2026-07-21`, backed by
 `authority/implementation-spec-v0.4/`.
 
-Contract inventory: **79 API operations / 10 async operations / 80 app tables / 12 frozen rules**
+Contract inventory: **80 API operations / 10 async operations / 80 app tables / 12 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
@@ -21,7 +21,7 @@ Current authority: **v0.4 complete four-module workbench**
 
 v0.4 has atomically activated Keyword/Competitor governance, execution state,
 durable approval, publication/rollback preview authority, receipt lineage and
-immutable Measurement Windows. Its 79 operations still do not include a real
+immutable Measurement Windows. Its 80 operations still do not include a real
 GitHub/WordPress external-write command. A GitHub pull request or WordPress
 Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live

@@ -10,6 +10,7 @@ import {
 
 const ids = {
   project: "81000000-0000-4000-8000-000000000001",
+  workspace: "81000000-0000-4000-8000-000000000012",
   profile: "81000000-0000-4000-8000-000000000002",
   topicRevision: "81000000-0000-4000-8000-000000000003",
   topic: "81000000-0000-4000-8000-000000000004",
@@ -29,6 +30,7 @@ const manifest = {
   generationVersion: "keyword-governance-suggestion-generation.v1",
   promptSetVersion: "keyword-governance-suggestion.prompt.v1",
   projectId: ids.project,
+  workspaceId: ids.workspace,
   marketCode: "US",
   languageTag: "en",
   confirmedProductProfile: {
@@ -88,7 +90,6 @@ const manifest = {
       },
     },
   ],
-  inputHash: hash,
 } as const;
 
 const output = {
@@ -209,6 +210,18 @@ describe("Keyword governance suggestion contracts", () => {
     expect(
       KeywordGovernanceSuggestionInputManifest.safeParse({
         ...manifest,
+        inputHash: hash,
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernanceSuggestionInputManifest.safeParse({
+        ...manifest,
+        workspaceId: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernanceSuggestionInputManifest.safeParse({
+        ...manifest,
         rawProviderPayload: {},
       }).success,
     ).toBe(false);
@@ -246,6 +259,27 @@ describe("Keyword governance suggestion contracts", () => {
       {
         ...output,
         suggestions: [{ ...output.suggestions[0], pageKey: "page-999" }],
+      },
+    ]) {
+      expect(() =>
+        parseKeywordGovernanceSuggestionStructuredOutput(invalid, manifest),
+      ).toThrow();
+    }
+  });
+
+  it("rejects excluded or provider-overriding model governance", () => {
+    for (const invalid of [
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], status: "excluded", topicKey: "topic-001" }],
+      },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], status: "excluded", mappingDecision: "existing_page", pageKey: "page-001" }],
+      },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], intent: "transactional" }],
       },
     ]) {
       expect(() =>

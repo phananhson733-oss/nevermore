@@ -1700,6 +1700,7 @@ describe("Growth Map Keyword Library contracts", () => {
         data: {
           ...base,
           cluster: { ...base.cluster!, topicModelRevision: 2 },
+          pendingSuggestion: null,
         },
       }).success,
     ).toBe(true);
@@ -1723,7 +1724,7 @@ describe("Growth Map Keyword Library contracts", () => {
     expect(
       GrowthMapKeywordDetailResponse.safeParse({
         projectId: ids.project,
-        data: { ...base, recollection },
+        data: { ...base, recollection, pendingSuggestion: null },
       }).success,
     ).toBe(true);
     expect(
@@ -1735,6 +1736,7 @@ describe("Growth Map Keyword Library contracts", () => {
             ...recollection,
             fields: ["keyword_difficulty", "keyword_difficulty"],
           },
+          pendingSuggestion: null,
         },
       }).success,
     ).toBe(false);
@@ -1763,6 +1765,7 @@ describe("Growth Map Keyword Library contracts", () => {
             },
           ],
           recollection,
+          pendingSuggestion: null,
         },
       }).success,
     ).toBe(false);
@@ -1776,13 +1779,13 @@ describe("Growth Map Keyword Library contracts", () => {
     expect(
       GrowthMapKeywordDetailResponse.safeParse({
         projectId: ids.project,
-        data: keywordItem(),
+        data: { ...keywordItem(), pendingSuggestion: null },
       }).success,
     ).toBe(true);
     expect(
       GrowthMapKeywordDetailResponse.parse({
         projectId: ids.project,
-        data: keywordItem(),
+        data: { ...keywordItem(), pendingSuggestion: null },
       }).data.pendingSuggestion,
     ).toBeNull();
     expect(
@@ -1821,6 +1824,16 @@ describe("Growth Map Keyword Library contracts", () => {
           ...keywordItem(),
           pendingSuggestion: pendingKeywordSuggestion(),
         },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires pendingSuggestion on every detail, even when it is null", () => {
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        diagnosticRunId: null,
+        data: keywordItem(),
       }).success,
     ).toBe(false);
   });
@@ -1864,7 +1877,7 @@ describe("Growth Map Keyword Library contracts", () => {
       expect(
         GrowthMapKeywordDetailResponse.safeParse({
           projectId: ids.project,
-          data: { ...keywordItem(), status: "approved", reviewOrigin },
+          data: { ...keywordItem(), status: "approved", reviewOrigin, pendingSuggestion: null },
         }).success,
       ).toBe(true);
     }
@@ -1965,7 +1978,7 @@ describe("Growth Map Keyword Library contracts", () => {
       expect(
         GrowthMapKeywordDetailResponse.safeParse({
           projectId: ids.project,
-          data: { ...base, ...governance, searchIntent },
+          data: { ...base, ...governance, searchIntent, pendingSuggestion: null },
         }).success,
       ).toBe(true);
     }
@@ -2042,7 +2055,7 @@ describe("Growth Map Keyword Library contracts", () => {
     expect(
       GrowthMapKeywordDetailResponse.safeParse({
         projectId: ids.project,
-        data: { ...base, sourceOccurrences },
+        data: { ...base, sourceOccurrences, pendingSuggestion: null },
       }).success,
     ).toBe(true);
 
@@ -2095,6 +2108,7 @@ describe("Growth Map Keyword Library contracts", () => {
           intent: governedLegacy.value,
           reviewOrigin: null,
           searchIntent: governedLegacy,
+          pendingSuggestion: null,
         },
       }).success,
     ).toBe(true);
