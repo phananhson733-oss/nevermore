@@ -8,6 +8,7 @@ import {
   CompetitorsRepository,
   MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
   MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
+  MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ,
   MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
   MAX_COMPETITOR_PAGE_SIZE,
   type CompetitorEntityRow,
@@ -555,6 +556,130 @@ describe("CompetitorsRepository", () => {
     expect(db.last("limit").args).toEqual([
       MAX_DIAGNOSTIC_COMPETITOR_ENTITY_READ,
     ]);
+  });
+
+  it("counts each full-library non-AI discovery route exactly once per competitor", async () => {
+    const db = new FakeExecutor();
+    db.enqueue({
+      rows: [
+        {
+          customer_input: "7",
+          serp_duplicate: "100",
+          approved_corpus: "3",
+        },
+      ],
+    });
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(repo.countDiscoveryOrigins(scope)).resolves.toEqual({
+      customer_input: 7,
+      serp_duplicate: 100,
+      approved_corpus: 3,
+    });
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toMatch(/count\(distinct[\s\S]*competitor_id/iu);
+    expect(compiled.sql).toContain("'product_profile'");
+    expect(compiled.sql).toContain("'manual'");
+    expect(compiled.sql).toContain("'serp_overlap'");
+    expect(compiled.sql).toContain("'csv_keyword_gap'");
+    expect(compiled.sql).toContain('"workspace_id" = $');
+    expect(compiled.sql).toContain('"project_id" = $');
+    expect(compiled.sql).toContain('"archived_at" is null');
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([scope.workspaceId, scope.projectId]),
+    );
+  });
+
+  it.each([
+    ["no aggregate row", { rows: [] }],
+    [
+      "more than one aggregate row",
+      {
+        rows: [
+          { customer_input: "0", serp_duplicate: "0", approved_corpus: "0" },
+          { customer_input: "0", serp_duplicate: "0", approved_corpus: "0" },
+        ],
+      },
+    ],
+    [
+      "a negative count",
+      {
+        rows: [
+          { customer_input: "-1", serp_duplicate: "0", approved_corpus: "0" },
+        ],
+      },
+    ],
+    [
+      "a fractional count",
+      {
+        rows: [
+          { customer_input: "0", serp_duplicate: "1.5", approved_corpus: "0" },
+        ],
+      },
+    ],
+    [
+      "an unsafe count",
+      {
+        rows: [
+          {
+            customer_input: "0",
+            serp_duplicate: "0",
+            approved_corpus: String(Number.MAX_SAFE_INTEGER + 1),
+          },
+        ],
+      },
+    ],
+  ])("fails closed when discovery counts return %s", async (_label, result) => {
+    const db = new FakeExecutor();
+    db.enqueue(result);
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(repo.countDiscoveryOrigins(scope)).rejects.toThrow(
+      /discovery count/i,
+    );
+  });
+
+  it("returns all AI candidates inside each entity's canonical top-100 origin window", async () => {
+    const db = new FakeExecutor();
+    const rows = [
+      {
+        id: "00000000-0000-4000-8000-000000000070",
+        competitor_id: entity.id,
+        origin_kind: "ai_citation",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000071",
+        competitor_id: entity.id,
+        origin_kind: "ai_citation",
+      },
+    ];
+    db.enqueue({ rows });
+    const repo = new CompetitorsRepository(db as never);
+
+    await expect(repo.listAiCitationDiscoveryOrigins(scope)).resolves.toEqual(
+      rows,
+    );
+
+    const compiled = new PgDialect().sqlToQuery(
+      db.last("execute").args[0] as never,
+    );
+    expect(compiled.sql).toMatch(/row_number\(\) over\s*\(\s*partition by/iu);
+    expect(compiled.sql).toMatch(/observed_at[^,]*desc nulls last/iu);
+    expect(compiled.sql).toMatch(/created_at[^,]*desc/iu);
+    expect(compiled.sql).toMatch(/entity_row_number\s*<=/iu);
+    expect(compiled.sql).toMatch(/origin_kind\s*=\s*'ai_citation'/iu);
+    expect(compiled.sql).not.toMatch(/distinct\s+on/iu);
+    expect(compiled.params).toEqual(
+      expect.arrayContaining([
+        scope.workspaceId,
+        scope.projectId,
+        MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
+        MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ + 1,
+      ]),
+    );
   });
 
   it("batch-loads bounded origins for many competitors in one project-scoped query", async () => {

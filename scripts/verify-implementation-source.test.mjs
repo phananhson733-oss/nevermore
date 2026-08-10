@@ -175,6 +175,7 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Growth Map Competitor origin occurrence discriminator drift",
     "Growth Map Competitor product_profile origin must keep its strict typed Product Profile evidence contract",
     "Growth Map Competitor insight availability discriminator drift",
+    "Growth Map Competitor discovery counts must remain exact non-negative whole-library integers",
     "Growth Map Competitor cursor page must remain bounded with exact metadata and explicit coverage",
   ]) {
     assert.match(verifier, new RegExp(invariant));

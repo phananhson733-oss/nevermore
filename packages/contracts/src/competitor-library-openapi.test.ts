@@ -45,6 +45,8 @@ type CompetitorPage =
   components["schemas"]["GrowthMapCompetitorLibraryResponse"];
 type CompetitorPageMeta =
   components["schemas"]["GrowthMapCompetitorLibraryPageMeta"];
+type CompetitorDiscoveryCounts =
+  components["schemas"]["GrowthMapCompetitorDiscoveryCounts"];
 type CompetitorItem =
   components["schemas"]["GrowthMapCompetitorLibraryItem"];
 type CompetitorOrigin =
@@ -121,11 +123,32 @@ type _PageRequiredFields = Expect<
 type _PageMetaFields = Expect<
   Equal<
     keyof CompetitorPageMeta,
-    "limit" | "nextCursor" | "hasNext" | "coverage"
+    "limit" | "nextCursor" | "hasNext" | "coverage" | "discoveryCounts"
   >
 >;
 type _PageMetaRequiredFields = Expect<
   Equal<RequiredKeys<CompetitorPageMeta>, keyof CompetitorPageMeta>
+>;
+type _DiscoveryCountFields = Expect<
+  Equal<
+    keyof CompetitorDiscoveryCounts,
+    | "customer_input"
+    | "serp_duplicate"
+    | "ai_co_citation"
+    | "approved_corpus"
+  >
+>;
+type _DiscoveryCountRequiredFields = Expect<
+  Equal<
+    RequiredKeys<CompetitorDiscoveryCounts>,
+    keyof CompetitorDiscoveryCounts
+  >
+>;
+type _DiscoveryCountsAreNullableOnFrozenReads = Expect<
+  Equal<
+    CompetitorPageMeta["discoveryCounts"],
+    CompetitorDiscoveryCounts | null
+  >
 >;
 type _ItemFields = Expect<
   Equal<

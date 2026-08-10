@@ -1154,6 +1154,35 @@ export type GrowthMapKeywordLibraryPageMeta = z.infer<
   typeof GrowthMapKeywordLibraryPageMeta
 >;
 
+/**
+ * Whole-library Competitor counts per discovery route, computed in the same
+ * read-only transaction as the page. One Competitor may count in several
+ * routes; the AI route counts only the latest measured positive aggregate.
+ */
+export const GrowthMapCompetitorDiscoveryCounts = z
+  .object({
+    customer_input: z.number().int().min(0),
+    serp_duplicate: z.number().int().min(0),
+    ai_co_citation: z.number().int().min(0),
+    approved_corpus: z.number().int().min(0),
+  })
+  .strict();
+export type GrowthMapCompetitorDiscoveryCounts = z.infer<
+  typeof GrowthMapCompetitorDiscoveryCounts
+>;
+
+/** Competitor Library meta: exact discovery counts, null on frozen reads. */
+export const GrowthMapCompetitorLibraryPageMeta = z
+  .object({
+    ...GrowthMapLibraryPageMetaShape,
+    discoveryCounts: GrowthMapCompetitorDiscoveryCounts.nullable(),
+  })
+  .strict()
+  .superRefine(assertCursorAvailabilityConsistency);
+export type GrowthMapCompetitorLibraryPageMeta = z.infer<
+  typeof GrowthMapCompetitorLibraryPageMeta
+>;
+
 export const GrowthMapKeywordQueryKind = z.enum([
   "search_query",
   "generative_query",
@@ -2806,7 +2835,7 @@ const GrowthMapCompetitorLibraryResponseObject = z
   .object({
     projectId: Uuid,
     data: z.array(GrowthMapCompetitorLibraryItem).max(100),
-    meta: GrowthMapLibraryPageMeta,
+    meta: GrowthMapCompetitorLibraryPageMeta,
   })
   .strict();
 

@@ -1081,7 +1081,7 @@ export function buildReviewGrowthMapCompetitorMutationOptions(
   return {
     mutationFn: (body) =>
       reviewGrowthMapCompetitor(projectId, competitorId, body),
-    onSuccess: (result) =>
+    onSuccess: async (result) => {
       queryClient.setQueryData(
         growthMapCompetitorReviewDetailQueryKey(
           projectId,
@@ -1089,7 +1089,18 @@ export function buildReviewGrowthMapCompetitorMutationOptions(
           competitorId,
         ),
         result,
-      ),
+      );
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "growth-map",
+          projectId,
+          uiLocale,
+          "competitors",
+          { diagnosticRunId: null },
+        ],
+        refetchType: "active",
+      });
+    },
     onError: (error) =>
       error.status === 409
         ? invalidateGrowthMapAfterCompetitorReview(

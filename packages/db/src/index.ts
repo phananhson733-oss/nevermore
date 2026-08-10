@@ -323,6 +323,7 @@ export * from "./repositories/topic-models.ts";
 export * from "./repositories/topic-model-insights.ts";
 export {
   CompetitorsRepository,
+  MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ,
   MAX_COMPETITOR_ORIGIN_BATCH_TOTAL,
   MAX_COMPETITOR_ORIGIN_PAGE_SIZE,
   MAX_COMPETITOR_PAGE_SIZE,
@@ -332,6 +333,7 @@ export type {
   AiCitationCompetitorOriginInput,
   AiCitationTrackedDomainRow,
   CompetitorAnalysisScope,
+  CompetitorDiscoveryOriginCounts,
   CompetitorEntityRow,
   CompetitorListOptions,
   CompetitorListPage,

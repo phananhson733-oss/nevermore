@@ -1,5 +1,6 @@
 import {
   CompetitorsRepository,
+  MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ,
   ProjectsRepository,
   type CompetitorEntityRow,
   type CompetitorOriginRow,
@@ -832,6 +833,18 @@ function arrangeList(input: {
     rows: [selected],
     nextCursor: input.nextCursor ?? null,
   });
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "countDiscoveryOrigins",
+  ).mockResolvedValue({
+    customer_input: 1,
+    serp_duplicate: 0,
+    approved_corpus: 1,
+  });
+  vi.spyOn(
+    CompetitorsRepository.prototype,
+    "listAiCitationDiscoveryOrigins",
+  ).mockResolvedValue([]);
   vi.spyOn(CompetitorsRepository.prototype, "listOriginsByIds").mockResolvedValue(
     [...(input.origins ?? [csvOrigin(), profileOrigin(), manualOrigin()])],
   );
@@ -855,6 +868,275 @@ beforeEach(() => {
 });
 
 describe("Growth Map Competitor Library read service", () => {
+  it("returns exact full-library discovery counts independently of the cursor page", async () => {
+    const exec = arrangeList();
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.countDiscoveryOrigins,
+    ).mockResolvedValue({
+      customer_input: 7,
+      serp_duplicate: 100,
+      approved_corpus: 3,
+    });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 1, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data).toHaveLength(1);
+    expect(response.meta.discoveryCounts).toEqual({
+      customer_input: 7,
+      serp_duplicate: 100,
+      ai_co_citation: 0,
+      approved_corpus: 3,
+    });
+  });
+
+  it("leaves whole-library discovery counts null for a frozen generation", async () => {
+    const exec = arrangeList({ generationRunId: ids.olderRun });
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: ids.olderRun },
+      exec as never,
+    );
+
+    expect(response.meta.discoveryCounts).toBeNull();
+    expect(
+      CompetitorsRepository.prototype.countDiscoveryOrigins,
+    ).not.toHaveBeenCalled();
+    expect(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("counts a canonical latest measured positive AI aggregate", async () => {
+    const exec = arrangeList({
+      queryResults: [
+        [profileRow()],
+        [csvObservation()],
+        [csvSnapshot()],
+        [csvCollectionRun()],
+        [csvPreview()],
+        [aiCitationObservation()],
+        [aiCitationSnapshot()],
+        [aiCitationCollectionRun()],
+      ],
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).mockResolvedValue([aiCitationOrigin()]);
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.meta.discoveryCounts?.ai_co_citation).toBe(1);
+  });
+
+  it("uses observation-id ascending as the latest AI tie-break and lets measured zero override positive", async () => {
+    const smallerObservationId =
+      "09000000-0000-4000-8000-000000000036";
+    const smallerOriginId = "09000000-0000-4000-8000-000000000034";
+    const baseValue = aiCitationObservation().value_json as Record<
+      string,
+      unknown
+    >;
+    const zeroObservation = aiCitationObservation({
+      id: smallerObservationId,
+      value_json: {
+        ...baseValue,
+        citedQueries: 0,
+        queryOutcomes: (
+          baseValue["queryOutcomes"] as Array<Record<string, unknown>>
+        ).map((outcome) => ({ ...outcome, cited: false })),
+      },
+    });
+    const exec = arrangeList({
+      queryResults: [
+        [profileRow()],
+        [csvObservation()],
+        [csvSnapshot()],
+        [csvCollectionRun()],
+        [csvPreview()],
+        [aiCitationObservation(), zeroObservation],
+        [aiCitationSnapshot()],
+        [aiCitationCollectionRun()],
+      ],
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).mockResolvedValue([
+      aiCitationOrigin(),
+      aiCitationOrigin({
+        id: smallerOriginId,
+        normalized_observation_id: smallerObservationId,
+      }),
+    ]);
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.meta.discoveryCounts?.ai_co_citation).toBe(0);
+  });
+
+  it("does not revive an older positive when the latest AI aggregate is unreadable", async () => {
+    const olderObservedAt = "2026-07-22T07:00:00.000Z";
+    const olderOriginId = "09000000-0000-4000-8000-000000000034";
+    const olderSnapshotId = "09000000-0000-4000-8000-000000000035";
+    const olderObservationId = "09000000-0000-4000-8000-000000000036";
+    const olderCollectionRunId =
+      "09000000-0000-4000-8000-000000000037";
+    const olderOrigin = aiCitationOrigin({
+      id: olderOriginId,
+      data_snapshot_id: olderSnapshotId,
+      normalized_observation_id: olderObservationId,
+      observed_at: olderObservedAt,
+      created_at: olderObservedAt,
+    });
+    const latestOrigin = aiCitationOrigin();
+    const olderObservation = aiCitationObservation({
+      id: olderObservationId,
+      snapshot_id: olderSnapshotId,
+      observed_at: olderObservedAt,
+    });
+    const latestValue = aiCitationObservation().value_json as Record<
+      string,
+      unknown
+    >;
+    const latestUnreadableObservation = aiCitationObservation({
+      value_json: {
+        ...latestValue,
+        undocumentedVendorField: "must-not-pass",
+      },
+    });
+    const olderSnapshot = aiCitationSnapshot({
+      id: olderSnapshotId,
+      collection_run_id: olderCollectionRunId,
+      captured_at: olderObservedAt,
+    });
+    const olderCollectionRun = aiCitationCollectionRun({
+      id: olderCollectionRunId,
+    });
+    const exec = arrangeList({
+      entity: entity({ origin_count: 2 }),
+      origins: [latestOrigin, olderOrigin],
+      queryResults: [
+        [olderObservation, latestUnreadableObservation],
+        [olderSnapshot, aiCitationSnapshot()],
+        [olderCollectionRun, aiCitationCollectionRun()],
+        [olderObservation, latestUnreadableObservation],
+        [olderSnapshot, aiCitationSnapshot()],
+        [olderCollectionRun, aiCitationCollectionRun()],
+      ],
+      confirmedProfileId: null,
+    });
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      latestOrigin,
+      olderOrigin,
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).mockResolvedValue([latestOrigin, olderOrigin]);
+
+    const response = await listProjectAuditCompetitors(
+      scope,
+      ids.project,
+      { limit: 50, cursor: null, diagnosticRunId: null },
+      exec as never,
+    );
+
+    expect(response.data[0]?.aiCitationInsight).toMatchObject({
+      availability: "unavailable",
+      value: null,
+    });
+    expect(response.meta.discoveryCounts?.ai_co_citation).toBe(0);
+  });
+
+  it("fails closed when the bounded AI discovery candidate read returns its overflow sentinel", async () => {
+    const exec = arrangeList();
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).mockResolvedValue(
+      Array.from(
+        { length: MAX_COMPETITOR_DISCOVERY_AI_ORIGIN_READ + 1 },
+        () => aiCitationOrigin(),
+      ),
+    );
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+    expect(CompetitorsRepository.prototype.listByIds).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before lineage loading for a foreign AI discovery origin", async () => {
+    const exec = arrangeList();
+    vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
+      csvOrigin(),
+      profileOrigin(),
+      manualOrigin(),
+    ]);
+    vi.mocked(
+      CompetitorsRepository.prototype.listAiCitationDiscoveryOrigins,
+    ).mockResolvedValue([
+      aiCitationOrigin({
+        workspace_id: "20000000-0000-4000-8000-000000000001",
+      }),
+    ]);
+
+    await expect(
+      listProjectAuditCompetitors(
+        scope,
+        ids.project,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+    expect(CompetitorsRepository.prototype.listByIds).not.toHaveBeenCalled();
+  });
+
   it("lists the current canonical competitor when it is absent from the published generation", async () => {
     const exec = arrangeList({ governanceCompetitors: [] });
     vi.spyOn(CompetitorsRepository.prototype, "listOrigins").mockResolvedValue([
@@ -1533,41 +1815,51 @@ describe("Growth Map Competitor Library read service", () => {
         })),
       },
     ],
-  ])("fails closed for an AI citation aggregate with %s", async (_label, valueDrift) => {
-    const baseValue = aiCitationObservation().value_json as Record<
-      string,
-      unknown
-    >;
-    const exec = arrangeList({
-      entity: entity({ name: null, origin_count: 1 }),
-      origins: [aiCitationOrigin()],
-      governanceCompetitors: [
-        governanceCompetitor({ originRefs: [aiCitationOriginRef()] }),
-      ],
-      queryResults: [
-        [
-          aiCitationObservation({
-            value_json: { ...baseValue, ...valueDrift },
-          }),
+  ])(
+    "reports the latest AI citation aggregate as unavailable when it has %s",
+    async (_label, valueDrift) => {
+      const baseValue = aiCitationObservation().value_json as Record<
+        string,
+        unknown
+      >;
+      const exec = arrangeList({
+        entity: entity({ name: null, origin_count: 1 }),
+        origins: [aiCitationOrigin()],
+        governanceCompetitors: [
+          governanceCompetitor({ originRefs: [aiCitationOriginRef()] }),
         ],
-        [aiCitationSnapshot()],
-        [aiCitationCollectionRun()],
-      ],
-      confirmedProfileId: null,
-    });
+        queryResults: [
+          [
+            aiCitationObservation({
+              value_json: { ...baseValue, ...valueDrift },
+            }),
+          ],
+          [aiCitationSnapshot()],
+          [aiCitationCollectionRun()],
+        ],
+        confirmedProfileId: null,
+      });
 
-    await expect(
-      listProjectAuditCompetitors(
+      const response = await listProjectAuditCompetitors(
         scope,
         ids.project,
         { limit: 50, cursor: null },
         exec as never,
-      ),
-    ).rejects.toMatchObject({
-      code: "DEPENDENCY_UNAVAILABLE",
-      status: 503,
-    });
-  });
+      );
+
+      expect(response.data[0]?.aiCitationInsight).toEqual({
+        availability: "unavailable",
+        value: null,
+        limitation:
+          "The latest immutable DataForSEO AI-citation aggregate recorded for this Competitor is unreadable; an older measurement is not substituted.",
+      });
+      expect(response.data[0]?.originOccurrences).toHaveLength(1);
+      expect(response.data[0]?.originOccurrences[0]).toMatchObject({
+        originKind: "ai_citation",
+        observationId: ids.aiObservation,
+      });
+    },
+  );
 
   it("projects one exact v2 paid SERP-competitor origin without claiming domain overlap", async () => {
     const exec = arrangeList({

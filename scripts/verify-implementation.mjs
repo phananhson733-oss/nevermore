@@ -1622,8 +1622,27 @@ function checkOpenApi() {
   );
 
   assertClosedRequiredCompetitorSchema(
+    "GrowthMapCompetitorDiscoveryCounts",
+    [
+      "customer_input",
+      "serp_duplicate",
+      "ai_co_citation",
+      "approved_corpus",
+    ],
+  );
+  const competitorDiscoveryCounts =
+    competitorSchemas.GrowthMapCompetitorDiscoveryCounts;
+  invariant(
+    Object.values(competitorDiscoveryCounts?.properties ?? {}).every(
+      (property) =>
+        property?.type === "integer" && property.minimum === 0,
+    ),
+    "Growth Map Competitor discovery counts must remain exact non-negative whole-library integers",
+  );
+
+  assertClosedRequiredCompetitorSchema(
     "GrowthMapCompetitorLibraryPageMeta",
-    ["limit", "nextCursor", "hasNext", "coverage"],
+    ["limit", "nextCursor", "hasNext", "coverage", "discoveryCounts"],
   );
   assertClosedRequiredCompetitorSchema(
     "GrowthMapCompetitorLibraryResponse",
@@ -1645,12 +1664,24 @@ function checkOpenApi() {
     competitorSchemas.GrowthMapCompetitorLibraryResponse;
   const competitorPageMeta =
     competitorSchemas.GrowthMapCompetitorLibraryPageMeta;
+  const competitorPageDiscoveryCounts =
+    competitorPageMeta?.properties?.discoveryCounts;
   invariant(
     competitorPage?.properties?.data?.maxItems === 100 &&
       competitorPage.properties?.meta?.$ref ===
         "#/components/schemas/GrowthMapCompetitorLibraryPageMeta" &&
       competitorPageMeta?.properties?.coverage?.$ref ===
         "#/components/schemas/GrowthMapCoverage" &&
+      Array.isArray(competitorPageDiscoveryCounts?.anyOf) &&
+      competitorPageDiscoveryCounts.anyOf.length === 2 &&
+      competitorPageDiscoveryCounts.anyOf.some(
+        (shape) =>
+          shape?.$ref ===
+          "#/components/schemas/GrowthMapCompetitorDiscoveryCounts",
+      ) &&
+      competitorPageDiscoveryCounts.anyOf.some(
+        (shape) => shape?.type === "null",
+      ) &&
       competitorPageMeta.properties?.limit?.minimum === 1 &&
       competitorPageMeta.properties.limit.maximum === 100,
     "Growth Map Competitor cursor page must remain bounded with exact metadata and explicit coverage",

@@ -104,6 +104,15 @@ interface SerpOriginFixture {
   readonly checksum: string;
 }
 
+interface AiCitationOriginFixture {
+  readonly originId: string;
+  readonly competitorId: string;
+  readonly collectionRunId: string;
+  readonly snapshotId: string;
+  readonly observationId: string;
+  readonly sourceConnectionId: string;
+}
+
 async function inRolledBackFixture(
   handle: DbHandle,
   test: (tx: DbTx) => Promise<void>,
@@ -645,6 +654,164 @@ async function seedSerpOverlapOrigin(
   };
 }
 
+async function seedAiCitationOrigin(
+  tx: DbTx,
+  project: ProjectFixture,
+  input: {
+    readonly domain: string;
+    readonly citedQueries: number;
+    readonly observedAt: string;
+    readonly sourceConnectionId?: string;
+  },
+): Promise<AiCitationOriginFixture> {
+  const sourceConnectionId = input.sourceConnectionId ?? randomUUID();
+  const collectionRunId = randomUUID();
+  const snapshotId = randomUUID();
+  const observationId = randomUUID();
+  const limitation =
+    "Complete fixed-20 ChatGPT web-search cohort in US/en-US.";
+  const queryOutcomes = Array.from({ length: 20 }, (_, index) => ({
+    queryEntityId: randomUUID(),
+    queryRevision: index + 1,
+    queryHash: contentHash({
+      domain: input.domain,
+      observedAt: input.observedAt,
+      index,
+    }),
+    availability: "available" as const,
+    cited: index < input.citedQueries,
+  }));
+
+  if (input.sourceConnectionId === undefined) {
+    await tx.insert(sourceConnections).values({
+      id: sourceConnectionId,
+      workspace_id: project.workspaceId,
+      project_id: project.projectId,
+      site_id: project.siteId,
+      provider: "dataforseo",
+      connection_type: "api_key_stub",
+      state: "available",
+      external_ref: project.host,
+      limitation,
+      connected_at: input.observedAt,
+      created_by: project.actorId,
+    });
+  }
+  await tx.insert(asyncRuns).values({
+    id: collectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    kind: "collection",
+    status: "completed",
+    result_type: "collection_run",
+    result_id: collectionRunId,
+    initiated_by: project.actorId,
+    queued_at: input.observedAt,
+    started_at: input.observedAt,
+    completed_at: input.observedAt,
+  });
+  await tx.insert(collectionRuns).values({
+    id: collectionRunId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    operation: "search_landscape",
+    method_version: "dataforseo.search_landscape.v3",
+    parameters_hash: contentHash({
+      provider: "dataforseo",
+      operation: "search_landscape",
+      domain: input.domain,
+      observedAt: input.observedAt,
+    }),
+  });
+  await tx.insert(dataSnapshots).values({
+    id: snapshotId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    site_id: project.siteId,
+    collection_run_id: collectionRunId,
+    source_connection_id: sourceConnectionId,
+    provider: "dataforseo",
+    dataset_key: "dataforseo.search_landscape.v3",
+    schema_version: "dataforseo.search_landscape.v3",
+    method_version: "dataforseo.search_landscape.v3",
+    captured_at: input.observedAt,
+    source_window: { start: null, end: null },
+    availability: "available",
+    limitation,
+    raw_object_key: null,
+    row_count: 1,
+    checksum: contentHash({ snapshotId, observationId }),
+    summary: {
+      collectionScope: {
+        target: project.host,
+        marketCode: "US",
+        languageTag: "en-US",
+      },
+    },
+  });
+  await tx.insert(normalizedObservations).values({
+    id: observationId,
+    workspace_id: project.workspaceId,
+    project_id: project.projectId,
+    snapshot_id: snapshotId,
+    site_page_id: null,
+    provider: "dataforseo",
+    metric_key: "dataforseo.competitor_ai_citation.v1",
+    subject_type: "site",
+    subject_ref: input.domain,
+    observed_at: input.observedAt,
+    availability: "available",
+    value_numeric: null,
+    value_text: null,
+    value_json: {
+      targetDomain: project.host,
+      competitorDomain: input.domain,
+      attemptedQueries: 20,
+      observedQueries: 20,
+      citedQueries: input.citedQueries,
+      unavailableQueries: 0,
+      cohortCoverage: "complete",
+      querySetHash: contentHash(
+        queryOutcomes.map((outcome) => outcome.queryHash),
+      ),
+      platform: "chat_gpt",
+      model: "gpt-5",
+      marketCode: "US",
+      languageTag: "en-US",
+      queryOutcomes,
+    },
+    unit: null,
+    origin: "vendor_observation",
+    method: "observed",
+    grade: "B",
+    support: "supports",
+    limitation,
+  });
+
+  const projected = await new CompetitorsRepository(tx).upsertOrigin(
+    { workspaceId: project.workspaceId, projectId: project.projectId },
+    {
+      originKind: "ai_citation",
+      domain: input.domain,
+      name: null,
+      snapshotId,
+      observationId,
+      sourcePointer: "/valueJson/competitorDomain",
+    },
+  );
+  return {
+    originId: projected.occurrenceId,
+    competitorId: projected.competitorId,
+    collectionRunId,
+    snapshotId,
+    observationId,
+    sourceConnectionId,
+  };
+}
+
 interface PublishedCompetitorGovernance {
   readonly reviewStatus: GovernanceCompetitorReviewStatus;
   readonly revision: number;
@@ -1092,6 +1259,132 @@ describeDb("Growth Map Competitor Library real Postgres projection", () => {
 
   afterAll(async () => {
     await handle?.end();
+  });
+
+  it("computes exact current AI discovery totals across cursor pages from each entity's latest canonical aggregate", async () => {
+    await inRolledBackFixture(handle, async (tx) => {
+      const workspaceId = randomUUID();
+      await tx.insert(workspaces).values({
+        plan_tier: "internal",
+        id: workspaceId,
+        name: `Competitor discovery integration ${workspaceId}`,
+      });
+      const project = await seedProject(tx, workspaceId, "Discovery");
+      const foreignProject = await seedProject(tx, workspaceId, "ForeignDiscovery");
+      const repository = new CompetitorsRepository(tx);
+      const projectScope = {
+        workspaceId,
+        projectId: project.projectId,
+      };
+      const domains = Array.from(
+        { length: 51 },
+        (_, index) => `discovery-${String(index + 1).padStart(2, "0")}.example`,
+      );
+      for (const domain of domains) {
+        const manualEntryId = randomUUID();
+        await repository.upsertOrigin(projectScope, {
+          originKind: "manual",
+          domain,
+          name: null,
+          manualEntryId,
+        });
+      }
+
+      const initialFirstPage = await repository.listByProject(projectScope, {
+        limit: 50,
+        cursor: null,
+      });
+      expect(initialFirstPage.rows).toHaveLength(50);
+      expect(initialFirstPage.nextCursor).not.toBeNull();
+      const firstPageDomains = new Set(
+        initialFirstPage.rows.map((entity) => entity.domain),
+      );
+      const secondPageDomain = domains.find(
+        (domain) => !firstPageDomains.has(domain),
+      );
+      const firstPageDomain = initialFirstPage.rows[0]?.domain;
+      if (!firstPageDomain || !secondPageDomain) {
+        throw new Error("Could not establish the two-page competitor fixture.");
+      }
+
+      const firstPageOld = await seedAiCitationOrigin(tx, project, {
+        domain: firstPageDomain,
+        citedQueries: 8,
+        observedAt: "2026-08-01T08:00:00.000Z",
+      });
+      await seedAiCitationOrigin(tx, project, {
+        domain: firstPageDomain,
+        citedQueries: 0,
+        observedAt: "2026-08-01T09:00:00.000Z",
+        sourceConnectionId: firstPageOld.sourceConnectionId,
+      });
+      await seedAiCitationOrigin(tx, project, {
+        domain: secondPageDomain,
+        citedQueries: 0,
+        observedAt: "2026-08-01T08:00:00.000Z",
+        sourceConnectionId: firstPageOld.sourceConnectionId,
+      });
+      await seedAiCitationOrigin(tx, project, {
+        domain: secondPageDomain,
+        citedQueries: 8,
+        observedAt: "2026-08-01T09:00:00.000Z",
+        sourceConnectionId: firstPageOld.sourceConnectionId,
+      });
+      await seedAiCitationOrigin(tx, foreignProject, {
+        domain: "foreign-positive.example",
+        citedQueries: 8,
+        observedAt: "2026-08-01T10:00:00.000Z",
+      });
+
+      const firstPage = await listProjectAuditCompetitors(
+        { workspaceId },
+        project.projectId,
+        { limit: 50, cursor: null, diagnosticRunId: null },
+        tx,
+      );
+      expect(firstPage.meta.discoveryCounts).toEqual({
+        customer_input: 51,
+        serp_duplicate: 0,
+        ai_co_citation: 1,
+        approved_corpus: 0,
+      });
+      expect(firstPage.meta.nextCursor).not.toBeNull();
+      expect(firstPage.data.some((item) => item.domain === secondPageDomain)).toBe(
+        false,
+      );
+      expect(
+        firstPage.data.find((item) => item.domain === firstPageDomain)
+          ?.aiCitationInsight,
+      ).toMatchObject({ availability: "available", value: 0 });
+      expect(
+        firstPage.data.some(
+          (item) => item.aiCitationInsight.availability === "unavailable",
+        ),
+      ).toBe(true);
+
+      const secondPage = await listProjectAuditCompetitors(
+        { workspaceId },
+        project.projectId,
+        {
+          limit: 50,
+          cursor: firstPage.meta.nextCursor,
+          diagnosticRunId: null,
+        },
+        tx,
+      );
+      expect(secondPage.meta.discoveryCounts).toEqual(
+        firstPage.meta.discoveryCounts,
+      );
+      expect(
+        secondPage.data.find((item) => item.domain === secondPageDomain)
+          ?.aiCitationInsight,
+      ).toMatchObject({ availability: "available", value: 8 });
+      expect(
+        [...firstPage.data, ...secondPage.data].some(
+          (item) => item.domain === "foreign-positive.example",
+        ),
+      ).toBe(false);
+    });
   });
 
   it("projects exact canonical origins with project isolation and no private raw leakage", async () => {

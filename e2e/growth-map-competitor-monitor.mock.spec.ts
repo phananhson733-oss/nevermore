@@ -170,6 +170,12 @@ const LIBRARY_RESPONSE = GrowthMapCompetitorLibraryResponse.parse({
       availability: "available",
       limitations: [],
     },
+    discoveryCounts: {
+      customer_input: 2,
+      serp_duplicate: 1,
+      ai_co_citation: 1,
+      approved_corpus: 0,
+    },
   },
 });
 
@@ -293,6 +299,15 @@ async function installCompetitorApi(
     ? GrowthMapCompetitorLibraryResponse.parse({
         ...LIBRARY_RESPONSE,
         data: [],
+        meta: {
+          ...LIBRARY_RESPONSE.meta,
+          discoveryCounts: {
+            customer_input: 0,
+            serp_duplicate: 0,
+            ai_co_citation: 0,
+            approved_corpus: 0,
+          },
+        },
       })
     : LIBRARY_RESPONSE;
 

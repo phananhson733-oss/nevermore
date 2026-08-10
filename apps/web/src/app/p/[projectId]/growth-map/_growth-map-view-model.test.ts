@@ -3568,7 +3568,9 @@ describe("Growth Map view model", () => {
     expect(source).toContain(
       'mode !== "backlinks" && generationQuery.isPending',
     );
-    expect(source).toContain("diagnosticRunId={diagnosticRunId!}");
+    expect(source).toMatch(
+      /<CompetitorLibraryPane[\s\S]{0,180}diagnosticRunId=\{null\}/,
+    );
     expect(source).toContain(
       "const detailQuery = useGrowthMapUrlDetail(\n    projectId,\n    selectedSitePageId,\n    diagnosticRunId,",
     );
@@ -3582,6 +3584,43 @@ describe("Growth Map view model", () => {
       "const pinnedSitePagesQuery = useGrowthMapUrls(projectId, {\n    limit: 100,\n    diagnosticRunId,",
     );
     expect(source).not.toContain('locationParams.get("diagnosticRunId")');
+  });
+
+  it("counts only measured positive AI citations as AI co-citation discoveries", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /ai_co_citation: items\.filter\([\s\S]{0,280}item\.aiCitationInsight\.availability === "available"[\s\S]{0,160}item\.aiCitationInsight\.value > 0/,
+    );
+    expect(source).not.toMatch(
+      /ai_co_citation: items\.filter\([\s\S]{0,280}origin\.originKind === "ai_citation"/,
+    );
+  });
+
+  it("prefers whole-library competitor discovery counts over the loaded cursor page", () => {
+    const source = readFileSync(
+      new URL("./_growth-map.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /const discoveryCounts =\s+response\.meta\.discoveryCounts \?\?/,
+    );
+    for (const key of [
+      "customer_input",
+      "serp_duplicate",
+      "ai_co_citation",
+      "approved_corpus",
+    ]) {
+      expect(source).toMatch(
+        new RegExp(
+          `key: "${key}"[\\s\\S]{0,160}count: discoveryCounts\\.${key}`,
+        ),
+      );
+    }
   });
 
   it("repairs only an explicit stale Keyword deep link after the cursor page loads", () => {

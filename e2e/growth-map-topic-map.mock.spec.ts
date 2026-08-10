@@ -193,6 +193,12 @@ async function fulfillJson(page: Page): Promise<void> {
               nextCursor: null,
               hasNext: false,
               coverage: { availability: "available", limitations: [] },
+              discoveryCounts: {
+                customer_input: 0,
+                serp_duplicate: 0,
+                ai_co_citation: 0,
+                approved_corpus: 0,
+              },
             },
           },
         }),
