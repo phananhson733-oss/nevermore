@@ -2,7 +2,9 @@ import {
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  KeywordGovernanceSuggestionGenerationRunsRepository,
   KeywordOccurrencesRepository,
+  KeywordReviewSuggestionsRepository,
   KeywordsRepository,
   ProjectsRepository,
   SitePagesRepository,
@@ -30,6 +32,7 @@ vi.mock("./growth-map-generation.ts", () => ({
 }));
 
 const {
+  approveProjectAuditKeywordReviewSuggestion,
   getProjectAuditKeyword,
   getProjectAuditKeywordReviewDetail,
   listProjectAuditKeywords,
@@ -52,6 +55,8 @@ const ids = {
   decision: "10000000-0000-4000-8000-000000000013",
   productProfile: "10000000-0000-4000-8000-000000000099",
   analysisInvocation: "10000000-0000-4000-8000-000000000017",
+  suggestion: "10000000-0000-4000-8000-000000000018",
+  suggestionRun: "10000000-0000-4000-8000-000000000019",
 } as const;
 
 const scope = { workspaceId: ids.workspace };
@@ -484,6 +489,107 @@ function reviewedGovernance() {
       earlierHistoryAvailable: false,
     },
   } as const;
+}
+
+function unreviewedGovernance() {
+  const reason = "Keyword ingestion generated the initial candidate decision.";
+  return {
+    decision: {
+      decisionId: ids.decision,
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 2,
+      status: "candidate",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      mappingReviewState: "unreviewed",
+      assignmentInvalidatedBy: null,
+      reason,
+      decisionOrigin: "migration_baseline",
+      decidedBy: null,
+      decidedAt: capturedAt,
+    },
+    projection: {
+      currentDecisionId: ids.decision,
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 2,
+      status: "candidate",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      mappingReviewState: "unreviewed",
+      assignmentInvalidatedBy: null,
+      mappingRevision: 2,
+      executionState: "blocked",
+      reason,
+      updatedAt: capturedAt,
+    },
+    clusterKey: null,
+    reviewedProjection: {
+      projectId: ids.project,
+      keywordId: ids.keyword,
+      governanceRevision: 2,
+      status: "candidate",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      clusterKey: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      mappingReviewState: "unreviewed",
+      assignmentInvalidatedBy: null,
+      earlierHistoryAvailable: false,
+    },
+  } as const;
+}
+
+function pendingSuggestionRow(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: ids.suggestion,
+    workspace_id: ids.workspace,
+    project_id: ids.project,
+    keyword_entity_id: ids.keyword,
+    generation_run_id: ids.suggestionRun,
+    output_ordinal: 1,
+    expected_governance_revision: 2,
+    suggestion_version: "keyword-governance-suggestion.v1",
+    generation_version: "keyword-governance-suggestion-generation.v1",
+    prompt_set_version: "keyword-governance-suggestion.prompt.v1",
+    input_hash: "a".repeat(64),
+    output_hash: "b".repeat(64),
+    status: "pending",
+    suggested_status: "approved",
+    suggested_intent: "commercial",
+    suggested_buyer_stage: "consideration",
+    suggested_topic_node_id: ids.topicNode,
+    suggested_topic_model_revision: 3,
+    suggested_mapping_decision: "existing_page",
+    suggested_mapped_site_page_id: ids.sitePage,
+    suggested_reason:
+      "The confirmed Topic and owned page match this keyword.",
+    analysis_invocation_id: ids.analysisInvocation,
+    intent_authority: "provider_observed",
+    intent_snapshot_id: ids.snapshot,
+    intent_observation_id: ids.observation,
+    intent_observed_at: capturedAt,
+    resolution_mode: null,
+    keyword_review_decision_id: null,
+    superseded_by_suggestion_id: null,
+    created_at: "2026-08-10T08:01:00.000Z",
+    resolved_at: null,
+    ...overrides,
+  } as never;
 }
 
 function frozenGovernance(input?: {
@@ -2659,6 +2765,14 @@ describe("Growth Map Keyword Library read service", () => {
     vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
       sitePage(),
     ] as never);
+    const pendingSuggestionRead = vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    );
+    const latestSuggestionGenerationRead = vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    );
     const exec = new FakeExecutor();
     exec.enqueue(
       [occurrence()],
@@ -2698,6 +2812,9 @@ describe("Growth Map Keyword Library read service", () => {
         ]),
       },
     });
+    expect(response.data.pendingSuggestion).toBeNull();
+    expect(pendingSuggestionRead).not.toHaveBeenCalled();
+    expect(latestSuggestionGenerationRead).not.toHaveBeenCalled();
   });
 
   it("returns not-found when the scoped keyword is absent from the frozen published manifest", async () => {
@@ -3005,6 +3122,483 @@ describe("Growth Map Keyword Library read service", () => {
   });
 });
 
+describe("Growth Map Keyword review suggestion projection", () => {
+  function arrangeUnreviewedDetail(
+    reviewOrigin:
+      | "migration_baseline"
+      | "system_suggestion" = "migration_baseline",
+  ) {
+    mockProject();
+    const governance = unreviewedGovernance();
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "findCurrent",
+    ).mockResolvedValue({
+      ...governance,
+      decision: { ...governance.decision, decisionOrigin: reviewOrigin },
+    });
+    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
+      entity({
+        status: "candidate",
+        intent: null,
+        buyer_stage: null,
+        cluster_key: null,
+        mapping_decision: "unassigned",
+        mapped_site_page_id: null,
+        mapping_review_state: "unreviewed",
+        mapping_revision: 2,
+      }),
+    );
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockResolvedValue([
+      {
+        keywordId: ids.keyword,
+        governanceRevision: 2,
+        decisionOrigin: reviewOrigin,
+        analysisInvocationId: null,
+      },
+    ]);
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([]);
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+    return exec;
+  }
+
+  it("projects the exact current pending suggestion with provider and model lineage", async () => {
+    const exec = arrangeUnreviewedDetail();
+    const suggestion = pendingSuggestionRow();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({
+      kind: "ready",
+      suggestion,
+      topicLabel: "Customer Onboarding",
+      mappedSitePageTitle: "Customer onboarding guide",
+    });
+    const latest = vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    );
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toEqual({
+      suggestionId: ids.suggestion,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+      state: "pending_ready",
+      expectedGovernanceRevision: 2,
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: ids.topicNode,
+      topicModelRevision: 3,
+      topicLabel: "Customer Onboarding",
+      mappingDecision: "existing_page",
+      mappedSitePageId: ids.sitePage,
+      mappedSitePageTitle: "Customer onboarding guide",
+      reason: "The confirmed Topic and owned page match this keyword.",
+      readinessReason: "all_authorities_confirmed",
+      limitation: null,
+      lineage: {
+        generationVersion: "keyword-governance-suggestion-generation.v1",
+        promptSetVersion: "keyword-governance-suggestion.prompt.v1",
+        authority: "llm_generated",
+        analysisInvocationId: ids.analysisInvocation,
+      },
+      intentLineage: {
+        authority: "provider_observed",
+        snapshotId: ids.snapshot,
+        observationId: ids.observation,
+        analysisInvocationId: null,
+        observedAt: capturedAt,
+      },
+      createdAt: "2026-08-10T08:01:00.000Z",
+    });
+    expect(latest).not.toHaveBeenCalled();
+  });
+
+  it("requires manual review when the current suggestion has no intent authority", async () => {
+    const exec = arrangeUnreviewedDetail();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({
+      kind: "ready",
+      suggestion: pendingSuggestionRow({
+        suggested_intent: null,
+        intent_authority: "unavailable",
+        intent_snapshot_id: null,
+        intent_observation_id: null,
+        intent_observed_at: null,
+      }),
+      topicLabel: "Customer Onboarding",
+      mappedSitePageTitle: "Customer onboarding guide",
+    });
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toMatchObject({
+      state: "pending_needs_review",
+      readinessReason: "insufficient_authority",
+      limitation: expect.stringMatching(/intent authority/i),
+      intent: null,
+      intentLineage: {
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+      },
+    });
+  });
+
+  it("marks an immutable pending suggestion stale when its frozen authority moved", async () => {
+    const exec = arrangeUnreviewedDetail();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({
+      kind: "stale",
+      suggestion: pendingSuggestionRow(),
+      topicLabel: "Customer Onboarding",
+      mappedSitePageTitle: "Customer onboarding guide",
+    });
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toMatchObject({
+      suggestionId: ids.suggestion,
+      state: "stale",
+      readinessReason: "governance_revision_changed",
+      limitation: expect.stringMatching(/changed after generation/i),
+    });
+  });
+
+  it("projects only a bounded empty generating stub for the active run", async () => {
+    const exec = arrangeUnreviewedDetail();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({ kind: "not_found" });
+    vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    ).mockResolvedValue({
+      suggestionId: ids.suggestionRun,
+      generationRunId: ids.suggestionRun,
+      keywordId: ids.keyword,
+      expectedGovernanceRevision: 2,
+      createdAt: "2026-08-10T08:00:00.000Z",
+      status: "running",
+      safeTerminalCode: null,
+      authorityCurrent: true,
+      hasSuggestion: false,
+    });
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toEqual({
+      suggestionId: ids.suggestionRun,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+      state: "generating",
+      expectedGovernanceRevision: 2,
+      status: null,
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      topicLabel: null,
+      mappingDecision: null,
+      mappedSitePageId: null,
+      mappedSitePageTitle: null,
+      reason: null,
+      readinessReason: "generation_in_progress",
+      limitation: "The bounded Keyword suggestion job is still running.",
+      lineage: null,
+      intentLineage: null,
+      createdAt: "2026-08-10T08:00:00.000Z",
+    });
+  });
+
+  it("collapses a current failed run to a generic unavailable state", async () => {
+    const exec = arrangeUnreviewedDetail();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({ kind: "not_found" });
+    vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    ).mockResolvedValue({
+      suggestionId: ids.suggestionRun,
+      generationRunId: ids.suggestionRun,
+      keywordId: ids.keyword,
+      expectedGovernanceRevision: 2,
+      createdAt: "2026-08-10T08:00:00.000Z",
+      status: "failed",
+      safeTerminalCode:
+        "KEYWORD_GOVERNANCE_SUGGESTION_INVOCATION_BUDGET_EXHAUSTED",
+      authorityCurrent: true,
+      hasSuggestion: false,
+    });
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toMatchObject({
+      state: "unavailable",
+      readinessReason: "authority_unavailable",
+      limitation: expect.stringMatching(/currently unavailable/i),
+    });
+    expect(JSON.stringify(response.data.pendingSuggestion)).not.toContain(
+      "BUDGET_EXHAUSTED",
+    );
+  });
+
+  it.each([
+    ["cancelled", true],
+    ["running", false],
+    ["failed", false],
+  ] as const)(
+    "marks %s generation stale when cancellation or authority drift makes it unsafe",
+    async (status, authorityCurrent) => {
+      const exec = arrangeUnreviewedDetail();
+      vi.spyOn(
+        KeywordReviewSuggestionsRepository.prototype,
+        "findCurrentPendingReadiness",
+      ).mockResolvedValue({ kind: "not_found" });
+      vi.spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "findLatestGenerationForKeyword",
+      ).mockResolvedValue({
+        suggestionId: ids.suggestionRun,
+        generationRunId: ids.suggestionRun,
+        keywordId: ids.keyword,
+        expectedGovernanceRevision: 2,
+        createdAt: "2026-08-10T08:00:00.000Z",
+        status,
+        safeTerminalCode:
+          status === "failed"
+            ? "KEYWORD_GOVERNANCE_SUGGESTION_AUTHORITY_STALE"
+            : null,
+        authorityCurrent,
+        hasSuggestion: false,
+      });
+
+      const response = await getProjectAuditKeywordReviewDetail(
+        scope,
+        ids.project,
+        ids.keyword,
+        exec as never,
+      );
+
+      expect(response.data.pendingSuggestion).toMatchObject({
+        state: "stale",
+        readinessReason: "governance_revision_changed",
+        limitation: expect.stringMatching(/changed after generation/i),
+      });
+    },
+  );
+
+  it.each(["running", "failed"] as const)(
+    "marks a %s generation stale when its frozen revision differs from live governance",
+    async (status) => {
+      const exec = arrangeUnreviewedDetail();
+      vi.spyOn(
+        KeywordReviewSuggestionsRepository.prototype,
+        "findCurrentPendingReadiness",
+      ).mockResolvedValue({ kind: "not_found" });
+      vi.spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "findLatestGenerationForKeyword",
+      ).mockResolvedValue({
+        suggestionId: ids.suggestionRun,
+        generationRunId: ids.suggestionRun,
+        keywordId: ids.keyword,
+        expectedGovernanceRevision: 1,
+        createdAt: "2026-08-10T08:00:00.000Z",
+        status,
+        safeTerminalCode:
+          status === "failed"
+            ? "KEYWORD_GOVERNANCE_SUGGESTION_INVOCATION_BUDGET_EXHAUSTED"
+            : null,
+        authorityCurrent: true,
+        hasSuggestion: false,
+      });
+
+      const response = await getProjectAuditKeywordReviewDetail(
+        scope,
+        ids.project,
+        ids.keyword,
+        exec as never,
+      );
+
+      expect(response.data.pendingSuggestion).toMatchObject({
+        state: "stale",
+        expectedGovernanceRevision: 1,
+        readinessReason: "governance_revision_changed",
+        limitation: expect.stringMatching(/changed after generation/i),
+      });
+    },
+  );
+
+  it("fails closed when a completed current generation has no durable suggestion", async () => {
+    const exec = arrangeUnreviewedDetail();
+    vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    ).mockResolvedValue({ kind: "not_found" });
+    vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    ).mockResolvedValue({
+      suggestionId: ids.suggestionRun,
+      generationRunId: ids.suggestionRun,
+      keywordId: ids.keyword,
+      expectedGovernanceRevision: 2,
+      createdAt: "2026-08-10T08:00:00.000Z",
+      status: "completed",
+      safeTerminalCode: null,
+      authorityCurrent: true,
+      hasSuggestion: false,
+    });
+
+    await expect(
+      getProjectAuditKeywordReviewDetail(
+        scope,
+        ids.project,
+        ids.keyword,
+        exec as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "DEPENDENCY_UNAVAILABLE",
+      status: 503,
+    });
+  });
+
+  it("does not infer a suggestion from reviewOrigin when no explicit authority exists", async () => {
+    const exec = arrangeUnreviewedDetail("system_suggestion");
+    const pending = vi
+      .spyOn(
+        KeywordReviewSuggestionsRepository.prototype,
+        "findCurrentPendingReadiness",
+      )
+      .mockResolvedValue({ kind: "not_found" });
+    vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    ).mockResolvedValue(null);
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(pending).toHaveBeenCalledTimes(1);
+    expect(response.data.pendingSuggestion).toBeNull();
+  });
+
+  it("never reads or exposes suggestions after a human review", async () => {
+    mockProject();
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "findCurrent",
+    ).mockResolvedValue(reviewedGovernance());
+    vi.spyOn(KeywordsRepository.prototype, "findById").mockResolvedValue(
+      entity({
+        status: "approved",
+        intent: "commercial",
+        buyer_stage: "consideration",
+        cluster_key: "Customer Onboarding",
+        mapping_decision: "existing_page",
+        mapped_site_page_id: ids.sitePage,
+        mapping_review_state: "confirmed",
+        mapping_revision: 3,
+      }),
+    );
+    vi.spyOn(
+      KeywordOccurrencesRepository.prototype,
+      "listForEntity",
+    ).mockResolvedValue({ rows: [occurrence()], nextCursor: null });
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "listDecisionOriginsAt",
+    ).mockResolvedValue([
+      {
+        keywordId: ids.keyword,
+        governanceRevision: 3,
+        decisionOrigin: "user",
+        analysisInvocationId: null,
+      },
+    ]);
+    vi.spyOn(SitePagesRepository.prototype, "findByIds").mockResolvedValue([
+      sitePage(),
+    ] as never);
+    const pending = vi.spyOn(
+      KeywordReviewSuggestionsRepository.prototype,
+      "findCurrentPendingReadiness",
+    );
+    const latest = vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "findLatestGenerationForKeyword",
+    );
+    const exec = new FakeExecutor();
+    exec.enqueue(
+      [dataForSeoObservation()],
+      [dataForSeoSnapshot()],
+      [collectionRun()],
+    );
+
+    const response = await getProjectAuditKeywordReviewDetail(
+      scope,
+      ids.project,
+      ids.keyword,
+      exec as never,
+    );
+
+    expect(response.data.pendingSuggestion).toBeNull();
+    expect(pending).not.toHaveBeenCalled();
+    expect(latest).not.toHaveBeenCalled();
+  });
+});
+
 describe("Growth Map Keyword governance review service", () => {
   const review = {
     expectedGovernanceRevision: 2,
@@ -3308,6 +3902,380 @@ describe("Growth Map Keyword governance review service", () => {
     ).rejects.toMatchObject({
       code: "DEPENDENCY_UNAVAILABLE",
       status: 503,
+    });
+  });
+
+  it.each([
+    [
+      "23503",
+      "keyword_review_decisions_mapped_site_page_scope_fkey",
+      "NOT_FOUND",
+      404,
+    ],
+    [
+      "23514",
+      "keyword_entities_mapped_site_page_scope_check",
+      "NOT_FOUND",
+      404,
+    ],
+    [
+      "23503",
+      "keyword_review_decisions_topic_node_revision_fkey",
+      "VALIDATION_ERROR",
+      422,
+    ],
+    [
+      "23503",
+      "keyword_review_decisions_workspace_id_project_id_topic_nod_fkey",
+      "VALIDATION_ERROR",
+      422,
+    ],
+    [
+      "23503",
+      "keyword_review_decisions_workspace_id_project_id_mapped_si_fkey",
+      "NOT_FOUND",
+      404,
+    ],
+    [
+      "23514",
+      "keyword_review_decisions_projection_guard_check",
+      "DEPENDENCY_UNAVAILABLE",
+      503,
+    ],
+  ] as const)(
+    "maps raw PostgreSQL %s / %s without exposing database text",
+    async (code, constraint, expectedCode, expectedStatus) => {
+      const error = Object.assign(
+        new Error("private keyword and provider payload must not leak"),
+        { code, constraint },
+      );
+      const logger = { error: vi.fn() };
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "reviewKeyword",
+      ).mockRejectedValue(error);
+
+      await expect(
+        reviewProjectAuditKeyword(
+          { ...reviewScope, logger },
+          ids.project,
+          ids.keyword,
+          review,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({ code: expectedCode, status: expectedStatus });
+      expect(logger.error).toHaveBeenCalledWith(
+        "keyword_review_persistence_failed",
+        expect.objectContaining({
+          sqlState: code,
+          constraint,
+          workspaceId: ids.workspace,
+          projectId: ids.project,
+          keywordId: ids.keyword,
+          governanceRevision: review.expectedGovernanceRevision,
+        }),
+      );
+      expect(JSON.stringify(logger.error.mock.calls)).not.toContain(
+        "private keyword",
+      );
+    },
+  );
+
+  it("sanitizes an unknown PostgreSQL failure to a fixed 500 error", async () => {
+    const privateMessage =
+      "secret keyword prompt provider payload SQL parameters";
+    const logger = { error: vi.fn() };
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockRejectedValue(
+      Object.assign(new Error(privateMessage), {
+        code: "23514",
+        constraint: "unknown_customer_constraint",
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await reviewProjectAuditKeyword(
+        { ...reviewScope, logger },
+        ids.project,
+        ids.keyword,
+        review,
+        new FakeExecutor() as never,
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(ProblemError);
+    expect((caught as Error).message).toBe(
+      "Keyword review persistence failed",
+    );
+    expect((caught as Error).message).not.toContain(privateMessage);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(
+      privateMessage,
+    );
+  });
+
+  it("maps a PostgreSQL fault wrapped by the query layer without logging wrapper text", async () => {
+    const logger = { error: vi.fn() };
+    vi.spyOn(
+      KeywordGovernanceRepository.prototype,
+      "reviewKeyword",
+    ).mockRejectedValue(
+      Object.assign(new Error("private wrapper query and parameters"), {
+        cause: Object.assign(new Error("private database detail"), {
+          code: "23503",
+          constraint: "keyword_review_decisions_topic_node_revision_fkey",
+        }),
+      }),
+    );
+
+    await expect(
+      reviewProjectAuditKeyword(
+        { ...reviewScope, logger },
+        ids.project,
+        ids.keyword,
+        review,
+        new FakeExecutor() as never,
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toMatch(
+      /private wrapper|private database/,
+    );
+  });
+
+  describe("one-click suggestion approval", () => {
+    const approval = {
+      expectedGovernanceRevision: 2,
+      suggestionVersion: "keyword-governance-suggestion.v1",
+    } as const;
+
+    it("accepts only the immutable suggestion identity and server actor, then returns reviewed r+1", async () => {
+      const exec = arrangeReviewedDetail();
+      const approve = vi
+        .spyOn(KeywordGovernanceRepository.prototype, "approveSuggestion")
+        .mockResolvedValue({ ...reviewedGovernance(), replayed: false });
+
+      const response = await approveProjectAuditKeywordReviewSuggestion(
+        reviewScope,
+        ids.project,
+        ids.keyword,
+        ids.suggestion,
+        approval,
+        exec as never,
+      );
+
+      expect(approve).toHaveBeenCalledWith(
+        { workspaceId: ids.workspace, projectId: ids.project },
+        ids.keyword,
+        ids.suggestion,
+        ids.actor,
+        approval,
+      );
+      expect(response).toMatchObject({
+        projectId: ids.project,
+        diagnosticRunId: null,
+        data: {
+          keywordId: ids.keyword,
+          revision: 3,
+          reviewOrigin: "user",
+          pendingSuggestion: null,
+        },
+      });
+    });
+
+    it("keeps approval and its canonical current-detail read in one transaction", async () => {
+      const exec = arrangeReviewedDetail();
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "approveSuggestion",
+      ).mockResolvedValue({ ...reviewedGovernance(), replayed: false });
+      const transaction = vi.fn(
+        async (callback: (selected: FakeExecutor) => Promise<unknown>) =>
+          callback(exec),
+      );
+      mocks.getDb.mockReturnValue({ db: { transaction } });
+
+      const response = await approveProjectAuditKeywordReviewSuggestion(
+        reviewScope,
+        ids.project,
+        ids.keyword,
+        ids.suggestion,
+        approval,
+      );
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(response.data.revision).toBe(3);
+    });
+
+    it("rejects injected governance fields before repository access", async () => {
+      const approve = vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "approveSuggestion",
+      );
+
+      await expect(
+        approveProjectAuditKeywordReviewSuggestion(
+          reviewScope,
+          ids.project,
+          ids.keyword,
+          ids.suggestion,
+          { ...approval, status: "approved" } as never,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", status: 422 });
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("returns one non-enumerating 404 for missing or cross-scope suggestions", async () => {
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "approveSuggestion",
+      ).mockRejectedValue(
+        new KeywordGovernanceConflictError(
+          "SUGGESTION_NOT_FOUND",
+          approval.expectedGovernanceRevision,
+        ),
+      );
+
+      await expect(
+        approveProjectAuditKeywordReviewSuggestion(
+          reviewScope,
+          ids.project,
+          ids.keyword,
+          ids.suggestion,
+          approval,
+          new FakeExecutor() as never,
+        ),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    });
+
+    it.each([
+      [null, undefined],
+      [2, undefined],
+      [4, 4],
+    ] as const)(
+      "returns 409 for a stale, edited, or expired suggestion (current revision %s)",
+      async (currentRevision, structuredCurrentRevision) => {
+        vi.spyOn(
+          KeywordGovernanceRepository.prototype,
+          "approveSuggestion",
+        ).mockRejectedValue(
+          new KeywordGovernanceConflictError(
+            "REVISION_CONFLICT",
+            approval.expectedGovernanceRevision,
+            currentRevision,
+          ),
+        );
+
+        let caught: unknown;
+        try {
+          await approveProjectAuditKeywordReviewSuggestion(
+            reviewScope,
+            ids.project,
+            ids.keyword,
+            ids.suggestion,
+            approval,
+            new FakeExecutor() as never,
+          );
+        } catch (error) {
+          caught = error;
+        }
+
+        expect(caught).toMatchObject({
+          code: "STALE_REVISION",
+          status: 409,
+          ...(structuredCurrentRevision === undefined
+            ? {}
+            : {
+                current: expect.objectContaining({
+                  expectedRevision: 2,
+                  currentRevision: structuredCurrentRevision,
+                }),
+              }),
+        });
+      },
+    );
+
+    it.each([
+      ["SITE_PAGE_NOT_FOUND", "NOT_FOUND", 404],
+      ["TOPIC_ASSIGNMENT_INVALID", "VALIDATION_ERROR", 422],
+    ] as const)(
+      "maps approval %s to the customer-safe %s boundary",
+      async (repositoryCode, code, status) => {
+        vi.spyOn(
+          KeywordGovernanceRepository.prototype,
+          "approveSuggestion",
+        ).mockRejectedValue(
+          new KeywordGovernanceConflictError(
+            repositoryCode,
+            approval.expectedGovernanceRevision,
+          ),
+        );
+
+        await expect(
+          approveProjectAuditKeywordReviewSuggestion(
+            reviewScope,
+            ids.project,
+            ids.keyword,
+            ids.suggestion,
+            approval,
+            new FakeExecutor() as never,
+          ),
+        ).rejects.toMatchObject({ code, status });
+      },
+    );
+
+    it("sanitizes an unknown approval PostgreSQL failure and safe-logs only identifiers", async () => {
+      const privateMessage =
+        "private keyword prompt provider payload SQL parameter secret";
+      const logger = { error: vi.fn() };
+      vi.spyOn(
+        KeywordGovernanceRepository.prototype,
+        "approveSuggestion",
+      ).mockRejectedValue(
+        Object.assign(new Error(privateMessage), {
+          code: "23514",
+          constraint: "unknown_suggestion_constraint",
+        }),
+      );
+
+      let caught: unknown;
+      try {
+        await approveProjectAuditKeywordReviewSuggestion(
+          { ...reviewScope, logger },
+          ids.project,
+          ids.keyword,
+          ids.suggestion,
+          approval,
+          new FakeExecutor() as never,
+        );
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toBe(
+        "Keyword review persistence failed",
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        "keyword_review_persistence_failed",
+        expect.objectContaining({
+          operation: "suggestion_approve",
+          sqlState: "23514",
+          constraint: "unknown_suggestion_constraint",
+          workspaceId: ids.workspace,
+          projectId: ids.project,
+          keywordId: ids.keyword,
+          governanceRevision: 2,
+        }),
+      );
+      expect(JSON.stringify(logger.error.mock.calls)).not.toContain(
+        privateMessage,
+      );
     });
   });
 });

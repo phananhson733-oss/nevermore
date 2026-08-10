@@ -535,6 +535,18 @@ describe("HTTP request completion metrics", () => {
     ).toBe(
       "/api/mvp/projects/:projectId/audit/keywords/:keywordId/rank-history",
     );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/customer-secret-keyword/review-suggestions/customer-secret-suggestion/approve`,
+      ),
+    ).toBe(
+      "/api/mvp/projects/:projectId/audit/keywords/:keywordId/review-suggestions/:suggestionId/approve",
+    );
+    expect(
+      apiRouteTemplate(
+        `${prefix}/customer-secret-keyword/review-suggestions/customer-secret-suggestion/delete`,
+      ),
+    ).toBe("/api/mvp/:unknown");
     expect(apiRouteTemplate(`${prefix}/customer-secret-keyword/history`)).toBe(
       "/api/mvp/:unknown",
     );

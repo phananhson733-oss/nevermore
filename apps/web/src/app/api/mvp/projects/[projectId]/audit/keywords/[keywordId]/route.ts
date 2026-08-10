@@ -95,6 +95,10 @@ export const PATCH = operatorRoute<{
     {
       workspaceId: ctx.operator.workspaceId,
       actorId: ctx.operator.userId,
+      logger: ctx.logger.child({
+        workspaceId: ctx.operator.workspaceId,
+        projectId: id,
+      }),
     },
     id,
     selectedKeywordId,

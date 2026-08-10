@@ -212,10 +212,11 @@ describe("PATCH selected Growth Map Keyword review", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.reviewProjectAuditKeyword).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         workspaceId: "00000000-0000-4000-8000-000000000002",
         actorId: "00000000-0000-4000-8000-000000000001",
-      },
+        logger: expect.objectContaining({ error: expect.any(Function) }),
+      }),
       projectId,
       keywordId,
       review,

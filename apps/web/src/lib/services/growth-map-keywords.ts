@@ -1,4 +1,5 @@
 import {
+  ApproveKeywordReviewSuggestionRequest as ApproveKeywordReviewSuggestionRequestSchema,
   GrowthMapKeywordDetailResponse,
   GrowthMapKeywordLibraryResponse,
   KeywordGovernanceRevisionConflict,
@@ -10,6 +11,8 @@ import {
   type GrowthMapKeywordNumericMetric,
   type GrowthMapKeywordSourceOccurrence,
   type GrowthMapKeywordTextMetric,
+  type KeywordGovernancePendingSuggestion,
+  type ApproveKeywordReviewSuggestionRequest,
   type ReviewKeywordRequest,
   type SourceFreshness,
   GrowthMapKeywordSourceKind,
@@ -19,7 +22,9 @@ import {
   KeywordGovernanceConflictError,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  KeywordGovernanceSuggestionGenerationRunsRepository,
   KeywordOccurrencesRepository,
+  KeywordReviewSuggestionsRepository,
   KeywordsRepository,
   MAX_KEYWORD_DECISION_ORIGIN_BATCH,
   MAX_KEYWORD_ENTITY_PAGE_SIZE,
@@ -37,11 +42,14 @@ import {
   type KeywordDecisionOriginRow,
   type KeywordEntityRow,
   type KeywordOccurrenceRow,
+  type KeywordReviewSuggestionReadinessResult,
+  type KeywordReviewSuggestionRow,
+  type LatestKeywordGovernanceSuggestionGeneration,
   type ProjectScope,
   type SitePageRow,
   type WorkspaceScope,
 } from "@sf/db";
-import { ProblemError } from "@sf/observability";
+import { ProblemError, type Logger } from "@sf/observability";
 import type { GovernanceKeywordFactV1 } from "@sf/engine";
 import {
   DATAFORSEO_DATASET_KEY,
@@ -109,6 +117,14 @@ const LEGACY_SEARCH_INTENT_LIMITATION =
   "This governed search intent predates durable provider or LLM invocation provenance; its original value is preserved as a pre-ledger classification.";
 const UNAVAILABLE_SEARCH_INTENT_LIMITATION =
   "No user-confirmed, provider-observed, or durably generated search intent is available for this keyword.";
+const SUGGESTION_GENERATING_LIMITATION =
+  "The bounded Keyword suggestion job is still running.";
+const SUGGESTION_INTENT_AUTHORITY_LIMITATION =
+  "The generated suggestion has no verifiable search intent authority and requires manual review.";
+const SUGGESTION_STALE_LIMITATION =
+  "The Keyword governance authority changed after generation; regenerate before approval.";
+const SUGGESTION_UNAVAILABLE_LIMITATION =
+  "A safe Keyword governance suggestion is currently unavailable; retry generation or review this Keyword manually.";
 
 const PROVIDER_SEARCH_INTENTS = [
   "informational",
@@ -343,6 +359,20 @@ function projectNotFound(): never {
 
 function keywordNotFound(): never {
   throw new ProblemError("NOT_FOUND", "Keyword not found.");
+}
+
+function keywordSuggestionNotFound(): never {
+  throw new ProblemError(
+    "NOT_FOUND",
+    "Keyword review suggestion not found.",
+  );
+}
+
+function keywordSuggestionConflict(): never {
+  throw new ProblemError(
+    "STALE_REVISION",
+    "Keyword review suggestion is stale; refetch and retry.",
+  );
 }
 
 function keywordRevisionConflict(
@@ -2513,10 +2543,214 @@ async function detailInSnapshot(
     { frozen: history.frozen },
   );
   try {
-    return GrowthMapKeywordDetailResponse.parse({ projectId, data });
+    return GrowthMapKeywordDetailResponse.parse({
+      projectId,
+      diagnosticRunId: pinnedDiagnosticRunId,
+      data: { ...data, pendingSuggestion: null },
+    });
   } catch {
     return corruptKeywordLibrary();
   }
+}
+
+type StoredSuggestionReadiness = Exclude<
+  KeywordReviewSuggestionReadinessResult,
+  { readonly kind: "not_found" }
+>;
+
+function suggestionIntentLineage(
+  suggestion: KeywordReviewSuggestionRow,
+): KeywordGovernancePendingSuggestion["intentLineage"] {
+  switch (suggestion.intent_authority) {
+    case "provider_observed":
+      return {
+        authority: "provider_observed",
+        snapshotId:
+          suggestion.intent_snapshot_id ?? corruptKeywordLibrary(),
+        observationId:
+          suggestion.intent_observation_id ?? corruptKeywordLibrary(),
+        analysisInvocationId: null,
+        observedAt:
+          suggestion.intent_observed_at === null
+            ? corruptKeywordLibrary()
+            : canonicalUtcTimestamptz(suggestion.intent_observed_at),
+      };
+    case "llm_generated":
+      return {
+        authority: "llm_generated",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: suggestion.analysis_invocation_id,
+        observedAt: null,
+      };
+    case "unavailable":
+      return {
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+      };
+    default:
+      return corruptKeywordLibrary();
+  }
+}
+
+function projectStoredPendingSuggestion(
+  scope: ProjectScope,
+  keywordId: string,
+  currentRevision: number,
+  readiness: StoredSuggestionReadiness,
+): KeywordGovernancePendingSuggestion {
+  const suggestion = readiness.suggestion;
+  if (
+    suggestion.workspace_id !== scope.workspaceId ||
+    suggestion.project_id !== scope.projectId ||
+    suggestion.keyword_entity_id !== keywordId ||
+    suggestion.status !== "pending" ||
+    (readiness.kind === "ready" &&
+      suggestion.expected_governance_revision !== currentRevision)
+  ) {
+    return corruptKeywordLibrary();
+  }
+  const state =
+    readiness.kind === "stale"
+      ? "stale"
+      : suggestion.intent_authority === "unavailable"
+        ? "pending_needs_review"
+        : "pending_ready";
+  return {
+    suggestionId: suggestion.id,
+    suggestionVersion: suggestion.suggestion_version,
+    state,
+    expectedGovernanceRevision:
+      suggestion.expected_governance_revision,
+    status: suggestion.suggested_status,
+    intent: suggestion.suggested_intent,
+    buyerStage: suggestion.suggested_buyer_stage,
+    topicNodeId: suggestion.suggested_topic_node_id,
+    topicModelRevision: suggestion.suggested_topic_model_revision,
+    topicLabel: readiness.topicLabel,
+    mappingDecision: suggestion.suggested_mapping_decision,
+    mappedSitePageId: suggestion.suggested_mapped_site_page_id,
+    mappedSitePageTitle: readiness.mappedSitePageTitle,
+    reason: suggestion.suggested_reason,
+    readinessReason:
+      state === "pending_ready"
+        ? "all_authorities_confirmed"
+        : state === "pending_needs_review"
+          ? "insufficient_authority"
+          : "governance_revision_changed",
+    limitation:
+      state === "pending_ready"
+        ? null
+        : state === "pending_needs_review"
+          ? SUGGESTION_INTENT_AUTHORITY_LIMITATION
+          : SUGGESTION_STALE_LIMITATION,
+    lineage: {
+      generationVersion: suggestion.generation_version,
+      promptSetVersion: suggestion.prompt_set_version,
+      authority: "llm_generated",
+      analysisInvocationId: suggestion.analysis_invocation_id,
+    },
+    intentLineage: suggestionIntentLineage(suggestion),
+    createdAt: canonicalUtcTimestamptz(suggestion.created_at),
+  };
+}
+
+function projectEmptyGenerationSuggestion(
+  generation: LatestKeywordGovernanceSuggestionGeneration,
+  state: "generating" | "stale" | "unavailable",
+): KeywordGovernancePendingSuggestion {
+  return {
+    suggestionId: generation.suggestionId,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+    state,
+    expectedGovernanceRevision:
+      generation.expectedGovernanceRevision,
+    status: null,
+    intent: null,
+    buyerStage: null,
+    topicNodeId: null,
+    topicModelRevision: null,
+    topicLabel: null,
+    mappingDecision: null,
+    mappedSitePageId: null,
+    mappedSitePageTitle: null,
+    reason: null,
+    readinessReason:
+      state === "generating"
+        ? "generation_in_progress"
+        : state === "stale"
+          ? "governance_revision_changed"
+          : "authority_unavailable",
+    limitation:
+      state === "generating"
+        ? SUGGESTION_GENERATING_LIMITATION
+        : state === "stale"
+          ? SUGGESTION_STALE_LIMITATION
+          : SUGGESTION_UNAVAILABLE_LIMITATION,
+    lineage: null,
+    intentLineage: null,
+    createdAt: canonicalUtcTimestamptz(generation.createdAt),
+  };
+}
+
+async function loadPendingSuggestion(
+  exec: Executor,
+  scope: ProjectScope,
+  keywordId: string,
+  currentRevision: number,
+): Promise<KeywordGovernancePendingSuggestion | null> {
+  let pending: KeywordReviewSuggestionReadinessResult;
+  let latest: LatestKeywordGovernanceSuggestionGeneration | null;
+  try {
+    pending = await new KeywordReviewSuggestionsRepository(
+      exec,
+    ).findCurrentPendingReadiness(scope, keywordId);
+    if (pending.kind !== "not_found") {
+      return projectStoredPendingSuggestion(
+        scope,
+        keywordId,
+        currentRevision,
+        pending,
+      );
+    }
+    latest = await new KeywordGovernanceSuggestionGenerationRunsRepository(
+      exec,
+    ).findLatestGenerationForKeyword(scope, keywordId);
+  } catch {
+    return corruptKeywordLibrary();
+  }
+  if (latest === null) return null;
+  if (
+    latest.keywordId !== keywordId ||
+    latest.suggestionId !== latest.generationRunId
+  ) {
+    return corruptKeywordLibrary();
+  }
+  if (
+    latest.expectedGovernanceRevision !== currentRevision ||
+    !latest.authorityCurrent ||
+    latest.status === "cancelled"
+  ) {
+    return projectEmptyGenerationSuggestion(latest, "stale");
+  }
+  if (
+    (latest.status === "queued" || latest.status === "running") &&
+    latest.expectedGovernanceRevision === currentRevision &&
+    !latest.hasSuggestion
+  ) {
+    return projectEmptyGenerationSuggestion(latest, "generating");
+  }
+  if (latest.status === "failed") {
+    return projectEmptyGenerationSuggestion(latest, "unavailable");
+  }
+  if (latest.status === "completed" && !latest.hasSuggestion) {
+    return corruptKeywordLibrary();
+  }
+  if (latest.status === "completed" && latest.hasSuggestion) return null;
+  return corruptKeywordLibrary();
 }
 
 async function reviewDetailInSnapshot(
@@ -2548,8 +2782,21 @@ async function reviewDetailInSnapshot(
   const data = projectItem(history, rows, scope, validNow(now), {
     governance,
   });
+  const pendingSuggestion =
+    data.reviewOrigin === "user"
+      ? null
+      : await loadPendingSuggestion(
+          exec,
+          scope,
+          keywordId,
+          governance.projection.governanceRevision,
+        );
   try {
-    return GrowthMapKeywordDetailResponse.parse({ projectId, data });
+    return GrowthMapKeywordDetailResponse.parse({
+      projectId,
+      diagnosticRunId: null,
+      data: { ...data, pendingSuggestion },
+    });
   } catch {
     return corruptKeywordLibrary();
   }
@@ -2665,10 +2912,126 @@ export async function getProjectAuditKeywordReviewDetail(
 export interface KeywordReviewScope extends WorkspaceScope {
   /** Server-resolved operator identity; never accepted from the request body. */
   readonly actorId: string;
+  /** Request-scoped structured logger; never receives customer or provider text. */
+  readonly logger?: Pick<Logger, "error">;
+}
+
+interface DatabaseFault {
+  readonly sqlState: string;
+  readonly constraint: string | null;
+}
+
+const SQLSTATE = /^[0-9A-Z]{5}$/u;
+const CONSTRAINT_NAME = /^[a-z][a-z0-9_]{0,62}$/u;
+const PAGE_CONSTRAINT = /(?:mapped_site_page|mapped_si_fkey|site_page.*(?:scope|fkey)|page_scope)/u;
+const TOPIC_CONSTRAINT = /(?:topic_node|topic_nod_fkey|topic_model_revision|topic_mod_fkey|topic_assignment)/u;
+const INTEGRITY_CONSTRAINT = /(?:keyword.*(?:projection|revision|ledger)|keyword_review_decisions_(?:check|.*projection)|keyword_entities_(?:check|.*revision))/u;
+
+function databaseFault(error: unknown): DatabaseFault | null {
+  let candidate = error;
+  const visited = new Set<object>();
+  for (let depth = 0; depth < 8; depth += 1) {
+    try {
+      if (typeof candidate !== "object" || candidate === null) return null;
+      if (visited.has(candidate)) return null;
+      visited.add(candidate);
+      const record = candidate as {
+        readonly code?: unknown;
+        readonly constraint?: unknown;
+        readonly cause?: unknown;
+      };
+      if (typeof record.code === "string" && SQLSTATE.test(record.code)) {
+        const constraint =
+          typeof record.constraint === "string" &&
+          CONSTRAINT_NAME.test(record.constraint)
+            ? record.constraint
+            : null;
+        return { sqlState: record.code, constraint };
+      }
+      candidate = record.cause;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function logKeywordReviewDatabaseFault(
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  expectedRevision: number,
+  operation:
+    | "keyword_update"
+    | "decision_insert"
+    | "suggestion_approve",
+  fault: DatabaseFault,
+): void {
+  try {
+    scope.logger?.error("keyword_review_persistence_failed", {
+      operation,
+      sqlState: fault.sqlState,
+      ...(fault.constraint === null
+        ? {}
+        : { constraint: fault.constraint }),
+      workspaceId: scope.workspaceId,
+      projectId,
+      keywordId,
+      governanceRevision: expectedRevision,
+    });
+  } catch {
+    // Persistence classification must not depend on the logging sink.
+  }
+}
+
+function mapKeywordReviewPersistenceError(
+  error: unknown,
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  expectedRevision: number,
+  operation: "keyword_update" | "decision_insert" | "suggestion_approve",
+): never {
+  const fault = databaseFault(error);
+  if (fault === null) throw error;
+  logKeywordReviewDatabaseFault(
+    scope,
+    projectId,
+    keywordId,
+    expectedRevision,
+    operation,
+    fault,
+  );
+  if (
+    (fault.sqlState === "23503" || fault.sqlState === "23514") &&
+    fault.constraint !== null &&
+    PAGE_CONSTRAINT.test(fault.constraint)
+  ) {
+    throw new ProblemError("NOT_FOUND", "Mapped page not found.");
+  }
+  if (
+    (fault.sqlState === "23503" || fault.sqlState === "23514") &&
+    fault.constraint !== null &&
+    TOPIC_CONSTRAINT.test(fault.constraint)
+  ) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "The selected Topic assignment is not active in the confirmed model revision.",
+    );
+  }
+  if (
+    fault.sqlState === "23514" &&
+    fault.constraint !== null &&
+    INTEGRITY_CONSTRAINT.test(fault.constraint)
+  ) {
+    return corruptKeywordLibrary();
+  }
+  throw new Error("Keyword review persistence failed");
 }
 
 function mapKeywordReviewError(
   error: unknown,
+  scope: KeywordReviewScope,
   projectId: string,
   keywordId: string,
   expectedRevision: number,
@@ -2676,6 +3039,8 @@ function mapKeywordReviewError(
   if (error instanceof KeywordGovernanceConflictError) {
     switch (error.code) {
       case "KEYWORD_NOT_FOUND":
+        return keywordNotFound();
+      case "SUGGESTION_NOT_FOUND":
         return keywordNotFound();
       case "REVISION_CONFLICT":
         if (
@@ -2706,7 +3071,73 @@ function mapKeywordReviewError(
   if (error instanceof KeywordGovernanceIntegrityError) {
     return corruptKeywordLibrary();
   }
-  throw error;
+  const fault = databaseFault(error);
+  const operation =
+    fault?.sqlState === "23503" ? "decision_insert" : "keyword_update";
+  return mapKeywordReviewPersistenceError(
+    error,
+    scope,
+    projectId,
+    keywordId,
+    expectedRevision,
+    operation,
+  );
+}
+
+function mapKeywordSuggestionApprovalError(
+  error: unknown,
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  expectedRevision: number,
+): never {
+  if (error instanceof KeywordGovernanceConflictError) {
+    switch (error.code) {
+      case "KEYWORD_NOT_FOUND":
+        return keywordNotFound();
+      case "SUGGESTION_NOT_FOUND":
+        return keywordSuggestionNotFound();
+      case "REVISION_CONFLICT":
+        if (
+          error.expectedRevision !== expectedRevision ||
+          (error.currentRevision !== null &&
+            (!Number.isSafeInteger(error.currentRevision) ||
+              error.currentRevision < 0))
+        ) {
+          return corruptKeywordLibrary();
+        }
+        if (
+          error.currentRevision !== null &&
+          error.currentRevision !== expectedRevision
+        ) {
+          return keywordRevisionConflict(
+            projectId,
+            keywordId,
+            expectedRevision,
+            error.currentRevision,
+          );
+        }
+        return keywordSuggestionConflict();
+      case "SITE_PAGE_NOT_FOUND":
+        throw new ProblemError("NOT_FOUND", "Mapped page not found.");
+      case "TOPIC_ASSIGNMENT_INVALID":
+        throw new ProblemError(
+          "VALIDATION_ERROR",
+          "The suggested Topic assignment is no longer active in the confirmed model revision.",
+        );
+    }
+  }
+  if (error instanceof KeywordGovernanceIntegrityError) {
+    return corruptKeywordLibrary();
+  }
+  return mapKeywordReviewPersistenceError(
+    error,
+    scope,
+    projectId,
+    keywordId,
+    expectedRevision,
+    "suggestion_approve",
+  );
 }
 
 async function reviewKeywordInSnapshot(
@@ -2726,6 +3157,7 @@ async function reviewKeywordInSnapshot(
   } catch (error) {
     mapKeywordReviewError(
       error,
+      scope,
       projectId,
       keywordId,
       review.expectedGovernanceRevision,
@@ -2777,4 +3209,69 @@ export async function reviewProjectAuditKeyword(
       parsed.data,
     ),
   );
+}
+
+async function approveKeywordSuggestionInSnapshot(
+  exec: Executor,
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  suggestionId: string,
+  approval: ApproveKeywordReviewSuggestionRequest,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  try {
+    await new KeywordGovernanceRepository(exec).approveSuggestion(
+      { workspaceId: scope.workspaceId, projectId },
+      keywordId,
+      suggestionId,
+      scope.actorId,
+      approval,
+    );
+  } catch (error) {
+    mapKeywordSuggestionApprovalError(
+      error,
+      scope,
+      projectId,
+      keywordId,
+      approval.expectedGovernanceRevision,
+    );
+  }
+  return reviewDetailInSnapshot(
+    exec,
+    { workspaceId: scope.workspaceId },
+    projectId,
+    keywordId,
+    new Date(),
+  );
+}
+
+/** Accept one immutable generated suggestion as the authenticated user's review. */
+export async function approveProjectAuditKeywordReviewSuggestion(
+  scope: KeywordReviewScope,
+  projectId: string,
+  keywordId: string,
+  suggestionId: string,
+  body: ApproveKeywordReviewSuggestionRequest,
+  exec?: Executor,
+): Promise<ReturnType<typeof GrowthMapKeywordDetailResponse.parse>> {
+  if (!UUID.test(keywordId)) return keywordNotFound();
+  if (!UUID.test(suggestionId)) return keywordSuggestionNotFound();
+  const parsed = ApproveKeywordReviewSuggestionRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ProblemError(
+      "VALIDATION_ERROR",
+      "Keyword review suggestion approval failed validation.",
+    );
+  }
+  const run = (selected: Executor) =>
+    approveKeywordSuggestionInSnapshot(
+      selected,
+      scope,
+      projectId,
+      keywordId,
+      suggestionId,
+      parsed.data,
+    );
+  if (exec) return run(exec);
+  return getDb().db.transaction(run);
 }

@@ -151,6 +151,15 @@ export function apiRouteTemplate(rawUrl: string): string {
     return `${base}/audit/keywords/:keywordId/rank-history`;
   }
   if (
+    resource === "audit" &&
+    segments.length === 8 &&
+    segments[3] === "keywords" &&
+    segments[5] === "review-suggestions" &&
+    segments[7] === "approve"
+  ) {
+    return `${base}/audit/keywords/:keywordId/review-suggestions/:suggestionId/approve`;
+  }
+  if (
     segments.length === 4 &&
     (resource === "findings" ||
       resource === "actions" ||
