@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./quick-wins/csv": "./src/quick-wins/csv.ts",
-    "./quick-wins/track": "./src/quick-wins/track.ts"
+    "./quick-wins/track": "./src/quick-wins/track.ts",
+    "./keyword-opportunity/types": "./src/keyword-opportunity/types.ts",
+    "./keyword-opportunity/next-checks": "./src/keyword-opportunity/next-checks.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

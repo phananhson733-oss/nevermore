@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./canonical-url": "./src/canonical-url.ts",
+    "./crawl-context-profile": "./src/crawl/context-profile.ts",
+    "./crawl-page-value": "./src/crawl/page-value.ts",
     "./crawl-public-preview": "./src/crawl/public-preview.ts",
     "./public-http": "./src/public-http/index.ts",
     "./url-safety": "./src/url-safety/index.ts"
