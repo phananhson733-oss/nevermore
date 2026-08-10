@@ -51,7 +51,15 @@ export function createQuickWinsReader(options: {
     // Null when the deployment has no draft model configured, which skips the
     // two extra Search Console reads as well as the crawl. The evidence table
     // does not depend on any of it.
-    const draftDependencies = createDraftDependencies({ property });
+    //
+    // `remainingMs` is the same clock the reads run against, on purpose: the
+    // drafts are the last and slowest thing in the request, and the handler
+    // awaits them before returning, so a draft that overruns does not cost a
+    // draft — it costs the finished table.
+    const draftDependencies = createDraftDependencies({
+      property,
+      remainingMs,
+    });
 
     return runQuickWins({
       client: createSearchAnalyticsClient({

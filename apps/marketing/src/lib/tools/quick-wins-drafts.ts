@@ -68,9 +68,10 @@ async function attempt(
   config: DraftModelConfig,
   fetchImpl: typeof fetch,
   jsonMode: boolean,
+  timeoutMs: number,
 ): Promise<CompletionAttempt> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(config.url, {
       method: "POST",
@@ -144,8 +145,23 @@ async function complete(
   prompt: string,
   config: DraftModelConfig,
   fetchImpl: typeof fetch,
+  remainingMs: () => number,
 ): Promise<DraftCompletion> {
-  let result = await attempt(prompt, config, fetchImpl, config.jsonMode);
+  // ONE deadline for the whole call, not one per attempt. The retry below
+  // used to get its own full timeout, so a "per-call deadline" of 30 seconds
+  // actually permitted 60 — more than the route's entire budget from a single
+  // row. Clamped to what the request has left, because overrunning does not
+  // cost a draft, it costs the finished evidence table the handler is holding.
+  const deadlineAt = Date.now() + Math.min(MODEL_TIMEOUT_MS, remainingMs());
+  const timeLeft = (): number => deadlineAt - Date.now();
+
+  let result = await attempt(
+    prompt,
+    config,
+    fetchImpl,
+    config.jsonMode,
+    timeLeft(),
+  );
 
   // A 400 while asking for a JSON object is the one rejection worth a second
   // call: `response_format` is the only optional field in the request, and a
@@ -153,7 +169,10 @@ async function complete(
   // a deployment that never configured the switch costs one wasted call per
   // draft; not dropping it costs every draft.
   if (!result.ok && result.status === 400 && config.jsonMode) {
-    result = await attempt(prompt, config, fetchImpl, false);
+    // Only if there is time for it. Out of time, the 400 stands and the row
+    // degrades on its own.
+    if (timeLeft() <= 0) throw new Error("draft model responded 400");
+    result = await attempt(prompt, config, fetchImpl, false, timeLeft());
   }
 
   if (!result.ok) {
@@ -264,6 +283,13 @@ async function readPageMeta(
  */
 export function createDraftDependencies(options: {
   readonly property: string;
+  /**
+   * Milliseconds left in the request, from the reader's one absolute deadline.
+   *
+   * The same clock the Search Console reads run against, so the drafts cannot
+   * quietly spend budget those reads were counting on.
+   */
+  readonly remainingMs: () => number;
   readonly fetchImpl?: typeof fetch;
   readonly model?: DraftModelConfig | null;
 }): DraftRunDependencies | null {
@@ -279,6 +305,8 @@ export function createDraftDependencies(options: {
   return {
     fetchPageMeta: (url: string) =>
       readPageMeta(url, allowedOrigins, fetchImpl),
-    complete: (prompt: string) => complete(prompt, model, fetchImpl),
+    complete: (prompt: string) =>
+      complete(prompt, model, fetchImpl, options.remainingMs),
+    remainingMs: options.remainingMs,
   };
 }

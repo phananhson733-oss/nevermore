@@ -1420,6 +1420,7 @@
         "empty": "草稿返回为空",
         "unparseable": "草稿返回的格式无法使用",
         "truncated": "模型还没写完这条草稿就被截断了",
+        "out_of_time": "这次运行的时间用完了，没来得及开始这条草稿",
         "model_unavailable": "生成草稿的模型不可用",
         "page_dimension_unavailable": "草稿所需的页面级数据不可用"
       },

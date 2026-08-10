@@ -108,6 +108,7 @@ describe("createDraftDependencies", () => {
     expect(
       createDraftDependencies({
         property: "sc-domain:example.com",
+        remainingMs: () => 30_000,
         model: null,
       }),
     ).toBeNull();
@@ -117,6 +118,7 @@ describe("createDraftDependencies", () => {
     expect(
       createDraftDependencies({
         property: "http://example.com/",
+        remainingMs: () => 30_000,
         model: MODEL,
       }),
     ).toBeNull();
@@ -125,6 +127,7 @@ describe("createDraftDependencies", () => {
   it("reads a page's title and description", async () => {
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () => html("A Title", "A description."),
     });
@@ -141,6 +144,7 @@ describe("createDraftDependencies", () => {
     const fetchImpl = vi.fn(async () => html("t", "d"));
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl,
     });
@@ -155,6 +159,7 @@ describe("createDraftDependencies", () => {
     const deps = (body: Response) =>
       createDraftDependencies({
         property: "sc-domain:example.com",
+        remainingMs: () => 30_000,
         model: MODEL,
         fetchImpl: async () => body,
       })!;
@@ -180,6 +185,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (url, init) => {
         seenUrl = String(url);
@@ -202,6 +208,7 @@ describe("createDraftDependencies", () => {
     // fixes and only one of them is the model's fault.
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () => completion('{"title":"half a dr', "length"),
     });
@@ -220,6 +227,7 @@ describe("createDraftDependencies", () => {
     // check an endpoint that answered fine.
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () =>
         new Response(
@@ -241,6 +249,7 @@ describe("createDraftDependencies", () => {
     // problem, and it must not be laundered into a truncation notice.
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () =>
         new Response(
@@ -261,6 +270,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -284,6 +294,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -300,6 +311,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, temperature: 1 },
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -316,6 +328,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -332,6 +345,7 @@ describe("createDraftDependencies", () => {
     let seenBody: Record<string, unknown> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, jsonMode: false },
       fetchImpl: async (_url, init) => {
         seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -352,6 +366,7 @@ describe("createDraftDependencies", () => {
     const bodies: Record<string, unknown>[] = [];
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
@@ -382,6 +397,7 @@ describe("createDraftDependencies", () => {
     let calls = 0;
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, jsonMode: false },
       fetchImpl: async () => {
         calls += 1;
@@ -401,6 +417,7 @@ describe("createDraftDependencies", () => {
     let seenHeaders: Record<string, string> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: { ...MODEL, authScheme: "api-key" },
       fetchImpl: async (_url, init) => {
         seenHeaders = init?.headers as Record<string, string>;
@@ -418,6 +435,7 @@ describe("createDraftDependencies", () => {
     let seenHeaders: Record<string, string> = {};
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async (_url, init) => {
         seenHeaders = init?.headers as Record<string, string>;
@@ -436,6 +454,7 @@ describe("createDraftDependencies", () => {
     // the evidence table untouched.
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () => new Response("nope", { status: 500 }),
     });
@@ -446,6 +465,7 @@ describe("createDraftDependencies", () => {
   it("throws when the model returns no message content", async () => {
     const deps = createDraftDependencies({
       property: "sc-domain:example.com",
+      remainingMs: () => 30_000,
       model: MODEL,
       fetchImpl: async () =>
         new Response(JSON.stringify({ choices: [] }), {

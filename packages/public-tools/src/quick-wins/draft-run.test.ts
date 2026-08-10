@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { MAX_DRAFT_TITLE_CHARS } from "./draft.ts";
 import type { DraftTask } from "./draft-plan.ts";
-import { runDrafts } from "./draft-run.ts";
+import { MAX_CONCURRENT_DRAFTS, runDrafts } from "./draft-run.ts";
 
 const TASK: DraftTask = {
   query: "lamine yamal zodiac sign",
@@ -36,6 +36,8 @@ function deps(over: Partial<Parameters<typeof runDrafts>[1]> = {}) {
         url
       ] ?? null,
     complete: async () => ({ text: GOOD_REPLY, truncated: false }),
+    // Plenty, so a test only exercises the budget gate when it says so.
+    remainingMs: () => 60_000,
     ...over,
   };
 }
@@ -184,11 +186,12 @@ describe("runDrafts", () => {
     expect(result.failed.get(TASK.query)).toBe("model_unavailable");
   });
 
-  it("runs the model calls concurrently, not one after another", async () => {
-    // These are the slowest thing in the request: a reasoning model spends
-    // 5-11 seconds per draft, and MAX_DRAFT_ROWS of those in sequence is most
-    // of the route's 60-second budget. They do not depend on each other, so
-    // running them in sequence spends the budget for nothing.
+  it("runs the model calls concurrently, but only a few at a time", async () => {
+    // Two failures to avoid at once. Sequential: a reasoning model spends
+    // 4.5-11 seconds per draft, and MAX_DRAFT_ROWS of those in a row is most
+    // of the route's 60-second budget. Unbounded: every request on this public
+    // tool shares one model deployment, so one visitor's report should not be
+    // able to occupy every generation slot.
     let inFlight = 0;
     let peak = 0;
     const tasks: DraftTask[] = Array.from({ length: 5 }, (_, i) => ({
@@ -210,7 +213,55 @@ describe("runDrafts", () => {
     );
 
     expect(result.drafts).toHaveLength(5);
-    expect(peak).toBe(5);
+    expect(peak).toBe(MAX_CONCURRENT_DRAFTS);
+    expect(MAX_CONCURRENT_DRAFTS).toBeGreaterThan(1);
+  });
+
+  it("does not start a draft it has no time to finish", async () => {
+    // The handler awaits drafts before returning, so a draft that overruns
+    // does not cost a draft — it throws away the finished evidence table. The
+    // honest reason is that we ran out of room, not that the model was down.
+    const complete = vi.fn(async () => ({
+      text: GOOD_REPLY,
+      truncated: false,
+    }));
+
+    const result = await runDrafts(
+      [TASK],
+      deps({ complete, remainingMs: () => 2_000 }),
+    );
+
+    expect(result.drafts).toHaveLength(0);
+    expect(result.failed.get(TASK.query)).toBe("out_of_time");
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it("stops starting drafts once the budget runs out mid-run", async () => {
+    // With a bounded fan-out the later tasks start after the earlier ones
+    // finish, so the answer changes as the run proceeds. The rows that did
+    // fit still ship.
+    const tasks: DraftTask[] = Array.from({ length: 5 }, (_, i) => ({
+      ...TASK,
+      query: `q${i}`,
+    }));
+    let left = 40_000;
+
+    const result = await runDrafts(
+      tasks,
+      deps({
+        remainingMs: () => left,
+        complete: async () => {
+          left -= 15_000;
+          return { text: GOOD_REPLY, truncated: false };
+        },
+      }),
+    );
+
+    expect(result.drafts.length).toBeGreaterThan(0);
+    expect(result.drafts.length).toBeLessThan(tasks.length);
+    for (const task of tasks.slice(result.drafts.length)) {
+      expect(result.failed.get(task.query)).toBe("out_of_time");
+    }
   });
 
   it("keeps drafts in task order even though the calls race", async () => {
@@ -269,7 +320,11 @@ describe("runDrafts", () => {
       truncated: false,
     }));
 
-    const result = await runDrafts([], { fetchPageMeta, complete });
+    const result = await runDrafts([], {
+      fetchPageMeta,
+      complete,
+      remainingMs: () => 60_000,
+    });
 
     expect(result.drafts).toEqual([]);
     expect(fetchPageMeta).not.toHaveBeenCalled();
