@@ -3825,7 +3825,7 @@ export interface components {
             projectId: components["schemas"]["Uuid"];
             diagnosticRunId: components["schemas"]["Uuid"];
             data: components["schemas"]["GrowthMapKeywordDetailItem"] & {
-                pendingSuggestion?: null;
+                pendingSuggestion: null;
             };
         };
         GrowthMapKeywordLibraryHttpResponse: {

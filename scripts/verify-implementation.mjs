@@ -828,10 +828,16 @@ function checkOpenApi() {
   const keywordSuggestionContract = read(
     "packages/contracts/src/zod/keyword-governance-suggestions.ts",
   );
-  invariant(
-    /KeywordGovernanceSuggestionInputManifest[\s\S]*?workspaceId: Uuid,[\s\S]*?projectId: Uuid,/u.test(keywordSuggestionContract) &&
-      !/KeywordGovernanceSuggestionInputManifest[\s\S]{0,200}inputHash:/u.test(keywordSuggestionContract),
-    "Keyword suggestion manifest must contain exact workspaceId/projectId authority and no self-embedded inputHash",
+  const manifestFieldBlock = keywordSuggestionContract.match(
+    /KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS\s*=\s*\[([\s\S]*?)\]\s*as const/u,
+  )?.[1];
+  const manifestFields = [...(manifestFieldBlock ?? "").matchAll(/"([A-Za-z]+)"/gu)].map(
+    (match) => match[1],
+  );
+  assertExactSet(
+    manifestFields,
+    ["schemaVersion", "generationVersion", "promptSetVersion", "workspaceId", "projectId", "marketCode", "languageTag", "confirmedProductProfile", "confirmedTopicModel", "topicAllowlist", "pageAllowlist", "candidates"],
+    "Keyword suggestion manifest field inventory",
   );
   const canonicalLibraryLanguageTag =
     keywordSchemas.GrowthMapLibraryLanguageTag;

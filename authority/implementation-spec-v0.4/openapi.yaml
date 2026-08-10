@@ -6845,6 +6845,7 @@ components:
               allOf:
                 - $ref: '#/components/schemas/GrowthMapKeywordDetailItem'
                 - type: object
+                  required: [pendingSuggestion]
                   properties:
                     pendingSuggestion: { type: 'null' }
       description: Current details carry a required nullable pendingSuggestion. Pinned details require literal null.

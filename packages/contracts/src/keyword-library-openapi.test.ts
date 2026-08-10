@@ -97,10 +97,13 @@ type _DetailCurrentSuggestionIsNullable = Expect<
     : false
 >;
 type _DetailPinnedSuggestionIsNull = Expect<
-  Extract<
-    KeywordDetailHttpResponse["data"],
-    { diagnosticRunId: string }
-  >["data"]["pendingSuggestion"] extends null ? true : false
+  Equal<
+    Extract<
+      KeywordDetailHttpResponse["data"],
+      { diagnosticRunId: string }
+    >["data"]["pendingSuggestion"],
+    null
+  >
 >;
 type _KeywordItemIsClosed = Expect<
   Equal<string extends keyof KeywordItem ? true : false, false>

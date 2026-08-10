@@ -164,7 +164,7 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Growth Map Keyword suggestion approval request must remain a strict two-field compare-and-swap command",
     "Growth Map Keyword pinned detail must never expose a current pending suggestion",
     "Keyword governance suggestion generation must remain an exact internal async identity with no public model/config selector",
-    "Keyword suggestion manifest must contain exact workspaceId/projectId authority and no self-embedded inputHash",
+    "Keyword suggestion manifest field inventory",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",

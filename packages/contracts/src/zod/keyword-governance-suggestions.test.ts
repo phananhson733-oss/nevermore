@@ -4,6 +4,7 @@ import {
   ApproveKeywordReviewSuggestionRequest,
   KeywordGovernancePendingSuggestion,
   KeywordGovernanceSuggestionInputManifest,
+  KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS,
   KeywordGovernanceSuggestionStructuredOutput,
   parseKeywordGovernanceSuggestionStructuredOutput,
 } from "./keyword-governance-suggestions.ts";
@@ -142,6 +143,12 @@ const pendingSuggestion = {
 } as const;
 
 describe("Keyword governance suggestion contracts", () => {
+  it("keeps the manifest field inventory exact and self-hash-free", () => {
+    expect(Object.keys(KeywordGovernanceSuggestionInputManifest.shape)).toEqual(
+      KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS,
+    );
+    expect(KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS).not.toContain("inputHash");
+  });
   it("accepts one exact bounded frozen manifest", () => {
     expect(KeywordGovernanceSuggestionInputManifest.parse(manifest)).toEqual(
       manifest,

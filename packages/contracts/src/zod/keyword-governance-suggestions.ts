@@ -12,6 +12,12 @@ const KeywordStatus = z.enum(["candidate", "approved", "excluded", "parked"]);
 const MappingDecision = z.enum(["unassigned", "existing_page", "new_asset"]);
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 
+export const KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS = [
+  "schemaVersion", "generationVersion", "promptSetVersion", "workspaceId", "projectId",
+  "marketCode", "languageTag", "confirmedProductProfile", "confirmedTopicModel",
+  "topicAllowlist", "pageAllowlist", "candidates",
+] as const;
+
 export const KeywordGovernanceSuggestionVersion = z.literal(
   "keyword-governance-suggestion.v1",
 );
