@@ -370,6 +370,180 @@ test("Keyword and Competitor libraries expose operable tabs, rows, and provenanc
   expect(await competitorPanel.innerText()).not.toMatch(/\bnull%|\bundefined\b/);
 });
 
+test("Keyword governance suggestions stay conclusion-first and scenario-only", async ({
+  page,
+}) => {
+  await gotoArtifact(page, "growth-map");
+  await page
+    .locator('[data-action="map-tab"][data-tab="keywords"]')
+    .click();
+
+  const keywordPanel = page.locator("#panel-map-keywords");
+  const search = keywordPanel.locator('[data-search="keywords"]');
+
+  await search.fill("onboarding handoff checklist");
+  await keywordPanel
+    .locator(
+      '[data-action="select-map-keyword"][data-id="kw-handoff-checklist"]',
+    )
+    .click();
+
+  const readyRail = keywordPanel.locator(
+    '[data-keyword-suggestion-state="pending_ready"]',
+  );
+  await expect(readyRail).toContainText("系统建议");
+  await expect(readyRail).toContainText("建议依据");
+  await expect(
+    readyRail.locator('[data-action="approve-keyword-suggestion"]'),
+  ).toHaveCount(1);
+
+  await keywordPanel
+    .locator(
+      '.v13-detail-actions [data-action="open-keyword"][data-id="kw-handoff-checklist"]',
+    )
+    .click();
+  const readyDialog = page.getByRole("dialog");
+  await expect(readyDialog).toContainText("系统建议");
+  await expect(readyDialog).toContainText("建议依据");
+  await expect(readyDialog.getByRole("button", { name: "取消" })).toBeVisible();
+  await expect(
+    readyDialog.getByRole("button", { name: "展开修改" }),
+  ).toBeVisible();
+  await expect(
+    readyDialog.getByRole("button", { name: "批准系统建议" }),
+  ).toBeVisible();
+  await expect(
+    readyDialog.locator('form[data-form="keyword-suggestion-edit"]'),
+  ).toHaveCount(0);
+  await expect(
+    readyDialog.locator('input:not([type="hidden"]), select, textarea'),
+  ).toHaveCount(0);
+
+  await readyDialog.getByRole("button", { name: "展开修改" }).click();
+  const editor = readyDialog.locator(
+    'form[data-form="keyword-suggestion-edit"]',
+  );
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('select[name="intent"]')).toHaveValue(
+    "informational",
+  );
+  await expect(editor.locator('select[name="buyerStage"]')).toHaveValue(
+    "awareness",
+  );
+  await expect(editor.locator('select[name="clusterId"]')).toHaveValue(
+    "clu-onboarding",
+  );
+  await expect(editor.locator('select[name="mappingDecision"]')).toHaveValue(
+    "new_asset",
+  );
+  await readyDialog.getByRole("button", { name: "收起修改" }).click();
+  await expect(editor).toHaveCount(0);
+  await readyDialog.getByRole("button", { name: "取消" }).click();
+
+  await search.fill("AI customer onboarding assistant");
+  await keywordPanel
+    .locator(
+      '[data-action="select-map-keyword"][data-id="kw-ai-assistant"]',
+    )
+    .click();
+  const needsReviewRail = keywordPanel.locator(
+    '[data-keyword-suggestion-state="pending_needs_review"]',
+  );
+  await expect(needsReviewRail).toContainText("需要人工修改");
+  await expect(
+    needsReviewRail.getByText("搜索意图", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    needsReviewRail.locator('[data-action="approve-keyword-suggestion"]'),
+  ).toHaveCount(0);
+  await expect(
+    needsReviewRail.locator('[data-action="edit-keyword-suggestion"]'),
+  ).toBeVisible();
+
+  await needsReviewRail
+    .locator('[data-action="edit-keyword-suggestion"]')
+    .click();
+  const needsReviewDialog = page.getByRole("dialog");
+  await expect(
+    needsReviewDialog.getByRole("button", { name: "批准系统建议" }),
+  ).toHaveCount(0);
+  await expect(
+    needsReviewDialog.locator(
+      'form[data-form="keyword-suggestion-edit"]',
+    ),
+  ).toBeVisible();
+  await expect(
+    needsReviewDialog.locator('select[name="intent"]'),
+  ).toHaveValue("");
+  await needsReviewDialog.getByRole("button", { name: "取消" }).click();
+
+  await search.fill("customer success onboarding metrics");
+  await keywordPanel
+    .locator(
+      '[data-action="select-map-keyword"][data-id="kw-onboarding-metrics"]',
+    )
+    .click();
+  const staleRail = keywordPanel.locator(
+    '[data-keyword-suggestion-state="stale"]',
+  );
+  await expect(staleRail).toContainText("系统建议已过期");
+  await expect(staleRail).toContainText("治理版本");
+  await expect(
+    staleRail.locator('[data-action="approve-keyword-suggestion"]'),
+  ).toHaveCount(0);
+  await keywordPanel
+    .locator(
+      '.v13-detail-actions [data-action="open-keyword"][data-id="kw-onboarding-metrics"]',
+    )
+    .click();
+  const staleDialog = page.getByRole("dialog");
+  await expect(staleDialog).toContainText("系统建议已过期");
+  await expect(
+    staleDialog.getByRole("button", { name: "批准系统建议" }),
+  ).toHaveCount(0);
+  await expect(
+    staleDialog.getByRole("button", { name: "展开修改" }),
+  ).toHaveCount(0);
+  await staleDialog.getByRole("button", { name: "取消" }).click();
+
+  await search.fill("reduce customer time to value");
+  await keywordPanel
+    .locator(
+      '[data-action="select-map-keyword"][data-id="kw-reduce-ttv"]',
+    )
+    .click();
+  const versionStaleRail = keywordPanel.locator(
+    '[data-keyword-suggestion-state="stale"]',
+  );
+  await expect(versionStaleRail).toContainText("系统建议已过期");
+  await expect(versionStaleRail).toContainText("建议版本或治理版本已变化");
+  await expect(
+    versionStaleRail.locator('[data-action="approve-keyword-suggestion"]'),
+  ).toHaveCount(0);
+
+  await search.fill("onboarding handoff checklist");
+  await keywordPanel
+    .locator(
+      '[data-action="select-map-keyword"][data-id="kw-handoff-checklist"]',
+    )
+    .click();
+  await keywordPanel
+    .locator(
+      '.v13-detail-actions [data-action="open-keyword"][data-id="kw-handoff-checklist"]',
+    )
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "批准系统建议" })
+    .click();
+
+  const receipt = page.getByRole("dialog");
+  await expect(receipt).toContainText("关键词建议已批准");
+  await expect(receipt).toContainText("离线 Artifact 场景回执");
+  await expect(receipt).toContainText("没有调用登录应用 API");
+  await expect(receipt).toContainText("没有写入生产数据");
+});
+
 test("secondary selections, pagination, Results windows, and dialogs survive URL history", async ({
   page,
 }) => {

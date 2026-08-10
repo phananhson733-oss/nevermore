@@ -12638,6 +12638,245 @@ button:disabled {
   }
 }
 
+.client-keyword-suggestion {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 22px;
+  padding: 18px;
+  background: #edf8f4;
+  border: 1px solid #b8d9cf;
+  border-radius: 14px;
+}
+
+.client-keyword-suggestion.is-rail {
+  margin: 22px 0 0;
+}
+
+.client-keyword-suggestion.is-approved {
+  background: #f4f8f2;
+  border-color: #cbdcc4;
+}
+
+.client-keyword-suggestion > header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.client-keyword-suggestion > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.client-keyword-suggestion > header strong {
+  color: var(--green-dark);
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.client-keyword-suggestion > p,
+.client-keyword-suggestion__reason p,
+.client-keyword-suggestion__limitation span {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.client-keyword-suggestion > dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.client-keyword-suggestion > dl > div {
+  min-width: 0;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.client-keyword-suggestion > dl > div:nth-child(2n) {
+  border-right: 0;
+}
+
+.client-keyword-suggestion > dl > div:last-child {
+  grid-column: 1 / -1;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.client-keyword-suggestion dt,
+.client-keyword-suggestion dd {
+  margin: 0;
+}
+
+.client-keyword-suggestion dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.client-keyword-suggestion dd {
+  color: var(--green-dark);
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+
+.client-keyword-suggestion__reason {
+  display: grid;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.client-keyword-suggestion__reason strong {
+  color: var(--green-dark);
+  font-size: 12px;
+}
+
+.client-keyword-suggestion__limitation {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  color: #7a4b00;
+  background: #fff6df;
+  border: 1px solid #ecd19a;
+  border-radius: 10px;
+}
+
+.client-keyword-suggestion__limitation strong {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.client-keyword-suggestion > small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.client-keyword-suggestion__actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.client-keyword-suggestion-editor {
+  display: grid;
+  gap: 18px;
+  margin: 0 0 24px;
+  padding: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.client-keyword-suggestion-editor > section {
+  display: grid;
+  gap: 13px;
+}
+
+.client-keyword-suggestion-editor > section + section {
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+}
+
+.client-keyword-suggestion-editor > section > div:first-child {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.client-keyword-suggestion-editor > section > div:first-child > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  color: #ad3f31;
+  background: #fff0eb;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.client-keyword-suggestion-editor h3,
+.client-keyword-suggestion-editor p {
+  margin: 0;
+}
+
+.client-keyword-suggestion-editor p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.client-keyword-suggestion-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.client-keyword-suggestion-editor label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.client-keyword-suggestion-editor select,
+.client-keyword-suggestion-editor textarea {
+  width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font: inherit;
+}
+
+.client-keyword-suggestion-editor select {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.client-keyword-suggestion-editor textarea {
+  min-height: 106px;
+  padding: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+@media (max-width: 760px) {
+  .client-keyword-suggestion > dl,
+  .client-keyword-suggestion-editor__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .client-keyword-suggestion > dl > div,
+  .client-keyword-suggestion > dl > div:nth-child(2n) {
+    grid-column: 1;
+    border-right: 0;
+  }
+
+  .client-keyword-suggestion__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .client-keyword-suggestion__actions .button {
+    width: 100%;
+  }
+}
+
 /* v17 readability guard: the keyword corpus carries nine meaningful fields.
    Preserve normal Chinese word shapes and let the table scroll locally instead
    of squeezing column labels and values into one-character vertical stacks. */

@@ -411,6 +411,80 @@ if (currentHashRoute() === "#/growth-map") {
   click('.primary-nav [data-action="nav"][data-route="growth-map"]');
   click('[data-action="map-tab"][data-tab="keywords"]');
 }
+
+click('[data-action="keyword-source"][data-source="all"]');
+setValue('[data-search="keywords"]', "onboarding handoff checklist");
+click('[data-action="select-map-keyword"][data-id="kw-handoff-checklist"]');
+const readySuggestionRail = one('[data-keyword-suggestion-state="pending_ready"]');
+assert.match(readySuggestionRail.textContent, /系统建议/);
+assert.match(readySuggestionRail.textContent, /建议依据/);
+assert.ok(readySuggestionRail.querySelector('[data-action="approve-keyword-suggestion"]'));
+click('.v13-detail-actions [data-action="open-keyword"][data-id="kw-handoff-checklist"]');
+assert.match(one(".client-overlay").textContent, /系统建议/);
+assert.match(one(".client-overlay").textContent, /建议依据/);
+assert.ok(one('.client-overlay__footer [data-action="close-overlay"]'));
+assert.ok(one('.client-overlay [data-action="expand-keyword-suggestion"]'));
+assert.ok(one('.client-overlay [data-action="approve-keyword-suggestion"]'));
+assert.equal(document.querySelector('form[data-form="keyword-suggestion-edit"]'), null);
+assert.equal(document.querySelector('.client-overlay select'), null);
+assert.equal(document.querySelector('.client-overlay textarea'), null);
+click('.client-overlay [data-action="expand-keyword-suggestion"]');
+const readySuggestionEditor = one('form[data-form="keyword-suggestion-edit"]');
+assert.equal(one('select[name="intent"]', readySuggestionEditor).value, "informational");
+assert.equal(one('select[name="buyerStage"]', readySuggestionEditor).value, "awareness");
+assert.equal(one('select[name="clusterId"]', readySuggestionEditor).value, "clu-onboarding");
+assert.equal(one('select[name="mappingDecision"]', readySuggestionEditor).value, "new_asset");
+click('.client-overlay [data-action="collapse-keyword-suggestion"]');
+assert.equal(document.querySelector('form[data-form="keyword-suggestion-edit"]'), null);
+click('.client-overlay__footer [data-action="close-overlay"]');
+
+setValue('[data-search="keywords"]', "AI customer onboarding assistant");
+click('[data-action="select-map-keyword"][data-id="kw-ai-assistant"]');
+const needsReviewSuggestionRail = one('[data-keyword-suggestion-state="pending_needs_review"]');
+assert.match(needsReviewSuggestionRail.textContent, /需要人工修改/);
+assert.equal([...needsReviewSuggestionRail.querySelectorAll("dt")].some((item) => item.textContent.trim() === "搜索意图"), false);
+assert.equal(needsReviewSuggestionRail.querySelector('[data-action="approve-keyword-suggestion"]'), null);
+assert.ok(needsReviewSuggestionRail.querySelector('[data-action="edit-keyword-suggestion"]'));
+click('[data-action="edit-keyword-suggestion"][data-id="kw-ai-assistant"]');
+assert.equal(document.querySelector('.client-overlay [data-action="approve-keyword-suggestion"]'), null);
+const needsReviewEditor = one('form[data-form="keyword-suggestion-edit"]');
+assert.equal(one('select[name="intent"]', needsReviewEditor).value, "");
+setValue('form[data-form="keyword-suggestion-edit"] select[name="intent"]', "commercial");
+submit('form[data-form="keyword-suggestion-edit"]');
+assert.match(one("#overlay-title").textContent, /关键词建议已批准/);
+assert.match(one(".client-overlay").textContent, /修改后批准/);
+click('.client-overlay__header .icon-button[data-action="close-overlay"]');
+
+setValue('[data-search="keywords"]', "customer success onboarding metrics");
+click('[data-action="select-map-keyword"][data-id="kw-onboarding-metrics"]');
+const staleSuggestionRail = one('[data-keyword-suggestion-state="stale"]');
+assert.match(staleSuggestionRail.textContent, /系统建议已过期/);
+assert.match(staleSuggestionRail.textContent, /治理版本/);
+assert.equal(staleSuggestionRail.querySelector('[data-action="approve-keyword-suggestion"]'), null);
+click('.v13-detail-actions [data-action="open-keyword"][data-id="kw-onboarding-metrics"]');
+assert.match(one(".client-overlay").textContent, /系统建议已过期/);
+assert.equal(document.querySelector('.client-overlay [data-action="approve-keyword-suggestion"]'), null);
+assert.equal(document.querySelector('.client-overlay [data-action="expand-keyword-suggestion"]'), null);
+click('.client-overlay__footer [data-action="close-overlay"]');
+
+setValue('[data-search="keywords"]', "reduce customer time to value");
+click('[data-action="select-map-keyword"][data-id="kw-reduce-ttv"]');
+const versionStaleSuggestionRail = one('[data-keyword-suggestion-state="stale"]');
+assert.match(versionStaleSuggestionRail.textContent, /系统建议已过期/);
+assert.match(versionStaleSuggestionRail.textContent, /建议版本或治理版本已变化/);
+assert.equal(versionStaleSuggestionRail.querySelector('[data-action="approve-keyword-suggestion"]'), null);
+
+setValue('[data-search="keywords"]', "onboarding handoff checklist");
+click('[data-action="select-map-keyword"][data-id="kw-handoff-checklist"]');
+click('.v13-detail-actions [data-action="open-keyword"][data-id="kw-handoff-checklist"]');
+click('.client-overlay [data-action="approve-keyword-suggestion"]');
+assert.match(one("#overlay-title").textContent, /关键词建议已批准/);
+assert.match(one(".client-overlay").textContent, /离线 Artifact 场景回执/);
+assert.match(one(".client-overlay").textContent, /没有调用登录应用 API/);
+assert.match(one(".client-overlay").textContent, /没有写入生产数据/);
+click('.client-overlay__header .icon-button[data-action="close-overlay"]');
+setValue('[data-search="keywords"]', "");
+
 click('[data-action="add-keyword"]');
 assert.equal(one('form[data-form="keyword-add"]').id, "keyword-add-form");
 setValue('form[data-form="keyword-add"] input[name="text"]', "customer onboarding risk signals");

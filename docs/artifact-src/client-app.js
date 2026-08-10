@@ -226,13 +226,35 @@
     manual_csv: { label: '手动 / CSV', tone: 'gray' },
     manual: { label: '手动添加', tone: 'gray' },
   };
+  const keywordGovernanceStatusLabels = {
+    candidate: '候选', approved: '已确认', excluded: '已排除', parked: '已暂存',
+  };
+  const keywordIntentLabels = {
+    informational: '信息了解', commercial: '方案评估', transactional: '行动转化', navigational: '品牌 / 导航',
+    comparison: '对比意图', implementation: '实施意图',
+  };
+  const keywordBuyerStageLabels = {
+    awareness: '认知', consideration: '评估', decision: '决策', retention: '留存',
+  };
+  const keywordMappingDecisionLabels = {
+    existing_page: '已有页面', new_asset: '新内容资产', unassigned: '暂不分配',
+  };
+  const keywordSuggestionStateLabels = {
+    generating: '系统建议生成中',
+    pending_ready: '系统建议待批准',
+    pending_needs_review: '需要人工修改',
+    stale: '系统建议已过期',
+    unavailable: '系统建议不可用',
+    approved: '系统建议已批准',
+  };
+  const keywordSuggestionVersion = 'keyword-governance-suggestion.v1';
   const eventLabels = {
     snapshot_created: '数据快照完成', profile_confirmed: '产品画像已确认', finding_confirmed: '问题已确认',
     finding_reviewed: '问题证据审核完成',
     opportunity_reviewed: '机会决定已记录',
     action_created: '执行项已建立', artifact_revised: '交付物已更新', artifact_approved: '交付物已批准',
     change_published: '变更已发布', recheck_completed: '复查完成', observation_recorded: '结果已记录',
-    keyword_added: '关键词已入库', competitor_reviewed: '竞品范围已更新', report_shared: '报告已分享', sync_completed: '数据同步完成',
+    keyword_added: '关键词已入库', keyword_reviewed: '关键词建议已审核', competitor_reviewed: '竞品范围已更新', report_shared: '报告已分享', sync_completed: '数据同步完成',
   };
 
   function derived() {
@@ -1179,6 +1201,102 @@
     return `<aside class="panel v13-detail-panel v14-url-detail"><header class="v14-detail-header"><div><span class="eyebrow">增长机会 · ${item.priority.toUpperCase()}</span><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(labels.lens[item.lens])} · ${escapeHtml(workShape)}${item.targetKind === 'template' ? ` · 页面模板 ${escapeHtml(item.templateKey)}` : ''}</p></div>${badge(statusLabel('opportunityStatus', item.status), toneFor(item.status))}</header><div class="v14-detail-metrics"><div><span>目标 URLs</span><strong>${item.urlIds.length}</strong></div><div><span>问题证据</span><strong>${findings.length}</strong></div><div><span>交付物</span><strong>${artifacts.length}</strong></div></div><section class="v14-detail-section"><div><h3>主要 Finding</h3><span>${primaryFinding ? primaryFinding.severity.toUpperCase() : '待建立'}</span></div><div class="v14-primary-finding"><strong>${escapeHtml(primaryFinding?.title || '当前尚未绑定主要 Finding')}</strong><p>${primaryFinding ? primaryFinding.sourceRefs.map(sourceName).join(' · ') : '需要补充证据后再进入决策。'}</p></div></section><section class="v14-detail-section"><div><h3>支撑证据</h3><span>${findings.length} 条记录</span></div><div class="client-chip-row">${findings.flatMap((finding) => finding.sourceRefs).filter((value, index, list) => list.indexOf(value) === index).map((sourceId) => `<span>${escapeHtml(sourceName(sourceId))}</span>`).join('')}</div></section><section class="v14-detail-section"><div><h3>目标页面</h3><span>${item.urlIds.length} 项</span></div><div class="v14-object-list">${item.urlIds.map((id) => { const page = byId(workspace.urls, id); return `<button data-action="open-opportunity-page" data-id="${id}"><span><strong>${escapeHtml(page?.path || id)}</strong><small>${escapeHtml(page?.title || '')}</small></span>${icon('arrow')}</button>`; }).join('')}</div></section><section class="v14-detail-section"><div><h3>覆盖范围与限制</h3></div><ul class="v14-query-list">${limitations.map((limitation) => `<li>${escapeHtml(limitation)}</li>`).join('')}</ul></section><section class="v14-detail-section"><div><h3>执行输出</h3></div><div class="v14-output-card"><span>${escapeHtml(output.label)}</span><strong>${escapeHtml(output.artifact?.title || '尚未创建正式交付物')}</strong><small>${output.artifact ? statusLabel('artifactStatus', output.artifact.status) : '机会证据已建立，可以创建客户可审核的执行物'}</small></div></section><section class="v14-next-decision"><span>下一步决定</span><strong>${escapeHtml(nextDecision)}</strong><button class="button button--secondary button--full" data-action="decide-opportunity" data-id="${item.id}">记录机会决定</button></section><div class="v14-detail-primary">${output.artifact ? `<button class="button button--primary button--full" data-action="go-artifact" data-id="${output.artifact.id}">打开交付物 ${icon('arrow')}</button>` : `<button class="button button--primary button--full" data-action="create-artifact" data-id="${item.id}">创建执行物 ${icon('arrow')}</button>`}</div></aside>`;
   }
 
+  function keywordSuggestionMappingLabel(suggestion) {
+    const page = byId(workspace.urls, suggestion.mappedUrlId);
+    const mapping = keywordMappingDecisionLabels[suggestion.mappingDecision] || suggestion.mappingDecision;
+    return page ? `${mapping} · ${page.path}` : mapping;
+  }
+
+  function keywordSuggestionEffectiveState(item) {
+    const suggestion = item?.pendingSuggestion;
+    if (!suggestion) return null;
+    if (suggestion.state === 'approved') return 'approved';
+    const revisionMatches = suggestion.expectedGovernanceRevision === Number(item.governanceRevision || 0);
+    return suggestion.suggestionVersion === keywordSuggestionVersion && revisionMatches
+      ? suggestion.state
+      : 'stale';
+  }
+
+  function renderKeywordSuggestionSummary(item, options = {}) {
+    const suggestion = item.pendingSuggestion;
+    if (!suggestion) return '';
+    const suggestionState = keywordSuggestionEffectiveState(item);
+    if (suggestionState === 'approved') {
+      return `<section class="client-keyword-suggestion is-approved ${options.rail ? 'is-rail' : ''}" data-keyword-suggestion-state="approved"><header><div><span class="eyebrow">系统建议</span><strong>已由用户批准</strong></div>${badge('人工确认', 'success')}</header><p>这条离线场景建议已记录为人工决定；场景回执不代表登录应用 API 或生产数据写入。</p></section>`;
+    }
+    const topic = byId(workspace.clusters, suggestion.clusterId);
+    const isReady = suggestionState === 'pending_ready';
+    const isEditable = ['pending_ready', 'pending_needs_review'].includes(suggestionState);
+    const limitation = suggestionState === 'stale'
+      ? `建议版本或治理版本已变化：建议基于治理版本 ${suggestion.expectedGovernanceRevision}，当前为 ${Number(item.governanceRevision || 0)}。请刷新或重新生成建议后再审核。`
+      : suggestion.limitation;
+    const facts = [
+      suggestion.status == null ? '' : `<div><dt>关键词状态</dt><dd>${escapeHtml(keywordGovernanceStatusLabels[suggestion.status] || suggestion.status)}</dd></div>`,
+      suggestion.intent == null ? '' : `<div><dt>搜索意图</dt><dd>${escapeHtml(keywordIntentLabels[suggestion.intent] || suggestion.intent)}</dd></div>`,
+      suggestion.buyerStage == null ? '' : `<div><dt>购买阶段</dt><dd>${escapeHtml(keywordBuyerStageLabels[suggestion.buyerStage] || suggestion.buyerStage)}</dd></div>`,
+      suggestion.clusterId == null ? '' : `<div><dt>已发布 Topic</dt><dd>${escapeHtml(topic?.label || '尚未解析')}</dd></div>`,
+      suggestion.mappingDecision == null ? '' : `<div><dt>页面映射</dt><dd>${escapeHtml(keywordSuggestionMappingLabel(suggestion))}</dd></div>`,
+    ].join('');
+    const actions = options.rail && isEditable
+      ? `<div class="client-keyword-suggestion__actions"><button class="button button--secondary button--small" data-action="edit-keyword-suggestion" data-id="${item.id}">展开修改</button>${isReady ? `<button class="button button--primary button--small" data-action="approve-keyword-suggestion" data-id="${item.id}">批准系统建议</button>` : ''}</div>`
+      : '';
+    const stateBadge = isReady ? badge('可批准', 'success') : badge(suggestionState === 'pending_needs_review' ? '需修改' : '已阻断', 'warning');
+    return `<section class="client-keyword-suggestion ${options.rail ? 'is-rail' : ''}" data-keyword-suggestion-state="${escapeHtml(suggestionState)}"><header><div><span class="eyebrow">系统建议</span><strong>${escapeHtml(keywordSuggestionStateLabels[suggestionState] || suggestionState)}</strong></div>${stateBadge}</header><p>建议来自已确认的产品画像、关键词证据和已发布 Topic；只有当前、完整的建议才能一键批准。</p>${facts ? `<dl>${facts}</dl>` : ''}${suggestion.reason ? `<div class="client-keyword-suggestion__reason"><strong>建议依据</strong><p>${escapeHtml(suggestion.reason)}</p></div>` : ''}${limitation ? `<div class="client-keyword-suggestion__limitation" role="alert"><strong>${escapeHtml(keywordSuggestionStateLabels[suggestionState] || '需要人工处理')}</strong><span>${escapeHtml(limitation)}</span></div>` : ''}${suggestion.lineageSummary ? `<small>依据范围：${escapeHtml(suggestion.lineageSummary)}</small>` : ''}${actions}</section>`;
+  }
+
+  function renderKeywordSuggestionEditor(item) {
+    const suggestion = item.pendingSuggestion;
+    const suggestionState = keywordSuggestionEffectiveState(item);
+    if (!suggestion || !['pending_ready', 'pending_needs_review'].includes(suggestionState)) return '';
+    const statusOptions = Object.entries(keywordGovernanceStatusLabels).map(([value, label]) => `<option value="${value}" ${suggestion.status === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    const intentOptions = `<option value="" ${suggestion.intent == null ? 'selected' : ''}>请选择搜索意图</option>${['informational', 'commercial', 'transactional', 'navigational'].map((value) => `<option value="${value}" ${suggestion.intent === value ? 'selected' : ''}>${escapeHtml(keywordIntentLabels[value])}</option>`).join('')}`;
+    const buyerStageOptions = Object.entries(keywordBuyerStageLabels).map(([value, label]) => `<option value="${value}" ${suggestion.buyerStage === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    const topicOptions = workspace.clusters.map((cluster) => `<option value="${cluster.id}" ${suggestion.clusterId === cluster.id ? 'selected' : ''}>${escapeHtml(cluster.label)}</option>`).join('');
+    const mappingOptions = Object.entries(keywordMappingDecisionLabels).map(([value, label]) => `<option value="${value}" ${suggestion.mappingDecision === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+    const pageOptions = workspace.urls.map((page) => `<option value="${page.id}" ${suggestion.mappedUrlId === page.id ? 'selected' : ''}>${escapeHtml(page.path)} · ${escapeHtml(page.title)}</option>`).join('');
+    return `<form id="keyword-suggestion-edit-form" data-form="keyword-suggestion-edit" class="client-keyword-suggestion-editor"><input type="hidden" name="id" value="${item.id}"><section><div><span>01</span><div><h3>业务分类</h3><p>系统已预填有权威的字段；缺失项必须由用户明确补充。</p></div></div><div class="client-keyword-suggestion-editor__grid"><label><span>关键词状态</span><select name="status" required>${statusOptions}</select></label><label><span>搜索意图</span><select name="intent" required>${intentOptions}</select></label><label><span>购买阶段</span><select name="buyerStage" required>${buyerStageOptions}</select></label></div></section><section><div><span>02</span><div><h3>Topic 与页面映射</h3><p>Topic 和页面只来自当前离线场景的稳定对象。</p></div></div><div class="client-keyword-suggestion-editor__grid"><label><span>已发布 Topic</span><select name="clusterId" required>${topicOptions}</select></label><label><span>页面映射决定</span><select name="mappingDecision" required>${mappingOptions}</select></label><label><span>规范页面（仅已有页面）</span><select name="mappedUrlId"><option value="">不选择页面</option>${pageOptions}</select></label></div></section><label><span>审核说明</span><textarea name="reason" rows="4" maxlength="2000" required>${escapeHtml(suggestion.reason)}</textarea></label><div class="client-honesty-note"><strong>离线 Artifact：</strong>保存只更新当前浏览器会话中的场景数据，并生成场景回执；不会调用登录应用 API，也不会写入生产数据。</div></form>`;
+  }
+
+  function resolveKeywordSuggestion(item, values, resolutionMode) {
+    const suggestion = item?.pendingSuggestion;
+    const suggestionState = keywordSuggestionEffectiveState(item);
+    if (!suggestion || !['pending_ready', 'pending_needs_review'].includes(suggestionState)) return null;
+    if (suggestionState === 'pending_needs_review' && !String(values?.intent || '').trim()) return null;
+    const nextStatus = values?.status || suggestion.status;
+    const nextMappingDecision = nextStatus === 'excluded' ? 'unassigned' : (values?.mappingDecision || suggestion.mappingDecision);
+    const nextClusterId = nextStatus === 'excluded' ? null : (values?.clusterId || suggestion.clusterId);
+    const nextMappedUrlId = nextMappingDecision === 'existing_page' ? (values?.mappedUrlId || suggestion.mappedUrlId) : null;
+    if (nextMappingDecision !== 'unassigned' && !byId(workspace.clusters, nextClusterId)) return null;
+    if (nextMappingDecision === 'existing_page' && !byId(workspace.urls, nextMappedUrlId)) return null;
+    const now = new Date().toISOString();
+    item.governanceStatus = nextStatus;
+    item.governanceRevision = Number(item.governanceRevision || 0) + 1;
+    item.intent = values ? String(values.intent || '').trim() || null : suggestion.intent;
+    item.buyerStage = values?.buyerStage || suggestion.buyerStage;
+    item.clusterId = nextClusterId;
+    item.mappingDecision = nextMappingDecision;
+    item.mappedUrlId = nextMappedUrlId;
+    item.reviewedAt = now;
+    item.reviewedBy = 'customer-user';
+    item.reviewNote = String(values?.reason || suggestion.reason).trim();
+    suggestion.state = 'approved';
+    suggestion.resolutionMode = resolutionMode;
+    suggestion.resolvedAt = now;
+    suggestion.resolvedBy = 'customer-user';
+    recordEvent('keyword_reviewed', [item.id, suggestion.id]);
+    const result = receipt('keyword_suggestion', {
+      subject: `${item.text} · ${resolutionMode === 'edited' ? '修改后批准' : '系统建议已批准'}`,
+      keywordId: item.id,
+      suggestionId: suggestion.id,
+      resolutionMode,
+      scenarioOnly: true,
+      simulated: true,
+      message: `离线 Artifact 场景回执：已把这条${resolutionMode === 'edited' ? '修改后的' : ''}系统建议记录为人工确认，治理版本更新为 ${item.governanceRevision}。没有调用登录应用 API，也没有写入生产数据。`,
+    });
+    workspace.shareReceipts.push(result);
+    return result;
+  }
+
   function renderKeywordLibrary() {
     const rows = filterRows('keywords', workspace.keywords);
     const page = paginate('keywords', rows);
@@ -1204,7 +1322,7 @@
     const cta = workspace.project.conversionGoals.find((goal) => goal.id === item.ctaId);
     const visibleSources = item.sourceRefs.map((id) => byId(workspace.dataSources, id)).filter((entry) => entry?.audienceVisibility === 'customer');
     const freshness = sourceFreshness(item.sourceRefs);
-    return `<aside class="panel v13-detail-panel"><header class="v13-detail-header"><div><span class="eyebrow">关键词详情</span><h2>${escapeHtml(item.text)}</h2><p>${escapeHtml(cluster?.label || '未分组')} · ${escapeHtml(intentLabels[item.intent] || item.intent)}</p></div>${badge(statusLabel('keywordStatus', item.status), toneFor(item.status))}</header><div class="v13-detail-metrics v13-detail-metrics--four"><div><span>美国搜索量</span><strong>${metricValue(item.volume, '未连接')}</strong></div><div><span>KD</span><strong>${item.difficulty ?? '不可用'}</strong></div><div><span>当前排名</span><strong>${item.currentRank ?? '未覆盖'}</strong></div><div><span>数据新鲜度</span><strong>${escapeHtml(freshness.label)}</strong></div></div><section class="v13-route-card"><span>入库路径</span><strong>${escapeHtml(sourceLabels[item.sourceKind] || source.label)}</strong><p>${visibleSources.length ? `已关联 ${visibleSources.map((entry) => entry.name).join('、')}` : `${internalSignalCount(item.sourceRefs)} 条系统内置信号`}；保留标准化、去重和 ICP / JTBD 相关性结果。</p></section><section class="v13-detail-section"><div class="v13-detail-section__heading"><h3>主题簇承接与转化路径</h3></div><div class="v13-cluster-path"><div><span>01</span><small>主题簇</small><strong>${escapeHtml(cluster?.label || '—')}</strong></div><i>${icon('arrow')}</i><div><span>02</span><small>映射页面</small><strong>${escapeHtml(mapped?.path || '新内容')}</strong></div><i>${icon('arrow')}</i><div><span>03</span><small>CTA</small><strong>${escapeHtml(cta?.label || '—')}</strong></div></div></section><section class="v13-detail-section"><div class="v13-detail-section__heading"><h3>同主题簇需求信号</h3><span>显示 ${related.length} 项</span></div><div class="v13-related-list">${related.map((keyword) => `<button data-action="select-map-keyword" data-id="${keyword.id}"><strong>${escapeHtml(keyword.text)}</strong><small>${intentLabels[keyword.intent] || keyword.intent} · 搜索量 ${metricValue(keyword.volume, '未连接')}</small>${icon('arrow')}</button>`).join('')}</div></section><div class="v13-detail-actions"><button class="button button--secondary" data-action="open-keyword" data-id="${item.id}">查看来源与明细</button><button class="button button--primary" data-action="go-keyword-artifact" data-cluster="${item.clusterId}">打开相关交付物</button></div></aside>`;
+    return `<aside class="panel v13-detail-panel"><header class="v13-detail-header"><div><span class="eyebrow">关键词详情</span><h2>${escapeHtml(item.text)}</h2><p>${escapeHtml(cluster?.label || '未分组')} · ${escapeHtml(intentLabels[item.intent] || item.intent)}</p></div>${badge(statusLabel('keywordStatus', item.status), toneFor(item.status))}</header><div class="v13-detail-metrics v13-detail-metrics--four"><div><span>美国搜索量</span><strong>${metricValue(item.volume, '未连接')}</strong></div><div><span>KD</span><strong>${item.difficulty ?? '不可用'}</strong></div><div><span>当前排名</span><strong>${item.currentRank ?? '未覆盖'}</strong></div><div><span>数据新鲜度</span><strong>${escapeHtml(freshness.label)}</strong></div></div><section class="v13-route-card"><span>入库路径</span><strong>${escapeHtml(sourceLabels[item.sourceKind] || source.label)}</strong><p>${visibleSources.length ? `已关联 ${visibleSources.map((entry) => entry.name).join('、')}` : `${internalSignalCount(item.sourceRefs)} 条系统内置信号`}；保留标准化、去重和 ICP / JTBD 相关性结果。</p></section><section class="v13-detail-section"><div class="v13-detail-section__heading"><h3>主题簇承接与转化路径</h3></div><div class="v13-cluster-path"><div><span>01</span><small>主题簇</small><strong>${escapeHtml(cluster?.label || '—')}</strong></div><i>${icon('arrow')}</i><div><span>02</span><small>映射页面</small><strong>${escapeHtml(mapped?.path || '新内容')}</strong></div><i>${icon('arrow')}</i><div><span>03</span><small>CTA</small><strong>${escapeHtml(cta?.label || '—')}</strong></div></div></section><section class="v13-detail-section"><div class="v13-detail-section__heading"><h3>同主题簇需求信号</h3><span>显示 ${related.length} 项</span></div><div class="v13-related-list">${related.map((keyword) => `<button data-action="select-map-keyword" data-id="${keyword.id}"><strong>${escapeHtml(keyword.text)}</strong><small>${intentLabels[keyword.intent] || keyword.intent} · 搜索量 ${metricValue(keyword.volume, '未连接')}</small>${icon('arrow')}</button>`).join('')}</div></section>${renderKeywordSuggestionSummary(item, { rail: true })}<div class="v13-detail-actions"><button class="button button--secondary" data-action="open-keyword" data-id="${item.id}">查看来源与明细</button><button class="button button--primary" data-action="go-keyword-artifact" data-cluster="${item.clusterId}">打开相关交付物</button></div></aside>`;
   }
 
   function renderCompetitorLibrary() {
@@ -1490,12 +1608,21 @@
     const visibleSources = keyword.sourceRefs.map((sourceId) => byId(workspace.dataSources, sourceId)).filter((source) => source?.audienceVisibility === 'customer');
     const sourceRoute = keywordSourceMeta[keyword.sourceKind] || keywordSourceMeta.manual;
     const sourceLabels = { competitor_gap: '竞品关键词缺口', content_gap: '内容缺口', suggest_paa: '种子词 + 搜索建议 / PAA', community_voc: '社区 / VOC', trend_signal: '趋势信号', gsc_unexpected: 'GSC 意外词', manual_csv: '手动 / CSV', manual: '手动添加' };
-    const intentLabels = { commercial: '商业意图', informational: '信息意图', comparison: '对比意图', implementation: '实施意图' };
     const mappedPage = mapped
       ? `<button class="inline-object" data-action="open-page" data-id="${mapped.id}">${escapeHtml(mapped.path)}</button>`
       : '<span class="inline-object is-static">新内容 / 尚未映射</span>';
     const freshness = sourceFreshness(keyword.sourceRefs);
-    return overlayFrame(keyword.text, `${keyword.market} · ${intentLabels[keyword.intent] || keyword.intent}`, `<div class="client-keyword-metrics"><div><span>搜索量</span><strong>${metricValue(keyword.volume, '未连接')}</strong></div><div><span>KD</span><strong>${keyword.difficulty ?? '不可用'}</strong></div><div><span>排名</span><strong>${keyword.currentRank ?? '未覆盖'}</strong></div><div><span>数据新鲜度</span><strong>${escapeHtml(freshness.label)}</strong></div></div><section class="client-overlay-section"><h3>主题簇优先映射</h3><dl class="client-detail-grid"><div><dt>主题簇</dt><dd>${escapeHtml(cluster?.label)}</dd></div><div><dt>页面角色</dt><dd>${escapeHtml(cluster?.roleLabel || cluster?.role)}</dd></div><div><dt>映射页面</dt><dd>${mappedPage}</dd></div><div><dt>主要 CTA</dt><dd>${escapeHtml(workspace.project.conversionGoals.find((item) => item.id === keyword.ctaId)?.label || '尚未映射')}</dd></div></dl></section><section class="client-overlay-section"><h3>入库路径</h3><div class="client-chip-row"><span>${escapeHtml(sourceLabels[keyword.sourceKind] || sourceRoute.label)}</span>${visibleSources.map((source) => `<button data-action="open-source" data-id="${source.id}">${escapeHtml(source.name)}</button>`).join('')}<span>${internalSignalCount(keyword.sourceRefs)} 条系统证据</span></div><p class="client-honesty-note">最旧有效来源观察时间：${escapeHtml(freshness.label)}。缺失指标保持“未连接 / 不可用 / 未覆盖”，不会写成 0。</p></section><section class="client-overlay-section"><h3>同主题簇查询</h3><div class="client-compact-list">${related.map((item) => `<button data-action="open-keyword" data-id="${item.id}"><strong>${escapeHtml(item.text)}</strong><small>${intentLabels[item.intent] || item.intent} · 搜索量 ${metricValue(item.volume, '未连接')}</small>${icon('arrow')}</button>`).join('')}</div></section>`, { drawer: true, footer: `<button class="button button--primary" data-action="go-keyword-artifact" data-cluster="${keyword.clusterId}">查看相关交付物</button>` });
+    const suggestion = keyword.pendingSuggestion;
+    const suggestionState = keywordSuggestionEffectiveState(keyword);
+    const hasPendingSuggestion = suggestion && suggestionState !== 'approved';
+    const isEditableSuggestion = ['pending_ready', 'pending_needs_review'].includes(suggestionState);
+    const isEditExpanded = Boolean(state.overlayPayload?.editExpanded && isEditableSuggestion);
+    const suggestionFooter = isEditableSuggestion
+      ? `<button class="button button--secondary" data-action="close-overlay">取消</button>${isEditExpanded ? `<button class="button button--secondary" data-action="collapse-keyword-suggestion" data-id="${keyword.id}">收起修改</button><button class="button button--primary" type="submit" form="keyword-suggestion-edit-form">保存修改并批准</button>` : `<button class="button button--secondary" data-action="expand-keyword-suggestion" data-id="${keyword.id}">展开修改</button>${suggestionState === 'pending_ready' ? `<button class="button button--primary" data-action="approve-keyword-suggestion" data-id="${keyword.id}">批准系统建议</button>` : ''}`}`
+      : hasPendingSuggestion
+        ? '<button class="button button--secondary" data-action="close-overlay">取消</button>'
+        : `<button class="button button--secondary" data-action="close-overlay">取消</button><button class="button button--primary" data-action="go-keyword-artifact" data-cluster="${keyword.clusterId}">查看相关交付物</button>`;
+    return overlayFrame(keyword.text, `${keyword.market} · ${keywordIntentLabels[keyword.intent] || keyword.intent}`, `<div class="client-keyword-metrics"><div><span>搜索量</span><strong>${metricValue(keyword.volume, '未连接')}</strong></div><div><span>KD</span><strong>${keyword.difficulty ?? '不可用'}</strong></div><div><span>排名</span><strong>${keyword.currentRank ?? '未覆盖'}</strong></div><div><span>数据新鲜度</span><strong>${escapeHtml(freshness.label)}</strong></div></div>${renderKeywordSuggestionSummary(keyword)}${isEditExpanded ? renderKeywordSuggestionEditor(keyword) : ''}<section class="client-overlay-section"><h3>主题簇优先映射</h3><dl class="client-detail-grid"><div><dt>主题簇</dt><dd>${escapeHtml(cluster?.label || '尚未映射')}</dd></div><div><dt>页面角色</dt><dd>${escapeHtml(cluster?.roleLabel || cluster?.role || '尚未定义')}</dd></div><div><dt>映射页面</dt><dd>${mappedPage}</dd></div><div><dt>主要 CTA</dt><dd>${escapeHtml(workspace.project.conversionGoals.find((item) => item.id === keyword.ctaId)?.label || '尚未映射')}</dd></div></dl></section><section class="client-overlay-section"><h3>入库路径</h3><div class="client-chip-row"><span>${escapeHtml(sourceLabels[keyword.sourceKind] || sourceRoute.label)}</span>${visibleSources.map((source) => `<button data-action="open-source" data-id="${source.id}">${escapeHtml(source.name)}</button>`).join('')}<span>${internalSignalCount(keyword.sourceRefs)} 条系统证据</span></div><p class="client-honesty-note">最旧有效来源观察时间：${escapeHtml(freshness.label)}。缺失指标保持“未连接 / 不可用 / 未覆盖”，不会写成 0。</p></section><section class="client-overlay-section"><h3>同主题簇查询</h3><div class="client-compact-list">${related.map((item) => `<button data-action="open-keyword" data-id="${item.id}"><strong>${escapeHtml(item.text)}</strong><small>${keywordIntentLabels[item.intent] || item.intent} · 搜索量 ${metricValue(item.volume, '未连接')}</small>${icon('arrow')}</button>`).join('')}</div></section>`, { drawer: true, footer: suggestionFooter });
   }
 
   function renderKeywordAdd() {
@@ -1621,11 +1748,16 @@
     const receipt = typeof payload === 'object' ? payload : workspace.releases.find((item) => item.artifactId === payload);
     if (!receipt) return overlayFrame('尚无回执', '操作回执', '<div class="empty-state">这个对象还没有生成回执。</div>');
     const artifact = byId(workspace.artifacts, receipt.artifactId);
-    const title = receipt.kind === 'blocked' ? '操作已阻断' : receipt.kind === 'share' ? '模拟分享预览已生成' : receipt.kind === 'keyword' ? '关键词已入库' : receipt.kind === 'competitor' ? '竞品记录已创建' : receipt.kind === 'sync' ? '数据更新已完成' : receipt.kind === 'review' ? '审核决定已记录' : receipt.simulated || seed.datasetKind === 'scenario' ? '模拟发布回执' : '发布回执';
+    const title = receipt.kind === 'blocked' ? '操作已阻断' : receipt.kind === 'share' ? '模拟分享预览已生成' : receipt.kind === 'keyword_suggestion' ? '关键词建议已批准' : receipt.kind === 'keyword' ? '关键词已入库' : receipt.kind === 'competitor' ? '竞品记录已创建' : receipt.kind === 'sync' ? '数据更新已完成' : receipt.kind === 'review' ? '审核决定已记录' : receipt.simulated || seed.datasetKind === 'scenario' ? '模拟发布回执' : '发布回执';
     const receiptIcon = receipt.kind === 'blocked' ? '<span class="receipt-check is-blocked">!</span>' : `<span class="receipt-check">${icon('check')}</span>`;
     const copyLabel = receipt.copyFailed ? '复制失败，请手动复制' : receipt.copiedAt ? '已复制模拟地址' : receipt.scenarioOnly ? '复制模拟预览地址' : '复制访问链接';
     const nextAction = receipt.opportunityId ? `<button class="button button--primary button--full" data-action="open-opportunity" data-id="${receipt.opportunityId}">打开关联机会 ${icon('arrow')}</button>` : receipt.artifactId && byId(workspace.artifacts, receipt.artifactId) ? `<button class="button button--secondary button--full" data-action="go-artifact" data-id="${receipt.artifactId}">打开关联交付物 ${icon('arrow')}</button>` : '';
-    return overlayFrame(title, receipt.id, `<div class="client-receipt">${receiptIcon}<h3>${escapeHtml(receipt.subject || artifact?.title || title)}</h3><p>${escapeHtml(receipt.message || '状态、对象关系与审计事件已在当前工作区更新。')}</p>${receipt.scenarioOnly ? '<div class="client-honesty-note"><strong>不可外部访问：</strong>以下地址仅用于演示复制与审计交互，不会打开真实页面，也没有发送给任何收件人。</div>' : ''}<dl><div><dt>回执 ID</dt><dd>${escapeHtml(receipt.id)}</dd></div><div><dt>创建时间</dt><dd>${dateZh(receipt.createdAt || receipt.publishedAt)}</dd></div>${receipt.scopes?.length ? `<div><dt>报告范围</dt><dd>${receipt.scopes.map((scope) => escapeHtml(scope)).join(' · ')}</dd></div>` : ''}${receipt.url ? `<div><dt>${receipt.scenarioOnly ? '模拟预览地址（不可外部访问）' : '访问链接'}</dt><dd><code>${escapeHtml(receipt.url)}</code></dd></div>` : ''}${receipt.rollbackRef ? `<div><dt>${receipt.simulated || seed.datasetKind === 'scenario' ? '模拟回滚引用' : '回滚引用'}</dt><dd><code>${escapeHtml(receipt.rollbackRef)}</code></dd></div>` : ''}${receipt.targetUrl ? `<div><dt>目标</dt><dd>${escapeHtml(receipt.targetUrl)}</dd></div>` : ''}</dl>${receipt.url ? `<button class="button button--secondary button--full" data-action="copy-receipt-link" data-url="${escapeHtml(receipt.url)}">${copyLabel}</button>` : ''}${nextAction}</div>`, { footer: '<button class="button button--primary" data-action="close-overlay">完成</button>' });
+    const scenarioNote = receipt.kind === 'keyword_suggestion'
+      ? '<div class="client-honesty-note"><strong>离线 Artifact 场景回执：</strong>这个回执只存在于当前浏览器会话；没有调用登录应用 API，也没有写入生产数据。</div>'
+      : receipt.scenarioOnly
+        ? '<div class="client-honesty-note"><strong>不可外部访问：</strong>以下地址仅用于演示复制与审计交互，不会打开真实页面，也没有发送给任何收件人。</div>'
+        : '';
+    return overlayFrame(title, receipt.id, `<div class="client-receipt">${receiptIcon}<h3>${escapeHtml(receipt.subject || artifact?.title || title)}</h3><p>${escapeHtml(receipt.message || '状态、对象关系与审计事件已在当前工作区更新。')}</p>${scenarioNote}<dl><div><dt>回执 ID</dt><dd>${escapeHtml(receipt.id)}</dd></div><div><dt>创建时间</dt><dd>${dateZh(receipt.createdAt || receipt.publishedAt)}</dd></div>${receipt.suggestionId ? `<div><dt>建议版本</dt><dd>${escapeHtml(receipt.suggestionId)} · ${escapeHtml(receipt.resolutionMode === 'edited' ? '修改后批准' : '原样批准')}</dd></div>` : ''}${receipt.scopes?.length ? `<div><dt>报告范围</dt><dd>${receipt.scopes.map((scope) => escapeHtml(scope)).join(' · ')}</dd></div>` : ''}${receipt.url ? `<div><dt>${receipt.scenarioOnly ? '模拟预览地址（不可外部访问）' : '访问链接'}</dt><dd><code>${escapeHtml(receipt.url)}</code></dd></div>` : ''}${receipt.rollbackRef ? `<div><dt>${receipt.simulated || seed.datasetKind === 'scenario' ? '模拟回滚引用' : '回滚引用'}</dt><dd><code>${escapeHtml(receipt.rollbackRef)}</code></dd></div>` : ''}${receipt.targetUrl ? `<div><dt>目标</dt><dd>${escapeHtml(receipt.targetUrl)}</dd></div>` : ''}</dl>${receipt.url ? `<button class="button button--secondary button--full" data-action="copy-receipt-link" data-url="${escapeHtml(receipt.url)}">${copyLabel}</button>` : ''}${nextAction}</div>`, { footer: '<button class="button button--primary" data-action="close-overlay">完成</button>' });
   }
 
   function renderResultPage(id) {
@@ -1768,6 +1900,30 @@
     }
     if (action === 'evidence-tab') { state.evidenceTab = button.dataset.tab; return commitState('replace'); }
     if (action === 'open-keyword') return openOverlay('keyword-detail', { id });
+    if (action === 'edit-keyword-suggestion') {
+      const item = byId(workspace.keywords, id);
+      if (!['pending_ready', 'pending_needs_review'].includes(keywordSuggestionEffectiveState(item))) return;
+      return openOverlay('keyword-detail', { id, editExpanded: true });
+    }
+    if (action === 'expand-keyword-suggestion') {
+      const item = byId(workspace.keywords, id);
+      if (!['pending_ready', 'pending_needs_review'].includes(keywordSuggestionEffectiveState(item))) return;
+      state.overlayPayload = { id, editExpanded: true };
+      commitState('replace');
+      return window.requestAnimationFrame(() => document.querySelector('form[data-form="keyword-suggestion-edit"] select')?.focus());
+    }
+    if (action === 'collapse-keyword-suggestion') {
+      state.overlayPayload = { id, editExpanded: false };
+      commitState('replace');
+      return window.requestAnimationFrame(() => document.querySelector('.client-overlay [data-action="expand-keyword-suggestion"]')?.focus());
+    }
+    if (action === 'approve-keyword-suggestion') {
+      const item = byId(workspace.keywords, id);
+      if (keywordSuggestionEffectiveState(item) !== 'pending_ready') return;
+      const result = resolveKeywordSuggestion(item, null, 'accepted');
+      if (result) return openOverlay('receipt', result);
+      return;
+    }
     if (action === 'add-keyword') return openOverlay('keyword-add');
     if (action === 'open-competitor') return openOverlay('competitor-detail', { id });
     if (action === 'add-competitor') return openOverlay('competitor-add');
@@ -1910,6 +2066,23 @@
       workspace.profileVersions.push({ id: versionId, version: next.version, confirmedAt: next.confirmedAt, confirmedBy: next.confirmedBy, previousVersionId, snapshot: clone(next) });
       recordEvent('profile_confirmed', [next.id, versionId]);
       return openOverlay('receipt', receipt('review', { subject: `产品画像 v${next.version}`, message: `新版本已追加，v${previous.version} 仍保留为只读历史；后续机会判断将引用 v${next.version}。` }));
+    }
+    if (form.dataset.form === 'keyword-suggestion-edit') {
+      const item = byId(workspace.keywords, values.id);
+      if (!item?.pendingSuggestion || item.pendingSuggestion.state === 'approved') {
+        return openOverlay('receipt', receipt('blocked', {
+          subject: '系统建议已变化',
+          message: '这条离线场景建议已不再可编辑；没有修改关键词，也没有生成批准回执。',
+        }));
+      }
+      const result = resolveKeywordSuggestion(item, values, 'edited');
+      if (!result) {
+        return openOverlay('receipt', receipt('blocked', {
+          subject: '尚未保存关键词建议',
+          message: '请为需要映射的关键词选择有效 Topic；选择“已有页面”时还必须选择一个当前场景页面。当前没有写入任何决定。',
+        }));
+      }
+      return openOverlay('receipt', result);
     }
     if (form.dataset.form === 'keyword-add') {
       const id = `kw-manual-${Date.now()}`;
