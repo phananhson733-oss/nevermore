@@ -4,7 +4,7 @@ import { LATEST_APP_MIGRATION } from "./migration-version.ts";
 
 /**
  * Verify the applied database matches the SQL contract shape (spec AC-003):
- * exactly 83 app tables plus every named index, trigger, and callable routine
+ * exactly 84 app tables plus every named index, trigger, and callable routine
  * in the frozen SQL contract. Exits non-zero on drift. This is a structural
  * object-presence gate; the byte-for-byte migration/spec gate separately
  * prevents definition drift.
@@ -54,6 +54,7 @@ const EXPECTED_TABLES = [
   "keyword_governance_suggestion_generation_runs",
   "keyword_governance_suggestion_invocation_attempts",
   "keyword_review_suggestions",
+  "keyword_governance_schedule_requests",
   "keyword_occurrences",
   "keyword_entities",
   "keyword_entity_sources",
@@ -154,6 +155,8 @@ const REQUIRED_INDEXES = [
   "keyword_review_suggestions_project_created_idx",
   "keyword_review_suggestions_generation_idx",
   "keyword_review_suggestions_one_pending_idx",
+  "keyword_governance_schedule_requests_due_idx",
+  "keyword_governance_schedule_requests_source_idx",
   "keyword_occurrences_project_collected_idx",
   "keyword_entities_project_created_idx",
   "keyword_entities_project_review_idx",
@@ -292,6 +295,8 @@ const REQUIRED_TRIGGERS = [
   "async_runs_keyword_suggestion_generation_result_guard",
   "keyword_suggestion_invocation_attempts_transition_guard",
   "keyword_review_suggestions_mutation_guard",
+  "keyword_governance_schedule_requests_mutation_guard",
+  "keyword_governance_generation_continuation_schedule",
   "keyword_occurrences_suggestion_writer_lock",
   "keyword_entity_sources_suggestion_writer_lock",
   "keyword_occurrences_lineage_guard",
@@ -413,6 +418,15 @@ const REQUIRED_ROUTINES = [
   "supersede_keyword_review_suggestions_for_project",
   "insert_keyword_review_suggestions_batch",
   "terminalize_keyword_governance_suggestion_generation_run",
+  "enforce_keyword_governance_schedule_request_mutation",
+  "insert_keyword_governance_schedule_request",
+  "claim_keyword_governance_schedule_request",
+  "claim_keyword_governance_schedule_request_by_source",
+  "claim_due_keyword_governance_schedule_requests",
+  "complete_keyword_governance_schedule_request",
+  "release_keyword_governance_schedule_request",
+  "append_keyword_governance_generation_continuation_request",
+  "supersede_stale_pending_keyword_review_suggestions",
   "enforce_keyword_review_analysis_invocation",
   "enforce_keyword_occurrence_lineage",
   "is_bcp47_canonical_identity",
@@ -482,6 +496,9 @@ const REQUIRED_ROUTINES = [
 ] as const;
 
 const REQUIRED_NON_NULL_TEXT_COLUMNS = [
+  ["keyword_governance_schedule_requests", "dispatch_key"],
+  ["keyword_governance_schedule_requests", "source_kind"],
+  ["keyword_governance_schedule_requests", "source_ref"],
   ["publication_attempts", "approved_artifact_content_hash"],
   ["publication_attempts", "preview_checksum"],
   ["publication_attempts", "content_checksum"],

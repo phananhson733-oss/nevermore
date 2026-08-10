@@ -131,8 +131,8 @@ $pgcrypto_contract$;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 83 THEN
-    RAISE EXCEPTION 'expected exactly 83 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 84 THEN
+    RAISE EXCEPTION 'expected exactly 84 app tables';
   END IF;
   IF (
     SELECT count(*)
@@ -165,11 +165,12 @@ BEGIN
       AND table_name IN (
         'keyword_governance_suggestion_generation_runs',
         'keyword_governance_suggestion_invocation_attempts',
-        'keyword_review_suggestions'
+        'keyword_review_suggestions',
+        'keyword_governance_schedule_requests'
       )
       AND table_type = 'BASE TABLE'
-  ) <> 3 THEN
-    RAISE EXCEPTION 'Keyword governance suggestion ledgers are incomplete';
+  ) <> 4 THEN
+    RAISE EXCEPTION 'Keyword governance suggestion and schedule ledgers are incomplete';
   END IF;
   IF NOT EXISTS (
     SELECT 1
@@ -354,6 +355,8 @@ BEGIN
         'keyword_review_suggestions_project_created_idx',
         'keyword_review_suggestions_generation_idx',
         'keyword_review_suggestions_one_pending_idx',
+        'keyword_governance_schedule_requests_due_idx',
+        'keyword_governance_schedule_requests_source_idx',
         'keyword_occurrences_project_collected_idx',
         'keyword_entities_project_created_idx',
         'keyword_entities_project_review_idx',
@@ -395,8 +398,8 @@ BEGIN
         'keyword_review_decisions_project_decided_idx',
         'keyword_review_decisions_topic_idx'
       ]::text[])
-  ) <> 92 THEN
-    RAISE EXCEPTION 'expected all 92 named app indexes';
+  ) <> 94 THEN
+    RAISE EXCEPTION 'expected all 94 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -470,6 +473,8 @@ BEGIN
         'async_runs_keyword_suggestion_generation_result_guard',
         'keyword_suggestion_invocation_attempts_transition_guard',
         'keyword_review_suggestions_mutation_guard',
+        'keyword_governance_schedule_requests_mutation_guard',
+        'keyword_governance_generation_continuation_schedule',
         'keyword_occurrences_suggestion_writer_lock',
         'keyword_entity_sources_suggestion_writer_lock',
         'keyword_occurrences_lineage_guard',
@@ -527,8 +532,8 @@ BEGIN
         'topic_node_successors_append_only',
         'keyword_review_decisions_append_only'
       ]::text[])
-  ) <> 120 THEN
-    RAISE EXCEPTION 'expected all 120 app triggers';
+  ) <> 122 THEN
+    RAISE EXCEPTION 'expected all 122 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -563,6 +568,15 @@ BEGIN
         'supersede_keyword_review_suggestions_for_project',
         'insert_keyword_review_suggestions_batch',
         'terminalize_keyword_governance_suggestion_generation_run',
+        'enforce_keyword_governance_schedule_request_mutation',
+        'insert_keyword_governance_schedule_request',
+        'claim_keyword_governance_schedule_request',
+        'claim_keyword_governance_schedule_request_by_source',
+        'claim_due_keyword_governance_schedule_requests',
+        'complete_keyword_governance_schedule_request',
+        'release_keyword_governance_schedule_request',
+        'append_keyword_governance_generation_continuation_request',
+        'supersede_stale_pending_keyword_review_suggestions',
         'enforce_keyword_review_analysis_invocation',
         'enforce_keyword_occurrence_lineage',
         'is_bcp47_canonical_identity',
@@ -600,8 +614,8 @@ BEGIN
         'enforce_topic_cluster_alias_retention',
         'prevent_topic_successor_cycle'
       ]::text[])
-  ) <> 64 THEN
-    RAISE EXCEPTION 'expected all 64 runtime routines';
+  ) <> 73 THEN
+    RAISE EXCEPTION 'expected all 73 runtime routines';
   END IF;
 END;
 $$;
@@ -5031,7 +5045,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0051_keyword_review_suggestions' THEN
+  ) IS DISTINCT FROM '0052_keyword_governance_schedule_requests' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

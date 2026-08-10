@@ -14,11 +14,11 @@ The active repository-owned authority is
 [`authority/implementation-spec-v0.4/`](authority/implementation-spec-v0.4/).
 The machine lock is [`scripts/spec-v0.4-lock.json`](scripts/spec-v0.4-lock.json).
 
-Contract inventory: **80 API operations / 11 async operations / 83 app tables / 12 frozen rules**
+Contract inventory: **80 API operations / 11 async operations / 84 app tables / 12 frozen rules**
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0051_keyword_review_suggestions.sql` (**51 migrations**). Migration 0048
+`0052_keyword_governance_schedule_requests.sql` (**52 migrations**). Migration 0048
 adds bounded Topic Model generation, an invocation-attempt fence, and Analysis
 Refresh v3 while preserving exact v1/v2 historical readability. Migration 0049
 keeps the existing exact-lineage authorities while bounding Keyword,
@@ -26,7 +26,8 @@ Competitor, and provider-discrepancy collection projection round trips;
 migration 0050 adds explicit confirmed Product Profile lineage for the fixed
 GenerativeQuery Keyword cohort without inventing provider provenance; migration
 0051 adds frozen, fenced Keyword governance suggestion generation and atomic
-human resolution authority.
+human resolution authority; migration 0052 adds payload-free durable source
+schedule requests, lease-token dispatch CAS, and atomic generation continuation.
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

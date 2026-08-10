@@ -16,7 +16,7 @@ const migration = readFileSync(
 describe("DataForSEO competitor metric authority", () => {
   it("admits Search Landscape v3 without rewriting readable v1/v2 lineage", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0051_keyword_review_suggestions",
+      "0052_keyword_governance_schedule_requests",
     );
     expect(migration).toMatch(/dataforseo\.search_landscape\.v1/iu);
     expect(migration).toMatch(/dataforseo\.search_landscape\.v2/iu);

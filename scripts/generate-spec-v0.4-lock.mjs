@@ -187,13 +187,13 @@ for (const operationId of asyncOperations) {
 
 const migrations = listOrderedMigrationSources({ root: repositoryRoot });
 const tables = migrationTableInventory(migrations);
-assert.equal(migrations.length, 51, "reviewed v0.4 migration count drift");
+assert.equal(migrations.length, 52, "reviewed v0.4 migration count drift");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
-  "0051_keyword_review_suggestions",
+  "0052_keyword_governance_schedule_requests",
   "reviewed v0.4 migration head drift",
 );
-assert.equal(tables.length, 83, "reviewed v0.4 table count drift");
+assert.equal(tables.length, 84, "reviewed v0.4 table count drift");
 
 const ruleContracts = diagnosticRules();
 assert.equal(ruleContracts.length, 12, "reviewed v0.4 rule count drift");

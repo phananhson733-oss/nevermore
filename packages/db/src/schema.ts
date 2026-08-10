@@ -611,6 +611,38 @@ export const keywordGovernanceSuggestionInvocationAttempts = app.table(
 );
 
 // ---------------------------------------------------------------------------
+// 12g. keyword_governance_schedule_requests (durable payload-free outbox)
+// ---------------------------------------------------------------------------
+export const keywordGovernanceScheduleRequests = app.table(
+  "keyword_governance_schedule_requests",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    source_kind: text().notNull(),
+    source_ref: text().notNull(),
+    initiated_by: uuid().notNull(),
+    dispatch_key: text().notNull().generatedAlwaysAs(sql`
+        'keyword-governance-schedule.v1:'
+          || workspace_id::text || ':' || project_id::text || ':'
+          || source_kind || ':' || source_ref
+      `),
+    requested_at: tz().notNull().defaultNow(),
+    next_attempt_at: tz().notNull().defaultNow(),
+    claim_token: uuid(),
+    claimed_at: tz(),
+    claim_expires_at: tz(),
+    attempt_count: integer().notNull().default(0),
+    completed_at: tz(),
+    last_error_code: text(),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // 13. normalized_observations  (append-only)
 // ---------------------------------------------------------------------------
 export const normalizedObservations = app.table("normalized_observations", {
@@ -2722,6 +2754,9 @@ export const schema = {
   productProfileInvocationAttempts,
   topicModelGenerationRuns,
   topicModelGenerationInvocationAttempts,
+  keywordGovernanceSuggestionGenerationRuns,
+  keywordGovernanceSuggestionInvocationAttempts,
+  keywordGovernanceScheduleRequests,
   normalizedObservations,
   providerDiscrepancies,
   diagnosticRuns,
@@ -2770,6 +2805,7 @@ export const schema = {
   topicClusterAliases,
   topicNodeSuccessors,
   keywordReviewDecisions,
+  keywordReviewSuggestions,
   keywordRelationIdentities,
   keywordRelationCandidates,
   keywordRelationDecisions,

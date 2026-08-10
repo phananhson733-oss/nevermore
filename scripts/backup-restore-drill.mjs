@@ -146,6 +146,7 @@ export const APP_TABLES = [
   "keyword_governance_suggestion_generation_runs",
   "keyword_governance_suggestion_invocation_attempts",
   "keyword_review_suggestions",
+  "keyword_governance_schedule_requests",
 ];
 
 /**

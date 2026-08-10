@@ -47,12 +47,12 @@ test("derives active versions and inventories from the reviewed v0.4 lock", () =
   assert.equal(lock.authorityVersion, "0.4.0");
   assert.equal(lock.apiOperations.length, 80);
   assert.equal(lock.asyncOperations.length, 10);
-  assert.equal(lock.tables.length, 83);
+  assert.equal(lock.tables.length, 84);
   assert.equal(lock.rules.length, 12);
   assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     lock.migrationHead,
-    "0051_keyword_review_suggestions",
+    "0052_keyword_governance_schedule_requests",
   );
   assert.equal(lock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(lock.ruleVersions["TECH-LINKGRAPH-005"], 3);
@@ -76,7 +76,7 @@ test("builds the complete database inventory through the static schema catalog",
   );
   assert.match(
     verifier,
-    /database: 51 migrations through \$\{EXPECTED_MIGRATION_HEAD\}, \$\{EXPECTED_TABLES\.length\} app tables \(pg-boss excluded\), 116 indexes, 164 triggers, and 96 routines in migrate-check/,
+    /database: 52 migrations through \$\{EXPECTED_MIGRATION_HEAD\}, \$\{EXPECTED_TABLES\.length\} app tables \(pg-boss excluded\), 118 indexes, 166 triggers, and 105 routines in migrate-check/,
   );
   for (const invariant of [
     "authority schema must contain migration 0048 verbatim and exactly once",

@@ -270,7 +270,7 @@ assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
 assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 assert.equal(
   lock.migrationHead,
-  "0051_keyword_review_suggestions",
+  "0052_keyword_governance_schedule_requests",
 );
 
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
@@ -306,7 +306,7 @@ const migrations = listOrderedMigrationSources({
   migrationDirectory: lock.migrationDirectory,
   migrationFilePattern: lock.migrationFilePattern,
 });
-assert.equal(migrations.length, 51, "v0.4 must freeze 51 migrations");
+assert.equal(migrations.length, 52, "v0.4 must freeze 52 migrations");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
   lock.migrationHead,
@@ -314,7 +314,7 @@ assert.equal(
 );
 const tables = migrationTableInventory(migrations);
 exactSet(tables, lock.tables, "application tables");
-assert.equal(tables.length, 83, "v0.4 must freeze 83 application tables");
+assert.equal(tables.length, 84, "v0.4 must freeze 84 application tables");
 
 assert.ok(Array.isArray(lock.rules), "rules must be an array");
 assert.ok(

@@ -6,7 +6,7 @@ customer-facing brand, and its approved production origin is
 contract `2026-07-21`, backed by
 `authority/implementation-spec-v0.4/`.
 
-Contract inventory: **80 API operations / 11 async operations / 83 app tables / 12 frozen rules**
+Contract inventory: **80 API operations / 11 async operations / 84 app tables / 12 frozen rules**
 
 Content Shadow state: **reviewed, not published**
 
@@ -27,10 +27,10 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0051_keyword_review_suggestions.sql` (**51 ordered migrations**); `0048_topic_model_generation.sql` is followed by `0049_projection_batch_writes.sql`, `0050_product_profile_keyword_lineage.sql`, and the `0051` head.
+Migration range: `0001_init.sql` through `0052_keyword_governance_schedule_requests.sql` (**52 ordered migrations**); `0048_topic_model_generation.sql` is followed by `0049_projection_batch_writes.sql`, `0050_product_profile_keyword_lineage.sql`, `0051_keyword_review_suggestions.sql`, and the `0052` head.
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0051` are hosted; every release must back up,
+v0.4 migrations through `0052` are hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
 

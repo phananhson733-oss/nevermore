@@ -535,6 +535,27 @@ export type {
   KeywordReviewSuggestionStatus,
   ReusableKeywordReviewSuggestionBatchResult,
 } from "./repositories/keyword-review-suggestions.ts";
+export {
+  KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED,
+  KEYWORD_GOVERNANCE_SCHEDULE_REQUEST_SOURCE_KINDS,
+  KeywordGovernanceScheduleRequestsRepository,
+} from "./repositories/keyword-governance-schedule-requests.ts";
+export type {
+  ClaimedKeywordGovernanceScheduleRequest,
+  ClaimDueKeywordGovernanceScheduleRequestsInput,
+  ClaimKeywordGovernanceScheduleRequestBySourceInput,
+  ClaimKeywordGovernanceScheduleRequestInput,
+  ClaimKeywordGovernanceScheduleRequestResult,
+  CompleteKeywordGovernanceScheduleRequestResult,
+  InsertKeywordGovernanceScheduleRequestInput,
+  InsertKeywordGovernanceScheduleRequestResult,
+  KeywordGovernanceScheduleRequest,
+  KeywordGovernanceScheduleRequestErrorCode,
+  KeywordGovernanceScheduleRequestSourceKind,
+  ReleaseKeywordGovernanceScheduleRequestInput,
+  ReleaseKeywordGovernanceScheduleRequestResult,
+  SettleKeywordGovernanceScheduleRequestInput,
+} from "./repositories/keyword-governance-schedule-requests.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
 export type { ExportBundleRow } from "./repositories/export-bundles.ts";
 export {

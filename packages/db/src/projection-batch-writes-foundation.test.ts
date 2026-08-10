@@ -13,7 +13,7 @@ const migration = readFileSync(
 describe("bounded collection projection writes", () => {
   it("keeps 0049 below the forward-only application migration head", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0051_keyword_review_suggestions",
+      "0052_keyword_governance_schedule_requests",
     );
   });
 

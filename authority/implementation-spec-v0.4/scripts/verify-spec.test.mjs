@@ -74,10 +74,10 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
     {
       operations: 80,
       async: 10,
-      tables: 83,
+      tables: 84,
       rules: 12,
-      migrations: 51,
-      head: "0051_keyword_review_suggestions",
+      migrations: 52,
+      head: "0052_keyword_governance_schedule_requests",
     },
   );
 });
@@ -107,7 +107,7 @@ test("rejects hand-edited generated authority SQL", () => {
 
 test("generated schema is the exact ordered migration chain", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
-  assert.equal(migrations.length, 51);
+  assert.equal(migrations.length, 52);
   assert.equal(
     readAuthority("schema.sql"),
     renderAuthoritySchema(migrations),
@@ -125,7 +125,7 @@ test("generated schema is the exact ordered migration chain", () => {
 test("catalog recognizes CREATE TABLE with and without IF NOT EXISTS", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
   const tables = migrationTableInventory(migrations);
-  assert.equal(tables.length, 83);
+  assert.equal(tables.length, 84);
   for (const table of [
     "keyword_relation_identities",
     "action_execution_state_events",
@@ -133,6 +133,7 @@ test("catalog recognizes CREATE TABLE with and without IF NOT EXISTS", () => {
     "geo_citation_occurrences",
     "backlink_facts",
     "topic_model_generation_runs",
+    "keyword_governance_schedule_requests",
     "topic_model_generation_invocation_attempts",
     "keyword_governance_suggestion_generation_runs",
     "keyword_governance_suggestion_invocation_attempts",

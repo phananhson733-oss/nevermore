@@ -13,7 +13,7 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **80 个 operation 与 11 个
-async operation**（其中 10 个使用 shared `AsyncAccepted`），**51 个 ordered migrations** 精确声明 **83 张应用表**，引擎
+async operation**（其中 10 个使用 shared `AsyncAccepted`），**52 个 ordered migrations** 精确声明 **84 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -605,8 +605,8 @@ operation `createProjectMeasurementWindow` 使用专用 typed accepted envelope�
 
 ## 10. 冻结数据库 inventory
 
-以下 83 张应用表来自 `0001_init.sql` 至
-`0051_keyword_review_suggestions.sql` 的 51 个 ordered migrations 与
+以下 84 张应用表来自 `0001_init.sql` 至
+`0052_keyword_governance_schedule_requests.sql` 的 52 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->
@@ -652,6 +652,7 @@ static schema catalog；pg-boss 自有表不计入。
 - `keyword_governance_suggestion_generation_runs`
 - `keyword_governance_suggestion_invocation_attempts`
 - `keyword_review_suggestions`
+- `keyword_governance_schedule_requests`
 - `finding_targets`
 - `keyword_occurrences`
 - `keyword_entities`
