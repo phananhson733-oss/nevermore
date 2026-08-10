@@ -6,3 +6,4 @@ export * from "./traffic-drop/index.ts";
 export * from "./site-baseline/index.ts";
 export * from "./quick-wins/index.ts";
 export * from "./gsc-analytics/index.ts";
+export * from "./keyword-opportunity/index.ts";

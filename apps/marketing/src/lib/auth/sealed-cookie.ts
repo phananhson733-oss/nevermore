@@ -29,7 +29,18 @@ export type SealedCookiePurpose =
   | "gg_id"
   | "gg_gsc"
   | "gg_sites"
-  | "gg_onetap";
+  | "gg_onetap"
+  /**
+   * The Keyword Opportunity Map's stage-one carry-over, which travels in a
+   * response body rather than a cookie.
+   *
+   * It gets its own purpose rather than borrowing one: the purpose is both the
+   * HKDF info and the GCM additional data, so sharing it with a grant would
+   * make a carry-over token presentable as authorization and a grant
+   * presentable as crawl context. The cookie byte budget does not apply to it
+   * — nothing sets it as a cookie — but every other rule here does.
+   */
+  | "gg_kw_context";
 
 export class SealedCookieError extends Error {
   constructor(message: string) {
