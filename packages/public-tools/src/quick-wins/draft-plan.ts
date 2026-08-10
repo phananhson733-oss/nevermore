@@ -79,11 +79,13 @@ export function planDrafts(input: DraftPlanInput): DraftPlan {
     .sort((a, b) => b.clickGap - a.clickGap || a.query.localeCompare(b.query));
 
   for (const row of candidates) {
-    if (tasks.length >= MAX_DRAFT_ROWS) {
-      skipped.set(row.query, "beyond_draft_cap");
-      continue;
-    }
-
+    // The comparable search runs for every candidate, including rows already
+    // past the cap. It is pure arithmetic over rows we have — it fetches
+    // nothing — so the run's network cost is still fixed by MAX_DRAFT_ROWS.
+    // What it buys is an honest reason: checking the cap first labelled every
+    // remaining row "beyond the per-run cap", including rows with no
+    // comparable page, which reads as "raise the cap and you get a draft" for
+    // rows that would produce nothing at any cap.
     const selection = selectComparablePage({
       query: row.query,
       pages: input.pages,
@@ -93,6 +95,11 @@ export function planDrafts(input: DraftPlanInput): DraftPlan {
 
     if (selection.kind !== "found") {
       skipped.set(row.query, selection.kind);
+      continue;
+    }
+
+    if (tasks.length >= MAX_DRAFT_ROWS) {
+      skipped.set(row.query, "beyond_draft_cap");
       continue;
     }
 

@@ -11,11 +11,25 @@ export interface PageMeta {
   readonly metaDescription: string | null;
 }
 
+/**
+ * One model reply.
+ *
+ * `truncated` is carried as data rather than inferred from the text, because
+ * the two failures it separates look identical from here: a reply cut off at
+ * the token ceiling and a reply the model formatted badly are both "not the
+ * JSON we asked for". Only the caller that made the request knows which.
+ */
+export interface DraftCompletion {
+  readonly text: string;
+  /** True when the model stopped because it ran out of budget, not ideas. */
+  readonly truncated: boolean;
+}
+
 export interface DraftRunDependencies {
   /** Returns null when the page could not be read. Never throws for a 404. */
   readonly fetchPageMeta: (url: string) => Promise<PageMeta | null>;
   /** One model completion for one prompt. */
-  readonly complete: (prompt: string) => Promise<string>;
+  readonly complete: (prompt: string) => Promise<DraftCompletion>;
 }
 
 export type DraftFailureReason =
@@ -25,6 +39,15 @@ export type DraftFailureReason =
   | "no_pattern_to_copy"
   /** The model replied with something that was not the expected JSON shape. */
   | "unparseable"
+  /**
+   * The reply hit the token ceiling mid-sentence.
+   *
+   * Separate from `unparseable` on purpose. Both arrive as text that will not
+   * parse, but this one is our budget rather than the model's formatting, and
+   * saying "the format was unusable" would point whoever reads it at the
+   * wrong thing.
+   */
+  | "truncated"
   | "empty"
   | "too_long"
   /** The model asserted the rewrite would work. See `draft.ts`. */
@@ -122,7 +145,7 @@ export async function runDrafts(
       },
     });
 
-    let reply: string;
+    let reply: DraftCompletion;
     try {
       reply = await dependencies.complete(prompt);
     } catch {
@@ -130,7 +153,16 @@ export async function runDrafts(
       continue;
     }
 
-    const validated = validateDraft(reply);
+    // Checked before the validator, and without looking at the text. A cut-off
+    // reply can still happen to parse — the model may have finished the JSON
+    // and been cut mid-thought after it — but it is not a draft the model
+    // finished, so it does not ship on the strength of a coincidence.
+    if (reply.truncated) {
+      failed.set(task.query, "truncated");
+      continue;
+    }
+
+    const validated = validateDraft(reply.text);
     if (!validated.ok) {
       failed.set(task.query, validated.reason);
       continue;

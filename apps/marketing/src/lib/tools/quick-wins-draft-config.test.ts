@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  draftModelFromEnv,
-  draftsEnabled,
-} from "./quick-wins-draft-config.ts";
+import { draftModelFromEnv, draftsEnabled } from "./quick-wins-draft-config.ts";
 
 const FULL = {
   QUICK_WINS_DRAFT_API_KEY: "sk-test",
@@ -81,19 +78,24 @@ describe("auth scheme", () => {
 });
 
 describe("temperature", () => {
-  it("defaults low, because a wording candidate should not wander", () => {
-    expect(draftModelFromEnv(FULL)?.temperature).toBe(0.4);
+  it("defaults to sending none at all", () => {
+    // Measured against the real Azure gpt-5.6-luna deployment: a request
+    // carrying `temperature: 0.4` comes back 400 `unsupported_value` — "Only
+    // the default (1) value is supported" — so the old low default disabled
+    // drafts outright on any reasoning model. Omitting the field works on
+    // every endpoint this can point at, and the wording candidates it
+    // produced in that state were stable anyway.
+    expect(draftModelFromEnv(FULL)?.temperature).toBeNull();
   });
 
-  it("takes the deployment's value", () => {
-    // The Azure gpt-5.6-luna deployment accepts exactly 1.
+  it("takes the deployment's value when one is set", () => {
     expect(
       draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: "1" })
         ?.temperature,
     ).toBe(1);
   });
 
-  it("falls back rather than sending a value the model will refuse", () => {
+  it("omits the field rather than sending a value the model will refuse", () => {
     // A refused temperature fails the whole request, so a typo in a dashboard
     // would disable drafts entirely with no obvious cause.
     for (const bad of ["", "  ", "hot", "-1", "3", "NaN"]) {
@@ -101,7 +103,7 @@ describe("temperature", () => {
         draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: bad })
           ?.temperature,
         bad,
-      ).toBe(0.4);
+      ).toBeNull();
     }
   });
 
@@ -114,6 +116,34 @@ describe("temperature", () => {
       draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_TEMPERATURE: "2" })
         ?.temperature,
     ).toBe(2);
+  });
+});
+
+describe("json mode", () => {
+  it("defaults to on", () => {
+    // Asking for a JSON object is what stops a chatty model from wrapping the
+    // draft in a sentence, which is the failure the live tool was showing as
+    // "the draft came back in a format we cannot use".
+    expect(draftModelFromEnv(FULL)?.jsonMode).toBe(true);
+  });
+
+  it("can be turned off for an endpoint that refuses the field", () => {
+    // Not every gateway supports `response_format`. One that does not answers
+    // 400 for every request, so the switch has to exist.
+    for (const off of ["0", "false", "FALSE", " off "]) {
+      expect(
+        draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_JSON_MODE: off })
+          ?.jsonMode,
+        off,
+      ).toBe(false);
+    }
+  });
+
+  it("stays on for anything it does not recognize", () => {
+    expect(
+      draftModelFromEnv({ ...FULL, QUICK_WINS_DRAFT_JSON_MODE: "yes" })
+        ?.jsonMode,
+    ).toBe(true);
   });
 });
 

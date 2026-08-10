@@ -1405,6 +1405,7 @@
       "draftsSource": "Modelled on",
       "draftTitleLabel": "Title",
       "draftMetaLabel": "Description",
+      "draftsSkippedToggle": "{count} more rows got no candidate this run — expand for the reason on each",
       "draftsNone": "No wording candidates this time. A candidate needs another page on your site, in the same position band, earning clearly more with enough impressions to trust — most queries do not have one, and we would rather show nothing than a generic template.",
       "draftSkipped": {
         "no_shortfall": "beat your own curve, nothing to rewrite",
@@ -1418,6 +1419,7 @@
         "too_long": "the draft was too long",
         "empty": "the draft came back empty",
         "unparseable": "the draft came back in an unusable form",
+        "truncated": "the model was cut off before it finished this draft",
         "model_unavailable": "the drafting model was unavailable",
         "page_dimension_unavailable": "the page-level data needed for drafts was unavailable"
       },

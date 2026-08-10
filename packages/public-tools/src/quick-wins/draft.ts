@@ -81,7 +81,11 @@ export type DraftValidation =
     }
   | {
       readonly ok: false;
-      readonly reason: "unparseable" | "empty" | "too_long" | "promises_outcome";
+      readonly reason:
+        | "unparseable"
+        | "empty"
+        | "too_long"
+        | "promises_outcome";
     };
 
 /**
@@ -114,6 +118,86 @@ function stripCodeFence(raw: string): string {
 }
 
 /**
+ * Every balanced top-level `{...}` span in the text, in the order they appear.
+ *
+ * Models asked for JSON often deliver it with a sentence in front, a sentence
+ * behind, or a fence that does not start at character zero. On the live tool
+ * that arrived as `unparseable` — the format was called unusable while the
+ * draft the prompt asked for sat inside the reply.
+ *
+ * This finds the object rather than repairing it. Brace counting is
+ * string-aware so a `{` inside a title does not open a span and a `}` inside
+ * one does not close it; a span that never closes (the shape a cut-off reply
+ * takes) is simply never produced, so truncation stays a failure.
+ */
+function jsonObjectSpans(text: string): readonly string[] {
+  const spans: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]!;
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        spans.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return spans;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The object a draft should be read out of, or null when the reply has none.
+ *
+ * The whole reply is tried first, so a well-behaved model costs nothing extra.
+ * When several objects are present the one carrying both draft fields wins —
+ * a model that narrated in JSON before answering should not have its preamble
+ * validated as the draft. Failing that, the first object is returned so the
+ * caller can still say precisely what was wrong with it.
+ */
+function findDraftObject(text: string): Record<string, unknown> | null {
+  const objects: Record<string, unknown>[] = [];
+
+  for (const candidate of [text, ...jsonObjectSpans(text)]) {
+    try {
+      const value: unknown = JSON.parse(candidate);
+      if (isPlainObject(value)) objects.push(value);
+    } catch {
+      // Not this span. A reply with no parseable object at all is terminal,
+      // and the caller reports it as such.
+    }
+  }
+
+  return (
+    objects.find((o) => "title" in o && "metaDescription" in o) ??
+    objects[0] ??
+    null
+  );
+}
+
+/**
  * Validate a model's reply.
  *
  * Every failure is terminal for that row — the surface shows no draft and says
@@ -122,18 +206,9 @@ function stripCodeFence(raw: string): string {
  * feature exists to not be.
  */
 export function validateDraft(raw: string): DraftValidation {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripCodeFence(raw));
-  } catch {
-    return { ok: false, reason: "unparseable" };
-  }
+  const body = findDraftObject(stripCodeFence(raw));
+  if (body === null) return { ok: false, reason: "unparseable" };
 
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, reason: "unparseable" };
-  }
-
-  const body = parsed as Record<string, unknown>;
   const title = body["title"];
   const metaDescription = body["metaDescription"];
   if (typeof title !== "string" || typeof metaDescription !== "string") {

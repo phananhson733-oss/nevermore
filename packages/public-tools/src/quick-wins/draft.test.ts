@@ -137,6 +137,50 @@ describe("validateDraft", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("tolerates a model that talked before or after its JSON", () => {
+    // Every shape below was a real `unparseable` on the live tool: the reply
+    // carried the JSON the prompt asked for and some conversational padding
+    // around it. Rejecting those threw away a draft the model did produce,
+    // and told the visitor the format was unusable when it was not.
+    for (const raw of [
+      `Here is the rewrite:\n${good}`,
+      `${good}\n\nLet me know if you want another angle.`,
+      `Sure! Here you go:\n\`\`\`json\n${good}\n\`\`\`\nHope this helps.`,
+      `\`\`\`\n${good}\n\`\`\``,
+    ]) {
+      const result = validateDraft(raw);
+      expect(result.ok, raw.slice(0, 40)).toBe(true);
+      if (!result.ok) continue;
+      expect(result.title).toContain("Birth Chart");
+    }
+  });
+
+  it("still refuses a reply with no JSON object in it at all", () => {
+    // Tolerating padding must not become tolerating anything. A reply the
+    // model never put an object in has nothing to extract.
+    for (const raw of [
+      "I cannot help with that.",
+      "not json at all",
+      "{ this is not json }",
+      // A truncated reply: the object opens and never closes.
+      '{"title":"Lamine Yamal\'s Birth Chart","metaDes',
+    ]) {
+      const result = validateDraft(raw);
+      expect(result.ok, raw).toBe(false);
+      if (!result.ok) expect(result.reason).toBe("unparseable");
+    }
+  });
+
+  it("takes the JSON object even when prose around it has braces", () => {
+    // Scanning to the LAST closing brace rather than the first keeps a
+    // complete object intact; stopping early would cut it in half.
+    const result = validateDraft(
+      `Note: {the pattern} is copied from the other page.\n${good}\nThat's it.`,
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
   it("trims surrounding whitespace rather than rejecting on it", () => {
     const result = validateDraft(
       JSON.stringify({ title: "  Fine Title  ", metaDescription: " Fine. " }),
