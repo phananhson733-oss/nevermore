@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { KeywordOpportunityProviderRow } from "@sf/public-tools";
 import { open, seal } from "../auth/sealed-cookie.ts";
+import { openCrawlGate, type CrawlGateDependencies } from "./crawl-gate.ts";
 import { createKeywordCostAccumulator } from "./keyword-cost-guard.ts";
+import {
+  acquirePublicCrawlSlot,
+  resetPublicToolSlots,
+} from "./public-tool-request.ts";
+import { crawlTargetBucket } from "./shared-rate-limit.ts";
 import {
   handleKeywordContextRequest,
   handleKeywordOpportunitiesRequest,
@@ -409,6 +415,52 @@ describe("handleKeywordContextRequest", () => {
     // The point of the gate is the request to somebody else's server that it
     // prevents, so a refusal that still crawled would be no gate at all.
     expect(crawlContext).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Runs stage one against the REAL crawl gate, not a stub.
+   *
+   * The shipped bug this pins: the handler passed the target's hostname where
+   * the gate expects the site URL, so the gate's `new URL(...)` threw and every
+   * single request was refused with `invalid_url` before any crawl. Every test
+   * above injects a stub gate, and a stub accepts whatever it is handed — which
+   * is exactly why a suite of 8,972 passing tests said nothing about an
+   * endpoint that could not serve one request in production.
+   *
+   * So this case wires the real gate with an in-memory quota, and asserts on
+   * the bucket key it derived: proof that what the handler passes is something
+   * the gate can actually parse.
+   */
+  it("passes the crawl gate a URL it can parse, not a bare hostname", async () => {
+    resetPublicToolSlots();
+    const buckets: string[] = [];
+    const gateDependencies: CrawlGateDependencies = {
+      acquireSlot: acquirePublicCrawlSlot,
+      quota: {
+        callQuota: async (bucketKey) => {
+          buckets.push(bucketKey);
+          return {
+            allowed: true,
+            hits: 1,
+            reset_at: "2099-01-01T00:00:00.000Z",
+          };
+        },
+      },
+    };
+
+    const response = await handleKeywordContextRequest(
+      request(CONTEXT_BODY),
+      deps({
+        openCrawlGate: (clientIp, siteUrl) =>
+          openCrawlGate(clientIp, siteUrl, gateDependencies),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // The per-target bucket carries the host the gate parsed out for itself.
+    // A bare hostname would never have reached this line — the gate would have
+    // answered 400 without calling the quota at all.
+    expect(buckets).toContain(crawlTargetBucket("acme.example"));
   });
 
   it("returns the crawl summary sealed to the identity that asked for it", async () => {

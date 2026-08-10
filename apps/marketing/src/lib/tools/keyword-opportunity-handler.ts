@@ -34,10 +34,7 @@ import {
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
 import { cookies } from "next/headers";
-import {
-  identitySubFrom,
-  type GrantResolution,
-} from "../auth/grant-cookie.ts";
+import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
 import {
   openGscGate,
@@ -143,10 +140,16 @@ export interface KeywordContextCrawlResult {
 export interface KeywordOpportunityDependencies {
   /** Who is asking. Null when the visitor is not signed in. */
   readonly readIdentity: () => Promise<{ readonly sub: string } | null>;
-  /** Admission for the crawl half, keyed by IP and by target host. */
+  /**
+   * Admission for the crawl half, keyed by IP and by target host.
+   *
+   * Takes the site URL, not the host: the gate derives the host itself so that
+   * every caller keys the per-target budget the same way. Passing a bare host
+   * here parses as a relative URL and the gate refuses the request outright.
+   */
   readonly openCrawlGate: (
     clientIp: string,
-    targetHost: string,
+    siteUrl: string,
   ) => Promise<CrawlGateResult>;
   /** Admission for the Search Console half. */
   readonly openGscGate: (clientIp: string) => Promise<GscGateResult>;
@@ -332,14 +335,13 @@ export async function handleKeywordContextRequest(
   const input = parseContextInput(body.value);
   if (input === null) return json(createPublicToolError("invalid_input"), 400);
 
-  const targetHost = hostOf(input.siteUrl);
-  if (targetHost === null) {
+  if (hostOf(input.siteUrl) === null) {
     return json(createPublicToolError("invalid_input"), 400);
   }
 
   const gate = await dependencies.openCrawlGate(
     dependencies.extractClientIp(request.headers),
-    targetHost,
+    input.siteUrl,
   );
   if (!gate.ok) return gate.response;
 
@@ -714,7 +716,7 @@ export const DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES: Pick<
     return sub === null ? null : { sub };
   },
   resolveGrant: resolveTrafficDropGrant,
-  openCrawlGate: (clientIp, targetHost) => openCrawlGate(clientIp, targetHost),
+  openCrawlGate: (clientIp, siteUrl) => openCrawlGate(clientIp, siteUrl),
   openGscGate: (clientIp) => openGscGate(clientIp),
   consumeDailyBudget: () => consumeKeywordDailyBudget(),
   now: () => new Date(),
