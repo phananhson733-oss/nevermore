@@ -41,6 +41,7 @@ import {
 } from "@sf/contracts";
 import type { Logger } from "@sf/observability";
 import type { WorkerContext } from "../context.ts";
+import { DiagnosticGovernanceCapacityError } from "./governance.ts";
 import {
   runAnalysisRefresh,
   type AnalysisRefreshJobPayload,
@@ -1409,6 +1410,98 @@ describe("runAnalysisRefresh", () => {
         limitation: expect.stringContaining("no decision"),
       }),
     );
+  });
+
+  it("terminalizes once when the bounded governance freeze is unusable after the optional Topic step", async () => {
+    const harness = createHarness({ v3Plan: true });
+    installReadyTopicPlan(harness);
+    vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    ).mockRejectedValue(
+      new DiagnosticGovernanceCapacityError("more than 10000 refs"),
+    );
+
+    await runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW });
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "topic_model",
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_TOPIC_MODEL_INPUT_INVALID" },
+    });
+    expect(harness.state.steps[6]).toMatchObject({
+      step_key: "growth_audit",
+      state: "pending",
+    });
+    expect(harness.state.parentStatus).toBe("queued");
+    const continuationCount = harness.send.mock.calls.filter(
+      ([queue]) => queue === "refresh.analysis",
+    ).length;
+    expect(continuationCount).toBe(1);
+
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW }),
+    ).resolves.toBeUndefined();
+
+    expect(harness.state.steps[6]).toMatchObject({
+      step_key: "growth_audit",
+      state: "failed",
+      error: { code: "ANALYSIS_REFRESH_AUDIT_UNUSABLE" },
+    });
+    expect(harness.state.parentStatus).toBe("failed");
+    expect(AsyncRunsRepository.prototype.setTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: IDS.parent }),
+      expect.objectContaining({
+        status: "failed",
+        lastErrorCode: "ANALYSIS_REFRESH_AUDIT_UNUSABLE",
+      }),
+    );
+    expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
+    expect(AuditRunsRepository.prototype.create).not.toHaveBeenCalled();
+    expect(
+      harness.send.mock.calls.filter(
+        ([queue]) => queue === "refresh.analysis",
+      ),
+    ).toHaveLength(continuationCount);
+  });
+
+  it("keeps non-cap governance read failures retryable", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    ).mockRejectedValue(new Error("database read unavailable"));
+
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW }),
+    ).rejects.toThrow("database read unavailable");
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "growth_audit",
+      state: "pending",
+    });
+    expect(harness.state.parentStatus).toBe("queued");
+    expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
+  });
+
+  it("keeps unrelated governance RangeErrors retryable", async () => {
+    const harness = createHarness();
+    installCompletedCollectionPlan(harness);
+    vi.mocked(
+      KeywordsRepository.prototype.listDiagnosticEligible,
+    ).mockRejectedValue(new RangeError("repository argument is malformed"));
+
+    await expect(
+      runAnalysisRefresh(harness.ctx, JOB, { now: () => NOW }),
+    ).rejects.toThrow("repository argument is malformed");
+
+    expect(harness.state.steps[5]).toMatchObject({
+      step_key: "growth_audit",
+      state: "pending",
+    });
+    expect(harness.state.parentStatus).toBe("queued");
+    expect(AsyncRunsRepository.prototype.setTerminal).not.toHaveBeenCalled();
+    expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
   });
 
   it("writes no automated keyword decision when the rollout flag is off", async () => {

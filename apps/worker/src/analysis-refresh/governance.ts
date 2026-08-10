@@ -44,8 +44,15 @@ function corruptGovernance(message: string): never {
   throw new Error(`Diagnostic governance library is corrupt: ${message}`);
 }
 
+export class DiagnosticGovernanceCapacityError extends RangeError {
+  constructor(message: string) {
+    super(`Diagnostic governance library exceeds its hard cap: ${message}`);
+    this.name = "DiagnosticGovernanceCapacityError";
+  }
+}
+
 function governanceTooLarge(message: string): never {
-  throw new RangeError(`Diagnostic governance library exceeds its hard cap: ${message}`);
+  throw new DiagnosticGovernanceCapacityError(message);
 }
 
 function assertProjectRow(
@@ -118,6 +125,7 @@ function assertOccurrenceMatchesEntity(
   }
   const hasSnapshot = row.data_snapshot_id !== null;
   const hasObservation = row.normalized_observation_id !== null;
+  const hasProductProfile = row.product_profile_id !== null;
   if (hasSnapshot !== hasObservation) {
     corruptGovernance(
       "keyword occurrence has incomplete snapshot/observation lineage",
@@ -126,9 +134,21 @@ function assertOccurrenceMatchesEntity(
   if (
     row.source_kind === "manual"
       ? hasSnapshot ||
+        hasProductProfile ||
         row.source_pointer !== null ||
         !row.source_ref.startsWith("manual:")
-      : !hasSnapshot ||
+      : row.source_kind === "product_profile"
+        ? !hasProductProfile ||
+          hasSnapshot ||
+          row.source_pointer !== null ||
+          row.provider_data_as_of !== null ||
+          row.scope_basis !== "project_context" ||
+          row.query_kind !== "generative_query" ||
+          !row.source_ref.startsWith(
+            `product_profile:${row.product_profile_id}#profile-generative-query.v1/`,
+          )
+        : hasProductProfile ||
+          !hasSnapshot ||
         row.source_pointer === null ||
         !row.source_ref.startsWith("observation:")
   ) {
