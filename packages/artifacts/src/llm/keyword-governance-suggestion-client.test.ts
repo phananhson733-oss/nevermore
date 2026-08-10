@@ -196,6 +196,16 @@ describe("keyword governance suggestion structured client", () => {
       manifest(),
     );
 
+    const [messages] = transport.complete.mock.calls[0] as [
+      { readonly system: string; readonly user: string },
+    ];
+    expect(messages.system).toContain(
+      "buyerStage must be awareness, consideration, decision, retention, or null.",
+    );
+    expect(messages.user).toContain(
+      '"buyerStage":"awareness | consideration | decision | retention | null"',
+    );
+
     expect(sentContext(transport)).toEqual({
       schemaVersion: "keyword-governance-suggestion-prompt.v1",
       marketCode: "US",
