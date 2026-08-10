@@ -140,6 +140,32 @@ describe("collectSitemap exact fetch identities", () => {
  * they disagree, the sitemap copy looks like a page nothing links to — which
  * is exactly the false orphan_candidate this decoding work set out to remove.
  */
+/**
+ * The one place they deliberately disagree.
+ *
+ * `&nbsp;` is an HTML entity, not an XML one. The page parser resolves it
+ * because a browser would; the sitemap parser leaves it verbatim rather than
+ * inventing a character the document never declared. A URL containing it would
+ * therefore canonicalize differently from either entrance — the exception is
+ * recorded here so "the parsers agree" is never read as unconditional.
+ */
+describe("sitemap and page-parser decoding, known exception", () => {
+  it("resolves &nbsp; on the page side and keeps it verbatim in a sitemap", () => {
+    const fromSitemap = parseSitemapXml(
+      `<urlset><url><loc>https://e.com/a?x=&nbsp;1</loc></url></urlset>`,
+    ).locs[0];
+    const fromHref = JSON.stringify(
+      parsePage(
+        `<html><body><a href="/a?x=&nbsp;1">x</a></body></html>`,
+        "https://e.com/",
+      ),
+    ).match(/https:\/\/e\.com\/[^"\\]*/)?.[0];
+
+    expect(fromSitemap).toBe("https://e.com/a?x=&nbsp;1");
+    expect(fromHref).toBe("https://e.com/a?x=+1");
+  });
+});
+
 describe("sitemap and page-parser decoding agree", () => {
   it.each([
     ["&apos;", "/o&apos;neill"],
