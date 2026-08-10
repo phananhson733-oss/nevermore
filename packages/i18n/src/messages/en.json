@@ -1894,6 +1894,25 @@
         "topicDescription": "Topics can only be selected from stable nodes in the latest published Topic Map; labels cannot be entered manually.",
         "mappingTitle": "Choose the growth destination",
         "mappingDescription": "After confirming a Topic, map to one canonical SitePage or create a new content asset.",
+        "suggestion": {
+          "title": "System suggestion",
+          "description": "This suggestion uses the confirmed Product Profile, Keyword evidence, and published Topic. Approving records it unchanged as a human decision; expand the editor only for exceptions.",
+          "reasonLabel": "Why this is suggested",
+          "approve": "Approve system suggestion",
+          "approving": "Approving…",
+          "expandEdit": "Edit suggestion",
+          "collapseEdit": "Hide edits",
+          "detailLoading": "Loading the latest Keyword suggestion…",
+          "detailError": "The latest Keyword suggestion could not be loaded.",
+          "approvalConflict": "The Keyword or suggestion changed. The latest suggestion has been reloaded; review it before approving.",
+          "approvalError": "The system suggestion could not be approved. Please try again.",
+          "state": {
+            "generating": "The system is generating a suggestion",
+            "pending_needs_review": "This suggestion still needs human input",
+            "stale": "This suggestion is out of date",
+            "unavailable": "No approvable suggestion is currently available"
+          }
+        },
         "field": {
           "status": "Keyword status",
           "intent": "Search intent",

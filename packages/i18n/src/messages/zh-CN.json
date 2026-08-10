@@ -1894,6 +1894,25 @@
         "topicDescription": "Topic 只能选择最近一次已发布 Topic Map 中的稳定节点，不能手工输入名称。",
         "mappingTitle": "选择增长落点",
         "mappingDescription": "已确认 Topic 后，可以指向一个规范 SitePage，或创建新的内容资产。",
+        "suggestion": {
+          "title": "系统建议",
+          "description": "以下建议来自已确认的产品画像、关键词证据和已发布 Topic。批准后会原样记录为人工确认；需要例外时再展开修改。",
+          "reasonLabel": "建议依据",
+          "approve": "批准系统建议",
+          "approving": "正在批准…",
+          "expandEdit": "展开修改",
+          "collapseEdit": "收起修改",
+          "detailLoading": "正在读取最新关键词建议…",
+          "detailError": "无法读取最新关键词建议。",
+          "approvalConflict": "关键词或建议已更新；系统已重新加载最新建议，请核对后再批准。",
+          "approvalError": "无法批准系统建议，请重试。",
+          "state": {
+            "generating": "系统正在生成建议",
+            "pending_needs_review": "这条建议仍需人工补充",
+            "stale": "建议已过期",
+            "unavailable": "当前无法生成可批准建议"
+          }
+        },
         "field": {
           "status": "关键词状态",
           "intent": "搜索意图",

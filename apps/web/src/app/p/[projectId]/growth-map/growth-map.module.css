@@ -3627,8 +3627,171 @@
 }
 
 .keywordReviewForm {
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.keywordSuggestionSummary {
+  display: grid;
+  gap: 16px;
+  padding: 20px 26px 22px;
+  border-bottom: 1px solid var(--sf-border);
+}
+
+.keywordSuggestionHeading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.keywordSuggestionHeading > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.keywordSuggestionHeading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--gm-ink);
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.keywordSuggestionHeading p {
+  max-width: 68ch;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.keywordSuggestionFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  overflow: hidden;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border);
+  border-radius: 11px;
+}
+
+.keywordSuggestionFact {
+  min-width: 0;
+  padding: 11px 13px;
+}
+
+.keywordSuggestionFact:nth-child(even) {
+  border-left: 1px solid var(--sf-border);
+}
+
+.keywordSuggestionFact:nth-child(n + 3) {
+  border-top: 1px solid var(--sf-border);
+}
+
+.keywordSuggestionFact dt {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.4;
+}
+
+.keywordSuggestionFact dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1.4;
+}
+
+.keywordSuggestionReason {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  background: color-mix(in srgb, var(--sf-mint-soft) 65%, var(--sf-surface));
+  border: 1px solid color-mix(in srgb, var(--sf-mint) 32%, var(--sf-border));
+  border-radius: 11px;
+}
+
+.keywordSuggestionReason > span {
+  color: var(--sf-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.keywordSuggestionReason > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sf-fg);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.keywordSuggestionState {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  overflow-wrap: anywhere;
+  color: var(--sf-amber-text);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--sf-amber-soft);
+  border: 1px solid color-mix(in srgb, var(--sf-amber-text) 24%, var(--sf-border));
+  border-radius: 9px;
+}
+
+.keywordSuggestionState > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.keywordSuggestionEditToggle {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  color: var(--sf-mint-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-border-strong);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.keywordSuggestionEditToggle:hover {
+  color: var(--sf-fg);
+  background: var(--sf-surface-deep);
+}
+
+.keywordSuggestionEditToggle:focus-visible {
+  outline: 0;
+  box-shadow: var(--sf-focus-ring);
+}
+
+.keywordSuggestionEditToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.keywordSuggestionEditPanel {
+  min-width: 0;
 }
 
 .keywordReviewSection {
@@ -3891,6 +4054,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.keywordSuggestionFooter {
+  justify-content: flex-end;
+}
+
+.keywordReviewFooter > .keywordSuggestionFooterActions {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
 }
 
 .competitorReviewFooter {
@@ -6543,6 +6715,24 @@ a.competitorMonitorContentUrl:hover {
   .keywordReviewSection {
     padding: 20px 16px;
   }
+  .keywordSuggestionSummary {
+    padding: 18px 16px 20px;
+  }
+  .keywordSuggestionHeading {
+    flex-direction: column;
+  }
+  .keywordSuggestionFacts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keywordSuggestionFact:nth-child(even) {
+    border-left: 0;
+  }
+  .keywordSuggestionFact:nth-child(n + 2) {
+    border-top: 1px solid var(--sf-border);
+  }
+  .keywordSuggestionEditToggle {
+    width: 100%;
+  }
   .keywordReviewGrid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -6561,6 +6751,10 @@ a.competitorMonitorContentUrl:hover {
   .keywordReviewFooter > div {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+  .keywordSuggestionFooter > .keywordSuggestionFooterActions {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
   }
   .keywordReviewFooter button {
     width: 100%;

@@ -10,6 +10,7 @@ import type {
   GrowthMapKeywordRelation,
   GrowthMapInternalLinkMap,
   GrowthMapKeywordNumericMetric,
+  KeywordGovernancePendingSuggestion,
   GrowthOpportunity,
   GrowthMapTopicModelInsights,
   GrowthMapUrlFinding,
@@ -71,6 +72,7 @@ import {
   resolveGrowthMapCursorPredecessor,
   keywordMetricPresentation,
   keywordDetailReadState,
+  keywordSuggestionReviewDraft,
   keywordTopicNeedsConflictConfirmation,
   keywordLibraryReadState,
   metricValueLabelKey,
@@ -124,7 +126,48 @@ const IDS = {
   internalLinkTopic: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
   competitorA: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
   competitorB: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+  suggestion: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
+  suggestionInvocation: "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
 } as const;
+
+function readyKeywordSuggestion(
+  overrides: Partial<KeywordGovernancePendingSuggestion> = {},
+): KeywordGovernancePendingSuggestion {
+  return {
+    suggestionId: IDS.suggestion,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+    state: "pending_ready",
+    expectedGovernanceRevision: 7,
+    status: "approved",
+    intent: "commercial",
+    buyerStage: "consideration",
+    topicNodeId: IDS.topicChild,
+    topicModelRevision: 1,
+    topicLabel: "Customer onboarding",
+    mappingDecision: "existing_page",
+    mappedSitePageId: IDS.sitePage,
+    mappedSitePageTitle: "Customer onboarding platform",
+    reason:
+      "The confirmed Product Profile, Topic, and canonical page support this exact suggestion.",
+    readinessReason: "all_authorities_confirmed",
+    limitation: null,
+    lineage: {
+      generationVersion: "keyword-governance-suggestion-generation.v1",
+      promptSetVersion: "keyword-governance-suggestion.prompt.v1",
+      authority: "llm_generated",
+      analysisInvocationId: IDS.suggestionInvocation,
+    },
+    intentLineage: {
+      authority: "llm_generated",
+      snapshotId: null,
+      observationId: null,
+      analysisInvocationId: IDS.suggestionInvocation,
+      observedAt: null,
+    },
+    createdAt: "2026-08-10T08:00:00.000Z",
+    ...overrides,
+  };
+}
 
 function competitorMonitorItem(
   overrides: Partial<CompetitorMonitorItem> = {},
@@ -3126,6 +3169,71 @@ describe("Growth Map view model", () => {
     expect(
       keywordTopicNeedsConflictConfirmation(insights, IDS.topicChild),
     ).toBe(true);
+  });
+
+  it("prefills the exception editor only from a fully ready system suggestion", () => {
+    const suggestion = readyKeywordSuggestion();
+
+    expect(keywordSuggestionReviewDraft(suggestion)).toEqual({
+      status: "approved",
+      intent: "commercial",
+      buyerStage: "consideration",
+      topicNodeId: IDS.topicChild,
+      mappingDecision: "existing_page",
+      mappedSitePageId: IDS.sitePage,
+      reason: suggestion.reason,
+    });
+  });
+
+  it("preserves an excluded suggestion as an exact unassigned exception draft", () => {
+    const reason = "Exclude this term because it is outside the confirmed ICP.";
+    const suggestion = readyKeywordSuggestion({
+      status: "excluded",
+      intent: null,
+      buyerStage: null,
+      topicNodeId: null,
+      topicModelRevision: null,
+      topicLabel: null,
+      mappingDecision: "unassigned",
+      mappedSitePageId: null,
+      mappedSitePageTitle: null,
+      reason,
+    });
+
+    expect(keywordSuggestionReviewDraft(suggestion)).toEqual({
+      status: "excluded",
+      intent: "",
+      buyerStage: "",
+      topicNodeId: "",
+      mappingDecision: "unassigned",
+      mappedSitePageId: "",
+      reason,
+    });
+  });
+
+  it("fails closed for non-ready, insufficient-authority, or incomplete suggestions", () => {
+    expect(keywordSuggestionReviewDraft(null)).toBeNull();
+    expect(
+      keywordSuggestionReviewDraft(
+        readyKeywordSuggestion({
+          state: "pending_needs_review",
+          readinessReason: "insufficient_authority",
+          limitation: "The suggested page still needs customer confirmation.",
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      keywordSuggestionReviewDraft(
+        readyKeywordSuggestion({
+          readinessReason: "insufficient_authority",
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      keywordSuggestionReviewDraft(
+        readyKeywordSuggestion({ mappedSitePageId: null }),
+      ),
+    ).toBeNull();
   });
 
   it("rejects stale or invented Topic assignments and mappings without a confirmed Topic", () => {

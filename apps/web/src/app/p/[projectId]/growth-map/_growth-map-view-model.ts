@@ -35,6 +35,7 @@ import type {
   InternalLinkRecommendation,
   InternalLinkRecommendationCoverage,
   DecideKeywordRelationRequest,
+  KeywordGovernancePendingSuggestion,
   KeywordRelationDecisionKind,
   KeywordMappingDecision,
   PatchTopicModelDraftRequest,
@@ -1643,6 +1644,56 @@ export interface KeywordGovernanceReviewDraft {
   readonly mappingDecision: KeywordMappingDecision;
   readonly mappedSitePageId: string;
   readonly reason: string;
+}
+
+/**
+ * Prefill the exception editor from one complete, currently approvable system
+ * suggestion. Non-ready or structurally incomplete suggestions stay read-only
+ * and must never become an editable draft through client-side guessing.
+ */
+export function keywordSuggestionReviewDraft(
+  suggestion: KeywordGovernancePendingSuggestion | null,
+): KeywordGovernanceReviewDraft | null {
+  if (
+    suggestion === null ||
+    suggestion.state !== "pending_ready" ||
+    suggestion.readinessReason !== "all_authorities_confirmed" ||
+    suggestion.status === null ||
+    suggestion.mappingDecision === null ||
+    suggestion.reason === null
+  ) {
+    return null;
+  }
+
+  const topicNodeId = suggestion.topicNodeId ?? "";
+  const mappedSitePageId = suggestion.mappedSitePageId ?? "";
+  if (
+    (suggestion.topicNodeId === null) !==
+      (suggestion.topicModelRevision === null) ||
+    (suggestion.topicNodeId === null) !== (suggestion.topicLabel === null) ||
+    (suggestion.mappedSitePageId === null) !==
+      (suggestion.mappedSitePageTitle === null) ||
+    (suggestion.mappingDecision !== "unassigned" &&
+      topicNodeId.length === 0) ||
+    (suggestion.mappingDecision === "existing_page") !==
+      (mappedSitePageId.length > 0) ||
+    (suggestion.status === "excluded" &&
+      (topicNodeId.length > 0 ||
+        suggestion.mappingDecision !== "unassigned" ||
+        mappedSitePageId.length > 0))
+  ) {
+    return null;
+  }
+
+  return {
+    status: suggestion.status,
+    intent: suggestion.intent ?? "",
+    buyerStage: suggestion.buyerStage ?? "",
+    topicNodeId,
+    mappingDecision: suggestion.mappingDecision,
+    mappedSitePageId,
+    reason: suggestion.reason,
+  };
 }
 
 /**

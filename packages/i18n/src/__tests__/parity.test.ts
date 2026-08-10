@@ -245,6 +245,52 @@ describe("i18n message key parity", () => {
     expect(en.growthMap.competitorLibrary).not.toHaveProperty("addAction");
   });
 
+  it("keeps Keyword system-suggestion approval compact and explicit in both locales", () => {
+    expect(zhCN.growthMap.keywordLibrary.review.suggestion).toEqual({
+      title: "系统建议",
+      description:
+        "以下建议来自已确认的产品画像、关键词证据和已发布 Topic。批准后会原样记录为人工确认；需要例外时再展开修改。",
+      reasonLabel: "建议依据",
+      approve: "批准系统建议",
+      approving: "正在批准…",
+      expandEdit: "展开修改",
+      collapseEdit: "收起修改",
+      detailLoading: "正在读取最新关键词建议…",
+      detailError: "无法读取最新关键词建议。",
+      approvalConflict:
+        "关键词或建议已更新；系统已重新加载最新建议，请核对后再批准。",
+      approvalError: "无法批准系统建议，请重试。",
+      state: {
+        generating: "系统正在生成建议",
+        pending_needs_review: "这条建议仍需人工补充",
+        stale: "建议已过期",
+        unavailable: "当前无法生成可批准建议",
+      },
+    });
+    expect(en.growthMap.keywordLibrary.review.suggestion).toEqual({
+      title: "System suggestion",
+      description:
+        "This suggestion uses the confirmed Product Profile, Keyword evidence, and published Topic. Approving records it unchanged as a human decision; expand the editor only for exceptions.",
+      reasonLabel: "Why this is suggested",
+      approve: "Approve system suggestion",
+      approving: "Approving…",
+      expandEdit: "Edit suggestion",
+      collapseEdit: "Hide edits",
+      detailLoading: "Loading the latest Keyword suggestion…",
+      detailError: "The latest Keyword suggestion could not be loaded.",
+      approvalConflict:
+        "The Keyword or suggestion changed. The latest suggestion has been reloaded; review it before approving.",
+      approvalError:
+        "The system suggestion could not be approved. Please try again.",
+      state: {
+        generating: "The system is generating a suggestion",
+        pending_needs_review: "This suggestion still needs human input",
+        stale: "This suggestion is out of date",
+        unavailable: "No approvable suggestion is currently available",
+      },
+    });
+  });
+
   it("localizes every Context control group and app-shell accessibility name", () => {
     expect(en.context.fields.marketCodes).toBe("Target markets");
     expect(zhCN.context.fields).toMatchObject({
