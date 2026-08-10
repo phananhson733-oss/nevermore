@@ -17,8 +17,86 @@ const MAX_SITEMAP_DEPTH = 3;
 const MAX_SITEMAP_DOCUMENTS = 50;
 const MAX_SITEMAP_URLS = 10_000;
 
-function decodeXml(value: string): string {
-  return value.replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">");
+/**
+ * The five XML predefined entities plus numeric character references.
+ *
+ * `&amp;` alone was not enough. A sitemap that writes its query separators as
+ * `&#38;` or `&#x26;` — which XML permits everywhere `&amp;` is permitted, and
+ * which several generators emit — left the escape sitting literally inside the
+ * URL. That URL then canonicalized into a phantom that no page links to, so
+ * every affected entry surfaced as an orphan_candidate in the internal-link
+ * audit and a sitemap_page_without_observed_inlink in the site audit: findings
+ * about the parser, reported as findings about the site.
+ *
+ * One pass, not a chain of replaces. Chained replaces decode their own output:
+ * `&amp;#38;` becomes `&#38;` after the first replace and then `&` after the
+ * numeric one, inventing an ampersand the document never contained. A single
+ * scan cannot revisit what it has already written.
+ */
+const XML_ENTITY = /&(?:#(x[0-9a-f]+|\d+)|(amp|lt|gt|quot|apos));/gi;
+const XML_NAMED: Readonly<Record<string, string>> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Decodes, or refuses.
+ *
+ * An earlier version turned an out-of-range or surrogate reference into
+ * U+FFFD, which quietly promoted malformed input into a brand-new same-origin
+ * URL. A sitemap could then declare thousands of distinct invalid suffixes and
+ * have every one of them enter the frontier, filling MAX_SITEMAP_URLS and
+ * spending the crawl's budget on targets the site never had. Bad input is not
+ * something to repair into a crawlable page: the `<loc>` is dropped instead.
+ */
+/**
+ * XML 1.0's Char production, not merely "a Unicode scalar value".
+ *
+ * The two are not the same set, and the gap is where an attacker lives: C0
+ * controls like `&#1;` and the noncharacters `&#xFFFE;`/`&#xFFFF;` are perfectly
+ * good scalars and completely invalid XML. Accepting them let a sitemap mint
+ * distinct frontier entries out of references no conforming document could
+ * contain. Every character a real sitemap can legally carry is in this set, so
+ * narrowing to it drops nothing valid.
+ *
+ * https://www.w3.org/TR/xml/#charsets
+ */
+function isXmlChar(code: number): boolean {
+  if (!Number.isSafeInteger(code)) return false;
+  return (
+    code === 0x9 ||
+    code === 0xa ||
+    code === 0xd ||
+    (code >= 0x20 && code <= 0xd7ff) ||
+    (code >= 0xe000 && code <= 0xfffd) ||
+    (code >= 0x10000 && code <= 0x10ffff)
+  );
+}
+
+function decodeXml(value: string): string | null {
+  let rejected = false;
+  const decoded = value.replace(
+    XML_ENTITY,
+    (match, numeric?: string, name?: string): string => {
+      if (name) return XML_NAMED[name.toLowerCase()] ?? match;
+      if (!numeric) return match;
+
+      const isHex = numeric.toLowerCase().startsWith("x");
+      const code = Number.parseInt(
+        isHex ? numeric.slice(1) : numeric,
+        isHex ? 16 : 10,
+      );
+      if (!isXmlChar(code)) {
+        rejected = true;
+        return "";
+      }
+      return String.fromCodePoint(code);
+    },
+  );
+  return rejected ? null : decoded;
 }
 
 export interface SitemapDocument {
@@ -28,11 +106,14 @@ export interface SitemapDocument {
 
 /** Parse one sitemap document into its `<loc>` values and index/urlset kind. */
 export function parseSitemapXml(xml: string): SitemapDocument {
-  if (!/<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(xml)) return { isIndex: false, locs: [] };
+  if (!/<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(xml))
+    return { isIndex: false, locs: [] };
   const isIndex = /<(?:\w+:)?sitemapindex\b/i.test(xml);
   const seen = new Set<string>();
-  for (const match of xml.matchAll(/<(?:\w+:)?loc\b[^>]*>([\s\S]*?)<\/(?:\w+:)?loc\s*>/gi)) {
-    const url = decodeXml(match[1] ?? "").trim();
+  for (const match of xml.matchAll(
+    /<(?:\w+:)?loc\b[^>]*>([\s\S]*?)<\/(?:\w+:)?loc\s*>/gi,
+  )) {
+    const url = decodeXml(match[1] ?? "")?.trim();
     if (url) seen.add(url);
   }
   return { isIndex, locs: [...seen] };

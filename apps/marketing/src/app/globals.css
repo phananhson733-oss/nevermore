@@ -316,6 +316,48 @@
 }
 
 /*
+ * 首屏「落位」动画的 CSS 版本，与 lib/animations.ts 的 fadeInUp 同参（14px /
+ * 0.45s / 同一条 ease）。
+ *
+ * 首屏不能用 framer-motion 的 initial+animate：那条预设把 opacity:0 写进了
+ * 服务端渲染出的 HTML，要等 JS 加载并 hydrate 完才恢复。折叠线以下的区块无所
+ * 谓——用户滚到那里时 JS 早就好了——但首页和 /pricing 的 H1、副标题、CTA 是
+ * 访客看到的第一样东西，把它们押在 JS 上，等于让最慢的那批网络看一段空白首
+ * 屏，让 JS 挂掉的访客看一张永远空着的页面。
+ *
+ * CSS 动画不欠 JS 任何东西：样式表一到就开始播，播完停在终态。
+ */
+@keyframes hero-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-hero-fade-in-up {
+  animation: hero-fade-in-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/*
+ * 动效偏好由 CSS 自己兜住。framer-motion 那边有 MotionConfig
+ * reducedMotion="user"，CSS 动画不经过它，所以这里必须自己关。
+ *
+ * 关法是整条 shorthand 置 none：animation-name 与 fill-mode 一起被清掉，关键帧
+ * 一帧都不应用，元素直接落在自然值（opacity:1 / transform:none）。**不能**只
+ * 把时长压到 0 —— 那样 fill-mode: both 仍然生效，元素会在 delay 期间被按在
+ * from 帧上，也就是全透明。首屏最长的那个 delay 是 0.45s。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-fade-in-up {
+    animation: none;
+  }
+}
+
+/*
  * 中文正文行高兜底。刻意放在所有 @layer 之外：组件里为拉丁文调的
  * `leading-[1.6]` 属于 utility 层，只有未分层的规则才压得住它。mono 排除在外
  * ——那里的行高是用来对齐数据网格的，拉高会破坏对齐。

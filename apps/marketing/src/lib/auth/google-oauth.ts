@@ -17,9 +17,17 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 const GSC_SITES_ENDPOINT = "https://www.googleapis.com/webmasters/v3/sites";
 
-/** Read-only, and the only sensitive scope this site ever asks for. */
+/**
+ * Read-only, and the widest scope this site ever asks for.
+ *
+ * Not a sensitive scope, whatever its reputation: this project's consent
+ * screen lists it under non-sensitive, with `analytics.readonly` as the one
+ * sitting in the sensitive group. That is why no visitor meets an
+ * "unverified app" interstitial here — Google shows that screen for
+ * unapproved sensitive or restricted scopes, and we request none.
+ */
 export const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
-/** Identity only. Non-sensitive, so One Tap can ship before consent-screen review. */
+/** Identity only. Also non-sensitive. */
 export const IDENTITY_SCOPES = "openid email profile";
 
 const HTTP_TIMEOUT_MS = 10_000;

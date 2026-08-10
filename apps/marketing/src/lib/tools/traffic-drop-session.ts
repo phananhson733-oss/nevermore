@@ -38,8 +38,7 @@ export interface TrafficDropSession {
   /**
    * Whether the Google grant flow is open in this environment.
    *
-   * The `webmasters.readonly` scope is a Google-sensitive scope and cannot ship
-   * until the consent screen passes verification. Until then the page says so
+   * Off by default so an environment without working OAuth credentials says so
    * plainly rather than offering a button that leads nowhere.
    */
   readonly connectEnabled: boolean;
@@ -57,29 +56,57 @@ export interface TrafficDropSession {
 /**
  * - `invite_only` — the consent screen is in Testing, so only accounts on its
  *   tester list can authorize and everyone else is hard-blocked.
- * - `unverified` — published, but Google has not finished verifying the
- *   sensitive scope, so every visitor passes an "app isn't verified"
- *   interstitial they must click through.
- * - `none` — published and verified; the flow is unremarkable.
+ * - `none` — nothing unusual happens on the way through.
+ *
+ * There used to be an `unverified` state for the "Google hasn't verified this
+ * app" interstitial. It was removed because the condition that produces that
+ * screen does not hold here: Google shows it when a request carries a
+ * sensitive or restricted scope that has not been approved, and this flow asks
+ * only for `openid email profile webmasters.readonly` — all of which this
+ * project's consent screen lists as non-sensitive. Describing a screen the
+ * visitor will never meet is worse than saying nothing: it also hands them
+ * click-by-click instructions for buttons that are not there.
+ *
+ * Re-add the state, do not repurpose this one, if the flow ever requests a
+ * scope Google does classify as sensitive.
  */
-export type GoogleConsentNotice = "invite_only" | "unverified" | "none";
+export type GoogleConsentNotice = "invite_only" | "none";
 
 /** Server-side flag; there is deliberately no NEXT_PUBLIC_ variant of this. */
 export function isGoogleConnectEnabled(): boolean {
   return process.env.MARKETING_GSC_CONNECT_ENABLED === "true";
 }
 
+/** The values this reader still recognizes from a previous release. */
+const RETIRED_CONSENT_VALUES = new Set(["unverified"]);
+
 /**
- * Defaults to the most restrictive notice.
+ * Reads the declared consent-screen state. Three cases, not two.
  *
- * The safe direction is to over-warn: a visitor who reads a warning that did
- * not apply loses a few seconds, while a visitor sent unprepared into Google's
- * block page cannot recover at all. Both `unverified` and `none` therefore
- * have to be set deliberately, as the consent screen actually advances.
+ * `unverified` is the value production is known to carry today, and it maps to
+ * `none`: the screen it described only appears for unapproved sensitive scopes,
+ * and this flow requests none. Treating it conservatively instead would bring
+ * back the invite-only copy this change exists to remove, including its
+ * demoted authorize link.
+ *
+ * Anything else unrecognized is a different situation. A typo, or a value from
+ * some future state, says nothing about the consent screen, and answering
+ * "nothing unusual" to it is a guess made in the visitor's name. Those fall
+ * back to the cautious notice, so a misconfiguration costs a few seconds of
+ * reading rather than sending someone into a block page unprepared.
+ *
+ * Absent is the ordinary case and means `none`, which is what this consent
+ * screen actually does. `invite_only` has to be set deliberately, and must be
+ * the moment the screen goes back to Testing — an operational contract this
+ * code cannot verify on its own.
  */
 export function readGoogleConsentNotice(): GoogleConsentNotice {
-  const value = process.env.MARKETING_GSC_CONSENT_NOTICE;
-  return value === "none" || value === "unverified" ? value : "invite_only";
+  const raw = process.env.MARKETING_GSC_CONSENT_NOTICE?.trim();
+  if (!raw) return "none";
+  if (raw === "invite_only") return "invite_only";
+  if (raw === "none") return "none";
+  if (RETIRED_CONSENT_VALUES.has(raw)) return "none";
+  return "invite_only";
 }
 
 /**

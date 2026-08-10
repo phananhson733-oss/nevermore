@@ -48,27 +48,49 @@ describe("connect flags", () => {
     expect(isGoogleConnectEnabled()).toBe(true);
   });
 
-  it("assumes the most restrictive consent notice until told otherwise", () => {
-    // A visitor who reads a warning that did not apply loses a few seconds; a
-    // visitor sent unprepared into Google's block page cannot recover at all.
-    // So the softer states have to be set deliberately, as the consent screen
-    // actually advances — never inferred.
-    expect(readGoogleConsentNotice()).toBe("invite_only");
+  it("claims no consent-screen restriction when none is declared", () => {
+    // This used to default to `invite_only` on an over-warn argument, which
+    // held while the screen's real state was unknown. It is known now, so that
+    // default became a false statement: it tells every visitor they are
+    // probably not on a tester list that is not gating anything, and demotes
+    // the authorize link that in fact works for them.
+    expect(readGoogleConsentNotice()).toBe("none");
 
     process.env.MARKETING_GSC_CONSENT_NOTICE = "";
-    expect(readGoogleConsentNotice()).toBe("invite_only");
+    expect(readGoogleConsentNotice()).toBe("none");
 
-    process.env.MARKETING_GSC_CONSENT_NOTICE = "published";
-    expect(readGoogleConsentNotice()).toBe("invite_only");
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "   ";
+    expect(readGoogleConsentNotice()).toBe("none");
   });
 
-  it("reads the two advanced states exactly", () => {
-    process.env.MARKETING_GSC_CONSENT_NOTICE = "unverified";
-    expect(readGoogleConsentNotice()).toBe("unverified");
+  it("reads the two declared states exactly", () => {
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "invite_only";
+    expect(readGoogleConsentNotice()).toBe("invite_only");
 
     process.env.MARKETING_GSC_CONSENT_NOTICE = "none";
     expect(readGoogleConsentNotice()).toBe("none");
   });
+
+  it("maps the retired unverified value to no notice", () => {
+    // Google shows the "app isn't verified" interstitial for unapproved
+    // sensitive scopes; this flow requests none. Production still carries this
+    // value, and treating it cautiously would resurrect the invite-only copy
+    // this change removes.
+    process.env.MARKETING_GSC_CONSENT_NOTICE = "unverified";
+    expect(readGoogleConsentNotice()).toBe("none");
+  });
+
+  it.each(["invite-only", "inviteOnly", "INVITE_ONLY", "published", "off"])(
+    "falls back to the cautious notice for the unrecognized value %p",
+    (value) => {
+      // A typo says nothing about the consent screen. Answering "nothing
+      // unusual" to it would be a guess made in the visitor's name, and the
+      // cost of being wrong is asymmetric: a needless warning wastes seconds,
+      // an unwarned visitor hits a block page they cannot get past.
+      process.env.MARKETING_GSC_CONSENT_NOTICE = value;
+      expect(readGoogleConsentNotice()).toBe("invite_only");
+    },
+  );
 });
 
 const PROPERTY = "sc-domain:example.com";

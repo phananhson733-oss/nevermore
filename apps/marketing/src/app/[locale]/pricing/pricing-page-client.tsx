@@ -35,26 +35,21 @@ export default function PricingPageClient() {
           className="absolute -top-45 left-1/2 hidden h-100 w-150 -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.14),transparent_65%)] blur-[12px] md:block"
         />
         <div className="max-w-content relative mx-auto px-6 text-center md:px-8">
-          <motion.p
-            {...fadeInUp}
-            className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase"
-          >
+          <p className="animate-hero-fade-in-up font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
             {tHero("eyebrow")}
-          </motion.p>
-          <motion.h1
-            {...fadeInUp}
-            transition={{ ...fadeInUp.transition, delay: 0.1 }}
-            className="mx-auto mt-5 max-w-3xl text-text-dark-primary"
+          </p>
+          <h1
+            className="animate-hero-fade-in-up mx-auto mt-5 max-w-3xl text-text-dark-primary"
+            style={{ animationDelay: "0.1s" }}
           >
             {tHero("title")}
-          </motion.h1>
-          <motion.p
-            {...fadeInUp}
-            transition={{ ...fadeInUp.transition, delay: 0.2 }}
-            className="mx-auto mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]"
+          </h1>
+          <p
+            className="animate-hero-fade-in-up mx-auto mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]"
+            style={{ animationDelay: "0.2s" }}
           >
             {tHero("subtitle")}
-          </motion.p>
+          </p>
         </div>
       </section>
 
