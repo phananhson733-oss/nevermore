@@ -237,18 +237,23 @@ async function draftOne(
   const comparable = metaByUrl.get(task.comparablePage) ?? null;
   if (subject === null || comparable === null) return fail("page_unreadable");
 
+  // Nothing to copy the shape of. Asking the model anyway would make it
+  // invent a pattern rather than transfer one.
+  //
+  // Decided BEFORE the budget gate below. This row was never going to make a
+  // model call, so reporting it as "we ran out of time" would replace a
+  // standing, actionable fact about the page with an answer that depends on
+  // how busy the run happened to be.
+  if (comparable.title === null && comparable.metaDescription === null) {
+    return fail("no_pattern_to_copy");
+  }
+
   // Checked here rather than once up front: with a bounded fan-out the later
   // tasks start after the earlier ones finish, so the answer changes as the
   // run proceeds. Starting a call we cannot afford to finish spends the
   // response's own headroom on a row that fails anyway.
   if (dependencies.remainingMs() < MIN_DRAFT_BUDGET_MS)
     return fail("out_of_time");
-
-  // Nothing to copy the shape of. Asking the model anyway would make it
-  // invent a pattern rather than transfer one.
-  if (comparable.title === null && comparable.metaDescription === null) {
-    return fail("no_pattern_to_copy");
-  }
 
   const prompt = buildDraftPrompt({
     query: task.query,

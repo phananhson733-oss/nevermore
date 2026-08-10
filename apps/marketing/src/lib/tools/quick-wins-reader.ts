@@ -19,12 +19,27 @@ const READ_TIMEOUT_MS = 20_000;
  * past the platform limit costs more than a slow response — the visitor gets a
  * bare 504 instead of a stable envelope, and the handler's `finally` never
  * runs to release the shared Search Console slot.
+ *
+ * Exported because the clock has to start at the route, not here. Everything
+ * this budget is meant to bound — the reads, the draft crawls, the model calls
+ * — happens after the handler has already spent time resolving the grant.
  */
-const REQUEST_BUDGET_MS = 45_000;
+export const REQUEST_BUDGET_MS = 45_000;
 
 export interface QuickWinsReadInput {
   readonly property: string;
   readonly brandTerms: readonly string[];
+  /**
+   * Milliseconds left in the request, measured from the route's own start.
+   *
+   * Supplied by the caller rather than started here. Resolving the visitor's
+   * grant happens before this reader is ever called and can itself refresh an
+   * OAuth token and re-list properties — two provider round trips. A clock
+   * started at the first Search Console read does not know about any of that,
+   * so it can hand out a full budget to a request that has already spent a
+   * third of the platform's limit.
+   */
+  readonly remainingMs: () => number;
 }
 
 /**
@@ -40,14 +55,7 @@ export function createQuickWinsReader(options: {
 }): (input: QuickWinsReadInput) => Promise<QuickWinsEnvelope> {
   const now = options.now ?? (() => new Date());
 
-  return ({ property, brandTerms }) => {
-    // ONE absolute deadline, shared by the paging loop and every HTTP attempt
-    // on both reads. A page-boundary check alone did not bound the request:
-    // a page starting just under the budget could still run its own timeout
-    // plus a retry and carry the request past the platform limit.
-    const deadlineAt = now().getTime() + REQUEST_BUDGET_MS;
-    const remainingMs = () => deadlineAt - now().getTime();
-
+  return ({ property, brandTerms, remainingMs }) => {
     // Null when the deployment has no draft model configured, which skips the
     // two extra Search Console reads as well as the crawl. The evidence table
     // does not depend on any of it.
