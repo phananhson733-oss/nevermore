@@ -16,6 +16,23 @@ function hostOf(value: string): string | null {
   }
 }
 
+/**
+ * Normalize a bare domain the way `hostOf` normalizes a URL's host.
+ *
+ * Both sides go through the URL parser so an internationalized domain is
+ * compared in one encoding. `例え.jp` parses to `xn--r8jz45g.jp`, which is
+ * what the Search Console API returns; comparing the two literally would miss
+ * every non-ASCII domain and report the coverage stage unread for a visitor
+ * who does hold the property.
+ */
+function normalizeDomain(domain: string): string | null {
+  // A domain property holds a host and nothing else. Rejecting the separators
+  // first matters because the URL parser would quietly discard whatever
+  // follows them rather than refuse the string.
+  if (domain === "" || /[/?#@:]/.test(domain)) return null;
+  return hostOf(`https://${domain}`);
+}
+
 /** Whether `host` is the domain itself or one of its subdomains. */
 function coversHost(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
@@ -57,11 +74,8 @@ export function keywordCoverageProperty(
 
   for (const property of properties) {
     if (property.startsWith(DOMAIN_PREFIX)) {
-      const domain = property
-        .slice(DOMAIN_PREFIX.length)
-        .toLowerCase()
-        .replace(/\.$/, "");
-      if (domain !== "" && coversHost(domain, host)) {
+      const domain = normalizeDomain(property.slice(DOMAIN_PREFIX.length));
+      if (domain !== null && coversHost(domain, host)) {
         if (domain.length > domainLength) {
           domainMatch = property;
           domainLength = domain.length;

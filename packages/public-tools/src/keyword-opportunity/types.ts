@@ -257,7 +257,17 @@ export interface KeywordOpportunityFunnel {
   readonly volumePositive: number;
   readonly explicitZero: number;
   readonly providerNoData: number;
-  readonly alreadyCovered: number;
+  /**
+   * Candidates the site was measured to already serve.
+   *
+   * Null — not zero — when the Search Console sample was never read. A funnel
+   * is read as a pipeline and each number as a count of things that happened,
+   * so a zero here says "none of your candidates are covered" about a question
+   * nobody asked. The rest of the payload carries the same fact twice
+   * (`unavailableStages` and every row's coverage state); a number that
+   * contradicts them in the one place readers skim is worse than an absence.
+   */
+  readonly alreadyCovered: number | null;
   readonly serpSampled: number;
   readonly winnableEvidence: number;
   readonly shown: number;

@@ -120,6 +120,33 @@ describe("keywordCoverageProperty", () => {
     ).toBeNull();
   });
 
+  it("matches an internationalized domain in either encoding", () => {
+    // Search Console answers in punycode. A literal comparison would miss
+    // every non-ASCII domain and tell the visitor the stage went unread for a
+    // property they plainly hold.
+    expect(
+      keywordCoverageProperty("https://例え.jp/", ["sc-domain:例え.jp"]),
+    ).toBe("sc-domain:例え.jp");
+    expect(
+      keywordCoverageProperty("https://例え.jp/", ["sc-domain:xn--r8jz45g.jp"]),
+    ).toBe("sc-domain:xn--r8jz45g.jp");
+  });
+
+  it("refuses a domain property carrying anything but a host", () => {
+    // The URL parser would silently drop the path, port or credentials and
+    // hand back a host that matches — turning a malformed entry into a match.
+    for (const property of [
+      "sc-domain:acme.com/blog",
+      "sc-domain:acme.com:8443",
+      "sc-domain:user@acme.com",
+    ]) {
+      expect(
+        keywordCoverageProperty("https://acme.com/", [property]),
+        property,
+      ).toBeNull();
+    }
+  });
+
   it("compares hosts case-insensitively", () => {
     expect(
       keywordCoverageProperty("https://ACME.com/", ["sc-domain:acme.com"]),

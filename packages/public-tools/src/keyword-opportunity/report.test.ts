@@ -383,6 +383,25 @@ describe("buildKeywordOpportunityResult funnel", () => {
     expect(result.funnel.winnableEvidence).toBe(4);
   });
 
+  it("leaves the covered count absent rather than zero when nothing was read", () => {
+    // A funnel is skimmed as a pipeline and each number read as a count of
+    // something that happened. Zero here would say "none of your candidates
+    // are already covered" about a question nobody asked — the same false
+    // negative the row-level state was split to prevent, in the one place a
+    // reader is most likely to take at face value.
+    const result = buildKeywordOpportunityResult(
+      input({
+        observations: observations.map((observation) => ({
+          ...observation,
+          coverage: "gsc_query_sample_not_read" as const,
+        })),
+        unavailableStages: ["gsc_coverage"],
+      }),
+    );
+
+    expect(result.funnel.alreadyCovered).toBeNull();
+  });
+
   it("reports shown as exactly the number of rows it handed back", () => {
     // A funnel whose last number disagrees with the table underneath it is the
     // one number a reader cannot check, so it must be derived from the rows.

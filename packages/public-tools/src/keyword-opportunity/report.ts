@@ -122,9 +122,14 @@ function countFunnel(
     volumePositive: availability("available"),
     explicitZero: availability("explicit_zero"),
     providerNoData: availability("provider_no_data"),
-    alreadyCovered: observations.filter((o) =>
-      isKeywordAlreadyCovered(o.coverage),
-    ).length,
+    // Derived from the observations rather than from `unavailableStages`, so
+    // there is one source of truth: a row can only be `gsc_query_sample_not_read`
+    // if nothing was read for it, and the count is meaningless then.
+    alreadyCovered: observations.some(
+      (o) => o.coverage === "gsc_query_sample_not_read",
+    )
+      ? null
+      : observations.filter((o) => isKeywordAlreadyCovered(o.coverage)).length,
     serpSampled: observations.filter(
       (o) => o.serp.verdict !== "no_serp_evidence",
     ).length,
