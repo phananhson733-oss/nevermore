@@ -13,6 +13,7 @@ const mocked = vi.hoisted(() => ({
   registerDiagnoseHandler: vi.fn(),
   registerProfileSynthesizeHandler: vi.fn(),
   registerTopicModelGenerationHandler: vi.fn(),
+  registerKeywordGovernanceSuggestionGenerationHandler: vi.fn(),
   registerArtifactHandlers: vi.fn(),
   registerContentShadowHandler: vi.fn(),
   registerPublicationHandler: vi.fn(),
@@ -51,6 +52,10 @@ vi.mock("./handlers/profile-synthesize.ts", () => ({
 vi.mock("./handlers/topic-model-generation.ts", () => ({
   registerTopicModelGenerationHandler:
     mocked.registerTopicModelGenerationHandler,
+}));
+vi.mock("./handlers/keyword-governance-suggestion-generation.ts", () => ({
+  registerKeywordGovernanceSuggestionGenerationHandler:
+    mocked.registerKeywordGovernanceSuggestionGenerationHandler,
 }));
 vi.mock("./handlers/content-shadow.ts", () => ({
   registerContentShadowHandler: mocked.registerContentShadowHandler,
@@ -160,6 +165,11 @@ function configureSuccessfulBoot(order: string[]) {
   mocked.registerTopicModelGenerationHandler.mockImplementation(async () => {
     order.push("topic-model.generate");
   });
+  mocked.registerKeywordGovernanceSuggestionGenerationHandler.mockImplementation(
+    async () => {
+      order.push("keyword-governance-suggestion.generate");
+    },
+  );
   mocked.registerArtifactHandlers.mockImplementation(async () => {
     order.push("artifact");
   });
@@ -238,6 +248,7 @@ describe("worker bootstrap lifecycle", () => {
       "diagnose",
       "profile.synthesize",
       "topic-model.generate",
+      "keyword-governance-suggestion.generate",
       "artifact",
       "content-shadow",
       "publication",
@@ -565,11 +576,68 @@ describe("worker bootstrap lifecycle", () => {
       expect(
         mocked.registerTopicModelGenerationHandler,
       ).not.toHaveBeenCalled();
+      expect(
+        mocked.registerKeywordGovernanceSuggestionGenerationHandler,
+      ).not.toHaveBeenCalled();
       expect(mocked.registerArtifactHandlers).not.toHaveBeenCalled();
       expect(mocked.registerContentShadowHandler).not.toHaveBeenCalled();
       expect(mocked.registerPublicationHandler).not.toHaveBeenCalled();
       expect(mocked.registerMeasurementHandler).not.toHaveBeenCalled();
       expect(mocked.registerAnalysisRefreshHandler).not.toHaveBeenCalled();
+      expect(mocked.startWorkerMaintenance).not.toHaveBeenCalled();
+      expect(mocked.acquireWorkerReadinessLease).not.toHaveBeenCalled();
+      expect(resources.boss.stop).toHaveBeenCalledTimes(1);
+      expect(resources.db.end).toHaveBeenCalledTimes(1);
+      expect(resources.logger.info).not.toHaveBeenCalledWith(
+        "worker_ready",
+        expect.anything(),
+      );
+      await expect(runtime.stop()).resolves.toEqual({
+        ok: true,
+        failures: [],
+      });
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+
+  it("stops after an interrupted Keyword suggestion handler registration before maintenance and readiness", async () => {
+    const resources = configureSuccessfulBoot([]);
+    const registered = deferred<void>();
+    mocked.registerKeywordGovernanceSuggestionGenerationHandler.mockImplementation(
+      () => registered.promise,
+    );
+    const listeners = new Map<string | symbol, (...args: unknown[]) => void>();
+    const originalExitCode = process.exitCode;
+    vi.spyOn(process, "once").mockImplementation(
+      ((_event: string | symbol, _listener: (...args: unknown[]) => void) =>
+        process) as typeof process.once,
+    );
+    vi.spyOn(process, "on").mockImplementation(
+      ((event: string | symbol, listener: (...args: unknown[]) => void) => {
+        listeners.set(event, listener);
+        return process;
+      }) as typeof process.on,
+    );
+
+    try {
+      const boot = start({
+        installSignalHandlers: true,
+        shutdownStageTimeoutMs: 20,
+        forceShutdownTimeoutMs: 100,
+      });
+      await vi.waitFor(() =>
+        expect(
+          mocked.registerKeywordGovernanceSuggestionGenerationHandler,
+        ).toHaveBeenCalledTimes(1),
+      );
+
+      listeners.get("SIGTERM")?.();
+      registered.resolve();
+      const runtime = await boot;
+      await vi.waitFor(() => expect(process.exitCode).toBe(0));
+
+      expect(mocked.registerArtifactHandlers).not.toHaveBeenCalled();
       expect(mocked.startWorkerMaintenance).not.toHaveBeenCalled();
       expect(mocked.acquireWorkerReadinessLease).not.toHaveBeenCalled();
       expect(resources.boss.stop).toHaveBeenCalledTimes(1);

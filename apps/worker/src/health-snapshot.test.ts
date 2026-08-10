@@ -69,6 +69,16 @@ describe("startWorkerHealthSnapshotLoop", () => {
         retryCount24h: 1,
         failureCount24h: 0,
       },
+      {
+        kind: "keyword_governance_suggestion_generation",
+        queuedDepth: 5,
+        runningDepth: 1,
+        oldestQueuedAgeMs: 1_500,
+        averageRunDurationMs24h: 2_500,
+        maxRunDurationMs24h: 3_500,
+        retryCount24h: 2,
+        failureCount24h: 1,
+      },
     ];
     const loadQueueMetrics = vi.fn(async () => metrics);
     const input = healthInput(logger);
@@ -109,6 +119,16 @@ describe("startWorkerHealthSnapshotLoop", () => {
           },
           zeroMetric("product_profile_synthesis"),
           zeroMetric("topic_model_generation"),
+          {
+            kind: "keyword_governance_suggestion_generation",
+            queuedDepth: 5,
+            runningDepth: 1,
+            oldestQueuedAgeMs: 1_500,
+            averageRunDurationMs24h: 2_500,
+            maxRunDurationMs24h: 3_500,
+            retryCount24h: 2,
+            failureCount24h: 1,
+          },
           zeroMetric("diagnostic"),
           zeroMetric("artifact_generation"),
           {

@@ -5,6 +5,7 @@ import {
   toRunAttempt,
   ExecutionArtifactsRepository,
   IdempotencyRepository,
+  KeywordGovernanceSuggestionGenerationRunsRepository,
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
@@ -118,6 +119,7 @@ const MAX_SAFE_ERROR_SUMMARY_LENGTH = 512;
 const SAFE_RETRY_SUMMARIES = new Set<string>([
   "Product Profile synthesis will be retried.",
   "Topic Model generation will be retried.",
+  "Keyword governance suggestion generation will be retried.",
   "Collection was interrupted by worker shutdown; automatic retry is scheduled.",
   "Provider rate limit reached; automatic retry is scheduled.",
   "Provider request timed out; automatic retry is scheduled.",
@@ -233,6 +235,8 @@ export function queueForRun(
       return "refresh.analysis";
     case "topic_model_generation":
       return "topic-model.generate";
+    case "keyword_governance_suggestion_generation":
+      return "keyword-governance-suggestion.generate";
     default:
       return null;
   }
@@ -1033,6 +1037,33 @@ async function reconcileCanonicalAndProjection(
       if (terminalized.kind !== "terminalized") {
         throw new Error(
           "recovery could not terminalize the Topic Model generation ledger",
+        );
+      }
+      reconciled = true;
+    } else if (run.kind === "keyword_governance_suggestion_generation") {
+      if (
+        lockedRun.kind !== "keyword_governance_suggestion_generation" ||
+        lockedRun.result_type !==
+          "keyword_governance_suggestion_generation_run" ||
+        lockedRun.result_id !== lockedRun.id
+      ) {
+        throw new Error(
+          "recovery found an invalid Keyword governance suggestion generation run projection",
+        );
+      }
+      const terminalized =
+        await new KeywordGovernanceSuggestionGenerationRunsRepository(
+          tx,
+        ).terminalize(toRunAttempt(lockedRun), {
+          status: values.status,
+          resultOutputHash: null,
+          lastErrorCode: values.lastErrorCode,
+          lastErrorSummary: values.lastErrorSummary,
+        });
+      if (terminalized.kind === "stale") return false;
+      if (terminalized.kind !== "terminalized") {
+        throw new Error(
+          "recovery could not terminalize the Keyword governance suggestion generation ledger",
         );
       }
       reconciled = true;

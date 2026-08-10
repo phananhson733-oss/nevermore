@@ -18,6 +18,9 @@ import { registerCollectHandlers } from "./handlers/collect.ts";
 import { registerDiagnoseHandler } from "./handlers/diagnose.ts";
 import { registerProfileSynthesizeHandler } from "./handlers/profile-synthesize.ts";
 import { registerTopicModelGenerationHandler } from "./handlers/topic-model-generation.ts";
+import {
+  registerKeywordGovernanceSuggestionGenerationHandler,
+} from "./handlers/keyword-governance-suggestion-generation.ts";
 import { registerArtifactHandlers } from "./handlers/artifact.ts";
 import { registerContentShadowHandler } from "./handlers/content-shadow.ts";
 import { registerPublicationHandler } from "./handlers/publication.ts";
@@ -46,7 +49,7 @@ import {
 
 /**
  * Worker bootstrap (spec §3.1, §13). Readiness is acquired last: pg-boss must be
- * started, all fourteen queue handlers registered, and blocking startup recovery
+ * started, all fifteen queue handlers registered, and blocking startup recovery
  * completed before the process owns the advisory readiness lease.
  */
 
@@ -291,6 +294,11 @@ async function start(options: WorkerStartOptions = {}): Promise<WorkerRuntime> {
     await registerTopicModelGenerationHandler(workerCtx);
     const interruptedAfterTopicModel = finishInterruptedBoot(db, boss);
     if (interruptedAfterTopicModel) return await interruptedAfterTopicModel;
+    await registerKeywordGovernanceSuggestionGenerationHandler(workerCtx);
+    const interruptedAfterKeywordSuggestions = finishInterruptedBoot(db, boss);
+    if (interruptedAfterKeywordSuggestions) {
+      return await interruptedAfterKeywordSuggestions;
+    }
     await registerArtifactHandlers(workerCtx);
     const interruptedAfterArtifacts = finishInterruptedBoot(db, boss);
     if (interruptedAfterArtifacts) return await interruptedAfterArtifacts;

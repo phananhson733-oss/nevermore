@@ -9,6 +9,9 @@ import { registerContentShadowHandler } from "./content-shadow.ts";
 import { registerCollectHandlers } from "./collect.ts";
 import { registerDiagnoseHandler } from "./diagnose.ts";
 import { registerMeasurementHandler } from "./measurement.ts";
+import {
+  registerKeywordGovernanceSuggestionGenerationHandler,
+} from "./keyword-governance-suggestion-generation.ts";
 import { registerProfileSynthesizeHandler } from "./profile-synthesize.ts";
 import { registerPublicationHandler } from "./publication.ts";
 import { registerTopicModelGenerationHandler } from "./topic-model-generation.ts";
@@ -59,13 +62,14 @@ describe("worker handler registration", () => {
     await registerDiagnoseHandler(ctx);
     await registerProfileSynthesizeHandler(ctx);
     await registerTopicModelGenerationHandler(ctx);
+    await registerKeywordGovernanceSuggestionGenerationHandler(ctx);
     await registerArtifactHandlers(ctx);
     await registerContentShadowHandler(ctx);
     await registerPublicationHandler(ctx, vi.fn(async () => undefined));
     await registerMeasurementHandler(ctx, vi.fn(async () => undefined));
     await registerAnalysisRefreshHandler(ctx);
 
-    expect(work).toHaveBeenCalledTimes(14);
+    expect(work).toHaveBeenCalledTimes(15);
     expect(work.mock.calls.map((call) => call[0])).toEqual([
       "collect.crawl",
       "collect.gsc",
@@ -75,6 +79,7 @@ describe("worker handler registration", () => {
       "diagnose",
       "profile.synthesize",
       "topic-model.generate",
+      "keyword-governance-suggestion.generate",
       "artifact.generate",
       "export.bundle",
       "content-shadow",

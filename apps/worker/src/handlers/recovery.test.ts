@@ -5,6 +5,7 @@ import {
   DiagnosticRunsRepository,
   ExecutionArtifactsRepository,
   IdempotencyRepository,
+  KeywordGovernanceSuggestionGenerationRunsRepository,
   OAuthIntentsRepository,
   ProjectsRepository,
   SourceConnectionsRepository,
@@ -100,6 +101,9 @@ describe("queueForRun", () => {
     expect(queueForRun(run("topic_model_generation", {}))).toBe(
       "topic-model.generate",
     );
+    expect(
+      queueForRun(run("keyword_governance_suggestion_generation", {})),
+    ).toBe("keyword-governance-suggestion.generate");
   });
 
   it("rejects unknown/missing collection providers", () => {
@@ -610,6 +614,106 @@ describe("prepareRunDelivery", () => {
           "Topic Model generation will be retried. Queue retries exhausted before the run completed.",
       },
     );
+  });
+
+  it("terminalizes exhausted Keyword suggestion retries with fixed safe metadata and no parent notification", async () => {
+    const suggestionRun = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(suggestionRun);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(suggestionRun);
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const suggestionTerminal = vi
+      .spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "terminalize",
+      )
+      .mockResolvedValue({ kind: "terminalized", run: {} as never });
+    const runnerError = new Error("provider-payload-secret");
+
+    await expect(
+      prepareRunDelivery(context(), metadataJob(2, 2), async () => {
+        throw runnerError;
+      }),
+    ).rejects.toBe(runnerError);
+
+    expect(suggestionTerminal).toHaveBeenCalledWith(
+      {
+        workspaceId: suggestionRun.workspace_id,
+        projectId: suggestionRun.project_id,
+        runId: suggestionRun.id,
+        attemptCount: suggestionRun.attempt_count,
+      },
+      {
+        status: "failed",
+        resultOutputHash: null,
+        lastErrorCode: "QUEUE_RETRY_EXHAUSTED",
+        lastErrorSummary:
+          "Queue retries exhausted before the run completed.",
+      },
+    );
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
+  });
+
+  it("preserves only the frozen Keyword suggestion retry cause when retries are exhausted", async () => {
+    const suggestionRun = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "prepareDelivery",
+    ).mockResolvedValue(suggestionRun);
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValue({
+      ...suggestionRun,
+      last_error_code: "NETWORK_ERROR",
+      last_error_summary:
+        "Keyword governance suggestion generation will be retried.",
+    });
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(suggestionRun);
+    const suggestionTerminal = vi
+      .spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "terminalize",
+      )
+      .mockResolvedValue({ kind: "terminalized", run: {} as never });
+
+    await expect(
+      prepareRunDelivery(context(), metadataJob(2, 2), async () => {
+        throw new Error("provider-payload-secret");
+      }),
+    ).rejects.toThrow("provider-payload-secret");
+
+    expect(suggestionTerminal).toHaveBeenCalledWith(
+      {
+        workspaceId: suggestionRun.workspace_id,
+        projectId: suggestionRun.project_id,
+        runId: suggestionRun.id,
+        attemptCount: suggestionRun.attempt_count,
+      },
+      {
+        status: "failed",
+        resultOutputHash: null,
+        lastErrorCode: "NETWORK_ERROR",
+        lastErrorSummary:
+          "Keyword governance suggestion generation will be retried. Queue retries exhausted before the run completed.",
+      },
+    );
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
   });
 
   it("does not preserve a canonical retry summary that may contain a secret", async () => {
@@ -1634,6 +1738,192 @@ describe("reconcileActiveRuns", () => {
       workspaceId: row.workspace_id,
       projectId: row.project_id,
     });
+  });
+
+  it("terminalizes a missing Keyword suggestion job through its exact ledger without notifying Analysis Refresh", async () => {
+    const row = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(row);
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const suggestionTerminal = vi
+      .spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "terminalize",
+      )
+      .mockResolvedValue({ kind: "terminalized", run: {} as never });
+    const getJobById = vi.fn(async () => null);
+    const ctx = contextWithBoss({
+      getJobById,
+      findJobs: vi.fn(async () => []),
+    });
+
+    await reconcileActiveRuns(ctx, {
+      now: new Date("2026-07-19T12:00:00.000Z"),
+      missingAfterMs: 1,
+    });
+
+    expect(getJobById).toHaveBeenCalledWith(
+      "keyword-governance-suggestion.generate",
+      row.id,
+    );
+    expect(suggestionTerminal).toHaveBeenCalledWith(
+      {
+        workspaceId: row.workspace_id,
+        projectId: row.project_id,
+        runId: row.id,
+        attemptCount: row.attempt_count,
+      },
+      {
+        status: "failed",
+        resultOutputHash: null,
+        lastErrorCode: "QUEUE_JOB_MISSING",
+        lastErrorSummary: "No queue job could be found for this active run.",
+      },
+    );
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
+  });
+
+  it("leaves a Keyword suggestion run active when its exact terminalizer loses the attempt CAS", async () => {
+    const row = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(row);
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const suggestionTerminal = vi
+      .spyOn(
+        KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+        "terminalize",
+      )
+      .mockResolvedValue({ kind: "stale" });
+    const { ctx, lines } = contextWithCapturedLogger({
+      getJobById: vi.fn(async () => null),
+      findJobs: vi.fn(async () => []),
+    });
+
+    await reconcileActiveRuns(ctx, {
+      now: new Date("2026-07-19T12:00:00.000Z"),
+      missingAfterMs: 1,
+    });
+
+    expect(suggestionTerminal).toHaveBeenCalledTimes(1);
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(lines).not.toContainEqual(
+      expect.objectContaining({ event: "run_recovery_reconciled" }),
+    );
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with fixed metadata when the Keyword suggestion terminal ledger conflicts", async () => {
+    const row = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce(row);
+    vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "terminalize",
+    ).mockResolvedValue({ kind: "conflict", run: null });
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const { ctx, lines } = contextWithCapturedLogger({
+      getJobById: vi.fn(async () => null),
+      findJobs: vi.fn(async () => []),
+    });
+
+    await reconcileActiveRuns(ctx, {
+      now: new Date("2026-07-19T12:00:00.000Z"),
+      missingAfterMs: 1,
+    });
+
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(lines).toContainEqual({
+      event: "run_recovery_failed",
+      fields: {
+        code: "RUN_RECOVERY_CHECK_FAILED",
+        runId: row.id,
+      },
+    });
+    expect(JSON.stringify(lines)).not.toMatch(/ledger|projection|payload/i);
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mismatched Keyword suggestion projection without using either terminalizer", async () => {
+    const row = {
+      ...run("keyword_governance_suggestion_generation", {}),
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: PAYLOAD.runId,
+    };
+    vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "listActiveForRecovery",
+    ).mockResolvedValue([row]);
+    vi.mocked(
+      AsyncRunsRepository.prototype.lockActiveForRecovery,
+    ).mockResolvedValueOnce({
+      ...row,
+      result_type: "topic_model_generation_run",
+    });
+    const suggestionTerminal = vi.spyOn(
+      KeywordGovernanceSuggestionGenerationRunsRepository.prototype,
+      "terminalize",
+    );
+    const genericTerminal = vi.spyOn(
+      AsyncRunsRepository.prototype,
+      "reconcileActiveToTerminal",
+    );
+    const { ctx, lines } = contextWithCapturedLogger({
+      getJobById: vi.fn(async () => null),
+      findJobs: vi.fn(async () => []),
+    });
+
+    await reconcileActiveRuns(ctx, {
+      now: new Date("2026-07-19T12:00:00.000Z"),
+      missingAfterMs: 1,
+    });
+
+    expect(suggestionTerminal).not.toHaveBeenCalled();
+    expect(genericTerminal).not.toHaveBeenCalled();
+    expect(lines).toContainEqual({
+      event: "run_recovery_failed",
+      fields: {
+        code: "RUN_RECOVERY_CHECK_FAILED",
+        runId: row.id,
+      },
+    });
+    expect(notifyAnalysisRefreshParent).not.toHaveBeenCalled();
   });
 
   it("leaves a run active when public queue lookup fails and logs no raw error", async () => {

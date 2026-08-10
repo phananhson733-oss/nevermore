@@ -17,6 +17,7 @@ const RUN_KINDS = [
   "collection",
   "product_profile_synthesis",
   "topic_model_generation",
+  "keyword_governance_suggestion_generation",
   "diagnostic",
   "artifact_generation",
   "export",

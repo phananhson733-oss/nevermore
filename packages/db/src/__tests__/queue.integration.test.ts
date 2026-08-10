@@ -73,7 +73,7 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'app' AND table_type = 'BASE TABLE'`,
     );
-    expect(APP_TABLES).toHaveLength(80);
+    expect(APP_TABLES).toHaveLength(83);
     expect(appTables.rows.map((row) => row.table_name).sort()).toEqual(
       [...APP_TABLES].sort(),
     );
@@ -88,6 +88,18 @@ describeDb("queue + atomic enqueue (AC-004, AC-006)", () => {
     const queue = await boss.getQueue("diagnose");
     expect(queue?.heartbeatSeconds).toBe(
       QUEUE_CONFIG.diagnose.heartbeatSeconds,
+    );
+  });
+
+  it("registers the bounded Keyword governance suggestion queue in pg-boss", async () => {
+    const keywordSuggestionQueue = await boss.getQueue(
+      "keyword-governance-suggestion.generate",
+    );
+    expect(keywordSuggestionQueue?.expireInSeconds).toBe(
+      QUEUE_CONFIG["keyword-governance-suggestion.generate"].expireInSeconds,
+    );
+    expect(keywordSuggestionQueue?.retryLimit).toBe(
+      QUEUE_CONFIG["keyword-governance-suggestion.generate"].retryLimit,
     );
   });
 
