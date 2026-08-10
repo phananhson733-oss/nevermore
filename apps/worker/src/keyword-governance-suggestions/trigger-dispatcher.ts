@@ -38,12 +38,14 @@ interface DispatchContinuationRequestInput {
 
 export type KeywordGovernanceScheduleDispatchResult =
   | { readonly kind: "completed" }
+  | { readonly kind: "deferred" }
   | { readonly kind: "stale" }
   | { readonly kind: "unavailable" };
 
 export interface KeywordGovernanceTriggerDispatcherSummary {
   readonly claimedCount: number;
   readonly completedCount: number;
+  readonly deferredCount: number;
   readonly releasedCount: number;
   readonly staleCount: number;
 }
@@ -68,6 +70,10 @@ export interface KeywordGovernanceSuggestionTriggerDispatcherLoop {
 type ClaimedDispatchResult =
   | { readonly kind: "completed" }
   | { readonly kind: "stale" }
+  | {
+      readonly kind: "deferred";
+      readonly releaseKind: "released" | "stale";
+    }
   | {
       readonly kind: "failed";
       readonly releaseKind: "released" | "stale";
@@ -102,6 +108,26 @@ function safeError(
   }
 }
 
+async function releaseClaimedRequest(
+  ctx: WorkerContext,
+  scope: ProjectScope,
+  request: ClaimedKeywordGovernanceScheduleRequest,
+): Promise<"released" | "stale"> {
+  try {
+    const released = await new KeywordGovernanceScheduleRequestsRepository(
+      ctx.db,
+    ).release(scope, {
+      requestId: request.id,
+      claimToken: request.claimToken,
+      errorCode: DISPATCH_FAILURE_CODE,
+    });
+    return released.kind;
+  } catch {
+    // The unexpired lease prevents a competing claim; expiry makes it due.
+    return "stale";
+  }
+}
+
 async function dispatchClaimedRequest(
   ctx: WorkerContext,
   request: ClaimedKeywordGovernanceScheduleRequest,
@@ -111,31 +137,27 @@ async function dispatchClaimedRequest(
     workspaceId: request.workspaceId,
     projectId: request.projectId,
   };
+  let scheduled: ScheduleKeywordGovernanceSuggestionsResult;
   try {
-    await schedule(
+    scheduled = await schedule(
       { db: ctx.db, boss: ctx.boss },
       { scope, initiatedBy: request.initiatedBy },
     );
   } catch (error) {
-    let releaseKind: "released" | "stale" = "stale";
-    try {
-      const released = await new KeywordGovernanceScheduleRequestsRepository(
-        ctx.db,
-      ).release(scope, {
-        requestId: request.id,
-        claimToken: request.claimToken,
-        errorCode: DISPATCH_FAILURE_CODE,
-      });
-      releaseKind = released.kind;
-    } catch {
-      // The unexpired lease prevents a competing claim; expiry makes it due.
-    }
+    const releaseKind = await releaseClaimedRequest(ctx, scope, request);
     safeError(ctx, "keyword_governance_schedule_dispatch_failed", {
       code: DISPATCH_FAILURE_CODE,
       requestId: request.id,
       sourceKind: request.sourceKind,
     });
     return { kind: "failed", releaseKind, error };
+  }
+
+  if (scheduled.kind === "active") {
+    return {
+      kind: "deferred",
+      releaseKind: await releaseClaimedRequest(ctx, scope, request),
+    };
   }
 
   const completed = await new KeywordGovernanceScheduleRequestsRepository(
@@ -159,6 +181,7 @@ async function dispatchClaim(
   if (claim.kind === "unavailable") return claim;
   const result = await dispatchClaimedRequest(ctx, claim.request, schedule);
   if (result.kind === "failed") throw result.error;
+  if (result.kind === "deferred") return { kind: "deferred" };
   return result;
 }
 
@@ -224,6 +247,7 @@ export async function runKeywordGovernanceSuggestionTriggerDispatcherSweep(
     return {
       claimedCount: 0,
       completedCount: 0,
+      deferredCount: 0,
       releasedCount: 0,
       staleCount: 0,
     };
@@ -246,6 +270,7 @@ export async function runKeywordGovernanceSuggestionTriggerDispatcherSweep(
   ).claimDue({ limit, leaseSeconds });
   const schedule = options.schedule ?? scheduleKeywordGovernanceSuggestions;
   let completedCount = 0;
+  let deferredCount = 0;
   let releasedCount = 0;
   let staleCount = 0;
 
@@ -253,12 +278,16 @@ export async function runKeywordGovernanceSuggestionTriggerDispatcherSweep(
     const result = await dispatchClaimedRequest(ctx, request, schedule);
     if (result.kind === "completed") completedCount += 1;
     else if (result.kind === "stale") staleCount += 1;
-    else if (result.releaseKind === "released") releasedCount += 1;
+    else if (result.kind === "deferred") {
+      if (result.releaseKind === "released") deferredCount += 1;
+      else staleCount += 1;
+    } else if (result.releaseKind === "released") releasedCount += 1;
     else staleCount += 1;
   }
   const summary = {
     claimedCount: requests.length,
     completedCount,
+    deferredCount,
     releasedCount,
     staleCount,
   } as const;

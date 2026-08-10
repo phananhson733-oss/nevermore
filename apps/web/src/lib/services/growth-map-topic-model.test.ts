@@ -805,6 +805,50 @@ describe("Growth Map Topic Model draft lifecycle", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("defers an active manual suggestion run without consuming the durable Topic request", async () => {
+    activeProject();
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "confirmDraft",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "getLatestConfirmed",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(TopicModelsRepository.prototype, "getDraft").mockResolvedValue(
+      null,
+    );
+    serviceMocks.scheduleKeywordGovernanceSuggestions.mockResolvedValueOnce({
+      kind: "active",
+      runId: ids.invocation,
+    });
+
+    await expect(
+      confirmProjectAuditTopicModelDraft(mutationScope, ids.project, {
+        topicModelRevision: 2,
+        expectedEditRevision: 1,
+        reason: "Confirm the reviewed customer Topic Map.",
+      }),
+    ).resolves.toMatchObject({
+      latestConfirmed: { topicModelRevision: 2 },
+      draft: null,
+    });
+
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.release,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      {
+        requestId: ids.scheduleRequest,
+        claimToken: ids.scheduleClaim,
+        errorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+      },
+    );
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.complete,
+    ).not.toHaveBeenCalled();
+  });
+
   it("fails closed if a mutation re-read does not form one coherent workspace", async () => {
     activeProject();
     vi.spyOn(

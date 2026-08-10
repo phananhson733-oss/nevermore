@@ -128,6 +128,90 @@ describeDb("Keyword governance durable trigger dispatcher", () => {
     ).resolves.toEqual({ kind: "unavailable" });
   });
 
+  it("retries the same request after an active run ends without duplicating a paid enqueue", async () => {
+    const fixture = await createFixture("dispatcher active retry");
+    const recorded =
+      await new KeywordGovernanceScheduleRequestsRepository(
+        handle.db,
+      ).insertRequest(fixture.scope, {
+        sourceKind: "analysis_refresh",
+        sourceRef: randomUUID(),
+        initiatedBy: fixture.actorId,
+      });
+    const activeRunId = randomUUID();
+    let activeRunTerminal = false;
+    const enqueuePaidGeneration = vi.fn(() => ({
+      kind: "queued" as const,
+      runId: randomUUID(),
+      inputHash: "a".repeat(64),
+      candidateCount: 1,
+      hasMore: false,
+    }));
+    const schedule = vi.fn(async () =>
+      activeRunTerminal
+        ? enqueuePaidGeneration()
+        : { kind: "active" as const, runId: activeRunId },
+    );
+
+    await expect(
+      dispatchKeywordGovernanceScheduleRequest(
+        context(),
+        { scope: fixture.scope, requestId: recorded.request.id },
+        { schedule },
+      ),
+    ).resolves.toEqual({ kind: "deferred" });
+    expect(enqueuePaidGeneration).not.toHaveBeenCalled();
+
+    activeRunTerminal = true;
+    await vi.waitFor(
+      async () => {
+        const result = await handle.pool.query<{ due: boolean }>(
+          `SELECT next_attempt_at <= clock_timestamp() AS due
+             FROM app.keyword_governance_schedule_requests
+            WHERE id = $1`,
+          [recorded.request.id],
+        );
+        expect(result.rows[0]?.due).toBe(true);
+      },
+      { timeout: 5_000, interval: 50 },
+    );
+
+    await expect(
+      runKeywordGovernanceSuggestionTriggerDispatcherSweep(context(), {
+        limit: 1,
+        leaseSeconds: 30,
+        schedule,
+      }),
+    ).resolves.toMatchObject({
+      claimedCount: 1,
+      completedCount: 1,
+      deferredCount: 0,
+    });
+    await expect(
+      runKeywordGovernanceSuggestionTriggerDispatcherSweep(context(), {
+        limit: 1,
+        leaseSeconds: 30,
+        schedule,
+      }),
+    ).resolves.toMatchObject({ claimedCount: 0 });
+
+    expect(schedule).toHaveBeenCalledTimes(2);
+    expect(enqueuePaidGeneration).toHaveBeenCalledOnce();
+    const stored = await handle.pool.query<{
+      completed_at: Date | null;
+      attempt_count: number;
+    }>(
+      `SELECT completed_at, attempt_count
+         FROM app.keyword_governance_schedule_requests
+        WHERE id = $1`,
+      [recorded.request.id],
+    );
+    expect(stored.rows[0]).toMatchObject({
+      completed_at: expect.any(Date),
+      attempt_count: 2,
+    });
+  });
+
   it("lets two maintenance workers drain one bounded batch without duplicate scheduling", async () => {
     const fixture = await createFixture("dispatcher concurrent drain");
     const initiatedBy = Array.from({ length: 6 }, () => randomUUID());

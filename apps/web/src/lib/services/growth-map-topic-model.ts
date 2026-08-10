@@ -53,16 +53,7 @@ async function dispatchManualTopicSuggestionRequest(
     leaseSeconds: 60,
   });
   if (claim.kind === "unavailable") return;
-  try {
-    await scheduleKeywordGovernanceSuggestions(schedulerContext, {
-      scope: projectScope,
-      initiatedBy,
-    });
-    await requests.complete(projectScope, {
-      requestId,
-      claimToken: claim.request.claimToken,
-    });
-  } catch {
+  const release = async (): Promise<void> => {
     try {
       await requests.release(projectScope, {
         requestId,
@@ -72,6 +63,25 @@ async function dispatchManualTopicSuggestionRequest(
     } catch {
       // Lease expiry keeps this durable request recoverable by the Worker.
     }
+  };
+  try {
+    const scheduled = await scheduleKeywordGovernanceSuggestions(
+      schedulerContext,
+      {
+        scope: projectScope,
+        initiatedBy,
+      },
+    );
+    if (scheduled.kind === "active") {
+      await release();
+      return;
+    }
+    await requests.complete(projectScope, {
+      requestId,
+      claimToken: claim.request.claimToken,
+    });
+  } catch {
+    await release();
   }
 }
 

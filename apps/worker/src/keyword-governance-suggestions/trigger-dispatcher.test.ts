@@ -64,7 +64,6 @@ const ACK_RESULTS = [
     candidateCount: 1,
     hasMore: false,
   },
-  { kind: "active", runId: IDS.run },
   {
     kind: "exact_pending_reused",
     generationRunId: IDS.run,
@@ -141,6 +140,53 @@ describe("Keyword governance durable trigger dispatcher", () => {
     ).resolves.toEqual({ kind: "unavailable" });
 
     expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it("defers an active generation by releasing the exact lease without throwing", async () => {
+    const ctx = context();
+    const schedule = vi.fn(async () => ({
+      kind: "active" as const,
+      runId: IDS.run,
+    }));
+    vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "claimRequest",
+    ).mockResolvedValue({ kind: "claimed", request: claimedRequest });
+    vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "release",
+    ).mockResolvedValue({
+      kind: "released",
+      request: {
+        ...claimedRequest,
+        claimToken: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        nextAttemptAt: "2026-08-10T00:02:00.000Z",
+        lastErrorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+      },
+    });
+    const complete = vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "complete",
+    );
+
+    await expect(
+      dispatchKeywordGovernanceScheduleRequest(
+        ctx,
+        { scope, requestId: IDS.request },
+        { schedule },
+      ),
+    ).resolves.toEqual({ kind: "deferred" });
+
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.release,
+    ).toHaveBeenCalledWith(scope, {
+      requestId: IDS.request,
+      claimToken: IDS.claim,
+      errorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+    });
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("claims a generation continuation by its exact durable source identity", async () => {
@@ -256,6 +302,48 @@ describe("Keyword governance durable trigger dispatcher", () => {
     );
   });
 
+  it("counts an active maintenance result as deferred without failure logging", async () => {
+    const ctx = context();
+    vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "claimDue",
+    ).mockResolvedValue([claimedRequest]);
+    vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "release",
+    ).mockResolvedValue({
+      kind: "released",
+      request: {
+        ...claimedRequest,
+        claimToken: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+        nextAttemptAt: "2026-08-10T00:02:00.000Z",
+        lastErrorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+      },
+    });
+    const complete = vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "complete",
+    );
+
+    await expect(
+      runKeywordGovernanceSuggestionTriggerDispatcherSweep(ctx, {
+        limit: 1,
+        schedule: async () => ({ kind: "active", runId: IDS.run }),
+      }),
+    ).resolves.toEqual({
+      claimedCount: 1,
+      completedCount: 0,
+      deferredCount: 1,
+      releasedCount: 0,
+      staleCount: 0,
+    });
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(ctx.logger.error).not.toHaveBeenCalled();
+  });
+
   it("drains one bounded leased batch and leaves failed scheduling retryable", async () => {
     const ctx = context();
     const second = {
@@ -304,6 +392,7 @@ describe("Keyword governance durable trigger dispatcher", () => {
     ).resolves.toEqual({
       claimedCount: 2,
       completedCount: 1,
+      deferredCount: 0,
       releasedCount: 1,
       staleCount: 0,
     });
