@@ -7,6 +7,7 @@ import {
   handleQuickWinsRequest,
   type QuickWinsHandlerDependencies,
 } from "./quick-wins-handler.ts";
+import { REQUEST_BUDGET_MS } from "./quick-wins-reader.ts";
 import { createPublicToolError } from "@sf/public-tools";
 
 const PROPERTY = "sc-domain:astrologywiki.com";
@@ -388,6 +389,9 @@ describe("handleQuickWinsRequest", () => {
       property: PROPERTY,
       brandTerms: ["Acme", "acme corp"],
       accessToken: ACCESS_TOKEN,
+      // The route's own clock, so the report cannot spend a budget the grant
+      // resolution already ate into.
+      remainingMs: expect.any(Function),
     });
   });
 
@@ -402,7 +406,42 @@ describe("handleQuickWinsRequest", () => {
       property: PROPERTY,
       brandTerms: ["acme"],
       accessToken: ACCESS_TOKEN,
+      remainingMs: expect.any(Function),
     });
+  });
+
+  it("starts the request clock before the grant is resolved", async () => {
+    // The budget used to start inside the report. Resolving a grant can
+    // refresh an OAuth token and re-list properties — two provider round
+    // trips — so a clock started after it hands a full budget to a request
+    // that has already spent a third of the platform's limit, and the report
+    // then overruns maxDuration. Overrunning costs the finished envelope, not
+    // just the slow part of it.
+    let clock = new Date("2026-08-03T09:00:00.000Z").getTime();
+    let seen = Number.NaN;
+
+    await handleQuickWinsRequest(
+      post({ property: PROPERTY }),
+      deps({
+        now: () => new Date(clock),
+        resolveGrant: async () => {
+          clock += 20_000;
+          return {
+            kind: "grant",
+            accessToken: ACCESS_TOKEN,
+            properties: [PROPERTY],
+            propertyTotal: 1,
+          };
+        },
+        runReport: async ({ remainingMs }) => {
+          seen = remainingMs();
+          return ENVELOPE;
+        },
+      }),
+    );
+
+    // Whatever the budget is, the 20 seconds the grant took came out of it.
+    expect(seen).toBeLessThanOrEqual(REQUEST_BUDGET_MS - 20_000);
   });
 
   it("rejects more brand terms than the cap", async () => {

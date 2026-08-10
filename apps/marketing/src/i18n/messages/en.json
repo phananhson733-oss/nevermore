@@ -1420,6 +1420,7 @@
         "empty": "the draft came back empty",
         "unparseable": "the draft came back in an unusable form",
         "truncated": "the model was cut off before it finished this draft",
+        "out_of_time": "the run was out of time before this draft could be started",
         "model_unavailable": "the drafting model was unavailable",
         "page_dimension_unavailable": "the page-level data needed for drafts was unavailable"
       },
