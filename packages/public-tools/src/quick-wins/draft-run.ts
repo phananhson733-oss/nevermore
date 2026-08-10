@@ -165,6 +165,16 @@ export async function runDrafts(
   const failed = new Map<string, DraftFailureReason>();
   if (tasks.length === 0) return { drafts: [], failed };
 
+  // Before fetching anything. The crawl runs ahead of the per-task budget gate
+  // below, so without this a request with no time left still spends a page
+  // fetch on every task's two URLs and only then discovers it cannot use any
+  // of them. Nothing downstream could have succeeded, so nothing upstream
+  // should be paid for.
+  if (dependencies.remainingMs() < MIN_DRAFT_BUDGET_MS) {
+    for (const task of tasks) failed.set(task.query, "out_of_time");
+    return { drafts: [], failed };
+  }
+
   const urls = new Set<string>();
   for (const task of tasks) {
     urls.add(task.subjectPage);

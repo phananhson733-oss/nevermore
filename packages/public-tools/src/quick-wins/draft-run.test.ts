@@ -217,6 +217,26 @@ describe("runDrafts", () => {
     expect(MAX_CONCURRENT_DRAFTS).toBeGreaterThan(1);
   });
 
+  it("does not even crawl when there is no time for a single draft", async () => {
+    // The crawl runs ahead of the per-task gate, so without an up-front check
+    // a request with no budget left still pays for two page fetches per task
+    // before discovering it cannot use any of them.
+    const fetchPageMeta = vi.fn(async () => null);
+    const complete = vi.fn(async () => ({
+      text: GOOD_REPLY,
+      truncated: false,
+    }));
+
+    const result = await runDrafts(
+      [TASK],
+      deps({ fetchPageMeta, complete, remainingMs: () => 500 }),
+    );
+
+    expect(fetchPageMeta).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    expect(result.failed.get(TASK.query)).toBe("out_of_time");
+  });
+
   it("does not start a draft it has no time to finish", async () => {
     // The handler awaits drafts before returning, so a draft that overruns
     // does not cost a draft — it throws away the finished evidence table. The
