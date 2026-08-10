@@ -1647,17 +1647,26 @@ export interface KeywordGovernanceReviewDraft {
 }
 
 /**
- * Prefill the exception editor from one complete, currently approvable system
- * suggestion. Non-ready or structurally incomplete suggestions stay read-only
- * and must never become an editable draft through client-side guessing.
+ * Prefill the exception editor from one persisted system suggestion. A ready
+ * suggestion is directly approvable; a needs-review suggestion may still
+ * provide verified fields while leaving the missing choice empty. Stale,
+ * unavailable, generating, or structurally incomplete projections never
+ * become editable drafts through client-side guessing.
  */
 export function keywordSuggestionReviewDraft(
   suggestion: KeywordGovernancePendingSuggestion | null,
 ): KeywordGovernanceReviewDraft | null {
+  const isReady =
+    suggestion?.state === "pending_ready" &&
+    suggestion.readinessReason === "all_authorities_confirmed";
+  const needsReview =
+    suggestion?.state === "pending_needs_review" &&
+    suggestion.readinessReason === "insufficient_authority" &&
+    suggestion.lineage !== null &&
+    suggestion.intentLineage !== null;
   if (
     suggestion === null ||
-    suggestion.state !== "pending_ready" ||
-    suggestion.readinessReason !== "all_authorities_confirmed" ||
+    (!isReady && !needsReview) ||
     suggestion.status === null ||
     suggestion.mappingDecision === null ||
     suggestion.reason === null

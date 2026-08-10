@@ -7695,7 +7695,10 @@ function KeywordReviewDialog({
     approvalMutation.error instanceof ApiError &&
     approvalMutation.error.status === 409;
   const suggestionDraft = keywordSuggestionReviewDraft(pendingSuggestion);
-  const isReadySuggestion = suggestionDraft !== null;
+  const isReadySuggestion =
+    pendingSuggestion?.state === "pending_ready" &&
+    pendingSuggestion.readinessReason === "all_authorities_confirmed" &&
+    suggestionDraft !== null;
   const suggestionBuyerStageTranslationKey =
     pendingSuggestion?.buyerStage === null ||
     pendingSuggestion?.buyerStage === undefined

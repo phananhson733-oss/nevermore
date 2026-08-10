@@ -43,6 +43,26 @@ function keywordSuggestion(
   expectedGovernanceRevision = 0,
   suggestionId = SUGGESTION_A,
 ): KeywordGovernancePendingSuggestion {
+  if (state === "pending_needs_review") {
+    return {
+      ...keywordSuggestion(
+        "pending_ready",
+        expectedGovernanceRevision,
+        suggestionId,
+      ),
+      state,
+      intent: null,
+      readinessReason: "insufficient_authority",
+      limitation: "搜索意图仍需人工确认。",
+      intentLineage: {
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+      },
+    };
+  }
   if (state !== "pending_ready") {
     const readinessReason = {
       generating: "generation_in_progress",
@@ -69,9 +89,7 @@ function keywordSuggestion(
       limitation:
         state === "generating"
           ? "系统正在基于已确认权威生成建议。"
-          : state === "pending_needs_review"
-            ? "页面映射仍需人工判断。"
-            : state === "stale"
+          : state === "stale"
               ? "关键词治理版本已变化。"
               : "当前缺少生成建议所需的权威。",
       lineage: null,
@@ -860,6 +878,21 @@ test("非 ready 与无建议状态可访问且不会出现一键批准", async (
     await expect(
       dialog.getByRole("button", { name: "展开修改" }),
     ).toBeVisible();
+    if (suggestionState === "pending_needs_review") {
+      await expandKeywordReview(dialog);
+      await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
+      await expect(dialog.getByLabel("搜索意图")).toHaveValue("");
+      await expect(dialog.getByLabel("购买阶段")).toHaveValue(
+        "consideration",
+      );
+      await expect(dialog.getByLabel("已发布 Topic")).toHaveValue(ROOT_TOPIC);
+      await expect(dialog.getByLabel("页面映射决定")).toHaveValue(
+        "existing_page",
+      );
+      await expect(dialog.getByLabel("规范页面")).toHaveValue(
+        E2E_ONBOARDING_SITE_PAGE_ID,
+      );
+    }
     await dialog.getByRole("button", { name: "关闭关键词审核" }).click();
   }
 

@@ -3211,17 +3211,34 @@ describe("Growth Map view model", () => {
     });
   });
 
-  it("fails closed for non-ready, insufficient-authority, or incomplete suggestions", () => {
+  it("prefills verified fields when a suggestion only needs one missing authority reviewed", () => {
+    const suggestion = readyKeywordSuggestion({
+      state: "pending_needs_review",
+      intent: null,
+      readinessReason: "insufficient_authority",
+      limitation: "Search intent requires customer confirmation.",
+      intentLineage: {
+        authority: "unavailable",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+      },
+    });
+
+    expect(keywordSuggestionReviewDraft(suggestion)).toEqual({
+      status: "approved",
+      intent: "",
+      buyerStage: "consideration",
+      topicNodeId: IDS.topicChild,
+      mappingDecision: "existing_page",
+      mappedSitePageId: IDS.sitePage,
+      reason: suggestion.reason,
+    });
+  });
+
+  it("fails closed for unavailable, stale, or structurally incomplete suggestions", () => {
     expect(keywordSuggestionReviewDraft(null)).toBeNull();
-    expect(
-      keywordSuggestionReviewDraft(
-        readyKeywordSuggestion({
-          state: "pending_needs_review",
-          readinessReason: "insufficient_authority",
-          limitation: "The suggested page still needs customer confirmation.",
-        }),
-      ),
-    ).toBeNull();
     expect(
       keywordSuggestionReviewDraft(
         readyKeywordSuggestion({
