@@ -1405,6 +1405,7 @@
       "draftsSource": "模仿自",
       "draftTitleLabel": "标题",
       "draftMetaLabel": "描述",
+      "draftsSkippedToggle": "另有 {count} 行这次没有候选 —— 展开看每行的原因",
       "draftsNone": "这次没有措辞候选。候选需要你站上另一个页面，位于同一位置段、点击率明显更高且曝光量足以采信——大多数查询词没有这样的页面，而我们宁可什么都不给，也不给一个通用模板。",
       "draftSkipped": {
         "no_shortfall": "表现优于你自己的曲线，无需重写",
@@ -1418,6 +1419,7 @@
         "too_long": "草稿超长",
         "empty": "草稿返回为空",
         "unparseable": "草稿返回的格式无法使用",
+        "truncated": "模型还没写完这条草稿就被截断了",
         "model_unavailable": "生成草稿的模型不可用",
         "page_dimension_unavailable": "草稿所需的页面级数据不可用"
       },

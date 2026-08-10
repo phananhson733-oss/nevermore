@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { GscPageRow, GscQueryPageRow } from "../gsc-analytics/page-reader.ts";
+import type {
+  GscPageRow,
+  GscQueryPageRow,
+} from "../gsc-analytics/page-reader.ts";
 import { MAX_DRAFT_ROWS, planDrafts } from "./draft-plan.ts";
 import type { QuickWinEvidenceRow } from "./types.ts";
 
@@ -42,7 +45,10 @@ function healthyPages(queries: readonly string[]) {
 
 describe("planDrafts", () => {
   it("plans at most MAX_DRAFT_ROWS tasks, taking the largest gaps first", () => {
-    const queries = Array.from({ length: MAX_DRAFT_ROWS + 3 }, (_, i) => `q${i}`);
+    const queries = Array.from(
+      { length: MAX_DRAFT_ROWS + 3 },
+      (_, i) => `q${i}`,
+    );
     const { pages, queryPages } = healthyPages(queries);
     // Ascending gap, so the planner must reorder rather than take the first N.
     const rows = queries.map((q, i) => row(q, i + 1));
@@ -62,7 +68,10 @@ describe("planDrafts", () => {
     // The crawl budget is the reason MAX_DRAFT_ROWS exists. Every extra task
     // is two more third-party requests inside a request the visitor is
     // watching.
-    const queries = Array.from({ length: MAX_DRAFT_ROWS + 3 }, (_, i) => `q${i}`);
+    const queries = Array.from(
+      { length: MAX_DRAFT_ROWS + 3 },
+      (_, i) => `q${i}`,
+    );
     const { pages, queryPages } = healthyPages(queries);
 
     const plan = planDrafts({
@@ -121,6 +130,70 @@ describe("planDrafts", () => {
     expect(task!.comparablePage).toBe("https://x.test/strong");
     expect(task!.subjectCtr).toBeCloseTo(0.001);
     expect(task!.comparableCtr).toBeCloseTo(0.2);
+  });
+
+  it("only blames the cap for rows that would otherwise have got a task", () => {
+    // The cap used to be checked before the comparable search, so every row
+    // past the budget was labelled "beyond the per-run cap" — including rows
+    // that have no comparable page and would have produced nothing at any
+    // budget. That reads as "raise the cap and you get a draft", which is a
+    // promise the evidence does not support.
+    const withComparable = Array.from(
+      { length: MAX_DRAFT_ROWS + 1 },
+      (_, i) => `has-comparable-${i}`,
+    );
+    const { pages, queryPages } = healthyPages(withComparable);
+
+    // One more row whose subject page has no same-band peer at all: it sits
+    // at position 1 while every other page in the set sits at 9.
+    pages.push({
+      page: "https://x.test/lonely",
+      impressions: 3000,
+      clicks: 3,
+      position: 1,
+    });
+    queryPages.push(carries("lonely", "https://x.test/lonely"));
+
+    const queries = [...withComparable, "lonely"];
+    const plan = planDrafts({
+      // Smallest gap, so it sorts last and lands well past the cap.
+      rows: [
+        ...withComparable.map((q, i) => row(q, 100 + i)),
+        row("lonely", 1),
+      ],
+      pages,
+      queryPages,
+      coverage: new Map(queries.map((q) => [q, 1])),
+    });
+
+    expect(plan.tasks).toHaveLength(MAX_DRAFT_ROWS);
+    // The row that lost to the budget says so.
+    expect(plan.skipped.get("has-comparable-0")).toBe("beyond_draft_cap");
+    // The row that had nothing to copy says THAT, cap or no cap.
+    expect(plan.skipped.get("lonely")).toBe("no_comparable_high_ctr_page");
+  });
+
+  it("stays linear when the property brings a lot of rows", () => {
+    // Asking the comparable question for every row (rather than only up to the
+    // cap) is what makes the skip reasons honest, and it is only affordable
+    // because the page rows are indexed once. Deriving the index per row is
+    // the same answer at N times the cost: at 10k rows that measured around
+    // seven seconds, inside a request with a 60-second platform ceiling, and
+    // the readers allow ten times this many rows.
+    const queries = Array.from({ length: 10_000 }, (_, i) => `q${i}`);
+    const { pages, queryPages } = healthyPages(queries);
+    const rows = queries.map((q, i) => row(q, i + 1));
+    const coverage = new Map(queries.map((q) => [q, 1]));
+
+    const startedAt = performance.now();
+    const plan = planDrafts({ rows, pages, queryPages, coverage });
+    const elapsed = performance.now() - startedAt;
+
+    expect(plan.tasks).toHaveLength(MAX_DRAFT_ROWS);
+    expect(plan.skipped.size).toBe(queries.length - MAX_DRAFT_ROWS);
+    // Generous on purpose: the indexed version lands two orders of magnitude
+    // under this, and the version it replaced could not have.
+    expect(elapsed).toBeLessThan(3_000);
   });
 
   it("returns an empty plan for an empty table rather than throwing", () => {

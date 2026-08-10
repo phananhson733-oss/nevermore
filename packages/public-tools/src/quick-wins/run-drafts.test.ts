@@ -78,7 +78,7 @@ describe("runQuickWins with draft dependencies", () => {
           title: url === COMPARABLE ? "Strong Page: What You Get" : "Weak Page",
           metaDescription: "something",
         }),
-        complete: async () => DRAFT_REPLY,
+        complete: async () => ({ text: DRAFT_REPLY, truncated: false }),
       },
     });
 
@@ -143,7 +143,7 @@ describe("runQuickWins with draft dependencies", () => {
       brandTerms: [],
       draftDependencies: {
         fetchPageMeta: async () => null,
-        complete: async () => DRAFT_REPLY,
+        complete: async () => ({ text: DRAFT_REPLY, truncated: false }),
       },
     });
 

@@ -35,7 +35,7 @@ function deps(over: Partial<Parameters<typeof runDrafts>[1]> = {}) {
       (PAGE_META as Record<string, { title: string; metaDescription: string }>)[
         url
       ] ?? null,
-    complete: async () => GOOD_REPLY,
+    complete: async () => ({ text: GOOD_REPLY, truncated: false }),
     ...over,
   };
 }
@@ -56,9 +56,12 @@ describe("runDrafts", () => {
   it("fetches each unique page once even across tasks", async () => {
     const fetchPageMeta = vi.fn(
       async (url: string) =>
-        (PAGE_META as Record<string, { title: string; metaDescription: string }>)[
-          url
-        ] ?? null,
+        (
+          PAGE_META as Record<
+            string,
+            { title: string; metaDescription: string }
+          >
+        )[url] ?? null,
     );
     const second: DraftTask = { ...TASK, query: "yamal zodiac" };
 
@@ -99,11 +102,13 @@ describe("runDrafts", () => {
     const result = await runDrafts(
       [TASK],
       deps({
-        complete: async () =>
-          JSON.stringify({
+        complete: async () => ({
+          text: JSON.stringify({
             title: "This title will increase your clicks",
             metaDescription: "Guaranteed to rank higher.",
           }),
+          truncated: false,
+        }),
       }),
     );
 
@@ -116,16 +121,49 @@ describe("runDrafts", () => {
     const result = await runDrafts(
       [TASK],
       deps({
-        complete: async () =>
-          JSON.stringify({
+        complete: async () => ({
+          text: JSON.stringify({
             title: "x".repeat(MAX_DRAFT_TITLE_CHARS + 1),
             metaDescription: "fine",
           }),
+          truncated: false,
+        }),
       }),
     );
 
     expect(result.drafts).toHaveLength(0);
     expect(result.failed.get(TASK.query)).toBe("too_long");
+  });
+
+  it("reports a cut-off reply as truncated, not as bad formatting", async () => {
+    // A reply the model was still writing when it hit the token ceiling is
+    // half a JSON object. Calling that `unparseable` blames the model's
+    // formatting for our own budget, and sends whoever reads the surface
+    // looking in the wrong place.
+    const result = await runDrafts(
+      [TASK],
+      deps({
+        complete: async () => ({
+          text: '{"title":"Lamine Yamal\'s Birth Ch',
+          truncated: true,
+        }),
+      }),
+    );
+
+    expect(result.drafts).toHaveLength(0);
+    expect(result.failed.get(TASK.query)).toBe("truncated");
+  });
+
+  it("trusts the truncation flag even when the cut-off text still parses", async () => {
+    // A reply can stop early and still happen to be valid JSON. It is not a
+    // draft the model finished, so it does not ship.
+    const result = await runDrafts(
+      [TASK],
+      deps({ complete: async () => ({ text: GOOD_REPLY, truncated: true }) }),
+    );
+
+    expect(result.drafts).toHaveLength(0);
+    expect(result.failed.get(TASK.query)).toBe("truncated");
   });
 
   it("survives one task's model call throwing", async () => {
@@ -137,7 +175,7 @@ describe("runDrafts", () => {
         complete: async () => {
           call += 1;
           if (call === 1) throw new Error("upstream 500");
-          return GOOD_REPLY;
+          return { text: GOOD_REPLY, truncated: false };
         },
       }),
     );
@@ -148,7 +186,10 @@ describe("runDrafts", () => {
 
   it("returns empty for no tasks without calling anything", async () => {
     const fetchPageMeta = vi.fn(async () => null);
-    const complete = vi.fn(async () => GOOD_REPLY);
+    const complete = vi.fn(async () => ({
+      text: GOOD_REPLY,
+      truncated: false,
+    }));
 
     const result = await runDrafts([], { fetchPageMeta, complete });
 

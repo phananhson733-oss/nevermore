@@ -363,23 +363,56 @@ function DraftSection({ result }: { readonly result: QuickWinsResult }) {
         </ul>
       )}
 
-      {skipped.length > 0 ? (
-        <ul className="mt-4 space-y-1.5">
-          {skipped.map(([query, reason]) => (
-            <li
-              key={query}
-              className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary"
-            >
-              <span className="font-mono text-[11.5px] text-text-dark-primary">
-                {query}
-              </span>
-              {" — "}
-              {t(`draftSkipped.${reason}`)}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {skipped.length === 0 ? null : skipped.length <= MAX_INLINE_SKIPPED ? (
+        <SkippedReasons entries={skipped} className="mt-4" />
+      ) : (
+        // A property with a few hundred queries produces a few dozen of these,
+        // and rendering them all put a wall of "beyond the per-run limit"
+        // directly under the candidates. Every line is still here and still
+        // says why — it just no longer reads as a page of errors on open.
+        <details className="mt-4 max-w-[52em]">
+          <summary className="cursor-pointer text-[12.5px] leading-[1.6] text-text-dark-secondary transition-colors hover:text-text-dark-primary">
+            {t("draftsSkippedToggle", { count: skipped.length })}
+          </summary>
+          <SkippedReasons entries={skipped} className="mt-2.5" />
+        </details>
+      )}
     </section>
+  );
+}
+
+/**
+ * How many skipped rows are worth showing without being asked.
+ *
+ * Small on purpose: this list explains an absence, and an explanation longer
+ * than the thing it explains stops being one.
+ */
+const MAX_INLINE_SKIPPED = 6;
+
+function SkippedReasons({
+  entries,
+  className,
+}: {
+  readonly entries: readonly (readonly [string, string])[];
+  readonly className: string;
+}) {
+  const t = useTranslations("tools.quickWins");
+
+  return (
+    <ul className={`${className} space-y-1.5`}>
+      {entries.map(([query, reason]) => (
+        <li
+          key={query}
+          className="max-w-[52em] text-[12.5px] leading-[1.6] text-text-dark-secondary"
+        >
+          <span className="font-mono text-[11.5px] text-text-dark-primary">
+            {query}
+          </span>
+          {" — "}
+          {t(`draftSkipped.${reason}`)}
+        </li>
+      ))}
+    </ul>
   );
 }
 

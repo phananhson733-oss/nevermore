@@ -64,6 +64,7 @@ const DRAFT_SKIP_REASONS = [
   "too_long",
   "empty",
   "unparseable",
+  "truncated",
   "model_unavailable",
   "page_dimension_unavailable",
 ] as const;
