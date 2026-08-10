@@ -5,7 +5,6 @@ const Revision = z.number().int().nonnegative().max(2_147_483_647);
 const IncrementableRevision = Revision.max(2_147_483_646);
 const PositiveRevision = z.number().int().positive().max(2_147_483_647);
 const Label = z.string().trim().min(1).max(500);
-const ShortLabel = z.string().trim().min(1).max(100);
 const Text = z.string().trim().min(1).max(2_000);
 const SuggestionReason = z.string().trim().min(3).max(2_000);
 const Hash = z.string().regex(/^[0-9a-f]{64}$/u);
@@ -17,6 +16,15 @@ const CanonicalIntent = z.enum([
   "commercial",
   "transactional",
 ]);
+export const KeywordGovernanceSuggestionBuyerStage = z.enum([
+  "awareness",
+  "consideration",
+  "decision",
+  "retention",
+]);
+export type KeywordGovernanceSuggestionBuyerStage = z.infer<
+  typeof KeywordGovernanceSuggestionBuyerStage
+>;
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 
 export const KEYWORD_GOVERNANCE_SUGGESTION_MANIFEST_FIELDS = [
@@ -99,7 +107,7 @@ export type KeywordGovernanceSuggestionInputManifest = z.infer<typeof KeywordGov
 
 const StructuredSuggestion = z.object({
   keywordKey: z.string().regex(/^keyword-[a-z0-9-]+$/u), status: KeywordStatus,
-  intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
+  intent: CanonicalIntent.nullable(), buyerStage: KeywordGovernanceSuggestionBuyerStage.nullable(),
   topicKey: z.string().regex(/^topic-[a-z0-9-]+$/u).nullable(),
   mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: SuggestionReason,
 }).strict().superRefine((item, ctx) => {
@@ -136,7 +144,7 @@ const IntentLineage = z.discriminatedUnion("authority", [
 ]);
 export const KeywordGovernancePendingSuggestion = z.object({
   suggestionId: Uuid, suggestionVersion: KeywordGovernanceSuggestionVersion, state: KeywordGovernanceSuggestionState,
-  expectedGovernanceRevision: IncrementableRevision, status: KeywordStatus.nullable(), intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
+  expectedGovernanceRevision: IncrementableRevision, status: KeywordStatus.nullable(), intent: CanonicalIntent.nullable(), buyerStage: KeywordGovernanceSuggestionBuyerStage.nullable(),
   topicNodeId: Uuid.nullable(), topicModelRevision: PositiveRevision.nullable(), topicLabel: Label.nullable(), mappingDecision: MappingDecision.nullable(),
   mappedSitePageId: Uuid.nullable(), mappedSitePageTitle: Label.nullable(), reason: SuggestionReason.nullable(),
   readinessReason: z.enum(["all_authorities_confirmed", "generation_in_progress", "insufficient_authority", "governance_revision_changed", "authority_unavailable"]), limitation: Text.nullable(),

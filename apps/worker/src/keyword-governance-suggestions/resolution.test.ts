@@ -256,6 +256,15 @@ describe("keyword governance suggestion resolution", () => {
         ),
       },
     ],
+    [
+      "non-canonical buyer stage",
+      {
+        ...output(),
+        suggestions: output().suggestions.map((row, index) =>
+          index === 0 ? { ...row, buyerStage: "research" } : row,
+        ),
+      },
+    ],
   ])("fails the whole batch for %s", (_label, structuredOutput) => {
     expect(() => resolve(structuredOutput)).toThrow();
   });
@@ -280,7 +289,7 @@ describe("keyword governance suggestion resolution", () => {
           [ids.keywordB]: ids.suggestionB,
         },
       }),
-    ).toThrow(/mapped suggestion.*Topic/u);
+    ).toThrow(/Current Page key requires current Topic|mapped suggestion.*Topic/u);
   });
 
   it("rejects a generated new-asset mapping without a Topic", () => {

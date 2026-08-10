@@ -412,6 +412,23 @@ describe("Keyword governance suggestion contracts", () => {
     ).toBe(false);
   });
 
+  it("rejects non-canonical model and pending buyer stages", () => {
+    expect(
+      KeywordGovernanceSuggestionStructuredOutput.safeParse({
+        ...output,
+        suggestions: [
+          { ...output.suggestions[0], buyerStage: "research" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
+        ...pendingSuggestion,
+        buyerStage: "research",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects incomplete ready suggestions and excluded assignment residue", () => {
     for (const invalid of [
       { ...pendingSuggestion, mappingDecision: null },

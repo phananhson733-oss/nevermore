@@ -455,6 +455,12 @@ describe("Keyword Library generated OpenAPI contract", () => {
       'intent: "informational" | "navigational" | "commercial" | "transactional" | null;',
     );
     expect(openapi).toMatch(
+      /KeywordGovernancePendingSuggestion:[\s\S]*?buyerStage: \{ type: \[string, 'null'\], enum: \[awareness, consideration, decision, retention, null\] \}/u,
+    );
+    expect(generated).toContain(
+      'buyerStage: "awareness" | "consideration" | "decision" | "retention" | null;',
+    );
+    expect(openapi).toMatch(
       /Any non-unassigned mappingDecision\s+requires complete Topic identity, and existing_page additionally\s+requires the exact mapped Page identity\./u,
     );
     expect(openapi).toMatch(

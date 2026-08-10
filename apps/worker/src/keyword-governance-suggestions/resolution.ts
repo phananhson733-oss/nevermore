@@ -22,7 +22,7 @@ export interface ResolvedKeywordGovernanceSuggestion {
   readonly suggestionVersion: "keyword-governance-suggestion.v1";
   readonly status: StructuredSuggestion["status"];
   readonly intent: StructuredSuggestion["intent"];
-  readonly buyerStage: string | null;
+  readonly buyerStage: StructuredSuggestion["buyerStage"];
   readonly topicNodeId: string | null;
   readonly topicModelRevision: number | null;
   readonly mappingDecision: StructuredSuggestion["mappingDecision"];

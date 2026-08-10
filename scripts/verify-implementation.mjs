@@ -836,6 +836,12 @@ function checkOpenApi() {
     ["informational", "navigational", "commercial", "transactional", null],
     "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
   );
+  assertExactSet(
+    keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.buyerStage
+      ?.enum ?? [],
+    ["awareness", "consideration", "decision", "retention", null],
+    "Keyword pending suggestion buyer stage must remain the canonical nullable four-value taxonomy",
+  );
   invariant(
     keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.reason
       ?.minLength === 3 &&

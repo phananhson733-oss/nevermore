@@ -6728,7 +6728,7 @@ components:
         expectedGovernanceRevision: { type: integer, minimum: 0, maximum: 2147483646 }
         status: { type: [string, 'null'], enum: [candidate, approved, excluded, parked, null] }
         intent: { type: [string, 'null'], enum: [informational, navigational, commercial, transactional, null] }
-        buyerStage: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        buyerStage: { type: [string, 'null'], enum: [awareness, consideration, decision, retention, null] }
         topicNodeId: { type: [string, 'null'], format: uuid }
         topicModelRevision: { type: [integer, 'null'], minimum: 1, maximum: 2147483647 }
         topicLabel: { type: [string, 'null'], minLength: 1, maxLength: 500 }
@@ -6757,7 +6757,10 @@ components:
         unavailable/authority_unavailable. Any non-unassigned mappingDecision
         requires complete Topic identity, and existing_page additionally
         requires the exact mapped Page identity. Excluded suggestions retain no
-        Topic or Page assignment and use mappingDecision=unassigned.
+        Topic or Page assignment and use mappingDecision=unassigned. Suggested
+        buyer stage uses the closed awareness, consideration, decision,
+        retention taxonomy; historical human-governed values remain readable
+        on the effective Keyword projection.
       x-signalframe-runtime-refinement: keywordSuggestionReadinessProvenanceAndExcludedAssignment
 
     KeywordGovernanceSuggestionLlmLineage:

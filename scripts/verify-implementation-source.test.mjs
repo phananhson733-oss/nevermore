@@ -168,6 +168,7 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Keyword suggestion manifest must require a current Topic key whenever a current Page key is present",
     "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
     "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
+    "Keyword pending suggestion buyer stage must remain the canonical nullable four-value taxonomy",
     "Keyword pending suggestion reason must remain nullable with 3..2000 bounded text when present",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
