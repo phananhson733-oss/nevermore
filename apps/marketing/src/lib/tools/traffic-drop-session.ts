@@ -77,26 +77,36 @@ export function isGoogleConnectEnabled(): boolean {
   return process.env.MARKETING_GSC_CONNECT_ENABLED === "true";
 }
 
+/** The values this reader still recognizes from a previous release. */
+const RETIRED_CONSENT_VALUES = new Set(["unverified"]);
+
 /**
- * Defaults to no notice, because that is what this consent screen actually
- * does today.
+ * Reads the declared consent-screen state. Three cases, not two.
  *
- * This used to default to `invite_only` on an over-warn argument: a visitor
- * who reads a warning that did not apply loses a few seconds, while a visitor
- * stopped by Google unprepared cannot recover. That reasoning held while the
- * screen's real state was unknown. It is known now — published, external, and
- * requesting only non-sensitive scopes — so `invite_only` is no longer the
- * cautious default but a false statement: it tells everyone they are probably
- * not on a tester list that is not gating anything, and demotes the authorize
- * link that in fact works for them.
+ * `unverified` is the value production is known to carry today, and it maps to
+ * `none`: the screen it described only appears for unapproved sensitive scopes,
+ * and this flow requests none. Treating it conservatively instead would bring
+ * back the invite-only copy this change exists to remove, including its
+ * demoted authorize link.
  *
- * `invite_only` therefore has to be set deliberately, and must be, the moment
- * the consent screen is moved back to Testing.
+ * Anything else unrecognized is a different situation. A typo, or a value from
+ * some future state, says nothing about the consent screen, and answering
+ * "nothing unusual" to it is a guess made in the visitor's name. Those fall
+ * back to the cautious notice, so a misconfiguration costs a few seconds of
+ * reading rather than sending someone into a block page unprepared.
+ *
+ * Absent is the ordinary case and means `none`, which is what this consent
+ * screen actually does. `invite_only` has to be set deliberately, and must be
+ * the moment the screen goes back to Testing — an operational contract this
+ * code cannot verify on its own.
  */
 export function readGoogleConsentNotice(): GoogleConsentNotice {
-  return process.env.MARKETING_GSC_CONSENT_NOTICE === "invite_only"
-    ? "invite_only"
-    : "none";
+  const raw = process.env.MARKETING_GSC_CONSENT_NOTICE?.trim();
+  if (!raw) return "none";
+  if (raw === "invite_only") return "invite_only";
+  if (raw === "none") return "none";
+  if (RETIRED_CONSENT_VALUES.has(raw)) return "none";
+  return "invite_only";
 }
 
 /**

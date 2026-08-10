@@ -68,6 +68,47 @@ describe("parseSitemapXml entity decoding", () => {
     expect(document.locs).toEqual(["https://example.com/good"]);
   });
 
+  it.each([
+    ["C0 control &#1;", "&#1;"],
+    ["noncharacter &#xFFFE;", "&#xFFFE;"],
+    ["noncharacter &#xFFFF;", "&#xFFFF;"],
+    ["surrogate &#xD800;", "&#xD800;"],
+    ["above Unicode &#x110000;", "&#x110000;"],
+  ])("drops a loc carrying the XML-invalid %s", (_label, ref) => {
+    // A Unicode scalar and an XML character are different sets. C0 controls and
+    // the noncharacters are valid scalars that no conforming XML document can
+    // contain, so accepting them let a sitemap mint frontier entries out of
+    // references it was never allowed to write.
+    const document = parseSitemapXml(
+      `<urlset>
+        <url><loc>https://example.com/bad?x=${ref}</loc></url>
+        <url><loc>https://example.com/good</loc></url>
+      </urlset>`,
+    );
+
+    expect(document.locs).toEqual(["https://example.com/good"]);
+  });
+
+  it.each([
+    ["tab", "&#9;"],
+    ["newline", "&#10;"],
+    ["carriage return", "&#13;"],
+    ["space", "&#32;"],
+    ["last BMP before surrogates", "&#xD7FF;"],
+    ["first after surrogates", "&#xE000;"],
+    ["replacement char", "&#xFFFD;"],
+    ["first astral", "&#x10000;"],
+    ["last valid", "&#x10FFFF;"],
+  ])("keeps a loc carrying the XML-legal %s", (_label, ref) => {
+    // The narrowing must not cost real sitemaps anything: every boundary of the
+    // Char production still round-trips.
+    const document = parseSitemapXml(
+      `<urlset><url><loc>https://example.com/a?x=${ref}</loc></url></urlset>`,
+    );
+
+    expect(document.locs).toHaveLength(1);
+  });
+
   it("leaves an unknown named entity alone rather than dropping it", () => {
     // &nbsp; is an HTML entity, not an XML one. Silently turning it into a
     // space would invent a URL the document did not declare.

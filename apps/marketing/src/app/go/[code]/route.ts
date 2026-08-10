@@ -48,8 +48,11 @@ function shortLinksEnabled(): boolean {
  * the requested URL, recrawls it, and spends budget on a page that was never
  * ours. A 404 spends the same request once and ends it.
  *
- * Once short links ARE enabled, every failure below is a 503 instead. A link
- * that exists must never be reported gone because we could not look it up.
+ * Once short links ARE enabled, 404 narrows to one meaning: the code is not
+ * registered. Everything else that can go wrong — an unreachable database, a
+ * missing table, a row pointing somewhere we will not send anyone, a status we
+ * cannot act on — answers 503, because a code somebody published must never be
+ * reported gone over a fault on our side.
  */
 export async function GET(_request: Request, context: RouteContext) {
   const params = await Promise.resolve(context.params);
@@ -78,9 +81,12 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const destination = normalizeOwnedDestination(record.destination_url);
   if (!destination) {
-    // A row whose destination is no longer one of ours. Nothing to send anyone
-    // to, and not something a retry fixes.
-    return missing();
+    // The row exists but points somewhere we will not send anyone: a bad
+    // import, an edited record, or a host that stopped being ours. That is a
+    // broken row, which is the same class of problem as an unusable status
+    // below — not evidence that the link was never registered. Answering 404
+    // would retire a code somebody deliberately published.
+    return unavailable();
   }
 
   const status = REDIRECT_STATUSES.has(record.redirect_status)

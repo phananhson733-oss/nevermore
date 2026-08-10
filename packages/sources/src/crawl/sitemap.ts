@@ -52,6 +52,30 @@ const XML_NAMED: Readonly<Record<string, string>> = {
  * spending the crawl's budget on targets the site never had. Bad input is not
  * something to repair into a crawlable page: the `<loc>` is dropped instead.
  */
+/**
+ * XML 1.0's Char production, not merely "a Unicode scalar value".
+ *
+ * The two are not the same set, and the gap is where an attacker lives: C0
+ * controls like `&#1;` and the noncharacters `&#xFFFE;`/`&#xFFFF;` are perfectly
+ * good scalars and completely invalid XML. Accepting them let a sitemap mint
+ * distinct frontier entries out of references no conforming document could
+ * contain. Every character a real sitemap can legally carry is in this set, so
+ * narrowing to it drops nothing valid.
+ *
+ * https://www.w3.org/TR/xml/#charsets
+ */
+function isXmlChar(code: number): boolean {
+  if (!Number.isSafeInteger(code)) return false;
+  return (
+    code === 0x9 ||
+    code === 0xa ||
+    code === 0xd ||
+    (code >= 0x20 && code <= 0xd7ff) ||
+    (code >= 0xe000 && code <= 0xfffd) ||
+    (code >= 0x10000 && code <= 0x10ffff)
+  );
+}
+
 function decodeXml(value: string): string | null {
   let rejected = false;
   const decoded = value.replace(
@@ -65,12 +89,7 @@ function decodeXml(value: string): string | null {
         isHex ? numeric.slice(1) : numeric,
         isHex ? 16 : 10,
       );
-      const validScalar =
-        Number.isSafeInteger(code) &&
-        code > 0 &&
-        code <= 0x10ffff &&
-        (code < 0xd800 || code > 0xdfff);
-      if (!validScalar) {
+      if (!isXmlChar(code)) {
         rejected = true;
         return "";
       }

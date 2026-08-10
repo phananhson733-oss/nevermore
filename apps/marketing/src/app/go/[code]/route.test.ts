@@ -82,14 +82,24 @@ describe("GET /go/[code] when nothing is registered", () => {
     expect(body).toContain('name="robots" content="noindex"');
   });
 
-  it("answers 404 when a row exists but its destination is no longer ours", async () => {
+});
+
+describe("GET /go/[code] when a registered row is unusable", () => {
+  it.each([
+    ["a destination that is no longer ours", "https://not-our-domain.example/x"],
+    ["a destination that will not parse", "not a url"],
+    ["an empty destination", ""],
+  ])("answers 503 rather than retiring the code over %s", async (_l, url) => {
+    // The row exists, so somebody published this code. A broken destination is
+    // the same class of problem as an unusable status: an operational fault,
+    // not evidence that the link was never registered.
     findShortLink.mockResolvedValue({
       code: "leftover",
-      destination_url: "https://not-our-domain.example/landing",
+      destination_url: url,
       redirect_status: 301,
     });
 
-    expect(await status("leftover")).toBe(404);
+    expect(await status("leftover")).toBe(503);
   });
 });
 
