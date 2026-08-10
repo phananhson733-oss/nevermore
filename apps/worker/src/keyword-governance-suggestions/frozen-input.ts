@@ -255,6 +255,11 @@ export function freezeKeywordGovernanceSuggestionInput(
       throw new Error("current Topic identity and revision must agree");
     }
     if (candidate.mappedSitePageId !== null) {
+      if (candidate.topicNodeId === null) {
+        throw new Error(
+          "current mapped Page requires exact current Topic authority",
+        );
+      }
       if (!pageById.has(candidate.mappedSitePageId)) {
         throw new Error("current mapped Page must resolve to an exact owned Page");
       }

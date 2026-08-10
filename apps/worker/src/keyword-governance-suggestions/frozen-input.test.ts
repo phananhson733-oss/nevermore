@@ -268,4 +268,20 @@ describe("keyword governance suggestion frozen input", () => {
       ),
     ).toThrow(/provider intent/u);
   });
+
+  it("rejects a current Page mapping without exact current Topic authority", () => {
+    expect(() =>
+      freezeKeywordGovernanceSuggestionInput(
+        input({
+          keywords: [
+            keyword(1, {
+              topicNodeId: null,
+              topicModelRevision: null,
+              mappedSitePageId: ids.pageA,
+            }),
+          ],
+        }),
+      ),
+    ).toThrow(/mapped Page.*Topic/u);
+  });
 });

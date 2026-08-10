@@ -259,4 +259,39 @@ describe("keyword governance suggestion resolution", () => {
   ])("fails the whole batch for %s", (_label, structuredOutput) => {
     expect(() => resolve(structuredOutput)).toThrow();
   });
+
+  it("rejects a final current-Page mapping when no Topic resolves", () => {
+    const corruptManifest = manifest();
+    corruptManifest.candidates[0]!.deterministicEvidence.currentTopicKey = null;
+    const unassignedOutput = output();
+    unassignedOutput.suggestions[1] = {
+      ...unassignedOutput.suggestions[1]!,
+      topicKey: null,
+      mappingDecision: "unassigned",
+      pageKey: null,
+    };
+
+    expect(() =>
+      resolveKeywordGovernanceSuggestions({
+        manifest: corruptManifest,
+        output: unassignedOutput,
+        suggestionIdsByKeywordId: {
+          [ids.keywordA]: ids.suggestionA,
+          [ids.keywordB]: ids.suggestionB,
+        },
+      }),
+    ).toThrow(/mapped suggestion.*Topic/u);
+  });
+
+  it("rejects a generated new-asset mapping without a Topic", () => {
+    const invalidOutput = output();
+    invalidOutput.suggestions[0] = {
+      ...invalidOutput.suggestions[0]!,
+      topicKey: null,
+      mappingDecision: "new_asset",
+      pageKey: null,
+    };
+
+    expect(() => resolve(invalidOutput)).toThrow();
+  });
 });

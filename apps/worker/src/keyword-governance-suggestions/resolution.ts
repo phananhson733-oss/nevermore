@@ -111,6 +111,9 @@ export function resolveKeywordGovernanceSuggestions(
       mappingDecision === "existing_page"
         ? (currentPageKey ?? generated.pageKey)
         : null;
+    if (mappingDecision !== "unassigned" && topic === null) {
+      throw new Error("final mapped suggestion requires a resolved Topic");
+    }
     const page = resolvedPage(manifest, pageKey);
 
     const providerIntent =
