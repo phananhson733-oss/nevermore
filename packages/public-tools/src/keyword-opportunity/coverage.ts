@@ -21,7 +21,7 @@ export const KEYWORD_COVERAGE_MIN_IMPRESSIONS = 10;
  */
 export const KEYWORD_COVERAGE_STRONG_POSITION = 10;
 
-/** Share of a candidate's tokens a page title must carry to look related. */
+/** Share of a candidate's tokens a page must carry to look related. */
 export const KEYWORD_COVERAGE_TOKEN_OVERLAP = 0.8;
 
 export interface KeywordCoverageQueryRow {
@@ -111,16 +111,37 @@ function relatedPage(
  * alone can only reach `related_coverage_unverified`; it never hard-filters a
  * candidate, since two pages sharing vocabulary is not proof either one ranks.
  *
- * Absence resolves to `not_observed_in_gsc_query_sample`, spelled out in full
- * because Search Console withholds a large share of queries — the tool has not
- * shown the term is uncovered, only that it did not see it.
+ * `exactIndex` is null when the query sample was never read — the Search
+ * Console call failed, or the visitor's grant covers no property for this
+ * site. Null rather than an empty map on purpose: an empty map is a real
+ * answer (a property that served nothing) and the two must not collapse, or
+ * the run reports "not observed in the sample" about a sample it never
+ * fetched. The page-similarity half still runs either way; it reads the crawl,
+ * not Search Console, and the GEO lane depends on it.
+ *
+ * `attributedPageUrl` is the page the generator said the candidate came from —
+ * for a proposition-derived term, the page the proposition was read off. It
+ * only ever fills in `supportingPageUrl`, and never moves the coverage state:
+ * where a claim originated says nothing about whether the site ranks for it.
+ * Token overlap wins when both are available, because it is computed from what
+ * the page says rather than from what the generator asserted.
+ *
+ * The attribution exists because overlap alone cannot carry the GEO lane. A
+ * question is mostly grammar — "can i audit a website without owning it" needs
+ * seven of its eight tokens on one page, and four of them are function words
+ * no heading contains — so the first live run matched none of its 44
+ * question-form candidates while the pages answering them sat in this list.
+ * Filtering the grammar out was tried and is worse: it cannot tell a function
+ * word from a subject the site genuinely does not cover, so "best crm for
+ * startups" would collapse onto a page about CRMs in general.
  */
 export function observeKeywordCoverage(
   keyword: string,
-  exactIndex: ReadonlyMap<string, ExactObservation>,
+  exactIndex: ReadonlyMap<string, ExactObservation> | null,
   pages: readonly KeywordCoveragePage[],
+  attributedPageUrl: string | null = null,
 ): KeywordCoverageObservation {
-  const exact = exactIndex.get(normalizeQuery(keyword));
+  const exact = exactIndex?.get(normalizeQuery(keyword));
   if (
     exact !== undefined &&
     exact.impressions >= KEYWORD_COVERAGE_MIN_IMPRESSIONS
@@ -130,7 +151,7 @@ export function observeKeywordCoverage(
         exact.weightedPosition <= KEYWORD_COVERAGE_STRONG_POSITION
           ? "observed_exact_strong"
           : "observed_exact_weak",
-      supportingPageUrl: relatedPage(keyword, pages),
+      supportingPageUrl: relatedPage(keyword, pages) ?? attributedPageUrl,
     };
   }
 
@@ -140,8 +161,14 @@ export function observeKeywordCoverage(
   }
 
   return {
-    state: "not_observed_in_gsc_query_sample",
-    supportingPageUrl: null,
+    state:
+      exactIndex === null
+        ? "gsc_query_sample_not_read"
+        : "not_observed_in_gsc_query_sample",
+    // Attribution alone leaves the state untouched but still names the page,
+    // which is what the GEO lane is judged on: nothing here says the site
+    // ranks, only that this is where the claim behind the question came from.
+    supportingPageUrl: attributedPageUrl,
   };
 }
 

@@ -72,7 +72,18 @@ export function keywordNextChecks(
     }
   }
 
-  if (row.coverage !== "not_observed_in_gsc_query_sample") {
+  // Written as the positive list rather than "not the one state that skips
+  // it". The coverage union grows, and a negation silently grants the check to
+  // every member added later — including ones where it would be wrong.
+  //
+  // `gsc_query_sample_not_read` earns it for the opposite reason to the
+  // observed states: nobody checked, so the reader is the only one who can.
+  if (
+    row.coverage === "observed_exact_strong" ||
+    row.coverage === "observed_exact_weak" ||
+    row.coverage === "related_coverage_unverified" ||
+    row.coverage === "gsc_query_sample_not_read"
+  ) {
     checks.push("check_existing_page_overlap");
   }
 

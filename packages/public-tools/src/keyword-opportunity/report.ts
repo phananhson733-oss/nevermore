@@ -7,7 +7,11 @@ import { createPublicToolResult } from "../contract.ts";
 import { clusterKeywords, keywordClusterIndex } from "./cluster.ts";
 import { isKeywordAlreadyCovered } from "./coverage.ts";
 import { keywordNextChecks } from "./next-checks.ts";
-import { KEYWORD_OPPORTUNITY_SCHEMA_VERSION } from "./types.ts";
+import {
+  KEYWORD_OPPORTUNITY_SCHEMA_VERSION,
+  KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_SERP_SAMPLE,
+} from "./types.ts";
 import { isKeywordWinnable } from "./winnability.ts";
 import type {
   KeywordOpportunityAvailability,
@@ -96,14 +100,21 @@ function isShown(observation: KeywordOpportunityObservation): boolean {
  */
 function withheldReason(
   observation: KeywordOpportunityObservation,
+  unavailableStages: readonly string[],
 ): KeywordOpportunityWithheld["reason"] {
   if (isKeywordAlreadyCovered(observation.coverage)) return "already_covered";
   if (observation.lane === "geo") return "no_supporting_page";
   if (observation.validation.availability !== "available") {
     return "no_measured_demand";
   }
-  return observation.serp.verdict === "contested_evidence"
-    ? "page_one_contested"
+  if (observation.serp.verdict === "contested_evidence") {
+    return "page_one_contested";
+  }
+  // A stage that failed and a budget that ran out are different facts, and
+  // only the first is worth retrying unchanged. Reporting the second for both
+  // told a reader to narrow a run that was never the problem.
+  return unavailableStages.includes(KEYWORD_STAGE_SERP_SAMPLE)
+    ? "serp_sample_unavailable"
     : "serp_sample_budget_exhausted";
 }
 
@@ -122,9 +133,14 @@ function countFunnel(
     volumePositive: availability("available"),
     explicitZero: availability("explicit_zero"),
     providerNoData: availability("provider_no_data"),
-    alreadyCovered: observations.filter((o) =>
-      isKeywordAlreadyCovered(o.coverage),
-    ).length,
+    // Read off the stage list, which is the fact, rather than inferred from
+    // the rows, which are a lossy projection of it: a run where every
+    // candidate happened to match a crawled page carries no
+    // `gsc_query_sample_not_read` row at all, and inferring from the rows
+    // would hand back a confident zero for a sample nobody fetched.
+    alreadyCovered: input.unavailableStages.includes(KEYWORD_STAGE_GSC_COVERAGE)
+      ? null
+      : observations.filter((o) => isKeywordAlreadyCovered(o.coverage)).length,
     serpSampled: observations.filter(
       (o) => o.serp.verdict !== "no_serp_evidence",
     ).length,
@@ -204,7 +220,7 @@ export function buildKeywordOpportunityResult(
     .map((observation) => ({
       keyword: observation.keyword,
       discoveryBasis: observation.discoveryBasis,
-      reason: withheldReason(observation),
+      reason: withheldReason(observation, input.unavailableStages),
     }));
 
   return {

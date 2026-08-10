@@ -46,7 +46,21 @@ function row(overrides: RowOverrides = {}): KeywordOpportunityCheckInput {
   };
 }
 
-/** Every input the four unions can produce, 2 x 3 x 3 x 4 = 72 rows. */
+/**
+ * Every input the four unions can produce, lanes x volume x winnability x
+ * coverage.
+ *
+ * The expected size is computed from the same value lists rather than written
+ * as a literal, so growing a union grows this test's coverage instead of
+ * merely breaking its count. A union member that never reaches a value list is
+ * caught by the `as const satisfies` on the list itself.
+ */
+const EXPECTED_COMBINATIONS =
+  KEYWORD_OPPORTUNITY_LANES.length *
+  KEYWORD_OPPORTUNITY_VOLUME_STATES.length *
+  KEYWORD_OPPORTUNITY_WINNABILITY_STATES.length *
+  KEYWORD_OPPORTUNITY_COVERAGE_STATES.length;
+
 const EVERY_COMBINATION: readonly KeywordOpportunityCheckInput[] =
   KEYWORD_OPPORTUNITY_LANES.flatMap((lane) =>
     KEYWORD_OPPORTUNITY_VOLUME_STATES.flatMap((availability) =>
@@ -72,7 +86,7 @@ describe("keywordNextChecks", () => {
     // The product rule the whole advice layer exists for: a row shipped with an
     // empty check list reads as a recommendation the reader can act on blind,
     // which is exactly the mistake that misled the team's own term selection.
-    expect(EVERY_COMBINATION).toHaveLength(72);
+    expect(EVERY_COMBINATION).toHaveLength(EXPECTED_COMBINATIONS);
     for (const input of EVERY_COMBINATION) {
       expect(
         keywordNextChecks(input).length,
@@ -92,7 +106,10 @@ describe("keywordNextChecks", () => {
   it("asks for the page-type check only when nobody sampled page one", () => {
     // A sampled SERP already answers what kind of page ranks; repeating the
     // question there would spend the reader's attention on a settled fact.
-    for (const verdict of ["winnable_evidence", "contested_evidence"] as const) {
+    for (const verdict of [
+      "winnable_evidence",
+      "contested_evidence",
+    ] as const) {
       expect(keywordNextChecks(row({ verdict }))).not.toContain(
         "confirm_result_page_type",
       );
@@ -111,15 +128,15 @@ describe("keywordNextChecks", () => {
   it("withholds the breakthrough check when page one is contested", () => {
     // Contested means no weak site broke through, so there is no breakthrough
     // to verify and the check would send the reader looking for nothing.
-    expect(keywordNextChecks(row({ verdict: "contested_evidence" }))).not.toContain(
-      "verify_weak_site_breakthrough",
-    );
+    expect(
+      keywordNextChecks(row({ verdict: "contested_evidence" })),
+    ).not.toContain("verify_weak_site_breakthrough");
   });
 
   it("withholds the breakthrough check when there is no SERP evidence at all", () => {
-    expect(keywordNextChecks(row({ verdict: "no_serp_evidence" }))).not.toContain(
-      "verify_weak_site_breakthrough",
-    );
+    expect(
+      keywordNextChecks(row({ verdict: "no_serp_evidence" })),
+    ).not.toContain("verify_weak_site_breakthrough");
   });
 
   it("asks about overlap whenever Search Console saw the site on the query", () => {
@@ -144,6 +161,17 @@ describe("keywordNextChecks", () => {
     expect(
       keywordNextChecks(row({ coverage: "not_observed_in_gsc_query_sample" })),
     ).not.toContain("check_existing_page_overlap");
+  });
+
+  it("sends the reader to check overlap themselves when nobody read the sample", () => {
+    // The opposite reason to the observed states, same conclusion: the tool
+    // could not look, so the only remaining check is the reader's own. This
+    // used to hold by accident — the rule was written as "not the one state
+    // that skips it", which grants the check to every state added later
+    // whether or not it should have one.
+    expect(
+      keywordNextChecks(row({ coverage: "gsc_query_sample_not_read" })),
+    ).toContain("check_existing_page_overlap");
   });
 
   it("calls a GEO row an early bet even when demand data exists", () => {
@@ -222,7 +250,9 @@ describe("keywordNextChecks", () => {
         produced.add(check);
       }
     }
-    expect([...produced].sort()).toEqual([...KEYWORD_OPPORTUNITY_CHECKS].sort());
+    expect([...produced].sort()).toEqual(
+      [...KEYWORD_OPPORTUNITY_CHECKS].sort(),
+    );
   });
 
   it("declares the constant with no duplicates and no missing union member", () => {
