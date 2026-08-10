@@ -825,6 +825,13 @@ function checkOpenApi() {
     "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
   );
   invariant(
+    keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.reason
+      ?.minLength === 3 &&
+      keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.reason
+        ?.maxLength === 2000,
+    "Keyword pending suggestion reason must remain nullable with 3..2000 bounded text when present",
+  );
+  invariant(
     Array.isArray(keywordDetailResponse?.oneOf) &&
       keywordDetailResponse.oneOf.length === 2 &&
       keywordDetailResponse?.["x-signalframe-runtime-refinement"] ===

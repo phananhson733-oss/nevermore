@@ -167,6 +167,7 @@ test("keeps strict Growth Map Keyword and Competitor contracts", () => {
     "Keyword suggestion manifest field inventory",
     "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
     "Keyword pending suggestion intent must remain the canonical nullable four-value taxonomy",
+    "Keyword pending suggestion reason must remain nullable with 3..2000 bounded text when present",
     "Growth Map Keyword source occurrence discriminator drift",
     "Growth Map Keyword mapped target discriminator drift",
     "Growth Map Keyword canonical metric pointer drift",

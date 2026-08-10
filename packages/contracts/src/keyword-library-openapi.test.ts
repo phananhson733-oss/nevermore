@@ -448,6 +448,9 @@ describe("Keyword Library generated OpenAPI contract", () => {
     expect(openapi).toMatch(
       /KeywordGovernancePendingSuggestion:[\s\S]*?intent: \{ type: \[string, 'null'\], enum: \[informational, navigational, commercial, transactional, null\] \}/u,
     );
+    expect(openapi).toMatch(
+      /KeywordGovernancePendingSuggestion:[\s\S]*?reason: \{ type: \[string, 'null'\], minLength: 3, maxLength: 2000 \}/u,
+    );
     expect(generated).toContain(
       'intent: "informational" | "navigational" | "commercial" | "transactional" | null;',
     );

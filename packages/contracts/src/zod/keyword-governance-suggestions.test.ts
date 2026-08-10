@@ -309,6 +309,10 @@ describe("Keyword governance suggestion contracts", () => {
         ...output,
         suggestions: [{ ...output.suggestions[0], intent: "awareness" }],
       },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], reason: "ok" }],
+      },
     ]) {
       expect(() =>
         parseKeywordGovernanceSuggestionStructuredOutput(invalid, manifest),
@@ -357,6 +361,35 @@ describe("Keyword governance suggestion contracts", () => {
     expect(KeywordGovernancePendingSuggestion.parse(pendingSuggestion)).toEqual(
       pendingSuggestion,
     );
+  });
+
+  it("rejects 1-2 character reasons in structured output and ready pending suggestions", () => {
+    expect(() =>
+      parseKeywordGovernanceSuggestionStructuredOutput(
+        {
+          ...output,
+          suggestions: [{ ...output.suggestions[0], reason: "ok" }],
+        },
+        {
+          ...manifest,
+          candidates: [
+            {
+              ...manifest.candidates[0],
+              deterministicEvidence: {
+                ...manifest.candidates[0].deterministicEvidence,
+                providerSearchIntent: null,
+              },
+            },
+          ],
+        },
+      ),
+    ).toThrow();
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
+        ...pendingSuggestion,
+        reason: "ok",
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects incomplete ready suggestions and excluded assignment residue", () => {

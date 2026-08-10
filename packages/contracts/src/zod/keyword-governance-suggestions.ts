@@ -7,6 +7,7 @@ const PositiveRevision = z.number().int().positive().max(2_147_483_647);
 const Label = z.string().trim().min(1).max(500);
 const ShortLabel = z.string().trim().min(1).max(100);
 const Text = z.string().trim().min(1).max(2_000);
+const SuggestionReason = z.string().trim().min(3).max(2_000);
 const Hash = z.string().regex(/^[0-9a-f]{64}$/u);
 const KeywordStatus = z.enum(["candidate", "approved", "excluded", "parked"]);
 const MappingDecision = z.enum(["unassigned", "existing_page", "new_asset"]);
@@ -99,7 +100,7 @@ const StructuredSuggestion = z.object({
   keywordKey: z.string().regex(/^keyword-[a-z0-9-]+$/u), status: KeywordStatus,
   intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
   topicKey: z.string().regex(/^topic-[a-z0-9-]+$/u).nullable(),
-  mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: Text,
+  mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: SuggestionReason,
 }).strict().superRefine((item, ctx) => {
   if ((item.mappingDecision === "existing_page") !== (item.pageKey !== null)) ctx.addIssue({ code: "custom", path: ["pageKey"], message: "Existing Page requires exactly one prompt-local Page key" });
   if (item.status === "excluded" && (item.topicKey !== null || item.pageKey !== null || item.mappingDecision !== "unassigned")) ctx.addIssue({ code: "custom", path: ["status"], message: "Excluded Keywords must not retain a Topic or Page assignment" });
@@ -135,7 +136,7 @@ export const KeywordGovernancePendingSuggestion = z.object({
   suggestionId: Uuid, suggestionVersion: KeywordGovernanceSuggestionVersion, state: KeywordGovernanceSuggestionState,
   expectedGovernanceRevision: IncrementableRevision, status: KeywordStatus.nullable(), intent: CanonicalIntent.nullable(), buyerStage: ShortLabel.nullable(),
   topicNodeId: Uuid.nullable(), topicModelRevision: PositiveRevision.nullable(), topicLabel: Label.nullable(), mappingDecision: MappingDecision.nullable(),
-  mappedSitePageId: Uuid.nullable(), mappedSitePageTitle: Label.nullable(), reason: Text.nullable(),
+  mappedSitePageId: Uuid.nullable(), mappedSitePageTitle: Label.nullable(), reason: SuggestionReason.nullable(),
   readinessReason: z.enum(["all_authorities_confirmed", "generation_in_progress", "insufficient_authority", "governance_revision_changed", "authority_unavailable"]), limitation: Text.nullable(),
   lineage: LlmLineage.nullable(), intentLineage: IntentLineage.nullable(), createdAt: IsoDateTime,
 }).strict().superRefine((item, ctx) => {

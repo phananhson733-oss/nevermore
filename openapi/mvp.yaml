@@ -6152,7 +6152,7 @@ components:
         kind: { type: string, const: unassigned }
         reviewState: { type: string, enum: [unreviewed, approved, rejected] }
         revision: { type: integer, minimum: 0 }
-        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        reason: { type: [string, 'null'], minLength: 3, maxLength: 2000 }
 
     GrowthMapKeywordExistingPageTarget:
       type: object
@@ -6162,7 +6162,7 @@ components:
         kind: { type: string, const: existing_page }
         reviewState: { type: string, enum: [unreviewed, approved, rejected] }
         revision: { type: integer, minimum: 0 }
-        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        reason: { type: [string, 'null'], minLength: 3, maxLength: 2000 }
         sitePageId: { $ref: '#/components/schemas/Uuid' }
         normalizedUrl: { type: string, format: uri, maxLength: 2048 }
 
@@ -6735,7 +6735,7 @@ components:
         mappingDecision: { type: [string, 'null'], enum: [unassigned, existing_page, new_asset, null] }
         mappedSitePageId: { type: [string, 'null'], format: uuid }
         mappedSitePageTitle: { type: [string, 'null'], minLength: 1, maxLength: 500 }
-        reason: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
+        reason: { type: [string, 'null'], minLength: 3, maxLength: 2000 }
         readinessReason: { type: string, enum: [all_authorities_confirmed, generation_in_progress, insufficient_authority, governance_revision_changed, authority_unavailable] }
         limitation: { type: [string, 'null'], minLength: 1, maxLength: 2000 }
         lineage:
