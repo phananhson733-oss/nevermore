@@ -114,68 +114,103 @@ export async function runDrafts(
 
   const drafts: QuickWinDraft[] = [];
 
-  for (const task of tasks) {
-    const subject = metaByUrl.get(task.subjectPage) ?? null;
-    const comparable = metaByUrl.get(task.comparablePage) ?? null;
-    if (subject === null || comparable === null) {
-      failed.set(task.query, "page_unreadable");
+  // Concurrent, because these are the slowest thing in the request and they do
+  // not depend on each other. A reasoning model spends 5-11 seconds on one
+  // draft; MAX_DRAFT_ROWS of those in sequence is most of the route's
+  // 60-second budget before the evidence table — the actual product — can be
+  // returned. Promise.all preserves order, so the drafts still come back in
+  // largest-shortfall-first order.
+  const outcomes = await Promise.all(
+    tasks.map(async (task) => draftOne(task, metaByUrl, dependencies)),
+  );
+
+  for (const outcome of outcomes) {
+    if (outcome.kind === "failed") {
+      failed.set(outcome.query, outcome.reason);
       continue;
     }
-    // Nothing to copy the shape of. Asking the model anyway would make it
-    // invent a pattern rather than transfer one.
-    if (comparable.title === null && comparable.metaDescription === null) {
-      failed.set(task.query, "no_pattern_to_copy");
-      continue;
-    }
+    drafts.push(outcome.draft);
+  }
 
-    const prompt = buildDraftPrompt({
-      query: task.query,
-      bucketId: task.bucketId,
-      subject: {
-        page: task.subjectPage,
-        title: subject.title,
-        metaDescription: subject.metaDescription,
-        ctr: task.subjectCtr,
-      },
-      comparable: {
-        page: task.comparablePage,
-        title: comparable.title,
-        metaDescription: comparable.metaDescription,
-        ctr: task.comparableCtr,
-      },
-    });
+  return { drafts, failed };
+}
 
-    let reply: DraftCompletion;
-    try {
-      reply = await dependencies.complete(prompt);
-    } catch {
-      failed.set(task.query, "model_unavailable");
-      continue;
-    }
+type DraftOutcome =
+  | { readonly kind: "drafted"; readonly draft: QuickWinDraft }
+  | {
+      readonly kind: "failed";
+      readonly query: string;
+      readonly reason: DraftFailureReason;
+    };
 
-    // Checked before the validator, and without looking at the text. A cut-off
-    // reply can still happen to parse — the model may have finished the JSON
-    // and been cut mid-thought after it — but it is not a draft the model
-    // finished, so it does not ship on the strength of a coincidence.
-    if (reply.truncated) {
-      failed.set(task.query, "truncated");
-      continue;
-    }
+/**
+ * One task, start to finish.
+ *
+ * Split out of `runDrafts` so the tasks can run concurrently while each still
+ * fails on its own: every exit here is one row's outcome, never the run's.
+ */
+async function draftOne(
+  task: DraftTask,
+  metaByUrl: ReadonlyMap<string, PageMeta | null>,
+  dependencies: DraftRunDependencies,
+): Promise<DraftOutcome> {
+  const fail = (reason: DraftFailureReason): DraftOutcome => ({
+    kind: "failed",
+    query: task.query,
+    reason,
+  });
 
-    const validated = validateDraft(reply.text);
-    if (!validated.ok) {
-      failed.set(task.query, validated.reason);
-      continue;
-    }
+  const subject = metaByUrl.get(task.subjectPage) ?? null;
+  const comparable = metaByUrl.get(task.comparablePage) ?? null;
+  if (subject === null || comparable === null) return fail("page_unreadable");
 
-    drafts.push({
+  // Nothing to copy the shape of. Asking the model anyway would make it
+  // invent a pattern rather than transfer one.
+  if (comparable.title === null && comparable.metaDescription === null) {
+    return fail("no_pattern_to_copy");
+  }
+
+  const prompt = buildDraftPrompt({
+    query: task.query,
+    bucketId: task.bucketId,
+    subject: {
+      page: task.subjectPage,
+      title: subject.title,
+      metaDescription: subject.metaDescription,
+      ctr: task.subjectCtr,
+    },
+    comparable: {
+      page: task.comparablePage,
+      title: comparable.title,
+      metaDescription: comparable.metaDescription,
+      ctr: task.comparableCtr,
+    },
+  });
+
+  let reply: DraftCompletion;
+  try {
+    reply = await dependencies.complete(prompt);
+  } catch {
+    return fail("model_unavailable");
+  }
+
+  // Checked before the validator, and without looking at the text. A cut-off
+  // reply can still happen to parse — the model may have finished the JSON
+  // and been cut mid-thought after it — but it is not a draft the model
+  // finished, so it does not ship on the strength of a coincidence.
+  if (reply.truncated) return fail("truncated");
+
+  const validated = validateDraft(reply.text);
+  if (!validated.ok) return fail(validated.reason);
+
+  return {
+    kind: "drafted",
+    draft: {
       query: task.query,
       subjectPage: task.subjectPage,
       title: validated.title,
       metaDescription: validated.metaDescription,
       comparablePage: task.comparablePage,
-    });
-  }
-
-  return { drafts, failed };
+    },
+  };
 }

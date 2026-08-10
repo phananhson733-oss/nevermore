@@ -184,6 +184,84 @@ describe("runDrafts", () => {
     expect(result.failed.get(TASK.query)).toBe("model_unavailable");
   });
 
+  it("runs the model calls concurrently, not one after another", async () => {
+    // These are the slowest thing in the request: a reasoning model spends
+    // 5-11 seconds per draft, and MAX_DRAFT_ROWS of those in sequence is most
+    // of the route's 60-second budget. They do not depend on each other, so
+    // running them in sequence spends the budget for nothing.
+    let inFlight = 0;
+    let peak = 0;
+    const tasks: DraftTask[] = Array.from({ length: 5 }, (_, i) => ({
+      ...TASK,
+      query: `q${i}`,
+    }));
+
+    const result = await runDrafts(
+      tasks,
+      deps({
+        complete: async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlight -= 1;
+          return { text: GOOD_REPLY, truncated: false };
+        },
+      }),
+    );
+
+    expect(result.drafts).toHaveLength(5);
+    expect(peak).toBe(5);
+  });
+
+  it("keeps drafts in task order even though the calls race", async () => {
+    // The planner hands these over largest-shortfall-first and the surface
+    // renders them in the order it receives them. A slow first call must not
+    // demote its own row.
+    const tasks: DraftTask[] = ["first", "second", "third"].map((query) => ({
+      ...TASK,
+      query,
+    }));
+    const delays: Record<string, number> = { first: 20, second: 1, third: 10 };
+
+    const result = await runDrafts(
+      tasks,
+      deps({
+        complete: async (prompt: string) => {
+          const query =
+            Object.keys(delays).find((q) => prompt.includes(q)) ?? "first";
+          await new Promise((resolve) => setTimeout(resolve, delays[query]));
+          return { text: GOOD_REPLY, truncated: false };
+        },
+      }),
+    );
+
+    expect(result.drafts.map((d) => d.query)).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+  });
+
+  it("isolates one task's failure from the rest when they run together", async () => {
+    const tasks: DraftTask[] = ["ok1", "boom", "ok2"].map((query) => ({
+      ...TASK,
+      query,
+    }));
+
+    const result = await runDrafts(
+      tasks,
+      deps({
+        complete: async (prompt: string) => {
+          if (prompt.includes("boom")) throw new Error("upstream 500");
+          return { text: GOOD_REPLY, truncated: false };
+        },
+      }),
+    );
+
+    expect(result.drafts.map((d) => d.query)).toEqual(["ok1", "ok2"]);
+    expect(result.failed.get("boom")).toBe("model_unavailable");
+  });
+
   it("returns empty for no tasks without calling anything", async () => {
     const fetchPageMeta = vi.fn(async () => null);
     const complete = vi.fn(async () => ({

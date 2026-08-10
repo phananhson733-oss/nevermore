@@ -18,8 +18,16 @@ import {
 
 export { draftModelFromEnv, type DraftModelConfig };
 
-/** The model call is the last thing in a run; it does not get to be slow. */
-const MODEL_TIMEOUT_MS = 20_000;
+/**
+ * Per-call deadline.
+ *
+ * The calls run concurrently (see `runDrafts`), so this is the drafts' whole
+ * share of the wall clock rather than one slice of a sequence. Measured on the
+ * deployment this points at, a draft takes 4.5-11 seconds depending on how
+ * much the model reasons; 30 seconds leaves room for the tail without putting
+ * the route's 60-second budget at risk.
+ */
+const MODEL_TIMEOUT_MS = 30_000;
 
 /** Per-page fetch deadline. Drafts must never be the reason a run times out. */
 const PAGE_FETCH_TIMEOUT_MS = 6_000;
@@ -29,14 +37,23 @@ const MAX_PAGE_BYTES = 512 * 1024;
 /**
  * Ceiling on one reply.
  *
- * Measured against the deployment this points at: a draft costs roughly 250
- * completion tokens, about 200 of which are reasoning the reply never shows.
- * The previous cap of 400 left a third of that as headroom, and a reply that
- * reaches the ceiling arrives as half a JSON object — paid for, then thrown
- * away by the validator. The cap still exists so a runaway reply is bounded;
- * it is just no longer set below what the work actually costs.
+ * Set from measurement against the real deployment, using a prompt built from
+ * live pages rather than a short synthetic one. Reasoning dominates and it is
+ * not stable: over repeated runs of the same prompt it ranged from 280 to over
+ * 1200 tokens, with the visible draft always under 80 of them.
+ *
+ * That range is why the two earlier values were both wrong. At 400, five of
+ * six replies hit the ceiling and came back with `finish_reason: "length"` and
+ * an EMPTY string for content — which `JSON.parse` rejects, so the surface
+ * reported "the draft came back in a format we cannot use". That was the live
+ * bug. At 1200 it was one in six, which is better and still not right. At 4000
+ * the same prompt completed eight times out of eight, so 3000 sits above the
+ * observed tail with room and still bounds a runaway reply.
+ *
+ * The cap is not a cost lever. A draft that stops early is paid for in full
+ * and then discarded, so a ceiling below what the work costs buys nothing.
  */
-const MAX_COMPLETION_TOKENS = 1_200;
+const MAX_COMPLETION_TOKENS = 3_000;
 
 /** What one HTTP attempt produced, before any judgement about the content. */
 interface CompletionAttempt {
