@@ -4,6 +4,7 @@ import {
   LLMError,
   prepareKeywordGovernanceSuggestionGeneration,
   type AnalysisInvocationRecord,
+  type KeywordGovernanceSuggestionClientOptions,
   type KeywordGovernanceSuggestionGenerationResult,
 } from "@sf/artifacts";
 import type { KeywordGovernanceSuggestionInputManifest } from "@sf/contracts";
@@ -279,7 +280,9 @@ const generateKeywordGovernanceSuggestions = vi.fn(
   ): Promise<KeywordGovernanceSuggestionGenerationResult> => modelResult,
 );
 const dependencies = {
-  createClient: vi.fn(() => ({ generateKeywordGovernanceSuggestions })),
+  createClient: vi.fn((_options: KeywordGovernanceSuggestionClientOptions) => ({
+    generateKeywordGovernanceSuggestions,
+  })),
   createSuggestionId: vi
     .fn()
     .mockReturnValueOnce(IDS.suggestionA)
@@ -1600,7 +1603,7 @@ describe("runKeywordGovernanceSuggestionGeneration", () => {
     if (!createClientCall) {
       throw new Error("Azure suggestion client call was missing");
     }
-    const [options] = createClientCall as readonly [Record<string, unknown>];
+    const [options] = createClientCall;
     expect(options).toMatchObject({
       apiKey: "azure-key",
       model: "gpt-test",
