@@ -91,6 +91,7 @@ export const KeywordGovernanceSuggestionInputManifest = z.object({
     if (candidate.ordinal !== index + 1 || keys.has(candidate.keywordKey)) ctx.addIssue({ code: "custom", path: ["candidates", index], message: "Candidates must have unique, contiguous ordinals and keys" });
     keys.add(candidate.keywordKey);
     if (candidate.deterministicEvidence.currentTopicKey !== null && !topicKeys.has(candidate.deterministicEvidence.currentTopicKey)) ctx.addIssue({ code: "custom", path: ["candidates", index, "deterministicEvidence", "currentTopicKey"], message: "Current Topic key must resolve from the frozen allowlist" });
+    if (candidate.deterministicEvidence.currentPageKey !== null && candidate.deterministicEvidence.currentTopicKey === null) ctx.addIssue({ code: "custom", path: ["candidates", index, "deterministicEvidence", "currentPageKey"], message: "Current Page key requires current Topic key" });
     if (candidate.deterministicEvidence.currentPageKey !== null && !pageKeys.has(candidate.deterministicEvidence.currentPageKey)) ctx.addIssue({ code: "custom", path: ["candidates", index, "deterministicEvidence", "currentPageKey"], message: "Current Page key must resolve from the frozen allowlist" });
   });
 });

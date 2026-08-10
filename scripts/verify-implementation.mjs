@@ -870,6 +870,12 @@ function checkOpenApi() {
     ["schemaVersion", "generationVersion", "promptSetVersion", "workspaceId", "projectId", "marketCode", "languageTag", "confirmedProductProfile", "confirmedTopicModel", "topicAllowlist", "pageAllowlist", "candidates"],
     "Keyword suggestion manifest field inventory",
   );
+  invariant(
+    /Current Page key requires current Topic key/.test(
+      keywordSuggestionContract,
+    ),
+    "Keyword suggestion manifest must require a current Topic key whenever a current Page key is present",
+  );
   const canonicalLibraryLanguageTag =
     keywordSchemas.GrowthMapLibraryLanguageTag;
   invariant(

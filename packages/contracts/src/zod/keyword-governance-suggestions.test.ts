@@ -185,6 +185,18 @@ describe("Keyword governance suggestion contracts", () => {
       },
       {
         ...manifest,
+        candidates: [
+          {
+            ...manifest.candidates[0],
+            deterministicEvidence: {
+              ...manifest.candidates[0].deterministicEvidence,
+              currentTopicKey: null,
+            },
+          },
+        ],
+      },
+      {
+        ...manifest,
         candidates: Array.from({ length: 101 }, (_, index) => ({
           ...manifest.candidates[0],
           ordinal: index + 1,
