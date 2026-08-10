@@ -3731,7 +3731,7 @@ export interface components {
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
             meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
         };
-        /** @description A pending_ready suggestion has complete governance, model lineage, and intent lineage. Excluded suggestions retain no Topic or Page assignment and use mappingDecision=unassigned. */
+        /** @description A pending_ready suggestion has complete governance, model lineage, and intent lineage. State and readinessReason remain one deterministic pair: pending_ready/all_authorities_confirmed, generating/generation_in_progress, pending_needs_review/insufficient_authority, stale/governance_revision_changed, unavailable/authority_unavailable. Any non-unassigned mappingDecision requires complete Topic identity, and existing_page additionally requires the exact mapped Page identity. Excluded suggestions retain no Topic or Page assignment and use mappingDecision=unassigned. */
         KeywordGovernancePendingSuggestion: {
             suggestionId: components["schemas"]["Uuid"];
             /** @constant */

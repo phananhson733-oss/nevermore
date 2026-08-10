@@ -103,6 +103,7 @@ const StructuredSuggestion = z.object({
   mappingDecision: MappingDecision, pageKey: z.string().regex(/^page-[a-z0-9-]+$/u).nullable(), reason: SuggestionReason,
 }).strict().superRefine((item, ctx) => {
   if ((item.mappingDecision === "existing_page") !== (item.pageKey !== null)) ctx.addIssue({ code: "custom", path: ["pageKey"], message: "Existing Page requires exactly one prompt-local Page key" });
+  if (item.mappingDecision !== "unassigned" && item.topicKey === null) ctx.addIssue({ code: "custom", path: ["topicKey"], message: "A mapped suggestion requires exactly one prompt-local Topic key" });
   if (item.status === "excluded" && (item.topicKey !== null || item.pageKey !== null || item.mappingDecision !== "unassigned")) ctx.addIssue({ code: "custom", path: ["status"], message: "Excluded Keywords must not retain a Topic or Page assignment" });
 });
 export const KeywordGovernanceSuggestionStructuredOutput = z.object({ schemaVersion: z.literal("keyword-governance-suggestion-output.v1"), suggestions: z.array(StructuredSuggestion).min(1).max(100) }).strict();
@@ -141,10 +142,19 @@ export const KeywordGovernancePendingSuggestion = z.object({
   lineage: LlmLineage.nullable(), intentLineage: IntentLineage.nullable(), createdAt: IsoDateTime,
 }).strict().superRefine((item, ctx) => {
   const ready = item.state === "pending_ready";
+  const readinessByState = {
+    pending_ready: "all_authorities_confirmed",
+    generating: "generation_in_progress",
+    pending_needs_review: "insufficient_authority",
+    stale: "governance_revision_changed",
+    unavailable: "authority_unavailable",
+  } as const;
   const empty = item.status === null && item.intent === null && item.buyerStage === null && item.topicNodeId === null && item.topicModelRevision === null && item.topicLabel === null && item.mappingDecision === null && item.mappedSitePageId === null && item.mappedSitePageTitle === null && item.reason === null && item.lineage === null && item.intentLineage === null;
   if (ready && (item.limitation !== null || item.lineage === null || item.intentLineage === null || item.status === null || item.mappingDecision === null || item.reason === null)) ctx.addIssue({ code: "custom", path: ["state"], message: "A ready suggestion requires complete generated governance and provenance" });
+  if (item.readinessReason !== readinessByState[item.state]) ctx.addIssue({ code: "custom", path: ["readinessReason"], message: "State and readinessReason must remain the documented deterministic pair" });
   if (!ready && item.limitation === null) ctx.addIssue({ code: "custom", path: ["limitation"], message: "A non-ready suggestion requires an explicit limitation" });
   if ((item.topicNodeId === null) !== (item.topicModelRevision === null) || (item.topicNodeId === null) !== (item.topicLabel === null)) ctx.addIssue({ code: "custom", path: ["topicNodeId"], message: "Suggested Topic identity, revision, and label must agree" });
+  if (item.mappingDecision !== null && item.mappingDecision !== "unassigned" && item.topicNodeId === null) ctx.addIssue({ code: "custom", path: ["topicNodeId"], message: "A mapped suggestion requires complete Topic identity" });
   if ((item.mappedSitePageId === null) !== (item.mappedSitePageTitle === null) || (item.mappingDecision === "existing_page") !== (item.mappedSitePageId !== null)) ctx.addIssue({ code: "custom", path: ["mappedSitePageId"], message: "Suggested Page identity and mapping decision must agree" });
   if (item.status === "excluded" && (item.topicNodeId !== null || item.topicModelRevision !== null || item.topicLabel !== null || item.mappingDecision !== "unassigned" || item.mappedSitePageId !== null || item.mappedSitePageTitle !== null)) ctx.addIssue({ code: "custom", path: ["status"], message: "An excluded suggestion must not retain a Topic or Page assignment" });
   if (!ready && !empty && item.state === "generating") ctx.addIssue({ code: "custom", path: ["state"], message: "Generating suggestions cannot expose partial governance" });

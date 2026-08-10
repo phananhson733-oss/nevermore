@@ -818,6 +818,18 @@ function checkOpenApi() {
     ] === "keywordSuggestionReadinessProvenanceAndExcludedAssignment",
     "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
   );
+  invariant(
+    /Any non-unassigned mappingDecision requires complete Topic identity/.test(
+      keywordSchemas.KeywordGovernancePendingSuggestion?.description ?? "",
+    ),
+    "Keyword pending suggestion mapped states must require complete Topic identity",
+  );
+  invariant(
+    /State and readinessReason remain one deterministic pair: pending_ready\/all_authorities_confirmed, generating\/generation_in_progress, pending_needs_review\/insufficient_authority, stale\/governance_revision_changed, unavailable\/authority_unavailable\./.test(
+      keywordSchemas.KeywordGovernancePendingSuggestion?.description ?? "",
+    ),
+    "Keyword pending suggestion state and readiness reason must remain a deterministic pair",
+  );
   assertExactSet(
     keywordSchemas.KeywordGovernancePendingSuggestion?.properties?.intent?.enum ??
       [],

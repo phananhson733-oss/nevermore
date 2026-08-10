@@ -454,6 +454,12 @@ describe("Keyword Library generated OpenAPI contract", () => {
     expect(generated).toContain(
       'intent: "informational" | "navigational" | "commercial" | "transactional" | null;',
     );
+    expect(openapi).toMatch(
+      /Any non-unassigned mappingDecision\s+requires complete Topic identity, and existing_page additionally\s+requires the exact mapped Page identity\./u,
+    );
+    expect(openapi).toMatch(
+      /State and readinessReason remain one deterministic pair:\s+pending_ready\/all_authorities_confirmed,\s+generating\/generation_in_progress,\s+pending_needs_review\/insufficient_authority,\s+stale\/governance_revision_changed,\s+unavailable\/authority_unavailable\./u,
+    );
     expect(openapi).toContain(
       "x-signalframe-runtime-refinement: keywordSuggestionReadinessProvenanceAndExcludedAssignment",
     );

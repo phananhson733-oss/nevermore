@@ -313,6 +313,14 @@ describe("Keyword governance suggestion contracts", () => {
         ...output,
         suggestions: [{ ...output.suggestions[0], reason: "ok" }],
       },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], mappingDecision: "new_asset", topicKey: null, pageKey: null }],
+      },
+      {
+        ...output,
+        suggestions: [{ ...output.suggestions[0], mappingDecision: "existing_page", topicKey: null, pageKey: "page-001" }],
+      },
     ]) {
       expect(() =>
         parseKeywordGovernanceSuggestionStructuredOutput(invalid, manifest),
@@ -396,6 +404,9 @@ describe("Keyword governance suggestion contracts", () => {
     for (const invalid of [
       { ...pendingSuggestion, mappingDecision: null },
       { ...pendingSuggestion, intentLineage: null },
+      { ...pendingSuggestion, mappingDecision: "new_asset", topicNodeId: null, topicModelRevision: null, topicLabel: null, mappedSitePageId: null, mappedSitePageTitle: null },
+      { ...pendingSuggestion, mappingDecision: "existing_page", topicNodeId: null, topicModelRevision: null, topicLabel: null },
+      { ...pendingSuggestion, readinessReason: "authority_unavailable" },
       { ...pendingSuggestion, status: "excluded" },
       {
         ...pendingSuggestion,
@@ -482,12 +493,28 @@ describe("Keyword governance suggestion contracts", () => {
     ).toBe(true);
     expect(
       KeywordGovernancePendingSuggestion.safeParse({
+        ...emptySuggestion,
+        state: "generating",
+        readinessReason: "authority_unavailable",
+        limitation: "The bounded suggestion job is still running.",
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
         ...pendingSuggestion,
         state: "pending_needs_review",
         readinessReason: "insufficient_authority",
         limitation: "The suggested Page needs customer confirmation.",
       }).success,
     ).toBe(true);
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
+        ...pendingSuggestion,
+        state: "pending_needs_review",
+        readinessReason: "generation_in_progress",
+        limitation: "The suggested Page needs customer confirmation.",
+      }).success,
+    ).toBe(false);
     expect(
       KeywordGovernancePendingSuggestion.safeParse({
         ...pendingSuggestion,
@@ -498,12 +525,28 @@ describe("Keyword governance suggestion contracts", () => {
     ).toBe(true);
     expect(
       KeywordGovernancePendingSuggestion.safeParse({
+        ...pendingSuggestion,
+        state: "stale",
+        readinessReason: "insufficient_authority",
+        limitation: "The Keyword revision changed after generation.",
+      }).success,
+    ).toBe(false);
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
         ...emptySuggestion,
         state: "unavailable",
         readinessReason: "authority_unavailable",
         limitation: "Confirmed Topic authority is unavailable.",
       }).success,
     ).toBe(true);
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
+        ...emptySuggestion,
+        state: "unavailable",
+        readinessReason: "generation_in_progress",
+        limitation: "Confirmed Topic authority is unavailable.",
+      }).success,
+    ).toBe(false);
   });
 
   it("exposes only revision and suggestion version in the approval command", () => {
