@@ -318,6 +318,37 @@ describe("Keyword governance suggestion contracts", () => {
     );
   });
 
+  it("rejects incomplete ready suggestions and excluded assignment residue", () => {
+    for (const invalid of [
+      { ...pendingSuggestion, mappingDecision: null },
+      { ...pendingSuggestion, intentLineage: null },
+      { ...pendingSuggestion, status: "excluded" },
+      {
+        ...pendingSuggestion,
+        status: "excluded",
+        topicNodeId: null,
+        topicModelRevision: null,
+        topicLabel: null,
+        mappingDecision: "unassigned",
+        mappedSitePageId: ids.page,
+      },
+    ]) {
+      expect(KeywordGovernancePendingSuggestion.safeParse(invalid).success).toBe(false);
+    }
+    expect(
+      KeywordGovernancePendingSuggestion.safeParse({
+        ...pendingSuggestion,
+        status: "excluded",
+        topicNodeId: null,
+        topicModelRevision: null,
+        topicLabel: null,
+        mappingDecision: "unassigned",
+        mappedSitePageId: null,
+        mappedSitePageTitle: null,
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires successful invocation lineage for LLM fields and never mixes provider facts with it", () => {
     expect(
       KeywordGovernancePendingSuggestion.safeParse({

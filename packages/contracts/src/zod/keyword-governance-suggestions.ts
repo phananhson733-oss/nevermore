@@ -135,10 +135,11 @@ export const KeywordGovernancePendingSuggestion = z.object({
 }).strict().superRefine((item, ctx) => {
   const ready = item.state === "pending_ready";
   const empty = item.status === null && item.intent === null && item.buyerStage === null && item.topicNodeId === null && item.topicModelRevision === null && item.topicLabel === null && item.mappingDecision === null && item.mappedSitePageId === null && item.mappedSitePageTitle === null && item.reason === null && item.lineage === null && item.intentLineage === null;
-  if (ready && (item.limitation !== null || item.lineage === null || item.status === null || item.reason === null)) ctx.addIssue({ code: "custom", path: ["state"], message: "A ready suggestion requires complete generated governance and lineage" });
+  if (ready && (item.limitation !== null || item.lineage === null || item.intentLineage === null || item.status === null || item.mappingDecision === null || item.reason === null)) ctx.addIssue({ code: "custom", path: ["state"], message: "A ready suggestion requires complete generated governance and provenance" });
   if (!ready && item.limitation === null) ctx.addIssue({ code: "custom", path: ["limitation"], message: "A non-ready suggestion requires an explicit limitation" });
   if ((item.topicNodeId === null) !== (item.topicModelRevision === null) || (item.topicNodeId === null) !== (item.topicLabel === null)) ctx.addIssue({ code: "custom", path: ["topicNodeId"], message: "Suggested Topic identity, revision, and label must agree" });
   if ((item.mappedSitePageId === null) !== (item.mappedSitePageTitle === null) || (item.mappingDecision === "existing_page") !== (item.mappedSitePageId !== null)) ctx.addIssue({ code: "custom", path: ["mappedSitePageId"], message: "Suggested Page identity and mapping decision must agree" });
+  if (item.status === "excluded" && (item.topicNodeId !== null || item.topicModelRevision !== null || item.topicLabel !== null || item.mappingDecision !== "unassigned" || item.mappedSitePageId !== null || item.mappedSitePageTitle !== null)) ctx.addIssue({ code: "custom", path: ["status"], message: "An excluded suggestion must not retain a Topic or Page assignment" });
   if (!ready && !empty && item.state === "generating") ctx.addIssue({ code: "custom", path: ["state"], message: "Generating suggestions cannot expose partial governance" });
 });
 export type KeywordGovernancePendingSuggestion = z.infer<typeof KeywordGovernancePendingSuggestion>;

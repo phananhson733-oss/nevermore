@@ -6747,6 +6747,8 @@ components:
             - $ref: '#/components/schemas/KeywordGovernanceSuggestionIntentLineage'
             - type: 'null'
         createdAt: { $ref: '#/components/schemas/Timestamp' }
+      description: A pending_ready suggestion has complete governance, model lineage, and intent lineage. Excluded suggestions retain no Topic or Page assignment and use mappingDecision=unassigned.
+      x-signalframe-runtime-refinement: keywordSuggestionReadinessProvenanceAndExcludedAssignment
 
     KeywordGovernanceSuggestionLlmLineage:
       type: object

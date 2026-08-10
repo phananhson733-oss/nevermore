@@ -813,6 +813,12 @@ function checkOpenApi() {
   const keywordSchemas = document.components?.schemas ?? {};
   const keywordDetailResponse = keywordSchemas.GrowthMapKeywordDetailResponse;
   invariant(
+    keywordSchemas.KeywordGovernancePendingSuggestion?.[
+      "x-signalframe-runtime-refinement"
+    ] === "keywordSuggestionReadinessProvenanceAndExcludedAssignment",
+    "Keyword pending suggestion must enforce complete ready provenance and excluded assignment semantics",
+  );
+  invariant(
     Array.isArray(keywordDetailResponse?.oneOf) &&
       keywordDetailResponse.oneOf.length === 2 &&
       keywordDetailResponse?.["x-signalframe-runtime-refinement"] ===

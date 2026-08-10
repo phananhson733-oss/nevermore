@@ -3731,6 +3731,7 @@ export interface components {
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
             meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
         };
+        /** @description A pending_ready suggestion has complete governance, model lineage, and intent lineage. Excluded suggestions retain no Topic or Page assignment and use mappingDecision=unassigned. */
         KeywordGovernancePendingSuggestion: {
             suggestionId: components["schemas"]["Uuid"];
             /** @constant */

@@ -445,6 +445,9 @@ describe("Keyword Library generated OpenAPI contract", () => {
     expect(generated).toContain(
       'intentLineage: components["schemas"]["KeywordGovernanceSuggestionIntentLineage"] | null;',
     );
+    expect(openapi).toContain(
+      "x-signalframe-runtime-refinement: keywordSuggestionReadinessProvenanceAndExcludedAssignment",
+    );
   });
 
   it("publishes the implemented cursor read, detail read, and governed review", () => {
