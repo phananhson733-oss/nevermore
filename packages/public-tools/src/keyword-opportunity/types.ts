@@ -279,13 +279,62 @@ export type KeywordOpportunityEnvelope = PublicToolResultEnvelope<
   "site"
 >;
 
+/**
+ * Every code the two endpoints can emit.
+ *
+ * Exhaustive on purpose: a surface written as a switch over this union renders
+ * an unknown state for anything missing, so a code that escapes the list is a
+ * blank error message for a real visitor. The request-shape codes come from
+ * the shared body reader and belong here even though this module never raises
+ * them itself.
+ */
 export type KeywordOpportunityErrorCode =
   | "invalid_input"
+  | "invalid_request"
+  | "payload_too_large"
+  | "unsupported_media_type"
   | "authentication_required"
   | "property_not_verified"
   | "rate_limited"
   | "context_token_invalid"
-  | "context_token_expired"
   | "keyword_source_unavailable"
   | "site_unreachable"
-  | "bot_protection_blocked";
+  | "bot_protection_blocked"
+  | "rate_limited_by_target"
+  | "protocol_downgrade_rejected"
+  | "too_few_pages";
+
+export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
+  "invalid_input",
+  "invalid_request",
+  "payload_too_large",
+  "unsupported_media_type",
+  "authentication_required",
+  "property_not_verified",
+  "rate_limited",
+  "context_token_invalid",
+  "keyword_source_unavailable",
+  "site_unreachable",
+  "bot_protection_blocked",
+  "rate_limited_by_target",
+  "protocol_downgrade_rejected",
+  "too_few_pages",
+] as const satisfies readonly KeywordOpportunityErrorCode[];
+
+/**
+ * Narrow an arbitrary thrown code to one the surface has copy for.
+ *
+ * The crawl layer's error codes travel as plain strings, so without this an
+ * unrecognised one reaches the client and renders as a blank state. Anything
+ * unknown becomes `site_unreachable`, which is the weakest true statement:
+ * the run did not get the pages.
+ */
+export function toKeywordOpportunityErrorCode(
+  code: unknown,
+): KeywordOpportunityErrorCode {
+  return (KEYWORD_OPPORTUNITY_ERROR_CODES as readonly string[]).includes(
+    String(code),
+  )
+    ? (code as KeywordOpportunityErrorCode)
+    : "site_unreachable";
+}
