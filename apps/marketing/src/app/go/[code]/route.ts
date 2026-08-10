@@ -1,5 +1,6 @@
 // @input  -- GET /go/[code] requests and Supabase link_redirects mappings
-// @output -- 302 redirect to a stored owned destination, 404 when no link exists
+// @output -- redirect (301/302/303/307/308) to a stored owned destination, 404 when
+//            no link is registered, 503 when a registered one cannot be served
 // @pos    -- Public clean short-link entrypoint for GenGrowth attribution
 // once this file is updated, update header comments and _DIR.md in this folder
 import { NextResponse } from "next/server";

@@ -101,7 +101,10 @@ describe("parseSitemapXml entity decoding", () => {
     ["last valid", "&#x10FFFF;"],
   ])("keeps a loc carrying the XML-legal %s", (_label, ref) => {
     // The narrowing must not cost real sitemaps anything: every boundary of the
-    // Char production still round-trips.
+    // Char production still yields an entry. Not the same as round-tripping —
+    // a trailing &#9;/&#10;/&#13;/&#32; is stripped by the same .trim() that
+    // handles ordinary sitemap whitespace, which is why this asserts the entry
+    // survives rather than that the character does.
     const document = parseSitemapXml(
       `<urlset><url><loc>https://example.com/a?x=${ref}</loc></url></urlset>`,
     );

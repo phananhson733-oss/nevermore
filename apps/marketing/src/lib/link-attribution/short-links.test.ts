@@ -1,5 +1,5 @@
 // @input  — findShortLink with a stubbed Supabase admin client
-// @output — tests pinning "no such table" to absence and real errors to errors
+// @output — tests pinning every lookup error, "no such table" included, to a failure
 // @pos    — link attribution domain tests
 // once this file is updated, update header comments and _DIR.md in this folder
 import { describe, expect, it } from "vitest";
