@@ -27,6 +27,7 @@ export {
   observeKeywordCoverage,
   isKeywordAlreadyCovered,
 } from "./coverage.ts";
+export { keywordCoverageProperty } from "./property.ts";
 export type {
   KeywordCoverageObservation,
   KeywordCoveragePage,

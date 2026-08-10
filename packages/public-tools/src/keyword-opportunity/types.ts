@@ -62,12 +62,20 @@ export type KeywordOpportunityWinnability =
  * `not_observed_in_gsc_query_sample` is deliberately long: Search Console
  * anonymises a large share of queries, so absence from the sample is not
  * evidence of absence from the index.
+ *
+ * `gsc_query_sample_not_read` is the state that separates that from the case
+ * where nobody looked — the read failed, or the visitor's grant covers no
+ * property for this site. The first live run shipped without it and reported
+ * "not observed in the sample" on every row of a run whose sample was never
+ * fetched, which is the same quiet dishonesty the withheld reasons below are
+ * split to avoid: a reader acts on the first and re-runs on the second.
  */
 export type KeywordOpportunityCoverage =
   | "observed_exact_strong"
   | "observed_exact_weak"
   | "related_coverage_unverified"
-  | "not_observed_in_gsc_query_sample";
+  | "not_observed_in_gsc_query_sample"
+  | "gsc_query_sample_not_read";
 
 /** A check the reader should run before acting on a row. Never a verdict. */
 export type KeywordOpportunityCheck =
@@ -136,6 +144,7 @@ export const KEYWORD_OPPORTUNITY_COVERAGE_STATES = [
   "observed_exact_weak",
   "related_coverage_unverified",
   "not_observed_in_gsc_query_sample",
+  "gsc_query_sample_not_read",
 ] as const satisfies readonly KeywordOpportunityCoverage[];
 
 export const KEYWORD_OPPORTUNITY_WITHHELD_REASONS = [

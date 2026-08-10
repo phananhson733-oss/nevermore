@@ -3,10 +3,7 @@
 // @pos    -- the only Search Console read the keyword map makes; transport lives here
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
-import {
-  readQueryRows,
-  type KeywordCoverageQueryRow,
-} from "@sf/public-tools";
+import { readQueryRows, type KeywordCoverageQueryRow } from "@sf/public-tools";
 import { createSearchAnalyticsClient } from "@sf/sources";
 
 /** Per-call deadline for one Search Console request. */
@@ -48,7 +45,15 @@ function shiftDays(from: Date, days: number): Date {
 }
 
 export interface KeywordCoverageReadInput {
-  readonly siteUrl: string;
+  /**
+   * A Search Console property identifier, resolved from the visitor's grant.
+   *
+   * `sc-domain:acme.com` or the exact verified URL prefix — never a site URL
+   * the visitor typed. Search Console addresses properties and refuses
+   * anything else, which is how the first live run lost this stage on every
+   * request.
+   */
+  readonly property: string;
   readonly accessToken: string;
 }
 
@@ -64,16 +69,30 @@ export interface KeywordCoverageReadInput {
  */
 export function createKeywordCoverageReader(options: {
   readonly now?: () => Date;
+  /**
+   * Offline test seam, handed to the Search Console client.
+   *
+   * Present because the one thing this adapter has to get right — which
+   * identifier ends up in the request path — is invisible from the outside
+   * without it, and shipping it wrong is what cost the whole coverage stage
+   * on the first live run.
+   */
+  readonly fetchImpl?: typeof fetch;
 }): (
   input: KeywordCoverageReadInput,
 ) => Promise<readonly KeywordCoverageQueryRow[]> {
   const now = options.now ?? (() => new Date());
 
-  return async ({ siteUrl, accessToken }) => {
+  return async ({ property, accessToken }) => {
+    // The client's field is named `siteUrl` because that is what Google calls
+    // the path segment; what it wants there is the property identifier.
     const client = createSearchAnalyticsClient({
-      siteUrl,
+      siteUrl: property,
       accessToken,
       requestTimeoutMs: READ_TIMEOUT_MS,
+      ...(options.fetchImpl === undefined
+        ? {}
+        : { fetchImpl: options.fetchImpl }),
     });
 
     const endDate = shiftDays(now(), -FINALISATION_LAG_DAYS);

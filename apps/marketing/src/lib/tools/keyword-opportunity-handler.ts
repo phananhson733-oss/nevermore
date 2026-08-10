@@ -8,6 +8,7 @@ import {
   buildKeywordCoverageIndex,
   createPublicToolError,
   judgeKeywordWinnability,
+  keywordCoverageProperty,
   keywordTokens,
   keywordValidationFor,
   keywordVolumeKey,
@@ -55,7 +56,7 @@ const CONTEXT_BODY_LIMIT_BYTES = 4_096;
  * 4,096 a legitimate request would 413 before any handler logging ran, which
  * leaves nothing in the trace to explain it.
  */
-const OPPORTUNITIES_BODY_LIMIT_BYTES = 16_384;
+export const OPPORTUNITIES_BODY_LIMIT_BYTES = 16_384;
 
 /** How long a carry-over token stays usable. */
 export const KEYWORD_CONTEXT_TTL_SECONDS = 600;
@@ -76,13 +77,95 @@ export const KEYWORD_SERP_SAMPLE_CAP = 20;
 export const KEYWORD_MAX_SEEDS = 10;
 export const KEYWORD_MAX_SEED_LENGTH = 80;
 
+/**
+ * Heading budgets to try, in bytes of UTF-8, largest first.
+ *
+ * A ladder rather than one constant because no constant can be right: the
+ * sealed token also carries model-written propositions, the visitor's seeds
+ * and up to fourteen URLs, none of which have a fixed size. Stage one seals,
+ * measures the real result against the real limit, and drops to the next rung
+ * if it does not fit — so the guarantee comes from measurement rather than
+ * from arithmetic that a Japanese site would quietly break.
+ *
+ * The last rung is zero: no headings at all, which is what shipped before and
+ * still produces a usable run.
+ */
+export const KEYWORD_CONTEXT_HEADING_BUDGETS = [6_000, 3_000, 1_200, 0];
+
+/**
+ * Bytes the sealed token may occupy.
+ *
+ * Stage two reads `{"contextToken":"…"}` under a 16,384-byte limit; the margin
+ * covers that wrapper and any whitespace a client adds.
+ */
+export const KEYWORD_CONTEXT_TOKEN_MAX_BYTES =
+  OPPORTUNITIES_BODY_LIMIT_BYTES - 512;
+
+/** Longest single heading kept. Past this it is body copy in an h3. */
+export const KEYWORD_CONTEXT_HEADING_MAX_LENGTH = 120;
+
+const UTF8 = new TextEncoder();
+
+export function keywordByteLength(value: string): number {
+  return UTF8.encode(value).length;
+}
+
+/**
+ * Trim crawled headings to a byte budget.
+ *
+ * Bytes and not characters: the limit downstream is a byte limit, and one CJK
+ * character is three of them. Counting characters would let a Japanese site
+ * spend three times the intended budget and 413 at stage two — a failure that
+ * every ASCII test in this suite is blind to.
+ *
+ * Spends the budget in crawl order, which is page-value order: the pages the
+ * profile scored highest keep their headings, and a site large enough to
+ * exhaust it loses the tail rather than the front.
+ */
+export function trimKeywordContextHeadings(
+  pages: readonly {
+    readonly url: string;
+    readonly headings: readonly string[];
+  }[],
+  budgetBytes: number,
+): readonly (readonly string[])[] {
+  let remaining = budgetBytes;
+  return pages.map((page) => {
+    const kept: string[] = [];
+    for (const heading of page.headings) {
+      const trimmed = heading
+        .trim()
+        .slice(0, KEYWORD_CONTEXT_HEADING_MAX_LENGTH);
+      if (trimmed === "") continue;
+      const cost = keywordByteLength(trimmed);
+      if (cost > remaining) break;
+      remaining -= cost;
+      kept.push(trimmed);
+    }
+    return kept;
+  });
+}
+
 /** What stage one seals and stage two opens. */
 export interface KeywordContextToken {
   readonly siteUrl: string;
   readonly marketCode: string;
   readonly languageCode: string;
   readonly propositions: readonly KeywordOpportunityProposition[];
-  readonly pages: readonly { readonly url: string; readonly title: string }[];
+  /**
+   * What each crawled page visibly targets, carried across the two stages.
+   *
+   * Headings travel with the title because the page-similarity half of the
+   * coverage check reads exactly this, and a title alone is three or four
+   * words — too thin to recognise the page that answers a question. The body
+   * text does NOT travel: it would blow the sealed token past the request
+   * limit, and headings carry the same signal at a fraction of the size.
+   */
+  readonly pages: readonly {
+    readonly url: string;
+    readonly title: string;
+    readonly headings: readonly string[];
+  }[];
   readonly pagesFetched: number;
   readonly productPagesFetched: number;
   readonly stopReason: string;
@@ -194,9 +277,15 @@ export interface KeywordOpportunityDependencies {
    * thing it is supposed to limit.
    */
   readonly resolveGrant: () => Promise<GrantResolution>;
-  /** Offline test seam. The visitor's own Search Console queries. */
+  /**
+   * Offline test seam. The visitor's own Search Console queries.
+   *
+   * Takes a property identifier — `sc-domain:acme.com` or a verified URL
+   * prefix — not the site URL the visitor typed. Search Console is addressed
+   * only by property, and passing anything else is refused upstream.
+   */
   readonly readCoverageQueries: (input: {
-    readonly siteUrl: string;
+    readonly property: string;
     /** From this request's resolution; never captured at module scope. */
     readonly accessToken: string;
   }) => Promise<readonly KeywordCoverageQueryRow[]>;
@@ -349,21 +438,56 @@ export async function handleKeywordContextRequest(
     const crawl = await dependencies.crawlContext(input.siteUrl);
     const propositions = await dependencies.extractPropositions(crawl.pages);
 
-    const token: KeywordContextToken = {
+    const base = {
       siteUrl: input.siteUrl,
       marketCode: input.marketCode,
       languageCode: input.languageCode,
       propositions,
-      pages: crawl.pages.map((page) => ({
-        url: page.url,
-        title: page.title,
-      })),
       pagesFetched: crawl.pagesFetched,
       productPagesFetched: crawl.productPagesFetched,
       stopReason: crawl.stopReason,
       seeds: input.seeds,
       sub: identity.sub,
     };
+
+    // Seal, measure, and step down the ladder until the real token fits the
+    // real limit. Everything else in here is variable-length and outside this
+    // handler's control — model-written propositions, the visitor's seeds, up
+    // to fourteen URLs — so a fixed heading budget could only ever be a guess
+    // that some site disproves in production.
+    let contextToken = "";
+    let headingBudget = 0;
+    for (const budget of KEYWORD_CONTEXT_HEADING_BUDGETS) {
+      const headings = trimKeywordContextHeadings(crawl.pages, budget);
+      const token: KeywordContextToken = {
+        ...base,
+        pages: crawl.pages.map((page, index) => ({
+          url: page.url,
+          title: page.title,
+          headings: headings[index] ?? [],
+        })),
+      };
+      contextToken = seal("gg_kw_context", token, KEYWORD_CONTEXT_TTL_SECONDS);
+      headingBudget = budget;
+      if (keywordByteLength(contextToken) <= KEYWORD_CONTEXT_TOKEN_MAX_BYTES) {
+        break;
+      }
+    }
+
+    if (keywordByteLength(contextToken) > KEYWORD_CONTEXT_TOKEN_MAX_BYTES) {
+      // Nothing left to drop: what remains is propositions and URLs, and
+      // truncating those would change what stage two analyses rather than how
+      // much of it. Logged so the 413 the visitor is about to hit is
+      // diagnosable instead of a mystery.
+      console.error(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "context",
+          code: "context_token_oversized",
+          bytes: keywordByteLength(contextToken),
+        }),
+      );
+    }
 
     return json(
       {
@@ -373,11 +497,8 @@ export async function handleKeywordContextRequest(
           productPagesFetched: crawl.productPagesFetched,
           stopReason: crawl.stopReason,
           contextSufficient: crawl.pages.length >= 3,
-          contextToken: seal(
-            "gg_kw_context",
-            token,
-            KEYWORD_CONTEXT_TTL_SECONDS,
-          ),
+          headingBudgetBytes: headingBudget,
+          contextToken,
         },
       },
       200,
@@ -543,22 +664,69 @@ export async function handleKeywordOpportunitiesRequest(
       providerRows,
     );
 
-    let coverageRows: readonly KeywordCoverageQueryRow[] = [];
-    try {
-      coverageRows = await dependencies.readCoverageQueries({
-        siteUrl: token.siteUrl,
-        accessToken: grant.accessToken,
-      });
-    } catch {
-      // Coverage is the one stage whose absence must not stop the run: without
-      // it the tool cannot say a term is already served, which is a weaker
-      // claim, not a wrong one. It is named so the result reads `partial`.
+    // Null all the way through when the sample was never read, so the domain
+    // layer can tell "the property served nothing" from "nobody looked". An
+    // empty array here would collapse the two and put a false negative on
+    // every row.
+    let coverageRows: readonly KeywordCoverageQueryRow[] | null = null;
+    // The grant lists properties, not sites. Resolving here also answers
+    // whether this visitor is entitled to read the site at all: no match means
+    // no property whose queries we may fetch.
+    const property = keywordCoverageProperty(token.siteUrl, grant.properties);
+    if (property === null) {
       unavailableStages.push("gsc_coverage");
+      console.error(
+        JSON.stringify({
+          tool: "keyword_opportunity",
+          stage: "gsc_coverage",
+          reason: "no_granted_property_for_site",
+          propertyCount: grant.properties.length,
+        }),
+      );
+    } else {
+      try {
+        coverageRows = await dependencies.readCoverageQueries({
+          property,
+          accessToken: grant.accessToken,
+        });
+      } catch (error) {
+        // Coverage is the one stage whose absence must not stop the run:
+        // without it the tool cannot say a term is already served, which is a
+        // weaker claim, not a wrong one. It is named so the result reads
+        // `partial` — and logged, because the first live run degraded here on
+        // every request and left nothing in the trace to explain it.
+        unavailableStages.push("gsc_coverage");
+        console.error(
+          JSON.stringify({
+            tool: "keyword_opportunity",
+            stage: "gsc_coverage",
+            reason: "read_failed",
+            message: error instanceof Error ? error.message : "unknown",
+          }),
+        );
+      }
     }
-    const coverageIndex = buildKeywordCoverageIndex(coverageRows);
+    const coverageIndex =
+      coverageRows === null ? null : buildKeywordCoverageIndex(coverageRows);
     const coveragePages: readonly KeywordCoveragePage[] = token.pages.map(
-      (page) => ({ url: page.url, tokens: keywordTokens(page.title) }),
+      (page) => ({
+        url: page.url,
+        tokens: keywordTokens([page.title, ...page.headings].join(" ")),
+      }),
     );
+    // Every URL the crawl actually reached. The generator's attribution is
+    // checked against it before it can become a link in the result: stage one
+    // verified proposition URLs against the crawl, but the index arrives on
+    // this request and an out-of-range or drifted one must resolve to nothing
+    // rather than to a page that was never fetched.
+    const crawledUrls = new Set(token.pages.map((page) => page.url));
+    const attributedPage = (index: number | null): string | null => {
+      if (index === null) return null;
+      const sourceUrl = token.propositions[index]?.sourceUrl;
+      return sourceUrl !== undefined && crawledUrls.has(sourceUrl)
+        ? sourceUrl
+        : null;
+    };
 
     const priced = candidates.map((candidate) => ({
       candidate,
@@ -567,6 +735,7 @@ export async function handleKeywordOpportunitiesRequest(
         candidate.keyword,
         coverageIndex,
         coveragePages,
+        attributedPage(candidate.propositionIndex),
       ),
     }));
 
@@ -574,7 +743,12 @@ export async function handleKeywordOpportunitiesRequest(
       .filter(
         (row) =>
           row.validation.availability === "available" &&
-          row.coverage.state === "not_observed_in_gsc_query_sample",
+          // Both states mean "not known to be served": the sample said so, or
+          // there was no sample. Spelled out rather than "not covered" so a
+          // future coverage state has to be classified here on purpose — page
+          // one is the expensive stage and what it samples is the whole cost.
+          (row.coverage.state === "not_observed_in_gsc_query_sample" ||
+            row.coverage.state === "gsc_query_sample_not_read"),
       )
       .sort((a, b) =>
         serpSampleOrder(
