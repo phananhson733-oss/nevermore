@@ -47,9 +47,9 @@ function migrationTemplateIds(): string[] {
 }
 
 describe("Product Profile Keyword Library database authority", () => {
-  it("publishes the forward-only 0050 migration head", () => {
+  it("keeps the 0050 authority below the current forward-only head", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0050_product_profile_keyword_lineage",
+      "0051_keyword_review_suggestions",
     );
     expect(migration).toContain(
       "SELECT '0050_product_profile_keyword_lineage'::text AS migration_version",

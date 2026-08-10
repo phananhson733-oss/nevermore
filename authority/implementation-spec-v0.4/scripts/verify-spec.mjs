@@ -175,7 +175,7 @@ export function verifyAuthoritySourceSet({
   assert.equal(lock.ruleVersions["TECH-INDEXABILITY-006"], 1);
   assert.equal(
     lock.migrationHead,
-    "0050_product_profile_keyword_lineage",
+    "0051_keyword_review_suggestions",
   );
 
   assert.match(readme, /状态：\*\*active\*\*/);
@@ -209,7 +209,7 @@ export function verifyAuthoritySourceSet({
     migrationDirectory: lock.migrationDirectory,
     migrationFilePattern: lock.migrationFilePattern,
   });
-  assert.equal(migrations.length, 50, "v0.4 must freeze 50 migrations");
+  assert.equal(migrations.length, 51, "v0.4 must freeze 51 migrations");
   assert.equal(
     authoritySchema,
     renderAuthoritySchema(migrations),
@@ -223,7 +223,7 @@ export function verifyAuthoritySourceSet({
 
   const tables = migrationTableInventory(migrations);
   exactSet(tables, lock.tables, "application table inventory");
-  assert.equal(tables.length, 80, "v0.4 must freeze exactly 80 app tables");
+  assert.equal(tables.length, 83, "v0.4 must freeze exactly 83 app tables");
   assert.ok(
     !tables.some((table) => table === "job" || table.startsWith("pgboss")),
     "pg-boss tables are not part of the app inventory",
@@ -489,7 +489,7 @@ export function verifyAuthoritySourceSet({
   for (const [label, expected, patterns] of [
     ["operations", 80, [/80 个 operation/g]],
     ["shared async operations", 10, [/10 个 shared async operation/g]],
-    ["tables", 80, [/80 张应用表/g]],
+    ["tables", 83, [/83 张应用表/g]],
     ["rules", 12, [/12 条规则/g]],
   ]) {
     const count = patterns.reduce(

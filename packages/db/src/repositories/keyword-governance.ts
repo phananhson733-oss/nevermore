@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  ApproveKeywordReviewSuggestionRequest,
   KeywordGovernanceCurrentProjection,
   KeywordReviewDecision,
   ReviewKeywordRequest,
@@ -25,6 +26,7 @@ import {
   clientProjects,
   keywordEntities,
   keywordReviewDecisions,
+  keywordReviewSuggestions,
   sitePages,
   topicModelRevisions,
   topicNodeRevisions,
@@ -54,6 +56,8 @@ export type {
 } from "./keywords.ts";
 
 export type ReviewKeywordInput = ReviewKeywordRequest;
+export type ApproveKeywordReviewSuggestionInput =
+  ApproveKeywordReviewSuggestionRequest;
 
 export interface KeywordGovernanceReviewedProjection {
   readonly projectId: string;
@@ -274,6 +278,7 @@ export interface SystemKeywordApprovalOutcome {
 
 export type KeywordGovernanceConflictCode =
   | "KEYWORD_NOT_FOUND"
+  | "SUGGESTION_NOT_FOUND"
   | "REVISION_CONFLICT"
   | "TOPIC_ASSIGNMENT_INVALID"
   | "SITE_PAGE_NOT_FOUND";
@@ -290,6 +295,8 @@ export class KeywordGovernanceConflictError extends Error {
       {
         KEYWORD_NOT_FOUND:
           "The keyword does not belong to the active project",
+        SUGGESTION_NOT_FOUND:
+          "The keyword review suggestion does not belong to the active project",
         REVISION_CONFLICT:
           "The keyword governance revision is stale",
         TOPIC_ASSIGNMENT_INVALID:
@@ -436,6 +443,37 @@ interface CanonicalReview {
   readonly reason: string;
 }
 
+interface LockedKeywordReviewSuggestion {
+  readonly id: string;
+  readonly workspace_id: string;
+  readonly project_id: string;
+  readonly keyword_entity_id: string;
+  readonly expected_governance_revision: number;
+  readonly suggestion_version: string;
+  readonly status: string;
+  readonly suggested_status: string;
+  readonly suggested_intent: string | null;
+  readonly suggested_buyer_stage: string | null;
+  readonly suggested_topic_node_id: string | null;
+  readonly suggested_topic_model_revision: number | null;
+  readonly suggested_mapping_decision: string;
+  readonly suggested_mapped_site_page_id: string | null;
+  readonly suggested_reason: string;
+  readonly intent_authority:
+    | "provider_observed"
+    | "llm_generated"
+    | "unavailable";
+  readonly resolution_mode: string | null;
+  readonly keyword_review_decision_id: string | null;
+}
+
+type ReviewSuggestionResolution =
+  | { readonly mode: "edited" }
+  | {
+      readonly mode: "accepted";
+      readonly suggestion: LockedKeywordReviewSuggestion;
+    };
+
 const keywordSelection = {
   id: keywordEntities.id,
   workspace_id: keywordEntities.workspace_id,
@@ -475,6 +513,33 @@ const decisionSelection = {
   decided_at: keywordReviewDecisions.decided_at,
   reviewed_projection: keywordReviewDecisions.reviewed_projection,
   created_at: keywordReviewDecisions.created_at,
+} as const;
+
+const suggestionSelection = {
+  id: keywordReviewSuggestions.id,
+  workspace_id: keywordReviewSuggestions.workspace_id,
+  project_id: keywordReviewSuggestions.project_id,
+  keyword_entity_id: keywordReviewSuggestions.keyword_entity_id,
+  expected_governance_revision:
+    keywordReviewSuggestions.expected_governance_revision,
+  suggestion_version: keywordReviewSuggestions.suggestion_version,
+  status: keywordReviewSuggestions.status,
+  suggested_status: keywordReviewSuggestions.suggested_status,
+  suggested_intent: keywordReviewSuggestions.suggested_intent,
+  suggested_buyer_stage: keywordReviewSuggestions.suggested_buyer_stage,
+  suggested_topic_node_id:
+    keywordReviewSuggestions.suggested_topic_node_id,
+  suggested_topic_model_revision:
+    keywordReviewSuggestions.suggested_topic_model_revision,
+  suggested_mapping_decision:
+    keywordReviewSuggestions.suggested_mapping_decision,
+  suggested_mapped_site_page_id:
+    keywordReviewSuggestions.suggested_mapped_site_page_id,
+  suggested_reason: keywordReviewSuggestions.suggested_reason,
+  intent_authority: keywordReviewSuggestions.intent_authority,
+  resolution_mode: keywordReviewSuggestions.resolution_mode,
+  keyword_review_decision_id:
+    keywordReviewSuggestions.keyword_review_decision_id,
 } as const;
 
 function assertUuid(
@@ -868,6 +933,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     value !== null &&
     !Array.isArray(value)
   );
+}
+
+function isAcceptedSuggestionAuthorityConflict(error: unknown): boolean {
+  let candidate = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!isRecord(candidate)) return false;
+    if (
+      candidate["code"] === "23514" &&
+      candidate["constraint"] ===
+        "keyword_review_suggestion_accepted_authority_current"
+    ) {
+      return true;
+    }
+    candidate = candidate["cause"];
+  }
+  return false;
 }
 
 function isNullableBoundedString(
@@ -1372,6 +1453,7 @@ export class KeywordGovernanceRepository extends Repository {
           keywordId,
           actorId,
           canonical,
+          { mode: "edited" },
         ),
       );
     }
@@ -1381,7 +1463,123 @@ export class KeywordGovernanceRepository extends Repository {
       keywordId,
       actorId,
       canonical,
+      { mode: "edited" },
     );
+  }
+
+  /**
+   * Accept one immutable pending suggestion as an exact human decision. The
+   * suggestion row supplies every governance field; the public command owns
+   * only the expected revision and version, and the authenticated actor is
+   * supplied separately by the caller.
+   */
+  async approveSuggestion(
+    scope: ProjectScope,
+    keywordId: string,
+    suggestionId: string,
+    actorId: string,
+    input: ApproveKeywordReviewSuggestionInput,
+  ): Promise<ReviewKeywordResult> {
+    assertScope(scope, keywordId, actorId);
+    assertUuid(suggestionId, "suggestionId");
+    if (
+      !Number.isSafeInteger(input.expectedGovernanceRevision) ||
+      input.expectedGovernanceRevision < 0 ||
+      input.expectedGovernanceRevision >
+        MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION
+    ) {
+      throw new RangeError(
+        `expectedGovernanceRevision must be a non-negative integer at most ${MAX_INCREMENTABLE_KEYWORD_GOVERNANCE_REVISION}`,
+      );
+    }
+    if (input.suggestionVersion !== "keyword-governance-suggestion.v1") {
+      throw new RangeError("suggestionVersion is not supported");
+    }
+
+    const run = async (exec: Executor): Promise<ReviewKeywordResult> => {
+      await acquireTopicGovernanceProjectWriterLock(exec, scope);
+      const rows = (await exec
+        .select(suggestionSelection)
+        .from(keywordReviewSuggestions)
+        .where(
+          and(
+            projectPredicate(keywordReviewSuggestions, scope),
+            eq(keywordReviewSuggestions.id, suggestionId),
+            eq(keywordReviewSuggestions.keyword_entity_id, keywordId),
+          ),
+        )
+        .limit(1)
+        .for("update")) as LockedKeywordReviewSuggestion[];
+      const suggestion = rows[0];
+      if (!suggestion) {
+        throw new KeywordGovernanceConflictError(
+          "SUGGESTION_NOT_FOUND",
+          input.expectedGovernanceRevision,
+        );
+      }
+      if (
+        suggestion.expected_governance_revision !==
+          input.expectedGovernanceRevision ||
+        suggestion.suggestion_version !== input.suggestionVersion ||
+        (suggestion.status !== "pending" &&
+          !(
+            suggestion.status === "approved" &&
+            suggestion.resolution_mode === "accepted" &&
+            suggestion.keyword_review_decision_id !== null
+          ))
+      ) {
+        throw new KeywordGovernanceConflictError(
+          "REVISION_CONFLICT",
+          input.expectedGovernanceRevision,
+        );
+      }
+      if (
+        suggestion.intent_authority !== "provider_observed" &&
+        suggestion.intent_authority !== "llm_generated"
+      ) {
+        throw new KeywordGovernanceConflictError(
+          "REVISION_CONFLICT",
+          input.expectedGovernanceRevision,
+        );
+      }
+      const canonical = canonicalReview({
+        expectedGovernanceRevision: input.expectedGovernanceRevision,
+        status:
+          suggestion.suggested_status as KeywordReviewDecision["status"],
+        intent: suggestion.suggested_intent,
+        buyerStage: suggestion.suggested_buyer_stage,
+        topicNodeId: suggestion.suggested_topic_node_id,
+        topicModelRevision: suggestion.suggested_topic_model_revision,
+        mappingDecision:
+          suggestion.suggested_mapping_decision as KeywordReviewDecision["mappingDecision"],
+        mappedSitePageId: suggestion.suggested_mapped_site_page_id,
+        reason: suggestion.suggested_reason,
+      });
+      return this.reviewWithExecutor(
+        exec,
+        scope,
+        keywordId,
+        actorId,
+        canonical,
+        { mode: "accepted", suggestion },
+      );
+    };
+
+    const transactional = this.exec as TransactionalExecutor;
+    try {
+      if (typeof transactional.transaction === "function") {
+        return await transactional.transaction((tx) => run(tx));
+      }
+      return await run(this.exec);
+    } catch (error) {
+      if (isAcceptedSuggestionAuthorityConflict(error)) {
+        throw new KeywordGovernanceConflictError(
+          "REVISION_CONFLICT",
+          input.expectedGovernanceRevision,
+        );
+      }
+      throw error;
+    }
   }
 
   private async findKeyword(
@@ -1444,6 +1642,7 @@ export class KeywordGovernanceRepository extends Repository {
     keywordId: string,
     actorId: string,
     input: CanonicalReview,
+    resolution: ReviewSuggestionResolution,
   ): Promise<ReviewKeywordResult> {
     await acquireTopicGovernanceProjectWriterLock(exec, scope);
     const keyword = await this.findKeyword(
@@ -1475,7 +1674,11 @@ export class KeywordGovernanceRepository extends Repository {
     if (currentRevision !== input.expectedGovernanceRevision) {
       if (
         currentRevision === input.expectedGovernanceRevision + 1 &&
-        exactReplay(current, actorId, input)
+        exactReplay(current, actorId, input) &&
+        (resolution.mode === "edited" ||
+          (resolution.suggestion.status === "approved" &&
+            resolution.suggestion.resolution_mode === "accepted" &&
+            resolution.suggestion.keyword_review_decision_id === current.id))
       ) {
         return { ...currentState, replayed: true };
       }
@@ -1666,6 +1869,46 @@ export class KeywordGovernanceRepository extends Repository {
       decided_at: decidedAt,
       reviewed_projection: { ...reviewedProjection },
     });
+
+    const resolvedSuggestions = await exec
+      .update(keywordReviewSuggestions)
+      .set({
+        status: "approved",
+        resolution_mode:
+          resolution.mode === "accepted" ? "accepted" : "edited",
+        keyword_review_decision_id: decisionId,
+        resolved_at: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          projectPredicate(keywordReviewSuggestions, scope),
+          eq(keywordReviewSuggestions.keyword_entity_id, keywordId),
+          eq(
+            keywordReviewSuggestions.expected_governance_revision,
+            input.expectedGovernanceRevision,
+          ),
+          eq(keywordReviewSuggestions.status, "pending"),
+          ...(resolution.mode === "accepted"
+            ? [
+                eq(
+                  keywordReviewSuggestions.id,
+                  resolution.suggestion.id,
+                ),
+                eq(
+                  keywordReviewSuggestions.suggestion_version,
+                  resolution.suggestion.suggestion_version,
+                ),
+              ]
+            : []),
+        ),
+      )
+      .returning({ id: keywordReviewSuggestions.id });
+    if (
+      resolvedSuggestions.length > 1 ||
+      (resolution.mode === "accepted" && resolvedSuggestions.length !== 1)
+    ) {
+      throw new KeywordGovernanceIntegrityError("CAS_UPDATE_FAILED");
+    }
 
     const updatedKeyword: KeywordAuthorityRow = {
       ...keyword,

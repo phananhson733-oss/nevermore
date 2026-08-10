@@ -20,7 +20,8 @@ export type RunKind =
   | "publication"
   | "measurement"
   | "analysis_refresh"
-  | "topic_model_generation";
+  | "topic_model_generation"
+  | "keyword_governance_suggestion_generation";
 export type RunStatus =
   | "queued"
   | "running"
@@ -123,7 +124,8 @@ export class AsyncRunsRepository extends Repository {
           ('publication'::text),
           ('measurement'::text),
           ('analysis_refresh'::text),
-          ('topic_model_generation'::text)
+          ('topic_model_generation'::text),
+          ('keyword_governance_suggestion_generation'::text)
       )
       select
         run_kinds.kind,
@@ -597,7 +599,8 @@ function runKind(value: unknown): RunKind | null {
     value === "publication" ||
     value === "measurement" ||
     value === "analysis_refresh" ||
-    value === "topic_model_generation"
+    value === "topic_model_generation" ||
+    value === "keyword_governance_suggestion_generation"
     ? value
     : null;
 }

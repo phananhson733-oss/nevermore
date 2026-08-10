@@ -8,6 +8,74 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
+  it("installs strict durable Keyword review suggestions at the 0051 head", () => {
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0051_keyword_review_suggestions.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+    const actorMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../migrations/0032_keyword_initial_governance.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(LATEST_APP_MIGRATION).toBe("0051_keyword_review_suggestions");
+    expect(migration).toMatch(
+      /kind\s+IN\s*\([\s\S]*?'keyword_governance_suggestion_generation'/iu,
+    );
+    expect(migration).toMatch(
+      /result_type\s+IS\s+NULL\s+OR\s+result_type\s+IN\s*\([\s\S]*?'keyword_governance_suggestion_generation_run'/iu,
+    );
+    expect(migration).toMatch(
+      /task\s+IN\s*\([\s\S]*?'keyword_governance_suggestion_generation'/iu,
+    );
+    for (const table of [
+      "keyword_governance_suggestion_generation_runs",
+      "keyword_governance_suggestion_invocation_attempts",
+      "keyword_review_suggestions",
+    ]) {
+      expect(migration).toMatch(
+        new RegExp(`CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+app\\.${table}`, "iu"),
+      );
+    }
+    expect(migration).toMatch(
+      /suggested_intent\s+IS\s+NULL\s+OR\s+suggested_intent\s+IN\s*\(\s*'informational'\s*,\s*'navigational'\s*,\s*'commercial'\s*,\s*'transactional'/iu,
+    );
+    expect(migration).toMatch(
+      /providerSearchIntent,value\}'\s+NOT\s+IN\s*\(\s*'informational'\s*,\s*'navigational'\s*,\s*'commercial'\s*,\s*'transactional'/iu,
+    );
+    expect(migration).toMatch(
+      /ELSIF\s+jsonb_typeof\(provider_intent\)\s*=\s*'object'\s+THEN[\s\S]*?cannot be downgraded/iu,
+    );
+    expect(migration).toMatch(
+      /prompt_input_hash\s+IS\s+NULL[\s\S]*?SET\s+prompt_input_hash\s*=\s*p_input_hash[\s\S]*?attempt[\s\S]*?input_hash/iu,
+    );
+    expect(migration).toMatch(
+      /status\s+IN\s*\('pending',\s*'approved',\s*'superseded'\)[\s\S]*?resolution_mode[\s\S]*?'accepted'[\s\S]*?'edited'/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+keyword_review_suggestions_one_pending_idx[\s\S]*?WHERE\s+status\s*=\s*'pending'/iu,
+    );
+    expect(migration).not.toMatch(
+      /raw_prompt|raw_response|prompt_text|response_text/iu,
+    );
+    expect(migration).toMatch(
+      /SELECT\s+'0051_keyword_review_suggestions'::text\s+AS\s+migration_version/iu,
+    );
+    expect(actorMigration).toMatch(
+      /decision_origin\s*=\s*'migration_baseline'[\s\S]*?decided_by\s+IS\s+NULL[\s\S]*?OR\s+decision_origin\s*=\s*'system_suggestion'[\s\S]*?decision_origin\s*=\s*'user'[\s\S]*?decided_by\s+IS\s+NOT\s+NULL/iu,
+    );
+  });
+
   it("adds a durable Topic Model generation child with fenced model lineage", () => {
     const migration = readFileSync(
       fileURLToPath(
@@ -19,7 +87,7 @@ describe("readMigrationVersion", () => {
       "utf8",
     );
 
-    expect(LATEST_APP_MIGRATION).toBe("0050_product_profile_keyword_lineage");
+    expect(LATEST_APP_MIGRATION).toBe("0051_keyword_review_suggestions");
     expect(migration).toMatch(
       /kind\s+IN\s*\([\s\S]*?'topic_model_generation'/iu,
     );
@@ -118,7 +186,7 @@ describe("readMigrationVersion", () => {
       /for\s*\(const\s*\{[\s\S]*?dataType[\s\S]*?isNullable[\s\S]*?\}\s+of\s+REQUIRED_TYPED_COLUMNS\)[\s\S]*?actual\?\.data_type\s*!==\s*dataType[\s\S]*?actual\.is_nullable\s*!==\s*isNullable/iu,
     );
     expect(schemaSmoke).toMatch(
-      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0050_product_profile_keyword_lineage'/iu,
+      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0051_keyword_review_suggestions'/iu,
     );
   });
 

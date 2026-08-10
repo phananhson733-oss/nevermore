@@ -1,7 +1,7 @@
 import type pg from "pg";
 
 export const LATEST_APP_MIGRATION =
-  "0050_product_profile_keyword_lineage" as const;
+  "0051_keyword_review_suggestions" as const;
 
 type MigrationVersionQuery = Pick<pg.Pool, "query">;
 

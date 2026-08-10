@@ -439,6 +439,31 @@ describe("core repositories", () => {
       async_run_id: "profile-run-1",
       task: "product_profile_synthesis",
     });
+
+    db.enqueue([{ id: "invocation-4" }]);
+    await expect(
+      repo.insert({
+        workspaceId: scope.workspaceId,
+        projectId: scope.projectId,
+        asyncRunId: "suggestion-run-1",
+        task: "keyword_governance_suggestion_generation",
+        provider: "openai",
+        model: "gpt",
+        promptSetVersion: "keyword-governance-suggestion.prompt.v1",
+        inputHash: "input-hash",
+        outputHash: "output-hash",
+        status: "succeeded",
+        inputTokens: 20,
+        outputTokens: 30,
+        costUsd: 0.25,
+        latencyMs: 450,
+        errorCode: null,
+      }),
+    ).resolves.toBe("invocation-4");
+    expect(db.last("values").args[0]).toMatchObject({
+      async_run_id: "suggestion-run-1",
+      task: "keyword_governance_suggestion_generation",
+    });
   });
 
   it("counts one project-scoped run/task aggregate and fails closed on unsafe counts", async () => {
@@ -538,6 +563,16 @@ describe("core repositories", () => {
           failure_count_24h: "0",
         },
         {
+          kind: "keyword_governance_suggestion_generation",
+          queued_depth: "2",
+          running_depth: "1",
+          oldest_queued_age_ms: "75",
+          average_run_duration_ms_24h: "250",
+          max_run_duration_ms_24h: "500",
+          retry_count_24h: "1",
+          failure_count_24h: "0",
+        },
+        {
           kind: "__proto__",
           queued_depth: "999",
         },
@@ -564,12 +599,25 @@ describe("core repositories", () => {
         retryCount24h: 0,
         failureCount24h: 0,
       },
+      {
+        kind: "keyword_governance_suggestion_generation",
+        queuedDepth: 2,
+        runningDepth: 1,
+        oldestQueuedAgeMs: 75,
+        averageRunDurationMs24h: 250,
+        maxRunDurationMs24h: 500,
+        retryCount24h: 1,
+        failureCount24h: 0,
+      },
     ]);
     const metricSql = new PgDialect().sqlToQuery(
       db.last("execute").args[0] as never,
     );
     expect(metricSql.sql).not.toContain("request_payload");
     expect(metricSql.sql).not.toContain("last_error_summary");
+    expect(metricSql.sql).toContain(
+      "keyword_governance_suggestion_generation",
+    );
 
     db.enqueue([run], [{ id: "run-2" }]);
     await expect(

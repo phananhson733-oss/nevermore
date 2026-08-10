@@ -677,6 +677,26 @@ test("the schema catalog refuses DDL it cannot model instead of going stale", ()
   }
 });
 
+test("the schema catalog does not confuse a PL/pgSQL loop insert with SELECT INTO", () => {
+  const catalog = buildSchemaCatalog([{
+    name: "0099_fixture.sql",
+    sql: [
+      "CREATE TABLE app.widgets (id uuid PRIMARY KEY);",
+      "DO $$",
+      "DECLARE selected jsonb;",
+      "BEGIN",
+      "  FOR selected IN SELECT value FROM jsonb_array_elements('[]'::jsonb)",
+      "  LOOP",
+      "    INSERT INTO app.widgets (id) VALUES (gen_random_uuid());",
+      "  END LOOP;",
+      "END;",
+      "$$;",
+    ].join("\n"),
+  }]);
+
+  assert.deepEqual([...catalog.keys()], ["widgets"]);
+});
+
 test("the schema catalog fails loudly on SQL it cannot tokenize", async () => {
   for (const [sql, expected] of [
     ["SELECT 'unterminated", /Unterminated SQL string literal/],

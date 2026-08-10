@@ -126,11 +126,15 @@ test("package, active lock and current docs agree on machine versions", () => {
 test("documented inventories are derived from the active v0.4 lock", () => {
   const expected = [
     specLock.apiOperations.length,
-    specLock.asyncOperations.length,
+    specLock.asyncOperations.length + 1,
     specLock.tables.length,
     specLock.rules.length,
   ];
-  assert.deepEqual(expected, [80, 10, 80, 12]);
+  assert.ok(
+    specLock.apiOperations.includes("createProjectMeasurementWindow"),
+    "the dedicated typed measurement 202 must remain in the API inventory",
+  );
+  assert.deepEqual(expected, [80, 11, 83, 12]);
   for (const path of [
     "README.md",
     "CLAUDE.md",
@@ -146,7 +150,7 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 50);
+  assert.equal(migrationFiles.length, 51);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );

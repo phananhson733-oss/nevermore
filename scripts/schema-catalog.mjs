@@ -47,7 +47,10 @@ const UNSUPPORTED_DDL = [
   [/\bdrop\s+table\b/i, "DROP TABLE"],
   [/\bcreate\s+(?:unlogged\s+|temp\w*\s+)*table\b[^;(]*\bas\b/i,
     "CREATE TABLE ... AS"],
-  [/\bselect\b[^;]*\binto\s+(?:strict\s+)?app\./i, "SELECT ... INTO app.*"],
+  [
+    /\bselect\b(?:(?!\binsert\s+into\b)[^;])*\binto\s+(?:strict\s+)?app\./i,
+    "SELECT ... INTO app.*",
+  ],
 ];
 
 const CONSTRAINT_ITEM_KEYWORDS = new Set([

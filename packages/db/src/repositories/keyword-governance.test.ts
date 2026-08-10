@@ -144,6 +144,7 @@ const ids = {
   invocation: "00000000-0000-4000-8000-000000000009",
   otherKeyword: "00000000-0000-4000-8000-000000000010",
   unknownTopic: "00000000-0000-4000-8000-000000000011",
+  suggestion: "00000000-0000-4000-8000-000000000012",
 } as const;
 
 const scope = {
@@ -226,6 +227,27 @@ const review = {
   mappedSitePageId: ids.page,
   reason: "Confirmed against the exact Topic Model revision.",
 } as const satisfies ReviewKeywordInput;
+
+const pendingSuggestion = {
+  id: ids.suggestion,
+  workspace_id: ids.workspace,
+  project_id: ids.project,
+  keyword_entity_id: ids.keyword,
+  expected_governance_revision: 3,
+  suggestion_version: "keyword-governance-suggestion.v1",
+  status: "pending",
+  suggested_status: review.status,
+  suggested_intent: review.intent,
+  suggested_buyer_stage: review.buyerStage,
+  suggested_topic_node_id: review.topicNodeId,
+  suggested_topic_model_revision: review.topicModelRevision,
+  suggested_mapping_decision: review.mappingDecision,
+  suggested_mapped_site_page_id: review.mappedSitePageId,
+  suggested_reason: review.reason,
+  intent_authority: "llm_generated",
+  resolution_mode: null,
+  keyword_review_decision_id: null,
+} as const;
 
 function sqlFor(call: RecordedCall): {
   readonly sql: string;
@@ -337,7 +359,7 @@ describe("KeywordGovernanceRepository", () => {
     expect(lockIndex).toBeGreaterThanOrEqual(0);
     expect(rowLockIndex).toBeGreaterThan(lockIndex);
     expect(db.last("for").args).toEqual(["update"]);
-    const updateSet = db.last("set").args[0] as Record<string, unknown>;
+    const updateSet = db.all("set")[0]!.args[0] as Record<string, unknown>;
     expect(updateSet).toMatchObject({
       status: "approved",
       intent: "commercial",
@@ -402,6 +424,186 @@ describe("KeywordGovernanceRepository", () => {
     expect(wheres[4]!.params).toEqual(
       expect.arrayContaining([ids.workspace, ids.project, ids.keyword, 3]),
     );
+    expect(db.all("update")).toHaveLength(2);
+    expect(db.all("set")[1]!.args[0]).toMatchObject({
+      status: "approved",
+      resolution_mode: "edited",
+      keyword_review_decision_id: ids.newDecision,
+    });
+  });
+
+  it("approves one exact pending suggestion and returns an exact idempotent replay", async () => {
+    const db = new FakeExecutor();
+    db.enqueue(
+      [pendingSuggestion],
+      [keyword],
+      [baseline],
+      [{ label: "Customer Onboarding" }],
+      [{ id: ids.page }],
+      [{ mapping_revision: 4, updated_at: databaseNow }],
+      [],
+      [{ id: ids.suggestion }],
+    );
+    const repo = new KeywordGovernanceRepository(db as never, clock);
+    const result = await repo.approveSuggestion(
+      scope,
+      ids.keyword,
+      ids.suggestion,
+      ids.actor,
+      {
+        expectedGovernanceRevision: 3,
+        suggestionVersion: "keyword-governance-suggestion.v1",
+      },
+    );
+
+    expect(result).toMatchObject({
+      replayed: false,
+      decision: {
+        decisionOrigin: "user",
+        decidedBy: ids.actor,
+        governanceRevision: 4,
+        status: review.status,
+        reason: review.reason,
+      },
+    });
+    expect(db.all("update")).toHaveLength(2);
+    expect(db.all("set")[1]!.args[0]).toMatchObject({
+      status: "approved",
+      resolution_mode: "accepted",
+      keyword_review_decision_id: ids.newDecision,
+    });
+    const suggestionPredicate = sqlFor(db.all("where").at(-1)!);
+    expect(suggestionPredicate.params).toEqual(
+      expect.arrayContaining([
+        ids.workspace,
+        ids.project,
+        ids.keyword,
+        3,
+        "pending",
+        ids.suggestion,
+        "keyword-governance-suggestion.v1",
+      ]),
+    );
+
+    const reviewedProjection = result.reviewedProjection;
+    const currentKeyword = {
+      ...keyword,
+      status: review.status,
+      intent: review.intent,
+      buyer_stage: review.buyerStage,
+      cluster_key: "Customer Onboarding",
+      mapping_decision: review.mappingDecision,
+      mapped_site_page_id: review.mappedSitePageId,
+      mapping_review_state: "confirmed",
+      mapping_revision: 4,
+      updated_at: databaseNow,
+    };
+    const currentDecision = {
+      ...baseline,
+      id: ids.newDecision,
+      governance_revision: 4,
+      decision_origin: "user",
+      status: review.status,
+      intent: review.intent,
+      buyer_stage: review.buyerStage,
+      topic_node_id: review.topicNodeId,
+      topic_model_revision: review.topicModelRevision,
+      cluster_key_at_decision: "Customer Onboarding",
+      mapping_decision: review.mappingDecision,
+      mapped_site_page_id: review.mappedSitePageId,
+      review_state: "confirmed",
+      decided_by: ids.actor,
+      reason: review.reason,
+      decided_at: databaseNow,
+      reviewed_projection: reviewedProjection,
+      created_at: databaseNow,
+    };
+    const replayDb = new FakeExecutor();
+    replayDb.enqueue(
+      [{
+        ...pendingSuggestion,
+        status: "approved",
+        resolution_mode: "accepted",
+        keyword_review_decision_id: ids.newDecision,
+      }],
+      [currentKeyword],
+      [currentDecision],
+    );
+    const replay = await new KeywordGovernanceRepository(
+      replayDb as never,
+      clock,
+    ).approveSuggestion(
+      scope,
+      ids.keyword,
+      ids.suggestion,
+      ids.actor,
+      {
+        expectedGovernanceRevision: 3,
+        suggestionVersion: "keyword-governance-suggestion.v1",
+      },
+    );
+    expect(replay.replayed).toBe(true);
+    expect(replayDb.all("update")).toHaveLength(0);
+    expect(replayDb.all("insert")).toHaveLength(0);
+  });
+
+  it("rejects a pending suggestion whose intent authority is unavailable", async () => {
+    const db = new FakeExecutor();
+    db.enqueue([{
+      ...pendingSuggestion,
+      suggested_intent: null,
+      intent_authority: "unavailable",
+    }]);
+    const error = await new KeywordGovernanceRepository(
+      db as never,
+      clock,
+    ).approveSuggestion(
+      scope,
+      ids.keyword,
+      ids.suggestion,
+      ids.actor,
+      {
+        expectedGovernanceRevision: 3,
+        suggestionVersion: "keyword-governance-suggestion.v1",
+      },
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(KeywordGovernanceConflictError);
+    expect((error as KeywordGovernanceConflictError).code).toBe(
+      "REVISION_CONFLICT",
+    );
+    expect(db.all("update")).toHaveLength(0);
+    expect(db.all("insert")).toHaveLength(0);
+  });
+
+  it("maps the named click-time authority fence to a typed revision conflict", async () => {
+    const databaseError = {
+      code: "23514",
+      constraint:
+        "keyword_review_suggestion_accepted_authority_current",
+    };
+    const exec = {
+      transaction: async () => {
+        throw { cause: databaseError };
+      },
+    };
+    const error = await new KeywordGovernanceRepository(
+      exec as never,
+      clock,
+    ).approveSuggestion(
+      scope,
+      ids.keyword,
+      ids.suggestion,
+      ids.actor,
+      {
+        expectedGovernanceRevision: 3,
+        suggestionVersion: "keyword-governance-suggestion.v1",
+      },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(KeywordGovernanceConflictError);
+    expect((error as KeywordGovernanceConflictError).code).toBe(
+      "REVISION_CONFLICT",
+    );
   });
 
   it("works inside a caller transaction and clears every excluded assignment", async () => {
@@ -435,7 +637,7 @@ describe("KeywordGovernanceRepository", () => {
     });
     expect(db.all("select")).toHaveLength(2);
     expect(db.all("transaction")).toHaveLength(0);
-    expect(db.last("set").args[0]).toMatchObject({
+    expect(db.all("set")[0]!.args[0]).toMatchObject({
       status: "excluded",
       cluster_key: null,
       mapping_decision: "unassigned",
@@ -903,7 +1105,7 @@ describe("KeywordGovernanceRepository", () => {
     expect(result.projection.governanceRevision).toBe(
       MAX_POSTGRES_INTEGER_REVISION,
     );
-    expect(db.last("set").args[0]).toMatchObject({
+    expect(db.all("set")[0]!.args[0]).toMatchObject({
       mapping_revision: MAX_POSTGRES_INTEGER_REVISION,
     });
   });

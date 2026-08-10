@@ -83,7 +83,7 @@ const HISTORICAL_BUNDLE_SCHEMA_VERSION = "signalframe.service-bundle.0.2.0";
 
 const EXPECTED_OPENAPI_OPERATIONS = ACTIVE_LOCK.apiOperations;
 const EXPECTED_ASYNC_OPERATIONS = ACTIVE_LOCK.asyncOperations;
-const EXPECTED_MIGRATION_HEAD = "0050_product_profile_keyword_lineage";
+const EXPECTED_MIGRATION_HEAD = "0051_keyword_review_suggestions";
 
 const ANALYSIS_REFRESH_PLAN_CONTRACTS = [
   {
@@ -2408,9 +2408,9 @@ function checkDatabaseContract() {
     `active lock migration head must be ${EXPECTED_MIGRATION_HEAD}`,
   );
   invariant(
-    migrationFiles.length === 50 &&
+    migrationFiles.length === 51 &&
       migrationFiles.at(-1) === `${EXPECTED_MIGRATION_HEAD}.sql`,
-    `ordered migrations must contain exactly 50 files through ${EXPECTED_MIGRATION_HEAD}.sql`,
+    `ordered migrations must contain exactly 51 files through ${EXPECTED_MIGRATION_HEAD}.sql`,
   );
   const topicModelGenerationMigration = migrationSources.find(
     ({ name }) => name === "0048_topic_model_generation.sql",
@@ -2745,10 +2745,10 @@ function checkDatabaseContract() {
 
   const migrateCheck = read("packages/db/src/migrate-check.ts");
   const migrateCheckInventories = [
-    ["EXPECTED_TABLES", 80],
-    ["REQUIRED_INDEXES", 109],
-    ["REQUIRED_TRIGGERS", 157],
-    ["REQUIRED_ROUTINES", 82],
+    ["EXPECTED_TABLES", 83],
+    ["REQUIRED_INDEXES", 116],
+    ["REQUIRED_TRIGGERS", 164],
+    ["REQUIRED_ROUTINES", 96],
   ];
   for (const [inventoryName, expectedCount] of migrateCheckInventories) {
     const inventory = sourceStringArray(migrateCheck, inventoryName);
@@ -2925,13 +2925,13 @@ function checkDatabaseContract() {
     "authority schema smoke must be byte-identical to the implementation smoke",
   );
   for (const [pattern, label] of [
-    [/expected exactly 80 app tables/, "80 app tables"],
-    [/expected all 85 named app indexes/, "85 named smoke indexes"],
-    [/expected all 113 app triggers/, "113 named smoke triggers"],
-    [/expected all 50 runtime routines/, "50 runtime smoke routines"],
+    [/expected exactly 83 app tables/, "83 app tables"],
+    [/expected all 92 named app indexes/, "92 named smoke indexes"],
+    [/expected all 120 app triggers/, "120 named smoke triggers"],
+    [/expected all 64 runtime routines/, "64 runtime smoke routines"],
     [
-      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0050_product_profile_keyword_lineage'/i,
-      "0050 migration head",
+      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0051_keyword_review_suggestions'/i,
+      "0051 migration head",
     ],
   ]) {
     invariant(pattern.test(smoke), `schema smoke must freeze ${label}`);
@@ -2940,7 +2940,7 @@ function checkDatabaseContract() {
     /\bROLLBACK\s*;\s*$/.test(smoke),
     "schema-smoke.sql must finish with ROLLBACK",
   );
-  return `database: 50 migrations through ${EXPECTED_MIGRATION_HEAD}, ${EXPECTED_TABLES.length} app tables (pg-boss excluded), 109 indexes, 157 triggers, and 82 routines in migrate-check`;
+  return `database: 51 migrations through ${EXPECTED_MIGRATION_HEAD}, ${EXPECTED_TABLES.length} app tables (pg-boss excluded), 116 indexes, 164 triggers, and 96 routines in migrate-check`;
 }
 
 async function importSource(relativePath) {

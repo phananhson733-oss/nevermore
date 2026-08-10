@@ -131,8 +131,8 @@ $pgcrypto_contract$;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 80 THEN
-    RAISE EXCEPTION 'expected exactly 80 app tables';
+  IF (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_type = 'BASE TABLE') <> 83 THEN
+    RAISE EXCEPTION 'expected exactly 83 app tables';
   END IF;
   IF (
     SELECT count(*)
@@ -157,6 +157,31 @@ BEGIN
       AND table_type = 'BASE TABLE'
   ) <> 2 THEN
     RAISE EXCEPTION 'Topic Model generation ledgers are incomplete';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM information_schema.tables
+    WHERE table_schema = 'app'
+      AND table_name IN (
+        'keyword_governance_suggestion_generation_runs',
+        'keyword_governance_suggestion_invocation_attempts',
+        'keyword_review_suggestions'
+      )
+      AND table_type = 'BASE TABLE'
+  ) <> 3 THEN
+    RAISE EXCEPTION 'Keyword governance suggestion ledgers are incomplete';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint constraint_def
+    WHERE constraint_def.conrelid = 'app.keyword_review_decisions'::regclass
+      AND constraint_def.conname = 'keyword_review_decisions_check4'
+      AND position(
+        '(decision_origin = ''system_suggestion''::text)'
+        IN pg_get_constraintdef(constraint_def.oid)
+      ) > 0
+  ) THEN
+    RAISE EXCEPTION 'actorless system suggestion decision authority drifted';
   END IF;
   IF (
     SELECT count(*)
@@ -322,6 +347,13 @@ BEGIN
         'topic_model_generation_runs_result_revision_idx',
         'topic_model_generation_invocation_attempts_project_idx',
         'topic_model_generation_invocation_attempts_unresolved_idx',
+        'keyword_suggestion_runs_project_created_idx',
+        'keyword_governance_suggestion_generation_runs_input_hash_idx',
+        'keyword_governance_suggestion_invocation_attempts_project_idx',
+        'keyword_suggestion_attempts_unresolved_idx',
+        'keyword_review_suggestions_project_created_idx',
+        'keyword_review_suggestions_generation_idx',
+        'keyword_review_suggestions_one_pending_idx',
         'keyword_occurrences_project_collected_idx',
         'keyword_entities_project_created_idx',
         'keyword_entities_project_review_idx',
@@ -363,8 +395,8 @@ BEGIN
         'keyword_review_decisions_project_decided_idx',
         'keyword_review_decisions_topic_idx'
       ]::text[])
-  ) <> 85 THEN
-    RAISE EXCEPTION 'expected all 85 named app indexes';
+  ) <> 92 THEN
+    RAISE EXCEPTION 'expected all 92 named app indexes';
   END IF;
   IF (
     SELECT count(*)
@@ -433,6 +465,13 @@ BEGIN
         'topic_model_generation_runs_frozen_input_guard',
         'async_runs_topic_model_generation_result_guard',
         'topic_model_generation_invocation_attempts_transition_guard',
+        'keyword_suggestion_generation_runs_provenance_guard',
+        'keyword_suggestion_generation_runs_frozen_input_guard',
+        'async_runs_keyword_suggestion_generation_result_guard',
+        'keyword_suggestion_invocation_attempts_transition_guard',
+        'keyword_review_suggestions_mutation_guard',
+        'keyword_occurrences_suggestion_writer_lock',
+        'keyword_entity_sources_suggestion_writer_lock',
         'keyword_occurrences_lineage_guard',
         'keyword_occurrences_product_profile_lineage_guard',
         'keyword_occurrences_append_only',
@@ -488,8 +527,8 @@ BEGIN
         'topic_node_successors_append_only',
         'keyword_review_decisions_append_only'
       ]::text[])
-  ) <> 113 THEN
-    RAISE EXCEPTION 'expected all 113 app triggers';
+  ) <> 120 THEN
+    RAISE EXCEPTION 'expected all 120 app triggers';
   END IF;
   IF (
     SELECT count(DISTINCT procedure.proname)
@@ -510,6 +549,20 @@ BEGIN
         'finalize_topic_model_generation_invocation_attempt',
         'mark_topic_model_generation_invocation_outcome_unknown',
         'terminalize_topic_model_generation_run',
+        'current_keyword_governance_suggestion_occurrence_ids',
+        'enforce_keyword_governance_suggestion_generation_run_provenance',
+        'enforce_keyword_suggestion_run_frozen_input',
+        'enforce_keyword_governance_suggestion_generation_async_result',
+        'enforce_keyword_suggestion_attempt_transition',
+        'reserve_keyword_governance_suggestion_invocation_attempt',
+        'finalize_keyword_governance_suggestion_invocation_attempt',
+        'mark_keyword_governance_suggestion_invocation_outcome_unknown',
+        'enforce_keyword_review_suggestion_mutation',
+        'lock_keyword_governance_suggestion_source_write',
+        'supersede_keyword_review_suggestions_for_keywords',
+        'supersede_keyword_review_suggestions_for_project',
+        'insert_keyword_review_suggestions_batch',
+        'terminalize_keyword_governance_suggestion_generation_run',
         'enforce_keyword_review_analysis_invocation',
         'enforce_keyword_occurrence_lineage',
         'is_bcp47_canonical_identity',
@@ -547,8 +600,8 @@ BEGIN
         'enforce_topic_cluster_alias_retention',
         'prevent_topic_successor_cycle'
       ]::text[])
-  ) <> 50 THEN
-    RAISE EXCEPTION 'expected all 50 runtime routines';
+  ) <> 64 THEN
+    RAISE EXCEPTION 'expected all 64 runtime routines';
   END IF;
 END;
 $$;
@@ -4978,7 +5031,7 @@ BEGIN
   END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0050_product_profile_keyword_lineage' THEN
+  ) IS DISTINCT FROM '0051_keyword_review_suggestions' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (

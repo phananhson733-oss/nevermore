@@ -14,7 +14,8 @@ export type AnalysisInvocationTask =
   | "artifact_generation"
   | "product_profile_synthesis"
   | "content_shadow_draft"
-  | "topic_model_generation";
+  | "topic_model_generation"
+  | "keyword_governance_suggestion_generation";
 
 export class AnalysisInvocationsRepository extends Repository {
   /**

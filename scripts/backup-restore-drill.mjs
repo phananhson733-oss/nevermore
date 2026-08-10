@@ -143,6 +143,9 @@ export const APP_TABLES = [
   "analysis_refresh_steps",
   "topic_model_generation_runs",
   "topic_model_generation_invocation_attempts",
+  "keyword_governance_suggestion_generation_runs",
+  "keyword_governance_suggestion_invocation_attempts",
+  "keyword_review_suggestions",
 ];
 
 /**

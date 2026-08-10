@@ -497,6 +497,44 @@ export type {
 } from "./repositories/geo-citations.ts";
 export { AnalysisInvocationsRepository } from "./repositories/analysis-invocations.ts";
 export type { AnalysisInvocationTask } from "./repositories/analysis-invocations.ts";
+export { KeywordGovernanceSuggestionGenerationRunsRepository } from "./repositories/keyword-governance-suggestion-generation-runs.ts";
+export type {
+  CurrentKeywordGovernanceSuggestionGeneration,
+  KeywordGovernanceSuggestionCandidateAuthority,
+  KeywordGovernanceSuggestionFreezeAuthority,
+  KeywordGovernanceSuggestionFreezeAuthorityReadResult,
+  KeywordGovernanceSuggestionGenerationStatus,
+  KeywordGovernanceSuggestionGenerationRunRow,
+  KeywordGovernanceSuggestionGenerationTerminalInput,
+  KeywordGovernanceSuggestionGenerationTerminalizeResult,
+  KeywordGovernanceSuggestionOccurrenceAuthority,
+  KeywordGovernanceSuggestionSafeTerminalCode,
+  LatestKeywordGovernanceSuggestionGeneration,
+} from "./repositories/keyword-governance-suggestion-generation-runs.ts";
+export { KeywordGovernanceSuggestionInvocationAttemptsRepository } from "./repositories/keyword-governance-suggestion-invocation-attempts.ts";
+export type {
+  KeywordGovernanceSuggestionInvocationAttemptRow,
+  KeywordGovernanceSuggestionInvocationAttemptStatus,
+  KeywordGovernanceSuggestionInvocationFinalizeResult,
+  KeywordGovernanceSuggestionInvocationMetadata,
+  KeywordGovernanceSuggestionInvocationOutcomeUnknownResult,
+  KeywordGovernanceSuggestionInvocationPreflight,
+  KeywordGovernanceSuggestionInvocationReservationResult,
+} from "./repositories/keyword-governance-suggestion-invocation-attempts.ts";
+export { KeywordReviewSuggestionsRepository } from "./repositories/keyword-review-suggestions.ts";
+export type {
+  InsertKeywordReviewSuggestionBatchInput,
+  InsertKeywordReviewSuggestionBatchResult,
+  KeywordReviewSuggestionBatchItem,
+  KeywordReviewSuggestionBuyerStage,
+  KeywordReviewSuggestionIntent,
+  KeywordReviewSuggestionIntentAuthority,
+  KeywordReviewSuggestionResolutionMode,
+  KeywordReviewSuggestionReadinessResult,
+  KeywordReviewSuggestionRow,
+  KeywordReviewSuggestionStatus,
+  ReusableKeywordReviewSuggestionBatchResult,
+} from "./repositories/keyword-review-suggestions.ts";
 export { ExportBundlesRepository } from "./repositories/export-bundles.ts";
 export type { ExportBundleRow } from "./repositories/export-bundles.ts";
 export {

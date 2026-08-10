@@ -168,7 +168,7 @@ function makeFixture(t, options = {}) {
   const authorityRoot = "authority/active";
   const tables =
     options.tables ??
-    Array.from({ length: 80 }, (_, index) => `table_${index + 1}`);
+    Array.from({ length: 83 }, (_, index) => `table_${index + 1}`);
   const openapi = fixtureOpenApi();
 
   for (const path of REQUIRED_AUTHORITY_FILES) {
@@ -263,6 +263,11 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/0050_product_profile_keyword_lineage.sql",
     fixtureMigration("0050_product_profile_keyword_lineage"),
   );
+  write(
+    root,
+    "packages/db/migrations/0051_keyword_review_suggestions.sql",
+    fixtureMigration("0051_keyword_review_suggestions"),
+  );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
     write(
@@ -336,7 +341,7 @@ function makeFixture(t, options = {}) {
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0050_product_profile_keyword_lineage",
+    migrationHead: "0051_keyword_review_suggestions",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -369,12 +374,12 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeIndex.active.version, "0.4.0");
   assert.equal(activeLock.apiOperations.length, 80);
   assert.equal(activeLock.asyncOperations.length, 10);
-  assert.equal(activeLock.tables.length, 80);
+  assert.equal(activeLock.tables.length, 83);
   assert.equal(activeLock.rules.length, 12);
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     activeLock.migrationHead,
-    "0050_product_profile_keyword_lineage",
+    "0051_keyword_review_suggestions",
   );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
@@ -493,7 +498,7 @@ test("rejects a table removed from the ordered migration chain", (t) => {
     fixture.root,
     "packages/db/migrations/0001_fixture.sql",
     readFileSync(path, "utf8").replace(
-      `CREATE TABLE app.${fixture.tables.at(-1)} (id uuid PRIMARY KEY);\n`,
+      `CREATE TABLE app.${fixture.tables.at(-2)} (id uuid PRIMARY KEY);\n`,
       "",
     ),
   );

@@ -552,6 +552,65 @@ export const topicModelGenerationInvocationAttempts = app.table(
 );
 
 // ---------------------------------------------------------------------------
+// 12e. keyword_governance_suggestion_generation_runs (shares async_runs.id)
+// ---------------------------------------------------------------------------
+export const keywordGovernanceSuggestionGenerationRuns = app.table(
+  "keyword_governance_suggestion_generation_runs",
+  {
+    id: uuid()
+      .primaryKey()
+      .references(() => asyncRuns.id),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    generation_version: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_manifest: jsonb().$type<JsonObject>().notNull(),
+    input_hash: text().notNull(),
+    prompt_input_hash: text(),
+    result_output_hash: text(),
+    created_at: tz().notNull().defaultNow(),
+  },
+);
+
+// ---------------------------------------------------------------------------
+// 12f. keyword_governance_suggestion_invocation_attempts
+// ---------------------------------------------------------------------------
+export const keywordGovernanceSuggestionInvocationAttempts = app.table(
+  "keyword_governance_suggestion_invocation_attempts",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    generation_run_id: uuid()
+      .notNull()
+      .references(() => keywordGovernanceSuggestionGenerationRuns.id),
+    ordinal: smallint().notNull(),
+    async_attempt_count: integer().notNull(),
+    provider: text().notNull(),
+    model: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_hash: text().notNull(),
+    planned_analysis_invocation_id: uuid().notNull(),
+    status: text().notNull().default("reserved"),
+    analysis_invocation_id: uuid().references(
+      (): AnyPgColumn => analysisInvocations.id,
+    ),
+    terminal_error_code: text(),
+    reserved_at: tz().notNull().defaultNow(),
+    provider_returned_at: tz(),
+    finalized_at: tz(),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // 13. normalized_observations  (append-only)
 // ---------------------------------------------------------------------------
 export const normalizedObservations = app.table("normalized_observations", {
@@ -2071,6 +2130,60 @@ export const keywordReviewDecisions = app.table("keyword_review_decisions", {
   reviewed_projection: jsonb().$type<JsonObject>().notNull(),
   created_at: tz().notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// 62a. keyword_review_suggestions (immutable content, one terminal resolution)
+// ---------------------------------------------------------------------------
+export const keywordReviewSuggestions = app.table(
+  "keyword_review_suggestions",
+  {
+    id: uuid().primaryKey(),
+    workspace_id: uuid()
+      .notNull()
+      .references(() => workspaces.id),
+    project_id: uuid()
+      .notNull()
+      .references(() => clientProjects.id),
+    keyword_entity_id: uuid()
+      .notNull()
+      .references(() => keywordEntities.id),
+    generation_run_id: uuid()
+      .notNull()
+      .references(() => keywordGovernanceSuggestionGenerationRuns.id),
+    output_ordinal: smallint().notNull(),
+    expected_governance_revision: integer().notNull(),
+    suggestion_version: text().notNull(),
+    generation_version: text().notNull(),
+    prompt_set_version: text().notNull(),
+    input_hash: text().notNull(),
+    output_hash: text().notNull(),
+    status: text().notNull().default("pending"),
+    suggested_status: text().notNull(),
+    suggested_intent: text(),
+    suggested_buyer_stage: text(),
+    suggested_topic_node_id: uuid().references(() => topicNodeIdentities.id),
+    suggested_topic_model_revision: integer(),
+    suggested_mapping_decision: text().notNull(),
+    suggested_mapped_site_page_id: uuid().references(() => sitePages.id),
+    suggested_reason: text().notNull(),
+    analysis_invocation_id: uuid()
+      .notNull()
+      .references(() => analysisInvocations.id),
+    intent_authority: text().notNull(),
+    intent_snapshot_id: uuid().references(() => dataSnapshots.id),
+    intent_observation_id: uuid().references(() => normalizedObservations.id),
+    intent_observed_at: tz(),
+    resolution_mode: text(),
+    keyword_review_decision_id: uuid().references(
+      () => keywordReviewDecisions.id,
+    ),
+    superseded_by_suggestion_id: uuid().references(
+      (): AnyPgColumn => keywordReviewSuggestions.id,
+    ),
+    created_at: tz().notNull().defaultNow(),
+    resolved_at: tz(),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // 63. keyword_relation_identities  (stable unordered Keyword pair)

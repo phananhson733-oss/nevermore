@@ -12,8 +12,8 @@ prompt_set_version: mvp.prompts.0.2.0
 
 ## 0. 规范范围
 
-本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **80 个 operation 与 10 个
-shared async operation**，**47 个 ordered migrations** 精确声明 **80 张应用表**，引擎
+本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **80 个 operation 与 11 个
+async operation**（其中 10 个使用 shared `AsyncAccepted`），**51 个 ordered migrations** 精确声明 **83 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -586,7 +586,9 @@ reconciliation、route/OpenAPI 与测试。
 - `getProjectMeasurementWindowHistory`
 <!-- API_OPERATIONS_END -->
 
-十个共享 AsyncAccepted operation：
+十个使用 shared `AsyncAccepted` 的 operation；第十一个 public `202`
+operation `createProjectMeasurementWindow` 使用专用 typed accepted envelope，
+因此不进入以下 shared inventory：
 
 <!-- ASYNC_OPERATIONS_BEGIN -->
 - `createProductProfileSynthesisRun`
@@ -603,8 +605,8 @@ reconciliation、route/OpenAPI 与测试。
 
 ## 10. 冻结数据库 inventory
 
-以下 80 张应用表来自 `0001_init.sql` 至
-`0048_topic_model_generation.sql` 的 48 个 ordered migrations 与
+以下 83 张应用表来自 `0001_init.sql` 至
+`0051_keyword_review_suggestions.sql` 的 51 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->
@@ -647,6 +649,9 @@ static schema catalog；pg-boss 自有表不计入。
 - `product_profile_invocation_attempts`
 - `topic_model_generation_runs`
 - `topic_model_generation_invocation_attempts`
+- `keyword_governance_suggestion_generation_runs`
+- `keyword_governance_suggestion_invocation_attempts`
+- `keyword_review_suggestions`
 - `finding_targets`
 - `keyword_occurrences`
 - `keyword_entities`
