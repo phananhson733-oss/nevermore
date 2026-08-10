@@ -330,6 +330,14 @@ URL 与所有显式 `diagnosticRunId` 的 list/detail GET 属于 published-gener
 
 ### 4.2 Keyword Library
 
+Current Keyword review detail may expose one nullable, server-owned pending
+governance suggestion. A pinned published-generation detail always exposes
+`pendingSuggestion: null`. The only one-click approval command is scoped to
+the Keyword and suggestion identity and carries exactly
+`expectedGovernanceRevision` plus the immutable `suggestionVersion`; the
+client cannot submit suggested governance fields, actor identity, provider
+facts, model configuration, or lineage.
+
 - 来源包括 GSC top query、DataForSEO Search Landscape ranked observation、
   competitor/content gap、VOC/manual/CSV；每条 occurrence 保留来源、scope
   和时间。

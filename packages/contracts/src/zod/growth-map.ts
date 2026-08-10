@@ -9,6 +9,7 @@ import {
 import { PriorityBand } from "./diagnostics.ts";
 import { SourceFreshness } from "./audit.ts";
 import { ExecutionPreview } from "./execution-preview.ts";
+import { KeywordGovernancePendingSuggestion } from "./keyword-governance-suggestions.ts";
 import {
   ProductProfileCompetitorAnalysisScope,
   ProductProfileCompetitorDomain,
@@ -1815,169 +1816,195 @@ const GrowthMapKeywordLibraryItemObject = z
   })
   .strict();
 
+function addGrowthMapKeywordLibraryItemIssues(
+  item: z.infer<typeof GrowthMapKeywordLibraryItemObject>,
+  ctx: z.RefinementCtx,
+): void {
+  if (item.normalizedKeyword !== normalizedKeywordValue(item.displayKeyword)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["normalizedKeyword"],
+      message:
+        "normalizedKeyword must be the NFKC, lowercase, single-space display keyword",
+    });
+  }
+
+  for (const field of ["intent", "buyerStage", "cluster"] as const) {
+    if (item[field] === null && item.classificationLimitations[field] === null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["classificationLimitations", field],
+        message: `Unknown ${field} requires an explicit limitation`,
+      });
+    }
+  }
+
+  const occurrenceIds = new Set<string>();
+  const sourceIdentities = new Set<string>();
+  item.sourceOccurrences.forEach((occurrence, index) => {
+    if (occurrenceIds.has(occurrence.occurrenceId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceOccurrences", index, "occurrenceId"],
+        message: "Keyword source occurrence IDs must be unique",
+      });
+    }
+    occurrenceIds.add(occurrence.occurrenceId);
+
+    const sourceIdentity = keywordSourceIdentity(occurrence);
+    if (sourceIdentities.has(sourceIdentity)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceOccurrences", index],
+        message: "Exact Keyword source occurrences must be unique",
+      });
+    }
+    sourceIdentities.add(sourceIdentity);
+
+    if (occurrence.marketCode !== item.marketCode) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceOccurrences", index, "marketCode"],
+        message: "Keyword occurrence market must match the Library identity",
+      });
+    }
+    if (occurrence.languageTag !== item.languageTag) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceOccurrences", index, "languageTag"],
+        message: "Keyword occurrence language must match the Library identity",
+      });
+    }
+  });
+
+  if (
+    item.recollection !== null &&
+    !item.sourceOccurrences.some(
+      (occurrence) => occurrence.sourceKind === "dataforseo_ranked",
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["recollection"],
+      message:
+        "Historical DataForSEO recollection requires a canonical DataForSEO occurrence",
+    });
+  }
+
+  const searchIntent = item.searchIntent;
+  if (
+    item.reviewOrigin === "user" &&
+    item.intent !== null &&
+    searchIntent.authority !== "user_confirmed"
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["searchIntent", "authority"],
+      message:
+        "A non-null user-governed intent must resolve as user-confirmed",
+    });
+  }
+  if (searchIntent.authority === "provider_observed") {
+    const hasExactProviderOccurrence = item.sourceOccurrences.some(
+      (occurrence) =>
+        occurrence.sourceKind === "dataforseo_ranked" &&
+        occurrence.snapshotId === searchIntent.snapshotId &&
+        occurrence.sourceObservationId === searchIntent.observationId,
+    );
+    if (!hasExactProviderOccurrence) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "observationId"],
+        message:
+          "Provider search intent must reference one exact DataForSEO occurrence",
+      });
+    }
+  } else if (searchIntent.authority === "user_confirmed") {
+    if (item.reviewOrigin !== "user") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "authority"],
+        message: "User-confirmed search intent requires a user review decision",
+      });
+    }
+    if (item.intent !== searchIntent.value) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "value"],
+        message: "User-confirmed search intent must match governed intent",
+      });
+    }
+  } else if (searchIntent.authority === "governed_legacy") {
+    if (item.reviewOrigin === "user" || item.intent !== searchIntent.value) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["searchIntent", "authority"],
+        message:
+          "Legacy search intent must match a non-user governed intent",
+      });
+    }
+  } else if (
+    searchIntent.authority === "unavailable" &&
+    item.intent !== null
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["searchIntent", "authority"],
+      message: "Search intent cannot be unavailable when governed intent exists",
+    });
+  }
+
+  for (const field of [
+    "volume",
+    "kd",
+    "currentRank",
+    "currentUrl",
+    "competitorDomain",
+    "competitorRank",
+  ] as const) {
+    const metric = item.metrics[field];
+    if (metric === null) continue;
+    const hasCanonicalOccurrence = item.sourceOccurrences.some(
+      (occurrence) =>
+        occurrence.snapshotId === metric.snapshotId &&
+        occurrence.sourceObservationId === metric.observationId,
+    );
+    if (!hasCanonicalOccurrence) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["metrics", field, "observationId"],
+        message:
+          "A Keyword metric must reference one exact source occurrence Observation",
+      });
+    }
+  }
+}
+
 export const GrowthMapKeywordLibraryItem =
   GrowthMapKeywordLibraryItemObject.superRefine((item, ctx) => {
-    if (item.normalizedKeyword !== normalizedKeywordValue(item.displayKeyword)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["normalizedKeyword"],
-        message:
-          "normalizedKeyword must be the NFKC, lowercase, single-space display keyword",
-      });
-    }
-
-    for (const field of ["intent", "buyerStage", "cluster"] as const) {
-      if (item[field] === null && item.classificationLimitations[field] === null) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["classificationLimitations", field],
-          message: `Unknown ${field} requires an explicit limitation`,
-        });
-      }
-    }
-
-    const occurrenceIds = new Set<string>();
-    const sourceIdentities = new Set<string>();
-    item.sourceOccurrences.forEach((occurrence, index) => {
-      if (occurrenceIds.has(occurrence.occurrenceId)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["sourceOccurrences", index, "occurrenceId"],
-          message: "Keyword source occurrence IDs must be unique",
-        });
-      }
-      occurrenceIds.add(occurrence.occurrenceId);
-
-      const sourceIdentity = keywordSourceIdentity(occurrence);
-      if (sourceIdentities.has(sourceIdentity)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["sourceOccurrences", index],
-          message: "Exact Keyword source occurrences must be unique",
-        });
-      }
-      sourceIdentities.add(sourceIdentity);
-
-      if (occurrence.marketCode !== item.marketCode) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["sourceOccurrences", index, "marketCode"],
-          message: "Keyword occurrence market must match the Library identity",
-        });
-      }
-      if (occurrence.languageTag !== item.languageTag) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["sourceOccurrences", index, "languageTag"],
-          message: "Keyword occurrence language must match the Library identity",
-        });
-      }
-    });
-
-    if (
-      item.recollection !== null &&
-      !item.sourceOccurrences.some(
-        (occurrence) => occurrence.sourceKind === "dataforseo_ranked",
-      )
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recollection"],
-        message:
-          "Historical DataForSEO recollection requires a canonical DataForSEO occurrence",
-      });
-    }
-
-    const searchIntent = item.searchIntent;
-    if (
-      item.reviewOrigin === "user" &&
-      item.intent !== null &&
-      searchIntent.authority !== "user_confirmed"
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["searchIntent", "authority"],
-        message:
-          "A non-null user-governed intent must resolve as user-confirmed",
-      });
-    }
-    if (searchIntent.authority === "provider_observed") {
-      const hasExactProviderOccurrence = item.sourceOccurrences.some(
-        (occurrence) =>
-          occurrence.sourceKind === "dataforseo_ranked" &&
-          occurrence.snapshotId === searchIntent.snapshotId &&
-          occurrence.sourceObservationId === searchIntent.observationId,
-      );
-      if (!hasExactProviderOccurrence) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["searchIntent", "observationId"],
-          message:
-            "Provider search intent must reference one exact DataForSEO occurrence",
-        });
-      }
-    } else if (searchIntent.authority === "user_confirmed") {
-      if (item.reviewOrigin !== "user") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["searchIntent", "authority"],
-          message: "User-confirmed search intent requires a user review decision",
-        });
-      }
-      if (item.intent !== searchIntent.value) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["searchIntent", "value"],
-          message: "User-confirmed search intent must match governed intent",
-        });
-      }
-    } else if (searchIntent.authority === "governed_legacy") {
-      if (item.reviewOrigin === "user" || item.intent !== searchIntent.value) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["searchIntent", "authority"],
-          message:
-            "Legacy search intent must match a non-user governed intent",
-        });
-      }
-    } else if (
-      searchIntent.authority === "unavailable" &&
-      item.intent !== null
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["searchIntent", "authority"],
-        message: "Search intent cannot be unavailable when governed intent exists",
-      });
-    }
-
-    for (const field of [
-      "volume",
-      "kd",
-      "currentRank",
-      "currentUrl",
-      "competitorDomain",
-      "competitorRank",
-    ] as const) {
-      const metric = item.metrics[field];
-      if (metric === null) continue;
-      const hasCanonicalOccurrence = item.sourceOccurrences.some(
-        (occurrence) =>
-          occurrence.snapshotId === metric.snapshotId &&
-          occurrence.sourceObservationId === metric.observationId,
-      );
-      if (!hasCanonicalOccurrence) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["metrics", field, "observationId"],
-          message:
-            "A Keyword metric must reference one exact source occurrence Observation",
-        });
-      }
-    }
+    addGrowthMapKeywordLibraryItemIssues(item, ctx);
   });
 export type GrowthMapKeywordLibraryItem = z.infer<
   typeof GrowthMapKeywordLibraryItem
+>;
+
+const NullablePendingKeywordGovernanceSuggestion = z.preprocess(
+  (value) => (value === undefined ? null : value),
+  KeywordGovernancePendingSuggestion.nullable(),
+);
+
+const GrowthMapKeywordDetailItemObject = GrowthMapKeywordLibraryItemObject.extend(
+  {
+    pendingSuggestion: NullablePendingKeywordGovernanceSuggestion,
+  },
+).strict();
+
+export const GrowthMapKeywordDetailItem =
+  GrowthMapKeywordDetailItemObject.superRefine((item, ctx) => {
+    addGrowthMapKeywordLibraryItemIssues(item, ctx);
+  });
+export type GrowthMapKeywordDetailItem = z.infer<
+  typeof GrowthMapKeywordDetailItem
 >;
 
 const GrowthMapKeywordLibraryResponseObject = z
@@ -2064,7 +2091,11 @@ export type GrowthMapKeywordLibraryResponse = z.infer<
 const GrowthMapKeywordDetailResponseObject = z
   .object({
     projectId: Uuid,
-    data: GrowthMapKeywordLibraryItem,
+    diagnosticRunId: z.preprocess(
+      (value) => (value === undefined ? null : value),
+      Uuid.nullable(),
+    ),
+    data: GrowthMapKeywordDetailItem,
   })
   .strict();
 
@@ -2075,6 +2106,17 @@ export const GrowthMapKeywordDetailResponse =
         code: "custom",
         path: ["data", "projectId"],
         message: "Keyword projectId must match the detail response scope",
+      });
+    }
+    if (
+      response.diagnosticRunId !== null &&
+      response.data.pendingSuggestion !== null
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["data", "pendingSuggestion"],
+        message:
+          "A pinned Keyword detail must never expose a current pending suggestion",
       });
     }
   });

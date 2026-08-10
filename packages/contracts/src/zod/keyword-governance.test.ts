@@ -954,6 +954,7 @@ describe("Keyword Review decisions and current projection", () => {
       }).success,
     ).toBe(true);
   });
+
 });
 
 describe("revision conflicts", () => {

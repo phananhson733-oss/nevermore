@@ -59,6 +59,7 @@ const ids = {
   aiSnapshot: "10000000-0000-4000-8000-000000000042",
   aiObservation: "10000000-0000-4000-8000-000000000043",
   analysisInvocation: "10000000-0000-4000-8000-000000000044",
+  suggestion: "10000000-0000-4000-8000-000000000045",
 } as const;
 
 function comparisonBasis() {
@@ -1533,6 +1534,41 @@ function keywordItem() {
   };
 }
 
+function pendingKeywordSuggestion() {
+  return {
+    suggestionId: ids.suggestion,
+    suggestionVersion: "keyword-governance-suggestion.v1" as const,
+    state: "pending_ready" as const,
+    expectedGovernanceRevision: 4,
+    status: "approved" as const,
+    intent: "commercial investigation",
+    buyerStage: "consideration",
+    topicNodeId: ids.cluster,
+    topicModelRevision: 2,
+    topicLabel: "Celebrity birthdays",
+    mappingDecision: "existing_page" as const,
+    mappedSitePageId: ids.sitePage,
+    mappedSitePageTitle: "Customer onboarding",
+    reason: "The confirmed Topic and current page already cover the keyword.",
+    readinessReason: "all_authorities_confirmed" as const,
+    limitation: null,
+    lineage: {
+      generationVersion: "keyword-governance-suggestion-generation.v1" as const,
+      promptSetVersion: "keyword-governance-suggestion.prompt.v1" as const,
+      authority: "llm_generated" as const,
+      analysisInvocationId: ids.analysisInvocation,
+    },
+    intentLineage: {
+      authority: "provider_observed" as const,
+      snapshotId: ids.aiSnapshot,
+      observationId: ids.aiObservation,
+      analysisInvocationId: null,
+      observedAt: "2026-08-10T08:00:00Z",
+    },
+    createdAt: "2026-08-10T08:00:00Z",
+  };
+}
+
 function keywordLibraryResponse() {
   return {
     projectId: ids.project,
@@ -1733,9 +1769,7 @@ describe("Growth Map Keyword Library contracts", () => {
   });
 
   it("accepts a strict, traceable Keyword projection and preserves observed zero", () => {
-    const parsed = GrowthMapKeywordLibraryResponse.parse(
-      keywordLibraryResponse(),
-    );
+    const parsed = GrowthMapKeywordLibraryResponse.parse(keywordLibraryResponse());
 
     expect(parsed.data[0]?.metrics.volume?.value).toBe(0);
     expect(parsed.data[0]?.metrics.kd).toBeNull();
@@ -1746,9 +1780,47 @@ describe("Growth Map Keyword Library contracts", () => {
       }).success,
     ).toBe(true);
     expect(
+      GrowthMapKeywordDetailResponse.parse({
+        projectId: ids.project,
+        data: keywordItem(),
+      }).data.pendingSuggestion,
+    ).toBeNull();
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...keywordItem(),
+          pendingSuggestion: pendingKeywordSuggestion(),
+        },
+      }).success,
+    ).toBe(true);
+    expect(
       GrowthMapKeywordLibraryResponse.safeParse({
         ...keywordLibraryResponse(),
         confirmActionId: ids.action,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("exposes pending suggestions only on the current review detail", () => {
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        diagnosticRunId: null,
+        data: {
+          ...keywordItem(),
+          pendingSuggestion: pendingKeywordSuggestion(),
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        diagnosticRunId: ids.currentRun,
+        data: {
+          ...keywordItem(),
+          pendingSuggestion: pendingKeywordSuggestion(),
+        },
       }).success,
     ).toBe(false);
   });
@@ -1808,6 +1880,32 @@ describe("Growth Map Keyword Library contracts", () => {
       GrowthMapKeywordDetailResponse.safeParse({
         projectId: ids.project,
         data: { ...keywordItem(), reviewOrigin: "auto_pilot" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires pending suggestions to stay customer-safe and internally consistent", () => {
+    const base = keywordItem();
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          pendingSuggestion: { ...pendingKeywordSuggestion(), actorId: ids.analysisInvocation },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrowthMapKeywordDetailResponse.safeParse({
+        projectId: ids.project,
+        data: {
+          ...base,
+          pendingSuggestion: {
+            ...pendingKeywordSuggestion(),
+            mappedSitePageId: null,
+            mappedSitePageTitle: "Customer onboarding",
+          },
+        },
       }).success,
     ).toBe(false);
   });

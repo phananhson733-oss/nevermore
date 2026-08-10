@@ -1187,6 +1187,41 @@ paths:
         '422': { $ref: '#/components/responses/ValidationError' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
 
+  /projects/{projectId}/audit/keywords/{keywordId}/review-suggestions/{suggestionId}/approve:
+    post:
+      tags: [Diagnosis]
+      summary: Approve one current Keyword review suggestion
+      description: |
+        Applies one current pending suggestion only when the exact Keyword governance
+        revision and immutable suggestion version still match. The strict two-field
+        command does not accept client-authored governance, actor, provider, or model facts.
+      operationId: approveProjectAuditKeywordReviewSuggestion
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/KeywordId'
+        - name: suggestionId
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Uuid' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApproveKeywordReviewSuggestionRequest' }
+      responses:
+        '200':
+          description: Canonical Keyword detail after the atomic approval.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GrowthMapKeywordDetailHttpResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+
   /projects/{projectId}/audit/keywords/{keywordId}/rank-history:
     get:
       tags: [Diagnosis]
@@ -6685,12 +6720,19 @@ components:
     GrowthMapKeywordDetailResponse:
       type: object
       additionalProperties: false
-      required: [projectId, data]
+      required: [projectId, diagnosticRunId, data]
       properties:
         projectId: { $ref: '#/components/schemas/Uuid' }
-        data: { $ref: '#/components/schemas/GrowthMapKeywordLibraryItem' }
-      description: The selected Keyword item's projectId exactly matches the response scope.
-      x-signalframe-runtime-refinement: keywordDetailScopeConsistency
+        diagnosticRunId: { type: [string, 'null'], format: uuid }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/GrowthMapKeywordLibraryItem'
+            - type: object
+              required: [pendingSuggestion]
+              properties:
+                pendingSuggestion: { type: 'null' }
+      description: The selected Keyword item's projectId exactly matches the response scope. Current review reads carry a nullable pendingSuggestion; pinned reads always carry null.
+      x-signalframe-runtime-refinement: keywordDetailScopeCurrentSuggestionOnly
 
     GrowthMapKeywordLibraryHttpResponse:
       type: object
@@ -7171,6 +7213,20 @@ components:
           maxLength: 2000
       description: Human Keyword review bound to one exact governance revision. Topic labels, actor facts, timestamps, provenance, and source history are server-owned.
       x-signalframe-runtime-refinement: keywordReviewAssignmentConsistency
+
+    ApproveKeywordReviewSuggestionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedGovernanceRevision, suggestionVersion]
+      properties:
+        expectedGovernanceRevision:
+          type: integer
+          minimum: 0
+          maximum: 2147483646
+        suggestionVersion:
+          type: string
+          const: keyword-governance-suggestion.v1
+      description: Strict two-field compare-and-swap command for one server-owned pending suggestion.
 
     GrowthMapCompetitorReviewStatus:
       type: string

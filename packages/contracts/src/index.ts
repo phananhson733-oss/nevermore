@@ -26,6 +26,7 @@ export * from "./zod/opportunities.ts";
 export * from "./zod/recheck.ts";
 export * from "./zod/growth-map.ts";
 export * from "./zod/keyword-governance.ts";
+export * from "./zod/keyword-governance-suggestions.ts";
 export * from "./zod/keyword-relations.ts";
 export * from "./zod/artifact-approval.ts";
 export * from "./zod/delivery-connections.ts";

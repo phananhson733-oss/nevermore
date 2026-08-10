@@ -8,6 +8,15 @@ import {
 } from "./growth-map.ts";
 import { ProductProfileCompetitorAnalysisScope } from "./product-profile.ts";
 
+export {
+  ApproveKeywordGovernanceSuggestionRequest,
+  ApproveKeywordReviewSuggestionRequest,
+  KeywordGovernancePendingSuggestion,
+  KeywordGovernanceSuggestion,
+  KeywordGovernanceSuggestionState,
+  KeywordGovernanceSuggestionVersion,
+} from "./keyword-governance-suggestions.ts";
+
 /** PostgreSQL `integer` upper bound used by persisted governance revisions. */
 export const MAX_POSTGRES_INTEGER_REVISION = 2_147_483_647;
 /**

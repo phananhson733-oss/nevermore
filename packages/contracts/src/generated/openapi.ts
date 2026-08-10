@@ -774,6 +774,28 @@ export interface paths {
         patch: operations["reviewProjectAuditKeyword"];
         trace?: never;
     };
+    "/projects/{projectId}/audit/keywords/{keywordId}/review-suggestions/{suggestionId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve one current Keyword review suggestion
+         * @description Applies one current pending suggestion only when the exact Keyword governance
+         *     revision and immutable suggestion version still match. The strict two-field
+         *     command does not accept client-authored governance, actor, provider, or model facts.
+         */
+        post: operations["approveProjectAuditKeywordReviewSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{projectId}/audit/keywords/{keywordId}/rank-history": {
         parameters: {
             query?: never;
@@ -3709,10 +3731,14 @@ export interface components {
             data: components["schemas"]["GrowthMapKeywordLibraryItem"][];
             meta: components["schemas"]["GrowthMapKeywordLibraryPageMeta"];
         };
-        /** @description The selected Keyword item's projectId exactly matches the response scope. */
+        /** @description The selected Keyword item's projectId exactly matches the response scope. Current review reads carry a nullable pendingSuggestion; pinned reads always carry null. */
         GrowthMapKeywordDetailResponse: {
             projectId: components["schemas"]["Uuid"];
-            data: components["schemas"]["GrowthMapKeywordLibraryItem"];
+            /** Format: uuid */
+            diagnosticRunId: string | null;
+            data: components["schemas"]["GrowthMapKeywordLibraryItem"] & {
+                pendingSuggestion: null;
+            };
         };
         GrowthMapKeywordLibraryHttpResponse: {
             data: components["schemas"]["GrowthMapKeywordLibraryResponse"];
@@ -3934,6 +3960,12 @@ export interface components {
             mappingDecision: "unassigned" | "existing_page" | "new_asset";
             mappedSitePageId: components["schemas"]["Uuid"] | null;
             reason: string;
+        };
+        /** @description Strict two-field compare-and-swap command for one server-owned pending suggestion. */
+        ApproveKeywordReviewSuggestionRequest: {
+            expectedGovernanceRevision: number;
+            /** @constant */
+            suggestionVersion: "keyword-governance-suggestion.v1";
         };
         /** @enum {string} */
         GrowthMapCompetitorReviewStatus: "candidate" | "approved" | "excluded";
@@ -7381,6 +7413,40 @@ export interface operations {
         };
         responses: {
             /** @description Canonical Keyword detail after the governance decision. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthMapKeywordDetailHttpResponse"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    approveProjectAuditKeywordReviewSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectId"];
+                keywordId: components["parameters"]["KeywordId"];
+                suggestionId: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveKeywordReviewSuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Canonical Keyword detail after the atomic approval. */
             200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];

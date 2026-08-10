@@ -402,6 +402,15 @@ const implementationSpec = readFileSync(
 );
 
 describe("Keyword Library generated OpenAPI contract", () => {
+  it("publishes the scoped one-click suggestion approval operation", () => {
+    expect(generated).toContain(
+      '"/projects/{projectId}/audit/keywords/{keywordId}/review-suggestions/{suggestionId}/approve": {',
+    );
+    expect(generated).toContain(
+      'post: operations["approveProjectAuditKeywordReviewSuggestion"];',
+    );
+  });
+
   it("publishes the implemented cursor read, detail read, and governed review", () => {
     expect(generated).toContain(
       '"/projects/{projectId}/audit/keywords": {',

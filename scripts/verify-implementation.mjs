@@ -679,11 +679,15 @@ function checkOpenApi() {
   const keywordListPathName = "/projects/{projectId}/audit/keywords";
   const keywordDetailPathName =
     "/projects/{projectId}/audit/keywords/{keywordId}";
+  const keywordSuggestionApprovalPathName =
+    "/projects/{projectId}/audit/keywords/{keywordId}/review-suggestions/{suggestionId}/approve";
   const keywordListPath = document.paths?.[keywordListPathName];
   const keywordDetailPath = document.paths?.[keywordDetailPathName];
   const keywordList = keywordListPath?.get;
   const keywordDetail = keywordDetailPath?.get;
   const keywordReview = keywordDetailPath?.patch;
+  const keywordSuggestionApproval =
+    document.paths?.[keywordSuggestionApprovalPathName]?.post;
   invariant(
     keywordList?.operationId === "listProjectAuditKeywords",
     "Growth Map Keyword list path/operationId drift",
@@ -695,6 +699,24 @@ function checkOpenApi() {
   invariant(
     keywordReview?.operationId === "reviewProjectAuditKeyword",
     "Growth Map Keyword review path/operationId drift",
+  );
+  invariant(
+    keywordSuggestionApproval?.operationId ===
+      "approveProjectAuditKeywordReviewSuggestion",
+    "Growth Map Keyword suggestion approval path/operationId drift",
+  );
+  invariant(
+    keywordSuggestionApproval.requestBody?.required === true &&
+      keywordSuggestionApproval.requestBody?.content?.["application/json"]
+        ?.schema?.$ref ===
+        "#/components/schemas/ApproveKeywordReviewSuggestionRequest" &&
+      (document.components?.schemas ?? {}).ApproveKeywordReviewSuggestionRequest
+        ?.additionalProperties === false &&
+      JSON.stringify(
+        (document.components?.schemas ?? {}).ApproveKeywordReviewSuggestionRequest?.required,
+      ) ===
+        JSON.stringify(["expectedGovernanceRevision", "suggestionVersion"]),
+    "Growth Map Keyword suggestion approval request must remain a strict two-field compare-and-swap command",
   );
   assertExactSet(
     Object.keys(keywordListPath ?? {}).filter((key) => HTTP_METHODS.has(key)),
@@ -789,6 +811,13 @@ function checkOpenApi() {
   );
 
   const keywordSchemas = document.components?.schemas ?? {};
+  const keywordDetailResponse = keywordSchemas.GrowthMapKeywordDetailResponse;
+  invariant(
+    keywordDetailResponse?.required?.includes("diagnosticRunId") &&
+      keywordDetailResponse?.["x-signalframe-runtime-refinement"] ===
+        "keywordDetailScopeCurrentSuggestionOnly",
+    "Growth Map Keyword pinned detail must never expose a current pending suggestion",
+  );
   const canonicalLibraryLanguageTag =
     keywordSchemas.GrowthMapLibraryLanguageTag;
   invariant(
