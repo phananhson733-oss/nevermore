@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 describe("CSV Keyword governance suggestion scheduling", () => {
-  it("schedules after a persisted keyword-gap import and preserves success when scheduling fails", async () => {
+  it("dispatches the durable request after a persisted keyword-gap import and preserves success when dispatch fails", async () => {
     const claimed = {
       id: IDS.run,
       workspace_id: IDS.workspace,
@@ -85,9 +85,15 @@ describe("CSV Keyword governance suggestion scheduling", () => {
       raw_object_key: "csv/keyword-gap.csv",
       detected_columns: ["keyword", "search_volume"],
     } as never);
-    mocks.persistCollectionResult.mockResolvedValue(IDS.preview);
-    const scheduleSuggestions = vi.fn(async () => {
-      throw new Error("suggestion scheduler unavailable");
+    const requestId = "00000000-0000-4000-8000-000000000307";
+    mocks.persistCollectionResult.mockImplementation(
+      async (_ctx, input: { onKeywordGovernanceScheduleRequest?: (id: string) => void }) => {
+        input.onKeywordGovernanceScheduleRequest?.(requestId);
+        return IDS.preview;
+      },
+    );
+    const dispatchScheduleRequest = vi.fn(async () => {
+      throw new Error("suggestion queue unavailable");
     });
     const ctx = {
       db: {
@@ -108,7 +114,7 @@ describe("CSV Keyword governance suggestion scheduling", () => {
         warn: vi.fn(),
         error: vi.fn(),
       },
-      scheduleKeywordGovernanceSuggestions: scheduleSuggestions,
+      dispatchKeywordGovernanceScheduleRequest: dispatchScheduleRequest,
     } as unknown as CollectionWorkerContext;
 
     await expect(
@@ -120,11 +126,11 @@ describe("CSV Keyword governance suggestion scheduling", () => {
     ).resolves.toBeUndefined();
 
     expect(mocks.persistCollectionResult).toHaveBeenCalledOnce();
-    expect(scheduleSuggestions).toHaveBeenCalledWith(
-      { db: ctx.db, boss: ctx.boss },
+    expect(dispatchScheduleRequest).toHaveBeenCalledWith(
+      ctx,
       {
         scope: { workspaceId: IDS.workspace, projectId: IDS.project },
-        initiatedBy: IDS.actor,
+        requestId,
       },
     );
     expect(setTerminal).not.toHaveBeenCalled();

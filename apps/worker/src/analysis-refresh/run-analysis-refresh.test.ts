@@ -12,6 +12,7 @@ import {
   IcpProfilesRepository,
   KeywordGovernanceIntegrityError,
   KeywordGovernanceRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   KeywordOccurrencesRepository,
   KeywordsRepository,
   ObservationsRepository,
@@ -1669,10 +1670,40 @@ describe("runAnalysisRefresh", () => {
     expect(DiagnosticRunsRepository.prototype.insert).not.toHaveBeenCalled();
   });
 
-  it("terminalizes partial when the required audit succeeds partially and optional inputs were skipped", async () => {
+  it("terminalizes partial with a durable suggestion request and preserves success when immediate dispatch fails", async () => {
     const harness = createHarness();
-    const scheduleSuggestions = vi.fn(async () => {
-      throw new Error("suggestion scheduler unavailable");
+    const requestId = "00000000-0000-4000-8000-000000000099";
+    const insertRequest = vi
+      .spyOn(
+        KeywordGovernanceScheduleRequestsRepository.prototype,
+        "insertRequest",
+      )
+      .mockImplementation(async (_scope, input) => {
+        expect(harness.isInTransaction()).toBe(true);
+        return {
+          kind: "inserted",
+          request: {
+            id: requestId,
+            workspaceId: IDS.workspace,
+            projectId: IDS.project,
+            dispatchKey: "durable-key",
+            sourceKind: input.sourceKind,
+            sourceRef: input.sourceRef,
+            initiatedBy: input.initiatedBy,
+            requestedAt: NOW.toISOString(),
+            nextAttemptAt: NOW.toISOString(),
+            claimToken: null,
+            claimedAt: null,
+            claimExpiresAt: null,
+            attemptCount: 0,
+            completedAt: null,
+            lastErrorCode: null,
+          },
+        };
+      });
+    const dispatchRequest = vi.fn(async () => {
+      expect(harness.isInTransaction()).toBe(false);
+      throw new Error("suggestion queue unavailable");
     });
     installCompletedCollectionPlan(harness);
     harness.state.steps[5] = step("growth_audit", 6, true, {
@@ -1705,7 +1736,7 @@ describe("runAnalysisRefresh", () => {
     await expect(
       runAnalysisRefresh(harness.ctx, JOB, {
         now: () => NOW,
-        scheduleKeywordGovernanceSuggestions: scheduleSuggestions,
+        dispatchKeywordGovernanceScheduleRequest: dispatchRequest,
       }),
     ).resolves.toBeUndefined();
 
@@ -1722,28 +1753,41 @@ describe("runAnalysisRefresh", () => {
       (call) => call[0] === "refresh.analysis",
     );
     expect(continuationCalls).toHaveLength(0);
-    expect(scheduleSuggestions).toHaveBeenCalledWith(
-      { db: harness.ctx.db, boss: harness.ctx.boss },
+    expect(insertRequest).toHaveBeenCalledWith(
+      { workspaceId: IDS.workspace, projectId: IDS.project },
+      {
+        sourceKind: "analysis_refresh",
+        sourceRef: IDS.parent,
+        initiatedBy: IDS.actor,
+      },
+    );
+    expect(dispatchRequest).toHaveBeenCalledWith(
+      harness.ctx,
       {
         scope: { workspaceId: IDS.workspace, projectId: IDS.project },
-        initiatedBy: IDS.actor,
+        requestId,
       },
     );
   });
 
-  it("does not resignal suggestions when a terminal parent was not claimed by this delivery", async () => {
+  it("does not record or dispatch a request when a terminal parent was not claimed by this delivery", async () => {
     const harness = createHarness();
     harness.state.parentStatus = "partial";
-    const scheduleSuggestions = vi.fn();
+    const insertRequest = vi.spyOn(
+      KeywordGovernanceScheduleRequestsRepository.prototype,
+      "insertRequest",
+    );
+    const dispatchRequest = vi.fn();
 
     await expect(
       runAnalysisRefresh(harness.ctx, JOB, {
         now: () => NOW,
-        scheduleKeywordGovernanceSuggestions: scheduleSuggestions,
+        dispatchKeywordGovernanceScheduleRequest: dispatchRequest,
       }),
     ).resolves.toBeUndefined();
 
-    expect(scheduleSuggestions).not.toHaveBeenCalled();
+    expect(insertRequest).not.toHaveBeenCalled();
+    expect(dispatchRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -1763,6 +1807,7 @@ interface Harness {
   readonly ctx: WorkerContext;
   readonly state: HarnessState;
   readonly send: ReturnType<typeof vi.fn>;
+  readonly isInTransaction: () => boolean;
 }
 
 function createHarness(options: {
@@ -2160,6 +2205,29 @@ function createHarness(options: {
   ).mockImplementation(
     async (_scope, id) => state.auditChildren.get(id) ?? null,
   );
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "insertRequest",
+  ).mockImplementation(async (scope, input) => ({
+    kind: "inserted",
+    request: {
+      id: "00000000-0000-4000-8000-000000000099",
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      dispatchKey: "durable-key",
+      sourceKind: input.sourceKind,
+      sourceRef: input.sourceRef,
+      initiatedBy: input.initiatedBy,
+      requestedAt: NOW.toISOString(),
+      nextAttemptAt: NOW.toISOString(),
+      claimToken: null,
+      claimedAt: null,
+      claimExpiresAt: null,
+      attemptCount: 0,
+      completedAt: null,
+      lastErrorCode: null,
+    },
+  }));
 
   let failContinuation = options.failFirstContinuation === true;
   let continuationIndex = 0;
@@ -2178,16 +2246,20 @@ function createHarness(options: {
       return `10000000-0000-4000-8000-${String(continuationIndex).padStart(12, "0")}`;
     },
   );
+  let transactionDepth = 0;
   const db = {
     transaction: async <T>(
       callback: (tx: WorkerContext["db"]) => Promise<T>,
     ): Promise<T> => {
       const before = cloneState(state);
+      transactionDepth += 1;
       try {
         return await callback({} as WorkerContext["db"]);
       } catch (error) {
         restoreState(state, before);
         throw error;
+      } finally {
+        transactionDepth -= 1;
       }
     },
   } as WorkerContext["db"];
@@ -2203,7 +2275,7 @@ function createHarness(options: {
     findingSummariesEnabled: true,
     logger: testLogger,
   };
-  return { ctx, state, send };
+  return { ctx, state, send, isInTransaction: () => transactionDepth > 0 };
 }
 
 function prepareDataForSeoStep(harness: Harness): void {

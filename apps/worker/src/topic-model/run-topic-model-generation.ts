@@ -22,6 +22,7 @@ import {
 import {
   AsyncRunsRepository,
   KeywordGovernanceRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   TopicModelConflictError,
   TopicModelGenerationInvocationAttemptsRepository,
   TopicModelGenerationRunsRepository,
@@ -35,13 +36,13 @@ import {
   type TopicModelGenerationInvocationMetadata,
   type TopicModelGenerationRunRow,
 } from "@sf/db";
-import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import { z } from "zod";
 import type { WorkerContext } from "../context.ts";
 import {
   isTransientInfrastructureError,
   transientFailureCode,
 } from "../handlers/transient-errors.ts";
+import { dispatchKeywordGovernanceScheduleRequest } from "../keyword-governance-suggestions/trigger-dispatcher.ts";
 
 export const TOPIC_MODEL_GENERATION_VERSION =
   "topic-model-generation.v1" as const;
@@ -91,7 +92,7 @@ export interface TopicModelGenerationDependencies {
   readonly createClient?: (
     options: TopicModelClientOptions,
   ) => TopicModelGenerationClient;
-  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
+  readonly dispatchKeywordGovernanceScheduleRequest?: typeof dispatchKeywordGovernanceScheduleRequest;
 }
 
 const JobPayloadSchema = z
@@ -614,11 +615,14 @@ async function commitSuccessfulResult(
   frozen: FrozenTopicModelGenerationInput,
   expected: ExpectedInvocationIdentity,
   result: TopicModelGenerationResult,
-): Promise<"completed" | "superseded" | "stale"> {
+): Promise<
+  | { readonly kind: "completed"; readonly scheduleRequestId: string }
+  | { readonly kind: "superseded" | "stale" }
+> {
   return ctx.db.transaction(async (tx) => {
     const runs = new AsyncRunsRepository(tx);
     const lockedRun = await runs.lockAttemptForUpdate(attempt);
-    if (lockedRun === null) return "stale";
+    if (lockedRun === null) return { kind: "stale" };
 
     const attempts = new TopicModelGenerationInvocationAttemptsRepository(tx);
     const finalized = await attempts.finalizeWithInvocation(
@@ -667,7 +671,7 @@ async function commitSuccessfulResult(
         if (terminalized.kind !== "terminalized") {
           throw new Error("Topic Model superseded terminalization failed");
         }
-        return "superseded";
+        return { kind: "superseded" };
       }
       throw error;
     }
@@ -726,7 +730,19 @@ async function commitSuccessfulResult(
     if (terminalized.kind !== "terminalized") {
       throw new Error("Topic Model generation completion failed");
     }
-    return "completed";
+    const recorded =
+      await new KeywordGovernanceScheduleRequestsRepository(tx).insertRequest(
+        scope,
+        {
+          sourceKind: "topic_model_confirmation_system",
+          sourceRef: attempt.runId,
+          initiatedBy: lockedRun.initiated_by,
+        },
+      );
+    return {
+      kind: "completed",
+      scheduleRequestId: recorded.request.id,
+    };
   });
 }
 
@@ -968,23 +984,23 @@ export async function runTopicModelGeneration(
       expected,
       result,
     );
-    if (committed === "completed") {
+    if (committed.kind === "completed") {
       try {
-        const scheduleSuggestions =
-          dependencies.scheduleKeywordGovernanceSuggestions ??
-          scheduleKeywordGovernanceSuggestions;
-        await scheduleSuggestions(
-          { db: ctx.db, boss: ctx.boss },
-          { scope, initiatedBy: claimed.initiated_by },
+        const dispatchRequest =
+          dependencies.dispatchKeywordGovernanceScheduleRequest ??
+          dispatchKeywordGovernanceScheduleRequest;
+        await dispatchRequest(
+          ctx,
+          { scope, requestId: committed.scheduleRequestId },
         );
       } catch {
         try {
-          ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
-            code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
-            source: "topic_model_confirmation",
+          ctx.logger.warn("keyword_governance_schedule_dispatch_failed", {
+            code: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+            source: "topic_model_confirmation_system",
           });
         } catch {
-          // Topic confirmation is already committed.
+          // Topic confirmation and its durable request are committed.
         }
       }
       try {
@@ -997,7 +1013,7 @@ export async function runTopicModelGeneration(
         // Canonical database state is already committed.
       }
     }
-    if (committed !== "stale") return;
+    if (committed.kind !== "stale") return;
   } catch {
     // The successful invocation and all domain writes shared Tx B; a rejected
     // commit leaves only the durable pre-call reservation.

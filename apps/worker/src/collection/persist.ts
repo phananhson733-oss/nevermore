@@ -3,6 +3,7 @@ import {
   AsyncRunsRepository,
   CollectionRunsRepository,
   DataSnapshotsRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   ObservationsRepository,
   projectDataForSeoBacklinkSnapshot,
   ProjectsRepository,
@@ -83,6 +84,8 @@ export async function persistCollectionResult(
     attempt: RunAttempt;
     outcome: CollectionOutcome;
     observations: readonly ObservationInsert[];
+    /** Receives the committed durable request id for low-latency dispatch. */
+    onKeywordGovernanceScheduleRequest?: (requestId: string) => void;
   },
 ): Promise<string | null> {
   const { collectionRun: run, outcome } = input;
@@ -149,6 +152,7 @@ export async function persistCollectionResult(
   // On rollback, best-effort delete the just-uploaded orphan object (spec §13.3);
   // the daily orphan cleanup is the backstop.
   let transactionCallbackCompleted = false;
+  let keywordGovernanceScheduleRequestId: string | null = null;
   try {
     const snapshotId = await ctx.db.transaction(async (tx) => {
       await new StorageObjectReferencesRepository(
@@ -364,6 +368,21 @@ export async function persistCollectionResult(
         );
       }
 
+      if (
+        run.provider === "csv" &&
+        run.operation === "keyword_gap_import"
+      ) {
+        const recorded =
+          await new KeywordGovernanceScheduleRequestsRepository(
+            tx,
+          ).insertRequest(scope, {
+            sourceKind: "csv_keyword_gap_import",
+            sourceRef: run.id,
+            initiatedBy: input.actorId,
+          });
+        keywordGovernanceScheduleRequestId = recorded.request.id;
+      }
+
       await new TelemetryRepository(tx).emit({
         workspaceId: run.workspace_id,
         projectId: run.project_id,
@@ -389,6 +408,14 @@ export async function persistCollectionResult(
       // upload cannot be referenced by another attempt and is safe to remove.
       if (put !== undefined) {
         await ctx.blobStore.delete(put.key).catch(() => {});
+      }
+    } else if (keywordGovernanceScheduleRequestId !== null) {
+      try {
+        input.onKeywordGovernanceScheduleRequest?.(
+          keywordGovernanceScheduleRequestId,
+        );
+      } catch {
+        // The request is durable; callback failure cannot falsify the source.
       }
     }
     return snapshotId;

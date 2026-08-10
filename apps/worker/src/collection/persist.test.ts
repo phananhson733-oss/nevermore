@@ -6,6 +6,7 @@ import {
   CompetitorsRepository,
   DataSnapshotsRepository,
   ImportPreviewsRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   KeywordOccurrencesRepository,
   ObservationsRepository,
   PageSnapshotsRepository,
@@ -237,6 +238,29 @@ beforeEach(() => {
     "setReadyToDiagnoseIfEligible",
   ).mockResolvedValue(false);
   vi.spyOn(TelemetryRepository.prototype, "emit").mockResolvedValue();
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "insertRequest",
+  ).mockImplementation(async (scope, input) => ({
+    kind: "inserted",
+    request: {
+      id: "00000000-0000-4000-8000-000000000099",
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      dispatchKey: "durable-key",
+      sourceKind: input.sourceKind,
+      sourceRef: input.sourceRef,
+      initiatedBy: input.initiatedBy,
+      requestedAt: capturedAt,
+      nextAttemptAt: capturedAt,
+      claimToken: null,
+      claimedAt: null,
+      claimExpiresAt: null,
+      attemptCount: 0,
+      completedAt: null,
+      lastErrorCode: null,
+    },
+  }));
 });
 
 describe("persistCollectionResult transaction outcomes", () => {
@@ -437,8 +461,44 @@ describe("persistCollectionResult transaction outcomes", () => {
       created_at: "2026-07-18T23:58:00.000Z",
       updated_at: "2026-07-18T23:59:00.000Z",
     });
+    let transactionDepth = 0;
+    const insertScheduleRequest = vi
+      .spyOn(
+        KeywordGovernanceScheduleRequestsRepository.prototype,
+        "insertRequest",
+      )
+      .mockImplementation(async (_scope, input) => {
+        expect(transactionDepth).toBe(1);
+        return {
+          kind: "inserted",
+          request: {
+            id: "00000000-0000-4000-8000-000000000099",
+            workspaceId: attempt.workspaceId,
+            projectId: attempt.projectId,
+            dispatchKey: "durable-key",
+            sourceKind: input.sourceKind,
+            sourceRef: input.sourceRef,
+            initiatedBy: input.initiatedBy,
+            requestedAt: capturedAt,
+            nextAttemptAt: capturedAt,
+            claimToken: null,
+            claimedAt: null,
+            claimExpiresAt: null,
+            attemptCount: 0,
+            completedAt: null,
+            lastErrorCode: null,
+          },
+        };
+      });
     transaction.mockImplementationOnce(
-      async (callback: (tx: object) => Promise<unknown>) => callback({}),
+      async (callback: (tx: object) => Promise<unknown>) => {
+        transactionDepth += 1;
+        try {
+          return await callback({});
+        } finally {
+          transactionDepth -= 1;
+        }
+      },
     );
 
     await expect(
@@ -476,6 +536,21 @@ describe("persistCollectionResult transaction outcomes", () => {
       vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
         .invocationCallOrder[0]!,
     );
+    expect(insertScheduleRequest).toHaveBeenCalledWith(
+      {
+        workspaceId: attempt.workspaceId,
+        projectId: attempt.projectId,
+      },
+      {
+        sourceKind: "csv_keyword_gap_import",
+        sourceRef: csvRun.id,
+        initiatedBy: "actor-1",
+      },
+    );
+    expect(
+      vi.mocked(AsyncRunsRepository.prototype.setTerminal).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(insertScheduleRequest.mock.invocationCallOrder[0]!);
     expect(CompetitorsRepository.prototype.upsertOrigins).not.toHaveBeenCalled();
   });
 

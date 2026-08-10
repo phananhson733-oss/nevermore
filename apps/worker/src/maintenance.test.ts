@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   isRecoveryAbortError: vi.fn(),
   startRecovery: vi.fn(),
   startCompetitorMonitor: vi.fn(),
+  startKeywordGovernanceTrigger: vi.fn(),
   startOrphanCleanup: vi.fn(),
   startRetentionCleanup: vi.fn(),
 }));
@@ -22,6 +23,10 @@ vi.mock("./handlers/retention-cleanup.ts", () => ({
 vi.mock("./competitor-monitor/scheduler.ts", () => ({
   startCompetitorMonitorSchedulerLoop: mocks.startCompetitorMonitor,
 }));
+vi.mock("./keyword-governance-suggestions/trigger-dispatcher.ts", () => ({
+  startKeywordGovernanceSuggestionTriggerDispatcherLoop:
+    mocks.startKeywordGovernanceTrigger,
+}));
 
 import {
   getWorkerMaintenanceFromStartError,
@@ -32,6 +37,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.isRecoveryAbortError.mockReturnValue(false);
   mocks.startCompetitorMonitor.mockReturnValue({
+    runNow: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+  });
+  mocks.startKeywordGovernanceTrigger.mockReturnValue({
     runNow: vi.fn(async () => undefined),
     stop: vi.fn(async () => undefined),
   });
@@ -48,6 +57,7 @@ describe("startWorkerMaintenance", () => {
     const orphanStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(async () => undefined);
     const competitorMonitorStop = vi.fn(async () => undefined);
+    const keywordGovernanceTriggerStop = vi.fn(async () => undefined);
     let resolveImmediate!: () => void;
     const immediateSweep = new Promise<void>((resolve) => {
       resolveImmediate = resolve;
@@ -70,6 +80,10 @@ describe("startWorkerMaintenance", () => {
       runNow: vi.fn(() => immediateSweep),
       stop: competitorMonitorStop,
     });
+    mocks.startKeywordGovernanceTrigger.mockReturnValue({
+      runNow: vi.fn(() => immediateSweep),
+      stop: keywordGovernanceTriggerStop,
+    });
 
     const maintenance = await startWorkerMaintenance({} as WorkerContext);
 
@@ -77,6 +91,8 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.startOrphanCleanup).toHaveBeenCalledTimes(1);
     expect(mocks.startRetentionCleanup).toHaveBeenCalledTimes(1);
     expect(mocks.startCompetitorMonitor).toHaveBeenCalledTimes(1);
+    expect(mocks.startKeywordGovernanceTrigger).toHaveBeenCalledTimes(1);
+    expect(maintenance.keywordGovernanceTrigger.runNow).not.toHaveBeenCalled();
     expect(maintenance.competitorMonitor.runNow).not.toHaveBeenCalled();
     expect(maintenance.orphanCleanup.runNow).not.toHaveBeenCalled();
     expect(maintenance.retentionCleanup.runNow).not.toHaveBeenCalled();
@@ -87,6 +103,7 @@ describe("startWorkerMaintenance", () => {
     expect(orphanStop).toHaveBeenCalledTimes(1);
     expect(retentionStop).toHaveBeenCalledTimes(1);
     expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
+    expect(keywordGovernanceTriggerStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -96,6 +113,7 @@ describe("startWorkerMaintenance", () => {
     const orphanStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(() => new Promise<void>(() => undefined));
     const competitorMonitorStop = vi.fn(async () => undefined);
+    const keywordGovernanceTriggerStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -112,6 +130,10 @@ describe("startWorkerMaintenance", () => {
       runNow: vi.fn(async () => undefined),
       stop: competitorMonitorStop,
     });
+    mocks.startKeywordGovernanceTrigger.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: keywordGovernanceTriggerStop,
+    });
     const maintenance = await startWorkerMaintenance({} as WorkerContext, {
       stopTimeoutMs: 50,
     });
@@ -124,6 +146,7 @@ describe("startWorkerMaintenance", () => {
     expect(orphanStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
     expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
+    expect(keywordGovernanceTriggerStop).toHaveBeenCalledTimes(1);
 
     const rejected = expect(firstStop).rejects.toMatchObject({
       code: "WORKER_MAINTENANCE_STOP_FAILED",
@@ -151,6 +174,7 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
     expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
+    expect(mocks.startKeywordGovernanceTrigger).not.toHaveBeenCalled();
   });
 
   it("stops all previously started loops when a later loop cannot start", async () => {
@@ -158,6 +182,7 @@ describe("startWorkerMaintenance", () => {
     const recoveryStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(async () => undefined);
     const competitorMonitorStop = vi.fn(async () => undefined);
+    const keywordGovernanceTriggerStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -170,6 +195,10 @@ describe("startWorkerMaintenance", () => {
       runNow: vi.fn(async () => undefined),
       stop: competitorMonitorStop,
     });
+    mocks.startKeywordGovernanceTrigger.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: keywordGovernanceTriggerStop,
+    });
     mocks.startOrphanCleanup.mockImplementation(() => {
       throw startupFailure;
     });
@@ -180,6 +209,7 @@ describe("startWorkerMaintenance", () => {
 
     expect(retentionStop).toHaveBeenCalledTimes(1);
     expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
+    expect(keywordGovernanceTriggerStop).toHaveBeenCalledTimes(1);
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -213,6 +243,7 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
     expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
+    expect(mocks.startKeywordGovernanceTrigger).not.toHaveBeenCalled();
     await maintenance.stop();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
@@ -242,6 +273,7 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
     expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
+    expect(mocks.startKeywordGovernanceTrigger).not.toHaveBeenCalled();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
 
@@ -270,6 +302,7 @@ describe("startWorkerMaintenance", () => {
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
     expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
+    expect(mocks.startKeywordGovernanceTrigger).not.toHaveBeenCalled();
     await maintenance.stop();
     expect(recoveryStop).toHaveBeenCalledTimes(1);
   });
@@ -280,6 +313,7 @@ describe("startWorkerMaintenance", () => {
     const recoveryStop = vi.fn(async () => undefined);
     const retentionStop = vi.fn(() => new Promise<void>(() => undefined));
     const competitorMonitorStop = vi.fn(async () => undefined);
+    const keywordGovernanceTriggerStop = vi.fn(async () => undefined);
     mocks.startRecovery.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: recoveryStop,
@@ -291,6 +325,10 @@ describe("startWorkerMaintenance", () => {
     mocks.startCompetitorMonitor.mockReturnValue({
       runNow: vi.fn(async () => undefined),
       stop: competitorMonitorStop,
+    });
+    mocks.startKeywordGovernanceTrigger.mockReturnValue({
+      runNow: vi.fn(async () => undefined),
+      stop: keywordGovernanceTriggerStop,
     });
     mocks.startOrphanCleanup.mockImplementation(() => {
       throw startupFailure;
@@ -312,6 +350,7 @@ describe("startWorkerMaintenance", () => {
     expect(recoveryStop).toHaveBeenCalledTimes(1);
     expect(retentionStop).toHaveBeenCalledTimes(1);
     expect(competitorMonitorStop).toHaveBeenCalledTimes(1);
+    expect(keywordGovernanceTriggerStop).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an invalid stop deadline before any loop starts", async () => {
@@ -321,6 +360,7 @@ describe("startWorkerMaintenance", () => {
 
     expect(mocks.startRecovery).not.toHaveBeenCalled();
     expect(mocks.startCompetitorMonitor).not.toHaveBeenCalled();
+    expect(mocks.startKeywordGovernanceTrigger).not.toHaveBeenCalled();
     expect(mocks.startRetentionCleanup).not.toHaveBeenCalled();
     expect(mocks.startOrphanCleanup).not.toHaveBeenCalled();
   });

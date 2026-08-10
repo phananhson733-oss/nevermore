@@ -16,6 +16,10 @@ import {
   startCompetitorMonitorSchedulerLoop,
   type CompetitorMonitorSchedulerLoop,
 } from "./competitor-monitor/scheduler.ts";
+import {
+  startKeywordGovernanceSuggestionTriggerDispatcherLoop,
+  type KeywordGovernanceSuggestionTriggerDispatcherLoop,
+} from "./keyword-governance-suggestions/trigger-dispatcher.ts";
 
 export const WORKER_MAINTENANCE_STOP_TIMEOUT_MS = 5_000;
 
@@ -27,6 +31,7 @@ export interface WorkerMaintenanceOptions {
 
 type MaintenanceLoopName =
   | "competitor-monitor"
+  | "keyword-governance-trigger"
   | "retention"
   | "orphan"
   | "recovery";
@@ -72,6 +77,7 @@ export class WorkerMaintenanceStartCleanupError extends Error {
 export interface WorkerMaintenance {
   readonly recovery: RunRecoveryLoop;
   readonly competitorMonitor: CompetitorMonitorSchedulerLoop;
+  readonly keywordGovernanceTrigger: KeywordGovernanceSuggestionTriggerDispatcherLoop;
   readonly orphanCleanup: OrphanCleanupLoop;
   readonly retentionCleanup: RetentionCleanupLoop;
   stop(): Promise<void>;
@@ -99,6 +105,9 @@ export async function startWorkerMaintenance(
   const startedLoops: MaintenanceLoopStop[] = [];
   let recovery: RunRecoveryLoop | undefined;
   let competitorMonitor: CompetitorMonitorSchedulerLoop | undefined;
+  let keywordGovernanceTrigger:
+    | KeywordGovernanceSuggestionTriggerDispatcherLoop
+    | undefined;
   let retentionCleanup: RetentionCleanupLoop | undefined;
   let orphanCleanup: OrphanCleanupLoop | undefined;
 
@@ -119,6 +128,7 @@ export async function startWorkerMaintenance(
         undefined,
         undefined,
         undefined,
+        undefined,
         stopTimeoutMs,
       );
     }
@@ -136,6 +146,25 @@ export async function startWorkerMaintenance(
         startedCompetitorMonitor,
         undefined,
         undefined,
+        undefined,
+        stopTimeoutMs,
+      );
+    }
+
+    const startedKeywordGovernanceTrigger =
+      startKeywordGovernanceSuggestionTriggerDispatcherLoop(ctx);
+    keywordGovernanceTrigger = startedKeywordGovernanceTrigger;
+    startedLoops.push({
+      name: "keyword-governance-trigger",
+      stop: () => startedKeywordGovernanceTrigger.stop(),
+    });
+    if (options.signal?.aborted) {
+      return createWorkerMaintenance(
+        startedRecovery,
+        startedCompetitorMonitor,
+        startedKeywordGovernanceTrigger,
+        undefined,
+        undefined,
         stopTimeoutMs,
       );
     }
@@ -150,6 +179,7 @@ export async function startWorkerMaintenance(
       return createWorkerMaintenance(
         startedRecovery,
         startedCompetitorMonitor,
+        startedKeywordGovernanceTrigger,
         startedRetentionCleanup,
         undefined,
         stopTimeoutMs,
@@ -166,6 +196,7 @@ export async function startWorkerMaintenance(
     return createWorkerMaintenance(
       startedRecovery,
       startedCompetitorMonitor,
+      startedKeywordGovernanceTrigger,
       startedRetentionCleanup,
       startedOrphanCleanup,
       stopTimeoutMs,
@@ -179,6 +210,7 @@ export async function startWorkerMaintenance(
       return createWorkerMaintenance(
         recovery,
         competitorMonitor,
+        keywordGovernanceTrigger,
         retentionCleanup,
         orphanCleanup,
         stopTimeoutMs,
@@ -189,6 +221,7 @@ export async function startWorkerMaintenance(
       const partial = createWorkerMaintenance(
         recovery,
         competitorMonitor,
+        keywordGovernanceTrigger,
         retentionCleanup,
         orphanCleanup,
         stopTimeoutMs,
@@ -222,6 +255,9 @@ export function getWorkerMaintenanceFromStartError(
 function createWorkerMaintenance(
   recovery: RunRecoveryLoop,
   competitorMonitor: CompetitorMonitorSchedulerLoop | undefined,
+  keywordGovernanceTrigger:
+    | KeywordGovernanceSuggestionTriggerDispatcherLoop
+    | undefined,
   retentionCleanup: RetentionCleanupLoop | undefined,
   orphanCleanup: OrphanCleanupLoop | undefined,
   stopTimeoutMs: number,
@@ -230,12 +266,18 @@ function createWorkerMaintenance(
   const resolvedOrphan = orphanCleanup ?? STOPPED_STORAGE_LOOP;
   const resolvedCompetitorMonitor =
     competitorMonitor ?? STOPPED_STORAGE_LOOP;
+  const resolvedKeywordGovernanceTrigger =
+    keywordGovernanceTrigger ?? STOPPED_STORAGE_LOOP;
   const allLoops: readonly MaintenanceLoopStop[] = [
     { name: "retention", stop: () => resolvedRetention.stop() },
     { name: "orphan", stop: () => resolvedOrphan.stop() },
     {
       name: "competitor-monitor",
       stop: () => resolvedCompetitorMonitor.stop(),
+    },
+    {
+      name: "keyword-governance-trigger",
+      stop: () => resolvedKeywordGovernanceTrigger.stop(),
     },
     { name: "recovery", stop: () => recovery.stop() },
   ];
@@ -256,6 +298,7 @@ function createWorkerMaintenance(
   return {
     recovery,
     competitorMonitor: resolvedCompetitorMonitor,
+    keywordGovernanceTrigger: resolvedKeywordGovernanceTrigger,
     orphanCleanup: resolvedOrphan,
     retentionCleanup: resolvedRetention,
     stop,

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AsyncRunsRepository } from "@sf/db";
-import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import type { WorkerContext } from "../context.ts";
+import { dispatchKeywordGovernanceScheduleRequestBySource } from "../keyword-governance-suggestions/trigger-dispatcher.ts";
 import { runKeywordGovernanceSuggestionGeneration } from "../keyword-governance-suggestions/run-keyword-governance-suggestion-generation.ts";
 import { registerKeywordGovernanceSuggestionGenerationHandler } from "./keyword-governance-suggestion-generation.ts";
 import { prepareRunDelivery } from "./recovery.ts";
@@ -16,9 +16,9 @@ vi.mock(
     })),
   }),
 );
-vi.mock("@sf/db/keyword-governance-suggestion-scheduler", () => ({
-  scheduleKeywordGovernanceSuggestions: vi.fn(async () => ({
-    kind: "no_candidates",
+vi.mock("../keyword-governance-suggestions/trigger-dispatcher.ts", () => ({
+  dispatchKeywordGovernanceScheduleRequestBySource: vi.fn(async () => ({
+    kind: "completed",
   })),
 }));
 vi.mock("./recovery.ts", () => ({
@@ -40,9 +40,9 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
       requestNextBatch: true,
       initiatedBy: "00000000-0000-4000-8000-000000000004",
     });
-    vi.mocked(scheduleKeywordGovernanceSuggestions).mockResolvedValue({
-      kind: "no_candidates",
-    });
+    vi.mocked(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).mockResolvedValue({ kind: "completed" });
     vi.mocked(prepareRunDelivery).mockImplementation(
       async (ctx, job, execute) => execute(job.data, ctx),
     );
@@ -97,14 +97,17 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
         projectId: data.projectId,
       },
     );
-    expect(scheduleKeywordGovernanceSuggestions).toHaveBeenCalledWith(
-      { db: ctx.db, boss: ctx.boss },
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).toHaveBeenCalledWith(
+      ctx,
       {
         scope: {
           workspaceId: data.workspaceId,
           projectId: data.projectId,
         },
-        initiatedBy: "00000000-0000-4000-8000-000000000004",
+        sourceKind: "generation_continuation",
+        sourceRef: data.runId,
       },
     );
     expect(data).not.toHaveProperty("retryCount");
@@ -114,7 +117,7 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
     "stale_authority",
     "concurrent_human",
     "conflict",
-  ] as const)("schedules after a durable %s supersession", async (reason) => {
+  ] as const)("dispatches the durable continuation after a %s supersession", async (reason) => {
     let handler:
       | ((jobs: readonly Record<string, unknown>[]) => Promise<void>)
       | undefined;
@@ -131,7 +134,7 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
     const ctx = {
       db: {},
       boss: { work },
-      logger: { info: vi.fn() },
+      logger: { info: vi.fn(), warn: vi.fn() },
     } as unknown as WorkerContext;
     vi.mocked(runKeywordGovernanceSuggestionGeneration).mockResolvedValueOnce({
       kind: "reschedule",
@@ -154,10 +157,12 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
       },
     ]);
 
-    expect(scheduleKeywordGovernanceSuggestions).toHaveBeenCalledOnce();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).toHaveBeenCalledOnce();
   });
 
-  it("retries scheduling from a durable terminal disposition without paying again", async () => {
+  it("ACKs the generation delivery when immediate continuation dispatch fails because maintenance owns the retry", async () => {
     let handler:
       | ((jobs: readonly Record<string, unknown>[]) => Promise<void>)
       | undefined;
@@ -174,18 +179,12 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
     const ctx = {
       db: {},
       boss: { work },
-      logger: { info: vi.fn() },
+      logger: { info: vi.fn(), warn: vi.fn() },
     } as unknown as WorkerContext;
     const schedulingFailure = new Error("database unavailable");
-    vi.mocked(scheduleKeywordGovernanceSuggestions)
-      .mockRejectedValueOnce(schedulingFailure)
-      .mockResolvedValueOnce({
-        kind: "queued",
-        runId: "00000000-0000-4000-8000-000000000005",
-        inputHash: "a".repeat(64),
-        candidateCount: 100,
-        hasMore: true,
-      });
+    vi.mocked(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).mockRejectedValueOnce(schedulingFailure);
 
     await registerKeywordGovernanceSuggestionGenerationHandler(ctx);
     if (!handler) throw new Error("suggestion generation handler missing");
@@ -199,35 +198,19 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
       retryLimit: 2,
     };
 
-    await expect(handler([firstDelivery])).rejects.toBe(schedulingFailure);
+    await expect(handler([firstDelivery])).resolves.toBeUndefined();
 
-    vi.mocked(prepareRunDelivery).mockImplementationOnce(async () => undefined);
-    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValueOnce({
-      id: firstDelivery.data.runId,
-      workspace_id: firstDelivery.data.workspaceId,
-      project_id: firstDelivery.data.projectId,
-      kind: "keyword_governance_suggestion_generation",
-      status: "completed",
-      active_key: "keyword-governance-suggestion:generation",
-      contract_version: "2026-08-10",
-      request_payload: {},
-      progress: {},
-      last_error_code: null,
-      last_error_summary: null,
-      result_type: "keyword_governance_suggestion_generation_run",
-      result_id: firstDelivery.data.runId,
-      attempt_count: 1,
-      initiated_by: "00000000-0000-4000-8000-000000000004",
-      queued_at: "2026-08-10T00:00:00.000Z",
-      started_at: "2026-08-10T00:00:01.000Z",
-      completed_at: "2026-08-10T00:00:02.000Z",
-    });
-    await expect(
-      handler([{ ...firstDelivery, retryCount: 1 }]),
-    ).resolves.toBeUndefined();
-
-    expect(runKeywordGovernanceSuggestionGeneration).toHaveBeenCalledTimes(2);
-    expect(scheduleKeywordGovernanceSuggestions).toHaveBeenCalledTimes(2);
+    expect(runKeywordGovernanceSuggestionGeneration).toHaveBeenCalledOnce();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).toHaveBeenCalledOnce();
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      "keyword_governance_schedule_dispatch_failed",
+      {
+        code: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+        source: "generation_continuation",
+      },
+    );
   });
 
   it("does not bypass preparation when a skipped canonical run is not terminal", async () => {
@@ -286,15 +269,12 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
     ]);
 
     expect(runKeywordGovernanceSuggestionGeneration).not.toHaveBeenCalled();
-    expect(scheduleKeywordGovernanceSuggestions).not.toHaveBeenCalled();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { kind: "active", runId: "00000000-0000-4000-8000-000000000005" },
-    { kind: "exact_pending_reused", generationRunId: "00000000-0000-4000-8000-000000000005", inputHash: "a".repeat(64), suggestionCount: 1 },
-    { kind: "no_candidates" },
-    { kind: "authority_unavailable" },
-  ] as const)("acks the typed scheduler result $kind", async (scheduled) => {
+  it("dispatches a continuation request recovered from an already-terminal delivery without replaying the paid runner", async () => {
     let handler:
       | ((jobs: readonly Record<string, unknown>[]) => Promise<void>)
       | undefined;
@@ -313,9 +293,27 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
       boss: { work },
       logger: { info: vi.fn() },
     } as unknown as WorkerContext;
-    vi.mocked(scheduleKeywordGovernanceSuggestions).mockResolvedValueOnce(
-      scheduled,
-    );
+    vi.mocked(prepareRunDelivery).mockImplementationOnce(async () => undefined);
+    vi.spyOn(AsyncRunsRepository.prototype, "findById").mockResolvedValueOnce({
+      id: "00000000-0000-4000-8000-000000000001",
+      workspace_id: "00000000-0000-4000-8000-000000000002",
+      project_id: "00000000-0000-4000-8000-000000000003",
+      kind: "keyword_governance_suggestion_generation",
+      status: "completed",
+      active_key: "keyword-governance-suggestion:generation",
+      contract_version: "2026-08-10",
+      request_payload: {},
+      progress: {},
+      last_error_code: null,
+      last_error_summary: null,
+      result_type: "keyword_governance_suggestion_generation_run",
+      result_id: "00000000-0000-4000-8000-000000000001",
+      attempt_count: 1,
+      initiated_by: "00000000-0000-4000-8000-000000000004",
+      queued_at: "2026-08-10T00:00:00.000Z",
+      started_at: "2026-08-10T00:00:01.000Z",
+      completed_at: "2026-08-10T00:00:02.000Z",
+    });
 
     await registerKeywordGovernanceSuggestionGenerationHandler(ctx);
     if (!handler) throw new Error("suggestion generation handler missing");
@@ -333,6 +331,10 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
         },
       ]),
     ).resolves.toBeUndefined();
+    expect(runKeywordGovernanceSuggestionGeneration).not.toHaveBeenCalled();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).toHaveBeenCalledOnce();
   });
 
   it("does not schedule after a fatal settled outcome", async () => {
@@ -372,7 +374,9 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
       },
     ]);
 
-    expect(scheduleKeywordGovernanceSuggestions).not.toHaveBeenCalled();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).not.toHaveBeenCalled();
   });
 
   it("preserves preparation failures without invoking the runner", async () => {
@@ -414,6 +418,8 @@ describe("registerKeywordGovernanceSuggestionGenerationHandler", () => {
     ).rejects.toBe(failure);
 
     expect(runKeywordGovernanceSuggestionGeneration).not.toHaveBeenCalled();
-    expect(scheduleKeywordGovernanceSuggestions).not.toHaveBeenCalled();
+    expect(
+      dispatchKeywordGovernanceScheduleRequestBySource,
+    ).not.toHaveBeenCalled();
   });
 });

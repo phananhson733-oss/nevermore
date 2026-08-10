@@ -1,4 +1,5 @@
 import {
+  KeywordGovernanceScheduleRequestsRepository,
   ProjectsRepository,
   TopicModelConflictError,
   TopicModelIntegrityError,
@@ -34,6 +35,8 @@ const ids = {
   actor: "10000000-0000-4000-8000-000000000003",
   node: "10000000-0000-4000-8000-000000000004",
   invocation: "10000000-0000-4000-8000-000000000005",
+  scheduleRequest: "10000000-0000-4000-8000-000000000006",
+  scheduleClaim: "10000000-0000-4000-8000-000000000007",
 } as const;
 
 const readScope = { workspaceId: ids.workspace };
@@ -42,6 +45,23 @@ const mutationScope = {
   actorId: ids.actor,
 };
 const exec = {} as Executor;
+const scheduleRequest = {
+  id: ids.scheduleRequest,
+  workspaceId: ids.workspace,
+  projectId: ids.project,
+  dispatchKey: "durable-key",
+  sourceKind: "topic_model_confirmation_manual" as const,
+  sourceRef: `${ids.project}:2`,
+  initiatedBy: ids.actor,
+  requestedAt: "2026-07-22T11:00:00.000Z",
+  nextAttemptAt: "2026-07-22T11:00:00.000Z",
+  claimToken: null,
+  claimedAt: null,
+  claimExpiresAt: null,
+  attemptCount: 0,
+  completedAt: null,
+  lastErrorCode: null,
+};
 
 function activeProject(
   overrides: Readonly<Record<string, unknown>> = {},
@@ -151,6 +171,44 @@ beforeEach(() => {
   serviceMocks.scheduleKeywordGovernanceSuggestions
     .mockReset()
     .mockResolvedValue({ kind: "no_candidates" });
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "insertRequest",
+  ).mockResolvedValue({ kind: "inserted", request: scheduleRequest });
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "claimRequest",
+  ).mockResolvedValue({
+    kind: "claimed",
+    request: {
+      ...scheduleRequest,
+      claimToken: ids.scheduleClaim,
+      claimedAt: "2026-07-22T11:00:01.000Z",
+      claimExpiresAt: "2026-07-22T11:01:01.000Z",
+      attemptCount: 1,
+    },
+  });
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "complete",
+  ).mockResolvedValue({
+    kind: "completed",
+    request: {
+      ...scheduleRequest,
+      completedAt: "2026-07-22T11:00:02.000Z",
+    },
+  });
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "release",
+  ).mockResolvedValue({
+    kind: "released",
+    request: {
+      ...scheduleRequest,
+      nextAttemptAt: "2026-07-22T11:01:02.000Z",
+      lastErrorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+    },
+  });
 });
 
 afterEach(() => {
@@ -630,9 +688,22 @@ describe("Growth Map Topic Model draft lifecycle", () => {
       },
       draft: null,
     });
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.insertRequest,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      {
+        sourceKind: "topic_model_confirmation_manual",
+        sourceRef: `${ids.project}:2`,
+        initiatedBy: ids.actor,
+      },
+    );
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.claimRequest,
+    ).not.toHaveBeenCalled();
   });
 
-  it("best-effort schedules suggestions after the default confirmation transaction commits", async () => {
+  it("records the manual confirmation request in the source transaction before dispatching its exact lease", async () => {
     activeProject();
     vi.spyOn(
       TopicModelsRepository.prototype,
@@ -645,10 +716,6 @@ describe("Growth Map Topic Model draft lifecycle", () => {
     vi.spyOn(TopicModelsRepository.prototype, "getDraft").mockResolvedValue(
       null,
     );
-    serviceMocks.scheduleKeywordGovernanceSuggestions.mockRejectedValueOnce(
-      new Error("suggestion scheduler unavailable"),
-    );
-
     await expect(
       confirmProjectAuditTopicModelDraft(mutationScope, ids.project, {
         topicModelRevision: 2,
@@ -663,6 +730,22 @@ describe("Growth Map Topic Model draft lifecycle", () => {
     expect(serviceMocks.transaction).toHaveBeenCalledOnce();
     expect(serviceMocks.getBoss).toHaveBeenCalledOnce();
     expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.insertRequest,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      {
+        sourceKind: "topic_model_confirmation_manual",
+        sourceRef: `${ids.project}:2`,
+        initiatedBy: ids.actor,
+      },
+    );
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.claimRequest,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { requestId: ids.scheduleRequest, leaseSeconds: 60 },
+    );
+    expect(
       serviceMocks.scheduleKeywordGovernanceSuggestions,
     ).toHaveBeenCalledWith(
       { db: expect.any(Object), boss: { name: "boss" } },
@@ -671,6 +754,55 @@ describe("Growth Map Topic Model draft lifecycle", () => {
         initiatedBy: ids.actor,
       },
     );
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.complete,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      { requestId: ids.scheduleRequest, claimToken: ids.scheduleClaim },
+    );
+  });
+
+  it("releases a failed immediate manual dispatch without rolling back the confirmed Topic", async () => {
+    activeProject();
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "confirmDraft",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(
+      TopicModelsRepository.prototype,
+      "getLatestConfirmed",
+    ).mockResolvedValue(confirmedV2);
+    vi.spyOn(TopicModelsRepository.prototype, "getDraft").mockResolvedValue(
+      null,
+    );
+    serviceMocks.scheduleKeywordGovernanceSuggestions.mockRejectedValueOnce(
+      new Error("suggestion queue unavailable"),
+    );
+
+    await expect(
+      confirmProjectAuditTopicModelDraft(mutationScope, ids.project, {
+        topicModelRevision: 2,
+        expectedEditRevision: 1,
+        reason: "Confirm the reviewed customer Topic Map.",
+      }),
+    ).resolves.toMatchObject({
+      latestConfirmed: { topicModelRevision: 2 },
+      draft: null,
+    });
+
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.release,
+    ).toHaveBeenCalledWith(
+      { workspaceId: ids.workspace, projectId: ids.project },
+      {
+        requestId: ids.scheduleRequest,
+        claimToken: ids.scheduleClaim,
+        errorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+      },
+    );
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.complete,
+    ).not.toHaveBeenCalled();
   });
 
   it("fails closed if a mutation re-read does not form one coherent workspace", async () => {

@@ -1,29 +1,35 @@
 import { AsyncRunsRepository, type JobWithMetadata } from "@sf/db";
-import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import type { WorkerContext } from "../context.ts";
+import { dispatchKeywordGovernanceScheduleRequestBySource } from "../keyword-governance-suggestions/trigger-dispatcher.ts";
 import {
   runKeywordGovernanceSuggestionGeneration,
   type KeywordGovernanceSuggestionGenerationJobPayload,
-  type KeywordGovernanceSuggestionGenerationOutcome,
 } from "../keyword-governance-suggestions/run-keyword-governance-suggestion-generation.ts";
 import { prepareRunDelivery } from "./recovery.ts";
 
-async function scheduleNextBatch(
+async function dispatchContinuation(
   ctx: WorkerContext,
   payload: KeywordGovernanceSuggestionGenerationJobPayload,
-  outcome: KeywordGovernanceSuggestionGenerationOutcome,
 ): Promise<void> {
-  if (!outcome.requestNextBatch) return;
-  await scheduleKeywordGovernanceSuggestions(
-    { db: ctx.db, boss: ctx.boss },
-    {
+  try {
+    await dispatchKeywordGovernanceScheduleRequestBySource(ctx, {
       scope: {
         workspaceId: payload.workspaceId,
         projectId: payload.projectId,
       },
-      initiatedBy: outcome.initiatedBy,
-    },
-  );
+      sourceKind: "generation_continuation",
+      sourceRef: payload.runId,
+    });
+  } catch {
+    try {
+      ctx.logger.warn("keyword_governance_schedule_dispatch_failed", {
+        code: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+        source: "generation_continuation",
+      });
+    } catch {
+      // The DB-triggered request remains durable for maintenance recovery.
+    }
+  }
 }
 
 /** Register the independent Keyword-governance suggestion queue. */
@@ -43,6 +49,7 @@ export async function registerKeywordGovernanceSuggestionGenerationHandler(
           projectId: job.data.projectId,
         };
         let runnerInvoked = false;
+        let shouldDispatchContinuation = false;
         await prepareRunDelivery(ctx, job, async (payload, runCtx) => {
           runnerInvoked = true;
           const canonicalPayload = {
@@ -54,7 +61,7 @@ export async function registerKeywordGovernanceSuggestionGenerationHandler(
             runCtx,
             canonicalPayload,
           );
-          await scheduleNextBatch(runCtx, canonicalPayload, outcome);
+          shouldDispatchContinuation = outcome.requestNextBatch;
         });
         if (!runnerInvoked) {
           const observed = await new AsyncRunsRepository(ctx.db).findById(
@@ -66,15 +73,21 @@ export async function registerKeywordGovernanceSuggestionGenerationHandler(
           );
           if (
             observed === null ||
-            (observed.status !== "completed" && observed.status !== "cancelled")
+            (observed.status !== "completed" && observed.status !== "cancelled") ||
+            observed.id !== payload.runId ||
+            observed.workspace_id !== payload.workspaceId ||
+            observed.project_id !== payload.projectId ||
+            observed.kind !== "keyword_governance_suggestion_generation" ||
+            observed.result_type !==
+              "keyword_governance_suggestion_generation_run" ||
+            observed.result_id !== payload.runId
           ) {
             continue;
           }
-          const outcome = await runKeywordGovernanceSuggestionGeneration(
-            ctx,
-            payload,
-          );
-          await scheduleNextBatch(ctx, payload, outcome);
+          shouldDispatchContinuation = true;
+        }
+        if (shouldDispatchContinuation) {
+          await dispatchContinuation(ctx, payload);
         }
       }
     },

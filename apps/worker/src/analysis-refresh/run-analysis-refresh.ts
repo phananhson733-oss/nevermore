@@ -19,6 +19,7 @@ import {
   enqueueRunInTx,
   GROWTH_AUDIT_PROJECTION_VERSION,
   IcpProfilesRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   legacyAnalysisRefreshPlanManifest,
   ObservationsRepository,
   ProjectsRepository,
@@ -45,7 +46,6 @@ import {
   type SiteRow,
   type SourceConnectionRow,
 } from "@sf/db";
-import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import {
   CONTRACT_VERSION,
   GROWTH_AUDIT_CAPABILITY_CONTRACT_VERSION,
@@ -107,6 +107,7 @@ import {
   parseAnalysisRefreshRequestPayload,
   type AnalysisRefreshRequestPayload,
 } from "./payload.ts";
+import { dispatchKeywordGovernanceScheduleRequest } from "../keyword-governance-suggestions/trigger-dispatcher.ts";
 
 export interface AnalysisRefreshJobPayload {
   readonly runId: string;
@@ -118,7 +119,7 @@ export interface AnalysisRefreshJobPayload {
 export interface AnalysisRefreshRuntime {
   readonly now?: () => Date;
   readonly continuationDelayMs?: number;
-  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
+  readonly dispatchKeywordGovernanceScheduleRequest?: typeof dispatchKeywordGovernanceScheduleRequest;
 }
 
 /**
@@ -2783,7 +2784,7 @@ export async function runAnalysisRefresh(
   // so the pg-boss redelivery was swallowed and the whole run was orphaned.
   // Inside the transaction any death rolls the claim back to `queued`, and the
   // redelivery replays the tick from the start.
-  const committedTerminalCandidate = await ctx.db.transaction(async (tx) => {
+  const committedScheduleRequestId = await ctx.db.transaction(async (tx) => {
     const runs = new AsyncRunsRepository(tx);
     const claimed = await runs.claim(scope, job.runId);
     if (!claimed) {
@@ -2791,7 +2792,7 @@ export async function runAnalysisRefresh(
         code: "CANONICAL_RUN_NOT_QUEUED",
         runId: job.runId,
       });
-      return false;
+      return null;
     }
     const attempt = toRunAttempt(claimed);
 
@@ -2809,7 +2810,7 @@ export async function runAnalysisRefresh(
         code: SAFE_FAILURES.payloadInvalid.code,
         runId: job.runId,
       });
-      return false;
+      return null;
     }
 
     const plans = new AnalysisRefreshRunsRepository(tx);
@@ -2828,7 +2829,7 @@ export async function runAnalysisRefresh(
         code: SAFE_FAILURES.projectionInvalid.code,
         runId: job.runId,
       });
-      return false;
+      return null;
     }
 
     const parent: ParentContext = {
@@ -2840,24 +2841,25 @@ export async function runAnalysisRefresh(
       job,
     };
     const step = nextUnfinishedStep(steps);
+    let terminalCandidate: boolean;
     if (!step) {
       await finalizeAlreadyTerminalPlan(ctx, tx, parent);
-      return true;
-    }
-    if (step.state === "pending") {
+      terminalCandidate = true;
+    } else if (step.state === "pending") {
       await advancePendingStep(ctx, tx, parent, step.step_key, runtime);
-      return false;
+      return null;
+    } else {
+      terminalCandidate = await observeRunningStep(
+        ctx,
+        tx,
+        parent,
+        step.step_key,
+        runtime,
+      );
     }
-    return observeRunningStep(ctx, tx, parent, step.step_key, runtime);
-  });
+    if (!terminalCandidate) return null;
 
-  if (!committedTerminalCandidate) return;
-
-  try {
-    const committedParent = await new AsyncRunsRepository(ctx.db).findById(
-      scope,
-      job.runId,
-    );
+    const committedParent = await runs.findById(scope, job.runId);
     if (
       committedParent === null ||
       (committedParent.status !== "completed" &&
@@ -2868,23 +2870,38 @@ export async function runAnalysisRefresh(
       committedParent.result_type !== "analysis_refresh_run" ||
       committedParent.result_id !== job.runId
     ) {
-      return;
+      return null;
     }
-    const scheduleSuggestions =
-      runtime.scheduleKeywordGovernanceSuggestions ??
-      scheduleKeywordGovernanceSuggestions;
-    await scheduleSuggestions(
-      { db: ctx.db, boss: ctx.boss },
-      { scope, initiatedBy: committedParent.initiated_by },
+    const recorded =
+      await new KeywordGovernanceScheduleRequestsRepository(tx).insertRequest(
+        scope,
+        {
+          sourceKind: "analysis_refresh",
+          sourceRef: job.runId,
+          initiatedBy: committedParent.initiated_by,
+        },
+      );
+    return recorded.request.id;
+  });
+
+  if (committedScheduleRequestId === null) return;
+
+  try {
+    const dispatchRequest =
+      runtime.dispatchKeywordGovernanceScheduleRequest ??
+      dispatchKeywordGovernanceScheduleRequest;
+    await dispatchRequest(
+      ctx,
+      { scope, requestId: committedScheduleRequestId },
     );
   } catch {
     try {
-      ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
-        code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
+      ctx.logger.warn("keyword_governance_schedule_dispatch_failed", {
+        code: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
         source: "analysis_refresh",
       });
     } catch {
-      // Analysis Refresh terminal state is already committed.
+      // Analysis Refresh terminal state and durable request are committed.
     }
   }
 }

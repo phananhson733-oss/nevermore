@@ -11,6 +11,7 @@ import { parseTopicModelGenerationInputManifest } from "@sf/contracts";
 import {
   AsyncRunsRepository,
   KeywordGovernanceRepository,
+  KeywordGovernanceScheduleRequestsRepository,
   TopicModelConflictError,
   TopicModelGenerationInvocationAttemptsRepository,
   TopicModelGenerationRunsRepository,
@@ -177,6 +178,7 @@ const IDS = {
   modelRevision: "00000000-0000-4000-8000-000000000014",
   rootTopic: "00000000-0000-4000-8000-000000000015",
   childTopic: "00000000-0000-4000-8000-000000000016",
+  scheduleRequest: "00000000-0000-4000-8000-000000000017",
 } as const;
 const scope = { workspaceId: IDS.workspace, projectId: manifest.projectId };
 const generatedAt = "2026-08-09T01:00:00.000Z";
@@ -369,8 +371,8 @@ const generateTopicModel = vi.fn(
 );
 const dependencies = {
   createClient: vi.fn(() => ({ generateTopicModel })),
-  scheduleKeywordGovernanceSuggestions: vi.fn(async () => ({
-    kind: "no_candidates" as const,
+  dispatchKeywordGovernanceScheduleRequest: vi.fn(async () => ({
+    kind: "completed" as const,
   })),
 };
 
@@ -380,9 +382,9 @@ beforeEach(() => {
   transactionDepth = 0;
   generateTopicModel.mockReset().mockImplementation(async () => modelResult);
   dependencies.createClient.mockClear();
-  dependencies.scheduleKeywordGovernanceSuggestions.mockReset().mockResolvedValue({
-    kind: "no_candidates",
-  });
+  dependencies.dispatchKeywordGovernanceScheduleRequest
+    .mockReset()
+    .mockResolvedValue({ kind: "completed" });
   vi.mocked(logger.info).mockClear();
   vi.mocked(logger.warn).mockClear();
   vi.mocked(logger.error).mockClear();
@@ -445,14 +447,62 @@ beforeEach(() => {
     KeywordGovernanceRepository.prototype,
     "applyGeneratedTopicAssignments",
   ).mockResolvedValue(assignmentReport);
+  vi.spyOn(
+    KeywordGovernanceScheduleRequestsRepository.prototype,
+    "insertRequest",
+  ).mockResolvedValue({
+    kind: "inserted",
+    request: {
+      id: IDS.scheduleRequest,
+      workspaceId: IDS.workspace,
+      projectId: manifest.projectId,
+      dispatchKey: "durable-key",
+      sourceKind: "topic_model_confirmation_system",
+      sourceRef: IDS.run,
+      initiatedBy: IDS.actor,
+      requestedAt: generatedAt,
+      nextAttemptAt: generatedAt,
+      claimToken: null,
+      claimedAt: null,
+      claimExpiresAt: null,
+      attemptCount: 0,
+      completedAt: null,
+      lastErrorCode: null,
+    },
+  });
 });
 
 describe("runTopicModelGeneration", () => {
-  it("best-effort schedules Keyword governance suggestions after the system Topic commit", async () => {
-    dependencies.scheduleKeywordGovernanceSuggestions.mockImplementationOnce(
+  it("records a durable request in the system Topic transaction and preserves completion when immediate dispatch fails", async () => {
+    vi.mocked(
+      KeywordGovernanceScheduleRequestsRepository.prototype.insertRequest,
+    ).mockImplementationOnce(async (_scope, input) => {
+      expect(transactionDepth).toBe(1);
+      return {
+        kind: "inserted",
+        request: {
+          id: IDS.scheduleRequest,
+          workspaceId: IDS.workspace,
+          projectId: manifest.projectId,
+          dispatchKey: "durable-key",
+          sourceKind: input.sourceKind,
+          sourceRef: input.sourceRef,
+          initiatedBy: input.initiatedBy,
+          requestedAt: generatedAt,
+          nextAttemptAt: generatedAt,
+          claimToken: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+          attemptCount: 0,
+          completedAt: null,
+          lastErrorCode: null,
+        },
+      };
+    });
+    dependencies.dispatchKeywordGovernanceScheduleRequest.mockImplementationOnce(
       async () => {
         expect(transactionDepth).toBe(0);
-        throw new Error("suggestion scheduler unavailable");
+        throw new Error("suggestion queue unavailable");
       },
     );
 
@@ -460,9 +510,18 @@ describe("runTopicModelGeneration", () => {
       runTopicModelGeneration(ctx, { runId: IDS.run, ...scope }, dependencies),
     ).resolves.toBeUndefined();
 
-    expect(dependencies.scheduleKeywordGovernanceSuggestions).toHaveBeenCalledWith(
-      { db: ctx.db, boss: ctx.boss },
-      { scope, initiatedBy: IDS.actor },
+    expect(
+      KeywordGovernanceScheduleRequestsRepository.prototype.insertRequest,
+    ).toHaveBeenCalledWith(scope, {
+      sourceKind: "topic_model_confirmation_system",
+      sourceRef: IDS.run,
+      initiatedBy: IDS.actor,
+    });
+    expect(
+      dependencies.dispatchKeywordGovernanceScheduleRequest,
+    ).toHaveBeenCalledWith(
+      ctx,
+      { scope, requestId: IDS.scheduleRequest },
     );
     expect(
       TopicModelGenerationRunsRepository.prototype.terminalize,
@@ -650,7 +709,7 @@ describe("runTopicModelGeneration", () => {
         .markOutcomeUnknown,
     ).not.toHaveBeenCalled();
     expect(
-      dependencies.scheduleKeywordGovernanceSuggestions,
+      dependencies.dispatchKeywordGovernanceScheduleRequest,
     ).not.toHaveBeenCalled();
   });
 

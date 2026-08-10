@@ -10,6 +10,7 @@ import {
   type TopicModelRevision,
 } from "@sf/contracts";
 import {
+  KeywordGovernanceScheduleRequestsRepository,
   ProjectsRepository,
   TopicModelConflictError,
   TopicModelIntegrityError,
@@ -28,6 +29,51 @@ type ConfirmedTopicModel = Extract<
   TopicModelRevision,
   { state: "confirmed" }
 >;
+type TopicModelWorkspace = ReturnType<typeof TopicModelWorkspaceProjection.parse>;
+type SuggestionSchedulerContext = Parameters<
+  typeof scheduleKeywordGovernanceSuggestions
+>[0];
+
+interface ConfirmDraftTransactionResult {
+  readonly workspace: TopicModelWorkspace;
+  readonly scheduleRequestId: string;
+}
+
+async function dispatchManualTopicSuggestionRequest(
+  schedulerContext: SuggestionSchedulerContext,
+  projectScope: ProjectScope,
+  requestId: string,
+  initiatedBy: string,
+): Promise<void> {
+  const requests = new KeywordGovernanceScheduleRequestsRepository(
+    schedulerContext.db,
+  );
+  const claim = await requests.claimRequest(projectScope, {
+    requestId,
+    leaseSeconds: 60,
+  });
+  if (claim.kind === "unavailable") return;
+  try {
+    await scheduleKeywordGovernanceSuggestions(schedulerContext, {
+      scope: projectScope,
+      initiatedBy,
+    });
+    await requests.complete(projectScope, {
+      requestId,
+      claimToken: claim.request.claimToken,
+    });
+  } catch {
+    try {
+      await requests.release(projectScope, {
+        requestId,
+        claimToken: claim.request.claimToken,
+        errorCode: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
+      });
+    } catch {
+      // Lease expiry keeps this durable request recoverable by the Worker.
+    }
+  }
+}
 
 export interface TopicModelMutationScope extends WorkspaceScope {
   /** Server-resolved operator identity; never accepted from the request body. */
@@ -328,12 +374,21 @@ async function confirmDraftInTransaction(
   scope: TopicModelMutationScope,
   projectId: string,
   body: ConfirmTopicModelRequest,
-): Promise<ReturnType<typeof TopicModelWorkspaceProjection.parse>> {
+): Promise<ConfirmDraftTransactionResult> {
   const projectScope = await loadActiveProject(exec, scope, projectId);
   const repository = new TopicModelsRepository(exec);
   try {
     await repository.confirmDraft(projectScope, scope.actorId, body);
-    return await readWorkspace(exec, projectScope);
+    const workspace = await readWorkspace(exec, projectScope);
+    const recorded =
+      await new KeywordGovernanceScheduleRequestsRepository(
+        exec,
+      ).insertRequest(projectScope, {
+        sourceKind: "topic_model_confirmation_manual",
+        sourceRef: `${projectId}:${body.topicModelRevision}`,
+        initiatedBy: scope.actorId,
+      });
+    return { workspace, scheduleRequestId: recorded.request.id };
   } catch (error) {
     return mapTopicModelError(error, projectId, {
       modelRevision: body.topicModelRevision,
@@ -360,22 +415,27 @@ export async function confirmProjectAuditTopicModelDraft(
     );
   }
   if (exec) {
-    return confirmDraftInTransaction(exec, scope, projectId, parsed.data);
+    const confirmed = await confirmDraftInTransaction(
+      exec,
+      scope,
+      projectId,
+      parsed.data,
+    );
+    return confirmed.workspace;
   }
   const db = getDb().db;
-  const workspace = await db.transaction((tx) =>
+  const confirmed = await db.transaction((tx) =>
     confirmDraftInTransaction(tx, scope, projectId, parsed.data),
   );
   try {
-    await scheduleKeywordGovernanceSuggestions(
+    await dispatchManualTopicSuggestionRequest(
       { db, boss: await getBoss() },
-      {
-        scope: { workspaceId: scope.workspaceId, projectId },
-        initiatedBy: scope.actorId,
-      },
+      { workspaceId: scope.workspaceId, projectId },
+      confirmed.scheduleRequestId,
+      scope.actorId,
     );
   } catch {
-    // The manual Topic confirmation is authoritative and already committed.
+    // The manual Topic confirmation and request are already committed.
   }
-  return workspace;
+  return confirmed.workspace;
 }

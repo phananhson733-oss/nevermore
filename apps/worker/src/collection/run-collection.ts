@@ -18,7 +18,6 @@ import {
   type SourceConnectionRow,
   type SourceCredentialRow,
 } from "@sf/db";
-import { scheduleKeywordGovernanceSuggestions } from "@sf/db/keyword-governance-suggestion-scheduler";
 import {
   BlobObjectAlreadyExistsError,
   BlobObjectNotFoundError,
@@ -97,6 +96,7 @@ import {
   type ProviderMetricOutcome,
 } from "./provider-metrics.ts";
 import { exactCandidatesForCanonicalSubject } from "./observation-site-page-lineage.ts";
+import { dispatchKeywordGovernanceScheduleRequest } from "../keyword-governance-suggestions/trigger-dispatcher.ts";
 
 /**
  * Collection job runner (spec §7, §13.3). Claims the run (queued→running winner
@@ -395,7 +395,7 @@ export interface CrawlRuntime {
 export type CollectionWorkerContext = Omit<WorkerContext, "googleOAuth"> & {
   readonly googleOAuth: GoogleOAuthRuntime;
   readonly crawl?: CrawlRuntime;
-  readonly scheduleKeywordGovernanceSuggestions?: typeof scheduleKeywordGovernanceSuggestions;
+  readonly dispatchKeywordGovernanceScheduleRequest?: typeof dispatchKeywordGovernanceScheduleRequest;
 };
 
 interface CollectProduct {
@@ -628,6 +628,7 @@ export async function runCollection(
     // operational interruption as a successful partial snapshot.
     throwIfCollectionAborted(ctx.signal);
     providerMetrics.recordResult(product.outcome);
+    let keywordGovernanceScheduleRequestId: string | null = null;
     const snapshotId = await persistCollectionResult(ctx, {
       collectionRun,
       datasetKey: snapshotIdentity.datasetKey,
@@ -637,32 +638,32 @@ export async function runCollection(
       attempt,
       outcome: product.outcome,
       observations: product.observations,
+      onKeywordGovernanceScheduleRequest: (requestId) => {
+        keywordGovernanceScheduleRequestId = requestId;
+      },
     });
     if (snapshotId === null) {
       emitProviderMetric(ctx, providerMetrics, "stale_attempt", "NONE");
       ctx.logger.info("collection_skip_stale_attempt", { runId });
       return;
     }
-    if (
-      collectionRun.provider === "csv" &&
-      collectionRun.operation === "keyword_gap_import"
-    ) {
+    if (keywordGovernanceScheduleRequestId !== null) {
       try {
-        const scheduleSuggestions =
-          ctx.scheduleKeywordGovernanceSuggestions ??
-          scheduleKeywordGovernanceSuggestions;
-        await scheduleSuggestions(
-          { db: ctx.db, boss: ctx.boss },
-          { scope, initiatedBy: claimed.initiated_by },
+        const dispatchRequest =
+          ctx.dispatchKeywordGovernanceScheduleRequest ??
+          dispatchKeywordGovernanceScheduleRequest;
+        await dispatchRequest(
+          ctx,
+          { scope, requestId: keywordGovernanceScheduleRequestId },
         );
       } catch {
         try {
-          ctx.logger.warn("keyword_governance_suggestion_schedule_failed", {
-            code: "KEYWORD_GOVERNANCE_SUGGESTION_SCHEDULE_FAILED",
+          ctx.logger.warn("keyword_governance_schedule_dispatch_failed", {
+            code: "KEYWORD_GOVERNANCE_SCHEDULE_DISPATCH_FAILED",
             source: "csv_keyword_gap_import",
           });
         } catch {
-          // The CSV Snapshot and Keyword occurrences are already committed.
+          // The durable request and CSV authority are already committed.
         }
       }
     }
