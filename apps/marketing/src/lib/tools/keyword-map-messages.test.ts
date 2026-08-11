@@ -60,9 +60,10 @@ describe("keyword map copy", () => {
   it.each(["en", "zh"] as const)(
     "renders every coverage state in %s",
     (locale) => {
-      // The state the reader sees on every single row. A missing one throws
-      // MISSING_MESSAGE mid-table, and only for the visitors whose own data
-      // produced it.
+      // The state the reader sees on every single row. A missing one renders
+      // as its own dotted key path mid-table — next-intl resolves an unknown
+      // key to its name rather than throwing — and only for the visitors
+      // whose own data produced it.
       const copy = group(locale, "coverage");
       for (const state of KEYWORD_OPPORTUNITY_COVERAGE_STATES) {
         expect(copy[state], `coverage.${state}`).toBeTypeOf("string");
@@ -100,8 +101,9 @@ describe("keyword map copy", () => {
   );
 
   it.each(["en", "zh"] as const)("renders every error code in %s", (locale) => {
-    // Plus the fallback the surface uses for a code it does not recognise —
-    // without it, an unplanned code renders as a crash instead of a sentence.
+    // Plus the fallback the surface uses for a code it does not recognise.
+    // Without it the visitor reads "tools.keywordMap.errors.something" where a
+    // sentence belongs, which is quieter than a crash and no more use.
     const copy = group(locale, "errors");
     for (const code of [...KEYWORD_OPPORTUNITY_ERROR_CODES, "unknown"]) {
       expect(copy[code], `errors.${code}`).toBeTypeOf("string");
@@ -121,8 +123,9 @@ describe("keyword map copy", () => {
   );
 
   it("carries the same keys in both locales", () => {
-    // A key in one bundle and not the other is a MISSING_MESSAGE for exactly
-    // the visitors on that locale, and nothing else in the suite can see it.
+    // A key in one bundle and not the other puts a raw dotted key path in
+    // front of exactly the visitors on that locale, and nothing else in the
+    // suite can see it.
     expect(keyPaths(namespace("zh")).sort()).toEqual(
       keyPaths(namespace("en")).sort(),
     );

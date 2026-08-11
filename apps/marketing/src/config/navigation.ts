@@ -47,7 +47,7 @@ export const toolsMenuGroups: NavMenuGroup[] = [
     labelKey: "nav.toolsMenu.planGroup",
     items: [
       {
-        slug: "hidden-keywords",
+        slug: "low-competition-keywords",
         labelKey: "nav.toolsMenu.hiddenKeywords.label",
         descriptionKey: "nav.toolsMenu.hiddenKeywords.description",
         icon: "Compass",

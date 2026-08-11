@@ -28,7 +28,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const content = getConnectedToolContent(locale, "hidden-keywords");
+  const content = getConnectedToolContent(locale, "low-competition-keywords");
   return generatePageMetadata({
     title:
       locale === "en"
@@ -37,14 +37,10 @@ export async function generateMetadata({
     description: content.description,
     locale,
     path: content.path,
-    // Still excluded from search. The tool works now, but this page is due to
-    // move to `/tools/low-competition-keywords` with a 301, and indexing a URL
-    // we are about to redirect spends the crawl budget twice for nothing.
-    noIndex: true,
   });
 }
 
-export default async function HiddenKeywordsPage({
+export default async function LowCompetitionKeywordsPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
@@ -54,7 +50,7 @@ export default async function HiddenKeywordsPage({
     readTrafficDropSession(),
     getMessages(),
   ]);
-  const content = getConnectedToolContent(locale, "hidden-keywords");
+  const content = getConnectedToolContent(locale, "low-competition-keywords");
   const canonical = localeUrl(locale, content.path);
 
   return (

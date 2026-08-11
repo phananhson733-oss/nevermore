@@ -61,8 +61,8 @@ describe("ConnectedToolPage hero CTA", () => {
     // would have requested a grant it could not use. It now runs on this page
     // and reads the visitor's own Search Console queries to decide which terms
     // their site already serves, so the product hand-off would strand them.
-    const markup = render("en", "hidden-keywords");
-    expect(markup).toContain(oauthStart("/tools/hidden-keywords"));
+    const markup = render("en", "low-competition-keywords");
+    expect(markup).toContain(oauthStart("/tools/low-competition-keywords"));
     expect(markup).not.toContain("https://app.gengrowth.ai");
   });
 
@@ -74,7 +74,7 @@ describe("ConnectedToolPage hero CTA", () => {
       <ConnectedToolPage
         locale="en"
         content={{
-          ...getConnectedToolContent("en", "hidden-keywords"),
+          ...getConnectedToolContent("en", "low-competition-keywords"),
           path: "/tools/not-a-google-tool" as ConnectedToolContent["path"],
         }}
       />,
