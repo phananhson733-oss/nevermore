@@ -13,7 +13,7 @@ prompt_set_version: mvp.prompts.0.2.0
 ## 0. 规范范围
 
 本文件冻结当前完整四模块产品面。OpenAPI 精确声明 **80 个 operation 与 11 个
-async operation**（其中 10 个使用 shared `AsyncAccepted`），**52 个 ordered migrations** 精确声明 **84 张应用表**，引擎
+async operation**（其中 10 个使用 shared `AsyncAccepted`），**53 个 ordered migrations** 精确声明 **84 张应用表**，引擎
 精确注册 **12 条规则**。`createProjectMeasurementWindow` 是额外的 typed
 measurement `202`，使用 `MeasurementWindowAcceptedHttpResponse`，不计入十个
 共享 `AsyncAccepted` operation。
@@ -345,6 +345,36 @@ the canonical SHA-256 preimage; it contains no self-referential `inputHash`.
 The generation-run envelope/row stores `sha256(canonicalJson(manifest))`
 separately.
 
+The canonical suggestion locale authority is the sole primary Site with
+exactly one declared `language_codes` entry whose lowercase BCP-47 identity
+matches the canonical current Keyword language, together with the exact current
+primary-market authority. Actual BCP-47 canonicalization belongs only to the
+server-owned freezer: it calls `Intl.getCanonicalLocales` and emits a canonical
+tag only when lowercase identity is unchanged. Historical case-only spelling
+such as `en-us` is therefore exposed as `en-US`, while an alias rewrite such as
+`iw-IL` to `he-IL` fails closed before a manifest exists. PostgreSQL's
+`app.is_bcp47_canonical_identity` is intentionally not a canonicalizer. The
+database freeze query compares the current singleton Site spelling with the
+canonical Keyword tag by valid-shape, canonical-casing, and case-only identity,
+then returns the raw Site spelling to the application canonicalizer. The
+completed-run reuse, pending readiness, final paid-result TxB batch CAS, bounded
+stale sweep, and accepted approval gates trust the app-canonical manifest
+created by that server path and compare it with current Site/Keyword authority.
+Browser
+`anon/authenticated` roles cannot create a generation run or write canonical
+`app` tables. A missing/non-singleton primary Site language or any
+Site/Keyword authority drift fails closed. `client_projects.default_delivery_locale`
+controls customer delivery/report copy only: it is never a language fallback,
+and changing it alone cannot stale a suggestion.
+
+Migration 0053 changes no Site rows. Release preflight must aggregate active
+projects by primary-Site count and `language_codes` cardinality without reading
+or publishing customer-specific values into this authority. Multiple languages
+on the primary Site remain fail closed. An empty Site language authority must
+be established through governed collection or operator confirmation before
+suggestion generation; it must not be inferred from delivery locale or filled
+by a blind migration.
+
 - 来源包括 GSC top query、DataForSEO Search Landscape ranked observation、
   competitor/content gap、VOC/manual/CSV；每条 occurrence 保留来源、scope
   和时间。
@@ -606,7 +636,7 @@ operation `createProjectMeasurementWindow` 使用专用 typed accepted envelope�
 ## 10. 冻结数据库 inventory
 
 以下 84 张应用表来自 `0001_init.sql` 至
-`0052_keyword_governance_schedule_requests.sql` 的 52 个 ordered migrations 与
+`0053_keyword_governance_suggestion_locale_authority.sql` 的 53 个 ordered migrations 与
 static schema catalog；pg-boss 自有表不计入。
 
 <!-- TABLES_BEGIN -->

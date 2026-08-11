@@ -8,7 +8,7 @@ import {
 import { asyncRuns } from "./schema.ts";
 
 describe("readMigrationVersion", () => {
-  it("retains strict durable Keyword review suggestions below the 0052 head", () => {
+  it("retains strict durable Keyword review suggestions below the 0053 head", () => {
     const migration = readFileSync(
       fileURLToPath(
         new URL(
@@ -29,7 +29,7 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0052_keyword_governance_schedule_requests",
+      "0053_keyword_governance_suggestion_locale_authority",
     );
     expect(migration).toMatch(
       /kind\s+IN\s*\([\s\S]*?'keyword_governance_suggestion_generation'/iu,
@@ -90,7 +90,7 @@ describe("readMigrationVersion", () => {
     );
 
     expect(LATEST_APP_MIGRATION).toBe(
-      "0052_keyword_governance_schedule_requests",
+      "0053_keyword_governance_suggestion_locale_authority",
     );
     expect(migration).toMatch(
       /kind\s+IN\s*\([\s\S]*?'topic_model_generation'/iu,
@@ -190,7 +190,7 @@ describe("readMigrationVersion", () => {
       /for\s*\(const\s*\{[\s\S]*?dataType[\s\S]*?isNullable[\s\S]*?\}\s+of\s+REQUIRED_TYPED_COLUMNS\)[\s\S]*?actual\?\.data_type\s*!==\s*dataType[\s\S]*?actual\.is_nullable\s*!==\s*isNullable/iu,
     );
     expect(schemaSmoke).toMatch(
-      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0052_keyword_governance_schedule_requests'/iu,
+      /schema_migration_version[\s\S]*?IS\s+DISTINCT\s+FROM\s+'0053_keyword_governance_suggestion_locale_authority'/iu,
     );
   });
 

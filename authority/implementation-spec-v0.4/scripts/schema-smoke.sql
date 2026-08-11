@@ -5043,9 +5043,46 @@ BEGIN
   ) <> 2 THEN
     RAISE EXCEPTION 'Action Execution authority routines are incomplete';
   END IF;
+  -- The server-owned freezer is the only actual BCP-47 canonicalizer. These
+  -- database routines compare singleton Site spelling with its app-canonical
+  -- manifest/Keyword tag by case-only identity; they do not canonicalize it.
+  IF EXISTS (
+    SELECT 1
+    FROM unnest(ARRAY[
+      'app.enforce_keyword_review_suggestion_mutation()'::regprocedure,
+      'app.insert_keyword_review_suggestions_batch(uuid,uuid,uuid,text,text,uuid,jsonb)'::regprocedure,
+      'app.supersede_stale_pending_keyword_review_suggestions(uuid,uuid)'::regprocedure
+    ]) locale_authority(routine_oid)
+    WHERE position(
+      'default_delivery_locale'
+      IN pg_get_functiondef(locale_authority.routine_oid::oid)
+    ) > 0
+      OR position(
+        'cardinality(primary_site.language_codes) = 1'
+        IN pg_get_functiondef(locale_authority.routine_oid::oid)
+      ) = 0
+      OR position(
+        'app.is_bcp47_canonical_identity('
+        IN pg_get_functiondef(locale_authority.routine_oid::oid)
+      ) = 0
+      OR position(
+        'primary_site.language_codes[1]'
+        IN pg_get_functiondef(locale_authority.routine_oid::oid)
+      ) = 0
+  ) THEN
+    RAISE EXCEPTION 'Keyword suggestion locale authority routines drifted';
+  END IF;
+  IF position(
+    'RETURN jsonb_build_object(''kind'', ''stale_authority'')'
+    IN pg_get_functiondef(
+      'app.insert_keyword_review_suggestions_batch(uuid,uuid,uuid,text,text,uuid,jsonb)'::regprocedure::oid
+    )
+  ) = 0 THEN
+    RAISE EXCEPTION 'Keyword suggestion final authority CAS is incomplete';
+  END IF;
   IF (
     SELECT migration_version FROM app.schema_migration_version
-  ) IS DISTINCT FROM '0052_keyword_governance_schedule_requests' THEN
+  ) IS DISTINCT FROM '0053_keyword_governance_suggestion_locale_authority' THEN
     RAISE EXCEPTION 'database migration version projection is stale';
   END IF;
   IF NOT EXISTS (
@@ -5462,11 +5499,15 @@ DO $product_profile_keyword_lineage_contract$
 DECLARE
   batch_source text;
 BEGIN
+  -- This SQL helper is deliberately a case-identity predicate against an
+  -- app-canonical second argument, not an Intl alias detector. The same-alias
+  -- result stays true here; the server-owned freezer rejects it before freeze.
   IF NOT app.is_bcp47_canonical_identity('en-us', 'en-US')
      OR NOT app.is_bcp47_canonical_identity(
        'zh-hans-cn-u-nu-hanidec',
        'zh-Hans-CN-u-nu-hanidec'
      )
+     OR NOT app.is_bcp47_canonical_identity('iw-IL', 'iw-IL')
      OR app.is_bcp47_canonical_identity('en-US', 'en-us')
      OR app.is_bcp47_canonical_identity('iw-IL', 'he-IL')
      OR app.is_bcp47_canonical_identity('not_a_locale', 'not-a-locale') THEN

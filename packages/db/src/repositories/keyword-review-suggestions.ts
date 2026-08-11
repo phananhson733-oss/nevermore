@@ -508,16 +508,17 @@ export class KeywordReviewSuggestionsRepository extends Repository {
           on project.id = generation.project_id
          and project.workspace_id = generation.workspace_id
          and project.archived_at is null
-         and project.default_delivery_locale =
-           generation.input_manifest ->> 'languageTag'
         inner join app.sites primary_site
           on primary_site.workspace_id = project.workspace_id
          and primary_site.project_id = project.id
          and primary_site.is_primary
+         and cardinality(primary_site.language_codes) = 1
          and generation.input_manifest ->> 'marketCode' =
            any(primary_site.market_codes)
-         and generation.input_manifest ->> 'languageTag' =
-           any(primary_site.language_codes)
+         and app.is_bcp47_canonical_identity(
+           primary_site.language_codes[1],
+           generation.input_manifest ->> 'languageTag'
+         )
         inner join app.icp_profiles profile
           on profile.id = project.confirmed_icp_profile_id
          and profile.workspace_id = project.workspace_id
@@ -956,15 +957,16 @@ export class KeywordReviewSuggestionsRepository extends Repository {
               on primary_site.workspace_id = project.workspace_id
              and primary_site.project_id = project.id
              and primary_site.is_primary
+             and cardinality(primary_site.language_codes) = 1
             where project.id = suggestion.project_id
               and project.workspace_id = suggestion.workspace_id
               and project.archived_at is null
-              and project.default_delivery_locale =
-                generation.input_manifest ->> 'languageTag'
               and generation.input_manifest ->> 'marketCode' =
                 any(primary_site.market_codes)
-              and generation.input_manifest ->> 'languageTag' =
-                any(primary_site.language_codes)
+              and app.is_bcp47_canonical_identity(
+                primary_site.language_codes[1],
+                generation.input_manifest ->> 'languageTag'
+              )
               and profile.id = (generation.input_manifest #>>
                 '{confirmedProductProfile,productProfileId}')::uuid
               and profile.version = (generation.input_manifest #>>

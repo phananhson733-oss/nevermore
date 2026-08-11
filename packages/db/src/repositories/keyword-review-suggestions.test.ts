@@ -257,9 +257,15 @@ describe("KeywordReviewSuggestionsRepository", () => {
     expect(compiled.sql).toContain(
       "app.current_keyword_governance_suggestion_occurrence_ids",
     );
-    expect(compiled.sql).toContain("project.default_delivery_locale");
     expect(compiled.sql).toContain("primary_site.market_codes");
     expect(compiled.sql).toContain("primary_site.language_codes");
+    expect(compiled.sql).toContain(
+      "cardinality(primary_site.language_codes) = 1",
+    );
+    expect(compiled.sql).toMatch(
+      /app\.is_bcp47_canonical_identity\s*\(\s*primary_site\.language_codes\[1\]/u,
+    );
+    expect(compiled.sql).not.toContain("project.default_delivery_locale");
     expect(compiled.sql).toContain("attempt.status = 'succeeded'");
     expect(compiled.params).toEqual([
       scope.workspaceId,
@@ -335,6 +341,13 @@ describe("KeywordReviewSuggestionsRepository", () => {
     expect(currentReuseSql.sql).toContain("authority_primary_site_id");
     expect(currentReuseSql.sql).toContain("current_decision");
     expect(currentReuseSql.sql).toContain("attempt.status = 'succeeded'");
+    expect(currentReuseSql.sql).toContain(
+      "cardinality(primary_site.language_codes) = 1",
+    );
+    expect(currentReuseSql.sql).toMatch(
+      /app\.is_bcp47_canonical_identity\s*\(\s*primary_site\.language_codes\[1\]/u,
+    );
+    expect(currentReuseSql.sql).not.toContain("project.default_delivery_locale");
 
     await expect(repo.supersedePendingForKeywords(
       scope,

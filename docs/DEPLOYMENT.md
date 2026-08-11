@@ -27,12 +27,34 @@ Draft produces a **delivery receipt**, not proof that a change is live. Only a
 separate **change receipt** that confirms merge/publish and records the live
 canonical URL may anchor attribution.
 
-Migration range: `0001_init.sql` through `0052_keyword_governance_schedule_requests.sql` (**52 ordered migrations**); `0048_topic_model_generation.sql` is followed by `0049_projection_batch_writes.sql`, `0050_product_profile_keyword_lineage.sql`, `0051_keyword_review_suggestions.sql`, and the `0052` head.
+Migration range: `0001_init.sql` through `0053_keyword_governance_suggestion_locale_authority.sql` (**53 ordered migrations**); `0048_topic_model_generation.sql` is followed by `0049_projection_batch_writes.sql`, `0050_product_profile_keyword_lineage.sql`, `0051_keyword_review_suggestions.sql`, `0052_keyword_governance_schedule_requests.sql`, and the `0053` head.
 
 Historical production evidence through `0021` does not prove that the active
-v0.4 migrations through `0052` are hosted; every release must back up,
+v0.4 migrations through `0052` are hosted. This repository change contains no
+release evidence that the local `0053` authority head is hosted; every release must back up,
 restore-verify, apply, and replay-check the complete active chain before
 traffic promotion.
+
+Migration 0053 changes no tables or customer delivery locale. It replaces the
+Keyword suggestion freeze/read/CAS/stale/approval routines so only the sole
+primary Site's single stored language spelling may match the canonical
+app-produced manifest/Keyword tag by case-only BCP-47 identity. Only the
+server-owned freezer performs actual canonicalization with
+`Intl.getCanonicalLocales`; it exposes historical case-only spelling
+canonically and rejects alias-changing Site tags before creating a manifest.
+PostgreSQL does not independently canonicalize BCP-47: its later gates compare
+current Site/Keyword authority with that trusted manifest. Browser roles cannot
+create generation runs or write canonical `app` tables. Other Site/Keyword
+authority drift fails closed, while a delivery-locale-only change does not
+invalidate a suggestion.
+
+Migration 0053 does not rewrite Site data. Before applying it, run a read-only
+aggregate preflight over active projects to classify primary-Site count and
+primary-Site `language_codes` cardinality. Any multi-language primary Site is a
+fail-closed rollout blocker. A zero-language Site must establish language
+authority through the governed collection or operator-confirmation path before
+suggestion generation; never backfill it from delivery locale or a blind data
+migration.
 
 The current deterministic executor is `mvp.rules.0.2.4` (12 rules), with
 `mvp.prompts.0.2.0` unchanged. Its `contextProjection.v1` is frozen from the

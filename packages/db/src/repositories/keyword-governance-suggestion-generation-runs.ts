@@ -363,6 +363,25 @@ function boundedTrimmedString(
   );
 }
 
+/**
+ * The server-owned freezer is the canonicalization boundary. PostgreSQL only
+ * prefilters singleton Site/Keyword spelling by case identity; it does not
+ * duplicate Intl alias canonicalization.
+ */
+function canonicalSiteLanguageIdentity(value: unknown): string | null {
+  if (!boundedTrimmedString(value, 2, 35)) return null;
+  try {
+    const canonical = Intl.getCanonicalLocales(value);
+    const languageTag = canonical.length === 1 ? canonical[0] : undefined;
+    return languageTag !== undefined &&
+        languageTag.toLowerCase() === value.toLowerCase()
+      ? languageTag
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseProviderIntent(
   value: unknown,
 ): KeywordGovernanceSuggestionOccurrenceAuthority["providerSearchIntent"] {
@@ -414,21 +433,21 @@ function parseFreezeAuthority(
   }
   const profile = ConfirmedProductProfileSchema.safeParse(row["profile"]);
   const marketCode = row["market_code"];
-  const languageTag = row["language_tag"];
+  const rawLanguageTag = row["language_tag"];
+  const languageTag = canonicalSiteLanguageIdentity(rawLanguageTag);
+  if (languageTag === null) return { kind: "unavailable" };
   if (
     !profile.success ||
     typeof marketCode !== "string" ||
     !MARKET.test(marketCode) ||
-    !boundedTrimmedString(languageTag, 2, 35) ||
     (expected !== undefined &&
       (marketCode !== expected.marketCode ||
         languageTag !== expected.languageTag)) ||
     row["workspace_id"] !== scope.workspaceId ||
     row["project_id"] !== scope.projectId ||
     row["market_code"] !== marketCode ||
-    row["language_tag"] !== languageTag ||
     row["primary_market_code"] !== marketCode ||
-    row["primary_language_tag"] !== languageTag ||
+    row["primary_language_tag"] !== rawLanguageTag ||
     !UUID.test(String(row["profile_id"])) ||
     !Number.isSafeInteger(row["profile_version"]) ||
     Number(row["profile_version"]) < 1 ||
@@ -687,14 +706,17 @@ export class KeywordGovernanceSuggestionGenerationRunsRepository extends Reposit
       ? sql`true`
       : sql`
           primary_market.market_code = ${options.marketCode}
-          and project.default_delivery_locale = ${options.languageTag}
+          and app.is_bcp47_canonical_identity(
+            primary_site.language_codes[1],
+            ${options.languageTag}
+          )
         `;
     const raw = await this.exec.execute(sql`
       with scoped_authority as (
         select
           project.workspace_id,
           project.id as project_id,
-          project.default_delivery_locale as primary_language_tag,
+          primary_site.language_codes[1] as primary_language_tag,
           primary_market.market_code as primary_market_code,
           profile.id as profile_id,
           profile.version as profile_version,
@@ -717,12 +739,12 @@ export class KeywordGovernanceSuggestionGenerationRunsRepository extends Reposit
           on primary_site.workspace_id = project.workspace_id
          and primary_site.project_id = project.id
          and primary_site.is_primary
+         and cardinality(primary_site.language_codes) = 1
         where project.workspace_id = ${scope.workspaceId}::uuid
           and project.id = ${scope.projectId}::uuid
           and project.archived_at is null
           and ${requestedAuthority}
           and primary_market.market_code = any(primary_site.market_codes)
-          and project.default_delivery_locale = any(primary_site.language_codes)
           and (
             select count(*)
             from jsonb_array_elements(profile.profile -> 'targetMarkets')
@@ -780,7 +802,10 @@ export class KeywordGovernanceSuggestionGenerationRunsRepository extends Reposit
           and keyword.status = 'candidate'
           and keyword.mapping_review_state = 'unreviewed'
           and keyword.market = authority.primary_market_code
-          and keyword.language_tag = authority.primary_language_tag
+          and app.is_bcp47_canonical_identity(
+            authority.primary_language_tag,
+            keyword.language_tag
+          )
           and jsonb_array_length(
             app.current_keyword_governance_suggestion_occurrence_ids(
               keyword.workspace_id,
@@ -1174,15 +1199,16 @@ export class KeywordGovernanceSuggestionGenerationRunsRepository extends Reposit
               on primary_site.workspace_id = project.workspace_id
              and primary_site.project_id = project.id
              and primary_site.is_primary
+             and cardinality(primary_site.language_codes) = 1
             where project.workspace_id = generation.workspace_id
               and project.id = generation.project_id
               and project.archived_at is null
-              and project.default_delivery_locale =
-                generation.input_manifest ->> 'languageTag'
               and generation.input_manifest ->> 'marketCode' =
                 any(primary_site.market_codes)
-              and generation.input_manifest ->> 'languageTag' =
-                any(primary_site.language_codes)
+              and app.is_bcp47_canonical_identity(
+                primary_site.language_codes[1],
+                generation.input_manifest ->> 'languageTag'
+              )
               and profile.id = (generation.input_manifest #>>
                 '{confirmedProductProfile,productProfileId}')::uuid
               and profile.version = (generation.input_manifest #>>

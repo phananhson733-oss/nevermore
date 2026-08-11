@@ -18,7 +18,7 @@ Contract inventory: **80 API operations / 11 async operations / 84 app tables / 
 
 Current deterministic versions: **`mvp.rules.0.2.4` / `mvp.prompts.0.2.0`**.
 The ordered migration head is
-`0052_keyword_governance_schedule_requests.sql` (**52 migrations**). Migration 0048
+`0053_keyword_governance_suggestion_locale_authority.sql` (**53 migrations**). Migration 0048
 adds bounded Topic Model generation, an invocation-attempt fence, and Analysis
 Refresh v3 while preserving exact v1/v2 historical readability. Migration 0049
 keeps the existing exact-lineage authorities while bounding Keyword,
@@ -27,7 +27,17 @@ migration 0050 adds explicit confirmed Product Profile lineage for the fixed
 GenerativeQuery Keyword cohort without inventing provider provenance; migration
 0051 adds frozen, fenced Keyword governance suggestion generation and atomic
 human resolution authority; migration 0052 adds payload-free durable source
-schedule requests, lease-token dispatch CAS, and atomic generation continuation.
+schedule requests, lease-token dispatch CAS, and atomic generation continuation;
+migration 0053 forward-only requires exactly one primary Site language whose
+stored spelling has case-only BCP-47 identity with the app-canonical manifest
+and Keyword tag. Only the server-owned freezer performs actual BCP-47
+canonicalization with `Intl.getCanonicalLocales`: historical case-only spelling
+is exposed canonically, while alias changes fail closed before a manifest is
+created. PostgreSQL is not a BCP-47 canonicalizer; reuse, readiness, final batch
+CAS, stale sweep, and approval compare current authority with that trusted
+manifest. Browser roles cannot create a generation run or write canonical
+`app` tables. Project delivery locale remains customer-facing copy authority
+and cannot stale a suggestion by itself.
 
 The v0.3 authority remains a historical snapshot. Any further route, migration,
 or operation must be promoted atomically through the active v0.4 authority and

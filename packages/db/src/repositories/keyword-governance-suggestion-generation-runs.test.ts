@@ -208,6 +208,16 @@ describe("KeywordGovernanceSuggestionGenerationRunsRepository", () => {
     expect(freezerSql.sql).toContain(
       "keyword.normalized_keyword, keyword.display_keyword, keyword.id",
     );
+    expect(freezerSql.sql).toContain(
+      "cardinality(primary_site.language_codes) = 1",
+    );
+    expect(freezerSql.sql).toMatch(
+      /app\.is_bcp47_canonical_identity\s*\(\s*primary_site\.language_codes\[1\]/u,
+    );
+    expect(freezerSql.sql).toMatch(
+      /app\.is_bcp47_canonical_identity\s*\(\s*authority\.primary_language_tag\s*,\s*keyword\.language_tag\s*\)/u,
+    );
+    expect(freezerSql.sql).not.toContain("project.default_delivery_locale");
     expect(freezerSql.params).toEqual([
       ids.workspace,
       ids.project,
@@ -303,6 +313,13 @@ describe("KeywordGovernanceSuggestionGenerationRunsRepository", () => {
     expect(compiled.sql).toContain(
       "app.current_keyword_governance_suggestion_occurrence_ids",
     );
+    expect(compiled.sql).toContain(
+      "cardinality(primary_site.language_codes) = 1",
+    );
+    expect(compiled.sql).toMatch(
+      /app\.is_bcp47_canonical_identity\s*\(\s*primary_site\.language_codes\[1\]/u,
+    );
+    expect(compiled.sql).not.toContain("project.default_delivery_locale");
     expect(compiled.sql).toContain("active_generation_count");
     expect(compiled.sql).not.toContain("last_error_summary");
     expect(compiled.params).toContain(ids.workspace);

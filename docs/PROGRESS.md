@@ -24,8 +24,10 @@ convergence worktree from older evidence recorded in checked-in stop gates.
 - Active authority: `authority/implementation-spec-v0.4/`
 - Machine lock: `scripts/spec-v0.4-lock.json`
 - Migration range: `0001_init.sql` through
-  `0052_keyword_governance_schedule_requests.sql` (**52 ordered migrations**), after
-  `0048_topic_model_generation.sql` and `0049_projection_batch_writes.sql`
+  `0053_keyword_governance_suggestion_locale_authority.sql` (**53 ordered migrations**), after
+  `0048_topic_model_generation.sql`, `0049_projection_batch_writes.sql`,
+  `0050_product_profile_keyword_lineage.sql`, `0051_keyword_review_suggestions.sql`,
+  and `0052_keyword_governance_schedule_requests.sql`
 - Contract inventory: **80 API operations / 11 async operations / 84 app tables / 12 frozen rules**
 - Current deterministic versions: `mvp.rules.0.2.4` /
   `mvp.prompts.0.2.0`; current Growth Audit projection:
@@ -312,8 +314,8 @@ sanitized evidence to the exact candidate SHA:
 
 1. Review the full convergence diff and freeze one immutable release SHA.
 2. Preserve and restore-verify the production backup, then re-check all ordered
-   migrations through `0052`; historical proof through `0021` does not prove
-   the active v0.4 migration head is hosted.
+   migrations through `0053`; existing evidence through `0052` does not prove
+   that the local 0053 authority head is hosted.
 3. Deploy the exact same SHA to Vercel Web and the Railway Worker; verify
    `/api/mvp/health/version`, liveness, readiness, pg-boss schema, and the live
    worker lease.

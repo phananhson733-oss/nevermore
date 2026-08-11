@@ -76,8 +76,8 @@ test("accepts the active v0.4 authority and complete current inventory", () => {
       async: 10,
       tables: 84,
       rules: 12,
-      migrations: 52,
-      head: "0052_keyword_governance_schedule_requests",
+      migrations: 53,
+      head: "0053_keyword_governance_suggestion_locale_authority",
     },
   );
 });
@@ -107,7 +107,7 @@ test("rejects hand-edited generated authority SQL", () => {
 
 test("generated schema is the exact ordered migration chain", () => {
   const migrations = listOrderedMigrationSources({ root: repositoryRoot });
-  assert.equal(migrations.length, 52);
+  assert.equal(migrations.length, 53);
   assert.equal(
     readAuthority("schema.sql"),
     renderAuthoritySchema(migrations),

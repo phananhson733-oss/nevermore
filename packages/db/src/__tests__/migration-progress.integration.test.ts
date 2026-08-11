@@ -157,6 +157,7 @@ describe("ordered migration progress", () => {
         "0050_product_profile_keyword_lineage.sql",
         "0051_keyword_review_suggestions.sql",
         "0052_keyword_governance_schedule_requests.sql",
+        "0053_keyword_governance_suggestion_locale_authority.sql",
       ]);
       await expect(readProjectedVersion(client)).resolves.toBe(
         LATEST_APP_MIGRATION,

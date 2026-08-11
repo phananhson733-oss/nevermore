@@ -150,12 +150,43 @@ test("documented inventories are derived from the active v0.4 lock", () => {
 });
 
 test("current handoff documents the complete ordered migration range", () => {
-  assert.equal(migrationFiles.length, 52);
+  assert.equal(migrationFiles.length, 53);
   const expected = new RegExp(
     `Migration range:\\s*\\\`${escapeRegExp(migrationFiles[0])}\\\` through\\s*\\\`${escapeRegExp(migrationFiles.at(-1))}\\\` \\(\\*\\*${migrationFiles.length} ordered migrations\\*\\*\\)`,
   );
   assert.match(sources.get("docs/PROGRESS.md"), expected);
   assert.match(sources.get("docs/DEPLOYMENT.md"), expected);
+});
+
+test("locale authority docs keep Intl and SQL case-identity boundaries distinct", () => {
+  for (const path of [
+    "README.md",
+    "CLAUDE.md",
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /Intl\.getCanonicalLocales/);
+    assert.match(source, /(?:\bnot\b|不是|does not)[^\n]{0,50}canonicaliz/i);
+    assert.match(
+      source,
+      /(?:Browser|浏览器)[\s\S]{0,200}(?:cannot|无权)[\s\S]{0,200}(?:generation run|canonical|generation)/i,
+    );
+  }
+});
+
+test("locale authority rollout never blind-migrates missing Site language", () => {
+  for (const path of [
+    "docs/DEPLOYMENT.md",
+    "authority/implementation-spec-v0.4/MVP-IMPLEMENTATION-SPEC.md",
+  ]) {
+    const source = sources.get(path);
+    assert.match(source, /Migration 0053 (?:does not rewrite Site data|changes no Site rows)/);
+    assert.match(source, /aggregate[\s\S]{0,120}(?:cardinality|language_codes)/i);
+    assert.match(source, /(?:multi-language|Multiple languages)[\s\S]{0,80}fail.closed/i);
+    assert.match(source, /(?:zero-language|empty Site language)[\s\S]{0,220}(?:governed collection|operator confirmation)/i);
+    assert.match(source, /(?:never backfill|must not be inferred)[\s\S]{0,120}delivery locale/i);
+  }
 });
 
 test("current docs freeze server-owned DFS and published-generation reads", () => {

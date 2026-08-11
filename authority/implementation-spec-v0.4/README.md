@@ -28,7 +28,7 @@ Authority 版本：**0.4.0**
 
 1. [MVP-IMPLEMENTATION-SPEC.md](MVP-IMPLEMENTATION-SPEC.md)：四模块产品模型、数据诚实性、授权边界和验收不变量。
 2. [openapi.yaml](openapi.yaml)：当前 80 个 HTTP operation 的逐字镜像；必须与 `openapi/mvp.yaml` 字节一致。
-3. [schema.sql](schema.sql)：由 52 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
+3. [schema.sql](schema.sql)：由 53 个 ordered migration 确定性生成的完整可执行 SQL；禁止手改。
 4. [schemas/service-bundle-manifest.schema.json](schemas/service-bundle-manifest.schema.json)：导出 bundle manifest 机器合同。
 5. [scripts/schema-smoke.sql](scripts/schema-smoke.sql)：当前数据库约束 smoke；必须与应用迁移目录中的 smoke 字节一致。
 6. [scripts/verify-spec.mjs](scripts/verify-spec.mjs)：authority、active lock 与当前实现的强一致性验证器。
@@ -41,7 +41,7 @@ active verifier 禁止 candidate machine file 留在本目录根部。
 
 `schema.sql` 不是第二套手写 DDL。以下命令按文件名排序读取
 `packages/db/migrations/0001_init.sql` 至
-`0052_keyword_governance_schedule_requests.sql`，验证每个 migration 的事务框架与
+`0053_keyword_governance_suggestion_locale_authority.sql`，验证每个 migration 的事务框架与
 `schema_migration_version`，再生成带精确边界 marker 的完整 SQL：
 
 ```bash

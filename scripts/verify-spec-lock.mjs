@@ -270,7 +270,7 @@ assert.equal(lock.ruleSetVersion, "mvp.rules.0.2.4");
 assert.equal(lock.promptSetVersion, "mvp.prompts.0.2.0");
 assert.equal(
   lock.migrationHead,
-  "0052_keyword_governance_schedule_requests",
+  "0053_keyword_governance_suggestion_locale_authority",
 );
 
 const openapi = readFileSync(resolve(repoRoot, "openapi/mvp.yaml"), "utf8");
@@ -306,7 +306,7 @@ const migrations = listOrderedMigrationSources({
   migrationDirectory: lock.migrationDirectory,
   migrationFilePattern: lock.migrationFilePattern,
 });
-assert.equal(migrations.length, 52, "v0.4 must freeze 52 migrations");
+assert.equal(migrations.length, 53, "v0.4 must freeze 53 migrations");
 assert.equal(
   migrations.at(-1)?.migrationVersion,
   lock.migrationHead,

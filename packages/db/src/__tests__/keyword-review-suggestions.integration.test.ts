@@ -967,6 +967,258 @@ describeDb("Keyword review suggestion durable authority", () => {
     )).toBe(true);
   });
 
+  it("freezes the sole primary Site language when delivery locale differs", async () => {
+    const project = await createProject();
+    await handle.pool.query(
+      `UPDATE app.client_projects
+          SET default_delivery_locale = 'zh-CN'
+        WHERE workspace_id = $1 AND id = $2`,
+      [project.workspaceId, project.projectId],
+    );
+    await handle.pool.query(
+      `UPDATE app.sites
+          SET language_codes = ARRAY['en']
+        WHERE workspace_id = $1 AND project_id = $2 AND is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+    await createConfirmedTopic(project);
+    await new KeywordOccurrencesRepository(handle.db).upsertIntoLibrary(
+      scope(project),
+      {
+        ...manualOccurrence(
+          "Customer Onboarding Software",
+          "2026-08-10T00:10:00.000Z",
+        ),
+        languageTag: "en",
+      },
+    );
+
+    await expect(
+      new KeywordGovernanceSuggestionGenerationRunsRepository(
+        handle.db,
+      ).readPrimaryFreezeAuthority(scope(project)),
+    ).resolves.toMatchObject({
+      kind: "ready",
+      authority: {
+        marketCode: "US",
+        languageTag: "en",
+        primaryMarketCode: "US",
+        primaryLanguageTag: "en",
+      },
+    });
+  });
+
+  it("keeps case-only Site language identity canonical across the full suggestion lifecycle", async () => {
+    const project = await createProject();
+    await handle.pool.query(
+      `UPDATE app.client_projects project
+          SET default_delivery_locale = 'zh-CN'
+        WHERE project.workspace_id = $1 AND project.id = $2`,
+      [project.workspaceId, project.projectId],
+    );
+    await handle.pool.query(
+      `UPDATE app.sites site
+          SET language_codes = ARRAY['en-us']
+        WHERE site.workspace_id = $1
+          AND site.project_id = $2
+          AND site.is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+    const topic = await createConfirmedTopic(project);
+    await createCsvOccurrence(project);
+    const suggestions = new KeywordReviewSuggestionsRepository(handle.db);
+    const generationRuns =
+      new KeywordGovernanceSuggestionGenerationRunsRepository(handle.db);
+    const authority = await generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    );
+    expect(authority.kind).toBe("ready");
+    if (authority.kind !== "ready") throw new Error("authority missing");
+    expect(authority.authority).toMatchObject({
+      marketCode: "US",
+      languageTag: "en-US",
+      primaryMarketCode: "US",
+      primaryLanguageTag: "en-US",
+      keywords: [{ languageTag: "en-US" }],
+    });
+    const generation = await createGeneration(
+      project,
+      freezeManifest(authority.authority),
+      `keyword-suggestion-case-identity:${randomUUID()}`,
+    );
+    const outputHash = contentHash({
+      run: generation.runId,
+      output: "case-identity",
+    });
+    const invocation = await successfulInvocation(generation, outputHash);
+    const inserted = await suggestions.insertBatch(scope(project), {
+      generationRunId: generation.runId,
+      inputHash: generation.inputHash,
+      outputHash,
+      analysisInvocationId: invocation.invocationId,
+      suggestions: suggestionsFor(generation, topic, project),
+    });
+    expect(inserted.kind).toBe("inserted");
+    if (inserted.kind !== "inserted") throw new Error("batch insert failed");
+    await expect(generationRuns.terminalize(generation.attempt, {
+      status: "completed",
+      resultOutputHash: outputHash,
+      lastErrorCode: null,
+      lastErrorSummary: null,
+    })).resolves.toMatchObject({ kind: "terminalized" });
+    const candidate = generation.manifest.candidates[0]!;
+    const pending = inserted.suggestions[0]!;
+
+    await expect(suggestions.findCurrentPendingReadiness(
+      scope(project),
+      candidate.keywordId,
+    )).resolves.toMatchObject({ kind: "ready" });
+    await expect(suggestions.findCurrentReusableCompletedBatch(
+      scope(project),
+    )).resolves.toMatchObject({ kind: "reusable" });
+    await expect(generationRuns.findLatestGenerationForKeyword(
+      scope(project),
+      candidate.keywordId,
+    )).resolves.toMatchObject({ authorityCurrent: true });
+    await expect(
+      suggestions.supersedeStalePendingForProject(scope(project)),
+    ).resolves.toBe(0);
+    await expect(new KeywordGovernanceRepository(handle.db).approveSuggestion(
+      scope(project),
+      candidate.keywordId,
+      pending.id,
+      project.actorId,
+      {
+        expectedGovernanceRevision: 0,
+        suggestionVersion: "keyword-governance-suggestion.v1",
+      },
+    )).resolves.toMatchObject({
+      replayed: false,
+      decision: { governanceRevision: 1, decisionOrigin: "user" },
+    });
+  });
+
+  it("fails closed when BCP-47 canonicalization changes a language alias", async () => {
+    const project = await createProject();
+    await handle.pool.query(
+      `UPDATE app.sites site
+          SET language_codes = ARRAY['he-IL']
+        WHERE site.workspace_id = $1
+          AND site.project_id = $2
+          AND site.is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+    await createConfirmedTopic(project);
+    await new KeywordOccurrencesRepository(handle.db).upsertIntoLibrary(
+      scope(project),
+      {
+        ...manualOccurrence(
+          "Customer Onboarding Software",
+          "2026-08-10T00:11:00.000Z",
+        ),
+        languageTag: "he-IL",
+      },
+    );
+    const generationRuns =
+      new KeywordGovernanceSuggestionGenerationRunsRepository(handle.db);
+    await expect(generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    )).resolves.toMatchObject({
+      kind: "ready",
+      authority: { languageTag: "he-IL" },
+    });
+
+    await handle.pool.query(
+      `UPDATE app.sites site
+          SET language_codes = ARRAY['iw-IL']
+        WHERE site.workspace_id = $1
+          AND site.project_id = $2
+          AND site.is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+    await expect(generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    )).resolves.toEqual({ kind: "unavailable" });
+  });
+
+  it("keeps SQL case identity bounded while the app freezer rejects a same-alias Site tag", async () => {
+    const project = await createProject();
+    await handle.pool.query(
+      `UPDATE app.sites site
+          SET language_codes = ARRAY['iw-IL']
+        WHERE site.workspace_id = $1
+          AND site.project_id = $2
+          AND site.is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+    await createConfirmedTopic(project);
+    const identity = await handle.pool.query<{
+      same_deprecated_alias: boolean;
+      case_only_canonical_identity: boolean;
+    }>(
+      `SELECT
+         app.is_bcp47_canonical_identity('iw-IL', 'iw-IL')
+           AS same_deprecated_alias,
+         app.is_bcp47_canonical_identity('en-us', 'en-US')
+           AS case_only_canonical_identity`,
+    );
+
+    expect(identity.rows[0]).toEqual({
+      same_deprecated_alias: true,
+      case_only_canonical_identity: true,
+    });
+    await expect(
+      new KeywordGovernanceSuggestionGenerationRunsRepository(
+        handle.db,
+      ).readPrimaryFreezeAuthority(scope(project)),
+    ).resolves.toEqual({ kind: "unavailable" });
+  });
+
+  it("atomically rejects a paid batch after primary Site language authority drifts", async () => {
+    const project = await createProject();
+    const topic = await createConfirmedTopic(project);
+    await createCsvOccurrence(project);
+    const generationRuns =
+      new KeywordGovernanceSuggestionGenerationRunsRepository(handle.db);
+    const authority = await generationRuns.readPrimaryFreezeAuthority(
+      scope(project),
+    );
+    expect(authority.kind).toBe("ready");
+    if (authority.kind !== "ready") throw new Error("authority missing");
+    const generation = await createGeneration(
+      project,
+      freezeManifest(authority.authority),
+      `keyword-suggestion-site-language-cas:${randomUUID()}`,
+    );
+    const outputHash = contentHash({ run: generation.runId, output: "site-drift" });
+    const invocation = await successfulInvocation(generation, outputHash);
+
+    await handle.pool.query(
+      `UPDATE app.sites
+          SET language_codes = ARRAY['en-US', 'fr-CA']
+        WHERE workspace_id = $1 AND project_id = $2 AND is_primary`,
+      [project.workspaceId, project.projectId],
+    );
+
+    await expect(new KeywordReviewSuggestionsRepository(handle.db).insertBatch(
+      scope(project),
+      {
+        generationRunId: generation.runId,
+        inputHash: generation.inputHash,
+        outputHash,
+        analysisInvocationId: invocation.invocationId,
+        suggestions: suggestionsFor(generation, topic, project),
+      },
+    )).resolves.toEqual({ kind: "stale_authority" });
+    const stored = await handle.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM app.keyword_review_suggestions
+        WHERE generation_run_id = $1`,
+      [generation.runId],
+    );
+    expect(stored.rows[0]?.count).toBe("0");
+  });
+
   it("does not let model output downgrade frozen provider intent authority", async () => {
     const project = await createProject();
     const topic = await createConfirmedTopic(project);
@@ -1040,7 +1292,7 @@ describeDb("Keyword review suggestion durable authority", () => {
     )).resolves.toMatchObject({ kind: "inserted" });
   });
 
-  it("rejects insufficient intent and project locale/Site authority drift at approval time", async () => {
+  it("rejects insufficient intent and non-singleton Site language authority at approval time", async () => {
     const project = await createProject();
     const topic = await createConfirmedTopic(project);
     await createCsvOccurrence(project);
@@ -1128,41 +1380,8 @@ describeDb("Keyword review suggestion durable authority", () => {
     );
 
     await handle.pool.query(
-      `UPDATE app.client_projects
-          SET default_delivery_locale = 'fr-CA'
-        WHERE workspace_id = $1 AND id = $2`,
-      [project.workspaceId, project.projectId],
-    );
-    await expect(suggestions.findCurrentPendingReadiness(
-      scope(project),
-      readyItem.keywordId,
-    )).resolves.toMatchObject({ kind: "stale" });
-    const localeDriftApproval = await governance.approveSuggestion(
-      scope(project),
-      readyItem.keywordId,
-      readySuggestion.id,
-      project.actorId,
-      {
-        expectedGovernanceRevision: 0,
-        suggestionVersion: "keyword-governance-suggestion.v1",
-      },
-    ).catch((error: unknown) => error);
-    expect(localeDriftApproval).toBeInstanceOf(
-      KeywordGovernanceConflictError,
-    );
-    expect((localeDriftApproval as KeywordGovernanceConflictError).code).toBe(
-      "REVISION_CONFLICT",
-    );
-    await handle.pool.query(
-      `UPDATE app.client_projects
-          SET default_delivery_locale = 'en-US'
-        WHERE workspace_id = $1 AND id = $2`,
-      [project.workspaceId, project.projectId],
-    );
-
-    await handle.pool.query(
       `UPDATE app.sites
-          SET market_codes = ARRAY['CA'], language_codes = ARRAY['fr-CA']
+          SET language_codes = ARRAY['en-US', 'fr-CA']
         WHERE workspace_id = $1 AND project_id = $2 AND is_primary`,
       [project.workspaceId, project.projectId],
     );
@@ -1186,7 +1405,7 @@ describeDb("Keyword review suggestion durable authority", () => {
     );
     await handle.pool.query(
       `UPDATE app.sites
-          SET market_codes = ARRAY['US'], language_codes = ARRAY['en-US']
+          SET language_codes = ARRAY['en-US']
         WHERE workspace_id = $1 AND project_id = $2 AND is_primary`,
       [project.workspaceId, project.projectId],
     );

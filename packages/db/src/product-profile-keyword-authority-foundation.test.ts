@@ -49,7 +49,7 @@ function migrationTemplateIds(): string[] {
 describe("Product Profile Keyword Library database authority", () => {
   it("keeps the 0050 authority below the current forward-only head", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0052_keyword_governance_schedule_requests",
+      "0053_keyword_governance_suggestion_locale_authority",
     );
     expect(migration).toContain(
       "SELECT '0050_product_profile_keyword_lineage'::text AS migration_version",

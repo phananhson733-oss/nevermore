@@ -12,7 +12,7 @@ const migrationPath = fileURLToPath(migrationUrl);
 describe("Keyword governance durable schedule request authority", () => {
   it("advances the ordered migration head and installs the durable request authority", () => {
     expect(LATEST_APP_MIGRATION).toBe(
-      "0052_keyword_governance_schedule_requests",
+      "0053_keyword_governance_suggestion_locale_authority",
     );
     expect(existsSync(migrationPath)).toBe(true);
     if (!existsSync(migrationPath)) return;

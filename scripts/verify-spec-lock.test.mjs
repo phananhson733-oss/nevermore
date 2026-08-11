@@ -273,6 +273,11 @@ function makeFixture(t, options = {}) {
     "packages/db/migrations/0052_keyword_governance_schedule_requests.sql",
     fixtureMigration("0052_keyword_governance_schedule_requests"),
   );
+  write(
+    root,
+    "packages/db/migrations/0053_keyword_governance_suggestion_locale_authority.sql",
+    fixtureMigration("0053_keyword_governance_suggestion_locale_authority"),
+  );
   write(root, "packages/db/migrations/schema-smoke.sql", "BEGIN; ROLLBACK;\n");
   for (const [index, [id, version]] of RULES.entries()) {
     write(
@@ -346,7 +351,7 @@ function makeFixture(t, options = {}) {
     lockPath,
     migrationDirectory: "packages/db/migrations",
     migrationFilePattern: "^[0-9]{4}_.+\\.sql$",
-    migrationHead: "0052_keyword_governance_schedule_requests",
+    migrationHead: "0053_keyword_governance_suggestion_locale_authority",
     authorityFiles: hashMap(root, authorityRoot, REQUIRED_AUTHORITY_FILES),
     implementationFiles: hashMap(root, "", REQUIRED_IMPLEMENTATION_FILES),
     apiOperations: operationIds,
@@ -384,7 +389,7 @@ test("freezes the complete active v0.4 surface", () => {
   assert.equal(activeLock.ruleSetVersion, "mvp.rules.0.2.4");
   assert.equal(
     activeLock.migrationHead,
-    "0052_keyword_governance_schedule_requests",
+    "0053_keyword_governance_suggestion_locale_authority",
   );
   assert.equal(activeLock.ruleVersions["CONTENT-GAP-011"], 2);
   assert.equal(activeLock.ruleVersions["TECH-LINKGRAPH-005"], 3);
