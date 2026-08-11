@@ -70,6 +70,33 @@ export function funnelGridDividesEvenly(): boolean {
   return FUNNEL_STEPS.length % FUNNEL_COLUMNS === 0;
 }
 
+
+/**
+ * A label for a payload value the bundle may have no copy for.
+ *
+ * Most of what this surface translates is a union whose value list is proved
+ * complete at compile time and covered by `keyword-map-messages.test.ts`.
+ * Four things are not: `marketCode`, `languageCode`, `unavailableStages` and
+ * `nextStepSuggestions` are plain `string` in the payload, and the API
+ * validates the two codes only as non-empty strings. A request naming a
+ * language this bundle never learned — or an API that later accepts one more
+ * — reaches `t()` with a key that does not exist.
+ *
+ * next-intl does not throw for that; it renders the dotted key path. So the
+ * failure is a sentence reading "market tools.keywordMap.markets.PT" on a
+ * report the visitor waited two minutes and a provider bill for. The bare
+ * code is a true, if terse, answer to which market this was.
+ */
+function useOptionalLabel(): (key: string, fallback: string) => string {
+  const t = useTranslations("tools.keywordMap");
+  return (key, fallback) => {
+    // Built from payload data, so it cannot be proved a member of the
+    // message-key union at compile time — which is the reason this exists.
+    const candidate = key as Parameters<typeof t.has>[0];
+    return t.has(candidate) ? t(candidate) : fallback;
+  };
+}
+
 export function KeywordMapResults({
   result,
   locale,
@@ -92,7 +119,7 @@ export function KeywordMapResults({
       <RunSummary result={result} locale={locale} />
 
       {result.rows.length === 0 ? (
-        <EmptyState />
+        <EmptyState degraded={result.unavailableStages.length > 0} />
       ) : (
         <>
           <RowTable rows={seo} lane="seo" />
@@ -118,6 +145,7 @@ export function KeywordMapResults({
  */
 function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
   const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
   const degraded = result.availability !== "available";
   if (!degraded && result.nextStepSuggestions.length === 0) return null;
 
@@ -135,7 +163,7 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
             <p className="mt-1.5 text-[12.5px] leading-[1.6] text-brand-warning">
               {t("stagesMissing", {
                 stages: result.unavailableStages
-                  .map((stage) => t(`stages.${stage}`))
+                  .map((stage) => label(`stages.${stage}`, stage))
                   .join(" · "),
               })}
             </p>
@@ -152,7 +180,7 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
                 key={step}
                 className="text-[13px] leading-[1.6] text-text-dark-primary"
               >
-                {t(`nextSteps.${step}`)}
+                {label(`nextSteps.${step}`, step)}
               </li>
             ))}
           </ul>
@@ -171,14 +199,18 @@ function RunSummary({
   readonly locale: string;
 }) {
   const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
 
   return (
     <section className={CARD}>
       <p className="text-[12.5px] leading-[1.6] text-text-dark-secondary">
         {t("runContext", {
           site: result.context.siteUrl,
-          market: t(`markets.${result.marketCode}`),
-          language: t(`languages.${result.languageCode}`),
+          market: label(`markets.${result.marketCode}`, result.marketCode),
+          language: label(
+            `languages.${result.languageCode}`,
+            result.languageCode,
+          ),
           pages: result.context.pagesFetched,
           productPages: result.context.productPagesFetched,
         })}
@@ -258,14 +290,22 @@ function Tile({
  *
  * Without this the funnel above is followed by the withheld list, and a reader
  * is left to infer from two absences that the tables were meant to be there.
+ *
+ * The body splits on whether every stage ran, because the two empties are not
+ * the same claim. When they all ran, the candidates were judged and dropped —
+ * a finding. When one did not, some were never judged at all, and saying they
+ * were "priced, checked or sampled out" would dress a gap in the evidence as
+ * a result.
  */
-function EmptyState() {
+function EmptyState({ degraded }: { readonly degraded: boolean }) {
   const t = useTranslations("tools.keywordMap");
 
   return (
     <section className={CARD}>
       <h3 className={SECTION_TITLE}>{t("emptyTitle")}</h3>
-      <p className={SECTION_INTRO}>{t("emptyBody")}</p>
+      <p className={SECTION_INTRO}>
+        {t(degraded ? "emptyBodyPartial" : "emptyBody")}
+      </p>
     </section>
   );
 }

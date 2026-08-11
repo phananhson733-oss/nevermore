@@ -88,6 +88,23 @@ function result(
   };
 }
 
+/**
+ * The bundle's copy as react-dom writes it into markup.
+ *
+ * react escapes `&`, `<`, `>`, `"` and `'` in text children, so a string with
+ * an apostrophe never appears in the output verbatim. Comparing against the
+ * raw bundle value makes `toContain` fail and — worse — makes `not.toContain`
+ * pass for copy that is right there on the page.
+ */
+function asRendered(copy: string): string {
+  return copy
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#x27;");
+}
+
 function render(
   locale: "en" | "zh",
   value: KeywordOpportunityResult = result(),
@@ -120,12 +137,12 @@ describe("keyword map results", () => {
         unavailableStages: ["gsc_coverage"],
       }),
     );
-    const label = en.tools.keywordMap.funnel.alreadyCovered;
+    const label = asRendered(en.tools.keywordMap.funnel.alreadyCovered);
     const tile = markup.slice(
       markup.lastIndexOf("<div", markup.indexOf(label)),
       markup.indexOf(label),
     );
-    expect(tile).toContain(en.tools.keywordMap.notMeasured);
+    expect(tile).toContain(asRendered(en.tools.keywordMap.notMeasured));
     expect(tile).not.toContain(">0<");
   });
 
@@ -133,9 +150,9 @@ describe("keyword map results", () => {
     // Collapsing them is the mistake the three-state volume design exists to
     // prevent, and a surface that shows only their sum has made it for us.
     const markup = render("en");
-    expect(markup).toContain(en.tools.keywordMap.funnel.explicitZero);
-    expect(markup).toContain(en.tools.keywordMap.funnel.providerNoData);
-    expect(markup).toContain(en.tools.keywordMap.funnel.volumePositive);
+    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.explicitZero));
+    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.providerNoData));
+    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.volumePositive));
   });
 
   it("keeps the funnel grid divisible by its column count", () => {
@@ -148,10 +165,31 @@ describe("keyword map results", () => {
   });
 
   it("explains a run that produced no rows", () => {
-    const markup = render("en", result({ rows: [], funnel: { ...FUNNEL, shown: 0 } }));
-    expect(markup).toContain(en.tools.keywordMap.emptyTitle);
-    expect(markup).not.toContain(en.tools.keywordMap.lane.seo.title);
-    expect(markup).not.toContain(en.tools.keywordMap.lane.geo.title);
+    const markup = render(
+      "en",
+      result({ rows: [], funnel: { ...FUNNEL, shown: 0 } }),
+    );
+    expect(markup).toContain(asRendered(en.tools.keywordMap.emptyTitle));
+    expect(markup).toContain(asRendered(en.tools.keywordMap.emptyBody));
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.lane.seo.title));
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.lane.geo.title));
+  });
+
+  it("does not say the gates dropped candidates a gate never saw", () => {
+    // Empty because every gate ran and rejected everything is a finding.
+    // Empty because a stage failed is a hole. The default body claims the
+    // first, and on a partial run that dresses missing evidence as a result.
+    const markup = render(
+      "en",
+      result({
+        rows: [],
+        availability: "partial",
+        unavailableStages: ["serp_sample"],
+        funnel: { ...FUNNEL, shown: 0, serpSampled: 0 },
+      }),
+    );
+    expect(markup).toContain(asRendered(en.tools.keywordMap.emptyBodyPartial));
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.emptyBody));
   });
 
   it("puts the suggestions above the tables, not below the withheld list", () => {
@@ -172,9 +210,9 @@ describe("keyword map results", () => {
         ],
       }),
     );
-    const advice = markup.indexOf(en.tools.keywordMap.nextSteps.add_seed_keywords);
-    const table = markup.indexOf(en.tools.keywordMap.lane.seo.title);
-    const withheld = markup.indexOf(en.tools.keywordMap.withheldTitle);
+    const advice = markup.indexOf(asRendered(en.tools.keywordMap.nextSteps.add_seed_keywords));
+    const table = markup.indexOf(asRendered(en.tools.keywordMap.lane.seo.title));
+    const withheld = markup.indexOf(asRendered(en.tools.keywordMap.withheldTitle));
     expect(advice).toBeGreaterThan(-1);
     expect(advice).toBeLessThan(table);
     expect(table).toBeLessThan(withheld);
@@ -196,7 +234,7 @@ describe("keyword map results", () => {
         ],
       }),
     );
-    expect(markup).toContain(en.tools.keywordMap.clustersTitle);
+    expect(markup).toContain(asRendered(en.tools.keywordMap.clustersTitle));
     expect(markup).not.toContain("orthodontic intake");
   });
 
@@ -209,7 +247,31 @@ describe("keyword map results", () => {
         ],
       }),
     );
-    expect(markup).not.toContain(en.tools.keywordMap.clustersTitle);
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.clustersTitle));
+  });
+
+  it("names a market, language or stage the bundle never learned", () => {
+    // The API validates marketCode and languageCode only as non-empty strings,
+    // and `unavailableStages` / `nextStepSuggestions` are plain string arrays.
+    // next-intl renders a missing key as its dotted path, so without a
+    // fallback the report reads "market tools.keywordMap.markets.PT" after the
+    // visitor waited two minutes and a provider bill for it.
+    const markup = render(
+      "en",
+      result({
+        marketCode: "PT",
+        languageCode: "pt",
+        availability: "partial",
+        unavailableStages: ["a_stage_added_after_this_bundle"],
+        nextStepSuggestions: ["a_step_added_after_this_bundle"],
+      }),
+    );
+    // Asserting the code alone would pass on the broken output too: the key
+    // path CONTAINS the code. The absence of the key path is the whole test.
+    expect(markup).not.toContain("tools.keywordMap.");
+    expect(markup).toContain("for PT / pt");
+    expect(markup).toContain("a_stage_added_after_this_bundle");
+    expect(markup).toContain("a_step_added_after_this_bundle");
   });
 
   it("carries an exit card, because the shell drops its own once connected", () => {
@@ -222,7 +284,7 @@ describe("keyword map results", () => {
 
   it("stays silent when a complete run has nothing to suggest", () => {
     const markup = render("en");
-    expect(markup).not.toContain(en.tools.keywordMap.nextStepsTitle);
-    expect(markup).not.toContain(en.tools.keywordMap.availability.available);
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.nextStepsTitle));
+    expect(markup).not.toContain(asRendered(en.tools.keywordMap.availability.available));
   });
 });
