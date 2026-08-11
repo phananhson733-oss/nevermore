@@ -1,6 +1,6 @@
 // @input  -- one finished keyword opportunity result and the page's locale
 // @output -- the run's verdict, its funnel, the two lanes, groups, and what was held back
-// @pos    -- read-only rendering for /[locale]/tools/hidden-keywords
+// @pos    -- read-only rendering for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";

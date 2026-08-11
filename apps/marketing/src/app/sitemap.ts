@@ -7,6 +7,7 @@ import type { MetadataRoute } from "next";
 import { getAllBlogPosts } from "@/lib/blog";
 import { getLegalDocument } from "@/lib/legal";
 import { localeUrl } from "@/lib/locale-path";
+import { SITEMAP_TOOLS } from "@/config/sitemap-tools";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
@@ -79,15 +80,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Tool pages
-  const tools = [
-    "seo-quick-wins",
-    "internal-link-audit",
-    "traffic-drop-diagnosis",
-    "seo-audit",
-  ] as const;
   for (const locale of locales) {
-    for (const tool of tools) {
+    for (const tool of SITEMAP_TOOLS) {
       entries.push({
         url: localeUrl(locale, `/tools/${tool}`),
         changeFrequency: "monthly",

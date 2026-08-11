@@ -12,6 +12,25 @@ describe("marketing redirects", () => {
     });
   });
 
+  // The tool page moved after it shipped, so the old slug is live in whatever
+  // already links to it. zh is listed separately because /tools/* is a real zh
+  // route: folding it onto the default-locale destination would drop the
+  // visitor's language, which the blog redirects below never have to consider.
+  it.each([
+    ["", "/tools/low-competition-keywords"],
+    ["/en", "/tools/low-competition-keywords"],
+    ["/zh", "/zh/tools/low-competition-keywords"],
+  ])(
+    "sends %s/tools/hidden-keywords to its new slug in one hop",
+    (prefix, destination) => {
+      expect(redirects).toContainEqual({
+        source: `${prefix}/tools/hidden-keywords`,
+        destination,
+        statusCode: 301,
+      });
+    },
+  );
+
   it.each([
     ["free-seo-consultation", "free-seo-company"],
     ["free-white-label-seo", "best-white-label-seo-tool"],

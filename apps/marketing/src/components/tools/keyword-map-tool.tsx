@@ -1,6 +1,6 @@
 // @input  -- locale, the visitor's Search Console grant, and the market allow-list
 // @output -- connect / read-site / confirm / run / result states for the keyword map
-// @pos    -- primary client surface for /[locale]/tools/hidden-keywords
+// @pos    -- primary client surface for /[locale]/tools/low-competition-keywords
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 "use client";
@@ -22,7 +22,7 @@ import { GscDisconnect } from "./gsc-disconnect";
 import { keywordMapSiteUrl } from "./keyword-map-property";
 import { KeywordMapResults } from "./keyword-map-results";
 
-const TOOL_PATH = "/tools/hidden-keywords";
+const TOOL_PATH = "/tools/low-competition-keywords";
 const SECTION_ID = "keyword-map-tool";
 
 /** Shared surfaces, so this tool and its siblings read as one console. */
