@@ -5,6 +5,10 @@
 
 import { createPublicToolError } from "@sf/public-tools";
 import {
+  EMPTY_KEYWORD_LLM_USAGE,
+  type KeywordLlmUsage,
+} from "./keyword-llm-client.ts";
+import {
   consumePublicToolQuota,
   DEFAULT_SHARED_QUOTA_DEPENDENCIES,
   type SharedQuotaDependencies,
@@ -314,12 +318,24 @@ export interface KeywordCostReport {
   readonly capped: boolean;
   readonly cappedStages: readonly string[];
   readonly unpricedCalls: number;
+  /**
+   * What the run spent on the model, in requests rather than dollars.
+   *
+   * The provider bills tokens on an account we do not itemise per tool, so a
+   * dollar figure here would be invented. Counts are not: `retryCount` is the
+   * number of replies this run threw away and paid for, and it is the only
+   * signal that says whether the model is answering reliably today. It read
+   * zero on every run until 2026-08-11 because nothing was wired to `onUsage`.
+   */
+  readonly llm: KeywordLlmUsage;
 }
 
 export interface KeywordCostReportInput {
   readonly costs: KeywordCostAccumulator;
   readonly candidateCount: number;
   readonly serpSampled: number;
+  /** Absent only in tests that predate the model being counted. */
+  readonly llm?: KeywordLlmUsage;
 }
 
 /**
@@ -345,6 +361,7 @@ export function reportKeywordRunCost(
     capped: input.costs.capped(),
     cappedStages: input.costs.cappedStages(),
     unpricedCalls: input.costs.unpricedCalls(),
+    llm: input.llm ?? EMPTY_KEYWORD_LLM_USAGE,
   };
   emit(JSON.stringify(report));
   return report;

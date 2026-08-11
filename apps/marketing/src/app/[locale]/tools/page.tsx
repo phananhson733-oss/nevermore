@@ -50,16 +50,16 @@ const DIAGNOSIS_TOOLS = [
 
 const PLANNING_TOOLS = [
   {
-    slug: "hidden-keywords",
+    slug: "low-competition-keywords",
     title: { en: "Keyword Opportunity Map", zh: "关键词机会地图" },
     description: {
-      en: "Turn site context into keyword directions only after demand signals are verified.",
-      zh: "先验证需求信号，再把网站上下文转为关键词方向。",
+      // Not "only after demand signals are verified": the GEO lane is
+      // deliberately not gated on demand data, so that promise is broken by
+      // every question-form row the tool is designed to return.
+      en: "Reads your site, then shows search terms with measured demand and a weak site already on page one, plus the questions your pages already answer.",
+      zh: "先读你的站点，再给出「有实测搜索量、且第一页已经有弱站」的词，以及你的页面已经能回答的问题。",
     },
-    // The tool has not shipped; the card must say so instead of implying a
-    // gate the visitor can pass today. The page carries the waitlist form.
-    status: { en: "Coming soon", zh: "即将上线" },
-    cta: { en: "Join the waitlist", zh: "加入等待列表" },
+    cta: { en: "Connect Search Console", zh: "连接 Search Console" },
     category: "planning",
   },
 ] as const;
@@ -204,7 +204,6 @@ export default async function ToolsPage({
                 category={tool.category}
                 locale={locale}
                 ctaLabel={tool.cta[locale as "en" | "zh"]}
-                statusLabel={tool.status[locale as "en" | "zh"]}
               />
             ))}
           </div>

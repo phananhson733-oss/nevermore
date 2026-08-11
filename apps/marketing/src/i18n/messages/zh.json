@@ -47,7 +47,7 @@
       },
       "hiddenKeywords": {
         "label": "关键词机会地图",
-        "description": "先验证需求信号，再把网站上下文转为关键词方向。"
+        "description": "先读你的站点，再给出「有实测搜索量、且第一页已经有弱站」的词，以及你的页面已经能回答的问题。"
       }
     }
   },
@@ -1553,14 +1553,20 @@
       "runningStatus": "仍在运行，已用时 {seconds} 秒。",
       "elapsed": "已用时 {seconds} 秒",
       "statusDone": "完成，{count} 条机会。",
-      "funnelTitle": "候选词都去哪了",
-      "funnelIntro": "上面表格里没出现的每一个候选词，都在这里有交代。一份短名单只有在你能看见它是从什么里筛出来的时候才可信。",
+      "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
+      "funnelIntro": "本次运行每一步各看到了多少。这些计数会重叠，是有意的：GEO 泳道本来就不以需求量为门槛，所以一个数据源没有数据的词照样可能出现在结果里。把它读成「证据花在了哪里」，不是「总数被切成了几块」。",
       "notMeasured": "未检查",
+      "emptyTitle": "没有候选词进入上面的表格",
+      "emptyBody": "本次运行生成的候选词，没有一个进入上面两张表。上面的计数写明每一步各看到了什么，下面的清单逐条列出每个词具体撞在哪一道墙上。这是关于这个市场公开数据的结论，不是对站点的判决。",
+      "emptyBodyPartial": "本次运行有一部分没跑完，所以有些候选词根本没被判过，而不是判过之后被筛掉。上面的计数说明哪几道闸口真的跑了；在缺失的那一步恢复之前，这里的空清单不能当成「没有东西可找」的证据。",
+      "clustersTitle": "可以放在同一个页面上的词",
+      "clustersIntro": "词面重合到可以由同一个页面服务的词。这里只列两个词以上的组，所以它隐含的页面数是「这些组，加上每个单独成立的词各一页」。分组只看词面，所以这是建议而不是站点结构：要证明两个词该共用一个页面，需要本次运行没有抓取的第一页重合度。",
       "funnel": {
         "generated": "已生成",
         "deduplicated": "去重后",
-        "providerReturned": "已核价",
         "providerNoData": "数据源无数据",
+        "explicitZero": "核价为零",
+        "volumePositive": "有搜索量",
         "alreadyCovered": "已在服务",
         "serpSampled": "已抽样第一页",
         "winnableEvidence": "第一页有弱站",
@@ -1571,6 +1577,10 @@
       "withheldTitle": "被拦下的，以及原因",
       "withheldIntro": "每一条都撞在某一道具体的墙上。原因写明是哪一道，因为它们对应的下一步动作不同。",
       "nextStepsTitle": "下次跑之前可以做什么",
+      "whereNextTitle": "接下来去哪里",
+      "whereNextBody": "先用无需连接的数据检查网站基础。",
+      "whereNextAudit": "免费 SEO 审计",
+      "whereNextLinks": "内链审计",
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
@@ -1607,7 +1617,8 @@
         "decide_whether_to_bet_early": "在没有需求数字的情况下，决定要不要押"
       },
       "withheld": {
-        "no_measured_demand": "数据源没有给出搜索量",
+        "volume_priced_at_zero": "数据源给出的搜索量是零",
+        "volume_not_returned": "数据源对它没有任何数据——这和「零」不是一回事",
         "already_covered": "你的站点已经在服务这个查询",
         "page_one_contested": "第一页抽样过了，被强站占着",
         "serp_sample_budget_exhausted": "本次的第一页抽样预算没轮到它",

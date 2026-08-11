@@ -673,3 +673,75 @@ describe("createKeywordLlmSeams", () => {
     expect(await seams.extractPropositions(PAGES)).toHaveLength(1);
   });
 });
+
+describe("an empty reply from the model", () => {
+  const empty = (input = 900, output = 0) =>
+    new KeywordLlmError(
+      "invalid_response",
+      "LLM response carried no message content.",
+      { inputTokens: input, outputTokens: output, requestCount: 1, retryCount: 0 },
+    );
+
+  it("is asked again, because the provider answered and the model did not", async () => {
+    // Observed in production 2026-08-11: the first run after a release came
+    // back 502 on this, after the crawl and before anything billable, and the
+    // visitor had to start the paid step over by hand.
+    const { client, requests } = recorder([
+      empty(),
+      propositionReply([{ statement: "Same-day claims", sourceUrl: `${HOST}/` }]),
+    ]);
+
+    const result = await extractKeywordPropositions(PAGES, { client });
+
+    expect(result.propositions).toHaveLength(1);
+    expect(requests).toHaveLength(2);
+  });
+
+  it("still bills for the reply it threw away", async () => {
+    // A reasoning model that spends its whole output budget thinking bills
+    // exactly like one that also wrote something. Dropping this would make the
+    // most expensive failures the cheapest-looking lines in the cost log.
+    const { client } = recorder([
+      empty(900, 0),
+      propositionReply([{ statement: "Same-day claims", sourceUrl: `${HOST}/` }]),
+    ]);
+
+    const result = await extractKeywordPropositions(PAGES, { client });
+
+    expect(result.usage.retryCount).toBe(1);
+    expect(result.usage.requestCount).toBe(2);
+    // 900 burned on the discarded reply plus the 100 the recorder reports for
+    // the accepted one.
+    expect(result.usage.inputTokens).toBe(1000);
+  });
+
+  it("gives up as an empty reply, not as a schema failure", async () => {
+    // The two send an operator to different systems: one is the model not
+    // answering, the other is our prompt and validator disagreeing with it.
+    const { client, requests } = recorder([empty(), empty()]);
+
+    await expect(extractKeywordPropositions(PAGES, { client })).rejects.toMatchObject({
+      reason: "invalid_response",
+    });
+    expect(requests).toHaveLength(2);
+  });
+
+  it.each(["timeout", "rate_limited", "server_error", "auth_failed"] as const)(
+    "does not retry a %s, which is the provider and not the model",
+    async (reason) => {
+      // A second identical request to a provider that is down, throttling us,
+      // or refusing our key spends the visitor's latency budget to learn
+      // nothing — and 45s twice on one call sits inside a stage that already
+      // runs two minutes.
+      const { client, requests } = recorder([
+        new KeywordLlmError(reason, `LLM request failed: ${reason}.`),
+        propositionReply([{ statement: "Never reached", sourceUrl: `${HOST}/` }]),
+      ]);
+
+      await expect(extractKeywordPropositions(PAGES, { client })).rejects.toMatchObject({
+        reason,
+      });
+      expect(requests).toHaveLength(1);
+    },
+  );
+});

@@ -590,7 +590,7 @@ describe("buildKeywordOpportunityResult withheld", () => {
     ]);
   });
 
-  it("blames the missing demand measurement when the provider said zero or said nothing", () => {
+  it("keeps a priced zero and a provider silence apart in the withheld list", () => {
     const result = buildKeywordOpportunityResult(
       input({
         observations: [
@@ -600,9 +600,12 @@ describe("buildKeywordOpportunityResult withheld", () => {
       }),
     );
 
+    // Both leave the reader without a number, but only one of them is an
+    // answer: a term the provider priced at zero is finished, and a term it
+    // has never heard of is still open.
     expect(result.withheld.map((entry) => entry.reason)).toEqual([
-      "no_measured_demand",
-      "no_measured_demand",
+      "volume_priced_at_zero",
+      "volume_not_returned",
     ]);
   });
 

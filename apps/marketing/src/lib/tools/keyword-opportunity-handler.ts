@@ -37,6 +37,7 @@ import {
   type KeywordBudgetOutcome,
   type KeywordCostAccumulator,
 } from "./keyword-cost-guard.ts";
+import type { KeywordLlmUsage } from "./keyword-llm-client.ts";
 import { cookies } from "next/headers";
 import { identitySubFrom, type GrantResolution } from "../auth/grant-cookie.ts";
 import { openCrawlGate, type CrawlGateResult } from "./crawl-gate.ts";
@@ -307,6 +308,15 @@ export interface KeywordOpportunityDependencies {
    * that the paid analysis pipeline also spends from.
    */
   readonly consumeDailyBudget: () => Promise<KeywordBudgetOutcome>;
+  /**
+   * What the model cost this run, read once at the end.
+   *
+   * A seam rather than an accumulator argument because the two model calls
+   * happen inside `extractPropositions` / `expandCandidates`, which are
+   * themselves seams — the handler never sees a completion. Optional so a test
+   * that only cares about orchestration does not have to fake token counts.
+   */
+  readonly llmUsage?: () => KeywordLlmUsage;
   /**
    * Books provider spend and answers whether the next stage still fits.
    *
@@ -887,6 +897,7 @@ export async function handleKeywordOpportunitiesRequest(
       costs: dependencies.costs,
       candidateCount: candidates.length,
       serpSampled: samples.length,
+      llm: dependencies.llmUsage?.(),
     });
 
     return json({ data: payload }, 200);

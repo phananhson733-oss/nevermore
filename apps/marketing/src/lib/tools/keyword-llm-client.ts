@@ -59,11 +59,27 @@ export const KEYWORD_LLM_ERROR_CODE = "keyword_source_unavailable" as const;
 export class KeywordLlmError extends Error {
   readonly code: typeof KEYWORD_LLM_ERROR_CODE = KEYWORD_LLM_ERROR_CODE;
   readonly reason: KeywordLlmFailureReason;
+  /**
+   * Tokens the failed attempt still burned.
+   *
+   * Only ever non-empty for `invalid_response`, which is the one failure where
+   * the provider answered, charged for the answer, and put nothing usable in
+   * it — a reasoning model that spends its whole output budget thinking bills
+   * exactly like one that also wrote a reply. A retry that dropped this on the
+   * floor would make the expensive failures the cheapest-looking ones in the
+   * cost log.
+   */
+  readonly usage: KeywordLlmUsage;
 
-  constructor(reason: KeywordLlmFailureReason, message: string) {
+  constructor(
+    reason: KeywordLlmFailureReason,
+    message: string,
+    usage?: KeywordLlmUsage,
+  ) {
     super(message);
     this.name = "KeywordLlmError";
     this.reason = reason;
+    this.usage = usage ?? EMPTY_KEYWORD_LLM_USAGE;
   }
 }
 
@@ -560,6 +576,7 @@ class ChatCompletionsClient implements KeywordLlmClient {
         throw new KeywordLlmError(
           "invalid_response",
           "LLM response carried no message content.",
+          readUsage(data),
         );
       }
       return { content, usage: readUsage(data) };

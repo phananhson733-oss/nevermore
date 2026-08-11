@@ -11,6 +11,7 @@ import {
   handleKeywordContextRequest,
 } from "@/lib/tools/keyword-opportunity-handler";
 import { createKeywordLlmSeams } from "@/lib/tools/keyword-prompts";
+import { createKeywordLlmUsageSink } from "@/lib/tools/keyword-llm-usage-sink";
 import { createKeywordCostAccumulator } from "@/lib/tools/keyword-cost-guard";
 import { createKeywordCoverageReader } from "@/lib/tools/keyword-coverage-reader";
 import { createKeywordProviderSeams } from "@/lib/tools/keyword-providers";
@@ -28,9 +29,12 @@ export async function POST(request: Request): Promise<Response> {
   // request: the dependency shape is shared with stage two, and a module-scope
   // one would carry another visitor's spend into this run's report.
   const costs = createKeywordCostAccumulator();
-  const llm = createKeywordLlmSeams({});
+  // Counted, not just offered: `onUsage` existed from the start and both
+  // routes passed an empty object, so every run reported zero model calls.
+  const llmUsage = createKeywordLlmUsageSink();
+  const llm = createKeywordLlmSeams({ onUsage: llmUsage.add });
 
-  return handleKeywordContextRequest(request, {
+  const response = await handleKeywordContextRequest(request, {
     ...DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES,
     costs,
     crawlContext: async (siteUrl) =>
@@ -41,4 +45,18 @@ export async function POST(request: Request): Promise<Response> {
     readCoverageQueries: createKeywordCoverageReader({}),
     extractClientIp,
   });
+
+  // Stage one has no cost report to hang this on — it spends no provider
+  // money — but it does make a model call, so it is where half this tool's
+  // retries happen. Logged on failures too: a run that burned its output
+  // budget and returned nothing is the one worth seeing.
+  console.info(
+    JSON.stringify({
+      tool: "keyword_opportunity",
+      stage: "context",
+      status: response.status,
+      llm: llmUsage.total(),
+    }),
+  );
+  return response;
 }

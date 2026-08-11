@@ -22,6 +22,15 @@ export function getMarketingRedirects() {
       destination: "/blog/best-white-label-seo-tool",
       statusCode: 301 as const,
     },
+    // The keyword map shipped at /tools/hidden-keywords, which describes the
+    // feeling and not the search. Both locale forms are listed: /tools/* is a
+    // real zh route, unlike the blog slugs below, so a zh visitor cannot be
+    // folded onto the default-locale destination.
+    ...["", "/en", "/zh"].map((prefix) => ({
+      source: `${prefix}/tools/hidden-keywords`,
+      destination: `${prefix === "/zh" ? "/zh" : ""}/tools/low-competition-keywords`,
+      statusCode: 301 as const,
+    })),
     ...[
       ["free-seo-consultation", "free-seo-company"],
       ["free-white-label-seo", "best-white-label-seo-tool"],

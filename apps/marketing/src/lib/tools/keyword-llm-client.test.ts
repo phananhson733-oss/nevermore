@@ -499,3 +499,24 @@ describe("createKeywordLlmClient", () => {
     expect(result.usage.requestCount).toBe(1);
   });
 });
+
+describe("an empty reply's cost", () => {
+  it("is carried on the error, because the retry above it has to bill for it", () => {
+    // A reasoning model that spends its whole output budget thinking bills
+    // exactly like one that also wrote a reply, so the caller that retries
+    // needs the number the failed attempt burned.
+    const error = new KeywordLlmError("invalid_response", "empty", {
+      inputTokens: 900,
+      outputTokens: 0,
+      requestCount: 1,
+      retryCount: 0,
+    });
+    expect(error.usage.inputTokens).toBe(900);
+  });
+
+  it("defaults to nothing counted for failures that never reached the model", () => {
+    expect(new KeywordLlmError("timeout", "slow").usage).toEqual(
+      EMPTY_KEYWORD_LLM_USAGE,
+    );
+  });
+});

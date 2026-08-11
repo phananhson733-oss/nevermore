@@ -14,8 +14,6 @@ interface ToolCardProps {
   category: string;
   locale: string;
   ctaLabel?: string;
-  /** Availability state, e.g. "Coming soon". Only for tools that cannot run yet. */
-  statusLabel?: string;
 }
 
 const CATEGORY_LABELS: Record<string, Record<string, string>> = {
@@ -33,7 +31,6 @@ export function ToolCard({
   category,
   locale,
   ctaLabel,
-  statusLabel,
 }: ToolCardProps) {
   const categoryLabel = CATEGORY_LABELS[category]?.[locale] ?? category;
 
@@ -45,12 +42,6 @@ export function ToolCard({
           <span className="rounded border border-brand-accent/30 px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-brand-accent-text uppercase">
             {categoryLabel}
           </span>
-          {/* Availability chip stays neutral: it is a fact, not a selling point */}
-          {statusLabel ? (
-            <span className="rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
-              {statusLabel}
-            </span>
-          ) : null}
         </div>
 
         {/* Tool name */}

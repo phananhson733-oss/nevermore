@@ -5,7 +5,29 @@
 export type ConnectedTool =
   | "seo-quick-wins"
   | "traffic-drop-diagnosis"
-  | "hidden-keywords";
+  | "low-competition-keywords";
+
+/**
+ * The union as a value, so a test can walk every member.
+ *
+ * `satisfies` alone proves each entry is a member of the union; it does not
+ * prove the list holds all of them. `CONNECTED_TOOLS_ARE_COMPLETE` fails the
+ * build with the missing name when a tool is added to the type and not here.
+ */
+export const CONNECTED_TOOLS = [
+  "seo-quick-wins",
+  "traffic-drop-diagnosis",
+  "low-competition-keywords",
+] as const satisfies readonly ConnectedTool[];
+
+type MissingConnectedTool = Exclude<
+  ConnectedTool,
+  (typeof CONNECTED_TOOLS)[number]
+>;
+const CONNECTED_TOOLS_ARE_COMPLETE: [MissingConnectedTool] extends [never]
+  ? true
+  : MissingConnectedTool = true;
+void CONNECTED_TOOLS_ARE_COMPLETE;
 
 export interface ConnectedToolContent {
   readonly path: `/tools/${ConnectedTool}`;
@@ -269,8 +291,8 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       },
     ],
   },
-  "hidden-keywords": {
-    path: "/tools/hidden-keywords",
+  "low-competition-keywords": {
+    path: "/tools/low-competition-keywords",
     eyebrow: "Content opportunity planning",
     title: "Find low competition keywords with a weak site already on page one",
     description:
@@ -568,8 +590,8 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       },
     ],
   },
-  "hidden-keywords": {
-    path: "/tools/hidden-keywords",
+  "low-competition-keywords": {
+    path: "/tools/low-competition-keywords",
     eyebrow: "内容机会规划",
     title: "找出第一页已经有弱站排上去的低竞争关键词",
     description:
