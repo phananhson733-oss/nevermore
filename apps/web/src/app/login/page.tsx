@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { Card, LocaleSwitch } from "@/components/ui";
 import { safePostLoginPath } from "@/lib/auth/redirect";
+import { withBasePath } from "@/lib/base-path";
 import { LoginForm } from "./_form.tsx";
 import { oauthErrorMessageKey } from "./_oauth-error.ts";
 import styles from "./login.module.css";
@@ -33,7 +34,7 @@ export default async function LoginPage({
           <span className={styles.brandMark} aria-hidden="true">
             <img
               className={styles.brandGlyph}
-              src="/images/logo-mark.png"
+              src={withBasePath("/images/logo-mark.png")}
               alt=""
               width={20}
               height={20}

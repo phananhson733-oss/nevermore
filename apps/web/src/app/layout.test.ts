@@ -97,7 +97,13 @@ describe("GenGrowth browser identity", () => {
         new URL(source, import.meta.url),
         "utf8",
       );
-      expect(component, source).toContain('src="/images/logo-mark.png"');
+      // Through withBasePath, not as a bare literal: a raw <img> src is a
+      // hand-built same-origin URL, and Next prefixes <Link>, redirect() and
+      // the assets it emits itself — not this. A sub-path deployment would
+      // serve a broken image.
+      expect(component, source).toContain(
+        'withBasePath("/images/logo-mark.png")',
+      );
     }
   });
 });

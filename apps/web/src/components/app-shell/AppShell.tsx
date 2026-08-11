@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { signOutAction } from "@/lib/auth/actions";
+import { withBasePath } from "@/lib/base-path";
 import { cx, LocaleSwitch } from "@/components/ui";
 import {
   PRIMARY_NAV_ITEMS,
@@ -86,10 +87,12 @@ export async function AppShell({
           <span className={styles.brandMark} aria-hidden="true">
             {/* Plain <img>: the product app has never routed an image through
                 the Next optimizer, and a fixed-size local PNG does not need it.
-                The wrapper already carries the accessible name. */}
+                The wrapper already carries the accessible name. The path is
+                hand-built, so it takes withBasePath — Next prefixes <Link> and
+                the assets it emits itself, not a raw img src. */}
             <img
               className={styles.brandGlyph}
-              src="/images/logo-mark.png"
+              src={withBasePath("/images/logo-mark.png")}
               alt=""
               width={32}
               height={32}
