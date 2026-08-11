@@ -75,4 +75,29 @@ describe("GenGrowth browser identity", () => {
 
     expect(frames).toContainEqual({ width: 32, height: 32 });
   });
+
+  it("ships the brand mark the app chrome renders", async () => {
+    // The sidebar tile and the login card reach for this file through a plain
+    // path string, so nothing here type-checks or bundles it: if it went
+    // missing the app would keep building and just serve a broken image.
+    const bytes = await readFile(
+      new URL("../../public/images/logo-mark.png", import.meta.url),
+    );
+
+    expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    // Colour type 6 = RGBA. The tile paints the brand navy itself, in both the
+    // paper and ink themes, so the mark on top of it has to be transparent.
+    expect(bytes[25]).toBe(6);
+
+    for (const source of [
+      "../components/app-shell/AppShell.tsx",
+      "./login/page.tsx",
+    ]) {
+      const component = await readFile(
+        new URL(source, import.meta.url),
+        "utf8",
+      );
+      expect(component, source).toContain('src="/images/logo-mark.png"');
+    }
+  });
 });

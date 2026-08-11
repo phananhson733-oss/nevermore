@@ -93,17 +93,20 @@ describe("GenGrowth marketing browser identity", () => {
     },
   );
 
-  it("keeps apple-touch-icon opaque, because iOS ignores alpha", async () => {
-    const { colorType } = readPngHeader(
-      await readPublic("apple-touch-icon.png"),
-    );
+  it.each(["apple-touch-icon.png", "images/logo.png"])(
+    "%s carries no alpha channel at all, so nothing can composite it onto black",
+    async (fileName) => {
+      const { colorType } = readPngHeader(await readPublic(fileName));
 
-    expect([RGBA, GREY_ALPHA]).toContain(colorType);
-    // Opacity here is a property of the pixels, not the colour type: PIL keeps
-    // the RGBA type but fills the alpha. Assert the corner is actually solid.
-    const bytes = await readPublic("apple-touch-icon.png");
-    expect(bytes.length).toBeGreaterThan(1024);
-  });
+      // Opacity used to be asserted as "RGBA whose alpha happens to be full",
+      // which is not something this test can actually read: it never decodes a
+      // pixel. An alpha-free colour type is checkable from the header and is
+      // the stronger guarantee — iOS composites a transparent Apple Touch icon
+      // onto black, and Google renders the Organization logo on surfaces we do
+      // not control.
+      expect([RGBA, GREY_ALPHA]).not.toContain(colorType);
+    },
+  );
 
   it("ships favicon.ico as a Windows icon containing the declared 32x32", async () => {
     const bytes = await readPublic("favicon.ico");
@@ -144,5 +147,22 @@ describe("GenGrowth marketing browser identity", () => {
     expect(header.isPng, "logo.png is not PNG bytes").toBe(true);
     expect(header.width).toBe(1024);
     expect(header.height).toBe(1024);
+  });
+
+  /**
+   * The round crop was a workaround for the old file's white corners. The
+   * Direction A mark is not a disc — its arrow runs out to the canvas corner —
+   * so re-applying that crop would silently cut the arrow off. Both chrome
+   * surfaces sit on the dark brand background and take the bare mark.
+   */
+  it.each([
+    "../components/layout/header.tsx",
+    "../components/layout/footer.tsx",
+  ])("%s renders the transparent mark without a round crop", async (source) => {
+    const component = await readFile(new URL(source, import.meta.url), "utf8");
+
+    const mark = component.slice(component.indexOf("<Image"));
+    expect(mark).toContain('src="/images/logo-mark.png"');
+    expect(mark.slice(0, mark.indexOf("/>"))).not.toContain("rounded-full");
   });
 });

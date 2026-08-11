@@ -84,7 +84,16 @@ export async function AppShell({
       <aside className={styles.sidebar} data-app-shell-sidebar="">
         <div className={styles.brand} aria-label="GenGrowth">
           <span className={styles.brandMark} aria-hidden="true">
-            G
+            {/* Plain <img>: the product app has never routed an image through
+                the Next optimizer, and a fixed-size local PNG does not need it.
+                The wrapper already carries the accessible name. */}
+            <img
+              className={styles.brandGlyph}
+              src="/images/logo-mark.png"
+              alt=""
+              width={32}
+              height={32}
+            />
           </span>
           <span className={styles.brandCopy}>
             <span className={styles.brandWord}>GenGrowth</span>
@@ -105,10 +114,7 @@ export async function AppShell({
         >
           {state === "empty-project" ? (
             <span
-              className={cx(
-                styles.newProjectLink,
-                styles.newProjectLinkActive,
-              )}
+              className={cx(styles.newProjectLink, styles.newProjectLinkActive)}
               aria-current="page"
             >
               <Plus aria-hidden="true" size={17} strokeWidth={1.8} />

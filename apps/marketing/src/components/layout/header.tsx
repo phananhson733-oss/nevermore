@@ -42,16 +42,17 @@ export function Header() {
           href={localePath(locale)}
           className="flex items-center gap-2.5 text-base font-semibold text-text-dark-primary"
         >
-          {/* logo-mark is the alpha-masked build of the brand mark. The older
-              logo.png is a JPEG on a white square, so a round crop of it showed
-              white corners. That file stays put for the Organization JSON-LD,
-              which wants an opaque logo. */}
+          {/* The Direction A mark is a shape, not a disc: its arrow runs out to
+              the top-right corner of the canvas. The round crop this used to
+              carry was there to hide the old file's white corners, and applying
+              it to this mark would cut the arrow off instead. logo.png stays
+              opaque for the Organization JSON-LD; the header takes the bare
+              transparent mark, which the brand kit sizes for 32px and up. */}
           <Image
             src="/images/logo-mark.png"
             alt="GenGrowth"
-            width={28}
-            height={28}
-            className="rounded-full"
+            width={32}
+            height={32}
           />
           GenGrowth
         </Link>
