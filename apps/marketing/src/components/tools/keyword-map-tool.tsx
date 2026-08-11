@@ -226,14 +226,11 @@ export function KeywordMapTool({
     setPhase("running");
     setErrorCode(null);
     try {
-      const response = await fetch(
-        "/api/tools/hidden-keywords/opportunities",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contextToken: token }),
-        },
-      );
+      const response = await fetch("/api/tools/hidden-keywords/opportunities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contextToken: token }),
+      });
       const body = (await response.json()) as {
         data?: { result?: KeywordOpportunityResult };
         error?: { code?: string };
@@ -516,7 +513,9 @@ export function KeywordMapTool({
         </div>
       ) : null}
 
-      {result !== null ? <KeywordMapResults result={result} /> : null}
+      {result !== null ? (
+        <KeywordMapResults result={result} locale={locale} />
+      ) : null}
 
       <GscDisconnect namespace="tools.keywordMap" />
     </section>
