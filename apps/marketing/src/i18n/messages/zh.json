@@ -1510,7 +1510,162 @@
     "schema_validator": "Schema验证器",
     "media_database": "媒体数据库",
     "axe": "axe无障碍测试",
-    "security_scanner": "安全扫描器"
+    "security_scanner": "安全扫描器",
+    "keywordMap": {
+      "connectTitle": "连接 Search Console",
+      "connectBody": "这张地图会读取你站点的公开页面，把候选词拿到搜索数据源去核价，再用你自己资源里已经在服务的查询逐条比对。只读：我们改不了你 Google 账号里的任何东西，也不在服务器上留存任何数据。",
+      "connectCta": "连接 Search Console",
+      "connectTrust": "免费 · 只读授权 · 不在服务器留存 · 随时断开",
+      "connectPending": "这个环境还没开放 Google 连接。",
+      "inviteOnlyTitle": "还没对所有人开放",
+      "inviteOnlyBody": "我们的 Google 同意页还在测试状态，目前只有测试者名单上的账号能完成授权。",
+      "inviteOnlyCta": "申请访问",
+      "disconnect": "断开 Search Console",
+      "disconnecting": "正在断开…",
+      "disconnectHint": "从这个浏览器移除授权，并在 Google 侧一并撤销。",
+      "disconnectGoogleSettings": "打开 Google 第三方访问设置",
+      "noPropertyTitle": "这次授权里没有资源",
+      "noPropertyBody": "连接成功了，但没有覆盖任何 Search Console 资源。确认一下你用的 Google 账号名下有已验证的资源。",
+      "reconnect": "重新连接 Search Console",
+      "propertyLabel": "Search Console 资源",
+      "propertiesTruncated": "你的授权覆盖 {total} 个资源，列表因长度做了裁剪。要选没列出的那个，请重新连接。",
+      "siteUrlLabel": "要读取的站点",
+      "marketLabel": "市场",
+      "languageLabel": "语言",
+      "seedsLabel": "种子词（可选）",
+      "seedsPlaceholder": "牙科账单, 诊所排班",
+      "seedsHint": "最多十个，逗号分隔。它们会和爬取结果一起交给候选词生成——当你的站点没有写出买家实际会用的说法时，这一栏最有用。",
+      "readSite": "读取我的站点",
+      "rereadSite": "重新读取站点",
+      "reading": "正在读取站点…",
+      "readingTitle": "正在读取你的站点",
+      "readingBody": "抓取最多十四个页面并从中读出定位。通常二十秒左右。这一步不产生任何费用。",
+      "confirmTitle": "我们从你站点上读到的",
+      "confirmBody": "读了 {pages} 个页面，其中 {productPages} 个看起来是产品页。候选词就是从下面这些陈述生成的，所以在花掉搜索数据预算之前，值得先确认它们说的是不是你的业务。",
+      "confirmHint": "这些如果不准，关键词也不会准。可以在上面补种子词后重新读取；如果没问题，就直接跑。",
+      "thinContext": "回来的页面不到三个。地图仍然能跑，但用这么少的上下文生成的候选词通常很单薄——这种情况下补种子词最有用。",
+      "runMap": "生成机会地图",
+      "rerunMap": "再跑一次",
+      "startOver": "重新开始",
+      "running": "正在运行…",
+      "runningTitle": "正在生成机会地图",
+      "runningBody": "给候选词核价、读取你的 Search Console 查询，并对通过的词逐个打开搜索结果第一页。通常需要两分钟左右——第一页抽样是刻意串行的，避免把数据源打爆。",
+      "runningStatus": "仍在运行，已用时 {seconds} 秒。",
+      "elapsed": "已用时 {seconds} 秒",
+      "statusDone": "完成，{count} 条机会。",
+      "funnelTitle": "候选词都去哪了",
+      "funnelIntro": "上面表格里没出现的每一个候选词，都在这里有交代。一份短名单只有在你能看见它是从什么里筛出来的时候才可信。",
+      "notMeasured": "未检查",
+      "funnel": {
+        "generated": "已生成",
+        "deduplicated": "去重后",
+        "providerReturned": "已核价",
+        "providerNoData": "数据源无数据",
+        "alreadyCovered": "已在服务",
+        "serpSampled": "已抽样第一页",
+        "winnableEvidence": "第一页有弱站",
+        "shown": "已展示"
+      },
+      "weakestHint": "「最弱排名」指当前占据第一页的域名里权重最低的那个，用数据源的 0–1000 标度。数字低说明已经有小站进去了——这是证据，不是承诺。",
+      "geoHint": "这些刻意不带需求数据。问句形式几乎都没有可测量的搜索量，所以判据是「你站上是否已经有页面回答它」。",
+      "withheldTitle": "被拦下的，以及原因",
+      "withheldIntro": "每一条都撞在某一道具体的墙上。原因写明是哪一道，因为它们对应的下一步动作不同。",
+      "nextStepsTitle": "下次跑之前可以做什么",
+      "stagesMissing": "缺失：{stages}",
+      "columns": {
+        "keyword": "关键词",
+        "volume": "搜索量",
+        "difficulty": "KD",
+        "weakest": "最弱排名",
+        "supportingPage": "回答它的页面",
+        "coverage": "你的覆盖情况",
+        "nextChecks": "动手前先查"
+      },
+      "lane": {
+        "seo": {
+          "title": "有实测需求的搜索词",
+          "intro": "每一条都有数据源给出的搜索量，且第一页上至少已经有一个弱站排进去了。这两件事都不说明你一定能排上，只说明这次尝试没有被明显堵死。"
+        },
+        "geo": {
+          "title": "你站点已经能回答的问题",
+          "intro": "真人会输入、或会拿去问助手的说法，并对应到你已有的页面。这些不声称任何搜索量。"
+        }
+      },
+      "coverage": {
+        "observed_exact_strong": "已在服务，第一页",
+        "observed_exact_weak": "已在服务，第一页之后",
+        "related_coverage_unverified": "有页面看着相关，未核实",
+        "not_observed_in_gsc_query_sample": "不在你的查询样本里",
+        "gsc_query_sample_not_read": "未检查"
+      },
+      "checks": {
+        "read_page_one_intent": "打开第一页，看清那些结果到底在回答什么",
+        "confirm_result_page_type": "确认这个词赢的是哪类页面——指南、工具还是列表页",
+        "verify_weak_site_breakthrough": "看看排上去的那个弱站是守得住还是已经废弃",
+        "check_existing_page_overlap": "查一下你是不是已经有页面在打这个词",
+        "judge_commercial_fit": "判断这波需求是不是你的买家",
+        "decide_whether_to_bet_early": "在没有需求数字的情况下，决定要不要押"
+      },
+      "withheld": {
+        "no_measured_demand": "数据源没有给出搜索量",
+        "already_covered": "你的站点已经在服务这个查询",
+        "page_one_contested": "第一页抽样过了，被强站占着",
+        "serp_sample_budget_exhausted": "本次的第一页抽样预算没轮到它",
+        "serp_sample_unavailable": "第一页抽样没跑成",
+        "no_supporting_page": "爬到的页面里没有能回答它的"
+      },
+      "availability": {
+        "available": "完整运行。",
+        "partial": "本次运行有一部分没跑完，所以是「缺少证据」，不是「查过了没有」。",
+        "insufficient_evidence": "通过筛选的机会太少，不足以称为一份关键词计划。诚实的结论是：就这个站点和这个市场而言，公开数据目前撑不起一份计划。",
+        "unavailable": "本次运行没有产出可用结果。"
+      },
+      "stages": {
+        "gsc_coverage": "你的 Search Console 查询",
+        "serp_sample": "第一页抽样",
+        "serp_sample_cost_capped": "第一页抽样（触及本次成本上限后停止）"
+      },
+      "nextSteps": {
+        "supply_product_description": "补种子词——爬取能拿到的信息太少",
+        "add_seed_keywords": "补上买家会用、但你站点没写出来的说法",
+        "try_another_market": "换一个市场试试，需求可能在别处",
+        "rerun_when_stage_recovers": "等缺失的那一步恢复后再跑一次"
+      },
+      "markets": {
+        "US": "美国",
+        "GB": "英国",
+        "CA": "加拿大",
+        "AU": "澳大利亚",
+        "DE": "德国",
+        "FR": "法国",
+        "NL": "荷兰",
+        "SE": "瑞典"
+      },
+      "languages": {
+        "en": "英语",
+        "de": "德语",
+        "fr": "法语",
+        "nl": "荷兰语",
+        "sv": "瑞典语"
+      },
+      "errors": {
+        "unknown": "我们这边出了问题。没有产出报告的运行不会计费。",
+        "invalid_input": "检查一下站点 URL、市场和语言——其中有一项没被接受。",
+        "invalid_request": "这个请求没被理解。刷新页面重试。",
+        "payload_too_large": "你的站点产生的上下文超过了单次请求能携带的量。试试换一个更窄的起始 URL。",
+        "unsupported_media_type": "这个请求没被理解。刷新页面重试。",
+        "authentication_required": "你的 Search Console 授权已失效。",
+        "property_not_verified": "你的授权没有覆盖这个站点。选一个你拥有的资源，或者用拥有它的账号重新连接。",
+        "rate_limited": "你在过去一小时里跑了好几次。过几分钟再来。",
+        "context_token_invalid": "那次站点读取已过期——有效期十分钟。请重新读取站点。",
+        "keyword_source_unavailable": "搜索数据源没有响应。没有产出报告的运行不会计费。",
+        "site_unreachable": "我们连不上那个站点。检查 URL，以及它是否可公开访问。",
+        "bot_protection_blocked": "站点的机器人防护把我们挡了回来，读不到内容。",
+        "rate_limited_by_target": "站点要求我们放慢速度。过几分钟再试。",
+        "protocol_downgrade_rejected": "那个 URL 跳转到了不安全的地址，我们不跟随这种跳转。",
+        "too_few_pages": "能读到的页面不足三个，不够作为生成候选词的上下文。"
+      }
+    }
   },
   "compare": {
     "title": "GenGrowth 对比",

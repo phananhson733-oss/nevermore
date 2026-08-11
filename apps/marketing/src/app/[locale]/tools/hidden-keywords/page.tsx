@@ -1,16 +1,26 @@
-// @input  -- locale param, connected-tool copy, coming-soon copy, waitlist namespace messages
-// @output -- honest coming-soon page: the tool has not shipped; the waitlist is the primary CTA
-// @pos    -- P0-5 acquisition page; replaces the former pure redirect to the product app
+// @input  -- locale param, the visitor's Search Console grant, and the market allow-list
+// @output -- the running Keyword Opportunity Map on the shared connected-tool shell
+// @pos    -- P0-5 acquisition page; the waitlist it replaced is gone because the tool exists
+// 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { getConnectedToolContent } from "@/components/tools/connected-tool-content";
-import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
-import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
+import { ConnectedToolPage } from "@/components/tools/connected-tool-page";
+import { KeywordMapTool } from "@/components/tools/keyword-map-tool";
+import {
+  BreadcrumbJsonLd,
+  FaqPageJsonLd,
+  HowToJsonLd,
+  ToolSoftwareApplicationJsonLd,
+} from "@/components/seo/json-ld";
+import { KEYWORD_MARKET_LOCATIONS } from "@/lib/tools/keyword-providers";
+import { readTrafficDropSession } from "@/lib/tools/traffic-drop-session";
+import { localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
-import { localePath, localeUrl } from "@/lib/locale-path";
-import { getHiddenKeywordsComingSoonContent } from "./coming-soon-content";
-import { ComingSoonToolSections } from "./coming-soon-sections";
-import { ComingSoonWaitlist } from "./coming-soon-waitlist";
+
+// This route renders the visitor's cookie-backed grant state, so it cannot be
+// part of the statically built locale tree.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -19,12 +29,17 @@ export async function generateMetadata({
 }) {
   const { locale } = await params;
   const content = getConnectedToolContent(locale, "hidden-keywords");
-  const comingSoon = getHiddenKeywordsComingSoonContent(locale);
   return generatePageMetadata({
-    title: comingSoon.metaTitle,
+    title:
+      locale === "en"
+        ? "Low Competition Keyword Finder"
+        : "低竞争关键词发现",
     description: content.description,
     locale,
     path: content.path,
+    // Still excluded from search. The tool works now, but this page is due to
+    // move to `/tools/low-competition-keywords` with a 301, and indexing a URL
+    // we are about to redirect spends the crawl budget twice for nothing.
     noIndex: true,
   });
 }
@@ -35,84 +50,63 @@ export default async function HiddenKeywordsPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  const [session, messages] = await Promise.all([
+    readTrafficDropSession(),
+    getMessages(),
+  ]);
   const content = getConnectedToolContent(locale, "hidden-keywords");
-  const comingSoon = getHiddenKeywordsComingSoonContent(locale);
-  const messages = await getMessages({ locale });
-  const home = locale === "zh" ? "首页" : "Home";
-  const tools = locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools";
+  const canonical = localeUrl(locale, content.path);
 
   return (
-    /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
-    <section className="min-h-screen bg-brand-bg pt-9 pb-24">
-      <div className="max-w-report mx-auto px-6 md:px-8">
-        <BreadcrumbJsonLd
-          items={[
-            { name: home, url: localeUrl(locale) },
-            { name: tools, url: localeUrl(locale, "/tools") },
-            { name: content.title },
-          ]}
-        />
-        <VisibleBreadcrumb
-          items={[
-            { label: home, href: localePath(locale) },
-            { label: tools, href: localePath(locale, "/tools") },
-            { label: content.title },
-          ]}
-        />
-
-        <header className="relative overflow-hidden border-b border-brand-border pt-7 pb-12 md:pb-14">
-          {/* GLOW_01 — 页级 hero 才允许的网格 + 氛围光 */}
-          <div
-            aria-hidden="true"
-            className="bg-signal-grid absolute inset-0 opacity-40"
+    <>
+      <ToolSoftwareApplicationJsonLd
+        name={content.title}
+        description={content.description}
+        url={canonical}
+        featureList={content.outputs.map((output) => output.label)}
+      />
+      <HowToJsonLd name={content.workflowTitle} steps={content.steps} />
+      <FaqPageJsonLd
+        faqs={content.faq.map((item) => ({
+          q: item.question,
+          a: item.answer,
+        }))}
+      />
+      <BreadcrumbJsonLd
+        items={[
+          { name: locale === "zh" ? "首页" : "Home", url: localeUrl(locale) },
+          {
+            name: locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools",
+            url: localeUrl(locale, "/tools"),
+          },
+          { name: content.title, url: canonical },
+        ]}
+      />
+      <ConnectedToolPage
+        locale={locale}
+        content={content}
+        connected={session.properties !== null}
+      >
+        {/* Only this tool's namespace crosses the client boundary. */}
+        <NextIntlClientProvider
+          messages={{ tools: { keywordMap: messages.tools.keywordMap } }}
+        >
+          <KeywordMapTool
+            locale={locale}
+            properties={session.properties}
+            propertyTotal={session.propertyTotal}
+            connectEnabled={session.connectEnabled}
+            consentNotice={session.consentNotice}
+            /*
+             * Read here, from the adapter that owns it. The allow-list exists
+             * because the provider bills per task and answers an unmapped
+             * location with an error only after the call, so a second copy in
+             * the client bundle would be a second thing to forget to update.
+             */
+            markets={Object.keys(KEYWORD_MARKET_LOCATIONS)}
           />
-          <div
-            aria-hidden="true"
-            className="absolute -top-30 right-[4%] hidden h-70 w-100 rounded-full bg-[radial-gradient(ellipse,rgba(61,220,151,0.13),transparent_65%)] blur-[12px] md:block"
-          />
-          <div className="relative">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
-                {content.eyebrow}
-              </p>
-              {/* Availability chip stays neutral: it is a fact, not a selling point */}
-              <span className="rounded border border-brand-border-strong px-2 py-[3px] font-mono text-[9.5px] tracking-[0.08em] text-text-dark-secondary uppercase">
-                {comingSoon.statusLabel}
-              </span>
-            </div>
-            <h1 className="text-page-title mt-4 max-w-4xl text-text-dark-primary">
-              {content.title}
-            </h1>
-            <p className="mt-5 max-w-2xl text-[15.5px] leading-[1.65] text-text-dark-secondary md:text-[17px]">
-              {content.description}
-            </p>
-
-            <div className="rounded-card border-brand-border-card bg-brand-panel mt-8 max-w-3xl border p-[22px]">
-              <p className="text-[13px] font-semibold text-text-dark-primary">
-                {comingSoon.availabilityTitle}
-              </p>
-              <p className="mt-1.5 text-[13px] leading-[1.6] text-text-dark-secondary">
-                {comingSoon.availabilityBody}
-              </p>
-              <p className="mt-3 text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                {content.sourceDetail}
-              </p>
-            </div>
-
-            <NextIntlClientProvider
-              messages={{ waitlist: messages.waitlist }}
-            >
-              <ComingSoonWaitlist content={comingSoon} />
-            </NextIntlClientProvider>
-          </div>
-        </header>
-
-        <ComingSoonToolSections
-          locale={locale}
-          content={content}
-          comingSoon={comingSoon}
-        />
-      </div>
-    </section>
+        </NextIntlClientProvider>
+      </ConnectedToolPage>
+    </>
   );
 }

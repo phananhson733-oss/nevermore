@@ -272,65 +272,73 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
   "hidden-keywords": {
     path: "/tools/hidden-keywords",
     eyebrow: "Content opportunity planning",
-    title:
-      "Map keyword opportunities from a real site and verified keyword data",
+    title: "Find low competition keywords with a weak site already on page one",
     description:
-      "The opportunity map starts with your public site context, then validates candidate topics against a configured keyword data source before they are presented as opportunities.",
-    sourceLabel: "Requires an enabled keyword data source in GenGrowth",
+      "Reads your site, generates candidate terms from what it actually sells, prices them against a search-data provider, and keeps only the ones whose page one a small site has already broken into.",
+    sourceLabel: "Requires a Google Search Console connection",
     sourceDetail:
-      "Search-volume validation has a direct data cost. GenGrowth only presents validated opportunities when the project has an authorized provider available.",
-    cta: "Open GenGrowth to prepare an opportunity map",
+      "Read-only. Your own Search Console queries are what tell the map which terms your site already serves, so it does not hand you back a page you have.",
+    cta: "Connect Search Console",
     trust:
-      "No fabricated search volume and no AI-only keyword list presented as validated demand.",
-    workflowTitle: "What happens in the product",
+      "No fabricated search volume, and no keyword called winnable on a difficulty score. Every term shown had its page one opened.",
+    workflowTitle: "How the map decides what to show you",
     steps: [
       {
-        name: "Create a project",
-        text: "Set it up with your site and product context.",
+        name: "Connect Search Console",
+        text: "Read-only, one click, revoke it whenever you like from your Google account.",
       },
       {
-        name: "Connect a data source",
-        text: "The permitted keyword data source for the workspace.",
+        name: "We read your site first",
+        text: "Up to fourteen pages, product pages first, and we show you what we understood before spending anything. Wrong reading, wrong keywords — so you get to correct it.",
       },
       {
-        name: "Review the candidates",
-        text: "Site-informed candidate topics, only after their available demand signals are checked.",
+        name: "Candidates are priced, not guessed",
+        text: "Every term goes to a search-data provider. Terms it has no data for are reported as having no data, never as zero demand.",
+      },
+      {
+        name: "Page one is opened for the survivors",
+        text: "A term is only called winnable when a low-authority site is already ranking for it. A difficulty score cannot tell you that, and relying on one is what sent our own keyword picks wrong four times.",
       },
     ],
-    outputTitle: "What the opportunity map keeps separate",
+    outputTitle: "What you get back",
     outputs: [
       {
-        label: "Observation",
-        body: "Topics and language found in the public site context.",
+        label: "Search terms with measured demand",
+        body: "Volume from the provider, plus the weakest domain currently holding a page-one place.",
       },
       {
-        label: "Diagnosis",
-        body: "Coverage gaps or uncertain demand signals, with source availability shown.",
+        label: "Questions your site already answers",
+        body: "Question phrasings matched to a page you have. No search volume is claimed for these — they almost never have any.",
       },
       {
-        label: "Recommendation",
-        body: "A reviewable topic or keyword direction with its evidence status.",
+        label: "Checks before you act",
+        body: "Every row carries what to go look at. None of them is a verdict; the tool has not read the pages that rank.",
       },
       {
-        label: "Artifact",
-        body: "A keyword and topic list that records which items were validated by a provider.",
+        label: "Where the rest went",
+        body: "Every candidate that did not reach the table, with the specific wall it hit.",
       },
     ],
     faq: [
       {
         question: "Do I need Search Console?",
         answer:
-          "No. This workflow uses public site context plus an authorized keyword data source, not Search Console OAuth.",
+          "Yes. Read-only access is required. It is what lets the map skip terms your site already serves — without it every suggestion would risk being a page you already have.",
       },
       {
         question: "Are AI-generated candidates enough?",
         answer:
-          "No. They are candidates only until the available keyword source verifies the relevant demand signal.",
+          "No. The model proposes terms from what your site says; a search-data provider prices them and a real page-one sample decides whether any of them is worth attempting.",
       },
       {
-        question: "Why might the map be unavailable?",
+        question: "Why would a run come back with almost nothing?",
         answer:
-          "A workspace must have an authorized keyword provider before GenGrowth can validate demand instead of guessing.",
+          "Because the public data does not support a keyword plan for that site and market yet. Roughly a quarter of the sites we tested came back that way, and padding the table would be the dishonest answer.",
+      },
+      {
+        question: "How long does it take?",
+        answer:
+          "About twenty seconds to read your site, then roughly two minutes to price the candidates and open page one for the survivors one at a time.",
       },
     ],
   },
@@ -563,56 +571,73 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
   "hidden-keywords": {
     path: "/tools/hidden-keywords",
     eyebrow: "内容机会规划",
-    title: "从真实网站和已验证数据中建立关键词机会地图",
+    title: "找出第一页已经有弱站排上去的低竞争关键词",
     description:
-      "机会地图从公开网站上下文开始，只有在已配置的关键词数据源完成校验后，候选主题才会作为机会呈现。",
-    sourceLabel: "需要在 GenGrowth 中启用关键词数据源",
+      "读取你的站点，从它实际在卖的东西生成候选词，拿到搜索数据源核价，只保留那些第一页已经被小站攻进去的词。",
+    sourceLabel: "需要连接 Google Search Console",
     sourceDetail:
-      "搜索量校验存在直接数据成本。只有项目具备已授权的数据源时，GenGrowth 才会展示经过验证的机会。",
-    cta: "打开 GenGrowth 并准备机会地图",
-    trust: "不虚构搜索量，也不会把仅由 AI 发散出的关键词清单包装成已验证需求。",
-    workflowTitle: "产品中的执行方式",
+      "只读授权。正是你自己的 Search Console 查询数据，让这张地图知道哪些词你的站点已经在服务——从而不会把你已经有的页面再推荐给你一遍。",
+    cta: "连接 Search Console",
+    trust:
+      "不虚构搜索量，也不靠难度分判定「可赢」。每一个展示出来的词，第一页都被真实打开过。",
+    workflowTitle: "这张地图凭什么决定给你看什么",
     steps: [
-      { name: "创建项目", text: "使用网站和产品上下文创建项目。" },
       {
-        name: "连接数据源",
-        text: "为工作区连接允许使用的关键词数据源。",
+        name: "连接 Search Console",
+        text: "只读、一次点击，随时可在 Google 账号里撤销。",
       },
       {
-        name: "审阅候选主题",
-        text: "只有需求信号完成校验后，再审阅由站点上下文生成的候选主题。",
+        name: "先读你的站点",
+        text: "最多十四个页面、产品页优先，并且在花掉任何钱之前把我们读到的内容摆给你看。读错了关键词就会错，所以这一步由你来纠正。",
+      },
+      {
+        name: "候选词是核价出来的，不是猜的",
+        text: "每个词都送去搜索数据源。数据源没有数据的词，会如实报告为「无数据」，绝不写成需求为零。",
+      },
+      {
+        name: "对通过的词打开第一页",
+        text: "只有当低权重站点已经排在那里时，一个词才会被称为可赢。难度分说明不了这件事——我们自己就是靠难度分连续选错过四次词。",
       },
     ],
-    outputTitle: "机会地图如何区分不同层次",
+    outputTitle: "你会拿到什么",
     outputs: [
-      { label: "Observation", body: "公开站点上下文中出现的主题和表达。" },
       {
-        label: "Diagnosis",
-        body: "主题覆盖缺口或不确定的需求信号，并展示数据源可用性。",
+        label: "有实测需求的搜索词",
+        body: "数据源给出的搜索量，加上当前占据第一页的最弱域名。",
       },
       {
-        label: "Recommendation",
-        body: "带有证据状态、可审阅的主题或关键词方向。",
+        label: "你站点已经能回答的问题",
+        body: "问句说法，并对应到你已有的页面。这些不声称任何搜索量——它们基本上也没有。",
       },
       {
-        label: "Artifact",
-        body: "记录哪些条目经由数据源验证的关键词和主题列表。",
+        label: "动手前该查什么",
+        body: "每一行都带着要去看的东西。它们都不是结论：这个工具没有读过那些排在前面的页面。",
+      },
+      {
+        label: "其余的都去哪了",
+        body: "每一个没进表格的候选词，以及它具体撞在哪道墙上。",
       },
     ],
     faq: [
       {
         question: "需要 Search Console 吗？",
         answer:
-          "不需要。该工作流使用公开站点上下文和已授权的关键词数据源，不使用 Search Console OAuth。",
+          "需要，只读授权。正是它让地图能跳过你已经在服务的词——没有它，每一条建议都可能是你已经有的页面。",
       },
       {
         question: "AI 生成的候选词够用吗？",
-        answer: "不够。它们在可用关键词数据源验证相关需求信号前，只是候选项。",
+        answer:
+          "不够。模型根据你站点上写的东西提出候选词，由搜索数据源核价，再由真实的第一页抽样决定其中哪些值得一试。",
       },
       {
-        question: "为什么机会地图可能不可用？",
+        question: "为什么有的站跑完几乎什么都没有？",
         answer:
-          "工作区必须具备已授权的关键词提供商，GenGrowth 才能验证需求而不是猜测。",
+          "因为就那个站点和那个市场而言，公开数据目前撑不起一份关键词计划。我们测过的站里大约四分之一是这个结果，把表格凑满才是不诚实的答案。",
+      },
+      {
+        question: "要跑多久？",
+        answer:
+          "读站点大约二十秒，然后大约两分钟用于核价，以及对通过的词逐个打开第一页。",
       },
     ],
   },
