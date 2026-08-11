@@ -11,6 +11,7 @@ import {
   handleKeywordOpportunitiesRequest,
 } from "@/lib/tools/keyword-opportunity-handler";
 import { createKeywordLlmSeams } from "@/lib/tools/keyword-prompts";
+import { createKeywordLlmUsageSink } from "@/lib/tools/keyword-llm-usage-sink";
 import { createKeywordCostAccumulator } from "@/lib/tools/keyword-cost-guard";
 import { createKeywordCoverageReader } from "@/lib/tools/keyword-coverage-reader";
 import { createKeywordProviderSeams } from "@/lib/tools/keyword-providers";
@@ -28,7 +29,10 @@ export async function POST(request: Request): Promise<Response> {
   // One accumulator per request, shared between the provider adapters that
   // book spend and the orchestration that asks whether the next stage fits.
   const costs = createKeywordCostAccumulator();
-  const llm = createKeywordLlmSeams({});
+  // Counted, not just offered: `onUsage` existed from the start and both
+  // routes passed an empty object, so every run reported zero model calls.
+  const llmUsage = createKeywordLlmUsageSink();
+  const llm = createKeywordLlmSeams({ onUsage: llmUsage.add });
 
   return handleKeywordOpportunitiesRequest(request, {
     ...DEFAULT_KEYWORD_OPPORTUNITY_DEPENDENCIES,
@@ -41,5 +45,6 @@ export async function POST(request: Request): Promise<Response> {
     // Built here, from the token the handler resolved inside the gate.
     readCoverageQueries: createKeywordCoverageReader({}),
     extractClientIp,
+    llmUsage: llmUsage.total,
   });
 }

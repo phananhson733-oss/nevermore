@@ -34,6 +34,7 @@ import {
   KeywordLlmError,
   mergeKeywordLlmUsage,
   type KeywordLlmClient,
+  type KeywordLlmCompletion,
   type KeywordLlmRequest,
   type KeywordLlmUsage,
 } from "./keyword-llm-client.ts";
@@ -653,11 +654,23 @@ function parseCandidates(
 }
 
 /**
- * Call the model, validate, retry once on a validation failure, then give up.
+ * Call the model, validate, retry once on an unusable reply, then give up.
  *
- * Transport failures are NOT retried here: the client already distinguishes
- * them and a second identical request to a rate-limited or unreachable
- * provider spends the visitor's latency budget to learn nothing.
+ * Transport failures are NOT retried: the client already distinguishes them
+ * and a second identical request to a rate-limited or unreachable provider
+ * spends the visitor's latency budget to learn nothing. A timeout is included
+ * in that — 45s twice on the one call, inside a stage that already runs 90 to
+ * 120, buys a second wait for a model that was already stuck.
+ *
+ * An empty reply is not a transport failure. The provider answered; the model
+ * simply produced no content, which is the same class of event as a reply that
+ * will not parse or will not validate — the class this loop exists for. It was
+ * outside it until 2026-08-11, when the first run after a release returned 502
+ * on an empty reply, after the crawl and before anything billable, and the
+ * visitor had to start the paid step again by hand.
+ *
+ * No backoff. This is model-side randomness rather than congestion, so waiting
+ * only adds to a wait the visitor is already two minutes into.
  */
 async function completeValidated<T>(
   client: KeywordLlmClient,
@@ -666,11 +679,26 @@ async function completeValidated<T>(
 ): Promise<{ readonly value: T; readonly usage: KeywordLlmUsage }> {
   let usage = EMPTY_KEYWORD_LLM_USAGE;
   for (let attempt = 0; attempt < MAX_KEYWORD_LLM_ATTEMPTS; attempt += 1) {
-    const completion = await client.complete(request);
-    usage = mergeKeywordLlmUsage(usage, {
-      ...completion.usage,
-      retryCount: completion.usage.retryCount + (attempt > 0 ? 1 : 0),
-    });
+    const spent = (used: KeywordLlmUsage): KeywordLlmUsage =>
+      mergeKeywordLlmUsage(usage, {
+        ...used,
+        retryCount: used.retryCount + (attempt > 0 ? 1 : 0),
+      });
+
+    let completion: KeywordLlmCompletion;
+    try {
+      completion = await client.complete(request);
+    } catch (error) {
+      const empty =
+        error instanceof KeywordLlmError && error.reason === "invalid_response";
+      // The last attempt rethrows rather than falling out of the loop, so the
+      // caller still sees `invalid_response` instead of the `schema_invalid`
+      // below — the two send an operator to different systems.
+      if (!empty || attempt + 1 >= MAX_KEYWORD_LLM_ATTEMPTS) throw error;
+      usage = spent(error.usage);
+      continue;
+    }
+    usage = spent(completion.usage);
 
     let raw: unknown;
     try {
