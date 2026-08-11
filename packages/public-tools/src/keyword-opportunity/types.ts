@@ -96,7 +96,18 @@ export type KeywordOpportunityCheck =
  * first when the second happened invites a re-run that changes nothing.
  */
 export type KeywordOpportunityWithheldReason =
-  | "no_measured_demand"
+  /**
+   * The provider priced the term and the answer was zero.
+   *
+   * Split from `volume_not_returned` for the same reason the volume states
+   * themselves are split: a term nobody searches is finished, and a term the
+   * provider has never heard of is still open. The aggregate funnel kept the
+   * two apart while this list, which is where a reader decides about one
+   * specific term, folded them into "no measured demand".
+   */
+  | "volume_priced_at_zero"
+  /** The provider returned nothing for the term. Not a measurement of zero. */
+  | "volume_not_returned"
   | "already_covered"
   | "page_one_contested"
   /** The run's sample budget ran out before reaching this term. */
@@ -176,7 +187,8 @@ export const KEYWORD_OPPORTUNITY_COVERAGE_STATES = [
 ] as const satisfies readonly KeywordOpportunityCoverage[];
 
 export const KEYWORD_OPPORTUNITY_WITHHELD_REASONS = [
-  "no_measured_demand",
+  "volume_priced_at_zero",
+  "volume_not_returned",
   "already_covered",
   "page_one_contested",
   "serp_sample_budget_exhausted",

@@ -16,6 +16,7 @@ import type {
 import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import {
+  FUNNEL_COLUMNS,
   FUNNEL_STEPS,
   KeywordMapResults,
   funnelGridDividesEvenly,
@@ -116,13 +117,30 @@ function render(
   );
 }
 
+/**
+ * The one tile carrying `label`, as markup.
+ *
+ * Asserting that a label and a number both appear somewhere on the page proves
+ * nothing about which number sits under which label — the counts could be
+ * swapped, or all three could be the same value, and the assertion would hold.
+ */
+function tileFor(markup: string, label: string): string {
+  const at = markup.indexOf(asRendered(label));
+  expect(at, `no tile labelled ${label}`).toBeGreaterThan(-1);
+  const start = markup.lastIndexOf('<div class="px-3', at);
+  expect(start, `${label} is not inside a tile`).toBeGreaterThan(-1);
+  return markup.slice(start, at);
+}
+
 describe("keyword map results", () => {
   it.each(["en", "zh"] as const)("renders a full run in %s", (locale) => {
-    // A MISSING_MESSAGE throws at render, so this is the cheapest proof that a
-    // locale can show the surface at all.
     const markup = render(locale);
     expect(markup).toContain("dental billing software");
     expect(markup).toContain("acme.test");
+    // next-intl renders a key it cannot resolve as the dotted path rather than
+    // throwing, so a hole in one bundle is invisible to any assertion about
+    // the data. The namespace prefix appearing at all IS the hole.
+    expect(markup).not.toContain("tools.keywordMap.");
   });
 
   it("says the coverage sample was never read instead of counting zero", () => {
@@ -137,22 +155,91 @@ describe("keyword map results", () => {
         unavailableStages: ["gsc_coverage"],
       }),
     );
-    const label = asRendered(en.tools.keywordMap.funnel.alreadyCovered);
-    const tile = markup.slice(
-      markup.lastIndexOf("<div", markup.indexOf(label)),
-      markup.indexOf(label),
-    );
+    const tile = tileFor(markup, en.tools.keywordMap.funnel.alreadyCovered);
     expect(tile).toContain(asRendered(en.tools.keywordMap.notMeasured));
     expect(tile).not.toContain(">0<");
   });
 
+  it("blanks the page-one tiles when the sampling stage did not run", () => {
+    // The payload does not carry null for these: a failed stage leaves both at
+    // 0, which reads as "we opened twenty page ones and found nothing" on the
+    // same card whose verdict says nobody opened any.
+    const markup = render(
+      "en",
+      result({
+        availability: "partial",
+        unavailableStages: ["serp_sample"],
+        funnel: { ...FUNNEL, serpSampled: 0, winnableEvidence: 0 },
+      }),
+    );
+    for (const step of ["serpSampled", "winnableEvidence"] as const) {
+      const tile = tileFor(markup, en.tools.keywordMap.funnel[step]);
+      expect(tile, step).toContain(asRendered(en.tools.keywordMap.notMeasured));
+      expect(tile, step).not.toContain(">0<");
+    }
+  });
+
+  it("keeps a capped sample's real counts, because they were measured", () => {
+    // `serp_sample_cost_capped` means fewer page ones than wanted, not none.
+    // Blanking a partial measurement is its own kind of lie.
+    const markup = render(
+      "en",
+      result({
+        availability: "partial",
+        unavailableStages: ["serp_sample_cost_capped"],
+      }),
+    );
+    expect(tileFor(markup, en.tools.keywordMap.funnel.serpSampled)).toContain(
+      ">20<",
+    );
+  });
+
   it("keeps priced-at-zero and no-provider-data as separate gates", () => {
     // Collapsing them is the mistake the three-state volume design exists to
-    // prevent, and a surface that shows only their sum has made it for us.
+    // prevent. Each label is checked against ITS OWN number: three labels and
+    // three numbers all present somewhere would also hold if the values were
+    // swapped or all three read the same total.
     const markup = render("en");
-    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.explicitZero));
-    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.providerNoData));
-    expect(markup).toContain(asRendered(en.tools.keywordMap.funnel.volumePositive));
+    const expected = {
+      explicitZero: FUNNEL.explicitZero,
+      providerNoData: FUNNEL.providerNoData,
+      volumePositive: FUNNEL.volumePositive,
+    } as const;
+    for (const [step, value] of Object.entries(expected)) {
+      expect(
+        tileFor(markup, en.tools.keywordMap.funnel[step as keyof typeof expected]),
+        step,
+      ).toContain(`>${value}<`);
+    }
+  });
+
+  it("names the two demand states apart in the withheld list too", () => {
+    // The funnel splitting them at aggregate level is no use to someone
+    // deciding about one term: a priced zero is finished, a provider silence
+    // is still open, and they used to share one line.
+    const markup = render(
+      "en",
+      result({
+        withheld: [
+          {
+            keyword: "priced at zero",
+            discoveryBasis: "traditional_expansion",
+            reason: "volume_priced_at_zero",
+          },
+          {
+            keyword: "never priced",
+            discoveryBasis: "traditional_expansion",
+            reason: "volume_not_returned",
+          },
+        ],
+      }),
+    );
+    expect(markup).toContain(
+      asRendered(en.tools.keywordMap.withheld.volume_priced_at_zero),
+    );
+    expect(markup).toContain(
+      asRendered(en.tools.keywordMap.withheld.volume_not_returned),
+    );
   });
 
   it("keeps the funnel grid divisible by its column count", () => {
@@ -162,6 +249,10 @@ describe("keyword map results", () => {
     // is invisible in a fixture short enough to fit one row.
     expect(FUNNEL_STEPS.length).toBeGreaterThan(0);
     expect(funnelGridDividesEvenly()).toBe(true);
+    // And that the constant is the column count the page actually uses.
+    // Checking divisibility alone guards an arithmetic fact about a number no
+    // stylesheet reads: `grid-cols-4` in the JSX would leave it true.
+    expect(render("en")).toContain(`grid-cols-${FUNNEL_COLUMNS}`);
   });
 
   it("explains a run that produced no rows", () => {
@@ -205,7 +296,7 @@ describe("keyword map results", () => {
           {
             keyword: "dental billing pricing",
             discoveryBasis: "traditional_expansion",
-            reason: "no_measured_demand",
+            reason: "volume_not_returned",
           },
         ],
       }),
@@ -236,6 +327,11 @@ describe("keyword map results", () => {
     );
     expect(markup).toContain(asRendered(en.tools.keywordMap.clustersTitle));
     expect(markup).not.toContain("orthodontic intake");
+    // The heading alone would survive `groups.map` being deleted, leaving an
+    // empty card that still passes a test named for the grouping.
+    expect(markup).toContain(">dental billing<");
+    expect(markup).toContain(">dental billing software<");
+    expect(markup).toContain(">dental billing service<");
   });
 
   it("hides the cluster section when nothing groups", () => {

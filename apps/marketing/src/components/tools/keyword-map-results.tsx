@@ -13,6 +13,10 @@ import type {
   KeywordOpportunityRow,
   KeywordOpportunityWithheld,
 } from "@sf/public-tools/keyword-opportunity/types";
+import {
+  KEYWORD_STAGE_GSC_COVERAGE,
+  KEYWORD_STAGE_SERP_SAMPLE,
+} from "@sf/public-tools/keyword-opportunity/types";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
 // an aliased import would make this file unimportable from a test.
 import { formatCount } from "../../lib/tools/quick-wins-format";
@@ -64,7 +68,27 @@ export const FUNNEL_STEPS = [
  * Three columns divide the gate count exactly; `funnelGridDividesEvenly`
  * guards the pairing.
  */
-const FUNNEL_COLUMNS = 3;
+export const FUNNEL_COLUMNS = 3;
+
+/**
+ * The stage each gate's count comes out of, where one exists.
+ *
+ * `funnel.alreadyCovered` arrives as `null` when its stage did not run, but
+ * the SERP counters do not: a failed sampling stage leaves `serpSampled: 0`
+ * and `winnableEvidence: 0`, which read as "we looked at twenty page ones and
+ * found nothing" on the same card whose verdict says nobody looked at all.
+ * The rule is the same for every tile — a gate whose stage is missing has no
+ * count — so it is written once here rather than left to the payload's shape.
+ *
+ * `serp_sample_cost_capped` is deliberately not in this map. A capped run
+ * sampled fewer page ones than it wanted to, but the ones it did sample are
+ * real, and blanking a partial measurement is its own kind of lie.
+ */
+const STEP_STAGE: Partial<Record<(typeof FUNNEL_STEPS)[number], string>> = {
+  alreadyCovered: KEYWORD_STAGE_GSC_COVERAGE,
+  serpSampled: KEYWORD_STAGE_SERP_SAMPLE,
+  winnableEvidence: KEYWORD_STAGE_SERP_SAMPLE,
+};
 
 export function funnelGridDividesEvenly(): boolean {
   return FUNNEL_STEPS.length % FUNNEL_COLUMNS === 0;
@@ -194,7 +218,16 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
   );
 }
 
-/** What was read, and where every candidate it produced ended up. */
+/** False when this gate's count comes out of a stage that did not run. */
+export function stageRan(
+  step: (typeof FUNNEL_STEPS)[number],
+  unavailableStages: readonly string[],
+): boolean {
+  const stage = STEP_STAGE[step];
+  return stage === undefined || !unavailableStages.includes(stage);
+}
+
+/** What was read, and what each stage of the run saw. */
 function RunSummary({
   result,
   locale,
@@ -228,7 +261,11 @@ function RunSummary({
           <Tile
             key={step}
             label={t(`funnel.${step}`)}
-            value={result.funnel[step]}
+            value={
+              stageRan(step, result.unavailableStages)
+                ? result.funnel[step]
+                : null
+            }
             locale={locale}
             /* The funnel's payoff is its last number, so that is the one the
                eye should land on — the order stays strictly the pipeline's. */

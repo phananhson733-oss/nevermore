@@ -47,7 +47,7 @@
       },
       "hiddenKeywords": {
         "label": "Keyword Opportunity Map",
-        "description": "Turn site context into keyword directions after demand signals are verified."
+        "description": "Reads your site, then shows search terms with measured demand and a weak site already on page one, plus the questions your pages already answer."
       }
     }
   },
@@ -1554,13 +1554,13 @@
       "elapsed": "{seconds}s elapsed",
       "statusDone": "Done. {count} opportunities.",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
-      "funnelIntro": "Every candidate this run generated is accounted for by one of these gates. A short list is only trustworthy if you can see what it was shortened from.",
+      "funnelIntro": "What each stage of the run saw. The counts overlap on purpose: the GEO lane is not gated on demand, so a term the provider had no data for can still be shown. Read it as where the evidence went, not as a division of the total.",
       "notMeasured": "not checked",
       "emptyTitle": "Nothing reached the tables",
-      "emptyBody": "Every candidate this run generated was priced, checked or sampled out of the list. The counts above name the gate that took them and the list below names each term. That is a finding about this market's public data, not a verdict on the site.",
+      "emptyBody": "No candidate this run generated reached either table. The counts above show what each stage saw, and the list below names every term with the specific wall it hit. That is a finding about this market's public data, not a verdict on the site.",
       "emptyBodyPartial": "Part of this run did not complete, so some candidates were never judged at all rather than judged and dropped. The counts above show which gates actually ran; until the missing stage recovers, an empty list here is not evidence that there is nothing to find.",
       "clustersTitle": "Terms that could share one page",
-      "clustersIntro": "Grouped by overlapping wording, which makes this a suggestion and not a site structure: proving two terms belong on one page needs the page-one overlap this run does not fetch. Read it as roughly how many pages the list above is.",
+      "clustersIntro": "Terms whose wording overlaps enough that one page could serve them all. Only groups of two or more are listed, so the page count this implies is these groups plus one for every term that stands alone. Grouping is lexical, which makes it a suggestion and not a site structure: proving two terms belong on one page needs the page-one overlap this run does not fetch.",
       "funnel": {
         "generated": "Generated",
         "deduplicated": "After dedupe",
@@ -1617,7 +1617,8 @@
         "decide_whether_to_bet_early": "Decide whether to bet without a demand number"
       },
       "withheld": {
-        "no_measured_demand": "The provider returned no search volume",
+        "volume_priced_at_zero": "The provider priced it at zero searches",
+        "volume_not_returned": "The provider returned no data for it — which is not the same as zero",
         "already_covered": "Your site already serves this query",
         "page_one_contested": "Page one was sampled and strong sites hold it",
         "serp_sample_budget_exhausted": "The run's page-one budget did not reach it",

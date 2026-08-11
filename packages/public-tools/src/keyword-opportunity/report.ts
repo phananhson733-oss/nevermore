@@ -104,8 +104,14 @@ function withheldReason(
 ): KeywordOpportunityWithheld["reason"] {
   if (isKeywordAlreadyCovered(observation.coverage)) return "already_covered";
   if (observation.lane === "geo") return "no_supporting_page";
-  if (observation.validation.availability !== "available") {
-    return "no_measured_demand";
+  // The two non-available volume states are reported separately: this list is
+  // where a reader decides about one specific term, and "the provider said
+  // zero" ends that decision while "the provider said nothing" does not.
+  if (observation.validation.availability === "explicit_zero") {
+    return "volume_priced_at_zero";
+  }
+  if (observation.validation.availability === "provider_no_data") {
+    return "volume_not_returned";
   }
   if (observation.serp.verdict === "contested_evidence") {
     return "page_one_contested";

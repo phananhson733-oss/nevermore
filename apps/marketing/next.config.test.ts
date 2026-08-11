@@ -4,6 +4,20 @@ import { getMarketingRedirects } from "./next.config";
 describe("marketing redirects", () => {
   const redirects = getMarketingRedirects();
 
+  it("never sends a visitor to a path that redirects again", () => {
+    // Every test below asserts that an old→new pair is present, which is not
+    // the same as the hop being the last one. A later rename that redirects
+    // one of these destinations turns each of them into two hops, and nothing
+    // else in this file would notice.
+    const sources = new Set(redirects.map((entry) => entry.source));
+    for (const entry of redirects) {
+      expect(
+        sources,
+        `${entry.source} lands on ${entry.destination}, which redirects again`,
+      ).not.toContain(entry.destination);
+    }
+  });
+
   it("keeps the retired marketing app path from returning 404", () => {
     expect(redirects).toContainEqual({
       source: "/app",
