@@ -150,10 +150,14 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
   if (!degraded && result.nextStepSuggestions.length === 0) return null;
 
   return (
-    <section
-      role="status"
-      className="rounded-card border border-brand-warning/25 bg-brand-warning/[0.08] p-[22px] md:p-[26px]"
-    >
+    /*
+     * Not a live region, though the banner it replaced was one. The tool that
+     * renders this already keeps an `sr-only` `role="status"` for the run
+     * finishing, and both would fire on the same tick — two announcements
+     * competing, one of them content the reader is about to reach anyway,
+     * since this is the first thing in the report.
+     */
+    <section className="rounded-card border border-brand-warning/25 bg-brand-warning/[0.08] p-[22px] md:p-[26px]">
       {degraded ? (
         <>
           <p className="text-[13.5px] leading-[1.6] text-brand-warning">
