@@ -1510,7 +1510,162 @@
     "media_database": "Media Database",
     "axe": "axe Accessibility",
     "security_scanner": "Security Scanner",
-    "dev_tools": "Browser Dev Tools"
+    "dev_tools": "Browser Dev Tools",
+    "keywordMap": {
+      "connectTitle": "Connect Search Console",
+      "connectBody": "The map reads your site's public pages, prices candidate keywords against a search-data provider, and checks each one against the queries your own property already serves. Read-only: we cannot change anything in your Google account, and nothing is stored on our servers.",
+      "connectCta": "Connect Search Console",
+      "connectTrust": "Free · Read-only access · Nothing stored on our servers · Disconnect anytime",
+      "connectPending": "The Google connection is not open in this environment yet.",
+      "inviteOnlyTitle": "Not open to everyone yet",
+      "inviteOnlyBody": "Our Google consent screen is in testing, so only accounts on the tester list can authorize right now.",
+      "inviteOnlyCta": "Ask for access",
+      "disconnect": "Disconnect Search Console",
+      "disconnecting": "Disconnecting…",
+      "disconnectHint": "Removes the authorization from this browser and revokes it at Google.",
+      "disconnectGoogleSettings": "Open Google's third-party access settings",
+      "noPropertyTitle": "No properties in this grant",
+      "noPropertyBody": "The connection succeeded but it covers no Search Console properties. Check that the Google account you used owns a verified property.",
+      "reconnect": "Connect Search Console again",
+      "propertyLabel": "Search Console property",
+      "propertiesTruncated": "Your grant covers {total} properties; the list was trimmed to fit. Reconnect to pick one that is missing.",
+      "siteUrlLabel": "Site to read",
+      "marketLabel": "Market",
+      "languageLabel": "Language",
+      "seedsLabel": "Seed terms (optional)",
+      "seedsPlaceholder": "dental billing, clinic scheduling",
+      "seedsHint": "Up to ten, comma separated. They are handed to the candidate generator alongside what the crawl found — useful when your site does not spell out a term your buyers use.",
+      "readSite": "Read my site",
+      "rereadSite": "Read my site again",
+      "reading": "Reading your site…",
+      "readingTitle": "Reading your site",
+      "readingBody": "Fetching up to fourteen pages and reading the positioning off them. Usually about twenty seconds. Nothing is charged for this step.",
+      "confirmTitle": "What we read off your site",
+      "confirmBody": "Read {pages} pages, {productPages} of which look like product pages. The candidate keywords are generated from these statements, so it is worth checking they describe your business before spending the search-data budget.",
+      "confirmHint": "If these are wrong, the keywords will be too. Add seed terms above and read the site again, or run the map if they look right.",
+      "thinContext": "Fewer than three pages came back. The map can still run, but candidates generated from this little context are usually thin — seed terms help most here.",
+      "runMap": "Run the opportunity map",
+      "rerunMap": "Run it again",
+      "startOver": "Start over",
+      "running": "Running…",
+      "runningTitle": "Building the opportunity map",
+      "runningBody": "Pricing candidates, reading your Search Console queries, and opening page one for the survivors one at a time. This usually takes about two minutes — the page-one sampling is deliberately serial so we do not hammer the provider.",
+      "runningStatus": "Still running, {seconds} seconds elapsed.",
+      "elapsed": "{seconds}s elapsed",
+      "statusDone": "Done. {count} opportunities.",
+      "funnelTitle": "Where the candidates went",
+      "funnelIntro": "Every candidate that did not reach a table above is accounted for here. A short list is only trustworthy if you can see what it was shortened from.",
+      "notMeasured": "not checked",
+      "funnel": {
+        "generated": "Generated",
+        "deduplicated": "After dedupe",
+        "providerReturned": "Priced",
+        "providerNoData": "No provider data",
+        "alreadyCovered": "Already served",
+        "serpSampled": "Page one sampled",
+        "winnableEvidence": "Weak site on page one",
+        "shown": "Shown"
+      },
+      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale. A low number means somebody small is already there — which is evidence, not a promise.",
+      "geoHint": "These carry no demand data on purpose. Question phrasings almost never have measurable search volume, so they are judged on whether your site already has a page that answers them.",
+      "withheldTitle": "Held back, and why",
+      "withheldIntro": "Each of these hit a specific wall. The reason names which one, because they imply different next moves.",
+      "nextStepsTitle": "What might make the next run better",
+      "stagesMissing": "Missing: {stages}",
+      "columns": {
+        "keyword": "Keyword",
+        "volume": "Volume",
+        "difficulty": "KD",
+        "weakest": "Weakest rank",
+        "supportingPage": "Page that answers it",
+        "coverage": "Your coverage",
+        "nextChecks": "Check before acting"
+      },
+      "lane": {
+        "seo": {
+          "title": "Search terms with measured demand",
+          "intro": "Each one has a search volume from the provider and a page one where at least one weak site already ranks. Neither fact says you will rank; both say the attempt is not obviously blocked."
+        },
+        "geo": {
+          "title": "Questions your site already answers",
+          "intro": "Phrasings a person would type or ask an assistant, matched to a page you already have. No search volume is claimed for these."
+        }
+      },
+      "coverage": {
+        "observed_exact_strong": "Already served, page one",
+        "observed_exact_weak": "Already served, below page one",
+        "related_coverage_unverified": "A page looks related, unverified",
+        "not_observed_in_gsc_query_sample": "Not in your query sample",
+        "gsc_query_sample_not_read": "Not checked"
+      },
+      "checks": {
+        "read_page_one_intent": "Open page one and read what those results actually answer",
+        "confirm_result_page_type": "Confirm what kind of page wins this — guide, tool, category",
+        "verify_weak_site_breakthrough": "Check whether the weak site that ranks is defendable or abandoned",
+        "check_existing_page_overlap": "Check whether one of your pages already targets this",
+        "judge_commercial_fit": "Decide whether this demand is your buyer",
+        "decide_whether_to_bet_early": "Decide whether to bet without a demand number"
+      },
+      "withheld": {
+        "no_measured_demand": "The provider returned no search volume",
+        "already_covered": "Your site already serves this query",
+        "page_one_contested": "Page one was sampled and strong sites hold it",
+        "serp_sample_budget_exhausted": "The run's page-one budget did not reach it",
+        "serp_sample_unavailable": "Page-one sampling did not run",
+        "no_supporting_page": "No crawled page answers it"
+      },
+      "availability": {
+        "available": "Complete run.",
+        "partial": "Part of this run did not complete, so it is missing evidence rather than reporting an absence of it.",
+        "insufficient_evidence": "Too few opportunities survived to call this a keyword plan. The honest read is that public data does not support one for this site and market yet.",
+        "unavailable": "This run produced nothing usable."
+      },
+      "stages": {
+        "gsc_coverage": "your Search Console queries",
+        "serp_sample": "page-one sampling",
+        "serp_sample_cost_capped": "page-one sampling, stopped at the run's cost ceiling"
+      },
+      "nextSteps": {
+        "supply_product_description": "Add seed terms — the crawl found little to work from",
+        "add_seed_keywords": "Add seed terms your buyers use that your site does not spell out",
+        "try_another_market": "Try another market; demand for this is elsewhere",
+        "rerun_when_stage_recovers": "Run it again once the missing stage recovers"
+      },
+      "markets": {
+        "US": "United States",
+        "GB": "United Kingdom",
+        "CA": "Canada",
+        "AU": "Australia",
+        "DE": "Germany",
+        "FR": "France",
+        "NL": "Netherlands",
+        "SE": "Sweden"
+      },
+      "languages": {
+        "en": "English",
+        "de": "German",
+        "fr": "French",
+        "nl": "Dutch",
+        "sv": "Swedish"
+      },
+      "errors": {
+        "unknown": "Something went wrong on our side. Nothing was charged for a run that produced no report.",
+        "invalid_input": "Check the site URL, market and language — one of them was not accepted.",
+        "invalid_request": "That request was not understood. Reload the page and try again.",
+        "payload_too_large": "Your site produced more context than one request can carry. Try a narrower starting URL.",
+        "unsupported_media_type": "That request was not understood. Reload the page and try again.",
+        "authentication_required": "Your Search Console authorization has lapsed.",
+        "property_not_verified": "Your grant does not cover this site. Pick a property you own, or reconnect with the account that does.",
+        "rate_limited": "You have run this several times in the last hour. Give it a few minutes.",
+        "context_token_invalid": "That reading of your site expired — it is good for ten minutes. Read the site again.",
+        "keyword_source_unavailable": "The search-data provider did not answer. Nothing was charged for a run that produced no report.",
+        "site_unreachable": "We could not reach that site. Check the URL and that it is publicly reachable.",
+        "bot_protection_blocked": "The site's bot protection turned us away, so there was nothing to read.",
+        "rate_limited_by_target": "The site asked us to slow down. Try again in a few minutes.",
+        "protocol_downgrade_rejected": "That URL redirected to an insecure address, which we do not follow.",
+        "too_few_pages": "Fewer than three pages could be read, which is not enough context to generate candidates from."
+      }
+    }
   },
   "compare": {
     "title": "Compare GenGrowth",

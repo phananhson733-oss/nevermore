@@ -18,6 +18,7 @@ import { localePath } from "../../lib/locale-path";
 const GSC_CONNECT_PATHS: ReadonlySet<string> = new Set([
   "/tools/seo-quick-wins",
   "/tools/traffic-drop-diagnosis",
+  "/tools/hidden-keywords",
 ]);
 
 export function ConnectedToolPage({
