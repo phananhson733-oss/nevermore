@@ -79,13 +79,17 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  color: var(--sf-ink-950);
-  background: var(--sf-mint-bright);
+  background: var(--sf-brand-navy);
   border-radius: 14px 14px 14px 5px;
-  box-shadow: inset 0 0 0 1px rgba(10, 45, 37, 0.18);
-  font-family: var(--sf-font-display);
-  font-size: 24px;
-  font-weight: 700;
+  /* A light hairline, not the old dark-on-lime one: the tile is now dark in
+     both themes and needs the separation against the dark theme's ink. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.brandGlyph {
+  /* 32px is the size the brand kit sizes the three-node detail for; the tile's
+     remaining 5px a side is the mark's required clear space. */
+  width: 32px;
+  height: 32px;
 }
 .brandCopy {
   display: grid;

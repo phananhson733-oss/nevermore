@@ -45,6 +45,11 @@
   --sf-violet-soft: #eee9ff;
   --sf-violet-text: #6448b5;
 
+  /* Brand — the logo's own navy, which is not part of the ink/paper ramp above.
+     The mark is a fixed-colour gradient, so the surface behind it has to stay
+     the same in both themes; only the brand mark's backing uses this. */
+  --sf-brand-navy: #0b1426;
+
   /* Semantic surface roles (light) */
   --sf-bg: var(--sf-paper);
   --sf-surface: var(--sf-white);
