@@ -288,6 +288,51 @@ describe("consumeKeywordDailyBudget", () => {
 });
 
 describe("reportKeywordRunCost", () => {
+  it("carries the model's request and retry counts", () => {
+    // `retryCount` read zero on every production run until 2026-08-11, not
+    // because the model never retried but because nothing was wired to the
+    // hook that reports it. It is the only signal that says whether the model
+    // is answering reliably today.
+    const lines: string[] = [];
+    const report = reportKeywordRunCost(
+      {
+        costs: createKeywordCostAccumulator(),
+        candidateCount: 150,
+        serpSampled: 20,
+        llm: {
+          inputTokens: 1900,
+          outputTokens: 400,
+          requestCount: 3,
+          retryCount: 1,
+        },
+      },
+      (line) => lines.push(line),
+    );
+
+    expect(report.llm.retryCount).toBe(1);
+    expect(report.llm.requestCount).toBe(3);
+    expect(JSON.parse(lines[0] ?? "{}").llm).toEqual(report.llm);
+  });
+
+  it("reports no model calls rather than omitting them", () => {
+    // A run that never reached the model and a run whose counts were dropped
+    // must not look the same in a log read by a human scanning for retries.
+    const report = reportKeywordRunCost(
+      {
+        costs: createKeywordCostAccumulator(),
+        candidateCount: 0,
+        serpSampled: 0,
+      },
+      () => undefined,
+    );
+    expect(report.llm).toEqual({
+      inputTokens: null,
+      outputTokens: null,
+      requestCount: 0,
+      retryCount: 0,
+    });
+  });
+
   it("emits one structured line with the per-endpoint split", () => {
     const costs = createKeywordCostAccumulator();
     costs.record("keyword_overview", 0.017);
@@ -313,6 +358,12 @@ describe("reportKeywordRunCost", () => {
       capped: false,
       cappedStages: [],
       unpricedCalls: 0,
+      llm: {
+        inputTokens: null,
+        outputTokens: null,
+        requestCount: 0,
+        retryCount: 0,
+      },
     });
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "")).toEqual(report);
