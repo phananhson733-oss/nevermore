@@ -162,7 +162,12 @@ describe("GenGrowth marketing browser identity", () => {
     const component = await readFile(new URL(source, import.meta.url), "utf8");
 
     const mark = component.slice(component.indexOf("<Image"));
-    expect(mark).toContain('src="/images/logo-mark.png"');
-    expect(mark.slice(0, mark.indexOf("/>"))).not.toContain("rounded-full");
+    const tag = mark.slice(0, mark.indexOf("/>"));
+
+    expect(tag).toContain('src="/images/logo-mark.png"');
+    expect(tag).not.toContain("rounded-full");
+    // Decorative: both surfaces render the word "GenGrowth" beside the mark, so
+    // naming the image as well made the header link announce it twice.
+    expect(tag).toContain('alt=""');
   });
 });

@@ -47,13 +47,12 @@ export function Header() {
               carry was there to hide the old file's white corners, and applying
               it to this mark would cut the arrow off instead. logo.png stays
               opaque for the Organization JSON-LD; the header takes the bare
-              transparent mark, which the brand kit sizes for 32px and up. */}
-          <Image
-            src="/images/logo-mark.png"
-            alt="GenGrowth"
-            width={32}
-            height={32}
-          />
+              transparent mark, which the brand kit sizes for 32px and up.
+
+              Empty alt on purpose: the link renders the word "GenGrowth" right
+              next to the mark, so naming the image too made the link announce
+              "GenGrowth GenGrowth". The footer already did this correctly. */}
+          <Image src="/images/logo-mark.png" alt="" width={32} height={32} />
           GenGrowth
         </Link>
 
