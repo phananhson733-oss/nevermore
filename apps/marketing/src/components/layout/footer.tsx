@@ -33,12 +33,15 @@ export function Footer({
           {/* Brand */}
           <div>
             <p className="flex items-center gap-2.5 text-base font-semibold text-text-dark-primary">
+              {/* The footer sits on the dark brand surface, so it takes the
+                  transparent mark like the header does. logo.png is the
+                  on-light build Google's Organization logo points at; rendering
+                  that here would put a white square in the footer. */}
               <Image
-                src="/images/logo.png"
+                src="/images/logo-mark.png"
                 alt=""
-                width={24}
-                height={24}
-                className="rounded-full"
+                width={26}
+                height={26}
               />
               GenGrowth
             </p>

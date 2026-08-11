@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { signOutAction } from "@/lib/auth/actions";
+import { withBasePath } from "@/lib/base-path";
 import { cx, LocaleSwitch } from "@/components/ui";
 import {
   PRIMARY_NAV_ITEMS,
@@ -84,7 +85,18 @@ export async function AppShell({
       <aside className={styles.sidebar} data-app-shell-sidebar="">
         <div className={styles.brand} aria-label="GenGrowth">
           <span className={styles.brandMark} aria-hidden="true">
-            G
+            {/* Plain <img>: the product app has never routed an image through
+                the Next optimizer, and a fixed-size local PNG does not need it.
+                The wrapper already carries the accessible name. The path is
+                hand-built, so it takes withBasePath — Next prefixes <Link> and
+                the assets it emits itself, not a raw img src. */}
+            <img
+              className={styles.brandGlyph}
+              src={withBasePath("/images/logo-mark.png")}
+              alt=""
+              width={32}
+              height={32}
+            />
           </span>
           <span className={styles.brandCopy}>
             <span className={styles.brandWord}>GenGrowth</span>
@@ -105,10 +117,7 @@ export async function AppShell({
         >
           {state === "empty-project" ? (
             <span
-              className={cx(
-                styles.newProjectLink,
-                styles.newProjectLinkActive,
-              )}
+              className={cx(styles.newProjectLink, styles.newProjectLinkActive)}
               aria-current="page"
             >
               <Plus aria-hidden="true" size={17} strokeWidth={1.8} />
