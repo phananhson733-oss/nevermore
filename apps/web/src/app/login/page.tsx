@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { Card, LocaleSwitch } from "@/components/ui";
 import { safePostLoginPath } from "@/lib/auth/redirect";
+import { withBasePath } from "@/lib/base-path";
 import { LoginForm } from "./_form.tsx";
 import { oauthErrorMessageKey } from "./_oauth-error.ts";
 import styles from "./login.module.css";
@@ -30,7 +31,15 @@ export default async function LoginPage({
 
       <Card padding="lg" className={styles.card}>
         <div className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true" />
+          <span className={styles.brandMark} aria-hidden="true">
+            <img
+              className={styles.brandGlyph}
+              src={withBasePath("/images/logo-mark.png")}
+              alt=""
+              width={20}
+              height={20}
+            />
+          </span>
           <span className={styles.brandWord}>GenGrowth</span>
         </div>
 
