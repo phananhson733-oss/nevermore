@@ -85,30 +85,30 @@ function RowTable({
         <table className="w-full min-w-[720px] border-collapse text-left">
           <thead>
             <tr className="border-b border-brand-border-card">
-              <th scope="col" className={`${LABEL} pb-2`}>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                 {t("columns.keyword")}
               </th>
               {lane === "seo" ? (
                 <>
-                  <th scope="col" className={`${LABEL} pb-2 text-right`}>
+                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
                     {t("columns.volume")}
                   </th>
-                  <th scope="col" className={`${LABEL} pb-2 text-right`}>
+                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
                     {t("columns.difficulty")}
                   </th>
-                  <th scope="col" className={`${LABEL} pb-2 text-right`}>
+                  <th scope="col" className={`${LABEL} pr-4 pb-2 text-right`}>
                     {t("columns.weakest")}
                   </th>
                 </>
               ) : (
-                <th scope="col" className={`${LABEL} pb-2`}>
+                <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                   {t("columns.supportingPage")}
                 </th>
               )}
-              <th scope="col" className={`${LABEL} pb-2`}>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                 {t("columns.coverage")}
               </th>
-              <th scope="col" className={`${LABEL} pb-2`}>
+              <th scope="col" className={`${LABEL} pr-4 pb-2`}>
                 {t("columns.nextChecks")}
               </th>
             </tr>
