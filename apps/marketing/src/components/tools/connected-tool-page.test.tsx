@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   getConnectedToolContent,
   type ConnectedTool,
+  type ConnectedToolContent,
 } from "./connected-tool-content.ts";
 import { ConnectedToolPage } from "./connected-tool-page.tsx";
 
@@ -54,10 +55,30 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(markup).not.toContain("https://app.gengrowth.ai");
   });
 
-  it("leaves the non-GSC tool pointing at the product", () => {
-    // hidden-keywords needs a keyword data source inside the product; a GSC
-    // OAuth URL would request a grant that tool cannot use.
+  it("starts the Google grant for the keyword map too", () => {
+    // This used to assert the opposite, and was right to: the keyword map ran
+    // inside the product against a keyword data source, so a GSC OAuth URL
+    // would have requested a grant it could not use. It now runs on this page
+    // and reads the visitor's own Search Console queries to decide which terms
+    // their site already serves, so the product hand-off would strand them.
     const markup = render("en", "hidden-keywords");
+    expect(markup).toContain(oauthStart("/tools/hidden-keywords"));
+    expect(markup).not.toContain("https://app.gengrowth.ai");
+  });
+
+  it("still hands off to the product for a tool with no Google grant", () => {
+    // Every tool in the union is GSC-backed now, so the hand-off branch has no
+    // live case and would rot unseen. Rendered from a synthetic path to keep
+    // the branch exercised for whichever tool arrives next.
+    const markup = renderToStaticMarkup(
+      <ConnectedToolPage
+        locale="en"
+        content={{
+          ...getConnectedToolContent("en", "hidden-keywords"),
+          path: "/tools/not-a-google-tool" as ConnectedToolContent["path"],
+        }}
+      />,
+    );
     expect(markup).toContain('href="https://app.gengrowth.ai"');
     expect(markup).not.toContain("/api/auth/google/start");
   });
