@@ -1906,6 +1906,19 @@
           "detailError": "无法读取最新关键词建议。",
           "approvalConflict": "关键词或建议已更新；系统已重新加载最新建议，请核对后再批准。",
           "approvalError": "无法批准系统建议，请重试。",
+          "stateLabel": "系统建议状态：{state}",
+          "railState": {
+            "pending_ready": "系统建议待批准",
+            "pending_needs_review": "需要人工修改",
+            "generating": "系统建议生成中",
+            "stale": "系统建议已过期",
+            "unavailable": "系统建议不可用"
+          },
+          "railBadge": {
+            "pending_ready": "可批准",
+            "pending_needs_review": "需修改",
+            "blocked": "已阻断"
+          },
           "state": {
             "generating": "系统正在生成建议",
             "pending_needs_review": "这条建议仍需人工补充",

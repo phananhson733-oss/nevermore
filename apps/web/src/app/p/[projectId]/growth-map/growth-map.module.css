@@ -3639,6 +3639,14 @@
   border-bottom: 1px solid var(--sf-border);
 }
 
+.keywordSuggestionRail {
+  margin: 16px 20px 0;
+  padding: 18px;
+  background: color-mix(in srgb, var(--sf-mint-soft) 52%, var(--sf-surface));
+  border: 1px solid color-mix(in srgb, var(--sf-mint) 38%, var(--sf-border));
+  border-radius: 14px;
+}
+
 .keywordSuggestionHeading {
   display: flex;
   min-width: 0;
@@ -3668,6 +3676,39 @@
   color: var(--sf-muted);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.keywordSuggestionStatusTitle {
+  color: var(--gm-ink);
+  font-family: var(--sf-font-display);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.keywordSuggestionBadge {
+  display: inline-flex;
+  min-height: 28px;
+  flex: none;
+  align-items: center;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.keywordSuggestionBadge[data-tone="ready"] {
+  color: var(--sf-mint-text);
+  background: var(--sf-mint-soft);
+  border-color: color-mix(in srgb, var(--sf-mint-text) 24%, var(--sf-border));
+}
+
+.keywordSuggestionBadge[data-tone="review"],
+.keywordSuggestionBadge[data-tone="blocked"] {
+  color: var(--sf-amber-text);
+  background: var(--sf-amber-soft);
+  border-color: color-mix(in srgb, var(--sf-amber-text) 24%, var(--sf-border));
 }
 
 .keywordSuggestionFacts {
@@ -3788,6 +3829,17 @@
 .keywordSuggestionEditToggle:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.keywordSuggestionRailActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.keywordSuggestionRailActions > button {
+  min-height: 40px;
 }
 
 .keywordSuggestionEditPanel {
@@ -6733,6 +6785,14 @@ a.competitorMonitorContentUrl:hover {
   .keywordSuggestionEditToggle {
     width: 100%;
   }
+  .keywordSuggestionRailActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .keywordSuggestionRailActions > button {
+    width: 100%;
+    min-height: 44px;
+  }
   .keywordReviewGrid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -6840,6 +6900,9 @@ a.competitorMonitorContentUrl:hover {
     padding: 19px;
   }
   .keywordDetailPanel > .limitations {
+    margin-inline: 16px;
+  }
+  .keywordSuggestionRail {
     margin-inline: 16px;
   }
   .competitorDetailPanel > .limitations {

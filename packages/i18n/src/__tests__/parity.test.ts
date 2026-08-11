@@ -260,6 +260,19 @@ describe("i18n message key parity", () => {
       approvalConflict:
         "关键词或建议已更新；系统已重新加载最新建议，请核对后再批准。",
       approvalError: "无法批准系统建议，请重试。",
+      stateLabel: "系统建议状态：{state}",
+      railState: {
+        pending_ready: "系统建议待批准",
+        pending_needs_review: "需要人工修改",
+        generating: "系统建议生成中",
+        stale: "系统建议已过期",
+        unavailable: "系统建议不可用",
+      },
+      railBadge: {
+        pending_ready: "可批准",
+        pending_needs_review: "需修改",
+        blocked: "已阻断",
+      },
       state: {
         generating: "系统正在生成建议",
         pending_needs_review: "这条建议仍需人工补充",
@@ -282,6 +295,19 @@ describe("i18n message key parity", () => {
         "The Keyword or suggestion changed. The latest suggestion has been reloaded; review it before approving.",
       approvalError:
         "The system suggestion could not be approved. Please try again.",
+      stateLabel: "System suggestion status: {state}",
+      railState: {
+        pending_ready: "System suggestion awaiting approval",
+        pending_needs_review: "Human edits required",
+        generating: "System suggestion in progress",
+        stale: "System suggestion out of date",
+        unavailable: "System suggestion unavailable",
+      },
+      railBadge: {
+        pending_ready: "Ready to approve",
+        pending_needs_review: "Needs edits",
+        blocked: "Blocked",
+      },
       state: {
         generating: "The system is generating a suggestion",
         pending_needs_review: "This suggestion still needs human input",

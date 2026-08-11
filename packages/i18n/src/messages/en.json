@@ -1906,6 +1906,19 @@
           "detailError": "The latest Keyword suggestion could not be loaded.",
           "approvalConflict": "The Keyword or suggestion changed. The latest suggestion has been reloaded; review it before approving.",
           "approvalError": "The system suggestion could not be approved. Please try again.",
+          "stateLabel": "System suggestion status: {state}",
+          "railState": {
+            "pending_ready": "System suggestion awaiting approval",
+            "pending_needs_review": "Human edits required",
+            "generating": "System suggestion in progress",
+            "stale": "System suggestion out of date",
+            "unavailable": "System suggestion unavailable"
+          },
+          "railBadge": {
+            "pending_ready": "Ready to approve",
+            "pending_needs_review": "Needs edits",
+            "blocked": "Blocked"
+          },
           "state": {
             "generating": "The system is generating a suggestion",
             "pending_needs_review": "This suggestion still needs human input",

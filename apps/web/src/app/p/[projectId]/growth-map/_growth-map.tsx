@@ -10,6 +10,7 @@ import type {
   GrowthMapCompetitorRelationship,
   GrowthMapCompetitorReviewStatus,
   GrowthMapCompetitorSerpOverlap,
+  GrowthMapKeywordDetailItem,
   GrowthMapKeywordLibraryItem,
   GrowthMapKeywordNumericMetric,
   GrowthMapKeywordRankHistory,
@@ -27,6 +28,7 @@ import type {
   GrowthMapUrlPortfolioItem,
   KeywordRelationDecisionKind,
   KeywordMappingDecision,
+  KeywordGovernancePendingSuggestion,
   ProductProfileCompetitorAnalysisScope,
   ReviewCompetitorRequest,
   ReviewKeywordRequest,
@@ -7608,6 +7610,7 @@ function KeywordReviewDialog({
   sitePagesTruncated,
   onRequestClose,
   onSaved,
+  initiallyExpanded,
 }: {
   readonly projectId: string;
   readonly open: boolean;
@@ -7622,6 +7625,7 @@ function KeywordReviewDialog({
   readonly sitePagesTruncated: boolean;
   readonly onRequestClose: () => void;
   readonly onSaved: () => void;
+  readonly initiallyExpanded: boolean;
 }) {
   const t = useTranslations("growthMap.keywordLibrary.review");
   const dialogId = useId();
@@ -7742,8 +7746,8 @@ function KeywordReviewDialog({
   }, [confirmedTopicNodes, open, reviewDetail, t]);
 
   useEffect(() => {
-    if (!open) setIsEditExpanded(false);
-  }, [open]);
+    setIsEditExpanded(open && initiallyExpanded);
+  }, [initiallyExpanded, open]);
 
   function clearPendingConfirmation(): void {
     setConflictCommand(null);
@@ -8424,6 +8428,209 @@ function KeywordReviewDialog({
   );
 }
 
+function KeywordSuggestionRail({
+  projectId,
+  keywordId,
+  suggestion,
+  onOpenEdit,
+  onApproved,
+}: {
+  readonly projectId: string;
+  readonly keywordId: string;
+  readonly suggestion: KeywordGovernancePendingSuggestion;
+  readonly onOpenEdit: () => void;
+  readonly onApproved: () => void;
+}) {
+  const t = useTranslations("growthMap.keywordLibrary.review");
+  const titleId = `${useId()}-keyword-suggestion-title`;
+  const approvalMutation = useApproveGrowthMapKeywordReviewSuggestion(
+    projectId,
+    keywordId,
+    suggestion.suggestionId,
+  );
+  const suggestionDraft = keywordSuggestionReviewDraft(suggestion);
+  const isReady =
+    suggestion.state === "pending_ready" &&
+    suggestion.readinessReason === "all_authorities_confirmed" &&
+    suggestionDraft !== null;
+  const isEditable =
+    suggestionDraft !== null &&
+    (suggestion.state === "pending_ready" ||
+      suggestion.state === "pending_needs_review");
+  const isApprovalConflict =
+    approvalMutation.error instanceof ApiError &&
+    approvalMutation.error.status === 409;
+  const buyerStageTranslationKey =
+    suggestion.buyerStage === null
+      ? null
+      : keywordSuggestionBuyerStageTranslationKey(suggestion.buyerStage);
+  const facts = [
+    suggestion.status === null
+      ? null
+      : {
+          key: "status",
+          label: t("field.status"),
+          value: t(`status.${suggestion.status}`),
+        },
+    suggestion.intent === null
+      ? null
+      : {
+          key: "intent",
+          label: t("field.intent"),
+          value: t(`intent.${suggestion.intent}`),
+        },
+    suggestion.buyerStage === null
+      ? null
+      : {
+          key: "buyer-stage",
+          label: t("field.buyerStage"),
+          value:
+            buyerStageTranslationKey === null
+              ? suggestion.buyerStage
+              : t(buyerStageTranslationKey),
+        },
+    suggestion.topicLabel === null
+      ? null
+      : {
+          key: "topic",
+          label: t("field.topic"),
+          value: suggestion.topicLabel,
+        },
+    suggestion.mappingDecision === null
+      ? null
+      : {
+          key: "mapping",
+          label: t("field.mappingDecision"),
+          value: `${t(`mappingDecision.${suggestion.mappingDecision}`)}${
+            suggestion.mappedSitePageTitle === null
+              ? ""
+              : ` · ${suggestion.mappedSitePageTitle}`
+          }`,
+        },
+  ].filter(
+    (fact): fact is { key: string; label: string; value: string } =>
+      fact !== null,
+  );
+  const badgeKey =
+    suggestion.state === "pending_ready"
+      ? "pending_ready"
+      : suggestion.state === "pending_needs_review"
+        ? "pending_needs_review"
+        : "blocked";
+  const badgeTone =
+    suggestion.state === "pending_ready"
+      ? "ready"
+      : suggestion.state === "pending_needs_review"
+        ? "review"
+        : "blocked";
+  const stateLabel = t(`suggestion.railState.${suggestion.state}`);
+
+  function approveSuggestion(): void {
+    if (!isReady) return;
+    approvalMutation.reset();
+    approvalMutation.mutate(
+      {
+        expectedGovernanceRevision: suggestion.expectedGovernanceRevision,
+        suggestionVersion: suggestion.suggestionVersion,
+      },
+      { onSuccess: onApproved },
+    );
+  }
+
+  return (
+    <section
+      className={cx(
+        styles.keywordSuggestionSummary,
+        styles.keywordSuggestionRail,
+      )}
+      data-keyword-suggestion-state={suggestion.state}
+      aria-labelledby={titleId}
+    >
+      <div className={styles.keywordSuggestionHeading}>
+        <div>
+          <h3 id={titleId}>{t("suggestion.title")}</h3>
+          <strong className={styles.keywordSuggestionStatusTitle}>
+            {stateLabel}
+          </strong>
+          <p>{t("suggestion.description")}</p>
+        </div>
+        <span
+          className={styles.keywordSuggestionBadge}
+          data-tone={badgeTone}
+          aria-label={t("suggestion.stateLabel", { state: stateLabel })}
+        >
+          {t(`suggestion.railBadge.${badgeKey}`)}
+        </span>
+      </div>
+
+      {facts.length === 0 ? null : (
+        <dl className={styles.keywordSuggestionFacts}>
+          {facts.map((fact) => (
+            <div key={fact.key} className={styles.keywordSuggestionFact}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {suggestion.reason === null ? null : (
+        <div className={styles.keywordSuggestionReason}>
+          <span>{t("suggestion.reasonLabel")}</span>
+          <p>{suggestion.reason}</p>
+        </div>
+      )}
+
+      {suggestion.limitation === null ? null : (
+        <div
+          className={styles.keywordSuggestionState}
+          role={suggestion.state === "generating" ? "status" : "alert"}
+        >
+          {suggestion.state === "generating" ? (
+            <CircleDashed aria-hidden="true" size={18} />
+          ) : (
+            <CircleAlert aria-hidden="true" size={18} />
+          )}
+          <span>{suggestion.limitation}</span>
+        </div>
+      )}
+
+      {isEditable ? (
+        <div className={styles.keywordSuggestionRailActions}>
+          <button
+            type="button"
+            className={styles.keywordSuggestionEditToggle}
+            onClick={onOpenEdit}
+          >
+            <Pencil aria-hidden="true" size={15} />
+            {t("suggestion.expandEdit")}
+          </button>
+          {isReady ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={approvalMutation.isPending}
+              onClick={approveSuggestion}
+            >
+              {approvalMutation.isPending
+                ? t("suggestion.approving")
+                : t("suggestion.approve")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {approvalMutation.isError ? (
+        <p className={styles.keywordReviewError} role="alert">
+          {isApprovalConflict
+            ? t("suggestion.approvalConflict")
+            : t("suggestion.approvalError")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function KeywordEvidenceDialog({
   open,
   detail,
@@ -8627,7 +8834,7 @@ function KeywordDetailPanel({
   onSelectKeyword,
 }: {
   readonly projectId: string;
-  readonly detail: GrowthMapKeywordLibraryItem;
+  readonly detail: GrowthMapKeywordDetailItem;
   readonly deliveryProjection: GrowthMapKeywordDeliveryProjection;
   readonly rankHistory: GrowthMapKeywordRankHistory | undefined;
   readonly isRankHistoryPending: boolean;
@@ -8649,9 +8856,14 @@ function KeywordDetailPanel({
   const locale = useLocale();
   const pageTypeLabel = usePageTypeLabel();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewInitiallyExpanded, setReviewInitiallyExpanded] =
+    useState(false);
   const [reviewSaved, setReviewSaved] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const closeReview = useCallback(() => setReviewOpen(false), []);
+  const closeReview = useCallback(() => {
+    setReviewOpen(false);
+    setReviewInitiallyExpanded(false);
+  }, []);
   const closeEvidence = useCallback(() => setEvidenceOpen(false), []);
   const latestSource = latestKeywordOccurrence(detail.sourceOccurrences);
   const clusterPeersInLoadedRange = relatedKeywords.filter(
@@ -8722,6 +8934,20 @@ function KeywordDetailPanel({
           ) : null}
         </div>
       </header>
+
+      {detail.pendingSuggestion === null ? null : (
+        <KeywordSuggestionRail
+          projectId={projectId}
+          keywordId={detail.keywordId}
+          suggestion={detail.pendingSuggestion}
+          onOpenEdit={() => {
+            setReviewSaved(false);
+            setReviewInitiallyExpanded(true);
+            setReviewOpen(true);
+          }}
+          onApproved={() => setReviewSaved(true)}
+        />
+      )}
 
       <LimitationList limitations={detail.coverage.limitations} />
 
@@ -8998,6 +9224,7 @@ function KeywordDetailPanel({
           type="button"
           onClick={() => {
             setReviewSaved(false);
+            setReviewInitiallyExpanded(false);
             setReviewOpen(true);
           }}
         >
@@ -9022,6 +9249,7 @@ function KeywordDetailPanel({
         sitePagesTruncated={sitePagesTruncated}
         onRequestClose={closeReview}
         onSaved={() => setReviewSaved(true)}
+        initiallyExpanded={reviewInitiallyExpanded}
       />
       <KeywordEvidenceDialog
         open={evidenceOpen}

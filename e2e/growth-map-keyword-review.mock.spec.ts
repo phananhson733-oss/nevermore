@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import type {
   ApproveKeywordReviewSuggestionRequest,
@@ -16,6 +17,7 @@ import {
 const BASE = `/api/mvp/projects/${E2E_PROJECT_ID}`;
 const KEYWORD_A = "41000000-0000-4000-8000-000000000001";
 const KEYWORD_B = "41000000-0000-4000-8000-000000000002";
+const KEYWORD_C = "41000000-0000-4000-8000-000000000009";
 const ROOT_TOPIC = "41000000-0000-4000-8000-000000000003";
 const CONFLICT_TOPIC = "41000000-0000-4000-8000-000000000004";
 const TOPIC_ACTOR = "41000000-0000-4000-8000-000000000005";
@@ -471,6 +473,43 @@ async function installKeywordReviewApi(
       },
     },
   );
+  let keywordC = keywordFixture(
+    KEYWORD_C,
+    "human confirmed onboarding guide",
+    3,
+    {
+      status: "approved",
+      reviewOrigin: "user",
+      revision: 5,
+      intent: "informational",
+      searchIntent: {
+        value: "informational",
+        authority: "user_confirmed",
+        snapshotId: null,
+        observationId: null,
+        analysisInvocationId: null,
+        observedAt: null,
+        limitation: null,
+      },
+      buyerStage: "awareness",
+      cluster: {
+        clusterId: ROOT_TOPIC,
+        topicModelRevision: 7,
+        name: "客户入职",
+      },
+      classificationLimitations: {
+        intent: null,
+        buyerStage: null,
+        cluster: null,
+      },
+      mappedTarget: {
+        kind: "new_asset",
+        reviewState: "approved",
+        revision: 5,
+        reason: "用户已确认由新内容资产承接。",
+      },
+    },
+  );
 
   await page.route(`**${BASE}/audit/keywords**`, async (route) => {
     const request = route.request();
@@ -579,15 +618,26 @@ async function installKeywordReviewApi(
             body,
             body.expectedGovernanceRevision + 1,
           );
-        } else {
+        } else if (keywordId === KEYWORD_B) {
           keywordB = reviewedKeyword(
             keywordB,
             body,
             body.expectedGovernanceRevision + 1,
           );
+        } else {
+          keywordC = reviewedKeyword(
+            keywordC,
+            body,
+            body.expectedGovernanceRevision + 1,
+          );
         }
         if (keywordId === KEYWORD_A) currentSuggestion = null;
-        const selected = keywordId === KEYWORD_A ? keywordA : keywordB;
+        const selected =
+          keywordId === KEYWORD_A
+            ? keywordA
+            : keywordId === KEYWORD_B
+              ? keywordB
+              : keywordC;
         await json(route, {
           data: {
             projectId: E2E_PROJECT_ID,
@@ -599,7 +649,12 @@ async function installKeywordReviewApi(
       }
 
       state.keywordDetailReads += 1;
-      const selected = keywordId === KEYWORD_A ? keywordA : keywordB;
+      const selected =
+        keywordId === KEYWORD_A
+          ? keywordA
+          : keywordId === KEYWORD_B
+            ? keywordB
+            : keywordC;
       await json(route, {
         data: {
           projectId: E2E_PROJECT_ID,
@@ -618,7 +673,7 @@ async function installKeywordReviewApi(
       data: {
         projectId: E2E_PROJECT_ID,
         diagnosticRunId: url.searchParams.get("diagnosticRunId"),
-        data: [keywordA, keywordB],
+        data: [keywordA, keywordB, keywordC],
         meta: {
           limit: 50,
           nextCursor: null,
@@ -710,6 +765,162 @@ test.beforeEach(async ({ page }) => {
   ]);
 });
 
+test("选中关键词默认显示 ready 系统建议，并分开呈现当前正式状态与建议状态", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const detail = page.locator('aside[aria-label="所选关键词详情"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: "customer onboarding automation",
+    }),
+  ).toBeVisible();
+  await expect.poll(() => state.keywordDetailReads).toBeGreaterThan(0);
+
+  // “候选”是当前已经生效的治理事实；建议里的“已确认”仍只是待批准值。
+  await expect(
+    detail.locator(":scope > header").getByText("候选", { exact: true }),
+  ).toBeVisible();
+  const rail = detail.locator(
+    '[data-keyword-suggestion-state="pending_ready"]',
+  );
+  await expect(rail).toBeVisible();
+  await expect(
+    rail.getByText("系统建议待批准", { exact: true }),
+  ).toBeVisible();
+  await expect(rail.getByText("可批准", { exact: true })).toBeVisible();
+  await expect(rail.getByText("关键词状态", { exact: true })).toBeVisible();
+  await expect(rail.getByText("已确认", { exact: true })).toBeVisible();
+  await expect(rail.getByText("客户入职", { exact: true })).toBeVisible();
+  await expect(
+    rail.getByRole("button", { name: "展开修改" }),
+  ).toBeVisible();
+  const accessibilityScan = await new AxeBuilder({ page })
+    .include('[data-keyword-suggestion-state="pending_ready"]')
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(
+    accessibilityScan.violations
+      .filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      )
+      .map((violation) => violation.id),
+  ).toEqual([]);
+  await rail.getByRole("button", { name: "批准系统建议" }).click();
+  await expect.poll(() => state.approveBodies.length).toBe(1);
+  expect(state.approveBodies[0]).toEqual({
+    expectedGovernanceRevision: 0,
+    suggestionVersion: "keyword-governance-suggestion.v1",
+  });
+  expect(state.patchBodies).toHaveLength(0);
+  await expect(
+    detail.locator('[data-keyword-suggestion-state="pending_ready"]'),
+  ).toHaveCount(0);
+  await expect(
+    detail.locator(":scope > header").getByText("已确认", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.locator(":scope > header").getByText("用户已确认", { exact: true }),
+  ).toBeVisible();
+});
+
+test("needs-review 系统建议默认显示需修改状态，且只能展开预填审核", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  state.setSuggestionState("pending_needs_review");
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
+  );
+
+  const detail = page.locator('aside[aria-label="所选关键词详情"]');
+  const rail = detail.locator(
+    '[data-keyword-suggestion-state="pending_needs_review"]',
+  );
+  await expect(rail).toBeVisible();
+  await expect(
+    rail.getByText("需要人工修改", { exact: true }),
+  ).toBeVisible();
+  await expect(rail.getByText("需修改", { exact: true })).toBeVisible();
+  await expect(
+    rail.getByRole("button", { name: "批准系统建议" }),
+  ).toHaveCount(0);
+
+  await rail.getByRole("button", { name: "展开修改" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "审核“customer onboarding automation”",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("关键词状态")).toHaveValue("approved");
+  await expect(dialog.getByLabel("搜索意图")).toHaveValue("");
+  await expect(dialog.getByLabel("购买阶段")).toHaveValue("consideration");
+});
+
+test("生成中、已过期与不可用建议默认诚实显示阻断状态且没有批准入口", async ({
+  page,
+}) => {
+  const state = await installKeywordReviewApi(page);
+  const cases = [
+    ["generating", "系统建议生成中"],
+    ["stale", "系统建议已过期"],
+    ["unavailable", "系统建议不可用"],
+  ] as const;
+
+  for (const [suggestionState, label] of cases) {
+    state.setSuggestionState(suggestionState);
+    await page.goto(
+      `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}&railState=${suggestionState}`,
+    );
+
+    const detail = page.locator('aside[aria-label="所选关键词详情"]');
+    const rail = detail.locator(
+      `[data-keyword-suggestion-state="${suggestionState}"]`,
+    );
+    await expect(rail).toBeVisible();
+    await expect(rail.getByText(label, { exact: true })).toBeVisible();
+    await expect(rail.getByText("已阻断", { exact: true })).toBeVisible();
+    await expect(
+      rail.getByRole("button", { name: "批准系统建议" }),
+    ).toHaveCount(0);
+    await expect(
+      rail.getByRole("button", { name: "展开修改" }),
+    ).toHaveCount(0);
+  }
+});
+
+test("用户已确认且没有 pending suggestion 时不渲染系统建议 rail", async ({
+  page,
+}) => {
+  await installKeywordReviewApi(page);
+  await page.goto(
+    `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_C}`,
+  );
+
+  const detail = page.locator('aside[aria-label="所选关键词详情"]');
+  await expect(
+    detail.getByRole("heading", {
+      level: 2,
+      name: "human confirmed onboarding guide",
+    }),
+  ).toBeVisible();
+  await expect(
+    detail.locator(":scope > header").getByText("已确认", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.locator(":scope > header").getByText("用户已确认", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.locator("[data-keyword-suggestion-state]"),
+  ).toHaveCount(0);
+  await expect(detail.getByText("系统建议", { exact: true })).toHaveCount(0);
+});
+
 test("ready 系统建议默认只显示结论，一次批准发送严格两字段 POST", async ({
   page,
 }) => {
@@ -756,6 +967,19 @@ test("移动端默认与展开后的三项审核操作都可见可用", async ({
   await page.goto(
     `/p/${E2E_PROJECT_ID}/growth-map?object=keywords&selectedKeywordId=${KEYWORD_A}`,
   );
+
+  const detail = page.locator('aside[aria-label="所选关键词详情"]');
+  const rail = detail.locator(
+    '[data-keyword-suggestion-state="pending_ready"]',
+  );
+  await expect(rail).toBeVisible();
+  for (const action of ["展开修改", "批准系统建议"]) {
+    const button = rail.getByRole("button", { name: action });
+    await expect(button).toBeVisible();
+    await expect
+      .poll(async () => (await button.boundingBox())?.height ?? 0)
+      .toBeGreaterThanOrEqual(44);
+  }
 
   const dialog = await openKeywordReview(
     page,
