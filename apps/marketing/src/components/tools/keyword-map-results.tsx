@@ -96,20 +96,22 @@ export function funnelGridDividesEvenly(): boolean {
 
 
 /**
- * A label for a payload value the bundle may have no copy for.
+ * A label for a payload value this bundle may have no copy for.
  *
- * Most of what this surface translates is a union whose value list is proved
- * complete at compile time and covered by `keyword-map-messages.test.ts`.
- * Four things are not: `marketCode`, `languageCode`, `unavailableStages` and
- * `nextStepSuggestions` are plain `string` in the payload, and the API
- * validates the two codes only as non-empty strings. A request naming a
- * language this bundle never learned — or an API that later accepts one more
- * — reaches `t()` with a key that does not exist.
+ * Every key on this surface built from the result is routed through here, and
+ * the reason is a deploy, not a type. Compile-time completeness proves the
+ * bundle knows every member of the union **in the same build**. A visitor's
+ * tab holds the bundle from whichever build it loaded, and this tool's second
+ * request lands minutes later — so a run started before a release and finished
+ * after it asks an old bundle to name a value only the new one has.
  *
- * next-intl does not throw for that; it renders the dotted key path. So the
- * failure is a sentence reading "market tools.keywordMap.markets.PT" on a
- * report the visitor waited two minutes and a provider bill for. The bare
- * code is a true, if terse, answer to which market this was.
+ * That is not hypothetical. Splitting `no_measured_demand` into
+ * `volume_priced_at_zero` / `volume_not_returned` shipped on 2026-08-11, and
+ * the first real run afterwards rendered
+ * "tools.keywordMap.withheld.volume_not_returned  48" in the held-back list,
+ * because next-intl resolves a missing key to its own dotted path rather than
+ * throwing. The bare value is terse but it is the thing itself; the dotted
+ * path is our internals in front of a visitor.
  */
 function useOptionalLabel(): (key: string, fallback: string) => string {
   const t = useTranslations("tools.keywordMap");
@@ -185,7 +187,10 @@ function Verdict({ result }: { readonly result: KeywordOpportunityResult }) {
       {degraded ? (
         <>
           <p className="text-[13.5px] leading-[1.6] text-brand-warning">
-            {t(`availability.${result.availability}`)}
+            {label(
+              `availability.${result.availability}`,
+              result.availability,
+            )}
           </p>
           {result.unavailableStages.length > 0 ? (
             <p className="mt-1.5 text-[12.5px] leading-[1.6] text-brand-warning">
@@ -359,6 +364,7 @@ function RowTable({
   readonly lane: "seo" | "geo";
 }) {
   const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
   if (rows.length === 0) return null;
 
   return (
@@ -426,12 +432,12 @@ function RowTable({
                   </td>
                 )}
                 <td className="py-3 pr-4 text-[12.5px] text-text-dark-secondary">
-                  {t(`coverage.${row.coverage}`)}
+                  {label(`coverage.${row.coverage}`, row.coverage)}
                 </td>
                 <td className="py-3 text-[12.5px] text-text-dark-secondary">
                   <ul className="space-y-1">
                     {row.nextChecks.map((check) => (
-                      <li key={check}>{t(`checks.${check}`)}</li>
+                      <li key={check}>{label(`checks.${check}`, check)}</li>
                     ))}
                   </ul>
                 </td>
@@ -497,6 +503,7 @@ function Withheld({
   readonly withheld: readonly KeywordOpportunityWithheld[];
 }) {
   const t = useTranslations("tools.keywordMap");
+  const label = useOptionalLabel();
   if (withheld.length === 0) return null;
 
   // Grouped by reason rather than listed flat: a reader wants to know which
@@ -518,7 +525,7 @@ function Withheld({
         {[...byReason.entries()].map(([reason, keywords]) => (
           <details key={reason} className="group">
             <summary className="cursor-pointer text-[13px] text-text-dark-primary transition-colors marker:text-text-dark-secondary hover:text-brand-accent-text">
-              {t(`withheld.${reason}`)}
+              {label(`withheld.${reason}`, reason)}
               <span className="ml-2 font-mono text-[12px] text-text-dark-secondary tabular-nums">
                 {keywords.length}
               </span>

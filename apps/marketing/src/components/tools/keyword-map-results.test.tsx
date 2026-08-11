@@ -346,6 +346,48 @@ describe("keyword map results", () => {
     expect(markup).not.toContain(asRendered(en.tools.keywordMap.clustersTitle));
   });
 
+  it("never shows a visitor a key path, whatever the payload names", () => {
+    // The reason is a deploy, not a type. A tab holds the bundle it loaded;
+    // this tool's second request lands minutes later, so a run started before
+    // a release and finished after it asks an old bundle to name a value only
+    // the new one has. Observed on 2026-08-11: the first real run after
+    // splitting `no_measured_demand` rendered
+    // "tools.keywordMap.withheld.volume_not_returned  48" on screen.
+    //
+    // Every field here is typed as a closed union, which is exactly the
+    // reasoning that left them unguarded — completeness holds within one
+    // build, and the two sides of this are two builds.
+    const markup = render(
+      "en",
+      result({
+        availability: "a_state_from_a_newer_build" as never,
+        rows: [
+          {
+            ...seoRow("dental billing software"),
+            coverage: "a_coverage_from_a_newer_build" as never,
+            nextChecks: ["a_check_from_a_newer_build" as never],
+          },
+        ],
+        withheld: [
+          {
+            keyword: "dental billing pricing",
+            discoveryBasis: "traditional_expansion",
+            reason: "a_reason_from_a_newer_build" as never,
+          },
+        ],
+      }),
+    );
+    expect(markup).not.toContain("tools.keywordMap.");
+    for (const value of [
+      "a_state_from_a_newer_build",
+      "a_coverage_from_a_newer_build",
+      "a_check_from_a_newer_build",
+      "a_reason_from_a_newer_build",
+    ]) {
+      expect(markup, value).toContain(value);
+    }
+  });
+
   it("names a market, language or stage the bundle never learned", () => {
     // The API validates marketCode and languageCode only as non-empty strings,
     // and `unavailableStages` / `nextStepSuggestions` are plain string arrays.
