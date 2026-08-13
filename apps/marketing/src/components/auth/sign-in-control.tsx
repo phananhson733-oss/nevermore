@@ -1,12 +1,12 @@
-// @input  -- /api/auth/session, /api/auth/sign-out, siteConfig.appUrl, common.*
-// @output — 未登录显示「登录」按钮（打开站内 Google 登录弹层）；已登录显示「登出」
+// @input  -- /api/auth/session、/api/auth/sign-out、localePath、common.*
+// @output — 登录/登出控制与指向 SEO Agent 的主审计按钮
 // @pos    -- Header 右侧的登录入口，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
-import { siteConfig } from "@/config/site";
+import { useLocale, useTranslations } from "next-intl";
+import { localePath } from "@/lib/locale-path";
 
 /**
  * End the session and re-render against the cleared cookies.
@@ -53,6 +53,7 @@ export function SignInControl({
   readonly onSignIn: () => void;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -99,10 +100,10 @@ export function SignInControl({
       ) : null}
 
       <a
-        href={siteConfig.appUrl}
+        href={localePath(locale, "/agents/seo")}
         className="hidden h-9.5 items-center rounded-lg bg-brand-gradient px-[18px] text-[13.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta md:inline-flex"
       >
-        {signedIn ? t("common.openApp") : t("common.getStarted")}
+        {t("common.runAudit")}
       </a>
     </>
   );
@@ -122,6 +123,7 @@ export function SignInControlMobile({
   readonly onSignIn: () => void;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -140,11 +142,11 @@ export function SignInControlMobile({
   return (
     <>
       <a
-        href={siteConfig.appUrl}
+        href={localePath(locale, "/agents/seo")}
         onClick={onNavigate}
         className="mt-4 rounded-[10px] bg-brand-gradient px-4 py-2.5 text-center font-semibold text-brand-on-accent shadow-cta-sm"
       >
-        {signedIn ? t("common.openApp") : t("common.getStarted")}
+        {t("common.runAudit")}
       </a>
       <button
         type="button"

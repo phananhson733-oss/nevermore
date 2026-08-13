@@ -1,5 +1,5 @@
 // @input  — siteConfig、统一 blog 数据层
-// @output — Next.js MetadataRoute.Sitemap，生成当前营销站的 canonical URL 集
+// @output — Next.js MetadataRoute.Sitemap，生成当前营销站（含 Resources Hub）的 canonical URL 集
 // @pos    — SEO 基础设施；避免把旧实验页当成当前产品信息架构的一部分
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -16,7 +16,18 @@ export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = ["en", "zh"];
-  const staticPages = ["", "/tools", "/blog", "/pricing"];
+  const staticPages = [
+    "",
+    "/agents",
+    "/agents/seo",
+    "/agents/tech",
+    "/resources",
+    // Keep the established Tools canonical. Resources changes navigation
+    // grouping, not any existing public URL.
+    "/tools",
+    "/blog",
+    "/pricing",
+  ];
 
   const entries: MetadataRoute.Sitemap = [];
 
@@ -26,9 +37,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const priority =
         page === ""
           ? 1.0
-          : page === "/tools"
+          : page === "/agents" || page === "/resources" || page === "/tools"
             ? 0.9
-            : page === "/blog" || page === "/pricing"
+            : page === "/agents/seo" ||
+                page === "/agents/tech" ||
+                page === "/blog" ||
+                page === "/pricing"
               ? 0.8
               : 0.2;
       const changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] =

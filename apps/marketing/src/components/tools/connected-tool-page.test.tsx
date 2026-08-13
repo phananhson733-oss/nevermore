@@ -1,5 +1,5 @@
 // @input  -- each connected tool's content rendered without a session
-// @output -- a failing test when the hero CTA stops starting the Google grant
+// @output -- CTA, return-path, and signed-out supporting-Agent assertions
 // @pos    -- the guard on the first-screen connect entry for GSC-backed tools
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -89,14 +89,14 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(markup).not.toContain("https://app.gengrowth.ai");
   });
 
-  // The aside addresses visitors who have not connected ("run first"); a
-  // connected report carries its own exit card, so both at once would give
-  // one page two exits (交办 5b was a move, not a copy).
-  it("drops the run-first aside once the visitor is connected", () => {
+  // The aside addresses visitors who have not connected; a connected report
+  // carries its own exit card, so both at once would give one page two exits.
+  it("drops the supporting-Agent aside once the visitor is connected", () => {
     const before = render("en", "traffic-drop-diagnosis");
-    expect(before).toContain("Public tools you can run first");
+    expect(before).toContain("URL Agents to use next");
+    expect(before).toContain("Account verification is required");
 
     const after = render("en", "traffic-drop-diagnosis", true);
-    expect(after).not.toContain("Public tools you can run first");
+    expect(after).not.toContain("URL Agents to use next");
   });
 });

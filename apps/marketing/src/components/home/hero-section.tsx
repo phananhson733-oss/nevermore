@@ -1,19 +1,45 @@
-// @input  — next-intl, next/link, site config
-// @output — HeroSection 组件（方法论定位 + 产品/免费工具双入口）
+// @input  — next-intl、next/navigation、Agent intent helper、localePath
+// @output — HeroSection 组件（一个 URL 输入 + SEO/Tech Agent 双入口）
 // @pos    — 首页区块 1，深色背景，SPEC 2.5.2 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useTranslations } from "next-intl";
 import { useLocale } from "next-intl";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
-import { siteConfig } from "@/config/site";
-import { localePath } from "@/lib/locale-path";
+import {
+  getSessionIntentStorage,
+  storePendingAgentIntent,
+} from "../agents/agent-intent";
+import {
+  AGENT_PATH,
+  type AgentKind,
+} from "../agents/agent-types";
+import { localePath } from "../../lib/locale-path";
 
 export function HeroSection() {
   const t = useTranslations("home.hero");
   const locale = useLocale();
+  const router = useRouter();
+  const [targetUrl, setTargetUrl] = useState("");
+
+  function handleDestination(agent: AgentKind) {
+    const url = targetUrl.trim();
+    if (!url) return;
+
+    const storage = getSessionIntentStorage();
+    if (storage) storePendingAgentIntent(storage, agent, url);
+    router.push(localePath(locale, AGENT_PATH[agent]));
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent)
+      .submitter as HTMLButtonElement | null;
+    handleDestination(submitter?.value === "tech" ? "tech" : "seo");
+  }
 
   return (
     <section className="relative overflow-hidden bg-brand-bg">
@@ -55,25 +81,49 @@ export function HeroSection() {
           {t("subtitle")}
         </p>
 
-        <div
-          className="animate-hero-fade-in-up mt-8.5 flex flex-col items-center justify-center gap-3.5 sm:flex-row"
+        <form
+          onSubmit={handleSubmit}
+          className="animate-hero-fade-in-up mx-auto mt-8.5 max-w-[720px]"
           style={{ animationDelay: "0.3s" }}
         >
-          {/* GLOW_02 — 一屏最多一个渐变主 CTA，次按钮靠描边分层，不带投影 */}
-          <a
-            href={siteConfig.appUrl}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-[26px] text-[14.5px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-          >
-            {t("primaryCta")}
-            <ArrowRight aria-hidden="true" className="size-[15px]" />
-          </a>
-          <Link
-            href={localePath(locale, "/tools")}
-            className="inline-flex h-12 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
-          >
-            {t("secondaryCta")}
-          </Link>
-        </div>
+          <label htmlFor="homepage-agent-url" className="sr-only">
+            {t("urlLabel")}
+          </label>
+          <input
+            id="homepage-agent-url"
+            type="text"
+            inputMode="url"
+            autoComplete="url"
+            maxLength={2_048}
+            required
+            value={targetUrl}
+            onChange={(event) => setTargetUrl(event.target.value)}
+            placeholder={t("urlPlaceholder")}
+            className="h-13 w-full rounded-[10px] border border-brand-border-strong bg-brand-panel-raised px-4 text-[15px] text-text-dark-primary shadow-panel outline-none transition-colors placeholder:text-text-dark-faint focus:border-brand-accent/60 focus:ring-2 focus:ring-brand-accent/20"
+          />
+          <div className="mt-3.5 flex flex-col items-stretch justify-center gap-3 sm:flex-row">
+            {/* GLOW_02 — 一屏最多一个渐变主 CTA，次按钮靠描边分层，不带投影 */}
+            <button
+              type="submit"
+              name="agent"
+              value="seo"
+              disabled={!targetUrl.trim()}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-[26px] text-[14.5px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("primaryCta")}
+              <ArrowRight aria-hidden="true" className="size-[15px]" />
+            </button>
+            <button
+              type="submit"
+              name="agent"
+              value="tech"
+              disabled={!targetUrl.trim()}
+              className="inline-flex h-12 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("secondaryCta")}
+            </button>
+          </div>
+        </form>
 
         {/*
          * 这是一句完整的正文，不是标签——mono + uppercase + faint 那一档留给

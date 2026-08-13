@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-07
+updatedAt: 2026-08-12
 heroImage: /images/blog/zero-search-volume-keywords.jpg
 heroImageAlt: A row of six identical measuring cups standing on a shelf, five reading completely empty and one holding a thin sliver of liquid at the very bottom.
 localeExclusive: true
@@ -110,7 +110,7 @@ Low-volume keywords — those registering any confirmed monthly search figure in
 
 ## Take Action
 
-[Run the free SEO Audit](https://gengrowth.ai/tools/seo-audit) on your own site before you commission the next batch. It needs no login and no Search Console connection — it takes a public URL, crawls the same-origin static HTML, and reports what a crawler actually observes: crawl coverage, indexing directives and canonicals, whether a title and meta description are present on each page it reaches and where that text repeats across pages, and the internal link graph. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. Repeated titles and a thin link graph are the fastest way to see where you are already publishing near-duplicates — useful context before adding another unvalidated term. It reports observed facts, not a score, a fix list, or a demand forecast; the demand check stays yours to run.
+[Run the SEO Agent](https://gengrowth.ai/agents/seo) on your own site before you commission the next batch. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. It takes a public URL, crawls same-origin static HTML, and reports what the crawler actually observes: crawl coverage, metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. Repeated titles are a fast way to see where you may already be publishing near-duplicates — useful context before adding another unvalidated term. It reports observed facts and adaptable guidance, not a score or demand forecast; the demand check stays yours to run.
 
 ## Sources
 

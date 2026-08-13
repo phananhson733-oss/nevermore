@@ -1,53 +1,61 @@
 // @input  — next-intl, next/link, lucide-react, radix-ui NavigationMenu, config/navigation
-// @output — ToolsMenu（桌面悬停下拉）与 ToolsMenuMobile（移动端展开列表）
-// @pos    — Header 的免费工具子菜单，对应 SPEC 2.3.1
+// @output — NavSubmenu（桌面悬停下拉）与 NavSubmenuMobile（移动端展开列表）
+// @pos    — Header 的通用目录子菜单，对应 SPEC 2.3.1
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import {
+  BookOpen,
   ChevronDown,
   Compass,
-  Network,
+  MessageSquareText,
   ScanSearch,
-  TrendingDown,
-  Zap,
+  Sparkles,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { NavigationMenu } from "radix-ui";
 import type { NavMenuGroup } from "@/types";
+import { menuItemPath } from "@/config/navigation";
 import { localePath } from "@/lib/locale-path";
 
 /**
  * Icon names are strings in `config/navigation` so that module stays plain data
  * (a footer server component imports it too). Resolving them here keeps the
- * lucide import specific rather than dynamic, so the bundle carries these five
- * icons and not the whole set.
+ * lucide import specific rather than dynamic.
  */
 const ICONS: Record<string, LucideIcon> = {
+  BookOpen,
   Compass,
-  Network,
+  MessageSquareText,
   ScanSearch,
-  TrendingDown,
-  Zap,
+  Sparkles,
+  Wrench,
 };
 
-interface ToolsMenuProps {
+interface NavSubmenuProps {
+  readonly basePath: string;
   readonly groups: NavMenuGroup[];
   readonly locale: string;
   readonly triggerLabel: string;
+  readonly viewAllLabelKey: string;
 }
 
-function ToolLink({
+function MenuLink({
+  basePath,
   slug,
+  href,
   icon,
   label,
   description,
   locale,
   onNavigate,
 }: {
+  readonly basePath: string;
   readonly slug: string;
+  readonly href?: string;
   readonly icon: string;
   readonly label: string;
   readonly description: string;
@@ -57,7 +65,7 @@ function ToolLink({
   const Icon = ICONS[icon] ?? Compass;
   return (
     <Link
-      href={localePath(locale, `/tools/${slug}`)}
+      href={localePath(locale, menuItemPath(basePath, { href, slug }))}
       onClick={onNavigate}
       className="group flex items-start gap-3 rounded-row p-3 transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
     >
@@ -83,10 +91,16 @@ function ToolLink({
  * hover-only menu is unreachable by keyboard and invisible to assistive tech:
  * this one opens on hover, on Enter and on arrow keys, closes on Escape, and
  * announces itself as an expandable button. The trigger does not navigate — the
- * hub link lives at the foot of the panel, so a pointer user does not lose
- * `/tools` and a keyboard user does not have to pass through it.
+ * directory link lives at the foot of the panel, so pointer and keyboard users
+ * can still reach the parent route.
  */
-export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
+export function NavSubmenu({
+  basePath,
+  groups,
+  locale,
+  triggerLabel,
+  viewAllLabelKey,
+}: NavSubmenuProps) {
   const t = useTranslations();
 
   return (
@@ -115,8 +129,10 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
                   {group.items.map((item) => (
                     <li key={item.slug}>
                       <NavigationMenu.Link asChild>
-                        <ToolLink
+                        <MenuLink
+                          basePath={basePath}
                           slug={item.slug}
+                          href={item.href}
                           icon={item.icon}
                           label={t(item.labelKey)}
                           description={t(item.descriptionKey)}
@@ -132,10 +148,10 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
             <div className="mt-2 border-t border-brand-border pt-2">
               <NavigationMenu.Link asChild>
                 <Link
-                  href={localePath(locale, "/tools")}
+                  href={localePath(locale, basePath)}
                   className="group flex items-center justify-between rounded-row px-3 py-2.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
                 >
-                  {t("nav.toolsMenu.viewAll")}
+                  {t(viewAllLabelKey)}
                   <span
                     aria-hidden="true"
                     className="transition-transform duration-200 group-hover:translate-x-0.5"
@@ -156,20 +172,22 @@ export function ToolsMenu({ groups, locale, triggerLabel }: ToolsMenuProps) {
  * The same catalogue inside the mobile sheet.
  *
  * Hover has no meaning on touch and the sheet is already a disclosure, so the
- * tools are listed outright rather than hidden behind a second tap.
+ * destinations are listed outright rather than hidden behind a second tap.
  */
-export function ToolsMenuMobile({
+export function NavSubmenuMobile({
+  basePath,
   groups,
   locale,
   triggerLabel,
+  viewAllLabelKey: _viewAllLabelKey,
   onNavigate,
-}: ToolsMenuProps & { readonly onNavigate: () => void }) {
+}: NavSubmenuProps & { readonly onNavigate: () => void }) {
   const t = useTranslations();
 
   return (
     <div>
       <Link
-        href={localePath(locale, "/tools")}
+        href={localePath(locale, basePath)}
         onClick={onNavigate}
         className="text-lg text-text-dark-secondary transition-colors hover:text-text-dark-primary"
       >
@@ -184,8 +202,10 @@ export function ToolsMenuMobile({
           <ul className="mt-1 list-none space-y-0.5">
             {group.items.map((item) => (
               <li key={item.slug}>
-                <ToolLink
+                <MenuLink
+                  basePath={basePath}
                   slug={item.slug}
+                  href={item.href}
                   icon={item.icon}
                   label={t(item.labelKey)}
                   description={t(item.descriptionKey)}

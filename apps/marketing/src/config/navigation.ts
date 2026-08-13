@@ -1,71 +1,106 @@
 // @input  — @/types 中的 NavItem / FooterLink 类型
-// @output — headerNavItems / footerResourceLinks / footerLegalLinks 导航数据
+// @output — 顶部主导航、Agents / Resources 子菜单及 footer 链接数据
 // @pos    — 静态配置，供 Header 和 Footer 组件消费
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
-import type { NavItem, FooterLink, NavMenuGroup } from "@/types";
+import type {
+  NavItem,
+  FooterLink,
+  NavMenuGroup,
+  NavMenuItem,
+} from "@/types";
+
+export function menuItemPath(
+  basePath: string,
+  item: Pick<NavMenuItem, "href" | "slug">,
+): string {
+  return item.href ?? `${basePath}/${item.slug}`;
+}
 
 /**
- * The free tools surfaced in the header submenu.
+ * The two focused acquisition Agents surfaced in the primary header submenu.
  *
- * Grouped the same way the /tools hub groups them, because the two are the same
- * catalogue seen from two places — `navigation.test.ts` fails if a tool appears
- * in one and not the other, so adding a tool cannot silently skip the header.
- * The calculators are deliberately absent: they are supporting utilities rather
- * than entry points, and the hub does not list them either.
+ * Agent route directories are the catalogue authority. `navigation.test.ts`
+ * fails if the menu and those directories drift in either direction.
  */
-export const toolsMenuGroups: NavMenuGroup[] = [
+export const agentsMenuGroups: NavMenuGroup[] = [
   {
-    labelKey: "nav.toolsMenu.diagnoseGroup",
+    labelKey: "nav.agentsMenu.group",
     items: [
       {
-        slug: "seo-quick-wins",
-        labelKey: "nav.toolsMenu.seoQuickWins.label",
-        descriptionKey: "nav.toolsMenu.seoQuickWins.description",
-        icon: "Zap",
-      },
-      {
-        slug: "internal-link-audit",
-        labelKey: "nav.toolsMenu.internalLinkAudit.label",
-        descriptionKey: "nav.toolsMenu.internalLinkAudit.description",
-        icon: "Network",
-      },
-      {
-        slug: "traffic-drop-diagnosis",
-        labelKey: "nav.toolsMenu.trafficDropDiagnosis.label",
-        descriptionKey: "nav.toolsMenu.trafficDropDiagnosis.description",
-        icon: "TrendingDown",
-      },
-      {
-        slug: "seo-audit",
-        labelKey: "nav.toolsMenu.seoAudit.label",
-        descriptionKey: "nav.toolsMenu.seoAudit.description",
+        slug: "seo",
+        labelKey: "nav.agentsMenu.seo.label",
+        descriptionKey: "nav.agentsMenu.seo.description",
         icon: "ScanSearch",
+      },
+      {
+        slug: "tech",
+        labelKey: "nav.agentsMenu.tech.label",
+        descriptionKey: "nav.agentsMenu.tech.description",
+        icon: "Wrench",
       },
     ],
   },
+];
+
+export const resourcesMenuGroups: NavMenuGroup[] = [
   {
-    labelKey: "nav.toolsMenu.planGroup",
+    labelKey: "nav.resourcesMenu.group",
     items: [
       {
-        slug: "low-competition-keywords",
-        labelKey: "nav.toolsMenu.hiddenKeywords.label",
-        descriptionKey: "nav.toolsMenu.hiddenKeywords.description",
-        icon: "Compass",
+        slug: "prompts",
+        href: "/resources#prompts",
+        labelKey: "nav.resourcesMenu.prompts.label",
+        descriptionKey: "nav.resourcesMenu.prompts.description",
+        icon: "MessageSquareText",
+      },
+      {
+        slug: "tools",
+        href: "/tools",
+        labelKey: "nav.resourcesMenu.tools.label",
+        descriptionKey: "nav.resourcesMenu.tools.description",
+        icon: "Wrench",
+      },
+      {
+        slug: "skills",
+        href: "/resources#skills",
+        labelKey: "nav.resourcesMenu.skills.label",
+        descriptionKey: "nav.resourcesMenu.skills.description",
+        icon: "Sparkles",
+      },
+      {
+        slug: "docs",
+        href: "/resources#docs",
+        labelKey: "nav.resourcesMenu.docs.label",
+        descriptionKey: "nav.resourcesMenu.docs.description",
+        icon: "BookOpen",
       },
     ],
   },
 ];
 
 export const headerNavItems: NavItem[] = [
-  { labelKey: "nav.tools", href: "/tools", menu: toolsMenuGroups },
+  { labelKey: "common.home", href: "/" },
+  {
+    labelKey: "nav.agents",
+    href: "/agents",
+    menu: agentsMenuGroups,
+    menuViewAllLabelKey: "nav.agentsMenu.viewAll",
+  },
   { labelKey: "nav.blog", href: "/blog" },
+  {
+    labelKey: "nav.resources",
+    href: "/resources",
+    menu: resourcesMenuGroups,
+    menuViewAllLabelKey: "nav.resourcesMenu.viewAll",
+  },
   { labelKey: "nav.pricing", href: "/pricing" },
 ];
 
 export const footerResourceLinks: FooterLink[] = [
-  { labelKey: "nav.tools", href: "/tools" },
-  { labelKey: "nav.blog", href: "/blog" },
-  { labelKey: "nav.pricing", href: "/pricing" },
+  { labelKey: "nav.resourcesMenu.prompts.label", href: "/resources#prompts" },
+  { labelKey: "nav.resourcesMenu.tools.label", href: "/tools" },
+  { labelKey: "nav.resourcesMenu.skills.label", href: "/resources#skills" },
+  { labelKey: "nav.resourcesMenu.docs.label", href: "/resources#docs" },
 ];
 
 export const footerLegalLinks: FooterLink[] = [

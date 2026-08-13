@@ -196,6 +196,187 @@ describe("handleSeoAuditRequest", () => {
     expect(deps.cachePayload).toHaveBeenCalledTimes(1);
   });
 
+  it("does not reuse a same-host cache entry for a different normalized path", async () => {
+    const normalizedUrl = "https://acme.test/docs";
+    const freshPayload = {
+      ...payload,
+      result: { ...payload.result, targetUrl: normalizedUrl },
+    } satisfies SeoAuditPayload;
+    const scan = vi.fn(async () => ({ ...raw, requestedUrl: normalizedUrl }));
+    const release = vi.fn();
+    const deps = dependencies({
+      normalizeUrl: () => ({ ok: true, url: normalizedUrl }),
+      scan,
+      buildPayload: () => freshPayload,
+      openGate: async () => ({
+        ok: true,
+        kind: "cached",
+        payload,
+        capturedAt: "2026-07-30T08:00:00.000Z",
+        release,
+      }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test/docs" }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ data: freshPayload });
+    expect(scan).toHaveBeenCalledWith(normalizedUrl, expect.any(AbortSignal));
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it.each([null, {}, { result: null }, { result: { targetUrl: 42 } }])(
+    "safely treats an invalid cached payload as a miss: %j",
+    async (cachedPayload) => {
+      const scan = vi.fn(async () => raw);
+      const deps = dependencies({
+        scan,
+        openGate: async () => ({
+          ok: true,
+          kind: "cached",
+          payload: cachedPayload,
+          capturedAt: "2026-07-30T08:00:00.000Z",
+          release: () => {},
+        }),
+      });
+
+      const response = await handleSeoAuditRequest(
+        request({ url: "acme.test" }),
+        deps,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-crawl-cache")).toBeNull();
+      expect(scan).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    [
+      "old schema",
+      {
+        ...payload,
+        run: { ...payload.run, schemaVersion: "seo_audit.sitewide.v2" },
+      },
+    ],
+    [
+      "wrong scope",
+      {
+        ...payload,
+        run: { ...payload.run, scope: "homepage_only" },
+      },
+    ],
+    [
+      "wrong mode",
+      {
+        ...payload,
+        run: { ...payload.run, mode: "authenticated_agent" },
+      },
+    ],
+    [
+      "stored persistence",
+      {
+        ...payload,
+        run: { ...payload.run, persistence: "stored" },
+      },
+    ],
+    [
+      "non-canonical completion time",
+      {
+        ...payload,
+        run: { ...payload.run, completedAt: "2026-07-30T09:00:00Z" },
+      },
+    ],
+    [
+      "malformed coverage",
+      {
+        ...payload,
+        result: {
+          ...payload.result,
+          coverage: { ...payload.result.coverage, pagesInspected: "zero" },
+        },
+      },
+    ],
+    [
+      "malformed site resources",
+      {
+        ...payload,
+        result: {
+          ...payload.result,
+          siteResources: {
+            ...payload.result.siteResources,
+            robotsFetched: "yes",
+          },
+        },
+      },
+    ],
+    [
+      "malformed record",
+      { ...payload, result: { ...payload.result, records: [{}] } },
+    ],
+    [
+      "malformed page",
+      { ...payload, result: { ...payload.result, pages: [{}] } },
+    ],
+  ] as const)(
+    "treats an exact-target cache with %s as a miss and crawls fresh",
+    async (_label, cachedPayload) => {
+      const scan = vi.fn(async () => raw);
+      const release = vi.fn();
+      const deps = dependencies({
+        scan,
+        openGate: async () => ({
+          ok: true,
+          kind: "cached",
+          payload: cachedPayload,
+          capturedAt: "2026-07-30T08:00:00.000Z",
+          release,
+        }),
+      });
+
+      const response = await handleSeoAuditRequest(
+        request({ url: "acme.test" }),
+        deps,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-crawl-cache")).toBeNull();
+      await expect(response.json()).resolves.toEqual({ data: payload });
+      expect(scan).toHaveBeenCalledOnce();
+      expect(release).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("treats a cache hit with non-canonical capture provenance as a miss", async () => {
+    const scan = vi.fn(async () => raw);
+    const release = vi.fn();
+    const deps = dependencies({
+      scan,
+      openGate: async () => ({
+        ok: true,
+        kind: "cached",
+        payload,
+        capturedAt: "2026-07-30 08:00:00+00",
+        release,
+      }),
+    });
+
+    const response = await handleSeoAuditRequest(
+      request({ url: "acme.test" }),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-crawl-cache")).toBeNull();
+    expect(response.headers.get("x-crawl-captured-at")).toBeNull();
+    expect(scan).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledOnce();
+  });
+
   it("rejects an oversized request before validation or scan", async () => {
     const scan = vi.fn(async () => raw);
     const deps = dependencies({ scan });

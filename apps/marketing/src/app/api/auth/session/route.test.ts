@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
+vi.mock("../../../../lib/supabase/server.ts", () => ({
   createServerSupabaseClient: mocks.createClient,
 }));
 
@@ -17,7 +17,7 @@ afterEach(() => {
 
 function withUser(user: unknown) {
   mocks.createClient.mockResolvedValue({
-    auth: { getUser: async () => ({ data: { user } }) },
+    auth: { getUser: async () => ({ data: { user }, error: null }) },
   });
 }
 
@@ -25,8 +25,8 @@ function withUser(user: unknown) {
  * The header's session probe.
  *
  * Reachable from any marketing page without authentication, so the thing worth
- * pinning is what it does NOT say: the response is a bare boolean, and no
- * identifier from the session may appear in it.
+ * pinning is what it does NOT say: a verified response is a bare boolean, an
+ * unavailable response is a stable code, and no session identifier appears.
  */
 describe("GET /api/auth/session", () => {
   it("reports a signed-in visitor", async () => {
@@ -73,14 +73,57 @@ describe("GET /api/auth/session", () => {
     expect(cacheControl).toContain("private");
   });
 
-  it("answers signed-out when Supabase is unreachable", async () => {
+  it("keeps the normal missing-session error on the signed-out path", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: async () => ({
+          data: { user: null },
+          error: {
+            name: "AuthSessionMissingError",
+            status: 400,
+            message: "Auth session missing!",
+          },
+        }),
+      },
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ signedIn: false });
+  });
+
+  it("reports authentication unavailable when Supabase is unreachable", async () => {
     mocks.createClient.mockRejectedValue(new Error("no supabase"));
 
     const response = await GET();
 
-    // Degrading to the sign-in link is honest and harmless; a 500 in the header
-    // would break every marketing page instead.
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ signedIn: false });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "auth_unavailable" },
+    });
+    expect(response.headers.get("cache-control")).toBe("no-store, private");
+  });
+
+  it("does not misreport a returned auth service error as signed out", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: async () => ({
+          data: { user: null },
+          error: {
+            name: "AuthRetryableFetchError",
+            status: 503,
+            message: "Auth service unavailable",
+          },
+        }),
+      },
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "auth_unavailable" },
+    });
   });
 });

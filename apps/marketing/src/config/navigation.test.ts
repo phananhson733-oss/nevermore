@@ -1,43 +1,38 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { headerNavItems, toolsMenuGroups } from "./navigation.ts";
+import {
+  agentsMenuGroups,
+  footerResourceLinks,
+  headerNavItems,
+  menuItemPath,
+  resourcesMenuGroups,
+} from "./navigation.ts";
 
 /**
- * The header tools submenu against the two things it can drift from.
+ * The header Agents submenu against the route directories it can drift from.
  *
- * A menu is a second copy of a catalogue, and second copies rot: a tool ships
- * with a route and a hub card, nobody remembers the header, and the menu
- * quietly claims the catalogue is smaller than it is. So the route directory —
- * the only place a tool must exist to be reachable at all — is the authority
- * here, and every entry is checked against it in both directions.
+ * A menu is a second copy of a route catalogue, and second copies rot. The
+ * route directories are therefore the authority and the two lists are checked
+ * in both directions.
  */
 
-const TOOLS_ROUTE_DIR = fileURLToPath(
-  new URL("../app/[locale]/tools", import.meta.url),
+const AGENTS_ROUTE_DIR = fileURLToPath(
+  new URL("../app/[locale]/agents", import.meta.url),
 );
 const MESSAGES_DIR = fileURLToPath(new URL("../i18n/messages", import.meta.url));
 
-/**
- * Tools that exist as routes but are deliberately not in the menu.
- *
- * Both are supporting calculators reached from within a workflow rather than
- * entry points a visitor browses to, and the /tools hub omits them for the same
- * reason. Listing them explicitly means adding a tool without a decision fails
- * this test instead of silently joining the exclusions.
- */
-const NOT_IN_MENU = new Set(["ab-test-calculator", "growth-roi-calculator"]);
-
-function routedToolSlugs(): string[] {
-  return readdirSync(TOOLS_ROUTE_DIR, { withFileTypes: true })
+function routedAgentSlugs(): string[] {
+  if (!existsSync(AGENTS_ROUTE_DIR)) return [];
+  return readdirSync(AGENTS_ROUTE_DIR, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
 }
 
 function menuSlugs(): string[] {
-  return toolsMenuGroups.flatMap((group) =>
+  return agentsMenuGroups.flatMap((group) =>
     group.items.map((item) => item.slug),
   );
 }
@@ -61,48 +56,120 @@ function lookup(messages: Record<string, unknown>, key: string): unknown {
     );
 }
 
-describe("tools submenu", () => {
-  it("points every entry at a route that exists", () => {
-    const routed = new Set(routedToolSlugs());
-    for (const slug of menuSlugs()) {
-      expect(routed, `/tools/${slug} has no route directory`).toContain(slug);
-    }
+describe("Agents submenu", () => {
+  it("matches the routed Agent pages exactly", () => {
+    expect(menuSlugs().sort()).toEqual(routedAgentSlugs());
+    expect(menuSlugs().sort()).toEqual(["seo", "tech"]);
   });
 
-  it("covers every routed tool except the declared exclusions", () => {
-    const listed = new Set(menuSlugs());
-    const missing = routedToolSlugs().filter(
-      (slug) => !listed.has(slug) && !NOT_IN_MENU.has(slug),
-    );
-    expect(
-      missing,
-      "a tool route exists but the header menu does not offer it",
-    ).toEqual([]);
-  });
-
-  it("does not repeat a tool across groups", () => {
+  it("does not repeat an Agent across groups", () => {
     const slugs = menuSlugs();
     expect(slugs).toHaveLength(new Set(slugs).size);
   });
 
-  it("hangs the submenu off the Free Tools item only", () => {
+  it("links the Agents directory from its primary submenu", () => {
     const withMenu = headerNavItems.filter((item) => item.menu);
-    expect(withMenu.map((item) => item.href)).toEqual(["/tools"]);
-    expect(withMenu[0]?.menu).toBe(toolsMenuGroups);
+    const agents = withMenu.find((item) => item.href === "/agents");
+
+    expect(agents?.menu).toBe(agentsMenuGroups);
+    expect(agents?.menuViewAllLabelKey).toBe("nav.agentsMenu.viewAll");
+  });
+
+  it("keeps the exact primary IA and does not promote Tools", () => {
+    expect(
+      headerNavItems.map(({ labelKey, href }) => ({ labelKey, href })),
+    ).toEqual([
+      { labelKey: "common.home", href: "/" },
+      { labelKey: "nav.agents", href: "/agents" },
+      { labelKey: "nav.blog", href: "/blog" },
+      { labelKey: "nav.resources", href: "/resources" },
+      { labelKey: "nav.pricing", href: "/pricing" },
+    ]);
+    expect(headerNavItems.some((item) => item.href === "/tools")).toBe(false);
+    expect(headerNavItems.some((item) => item.labelKey === "nav.tools")).toBe(
+      false,
+    );
   });
 });
 
-describe("tools submenu copy", () => {
+describe("Resources submenu", () => {
+  it("is the second primary submenu and links the Resources directory", () => {
+    const withMenu = headerNavItems.filter((item) => item.menu);
+
+    expect(withMenu.map((item) => item.href)).toEqual([
+      "/agents",
+      "/resources",
+    ]);
+    expect(withMenu[1]?.menu).toBe(resourcesMenuGroups);
+    expect(withMenu[1]?.menuViewAllLabelKey).toBe(
+      "nav.resourcesMenu.viewAll",
+    );
+  });
+
+  it("keeps Prompts, Tools, Skills, and Docs at their exact destinations", () => {
+    expect(
+      resourcesMenuGroups.flatMap((group) =>
+        group.items.map(({ slug, href }) => ({ slug, href })),
+      ),
+    ).toEqual([
+      { slug: "prompts", href: "/resources#prompts" },
+      { slug: "tools", href: "/tools" },
+      { slug: "skills", href: "/resources#skills" },
+      { slug: "docs", href: "/resources#docs" },
+    ]);
+  });
+
+  it("uses exact destinations while preserving Agent slug routes", () => {
+    expect(menuItemPath("/agents", { slug: "seo" })).toBe("/agents/seo");
+    expect(menuItemPath("/agents", { slug: "tech" })).toBe("/agents/tech");
+    expect(
+      menuItemPath("/resources", {
+        slug: "prompts",
+        href: "/resources#prompts",
+      }),
+    ).toBe("/resources#prompts");
+    expect(
+      menuItemPath("/resources", { slug: "tools", href: "/tools" }),
+    ).toBe("/tools");
+  });
+
+  it("uses the same Resources IA in the footer", () => {
+    expect(footerResourceLinks).toEqual([
+      {
+        labelKey: "nav.resourcesMenu.prompts.label",
+        href: "/resources#prompts",
+      },
+      { labelKey: "nav.resourcesMenu.tools.label", href: "/tools" },
+      {
+        labelKey: "nav.resourcesMenu.skills.label",
+        href: "/resources#skills",
+      },
+      {
+        labelKey: "nav.resourcesMenu.docs.label",
+        href: "/resources#docs",
+      },
+    ]);
+  });
+});
+
+describe("Navigation copy", () => {
   const locales = ["en", "zh"];
 
   it.each(locales)("translates every label and description in %s", (locale) => {
     const messages = readMessages(locale);
     const keys = [
-      ...toolsMenuGroups.map((group) => group.labelKey),
-      ...toolsMenuGroups.flatMap((group) =>
+      ...headerNavItems.map((item) => item.labelKey),
+      ...agentsMenuGroups.map((group) => group.labelKey),
+      ...agentsMenuGroups.flatMap((group) =>
         group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),
       ),
-      "nav.toolsMenu.viewAll",
+      "nav.agentsMenu.viewAll",
+      ...resourcesMenuGroups.map((group) => group.labelKey),
+      ...resourcesMenuGroups.flatMap((group) =>
+        group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),
+      ),
+      "nav.resourcesMenu.viewAll",
+      ...footerResourceLinks.map((item) => item.labelKey),
     ];
 
     for (const key of keys) {

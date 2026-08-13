@@ -1,7 +1,7 @@
 ---
 title: Cookie Policy
-version: 1.1
-effectiveDate: 2026-08-07
+version: 1.2
+effectiveDate: 2026-08-12
 status: published
 ---
 
@@ -10,8 +10,8 @@ lasts. It is the companion to our [Privacy Policy](/privacy).
 
 ## Strictly necessary
 
-These make the site work. Without them sign-in, the Search Console connection,
-and the free tools cannot function.
+These make the site work. Without them sign-in, the SEO and Tech Agents, and
+the Search Console connection cannot function.
 
 | Cookie | Purpose | Lifetime |
 | --- | --- | --- |
@@ -42,8 +42,9 @@ signing in on `accounts.google.com`.
 ## Managing cookies
 
 You can clear or block cookies in your browser settings. Blocking the strictly
-necessary cookies will prevent sign-in and the Search Console tools from
-working; the free public tools will continue to function.
+necessary cookies will prevent sign-in, SEO and Tech Agent runs, and the Search
+Console tools from working. Stateless calculator pages that do not depend on
+these cookies may continue to function.
 
 To opt out of Google Analytics specifically, you can install Google's
 [opt-out browser add-on](https://tools.google.com/dlpage/gaoptout).

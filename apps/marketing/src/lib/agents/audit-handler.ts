@@ -1,0 +1,348 @@
+// @input  -- authenticated Agent POST request and existing bounded SEO audit handler
+// @output -- buffered, category-projected evidence or stable auth/upstream errors
+// @pos    -- shared server-only execution boundary for SEO and Tech Agent APIs
+
+import type {
+  SeoAuditCategory,
+  SeoAuditCoverage,
+  SeoAuditRecord,
+  SeoAuditSiteResources,
+} from "@sf/public-tools";
+import {
+  getServerAuthenticationStatus,
+  type ServerAuthenticationStatus,
+} from "../auth/server-auth-status.ts";
+import { handleSeoAuditRequest } from "../tools/seo-audit-handler.ts";
+import {
+  isCanonicalIsoTimestamp,
+  isSeoAuditUpstreamSuccessEnvelope,
+  type AgentAuditSuccessData,
+  type AgentKind,
+} from "./audit-contract.ts";
+
+export interface AgentAuditHandlerDependencies {
+  /** Proves a real Supabase user before any part of the audit request is read. */
+  readonly authenticate: () => Promise<ServerAuthenticationStatus>;
+  /** Runs the existing bounded crawler, gate, and completed-result cache. */
+  readonly delegate: (request: Request) => Promise<Response>;
+}
+
+const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
+  authenticate: getServerAuthenticationStatus,
+  delegate: handleSeoAuditRequest,
+};
+
+const ALLOWED_CATEGORIES: Readonly<
+  Record<AgentKind, ReadonlySet<SeoAuditCategory>>
+> = {
+  seo: new Set(["metadata", "structure", "structured_data"]),
+  tech: new Set(["crawl", "indexability", "links"]),
+};
+
+const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
+
+const UPSTREAM_ERROR_STATUS = {
+  invalid_url: 400,
+  invalid_request: 400,
+  payload_too_large: 413,
+  unsupported_media_type: 415,
+  scan_in_progress: 409,
+  rate_limited: 429,
+  target_busy: 429,
+  quota_unavailable: 503,
+  robots_disallowed: 422,
+  robots_unreachable: 422,
+  scan_timeout: 504,
+  scan_failed: 502,
+} as const satisfies Readonly<Record<string, number>>;
+
+type UpstreamErrorCode = keyof typeof UPSTREAM_ERROR_STATUS;
+
+const SAFE_UPSTREAM_ERROR_HEADERS = [
+  "Retry-After",
+  "RateLimit-Limit",
+  "RateLimit-Remaining",
+  "RateLimit-Reset",
+  "X-RateLimit-Limit",
+  "X-RateLimit-Remaining",
+  "X-RateLimit-Reset",
+] as const;
+
+type CacheProvenance =
+  | {
+      readonly status: "hit";
+      readonly capturedAt: string;
+      readonly explicitStatus: true;
+    }
+  | {
+      readonly status: "miss";
+      readonly capturedAt: null;
+      readonly explicitStatus: boolean;
+    };
+
+function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Readonly<Record<string, unknown>>,
+  expected: readonly string[],
+): boolean {
+  const keys = Object.keys(value);
+  return (
+    keys.length === expected.length &&
+    expected.every((key) => Object.hasOwn(value, key))
+  );
+}
+
+function isUpstreamErrorCode(value: unknown): value is UpstreamErrorCode {
+  return (
+    typeof value === "string" && Object.hasOwn(UPSTREAM_ERROR_STATUS, value)
+  );
+}
+
+function upstreamErrorCodeOf(value: unknown): UpstreamErrorCode | null {
+  if (!isObject(value) || !hasExactKeys(value, ["error"])) return null;
+  const error = value.error;
+  if (!isObject(error) || !hasExactKeys(error, ["code"])) return null;
+  return isUpstreamErrorCode(error.code) ? error.code : null;
+}
+
+function isJsonContentType(headers: Headers): boolean {
+  const mediaType = (headers.get("content-type") ?? "")
+    .split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  return (
+    mediaType === "application/json" || mediaType?.endsWith("+json") === true
+  );
+}
+
+async function readBoundedJson(response: Response): Promise<unknown | null> {
+  if (!isJsonContentType(response.headers) || response.body === null) return null;
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > UPSTREAM_ERROR_BODY_LIMIT_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function safeErrorHeaders(upstream: Headers): Headers {
+  const headers = new Headers({ "Cache-Control": "no-store, private" });
+  for (const name of SAFE_UPSTREAM_ERROR_HEADERS) {
+    const value = upstream.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  return headers;
+}
+
+function cacheProvenanceOf(headers: Headers): CacheProvenance | null {
+  const cacheStatus = headers.get("X-Crawl-Cache");
+  const capturedAt = headers.get("X-Crawl-Captured-At");
+
+  if (cacheStatus === null || cacheStatus === "miss") {
+    return capturedAt === null
+      ? {
+          status: "miss",
+          capturedAt: null,
+          explicitStatus: cacheStatus === "miss",
+        }
+      : null;
+  }
+  if (cacheStatus !== "hit" || !isCanonicalIsoTimestamp(capturedAt)) {
+    return null;
+  }
+  return { status: "hit", capturedAt, explicitStatus: true };
+}
+
+function successHeaders(cache: CacheProvenance): Headers {
+  const headers = new Headers({ "Cache-Control": "no-store, private" });
+  if (cache.explicitStatus) headers.set("X-Crawl-Cache", cache.status);
+  if (cache.status === "hit") {
+    headers.set("X-Crawl-Captured-At", cache.capturedAt);
+  }
+  return headers;
+}
+
+function projectCoverage(coverage: SeoAuditCoverage): SeoAuditCoverage {
+  return {
+    availability: coverage.availability,
+    pagesInspected: coverage.pagesInspected,
+    linksObserved: coverage.linksObserved,
+    sitemapUrlsObserved: coverage.sitemapUrlsObserved,
+    urlsSkipped: coverage.urlsSkipped,
+    urlsBlocked: coverage.urlsBlocked,
+    urlsDisallowed: coverage.urlsDisallowed,
+    urlsErrored: coverage.urlsErrored,
+    stopReason: coverage.stopReason,
+  };
+}
+
+function projectSiteResources(
+  siteResources: SeoAuditSiteResources,
+): SeoAuditSiteResources {
+  return {
+    robotsFetched: siteResources.robotsFetched,
+    robotsGroupsObserved: siteResources.robotsGroupsObserved,
+    sitemapReferencesObserved: siteResources.sitemapReferencesObserved,
+    sitemapFetched: siteResources.sitemapFetched,
+  };
+}
+
+function projectRecord(record: SeoAuditRecord): SeoAuditRecord {
+  return {
+    id: record.id,
+    category: record.category,
+    state: record.state,
+    unit: record.unit,
+    tested: record.tested,
+    affected: record.affected,
+    observations: record.observations.map((observation) => ({
+      url: observation.url,
+      values: observation.values.map((entry) => ({
+        label: entry.label,
+        value: entry.value,
+      })),
+    })),
+    limitation: record.limitation,
+  };
+}
+
+function errorResponse(
+  code: string,
+  status: number,
+  headers: Headers = new Headers({ "Cache-Control": "no-store, private" }),
+): Response {
+  return Response.json(
+    { error: { code } },
+    {
+      status,
+      headers,
+    },
+  );
+}
+
+async function projectUpstreamError(upstream: Response): Promise<Response> {
+  const envelope = await readBoundedJson(upstream);
+  const code = upstreamErrorCodeOf(envelope);
+  if (code === null || upstream.status !== UPSTREAM_ERROR_STATUS[code]) {
+    return errorResponse("audit_response_invalid", 502);
+  }
+  return errorResponse(
+    code,
+    upstream.status,
+    safeErrorHeaders(upstream.headers),
+  );
+}
+
+/** The existing handler streams only when Accept contains x-ndjson. */
+function asBufferedJsonRequest(request: Request): Request {
+  const headers = new Headers(request.headers);
+  headers.set("Accept", "application/json");
+  return new Request(request, { headers });
+}
+
+export async function handleAgentAuditRequest(
+  request: Request,
+  agent: AgentKind,
+  dependencies: AgentAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
+): Promise<Response> {
+  let authentication: ServerAuthenticationStatus = "unavailable";
+  try {
+    authentication = await dependencies.authenticate();
+  } catch {
+    authentication = "unavailable";
+  }
+
+  if (authentication === "unavailable") {
+    return errorResponse("auth_unavailable", 503);
+  }
+  if (authentication === "unauthenticated") {
+    return errorResponse("auth_required", 401);
+  }
+
+  const upstream = await dependencies.delegate(asBufferedJsonRequest(request));
+  if (!upstream.ok) return projectUpstreamError(upstream);
+
+  if (
+    !(upstream.headers.get("content-type") ?? "")
+      .toLowerCase()
+      .includes("application/json")
+  ) {
+    return errorResponse("audit_response_invalid", 502);
+  }
+
+  let envelope: unknown;
+  try {
+    envelope = await upstream.json();
+  } catch {
+    return errorResponse("audit_response_invalid", 502);
+  }
+  if (!isSeoAuditUpstreamSuccessEnvelope(envelope)) {
+    return errorResponse("audit_response_invalid", 502);
+  }
+
+  const cache = cacheProvenanceOf(upstream.headers);
+  if (cache === null) return errorResponse("audit_response_invalid", 502);
+
+  const { run, result } = envelope.data;
+  const projected: AgentAuditSuccessData = {
+    run: {
+      agent,
+      mode: "authenticated_agent",
+      persistence: "none",
+      source: {
+        tool: "seo_audit",
+        schemaVersion: run.schemaVersion,
+        completedAt: run.completedAt,
+        cache: {
+          status: cache.status,
+          capturedAt: cache.capturedAt,
+        },
+      },
+    },
+    result: {
+      targetUrl: result.targetUrl,
+      siteOrigin: result.siteOrigin,
+      scannedAt: result.scannedAt,
+      coverage: projectCoverage(result.coverage),
+      siteResources: projectSiteResources(result.siteResources),
+      records: result.records
+        .filter((record) => ALLOWED_CATEGORIES[agent].has(record.category))
+        .map(projectRecord),
+    },
+  };
+
+  return Response.json(
+    { data: projected },
+    { status: upstream.status, headers: successHeaders(cache) },
+  );
+}

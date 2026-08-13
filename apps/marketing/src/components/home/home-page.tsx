@@ -1,17 +1,11 @@
-// @input  -- HeroSection(eager), 8 homepage block components(lazy)
-// @output -- HomePage client component for the public-tools acquisition path
+// @input  -- HeroSection(eager), 6 homepage block components(lazy)
+// @output -- HomePage client component for the Agent acquisition path
 // @pos    -- Homepage assembly layer, used by [locale]/page.tsx
 // Once this file is updated, update header comment and folder _DIR.md
 "use client";
 
 import dynamic from "next/dynamic";
 import { HeroSection } from "./hero-section";
-
-const FreeAuditSection = dynamic(() =>
-  import("./free-audit-section").then((mod) => ({
-    default: mod.FreeAuditSection,
-  })),
-);
 
 const PainPointsSection = dynamic(() =>
   import("./pain-points-section").then((mod) => ({
@@ -48,10 +42,9 @@ export function HomePage() {
   return (
     <>
       <HeroSection />
-      <FreeAuditSection />
+      <CapabilitiesPreview />
       <PainPointsSection />
       <SolutionSection />
-      <CapabilitiesPreview />
       <SocialProofSection />
       <EditorialPreviewSection />
       <BottomCtaSection />

@@ -1,5 +1,5 @@
 // @input  -- lib/auth/gsi-client, next-intl locale
-// @output — Google 官方登录按钮；不可用时回落到 app 站登录页链接
+// @output — Google 官方登录按钮；不可用时在新标签页回落到 app 站登录页
 // @pos    -- 登录弹层的主体，SignInDialog 使用
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -90,6 +90,8 @@ export function GoogleSignInButton() {
       {status === "unavailable" ? (
         <a
           href={`${siteConfig.appUrl}/login`}
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-brand-gradient px-[18px] text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta"
         >
           {t("auth.continueOnApp")}

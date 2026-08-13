@@ -1,13 +1,14 @@
-// @input  — next-intl, framer-motion, site config
-// @output — BottomCtaSection 组件（进入已登录产品的底部转化区块）
+// @input  — next-intl、framer-motion、localePath
+// @output — BottomCtaSection 组件（进入 SEO Agent 的底部转化区块）
 // @pos    — 首页区块 7，深色背景
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { fadeInUp } from "@/lib/animations";
-import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export function BottomCtaSection({
   onOpenWaitlist: _onOpenWaitlist,
@@ -15,6 +16,7 @@ export function BottomCtaSection({
   readonly onOpenWaitlist?: () => void;
 }) {
   const t = useTranslations("home.bottomCta");
+  const locale = useLocale();
 
   return (
     <section className="relative overflow-hidden border-t border-brand-border bg-brand-bg-alt py-20 md:py-25">
@@ -52,12 +54,12 @@ export function BottomCtaSection({
           viewport={{ once: true }}
           transition={{ ...fadeInUp.transition, delay: 0.3 }}
         >
-          <a
-            href={siteConfig.appUrl}
+          <Link
+            href={localePath(locale, "/agents/seo")}
             className="inline-flex h-12.5 items-center justify-center rounded-[10px] bg-brand-gradient px-7.5 text-[15px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             {t("cta")}
-          </a>
+          </Link>
         </motion.div>
       </div>
     </section>

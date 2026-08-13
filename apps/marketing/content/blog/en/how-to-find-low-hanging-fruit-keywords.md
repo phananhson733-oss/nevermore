@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-07
+updatedAt: 2026-08-12
 heroImage: /images/blog/how-to-find-low-hanging-fruit-keywords.jpg
 heroImageAlt: A jeweler's loupe held close over one stone in a tray of loose stones, each stone sitting on its own small printed number card; the stone under the loupe is being looked at directly while the cards stay unread.
 localeExclusive: true
@@ -101,7 +101,7 @@ Enough to keep a steady publishing cadence, but only ones that survive both the 
 
 ## Take Action
 
-Run your own Search Console export through the SERP-first checks above. If you would rather start from the site than the spreadsheet, our free SEO Audit takes any public URL with no login and no Search Console connection, and reports what a crawler actually observes — crawl coverage, indexing directives and canonicals, whether a title and meta description are present and where that text repeats, and the internal link graph — so you can see which pages already exist and how they link to each other. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. It gives you observed facts, not a score, a fix list, or a demand forecast. [Run the free SEO Audit](https://gengrowth.ai/tools/seo-audit).
+Run your own Search Console export through the SERP-first checks above. If you would rather start from the site than the spreadsheet, the SEO Agent takes a public URL after you sign in to a verified GenGrowth account. It needs no Search Console connection or site-ownership verification, crawls same-origin static HTML, and reports observed metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. It gives you observed facts and adaptable guidance, not a score or demand forecast. [Run the SEO Agent](https://gengrowth.ai/agents/seo).
 
 ## Sources
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CrawlPageRecord } from "@sf/sources";
 import { buildSeoAuditPayload, buildSeoAuditReport } from "./model.ts";
+import { isSeoAuditPayload } from "./contract.ts";
 import type { SeoAuditRaw } from "./scan.ts";
 
 function page(
@@ -99,6 +100,54 @@ function byId(report: ReturnType<typeof buildSeoAuditReport>, id: string) {
 }
 
 describe("site-wide SEO audit model", () => {
+  it("accepts only the current complete payload", () => {
+    const current = buildSeoAuditPayload(raw());
+    const stale = {
+      ...current,
+      run: { ...current.run, schemaVersion: "seo_audit.sitewide.v2" },
+    };
+    const malformed = {
+      ...current,
+      result: {
+        ...current.result,
+        coverage: {
+          ...current.result.coverage,
+          pagesInspected: "two",
+        },
+      },
+    };
+
+    expect(isSeoAuditPayload(current)).toBe(true);
+    expect(isSeoAuditPayload(stale)).toBe(false);
+    expect(isSeoAuditPayload(malformed)).toBe(false);
+  });
+
+  it.each([
+    ["affected differs from observations", { tested: 2, affected: 2, state: "observed" }],
+    ["affected exceeds tested", { tested: 0, affected: 1, state: "observed" }],
+    ["observed has no affected observation", { tested: 1, affected: 0, state: "observed" }],
+    ["not_observed has an affected observation", { tested: 1, affected: 1, state: "not_observed" }],
+    ["unverified has an affected observation", { tested: 1, affected: 1, state: "unverified" }],
+  ] as const)("rejects a record whose %s", (_description, contradiction) => {
+    const malformed = structuredClone(buildSeoAuditPayload(raw())) as unknown as {
+      result: {
+        records: Array<{
+          tested: number;
+          affected: number;
+          state: string;
+          observations: unknown[];
+        }>;
+      };
+    };
+    const target = malformed.result.records[0]!;
+    target.tested = contradiction.tested;
+    target.affected = contradiction.affected;
+    target.state = contradiction.state;
+    target.observations = contradiction.affected === 0 ? [] : target.observations;
+
+    expect(isSeoAuditPayload(malformed)).toBe(false);
+  });
+
   it("builds a site-wide, persistence-free audit envelope without advisory fields", () => {
     const payload = buildSeoAuditPayload(raw());
 

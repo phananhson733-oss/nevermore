@@ -1,7 +1,7 @@
 ---
 title: Terms of Service
-version: 1.0
-effectiveDate: 2026-08-07
+version: 1.1
+effectiveDate: 2026-08-12
 status: published
 ---
 
@@ -23,14 +23,21 @@ You may create an account by signing in with Google. You are responsible for
 keeping access to that Google account secure. Tell us promptly if you believe
 your account has been used without your authorisation.
 
+The SEO Agent and Tech Agent require a verified account before a website URL is
+accepted for audit. This account gate does not grant us Gmail mailbox, Search
+Console, or site-ownership access.
+
 We may suspend or close an account that is used in breach of these terms.
 
 ## 3. Free tools and fair use
 
-The free tools are offered without an account and without charge. They run
-against a shared crawl budget, so they are rate limited per visitor and per
-target site, and each run is bounded in the number of pages and the time it may
-take.
+The SEO Agent and Tech Agent are offered without charge but require a verified
+account. Calculators that do not run a website crawl may remain available
+without an account. Website Agent runs use public static HTML only and do not
+require Search Console access or site-ownership verification. They run against
+a shared crawl budget, so they are rate limited per visitor and per target site,
+and each run is bounded in the number of pages and the time it may take. A
+marketing-site Agent run is not saved to an app project.
 
 You agree not to:
 

@@ -18,6 +18,7 @@ const rootShortCodePath = /^\/([a-z0-9][a-z0-9-]{5,79})$/i;
 const reservedRootPaths = new Set([
   "api",
   "about",
+  "agents",
   "blog",
   "compare",
   "contact",
@@ -31,6 +32,7 @@ const reservedRootPaths = new Set([
   "playbooks",
   "pricing",
   "privacy",
+  "resources",
   "robots.txt",
   "sitemap.xml",
   "templates",

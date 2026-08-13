@@ -1,12 +1,12 @@
 ---
 title: Sitemap、robots.txt 与公开 SEO 审计的边界
-excerpt: 了解零账号 SEO 审计能从公开 URL 检查什么、Sitemap 与 robots 检查为何有用，以及一次公开扫描必须在哪些地方停下。
+excerpt: 了解需要已验证账号的 SEO Agent 能从公开静态 HTML 检查什么、Sitemap 与 robots 检查为何有用，以及一次公开扫描必须在哪些地方停下。
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-30
-updatedAt: 2026-07-30
+updatedAt: 2026-08-12
 heroImage: /images/blog/public-seo-audit-boundaries.jpg
 heroImageAlt: 技术线稿插图：一道实心围墙上开着一扇小观察窗，窗内只看得见几个建筑剪影
 localeExclusive: false
@@ -14,18 +14,18 @@ localeExclusive: false
 
 公开 SEO 审计要值得信任，关键在于准确说明边界。只有一个公开 URL 时，工具能检查的是未登录请求能够获取到的内容；它看不到 Search Console 表现、私有服务器日志、转化数据，也看不到需要应用会话才能渲染的全部页面。
 
-这不是缺点，只要范围足够清楚。它可以成为一个小而可复现的起点：检查一个页面和它周围的标准文件。
+这不是缺点，只要范围足够清楚。它可以成为一个有边界且可复现的起点：检查可发现的同源公开静态 HTML 和周围的标准文件。
 
 ## 公开请求实际能检查什么
 
-对可访问 URL，公开审计能读取响应，并检查可见的技术和页面信号。GenGrowth 的免费 SEO 审计检查一个公开页面，并尝试读取站点的 `robots.txt` 与 `sitemap.xml`。结果会把已经测量、无法获取和超出范围的检查分开。
+对可访问 URL，有边界的抓取能读取响应，并检查可见的技术和页面信号。GenGrowth 通过两个独立视图呈现这些事实：SEO Agent 报告已观测的 Metadata、标题结构与结构化数据情况；Tech Agent 报告已观测的抓取、索引性与内链情况。两者都会保留本次采集覆盖范围，以及是否获取到 `robots.txt` 与 `sitemap.xml`。结果会把已经测量、无法获取和超出范围的检查分开。
 
 这足以回答一些实际的第一步问题：
 
 - 提交的 URL 是否返回可访问页面，或发生了跳转？
-- 页面是否有标题、描述、canonical 提示和可见标题？
-- 公开页面是否暴露了值得复核的抓取相关信号？
-- 标准 robots 与 sitemap 路径是可访问、缺失，还是不在本次公开扫描范围内？
+- 静态响应中是否有 Title、Description 与清晰的标题结构？
+- 已采集的技术证据中是否出现静态索引指令、Canonical 或内链情况？
+- 本次是否获取到标准 robots 与 sitemap 资源，或它们不可用、超出有边界扫描范围？
 
 但它不足以断言页面已经收录、能排在某个查询下，或造成了某次流量下降。这些问题需要公开请求并不拥有的数据。
 
@@ -60,4 +60,4 @@ Google 说明 Sitemap 是提供站点认为重要的页面与文件信息的文�
 
 ## 按未回答的问题选择下一件工具
 
-当你想从一个 URL 获得快速公开信号时，运行[免费 SEO 审计](/zh/tools/seo-audit)。当问题是结构性的、需要一张受限关系图时，运行[内链审计](/zh/tools/internal-link-audit)。只有当决策依赖公开请求无法诚实证明的数据时，再进入连接数据源的完整项目。
+当你想对页面信号做一次有边界的检查时，运行 [SEO Agent](/zh/agents/seo)；当问题是结构性的、需要一张受限关系图时，运行 [Tech Agent](/zh/agents/tech)。两者都需要已验证的 GenGrowth 账号，只读取公开静态 HTML，无需 Search Console 或站点所有权权限，本次营销站运行也不会保存到 App 项目。只有当决策依赖公开请求无法诚实证明的数据时，再进入连接数据源的完整项目。

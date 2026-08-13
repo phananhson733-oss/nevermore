@@ -1,12 +1,15 @@
 # GenGrowth marketing application
 
-`apps/marketing` contains the public `gengrowth.ai` experience migrated from
-the former `gengrowth-agents` repository. It is intentionally separate from
-`apps/web`: the latter remains the authenticated SignalFrame product workbench,
-while this app owns the public website, locale routing, SEO metadata, content
-pages and calculators. Product CTAs go to `https://app.gengrowth.ai`; this
-marketing deployment does not operate a separate trial or waitlist capture
-system.
+`apps/marketing` contains the `gengrowth.ai` acquisition experience migrated
+from the former `gengrowth-agents` repository. It is intentionally separate
+from `apps/web`: the latter remains the canonical authenticated GenGrowth
+product workbench, while this app owns the website, locale routing, SEO
+metadata, content pages, supporting public tools, and the registration-gated
+SEO / Tech Agent acquisition surfaces. Agent runs on this host are bounded,
+non-canonical and non-persistent; they do not create an app project or claim an
+app analysis run occurred. Product-workbench CTAs still go to
+`https://app.gengrowth.ai`; this marketing deployment does not operate a
+separate trial or waitlist capture system.
 
 ## Local development
 
@@ -22,10 +25,28 @@ Node.js 24.x. The public app must not be deployed from `apps/web`, which is the
 authenticated product app.
 
 Set `BLOG_LEGACY_SUPABASE_ENABLED=false` for Preview and Production after the
-legacy blog migration is verified. No Supabase or Resend credentials are needed
-for the present public-site release. Do not copy the authenticated-product
-environment variables into this project merely because both applications share
-a repository.
+legacy blog migration is verified. The current marketing application does need
+its own explicitly provisioned Supabase/Auth and public-tool infrastructure:
+
+- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the
+  Google/Supabase session used by registration-gated Agent routes;
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` for the existing Google Identity button;
+- `SESSION_COOKIE_DOMAIN=gengrowth.ai` in production when one Supabase session
+  is intentionally shared with `app.gengrowth.ai`;
+- the marketing deployment's existing server-side Supabase configuration for
+  durable public-tool quota and completed-crawl cache RPCs.
+
+Do not copy unrelated authenticated-product secrets into this project merely
+because both applications share a repository. In particular, the marketing
+site's sealed `gg_*` Google/Search Console cookies are host-scoped and are not
+app authentication or app workspace authority. Resend is not required while
+lead capture remains disabled.
+
+The Agent access gate is the Supabase user returned by
+`supabase.auth.getUser()`, checked before request parsing or crawl admission.
+Google sign-in requests identity data only; it is not Gmail mailbox access.
+The implementation and acceptance boundary is recorded in
+[`docs/plans/2026-08-12-marketing-seo-tech-agents-mvp.md`](plans/2026-08-12-marketing-seo-tech-agents-mvp.md).
 
 Until a new, migrated lead-capture data contract and email sender have been
 explicitly enabled, `/api/contact`, `/api/trial` and `/api/waitlist` deliberately

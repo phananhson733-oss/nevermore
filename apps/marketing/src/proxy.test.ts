@@ -1,6 +1,6 @@
 // @input  — proxy()、NextRequest
-// @output — 无前缀默认语言路径不被浏览器语言/cookie 劫持的回归测试
-// @pos    — i18n 路由边界测试，锁住 as-needed 前缀规则下的重定向行为
+// @output — 默认语言、Agents / Resources 与短链保留路径的路由回归测试
+// @pos    — i18n / 短链边界测试，锁住 as-needed 前缀与一级 IA 路径
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
@@ -111,4 +111,18 @@ describe("proxy internal-rewrite guard", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
   });
+});
+
+describe("proxy primary-directory route reservation", () => {
+  it.each(["/agents", "/agents/seo", "/resources", "/tools"])(
+    "keeps %s in locale routing instead of the short-link handler",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-middleware-rewrite")).toContain(
+        `/en${path}`,
+      );
+      expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
+    },
+  );
 });

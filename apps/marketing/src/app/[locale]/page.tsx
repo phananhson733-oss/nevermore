@@ -1,6 +1,6 @@
 // @input  — URL locale, localized messages, homepage JSON-LD and client view
 // @output — statically rendered localized marketing homepage
-// @pos    — [locale] 下的免费工具与产品工作流入口
+// @pos    — [locale] 下的账号门槛 Agent 审计与产品工作流入口
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 import { generatePageMetadata } from "@/lib/seo";
 import { NextIntlClientProvider } from "next-intl";
@@ -25,8 +25,8 @@ export async function generateMetadata({
         : "从诊断到行动的证据驱动 SEO 增长系统",
     description:
       locale === "en"
-        ? "Free SEO diagnostics and a connected workflow for keyword research, site structure, internal links, and authority building."
-        : "免费 SEO 诊断，以及串联关键词研究、网站结构、内链与外链建设的增长工作流。",
+        ? "Run independent SEO and Tech URL audit Agents after verifying a GenGrowth account. No payment, Search Console connection, site-ownership check, or saved run history."
+        : "验证 GenGrowth 账号后，独立运行 SEO 与 Tech URL 审计 Agent；无需付费、连接 Search Console、验证站点所有权，也不会保存运行历史。",
     locale,
     path: "",
   });

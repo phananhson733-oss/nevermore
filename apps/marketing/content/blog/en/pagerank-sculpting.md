@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-07
+updatedAt: 2026-08-12
 heroImage: /images/blog/pagerank-sculpting.jpg
 heroImageAlt: A five-lane toll plaza seen head-on, one lane shut off by a lowered barrier, the queues at the four open lanes all exactly the same length.
 localeExclusive: true
@@ -116,7 +116,7 @@ Google Search Central now documents three link attributes — sponsored for paid
 
 ## Take Action
 
-[Run a Free Internal Link Audit](https://gengrowth.ai/tools/internal-link-audit) on your site. One crawl of your public HTML returns candidate orphan pages (sitemap URLs the crawl never reached by following internal links), pages with one or fewer observed inbound links, unresolved link targets flagged for a follow-up check, and the shortest observed click path from your homepage. No login and no Search Console connection are required; a single run covers roughly 950 pages within a four-minute boundary, and a larger site comes back marked partial coverage. It will not confirm that a link is broken — that stays a manual verification step — and it is not a PageRank calculation. What it gives you is an observed link graph to reason from instead of assumptions.
+[Run the Tech Agent](https://gengrowth.ai/agents/tech) on your site. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. One crawl of public static HTML returns observed crawl, indexability, and internal-link conditions, including candidate orphan pages and collected error targets. The marketing run is not saved to an app project. A single run covers roughly 950 pages within a four-minute boundary, and a larger site comes back marked partial coverage. It will not classify an uncollected link as broken, and it is not a PageRank calculation. What it gives you is an observed link graph to reason from instead of assumptions.
 
 ## Sources
 

@@ -1,13 +1,13 @@
-// @input  -- public POST JSON body with one website URL
-// @output -- language-neutral synchronous SEO Audit report or stable error envelope
-// @pos    -- thin Next.js boundary over the shared Public Tools handler
+// @input  -- authenticated POST JSON body with one website URL
+// @output -- projected SEO Agent audit evidence or shared auth/upstream errors
+// @pos    -- compatibility boundary over the shared authenticated Agent handler
 
-import { handleSeoAuditRequest } from "@/lib/tools/seo-audit-handler";
+import { handleAgentAuditRequest } from "../../../../lib/agents/audit-handler.ts";
 
 export const runtime = "nodejs";
 /** The crawler caps itself at 240 seconds; this leaves response headroom. */
 export const maxDuration = 300;
 
 export async function POST(request: Request): Promise<Response> {
-  return handleSeoAuditRequest(request);
+  return handleAgentAuditRequest(request, "seo");
 }

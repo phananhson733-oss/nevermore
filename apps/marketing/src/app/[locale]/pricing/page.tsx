@@ -25,8 +25,8 @@ export async function generateMetadata({
     title: tNav("pricing"),
     description:
       locale === "en"
-        ? "Use GenGrowth's free SEO diagnostics, then move into a connected workflow for research, structure, internal links, authority, and measurement."
-        : "先使用 GenGrowth 的免费 SEO 诊断，再进入串联研究、网站结构、内链、权威建设与衡量的完整工作流。",
+        ? "Run GenGrowth SEO and Tech URL audits after account verification, without payment, Search Console, site-ownership verification, or saved run history."
+        : "验证账号后运行 GenGrowth SEO 与 Tech URL 审计；无需付费、连接 Search Console、验证站点所有权，也不会保存运行历史。",
     locale,
     path: "/pricing",
   });

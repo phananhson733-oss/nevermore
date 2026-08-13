@@ -149,7 +149,7 @@ const EN: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "Does this work without Search Console?",
         answer:
-          "No. It reads your own site's private search performance data, which only Search Console has. For a tool that works on any public URL with no login, use the Free SEO Audit.",
+          "No. It reads your own site's private search performance data, which only Search Console has. For a public-HTML review that needs no Search Console connection, use SEO Agent; a verified GenGrowth account is required before its crawl.",
       },
       {
         question: "What access do you need?",
@@ -450,7 +450,7 @@ const ZH: Record<ConnectedTool, ConnectedToolContent> = {
       {
         question: "不连 Search Console 能用吗？",
         answer:
-          "不能。它读的是只有 Search Console 才有的、你自己网站的私有搜索表现数据。如果你要一个对任意公开 URL 都能跑、无需登录的工具，请用免费 SEO 审计。",
+          "不能。它读的是只有 Search Console 才有的、你自己网站的私有搜索表现数据。如果要检查公开 HTML 且不连接 Search Console，请使用 SEO Agent；抓取前必须验证 GenGrowth 账号。",
       },
       {
         question: "你们需要什么权限？",
