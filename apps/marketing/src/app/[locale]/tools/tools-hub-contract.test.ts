@@ -23,4 +23,11 @@ describe("Tools hub Agent boundary", () => {
     expect(slugs).not.toContain("seo-audit");
     expect(slugs).not.toContain("internal-link-audit");
   });
+
+  it("keeps the full-product CTA on the marketing waitlist rather than the app", () => {
+    const source = readFileSync(HUB_PAGE, "utf8");
+
+    expect(source).toContain('localePath(locale, "/waitlist")');
+    expect(source).not.toContain("siteConfig.appUrl");
+  });
 });

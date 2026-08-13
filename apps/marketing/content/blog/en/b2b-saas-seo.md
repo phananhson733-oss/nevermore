@@ -103,7 +103,7 @@ No. Because the model prioritizes by funnel stage, a small team can start with t
 
 ## Take Action
 
-If you want a B2B SaaS SEO program mapped to your actual trial or freemium funnel rather than a generic content calendar, gengrowth.ai can help you build it stage by stage. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will map your funnel, match each stage to the right content pattern, and set the activation metric that proves it is working — no pressure, just a clear read on where your organic funnel leaks today.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

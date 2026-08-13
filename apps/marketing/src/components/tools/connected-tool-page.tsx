@@ -5,15 +5,14 @@ import { ArrowRight, CheckCircle2, Database, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
 // aliased imports would make this file untestable from the unit project.
-import { siteConfig } from "../../config/site";
 import type { ConnectedToolContent } from "./connected-tool-content";
 import { localePath } from "../../lib/locale-path";
 
 /**
  * Tools whose Google grant starts on this page. Their hero CTA must open the
- * OAuth flow and return here — handing off to the app home drops both the
+ * OAuth flow and return here — handing off elsewhere drops both the
  * requested scope and the way back to the tool. Everything else keeps the
- * product hand-off.
+ * marketing waitlist hand-off.
  */
 const GSC_CONNECT_PATHS: ReadonlySet<string> = new Set([
   "/tools/seo-quick-wins",
@@ -60,7 +59,7 @@ export function ConnectedToolPage({
     ? `/api/auth/google/start?scope=gsc&next=${encodeURIComponent(
         localePath(locale, content.path),
       )}`
-    : siteConfig.appUrl;
+    : localePath(locale, "/waitlist");
 
   return (
     /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */

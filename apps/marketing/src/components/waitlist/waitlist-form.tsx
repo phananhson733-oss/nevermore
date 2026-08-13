@@ -1,12 +1,11 @@
-// @input  — next-intl, ui/button, ui/input, ui/label, waitlist-profile-step, /api/waitlist；可选 source 归因与文案覆盖
+// @input  — next-intl, ui/button, ui/input, ui/label, waitlist-profile-step, /api/waitlist；可选 source 归因
 // @output — WaitlistForm 组件（邮箱提交 + 渐进补充资料）
-// @pos    — Waitlist 核心表单，支持两步流程，SPEC 2.4.2；工具页可传 copy 覆盖成功/提交文案
+// @pos    — Waitlist 核心表单，支持两步流程，SPEC 2.4.2
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,25 +15,14 @@ import { WaitlistProfileStep } from "./waitlist-profile-step";
 type Step = "email" | "profile" | "done";
 
 interface WaitlistFormProps {
-  onSuccess: () => void;
+  onSuccess?: () => void;
   /** Recorded with the signup so the list can be segmented by entry point. */
   source?: string;
-  /**
-   * Copy overrides for surfaces whose promise differs from the product
-   * waitlist (e.g. a tool-specific "we will email you when it opens").
-   * Untouched keys keep the shared `waitlist` namespace copy.
-   */
-  copy?: {
-    readonly submit?: string;
-    readonly successTitle?: string;
-    readonly successDesc?: string;
-  };
 }
 
 export function WaitlistForm({
   onSuccess,
   source = "website",
-  copy,
 }: WaitlistFormProps) {
   const t = useTranslations("waitlist");
   const locale = useLocale();
@@ -45,7 +33,6 @@ export function WaitlistForm({
   const [loading, setLoading] = useState(false);
   const [subscriberId, setSubscriberId] = useState<string | null>(null);
 
-  // Profile fields
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
@@ -74,15 +61,13 @@ export function WaitlistForm({
         return;
       }
 
-      // A null id means the email was already on the list (the API keeps the
-      // two cases indistinguishable); there is no row to attach a profile to.
       const id = json.data?.id || null;
       setSubscriberId(id);
       if (id) {
         setStep("profile");
       } else {
         setStep("done");
-        onSuccess();
+        onSuccess?.();
       }
     } catch {
       setError(t("genericError"));
@@ -95,7 +80,7 @@ export function WaitlistForm({
     e.preventDefault();
     if (!subscriberId) {
       setStep("done");
-      onSuccess();
+      onSuccess?.();
       return;
     }
 
@@ -115,12 +100,12 @@ export function WaitlistForm({
     }
 
     setStep("done");
-    onSuccess();
+    onSuccess?.();
   };
 
   const handleSkip = () => {
     setStep("done");
-    onSuccess();
+    onSuccess?.();
   };
 
   if (step === "done") {
@@ -130,10 +115,10 @@ export function WaitlistForm({
           <CheckCircle className="size-[18px]" aria-hidden="true" />
         </span>
         <h3 className="mb-2 text-[16.5px] font-semibold text-text-dark-primary">
-          {copy?.successTitle ?? t("successTitle")}
+          {t("successTitle")}
         </h3>
         <p className="text-[13px] leading-[1.6] text-text-dark-secondary">
-          {copy?.successDesc ?? t("successDesc")}
+          {t("successDesc")}
         </p>
       </div>
     );
@@ -155,7 +140,6 @@ export function WaitlistForm({
     );
   }
 
-  // Step: email
   return (
     <form onSubmit={handleEmailSubmit} className="space-y-5 py-2">
       <div>
@@ -198,7 +182,7 @@ export function WaitlistForm({
         aria-busy={loading}
         className="w-full"
       >
-        {loading ? t("submitting") : (copy?.submit ?? t("submit"))}
+        {loading ? t("submitting") : t("submit")}
       </Button>
     </form>
   );

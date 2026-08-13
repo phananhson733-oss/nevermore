@@ -109,7 +109,7 @@ A full audit at onboarding and a lighter health check each reporting cycle tends
 
 ## Take Action
 
-Run your first audit inside one workspace and let it produce a prioritized, client-ready report instead of a flat checklist. [Start your free GenGrowth trial](https://app.gengrowth.ai/) to audit a profile, separate local pack signals from organic ones, and export the findings in minutes. Once the diagnosis and the report live in the same place, the deciding question stops being which tool to buy and becomes which fix to ship first.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

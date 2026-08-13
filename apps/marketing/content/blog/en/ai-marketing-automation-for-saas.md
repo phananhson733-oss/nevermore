@@ -167,12 +167,12 @@ content review and operational metadata review.
 
 ## Where GenGrowth currently fits
 
-Within this repository, GenGrowth's marketing site and connected product are
-intentionally separate. The public `gengrowth.ai` site owns content, SEO
-metadata, resources, and focused Agent entry points; product CTAs open
-`app.gengrowth.ai`, and the marketing deployment does not run a separate live
-waitlist or trial capture system. That boundary matters for this topic because
-it keeps content marketing promises aligned with the active product surface.
+Within this repository, GenGrowth's public site owns content, SEO metadata,
+resources, focused Agent entry points, and the access waitlist. The broader
+product is not currently open, so public product CTAs stay on `gengrowth.ai`
+and invite readers to request an email when access opens. That boundary matters
+for this topic because it keeps content marketing promises aligned with the
+surface that is actually available.
 
 As of August 13, 2026, the most credible description of GenGrowth is not "fully
 autonomous marketing." The marketing site offers a registration-gated
@@ -182,8 +182,8 @@ static indexability, and internal-link review. A verified session authorizes
 the run, but neither Agent saves it to an app project or claims traffic impact.
 You can inspect the evidence boundary in
 [Sitemaps, robots.txt, and the Limits of a Public SEO Audit](/blog/public-seo-audit-boundaries),
-then continue in the connected product when a decision requires project context
-and connected sources.
+then join the [access waitlist](/waitlist) if you want to hear when broader
+product access opens.
 
 That is a better operating model for a SaaS team than pretending every content
 and conversion decision can be delegated to one opaque agent.
@@ -199,3 +199,19 @@ That approach is less flashy than "fully autonomous growth." It is also much
 more likely to survive contact with real SaaS operations, where unsupported
 claims, broken tracking, and ambiguous attribution are more expensive than slow
 drafting.
+
+## Take Action
+
+Start with one bounded review before you automate the rest. [Run the SEO Agent](/agents/seo)
+on a public landing-page cluster, verify the observed metadata, heading, and
+structured-data conditions, then decide which parts of the workflow deserve
+automation next. The marketing run requires a verified account, stays on the
+marketing domain, and does not save the result to an app project.
+
+## Sources
+
+- [Google Search Console API overview](https://developers.google.com/webmaster-tools/about) — official Search Console API scope and capability reference, accessed August 13, 2026
+- [Google Search Console getting-started guide](https://developers.google.com/search/docs/monitor-debug/search-console-start) — official Search Console operational boundary reference, accessed August 13, 2026
+- [Google Analytics attribution overview](https://support.google.com/analytics/answer/10596866) — official Analytics attribution-model overview, accessed August 13, 2026
+- [Google Analytics traffic-source dimensions, manual tagging, and auto-tagging](https://support.google.com/analytics/answer/11242870?hl=en) — official UTM and tagging guidance, accessed August 13, 2026
+- [Search Console API usage limits](https://developers.google.com/webmaster-tools/limits) — official Search Console API quota and limit reference, accessed August 13, 2026

@@ -22,7 +22,7 @@ describe("marketing redirects", () => {
   it("keeps the retired marketing app path from returning 404", () => {
     expect(redirects).toContainEqual({
       source: "/app",
-      destination: "https://app.gengrowth.ai/",
+      destination: "/waitlist",
       statusCode: 301,
     });
   });
@@ -51,7 +51,7 @@ describe("marketing redirects", () => {
     ["free-white-label-seo", "best-white-label-seo-tool"],
     ["marketing-attribution-for-saas", "marketing-attribution-models"],
     ["serankings", "serankings-alternative"],
-    ["astrologywiki-zero-to-5000-users", "astrologywiki-case-study"],
+    ["astrologywiki-case-study", "astrologywiki-zero-to-5000-users"],
   ])("redirects the retired %s slug in one hop", (source, destination) => {
     for (const prefix of ["", "/en"]) {
       expect(redirects).toContainEqual({
@@ -63,13 +63,7 @@ describe("marketing redirects", () => {
   });
 
   it.each([
-    ["/en/features", "/pricing"],
-    ["/en/about", "/pricing"],
-    ["/en/templates", "/blog"],
     ["/en/compare", "/blog#comparisons"],
-    ["/en/use-cases", "/blog"],
-    ["/en/playbooks", "/blog"],
-    ["/en/glossary", "/blog"],
     ["/en/tools/seo-audit", "/agents/seo"],
     ["/en/tools/internal-link-audit", "/agents/tech"],
   ])(
@@ -82,7 +76,7 @@ describe("marketing redirects", () => {
   it("implements every reviewed target override as an explicit one-hop redirect", () => {
     for (const entry of LEGACY_EN_MIGRATION_ENTRIES) {
       const strippedPath = entry.legacyPath.slice("/en".length) || "/";
-      if (entry.targetPath === strippedPath) continue;
+      if (!entry.targetPath || entry.targetPath === strippedPath) continue;
 
       expect(redirects, entry.legacyPath).toContainEqual({
         source: entry.legacyPath,
@@ -90,5 +84,16 @@ describe("marketing redirects", () => {
         statusCode: 301,
       });
     }
+  });
+
+  it.each([
+    "/en/about",
+    "/en/features",
+    "/en/glossary",
+    "/en/playbooks",
+    "/en/templates",
+    "/en/use-cases",
+  ])("does not mask the proxy's 410 for %s with a redirect", (source) => {
+    expect(redirects.some((entry) => entry.source === source)).toBe(false);
   });
 });

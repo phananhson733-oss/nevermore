@@ -93,7 +93,7 @@ Fundamentals-based work generally survives and often benefits from updates, sinc
 
 ## Take Action
 
-If you are weighing cheap SEO options and want a clear read on which tactics will compound versus which will reset, we are glad to help you think it through. [Book a free GenGrowth consultation](https://app.gengrowth.ai/), and we will walk through your goals, your budget, and a fundamentals-first plan you can trust.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

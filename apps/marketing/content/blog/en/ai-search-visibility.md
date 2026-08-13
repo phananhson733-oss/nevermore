@@ -101,7 +101,7 @@ Monthly fits most agency reporting cycles. Add a spot check any time a client sh
 
 ## Take Action
 
-Set up your first answer audit in an afternoon: [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run one client's real buyer questions across the major AI systems in a single place. You'll come away with a baseline that shows exactly where they're named and where they're missing — the raw material for the next client report. Once that gap is on the page, the renewal conversation shifts from defending old rankings to showing a client a slice of the market their last agency never reported on at all. That single reframe — from a defensive number into a visible gap the client can act on — is often what turns a routine renewal into an upsell.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

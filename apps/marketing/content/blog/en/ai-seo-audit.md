@@ -98,7 +98,7 @@ No. A clean report removes blockers, but rankings still depend on content depth,
 
 ## Take Action
 
-Run one site through GenGrowth and let it sort your issues into machine-owned fixes and human calls in a single pass — [Start your free GenGrowth trial](https://app.gengrowth.ai/) to get that split for your own pages. You will walk away with a prioritized issue list plus a clear line marking where automation stops and your strategist takes over. That boundary is the real payoff: it is what lets a small team scale content and technical hygiene without adding a head for every new client.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

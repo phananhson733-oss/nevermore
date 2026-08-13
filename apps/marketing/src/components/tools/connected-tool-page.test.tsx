@@ -66,7 +66,7 @@ describe("ConnectedToolPage hero CTA", () => {
     expect(markup).not.toContain("https://app.gengrowth.ai");
   });
 
-  it("still hands off to the product for a tool with no Google grant", () => {
+  it("sends a tool with no Google grant to the marketing waitlist", () => {
     // Every tool in the union is GSC-backed now, so the hand-off branch has no
     // live case and would rot unseen. Rendered from a synthetic path to keep
     // the branch exercised for whichever tool arrives next.
@@ -79,7 +79,7 @@ describe("ConnectedToolPage hero CTA", () => {
         }}
       />,
     );
-    expect(markup).toContain('href="https://app.gengrowth.ai"');
+    expect(markup).toContain('href="/waitlist"');
     expect(markup).not.toContain("/api/auth/google/start");
   });
 

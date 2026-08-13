@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 describe("frozen legacy English migration inventory", () => {
-  it("contains the 95 proven pre-cutover URLs exactly once", async () => {
+  it("contains the auditable cutover-plus-repair inventory exactly once", async () => {
     const { LEGACY_EN_MIGRATION_ENTRIES } = await import(
       "./legacy-en-migration.ts"
     );
@@ -10,8 +10,8 @@ describe("frozen legacy English migration inventory", () => {
       (entry) => entry.legacyPath,
     );
 
-    expect(legacyPaths).toHaveLength(95);
-    expect(new Set(legacyPaths).size).toBe(95);
+    expect(legacyPaths).toHaveLength(162);
+    expect(new Set(legacyPaths).size).toBe(162);
     expect(
       legacyPaths.every(
         (legacyPath) =>
@@ -25,36 +25,118 @@ describe("frozen legacy English migration inventory", () => {
       legacyPaths.filter((legacyPath) => legacyPath.startsWith("/en/blog/")),
     ).toHaveLength(75);
     expect(
-      legacyPaths.filter((legacyPath) => !legacyPath.startsWith("/en/blog/")),
-    ).toHaveLength(20);
+      legacyPaths.filter((legacyPath) => legacyPath.startsWith("/en/glossary/")),
+    ).toHaveLength(50);
+    expect(
+      legacyPaths.filter((legacyPath) => legacyPath.startsWith("/en/compare/")),
+    ).toHaveLength(4);
+    expect(
+      legacyPaths.filter((legacyPath) => legacyPath.startsWith("/en/playbooks/")),
+    ).toHaveLength(6);
+    expect(
+      legacyPaths.filter((legacyPath) => legacyPath.startsWith("/en/use-cases/")),
+    ).toHaveLength(4);
+    expect(legacyPaths).toContain("/en/tools/ab-test-calculator");
+    expect(legacyPaths).toContain("/en/tools/growth-roi-calculator");
+    expect(legacyPaths).toContain("/en/tools/hidden-keywords");
+
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.filter(
+        (entry) => entry.disposition === "gone",
+      ),
+    ).toHaveLength(75);
 
     // Count and shape alone do not pin membership: one reviewed URL could be
     // replaced by an arbitrary /en path and still pass. This digest freezes
-    // both the reviewed source set and its final destinations without copying
-    // the 95-row authority into the test.
+    // membership, final outcome, migration cohort, and provenance.
     const frozenInventoryDigest = createHash("sha256")
       .update(
         LEGACY_EN_MIGRATION_ENTRIES.map(
-          (entry) => `${entry.legacyPath}\t${entry.targetPath}`,
+          (entry) =>
+            [
+              entry.legacyPath,
+              entry.targetPath ?? "[gone]",
+              entry.disposition,
+              entry.migrationDate,
+              entry.provenance,
+            ].join("\t"),
         )
           .sort()
           .join("\n"),
       )
       .digest("hex");
     expect(frozenInventoryDigest).toBe(
-      "c31abf0f2e5b5379cd3d7d4f79152830c387c0e06df5235faf02d997f800b9e9",
+      "163b066b2eb30662382cc35fd4d5ab7bb994f7beecb3989068a44f21d39571a7",
     );
   });
 
-  it("maps every legacy URL to an unprefixed final target", async () => {
+  it("maps every legacy URL to a recorded disposition, target, and migration cohort", async () => {
     const { LEGACY_EN_MIGRATION_ENTRIES } = await import(
       "./legacy-en-migration.ts"
     );
 
     for (const entry of LEGACY_EN_MIGRATION_ENTRIES) {
-      expect(entry.targetPath, entry.legacyPath).toMatch(/^\//u);
-      expect(entry.targetPath, entry.legacyPath).not.toMatch(/^\/en(?:\/|$)/u);
+      if (entry.disposition === "gone") {
+        expect(entry.targetPath, entry.legacyPath).toBeNull();
+      } else {
+        expect(entry.targetPath, entry.legacyPath).toMatch(/^\//u);
+        expect(entry.targetPath, entry.legacyPath).not.toMatch(
+          /^\/en(?:\/|$)/u,
+        );
+      }
+      expect(entry.disposition, entry.legacyPath).toMatch(
+        /^(direct_redirect|replacement_redirect|recovered_redirect|gone)$/u,
+      );
+      expect(entry.migrationDate, entry.legacyPath).toMatch(
+        /^(?:2026-07-31|2026-08-13)$/u,
+      );
     }
+
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/blog/gengrowth-vs-improvado",
+      ),
+    ).toMatchObject({
+      targetPath: "/blog/gengrowth-vs-improvado",
+      disposition: "recovered_redirect",
+      migrationDate: "2026-08-13",
+    });
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/glossary/backlink-profile",
+      ),
+    ).toMatchObject({
+      targetPath: null,
+      disposition: "gone",
+      migrationDate: "2026-08-13",
+    });
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/compare",
+      ),
+    ).toMatchObject({
+      targetPath: "/blog#comparisons",
+      disposition: "replacement_redirect",
+      migrationDate: "2026-08-13",
+    });
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/tools/seo-audit",
+      ),
+    ).toMatchObject({
+      targetPath: "/agents/seo",
+      disposition: "replacement_redirect",
+      migrationDate: "2026-08-13",
+    });
+    expect(
+      LEGACY_EN_MIGRATION_ENTRIES.find(
+        (entry) => entry.legacyPath === "/en/blog/gengrowth-vs-okara",
+      ),
+    ).toMatchObject({
+      targetPath: null,
+      disposition: "gone",
+      migrationDate: "2026-08-13",
+    });
   });
 
   it("excludes pages first published after the locale cutover", async () => {
@@ -68,6 +150,7 @@ describe("frozen legacy English migration inventory", () => {
     for (const postCutoverPath of [
       "/en/blog/how-to-find-low-hanging-fruit-keywords",
       "/en/blog/pagerank-sculpting",
+      "/en/blog/seo-content-clusters-draft",
       "/en/blog/striking-distance-keywords",
       "/en/blog/zero-search-volume-keywords",
       "/en/tools/low-competition-keywords",

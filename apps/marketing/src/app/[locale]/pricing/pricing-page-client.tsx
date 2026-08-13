@@ -1,4 +1,4 @@
-// @input  -- next-intl, next/link, framer-motion, site config
+// @input  -- next-intl, next/link, framer-motion
 // @output -- pricing-positioning page with account-gated, payment-free Agent entry
 // @pos    -- pricing route's truthful access and persistence boundary
 "use client";
@@ -7,7 +7,6 @@ import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "framer-motion";
 import { useLocale, useTranslations } from "next-intl";
-import { siteConfig } from "@/config/site";
 import { fadeInUp } from "@/lib/animations";
 import { PricingFaq } from "./pricing-faq";
 import { localePath } from "@/lib/locale-path";
@@ -109,7 +108,7 @@ export default function PricingPageClient() {
               </p>
             </div>
             <a
-              href={siteConfig.appUrl}
+              href={localePath(locale, "/waitlist")}
               className="mt-7 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors hover:text-brand-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {tProduct("cta")}

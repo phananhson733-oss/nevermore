@@ -3,6 +3,7 @@ import createIntlMiddleware from "next-intl/middleware";
 // Relative import, not the `@/` alias: the shared Vitest config maps `@/` to
 // apps/web only, so an aliased import here would not resolve in proxy.test.ts.
 import { routing } from "./i18n/routing";
+import { getRetiredMarketingRouteDisposition } from "./retired-marketing-routes";
 
 const intlMiddleware = createIntlMiddleware(routing);
 const localeGoPath = /^\/(?:en|zh)\/go(?:\/|$)/;
@@ -39,6 +40,7 @@ const reservedRootPaths = new Set([
   "terms",
   "tools",
   "use-cases",
+  "waitlist",
   "zh",
 ]);
 
@@ -49,6 +51,19 @@ function rootShortCode(pathname: string): string | null {
   return reservedRootPaths.has(code) ? null : code;
 }
 
+function goneResponse(): NextResponse {
+  return new NextResponse(
+    `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>410 Gone</title></head><body><main><h1>410 Gone</h1><p>This retired marketing route no longer has a public equivalent.</p></main></body></html>`,
+    {
+      status: 410,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+      },
+    },
+  );
+}
+
 /**
  * Public boundary for the marketing app. Marketing pages use locale routing
  * with the default locale unprefixed; API and short-link routes remain
@@ -56,6 +71,17 @@ function rootShortCode(pathname: string): string | null {
  */
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
+  const retiredDisposition = getRetiredMarketingRouteDisposition(pathname);
+  if (retiredDisposition?.kind === "gone") {
+    return goneResponse();
+  }
+  if (retiredDisposition?.kind === "redirect") {
+    return NextResponse.redirect(
+      new URL(retiredDisposition.location, request.url),
+      308,
+    );
+  }
+
   if (
     pathname.startsWith("/api/") ||
     pathname === "/go" ||

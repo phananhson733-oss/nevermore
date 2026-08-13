@@ -102,7 +102,7 @@ It stops at prediction. This is a lens for weighing confirmed signals against sp
 
 ## Take Action
 
-Build your own confirmed-versus-rumored slate table for the releases you track, and you'll have a one-page decision sheet that tells you exactly which buys are documented and which are guesses. If Sony Playstation Physical Games Strategy 2026 is a recurring tracking problem for your team, gengrowth.ai can help you structure that workflow in one place. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and turn rumor-led buying into a documented review loop before the next slate shift catches you flat-footed.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

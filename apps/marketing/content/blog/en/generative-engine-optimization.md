@@ -104,7 +104,7 @@ These pages go deeper on the pieces this guide only touches:
 
 ## Take Action
 
-[Start your free GenGrowth trial](https://app.gengrowth.ai/) and connect one client site to track classic rankings and AI citations in a single view. Within a reporting cycle you will have one branded report showing where positions moved and whether generative engine optimization is putting your client into AI answers — which is the difference between reporting activity and reporting the visibility clients actually pay for.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

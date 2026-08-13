@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "./proxy.ts";
+import { LEGACY_EN_MIGRATION_ENTRIES } from "./lib/legacy-en-migration.ts";
 
 const zhBrowser = { "accept-language": "zh-CN,zh;q=0.9,en;q=0.8" };
 
@@ -114,7 +115,7 @@ describe("proxy internal-rewrite guard", () => {
 });
 
 describe("proxy primary-directory route reservation", () => {
-  it.each(["/agents", "/agents/seo", "/resources", "/tools"])(
+  it.each(["/agents", "/agents/seo", "/resources", "/tools", "/waitlist"])(
     "keeps %s in locale routing instead of the short-link handler",
     (path) => {
       const response = proxy(request(path));
@@ -125,4 +126,90 @@ describe("proxy primary-directory route reservation", () => {
       expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
     },
   );
+});
+
+describe("proxy retired marketing routes", () => {
+  const frozenGonePaths = LEGACY_EN_MIGRATION_ENTRIES.filter(
+    (entry) => entry.disposition === "gone",
+  ).map((entry) => entry.legacyPath);
+
+  it.each(frozenGonePaths)(
+    "matches the frozen B1 gone disposition for %s",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.status).toBe(410);
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
+
+  it.each([
+    "/about",
+    "/en/about",
+    "/zh/about",
+    "/features",
+    "/en/features",
+    "/zh/features",
+    "/templates",
+    "/en/templates",
+    "/zh/templates",
+    "/glossary",
+    "/en/glossary/backlink-profile",
+    "/zh/glossary/bounce-rate",
+    "/playbooks",
+    "/en/playbooks",
+    "/zh/playbooks",
+    "/playbooks/onboarding-plan",
+    "/en/playbooks/onboarding-plan",
+    "/zh/playbooks/onboarding-plan",
+    "/use-cases",
+    "/en/use-cases",
+    "/zh/use-cases",
+    "/use-cases/customer-onboarding",
+    "/en/use-cases/customer-onboarding",
+    "/zh/use-cases/customer-onboarding",
+    "/compare/okara-ai-cmo",
+    "/en/compare/okara-ai-cmo",
+    "/zh/compare/okara-ai-cmo",
+    "/tools/ab-test-calculator",
+    "/en/tools/ab-test-calculator",
+    "/zh/tools/ab-test-calculator",
+    "/tools/growth-roi-calculator",
+    "/en/tools/growth-roi-calculator",
+    "/zh/tools/growth-roi-calculator",
+    "/blog/gengrowth-vs-blaze",
+    "/en/blog/gengrowth-vs-cometly",
+    "/blog/gengrowth-vs-okara",
+  ])("answers 410 for retired route %s", (path) => {
+    const response = proxy(request(path));
+    expect(response.status).toBe(410);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it.each([
+    ["/compare", "https://gengrowth.ai/blog#comparisons"],
+    ["/en/compare", "https://gengrowth.ai/blog#comparisons"],
+    ["/zh/compare", "https://gengrowth.ai/zh/blog#comparisons"],
+    ["/tools/seo-audit", "https://gengrowth.ai/agents/seo"],
+    ["/en/tools/seo-audit", "https://gengrowth.ai/agents/seo"],
+    ["/zh/tools/seo-audit", "https://gengrowth.ai/zh/agents/seo"],
+    ["/tools/internal-link-audit", "https://gengrowth.ai/agents/tech"],
+    ["/en/tools/internal-link-audit", "https://gengrowth.ai/agents/tech"],
+    ["/zh/tools/internal-link-audit", "https://gengrowth.ai/zh/agents/tech"],
+  ] as const)("keeps exact semantic redirect for %s", (path, location) => {
+    const response = proxy(request(path));
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(location);
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it.each(["/", "/contact", "/privacy", "/terms", "/cookies", "/copyright"])(
+    "does not retire live route %s",
+    (path) => {
+      const response = proxy(request(path));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
+
 });

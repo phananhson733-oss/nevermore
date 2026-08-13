@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe("GoogleSignInButton fallback", () => {
-  it("opens app login in a separate, non-opener tab when GSI is unavailable", async () => {
+  it("sends the visitor to the in-site waitlist when GSI is unavailable", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -45,10 +45,10 @@ describe("GoogleSignInButton fallback", () => {
     });
 
     const link = document.querySelector<HTMLAnchorElement>(
-      'a[href="https://app.gengrowth.ai/login"]',
+      'a[href="/waitlist"]',
     );
     expect(link).not.toBeNull();
-    expect(link?.target).toBe("_blank");
-    expect(link?.rel.split(/\s+/).sort()).toEqual(["noopener", "noreferrer"]);
+    expect(link?.target).toBe("");
+    expect(link?.rel).toBe("");
   });
 });

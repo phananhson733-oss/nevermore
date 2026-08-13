@@ -103,7 +103,7 @@ Ask for outreach logs, named prospect lists, and the reasoning behind each quali
 
 ## Take Action
 
-If you are weighing whether a manual SEO service fits your growth plan — or where the human work should stop and automation should take over — gengrowth.ai is happy to talk it through. [Start a free GenGrowth trial](https://app.gengrowth.ai/) and we will help you map which deliverables truly need hands-on work and which are better handed to software, so you pay the manual premium only where it changes the outcome.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

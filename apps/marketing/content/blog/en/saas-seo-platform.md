@@ -108,7 +108,7 @@ There's no fixed number; the limit is whether each page answers a distinct query
 
 ## Take Action
 
-Run a free audit of your trial and pricing pages inside GenGrowth, and you'll get a prioritized list of the funnel-page fixes that move trial starts — not another dashboard of vanity metrics. Seeing which product pages leak organic intent is usually the moment teams realize their SEO budget has been pointed at the wrong work. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and audit your funnel pages first.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 
