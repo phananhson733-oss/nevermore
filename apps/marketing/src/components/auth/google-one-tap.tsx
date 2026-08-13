@@ -40,10 +40,12 @@ export function GoogleOneTap() {
       const session = await fetch("/api/auth/session", {
         signal: controller.signal,
       });
-      if (session.ok) {
-        const { signedIn } = (await session.json()) as { signedIn?: boolean };
-        if (signedIn) return;
-      }
+      // A failed probe does not prove the visitor is signed out. In
+      // particular, auth_unavailable must not prompt an already-signed-in
+      // visitor to select another identity while their session is unknown.
+      if (!session.ok) return;
+      const { signedIn } = (await session.json()) as { signedIn?: boolean };
+      if (signedIn) return;
       if (controller.signal.aborted) return;
 
       const clientId = await ensureGoogleIdentity();

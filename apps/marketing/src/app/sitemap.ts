@@ -16,7 +16,15 @@ export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const locales = ["en", "zh"];
-  const staticPages = ["", "/tools", "/blog", "/pricing"];
+  const staticPages = [
+    "",
+    "/agents",
+    "/agents/seo",
+    "/agents/tech",
+    "/tools",
+    "/blog",
+    "/pricing",
+  ];
 
   const entries: MetadataRoute.Sitemap = [];
 
@@ -26,9 +34,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const priority =
         page === ""
           ? 1.0
-          : page === "/tools"
+          : page === "/agents" || page === "/tools"
             ? 0.9
-            : page === "/blog" || page === "/pricing"
+            : page === "/agents/seo" ||
+                page === "/agents/tech" ||
+                page === "/blog" ||
+                page === "/pricing"
               ? 0.8
               : 0.2;
       const changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] =

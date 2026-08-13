@@ -1,22 +1,24 @@
 // @input  — 无
-// @output — NavItem / FooterLink / SocialLink 类型
-// @pos    — 导航相关类型，供 config/navigation.ts 和布局组件使用
+// @output — NavItem / NavMenuGroup / FooterLink / SocialLink 类型
+// @pos    — 通用导航类型，供 config/navigation.ts 和布局组件使用
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 export interface NavItem {
   labelKey: string;
   href: string;
   /** Present when the item opens a submenu instead of navigating on its own. */
   menu?: NavMenuGroup[];
+  /** Translation key for the directory link at the foot of a submenu. */
+  menuViewAllLabelKey?: string;
 }
 
-/** One labelled section of a header submenu (mirrors the /tools hub sections). */
+/** One labelled section of a header submenu. */
 export interface NavMenuGroup {
   labelKey: string;
   items: NavMenuItem[];
 }
 
 export interface NavMenuItem {
-  /** The tool's route segment — also the join key against the /tools hub. */
+  /** Route segment below the parent NavItem href. */
   slug: string;
   labelKey: string;
   descriptionKey: string;

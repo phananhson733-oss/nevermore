@@ -254,9 +254,9 @@ describe("TrafficDropResults tool links (5a)", () => {
     );
   });
 
-  it("appends the SEO Audit link inside the deploy-log action item", () => {
+  it("appends the SEO Agent link inside the deploy-log action item", () => {
     const markup = render(makeResult({}));
-    expect(markup).toContain('href="/tools/seo-audit"');
+    expect(markup).toContain('href="/agents/seo"');
   });
 
   it("drops a link when its host action is absent", () => {
@@ -291,11 +291,11 @@ describe("TrafficDropResults tool links (5a)", () => {
     );
   });
 
-  it("links the Cannot-check single-page row to the Internal Link Audit, and only then", () => {
-    // The exit card also links the Internal Link Audit, so presence alone
+  it("links the Cannot-check single-page row to Tech Agent, and only then", () => {
+    // The exit card also links Tech Agent, so presence alone
     // cannot tell host-bound from ambient: count the occurrences.
     const cannotCheck = render(makeResult({}));
-    expect(count(cannotCheck, 'href="/tools/internal-link-audit"')).toBe(2);
+    expect(count(cannotCheck, 'href="/agents/tech"')).toBe(2);
 
     const clear = render(
       makeResult({
@@ -308,7 +308,7 @@ describe("TrafficDropResults tool links (5a)", () => {
         ],
       }),
     );
-    expect(count(clear, 'href="/tools/internal-link-audit"')).toBe(1);
+    expect(count(clear, 'href="/agents/tech"')).toBe(1);
   });
 });
 
@@ -323,19 +323,19 @@ describe("TrafficDropResults exit card (5b)", () => {
     expect(checksAt).toBeGreaterThan(cardAt);
   });
 
-  it("keeps the card body and its two links unchanged", () => {
+  it("states the account gate and carries both Agent links", () => {
     const markup = render(makeResult({}));
     expect(markup).toContain(
-      "Start with a site check that does not require a connection.",
+      "Account verification is required before the crawl.",
     );
-    expect(markup).toContain("Free SEO Audit");
-    expect(markup).toContain("Internal Link Audit");
+    expect(markup).toContain("SEO Agent");
+    expect(markup).toContain("Tech Agent");
   });
 
   it("renders the Chinese card", () => {
     const markup = render(makeResult({}), "zh");
     expect(markup).toContain("接下来去哪里");
-    expect(markup).toContain("先用无需连接的数据检查网站基础。");
+    expect(markup).toContain("抓取前必须验证账号");
   });
 });
 

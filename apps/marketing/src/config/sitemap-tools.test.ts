@@ -41,14 +41,19 @@ const SITEMAP_MODULE = fileURLToPath(
 );
 
 /**
- * Routes that exist but are not pages.
+ * Routes that exist only as compatibility redirects.
  *
- * Both are `permanentRedirect` shims kept so old links to retired calculators
- * still land somewhere. A sitemap entry for a 301 spends the crawl twice, so
- * they are named here rather than filtered by a heuristic — adding a tool
- * without deciding fails this test instead of joining the exclusions.
+ * These are `permanentRedirect` shims kept so old links still land somewhere.
+ * A sitemap entry for a 301 spends the crawl twice, so they are named here
+ * rather than filtered by a heuristic — adding a route without deciding fails
+ * this test instead of silently joining the exclusions.
  */
-const REDIRECT_ONLY = new Set(["ab-test-calculator", "growth-roi-calculator"]);
+const REDIRECT_ONLY = new Set([
+  "ab-test-calculator",
+  "growth-roi-calculator",
+  "internal-link-audit",
+  "seo-audit",
+]);
 
 /**
  * Directories that actually hold a page.
@@ -69,6 +74,13 @@ function routedToolSlugs(): string[] {
 }
 
 describe("sitemap tool list", () => {
+  it("keeps every compatibility redirect out of the sitemap", () => {
+    const listed = new Set<string>(SITEMAP_TOOLS);
+    for (const slug of REDIRECT_ONLY) {
+      expect(listed, `/tools/${slug} is redirect-only`).not.toContain(slug);
+    }
+  });
+
   it("names only tools that have a route", () => {
     const routed = new Set(routedToolSlugs());
     for (const slug of SITEMAP_TOOLS) {
@@ -91,6 +103,18 @@ describe("sitemap tool list", () => {
       missing,
       "a tool page exists but crawlers are never told about it",
     ).toEqual([]);
+  });
+});
+
+describe("sitemap Agent routes", () => {
+  it("includes the directory and both focused Agents in the locale loop", () => {
+    const source = readFileSync(SITEMAP_MODULE, "utf8");
+    expect(source).toContain('const locales = ["en", "zh"]');
+    expect(source).toContain('"/agents"');
+    expect(source).toContain('"/agents/seo"');
+    expect(source).toContain('"/agents/tech"');
+    expect(source).toMatch(/for \(const locale of locales\)/);
+    expect(source).toMatch(/for \(const page of staticPages\)/);
   });
 });
 

@@ -547,7 +547,7 @@ function Withheld({
 /**
  * The exit card.
  *
- * `ConnectedToolPage` drops its page-bottom "public tools you can run first"
+ * `ConnectedToolPage` drops its page-bottom "URL Agents to use next"
  * aside once the visitor has connected — on the grounds that the report below
  * carries its own. This report did not, so a finished run was the one page on
  * the site with nowhere to go next. Same links as the shared aside; only the
@@ -567,14 +567,14 @@ function WhereNext({ locale }: { readonly locale: string }) {
       </p>
       <div className="mt-5 space-y-3">
         <Link
-          href={localePath(locale, "/tools/seo-audit")}
+          href={localePath(locale, "/agents/seo")}
           className={NAV_LINK}
         >
           {t("whereNextAudit")}
           <span aria-hidden="true">&rarr;</span>
         </Link>
         <Link
-          href={localePath(locale, "/tools/internal-link-audit")}
+          href={localePath(locale, "/agents/tech")}
           className={NAV_LINK}
         >
           {t("whereNextLinks")}

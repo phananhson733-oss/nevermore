@@ -7,7 +7,8 @@
     "home": "首页",
     "signIn": "登录",
     "signOut": "登出",
-    "getStarted": "免费开始"
+    "getStarted": "免费开始",
+    "runAudit": "运行网站审计"
   },
   "auth": {
     "title": "登录 GenGrowth",
@@ -25,6 +26,19 @@
     "contact": "联系我们",
     "glossary": "术语表",
     "pricing": "定价",
+    "agents": "Agents",
+    "agentsMenu": {
+      "group": "网站审查 Agents",
+      "viewAll": "查看全部 Agents",
+      "seo": {
+        "label": "SEO Agent",
+        "description": "基于保留的证据，审查元数据、标题结构与结构化数据状态。"
+      },
+      "tech": {
+        "label": "Tech Agent",
+        "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
+      }
+    },
     "toolsMenu": {
       "diagnoseGroup": "诊断现状",
       "planGroup": "规划下一步",
@@ -66,12 +80,14 @@
   },
   "home": {
     "hero": {
-      "eyebrow": "串联起来的 SEO 增长系统",
-      "title": "知道该修什么，<hl>也知道下一步做什么。</hl>",
-      "subtitle": "GenGrowth 将诊断、关键词研究、网站结构、内链和外链建设串成一条可执行的 SEO 工作流。",
-      "primaryCta": "开始使用 GenGrowth",
-      "secondaryCta": "探索免费工具",
-      "socialProof": "先用公开诊断验证，再让每一步自然衔接。"
+      "eyebrow": "SEO 与技术网站 Agents",
+      "title": "输入 URL，<hl>查看证据与下一步。</hl>",
+      "subtitle": "选择独立的 SEO 或 Tech Agent，对公开静态 HTML 进行有边界的审查，并查看已观察状态、证据和可调整的解决方案。",
+      "urlLabel": "网站域名或 URL",
+      "urlPlaceholder": "example.com 或 https://example.com",
+      "primaryCta": "运行 SEO Agent",
+      "secondaryCta": "运行 Tech Agent",
+      "socialProof": "需要已验证账号 · 仅身份权限 · 不读取 Gmail、Search Console，也不保存为项目运行"
     },
     "freeAudit": {
       "eyebrow": "先看证据，再给建议",
@@ -109,15 +125,21 @@
       "step4Desc": "带负责人、状态与依赖关系的 30/60/90 计划。"
     },
     "capabilities": {
-      "eyebrow": "免费工具，连接下一步",
-      "title": "从项目卡住的地方开始",
-      "subtitle": "使用公开工具获得即时、基于证据的信号；然后在 GenGrowth 中沿用上下文继续推进。",
+      "eyebrow": "两个独立的 Agents",
+      "title": "选择与你的问题匹配的审查",
+      "subtitle": "每个 Agent 都有独立的 URL 输入、运行、结果、机会选择与解决方案视图；共享抓取基础设施不会合并两者状态。",
+      "seoTitle": "SEO Agent",
+      "seoDesc": "审查已采集公开 HTML 中的元数据、标题结构与结构化数据状态。",
+      "techTitle": "Tech Agent",
+      "techDesc": "在有边界的抓取中审查响应、静态可索引指令与内链状态。",
+      "accountRequired": "需要已验证账号",
+      "liveCrawl": "有边界的抓取证据",
       "auditTitle": "免费 SEO 审计",
       "auditDesc": "无需账号，检查公开页面的 SEO 信号、robots.txt 与 sitemap.xml。",
       "linksTitle": "内链审计",
       "linksDesc": "绘制站点内链图谱，找出孤岛页、层级过深页和结构薄弱页。",
-      "cardCta": "运行工具",
-      "viewAll": "浏览全部免费工具"
+      "cardCta": "打开 Agent",
+      "viewAll": "查看两个 Agents"
     },
     "socialProof": {
       "title": "SEO 建议应当展示它的推导过程",
@@ -144,9 +166,9 @@
       "read": "阅读方法"
     },
     "bottomCta": {
-      "title": "让你的下一条 SEO 发现变成行动力",
-      "subtitle": "打开 GenGrowth，在同一条工作流中串联项目、关键词、网站结构、内链与外链建设。",
-      "cta": "开始使用 GenGrowth"
+      "title": "从眼前的网站问题开始",
+      "subtitle": "用 SEO Agent 查看页面信号，或用 Tech Agent 查看抓取、可索引性与链接证据；每次运行都会明确说明哪些内容尚未验证。",
+      "cta": "打开 SEO Agent"
     }
   },
   "waitlist": {
@@ -522,11 +544,11 @@
   },
   "tools": {
     "eyebrow": "从眼前的问题开始",
-    "title": "为下一步 SEO 决策准备的免费工具",
-    "subtitle": "先通过公开工具得到一个具体信号，再把工作带入同一份 GenGrowth 项目，而不是增加一张割裂的待办清单。",
+    "title": "为下一步 SEO 决策准备的辅助工具",
+    "subtitle": "在这里使用聚焦的 Search Console 或规划工具。URL 审计现已由各自独立、需要账号验证的 SEO 与 Tech Agents 运行。",
     "diagnoseEyebrow": "我有一个需要优化的网站",
-    "diagnoseTitle": "诊断是什么拖慢了网站",
-    "diagnoseBody": "从公开 URL 开始。这些工具只读取公开页面，获得第一个结果时无需账号或站点所有权验证。",
+    "diagnoseTitle": "读取搜索表现证据",
+    "diagnoseBody": "当问题依赖网站的私有查询与流量历史时，请连接 Search Console；如果要审计公开 HTML URL，请改用 SEO Agent 或 Tech Agent。",
     "planEyebrow": "我需要规划和衡量",
     "planTitle": "让下一次实验更容易判断",
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
@@ -1578,9 +1600,9 @@
       "withheldIntro": "每一条都撞在某一道具体的墙上。原因写明是哪一道，因为它们对应的下一步动作不同。",
       "nextStepsTitle": "下次跑之前可以做什么",
       "whereNextTitle": "接下来去哪里",
-      "whereNextBody": "先用无需连接的数据检查网站基础。",
-      "whereNextAudit": "免费 SEO 审计",
-      "whereNextLinks": "内链审计",
+      "whereNextBody": "无需连接 Search Console 即可检查网站基础；Agent 抓取开始前必须验证账号。",
+      "whereNextAudit": "SEO Agent",
+      "whereNextLinks": "Tech Agent",
       "stagesMissing": "缺失：{stages}",
       "columns": {
         "keyword": "关键词",
@@ -1979,25 +2001,25 @@
   },
   "pricing": {
     "hero": {
-      "eyebrow": "价值优先的定价方式",
-      "title": "先免费开始，持续使用时再付费。",
-      "subtitle": "公开工具会在你决定注册或付费之前给出一个有用的答案。完整产品的定价将以持续工作流的价值和运行成本为依据。"
+      "eyebrow": "先验证账号，无需付费即可审计",
+      "title": "无需先选择付费方案，即可运行第一次审计。",
+      "subtitle": "SEO Agent 与 Tech Agent 会在抓取任何 URL 前要求验证 GenGrowth 账号；无需付费、连接 Search Console 或验证站点所有权，当前审计也不会保存运行记录。"
     },
     "freeTools": {
       "eyebrow": "现已可用",
-      "title": "免费公开工具",
-      "body": "输入公开 URL，即可获得即时、基于证据的诊断。第一个结果不是阉割 demo，也不是伪装成工具的销售闸门。",
-      "item1": "无需账号或站点所有权验证，即可对公开页面运行站级 SEO 审计。",
-      "item2": "从公开可访问页面构建有明确边界的内链图谱。",
-      "item3": "当需要更快作出实验判断时，可使用规划计算器。",
-      "cta": "探索免费工具"
+      "title": "SEO 与 Tech URL 审计 Agents",
+      "body": "选择一个独立 Agent 并输入公开 URL，然后在抓取开始前登录或注册。注册用于访问控制，不会创建可保存的项目历史。",
+      "item1": "SEO Agent 基于有边界的抓取，检查 Metadata、标题结构与结构化数据证据。",
+      "item2": "Tech Agent 检查抓取响应、索引指令与内链证据。",
+      "item3": "无需付费、连接 Search Console 或验证站点所有权；每次运行均不持久化。",
+      "cta": "探索 Agents"
     },
     "product": {
       "eyebrow": "GenGrowth 完整产品",
       "title": "完整产品的定价仍在制定中",
       "body": "我们不会发布暂定价格或还无法兑现的方案边界。完整工作流会把项目上下文、已保存工作、更深数据和持续运营放在一起。",
       "principle": "定价原则",
-      "principleBody": "第一个有用的诊断保持开放；只有持续监控、更深数据、多站点工作或持续运营价值产生真实成本时才收费。",
+      "principleBody": "URL 抓取前必须验证账号，但当前 Agent 审计不要求付费。付费价值从保存上下文、更深数据、持续监控与多站点工作开始。",
       "cta": "打开 GenGrowth"
     },
     "starter": {
@@ -2073,30 +2095,211 @@
     "faq": {
       "title": "常见问题",
       "q1": {
-        "question": "公开工具免费吗？",
-        "answer": "是的。当前公开 SEO 审计、内链审计和计算器均无需付费即可使用。每个工具都会清楚说明自己的技术范围与限制。"
+        "question": "URL 审计 Agents 需要付费吗？",
+        "answer": "不需要。SEO Agent 与 Tech Agent 无需付费即可运行，但服务端在读取提交的 URL 或开始抓取之前，必须先验证 GenGrowth 账号。"
       },
       "q2": {
         "question": "完整产品的定价何时可用？",
         "answer": "当完整工作流、使用边界和持续运行成本已定义到足以做出可靠承诺时，我们会发布定价。"
       },
       "q3": {
-        "question": "运行公开诊断需要账号吗？",
-        "answer": "不需要。公开 SEO 审计和内链审计只读取公开页面；当工作需要保存、扩展或在产品中持续时，才需要账号。"
+        "question": "需要账号、Search Console 或站点所有权吗？",
+        "answer": "需要一个已验证的 GenGrowth 账号。无需连接 Search Console 或验证站点所有权，因为当前 Agents 只在明确的抓取边界内检查公开可访问的静态 HTML。"
       },
       "q4": {
         "question": "付费产品将覆盖什么价值？",
-        "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营；而不是把第一个有用的结果锁在付费墙后。"
+        "answer": "计划中的付费层用于持续性工作，例如已保存的项目上下文、更深的数据、持续监控和多站点运营。当前 Agent 审计本身无需付费，也不会保存运行历史。"
       },
       "q5": {
         "question": "我应该从哪里开始？",
-        "answer": "如果你已有网站，请从公开 SEO 审计或内链审计开始；如果你正在规划实验，可使用计算器，并在需要一份连续的项目工作流时进入 GenGrowth。"
+        "answer": "如果关注 Metadata、标题结构与结构化数据，请选择 SEO Agent；如果关注抓取、索引性与内链，请选择 Tech Agent。两个 Agent 都会在账号验证后独立接收 URL。"
       }
     },
     "cta": {
       "title": "先得到一个真实信号，而不是先作出付费承诺",
-      "subtitle": "选择最符合眼前问题的免费工具。得到有用证据后，再决定是否继续进入完整产品。",
-      "button": "探索免费工具"
+      "subtitle": "选择与你的问题匹配的 Agent，验证账号后即可运行有边界的审计，无需连接 Search Console 或选择付费方案。",
+      "button": "探索 Agents"
+    }
+  },
+  "agents": {
+    "hub": {
+      "metaTitle": "SEO 与技术网站 Agents 智能体",
+      "metaDescription": "选择一个聚焦的 GenGrowth Agent，基于公开静态 HTML 检查 SEO 内容信号或技术抓取与索引情况。",
+      "breadcrumb": "Agents 智能体",
+      "eyebrow": "聚焦式网站检查",
+      "title": "选择与你的问题相匹配的 Agent",
+      "subtitle": "对公开静态 HTML 进行有证据边界的检查。SEO Agent 检查页面内容信号；Tech Agent 检查抓取、索引指令和内链情况。",
+      "boundary": "两个 Agent 各自独立运行。结果不会保存到 App 项目，不使用 Search Console，也不声称流量影响或自动优先级。",
+      "seo": {
+        "title": "SEO Agent",
+        "description": "检查本次采集公开 HTML 中观测到的 Metadata、标题结构和结构化数据情况。",
+        "scope": "Metadata · 页面结构 · 结构化数据",
+        "cta": "打开 SEO Agent"
+      },
+      "tech": {
+        "title": "Tech Agent",
+        "description": "检查有边界抓取中观测到的响应、静态索引指令和内链情况。",
+        "scope": "抓取 · 索引性 · 内链",
+        "cta": "打开 Tech Agent"
+      }
+    },
+    "seo": {
+      "name": "SEO Agent",
+      "metaTitle": "公开 HTML 检查 SEO Agent",
+      "metaDescription": "检查网站公开静态 HTML 中的 Metadata、标题结构和结构化数据情况，并查看证据与明确限制。",
+      "eyebrow": "SEO Agent · 公开 HTML",
+      "title": "用证据检查页面 SEO 情况",
+      "subtitle": "提交一个站点，在可发现的同源静态 HTML 有边界抓取中检查 Metadata、标题结构和 JSON-LD 情况。",
+      "heroCta": "运行 SEO Agent",
+      "accountBoundaryTitle": "账号访问门槛",
+      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
+      "dataBoundaryTitle": "不保存到项目",
+      "dataBoundaryBody": "本次营销站运行不会保存到 App 项目，也不使用 ICP、画像、GSC、流量或排名数据。",
+      "howEyebrow": "工作方式",
+      "howTitle": "从 URL 到检查结论的有界路径",
+      "howBody": "Agent 将已采集证据、无法核验项和可调整建议分开呈现，不会把限制误写成通过或评分。",
+      "step1Title": "授权本次运行",
+      "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
+      "step2Title": "检查公开 HTML",
+      "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
+      "step3Title": "检查已观测情况",
+      "step3Body": "报告只保留 SEO 类别，按触达范围展示最多三项已观测问题情况，并保留原始证据。",
+      "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
+    },
+    "tech": {
+      "name": "Tech Agent",
+      "metaTitle": "抓取检查技术 SEO Agent",
+      "metaDescription": "检查网站公开静态 HTML 抓取中的响应、索引性和内链情况，并查看证据与明确限制。",
+      "eyebrow": "Tech Agent · 有边界抓取",
+      "title": "不用黑箱评分检查网站技术情况",
+      "subtitle": "提交一个站点，在可发现的同源 HTML 中检查已观测抓取响应、静态索引指令和内链情况。",
+      "heroCta": "运行 Tech Agent",
+      "accountBoundaryTitle": "账号访问门槛",
+      "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
+      "dataBoundaryTitle": "仅使用公开抓取事实",
+      "dataBoundaryBody": "本次运行不会保存到 App 项目，也不使用 PSI、CrUX、JavaScript 渲染、GSC 索引覆盖、流量或排名数据。",
+      "howEyebrow": "工作方式",
+      "howTitle": "先看技术证据，再看建议",
+      "howBody": "Agent 只报告有边界抓取实际采集到的内容，并将每个无法核验项与已检查情况分开。",
+      "step1Title": "授权本次运行",
+      "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
+      "step2Title": "检查有边界响应",
+      "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
+      "step3Title": "检查技术情况",
+      "step3Body": "报告只保留抓取、索引性和链接类别，并按触达范围排列已观测问题情况。",
+      "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
+    },
+    "workbench": {
+      "stage1": "阶段 01 · 目标",
+      "seo": {
+        "title": "开始 SEO 证据检查",
+        "body": "输入公开主机名或 URL。服务端会规范化并验证目标；私有网络和本机地址仍会被拦截。",
+        "scope": "本次运行只返回 Metadata、结构和结构化数据记录，不计算评分，也不使用流量数据。"
+      },
+      "tech": {
+        "title": "开始技术证据检查",
+        "body": "输入公开主机名或 URL。服务端会规范化并验证目标；私有网络和本机地址仍会被拦截。",
+        "scope": "本次运行只返回抓取、索引性和链接记录，不运行 PSI/CrUX、JavaScript 渲染或评分。"
+      },
+      "accountGate": "需要已验证账号 · 仅身份信息访问",
+      "urlLabel": "网站主机名或 URL",
+      "placeholder": "example.com 或 https://example.com",
+      "run": "运行 Agent",
+      "running": "运行中",
+      "loadingTitle": "正在采集有边界报告",
+      "loadingBody": "请求可能需要一点时间。服务端返回后才会显示结果；浏览器不会估算页面数或进度数。",
+      "errors": {
+        "auth_required": "运行本 Agent 需要已验证会话。请继续使用 Google 登录，之后只有匹配的待运行请求才可恢复。",
+        "auth_unavailable": "当前无法验证身份，因此审计尚未开始。请在认证服务恢复后重试。",
+        "intent_expired": "这条待运行请求已经过期并被清除。请检查 URL；如果仍想继续，请重新运行本 Agent。",
+        "intent_unavailable": "此浏览器无法为登录保留待运行请求，因此审计尚未开始。请检查浏览器存储权限后重试。",
+        "audit_response_invalid": "Agent 返回的响应无法安全展示，因此没有从中推断任何结果。",
+        "unknown": "本次 Agent 运行未能完成。"
+      },
+      "capturedReport": "阶段 02 · 已采集报告",
+      "finalOrigin": "最终公开源站",
+      "capturedAt": "采集时间",
+      "availability": {
+        "available": "覆盖可用",
+        "partial": "部分覆盖",
+        "unavailable": "覆盖不可用"
+      },
+      "cachedCapture": "已完成抓取缓存",
+      "newCapture": "新采集",
+      "pagesInspected": "已检查页面",
+      "linksObserved": "已观测链接",
+      "sitemapUrls": "已观测 Sitemap URL",
+      "notCollected": "已知未采集 URL",
+      "evaluatedChecks": "已评估相关检查",
+      "evaluatedBreakdown": "已观测 {observed} · 未观测 {notObserved}",
+      "unverifiedChecks": "无法核验的相关检查",
+      "unverifiedBoundary": "无法核验不等于通过，也不能证明情况不存在。",
+      "robotsStatus": "robots.txt",
+      "sitemapStatus": "Sitemap",
+      "resourceFetched": "本次运行已获取资源",
+      "resourceNotVerified": "本次运行未核验资源",
+      "collectionBoundary": "采集边界",
+      "boundedHtmlOnly": "仅限可发现的同源静态 HTML",
+      "stopReason": "有边界抓取停止时记录了以下原因：{reason}",
+      "stage3": "阶段 03 · 已观测机会",
+      "opportunitiesTitle": "触达范围最高的已观测问题情况",
+      "reachBoundary": "最多三条记录，按受影响观测数量排序。触达范围不是严重度、预测流量影响或自动优先级。",
+      "reachLabel": "触达 · 已观测 {count}",
+      "stage4": "阶段 04 · 已选解决方案",
+      "adaptablePreview": "可调整预览 · 尚未应用",
+      "issueLabel": "问题情况",
+      "evidenceLabel": "保留的本次运行证据",
+      "potentialImpactLabel": "潜在影响",
+      "recommendationLabel": "建议",
+      "implementationLabel": "实施模板",
+      "validationLabel": "验证方式",
+      "boundaryLabel": "边界与限制",
+      "recordBoundary": "本记录仅覆盖有边界抓取实际采集到的页面和响应。",
+      "previewBoundary": "这是可调整的静态模板，尚未编辑、应用、批准、发布或部署任何变更。",
+      "reachCount": "触达范围：受影响 {affected} / 已检查 {tested} {unit}",
+      "noObservedTitle": "未观测到相关问题情况",
+      "noObservedBody": "已评估检查未观测到本 Agent 所检查的问题情况。在作出更广泛结论前，请同时查看无法核验项和覆盖范围。",
+      "ledgerEyebrow": "相关检查账本",
+      "ledgerTitle": "全部 {count} 条相关记录",
+      "runBoundary": "{agent} Agent · {schema} · 已认证访问 · 不持久化",
+      "categories": {
+        "metadata": {
+          "impact": "缺失或重复的 Metadata 可能让读者和搜索系统更难区分页面用途。本次运行不衡量排名或点击。",
+          "recommendation": "检查受影响页面，并为每个可索引页面提供准确区分其内容与意图的 Metadata。",
+          "implementation": "HTML head\n  title: [清晰描述页面的标题]\n  meta description: [页面专属摘要]",
+          "validation": "获取变更后的页面，确认每页存在一个非空且符合预期的值，再重新运行相同的有边界检查；发布前单独验证重要模板。"
+        },
+        "structure": {
+          "impact": "不清晰的标题层级可能让文档主主题和各部分更难理解。本次抓取不衡量用户行为。",
+          "recommendation": "让可见标题结构与页面真实主题一致，使用清晰的主标题和有描述性的分区标题。",
+          "implementation": "main\n  h1: [一个清晰的页面主题]\n  section\n    h2: [有描述性的分区标题]",
+          "validation": "检查渲染后的文档大纲和已获取静态 HTML，确认预期标题存在，再重新运行受影响检查。"
+        },
+        "structured_data": {
+          "impact": "格式错误的 JSON-LD 可能让解析器无法理解声明的实体数据，但搜索结果功能资格并不因此得到保证。",
+          "recommendation": "将受影响 JSON-LD 修正为有效 JSON，并确保每个属性与可见页面内容及适用词汇一致。",
+          "implementation": "JSON-LD 代码块\n  @context: https://schema.org\n  @type: [适用类型]\n  properties: [页面可见事实]",
+          "validation": "将最终静态响应解析为 JSON，验证所选 Schema 类型以及与可见内容的一致性，再重新运行检查。"
+        },
+        "crawl": {
+          "impact": "非预期响应或重定向情况可能降低公开 URL 被可靠获取的程度。本次运行不模拟每一种爬虫或网络。",
+          "recommendation": "追踪每个受影响请求，移除非预期跳转或失败，并为 URL 保留一个明确的公开目标。",
+          "implementation": "[请求 URL]\n  -> [唯一预期 HTTPS 目标]\n  -> HTTP 2xx 静态 HTML",
+          "validation": "使用干净客户端请求公开 URL，记录每次跳转和最终状态，确认预期响应，再重新运行有边界抓取。"
+        },
+        "indexability": {
+          "impact": "静态 Noindex 或 Canonical 情况可能改变搜索系统被要求考虑的 URL，但这里不衡量真实索引覆盖。",
+          "recommendation": "先确认页面所有者预期的索引性和 Canonical 目标，再对齐静态指令，不覆盖有意排除。",
+          "implementation": "robots directive: [预期指令]\ncanonical href: [预期 Canonical URL]",
+          "validation": "获取最终 2xx HTML 和响应头，验证指令及 Canonical 是否解析到预期公开 URL；需要时再单独使用获授权的索引数据源。"
+        },
+        "links": {
+          "impact": "已观测错误目标或连接较弱的 Sitemap 页面，可能降低本次采集图谱内的导航和发现可靠性；未采集链接仍是未知。",
+          "recommendation": "检查每个已观测来源和目标，修复已确认错误，并在有边界证据支持时添加有上下文价值的内链路径。",
+          "implementation": "internal link\n  href: [已确认公开目标]\n  anchor text: [有描述性的标签]",
+          "validation": "获取每个变更目标，确认最终响应及来源页静态 HTML 中的链接，再重新运行抓取；不要把未采集目标归类为已修复。"
+        }
+      }
     }
   },
   "playbooks": {

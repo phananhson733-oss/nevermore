@@ -1,6 +1,6 @@
 // @input  -- locale, ConnectedToolContent, shared site configuration
 // @output -- transparent source-gated tool landing page
-// @pos    -- public handoff for product workflows that cannot use anonymous demo data
+// @pos    -- acquisition handoff for data-connected tools and account-gated URL Agents
 import { ArrowRight, CheckCircle2, Database, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
@@ -50,10 +50,10 @@ export function ConnectedToolPage({
    */
   readonly connected?: boolean;
 }) {
-  const toolsLabel = locale === "zh" ? "免费 SEO 工具" : "Free SEO Tools";
+  const toolsLabel = locale === "zh" ? "SEO 辅助工具" : "Supporting SEO Tools";
   const homeLabel = locale === "zh" ? "首页" : "Home";
   const relatedLabel =
-    locale === "zh" ? "可先试用的公开工具" : "Public tools you can run first";
+    locale === "zh" ? "可继续使用的 URL Agents" : "URL Agents to use next";
   // Same URL the in-page connect panel builds, locale prefix included, so the
   // two CTAs on one page cannot start two different flows.
   const ctaHref = GSC_CONNECT_PATHS.has(content.path)
@@ -250,23 +250,23 @@ export function ConnectedToolPage({
               </p>
               <p className="mt-3 text-[15.5px] leading-snug font-semibold text-text-dark-primary">
                 {locale === "zh"
-                  ? "先用无需连接的数据检查网站基础。"
-                  : "Start with a site check that does not require a connection."}
+                  ? "无需连接 Search Console，先用独立 Agent 检查网站基础。抓取前必须验证账号。"
+                  : "Check site fundamentals with an Agent that needs no Search Console connection. Account verification is required before the crawl."}
               </p>
               {/* 「去别处」型导航链接走次强调色，避免和页面主强调抢 */}
               <div className="mt-5 space-y-3">
                 <Link
-                  href={localePath(locale, "/tools/seo-audit")}
+                  href={localePath(locale, "/agents/seo")}
                   className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
                 >
-                  {locale === "zh" ? "免费 SEO 审计" : "Free SEO Audit"}
+                  SEO Agent
                   <span aria-hidden="true">&rarr;</span>
                 </Link>
                 <Link
-                  href={localePath(locale, "/tools/internal-link-audit")}
+                  href={localePath(locale, "/agents/tech")}
                   className="flex items-center gap-1.5 text-[13.5px] text-brand-accent-2 transition-colors hover:text-brand-info"
                 >
-                  {locale === "zh" ? "内链审计" : "Internal Link Audit"}
+                  Tech Agent
                   <span aria-hidden="true">&rarr;</span>
                 </Link>
               </div>

@@ -1,6 +1,6 @@
 // @input  — next-intl, framer-motion
-// @output — CapabilitiesPreview 组件（按用户情境分组的免费工具入口）
-// @pos    — 首页区块 5，深色背景 / Signal Console 设计规范
+// @output — CapabilitiesPreview 组件（SEO Agent / Tech Agent 双入口）
+// @pos    — 首页区块 2，深色背景 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
 
@@ -9,14 +9,9 @@ import { useLocale } from "next-intl";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import { Link2, ScanSearch, type LucideIcon } from "lucide-react";
+import { ScanSearch, Wrench, type LucideIcon } from "lucide-react";
 import { localePath } from "@/lib/locale-path";
 
-/*
- * 只放**输入一个 URL 就能跑出结果**的工具。共享的「运行工具」CTA 是一句承诺，
- * 而需要先接 Google OAuth（且受环境开关控制）的工具放在这里，会让人以为点进去
- * 就能得到结果——那些工具在 /tools 里有自己的页面把前置条件讲清楚。
- */
 const CARDS: {
   icon: LucideIcon;
   titleKey: string;
@@ -25,15 +20,15 @@ const CARDS: {
 }[] = [
   {
     icon: ScanSearch,
-    titleKey: "auditTitle",
-    descKey: "auditDesc",
-    slug: "seo-audit",
+    titleKey: "seoTitle",
+    descKey: "seoDesc",
+    slug: "seo",
   },
   {
-    icon: Link2,
-    titleKey: "linksTitle",
-    descKey: "linksDesc",
-    slug: "internal-link-audit",
+    icon: Wrench,
+    titleKey: "techTitle",
+    descKey: "techDesc",
+    slug: "tech",
   },
 ];
 
@@ -67,7 +62,7 @@ export function CapabilitiesPreview() {
           </div>
 
           <Link
-            href={localePath(locale, "/tools")}
+            href={localePath(locale, "/agents")}
             className="inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.06em] whitespace-nowrap text-brand-accent-2 uppercase transition-colors hover:text-brand-info"
           >
             {/* 箭头靠 flex gap 与文字分开，不靠 JSX 里的空白字符：`{expr} &rarr;`
@@ -87,7 +82,7 @@ export function CapabilitiesPreview() {
           {CARDS.map((card) => (
             <motion.div key={card.titleKey} {...staggerItem}>
               <Link
-                href={localePath(locale, `/tools/${card.slug}`)}
+                href={localePath(locale, `/agents/${card.slug}`)}
                 className="group block h-full rounded-card border border-brand-border-card bg-brand-panel p-[26px] transition-colors hover:border-brand-accent/40"
               >
                 <span
@@ -102,6 +97,14 @@ export function CapabilitiesPreview() {
                 <p className="mt-2 text-[13px] leading-[1.6] text-text-dark-secondary">
                   {t(card.descKey)}
                 </p>
+                <span className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-md border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
+                    {t("accountRequired")}
+                  </span>
+                  <span className="rounded-md border border-brand-border-strong bg-brand-panel-raised px-2 py-1 font-mono text-[9.5px] tracking-[0.06em] text-text-dark-secondary uppercase">
+                    {t("liveCrawl")}
+                  </span>
+                </span>
                 <span className="mt-4 inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.06em] text-brand-accent-text uppercase transition-colors group-hover:text-brand-accent-hover">
                   {t("cardCta")}
                   <span aria-hidden="true">&rarr;</span>

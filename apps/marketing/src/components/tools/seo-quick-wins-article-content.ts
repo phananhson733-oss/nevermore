@@ -116,7 +116,7 @@ const EN: QuickWinsArticle = {
     {
       heading: "Who this is for",
       paragraphs: [
-        "Sites that already rank for something. If you have queries landing in positions 4–20 with real impressions behind them, there is usually a measurable gap sitting in them. If most of your pages have no impressions at all, this is not your problem yet — start with the Free SEO Audit.",
+        "Sites that already rank for something. If you have queries landing in positions 4–20 with real impressions behind them, there is usually a measurable gap sitting in them. If most of your pages have no impressions at all, this is not your problem yet — start with SEO Agent.",
       ],
     },
     {
@@ -187,14 +187,16 @@ const EN: QuickWinsArticle = {
   relatedToolsHeading: "Related tools",
   relatedTools: [
     {
-      label: "Free SEO Audit",
-      href: "/tools/seo-audit",
-      description: "No login, works on any public URL.",
+      label: "SEO Agent",
+      href: "/agents/seo",
+      description:
+        "Reviews public HTML without Search Console; account verification is required before the crawl.",
     },
     {
-      label: "Internal Link Audit",
-      href: "/tools/internal-link-audit",
-      description: "For pages Google can barely reach.",
+      label: "Tech Agent",
+      href: "/agents/tech",
+      description:
+        "Reviews crawl, indexability, and internal-link evidence without saving the run.",
     },
     {
       label: "Traffic Drop Diagnosis",
@@ -275,7 +277,7 @@ const ZH: QuickWinsArticle = {
     {
       heading: "它适合谁",
       paragraphs: [
-        "适合已经在为某些词排名的网站。如果你有查询词落在位置 4–20、背后有真实曝光，那里通常就压着一个可测量的缺口。如果你的大多数页面根本没有曝光，这还不是你现在的问题——先从免费 SEO 审计开始。",
+        "适合已经在为某些词排名的网站。如果你有查询词落在位置 4–20、背后有真实曝光，那里通常就压着一个可测量的缺口。如果你的大多数页面根本没有曝光，这还不是你现在的问题——先从 SEO Agent 开始。",
       ],
     },
     {
@@ -345,14 +347,15 @@ const ZH: QuickWinsArticle = {
   relatedToolsHeading: "相关工具",
   relatedTools: [
     {
-      label: "免费 SEO 审计",
-      href: "/tools/seo-audit",
-      description: "无需登录，对任意公开 URL 都能跑。",
+      label: "SEO Agent",
+      href: "/agents/seo",
+      description:
+        "无需连接 Search Console 即可检查公开 HTML；抓取前必须验证账号。",
     },
     {
-      label: "内链审计",
-      href: "/tools/internal-link-audit",
-      description: "针对 Google 几乎够不到的页面。",
+      label: "Tech Agent",
+      href: "/agents/tech",
+      description: "检查抓取、索引性与内链证据，本次运行不会保存。",
     },
     {
       label: "流量下跌诊断",

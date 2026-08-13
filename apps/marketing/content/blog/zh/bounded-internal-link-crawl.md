@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-30
-updatedAt: 2026-07-31
+updatedAt: 2026-08-12
 heroImage: /images/blog/bounded-internal-link-crawl.jpg
 heroImageAlt: 技术线稿插图：手电筒光锥照亮一部分互连的方块，光锥之外的方块隐入淡影
 localeExclusive: false
@@ -20,7 +20,7 @@ localeExclusive: false
 
 Google 的说明指出，可抓取链接帮助其发现页面，而锚文本能帮助用户和 Google 理解内容。因此，审计应记录真实遇到的来源页、目标页和锚文本，而不是只给出一个数量。可参考 Google 的[链接最佳实践](https://developers.google.com/search/docs/crawling-indexing/links-crawlable)。
 
-GenGrowth 的公开审计只读取同源静态 HTML，不设置日常检测次数配额或固定的前台页数额度，并在一次在线运行中尽可能采集可发现页面。处理时长、请求与响应体积、重定向、并发、私网访问和主机访问节奏仍受服务端安全边界保护；大型网站可能只得到部分覆盖，因此报告会直接列出本次实际采集范围和停止原因，而不会把技术边界包装成免费额度或质量评分。
+GenGrowth 的 Tech Agent 只读取同源静态 HTML，不设置日常检测次数配额或固定的前台页数额度，并在一次在线运行中尽可能采集可发现页面。处理时长、请求与响应体积、重定向、并发、私网访问和主机访问节奏仍受服务端安全边界保护；大型网站可能只得到部分覆盖，因此报告会直接列出本次实际采集范围和停止原因，而不会把技术边界包装成免费额度或质量评分。
 
 | 已观测到的现象 | 可以支持的判断 | 不能支持的判断 |
 | --- | --- | --- |
@@ -53,4 +53,4 @@ Sitemap 是站长认为重要的 URL 列表。Google 说明它可以帮助发现
 
 选择一个同时有明确来源页和目标页的结构发现，把拟加入的链接放回真实编辑语境，记录目标为什么值得被看到，并设置复查窗口。目标不是增加链接数量，而是让重要路径对读者更清楚，也让维护过程更可观察。
 
-当你有一个公开网站需要检查时，可以运行[免费内链审计](/zh/tools/internal-link-audit)。它的输出是瞬时且受限的，应作为决策证据，而不是自动修改清单。
+当你有一个公开网站需要检查时，可以运行 [Tech Agent](/zh/agents/tech)。运行需要已验证的 GenGrowth 账号，但无需 Search Console 或站点所有权验证；Agent 只读取公开静态 HTML，本次营销站运行不会保存到 App 项目。它的输出是瞬时且受限的，应作为决策证据，而不是自动修改清单。

@@ -7,7 +7,8 @@
     "home": "Home",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "getStarted": "Get started free"
+    "getStarted": "Get started free",
+    "runAudit": "Run website audit"
   },
   "auth": {
     "title": "Sign in to GenGrowth",
@@ -25,6 +26,19 @@
     "contact": "Contact",
     "glossary": "Glossary",
     "pricing": "Pricing",
+    "agents": "Agents",
+    "agentsMenu": {
+      "group": "Website review Agents",
+      "viewAll": "View all Agents",
+      "seo": {
+        "label": "SEO Agent",
+        "description": "Review metadata, headings, and structured-data conditions with preserved evidence."
+      },
+      "tech": {
+        "label": "Tech Agent",
+        "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
+      }
+    },
     "toolsMenu": {
       "diagnoseGroup": "Diagnose what's happening",
       "planGroup": "Plan what's next",
@@ -66,12 +80,14 @@
   },
   "home": {
     "hero": {
-      "eyebrow": "A connected SEO growth system",
-      "title": "Know what to fix. <hl>Know what comes next.</hl>",
-      "subtitle": "GenGrowth connects diagnosis, keyword research, site structure, internal links, and authority-building into one practical SEO workflow.",
-      "primaryCta": "Start using GenGrowth",
-      "secondaryCta": "Explore free tools",
-      "socialProof": "Start with a public diagnostic. Keep every next step connected."
+      "eyebrow": "SEO and technical website Agents",
+      "title": "Enter a URL. <hl>Review the evidence and the next move.</hl>",
+      "subtitle": "Choose an independent SEO or Tech Agent for a bounded review of public static HTML, then inspect observed conditions, evidence, and adaptable solutions.",
+      "urlLabel": "Website host or URL",
+      "urlPlaceholder": "example.com or https://example.com",
+      "primaryCta": "Run SEO Agent",
+      "secondaryCta": "Run Tech Agent",
+      "socialProof": "Verified account required · identity access only · no Gmail, Search Console, or project persistence"
     },
     "freeAudit": {
       "eyebrow": "Start with evidence",
@@ -109,15 +125,21 @@
       "step4Desc": "A 30/60/90 plan carrying owners, status and dependencies."
     },
     "capabilities": {
-      "eyebrow": "Free tools, connected next steps",
-      "title": "Start where your project is stuck",
-      "subtitle": "Use a public tool to get an immediate, evidence-led signal. Then keep moving through GenGrowth with the context intact.",
+      "eyebrow": "Two independent Agents",
+      "title": "Choose the review that matches the question",
+      "subtitle": "Each Agent has its own URL input, run, result, opportunity selection, and solution view. Shared crawl infrastructure never merges their state.",
+      "seoTitle": "SEO Agent",
+      "seoDesc": "Inspect metadata, heading structure, and structured-data conditions observed in collected public HTML.",
+      "techTitle": "Tech Agent",
+      "techDesc": "Inspect crawl responses, static indexability directives, and internal-link conditions in a bounded crawl.",
+      "accountRequired": "Verified account",
+      "liveCrawl": "Bounded crawl evidence",
       "auditTitle": "Free SEO Audit",
       "auditDesc": "Inspect public-page SEO signals, robots.txt, and sitemap.xml without an account.",
       "linksTitle": "Internal Link Audit",
       "linksDesc": "Map a site's internal link graph and find orphan, deep, and structurally weak pages.",
-      "cardCta": "Run the tool",
-      "viewAll": "Browse all free tools"
+      "cardCta": "Open Agent",
+      "viewAll": "View both Agents"
     },
     "socialProof": {
       "title": "SEO advice should show its work",
@@ -144,9 +166,9 @@
       "read": "Read the method"
     },
     "bottomCta": {
-      "title": "Turn your next SEO finding into momentum",
-      "subtitle": "Open GenGrowth to connect your project, keywords, structure, internal links, and authority work in one workflow.",
-      "cta": "Start using GenGrowth"
+      "title": "Start with the website question in front of you",
+      "subtitle": "Run the SEO Agent for on-page signals or the Tech Agent for crawl, indexability, and link evidence. Each run stays explicit about what it did not verify.",
+      "cta": "Open SEO Agent"
     }
   },
   "waitlist": {
@@ -522,11 +544,11 @@
   },
   "tools": {
     "eyebrow": "Start with the question in front of you",
-    "title": "Free tools for the next SEO decision",
-    "subtitle": "Get a concrete signal from a public tool, then carry the work into one connected GenGrowth project instead of another disconnected checklist.",
+    "title": "Supporting tools for the next SEO decision",
+    "subtitle": "Use a focused Search Console or planning tool here. URL audits now run through the independent, account-gated SEO and Tech Agents.",
     "diagnoseEyebrow": "I have a website to improve",
-    "diagnoseTitle": "Diagnose what is holding the site back",
-    "diagnoseBody": "Start with a public URL. These tools read publicly available pages—no account or site-ownership verification is needed for the first result.",
+    "diagnoseTitle": "Read the search-performance evidence",
+    "diagnoseBody": "Connect Search Console when the question depends on your site's private query and traffic history. For a public-HTML URL audit, choose SEO Agent or Tech Agent instead.",
     "planEyebrow": "I need to plan and measure",
     "planTitle": "Make the next experiment easier to size",
     "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
@@ -1578,9 +1600,9 @@
       "withheldIntro": "Each of these hit a specific wall. The reason names which one, because they imply different next moves.",
       "nextStepsTitle": "What might make the next run better",
       "whereNextTitle": "Where to go next",
-      "whereNextBody": "Start with a site check that does not require a connection.",
-      "whereNextAudit": "Free SEO Audit",
-      "whereNextLinks": "Internal Link Audit",
+      "whereNextBody": "Check site fundamentals without connecting Search Console. Account verification is required before an Agent crawl.",
+      "whereNextAudit": "SEO Agent",
+      "whereNextLinks": "Tech Agent",
       "stagesMissing": "Missing: {stages}",
       "columns": {
         "keyword": "Keyword",
@@ -1979,25 +2001,25 @@
   },
   "pricing": {
     "hero": {
-      "eyebrow": "A value-first pricing approach",
-      "title": "Start free. Pay when the work becomes continuous.",
-      "subtitle": "The public tools are designed to give you a useful answer before an account or payment decision. Product pricing will follow the ongoing value and operating cost of the full workflow."
+      "eyebrow": "Account-gated, payment-free audits",
+      "title": "Run the first audit without choosing a paid plan.",
+      "subtitle": "SEO Agent and Tech Agent require a verified GenGrowth account before any URL is crawled. They need no payment, Search Console connection, or site-ownership verification, and current audit runs are not saved."
     },
     "freeTools": {
       "eyebrow": "Available now",
-      "title": "Free public tools",
-      "body": "Use a public URL to get an immediate, evidence-led diagnostic. These first results are not a limited demo or a disguised sales gate.",
-      "item1": "Run a site-wide SEO audit across your public pages, without an account or site-ownership check.",
-      "item2": "Map an observed internal-link graph from publicly accessible pages.",
-      "item3": "Use planning calculators when you need a quicker experimental decision.",
-      "cta": "Explore free tools"
+      "title": "SEO and Tech URL audit Agents",
+      "body": "Choose one independent Agent, enter a public URL, then sign in or register before the crawl starts. Registration controls access; it does not create saved project history.",
+      "item1": "SEO Agent reviews metadata, heading structure, and structured-data evidence from the bounded crawl.",
+      "item2": "Tech Agent reviews crawl responses, indexability directives, and internal-link evidence.",
+      "item3": "No payment, Search Console connection, or site-ownership verification is required; each run uses no persistence.",
+      "cta": "Explore Agents"
     },
     "product": {
       "eyebrow": "GenGrowth product",
       "title": "Full-product pricing is still being shaped",
       "body": "We are not publishing provisional prices or plan limits that we cannot yet stand behind. The full workflow is where project context, saved work, deeper data, and ongoing operations come together.",
       "principle": "The pricing principle",
-      "principleBody": "Keep the first useful diagnostic open. Charge only when ongoing monitoring, deeper data, multi-site work, or continuous operating value creates real cost.",
+      "principleBody": "Require a verified account before a URL crawl, but do not require payment for the current Agent audit. Paid value begins with saved context, deeper data, monitoring, and multi-site work.",
       "cta": "Open GenGrowth"
     },
     "starter": {
@@ -2073,30 +2095,211 @@
     "faq": {
       "title": "Frequently Asked Questions",
       "q1": {
-        "question": "Are the public tools free?",
-        "answer": "Yes. The current public SEO audit, internal-link audit, and calculators can be used without a payment step. Each tool clearly states its own technical scope and limits."
+        "question": "Do the URL audit Agents require payment?",
+        "answer": "No. SEO Agent and Tech Agent can run without a payment step. A verified GenGrowth account is required before the server reads the submitted URL or starts a crawl."
       },
       "q2": {
         "question": "When will full-product pricing be available?",
         "answer": "We will publish it after the full workflow, usage boundaries, and ongoing operating costs are defined well enough to make a reliable commitment."
       },
       "q3": {
-        "question": "Do I need an account to run a public diagnostic?",
-        "answer": "No. The public SEO audit and internal-link audit read only public pages. An account belongs at the point where work needs to be saved, expanded, or continued in the product."
+        "question": "Do I need an account, Search Console, or site ownership?",
+        "answer": "You need a verified GenGrowth account. You do not need a Search Console connection or site-ownership verification because the current Agents inspect only publicly reachable static HTML within their stated crawl boundary."
       },
       "q4": {
         "question": "What will paid product value cover?",
-        "answer": "The intended paid layer is for continuous work such as saved project context, deeper data, ongoing monitoring, and multi-site operations—not for withholding the first useful result."
+        "answer": "The intended paid layer is for continuous work such as saved project context, deeper data, ongoing monitoring, and multi-site operations. The current Agent audit itself does not require payment and does not save run history."
       },
       "q5": {
         "question": "Where should I start?",
-        "answer": "If you already have a website, start with the public SEO audit or internal-link audit. If you are planning an experiment, use the calculators and then move the work into GenGrowth when you need a connected project workflow."
+        "answer": "Choose SEO Agent for metadata, heading, and structured-data questions, or Tech Agent for crawl, indexability, and internal-link questions. Each Agent accepts its own URL after account verification."
       }
     },
     "cta": {
       "title": "Start with a real signal, not a pricing commitment",
-      "subtitle": "Choose the free tool that matches the question in front of you. You can decide whether to continue only after you have useful evidence.",
-      "button": "Explore free tools"
+      "subtitle": "Choose the Agent that matches your question, verify your account, and run the bounded audit without connecting Search Console or choosing a paid plan.",
+      "button": "Explore Agents"
+    }
+  },
+  "agents": {
+    "hub": {
+      "metaTitle": "SEO and Technical Website Agents",
+      "metaDescription": "Choose a focused GenGrowth Agent to inspect public static HTML for SEO content signals or technical crawl and indexability conditions.",
+      "breadcrumb": "Agents",
+      "eyebrow": "Focused website review",
+      "title": "Choose the Agent that matches the question",
+      "subtitle": "Run an evidence-bounded review of public static HTML. SEO Agent examines on-page content signals; Tech Agent examines crawl, indexability, and internal-link conditions.",
+      "boundary": "Each Agent runs independently. Results are not saved to an app project, do not use Search Console, and do not claim traffic impact or automatic priority.",
+      "seo": {
+        "title": "SEO Agent",
+        "description": "Review metadata, heading structure, and structured-data conditions observed in the collected public HTML.",
+        "scope": "Metadata · Structure · Structured data",
+        "cta": "Open SEO Agent"
+      },
+      "tech": {
+        "title": "Tech Agent",
+        "description": "Review crawl responses, static indexability directives, and internal-link conditions observed in the bounded crawl.",
+        "scope": "Crawl · Indexability · Links",
+        "cta": "Open Tech Agent"
+      }
+    },
+    "seo": {
+      "name": "SEO Agent",
+      "metaTitle": "SEO Agent for Public HTML Review",
+      "metaDescription": "Inspect a site's public static HTML for metadata, heading structure, and structured-data conditions with evidence and explicit limitations.",
+      "eyebrow": "SEO Agent · Public HTML",
+      "title": "Review on-page SEO conditions with evidence",
+      "subtitle": "Submit a site to inspect metadata, heading structure, and JSON-LD conditions in a bounded crawl of discoverable same-origin static HTML.",
+      "heroCta": "Run SEO Agent",
+      "accountBoundaryTitle": "Account access gate",
+      "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
+      "dataBoundaryTitle": "No project persistence",
+      "dataBoundaryBody": "This marketing run is not saved to an app project and does not use an ICP, profile, GSC, traffic, or ranking data.",
+      "howEyebrow": "How it works",
+      "howTitle": "A bounded path from URL to review",
+      "howBody": "The Agent separates collected evidence, unverified checks, and adaptable guidance so a limitation never becomes a pass or a score.",
+      "step1Title": "Authorize the run",
+      "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
+      "step2Title": "Inspect public HTML",
+      "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
+      "step3Title": "Review observed conditions",
+      "step3Body": "The report keeps only SEO categories and presents up to three observed issue conditions by reach, with their original evidence.",
+      "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
+    },
+    "tech": {
+      "name": "Tech Agent",
+      "metaTitle": "Technical SEO Agent for Crawl Review",
+      "metaDescription": "Inspect a site's public static HTML crawl for response, indexability, and internal-link conditions with evidence and explicit limitations.",
+      "eyebrow": "Tech Agent · Bounded crawl",
+      "title": "Review technical site conditions without a black-box score",
+      "subtitle": "Submit a site to inspect observed crawl responses, static indexability directives, and internal-link conditions in discoverable same-origin HTML.",
+      "heroCta": "Run Tech Agent",
+      "accountBoundaryTitle": "Account access gate",
+      "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
+      "dataBoundaryTitle": "Public crawl facts only",
+      "dataBoundaryBody": "This run is not saved to an app project and does not use PSI, CrUX, JavaScript rendering, GSC index coverage, traffic, or ranking data.",
+      "howEyebrow": "How it works",
+      "howTitle": "Technical evidence before guidance",
+      "howBody": "The Agent reports only what the bounded crawl collected and keeps every unverified condition separate from a checked condition.",
+      "step1Title": "Authorize the run",
+      "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
+      "step2Title": "Inspect bounded responses",
+      "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
+      "step3Title": "Review technical conditions",
+      "step3Body": "The report keeps only crawl, indexability, and link categories and orders observed issue conditions by reach.",
+      "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."
+    },
+    "workbench": {
+      "stage1": "Stage 01 · Target",
+      "seo": {
+        "title": "Start an SEO evidence run",
+        "body": "Enter a public host or URL. The server normalizes and validates the destination; private and local networks remain blocked.",
+        "scope": "This run returns metadata, structure, and structured-data records only. It does not calculate a score or use traffic data."
+      },
+      "tech": {
+        "title": "Start a technical evidence run",
+        "body": "Enter a public host or URL. The server normalizes and validates the destination; private and local networks remain blocked.",
+        "scope": "This run returns crawl, indexability, and link records only. It does not run PSI/CrUX, JavaScript rendering, or a score."
+      },
+      "accountGate": "Verified account required · identity access only",
+      "urlLabel": "Website host or URL",
+      "placeholder": "example.com or https://example.com",
+      "run": "Run Agent",
+      "running": "Running",
+      "loadingTitle": "Collecting a bounded report",
+      "loadingBody": "The request may take a moment. Results appear when the server returns; no page or progress count is estimated in the browser.",
+      "errors": {
+        "auth_required": "Your verified session is required to run this Agent. Continue with Google sign-in, then the matching pending run can resume.",
+        "auth_unavailable": "Authentication could not be verified right now, so no audit started. Try again when the authentication service is available.",
+        "intent_expired": "This pending run has expired and was cleared. Review the URL, then run this Agent again if you still want to continue.",
+        "intent_unavailable": "This browser could not keep the pending run for sign-in, so no audit started. Check browser storage access, then try again.",
+        "audit_response_invalid": "The Agent returned a response that could not be safely displayed. No result has been inferred from it.",
+        "unknown": "The Agent run could not be completed."
+      },
+      "capturedReport": "Stage 02 · Captured report",
+      "finalOrigin": "Final public origin",
+      "capturedAt": "Captured at",
+      "availability": {
+        "available": "Available coverage",
+        "partial": "Partial coverage",
+        "unavailable": "Coverage unavailable"
+      },
+      "cachedCapture": "Completed-crawl cache",
+      "newCapture": "New capture",
+      "pagesInspected": "Pages inspected",
+      "linksObserved": "Links observed",
+      "sitemapUrls": "Sitemap URLs observed",
+      "notCollected": "Known URLs not collected",
+      "evaluatedChecks": "Evaluated relevant checks",
+      "evaluatedBreakdown": "{observed} observed · {notObserved} not observed",
+      "unverifiedChecks": "Unverified relevant checks",
+      "unverifiedBoundary": "Unverified is not a pass and is not evidence of absence.",
+      "robotsStatus": "robots.txt",
+      "sitemapStatus": "Sitemap",
+      "resourceFetched": "Resource fetched in this run",
+      "resourceNotVerified": "Resource not verified in this run",
+      "collectionBoundary": "Collection boundary",
+      "boundedHtmlOnly": "Discoverable same-origin static HTML only",
+      "stopReason": "The bounded crawl stopped with this recorded reason: {reason}",
+      "stage3": "Stage 03 · Observed opportunities",
+      "opportunitiesTitle": "Top observed issue conditions",
+      "reachBoundary": "Up to three records, ordered by affected observation count. Reach is not severity, predicted traffic impact, or an automatic priority.",
+      "reachLabel": "Reach · {count} observed",
+      "stage4": "Stage 04 · Selected solution",
+      "adaptablePreview": "Adaptable preview · not applied",
+      "issueLabel": "Issue condition",
+      "evidenceLabel": "Preserved run evidence",
+      "potentialImpactLabel": "Potential impact",
+      "recommendationLabel": "Recommendation",
+      "implementationLabel": "Implementation template",
+      "validationLabel": "Validation",
+      "boundaryLabel": "Boundary and limitation",
+      "recordBoundary": "This record is limited to the pages and responses collected by the bounded crawl.",
+      "previewBoundary": "This is an adaptable static template. It has not edited, applied, approved, published, or deployed any change.",
+      "reachCount": "Reach: {affected} affected / {tested} tested {unit}",
+      "noObservedTitle": "No relevant issue condition was observed",
+      "noObservedBody": "The evaluated checks did not observe one of this Agent's issue conditions. Review unverified checks and coverage before drawing a broader conclusion.",
+      "ledgerEyebrow": "Relevant check ledger",
+      "ledgerTitle": "All {count} relevant records",
+      "runBoundary": "{agent} Agent · {schema} · authenticated access · persistence none",
+      "categories": {
+        "metadata": {
+          "impact": "Missing or repeated metadata can make page purpose less distinct to readers and search systems. This run does not measure rankings or clicks.",
+          "recommendation": "Review the affected pages and give each indexable page metadata that accurately distinguishes its content and intent.",
+          "implementation": "HTML head\n  title: [descriptive page title]\n  meta description: [page-specific summary]",
+          "validation": "Fetch the changed pages, confirm one non-empty intended value per page, then rerun the same bounded check. Validate important templates separately before release."
+        },
+        "structure": {
+          "impact": "An unclear heading hierarchy can make the document's main topic and sections harder to understand. The crawl does not measure user behavior.",
+          "recommendation": "Align the visible heading structure with the page's actual subject, using a clear main heading and descriptive subsections.",
+          "implementation": "main\n  h1: [one clear page subject]\n  section\n    h2: [descriptive section]",
+          "validation": "Inspect the rendered document outline and fetched static HTML, confirm the intended headings are present, then rerun the affected check."
+        },
+        "structured_data": {
+          "impact": "Malformed JSON-LD can prevent a parser from understanding the declared entity data. Eligibility for search features is not guaranteed.",
+          "recommendation": "Correct the affected JSON-LD as valid JSON and keep every property consistent with visible page content and the applicable vocabulary.",
+          "implementation": "JSON-LD block\n  @context: https://schema.org\n  @type: [applicable type]\n  properties: [facts visible on the page]",
+          "validation": "Parse the final static response as JSON, validate the chosen schema type and visible-content consistency, then rerun the check."
+        },
+        "crawl": {
+          "impact": "Unexpected response or redirect conditions can reduce how reliably a public URL is fetched. The run does not model every crawler or network.",
+          "recommendation": "Trace each affected request, remove unintended hops or failures, and keep one deliberate public destination for the URL.",
+          "implementation": "[requested URL]\n  -> [single intended HTTPS destination]\n  -> HTTP 2xx static HTML",
+          "validation": "Request the public URL from a clean client, record every hop and final status, confirm the intended response, then rerun the bounded crawl."
+        },
+        "indexability": {
+          "impact": "Static noindex or canonical conditions can change which URL a search system is asked to consider. Actual index coverage is not measured here.",
+          "recommendation": "Confirm the page owner's intended indexability and canonical target, then align static directives without overriding a deliberate exclusion.",
+          "implementation": "robots directive: [intended directive]\ncanonical href: [intended canonical URL]",
+          "validation": "Fetch the final 2xx HTML and response headers, verify the directive and canonical resolve to the intended public URL, then use an authorized index source separately if needed."
+        },
+        "links": {
+          "impact": "Observed broken targets or weakly connected sitemap pages can make navigation and discovery less reliable within the collected graph. Uncollected links remain unknown.",
+          "recommendation": "Review each observed source and target, repair confirmed errors, and add contextually useful internal paths where the bounded evidence supports it.",
+          "implementation": "internal link\n  href: [confirmed public target]\n  anchor text: [descriptive label]",
+          "validation": "Fetch each changed target, confirm the final response and source-page link in static HTML, then rerun the crawl without classifying uncollected targets as fixed."
+        }
+      }
     }
   },
   "playbooks": {

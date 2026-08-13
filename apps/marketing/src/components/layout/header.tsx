@@ -17,7 +17,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { LanguageSwitcher } from "./language-switcher";
-import { ToolsMenu, ToolsMenuMobile } from "./tools-menu";
+import { NavSubmenu, NavSubmenuMobile } from "./tools-menu";
 import {
   SignInControl,
   SignInControlMobile,
@@ -63,11 +63,13 @@ export function Header() {
         >
           {headerNavItems.map((item) =>
             item.menu ? (
-              <ToolsMenu
+              <NavSubmenu
                 key={item.href}
+                basePath={item.href}
                 groups={item.menu}
                 locale={locale}
                 triggerLabel={t(item.labelKey)}
+                viewAllLabelKey={item.menuViewAllLabelKey ?? item.labelKey}
               />
             ) : (
               <Link
@@ -107,11 +109,15 @@ export function Header() {
               >
                 {headerNavItems.map((item) =>
                   item.menu ? (
-                    <ToolsMenuMobile
+                    <NavSubmenuMobile
                       key={item.href}
+                      basePath={item.href}
                       groups={item.menu}
                       locale={locale}
                       triggerLabel={t(item.labelKey)}
+                      viewAllLabelKey={
+                        item.menuViewAllLabelKey ?? item.labelKey
+                      }
                       onNavigate={() => setMobileOpen(false)}
                     />
                   ) : (

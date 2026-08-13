@@ -413,11 +413,11 @@ describe("keyword map results", () => {
   });
 
   it("carries an exit card, because the shell drops its own once connected", () => {
-    // ConnectedToolPage hides the "public tools you can run first" aside for a
+    // ConnectedToolPage hides the "URL Agents to use next" aside for a
     // connected visitor on the grounds that the report has its own. Without
     // this, a finished run is the one page on the site with nowhere to go.
-    expect(render("en")).toContain('href="/tools/seo-audit"');
-    expect(render("zh")).toContain('href="/zh/tools/internal-link-audit"');
+    expect(render("en")).toContain('href="/agents/seo"');
+    expect(render("zh")).toContain('href="/zh/agents/tech"');
   });
 
   it("stays silent when a complete run has nothing to suggest", () => {

@@ -53,16 +53,17 @@ const ACTION_LINKS: Readonly<Record<string, InternalLinkDefinition>> = {
     },
   },
   pull_deploy_logs: {
-    path: "/tools/seo-audit",
+    path: "/agents/seo",
     copy: {
       en: {
-        label: "Run the Free SEO Audit on this site",
+        label: "Run SEO Agent on this site",
         detail:
-          "It is a public tool — no re-authorisation needed — and records what it observes on your public pages.",
+          "It uses public-page crawl evidence and needs no Search Console connection. A verified GenGrowth account is required before the crawl, and the run is not saved.",
       },
       zh: {
-        label: "对这个站点运行免费 SEO 审计",
-        detail: "它是公开工具，无需再次授权，只记录在你公开页面上观察到的内容。",
+        label: "对这个站点运行 SEO Agent",
+        detail:
+          "它使用公开页面抓取证据，无需连接 Search Console；抓取前必须验证 GenGrowth 账号，本次运行也不会保存。",
       },
     },
   },
@@ -74,16 +75,17 @@ const ACTION_LINKS: Readonly<Record<string, InternalLinkDefinition>> = {
  */
 const CHECK_LINKS: Readonly<Record<string, InternalLinkDefinition>> = {
   single_page_dominated_decline: {
-    path: "/tools/internal-link-audit",
+    path: "/agents/tech",
     copy: {
       en: {
-        label: "Run the Internal Link Audit on this site",
+        label: "Run Tech Agent on this site",
         detail:
-          "It maps how your internal links are distributed across pages, from public HTML alone.",
+          "It reviews internal-link evidence from public HTML without a Search Console connection. A verified account is required before the crawl, and the run is not saved.",
       },
       zh: {
-        label: "对这个站点运行内链审计",
-        detail: "它只用公开 HTML，梳理站内链接在各页面之间的分布。",
+        label: "对这个站点运行 Tech Agent",
+        detail:
+          "它无需连接 Search Console，基于公开 HTML 检查内链证据；抓取前必须验证账号，本次运行也不会保存。",
       },
     },
   },

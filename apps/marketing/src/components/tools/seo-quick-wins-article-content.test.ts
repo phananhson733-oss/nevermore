@@ -1,5 +1,5 @@
 // @input  -- both locales of the SEO Quick Wins long-form copy
-// @output -- a failing test when the page starts describing a different product
+// @output -- copy, capability, and related-route contract assertions
 // @pos    -- the guard between "reads well" and "is true"
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
@@ -117,9 +117,13 @@ describe("SEO Quick Wins page copy", () => {
       // it.
       const article = getQuickWinsArticle(locale);
       for (const link of article.relatedTools) {
-        const slug = link.href.replace("/tools/", "");
+        const [section, slug] = link.href.split("/").filter(Boolean);
+        expect(["agents", "tools"], link.href).toContain(section);
+        expect(slug, link.href).toBeTruthy();
         expect(
-          existsSync(`${APP_ROOT}/src/app/[locale]/tools/${slug}/page.tsx`),
+          existsSync(
+            `${APP_ROOT}/src/app/[locale]/${section}/${slug}/page.tsx`,
+          ),
           link.href,
         ).toBe(true);
       }

@@ -30,17 +30,15 @@ describe("trafficDropActionLink", () => {
     expect(link?.detail).toBeTruthy();
   });
 
-  it("sends the deploy-log action to the SEO Audit and says no re-authorisation is needed", () => {
+  it("sends the deploy-log action to SEO Agent with its account boundary", () => {
     const en = trafficDropActionLink("pull_deploy_logs", "en");
-    expect(en?.href).toBe("/tools/seo-audit");
+    expect(en?.href).toBe("/agents/seo");
     expect(en?.external).toBe(false);
-    // The audit is one of the two anonymous tools; the visitor just paid an
-    // OAuth consent for this report, so the link must say another one is not
-    // the price of following it.
-    expect(en?.detail).toContain("public tool");
+    expect(en?.detail).toContain("verified GenGrowth account");
+    expect(en?.detail).toContain("not saved");
     const zh = trafficDropActionLink("pull_deploy_logs", "zh");
-    expect(zh?.href).toBe("/zh/tools/seo-audit");
-    expect(zh?.detail).toContain("无需再次授权");
+    expect(zh?.href).toBe("/zh/agents/seo");
+    expect(zh?.detail).toContain("验证 GenGrowth 账号");
   });
 
   it("gives no link to actions outside the two agreed hosts", () => {
@@ -76,14 +74,14 @@ describe("trafficDropCheckLink", () => {
     expect(link?.external).toBe(true);
   });
 
-  it("links a Cannot-check single-page dominated decline to the Internal Link Audit", () => {
+  it("links a Cannot-check single-page dominated decline to Tech Agent", () => {
     const en = trafficDropCheckLink(
       "single_page_dominated_decline",
       "not_available",
       "en",
       null,
     );
-    expect(en?.href).toBe("/tools/internal-link-audit");
+    expect(en?.href).toBe("/agents/tech");
     expect(en?.external).toBe(false);
     const zh = trafficDropCheckLink(
       "single_page_dominated_decline",
@@ -91,7 +89,7 @@ describe("trafficDropCheckLink", () => {
       "zh",
       null,
     );
-    expect(zh?.href).toBe("/zh/tools/internal-link-audit");
+    expect(zh?.href).toBe("/zh/agents/tech");
     expect(zh?.label).toBeTruthy();
   });
 

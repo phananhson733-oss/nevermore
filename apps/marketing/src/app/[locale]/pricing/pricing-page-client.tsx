@@ -1,6 +1,6 @@
 // @input  -- next-intl, next/link, framer-motion, site config
-// @output -- pricing-positioning page without unapproved plans or price claims
-// @pos    -- pricing route's client presentation layer
+// @output -- pricing-positioning page with account-gated, payment-free Agent entry
+// @pos    -- pricing route's truthful access and persistence boundary
 "use client";
 
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { fadeInUp } from "@/lib/animations";
 import { PricingFaq } from "./pricing-faq";
 import { localePath } from "@/lib/locale-path";
 
-const FREE_TOOL_ITEMS = ["item1", "item2", "item3"] as const;
+const AGENT_ITEMS = ["item1", "item2", "item3"] as const;
 
 export default function PricingPageClient() {
   const locale = useLocale();
@@ -55,7 +55,7 @@ export default function PricingPageClient() {
 
       <section className="py-16 md:py-22">
         <div className="max-w-content mx-auto grid gap-4 px-6 md:px-8 lg:grid-cols-2">
-          {/* 强调卡：免费工具是当前唯一可立即使用的入口 */}
+          {/* 强调卡：账号验证后的 SEO / Tech Agents 是当前 URL 审计入口 */}
           <article className="rounded-card border border-brand-accent/50 bg-brand-accent/[0.08] p-[26px] shadow-[inset_2px_0_0_#3DDC97] md:p-8">
             <p className="font-mono text-[10.5px] tracking-[0.14em] text-brand-accent-text uppercase">
               {tFree("eyebrow")}
@@ -67,7 +67,7 @@ export default function PricingPageClient() {
               {tFree("body")}
             </p>
             <ul className="mt-7 space-y-3">
-              {FREE_TOOL_ITEMS.map((item) => (
+              {AGENT_ITEMS.map((item) => (
                 <li
                   key={item}
                   className="flex gap-2.5 text-[13px] leading-[1.6] text-text-dark-strong"
@@ -82,7 +82,7 @@ export default function PricingPageClient() {
             </ul>
             {/* GLOW_02 — 本屏唯一的渐变主 CTA */}
             <Link
-              href={localePath(locale, "/tools")}
+              href={localePath(locale, "/agents")}
               className="mt-7 inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {tFree("cta")}
@@ -160,7 +160,7 @@ export default function PricingPageClient() {
           >
             {/* GLOW_02 — 一屏最多一个渐变主 CTA */}
             <Link
-              href={localePath(locale, "/tools")}
+              href={localePath(locale, "/agents")}
               className="mt-8 inline-flex h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-[26px] text-[14.5px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {tCta("button")}

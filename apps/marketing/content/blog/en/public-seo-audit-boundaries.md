@@ -1,12 +1,12 @@
 ---
 title: Sitemaps, robots.txt, and the Limits of a Public SEO Audit
-excerpt: Learn what a zero-account SEO audit can inspect from a public URL, why sitemap and robots checks are useful, and where a public scan must stop.
+excerpt: Learn what an account-gated SEO Agent can inspect from public static HTML, why sitemap and robots checks are useful, and where a public scan must stop.
 author: GenGrowth Team
 category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-30
-updatedAt: 2026-07-30
+updatedAt: 2026-08-12
 heroImage: /images/blog/public-seo-audit-boundaries.jpg
 heroImageAlt: Technical line illustration: a tall solid fence across the frame with one small open viewing window cut into it, simple building silhouettes visible through the window and nothing else
 localeExclusive: false
@@ -18,24 +18,27 @@ retrieve. It cannot see Search Console performance, private server logs,
 conversion data, or every page rendered behind an application session.
 
 That is not a weakness when the scope is stated clearly. It is a useful first
-step: a small, reproducible check of one page and the standard files around
-it.
+step: a bounded, reproducible check of discoverable same-origin public static
+HTML and the standard files around it.
 
 ## What a public request can actually inspect
 
-For an accessible URL, a public audit can read the response and check visible
-technical and on-page signals. GenGrowth's free SEO audit inspects one public
-page and attempts to retrieve the site's `robots.txt` and `sitemap.xml`. The
-result separates measured checks from checks that were unavailable or outside
-the scan.
+For an accessible URL, a bounded crawl can read the response and check visible
+technical and on-page signals. GenGrowth exposes those facts through two
+independent views: the SEO Agent reports observed metadata, heading structure,
+and structured-data conditions; the Tech Agent reports observed crawl,
+indexability, and internal-link conditions. Both retain the collected coverage
+and whether `robots.txt` and `sitemap.xml` were fetched. The result separates
+measured checks from checks that were unavailable or outside the scan.
 
 This is enough to answer practical first questions:
 
 - Did the submitted URL return a reachable page or a redirect?
-- Is there a title, description, canonical hint, and a visible heading?
-- Does the public page expose crawl-related signals that deserve review?
-- Are the standard robots and sitemap paths accessible, missing, or outside
-  the public scan's scope?
+- Does the static response contain a title, description, and clear heading?
+- Are static indexability, canonical, or internal-link conditions visible in
+  the collected technical evidence?
+- Were the standard robots and sitemap resources fetched, unavailable, or
+  outside the bounded scan's scope?
 
 It is not enough to claim that a page is indexed, ranks for a query, or is
 responsible for a traffic change. Those questions need data a public request
@@ -88,8 +91,9 @@ those statements apart gives a team a cleaner handoff to its next diagnostic.
 
 ## Pick the next tool by the unanswered question
 
-Run a [free SEO audit](/tools/seo-audit) when you want a fast public signal
-from one URL. Run an [internal link audit](/tools/internal-link-audit) when
-the question is structural and needs a bounded relationship map. Move to a
-connected project only when the decision requires data that a public request
-cannot honestly prove.
+Run the [SEO Agent](/agents/seo) when you want a bounded review of on-page
+signals. Run the [Tech Agent](/agents/tech) when the question is structural and
+needs a bounded relationship map. Both require a verified GenGrowth account,
+read public static HTML without Search Console or site-ownership access, and do
+not save the marketing run to an app project. Move to a connected project only
+when the decision requires data that a public request cannot honestly prove.

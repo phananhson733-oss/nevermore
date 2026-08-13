@@ -336,15 +336,15 @@ export default async function BlogPage({
             </h2>
             <p className="mt-3 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
               {locale === "en"
-                ? "The public audit and internal-link audit are free to run and do not require an account for the first result."
-                : "公开 SEO 审计和内链审计均可免费运行，获得第一个结果无需账号。"}
+                ? "The SEO and Tech Agents inspect public HTML after you sign in to a verified GenGrowth account. No Search Console connection or site-ownership verification is required, and the marketing run is not saved to an app project."
+                : "登录已验证的 GenGrowth 账号后，即可使用 SEO 与 Tech Agent 检查公开 HTML；无需连接 Search Console 或验证站点所有权，本次营销站运行也不会保存到 App 项目。"}
             </p>
           </div>
           <Link
-            href={localePath(locale, "/tools")}
+            href={localePath(locale, "/agents")}
             className="inline-flex h-11.5 items-center justify-center rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
-            {locale === "en" ? "Explore free tools" : "探索免费工具"}
+            {locale === "en" ? "Explore Agents" : "查看 Agents"}
           </Link>
         </section>
       </div>

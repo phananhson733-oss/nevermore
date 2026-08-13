@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-07-30
-updatedAt: 2026-07-30
+updatedAt: 2026-08-12
 heroImage: /images/blog/bounded-internal-link-crawl.jpg
 heroImageAlt: Technical line illustration: a flashlight beam bounded by two thin lines, the boxes inside it drawn solid and the boxes outside it dashed
 localeExclusive: false
@@ -30,7 +30,7 @@ record the actual source page, target, and anchor text it encountered, rather
 than only returning a count. Read Google's [link best practices](https://developers.google.com/search/docs/crawling-indexing/links-crawlable)
 for the underlying crawlability requirements.
 
-In GenGrowth's public audit, the crawl reads static, same-origin HTML and has
+In GenGrowth's Tech Agent, the crawl reads static, same-origin HTML and has
 no normal-use scan quota or fixed customer-facing page allowance. Each online
 run still has technical processing boundaries for elapsed time, request and
 response volume, redirects, concurrency, and host pacing. Those boundaries
@@ -93,6 +93,8 @@ review window. The goal is not to maximize the number of links. It is to make
 the important paths on a site understandable for readers and observable in
 your own maintenance process.
 
-Run a [free internal link audit](/tools/internal-link-audit) when you have a
-public site to inspect. Its output is intentionally transient, so use the
+Run the [Tech Agent](/agents/tech) when you have a public site to inspect. A
+verified GenGrowth account is required, but no Search Console connection or
+site-ownership verification is needed. The Agent reads public static HTML, and
+the marketing run is intentionally not saved to an app project, so use the
 result as evidence for a decision—not as an automatic change list.

@@ -9,6 +9,10 @@ import {
   type SeoAuditRaw,
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
+import {
+  isCanonicalIsoTimestamp,
+  isSeoAuditPayload,
+} from "@sf/public-tools/seo-audit/contract";
 import { extractClientIp } from "../rate-limit.ts";
 import { readPublicToolJson } from "./public-tool-request.ts";
 import {
@@ -98,7 +102,12 @@ const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
       clientIp,
       normalizedUrl,
       DEFAULT_CRAWL_GATE_DEPENDENCIES,
-      (host) => readCrawlCache(TOOL_NAME, host),
+      async (host) => {
+        const cached = await readCrawlCache(TOOL_NAME, host);
+        return cached && cachedSeoAuditMatches(cached, normalizedUrl)
+          ? cached
+          : null;
+      },
     ),
   cachePayload: async (normalizedUrl, payload) => {
     const host = targetHostOf(normalizedUrl);
@@ -166,6 +175,18 @@ function inputUrl(
   };
 }
 
+/** A cache row is reusable only when both its payload and provenance are current. */
+function cachedSeoAuditMatches(
+  cached: { readonly payload: unknown; readonly capturedAt: string },
+  normalizedUrl: string,
+): boolean {
+  return (
+    isCanonicalIsoTimestamp(cached.capturedAt) &&
+    isSeoAuditPayload(cached.payload) &&
+    cached.payload.result.targetUrl === normalizedUrl
+  );
+}
+
 export async function handleSeoAuditRequest(
   request: Request,
   dependencies: SeoAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
@@ -193,7 +214,10 @@ export async function handleSeoAuditRequest(
   const ip = dependencies.extractClientIp(request.headers);
   const gate = await dependencies.openGate(ip, normalized.url);
   if (!gate.ok) return gate.response;
-  if (gate.kind === "cached") {
+  if (
+    gate.kind === "cached" &&
+    cachedSeoAuditMatches(gate, normalized.url)
+  ) {
     gate.release();
     // The payload carries the timestamp of the crawl that produced it, which
     // both tools render, so a cached answer never reads as a fresh one.

@@ -67,32 +67,32 @@ function getTopToolRecommendation(
 ) {
   if (pillar === "seo_content") {
     return {
-      href: localePath(locale, "/tools/internal-link-audit"),
-      eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
+      href: localePath(locale, "/agents/tech"),
+      eyebrow: locale === "zh" ? "匹配的 Agent" : "Matched Agent",
       title:
         locale === "zh"
-          ? "用一份有边界的内链审计检查站点结构"
-          : "Check site structure with a bounded internal-link audit",
+          ? "用 Tech Agent 检查站点结构"
+          : "Check site structure with the Tech Agent",
       body:
         locale === "zh"
-          ? "无需账号，直接从公开 HTML 链接中找出需要人工复核的结构线索。"
-          : "No account is required. Start from public HTML links and review the structural leads the crawl actually observed.",
-      cta: locale === "zh" ? "运行内链审计" : "Run an internal-link audit",
+          ? "需要已验证账号；只检查公开 HTML，无需 Search Console 或站点所有权验证，也不会把本次营销站运行保存到 App 项目。"
+          : "A verified account is required. The Agent reads public HTML without Search Console or site-ownership access, and the marketing run is not saved to an app project.",
+      cta: locale === "zh" ? "打开 Tech Agent" : "Open Tech Agent",
     };
   }
 
   return {
-    href: localePath(locale, "/tools/seo-audit"),
-    eyebrow: locale === "zh" ? "匹配的公开工具" : "Matched public tool",
+    href: localePath(locale, "/agents/seo"),
+    eyebrow: locale === "zh" ? "匹配的 Agent" : "Matched Agent",
     title:
       locale === "zh"
-        ? "先用公开 SEO 审计验证一个网站信号"
-        : "Verify one site signal with a public SEO audit",
+        ? "先用 SEO Agent 验证网站信号"
+        : "Verify site signals with the SEO Agent",
     body:
       locale === "zh"
-        ? "无需账号即可检查单个公开页面，并清楚区分已测量信号与工具边界。"
-        : "Check one public page without an account and keep measured signals separate from the tool's limits.",
-    cta: locale === "zh" ? "运行免费 SEO 审计" : "Run a free SEO audit",
+        ? "需要已验证账号；只检查公开 HTML，无需 Search Console 或站点所有权验证，也不会把本次营销站运行保存到 App 项目。"
+        : "A verified account is required. The Agent reads public HTML without Search Console or site-ownership access, and the marketing run is not saved to an app project.",
+    cta: locale === "zh" ? "打开 SEO Agent" : "Open SEO Agent",
   };
 }
 
@@ -222,22 +222,22 @@ export function BlogArticleContent({
         </h2>
         <p className="mt-3 max-w-2xl text-[13px] leading-[1.65] text-text-dark-secondary">
           {locale === "zh"
-            ? "公开工具不需要账号。先获得一个带证据的诊断结果，再决定是否把工作带入完整项目。"
-            : "The public tools do not require an account. Get an evidence-led diagnostic first, then decide whether the work belongs in a full project."}
+            ? "SEO 与 Tech Agent 需要已验证账号，只检查公开 HTML，无需 Search Console 或站点所有权验证；本次营销站运行不会保存到 App 项目。"
+            : "The SEO and Tech Agents require a verified account and inspect public HTML without Search Console or site-ownership access. The marketing run is not saved to an app project."}
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href={localePath(locale, "/tools/seo-audit")}
+            href={localePath(locale, "/agents/seo")}
             className="inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
-            {locale === "zh" ? "运行免费 SEO 审计" : "Run a free SEO audit"}
+            {locale === "zh" ? "打开 SEO Agent" : "Open SEO Agent"}
             <ArrowRight aria-hidden="true" className="size-3.5" />
           </Link>
           <Link
-            href={localePath(locale, "/tools/internal-link-audit")}
+            href={localePath(locale, "/agents/tech")}
             className="inline-flex h-11.5 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50"
           >
-            {locale === "zh" ? "运行内链审计" : "Run an internal link audit"}
+            {locale === "zh" ? "打开 Tech Agent" : "Open Tech Agent"}
           </Link>
         </div>
       </section>

@@ -1,7 +1,7 @@
 ---
 title: Privacy Policy
-version: 1.1
-effectiveDate: 2026-08-07
+version: 1.2
+effectiveDate: 2026-08-12
 status: published
 ---
 
@@ -20,13 +20,16 @@ us at the address in the *Contact* section below.
 
 ## What we collect
 
-### 1. When you use a free tool without signing in
+### 1. When you run the SEO or Tech Agent
 
-Our free tools (SEO audit, internal link audit, and the calculators) do not
-require an account.
+The SEO Agent and Tech Agent require a verified GenGrowth account. Signing in
+with Google creates that account using the identity information described in
+section 3. It does not grant us Gmail mailbox, Search Console, or site-ownership
+access. Some calculators that do not run a website crawl remain available
+without an account.
 
-- **The address you submit.** We fetch public pages at that address and analyse
-  the response.
+- **The address you submit.** We fetch same-origin public static HTML at that
+  address and analyse the response.
 - **Your IP address.** It is used as the key of a rate-limit counter so one
   visitor cannot exhaust the shared crawl budget. The counter is stored in our
   database with the IP address in the key.
@@ -34,8 +37,8 @@ require an account.
   repeated request within the hour does not re-crawl someone else's site. This
   cache expires after **one hour**.
 
-We do not create an account, a profile, or a saved report from an anonymous tool
-run.
+The verified account exists before the Agent runs. The marketing-site run does
+not create a saved app project or persisted report.
 
 ### 2. When you connect Google Search Console
 
@@ -91,7 +94,7 @@ purpose and lifetime.
 
 | Data | Retention |
 | --- | --- |
-| Free-tool crawl cache | 1 hour |
+| Agent crawl cache | 1 hour |
 | Rate-limit counters (contain IP) | Until the counting window closes |
 | Search Console access and refresh tokens | In your browser cookie only; 30 days, extended on use, up to 90 days from authorisation |
 | Account name and email | Until you delete the account |

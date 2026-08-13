@@ -1,6 +1,6 @@
 // @input  -- locale param, tools i18n namespace, site config, shared ToolCard
-// @output -- tools hub grouped by a visitor's current SEO/growth situation
-// @pos    -- free-tool continuation hub between acquisition pages and GenGrowth
+// @output -- supporting-tools hub grouped by a visitor's current SEO/growth situation
+// @pos    -- continuation hub for GSC and planning tools; URL audits live under /agents
 import { ArrowRight, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
@@ -25,12 +25,6 @@ const DIAGNOSIS_TOOLS = [
     category: "diagnosis",
   },
   {
-    slug: "internal-link-audit",
-    titleKey: "internalLinkAudit.title",
-    descKey: "internalLinkAudit.description",
-    category: "diagnosis",
-  },
-  {
     slug: "traffic-drop-diagnosis",
     title: { en: "Traffic Drop Diagnosis", zh: "流量下降诊断" },
     description: {
@@ -38,12 +32,6 @@ const DIAGNOSIS_TOOLS = [
       zh: "先比较 Search Console 时间段，再判断自然流量为何变化。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
-    category: "diagnosis",
-  },
-  {
-    slug: "seo-audit",
-    titleKey: "seoAudit.title",
-    descKey: "seoAudit.description",
     category: "diagnosis",
   },
 ] as const;
@@ -73,7 +61,8 @@ export async function generateMetadata({
   const t = await getTranslations({ locale, namespace: "tools" });
 
   return generatePageMetadata({
-    title: locale === "en" ? "Free SEO & Growth Tools" : "免费 SEO 与增长工具",
+    title:
+      locale === "en" ? "Supporting SEO & Growth Tools" : "SEO 与增长辅助工具",
     description: t("subtitle"),
     locale,
     path: "/tools",
@@ -89,7 +78,7 @@ export default async function ToolsPage({
   const t = await getTranslations({ locale, namespace: "tools" });
   const home = locale === "en" ? "Home" : "首页";
   const tools =
-    locale === "en" ? "Free SEO & Growth Tools" : "免费 SEO 与增长工具";
+    locale === "en" ? "Supporting SEO & Growth Tools" : "SEO 与增长辅助工具";
 
   return (
     /* 顶部间距只留 36px：PageShell 已经为 fixed 导航垫了 68px */
@@ -151,21 +140,11 @@ export default async function ToolsPage({
               <ToolCard
                 key={tool.slug}
                 slug={tool.slug}
-                title={
-                  "title" in tool
-                    ? tool.title[locale as "en" | "zh"]
-                    : t(tool.titleKey)
-                }
-                description={
-                  "description" in tool
-                    ? tool.description[locale as "en" | "zh"]
-                    : t(tool.descKey)
-                }
+                title={tool.title[locale as "en" | "zh"]}
+                description={tool.description[locale as "en" | "zh"]}
                 category={tool.category}
                 locale={locale}
-                ctaLabel={
-                  "cta" in tool ? tool.cta[locale as "en" | "zh"] : undefined
-                }
+                ctaLabel={tool.cta[locale as "en" | "zh"]}
               />
             ))}
           </div>

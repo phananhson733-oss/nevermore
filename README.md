@@ -191,8 +191,13 @@ reads select only that generation. An exact pin may still read known
 `growth-audit.0.3.0` history under its own validator. The Growth Audit capability
 version remains `0.3.0`; its request/addressing contract and
 `capabilityContractVersion` literal remain `growth-audit.0.3.0`.
-Anonymous Public Tools retain their existing facts-only, quota, no-Profile, and
-no-canonical-persistence boundary.
+Supporting Public Tools retain their facts-only, quota, no-Profile, and
+no-canonical-persistence boundary. URL audit execution is now
+registration-gated: the legacy SEO Audit and Internal Link Audit pages redirect
+to the matching SEO / Tech Agent, and both old and new audit APIs verify a
+Supabase user before admission. Marketing Agent runs remain non-canonical and
+non-persistent; they do not create or impersonate an authenticated app analysis
+run.
 
 A GitHub pull request or WordPress Draft produces a **delivery receipt** only;
 neither proves that a customer-visible change is live. A separate **change
