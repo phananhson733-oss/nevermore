@@ -101,7 +101,7 @@ You can, but stacking single-purpose tools sometimes costs more in money and con
 
 ## Take Action
 
-If you want to see how usable-ceiling thinking works inside a single platform, [start your free GenGrowth trial](https://app.gengrowth.ai/) and run one real project — a keyword map, a rank snapshot, an audit — to feel where genuine value lives versus where cheap tools throttle you. Bring your own non-negotiables list and let the tool prove its starter-tier worth on your actual workflow.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

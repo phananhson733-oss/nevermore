@@ -7,9 +7,10 @@ product workbench, while this app owns the website, locale routing, SEO
 metadata, content pages, supporting public tools, and the registration-gated
 SEO / Tech Agent acquisition surfaces. Agent runs on this host are bounded,
 non-canonical and non-persistent; they do not create an app project or claim an
-app analysis run occurred. Product-workbench CTAs still go to
-`https://app.gengrowth.ai`; this marketing deployment does not operate a
-separate trial or waitlist capture system.
+app analysis run occurred. The product app is not currently open, so public
+marketing CTAs stay on `gengrowth.ai`: shipped work goes to the public Agents
+or tools, while broader-product interest goes to the in-site waitlist and its
+hardened `/api/waitlist` endpoint.
 
 ## Local development
 
@@ -39,8 +40,8 @@ its own explicitly provisioned Supabase/Auth and public-tool infrastructure:
 Do not copy unrelated authenticated-product secrets into this project merely
 because both applications share a repository. In particular, the marketing
 site's sealed `gg_*` Google/Search Console cookies are host-scoped and are not
-app authentication or app workspace authority. Resend is not required while
-lead capture remains disabled.
+app authentication or app workspace authority. Resend is not required for the
+current waitlist-only closure.
 
 The Agent access gate is the Supabase user returned by
 `supabase.auth.getUser()`, checked before request parsing or crawl admission.
@@ -48,12 +49,25 @@ Google sign-in requests identity data only; it is not Gmail mailbox access.
 The implementation and acceptance boundary is recorded in
 [`docs/plans/2026-08-12-marketing-seo-tech-agents-mvp.md`](plans/2026-08-12-marketing-seo-tech-agents-mvp.md).
 
-Until a new, migrated lead-capture data contract and email sender have been
-explicitly enabled, `/api/contact`, `/api/trial` and `/api/waitlist` deliberately
-return `503 LEAD_CAPTURE_UNAVAILABLE`. The contact page uses
-`hello@gengrowth.ai` directly and the conversion CTAs open the existing product
-application. This protects the retired Supabase project from new writes and
-prevents promises of an email workflow that is not configured.
+The current lead-capture split is deliberate:
+
+- `/api/waitlist` is the hardened marketing-domain waitlist endpoint. It uses
+  `createAdminSupabaseClient()`, rate limits by IP, stores to
+  `waitlist_signups`, and fails closed with `503 LEAD_CAPTURE_UNAVAILABLE`
+  until the owner applies
+  `apps/marketing/supabase/migrations/0003_waitlist_signups.sql` to the active
+  marketing Supabase project and provisions either `SUPABASE_SECRET_KEY` or
+  the compatible `SUPABASE_SERVICE_ROLE_KEY` server-side variable.
+- `/api/trial` stays `503 LEAD_CAPTURE_UNAVAILABLE`; this release does not
+  promise or start a trial flow on the marketing domain.
+- `/api/contact` stays `503 LEAD_CAPTURE_UNAVAILABLE`; the contact page uses
+  `hello@gengrowth.ai` directly instead of writing to the retired project.
+
+That split protects the retired Supabase project from new writes while still
+allowing a minimal waitlist-only closure once the production migration and
+admin-secret authority are in place. Email sender authority remains separate:
+the current waitlist flow does not require Resend, and no production email
+promise should be made until sender configuration is explicitly approved.
 
 ## Blog content and media
 

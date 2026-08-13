@@ -108,7 +108,7 @@ describe("repository-backed blog content", () => {
       posts.map((post) => `/${post.locale}/blog/${post.slug}`),
     );
     const migratedLegacyUrls = [
-      "/en/blog/astrologywiki-case-study",
+      "/en/blog/astrologywiki-zero-to-5000-users",
       "/en/blog/growth-experiment-playbook",
       "/en/blog/marketing-attribution-models",
       "/en/blog/organic-traffic-growth-case-study",
@@ -144,31 +144,28 @@ describe("repository-backed blog content", () => {
     // striking-distance-keywords / zero-search-volume-keywords — and left this
     // count behind, so the gate fired exactly as intended. Reviewed and
     // accepted; Chinese is untouched.
-    // 66 → 73 on 2026-08-13: the legacy /en migration recovery restores
-    // seven indexed English articles whose locale redirects had been landing
-    // on 404. The conflicting AstrologyWiki draft is deliberately not revived;
-    // its old slug redirects to the already reviewed case study instead.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(73);
+    // 66 → 70 on 2026-08-13: four B2 URLs keep evidence-reviewed content,
+    // three retired comparison URLs are archived behind a truthful 410, and
+    // the unsupported AstrologyWiki case study is replaced by a correction on
+    // the historically ranked slug.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(70);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
     expect(urls.has("/en/blog/seo-content-clusters-draft")).toBe(false);
     expect(urls.has("/zh/blog/keyword-gap-analysis-guide-draft")).toBe(false);
-    // Newest-first ordering. Was 07-31 until the 2026-08-07 keyword-opportunity
-    // batch (377a4b9) landed four posts dated that day; the assertion pins the
-    // ordering, not any particular article, so it moves with the newest one.
-    expect(posts[0]?.published_at).toBe("2026-08-07T00:00:00.000Z");
+    // Newest-first ordering. The evidence-boundary correction is the newest
+    // published record after the 2026-08-13 migration closeout.
+    expect(posts[0]?.published_at).toBe("2026-08-13T00:00:00.000Z");
   });
 
-  it("restores every indexed English article selected for legacy migration", async () => {
+  it("publishes the evidence-reviewed English recovery articles", async () => {
     const restoredSlugs = [
       "9-best-marketing-attribution-tools-for-saas-in-2026",
       "ai-marketing-automation-for-saas",
       "best-ai-marketing-and-cmo-tools-for-saas-in-2026",
-      "gengrowth-vs-blaze",
-      "gengrowth-vs-cometly",
       "gengrowth-vs-improvado",
-      "gengrowth-vs-okara",
+      "astrologywiki-zero-to-5000-users",
     ];
 
     const posts = await Promise.all(
@@ -182,7 +179,7 @@ describe("repository-backed blog content", () => {
       expect(post, restoredSlugs[index]).not.toBeNull();
       if (!post) continue;
       expect(post?.status, restoredSlugs[index]).toBe("published");
-      expect(post?.reading_time, restoredSlugs[index]).toBeGreaterThanOrEqual(5);
+      expect(post?.reading_time, restoredSlugs[index]).toBeGreaterThanOrEqual(3);
       expect(post?.content, restoredSlugs[index]).toContain("<h2>");
       expect(post?.content, restoredSlugs[index]).not.toContain("Coming soon");
       const heroImage = post.hero_image;
@@ -195,14 +192,49 @@ describe("repository-backed blog content", () => {
     }
   });
 
-  it("keeps every published product CTA on the product subdomain", async () => {
+  it("gives each B2 URL an explicit recovered or gone outcome", async () => {
+    const recoveredSlugs = [
+      "9-best-marketing-attribution-tools-for-saas-in-2026",
+      "ai-marketing-automation-for-saas",
+      "gengrowth-vs-improvado",
+      "astrologywiki-zero-to-5000-users",
+    ];
+    const goneSlugs = [
+      "gengrowth-vs-blaze",
+      "gengrowth-vs-cometly",
+      "gengrowth-vs-okara",
+    ];
+
+    const posts = await Promise.all(
+      recoveredSlugs.map((slug) => getLocalBlogPostBySlug(slug, "en")),
+    );
+
+    for (const [index, post] of posts.entries()) {
+      expect(post, recoveredSlugs[index]).not.toBeNull();
+      if (!post) continue;
+
+      expect(post.content, recoveredSlugs[index]).not.toContain(
+        'href="https://app.gengrowth.ai',
+      );
+      expect(post.content, recoveredSlugs[index]).not.toContain('href="/en/');
+      expect(post.content, recoveredSlugs[index]).not.toContain(
+        'href="https://gengrowth.ai/en/',
+      );
+    }
+
+    for (const slug of goneSlugs) {
+      await expect(getLocalBlogPostBySlug(slug, "en"), slug).resolves.toBeNull();
+    }
+  });
+
+  it("keeps published product CTAs on the marketing site boundary", async () => {
     const englishPosts = await getLocalBlogPosts("en");
     const combinedContent = englishPosts.map((post) => post.content).join("\n");
 
     expect(combinedContent).not.toContain("https://gengrowth.ai/app");
     expect(combinedContent).not.toContain("https://gengrowth.ai/en/features");
     expect(combinedContent).not.toContain("https://gengrowth.ai/en/pricing");
-    expect(combinedContent).toContain("https://app.gengrowth.ai/");
+    expect(combinedContent).not.toContain("https://app.gengrowth.ai/");
   });
 
   it("does not link published articles through retired marketing routes", async () => {

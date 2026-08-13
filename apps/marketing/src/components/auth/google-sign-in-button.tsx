@@ -1,5 +1,5 @@
 // @input  -- lib/auth/gsi-client, next-intl locale
-// @output — Google 官方登录按钮；不可用时在新标签页回落到 app 站登录页
+// @output — Google 官方登录按钮；不可用时回落到营销站 waitlist 通知
 // @pos    -- 登录弹层的主体，SignInDialog 使用
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 
 import { ensureGoogleIdentity } from "../../lib/auth/gsi-client";
-import { siteConfig } from "../../config/site";
+import { localePath } from "../../lib/locale-path";
 
 /** Google's button ships its own width; this keeps the panel from reflowing. */
 const BUTTON_WIDTH = 280;
@@ -29,8 +29,8 @@ type Status = "loading" | "ready" | "unavailable";
  * to sign in.
  *
  * When GSI cannot initialise at all (blocked script, unconfigured deployment,
- * nonce unavailable) the slot degrades to the product's own sign-in page rather
- * than showing a dead frame.
+ * nonce unavailable) the slot degrades to the marketing waitlist rather than
+ * implying the visitor can continue a sign-in that is not available here.
  */
 export function GoogleSignInButton() {
   const t = useTranslations();
@@ -89,9 +89,7 @@ export function GoogleSignInButton() {
 
       {status === "unavailable" ? (
         <a
-          href={`${siteConfig.appUrl}/login`}
-          target="_blank"
-          rel="noopener noreferrer"
+          href={localePath(locale, "/waitlist")}
           className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-brand-gradient px-[18px] text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta"
         >
           {t("auth.continueOnApp")}

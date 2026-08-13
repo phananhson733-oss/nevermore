@@ -109,7 +109,7 @@ For rank tracking and white-label reporting across many client sites, yes — af
 
 ## Take Action
 
-Map your own five SEO jobs to hours, mark where serankings is strong and where it is thin, and you will see in one pass whether it covers your workflow or needs a single complement. Run that biggest time sink through GenGrowth first to baseline the real hours before you commit to any tool. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and measure one workflow this week.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

@@ -114,7 +114,7 @@ No. At DA 0 you need just enough tooling to confirm which long-tail terms are wi
 
 ## Take Action
 
-Pick your three winnable keywords this week, then run one of them through GenGrowth before you commit to any cadence or hire any help. You will see which terms a zero-authority startup can actually rank for and which are years away. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and choose your first three pages.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

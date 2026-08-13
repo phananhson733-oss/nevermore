@@ -120,7 +120,7 @@ Demand three things: five live placements you can read, the last campaign's repl
 
 ## Take Action
 
-Stop buying links by the dozen and start judging outreach on relevance, editorial merit, reply-rate transparency, and risk controls. GenGrowth gives operators the tracking and audit layer to verify every placement against the criteria above — so you can hold any SEO outreach agency to the standard that actually moves rankings. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and put your current link program through the relevance gauntlet this week.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

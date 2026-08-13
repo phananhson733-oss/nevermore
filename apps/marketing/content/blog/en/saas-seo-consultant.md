@@ -109,7 +109,7 @@ Programmatic pages fail when teams build templates without real search demand be
 
 ## Take Action
 
-Run a quick audit of your own pricing and use-case pages against the evaluation criteria above, then [start your free GenGrowth trial](https://app.gengrowth.ai/) to see which pages already feed your trial sign-ups. You'll get a conversion-first view of your organic pages in minutes, and that view tends to reframe the hire decision: the question stops being who publishes the most and becomes who can turn product-led search into activated accounts.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

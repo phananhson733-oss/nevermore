@@ -15,7 +15,7 @@
     "subtitle": "使用 Google 账号登录，不用设密码，也不用填表单。",
     "consent": "登录即创建 GenGrowth 账号，并表示同意服务条款与隐私政策。我们只读取你的姓名和邮箱地址。",
     "loading": "正在加载 Google 登录…",
-    "continueOnApp": "前往 app.gengrowth.ai 登录"
+    "continueOnApp": "加入候补，接收开放通知"
   },
   "nav": {
     "tools": "免费工具",
@@ -259,12 +259,12 @@
   "waitlist": {
     "emailLabel": "工作邮箱",
     "emailPlaceholder": "you@company.com",
-    "submit": "获取早期访问",
+    "submit": "访问开放时邮件通知我",
     "submitting": "订阅中...",
-    "successTitle": "已加入等待列表!",
-    "successDesc": "我们将发送早期访问资格、每周增长实验报告和 7 天免费试用。加入已在使用 GenGrowth 的 237 个产品团队。",
+    "successTitle": "已加入等待列表",
+    "successDesc": "GenGrowth 访问开放时，我们会发邮件通知你。",
     "duplicateError": "您已订阅过！",
-    "genericError": "出了点问题，请重试。",
+    "genericError": "等待列表暂时不可用，请稍后再试。",
     "nameLabel": "姓名（选填）",
     "companyLabel": "公司（选填）",
     "roleLabel": "角色（选填）",
@@ -593,19 +593,19 @@
     }
   },
   "trial": {
-    "modalTitle": "开始免费试用",
-    "modalDesc": "只需 4 步，2 分钟完成产品配置",
-    "contactTitle": "联系信息",
-    "contactDesc": "请留下您的邮箱，我们将发送试用邀请。",
+    "modalTitle": "产品访问暂未开放",
+    "modalDesc": "请通过营销站候补名单接收开放通知。",
+    "contactTitle": "开放通知",
+    "contactDesc": "旧申请表已停用，请改用候补名单。",
     "emailLabel": "工作邮箱",
     "emailPlaceholder": "you@company.com",
     "nameLabel": "姓名（选填）",
     "namePlaceholder": "您的姓名",
-    "submitTrial": "提交试用申请",
+    "submitTrial": "改为加入候补名单",
     "submitting": "提交中...",
-    "successTitle": "试用申请已提交！",
-    "successDesc": "我们将在 24 小时内审核您的申请，届时提供早期访问与 7 天免费试用。",
-    "duplicateError": "您已提交过试用申请！",
+    "successTitle": "旧申请入口已停用",
+    "successDesc": "产品访问暂未开放，请通过 /waitlist 接收开放通知。",
+    "duplicateError": "请通过 /waitlist 接收开放通知。",
     "genericError": "出了点问题，请重试。",
     "emailInvalid": "请输入有效的邮箱地址"
   },
@@ -639,8 +639,8 @@
     "planBody": "当你需要更快判断测试可信度和一项实验所需样本量时，可使用这个确定性计算器。",
     "productCtaEyebrow": "从一个答案到完整路径",
     "productCtaTitle": "你的 SEO 工作不该在每个工具处重新开始。",
-    "productCtaBody": "打开 GenGrowth，在一条连续路径中串联项目上下文、关键词研究、网站结构、内链与权威度建设。",
-    "productCta": "打开 GenGrowth",
+    "productCtaBody": "如果你想在更完整的连贯工作流开放时收到邮件通知，就加入候补名单。在此之前，先使用本站已公开的 Agents 和辅助工具。",
+    "productCta": "加入候补，接收产品开放通知",
     "abTest": {
       "title": "A/B 测试样本量计算器",
       "description": "根据基线转化率、最小可检测效应和统计参数，计算 A/B 测试所需的样本量。",
@@ -980,8 +980,8 @@
       "articlesCta": "阅读证据优先方法",
       "ctaEyebrow": "持久化工作区",
       "ctaTitle": "需要保存每次运行并做跨期对比？",
-      "ctaBody": "登录后的 GenGrowth App 是一套独立系统，用于保存项目证据和工作流；这份公共审计仍然保持匿名、无状态。",
-      "ctaButton": "打开 GenGrowth App"
+      "ctaBody": "更完整的项目保存工作流目前暂未开放；这份公共审计仍然保持匿名、无状态。",
+      "ctaButton": "加入产品开放候补名单"
     },
     "trafficDrop": {
       "title": "流量下降诊断",
@@ -1790,8 +1790,8 @@
     "subtitle": "了解 GenGrowth 与其他增长方式和工具的对比。",
     "bestForHeading": "最适合",
     "faqHeading": "常见问题",
-    "cta": "免费试用 GenGrowth",
-    "ctaSubtitle": "亲自体验差异。",
+    "cta": "加入 GenGrowth 候补名单",
+    "ctaSubtitle": "开放使用时第一时间通知你。",
     "backToCompare": "返回对比",
     "manual-growth": {
       "competitor": "手动增长",
@@ -2105,7 +2105,7 @@
       "body": "我们不会发布暂定价格或还无法兑现的方案边界。完整工作流会把项目上下文、已保存工作、更深数据和持续运营放在一起。",
       "principle": "定价原则",
       "principleBody": "URL 抓取前必须验证账号，但当前 Agent 审计不要求付费。付费价值从保存上下文、更深数据、持续监控与多站点工作开始。",
-      "cta": "打开 GenGrowth"
+      "cta": "加入候补，接收产品开放通知"
     },
     "starter": {
       "name": "Starter",
@@ -2119,7 +2119,7 @@
         "每周发现报告",
         "1 个产品"
       ],
-      "cta": "开始免费试用"
+      "cta": "加入产品开放候补名单"
     },
     "pro": {
       "name": "Pro",
@@ -2136,7 +2136,7 @@
         "Social-First 验证",
         "3 个产品"
       ],
-      "cta": "开始免费试用"
+      "cta": "加入产品开放候补名单"
     },
     "growth": {
       "name": "Growth",
@@ -2151,7 +2151,7 @@
         "优先支持",
         "自定义执行模板"
       ],
-      "cta": "开始免费试用"
+      "cta": "加入产品开放候补名单"
     },
     "comparison": {
       "title": "方案对比",

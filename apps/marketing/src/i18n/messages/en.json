@@ -15,7 +15,7 @@
     "subtitle": "Use your Google account. No password to create, no form to fill.",
     "consent": "Signing in creates a GenGrowth account and accepts the Terms and Privacy Policy. We read your name and email address only.",
     "loading": "Loading Google sign-in…",
-    "continueOnApp": "Continue on app.gengrowth.ai"
+    "continueOnApp": "Join the waitlist for access updates"
   },
   "nav": {
     "tools": "Free Tools",
@@ -259,12 +259,12 @@
   "waitlist": {
     "emailLabel": "Work Email",
     "emailPlaceholder": "you@company.com",
-    "submit": "Get Early Access",
+    "submit": "Email me when access opens",
     "submitting": "Subscribing...",
-    "successTitle": "You're on the list!",
-    "successDesc": "We'll send you early access, weekly growth experiment reports, and a 7-day free trial. Join 237 product teams already using GenGrowth.",
+    "successTitle": "You're on the list",
+    "successDesc": "We'll email you when access opens for GenGrowth.",
     "duplicateError": "You've already subscribed!",
-    "genericError": "Something went wrong. Please try again.",
+    "genericError": "The waitlist is temporarily unavailable. Please try again later.",
     "nameLabel": "Name (optional)",
     "companyLabel": "Company (optional)",
     "roleLabel": "Role (optional)",
@@ -593,19 +593,19 @@
     }
   },
   "trial": {
-    "modalTitle": "Start Free Trial",
-    "modalDesc": "4 steps, 2 minutes to configure your product",
-    "contactTitle": "Contact Information",
-    "contactDesc": "Leave your email and we'll send you a trial invitation.",
+    "modalTitle": "Product Access Is Not Open Yet",
+    "modalDesc": "Use the marketing waitlist to receive an access update.",
+    "contactTitle": "Access Updates",
+    "contactDesc": "The legacy request form is disabled. Join the waitlist instead.",
     "emailLabel": "Work Email",
     "emailPlaceholder": "you@company.com",
     "nameLabel": "Name (optional)",
     "namePlaceholder": "Your name",
-    "submitTrial": "Submit Trial Request",
+    "submitTrial": "Join the Waitlist Instead",
     "submitting": "Submitting...",
-    "successTitle": "Trial Request Submitted!",
-    "successDesc": "We'll review your request and get back to you within 24 hours with early access and a 7-day free trial.",
-    "duplicateError": "You've already submitted a trial request!",
+    "successTitle": "Legacy Request Disabled",
+    "successDesc": "Product access is not open. Use /waitlist for access updates.",
+    "duplicateError": "Use /waitlist for access updates.",
     "genericError": "Something went wrong. Please try again.",
     "emailInvalid": "Please enter a valid email address"
   },
@@ -639,8 +639,8 @@
     "planBody": "Use a deterministic calculator when you need a faster decision about test confidence and the sample a proposed experiment requires.",
     "productCtaEyebrow": "From one answer to a complete route",
     "productCtaTitle": "Your SEO work should not restart at every tool.",
-    "productCtaBody": "Open GenGrowth to connect your project context, keyword research, site structure, internal links, and authority work in one sequence.",
-    "productCta": "Open GenGrowth",
+    "productCtaBody": "Join the waitlist if you want an email when the broader connected workflow opens. Until then, use the public Agents and supporting tools on this site.",
+    "productCta": "Join the waitlist for product access",
     "abTest": {
       "title": "A/B Test Sample Size Calculator",
       "description": "Calculate the required sample size for your A/B test based on baseline conversion rate, minimum detectable effect, and statistical parameters.",
@@ -980,8 +980,8 @@
       "articlesCta": "Read the evidence-first method",
       "ctaEyebrow": "Saved workspace",
       "ctaTitle": "Need stored runs and cross-run comparison?",
-      "ctaBody": "The authenticated GenGrowth app is a separate system for saved project evidence and workflows. This public audit remains anonymous and stateless.",
-      "ctaButton": "Open GenGrowth app"
+      "ctaBody": "The broader saved-project workflow is not currently open. This public audit remains anonymous and stateless.",
+      "ctaButton": "Join the product-access waitlist"
     },
     "trafficDrop": {
       "title": "Traffic drop diagnosis",
@@ -1790,8 +1790,8 @@
     "subtitle": "See how GenGrowth compares to alternative approaches and tools.",
     "bestForHeading": "Best For",
     "faqHeading": "Frequently Asked Questions",
-    "cta": "Try GenGrowth Free",
-    "ctaSubtitle": "See the difference for yourself.",
+    "cta": "Join the GenGrowth Waitlist",
+    "ctaSubtitle": "Get notified when access opens.",
     "backToCompare": "Back to Compare",
     "manual-growth": {
       "competitor": "Manual Growth",
@@ -2105,7 +2105,7 @@
       "body": "We are not publishing provisional prices or plan limits that we cannot yet stand behind. The full workflow is where project context, saved work, deeper data, and ongoing operations come together.",
       "principle": "The pricing principle",
       "principleBody": "Require a verified account before a URL crawl, but do not require payment for the current Agent audit. Paid value begins with saved context, deeper data, monitoring, and multi-site work.",
-      "cta": "Open GenGrowth"
+      "cta": "Join the waitlist for product access"
     },
     "starter": {
       "name": "Starter",
@@ -2119,7 +2119,7 @@
         "Weekly discovery reports",
         "1 product"
       ],
-      "cta": "Start Free Trial"
+      "cta": "Join the product-access waitlist"
     },
     "pro": {
       "name": "Pro",
@@ -2136,7 +2136,7 @@
         "Social-First validation",
         "3 products"
       ],
-      "cta": "Start Free Trial"
+      "cta": "Join the product-access waitlist"
     },
     "growth": {
       "name": "Growth",
@@ -2151,7 +2151,7 @@
         "Priority support",
         "Custom execution templates"
       ],
-      "cta": "Start Free Trial"
+      "cta": "Join the product-access waitlist"
     },
     "comparison": {
       "title": "Compare Plans",

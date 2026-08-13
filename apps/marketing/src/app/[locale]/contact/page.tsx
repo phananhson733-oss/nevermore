@@ -1,9 +1,10 @@
 // @input  -- locale route param, siteConfig, generatePageMetadata
-// @output -- lightweight, direct contact page with an email and product handoff
-// @pos    -- preserves a useful contact URL without reviving the legacy lead form
+// @output -- lightweight, direct contact page with email plus waitlist handoff
+// @pos    -- preserves a useful contact URL without reviving the legacy lead form or app CTA
 import { ArrowRight, Mail } from "lucide-react";
 import { generatePageMetadata } from "@/lib/seo";
 import { siteConfig } from "@/config/site";
+import { localePath } from "@/lib/locale-path";
 
 export async function generateMetadata({
   params,
@@ -34,16 +35,16 @@ export default async function ContactPage({
       ? {
           eyebrow: "联系 GenGrowth",
           title: "有问题或想一起把增长做得更扎实？",
-          body: "产品使用、合作想法或反馈，请直接发邮件给我们。我们会用真实信息回复，而不是让你进入候补名单。",
+          body: "产品使用、合作想法或反馈，请直接发邮件给我们。若你想在完整产品开放时收到通知，也可以加入候补名单。",
           emailLabel: "发送邮件",
-          productLabel: "打开 GenGrowth",
+          productLabel: "加入候补，接收开放通知",
         }
       : {
           eyebrow: "Contact GenGrowth",
           title: "Questions, feedback, or a partnership idea?",
-          body: "Email us about the product, a collaboration, or support. We will respond with useful information instead of sending you through a waitlist.",
+          body: "Email us about the product, a collaboration, or support. If you want to hear when the broader product opens, join the waitlist for access updates.",
           emailLabel: "Email the team",
-          productLabel: "Open GenGrowth",
+          productLabel: "Join the waitlist for access updates",
         };
 
   return (
@@ -78,7 +79,7 @@ export default async function ContactPage({
             {copy.emailLabel}
           </a>
           <a
-            href={siteConfig.appUrl}
+            href={localePath(locale, "/waitlist")}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
           >
             {copy.productLabel}

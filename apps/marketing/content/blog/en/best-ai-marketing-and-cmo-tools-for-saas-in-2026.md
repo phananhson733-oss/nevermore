@@ -216,3 +216,20 @@ Before you commit, run one real workflow through the tool you favor: one audit,
 one campaign brief, one review loop, one export, and one stakeholder handoff.
 If the tool cannot make that weekly workflow meaningfully cleaner on real data,
 it is not yet your AI CMO. It is only another demo.
+
+## Take Action
+
+If the first unresolved question is still SEO evidence rather than execution
+breadth, [Run the SEO Agent](https://gengrowth.ai/agents/seo) before you buy
+the broader AI-marketing layer. Use one real public URL to check what the site
+already proves, keep the bounded result on the marketing domain, and only add
+the wider AI-CMO surface once the evidence gap is no longer the blocker.
+
+## Sources
+
+- [Okara homepage](https://okara.ai/) — official Okara positioning, accessed August 13, 2026
+- [Jasper platform page](https://www.jasper.ai/platform) — official Jasper platform positioning, accessed August 13, 2026
+- [Copy.ai homepage](https://www.copy.ai/) — official Copy.ai GTM AI positioning, accessed August 13, 2026
+- [HubSpot Marketing Hub](https://www.hubspot.com/products/marketing) — official HubSpot marketing-product positioning, accessed August 13, 2026
+- [HubSpot artificial intelligence and Agent Hub](https://www.hubspot.com/products/artificial-intelligence) — official HubSpot AI and agent positioning, accessed August 13, 2026
+- [GenGrowth pricing](https://gengrowth.ai/pricing) — official GenGrowth connected-workflow positioning, accessed August 13, 2026

@@ -9,7 +9,7 @@ export function getMarketingRedirects() {
   return [
     {
       source: "/app",
-      destination: "https://app.gengrowth.ai/",
+      destination: "/waitlist",
       statusCode: 301 as const,
     },
     {
@@ -23,13 +23,7 @@ export function getMarketingRedirects() {
       statusCode: 301 as const,
     },
     ...[
-      ["/en/features", "/pricing"],
-      ["/en/about", "/pricing"],
-      ["/en/templates", "/blog"],
       ["/en/compare", "/blog#comparisons"],
-      ["/en/use-cases", "/blog"],
-      ["/en/playbooks", "/blog"],
-      ["/en/glossary", "/blog"],
       ["/en/tools/seo-audit", "/agents/seo"],
       ["/en/tools/internal-link-audit", "/agents/tech"],
     ].map(([source, destination]) => ({
@@ -51,7 +45,7 @@ export function getMarketingRedirects() {
       ["free-white-label-seo", "best-white-label-seo-tool"],
       ["marketing-attribution-for-saas", "marketing-attribution-models"],
       ["serankings", "serankings-alternative"],
-      ["astrologywiki-zero-to-5000-users", "astrologywiki-case-study"],
+      ["astrologywiki-case-study", "astrologywiki-zero-to-5000-users"],
     ].flatMap(([source, destination]) => [
       {
         source: `/blog/${source}`,
@@ -81,8 +75,8 @@ const nextConfig: NextConfig = {
     // already ranks stops the two from splitting the same intent.
     // The /en/ variant is listed explicitly so it redirects in one hop instead
     // of bouncing through next-intl's prefix strip first.
-    // Product onboarding moved to its own subdomain. Keep /app as a permanent
-    // compatibility route for old articles, bookmarks, and third-party links.
+    // The product app is not currently open. Keep /app as a permanent
+    // compatibility route, but land old links on the marketing waitlist.
     return getMarketingRedirects();
   },
   async rewrites() {

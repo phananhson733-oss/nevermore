@@ -115,7 +115,7 @@ Yes, as a reference so nothing is missed. Keep the comprehensive list, but run i
 
 ## Take Action
 
-List your own audit items, then re-sort them by ranking impact before you fix anything — indexation first, cosmetics last. Run one site through GenGrowth to see which issues actually suppress its rankings and in what order to clear them. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and run an impact-ordered audit this week.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

@@ -112,7 +112,7 @@ If you compare them at that level, the decision gets simpler. You stop asking wh
 
 ## Take Action
 
-If your immediate question is about bounded public-HTML SEO evidence, start with the [GenGrowth Agent](https://gengrowth.ai/agents) that matches the question. If your immediate question is about unifying many marketing systems for governed analytics and AI access, validate Improvado against that operating-layer job directly. When GenGrowth work requires project context and connected sources, continue in the separate workflow at [app.gengrowth.ai](https://app.gengrowth.ai/).
+If your immediate question is about bounded public-HTML SEO evidence, start with the [GenGrowth Agent](https://gengrowth.ai/agents) that matches the question. If your immediate question is about unifying many marketing systems for governed analytics and AI access, validate Improvado against that operating-layer job directly. When the first missing input is still public-site evidence, [Run the SEO Agent](https://gengrowth.ai/agents/seo) on one real site before you widen the tool search.
 
 ## Sources
 

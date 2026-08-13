@@ -1,15 +1,29 @@
-// @input  — frozen pre-cutover /en route inventory and reviewed target overrides
-// @output — 95 old English URLs with the final unprefixed migration target
-// @pos    — temporary site-move authority for sitemap-legacy-en.xml and tests
+// @input  — cutover route history, connected blog register evidence, and repair cohort overrides
+// @output — auditable legacy /en inventory with disposition, target, and migration cohort
+// @pos    — temporary site-move authority for sitemap-legacy-en.xml and route tests
+
+export type LegacyEnDisposition =
+  | "direct_redirect"
+  | "replacement_redirect"
+  | "recovered_redirect"
+  | "gone";
+
+export type LegacyEnMigrationDate = "2026-07-31" | "2026-08-13";
 
 export interface LegacyEnMigrationEntry {
   readonly legacyPath: string;
-  readonly targetPath: string;
+  readonly targetPath: string | null;
+  readonly disposition: LegacyEnDisposition;
+  readonly migrationDate: LegacyEnMigrationDate;
+  readonly provenance:
+    | "cutover_route_history"
+    | "connected_blog_register"
+    | "repair_evidence";
 }
 
-// These routes existed before the default English locale became unprefixed on
-// 2026-07-31. low-competition-keywords is deliberately absent: that page first
-// shipped after cutover and never had a public /en URL.
+const CUTOVER_MIGRATION_DATE: LegacyEnMigrationDate = "2026-07-31";
+const REPAIR_MIGRATION_DATE: LegacyEnMigrationDate = "2026-08-13";
+
 const LEGACY_EN_SITE_PATHS = [
   "/en",
   "/en/about",
@@ -33,11 +47,7 @@ const LEGACY_EN_SITE_PATHS = [
   "/en/use-cases",
 ] as const;
 
-// Frozen union of the connected index-tracking register (64 rows), the
-// repository-backed English corpus present at cutover, and the separately
-// evidenced AstrologyWiki recovery URL. Four articles first published on
-// 2026-08-07 are intentionally excluded because they never had /en routes.
-const LEGACY_EN_BLOG_PATHS = [
+const CONNECTED_REGISTER_BLOG_PATHS = [
   "/en/blog/9-best-marketing-attribution-tools-for-saas-in-2026",
   "/en/blog/affordable-seo-software",
   "/en/blog/affordable-seo-tools",
@@ -115,24 +125,184 @@ const LEGACY_EN_BLOG_PATHS = [
   "/en/blog/world-cup-2026-content-marketing-ai",
 ] as const;
 
-const FINAL_TARGET_OVERRIDES: Readonly<Record<string, string>> = {
-  "/en/about": "/pricing",
-  "/en/compare": "/blog#comparisons",
-  "/en/features": "/pricing",
-  "/en/glossary": "/blog",
-  "/en/playbooks": "/blog",
-  "/en/templates": "/blog",
-  "/en/use-cases": "/blog",
-  "/en/tools/internal-link-audit": "/agents/tech",
-  "/en/tools/seo-audit": "/agents/seo",
-  "/en/blog/free-seo-consultation": "/blog/free-seo-company",
-  "/en/blog/free-white-label-seo": "/blog/best-white-label-seo-tool",
-  "/en/blog/marketing-attribution-for-saas":
+const POST_CUTOVER_EXCLUSIONS = new Set([
+  "/en/blog/how-to-find-low-hanging-fruit-keywords",
+  "/en/blog/pagerank-sculpting",
+  "/en/blog/seo-content-clusters-draft",
+  "/en/blog/striking-distance-keywords",
+  "/en/blog/zero-search-volume-keywords",
+  "/en/tools/low-competition-keywords",
+]);
+
+const EXTRA_TOOL_PATHS = [
+  "/en/tools/ab-test-calculator",
+  "/en/tools/growth-roi-calculator",
+  "/en/tools/hidden-keywords",
+] as const;
+
+// These leaf paths are deliberately frozen here instead of derived from the
+// current mock/content modules. A future editorial add, rename, or deletion is
+// not evidence that a URL existed before the 2026-07-31 locale cutover.
+const GLOSSARY_PATHS = [
+  "/en/glossary/a-b-testing-framework",
+  "/en/glossary/ab-testing",
+  "/en/glossary/activation-rate",
+  "/en/glossary/ai-citation",
+  "/en/glossary/ai-content-detection",
+  "/en/glossary/ai-overview-optimization",
+  "/en/glossary/ai-search-engine",
+  "/en/glossary/answer-engine-optimization",
+  "/en/glossary/attribution-model",
+  "/en/glossary/backlink-profile",
+  "/en/glossary/bounce-rate",
+  "/en/glossary/brand-visibility-score",
+  "/en/glossary/canonical-url",
+  "/en/glossary/churn-rate",
+  "/en/glossary/citation-potential",
+  "/en/glossary/click-through-rate",
+  "/en/glossary/competitive-analysis",
+  "/en/glossary/content-marketing-funnel",
+  "/en/glossary/conversion-rate",
+  "/en/glossary/core-web-vitals",
+  "/en/glossary/customer-acquisition-cost",
+  "/en/glossary/daily-active-users",
+  "/en/glossary/domain-authority",
+  "/en/glossary/entity-seo",
+  "/en/glossary/generative-engine-optimization",
+  "/en/glossary/growth-loop",
+  "/en/glossary/hreflang-tag",
+  "/en/glossary/lifetime-value",
+  "/en/glossary/link-building-strategy",
+  "/en/glossary/llm-content-optimization",
+  "/en/glossary/ltv-cac-ratio",
+  "/en/glossary/market-positioning",
+  "/en/glossary/mobile-first-indexing",
+  "/en/glossary/monthly-recurring-revenue",
+  "/en/glossary/net-promoter-score",
+  "/en/glossary/north-star-metric",
+  "/en/glossary/page-speed-optimization",
+  "/en/glossary/product-led-growth",
+  "/en/glossary/referral-program",
+  "/en/glossary/retention-curve",
+  "/en/glossary/robots-txt",
+  "/en/glossary/schema-markup",
+  "/en/glossary/seo-content-strategy",
+  "/en/glossary/social-proof-strategy",
+  "/en/glossary/structured-data",
+  "/en/glossary/topical-authority",
+  "/en/glossary/utm-parameters",
+  "/en/glossary/viral-coefficient",
+  "/en/glossary/xml-sitemap",
+  "/en/glossary/zero-click-search",
+] as const;
+
+const COMPARE_PATHS = [
+  "/en/compare/ahrefs",
+  "/en/compare/babylovegrowth",
+  "/en/compare/manual-growth",
+  "/en/compare/okara-ai-cmo",
+] as const;
+
+const PLAYBOOK_PATHS = [
+  "/en/playbooks/community-devrel-loop",
+  "/en/playbooks/email-nurture-sequence",
+  "/en/playbooks/link-building-starter",
+  "/en/playbooks/product-page-optimization",
+  "/en/playbooks/seo-scale-up",
+  "/en/playbooks/social-first-probe",
+] as const;
+
+const USE_CASE_PATHS = [
+  "/en/use-cases/content-site-seo-scale",
+  "/en/use-cases/devtool-community-growth",
+  "/en/use-cases/ecommerce-product-seo",
+  "/en/use-cases/saas-zero-to-1000",
+] as const;
+
+const CUTOVER_HISTORY_PATHS = [
+  ...LEGACY_EN_SITE_PATHS,
+  ...GLOSSARY_PATHS,
+  ...COMPARE_PATHS,
+  ...PLAYBOOK_PATHS,
+  ...USE_CASE_PATHS,
+  ...EXTRA_TOOL_PATHS,
+] as const;
+
+const GONE_LEGACY_PATHS = new Set<string>([
+  "/en/about",
+  "/en/features",
+  "/en/glossary",
+  "/en/playbooks",
+  "/en/templates",
+  "/en/use-cases",
+  "/en/tools/ab-test-calculator",
+  "/en/tools/growth-roi-calculator",
+  "/en/blog/gengrowth-vs-blaze",
+  "/en/blog/gengrowth-vs-cometly",
+  "/en/blog/gengrowth-vs-okara",
+  ...GLOSSARY_PATHS,
+  ...COMPARE_PATHS,
+  ...PLAYBOOK_PATHS,
+  ...USE_CASE_PATHS,
+]);
+
+const REPAIR_TARGET_OVERRIDES: Readonly<
+  Partial<Record<string, readonly [string, LegacyEnDisposition]>>
+> = {
+  "/en/compare": ["/blog#comparisons", "replacement_redirect"],
+  "/en/tools/internal-link-audit": [
+    "/agents/tech",
+    "replacement_redirect",
+  ],
+  "/en/tools/seo-audit": ["/agents/seo", "replacement_redirect"],
+  "/en/tools/hidden-keywords": [
+    "/tools/low-competition-keywords",
+    "replacement_redirect",
+  ],
+  "/en/blog/free-seo-consultation": [
+    "/blog/free-seo-company",
+    "replacement_redirect",
+  ],
+  "/en/blog/free-white-label-seo": [
+    "/blog/best-white-label-seo-tool",
+    "replacement_redirect",
+  ],
+  "/en/blog/marketing-attribution-for-saas": [
     "/blog/marketing-attribution-models",
-  "/en/blog/astrologywiki-zero-to-5000-users":
-    "/blog/astrologywiki-case-study",
-  "/en/blog/serankings": "/blog/serankings-alternative",
-  "/en/blog/whitelabel-seo-tool": "/blog/best-white-label-seo-tool",
+    "replacement_redirect",
+  ],
+  "/en/blog/serankings": [
+    "/blog/serankings-alternative",
+    "replacement_redirect",
+  ],
+  "/en/blog/whitelabel-seo-tool": [
+    "/blog/best-white-label-seo-tool",
+    "replacement_redirect",
+  ],
+  "/en/blog/astrologywiki-zero-to-5000-users": [
+    "/blog/astrologywiki-zero-to-5000-users",
+    "recovered_redirect",
+  ],
+  "/en/blog/astrologywiki-case-study": [
+    "/blog/astrologywiki-zero-to-5000-users",
+    "replacement_redirect",
+  ],
+  "/en/blog/9-best-marketing-attribution-tools-for-saas-in-2026": [
+    "/blog/9-best-marketing-attribution-tools-for-saas-in-2026",
+    "recovered_redirect",
+  ],
+  "/en/blog/ai-marketing-automation-for-saas": [
+    "/blog/ai-marketing-automation-for-saas",
+    "recovered_redirect",
+  ],
+  "/en/blog/best-ai-marketing-and-cmo-tools-for-saas-in-2026": [
+    "/blog/best-ai-marketing-and-cmo-tools-for-saas-in-2026",
+    "recovered_redirect",
+  ],
+  "/en/blog/gengrowth-vs-improvado": [
+    "/blog/gengrowth-vs-improvado",
+    "recovered_redirect",
+  ],
 };
 
 function defaultTarget(legacyPath: string): string {
@@ -140,12 +310,60 @@ function defaultTarget(legacyPath: string): string {
   return unprefixed || "/";
 }
 
+function createEntry(
+  legacyPath: string,
+  provenance: LegacyEnMigrationEntry["provenance"],
+): LegacyEnMigrationEntry {
+  if (GONE_LEGACY_PATHS.has(legacyPath)) {
+    return Object.freeze({
+      legacyPath,
+      targetPath: null,
+      disposition: "gone" as const,
+      migrationDate: REPAIR_MIGRATION_DATE,
+      provenance: "repair_evidence" as const,
+    });
+  }
+
+  const repairOverride = REPAIR_TARGET_OVERRIDES[legacyPath];
+
+  if (repairOverride) {
+    const [targetPath, disposition] = repairOverride;
+    return Object.freeze({
+      legacyPath,
+      targetPath,
+      disposition,
+      migrationDate: REPAIR_MIGRATION_DATE,
+      provenance: "repair_evidence",
+    });
+  }
+
+  return Object.freeze({
+    legacyPath,
+    targetPath: defaultTarget(legacyPath),
+    disposition: "direct_redirect" as const,
+    migrationDate: CUTOVER_MIGRATION_DATE,
+    provenance,
+  });
+}
+
 export const LEGACY_EN_MIGRATION_ENTRIES: readonly LegacyEnMigrationEntry[] =
   Object.freeze(
-    [...LEGACY_EN_SITE_PATHS, ...LEGACY_EN_BLOG_PATHS].map((legacyPath) =>
-      Object.freeze({
-        legacyPath,
-        targetPath: FINAL_TARGET_OVERRIDES[legacyPath] ?? defaultTarget(legacyPath),
-      }),
-    ),
+    Array.from(
+      new Set(
+        [...CUTOVER_HISTORY_PATHS, ...CONNECTED_REGISTER_BLOG_PATHS].filter(
+          (legacyPath) => !POST_CUTOVER_EXCLUSIONS.has(legacyPath),
+        ),
+      ),
+    )
+      .sort((left, right) => left.localeCompare(right))
+      .map((legacyPath) =>
+        createEntry(
+          legacyPath,
+          CONNECTED_REGISTER_BLOG_PATHS.includes(
+            legacyPath as (typeof CONNECTED_REGISTER_BLOG_PATHS)[number],
+          )
+            ? "connected_blog_register"
+            : "cutover_route_history",
+        ),
+      ),
   );

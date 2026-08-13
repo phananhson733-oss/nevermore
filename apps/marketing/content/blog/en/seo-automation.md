@@ -110,7 +110,7 @@ No. Automating tasks you rarely perform returns almost nothing, and automation t
 
 ## Take Action
 
-Baseline your four recurring SEO tasks in hours, multiply each by your client count, and run your biggest time sink through GenGrowth before you commission anything else. You will see exactly how many hours SEO automation returns per client per month — and which tasks still need a person. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and model one task this week.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

@@ -221,3 +221,26 @@ Before you sign, ask every vendor to prove the same three things on your own
 data: identity resolution, campaign taxonomy integrity, and whether the report
 changes a real budget decision. If they cannot do that, the platform may still
 be impressive, but it is not yet the right purchase.
+
+## Take Action
+
+Before you blame the attribution layer for a measurement gap, verify what the
+site itself is exposing. [Run the Tech Agent](https://gengrowth.ai/agents/tech)
+on the public pages that feed your highest-value campaigns and inspect crawl,
+indexability, and internal-link conditions first. The bounded run stays on the
+marketing domain, requires a verified account, and does not save the result to
+an app project.
+
+## Sources
+
+- [Google Analytics advertising and attribution documentation](https://support.google.com/analytics/answer/10607798?hl=en) — official GA4 attribution and advertising guidance, accessed August 13, 2026
+- [Google Analytics attribution settings guide](https://support.google.com/analytics/answer/10597962) — official GA4 attribution-settings reference, accessed August 13, 2026
+- [HubSpot Create attribution reports](https://knowledge.hubspot.com/reports/create-attribution-reports) — official HubSpot attribution-reporting documentation, accessed August 13, 2026
+- [HubSpot Understanding attribution reporting](https://knowledge.hubspot.com/reports/understand-attribution-reporting) — official HubSpot attribution-model reference, accessed August 13, 2026
+- [Dreamdata B2B attribution platform](https://dreamdata.io/b2b-attribution) — official Dreamdata positioning, accessed August 13, 2026
+- [Northbeam home](https://www.northbeam.io/) and [Northbeam multi-touch attribution](https://www.northbeam.io/products/multi-touch-attribution) — official Northbeam positioning, accessed August 13, 2026
+- [Rockerbox product page](https://www.rockerbox.com/) — official Rockerbox positioning, accessed August 13, 2026
+- [Ruler Analytics](https://www.ruleranalytics.com/) and [Ruler marketing attribution](https://www.ruleranalytics.com/marketing-attribution/) — official Ruler Analytics positioning, accessed August 13, 2026
+- [Adobe Analytics attribution overview](https://experienceleague.adobe.com/en/docs/analytics/analyze/analysis-workspace/attribution/overview) and [Adobe attribution models](https://experienceleague.adobe.com/en/docs/analytics/analyze/analysis-workspace/attribution/models) — official Adobe Analytics attribution references, accessed August 13, 2026
+- [Triple Whale attribution](https://www.triplewhale.com/attribution) — official Triple Whale attribution page, accessed August 13, 2026
+- [HockeyStack multi-touch attribution docs](https://docs.hockeystack.com/marketing-intelligence/reports/multi-touch-attribution) and [HockeyStack GTM intelligence](https://www.hockeystack.com/gtm-intelligence) — official HockeyStack positioning, accessed August 13, 2026

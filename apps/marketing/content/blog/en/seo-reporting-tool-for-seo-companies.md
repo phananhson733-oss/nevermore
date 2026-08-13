@@ -108,7 +108,7 @@ Monthly is the common cadence for retainer clients because it matches billing an
 
 ## Take Action
 
-Spin up a branded client report in GenGrowth and send a scheduled, white-label summary to your next client this month. You will get a deliverable that reads in plain business language instead of a raw metric dump, which is usually what separates a retainer that renews from one that quietly churns. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and see how your client reporting workflow holds up before your next billing cycle.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

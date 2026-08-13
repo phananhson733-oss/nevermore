@@ -46,4 +46,4 @@ localeExclusive: false
 <p><strong>Orphan pages.</strong> Link every page from at least one category page.</p>
 
 <h2>Scaling with an Evidence-led Workflow</h2>
-<p>Use a connected workflow to review demand, page purpose, internal links, and measurement before expanding a template. See how <a href="/blog/astrologywiki-case-study">astrologywiki.com approached its first 67 pages</a>. For a measurement framework, read our <a href="/blog/marketing-attribution-models">attribution guide</a>.</p>
+<p>Use a connected workflow to review demand, page purpose, internal links, and measurement before expanding a template. For a correction on how evidence boundaries matter when telling a growth story, read our <a href="/blog/astrologywiki-zero-to-5000-users">AstrologyWiki evidence-boundary note</a>. For a measurement framework, read our <a href="/blog/marketing-attribution-models">attribution guide</a>.</p>

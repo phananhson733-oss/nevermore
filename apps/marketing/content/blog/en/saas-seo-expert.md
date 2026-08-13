@@ -103,7 +103,7 @@ Activation events, pricing-page and integration intent, freemium and trial mecha
 
 ## Take Action
 
-If you are weighing whether to hire a SaaS SEO expert or where the role fits your stage, gengrowth.ai is happy to think it through with you. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will help you separate activation-linked SEO from generic traffic work, so you know exactly what to look for before you sign.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

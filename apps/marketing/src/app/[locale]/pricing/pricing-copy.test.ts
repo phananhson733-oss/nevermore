@@ -28,10 +28,12 @@ describe("active Pricing Agent contract", () => {
     );
   });
 
-  it("routes both current audit CTAs to the localized Agent directory", () => {
+  it("routes current audit CTAs to Agents and product-access interest to the waitlist", () => {
     const source = readFileSync(PRICING_CLIENT, "utf8");
 
     expect(source.match(/localePath\(locale, "\/agents"\)/g)).toHaveLength(2);
+    expect(source).toContain('localePath(locale, "/waitlist")');
     expect(source).not.toContain('localePath(locale, "/tools")');
+    expect(source).not.toContain("siteConfig.appUrl");
   });
 });

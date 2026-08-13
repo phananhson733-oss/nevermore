@@ -118,7 +118,7 @@ This is not a clinical interpretation or mental health advice.
 
 ## Take Action
 
-[Start your free GenGrowth trial](https://app.gengrowth.ai/) and run one cultural moment through the timing-archetype-cohort pass end to end. You'll walk away with a signal read and a written boundary you can drop straight into a client brief. The teams that hold that line — signal here, speculation off the table — are the ones whose analysis still stands after the follow-up questions.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

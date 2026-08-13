@@ -110,7 +110,7 @@ Check whether the tool requires a CMS install or simply a domain entry, and whet
 
 ## Take Action
 
-Inventory the point tools you run today, then move your biggest handoff — usually multi-client reporting — into one platform before you renew the rest. You will see fast whether an all in one seo platform returns the coordination hours a WordPress plugin never could. [Start your free GenGrowth trial](https://app.gengrowth.ai/) and consolidate one workflow this week.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

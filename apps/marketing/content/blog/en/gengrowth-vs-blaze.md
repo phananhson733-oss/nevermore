@@ -4,7 +4,7 @@ excerpt: Blaze and GenGrowth both use AI in marketing, but they package that wor
 author: GenGrowth Team
 category: methodology
 pillar: growth_automation
-status: published
+status: archived
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
 heroImage: /images/og-default.png

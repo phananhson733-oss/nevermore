@@ -4,7 +4,7 @@ excerpt: Compare GenGrowth and Okara by operating model, evidence boundary, and 
 author: GenGrowth Team
 category: methodology
 pillar: growth_automation
-status: published
+status: archived
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
 heroImage: /images/og-default.png
@@ -116,7 +116,7 @@ When SEO diagnosis and workflow continuity are one gap, and ongoing multi-channe
 
 ## Take Action
 
-Map your current bottleneck before you compare slogans. If your team needs clearer SEO evidence, choose the [GenGrowth Agent](https://gengrowth.ai/agents) that matches the question, run one real site after the verified-session gate, and inspect what the bounded result can actually prove. Then decide whether you also need an AI-CMO-style execution layer. When project context and connected sources are required, [continue in the authenticated workflow](https://app.gengrowth.ai/).
+Map your current bottleneck before you compare slogans. If your team needs clearer SEO evidence, choose the [GenGrowth Agent](https://gengrowth.ai/agents) that matches the question, run one real site after the verified-session gate, and inspect what the bounded result can actually prove. Then decide whether you also need an AI-CMO-style execution layer. If the first gap is still on-site evidence, [Run the SEO Agent](https://gengrowth.ai/agents/seo) before you add a broader execution surface.
 
 ## Sources
 

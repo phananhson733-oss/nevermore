@@ -110,7 +110,7 @@ Level 1 brands the report only, Level 2 adds a rebrandable client portal, and Le
 
 ## Take Action
 
-Map your current clients against the three resale tiers, then start a free GenGrowth trial to see which delivery model holds your branding and your margin end to end. You will leave with a clear read on where your fulfillment leaks the vendor's name and where it stays fully yours. For most agencies, that resale-tier view is the decision dimension that turns tool selection from a feature checklist into a margin call. Start your free GenGrowth trial at [https://app.gengrowth.ai/](https://app.gengrowth.ai/).
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

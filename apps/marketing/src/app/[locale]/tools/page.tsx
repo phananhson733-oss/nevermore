@@ -1,11 +1,10 @@
-// @input  -- locale param, tools i18n namespace, site config, shared ToolCard
+// @input  -- locale param, tools i18n namespace, shared ToolCard
 // @output -- Resources > Tools hub grouped by a visitor's current SEO/growth situation
 // @pos    -- supporting-tools branch of Resources; URL audits live under /agents
 import { ArrowRight, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
 import { generatePageMetadata } from "@/lib/seo";
-import { siteConfig } from "@/config/site";
 import { BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import { VisibleBreadcrumb } from "@/components/seo/visible-breadcrumb";
 import { localePath, localeUrl } from "@/lib/locale-path";
@@ -215,7 +214,7 @@ export default async function ToolsPage({
               </p>
             </div>
             <a
-              href={siteConfig.appUrl}
+              href={localePath(locale, "/waitlist")}
               className="inline-flex h-11.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent"
             >
               {t("productCta")}

@@ -4,7 +4,7 @@ excerpt: GenGrowth and Cometly solve different problems. This guide compares Com
 author: GenGrowth Team
 category: methodology
 pillar: attribution
-status: published
+status: archived
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
 heroImage: /images/og-default.png

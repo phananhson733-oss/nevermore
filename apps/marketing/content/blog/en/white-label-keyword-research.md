@@ -111,7 +111,7 @@ localeExclusive: true
 <li>A content gap analysis explainer — for turning raw keyword data into client-facing strategy</li>
 </ul>
 <h2>Take Action</h2>
-<p>Map your own delivery workflow against a real branded export before you sign any vendor contract, and you'll surface the vendor-leakage gaps that comparison posts never mention. To see how clean, client-ready research output comes together end to end, <a href="https://app.gengrowth.ai/">start a free GenGrowth trial</a> and run a real branded export through the workflow yourself. The agencies that win resale margin are the ones that treat delivery format, not database size, as the product.</p>
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 <h2>Sources</h2>
 <ul>
 <li>Based on patterns GenGrowth has observed across white-label SEO rollouts; no third-party study is cited</li>

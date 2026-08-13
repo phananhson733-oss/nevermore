@@ -99,7 +99,7 @@ The biggest risk is short-term tactics that produce a ranking spike and then col
 
 ## Take Action
 
-If you are weighing a free SEO offer and want a second opinion on whether it compounds or resets, gengrowth.ai is happy to help. [Book a free GenGrowth consultation](https://app.gengrowth.ai/) and we will walk through your current SEO posture, flag any short-term tactics worth avoiding, and outline the durable, white-hat path that fits your team — no pressure to sign anything.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 

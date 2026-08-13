@@ -1,5 +1,5 @@
-// @input  — frozen pre-cutover English migration inventory
-// @output — standalone XML sitemap containing only old /en URLs
+// @input  — auditable legacy /en migration inventory with fixed migration cohorts
+// @output — standalone XML sitemap containing old /en URLs and cohort lastmod values
 // @pos    — temporary Google site-move discovery surface; separate from sitemap.xml
 
 import { LEGACY_EN_MIGRATION_ENTRIES } from "../../lib/legacy-en-migration";
@@ -17,8 +17,8 @@ function escapeXml(value: string): string {
 
 export function GET(): Response {
   const urls = LEGACY_EN_MIGRATION_ENTRIES.map(
-    ({ legacyPath }) =>
-      `  <url><loc>${escapeXml(`${SITE_ORIGIN}${legacyPath}`)}</loc></url>`,
+    ({ legacyPath, migrationDate }) =>
+      `  <url><loc>${escapeXml(`${SITE_ORIGIN}${legacyPath}`)}</loc><lastmod>${migrationDate}</lastmod></url>`,
   ).join("\n");
   const xml = [
     '<?xml version="1.0" encoding="UTF-8"?>',

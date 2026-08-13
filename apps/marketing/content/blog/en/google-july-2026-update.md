@@ -103,7 +103,7 @@ A spam update targets manipulative tactics like cloaking or link schemes, while 
 
 ## Take Action
 
-[Start your free GenGrowth trial](https://app.gengrowth.ai/) and run your top pages through the update-impact workflow. You'll get a page-by-page read on which content is actually at risk, sorted by business value instead of raw ranking loss. That triage list is the difference between a same-day targeted fix and a month of guesswork — it turns an update from a fire drill into a routine content decision.
+If you want access to this broader GenGrowth workflow when it opens, [join the GenGrowth waitlist for access updates](/waitlist).
 
 ## Sources
 
