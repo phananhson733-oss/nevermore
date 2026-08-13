@@ -201,3 +201,46 @@ test("homepage chooses an exact Agent and retired audit pages redirect", async (
   await page.goto("/zh/tools/internal-link-audit");
   await expect(page).toHaveURL(/\/zh\/agents\/tech$/);
 });
+
+test("primary IA groups Tools under Resources without changing its URL", async ({
+  page,
+}) => {
+  await mockSession(page, false);
+
+  await page.goto("/");
+  const primary = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(primary.getByRole("link", { name: "Home", exact: true })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  await expect(primary.getByText("Agents", { exact: true })).toBeVisible();
+  await expect(primary.getByRole("link", { name: "Blog", exact: true })).toHaveAttribute(
+    "href",
+    "/blog",
+  );
+  await expect(primary.getByText("Resources", { exact: true })).toBeVisible();
+  await expect(primary.getByRole("link", { name: "Pricing", exact: true })).toHaveAttribute(
+    "href",
+    "/pricing",
+  );
+  await expect(primary.getByRole("link", { name: /Tools/ })).toHaveCount(0);
+
+  await primary.getByText("Resources", { exact: true }).click();
+  const tools = page.getByRole("link", { name: /Tools/ }).first();
+  await expect(tools).toHaveAttribute("href", "/tools");
+  await tools.click();
+  await expect(page).toHaveURL(/\/tools$/);
+
+  await page.goto("/resources");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    "Turn growth methods into reusable resources",
+  );
+  await expect(page.locator('a[href="#prompts"]')).toHaveCount(1);
+  await expect(page.locator('a[href="#tools"]')).toHaveCount(1);
+  await expect(page.locator('a[href="#skills"]')).toHaveCount(1);
+  await expect(page.locator('a[href="#docs"]')).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Browse Tools" })).toHaveAttribute(
+    "href",
+    "/tools",
+  );
+});

@@ -5,9 +5,12 @@
 "use client";
 
 import {
+  BookOpen,
   ChevronDown,
   Compass,
+  MessageSquareText,
   ScanSearch,
+  Sparkles,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -15,6 +18,7 @@ import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { NavigationMenu } from "radix-ui";
 import type { NavMenuGroup } from "@/types";
+import { menuItemPath } from "@/config/navigation";
 import { localePath } from "@/lib/locale-path";
 
 /**
@@ -23,8 +27,11 @@ import { localePath } from "@/lib/locale-path";
  * lucide import specific rather than dynamic.
  */
 const ICONS: Record<string, LucideIcon> = {
+  BookOpen,
   Compass,
+  MessageSquareText,
   ScanSearch,
+  Sparkles,
   Wrench,
 };
 
@@ -39,6 +46,7 @@ interface NavSubmenuProps {
 function MenuLink({
   basePath,
   slug,
+  href,
   icon,
   label,
   description,
@@ -47,6 +55,7 @@ function MenuLink({
 }: {
   readonly basePath: string;
   readonly slug: string;
+  readonly href?: string;
   readonly icon: string;
   readonly label: string;
   readonly description: string;
@@ -56,7 +65,7 @@ function MenuLink({
   const Icon = ICONS[icon] ?? Compass;
   return (
     <Link
-      href={localePath(locale, `${basePath}/${slug}`)}
+      href={localePath(locale, menuItemPath(basePath, { href, slug }))}
       onClick={onNavigate}
       className="group flex items-start gap-3 rounded-row p-3 transition-colors hover:bg-brand-panel focus-visible:bg-brand-panel focus-visible:ring-2 focus-visible:ring-brand-accent/60 focus-visible:outline-none"
     >
@@ -123,6 +132,7 @@ export function NavSubmenu({
                         <MenuLink
                           basePath={basePath}
                           slug={item.slug}
+                          href={item.href}
                           icon={item.icon}
                           label={t(item.labelKey)}
                           description={t(item.descriptionKey)}
@@ -195,6 +205,7 @@ export function NavSubmenuMobile({
                 <MenuLink
                   basePath={basePath}
                   slug={item.slug}
+                  href={item.href}
                   icon={item.icon}
                   label={t(item.labelKey)}
                   description={t(item.descriptionKey)}

@@ -27,6 +27,7 @@
     "glossary": "Glossary",
     "pricing": "Pricing",
     "agents": "Agents",
+    "resources": "Resources",
     "agentsMenu": {
       "group": "Website review Agents",
       "viewAll": "View all Agents",
@@ -37,6 +38,26 @@
       "tech": {
         "label": "Tech Agent",
         "description": "Review crawl, static indexability, and internal-link conditions in a bounded run."
+      }
+    },
+    "resourcesMenu": {
+      "group": "Reusable growth library",
+      "viewAll": "Open Resources",
+      "prompts": {
+        "label": "Prompts",
+        "description": "Planned task-specific prompt templates with an explicit scope."
+      },
+      "tools": {
+        "label": "Tools",
+        "description": "Supporting SEO and growth tools for an immediate question."
+      },
+      "skills": {
+        "label": "Skills",
+        "description": "Planned repeatable workflows that turn a method into reviewable steps."
+      },
+      "docs": {
+        "label": "Docs",
+        "description": "Planned definitions, capability boundaries, and practical guidance."
       }
     },
     "toolsMenu": {
@@ -77,6 +98,70 @@
     "useCases": "Use Cases",
     "rights": "© 2026 GenGrowth. All rights reserved.",
     "playbooks": "Playbooks"
+  },
+  "resources": {
+    "metadata": {
+      "title": "Growth Resources: Prompts, Tools, Skills & Docs",
+      "description": "Find GenGrowth tools and review the planned Prompts, Skills, and Docs library without mixing resources into the Agent catalogue."
+    },
+    "eyebrow": "Prompts · Tools · Skills · Docs",
+    "title": "Turn growth methods into reusable resources.",
+    "subtitle": "Use a tool for the immediate question, then reuse the method through scoped prompts, repeatable skills, and clear documentation. Available and planned entries stay visibly separate.",
+    "available": "Available",
+    "planned": "Planned",
+    "openTools": "Browse Tools",
+    "types": {
+      "prompts": {
+        "title": "Prompts",
+        "description": "Task-specific templates for structured growth work.",
+        "note": "Planned · No public prompt library yet"
+      },
+      "tools": {
+        "title": "Tools",
+        "description": "Supporting diagnostics and planning utilities.",
+        "note": "Available · Existing marketing-site routes"
+      },
+      "skills": {
+        "title": "Skills",
+        "description": "Repeatable workflows with explicit inputs and review points.",
+        "note": "Planned · No public skills library yet"
+      },
+      "docs": {
+        "title": "Docs",
+        "description": "Definitions, boundaries, and guidance for using GenGrowth responsibly.",
+        "note": "Planned · No public docs library yet"
+      }
+    },
+    "sections": {
+      "tools": {
+        "eyebrow": "Available now",
+        "title": "Tools answer the question in front of you.",
+        "body": "Open the existing supporting-tools directory for Search Console diagnostics and planning utilities. Website audits remain independent Agents rather than Tool cards.",
+        "cta": "Open Tools"
+      },
+      "planned": {
+        "eyebrow": "Library structure",
+        "title": "The next resource types are reserved, not overstated.",
+        "body": "Prompts, Skills, and Docs appear here to make the information architecture clear. They remain marked Planned until each resource has a real, reviewable public entry."
+      }
+    },
+    "examples": {
+      "prompts": {
+        "seo": "SEO Audit Prompt",
+        "geo": "GEO Brief Prompt",
+        "social": "Social Angle Prompt"
+      },
+      "skills": {
+        "evidence": "Public Evidence Review",
+        "brief": "Content Brief Workflow",
+        "distribution": "Distribution Repurposing"
+      },
+      "docs": {
+        "boundaries": "Public Audit Boundaries",
+        "agentScope": "How Agents Are Scoped",
+        "dataRules": "Data Availability Rules"
+      }
+    }
   },
   "home": {
     "hero": {

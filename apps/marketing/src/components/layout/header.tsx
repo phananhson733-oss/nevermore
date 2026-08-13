@@ -59,7 +59,7 @@ export function Header() {
         {/* Desktop Nav */}
         <nav
           aria-label="Main navigation"
-          className="hidden items-center gap-7.5 md:flex"
+          className="hidden items-center gap-7.5 lg:flex"
         >
           {headerNavItems.map((item) =>
             item.menu ? (
@@ -90,7 +90,7 @@ export function Header() {
 
           {/* Mobile Menu */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            <SheetTrigger asChild className="md:hidden">
+            <SheetTrigger asChild className="lg:hidden">
               <button
                 className="text-text-dark-primary p-2"
                 aria-label="Open menu"

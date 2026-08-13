@@ -18,8 +18,10 @@ export interface NavMenuGroup {
 }
 
 export interface NavMenuItem {
-  /** Route segment below the parent NavItem href. */
+  /** Stable catalogue key and, without an href override, the parent route segment. */
   slug: string;
+  /** Exact destination for entries that do not live below the parent route. */
+  href?: string;
   labelKey: string;
   descriptionKey: string;
   /** Lucide icon name, resolved to a component by the rendering layer so this

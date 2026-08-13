@@ -1,6 +1,6 @@
 // @input  -- locale param, tools i18n namespace, site config, shared ToolCard
-// @output -- supporting-tools hub grouped by a visitor's current SEO/growth situation
-// @pos    -- continuation hub for GSC and planning tools; URL audits live under /agents
+// @output -- Resources > Tools hub grouped by a visitor's current SEO/growth situation
+// @pos    -- supporting-tools branch of Resources; URL audits live under /agents
 import { ArrowRight, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
@@ -77,6 +77,7 @@ export default async function ToolsPage({
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "tools" });
   const home = locale === "en" ? "Home" : "首页";
+  const resources = locale === "en" ? "Resources" : "资源";
   const tools =
     locale === "en" ? "Supporting SEO & Growth Tools" : "SEO 与增长辅助工具";
 
@@ -88,10 +89,21 @@ export default async function ToolsPage({
             is plausibly the next step. */}
         <GoogleOneTap />
         <BreadcrumbJsonLd
-          items={[{ name: home, url: localeUrl(locale) }, { name: tools }]}
+          items={[
+            { name: home, url: localeUrl(locale) },
+            { name: resources, url: localeUrl(locale, "/resources") },
+            { name: tools },
+          ]}
         />
         <VisibleBreadcrumb
-          items={[{ label: home, href: localePath(locale) }, { label: tools }]}
+          items={[
+            { label: home, href: localePath(locale) },
+            {
+              label: resources,
+              href: localePath(locale, "/resources"),
+            },
+            { label: tools },
+          ]}
         />
 
         <header className="relative mb-14 overflow-hidden border-b border-brand-border pt-7 pb-12 md:pb-14">

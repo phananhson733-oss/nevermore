@@ -2,7 +2,13 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { agentsMenuGroups, headerNavItems } from "./navigation.ts";
+import {
+  agentsMenuGroups,
+  footerResourceLinks,
+  headerNavItems,
+  menuItemPath,
+  resourcesMenuGroups,
+} from "./navigation.ts";
 
 /**
  * The header Agents submenu against the route directories it can drift from.
@@ -61,22 +67,92 @@ describe("Agents submenu", () => {
     expect(slugs).toHaveLength(new Set(slugs).size);
   });
 
-  it("is the only primary submenu and links the Agents directory", () => {
+  it("links the Agents directory from its primary submenu", () => {
     const withMenu = headerNavItems.filter((item) => item.menu);
-    expect(withMenu.map((item) => item.href)).toEqual(["/agents"]);
-    expect(withMenu[0]?.menu).toBe(agentsMenuGroups);
+    const agents = withMenu.find((item) => item.href === "/agents");
+
+    expect(agents?.menu).toBe(agentsMenuGroups);
+    expect(agents?.menuViewAllLabelKey).toBe("nav.agentsMenu.viewAll");
   });
 
-  it("keeps the primary IA to Agents, Blog, and Pricing", () => {
-    expect(headerNavItems.map((item) => item.href)).toEqual([
+  it("keeps the exact primary IA and does not promote Tools", () => {
+    expect(
+      headerNavItems.map(({ labelKey, href }) => ({ labelKey, href })),
+    ).toEqual([
+      { labelKey: "common.home", href: "/" },
+      { labelKey: "nav.agents", href: "/agents" },
+      { labelKey: "nav.blog", href: "/blog" },
+      { labelKey: "nav.resources", href: "/resources" },
+      { labelKey: "nav.pricing", href: "/pricing" },
+    ]);
+    expect(headerNavItems.some((item) => item.href === "/tools")).toBe(false);
+    expect(headerNavItems.some((item) => item.labelKey === "nav.tools")).toBe(
+      false,
+    );
+  });
+});
+
+describe("Resources submenu", () => {
+  it("is the second primary submenu and links the Resources directory", () => {
+    const withMenu = headerNavItems.filter((item) => item.menu);
+
+    expect(withMenu.map((item) => item.href)).toEqual([
       "/agents",
-      "/blog",
-      "/pricing",
+      "/resources",
+    ]);
+    expect(withMenu[1]?.menu).toBe(resourcesMenuGroups);
+    expect(withMenu[1]?.menuViewAllLabelKey).toBe(
+      "nav.resourcesMenu.viewAll",
+    );
+  });
+
+  it("keeps Prompts, Tools, Skills, and Docs at their exact destinations", () => {
+    expect(
+      resourcesMenuGroups.flatMap((group) =>
+        group.items.map(({ slug, href }) => ({ slug, href })),
+      ),
+    ).toEqual([
+      { slug: "prompts", href: "/resources#prompts" },
+      { slug: "tools", href: "/tools" },
+      { slug: "skills", href: "/resources#skills" },
+      { slug: "docs", href: "/resources#docs" },
+    ]);
+  });
+
+  it("uses exact destinations while preserving Agent slug routes", () => {
+    expect(menuItemPath("/agents", { slug: "seo" })).toBe("/agents/seo");
+    expect(menuItemPath("/agents", { slug: "tech" })).toBe("/agents/tech");
+    expect(
+      menuItemPath("/resources", {
+        slug: "prompts",
+        href: "/resources#prompts",
+      }),
+    ).toBe("/resources#prompts");
+    expect(
+      menuItemPath("/resources", { slug: "tools", href: "/tools" }),
+    ).toBe("/tools");
+  });
+
+  it("uses the same Resources IA in the footer", () => {
+    expect(footerResourceLinks).toEqual([
+      {
+        labelKey: "nav.resourcesMenu.prompts.label",
+        href: "/resources#prompts",
+      },
+      { labelKey: "nav.resourcesMenu.tools.label", href: "/tools" },
+      {
+        labelKey: "nav.resourcesMenu.skills.label",
+        href: "/resources#skills",
+      },
+      {
+        labelKey: "nav.resourcesMenu.docs.label",
+        href: "/resources#docs",
+      },
     ]);
   });
 });
 
-describe("Agents submenu copy", () => {
+describe("Navigation copy", () => {
   const locales = ["en", "zh"];
 
   it.each(locales)("translates every label and description in %s", (locale) => {
@@ -88,6 +164,12 @@ describe("Agents submenu copy", () => {
         group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),
       ),
       "nav.agentsMenu.viewAll",
+      ...resourcesMenuGroups.map((group) => group.labelKey),
+      ...resourcesMenuGroups.flatMap((group) =>
+        group.items.flatMap((item) => [item.labelKey, item.descriptionKey]),
+      ),
+      "nav.resourcesMenu.viewAll",
+      ...footerResourceLinks.map((item) => item.labelKey),
     ];
 
     for (const key of keys) {

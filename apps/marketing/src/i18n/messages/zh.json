@@ -27,6 +27,7 @@
     "glossary": "术语表",
     "pricing": "定价",
     "agents": "Agents",
+    "resources": "资源",
     "agentsMenu": {
       "group": "网站审查 Agents",
       "viewAll": "查看全部 Agents",
@@ -37,6 +38,26 @@
       "tech": {
         "label": "Tech Agent",
         "description": "在有边界的运行中审查抓取、静态可索引性与内链状态。"
+      }
+    },
+    "resourcesMenu": {
+      "group": "可复用增长资源库",
+      "viewAll": "进入资源中心",
+      "prompts": {
+        "label": "Prompts",
+        "description": "规划中的任务型提示模板，并会明确说明适用范围。"
+      },
+      "tools": {
+        "label": "Tools",
+        "description": "用于回答眼前问题的 SEO 与增长辅助工具。"
+      },
+      "skills": {
+        "label": "Skills",
+        "description": "规划中把方法转成可复核步骤的重复执行流程。"
+      },
+      "docs": {
+        "label": "Docs",
+        "description": "规划中的定义、能力边界与实际使用说明。"
       }
     },
     "toolsMenu": {
@@ -77,6 +98,70 @@
     "useCases": "使用场景",
     "rights": "© 2026 GenGrowth. 保留所有权利。",
     "playbooks": "Playbook 库"
+  },
+  "resources": {
+    "metadata": {
+      "title": "增长资源：Prompts、Tools、Skills 与 Docs",
+      "description": "查找 GenGrowth 工具，并查看规划中的 Prompts、Skills 与 Docs 资源库，不把资源与 Agent 目录混在一起。"
+    },
+    "eyebrow": "Prompts · Tools · Skills · Docs",
+    "title": "把增长方法变成可复用资源。",
+    "subtitle": "先用工具回答眼前问题，再通过有明确范围的 Prompt、可重复执行的 Skill 与清晰文档复用同一套方法；现已可用与规划中条目始终分开标记。",
+    "available": "现已可用",
+    "planned": "规划中",
+    "openTools": "浏览 Tools",
+    "types": {
+      "prompts": {
+        "title": "Prompts",
+        "description": "用于结构化增长工作的任务型模板。",
+        "note": "规划中 · 尚无公开 Prompt 资源库"
+      },
+      "tools": {
+        "title": "Tools",
+        "description": "用于诊断与规划的辅助工具。",
+        "note": "现已可用 · 已有营销站路由"
+      },
+      "skills": {
+        "title": "Skills",
+        "description": "明确输入与人工复核点的重复执行流程。",
+        "note": "规划中 · 尚无公开 Skills 资源库"
+      },
+      "docs": {
+        "title": "Docs",
+        "description": "负责任使用 GenGrowth 所需的定义、边界与说明。",
+        "note": "规划中 · 尚无公开 Docs 资源库"
+      }
+    },
+    "sections": {
+      "tools": {
+        "eyebrow": "现已可用",
+        "title": "Tools 回答你眼前的问题。",
+        "body": "进入现有辅助工具目录，使用 Search Console 诊断与规划工具。网站审计继续作为独立 Agents，而不是 Tool 卡片。",
+        "cta": "打开 Tools"
+      },
+      "planned": {
+        "eyebrow": "资源库结构",
+        "title": "后续资源先保留位置，不提前夸大。",
+        "body": "Prompts、Skills 与 Docs 在这里明确整体信息架构；只有当每项资源拥有真实、可复核的公开入口后，才会从规划中变为可用。"
+      }
+    },
+    "examples": {
+      "prompts": {
+        "seo": "SEO Audit Prompt",
+        "geo": "GEO Brief Prompt",
+        "social": "Social Angle Prompt"
+      },
+      "skills": {
+        "evidence": "Public Evidence Review",
+        "brief": "Content Brief Workflow",
+        "distribution": "Distribution Repurposing"
+      },
+      "docs": {
+        "boundaries": "Public Audit Boundaries",
+        "agentScope": "How Agents Are Scoped",
+        "dataRules": "Data Availability Rules"
+      }
+    }
   },
   "home": {
     "hero": {
