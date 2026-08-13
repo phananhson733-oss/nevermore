@@ -22,6 +22,21 @@ export function getMarketingRedirects() {
       destination: "/blog/best-white-label-seo-tool",
       statusCode: 301 as const,
     },
+    ...[
+      ["/en/features", "/pricing"],
+      ["/en/about", "/pricing"],
+      ["/en/templates", "/blog"],
+      ["/en/compare", "/blog#comparisons"],
+      ["/en/use-cases", "/blog"],
+      ["/en/playbooks", "/blog"],
+      ["/en/glossary", "/blog"],
+      ["/en/tools/seo-audit", "/agents/seo"],
+      ["/en/tools/internal-link-audit", "/agents/tech"],
+    ].map(([source, destination]) => ({
+      source,
+      destination,
+      statusCode: 301 as const,
+    })),
     // The keyword map shipped at /tools/hidden-keywords, which describes the
     // feeling and not the search. Both locale forms are listed: /tools/* is a
     // real zh route, unlike the blog slugs below, so a zh visitor cannot be
@@ -36,6 +51,7 @@ export function getMarketingRedirects() {
       ["free-white-label-seo", "best-white-label-seo-tool"],
       ["marketing-attribution-for-saas", "marketing-attribution-models"],
       ["serankings", "serankings-alternative"],
+      ["astrologywiki-zero-to-5000-users", "astrologywiki-case-study"],
     ].flatMap(([source, destination]) => [
       {
         source: `/blog/${source}`,

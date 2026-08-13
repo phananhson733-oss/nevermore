@@ -142,7 +142,11 @@ describe("repository-backed blog content", () => {
     // striking-distance-keywords / zero-search-volume-keywords — and left this
     // count behind, so the gate fired exactly as intended. Reviewed and
     // accepted; Chinese is untouched.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(66);
+    // 66 → 73 on 2026-08-13: the legacy /en migration recovery restores
+    // seven indexed English articles whose locale redirects had been landing
+    // on 404. The conflicting AstrologyWiki draft is deliberately not revived;
+    // its old slug redirects to the already reviewed case study instead.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(73);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
@@ -152,6 +156,30 @@ describe("repository-backed blog content", () => {
     // batch (377a4b9) landed four posts dated that day; the assertion pins the
     // ordering, not any particular article, so it moves with the newest one.
     expect(posts[0]?.published_at).toBe("2026-08-07T00:00:00.000Z");
+  });
+
+  it("restores every indexed English article selected for legacy migration", async () => {
+    const restoredSlugs = [
+      "9-best-marketing-attribution-tools-for-saas-in-2026",
+      "ai-marketing-automation-for-saas",
+      "best-ai-marketing-and-cmo-tools-for-saas-in-2026",
+      "gengrowth-vs-blaze",
+      "gengrowth-vs-cometly",
+      "gengrowth-vs-improvado",
+      "gengrowth-vs-okara",
+    ];
+
+    const posts = await Promise.all(
+      restoredSlugs.map((slug) => getLocalBlogPostBySlug(slug, "en")),
+    );
+
+    for (const [index, post] of posts.entries()) {
+      expect(post, restoredSlugs[index]).not.toBeNull();
+      expect(post?.status, restoredSlugs[index]).toBe("published");
+      expect(post?.reading_time, restoredSlugs[index]).toBeGreaterThanOrEqual(5);
+      expect(post?.content, restoredSlugs[index]).toContain("<h2>");
+      expect(post?.content, restoredSlugs[index]).not.toContain("Coming soon");
+    }
   });
 
   it("keeps every published product CTA on the product subdomain", async () => {

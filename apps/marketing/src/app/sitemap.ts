@@ -4,10 +4,10 @@
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 
 import type { MetadataRoute } from "next";
-import { getAllBlogPosts } from "@/lib/blog";
-import { getLegalDocument } from "@/lib/legal";
-import { localeUrl } from "@/lib/locale-path";
-import { SITEMAP_TOOLS } from "@/config/sitemap-tools";
+import { SITEMAP_TOOLS } from "../config/sitemap-tools";
+import { getAllBlogPosts } from "../lib/blog";
+import { getLegalDocument } from "../lib/legal";
+import { localeUrl } from "../lib/locale-path";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
