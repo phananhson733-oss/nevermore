@@ -459,6 +459,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
       {data ? (
         <AgentResults
+          key={`${agent}:${data.result.targetUrl}:${data.run.source.completedAt}`}
           agent={agent}
           locale={locale}
           data={data}
