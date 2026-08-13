@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getMarketingRedirects } from "./next.config";
+import { LEGACY_EN_MIGRATION_ENTRIES } from "./src/lib/legacy-en-migration";
 
 describe("marketing redirects", () => {
   const redirects = getMarketingRedirects();
@@ -50,11 +51,42 @@ describe("marketing redirects", () => {
     ["free-white-label-seo", "best-white-label-seo-tool"],
     ["marketing-attribution-for-saas", "marketing-attribution-models"],
     ["serankings", "serankings-alternative"],
+    ["astrologywiki-zero-to-5000-users", "astrologywiki-case-study"],
   ])("redirects the retired %s slug in one hop", (source, destination) => {
     for (const prefix of ["", "/en"]) {
       expect(redirects).toContainEqual({
         source: `${prefix}/blog/${source}`,
         destination: `/blog/${destination}`,
+        statusCode: 301,
+      });
+    }
+  });
+
+  it.each([
+    ["/en/features", "/pricing"],
+    ["/en/about", "/pricing"],
+    ["/en/templates", "/blog"],
+    ["/en/compare", "/blog#comparisons"],
+    ["/en/use-cases", "/blog"],
+    ["/en/playbooks", "/blog"],
+    ["/en/glossary", "/blog"],
+    ["/en/tools/seo-audit", "/agents/seo"],
+    ["/en/tools/internal-link-audit", "/agents/tech"],
+  ])(
+    "sends the legacy hub %s straight to its final page",
+    (source, destination) => {
+      expect(redirects).toContainEqual({ source, destination, statusCode: 301 });
+    },
+  );
+
+  it("implements every reviewed target override as an explicit one-hop redirect", () => {
+    for (const entry of LEGACY_EN_MIGRATION_ENTRIES) {
+      const strippedPath = entry.legacyPath.slice("/en".length) || "/";
+      if (entry.targetPath === strippedPath) continue;
+
+      expect(redirects, entry.legacyPath).toContainEqual({
+        source: entry.legacyPath,
+        destination: entry.targetPath,
         statusCode: 301,
       });
     }
