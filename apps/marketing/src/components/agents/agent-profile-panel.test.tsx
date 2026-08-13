@@ -65,10 +65,10 @@ afterEach(async () => {
 });
 
 describe("AgentProfilePanel", () => {
-  it("shows URL plus three source-honest decision cards before expanding fields", () => {
+  it("shows URL plus four source-honest decision cards before expanding fields", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
-    expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(3);
+    expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(4);
     expect(
       document.querySelector('[data-profile-card="product"]')?.textContent,
     ).toContain("AstrologyWiki");
@@ -81,6 +81,12 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('[data-profile-source="inferred_run_assumptions"]'),
     ).not.toBeNull();
+    expect(
+      document.querySelector('[data-profile-card="competitor"]')?.textContent,
+    ).toContain("values.confirmationRequired");
+    expect(
+      document.querySelector('[data-profile-card="icp"]')?.textContent,
+    ).toContain("Inferred — the user and payer");
     expect(
       document.querySelector('[aria-label="fields.targetUrl"]'),
     ).not.toBeNull();
@@ -128,6 +134,12 @@ describe("AgentProfilePanel", () => {
     const categories = document.querySelector(
       '[aria-label="fields.categories"]',
     ) as HTMLInputElement;
+    const buyer = document.querySelector(
+      '[aria-label="fields.buyer"]',
+    ) as HTMLInputElement;
+    const directCompetitors = document.querySelector(
+      '[aria-label="fields.directCompetitors"]',
+    ) as HTMLInputElement;
 
     expect(country).not.toBeNull();
     expect(locale).not.toBeNull();
@@ -137,6 +149,8 @@ describe("AgentProfilePanel", () => {
     expect(auditScope).not.toBeNull();
     expect(primaryCta).not.toBeNull();
     expect(categories).not.toBeNull();
+    expect(buyer).not.toBeNull();
+    expect(directCompetitors).not.toBeNull();
 
     setValue(country, "US");
     expect(onChange).toHaveBeenLastCalledWith(
@@ -149,6 +163,14 @@ describe("AgentProfilePanel", () => {
       expect.objectContaining({
         agent: "tech",
         categories: ["Astrology SaaS", "Reflection tool"],
+      }),
+    );
+
+    setValue(directCompetitors, "Alternative A, Alternative B");
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agent: "tech",
+        directCompetitors: ["Alternative A", "Alternative B"],
       }),
     );
   });

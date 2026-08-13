@@ -54,6 +54,7 @@ const ENGINE_KEY: Readonly<Record<AgentAuditEngineState, string>> = {
 
 const TRUTH_KEY: Readonly<Record<AgentAuditTruthState, string>> = {
   observed: "observed",
+  not_observed: "notObserved",
   documented: "documented",
   inferred: "inferred",
   partial: "partial",

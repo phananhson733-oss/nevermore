@@ -4,7 +4,7 @@
 
 import type { AgentKind } from "./agent-types";
 
-export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v1" as const;
+export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v2" as const;
 
 export type AgentProfileDevice = "mobile" | "desktop";
 export type AgentProfilePageType = "homepage" | "product" | "tool" | "guide";
@@ -21,6 +21,7 @@ export type AgentProfileSourceId =
 export interface AgentProfileSources {
   readonly product: AgentProfileSourceId;
   readonly icp: AgentProfileSourceId;
+  readonly competitor: AgentProfileSourceId;
   readonly run: AgentProfileSourceId;
 }
 
@@ -38,11 +39,17 @@ export interface AgentProfileDraft {
   readonly primaryCta: string;
   readonly trustSignals: readonly string[];
   readonly primaryIcp: string;
+  readonly buyer: string;
+  readonly user: string;
+  readonly triggerPain: string;
   readonly icpInterests: readonly string[];
   readonly icpPain: string;
   readonly icpBehavior: string;
   readonly icpPositioning: string;
   readonly jtbd: string;
+  readonly directCompetitors: readonly string[];
+  readonly indirectAlternatives: readonly string[];
+  readonly excludedAlternatives: readonly string[];
   readonly firstOutcome: string;
   /** Explicit run assumptions; supplied documents do not prove these values. */
   readonly country: string;
@@ -64,11 +71,17 @@ export type AgentProfileEditableField =
   | "primaryCta"
   | "trustSignals"
   | "primaryIcp"
+  | "buyer"
+  | "user"
+  | "triggerPain"
   | "icpInterests"
   | "icpPain"
   | "icpBehavior"
   | "icpPositioning"
   | "jtbd"
+  | "directCompetitors"
+  | "indirectAlternatives"
+  | "excludedAlternatives"
   | "firstOutcome"
   | "country"
   | "locale"
@@ -89,11 +102,17 @@ const EDITABLE_FIELDS: readonly AgentProfileEditableField[] = [
   "primaryCta",
   "trustSignals",
   "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
   "icpInterests",
   "icpPain",
   "icpBehavior",
   "icpPositioning",
   "jtbd",
+  "directCompetitors",
+  "indirectAlternatives",
+  "excludedAlternatives",
   "firstOutcome",
   "country",
   "locale",
@@ -146,6 +165,9 @@ function copyDraft(profile: AgentProfileDraft): AgentProfileDraft {
     categories: [...profile.categories],
     trustSignals: [...profile.trustSignals],
     icpInterests: [...profile.icpInterests],
+    directCompetitors: [...profile.directCompetitors],
+    indirectAlternatives: [...profile.indirectAlternatives],
+    excludedAlternatives: [...profile.excludedAlternatives],
     sources: { ...profile.sources },
     editedFields: [...profile.editedFields],
   };
@@ -176,6 +198,12 @@ function astrologyWikiDraft(
       "Multilingual web app",
     ],
     primaryIcp: "Mobile-first young adults, 22–38, female-skewed",
+    buyer:
+      "Inferred — the user and payer are likely the same self-serve individual; confirm.",
+    user:
+      "Documented — an astrology-interested young adult using the product for self-reflection.",
+    triggerPain:
+      "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
     icpInterests: [
       "Astrology",
       "Psychology",
@@ -188,6 +216,9 @@ function astrologyWikiDraft(
       "Socially active, shares astrology content, and values emotional health.",
     icpPositioning: "Self-reflection, not fate prediction",
     jtbd: "Understand themselves without deterministic fortune-telling.",
+    directCompetitors: [],
+    indirectAlternatives: [],
+    excludedAlternatives: [],
     firstOutcome:
       agent === "seo"
         ? "Own the free birth-chart query and convert to chart generation"
@@ -201,6 +232,7 @@ function astrologyWikiDraft(
     sources: {
       product: "product_information_supplied",
       icp: "marketing_strategy_supplied",
+      competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     },
     editedFields: [],
@@ -226,11 +258,17 @@ function genericDraft(
     primaryCta: "Unknown — confirm the primary call to action.",
     trustSignals: [],
     primaryIcp: "Unknown — confirm the primary audience.",
+    buyer: "Unknown — confirm the buying role.",
+    user: "Unknown — confirm the user role.",
+    triggerPain: "Unknown — confirm the trigger or pain.",
     icpInterests: [],
     icpPain: "Unknown — confirm the audience pain.",
     icpBehavior: "Unknown — confirm audience behavior.",
     icpPositioning: "Unknown — confirm the positioning.",
     jtbd: "Unknown — confirm the job to be done.",
+    directCompetitors: [],
+    indirectAlternatives: [],
+    excludedAlternatives: [],
     firstOutcome:
       agent === "seo"
         ? "Confirm the first search-growth outcome."
@@ -244,6 +282,7 @@ function genericDraft(
     sources: {
       product: "hostname_inference",
       icp: "confirmation_required",
+      competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     },
     editedFields: [],
@@ -341,11 +380,17 @@ export function isConfirmedAgentProfile(
     isBoundedString(candidate.primaryCta) &&
     isStringArray(candidate.trustSignals) &&
     isBoundedString(candidate.primaryIcp) &&
+    isBoundedString(candidate.buyer) &&
+    isBoundedString(candidate.user) &&
+    isBoundedString(candidate.triggerPain) &&
     isStringArray(candidate.icpInterests) &&
     isBoundedString(candidate.icpPain) &&
     isBoundedString(candidate.icpBehavior) &&
     isBoundedString(candidate.icpPositioning) &&
     isBoundedString(candidate.jtbd) &&
+    isStringArray(candidate.directCompetitors) &&
+    isStringArray(candidate.indirectAlternatives) &&
+    isStringArray(candidate.excludedAlternatives) &&
     isBoundedString(candidate.firstOutcome) &&
     isBoundedString(candidate.country) &&
     isBoundedString(candidate.locale) &&
@@ -356,6 +401,7 @@ export function isConfirmedAgentProfile(
     !!sources &&
     SOURCE_VALUES.has(sources.product as AgentProfileSourceId) &&
     SOURCE_VALUES.has(sources.icp as AgentProfileSourceId) &&
+    SOURCE_VALUES.has(sources.competitor as AgentProfileSourceId) &&
     SOURCE_VALUES.has(sources.run as AgentProfileSourceId) &&
     Array.isArray(candidate.editedFields) &&
     candidate.editedFields.every((field) =>

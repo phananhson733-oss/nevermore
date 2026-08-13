@@ -31,6 +31,7 @@ export type AgentAuditEngineState =
   | "access_required";
 export type AgentAuditTruthState =
   | "observed"
+  | "not_observed"
   | "documented"
   | "inferred"
   | "partial"

@@ -124,6 +124,18 @@ function evaluateCheck(
       scoreContribution: null,
     };
   }
+  if (records.every((record) => record.state === "not_observed")) {
+    return {
+      check,
+      result: "excluded",
+      engine: "ready",
+      truth: "not-observed",
+      measurement: measurement(records),
+      evidenceRecordIds: records.map((record) => record.id),
+      scoreValue: null,
+      scoreContribution: null,
+    };
+  }
 
   const issueRecords = records.filter(
     (record) => record.state === "observed" && record.affected > 0,

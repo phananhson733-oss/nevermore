@@ -16,7 +16,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
+    command: `mkdir -p .next/standalone/apps/marketing/public .next/standalone/apps/marketing/.next/static && cp -R public/. .next/standalone/apps/marketing/public/ && cp -R .next/static/. .next/standalone/apps/marketing/.next/static/ && cd .next/standalone && HOSTNAME=127.0.0.1 PORT=${port} node apps/marketing/server.js`,
     url: `${baseURL}/tools/seo-audit`,
     timeout: 60_000,
     reuseExistingServer: false,

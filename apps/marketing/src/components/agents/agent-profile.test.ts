@@ -19,7 +19,7 @@ describe("Agent-local Product / ICP profiles", () => {
     );
 
     expect(profile).toMatchObject({
-      schemaVersion: "agent-profile.v1",
+      schemaVersion: "agent-profile.v2",
       agent: "seo",
       host: "astrologywiki.com",
       productName: "AstrologyWiki",
@@ -29,6 +29,12 @@ describe("Agent-local Product / ICP profiles", () => {
       businessModel: "Freemium · subscription · credits",
       primaryCta: "Generate Free Birth Chart",
       primaryIcp: "Mobile-first young adults, 22–38, female-skewed",
+      buyer:
+        "Inferred — the user and payer are likely the same self-serve individual; confirm.",
+      user:
+        "Documented — an astrology-interested young adult using the product for self-reflection.",
+      triggerPain:
+        "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
       jtbd: "Understand themselves without deterministic fortune-telling.",
       firstOutcome:
         "Own the free birth-chart query and convert to chart generation",
@@ -58,8 +64,12 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.sources).toEqual({
       product: "product_information_supplied",
       icp: "marketing_strategy_supplied",
+      competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     });
+    expect(profile.directCompetitors).toEqual([]);
+    expect(profile.indirectAlternatives).toEqual([]);
+    expect(profile.excludedAlternatives).toEqual([]);
   });
 
   it("keeps SEO and Tech drafts independent and gives each Agent its own first outcome", () => {
@@ -102,6 +112,7 @@ describe("Agent-local Product / ICP profiles", () => {
       sources: {
         product: "hostname_inference",
         icp: "confirmation_required",
+        competitor: "confirmation_required",
         run: "inferred_run_assumptions",
       },
     });
@@ -109,6 +120,7 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.oneLinePositioning).toContain("not yet confirmed");
     expect(profile.categories).toEqual(["Unknown — confirm the category."]);
     expect(profile.trustSignals).toEqual([]);
+    expect(profile.directCompetitors).toEqual([]);
   });
 
   it("returns to a fresh unconfirmed draft when the URL changes", () => {
@@ -174,6 +186,12 @@ describe("Agent-local Product / ICP profiles", () => {
         icpPain: "Rejects fatalistic readings",
         icpBehavior: "Compares and shares chart insights",
         icpPositioning: "Reflection without prediction",
+        buyer: "Self-serve consumer",
+        user: "Mobile astrology learner",
+        triggerPain: "Needs rapid, private self-reflection",
+        directCompetitors: ["Confirm direct competitors"],
+        indirectAlternatives: ["Journaling apps"],
+        excludedAlternatives: ["Traditional fortune-telling sites"],
       },
     );
 
@@ -187,6 +205,12 @@ describe("Agent-local Product / ICP profiles", () => {
       icpPain: "Rejects fatalistic readings",
       icpBehavior: "Compares and shares chart insights",
       icpPositioning: "Reflection without prediction",
+      buyer: "Self-serve consumer",
+      user: "Mobile astrology learner",
+      triggerPain: "Needs rapid, private self-reflection",
+      directCompetitors: ["Confirm direct competitors"],
+      indirectAlternatives: ["Journaling apps"],
+      excludedAlternatives: ["Traditional fortune-telling sites"],
       reviewState: "needs_confirmation",
     });
     expect(edited.editedFields).toEqual(
@@ -200,6 +224,12 @@ describe("Agent-local Product / ICP profiles", () => {
         "icpPain",
         "icpBehavior",
         "icpPositioning",
+        "buyer",
+        "user",
+        "triggerPain",
+        "directCompetitors",
+        "indirectAlternatives",
+        "excludedAlternatives",
       ]),
     );
   });

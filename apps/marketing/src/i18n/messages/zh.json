@@ -2304,6 +2304,9 @@
           "primaryCta": "主要 CTA",
           "trustSignals": "信任信号（逗号分隔）",
           "primaryIcp": "核心 ICP",
+          "buyer": "购买角色",
+          "user": "使用角色",
+          "triggerPain": "触发因素 / 痛点",
           "icpInterests": "ICP 兴趣（逗号分隔）",
           "icpPain": "ICP 痛点",
           "icpBehavior": "ICP 行为",
@@ -2315,12 +2318,16 @@
           "device": "设备",
           "pageType": "页面类型",
           "targetQuery": "目标查询",
-          "auditScope": "审计范围"
+          "auditScope": "审计范围",
+          "directCompetitors": "直接竞品（逗号分隔）",
+          "indirectAlternatives": "间接替代方案（逗号分隔）",
+          "excludedAlternatives": "排除的替代方案（逗号分隔）"
         },
         "cards": {
           "product": "Product Profile",
           "icp": "ICP 与待完成任务",
-          "context": "结果与运行上下文"
+          "context": "结果与运行上下文",
+          "competitor": "竞品框架"
         },
         "facts": {
           "category": "产品分类",
@@ -2329,7 +2336,13 @@
           "trustSignals": "信任信号",
           "interests": "ICP 兴趣",
           "pain": "ICP 痛点",
-          "positioning": "ICP 定位"
+          "positioning": "ICP 定位",
+          "buyer": "购买角色",
+          "user": "使用角色",
+          "triggerPain": "触发因素 / 痛点",
+          "directCompetitors": "直接竞品",
+          "indirectAlternatives": "间接替代方案",
+          "excludedAlternatives": "排除的替代方案"
         },
         "sources": {
           "product_information_supplied": "来源支持 · Product Information 已提供",
@@ -2340,7 +2353,8 @@
           "locally_adjusted": "已本地调整"
         },
         "values": {
-          "unavailable": "不可用"
+          "unavailable": "不可用",
+          "confirmationRequired": "未提供 · 需要确认"
         },
         "options": {
           "device": {
@@ -2432,6 +2446,7 @@
         },
         "truth": {
           "observed": "已观测",
+          "notObserved": "有边界样本中未观测到",
           "documented": "文档口径",
           "inferred": "推断",
           "partial": "部分证据",
@@ -2439,7 +2454,7 @@
           "unavailable": "不可用",
           "illustrative": "示意"
         },
-        "excludedBoundary": "不可用、未接入和来源受限的检查会从健康度计算中排除；排除项不记为零，也不等于通过。",
+        "excludedBoundary": "不可用、样本中未观测到、未接入和来源受限的检查会从健康度计算中排除；排除项不记为零，也不等于通过。",
         "headingPreset": {
           "label": "按页面类型调整的标题预设",
           "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · 每个 H3 分区至少 {words} 词",

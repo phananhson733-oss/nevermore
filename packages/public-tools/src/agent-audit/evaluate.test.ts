@@ -120,12 +120,18 @@ describe("v2 Agent audit evaluator", () => {
     expect(duplicateTitles?.evidenceRecordIds).toEqual([]);
   });
 
-  it("renormalizes evaluated weights and caps an incomplete perfect score at 99", () => {
+  it("keeps a condition not observed in the bounded sample out of Pass and Health", () => {
     const result = evaluateAgentAuditScope("site", {
       availability: "available",
       records: [record("meta_description_duplicate", "not_observed")],
     });
-    expect(result.health).toBe(99);
-    expect(result.excluded).toBeGreaterThan(0);
+    const duplicateDescriptions = result.checks.find(
+      (check) => check.check.id === "D2",
+    );
+
+    expect(duplicateDescriptions?.result).toBe("excluded");
+    expect(duplicateDescriptions?.truth).toBe("not-observed");
+    expect(duplicateDescriptions?.measurement?.en).toContain("0 affected");
+    expect(result.health).toBeNull();
   });
 });

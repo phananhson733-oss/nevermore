@@ -2304,6 +2304,9 @@
           "primaryCta": "Primary CTA",
           "trustSignals": "Trust signals (comma separated)",
           "primaryIcp": "Primary ICP",
+          "buyer": "Buyer role",
+          "user": "User role",
+          "triggerPain": "Trigger / pain",
           "icpInterests": "ICP interests (comma separated)",
           "icpPain": "ICP pain",
           "icpBehavior": "ICP behavior",
@@ -2315,12 +2318,16 @@
           "device": "Device",
           "pageType": "Page type",
           "targetQuery": "Target query",
-          "auditScope": "Audit scope"
+          "auditScope": "Audit scope",
+          "directCompetitors": "Direct competitors (comma separated)",
+          "indirectAlternatives": "Indirect alternatives (comma separated)",
+          "excludedAlternatives": "Excluded alternatives (comma separated)"
         },
         "cards": {
           "product": "Product Profile",
           "icp": "ICP and job to be done",
-          "context": "Outcome and run context"
+          "context": "Outcome and run context",
+          "competitor": "Competitor Frame"
         },
         "facts": {
           "category": "Categories",
@@ -2329,7 +2336,13 @@
           "trustSignals": "Trust signals",
           "interests": "ICP interests",
           "pain": "ICP pain",
-          "positioning": "ICP positioning"
+          "positioning": "ICP positioning",
+          "buyer": "Buyer",
+          "user": "User",
+          "triggerPain": "Trigger / pain",
+          "directCompetitors": "Direct competitors",
+          "indirectAlternatives": "Indirect alternatives",
+          "excludedAlternatives": "Excluded alternatives"
         },
         "sources": {
           "product_information_supplied": "Source-backed · Product Information supplied",
@@ -2340,7 +2353,8 @@
           "locally_adjusted": "Locally adjusted"
         },
         "values": {
-          "unavailable": "Unavailable"
+          "unavailable": "Unavailable",
+          "confirmationRequired": "Not supplied · confirmation required"
         },
         "options": {
           "device": {
@@ -2432,6 +2446,7 @@
         },
         "truth": {
           "observed": "Observed",
+          "notObserved": "Not observed in bounded sample",
           "documented": "Documented",
           "inferred": "Inferred",
           "partial": "Partial",
@@ -2439,7 +2454,7 @@
           "unavailable": "Unavailable",
           "illustrative": "Illustrative"
         },
-        "excludedBoundary": "Unavailable, not-integrated, and source-gated checks are excluded from health calculations; exclusion is never zero and is not a pass.",
+        "excludedBoundary": "Unavailable, not-observed-in-sample, not-integrated, and source-gated checks are excluded from health calculations; exclusion is never zero and is not a pass.",
         "headingPreset": {
           "label": "Page-type heading preset",
           "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · {words}+ words per H3 section",

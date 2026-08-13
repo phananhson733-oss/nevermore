@@ -117,6 +117,40 @@ describe("buildAgentAuditViewModel", () => {
     ).toBe(true);
   });
 
+  it("never promotes a condition not observed in the bounded sample to Pass", () => {
+    const model = buildAgentAuditViewModel({
+      agent: "seo",
+      locale: "en",
+      context,
+      data: {
+        ...data,
+        result: {
+          ...data.result,
+          coverage: { ...data.result.coverage, availability: "available" },
+          records: [
+            {
+              id: "meta_description_duplicate",
+              category: "metadata",
+              state: "not_observed",
+              unit: "pages",
+              tested: 4,
+              affected: 0,
+              observations: [],
+              limitation: null,
+            },
+          ],
+        },
+      },
+    });
+    const check = model.scopes.site.groups
+      .flatMap((group) => group.checks)
+      .find((candidate) => candidate.id === "D2");
+
+    expect(check?.result).toBe("excluded");
+    expect(check?.truth).toBe("not_observed");
+    expect(model.scopes.site.health).toBeNull();
+  });
+
   it("exposes every explainability field and the page-type heading policy", () => {
     const model = buildAgentAuditViewModel({
       agent: "tech",

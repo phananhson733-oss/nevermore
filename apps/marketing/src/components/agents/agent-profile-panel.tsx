@@ -35,6 +35,9 @@ const TEXT_FIELDS = [
   "businessModel",
   "primaryCta",
   "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
   "icpPain",
   "icpBehavior",
   "icpPositioning",
@@ -49,6 +52,9 @@ const LIST_FIELDS = [
   "categories",
   "trustSignals",
   "icpInterests",
+  "directCompetitors",
+  "indirectAlternatives",
+  "excludedAlternatives",
 ] as const satisfies readonly AgentProfileEditableField[];
 
 const PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
@@ -61,11 +67,19 @@ const PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
 ]);
 const ICP_FIELDS = new Set<AgentProfileEditableField>([
   "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
   "icpInterests",
   "icpPain",
   "icpBehavior",
   "icpPositioning",
   "jtbd",
+]);
+const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
+  "directCompetitors",
+  "indirectAlternatives",
+  "excludedAlternatives",
 ]);
 
 function LocalAdjustmentChip({ label }: { readonly label: string }) {
@@ -168,8 +182,14 @@ export function AgentProfilePanel({
   const icpAdjusted = profile.editedFields.some((field) =>
     ICP_FIELDS.has(field),
   );
+  const competitorAdjusted = profile.editedFields.some((field) =>
+    COMPETITOR_FIELDS.has(field),
+  );
   const contextAdjusted = profile.editedFields.some(
-    (field) => !PRODUCT_FIELDS.has(field) && !ICP_FIELDS.has(field),
+    (field) =>
+      !PRODUCT_FIELDS.has(field) &&
+      !ICP_FIELDS.has(field) &&
+      !COMPETITOR_FIELDS.has(field),
   );
 
   const canConfirm =
@@ -177,6 +197,9 @@ export function AgentProfilePanel({
     profile.targetUrl.trim().length > 0 &&
     profile.productName.trim().length > 0 &&
     profile.primaryIcp.trim().length > 0 &&
+    profile.buyer.trim().length > 0 &&
+    profile.user.trim().length > 0 &&
+    profile.triggerPain.trim().length > 0 &&
     profile.jtbd.trim().length > 0;
 
   return (
@@ -240,7 +263,7 @@ export function AgentProfilePanel({
           </span>
         </label>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+        <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
           <article
             data-profile-card="product"
             className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
@@ -302,9 +325,57 @@ export function AgentProfilePanel({
                     : t("values.unavailable")
                 }
               />
+              <Fact label={t("facts.buyer")} value={profile.buyer} />
+              <Fact label={t("facts.user")} value={profile.user} />
+              <Fact label={t("facts.triggerPain")} value={profile.triggerPain} />
               <Fact label={t("fields.jtbd")} value={profile.jtbd} />
               <Fact label={t("facts.pain")} value={profile.icpPain} />
               <Fact label={t("facts.positioning")} value={profile.icpPositioning} />
+            </dl>
+          </article>
+
+          <article
+            data-profile-card="competitor"
+            className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+          >
+            <SourceChip
+              source={profile.sources.competitor}
+              label={t(`sources.${profile.sources.competitor}`)}
+            />
+            {competitorAdjusted ? (
+              <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+            ) : null}
+            <p className="mt-4 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+              {t("cards.competitor")}
+            </p>
+            <h3 className="mt-1.5 text-[16px] font-semibold text-text-dark-primary">
+              {t("values.confirmationRequired")}
+            </h3>
+            <dl className="mt-4 grid gap-2.5">
+              <Fact
+                label={t("facts.directCompetitors")}
+                value={
+                  profile.directCompetitors.length > 0
+                    ? profile.directCompetitors.join(" · ")
+                    : t("values.confirmationRequired")
+                }
+              />
+              <Fact
+                label={t("facts.indirectAlternatives")}
+                value={
+                  profile.indirectAlternatives.length > 0
+                    ? profile.indirectAlternatives.join(" · ")
+                    : t("values.confirmationRequired")
+                }
+              />
+              <Fact
+                label={t("facts.excludedAlternatives")}
+                value={
+                  profile.excludedAlternatives.length > 0
+                    ? profile.excludedAlternatives.join(" · ")
+                    : t("values.confirmationRequired")
+                }
+              />
             </dl>
           </article>
 
@@ -354,6 +425,9 @@ export function AgentProfilePanel({
                   field === "oneLinePositioning" ||
                   field === "businessModel" ||
                   field === "primaryCta" ||
+                  field === "buyer" ||
+                  field === "user" ||
+                  field === "triggerPain" ||
                   field === "icpPain" ||
                   field === "icpBehavior" ||
                   field === "icpPositioning" ||
