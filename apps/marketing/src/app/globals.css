@@ -12,23 +12,24 @@
   --color-foreground: var(--foreground);
   /*
    * Signal Console v1 — 两个家族，分工严格。IBM Plex Sans 承担一切阅读文字，
-   * IBM Plex Mono 只用于数据、代码、eyebrow 和小标签。中文回退 Noto Sans SC。
+   * IBM Plex Mono 只用于数据、代码、eyebrow 和小标签。中文使用本地系统字体回退，
+   * 避免生产构建依赖远程分片文件。
    * 必须走 next/font 注入的 CSS 变量：next/font 生成的 family 名是编译期哈希
    * （__IBM_Plex_Sans_xxxxxx），字面量 "IBM Plex Sans" 匹配不到它，只会静默
    * 落到 system-ui。
    */
-  --font-sans: var(--font-ibm-plex-sans), var(--font-noto-sans-sc), system-ui,
-    sans-serif;
-  --font-display: var(--font-ibm-plex-sans), var(--font-noto-sans-sc),
-    system-ui, sans-serif;
+  --font-sans: var(--font-ibm-plex-sans), "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-display: var(--font-ibm-plex-sans), "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", system-ui, sans-serif;
   /*
    * mono 也要挂中文回退。IBM Plex Mono 没有汉字，而中文路由上每页有十几个 mono
    * 标签含汉字（eyebrow、chip、面包屑、页脚小标题、日期）；不挂回退它们会落到
    * 系统通用 monospace——每个操作系统一副面孔，且和旁边的拉丁 mono 字重对不上。
-   * 字体回退是逐字形的：拉丁仍走 Plex Mono，汉字走 Noto Sans SC。
+   * 字体回退是逐字形的：拉丁仍走 Plex Mono，汉字走当前平台的中文系统字体。
    */
-  --font-mono: var(--font-ibm-plex-mono), var(--font-noto-sans-sc), ui-monospace,
-    SFMono-Regular, monospace;
+  --font-mono: var(--font-ibm-plex-mono), "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", ui-monospace, SFMono-Regular, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

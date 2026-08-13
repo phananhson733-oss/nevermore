@@ -5,13 +5,13 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import { IBM_Plex_Sans, IBM_Plex_Mono, Noto_Sans_SC } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { routing } from "@/i18n/routing";
 import { PageShell } from "@/components/layout/page-shell";
 import { localePath } from "@/lib/locale-path";
 
-// Signal Console v1 排印：一个 sans 家族承担全部阅读文字，mono 只用于数据、
-// eyebrow 和小标签。globals.css 通过这三个 CSS 变量绑定 --font-sans/display/mono。
+// Signal Console v1 排印：IBM Plex Sans 承担拉丁阅读文字，mono 只用于数据、
+// eyebrow 和小标签；中文由 globals.css 的本地系统字体栈回退，避免构建依赖远程分片。
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   variable: "--font-ibm-plex-sans",
@@ -26,27 +26,7 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-// 标题字重在新规范里 600 封顶，所以中文侧也只到 600，避免浏览器为 600 合成伪粗体。
-// （注意字重并不影响下载量：Google 把 Noto Sans SC 按 unicode-range 切成 101 个可变
-// 分片，三个字重指向的是同一批文件。）
-//
-// preload: false 是必需的。subsets: ["latin"] 只会让 next/font 预载它的拉丁分片，
-// 而那个分片的 unicode-range 与 IBM Plex Sans 的拉丁面逐字节相同、且排在字体栈后面
-// ——它永远赢不了级联，一个字形都画不出来，却在每个页面以最高优先级白拉 25KB。
-// 汉字分片本来就是按需发现的，不受这个开关影响。
-const notoSansSC = Noto_Sans_SC({
-  subsets: ["latin"],
-  variable: "--font-noto-sans-sc",
-  weight: ["400", "500", "600"],
-  display: "swap",
-  preload: false,
-});
-
-const fontVars = [
-  ibmPlexSans.variable,
-  ibmPlexMono.variable,
-  notoSansSC.variable,
-].join(" ");
+const fontVars = [ibmPlexSans.variable, ibmPlexMono.variable].join(" ");
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
