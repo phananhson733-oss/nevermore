@@ -7,7 +7,7 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
-heroImage: /images/og-default.svg
+heroImage: /images/og-default.png
 heroImageAlt: GenGrowth default geometric illustration used as a fallback Open Graph image
 localeExclusive: true
 ---

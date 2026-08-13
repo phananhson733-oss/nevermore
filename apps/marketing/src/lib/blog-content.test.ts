@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getLocalBlogPostBySlug,
@@ -172,13 +174,24 @@ describe("repository-backed blog content", () => {
     const posts = await Promise.all(
       restoredSlugs.map((slug) => getLocalBlogPostBySlug(slug, "en")),
     );
+    const marketingRoot = process.cwd().endsWith(join("apps", "marketing"))
+      ? process.cwd()
+      : join(process.cwd(), "apps", "marketing");
 
     for (const [index, post] of posts.entries()) {
       expect(post, restoredSlugs[index]).not.toBeNull();
+      if (!post) continue;
       expect(post?.status, restoredSlugs[index]).toBe("published");
       expect(post?.reading_time, restoredSlugs[index]).toBeGreaterThanOrEqual(5);
       expect(post?.content, restoredSlugs[index]).toContain("<h2>");
       expect(post?.content, restoredSlugs[index]).not.toContain("Coming soon");
+      const heroImage = post.hero_image;
+      expect(heroImage, restoredSlugs[index]).toMatch(/^\/images\//);
+      if (!heroImage) continue;
+      await expect(
+        access(join(marketingRoot, "public", heroImage.slice(1))),
+        restoredSlugs[index],
+      ).resolves.toBeUndefined();
     }
   });
 

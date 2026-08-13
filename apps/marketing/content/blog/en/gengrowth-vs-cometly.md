@@ -7,7 +7,7 @@ pillar: attribution
 status: published
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
-heroImage: /images/og-default.svg
+heroImage: /images/og-default.png
 heroImageAlt: A side-by-side comparison frame showing attribution tracking on one side and an SEO workflow on the other.
 localeExclusive: true
 ---

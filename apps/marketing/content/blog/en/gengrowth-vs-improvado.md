@@ -7,7 +7,7 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
-heroImage: /images/og-default.svg
+heroImage: /images/og-default.png
 heroImageAlt: Abstract signal map with connected data points and directional paths
 localeExclusive: true
 ---

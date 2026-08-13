@@ -7,7 +7,7 @@ pillar: attribution
 status: published
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
-heroImage: /images/og-default.svg
+heroImage: /images/og-default.png
 heroImageAlt: Default GenGrowth Open Graph illustration
 localeExclusive: true
 ---

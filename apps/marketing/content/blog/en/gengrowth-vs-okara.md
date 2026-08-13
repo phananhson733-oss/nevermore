@@ -7,7 +7,7 @@ pillar: growth_automation
 status: published
 publishedAt: 2026-06-10
 updatedAt: 2026-08-13
-heroImage: /images/og-default.svg
+heroImage: /images/og-default.png
 heroImageAlt: Technical line illustration: two neutral control panels facing each other, one centered on measured diagnostics and the other on automated marketing agents
 localeExclusive: true
 ---
