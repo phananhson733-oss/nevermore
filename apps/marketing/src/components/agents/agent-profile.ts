@@ -4,12 +4,28 @@
 
 import type { AgentKind } from "./agent-types";
 
-export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v2" as const;
+export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v3" as const;
 
 export type AgentProfileDevice = "mobile" | "desktop";
 export type AgentProfilePageType = "homepage" | "product" | "tool" | "guide";
 export type AgentAuditScope = "site-first" | "page-only";
 export type AgentProfileReviewState = "needs_confirmation" | "confirmed";
+export type AgentProfileProvenanceDerivation =
+  | "declared"
+  | "observed"
+  | "computed"
+  | "inferred"
+  | "missing";
+export type AgentProfileConfidence = "high" | "medium" | "low" | "unknown";
+export type AgentProfileFieldSource =
+  | "supplied_product_information"
+  | "supplied_marketing_strategy"
+  | "visitor_url"
+  | "public_page"
+  | "local_computation"
+  | "local_inference"
+  | "user_edit"
+  | "not_available";
 
 export type AgentProfileSourceId =
   | "product_information_supplied"
@@ -25,6 +41,15 @@ export interface AgentProfileSources {
   readonly run: AgentProfileSourceId;
 }
 
+export interface AgentProfileFieldProvenance {
+  readonly path: `/${AgentProfileEditableField}`;
+  readonly derivation: AgentProfileProvenanceDerivation;
+  readonly confidence: AgentProfileConfidence;
+  readonly source: AgentProfileFieldSource;
+  readonly limitation: string | null;
+  readonly observedAt: string | null;
+}
+
 export interface AgentProfileDraft {
   readonly schemaVersion: typeof AGENT_PROFILE_SCHEMA_VERSION;
   readonly agent: AgentKind;
@@ -34,6 +59,8 @@ export interface AgentProfileDraft {
   readonly host: string;
   readonly productName: string;
   readonly oneLinePositioning: string;
+  readonly valueProposition: string;
+  readonly coreFeatures: readonly string[];
   readonly categories: readonly string[];
   readonly businessModel: string;
   readonly primaryCta: string;
@@ -47,6 +74,11 @@ export interface AgentProfileDraft {
   readonly icpBehavior: string;
   readonly icpPositioning: string;
   readonly jtbd: string;
+  readonly useCases: readonly string[];
+  readonly outcomes: readonly string[];
+  readonly barriers: readonly string[];
+  readonly qualificationSignals: readonly string[];
+  readonly disqualifiers: readonly string[];
   readonly directCompetitors: readonly string[];
   readonly indirectAlternatives: readonly string[];
   readonly excludedAlternatives: readonly string[];
@@ -59,6 +91,8 @@ export interface AgentProfileDraft {
   readonly targetQuery: string;
   readonly auditScope: AgentAuditScope;
   readonly sources: AgentProfileSources;
+  /** Local field facts only; these are not canonical app evidence references. */
+  readonly fieldProvenance: readonly AgentProfileFieldProvenance[];
   readonly editedFields: readonly AgentProfileEditableField[];
   readonly reviewState: AgentProfileReviewState;
 }
@@ -66,6 +100,8 @@ export interface AgentProfileDraft {
 export type AgentProfileEditableField =
   | "productName"
   | "oneLinePositioning"
+  | "valueProposition"
+  | "coreFeatures"
   | "categories"
   | "businessModel"
   | "primaryCta"
@@ -79,6 +115,11 @@ export type AgentProfileEditableField =
   | "icpBehavior"
   | "icpPositioning"
   | "jtbd"
+  | "useCases"
+  | "outcomes"
+  | "barriers"
+  | "qualificationSignals"
+  | "disqualifiers"
   | "directCompetitors"
   | "indirectAlternatives"
   | "excludedAlternatives"
@@ -97,6 +138,8 @@ export type AgentProfileEdits = Partial<
 const EDITABLE_FIELDS: readonly AgentProfileEditableField[] = [
   "productName",
   "oneLinePositioning",
+  "valueProposition",
+  "coreFeatures",
   "categories",
   "businessModel",
   "primaryCta",
@@ -110,6 +153,11 @@ const EDITABLE_FIELDS: readonly AgentProfileEditableField[] = [
   "icpBehavior",
   "icpPositioning",
   "jtbd",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "disqualifiers",
   "directCompetitors",
   "indirectAlternatives",
   "excludedAlternatives",
@@ -141,6 +189,85 @@ const SOURCE_VALUES = new Set<AgentProfileSourceId>([
   "confirmation_required",
   "inferred_run_assumptions",
 ]);
+const PROVENANCE_DERIVATION_VALUES = new Set<AgentProfileProvenanceDerivation>([
+  "declared",
+  "observed",
+  "computed",
+  "inferred",
+  "missing",
+]);
+const CONFIDENCE_VALUES = new Set<AgentProfileConfidence>([
+  "high",
+  "medium",
+  "low",
+  "unknown",
+]);
+const FIELD_SOURCE_VALUES = new Set<AgentProfileFieldSource>([
+  "supplied_product_information",
+  "supplied_marketing_strategy",
+  "visitor_url",
+  "public_page",
+  "local_computation",
+  "local_inference",
+  "user_edit",
+  "not_available",
+]);
+const DRAFT_KEYS = new Set<keyof AgentProfileDraft>([
+  "schemaVersion",
+  "agent",
+  "targetUrl",
+  "host",
+  "productName",
+  "oneLinePositioning",
+  "valueProposition",
+  "coreFeatures",
+  "categories",
+  "businessModel",
+  "primaryCta",
+  "trustSignals",
+  "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
+  "icpInterests",
+  "icpPain",
+  "icpBehavior",
+  "icpPositioning",
+  "jtbd",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "disqualifiers",
+  "directCompetitors",
+  "indirectAlternatives",
+  "excludedAlternatives",
+  "firstOutcome",
+  "country",
+  "locale",
+  "device",
+  "pageType",
+  "targetQuery",
+  "auditScope",
+  "sources",
+  "fieldProvenance",
+  "editedFields",
+  "reviewState",
+]);
+const SOURCE_KEYS = new Set<keyof AgentProfileSources>([
+  "product",
+  "icp",
+  "competitor",
+  "run",
+]);
+const FIELD_PROVENANCE_KEYS = new Set<keyof AgentProfileFieldProvenance>([
+  "path",
+  "derivation",
+  "confidence",
+  "source",
+  "limitation",
+  "observedAt",
+]);
 
 function displayHost(input: string): string {
   const trimmed = input.trim();
@@ -162,13 +289,20 @@ function displayHost(input: string): string {
 function copyDraft(profile: AgentProfileDraft): AgentProfileDraft {
   return {
     ...profile,
+    coreFeatures: [...profile.coreFeatures],
     categories: [...profile.categories],
     trustSignals: [...profile.trustSignals],
     icpInterests: [...profile.icpInterests],
+    useCases: [...profile.useCases],
+    outcomes: [...profile.outcomes],
+    barriers: [...profile.barriers],
+    qualificationSignals: [...profile.qualificationSignals],
+    disqualifiers: [...profile.disqualifiers],
     directCompetitors: [...profile.directCompetitors],
     indirectAlternatives: [...profile.indirectAlternatives],
     excludedAlternatives: [...profile.excludedAlternatives],
     sources: { ...profile.sources },
+    fieldProvenance: profile.fieldProvenance.map((entry) => ({ ...entry })),
     editedFields: [...profile.editedFields],
   };
 }
@@ -177,12 +311,164 @@ function usesChinesePresentation(locale: string): boolean {
   return locale.toLowerCase().startsWith("zh");
 }
 
+const ASTROLOGY_PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
+  "productName",
+  "oneLinePositioning",
+  "coreFeatures",
+  "categories",
+  "businessModel",
+  "primaryCta",
+  "trustSignals",
+]);
+const ASTROLOGY_MARKETING_FIELDS = new Set<AgentProfileEditableField>([
+  "valueProposition",
+  "primaryIcp",
+  "user",
+  "triggerPain",
+  "icpInterests",
+  "icpPain",
+  "icpBehavior",
+  "icpPositioning",
+  "jtbd",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "device",
+  "targetQuery",
+]);
+const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
+  "directCompetitors",
+  "indirectAlternatives",
+  "excludedAlternatives",
+]);
+
+function declaredProvenance(
+  field: AgentProfileEditableField,
+  source:
+    | "supplied_product_information"
+    | "supplied_marketing_strategy"
+    | "user_edit",
+): AgentProfileFieldProvenance {
+  return {
+    path: `/${field}`,
+    derivation: "declared",
+    confidence: "high",
+    source,
+    limitation: null,
+    observedAt: null,
+  };
+}
+
+function inferredProvenance(
+  field: AgentProfileEditableField,
+  source: "visitor_url" | "local_inference",
+  limitation: string,
+  observedAt: string,
+): AgentProfileFieldProvenance {
+  return {
+    path: `/${field}`,
+    derivation: "inferred",
+    confidence: "low",
+    source,
+    limitation,
+    observedAt,
+  };
+}
+
+function missingProvenance(
+  field: AgentProfileEditableField,
+  limitation: string,
+): AgentProfileFieldProvenance {
+  return {
+    path: `/${field}`,
+    derivation: "missing",
+    confidence: "unknown",
+    source: "not_available",
+    limitation,
+    observedAt: null,
+  };
+}
+
+function astrologyWikiFieldProvenance(
+  observedAt: string,
+): readonly AgentProfileFieldProvenance[] {
+  return EDITABLE_FIELDS.map((field) => {
+    if (ASTROLOGY_PRODUCT_FIELDS.has(field)) {
+      return declaredProvenance(field, "supplied_product_information");
+    }
+    if (ASTROLOGY_MARKETING_FIELDS.has(field)) {
+      return declaredProvenance(field, "supplied_marketing_strategy");
+    }
+    if (COMPETITOR_FIELDS.has(field)) {
+      return missingProvenance(
+        field,
+        "No business competitor was supplied; confirm before use.",
+      );
+    }
+    if (field === "buyer") {
+      return inferredProvenance(
+        field,
+        "local_inference",
+        "The supplied documents do not identify a distinct buyer; confirm the self-serve assumption.",
+        observedAt,
+      );
+    }
+    if (field === "disqualifiers") {
+      return inferredProvenance(
+        field,
+        "local_inference",
+        "Derived from the supplied anti-fatalistic positioning; confirm before use.",
+        observedAt,
+      );
+    }
+    return inferredProvenance(
+      field,
+      "local_inference",
+      "This run setting is not an explicit fact in the supplied documents; confirm before use.",
+      observedAt,
+    );
+  });
+}
+
+function genericFieldProvenance(
+  host: string,
+  observedAt: string,
+): readonly AgentProfileFieldProvenance[] {
+  return EDITABLE_FIELDS.map((field) => {
+    if (host && (field === "productName" || field === "oneLinePositioning")) {
+      return inferredProvenance(
+        field,
+        "visitor_url",
+        "Derived only from the visitor-entered hostname; confirm the product identity.",
+        observedAt,
+      );
+    }
+    if (
+      field === "country" ||
+      field === "locale" ||
+      field === "device" ||
+      field === "pageType" ||
+      field === "auditScope"
+    ) {
+      return inferredProvenance(
+        field,
+        "local_inference",
+        "Default run assumption; confirm before use.",
+        observedAt,
+      );
+    }
+    return missingProvenance(field, "No supporting source is available yet.");
+  });
+}
+
 function astrologyWikiDraft(
   agent: AgentKind,
   targetUrl: string,
   presentationLocale: string,
 ): AgentProfileDraft {
   const chinese = usesChinesePresentation(presentationLocale);
+  const observedAt = new Date().toISOString();
   return {
     schemaVersion: AGENT_PROFILE_SCHEMA_VERSION,
     agent,
@@ -192,6 +478,28 @@ function astrologyWikiDraft(
     oneLinePositioning: chinese
       ? "融合占星学与现代心理学的免费出生星盘与自我探索 Web 应用。"
       : "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
+    valueProposition: chinese
+      ? "用占星学认识自己，而非预测命运。"
+      : "Use astrology to know yourself, not predict fate.",
+    coreFeatures: chinese
+      ? [
+          "免费本命星盘计算器",
+          "行星过境洞察",
+          "合盘关系分析",
+          "占星时间轴",
+          "每周 AI 问卦",
+          "认知行为疗法占星日记",
+          "占星百科与工具库",
+        ]
+      : [
+          "Free natal chart calculator",
+          "Planetary transit insights",
+          "Synastry analysis",
+          "Astrology timeline",
+          "Weekly AI oracle",
+          "CBT astrology journal",
+          "Astrology encyclopedia and tools",
+        ],
     categories: chinese
       ? ["占星工具", "自我探索平台", "出生星盘计算器"]
       : ["Astrology tool", "Self-discovery platform", "Birth-chart calculator"],
@@ -229,6 +537,47 @@ function astrologyWikiDraft(
     jtbd: chinese
       ? "在不接受宿命论式算命的前提下理解自己。"
       : "Understand themselves without deterministic fortune-telling.",
+    useCases: chinese
+      ? [
+          "生成并探索精准本命星盘",
+          "反思情绪与个人成长",
+          "通过合盘探索关系动态",
+          "通过百科与工具系统学习占星",
+        ]
+      : [
+          "Generate and explore an accurate natal chart",
+          "Reflect on emotions and personal growth",
+          "Explore relationship dynamics with synastry",
+          "Learn astrology through the encyclopedia and tools",
+        ],
+    outcomes: chinese
+      ? [
+          "30 秒内生成精准出生星盘",
+          "理解个人与情绪模式",
+          "探索关系中的契合点与张力",
+        ]
+      : [
+          "Generate an accurate birth chart in 30 seconds",
+          "Understand personal and emotional patterns",
+          "Explore relationship compatibility and tension",
+        ],
+    barriers: chinese
+      ? ["排斥迷信式或宿命论式命运预测"]
+      : ["Rejects superstitious or deterministic fate prediction"],
+    qualificationSignals: chinese
+      ? [
+          "对占星、心理学、个人成长或正念感兴趣",
+          "以手机端为主",
+          "重视自我反思与情绪健康",
+        ]
+      : [
+          "Interested in astrology, psychology, personal growth, or mindfulness",
+          "Uses a mobile device",
+          "Values self-reflection and emotional health",
+        ],
+    disqualifiers: chinese
+      ? ["寻求确定性的命运预测"]
+      : ["Seeks deterministic fortune-telling"],
     directCompetitors: [],
     indirectAlternatives: [],
     excludedAlternatives: [],
@@ -252,6 +601,7 @@ function astrologyWikiDraft(
       competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     },
+    fieldProvenance: astrologyWikiFieldProvenance(observedAt),
     editedFields: [],
     reviewState: "needs_confirmation",
   };
@@ -265,6 +615,7 @@ function genericDraft(
 ): AgentProfileDraft {
   const chinese = usesChinesePresentation(presentationLocale);
   const label = host || (chinese ? "未知网站" : "Unknown website");
+  const observedAt = new Date().toISOString();
   return {
     schemaVersion: AGENT_PROFILE_SCHEMA_VERSION,
     agent,
@@ -274,6 +625,10 @@ function genericDraft(
     oneLinePositioning: chinese
       ? `${label} 上的公开网站；其产品与定位尚未确认。`
       : `Public website at ${label}; its product and positioning are not yet confirmed.`,
+    valueProposition: chinese
+      ? "未知——请确认核心价值主张。"
+      : "Unknown — confirm the value proposition.",
+    coreFeatures: [],
     categories: [
       chinese ? "未知——请确认产品类别。" : "Unknown — confirm the category.",
     ],
@@ -307,6 +662,11 @@ function genericDraft(
     jtbd: chinese
       ? "未知——请确认需要完成的任务。"
       : "Unknown — confirm the job to be done.",
+    useCases: [],
+    outcomes: [],
+    barriers: [],
+    qualificationSignals: [],
+    disqualifiers: [],
     directCompetitors: [],
     indirectAlternatives: [],
     excludedAlternatives: [],
@@ -318,7 +678,7 @@ function genericDraft(
         : chinese
           ? "确认首个技术可靠性目标。"
           : "Confirm the first technical reliability outcome.",
-    country: chinese ? "全球" : "GLOBAL",
+    country: "",
     locale: chinese ? "zh-CN" : "en",
     device: "mobile",
     pageType: "homepage",
@@ -330,6 +690,7 @@ function genericDraft(
       competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     },
+    fieldProvenance: genericFieldProvenance(host, observedAt),
     editedFields: [],
     reviewState: "needs_confirmation",
   };
@@ -366,16 +727,24 @@ export function updateAgentProfile(
   edits: AgentProfileEdits,
 ): AgentProfileDraft {
   const editedFields = [...profile.editedFields];
+  const fieldProvenance = profile.fieldProvenance.map((entry) => ({ ...entry }));
   const accepted: AgentProfileEdits = {};
   for (const [key, value] of Object.entries(edits)) {
     if (!EDITABLE_FIELD_SET.has(key as AgentProfileEditableField)) continue;
     const field = key as AgentProfileEditableField;
     (accepted as Record<string, unknown>)[field] = value;
     if (!editedFields.includes(field)) editedFields.push(field);
+    const index = fieldProvenance.findIndex(
+      (entry) => entry.path === `/${field}`,
+    );
+    const userEdit = declaredProvenance(field, "user_edit");
+    if (index === -1) fieldProvenance.push(userEdit);
+    else fieldProvenance[index] = userEdit;
   }
   return copyDraft({
     ...profile,
     ...accepted,
+    fieldProvenance,
     editedFields,
     reviewState: "needs_confirmation",
   });
@@ -385,7 +754,12 @@ export function updateAgentProfile(
 export function confirmAgentProfile(
   profile: AgentProfileDraft,
 ): AgentProfileDraft {
-  return copyDraft({ ...profile, reviewState: "confirmed" });
+  return copyDraft({
+    ...profile,
+    reviewState: isAgentProfileReady(profile)
+      ? "confirmed"
+      : "needs_confirmation",
+  });
 }
 
 function isBoundedString(value: unknown, allowEmpty = false): value is string {
@@ -400,8 +774,143 @@ function isStringArray(value: unknown, max = 16): value is readonly string[] {
   return (
     Array.isArray(value) &&
     value.length <= max &&
-    value.every((item) => isBoundedString(item))
+    value.every((item) => isBoundedString(item)) &&
+    new Set(value).size === value.length
   );
+}
+
+function hasExactKeys(value: object, expected: ReadonlySet<PropertyKey>): boolean {
+  const keys = Reflect.ownKeys(value);
+  return (
+    keys.length === expected.size && keys.every((key) => expected.has(key))
+  );
+}
+
+function isIsoDateTime(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 64 &&
+    !Number.isNaN(Date.parse(value)) &&
+    new Date(value).toISOString() === value
+  );
+}
+
+function isFieldProvenance(
+  value: unknown,
+): value is AgentProfileFieldProvenance {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!hasExactKeys(value, FIELD_PROVENANCE_KEYS)) return false;
+  const candidate = value as Partial<AgentProfileFieldProvenance>;
+  if (
+    typeof candidate.path !== "string" ||
+    !candidate.path.startsWith("/") ||
+    !EDITABLE_FIELD_SET.has(
+      candidate.path.slice(1) as AgentProfileEditableField,
+    ) ||
+    !PROVENANCE_DERIVATION_VALUES.has(
+      candidate.derivation as AgentProfileProvenanceDerivation,
+    ) ||
+    !CONFIDENCE_VALUES.has(candidate.confidence as AgentProfileConfidence) ||
+    !FIELD_SOURCE_VALUES.has(candidate.source as AgentProfileFieldSource) ||
+    !(
+      candidate.limitation === null ||
+      isBoundedString(candidate.limitation)
+    ) ||
+    !(candidate.observedAt === null || isIsoDateTime(candidate.observedAt))
+  ) {
+    return false;
+  }
+
+  if (candidate.derivation === "declared") {
+    return (
+      candidate.observedAt === null &&
+      candidate.confidence !== "unknown" &&
+      (candidate.source === "supplied_product_information" ||
+        candidate.source === "supplied_marketing_strategy" ||
+        candidate.source === "user_edit")
+    );
+  }
+  if (candidate.derivation === "observed") {
+    return candidate.source === "public_page" && isIsoDateTime(candidate.observedAt);
+  }
+  if (candidate.derivation === "computed") {
+    return (
+      candidate.source === "local_computation" &&
+      isIsoDateTime(candidate.observedAt)
+    );
+  }
+  if (candidate.derivation === "inferred") {
+    return (
+      (candidate.source === "visitor_url" ||
+        candidate.source === "local_inference") &&
+      isIsoDateTime(candidate.observedAt) &&
+      isBoundedString(candidate.limitation)
+    );
+  }
+  return (
+    candidate.derivation === "missing" &&
+    candidate.source === "not_available" &&
+    candidate.confidence === "unknown" &&
+    candidate.observedAt === null &&
+    isBoundedString(candidate.limitation)
+  );
+}
+
+function isCompleteFieldProvenance(
+  value: unknown,
+  editedFields: readonly AgentProfileEditableField[],
+): value is readonly AgentProfileFieldProvenance[] {
+  if (!Array.isArray(value) || value.length !== EDITABLE_FIELDS.length) {
+    return false;
+  }
+  if (!value.every(isFieldProvenance)) return false;
+  const paths = new Set(value.map((entry) => entry.path));
+  if (
+    paths.size !== EDITABLE_FIELDS.length ||
+    !EDITABLE_FIELDS.every((field) => paths.has(`/${field}`))
+  ) {
+    return false;
+  }
+  const edited = new Set(editedFields);
+  return value.every(
+    (entry) =>
+      (entry.source === "user_edit") ===
+      edited.has(entry.path.slice(1) as AgentProfileEditableField),
+  );
+}
+
+export const AGENT_PROFILE_READY_FIELDS = [
+  "productName",
+  "oneLinePositioning",
+  "valueProposition",
+  "coreFeatures",
+  "categories",
+  "businessModel",
+  "primaryCta",
+  "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
+  "icpPain",
+  "jtbd",
+  "useCases",
+  "country",
+  "locale",
+] as const satisfies readonly AgentProfileEditableField[];
+
+/** Minimal local gate aligned with the app's confirmed Product Profile roots. */
+export function isAgentProfileReady(profile: AgentProfileDraft): boolean {
+  const provenance = new Map(
+    profile.fieldProvenance.map((entry) => [entry.path, entry]),
+  );
+  return AGENT_PROFILE_READY_FIELDS.every((field) => {
+    const entry = provenance.get(`/${field}`);
+    if (!entry || entry.derivation === "missing") return false;
+    const value = profile[field];
+    return Array.isArray(value)
+      ? value.length > 0 && value.every((item) => isBoundedString(item))
+      : isBoundedString(value);
+  });
 }
 
 /** Runtime guard used only for a same-tab, short-lived auth handoff. */
@@ -411,8 +920,10 @@ export function isConfirmedAgentProfile(
   exactUrl?: string,
 ): value is AgentProfileDraft {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!hasExactKeys(value, DRAFT_KEYS)) return false;
   const candidate = value as Partial<AgentProfileDraft>;
   const sources = candidate.sources;
+  const editedFields = candidate.editedFields;
   return (
     candidate.schemaVersion === AGENT_PROFILE_SCHEMA_VERSION &&
     (candidate.agent === "seo" || candidate.agent === "tech") &&
@@ -422,6 +933,8 @@ export function isConfirmedAgentProfile(
     isBoundedString(candidate.host, true) &&
     isBoundedString(candidate.productName) &&
     isBoundedString(candidate.oneLinePositioning) &&
+    isBoundedString(candidate.valueProposition) &&
+    isStringArray(candidate.coreFeatures) &&
     isStringArray(candidate.categories) &&
     isBoundedString(candidate.businessModel) &&
     isBoundedString(candidate.primaryCta) &&
@@ -435,6 +948,11 @@ export function isConfirmedAgentProfile(
     isBoundedString(candidate.icpBehavior) &&
     isBoundedString(candidate.icpPositioning) &&
     isBoundedString(candidate.jtbd) &&
+    isStringArray(candidate.useCases) &&
+    isStringArray(candidate.outcomes) &&
+    isStringArray(candidate.barriers) &&
+    isStringArray(candidate.qualificationSignals) &&
+    isStringArray(candidate.disqualifiers) &&
     isStringArray(candidate.directCompetitors) &&
     isStringArray(candidate.indirectAlternatives) &&
     isStringArray(candidate.excludedAlternatives) &&
@@ -446,14 +964,23 @@ export function isConfirmedAgentProfile(
     isBoundedString(candidate.targetQuery, true) &&
     AUDIT_SCOPE_VALUES.has(candidate.auditScope as AgentAuditScope) &&
     !!sources &&
+    typeof sources === "object" &&
+    !Array.isArray(sources) &&
+    hasExactKeys(sources, SOURCE_KEYS) &&
     SOURCE_VALUES.has(sources.product as AgentProfileSourceId) &&
     SOURCE_VALUES.has(sources.icp as AgentProfileSourceId) &&
     SOURCE_VALUES.has(sources.competitor as AgentProfileSourceId) &&
     SOURCE_VALUES.has(sources.run as AgentProfileSourceId) &&
-    Array.isArray(candidate.editedFields) &&
-    candidate.editedFields.every((field) =>
+    Array.isArray(editedFields) &&
+    new Set(editedFields).size === editedFields.length &&
+    editedFields.every((field) =>
       EDITABLE_FIELD_SET.has(field as AgentProfileEditableField),
     ) &&
-    candidate.reviewState === "confirmed"
+    isCompleteFieldProvenance(
+      candidate.fieldProvenance,
+      editedFields as readonly AgentProfileEditableField[],
+    ) &&
+    candidate.reviewState === "confirmed" &&
+    isAgentProfileReady(candidate as AgentProfileDraft)
   );
 }

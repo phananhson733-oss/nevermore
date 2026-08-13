@@ -224,6 +224,18 @@ export function readPendingAgentIntent(
   }
 }
 
+/** Trigger the existing fail-closed read at this handoff's expiry deadline. */
+export function schedulePendingAgentIntentExpiry(
+  storage: IntentStorage,
+  intent: PendingAgentIntent,
+): void {
+  const agent = intent.agent;
+  const delay = Math.max(0, intent.expiresAt - Date.now());
+  setTimeout(() => {
+    readPendingAgentIntent(storage, agent);
+  }, delay);
+}
+
 export function clearPendingAgentIntent(
   storage: IntentStorage,
   agent: AgentKind,

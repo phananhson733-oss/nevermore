@@ -25,6 +25,9 @@ function renderPanel(
   profile: AgentProfileDraft,
   onChange = vi.fn(),
   onConfirm = vi.fn(),
+  profileSearch?: React.ComponentProps<
+    typeof AgentProfilePanel
+  >["profileSearch"],
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -36,6 +39,7 @@ function renderPanel(
         profile={profile}
         onChange={onChange}
         onConfirm={onConfirm}
+        profileSearch={profileSearch}
       />,
     );
   });
@@ -65,13 +69,40 @@ afterEach(async () => {
 });
 
 describe("AgentProfilePanel", () => {
+  it("presents Product, ICP, competitors, and run context as a top-to-bottom stage rail", () => {
+    renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
+
+    const rail = document.querySelector(
+      '[data-profile-layout="vertical-rail"]',
+    );
+    expect(rail).not.toBeNull();
+
+    const stages = Array.from(rail?.children ?? []).filter((element) =>
+      element.hasAttribute("data-profile-stage"),
+    );
+    expect(
+      stages.map((element) => ({
+        stage: element.getAttribute("data-profile-stage"),
+        card: element.getAttribute("data-profile-card"),
+      })),
+    ).toEqual([
+      { stage: "01", card: "product" },
+      { stage: "02", card: "icp" },
+      { stage: "03", card: "competitor" },
+      { stage: "04", card: "context" },
+    ]);
+  });
+
   it("shows URL plus four source-honest decision cards before expanding fields", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
     expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(4);
     expect(
       document.querySelector('[data-profile-card="product"]')?.textContent,
-    ).toContain("AstrologyWiki");
+    ).toContain("Use astrology to know yourself, not predict fate.");
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("Free natal chart calculator");
     expect(
       document.querySelector('[data-profile-source="product_information_supplied"]'),
     ).not.toBeNull();
@@ -87,6 +118,21 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('[data-profile-card="icp"]')?.textContent,
     ).toContain("Inferred — the user and payer");
+    expect(
+      document.querySelector('[data-profile-card="icp"]')?.textContent,
+    ).toContain("Generate and explore an accurate natal chart");
+    expect(
+      document.querySelectorAll('[data-profile-provenance="declared"]')
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      document.querySelectorAll('[data-profile-provenance="inferred"]')
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      document.querySelectorAll('[data-profile-provenance="missing"]')
+        .length,
+    ).toBeGreaterThan(0);
     expect(
       document.querySelector('[aria-label="fields.targetUrl"]'),
     ).not.toBeNull();
@@ -134,6 +180,12 @@ describe("AgentProfilePanel", () => {
     const categories = document.querySelector(
       '[aria-label="fields.categories"]',
     ) as HTMLInputElement;
+    const coreFeatures = document.querySelector(
+      '[aria-label="fields.coreFeatures"]',
+    ) as HTMLInputElement;
+    const useCases = document.querySelector(
+      '[aria-label="fields.useCases"]',
+    ) as HTMLInputElement;
     const buyer = document.querySelector(
       '[aria-label="fields.buyer"]',
     ) as HTMLInputElement;
@@ -149,6 +201,8 @@ describe("AgentProfilePanel", () => {
     expect(auditScope).not.toBeNull();
     expect(primaryCta).not.toBeNull();
     expect(categories).not.toBeNull();
+    expect(coreFeatures).not.toBeNull();
+    expect(useCases).not.toBeNull();
     expect(buyer).not.toBeNull();
     expect(directCompetitors).not.toBeNull();
 
@@ -215,7 +269,17 @@ describe("AgentProfilePanel", () => {
   });
 
   it("marks generic-host Product and ICP cards as inferred or confirmation-required", () => {
-    renderPanel(createAgentProfileDraft("tech", "example.com"));
+    renderPanel(
+      createAgentProfileDraft("tech", "example.com"),
+      undefined,
+      undefined,
+      {
+        loading: false,
+        data: null,
+        errorCode: null,
+        onDiscover: vi.fn(),
+      },
+    );
 
     expect(
       document.querySelector('[data-profile-source="hostname_inference"]'),
@@ -224,6 +288,15 @@ describe("AgentProfilePanel", () => {
       document.querySelector('[data-profile-source="confirmation_required"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("22–38");
+    expect(
+      (
+        document.querySelector(
+          'button[data-profile-action="confirm"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(document.body.textContent).toContain("readiness.missing");
+    expect(document.body.textContent).toContain("search.missingPrerequisite");
   });
 
   it("marks source-backed cards when their accepted facts were locally adjusted", () => {

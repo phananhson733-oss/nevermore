@@ -67,7 +67,7 @@ const { AgentWorkbench } = await import("./agent-workbench");
 
 type AgentKind = "seo" | "tech";
 
-function successEnvelope(agent: AgentKind, targetUrl = "example.com") {
+function successEnvelope(agent: AgentKind, targetUrl = "astrologywiki.com") {
   return {
     data: {
       run: {
@@ -83,7 +83,7 @@ function successEnvelope(agent: AgentKind, targetUrl = "example.com") {
       },
       result: {
         targetUrl,
-        siteOrigin: "https://example.com",
+        siteOrigin: "https://astrologywiki.com",
         scannedAt: "2026-08-13T00:00:00.000Z",
         coverage: {
           availability: "available",
@@ -177,6 +177,16 @@ function confirmProfile(): void {
   });
 }
 
+function discoverSearchCandidates(): void {
+  act(() => {
+    (
+      document.querySelector(
+        "[data-profile-search] button",
+      ) as HTMLButtonElement
+    ).click();
+  });
+}
+
 function postCalls(fetchMock: ReturnType<typeof vi.fn>) {
   return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
 }
@@ -199,6 +209,137 @@ afterEach(async () => {
 });
 
 describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
+  it("requests bounded search evidence from the independent Agent endpoint", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(input).toBe("/api/agents/seo/profile-search");
+        expect(init?.body).toBe(
+          JSON.stringify({
+            url: "astrologywiki.com",
+            marketCode: "CN",
+            languageTag: "zh-CN",
+            targetQuery: "免费星盘计算",
+          }),
+        );
+        return Response.json({
+          data: {
+            schemaVersion: "agent_profile_search.v1",
+            agent: "seo",
+            targetHost: "astrologywiki.com",
+            availability: "source_unavailable",
+            method: "target_query_serp",
+            market: { code: "CN", locationCode: 2156, languageCode: "zh" },
+            observedAt: null,
+            rows: [],
+          },
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("seo");
+    setProfileUrl("seo", "astrologywiki.com");
+    discoverSearchCandidates();
+    await flushAsyncWork();
+
+    expect(postCalls(fetchMock)).toHaveLength(1);
+    expect(
+      document.querySelector(
+        '[data-profile-search-results="source_unavailable"]',
+      )?.textContent,
+    ).toContain("search.sourceUnavailable");
+  });
+
+  it("opens sign-in and gives visible feedback when search evidence requires auth", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: { code: "auth_required" } },
+        { status: 401 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("tech");
+    setProfileUrl("tech", "astrologywiki.com");
+    discoverSearchCandidates();
+    await flushAsyncWork();
+
+    expect(
+      document
+        .querySelector('[data-testid="sign-in-dialog"]')
+        ?.getAttribute("data-open"),
+    ).toBe("true");
+    expect(
+      document.querySelector(
+        '[data-profile-search-error="auth_required"]',
+      )?.textContent,
+    ).toContain("search.errors.authRequired");
+  });
+
+  it("resumes only profile search after its sign-in handoff, never a stored audit intent", async () => {
+    let signedIn = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") {
+        return Response.json({ signedIn });
+      }
+      if (path === "/api/agents/tech/profile-search") {
+        if (!signedIn) {
+          return Response.json(
+            { error: { code: "auth_required" } },
+            { status: 401 },
+          );
+        }
+        return Response.json({
+          data: {
+            schemaVersion: "agent_profile_search.v1",
+            agent: "tech",
+            targetHost: "astrologywiki.com",
+            availability: "source_unavailable",
+            method: "target_query_serp",
+            market: { code: "CN", locationCode: 2156, languageCode: "zh" },
+            observedAt: null,
+            rows: [],
+          },
+        });
+      }
+      if (path === "/api/agents/tech/audit") {
+        return Response.json(successEnvelope("tech"));
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderStrict("tech");
+    setProfileUrl("tech", "astrologywiki.com");
+    const staleAuditProfile = confirmAgentProfile(
+      createAgentProfileDraft("tech", "astrologywiki.com"),
+    );
+    storeConfirmedAgentRunIntent(sessionStorage, staleAuditProfile);
+    discoverSearchCandidates();
+    await flushAsyncWork();
+
+    signedIn = true;
+    act(() => window.dispatchEvent(new Event("focus")));
+    await flushAsyncWork();
+
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/tech/profile-search",
+      ),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([input]) => String(input) === "/api/agents/tech/audit",
+      ),
+    ).toHaveLength(0);
+    expect(
+      document.querySelector(
+        '[data-profile-search-results="source_unavailable"]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("uses the route locale for the initial Profile draft", () => {
     renderStrict("tech", "zh");
 
@@ -242,14 +383,18 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
           return Response.json({ signedIn: true });
         }
         expect(input).toBe("/api/agents/seo/audit");
-        expect(init?.body).toBe(JSON.stringify({ url: "example.com/docs" }));
-        return Response.json(successEnvelope("seo", "example.com/docs"));
+        expect(init?.body).toBe(
+          JSON.stringify({ url: "astrologywiki.com/birth-chart" }),
+        );
+        return Response.json(
+          successEnvelope("seo", "astrologywiki.com/birth-chart"),
+        );
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com/docs");
+    setProfileUrl("seo", "astrologywiki.com/birth-chart");
     expect(fetchMock).not.toHaveBeenCalled();
     confirmProfile();
     await flushAsyncWork();
@@ -262,7 +407,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         agent: "seo",
         runAgent: "seo",
         profileAgent: "seo",
-        profileUrl: "example.com/docs",
+        profileUrl: "astrologywiki.com/birth-chart",
         profileState: "confirmed",
       }),
     });
@@ -273,7 +418,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
 
@@ -286,10 +431,10 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     expect(readPendingAgentIntent(sessionStorage, "tech")).toMatchObject({
       purpose: "run_confirmed_profile",
       agent: "tech",
-      url: "example.com",
+      url: "astrologywiki.com",
       confirmedProfile: {
         agent: "tech",
-        targetUrl: "example.com",
+        targetUrl: "astrologywiki.com",
         reviewState: "confirmed",
       },
     });
@@ -297,7 +442,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
 
   it("resumes a confirmed StrictMode intent exactly once", async () => {
     const profile = confirmAgentProfile(
-      createAgentProfileDraft("seo", "example.com"),
+      createAgentProfileDraft("seo", "astrologywiki.com"),
     );
     storeConfirmedAgentRunIntent(sessionStorage, profile);
     const fetchMock = vi.fn(
@@ -305,7 +450,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         if (String(input) === "/api/auth/session") {
           return Response.json({ signedIn: true });
         }
-        expect(init?.body).toBe(JSON.stringify({ url: "example.com" }));
+        expect(init?.body).toBe(JSON.stringify({ url: "astrologywiki.com" }));
         return Response.json(successEnvelope("seo"));
       },
     );
@@ -350,12 +495,12 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       async (input: RequestInfo | URL) =>
         String(input) === "/api/auth/session"
           ? Response.json({ signedIn: true })
-          : Response.json(successEnvelope("seo", "example.com")),
+          : Response.json(successEnvelope("seo", "astrologywiki.com")),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
 
@@ -371,7 +516,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
 
@@ -396,7 +541,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("tech");
-    setProfileUrl("tech", "example.com");
+    setProfileUrl("tech", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
 
@@ -422,7 +567,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       renderStrict("seo");
-      setProfileUrl("seo", "example.com");
+      setProfileUrl("seo", "astrologywiki.com");
       confirmProfile();
       await flushAsyncWork();
 
@@ -450,7 +595,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
     expect(postCalls(fetchMock)).toHaveLength(0);
@@ -475,7 +620,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "example.com");
+    setProfileUrl("seo", "astrologywiki.com");
     act(() => {
       const confirm = document.querySelector(
         '[data-profile-action="confirm"]',
@@ -503,7 +648,7 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderStrict("seo");
-    setProfileUrl("seo", "seo.example.com");
+    setProfileUrl("seo", "astrologywiki.com");
     confirmProfile();
     await flushAsyncWork();
     expect(document.querySelector('[data-testid="agent-results"]')).not.toBeNull();
@@ -522,5 +667,6 @@ describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
         .querySelector('[data-testid="sign-in-dialog"]')
         ?.getAttribute("data-open"),
     ).toBe("false");
+    expect(document.querySelector("[data-profile-search-results]")).toBeNull();
   });
 });

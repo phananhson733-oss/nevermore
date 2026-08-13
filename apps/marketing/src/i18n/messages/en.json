@@ -2299,6 +2299,8 @@
           "targetUrlPlaceholder": "example.com or https://example.com/page",
           "productName": "Product name",
           "oneLinePositioning": "One-line positioning",
+          "valueProposition": "Value proposition",
+          "coreFeatures": "Core features (comma separated)",
           "categories": "Categories (comma separated)",
           "businessModel": "Business model",
           "primaryCta": "Primary CTA",
@@ -2312,8 +2314,13 @@
           "icpBehavior": "ICP behavior",
           "icpPositioning": "ICP positioning",
           "jtbd": "Job to be done (JTBD)",
+          "useCases": "Use cases (comma separated)",
+          "outcomes": "Desired outcomes (comma separated)",
+          "barriers": "Barriers (comma separated)",
+          "qualificationSignals": "Qualification signals (comma separated)",
+          "disqualifiers": "Disqualifiers (comma separated)",
           "firstOutcome": "First desired outcome",
-          "country": "Country / market",
+          "country": "Primary search market (ISO-2)",
           "locale": "Language / locale",
           "device": "Device",
           "pageType": "Page type",
@@ -2327,9 +2334,11 @@
           "product": "Product Profile",
           "icp": "ICP and job to be done",
           "context": "Outcome and run context",
-          "competitor": "Competitor Frame"
+          "competitor": "Business competitor frame"
         },
         "facts": {
+          "valueProposition": "Value proposition",
+          "coreFeatures": "Core features",
           "category": "Categories",
           "businessModel": "Business model",
           "primaryCta": "Primary CTA",
@@ -2340,9 +2349,29 @@
           "buyer": "Buyer",
           "user": "User",
           "triggerPain": "Trigger / pain",
+          "useCases": "Use cases",
+          "outcomes": "Desired outcomes",
+          "barriers": "Barriers",
+          "qualificationSignals": "Qualification signals",
+          "disqualifiers": "Disqualifiers",
           "directCompetitors": "Direct competitors",
           "indirectAlternatives": "Indirect alternatives",
           "excludedAlternatives": "Excluded alternatives"
+        },
+        "provenance": {
+          "derivations": {
+            "declared": "Declared",
+            "observed": "Observed",
+            "computed": "Computed",
+            "inferred": "Inferred",
+            "missing": "Missing"
+          },
+          "confidence": {
+            "high": "High confidence",
+            "medium": "Medium confidence",
+            "low": "Low confidence",
+            "unknown": "Unknown confidence"
+          }
         },
         "sources": {
           "product_information_supplied": "Source-backed · Product Information supplied",
@@ -2355,6 +2384,31 @@
         "values": {
           "unavailable": "Unavailable",
           "confirmationRequired": "Not supplied · confirmation required"
+        },
+        "search": {
+          "eyebrow": "Optional search evidence",
+          "title": "Discover adjacent search domains",
+          "description": "Use the selected market and target query to request one bounded search-data observation. These results stay separate from declared business competitors.",
+          "action": "Check search landscape",
+          "loadingAction": "Checking search landscape",
+          "missingPrerequisite": "Add {fields} before requesting search evidence.",
+          "organicBoundary": "Organic keyword overlap from the search provider — candidate domains, not confirmed business competitors.",
+          "serpBoundary": "Domains observed for this exact target query — not confirmed business competitors.",
+          "noData": "No candidate domains were observed for this bounded request.",
+          "marketUnsupported": "This market and query do not map to a supported search-data method. You can still enter business competitors manually.",
+          "sourceUnavailable": "Search data is not configured or is temporarily unavailable. No missing value is treated as zero; business competitors can remain empty or be entered manually.",
+          "domainLabel": "Domain",
+          "intersectionsLabel": "Keyword intersections",
+          "averagePositionLabel": "Average position",
+          "trafficLabel": "Estimated organic traffic",
+          "rankLabel": "Observed rank",
+          "observedAtLabel": "Fetched at",
+          "errors": {
+            "authRequired": "Sign in to request provider-backed search evidence.",
+            "authUnavailable": "Account verification is temporarily unavailable. Try again before requesting search evidence.",
+            "rateLimited": "The daily provider-request allowance has been reached. Try again later.",
+            "requestFailed": "The search-evidence request could not be completed. No business-competitor conclusion was created."
+          }
         },
         "options": {
           "device": {
@@ -2372,10 +2426,13 @@
             "page-only": "This page only"
           }
         },
-        "boundary": "Review this Agent's context before running. Supplied facts and inferred assumptions stay visibly labeled; confirmation does not prove or enrich an unavailable fact.",
+        "boundary": "Review this Agent's context before running. Supplied facts, field-level provenance, and inferred assumptions stay visibly labeled; acceptance applies only to this Agent run and does not write an app Product Profile.",
+        "readiness": {
+          "missing": "Complete these required Product / Core ICP fields before running: {fields}."
+        },
         "actions": {
           "review": "Review & adjust",
-          "confirmRun": "Confirm profile & run"
+          "confirmRun": "Accept context & run"
         }
       },
       "diagnosis": {

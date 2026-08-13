@@ -39,8 +39,8 @@ function agentEnvelope(agent: AgentKind) {
         },
       },
       result: {
-        targetUrl: "https://acme.com/",
-        siteOrigin: "https://acme.com",
+        targetUrl: "https://astrologywiki.com/",
+        siteOrigin: "https://astrologywiki.com",
         scannedAt: "2026-08-12T10:00:00.000Z",
         coverage: {
           availability: "partial",
@@ -79,8 +79,8 @@ function agentEnvelope(agent: AgentKind) {
                   {
                     url:
                       agent === "seo"
-                        ? "https://acme.com/about"
-                        : "https://acme.com/old",
+                        ? "https://astrologywiki.com/about"
+                        : "https://astrologywiki.com/old",
                     values:
                       agent === "seo"
                         ? [{ label: "title", value: null }]
@@ -123,8 +123,8 @@ test("signed-out SEO submission opens registration without an audit POST", async
   });
 
   await page.goto("/agents/seo");
-  await page.getByLabel("Target URL").fill("acme.com/docs");
-  await page.getByRole("button", { name: "Confirm profile & run" }).click();
+  await page.getByLabel("Target URL").fill("astrologywiki.com/docs");
+  await page.getByRole("button", { name: "Accept context & run" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in to GenGrowth" })).toBeVisible();
@@ -149,10 +149,10 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   });
 
   await page.goto("/agents/seo");
-  await page.getByLabel("Target URL").fill("acme.com");
+  await page.getByLabel("Target URL").fill("astrologywiki.com");
   await page.getByRole("button", { name: "Review & adjust" }).click();
   await page.getByLabel("Target query").fill("technical seo audit");
-  await page.getByRole("button", { name: "Confirm profile & run" }).click();
+  await page.getByRole("button", { name: "Accept context & run" }).click();
 
   const results = page.getByTestId("agent-results-seo");
   await expect(results).toBeVisible();
@@ -218,8 +218,8 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => document.documentElement.clientWidth),
   );
-  await input.fill("acme.com");
-  await page.getByRole("button", { name: "确认画像并运行" }).click();
+  await input.fill("astrologywiki.com");
+  await page.getByRole("button", { name: "接受上下文并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
   await expect(page.getByTestId("diagnosis-group-A")).toHaveAttribute(
     "aria-pressed",

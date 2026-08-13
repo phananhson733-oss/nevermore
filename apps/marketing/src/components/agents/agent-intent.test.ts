@@ -2,7 +2,7 @@
 // @output -- regression coverage for TTL, exact-Agent isolation, and cleanup
 // @pos    -- unit guard for the sign-in/reload handoff
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AGENT_INTENT_TTL_MS,
@@ -12,6 +12,7 @@ import {
   pendingAgentIntentKey,
   readPendingAgentIntent,
   restorePendingAgentIntent,
+  schedulePendingAgentIntentExpiry,
   storeConfirmedAgentRunIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
@@ -34,6 +35,10 @@ class MemoryStorage {
 }
 
 describe("Agent pending intents", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns no storage when the browser sessionStorage getter throws", () => {
     const browser = Object.create(null) as { readonly sessionStorage: Storage };
     Object.defineProperty(browser, "sessionStorage", {
@@ -90,7 +95,7 @@ describe("Agent pending intents", () => {
   it("resumes only a confirmed profile with the exact Agent and URL snapshot", () => {
     const storage = new MemoryStorage();
     const profile = confirmAgentProfile(
-      createAgentProfileDraft("tech", "https://example.com/pricing"),
+      createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
     );
 
     const intent = storeConfirmedAgentRunIntent(storage, profile, 1_000);
@@ -98,10 +103,10 @@ describe("Agent pending intents", () => {
     expect(intent).toMatchObject({
       purpose: "run_confirmed_profile",
       agent: "tech",
-      url: "https://example.com/pricing",
+      url: "https://astrologywiki.com/pricing",
       confirmedProfile: {
         agent: "tech",
-        targetUrl: "https://example.com/pricing",
+        targetUrl: "https://astrologywiki.com/pricing",
         reviewState: "confirmed",
       },
     });
@@ -109,9 +114,28 @@ describe("Agent pending intents", () => {
     expect(
       isRunnablePendingAgentIntent({
         ...intent!,
-        url: "https://example.com/other",
+        url: "https://astrologywiki.com/other",
       }),
     ).toBe(false);
+  });
+
+  it("physically removes a confirmed profile handoff at its expiry", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const storage = new MemoryStorage();
+    const profile = confirmAgentProfile(
+      createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+    );
+    const intent = storeConfirmedAgentRunIntent(storage, profile)!;
+
+    schedulePendingAgentIntentExpiry(storage, intent);
+    vi.advanceTimersByTime(AGENT_INTENT_TTL_MS - 1);
+
+    expect(storage.getItem(pendingAgentIntentKey("tech"))).not.toBeNull();
+
+    vi.advanceTimersByTime(1);
+
+    expect(storage.getItem(pendingAgentIntentKey("tech"))).toBeNull();
   });
 
   it("fails closed on a v2 payload with an unknown purpose", () => {

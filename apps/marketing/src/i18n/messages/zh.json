@@ -2299,6 +2299,8 @@
           "targetUrlPlaceholder": "example.com 或 https://example.com/page",
           "productName": "产品名称",
           "oneLinePositioning": "一句话定位",
+          "valueProposition": "价值主张",
+          "coreFeatures": "核心功能（逗号分隔）",
           "categories": "产品类别（逗号分隔）",
           "businessModel": "商业模式",
           "primaryCta": "主要 CTA",
@@ -2312,8 +2314,13 @@
           "icpBehavior": "ICP 行为",
           "icpPositioning": "ICP 定位",
           "jtbd": "待完成任务（JTBD）",
+          "useCases": "使用场景（逗号分隔）",
+          "outcomes": "期望结果（逗号分隔）",
+          "barriers": "采用阻碍（逗号分隔）",
+          "qualificationSignals": "资格信号（逗号分隔）",
+          "disqualifiers": "排除信号（逗号分隔）",
           "firstOutcome": "首要期望结果",
-          "country": "国家 / 市场",
+          "country": "主要搜索市场（ISO-2）",
           "locale": "语言 / Locale",
           "device": "设备",
           "pageType": "页面类型",
@@ -2327,9 +2334,11 @@
           "product": "Product Profile",
           "icp": "ICP 与待完成任务",
           "context": "结果与运行上下文",
-          "competitor": "竞品框架"
+          "competitor": "商业竞品框架"
         },
         "facts": {
+          "valueProposition": "价值主张",
+          "coreFeatures": "核心功能",
           "category": "产品分类",
           "businessModel": "商业模式",
           "primaryCta": "主要 CTA",
@@ -2340,9 +2349,29 @@
           "buyer": "购买角色",
           "user": "使用角色",
           "triggerPain": "触发因素 / 痛点",
+          "useCases": "使用场景",
+          "outcomes": "期望结果",
+          "barriers": "采用阻碍",
+          "qualificationSignals": "资格信号",
+          "disqualifiers": "排除信号",
           "directCompetitors": "直接竞品",
           "indirectAlternatives": "间接替代方案",
           "excludedAlternatives": "排除的替代方案"
+        },
+        "provenance": {
+          "derivations": {
+            "declared": "已声明",
+            "observed": "已观测",
+            "computed": "已计算",
+            "inferred": "推断",
+            "missing": "缺失"
+          },
+          "confidence": {
+            "high": "高置信度",
+            "medium": "中置信度",
+            "low": "低置信度",
+            "unknown": "置信度未知"
+          }
         },
         "sources": {
           "product_information_supplied": "来源支持 · Product Information 已提供",
@@ -2355,6 +2384,31 @@
         "values": {
           "unavailable": "不可用",
           "confirmationRequired": "未提供 · 需要确认"
+        },
+        "search": {
+          "eyebrow": "可选搜索证据",
+          "title": "发现相邻搜索竞争域",
+          "description": "使用已选市场和目标查询，请求一次有边界的搜索数据观测。结果与已声明的商业竞品保持分离。",
+          "action": "检查搜索格局",
+          "loadingAction": "正在检查搜索格局",
+          "missingPrerequisite": "请先补充 {fields}，再请求搜索证据。",
+          "organicBoundary": "搜索数据源提供的自然关键词重合域——仅为候选域名，不是已确认的商业竞品。",
+          "serpBoundary": "该目标查询中实际观测到的域名——不是已确认的商业竞品。",
+          "noData": "本次有边界请求没有观测到候选域名。",
+          "marketUnsupported": "当前市场与查询无法映射到受支持的搜索数据方式；仍可手动填写商业竞品。",
+          "sourceUnavailable": "搜索数据尚未配置或暂时不可用。缺失值不会被当作 0；商业竞品可保持为空或手动填写。",
+          "domainLabel": "域名",
+          "intersectionsLabel": "关键词交集数",
+          "averagePositionLabel": "平均排名",
+          "trafficLabel": "预估自然流量",
+          "rankLabel": "观测排名",
+          "observedAtLabel": "获取时间",
+          "errors": {
+            "authRequired": "请先登录，再请求搜索数据证据。",
+            "authUnavailable": "暂时无法验证账户状态，请稍后再请求搜索证据。",
+            "rateLimited": "今日数据源请求额度已用完，请稍后重试。",
+            "requestFailed": "搜索证据请求未完成，因此没有生成任何商业竞品结论。"
+          }
         },
         "options": {
           "device": {
@@ -2372,10 +2426,13 @@
             "page-only": "仅当前页面"
           }
         },
-        "boundary": "运行前请检查本 Agent 的上下文。已提供事实和推断假设会保持明确标记；确认操作不会证明或补全不可用事实。",
+        "boundary": "运行前请检查本 Agent 的上下文。已提供事实、字段级来源与推断假设会保持明确标记；接受仅作用于本次 Agent 运行，不会写入 app 的 Product Profile。",
+        "readiness": {
+          "missing": "运行前请补全这些 Product / 核心 ICP 必填项：{fields}。"
+        },
         "actions": {
           "review": "检查并调整",
-          "confirmRun": "确认画像并运行"
+          "confirmRun": "接受上下文并运行"
         }
       },
       "diagnosis": {

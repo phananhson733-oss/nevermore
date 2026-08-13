@@ -40,6 +40,8 @@ const PROFILE_PATHS = [
   "fields.targetUrlPlaceholder",
   "fields.productName",
   "fields.oneLinePositioning",
+  "fields.valueProposition",
+  "fields.coreFeatures",
   "fields.categories",
   "fields.businessModel",
   "fields.primaryCta",
@@ -53,6 +55,11 @@ const PROFILE_PATHS = [
   "fields.icpBehavior",
   "fields.icpPositioning",
   "fields.jtbd",
+  "fields.useCases",
+  "fields.outcomes",
+  "fields.barriers",
+  "fields.qualificationSignals",
+  "fields.disqualifiers",
   "fields.firstOutcome",
   "fields.country",
   "fields.locale",
@@ -68,6 +75,8 @@ const PROFILE_PATHS = [
   "cards.context",
   "cards.competitor",
   "facts.category",
+  "facts.valueProposition",
+  "facts.coreFeatures",
   "facts.businessModel",
   "facts.primaryCta",
   "facts.trustSignals",
@@ -77,6 +86,11 @@ const PROFILE_PATHS = [
   "facts.buyer",
   "facts.user",
   "facts.triggerPain",
+  "facts.useCases",
+  "facts.outcomes",
+  "facts.barriers",
+  "facts.qualificationSignals",
+  "facts.disqualifiers",
   "facts.directCompetitors",
   "facts.indirectAlternatives",
   "facts.excludedAlternatives",
@@ -97,6 +111,36 @@ const PROFILE_PATHS = [
   "options.auditScope.site-first",
   "options.auditScope.page-only",
   "boundary",
+  "readiness.missing",
+  "provenance.derivations.declared",
+  "provenance.derivations.observed",
+  "provenance.derivations.inferred",
+  "provenance.derivations.missing",
+  "provenance.confidence.high",
+  "provenance.confidence.medium",
+  "provenance.confidence.low",
+  "provenance.confidence.unknown",
+  "search.eyebrow",
+  "search.title",
+  "search.description",
+  "search.action",
+  "search.loadingAction",
+  "search.missingPrerequisite",
+  "search.organicBoundary",
+  "search.serpBoundary",
+  "search.noData",
+  "search.marketUnsupported",
+  "search.sourceUnavailable",
+  "search.errors.authRequired",
+  "search.errors.authUnavailable",
+  "search.errors.rateLimited",
+  "search.errors.requestFailed",
+  "search.domainLabel",
+  "search.intersectionsLabel",
+  "search.averagePositionLabel",
+  "search.trafficLabel",
+  "search.rankLabel",
+  "search.observedAtLabel",
   "actions.review",
   "actions.confirmRun",
 ] as const;
@@ -346,23 +390,31 @@ describe("Agent message catalogs", () => {
     const english = JSON.stringify(en.agents.workbench.profile);
     const chinese = JSON.stringify(zh.agents.workbench.profile);
 
-    expect(english).toMatch(/Product|Positioning|Business model|Primary CTA/);
-    expect(english).toMatch(/ICP/);
+    expect(english).toMatch(/Product|Positioning|Value proposition|Core features/);
+    expect(english).toMatch(/Business model|Primary CTA/);
+    expect(english).toMatch(/ICP|Use cases|Desired outcomes|Barriers/);
     expect(english).toMatch(/JTBD/);
     expect(english).toMatch(/Country|Locale|Device|Page type|Target query|Audit scope/);
     expect(english).toMatch(/Source-backed|Supplied/);
     expect(english).toMatch(/Inferred|Confirm before use/);
     expect(english).toMatch(/Review & adjust/);
-    expect(english).toMatch(/Confirm profile & run/);
+    expect(english).toMatch(/Accept context & run/);
+    expect(english).toMatch(/not confirmed business competitors/);
+    expect(english).toMatch(/not configured|temporarily unavailable/);
+    expect(english).toMatch(/does not write an app Product Profile/);
 
-    expect(chinese).toMatch(/产品|定位|商业模式|主要 CTA/);
-    expect(chinese).toMatch(/ICP/);
+    expect(chinese).toMatch(/产品|定位|价值主张|核心功能/);
+    expect(chinese).toMatch(/商业模式|主要 CTA/);
+    expect(chinese).toMatch(/ICP|使用场景|期望结果|采用阻碍/);
     expect(chinese).toMatch(/JTBD/);
     expect(chinese).toMatch(/国家|语言|设备|页面类型|目标查询|审计范围/);
     expect(chinese).toMatch(/来源支持|已提供/);
     expect(chinese).toMatch(/推断|使用前确认/);
     expect(chinese).toMatch(/检查并调整/);
-    expect(chinese).toMatch(/确认画像并运行/);
+    expect(chinese).toMatch(/接受上下文并运行/);
+    expect(chinese).toMatch(/不是已确认的商业竞品/);
+    expect(chinese).toMatch(/尚未配置|暂时不可用/);
+    expect(chinese).toMatch(/不会写入 app 的 Product Profile/);
   });
 
   it("states the three diagnosis axes and null-safe excluded boundaries", () => {

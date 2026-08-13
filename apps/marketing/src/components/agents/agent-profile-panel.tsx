@@ -8,8 +8,15 @@ import { Check, ChevronDown, FileText, Radar, Sparkles } from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { useTranslations } from "next-intl";
 
+import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
 import {
+  AgentProfileSearch,
+  type AgentProfileSearchCopy,
+} from "./agent-profile-search";
+import {
+  AGENT_PROFILE_READY_FIELDS,
   confirmAgentProfile,
+  isAgentProfileReady,
   redraftAgentProfileForUrl,
   updateAgentProfile,
   type AgentProfileDraft,
@@ -28,11 +35,18 @@ export interface AgentProfilePanelProps {
   readonly onConfirm: (profile: AgentProfileDraft) => void;
   readonly errorId?: string;
   readonly urlInvalid?: boolean;
+  readonly profileSearch?: {
+    readonly loading: boolean;
+    readonly data: AgentProfileSearchData | null;
+    readonly errorCode: string | null;
+    readonly onDiscover: () => void;
+  };
 }
 
 const TEXT_FIELDS = [
   "productName",
   "oneLinePositioning",
+  "valueProposition",
   "businessModel",
   "primaryCta",
   "primaryIcp",
@@ -50,9 +64,15 @@ const TEXT_FIELDS = [
 ] as const satisfies readonly AgentProfileEditableField[];
 
 const LIST_FIELDS = [
+  "coreFeatures",
   "categories",
   "trustSignals",
   "icpInterests",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "disqualifiers",
   "directCompetitors",
   "indirectAlternatives",
   "excludedAlternatives",
@@ -61,6 +81,8 @@ const LIST_FIELDS = [
 const PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
   "productName",
   "oneLinePositioning",
+  "valueProposition",
+  "coreFeatures",
   "categories",
   "businessModel",
   "primaryCta",
@@ -76,6 +98,11 @@ const ICP_FIELDS = new Set<AgentProfileEditableField>([
   "icpBehavior",
   "icpPositioning",
   "jtbd",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "disqualifiers",
 ]);
 const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "directCompetitors",
@@ -121,15 +148,56 @@ function SourceChip({
   );
 }
 
-function Fact({ label, value }: { readonly label: string; readonly value: string }) {
+function Fact({
+  label,
+  value,
+  provenance,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly provenance?: {
+    readonly derivation: string;
+    readonly label: string;
+  };
+}) {
   return (
-    <div className="border-t border-brand-border-faint pt-2.5 first:border-0 first:pt-0">
+    <div className="min-w-0 border-t border-brand-border-faint pt-2.5">
       <dt className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
         {label}
       </dt>
       <dd className="mt-1 text-[11.5px] leading-[1.5] text-text-dark-secondary">
         {value}
       </dd>
+      {provenance ? (
+        <dd
+          data-profile-provenance={provenance.derivation}
+          className="mt-2 inline-flex max-w-full rounded border border-brand-border-faint bg-brand-panel-raised px-1.5 py-0.5 font-mono text-[9.5px] leading-[1.35] tracking-[0.04em] text-text-dark-secondary uppercase"
+        >
+          {provenance.label}
+        </dd>
+      ) : null}
+    </div>
+  );
+}
+
+function StageHeader({
+  number,
+  label,
+}: {
+  readonly number: string;
+  readonly label: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5">
+      <span
+        aria-hidden="true"
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-brand-accent/35 bg-brand-accent/[0.07] font-mono text-[9px] font-semibold tracking-[0.08em] text-brand-accent-text"
+      >
+        {number}
+      </span>
+      <p className="min-w-0 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
+        {label}
+      </p>
     </div>
   );
 }
@@ -143,6 +211,7 @@ export function AgentProfilePanel({
   onConfirm,
   errorId,
   urlInvalid = false,
+  profileSearch,
 }: AgentProfilePanelProps) {
   const t = useTranslations("agents.workbench.profile");
   const [reviewing, setReviewing] = useState(false);
@@ -156,9 +225,11 @@ export function AgentProfilePanel({
     field: AgentProfileEditableField,
     value: string,
   ): void {
+    const nextValue =
+      field === "country" ? value.trim().toUpperCase().slice(0, 2) : value;
     onChange(
       updateAgentProfile(profile, {
-        [field]: value,
+        [field]: nextValue,
       } as AgentProfileEdits),
     );
   }
@@ -194,15 +265,63 @@ export function AgentProfilePanel({
       !COMPETITOR_FIELDS.has(field),
   );
 
-  const canConfirm =
-    !disabled &&
-    profile.targetUrl.trim().length > 0 &&
-    profile.productName.trim().length > 0 &&
-    profile.primaryIcp.trim().length > 0 &&
-    profile.buyer.trim().length > 0 &&
-    profile.user.trim().length > 0 &&
-    profile.triggerPain.trim().length > 0 &&
-    profile.jtbd.trim().length > 0;
+  const canConfirm = !disabled && isAgentProfileReady(profile);
+  const missingReadyFields = AGENT_PROFILE_READY_FIELDS.filter((field) => {
+    const value = profile[field];
+    const source = profile.fieldProvenance.find(
+      (entry) => entry.path === `/${field}`,
+    );
+    return (
+      source?.derivation === "missing" ||
+      (Array.isArray(value)
+        ? value.length === 0
+        : typeof value !== "string" || value.trim().length === 0)
+    );
+  });
+  const readinessMessageId = `${agent}-profile-readiness`;
+  const missingSearchPrerequisites = [
+    profile.targetUrl.trim() ? null : t("fields.targetUrl"),
+    /^[A-Z]{2}$/.test(profile.country) ? null : t("fields.country"),
+    profile.locale.trim() ? null : t("fields.locale"),
+  ].filter((value): value is string => value !== null);
+  const searchDisabled = disabled || missingSearchPrerequisites.length > 0;
+  function fieldProvenance(field: AgentProfileEditableField) {
+    const provenance = profile.fieldProvenance.find(
+      (entry) => entry.path === `/${field}`,
+    );
+    return provenance
+      ? {
+          derivation: provenance.derivation,
+          label: `${t(`provenance.derivations.${provenance.derivation}`)} · ${t(`provenance.confidence.${provenance.confidence}`)}`,
+        }
+      : undefined;
+  }
+  const profileSearchCopy: AgentProfileSearchCopy = {
+    eyebrow: t("search.eyebrow"),
+    title: t("search.title"),
+    description: t("search.description"),
+    action: t("search.action"),
+    loadingAction: t("search.loadingAction"),
+    organicBoundary: t("search.organicBoundary"),
+    serpBoundary: t("search.serpBoundary"),
+    noData: t("search.noData"),
+    marketUnsupported: t("search.marketUnsupported"),
+    sourceUnavailable: t("search.sourceUnavailable"),
+    requestError:
+      profileSearch?.errorCode === "auth_required"
+        ? t("search.errors.authRequired")
+        : profileSearch?.errorCode === "auth_unavailable"
+          ? t("search.errors.authUnavailable")
+          : profileSearch?.errorCode === "rate_limited"
+            ? t("search.errors.rateLimited")
+            : t("search.errors.requestFailed"),
+    domainLabel: t("search.domainLabel"),
+    intersectionsLabel: t("search.intersectionsLabel"),
+    averagePositionLabel: t("search.averagePositionLabel"),
+    trafficLabel: t("search.trafficLabel"),
+    rankLabel: t("search.rankLabel"),
+    observedAtLabel: t("search.observedAtLabel"),
+  };
 
   return (
     <section
@@ -245,7 +364,7 @@ export function AgentProfilePanel({
           <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
             {t("fields.targetUrl")}
           </span>
-          <span className="flex h-12 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70">
+          <span className="flex h-12 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70 focus-within:ring-2 focus-within:ring-brand-accent/30">
             <Radar aria-hidden="true" className="size-3.5 shrink-0 text-brand-accent" />
             <input
               id={`${agent}-profile-target-url`}
@@ -265,31 +384,63 @@ export function AgentProfilePanel({
           </span>
         </label>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+        <div
+          data-profile-layout="vertical-rail"
+          className="relative mt-5 grid gap-3 md:gap-4"
+        >
           <article
             data-profile-card="product"
-            className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+            data-profile-stage="01"
+            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
-            <SourceChip
-              source={profile.sources.product}
-              label={t(`sources.${profile.sources.product}`)}
-            />
-            {productAdjusted ? (
-              <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-            ) : null}
-            <p className="mt-4 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
-              {t("cards.product")}
-            </p>
-            <h3 className="mt-1.5 text-[16px] font-semibold text-text-dark-primary">
-              {profile.productName}
-            </h3>
-            <p className="mt-2 min-h-[3.25rem] text-[11.5px] leading-[1.55] text-text-dark-secondary">
-              {profile.oneLinePositioning}
-            </p>
-            <dl className="mt-4 grid gap-2.5">
-              <Fact label={t("facts.category")} value={profile.categories.join(" · ")} />
-              <Fact label={t("facts.businessModel")} value={profile.businessModel} />
-              <Fact label={t("facts.primaryCta")} value={profile.primaryCta} />
+            <div className="min-w-0">
+              <StageHeader number="01" label={t("cards.product")} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <SourceChip
+                  source={profile.sources.product}
+                  label={t(`sources.${profile.sources.product}`)}
+                />
+                {productAdjusted ? (
+                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                ) : null}
+              </div>
+              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                {profile.productName}
+              </h3>
+              <p className="mt-2 max-w-xl text-[11.5px] leading-[1.6] text-text-dark-secondary">
+                {profile.oneLinePositioning}
+              </p>
+            </div>
+            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2">
+              <Fact
+                label={t("facts.valueProposition")}
+                value={profile.valueProposition}
+                provenance={fieldProvenance("valueProposition")}
+              />
+              <Fact
+                label={t("facts.coreFeatures")}
+                value={
+                  profile.coreFeatures.length > 0
+                    ? profile.coreFeatures.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("coreFeatures")}
+              />
+              <Fact
+                label={t("facts.category")}
+                value={profile.categories.join(" · ")}
+                provenance={fieldProvenance("categories")}
+              />
+              <Fact
+                label={t("facts.businessModel")}
+                value={profile.businessModel}
+                provenance={fieldProvenance("businessModel")}
+              />
+              <Fact
+                label={t("facts.primaryCta")}
+                value={profile.primaryCta}
+                provenance={fieldProvenance("primaryCta")}
+              />
               <Fact
                 label={t("facts.trustSignals")}
                 value={
@@ -297,28 +448,32 @@ export function AgentProfilePanel({
                     ? profile.trustSignals.join(" · ")
                     : t("values.unavailable")
                 }
+                provenance={fieldProvenance("trustSignals")}
               />
             </dl>
           </article>
 
           <article
             data-profile-card="icp"
-            className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+            data-profile-stage="02"
+            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
-            <SourceChip
-              source={profile.sources.icp}
-              label={t(`sources.${profile.sources.icp}`)}
-            />
-            {icpAdjusted ? (
-              <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-            ) : null}
-            <p className="mt-4 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
-              {t("cards.icp")}
-            </p>
-            <h3 className="mt-1.5 text-[16px] font-semibold text-text-dark-primary">
-              {profile.primaryIcp}
-            </h3>
-            <dl className="mt-4 grid gap-2.5">
+            <div className="min-w-0">
+              <StageHeader number="02" label={t("cards.icp")} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <SourceChip
+                  source={profile.sources.icp}
+                  label={t(`sources.${profile.sources.icp}`)}
+                />
+                {icpAdjusted ? (
+                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                ) : null}
+              </div>
+              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                {profile.primaryIcp}
+              </h3>
+            </div>
+            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2 xl:grid-cols-3">
               <Fact
                 label={t("facts.interests")}
                 value={
@@ -326,34 +481,107 @@ export function AgentProfilePanel({
                     ? profile.icpInterests.join(" · ")
                     : t("values.unavailable")
                 }
+                provenance={fieldProvenance("icpInterests")}
               />
-              <Fact label={t("facts.buyer")} value={profile.buyer} />
-              <Fact label={t("facts.user")} value={profile.user} />
-              <Fact label={t("facts.triggerPain")} value={profile.triggerPain} />
-              <Fact label={t("fields.jtbd")} value={profile.jtbd} />
-              <Fact label={t("facts.pain")} value={profile.icpPain} />
-              <Fact label={t("facts.positioning")} value={profile.icpPositioning} />
+              <Fact
+                label={t("facts.buyer")}
+                value={profile.buyer}
+                provenance={fieldProvenance("buyer")}
+              />
+              <Fact
+                label={t("facts.user")}
+                value={profile.user}
+                provenance={fieldProvenance("user")}
+              />
+              <Fact
+                label={t("facts.triggerPain")}
+                value={profile.triggerPain}
+                provenance={fieldProvenance("triggerPain")}
+              />
+              <Fact
+                label={t("facts.useCases")}
+                value={
+                  profile.useCases.length > 0
+                    ? profile.useCases.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("useCases")}
+              />
+              <Fact
+                label={t("fields.jtbd")}
+                value={profile.jtbd}
+                provenance={fieldProvenance("jtbd")}
+              />
+              <Fact
+                label={t("facts.pain")}
+                value={profile.icpPain}
+                provenance={fieldProvenance("icpPain")}
+              />
+              <Fact
+                label={t("facts.outcomes")}
+                value={
+                  profile.outcomes.length > 0
+                    ? profile.outcomes.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("outcomes")}
+              />
+              <Fact
+                label={t("facts.barriers")}
+                value={
+                  profile.barriers.length > 0
+                    ? profile.barriers.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("barriers")}
+              />
+              <Fact
+                label={t("facts.qualificationSignals")}
+                value={
+                  profile.qualificationSignals.length > 0
+                    ? profile.qualificationSignals.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("qualificationSignals")}
+              />
+              <Fact
+                label={t("facts.disqualifiers")}
+                value={
+                  profile.disqualifiers.length > 0
+                    ? profile.disqualifiers.join(" · ")
+                    : t("values.unavailable")
+                }
+                provenance={fieldProvenance("disqualifiers")}
+              />
+              <Fact
+                label={t("facts.positioning")}
+                value={profile.icpPositioning}
+                provenance={fieldProvenance("icpPositioning")}
+              />
             </dl>
           </article>
 
           <article
             data-profile-card="competitor"
-            className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+            data-profile-stage="03"
+            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
-            <SourceChip
-              source={profile.sources.competitor}
-              label={t(`sources.${profile.sources.competitor}`)}
-            />
-            {competitorAdjusted ? (
-              <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-            ) : null}
-            <p className="mt-4 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
-              {t("cards.competitor")}
-            </p>
-            <h3 className="mt-1.5 text-[16px] font-semibold text-text-dark-primary">
-              {t("values.confirmationRequired")}
-            </h3>
-            <dl className="mt-4 grid gap-2.5">
+            <div className="min-w-0">
+              <StageHeader number="03" label={t("cards.competitor")} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <SourceChip
+                  source={profile.sources.competitor}
+                  label={t(`sources.${profile.sources.competitor}`)}
+                />
+                {competitorAdjusted ? (
+                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                ) : null}
+              </div>
+              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                {t("values.confirmationRequired")}
+              </h3>
+            </div>
+            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-3">
               <Fact
                 label={t("facts.directCompetitors")}
                 value={
@@ -361,6 +589,7 @@ export function AgentProfilePanel({
                     ? profile.directCompetitors.join(" · ")
                     : t("values.confirmationRequired")
                 }
+                provenance={fieldProvenance("directCompetitors")}
               />
               <Fact
                 label={t("facts.indirectAlternatives")}
@@ -369,6 +598,7 @@ export function AgentProfilePanel({
                     ? profile.indirectAlternatives.join(" · ")
                     : t("values.confirmationRequired")
                 }
+                provenance={fieldProvenance("indirectAlternatives")}
               />
               <Fact
                 label={t("facts.excludedAlternatives")}
@@ -377,39 +607,81 @@ export function AgentProfilePanel({
                     ? profile.excludedAlternatives.join(" · ")
                     : t("values.confirmationRequired")
                 }
+                provenance={fieldProvenance("excludedAlternatives")}
               />
             </dl>
+            {profileSearch ? (
+              <div className="min-w-0 md:col-span-2">
+                <AgentProfileSearch
+                  loading={profileSearch.loading}
+                  data={profileSearch.data}
+                  errorCode={profileSearch.errorCode}
+                  onDiscover={profileSearch.onDiscover}
+                  locale={locale}
+                  disabled={searchDisabled}
+                  disabledReason={
+                    missingSearchPrerequisites.length > 0
+                      ? t("search.missingPrerequisite", {
+                          fields: missingSearchPrerequisites.join(", "),
+                        })
+                      : undefined
+                  }
+                  copy={profileSearchCopy}
+                />
+              </div>
+            ) : null}
           </article>
 
           <article
             data-profile-card="context"
-            className="rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+            data-profile-stage="04"
+            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
           >
-            <SourceChip
-              source={profile.sources.run}
-              label={t(`sources.${profile.sources.run}`)}
-            />
-            {contextAdjusted ? (
-              <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-            ) : null}
-            <p className="mt-4 font-mono text-[9px] tracking-[0.1em] text-text-dark-faint uppercase">
-              {t("cards.context")}
-            </p>
-            <h3 className="mt-1.5 text-[16px] font-semibold text-text-dark-primary">
-              {profile.firstOutcome}
-            </h3>
-            <dl className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1">
-              <Fact label={t("fields.country")} value={profile.country} />
-              <Fact label={t("fields.locale")} value={profile.locale} />
-              <Fact label={t("fields.device")} value={t(`options.device.${profile.device}`)} />
-              <Fact label={t("fields.pageType")} value={t(`options.pageType.${profile.pageType}`)} />
+            <div className="min-w-0">
+              <StageHeader number="04" label={t("cards.context")} />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <SourceChip
+                  source={profile.sources.run}
+                  label={t(`sources.${profile.sources.run}`)}
+                />
+                {contextAdjusted ? (
+                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                ) : null}
+              </div>
+              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                {profile.firstOutcome}
+              </h3>
+            </div>
+            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2 xl:grid-cols-3">
+              <Fact
+                label={t("fields.country")}
+                value={profile.country || t("values.unavailable")}
+                provenance={fieldProvenance("country")}
+              />
+              <Fact
+                label={t("fields.locale")}
+                value={profile.locale}
+                provenance={fieldProvenance("locale")}
+              />
+              <Fact
+                label={t("fields.device")}
+                value={t(`options.device.${profile.device}`)}
+                provenance={fieldProvenance("device")}
+              />
+              <Fact
+                label={t("fields.pageType")}
+                value={t(`options.pageType.${profile.pageType}`)}
+                provenance={fieldProvenance("pageType")}
+              />
               <Fact
                 label={t("fields.targetQuery")}
                 value={profile.targetQuery || t("values.unavailable")}
+                provenance={fieldProvenance("targetQuery")}
               />
               <Fact
                 label={t("fields.auditScope")}
                 value={t(`options.auditScope.${profile.auditScope}`)}
+                provenance={fieldProvenance("auditScope")}
               />
             </dl>
           </article>
@@ -425,6 +697,7 @@ export function AgentProfilePanel({
                 key={field}
                 className={
                   field === "oneLinePositioning" ||
+                  field === "valueProposition" ||
                   field === "businessModel" ||
                   field === "primaryCta" ||
                   field === "buyer" ||
@@ -452,7 +725,7 @@ export function AgentProfilePanel({
                   onChange={(event) =>
                     handleFieldChange(field, event.target.value)
                   }
-                  className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70 disabled:opacity-60"
+                  className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none transition-colors focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
                 />
               </label>
             ))}
@@ -471,7 +744,7 @@ export function AgentProfilePanel({
                   onChange={(event) =>
                     handleListFieldChange(field, event.target.value)
                   }
-                  className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none transition-colors focus:border-brand-accent/70 disabled:opacity-60"
+                  className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none transition-colors focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
                 />
               </label>
             ))}
@@ -487,7 +760,7 @@ export function AgentProfilePanel({
                 onChange={(event) =>
                   handleFieldChange("device", event.target.value)
                 }
-                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus:border-brand-accent/70 disabled:opacity-60"
+                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
               >
                 <option value="mobile">{t("options.device.mobile")}</option>
                 <option value="desktop">{t("options.device.desktop")}</option>
@@ -505,7 +778,7 @@ export function AgentProfilePanel({
                 onChange={(event) =>
                   handleFieldChange("pageType", event.target.value)
                 }
-                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus:border-brand-accent/70 disabled:opacity-60"
+                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
               >
                 {(["homepage", "product", "tool", "guide"] as const).map(
                   (value) => (
@@ -528,7 +801,7 @@ export function AgentProfilePanel({
                 onChange={(event) =>
                   handleFieldChange("auditScope", event.target.value)
                 }
-                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus:border-brand-accent/70 disabled:opacity-60"
+                className="h-10.5 w-full rounded-[9px] border border-brand-border-strong bg-brand-panel-raised px-3 text-[12.5px] text-text-dark-primary outline-none focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/35 disabled:opacity-60"
               >
                 <option value="site-first">
                   {t("options.auditScope.site-first")}
@@ -542,9 +815,23 @@ export function AgentProfilePanel({
         ) : null}
 
         <footer className="mt-5 flex flex-col gap-4 border-t border-brand-border-faint pt-5 md:flex-row md:items-center md:justify-between">
-          <p className="max-w-2xl text-[11.5px] leading-[1.55] text-text-dark-secondary">
-            {t("boundary")}
-          </p>
+          <div className="max-w-2xl">
+            <p className="text-[11.5px] leading-[1.55] text-text-dark-secondary">
+              {t("boundary")}
+            </p>
+            {missingReadyFields.length > 0 ? (
+              <p
+                id={readinessMessageId}
+                className="mt-2 text-[11px] leading-[1.5] text-brand-warning"
+              >
+                {t("readiness.missing", {
+                  fields: missingReadyFields
+                    .map((field) => t(`fields.${field}`))
+                    .join(", "),
+                })}
+              </p>
+            ) : null}
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
@@ -565,6 +852,9 @@ export function AgentProfilePanel({
               type="button"
               data-profile-action="confirm"
               disabled={!canConfirm}
+              aria-describedby={
+                missingReadyFields.length > 0 ? readinessMessageId : undefined
+              }
               onClick={() => onConfirm(confirmAgentProfile(profile))}
               className="inline-flex h-10.5 items-center justify-center gap-2 rounded-[9px] bg-brand-gradient px-4 text-[12.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >

@@ -10,6 +10,10 @@ import { useTranslations } from "next-intl";
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import { isAgentAuditSuccessEnvelope } from "../../lib/agents/audit-contract";
+import {
+  isAgentProfileSearchEnvelope,
+  type AgentProfileSearchData,
+} from "../../lib/agents/profile-search-contract";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
@@ -24,6 +28,7 @@ import {
   isRunnablePendingAgentIntent,
   readPendingAgentIntent,
   restorePendingAgentIntent,
+  schedulePendingAgentIntentExpiry,
   storeConfirmedAgentRunIntent,
   type PendingAgentIntent,
 } from "./agent-intent";
@@ -69,6 +74,7 @@ function successDataOf(
 }
 
 type SessionStatus = "signed_in" | "signed_out" | "unavailable";
+type SignInPurpose = "audit" | "profile_search";
 
 async function getSessionStatus(signal?: AbortSignal): Promise<SessionStatus> {
   const response = await fetch("/api/auth/session", {
@@ -101,11 +107,21 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [data, setData] = useState<AgentAuditSuccessData | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [signInPurpose, setSignInPurpose] =
+    useState<SignInPurpose | null>(null);
+  const [profileSearchLoading, setProfileSearchLoading] = useState(false);
+  const [profileSearchData, setProfileSearchData] =
+    useState<AgentProfileSearchData | null>(null);
+  const [profileSearchErrorCode, setProfileSearchErrorCode] = useState<
+    string | null
+  >(null);
   const mounted = useRef(true);
   const operationId = useRef(0);
   const busy = useRef(false);
   const resumeIntent = useRef<PendingAgentIntent | null>(null);
   const activeOperationController = useRef<AbortController | null>(null);
+  const profileSearchController = useRef<AbortController | null>(null);
+  const profileSearchBusy = useRef(false);
 
   const runAudit = useCallback(
     async (
@@ -146,7 +162,9 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
               setErrorCode("intent_unavailable");
               return;
             }
+            if (storage) schedulePendingAgentIntentExpiry(storage, stored);
             resumeIntent.current = stored;
+            setSignInPurpose("audit");
             setSignInOpen(true);
           }
           setErrorCode(code);
@@ -214,6 +232,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       try {
         if (sessionStatus === "unavailable") {
           setSignInOpen(false);
+          setSignInPurpose(null);
           setErrorCode("auth_unavailable");
           return;
         }
@@ -237,6 +256,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           const storage = getSessionIntentStorage();
           if (!storage) {
             setSignInOpen(false);
+            setSignInPurpose(null);
             setErrorCode("intent_unavailable");
             return;
           }
@@ -248,15 +268,19 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             : storeConfirmedAgentRunIntent(storage, confirmedProfile);
           if (!stored) {
             setSignInOpen(false);
+            setSignInPurpose(null);
             setErrorCode(pendingIntent ? "intent_expired" : "intent_unavailable");
             return;
           }
+          schedulePendingAgentIntentExpiry(storage, stored);
           resumeIntent.current = stored;
+          setSignInPurpose("audit");
           setSignInOpen(true);
           return;
         }
 
         setSignInOpen(false);
+        setSignInPurpose(null);
         const storage = getSessionIntentStorage();
         if (storage) clearPendingAgentIntent(storage, agent);
         await runAudit(confirmedProfile, currentOperation, signal, pendingIntent);
@@ -303,8 +327,96 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       mounted.current = false;
       activeOperationController.current?.abort();
       activeOperationController.current = null;
+      profileSearchController.current?.abort();
+      profileSearchController.current = null;
     };
   }, []);
+
+  const handleProfileSearch = useCallback(
+    async (resumeAfterSignIn = false): Promise<void> => {
+      if (
+        profileSearchBusy.current ||
+        !profile.targetUrl.trim() ||
+        !/^[A-Z]{2}$/.test(profile.country) ||
+        !profile.locale.trim()
+      ) {
+        return;
+      }
+
+      profileSearchController.current?.abort();
+      const controller = new AbortController();
+      profileSearchController.current = controller;
+      profileSearchBusy.current = true;
+      setProfileSearchLoading(true);
+      setProfileSearchErrorCode(null);
+      setProfileSearchData(null);
+
+      try {
+        const response = await fetch(`/api/agents/${agent}/profile-search`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            url: profile.targetUrl,
+            marketCode: profile.country,
+            languageTag: profile.locale,
+            targetQuery: profile.targetQuery,
+          }),
+          signal: controller.signal,
+        });
+        const body = (await response.json().catch(() => null)) as unknown;
+        if (!mounted.current || controller.signal.aborted) return;
+
+        if (!response.ok) {
+          const code = errorCodeOf(body) ?? "unknown";
+          setProfileSearchErrorCode(code);
+          if (code === "auth_required") {
+            setSignInPurpose("profile_search");
+            setSignInOpen(true);
+          } else if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+          return;
+        }
+
+        if (
+          !isAgentProfileSearchEnvelope(body) ||
+          body.data.agent !== agent ||
+          body.data.targetHost !== profile.host
+        ) {
+          setProfileSearchErrorCode("audit_response_invalid");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+          return;
+        }
+        setProfileSearchData(body.data);
+        if (resumeAfterSignIn) {
+          setSignInOpen(false);
+          setSignInPurpose(null);
+        }
+      } catch {
+        if (mounted.current && !controller.signal.aborted) {
+          setProfileSearchErrorCode("unknown");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+        }
+      } finally {
+        if (profileSearchController.current === controller) {
+          profileSearchController.current = null;
+          profileSearchBusy.current = false;
+          if (mounted.current) setProfileSearchLoading(false);
+        }
+      }
+    },
+    [agent, profile],
+  );
 
   useEffect(() => {
     const storage = getSessionIntentStorage();
@@ -340,6 +452,17 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   useEffect(() => {
     if (!signInOpen) return;
 
+    if (signInPurpose === "profile_search") {
+      function resumeSearchAfterSignIn(): void {
+        void handleProfileSearch(true);
+      }
+      window.addEventListener("focus", resumeSearchAfterSignIn);
+      return () =>
+        window.removeEventListener("focus", resumeSearchAfterSignIn);
+    }
+
+    if (signInPurpose !== "audit") return;
+
     function resumeAfterAppSignIn(): void {
       const storage = getSessionIntentStorage();
       const pending =
@@ -357,7 +480,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
     window.addEventListener("focus", resumeAfterAppSignIn);
     return () => window.removeEventListener("focus", resumeAfterAppSignIn);
-  }, [agent, signInOpen, startOperation]);
+  }, [agent, handleProfileSearch, signInOpen, signInPurpose, startOperation]);
 
   function handleProfileChange(next: AgentProfileDraft): void {
     activeOperationController.current?.abort();
@@ -367,6 +490,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     setLoading(false);
     setErrorCode(null);
     setData(null);
+    profileSearchController.current?.abort();
+    profileSearchController.current = null;
+    profileSearchBusy.current = false;
+    setProfileSearchLoading(false);
+    setProfileSearchData(null);
+    setProfileSearchErrorCode(null);
     setProfile(next);
   }
 
@@ -379,6 +508,9 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   function handleDialogChange(open: boolean): void {
     setSignInOpen(open);
     if (!open) {
+      const closingPurpose = signInPurpose;
+      setSignInPurpose(null);
+      if (closingPurpose !== "audit") return;
       activeOperationController.current?.abort();
       activeOperationController.current = null;
       operationId.current += 1;
@@ -414,6 +546,14 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         onConfirm={handleProfileConfirm}
         errorId={errorCode ? `${agent}-agent-error` : undefined}
         urlInvalid={urlIsInvalid}
+        profileSearch={{
+          loading: profileSearchLoading,
+          data: profileSearchData,
+          errorCode: profileSearchErrorCode,
+          onDiscover: () => {
+            void handleProfileSearch();
+          },
+        }}
       />
 
       {loading ? (
