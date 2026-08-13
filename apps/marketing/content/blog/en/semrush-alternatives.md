@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-08-13
 updatedAt: 2026-08-13
 heroImage: /images/blog/semrush-alternatives.jpg
-heroImageAlt: Technical line illustration: a wide toolbox opened to reveal many compartments, with three tools worn smooth from daily use and the remainder untouched.
+heroImageAlt: Technical blueprint illustration: an open toolbox divided into eight compartments, one tool per slot; only the screwdriver, hammer and pliers glow in cyan-green while the other five stay dim.
 localeExclusive: true
 ---
 ## What Is a Semrush Alternative?

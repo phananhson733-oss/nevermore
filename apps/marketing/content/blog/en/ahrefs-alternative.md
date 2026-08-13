@@ -8,7 +8,7 @@ status: published
 publishedAt: 2026-08-13
 updatedAt: 2026-08-13
 heroImage: /images/blog/ahrefs-alternative.jpg
-heroImageAlt: Technical line illustration: one occupied desk chair at a terminal with three empty chairs queued behind it, each carrying its own hanging price tag.
+heroImageAlt: Technical blueprint illustration: four identical office chairs in a row; the leftmost glows in cyan-green as the seat already included, while a blank price tag hangs above each of the other three.
 localeExclusive: true
 ---
 ## What Is an Ahrefs Alternative?
