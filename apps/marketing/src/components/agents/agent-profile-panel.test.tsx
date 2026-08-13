@@ -7,6 +7,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import en from "../../i18n/messages/en.json";
+import zh from "../../i18n/messages/zh.json";
+import type { AgentProfileRefreshData } from "../../lib/agents/profile-refresh-contract";
 import {
   createAgentProfileDraft,
   updateAgentProfile,
@@ -14,7 +17,13 @@ import {
 } from "./agent-profile";
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations:
+    () => (key: string, values?: Readonly<Record<string, unknown>>) =>
+      key === "search.summary.available"
+        ? `${key}:${String(values?.count)}`
+        : key === "search.missingPrerequisite"
+          ? `${key}:${String(values?.fields)}`
+          : key,
 }));
 
 const { AgentProfilePanel } = await import("./agent-profile-panel");
@@ -28,6 +37,10 @@ function renderPanel(
   profileSearch?: React.ComponentProps<
     typeof AgentProfilePanel
   >["profileSearch"],
+  profileRefresh?: React.ComponentProps<
+    typeof AgentProfilePanel
+  >["profileRefresh"],
+  onRefresh = vi.fn(),
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -40,10 +53,12 @@ function renderPanel(
         onChange={onChange}
         onConfirm={onConfirm}
         profileSearch={profileSearch}
+        profileRefresh={profileRefresh}
+        onRefresh={onRefresh}
       />,
     );
   });
-  return { onChange, onConfirm };
+  return { onChange, onConfirm, onRefresh };
 }
 
 function setValue(control: HTMLInputElement | HTMLSelectElement, value: string) {
@@ -59,6 +74,105 @@ function setValue(control: HTMLInputElement | HTMLSelectElement, value: string) 
   });
 }
 
+const REFRESH_FIELD_SPECS = [
+  ["productName", "string"],
+  ["oneLinePositioning", "string"],
+  ["valueProposition", "string"],
+  ["coreFeatures", "list"],
+  ["categories", "list"],
+  ["businessModel", "string"],
+  ["primaryCta", "string"],
+  ["trustSignals", "list"],
+  ["primaryIcp", "string"],
+  ["buyer", "string"],
+  ["user", "string"],
+  ["triggerPain", "string"],
+  ["icpInterests", "list"],
+  ["icpPain", "string"],
+  ["icpBehavior", "string"],
+  ["icpPositioning", "string"],
+  ["jtbd", "string"],
+  ["useCases", "list"],
+  ["outcomes", "list"],
+  ["barriers", "list"],
+  ["qualificationSignals", "list"],
+  ["disqualifiers", "list"],
+] as const;
+
+function makeProfileRefreshData({
+  availability = "available",
+  cacheStatus = "fresh",
+  contextSufficient,
+  stopReason = "max_urls",
+}: {
+  readonly availability?: "available" | "partial" | "no_data";
+  readonly cacheStatus?: "hit" | "fresh" | "refreshed";
+  readonly contextSufficient?: boolean;
+  readonly stopReason?: AgentProfileRefreshData["diagnostics"]["stopReason"];
+} = {}): AgentProfileRefreshData {
+  const availableCount =
+    availability === "available" ? 22 : availability === "partial" ? 6 : 0;
+  const sourceUrls = [
+    "https://astrologywiki.com/",
+    "https://astrologywiki.com/about",
+  ];
+
+  return {
+    schemaVersion: "agent_profile_refresh.v1" as const,
+    agent: "seo" as const,
+    request: {
+      submittedUrl: "astrologywiki.com",
+      normalizedUrl: "https://astrologywiki.com/",
+      targetHost: "astrologywiki.com",
+      marketCode: "US",
+      languageTag: "en-US",
+      outputLocale: "en",
+    },
+    availability,
+    observedAt: "2026-08-13T10:00:00.000Z",
+    cache: {
+      status: cacheStatus,
+      capturedAt: "2026-08-13T10:00:00.000Z",
+    },
+    diagnostics: {
+      resolvedOrigin: "https://astrologywiki.com",
+      pagesFetched: 7,
+      productPagesFetched: 3,
+      stopReason,
+      contextSufficient: contextSufficient ?? availableCount > 0,
+      sourceUrls,
+      fieldsAvailable: availableCount,
+      fieldsMissing: 22 - availableCount,
+    },
+    fields: REFRESH_FIELD_SPECS.map(([path, kind], index) =>
+      index < availableCount
+        ? {
+            path,
+            state: "available" as const,
+            value:
+              kind === "list"
+                ? [`Observed ${path}`]
+                : `Observed ${path}`,
+            derivation: "inferred" as const,
+            confidence: "medium" as const,
+            source: "public_page" as const,
+            limitation: null,
+            evidenceUrls: [sourceUrls[index % sourceUrls.length] as string],
+          }
+        : {
+            path,
+            state: "unavailable" as const,
+            value: null,
+            derivation: "missing" as const,
+            confidence: "unknown" as const,
+            source: "not_available" as const,
+            limitation: "Not stated on the bounded public pages.",
+            evidenceUrls: [] as const,
+          },
+    ) as AgentProfileRefreshData["fields"],
+  };
+}
+
 afterEach(async () => {
   if (root) {
     await act(async () => root?.unmount());
@@ -69,6 +183,488 @@ afterEach(async () => {
 });
 
 describe("AgentProfilePanel", () => {
+  it("puts URL, market, language, and an explicit diagnosis action before the four profile stages", () => {
+    renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
+
+    const control = document.querySelector("[data-profile-refresh-control]");
+    const rail = document.querySelector('[data-profile-layout="vertical-rail"]');
+
+    expect(control).not.toBeNull();
+    expect(rail).not.toBeNull();
+    expect(
+      (control?.compareDocumentPosition(rail as Node) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      control?.querySelector('[data-profile-refresh-field="url"]'),
+    ).not.toBeNull();
+    expect(
+      control?.querySelector('[data-profile-refresh-field="market"]'),
+    ).not.toBeNull();
+    expect(
+      control?.querySelector('[data-profile-refresh-field="language"]'),
+    ).not.toBeNull();
+    expect(
+      control?.querySelector('[data-profile-refresh-action="run"]')
+        ?.textContent,
+    ).toBe("refresh.actions.run");
+  });
+
+  it("updates URL, market, and language locally without starting diagnosis", () => {
+    const onChange = vi.fn();
+    const onRefresh = vi.fn();
+    renderPanel(
+      createAgentProfileDraft("tech", "astrologywiki.com"),
+      onChange,
+      undefined,
+      undefined,
+      undefined,
+      onRefresh,
+    );
+
+    setValue(
+      document.querySelector(
+        '[data-profile-refresh-field="url"]',
+      ) as HTMLInputElement,
+      "https://example.com/product",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agent: "tech",
+        host: "example.com",
+        targetUrl: "https://example.com/product",
+      }),
+    );
+
+    setValue(
+      document.querySelector(
+        '[data-profile-refresh-field="market"]',
+      ) as HTMLInputElement,
+      "us",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agent: "tech", country: "US" }),
+    );
+
+    setValue(
+      document.querySelector(
+        '[data-profile-refresh-field="language"]',
+      ) as HTMLInputElement,
+      "en-US",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agent: "tech", locale: "en-US" }),
+    );
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it("offers bounded Agent-specific country and language suggestions while retaining text entry", () => {
+    renderPanel(createAgentProfileDraft("tech", "astrologywiki.com"));
+
+    const market = document.querySelector(
+      '[data-profile-refresh-field="market"]',
+    ) as HTMLInputElement;
+    const language = document.querySelector(
+      '[data-profile-refresh-field="language"]',
+    ) as HTMLInputElement;
+    expect(market.type).toBe("text");
+    expect(language.type).toBe("text");
+    expect(market.getAttribute("list")).toBe("tech-profile-market-options");
+    expect(language.getAttribute("list")).toBe(
+      "tech-profile-language-options",
+    );
+    expect(
+      Array.from(
+        document.querySelectorAll(
+          "#tech-profile-market-options option",
+        ),
+        (option) => option.getAttribute("value"),
+      ),
+    ).toEqual([
+      "US",
+      "CN",
+      "GB",
+      "CA",
+      "AU",
+      "DE",
+      "FR",
+      "JP",
+      "KR",
+      "SG",
+      "IN",
+      "BR",
+    ]);
+    expect(
+      Array.from(
+        document.querySelectorAll(
+          "#tech-profile-language-options option",
+        ),
+        (option) => option.getAttribute("value"),
+      ),
+    ).toEqual([
+      "en-US",
+      "zh-CN",
+      "en-GB",
+      "de-DE",
+      "fr-FR",
+      "ja-JP",
+      "ko-KR",
+      "pt-BR",
+      "es-ES",
+    ]);
+  });
+
+  it("does not run diagnosis with an invalid BCP 47 target language", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "not_a_language" },
+    );
+    renderPanel(profile, undefined, undefined, undefined, undefined, vi.fn());
+
+    const language = document.querySelector(
+      '[data-profile-refresh-field="language"]',
+    ) as HTMLInputElement;
+    const action = document.querySelector(
+      '[data-profile-refresh-action="run"]',
+    ) as HTMLButtonElement;
+    expect(language.getAttribute("aria-invalid")).toBe("true");
+    expect(action.disabled).toBe(true);
+  });
+
+  it("runs cached diagnosis only from the explicit top action", () => {
+    const onRefresh = vi.fn();
+    renderPanel(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onRefresh,
+    );
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-refresh-action="run"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(onRefresh).toHaveBeenCalledWith("prefer_cache");
+  });
+
+  it.each(["available", "partial", "no_data"] as const)(
+    "shows truthful %s profile diagnostics from the completed result",
+    (availability) => {
+      renderPanel(
+        updateAgentProfile(
+          createAgentProfileDraft("seo", "astrologywiki.com"),
+          { country: "US", locale: "en-US" },
+        ),
+        undefined,
+        undefined,
+        undefined,
+        {
+          loading: false,
+          errorCode: null,
+          data: makeProfileRefreshData({ availability }),
+        },
+        vi.fn(),
+      );
+
+      const status = document.querySelector(
+        `[data-profile-refresh-status="${availability}"]`,
+      );
+      expect(status).not.toBeNull();
+      expect(status?.textContent).toContain(
+        `refresh.availability.${availability}`,
+      );
+      expect(
+        status?.querySelector('[data-profile-refresh-metric="pages"]')
+          ?.textContent,
+      ).toContain("7");
+      expect(
+        status?.querySelector(
+          '[data-profile-refresh-metric="product-pages"]',
+        )?.textContent,
+      ).toContain("3");
+      expect(
+        status?.querySelector('[data-profile-refresh-metric="sources"]')
+          ?.textContent,
+      ).toContain("2");
+      expect(
+        status?.querySelector('[data-profile-refresh-metric="missing"]')
+          ?.textContent,
+      ).toContain(String(availability === "available" ? 0 : availability === "partial" ? 16 : 22));
+      expect(
+        status?.querySelectorAll("[data-profile-refresh-source]"),
+      ).toHaveLength(2);
+      expect(
+        status?.querySelector("[data-profile-refresh-source]")?.getAttribute(
+          "href",
+        ),
+      ).toBe("https://astrologywiki.com/");
+      expect(status?.querySelector("time")?.getAttribute("dateTime")).toBe(
+        "2026-08-13T10:00:00.000Z",
+      );
+    },
+  );
+
+  it.each([
+    ["partial", "fields.primaryCta", "fields.disqualifiers"],
+    ["no_data", "fields.productName", "fields.disqualifiers"],
+  ] as const)(
+    "names fields that could not be obtained for a %s diagnosis",
+    (availability, firstMissing, lastMissing) => {
+      renderPanel(
+        updateAgentProfile(
+          createAgentProfileDraft("seo", "astrologywiki.com"),
+          { country: "US", locale: "en-US" },
+        ),
+        undefined,
+        undefined,
+        undefined,
+        {
+          loading: false,
+          errorCode: null,
+          data: makeProfileRefreshData({ availability }),
+        },
+        vi.fn(),
+      );
+
+      const missing = document.querySelector(
+        "[data-profile-refresh-missing-fields]",
+      );
+      expect(missing).not.toBeNull();
+      expect(missing?.textContent).toContain("refresh.diagnostics.missingFields");
+      expect(missing?.textContent).toContain(firstMissing);
+      expect(missing?.textContent).toContain(lastMissing);
+    },
+  );
+
+  it.each([
+    ["max_urls", "refresh.diagnostics.stopReasons.max_urls"],
+    ["max_requests", "refresh.diagnostics.stopReasons.max_requests"],
+    ["max_wall_clock", "refresh.diagnostics.stopReasons.max_wall_clock"],
+    ["max_total_bytes", "refresh.diagnostics.stopReasons.max_total_bytes"],
+    ["aborted", "refresh.diagnostics.stopReasons.aborted"],
+  ] as const)(
+    "explains the truthful %s crawl stop reason",
+    (stopReason, copyKey) => {
+      renderPanel(
+        updateAgentProfile(
+          createAgentProfileDraft("seo", "astrologywiki.com"),
+          { country: "US", locale: "en-US" },
+        ),
+        undefined,
+        undefined,
+        undefined,
+        {
+          loading: false,
+          errorCode: null,
+          data: makeProfileRefreshData({
+            availability: "partial",
+            stopReason,
+          }),
+        },
+        vi.fn(),
+      );
+
+      expect(
+        document.querySelector(
+          `[data-profile-refresh-stop-reason="${stopReason}"]`,
+        )?.textContent,
+      ).toBe(copyKey);
+    },
+  );
+
+  it("states when the bounded public context was insufficient", () => {
+    renderPanel(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      undefined,
+      undefined,
+      undefined,
+      {
+        loading: false,
+        errorCode: null,
+        data: makeProfileRefreshData({
+          availability: "partial",
+          contextSufficient: false,
+          stopReason: null,
+        }),
+      },
+      vi.fn(),
+    );
+
+    expect(
+      document.querySelector("[data-profile-refresh-limitation]")?.textContent,
+    ).toBe("refresh.diagnostics.insufficient");
+    expect(
+      document.querySelector("[data-profile-refresh-stop-reason]"),
+    ).toBeNull();
+  });
+
+  it.each(["hit", "refreshed"] as const)(
+    "labels a %s result and uses an explicit live-refresh action afterward",
+    (cacheStatus) => {
+      const onRefresh = vi.fn();
+      renderPanel(
+        updateAgentProfile(
+          createAgentProfileDraft("seo", "astrologywiki.com"),
+          { country: "US", locale: "en-US" },
+        ),
+        undefined,
+        undefined,
+        undefined,
+        {
+          loading: false,
+          errorCode: null,
+          data: makeProfileRefreshData({ cacheStatus }),
+        },
+        onRefresh,
+      );
+
+      expect(
+        document.querySelector(
+          `[data-profile-refresh-cache="${cacheStatus}"]`,
+        )?.textContent,
+      ).toContain(`refresh.cache.${cacheStatus}`);
+
+      const action = document.querySelector(
+        '[data-profile-refresh-action="run"]',
+      ) as HTMLButtonElement;
+      expect(action.textContent).toBe("refresh.actions.refresh");
+      act(() => action.click());
+      expect(onRefresh).toHaveBeenCalledWith("refresh");
+    },
+  );
+
+  it("announces bounded loading without inventing progress and disables the command bar", () => {
+    renderPanel(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      undefined,
+      undefined,
+      undefined,
+      { loading: true, data: null, errorCode: null },
+      vi.fn(),
+    );
+
+    const control = document.querySelector("[data-profile-refresh-control]");
+    const status = document.querySelector(
+      '[data-profile-refresh-status="loading"]',
+    );
+    expect(control?.getAttribute("aria-busy")).toBe("true");
+    expect(status?.getAttribute("role")).toBe("status");
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+    expect(status?.textContent).toContain("refresh.loading");
+    expect(status?.textContent).not.toMatch(/\d+%|page 1|1\/\d/i);
+    expect(
+      document.querySelectorAll(
+        "[data-profile-refresh-field]:disabled, [data-profile-refresh-action]:disabled",
+      ),
+    ).toHaveLength(4);
+  });
+
+  it("renders one accessible error announcement for a failed diagnosis", () => {
+    renderPanel(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      undefined,
+      undefined,
+      undefined,
+      {
+        loading: false,
+        data: null,
+        errorCode: "profile_source_unavailable",
+      },
+      vi.fn(),
+    );
+
+    const alerts = document.querySelectorAll(
+      '[data-profile-refresh-status="error"][role="alert"]',
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.textContent).toContain(
+      "refresh.errors.profile_source_unavailable",
+    );
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  });
+
+  it.each([
+    ["unknown", "refresh.errors.unknown"],
+    ["invalid_url", "refresh.errors.request_failed"],
+  ])("maps the %s error to a closed and safe copy key", (errorCode, copyKey) => {
+    renderPanel(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      undefined,
+      undefined,
+      undefined,
+      { loading: false, data: null, errorCode },
+      vi.fn(),
+    );
+
+    const error = document.querySelector(
+      '[data-profile-refresh-status="error"]',
+    );
+    expect(error?.textContent).toBe(copyKey);
+  });
+
+  it("keeps the diagnosis action full-width on mobile and bounded on desktop", () => {
+    renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
+
+    const control = document.querySelector(
+      "[data-profile-refresh-control]",
+    ) as HTMLElement;
+    const action = document.querySelector(
+      "[data-profile-refresh-action]",
+    ) as HTMLButtonElement;
+    expect(control.className).toContain("grid");
+    expect(control.className).toContain("lg:grid-cols-");
+    expect(action.className).toContain("w-full");
+    expect(action.className).toContain("lg:w-auto");
+  });
+
+  it("keeps the English and Chinese diagnosis-control contracts aligned", () => {
+    expect(Object.keys(en.agents.workbench.profile.refresh).sort()).toEqual(
+      Object.keys(zh.agents.workbench.profile.refresh).sort(),
+    );
+    expect(
+      Object.keys(en.agents.workbench.profile.refresh.fields).sort(),
+    ).toEqual(Object.keys(zh.agents.workbench.profile.refresh.fields).sort());
+    expect(
+      Object.keys(en.agents.workbench.profile.refresh.availability).sort(),
+    ).toEqual(
+      Object.keys(zh.agents.workbench.profile.refresh.availability).sort(),
+    );
+    expect(
+      Object.keys(en.agents.workbench.profile.refresh.cache).sort(),
+    ).toEqual(Object.keys(zh.agents.workbench.profile.refresh.cache).sort());
+    expect(
+      Object.keys(en.agents.workbench.profile.refresh.errors).sort(),
+    ).toEqual(Object.keys(zh.agents.workbench.profile.refresh.errors).sort());
+    expect(en.agents.workbench.profile.refresh.loading).toContain(
+      "bounded public pages",
+    );
+    expect(zh.agents.workbench.profile.refresh.loading).toContain(
+      "有边界的公开页面",
+    );
+  });
+
   it("presents Product, ICP, competitors, and run context as a top-to-bottom stage rail", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
@@ -145,6 +741,316 @@ describe("AgentProfilePanel", () => {
     ).toBe("actions.confirmRun");
   });
 
+  it("renders empty run-context inputs as confirmation-required missing values", () => {
+    renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
+
+    const context = document.querySelector('[data-profile-card="context"]');
+    const facts = Array.from(context?.querySelectorAll("dl > div") ?? []);
+    const fact = (label: string) =>
+      facts.find((entry) => entry.querySelector("dt")?.textContent === label);
+
+    for (const label of [
+      "fields.country",
+      "fields.locale",
+      "fields.targetQuery",
+    ]) {
+      expect(fact(label)?.querySelector("dd")?.textContent).toBe(
+        "values.confirmationRequired",
+      );
+      expect(
+        fact(label)?.querySelector('[data-profile-provenance="missing"]'),
+      ).not.toBeNull();
+    }
+  });
+
+  it("keeps provider-observed search domains separate from business classifications", () => {
+    renderPanel(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      undefined,
+      undefined,
+      {
+        loading: false,
+        errorCode: null,
+        onDiscover: vi.fn(),
+        data: {
+          schemaVersion: "agent_profile_search.v1",
+          agent: "seo",
+          targetHost: "astrologywiki.com",
+          availability: "available",
+          method: "target_query_serp",
+          market: {
+            code: "US",
+            locationCode: 2_840,
+            languageCode: "en",
+          },
+          observedAt: "2026-08-13T00:00:00.000Z",
+          rows: [
+            {
+              kind: "target_query_serp",
+              domain: "observed-one.example",
+              rank: 1,
+            },
+            {
+              kind: "target_query_serp",
+              domain: "observed-two.example",
+              rank: 2,
+            },
+          ],
+        },
+      },
+    );
+
+    const competitor = document.querySelector(
+      '[data-profile-card="competitor"]',
+    );
+    const declaredBusinessFrame = competitor?.querySelector("dl");
+    const summary = competitor?.querySelector(
+      '[data-profile-search-summary="available"]',
+    );
+
+    expect(summary?.textContent).toBe("search.summary.available:2");
+    expect(declaredBusinessFrame?.textContent).not.toContain(
+      "observed-one.example",
+    );
+    expect(
+      declaredBusinessFrame?.textContent?.match(
+        /values\.confirmationRequired/g,
+      ),
+    ).toHaveLength(3);
+    expect(
+      competitor?.querySelectorAll("[data-profile-search-domain]"),
+    ).toHaveLength(2);
+  });
+
+  it("shows a reviewed business frame when competitors were entered manually", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      {
+        directCompetitors: ["observed-only.example"],
+        indirectAlternatives: ["Manual Alternative"],
+      },
+    );
+    renderPanel(profile, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      onDiscover: vi.fn(),
+      data: {
+        schemaVersion: "agent_profile_search.v1",
+        agent: "seo",
+        targetHost: "astrologywiki.com",
+        availability: "available",
+        method: "target_query_serp",
+        market: {
+          code: "US",
+          locationCode: 2_840,
+          languageCode: "en",
+        },
+        observedAt: "2026-08-13T00:00:00.000Z",
+        rows: [
+          {
+            kind: "target_query_serp",
+            domain: "observed-only.example",
+            rank: 1,
+          },
+        ],
+      },
+    });
+
+    const competitor = document.querySelector(
+      '[data-profile-card="competitor"]',
+    );
+    expect(competitor?.querySelector("h3")?.textContent).toBe(
+      "values.businessFrameReviewed",
+    );
+    expect(competitor?.querySelector("dl")?.textContent).toContain(
+      "observed-only.example",
+    );
+    expect(competitor?.querySelector("dl")?.textContent).toContain(
+      "Manual Alternative",
+    );
+    expect(
+      competitor?.querySelector(
+        '[data-profile-search-summary="available"]',
+      )?.textContent,
+    ).toBe("search.summary.available:1");
+    expect(
+      en.agents.workbench.profile.search.summary.available,
+    ).toContain("provider observation itself does not classify");
+    expect(
+      zh.agents.workbench.profile.search.summary.available,
+    ).toContain("数据源观测本身不将其归类为商业竞品");
+  });
+
+  it("leaves search summary announcements to the existing results live region", () => {
+    renderPanel(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      undefined,
+      undefined,
+      {
+        loading: true,
+        data: null,
+        errorCode: null,
+        onDiscover: vi.fn(),
+      },
+    );
+
+    const summary = document.querySelector("[data-profile-search-summary]");
+    expect(summary).not.toBeNull();
+    expect(summary?.hasAttribute("aria-live")).toBe(false);
+  });
+
+  it.each([
+    {
+      state: "loading",
+      profileSearch: {
+        loading: true,
+        data: null,
+        errorCode: null,
+        onDiscover: vi.fn(),
+      },
+      message: "search.summary.loading",
+    },
+    {
+      state: "no_data",
+      profileSearch: {
+        loading: false,
+        errorCode: null,
+        onDiscover: vi.fn(),
+        data: {
+          schemaVersion: "agent_profile_search.v1" as const,
+          agent: "tech" as const,
+          targetHost: "astrologywiki.com",
+          availability: "no_data" as const,
+          method: "competitors_domain" as const,
+          market: {
+            code: "US",
+            locationCode: 2_840,
+            languageCode: "en",
+          },
+          observedAt: "2026-08-13T00:00:00.000Z",
+          rows: [] as const,
+        },
+      },
+      message: "search.summary.noData",
+    },
+    {
+      state: "source_unavailable",
+      profileSearch: {
+        loading: false,
+        errorCode: null,
+        onDiscover: vi.fn(),
+        data: {
+          schemaVersion: "agent_profile_search.v1" as const,
+          agent: "tech" as const,
+          targetHost: "astrologywiki.com",
+          availability: "source_unavailable" as const,
+          method: "competitors_domain" as const,
+          market: {
+            code: "US",
+            locationCode: 2_840,
+            languageCode: "en",
+          },
+          observedAt: null,
+          rows: [] as const,
+        },
+      },
+      message: "search.summary.sourceUnavailable",
+    },
+  ])("shows a truthful $state search-domain summary near Stage 03", ({
+    state,
+    profileSearch,
+    message,
+  }) => {
+    renderPanel(
+      createAgentProfileDraft("tech", "astrologywiki.com"),
+      undefined,
+      undefined,
+      profileSearch,
+    );
+
+    expect(
+      document.querySelector(
+        `[data-profile-search-summary="${state}"]`,
+      )?.textContent,
+    ).toBe(message);
+  });
+
+  it("uses dedicated timeout copy for a search_timeout client error", () => {
+    renderPanel(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      undefined,
+      undefined,
+      {
+        loading: false,
+        data: null,
+        errorCode: "search_timeout",
+        onDiscover: vi.fn(),
+      },
+    );
+
+    expect(
+      document.querySelector('[data-profile-search-error="search_timeout"]')
+        ?.textContent,
+    ).toContain("search.errors.searchTimeout");
+  });
+
+  it("requires a target query before provider search in the CN market", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "CN", locale: "zh-CN" },
+    );
+    renderPanel(profile, undefined, undefined, {
+      loading: false,
+      data: null,
+      errorCode: null,
+      onDiscover: vi.fn(),
+    });
+
+    const searchButton = document.querySelector(
+      "[data-profile-search] button",
+    ) as HTMLButtonElement;
+    expect(searchButton.disabled).toBe(true);
+    expect(document.body.textContent).toContain(
+      "search.missingPrerequisite:fields.targetQuery",
+    );
+  });
+
+  it("allows non-CN provider search without a target query", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
+    renderPanel(profile, undefined, undefined, {
+      loading: false,
+      data: null,
+      errorCode: null,
+      onDiscover: vi.fn(),
+    });
+
+    const searchButton = document.querySelector(
+      "[data-profile-search] button",
+    ) as HTMLButtonElement;
+    expect(searchButton.disabled).toBe(false);
+    expect(document.body.textContent).not.toContain(
+      "search.missingPrerequisite:fields.targetQuery",
+    );
+  });
+
+  it("keeps English and Chinese source-honest summary and timeout copy aligned", () => {
+    expect(en.agents.workbench.profile.search.summary.available).toContain(
+      "provider observation itself does not classify",
+    );
+    expect(zh.agents.workbench.profile.search.summary.available).toContain(
+      "数据源观测本身不将其归类为商业竞品",
+    );
+    expect(en.agents.workbench.profile.search.errors.searchTimeout).toContain(
+      "timed out",
+    );
+    expect(zh.agents.workbench.profile.search.errors.searchTimeout).toContain(
+      "超时",
+    );
+  });
+
   it("exposes accessible fields and emits an immutable edit", () => {
     const profile = createAgentProfileDraft("tech", "astrologywiki.com");
     const { onChange } = renderPanel(profile);
@@ -157,10 +1063,10 @@ describe("AgentProfilePanel", () => {
       ).click();
     });
     const country = document.querySelector(
-      '[aria-label="fields.country"]',
+      '[data-profile-refresh-field="market"]',
     ) as HTMLInputElement;
     const locale = document.querySelector(
-      '[aria-label="fields.locale"]',
+      '[data-profile-refresh-field="language"]',
     ) as HTMLInputElement;
     const targetQuery = document.querySelector(
       '[aria-label="fields.targetQuery"]',
@@ -210,7 +1116,7 @@ describe("AgentProfilePanel", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ agent: "tech", country: "US" }),
     );
-    expect(profile.country).toBe("CN");
+    expect(profile.country).toBe("");
 
     setValue(categories, "Astrology SaaS, Reflection tool");
     expect(onChange).toHaveBeenLastCalledWith(
@@ -250,7 +1156,10 @@ describe("AgentProfilePanel", () => {
   });
 
   it("confirms only the supplied Agent draft and does not persist it", () => {
-    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "astrologywiki.com"),
+      { country: "US", locale: "en-US" },
+    );
     const { onConfirm } = renderPanel(profile);
 
     act(() => {

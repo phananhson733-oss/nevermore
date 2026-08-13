@@ -4,11 +4,23 @@
 
 "use client";
 
-import { Check, ChevronDown, FileText, Radar, Sparkles } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ExternalLink,
+  FileText,
+  LoaderCircle,
+  Radar,
+  Sparkles,
+} from "lucide-react";
 import { useState, type ChangeEvent } from "react";
 import { useTranslations } from "next-intl";
 
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
+import type {
+  AgentProfileRefreshData,
+  AgentProfileRefreshMode,
+} from "../../lib/agents/profile-refresh-contract";
 import {
   AgentProfileSearch,
   type AgentProfileSearchCopy,
@@ -41,6 +53,12 @@ export interface AgentProfilePanelProps {
     readonly errorCode: string | null;
     readonly onDiscover: () => void;
   };
+  readonly profileRefresh?: {
+    readonly loading: boolean;
+    readonly data: AgentProfileRefreshData | null;
+    readonly errorCode: string | null;
+  };
+  readonly onRefresh?: (mode: AgentProfileRefreshMode) => void;
 }
 
 const TEXT_FIELDS = [
@@ -58,8 +76,6 @@ const TEXT_FIELDS = [
   "icpPositioning",
   "jtbd",
   "firstOutcome",
-  "country",
-  "locale",
   "targetQuery",
 ] as const satisfies readonly AgentProfileEditableField[];
 
@@ -109,6 +125,59 @@ const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "indirectAlternatives",
   "excludedAlternatives",
 ]);
+
+const PROFILE_MARKET_SUGGESTIONS = [
+  "US",
+  "CN",
+  "GB",
+  "CA",
+  "AU",
+  "DE",
+  "FR",
+  "JP",
+  "KR",
+  "SG",
+  "IN",
+  "BR",
+] as const;
+const PROFILE_LANGUAGE_SUGGESTIONS = [
+  "en-US",
+  "zh-CN",
+  "en-GB",
+  "de-DE",
+  "fr-FR",
+  "ja-JP",
+  "ko-KR",
+  "pt-BR",
+  "es-ES",
+] as const;
+const PROFILE_REFRESH_ERROR_KEYS = new Set([
+  "profile_timeout",
+  "profile_response_invalid",
+  "profile_source_unavailable",
+  "auth_required",
+  "auth_unavailable",
+  "intent_unavailable",
+  "rate_limited",
+  "request_failed",
+  "unknown",
+]);
+
+function canonicalLanguageTag(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 35) return null;
+  try {
+    return Intl.getCanonicalLocales(trimmed)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function profileRefreshErrorKey(errorCode: string): string {
+  return PROFILE_REFRESH_ERROR_KEYS.has(errorCode)
+    ? errorCode
+    : "request_failed";
+}
 
 function LocalAdjustmentChip({ label }: { readonly label: string }) {
   return (
@@ -212,6 +281,8 @@ export function AgentProfilePanel({
   errorId,
   urlInvalid = false,
   profileSearch,
+  profileRefresh,
+  onRefresh,
 }: AgentProfilePanelProps) {
   const t = useTranslations("agents.workbench.profile");
   const [reviewing, setReviewing] = useState(false);
@@ -258,6 +329,10 @@ export function AgentProfilePanel({
   const competitorAdjusted = profile.editedFields.some((field) =>
     COMPETITOR_FIELDS.has(field),
   );
+  const hasBusinessFrame =
+    profile.directCompetitors.length > 0 ||
+    profile.indirectAlternatives.length > 0 ||
+    profile.excludedAlternatives.length > 0;
   const contextAdjusted = profile.editedFields.some(
     (field) =>
       !PRODUCT_FIELDS.has(field) &&
@@ -283,8 +358,15 @@ export function AgentProfilePanel({
     profile.targetUrl.trim() ? null : t("fields.targetUrl"),
     /^[A-Z]{2}$/.test(profile.country) ? null : t("fields.country"),
     profile.locale.trim() ? null : t("fields.locale"),
+    profile.country === "CN" && !profile.targetQuery.trim()
+      ? t("fields.targetQuery")
+      : null,
   ].filter((value): value is string => value !== null);
   const searchDisabled = disabled || missingSearchPrerequisites.length > 0;
+  const refreshData = profileRefresh?.data ?? null;
+  const targetLanguageValid = canonicalLanguageTag(profile.locale) !== null;
+  const marketOptionsId = `${agent}-profile-market-options`;
+  const languageOptionsId = `${agent}-profile-language-options`;
   function fieldProvenance(field: AgentProfileEditableField) {
     const provenance = profile.fieldProvenance.find(
       (entry) => entry.path === `/${field}`,
@@ -295,6 +377,55 @@ export function AgentProfilePanel({
           label: `${t(`provenance.derivations.${provenance.derivation}`)} · ${t(`provenance.confidence.${provenance.confidence}`)}`,
         }
       : undefined;
+  }
+  function contextFieldValue(
+    field: "country" | "locale" | "targetQuery",
+  ): string {
+    return profile[field].trim() || t("values.confirmationRequired");
+  }
+  function contextFieldProvenance(
+    field: "country" | "locale" | "targetQuery",
+  ) {
+    return profile[field].trim()
+      ? fieldProvenance(field)
+      : {
+          derivation: "missing",
+          label: `${t("provenance.derivations.missing")} · ${t("provenance.confidence.unknown")}`,
+        };
+  }
+  let searchSummary: { readonly state: string; readonly label: string } | null =
+    null;
+  if (profileSearch?.loading) {
+    searchSummary = { state: "loading", label: t("search.summary.loading") };
+  } else if (profileSearch?.errorCode) {
+    searchSummary = {
+      state:
+        profileSearch.errorCode === "search_timeout"
+          ? "search_timeout"
+          : "request_error",
+      label: t("search.summary.requestError"),
+    };
+  } else if (profileSearch?.data?.availability === "available") {
+    searchSummary = {
+      state: "available",
+      label: t("search.summary.available", {
+        count: profileSearch.data.rows.length,
+      }),
+    };
+  } else if (profileSearch?.data?.availability === "no_data") {
+    searchSummary = { state: "no_data", label: t("search.summary.noData") };
+  } else if (profileSearch?.data?.availability === "source_unavailable") {
+    searchSummary = {
+      state: "source_unavailable",
+      label: t("search.summary.sourceUnavailable"),
+    };
+  } else if (profileSearch?.data?.availability === "market_unsupported") {
+    searchSummary = {
+      state: "market_unsupported",
+      label: t("search.summary.marketUnsupported"),
+    };
+  } else if (profileSearch) {
+    searchSummary = { state: "idle", label: t("search.summary.idle") };
   }
   const profileSearchCopy: AgentProfileSearchCopy = {
     eyebrow: t("search.eyebrow"),
@@ -312,6 +443,8 @@ export function AgentProfilePanel({
         ? t("search.errors.authRequired")
         : profileSearch?.errorCode === "auth_unavailable"
           ? t("search.errors.authUnavailable")
+          : profileSearch?.errorCode === "search_timeout"
+            ? t("search.errors.searchTimeout")
           : profileSearch?.errorCode === "rate_limited"
             ? t("search.errors.rateLimited")
             : t("search.errors.requestFailed"),
@@ -360,29 +493,270 @@ export function AgentProfilePanel({
       </header>
 
       <div className="p-5 md:p-6">
-        <label className="block" htmlFor={`${agent}-profile-target-url`}>
-          <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
-            {t("fields.targetUrl")}
-          </span>
-          <span className="flex h-12 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70 focus-within:ring-2 focus-within:ring-brand-accent/30">
-            <Radar aria-hidden="true" className="size-3.5 shrink-0 text-brand-accent" />
+        <div
+          data-profile-refresh-control
+          aria-busy={profileRefresh?.loading || undefined}
+          className="grid gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-4 lg:grid-cols-[minmax(18rem,1fr)_minmax(9rem,0.28fr)_minmax(10rem,0.32fr)_auto] lg:items-end"
+        >
+          <label className="block" htmlFor={`${agent}-profile-target-url`}>
+            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+              {t("fields.targetUrl")}
+            </span>
+            <span className="flex h-12 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70 focus-within:ring-2 focus-within:ring-brand-accent/30">
+              <Radar aria-hidden="true" className="size-3.5 shrink-0 text-brand-accent" />
+              <input
+                id={`${agent}-profile-target-url`}
+                data-profile-refresh-field="url"
+                aria-label={t("fields.targetUrl")}
+                type="text"
+                inputMode="url"
+                autoComplete="url"
+                maxLength={2_048}
+                disabled={disabled || profileRefresh?.loading}
+                value={profile.targetUrl}
+                onChange={handleUrlChange}
+                aria-invalid={urlInvalid}
+                aria-describedby={errorId}
+                placeholder={t("fields.targetUrlPlaceholder")}
+                className="min-w-0 flex-1 bg-transparent font-mono text-[13.5px] text-text-dark-primary outline-none placeholder:text-text-dark-faint disabled:opacity-60"
+              />
+            </span>
+          </label>
+
+          <label className="block" htmlFor={`${agent}-profile-market`}>
+            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+              {t("refresh.fields.market")}
+            </span>
             <input
-              id={`${agent}-profile-target-url`}
-              aria-label={t("fields.targetUrl")}
+              id={`${agent}-profile-market`}
+              data-profile-refresh-field="market"
+              aria-label={t("refresh.fields.market")}
               type="text"
-              inputMode="url"
-              autoComplete="url"
-              maxLength={2_048}
-              disabled={disabled}
-              value={profile.targetUrl}
-              onChange={handleUrlChange}
-              aria-invalid={urlInvalid}
-              aria-describedby={errorId}
-              placeholder={t("fields.targetUrlPlaceholder")}
-              className="min-w-0 flex-1 bg-transparent font-mono text-[13.5px] text-text-dark-primary outline-none placeholder:text-text-dark-faint disabled:opacity-60"
+              inputMode="text"
+              autoComplete="country"
+              list={marketOptionsId}
+              maxLength={2}
+              disabled={disabled || profileRefresh?.loading}
+              value={profile.country}
+              onChange={(event) =>
+                handleFieldChange("country", event.target.value)
+              }
+              placeholder={t("refresh.fields.marketPlaceholder")}
+              className="h-12 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-3 font-mono text-[13px] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-faint focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/30 disabled:opacity-60"
             />
-          </span>
-        </label>
+            <datalist id={marketOptionsId}>
+              {PROFILE_MARKET_SUGGESTIONS.map((market) => (
+                <option key={market} value={market} />
+              ))}
+            </datalist>
+          </label>
+
+          <label className="block" htmlFor={`${agent}-profile-language`}>
+            <span className="mb-2 block font-mono text-[9.5px] tracking-[0.1em] text-text-dark-secondary uppercase">
+              {t("refresh.fields.language")}
+            </span>
+            <input
+              id={`${agent}-profile-language`}
+              data-profile-refresh-field="language"
+              aria-label={t("refresh.fields.language")}
+              type="text"
+              inputMode="text"
+              list={languageOptionsId}
+              maxLength={35}
+              disabled={disabled || profileRefresh?.loading}
+              aria-invalid={
+                profile.locale.trim() && !targetLanguageValid ? true : undefined
+              }
+              value={profile.locale}
+              onChange={(event) =>
+                handleFieldChange("locale", event.target.value)
+              }
+              placeholder={t("refresh.fields.languagePlaceholder")}
+              className="h-12 w-full rounded-[10px] border border-brand-border-strong bg-brand-bg px-3 font-mono text-[13px] text-text-dark-primary outline-none transition-colors placeholder:text-text-dark-faint focus-visible:border-brand-accent/70 focus-visible:ring-2 focus-visible:ring-brand-accent/30 disabled:opacity-60"
+            />
+            <datalist id={languageOptionsId}>
+              {PROFILE_LANGUAGE_SUGGESTIONS.map((language) => (
+                <option key={language} value={language} />
+              ))}
+            </datalist>
+          </label>
+
+          <button
+            type="button"
+            data-profile-refresh-action="run"
+            disabled={
+              disabled ||
+              profileRefresh?.loading ||
+              !onRefresh ||
+              !profile.targetUrl.trim() ||
+              !/^[A-Z]{2}$/.test(profile.country) ||
+              !targetLanguageValid
+            }
+            onClick={() =>
+              onRefresh?.(refreshData ? "refresh" : "prefer_cache")
+            }
+            className="inline-flex h-12 w-full items-center justify-center rounded-[10px] bg-brand-gradient px-5 text-[12.5px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none lg:w-auto"
+          >
+            {profileRefresh?.loading ? (
+              <LoaderCircle aria-hidden="true" className="mr-2 size-3.5 animate-spin" />
+            ) : null}
+            {refreshData
+              ? t("refresh.actions.refresh")
+              : t("refresh.actions.run")}
+          </button>
+
+          {profileRefresh?.loading ? (
+            <p
+              data-profile-refresh-status="loading"
+              role="status"
+              aria-live="polite"
+              className="text-[11.5px] leading-[1.55] text-text-dark-secondary lg:col-span-4"
+            >
+              {t("refresh.loading")}
+            </p>
+          ) : profileRefresh?.errorCode ? (
+            <p
+              data-profile-refresh-status="error"
+              role="alert"
+              className="rounded-md border border-brand-error/35 bg-brand-error/[0.07] px-3 py-2 text-[11.5px] leading-[1.55] text-brand-error lg:col-span-4"
+            >
+              {t(
+                `refresh.errors.${profileRefreshErrorKey(profileRefresh.errorCode)}`,
+              )}
+            </p>
+          ) : refreshData ? (
+            <div
+              data-profile-refresh-status={String(
+                refreshData.availability,
+              )}
+              className="grid gap-3 border-t border-brand-border-faint pt-3 lg:col-span-4"
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <strong className="text-[12px] font-semibold text-text-dark-primary">
+                  {t(
+                    `refresh.availability.${String(refreshData.availability)}`,
+                  )}
+                </strong>
+                <span
+                  data-profile-refresh-cache={refreshData.cache.status}
+                  className="rounded border border-brand-accent/25 bg-brand-accent/[0.06] px-2 py-1 font-mono text-[9px] tracking-[0.05em] text-brand-accent-text uppercase"
+                >
+                  {t(`refresh.cache.${refreshData.cache.status}`)}
+                </span>
+                <time
+                  dateTime={refreshData.cache.capturedAt}
+                  className="font-mono text-[9.5px] text-text-dark-faint"
+                >
+                  {refreshData.cache.capturedAt}
+                </time>
+              </div>
+
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    [
+                      "pages",
+                      refreshData.diagnostics.pagesFetched,
+                      t("refresh.metrics.pages"),
+                    ],
+                    [
+                      "product-pages",
+                      refreshData.diagnostics.productPagesFetched,
+                      t("refresh.metrics.productPages"),
+                    ],
+                    [
+                      "sources",
+                      refreshData.diagnostics.sourceUrls.length,
+                      t("refresh.metrics.sources"),
+                    ],
+                    [
+                      "missing",
+                      refreshData.diagnostics.fieldsMissing,
+                      t("refresh.metrics.missing"),
+                    ],
+                  ] as const
+                ).map(([hook, value, label]) => {
+                  return (
+                    <div
+                      key={hook}
+                      data-profile-refresh-metric={hook}
+                      className="rounded-md border border-brand-border-faint bg-brand-bg px-3 py-2"
+                    >
+                      <dt className="font-mono text-[8.5px] tracking-[0.06em] text-text-dark-faint uppercase">
+                        {label}
+                      </dt>
+                      <dd className="mt-1 text-[13px] font-semibold text-text-dark-primary">
+                        {String(value)}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+
+              {refreshData.diagnostics.fieldsMissing > 0 ? (
+                <div
+                  data-profile-refresh-missing-fields
+                  className="grid gap-2 rounded-md border border-brand-warning/20 bg-brand-warning/[0.045] px-3 py-2.5"
+                >
+                  <p className="text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                    {t("refresh.diagnostics.missingFields")}
+                  </p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {refreshData.fields
+                      .filter((field) => field.state === "unavailable")
+                      .map((field) => (
+                        <li
+                          key={field.path}
+                          className="rounded border border-brand-border-faint bg-brand-bg px-2 py-1 font-mono text-[9px] leading-[1.35] text-text-dark-secondary"
+                        >
+                          {t(`fields.${field.path}`)}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {!refreshData.diagnostics.contextSufficient ||
+              refreshData.diagnostics.stopReason ? (
+                <div className="grid gap-1 text-[10.5px] leading-[1.55] text-brand-warning">
+                  {!refreshData.diagnostics.contextSufficient ? (
+                    <p data-profile-refresh-limitation>
+                      {t("refresh.diagnostics.insufficient")}
+                    </p>
+                  ) : null}
+                  {refreshData.diagnostics.stopReason ? (
+                    <p
+                      data-profile-refresh-stop-reason={
+                        refreshData.diagnostics.stopReason
+                      }
+                    >
+                      {t(
+                        `refresh.diagnostics.stopReasons.${refreshData.diagnostics.stopReason}`,
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {refreshData.diagnostics.sourceUrls.map((sourceUrl) => (
+                  <li key={sourceUrl}>
+                    <a
+                      data-profile-refresh-source
+                      href={sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex max-w-full items-center gap-1 text-[10.5px] text-brand-info underline decoration-brand-info/35 underline-offset-2 hover:decoration-brand-info"
+                    >
+                      <span className="max-w-[28rem] truncate">{sourceUrl}</span>
+                      <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
 
         <div
           data-profile-layout="vertical-rail"
@@ -578,8 +952,18 @@ export function AgentProfilePanel({
                 ) : null}
               </div>
               <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                {t("values.confirmationRequired")}
+                {hasBusinessFrame
+                  ? t("values.businessFrameReviewed")
+                  : t("values.confirmationRequired")}
               </h3>
+              {searchSummary ? (
+                <p
+                  data-profile-search-summary={searchSummary.state}
+                  className="mt-2 max-w-xl text-[11.5px] leading-[1.6] text-text-dark-secondary"
+                >
+                  {searchSummary.label}
+                </p>
+              ) : null}
             </div>
             <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-3">
               <Fact
@@ -655,13 +1039,13 @@ export function AgentProfilePanel({
             <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2 xl:grid-cols-3">
               <Fact
                 label={t("fields.country")}
-                value={profile.country || t("values.unavailable")}
-                provenance={fieldProvenance("country")}
+                value={contextFieldValue("country")}
+                provenance={contextFieldProvenance("country")}
               />
               <Fact
                 label={t("fields.locale")}
-                value={profile.locale}
-                provenance={fieldProvenance("locale")}
+                value={contextFieldValue("locale")}
+                provenance={contextFieldProvenance("locale")}
               />
               <Fact
                 label={t("fields.device")}
@@ -675,8 +1059,8 @@ export function AgentProfilePanel({
               />
               <Fact
                 label={t("fields.targetQuery")}
-                value={profile.targetQuery || t("values.unavailable")}
-                provenance={fieldProvenance("targetQuery")}
+                value={contextFieldValue("targetQuery")}
+                provenance={contextFieldProvenance("targetQuery")}
               />
               <Fact
                 label={t("fields.auditScope")}

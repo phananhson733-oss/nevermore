@@ -136,7 +136,7 @@
       "tools": {
         "eyebrow": "Available now",
         "title": "Tools answer the question in front of you.",
-        "body": "Open the existing supporting-tools directory for Search Console diagnostics and planning utilities. Website audits remain independent Agents rather than Tool cards.",
+        "body": "Open the supporting-tools directory for Search Console diagnostics and planning utilities, plus Agent-backed audit entry cards for SEO and technical review.",
         "cta": "Open Tools"
       },
       "planned": {
@@ -2377,13 +2377,66 @@
           "product_information_supplied": "Source-backed · Product Information supplied",
           "marketing_strategy_supplied": "Source-backed · Marketing Strategy supplied",
           "hostname_inference": "Inferred · Hostname only",
+          "public_page_refresh": "Inferred · Live public-page evidence",
           "confirmation_required": "Inferred · Confirm before use",
           "inferred_run_assumptions": "Inferred · Run assumptions",
           "locally_adjusted": "Locally adjusted"
         },
         "values": {
           "unavailable": "Unavailable",
-          "confirmationRequired": "Not supplied · confirmation required"
+          "confirmationRequired": "Not supplied · confirmation required",
+          "businessFrameReviewed": "Business frame entered · review before use"
+        },
+        "refresh": {
+          "fields": {
+            "market": "Target market / country (ISO-2)",
+            "marketPlaceholder": "US",
+            "language": "Target language (BCP 47)",
+            "languagePlaceholder": "en-US"
+          },
+          "actions": {
+            "run": "Run profile diagnosis",
+            "refresh": "Refresh live profile"
+          },
+          "loading": "Reading bounded public pages and generating a draft. No audit is running yet.",
+          "availability": {
+            "available": "Public-page profile draft is ready",
+            "partial": "A partial public-page profile draft is ready",
+            "no_data": "No usable profile facts were observed"
+          },
+          "cache": {
+            "hit": "Cached result",
+            "fresh": "Fresh result",
+            "refreshed": "Live refresh"
+          },
+          "metrics": {
+            "pages": "Pages read",
+            "productPages": "Product pages",
+            "sources": "Source URLs",
+            "missing": "Missing fields"
+          },
+          "diagnostics": {
+            "missingFields": "These profile fields could not be obtained from the bounded public pages:",
+            "insufficient": "The collected public-page context was not sufficient for a complete profile. Review the missing fields before using this draft.",
+            "stopReasons": {
+              "max_urls": "Collection stopped after reaching the bounded URL limit; unvisited pages may contain additional facts.",
+              "max_requests": "Collection stopped after reaching the bounded request limit; unvisited pages may contain additional facts.",
+              "max_wall_clock": "Collection stopped after reaching the bounded time limit; unvisited pages may contain additional facts.",
+              "max_total_bytes": "Collection stopped after reaching the bounded download limit; unvisited pages may contain additional facts.",
+              "aborted": "Collection was interrupted before the bounded public-page review completed."
+            }
+          },
+          "errors": {
+            "profile_timeout": "Profile diagnosis timed out before a draft was created. Try again.",
+            "profile_response_invalid": "The profile response could not be verified, so no draft was applied.",
+            "profile_source_unavailable": "The public site or profile source is temporarily unavailable. No profile facts were invented.",
+            "auth_required": "Sign in to run a profile diagnosis.",
+            "auth_unavailable": "Account verification is temporarily unavailable. Try again.",
+            "intent_unavailable": "The diagnosis request could not be authorized. Try again.",
+            "rate_limited": "The profile-diagnosis allowance has been reached. Try again later.",
+            "request_failed": "Profile diagnosis could not be completed. No draft was applied.",
+            "unknown": "Profile diagnosis could not be completed. Try again."
+          }
         },
         "search": {
           "eyebrow": "Optional search evidence",
@@ -2397,6 +2450,15 @@
           "noData": "No candidate domains were observed for this bounded request.",
           "marketUnsupported": "This market and query do not map to a supported search-data method. You can still enter business competitors manually.",
           "sourceUnavailable": "Search data is not configured or is temporarily unavailable. No missing value is treated as zero; business competitors can remain empty or be entered manually.",
+          "summary": {
+            "idle": "No provider-backed search-domain observation has been requested. Provider candidates remain separate from the business frame.",
+            "loading": "Checking provider-backed search domains now. Any candidates remain separate from the business frame.",
+            "available": "{count, plural, one {The provider observation itself does not classify the # search-domain candidate below as a business competitor; compare it with the business frame manually.} other {The provider observation itself does not classify the # search-domain candidates below as business competitors; compare them with the business frame manually.}}",
+            "noData": "The bounded provider request observed no search-domain candidates. The business frame is unchanged.",
+            "marketUnsupported": "No supported provider method is available for this market and query. The business frame is unchanged.",
+            "sourceUnavailable": "Provider-backed search domains are unavailable. The business frame is unchanged and can still be edited manually.",
+            "requestError": "The search-domain request did not complete. The business frame is unchanged."
+          },
           "domainLabel": "Domain",
           "intersectionsLabel": "Keyword intersections",
           "averagePositionLabel": "Average position",
@@ -2406,6 +2468,7 @@
           "errors": {
             "authRequired": "Sign in to request provider-backed search evidence.",
             "authUnavailable": "Account verification is temporarily unavailable. Try again before requesting search evidence.",
+            "searchTimeout": "The search-domain request timed out before completion. No candidate domain or business-competitor conclusion was created; try again.",
             "rateLimited": "The daily provider-request allowance has been reached. Try again later.",
             "requestFailed": "The search-evidence request could not be completed. No business-competitor conclusion was created."
           }

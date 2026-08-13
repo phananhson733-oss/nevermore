@@ -2,6 +2,7 @@
 // @output -- immutable, source-labeled Product/ICP drafts and local confirmation
 // @pos    -- browser-only Profile contract; it never writes an app project/profile
 
+import type { AgentProfileRefreshResult } from "../../lib/agents/profile-refresh-contract";
 import type { AgentKind } from "./agent-types";
 
 export const AGENT_PROFILE_SCHEMA_VERSION = "agent-profile.v3" as const;
@@ -31,6 +32,7 @@ export type AgentProfileSourceId =
   | "product_information_supplied"
   | "marketing_strategy_supplied"
   | "hostname_inference"
+  | "public_page_refresh"
   | "confirmation_required"
   | "inferred_run_assumptions";
 
@@ -48,6 +50,8 @@ export interface AgentProfileFieldProvenance {
   readonly source: AgentProfileFieldSource;
   readonly limitation: string | null;
   readonly observedAt: string | null;
+  /** Public source URLs used for a live refresh; local/supplied facts keep this empty. */
+  readonly evidenceUrls: readonly string[];
 }
 
 export interface AgentProfileDraft {
@@ -186,6 +190,7 @@ const SOURCE_VALUES = new Set<AgentProfileSourceId>([
   "product_information_supplied",
   "marketing_strategy_supplied",
   "hostname_inference",
+  "public_page_refresh",
   "confirmation_required",
   "inferred_run_assumptions",
 ]);
@@ -267,6 +272,7 @@ const FIELD_PROVENANCE_KEYS = new Set<keyof AgentProfileFieldProvenance>([
   "source",
   "limitation",
   "observedAt",
+  "evidenceUrls",
 ]);
 
 function displayHost(input: string): string {
@@ -286,6 +292,24 @@ function displayHost(input: string): string {
   }
 }
 
+function hasRootPath(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length > 2_048) return false;
+  try {
+    const parsed = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`,
+    );
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.pathname === "/"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function copyDraft(profile: AgentProfileDraft): AgentProfileDraft {
   return {
     ...profile,
@@ -302,7 +326,10 @@ function copyDraft(profile: AgentProfileDraft): AgentProfileDraft {
     indirectAlternatives: [...profile.indirectAlternatives],
     excludedAlternatives: [...profile.excludedAlternatives],
     sources: { ...profile.sources },
-    fieldProvenance: profile.fieldProvenance.map((entry) => ({ ...entry })),
+    fieldProvenance: profile.fieldProvenance.map((entry) => ({
+      ...entry,
+      evidenceUrls: [...entry.evidenceUrls],
+    })),
     editedFields: [...profile.editedFields],
   };
 }
@@ -335,7 +362,6 @@ const ASTROLOGY_MARKETING_FIELDS = new Set<AgentProfileEditableField>([
   "barriers",
   "qualificationSignals",
   "device",
-  "targetQuery",
 ]);
 const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "directCompetitors",
@@ -357,6 +383,7 @@ function declaredProvenance(
     source,
     limitation: null,
     observedAt: null,
+    evidenceUrls: [],
   };
 }
 
@@ -373,6 +400,7 @@ function inferredProvenance(
     source,
     limitation,
     observedAt,
+    evidenceUrls: [],
   };
 }
 
@@ -387,6 +415,7 @@ function missingProvenance(
     source: "not_available",
     limitation,
     observedAt: null,
+    evidenceUrls: [],
   };
 }
 
@@ -404,6 +433,32 @@ function astrologyWikiFieldProvenance(
       return missingProvenance(
         field,
         "No business competitor was supplied; confirm before use.",
+      );
+    }
+    if (field === "country") {
+      return missingProvenance(
+        field,
+        "No primary search market was supplied; select one before running the audit.",
+      );
+    }
+    if (field === "locale") {
+      return missingProvenance(
+        field,
+        "The product supports multiple languages, but no primary audit locale was supplied; select one before running the audit.",
+      );
+    }
+    if (field === "targetQuery") {
+      return missingProvenance(
+        field,
+        "The strategy lists keyword examples, but no target query was confirmed for this run.",
+      );
+    }
+    if (field === "pageType") {
+      return inferredProvenance(
+        field,
+        "visitor_url",
+        "Inferred only from the visitor-entered URL path; confirm before use.",
+        observedAt,
       );
     }
     if (field === "buyer") {
@@ -445,8 +500,6 @@ function genericFieldProvenance(
       );
     }
     if (
-      field === "country" ||
-      field === "locale" ||
       field === "device" ||
       field === "pageType" ||
       field === "auditScope"
@@ -584,16 +637,16 @@ function astrologyWikiDraft(
     firstOutcome:
       agent === "seo"
         ? chinese
-          ? "占领免费出生星盘查询并转化为星盘生成"
-          : "Own the free birth-chart query and convert to chart generation"
+          ? "评估与出生星盘生成相关的搜索机会"
+          : "Evaluate birth-chart search opportunities that lead to chart generation"
         : chinese
-          ? "保持移动端匿名星盘生成可抓取且可靠"
-          : "Keep mobile anonymous chart generation crawlable and reliable",
-    country: "CN",
-    locale: "zh-CN",
+          ? "评估公开出生星盘体验的可抓取性与可靠性"
+          : "Evaluate crawlability and reliability of the public birth-chart experience",
+    country: "",
+    locale: "",
     device: "mobile",
-    pageType: "tool",
-    targetQuery: "免费星盘计算",
+    pageType: hasRootPath(targetUrl) ? "homepage" : "tool",
+    targetQuery: "",
     auditScope: "site-first",
     sources: {
       product: "product_information_supplied",
@@ -679,7 +732,7 @@ function genericDraft(
           ? "确认首个技术可靠性目标。"
           : "Confirm the first technical reliability outcome.",
     country: "",
-    locale: chinese ? "zh-CN" : "en",
+    locale: "",
     device: "mobile",
     pageType: "homepage",
     targetQuery: "",
@@ -727,7 +780,11 @@ export function updateAgentProfile(
   edits: AgentProfileEdits,
 ): AgentProfileDraft {
   const editedFields = [...profile.editedFields];
-  const fieldProvenance = profile.fieldProvenance.map((entry) => ({ ...entry }));
+  const fieldProvenance: AgentProfileFieldProvenance[] =
+    profile.fieldProvenance.map((entry) => ({
+      ...entry,
+      evidenceUrls: [...entry.evidenceUrls],
+    }));
   const accepted: AgentProfileEdits = {};
   for (const [key, value] of Object.entries(edits)) {
     if (!EDITABLE_FIELD_SET.has(key as AgentProfileEditableField)) continue;
@@ -746,6 +803,133 @@ export function updateAgentProfile(
     ...accepted,
     fieldProvenance,
     editedFields,
+    reviewState: "needs_confirmation",
+  });
+}
+
+const REFRESH_PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
+  "productName",
+  "oneLinePositioning",
+  "valueProposition",
+  "coreFeatures",
+  "categories",
+  "businessModel",
+  "primaryCta",
+  "trustSignals",
+]);
+const REFRESH_ICP_FIELDS = new Set<AgentProfileEditableField>([
+  "primaryIcp",
+  "buyer",
+  "user",
+  "triggerPain",
+  "icpInterests",
+  "icpPain",
+  "icpBehavior",
+  "icpPositioning",
+  "jtbd",
+  "useCases",
+  "outcomes",
+  "barriers",
+  "qualificationSignals",
+  "disqualifiers",
+]);
+
+function comparableUrl(input: string): string {
+  try {
+    const parsed = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(input) ? input : `https://${input}`,
+    );
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Merge one browser-validated live diagnosis into this temporary local draft.
+ * This does not confirm or persist an app Product Profile.
+ */
+export function applyAgentProfileRefresh(
+  profile: AgentProfileDraft,
+  refresh: AgentProfileRefreshResult,
+): AgentProfileDraft {
+  if (
+    refresh.agent !== profile.agent ||
+    comparableUrl(refresh.request.submittedUrl) !==
+      comparableUrl(profile.targetUrl) ||
+    comparableUrl(refresh.request.normalizedUrl) !==
+      comparableUrl(profile.targetUrl) ||
+    displayHost(refresh.request.targetHost) !== profile.host ||
+    refresh.request.marketCode.toUpperCase() !== profile.country.toUpperCase() ||
+    refresh.request.languageTag.toLowerCase() !== profile.locale.toLowerCase()
+  ) {
+    return profile;
+  }
+
+  const accepted: AgentProfileEdits = {};
+  const fieldProvenance: AgentProfileFieldProvenance[] =
+    profile.fieldProvenance.map((entry) => ({
+      ...entry,
+      evidenceUrls: [...entry.evidenceUrls],
+    }));
+  let productRefreshed = false;
+  let icpRefreshed = false;
+
+  for (const field of refresh.fields) {
+    if (field.state !== "available") continue;
+    const provenanceIndex = fieldProvenance.findIndex(
+      (entry) => entry.path === `/${field.path}`,
+    );
+    const currentProvenance = fieldProvenance[provenanceIndex];
+    if (
+      !currentProvenance ||
+      profile.editedFields.includes(field.path) ||
+      !(
+        currentProvenance.source === "not_available" ||
+        currentProvenance.source === "visitor_url" ||
+        currentProvenance.source === "local_inference" ||
+        currentProvenance.source === "public_page"
+      )
+    ) {
+      continue;
+    }
+    (accepted as Record<string, unknown>)[field.path] = Array.isArray(field.value)
+      ? [...field.value]
+      : field.value;
+    const provenance: AgentProfileFieldProvenance = {
+      path: `/${field.path}`,
+      derivation: "inferred",
+      confidence: field.confidence,
+      source: "public_page",
+      limitation: field.limitation,
+      observedAt: refresh.observedAt,
+      evidenceUrls: [...field.evidenceUrls],
+    };
+    fieldProvenance[provenanceIndex] = provenance;
+    productRefreshed ||= REFRESH_PRODUCT_FIELDS.has(field.path);
+    icpRefreshed ||= REFRESH_ICP_FIELDS.has(field.path);
+  }
+
+  return copyDraft({
+    ...profile,
+    ...accepted,
+    sources: {
+      ...profile.sources,
+      product:
+        productRefreshed &&
+        profile.sources.product !== "product_information_supplied" &&
+        profile.sources.product !== "marketing_strategy_supplied"
+        ? "public_page_refresh"
+        : profile.sources.product,
+      icp:
+        icpRefreshed &&
+        profile.sources.icp !== "product_information_supplied" &&
+        profile.sources.icp !== "marketing_strategy_supplied"
+          ? "public_page_refresh"
+          : profile.sources.icp,
+    },
+    fieldProvenance,
     reviewState: "needs_confirmation",
   });
 }
@@ -816,7 +1000,8 @@ function isFieldProvenance(
       candidate.limitation === null ||
       isBoundedString(candidate.limitation)
     ) ||
-    !(candidate.observedAt === null || isIsoDateTime(candidate.observedAt))
+    !(candidate.observedAt === null || isIsoDateTime(candidate.observedAt)) ||
+    !isStringArray(candidate.evidenceUrls)
   ) {
     return false;
   }
@@ -824,6 +1009,7 @@ function isFieldProvenance(
   if (candidate.derivation === "declared") {
     return (
       candidate.observedAt === null &&
+      candidate.evidenceUrls.length === 0 &&
       candidate.confidence !== "unknown" &&
       (candidate.source === "supplied_product_information" ||
         candidate.source === "supplied_marketing_strategy" ||
@@ -831,20 +1017,29 @@ function isFieldProvenance(
     );
   }
   if (candidate.derivation === "observed") {
-    return candidate.source === "public_page" && isIsoDateTime(candidate.observedAt);
+    return (
+      candidate.source === "public_page" &&
+      isIsoDateTime(candidate.observedAt) &&
+      candidate.evidenceUrls.length > 0
+    );
   }
   if (candidate.derivation === "computed") {
     return (
       candidate.source === "local_computation" &&
-      isIsoDateTime(candidate.observedAt)
+      isIsoDateTime(candidate.observedAt) &&
+      candidate.evidenceUrls.length === 0
     );
   }
   if (candidate.derivation === "inferred") {
     return (
       (candidate.source === "visitor_url" ||
-        candidate.source === "local_inference") &&
+        candidate.source === "local_inference" ||
+        candidate.source === "public_page") &&
       isIsoDateTime(candidate.observedAt) &&
-      isBoundedString(candidate.limitation)
+      (candidate.source === "public_page"
+        ? candidate.evidenceUrls.length > 0
+        : candidate.evidenceUrls.length === 0) &&
+      (candidate.limitation === null || isBoundedString(candidate.limitation))
     );
   }
   return (
@@ -852,6 +1047,7 @@ function isFieldProvenance(
     candidate.source === "not_available" &&
     candidate.confidence === "unknown" &&
     candidate.observedAt === null &&
+    candidate.evidenceUrls.length === 0 &&
     isBoundedString(candidate.limitation)
   );
 }
@@ -913,8 +1109,8 @@ export function isAgentProfileReady(profile: AgentProfileDraft): boolean {
   });
 }
 
-/** Runtime guard used only for a same-tab, short-lived auth handoff. */
-export function isConfirmedAgentProfile(
+/** Strict browser guard for an untrusted, same-tab v3 draft handoff. */
+export function isAgentProfileDraft(
   value: unknown,
   agent?: AgentKind,
   exactUrl?: string,
@@ -928,37 +1124,39 @@ export function isConfirmedAgentProfile(
     candidate.schemaVersion === AGENT_PROFILE_SCHEMA_VERSION &&
     (candidate.agent === "seo" || candidate.agent === "tech") &&
     (agent === undefined || candidate.agent === agent) &&
-    isBoundedString(candidate.targetUrl) &&
+    isBoundedString(candidate.targetUrl, true) &&
+    candidate.targetUrl.trim() === candidate.targetUrl &&
     (exactUrl === undefined || candidate.targetUrl === exactUrl) &&
     isBoundedString(candidate.host, true) &&
+    candidate.host === displayHost(candidate.targetUrl) &&
     isBoundedString(candidate.productName) &&
     isBoundedString(candidate.oneLinePositioning) &&
     isBoundedString(candidate.valueProposition) &&
-    isStringArray(candidate.coreFeatures) &&
-    isStringArray(candidate.categories) &&
+    isStringArray(candidate.coreFeatures, 20) &&
+    isStringArray(candidate.categories, 20) &&
     isBoundedString(candidate.businessModel) &&
     isBoundedString(candidate.primaryCta) &&
-    isStringArray(candidate.trustSignals) &&
+    isStringArray(candidate.trustSignals, 20) &&
     isBoundedString(candidate.primaryIcp) &&
     isBoundedString(candidate.buyer) &&
     isBoundedString(candidate.user) &&
     isBoundedString(candidate.triggerPain) &&
-    isStringArray(candidate.icpInterests) &&
+    isStringArray(candidate.icpInterests, 20) &&
     isBoundedString(candidate.icpPain) &&
     isBoundedString(candidate.icpBehavior) &&
     isBoundedString(candidate.icpPositioning) &&
     isBoundedString(candidate.jtbd) &&
-    isStringArray(candidate.useCases) &&
-    isStringArray(candidate.outcomes) &&
-    isStringArray(candidate.barriers) &&
-    isStringArray(candidate.qualificationSignals) &&
-    isStringArray(candidate.disqualifiers) &&
+    isStringArray(candidate.useCases, 20) &&
+    isStringArray(candidate.outcomes, 20) &&
+    isStringArray(candidate.barriers, 20) &&
+    isStringArray(candidate.qualificationSignals, 20) &&
+    isStringArray(candidate.disqualifiers, 20) &&
     isStringArray(candidate.directCompetitors) &&
     isStringArray(candidate.indirectAlternatives) &&
     isStringArray(candidate.excludedAlternatives) &&
     isBoundedString(candidate.firstOutcome) &&
-    isBoundedString(candidate.country) &&
-    isBoundedString(candidate.locale) &&
+    isBoundedString(candidate.country, true) &&
+    isBoundedString(candidate.locale, true) &&
     DEVICE_VALUES.has(candidate.device as AgentProfileDevice) &&
     PAGE_TYPE_VALUES.has(candidate.pageType as AgentProfilePageType) &&
     isBoundedString(candidate.targetQuery, true) &&
@@ -980,7 +1178,20 @@ export function isConfirmedAgentProfile(
       candidate.fieldProvenance,
       editedFields as readonly AgentProfileEditableField[],
     ) &&
-    candidate.reviewState === "confirmed" &&
-    isAgentProfileReady(candidate as AgentProfileDraft)
+    (candidate.reviewState === "needs_confirmation" ||
+      candidate.reviewState === "confirmed")
+  );
+}
+
+/** Runtime guard used only for a same-tab, short-lived confirmed run handoff. */
+export function isConfirmedAgentProfile(
+  value: unknown,
+  agent?: AgentKind,
+  exactUrl?: string,
+): value is AgentProfileDraft {
+  return (
+    isAgentProfileDraft(value, agent, exactUrl) &&
+    value.reviewState === "confirmed" &&
+    isAgentProfileReady(value)
   );
 }
