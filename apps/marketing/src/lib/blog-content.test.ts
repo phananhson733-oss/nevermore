@@ -148,7 +148,9 @@ describe("repository-backed blog content", () => {
     // three retired comparison URLs are archived behind a truthful 410, and
     // the unsupported AstrologyWiki case study is replaced by a correction on
     // the historically ranked slug.
-    expect(posts.filter((post) => post.locale === "en")).toHaveLength(70);
+    // 70 → 72 on 2026-08-13: main added the reviewed Ahrefs and Semrush
+    // alternative comparison articles before this closeout landed.
+    expect(posts.filter((post) => post.locale === "en")).toHaveLength(72);
     expect(posts.filter((post) => post.locale === "zh")).toHaveLength(9);
     expect(migratedLegacyUrls.every((url) => urls.has(url))).toBe(true);
     expect(posts.every((post) => post.status === "published")).toBe(true);
