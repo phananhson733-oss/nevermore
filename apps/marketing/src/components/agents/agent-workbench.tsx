@@ -14,10 +14,16 @@ import {
   isAgentProfileSearchEnvelope,
   type AgentProfileSearchData,
 } from "../../lib/agents/profile-search-contract";
+import {
+  isAgentProfileRefreshEnvelope,
+  type AgentProfileRefreshData,
+  type AgentProfileRefreshMode,
+} from "../../lib/agents/profile-refresh-contract";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
 import { AgentProfilePanel } from "./agent-profile-panel";
 import {
+  applyAgentProfileRefresh,
   createAgentProfileDraft,
   type AgentProfileDraft,
 } from "./agent-profile";
@@ -25,10 +31,12 @@ import { AgentResults } from "./agent-results";
 import {
   clearPendingAgentIntent,
   getSessionIntentStorage,
+  isProfileRefreshPendingAgentIntent,
   isRunnablePendingAgentIntent,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
+  storeAgentProfileRefreshIntent,
   storeConfirmedAgentRunIntent,
   type PendingAgentIntent,
 } from "./agent-intent";
@@ -55,6 +63,18 @@ const URL_INPUT_ERROR_CODES = new Set([
   "payload_too_large",
 ]);
 
+const PROFILE_SEARCH_CLIENT_TIMEOUT_MS = 35_000;
+const PROFILE_REFRESH_CLIENT_TIMEOUT_MS = 110_000;
+
+function canonicalLanguageTag(value: string): string | null {
+  if (!value || value.length > 35) return null;
+  try {
+    return Intl.getCanonicalLocales(value)[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function errorCodeOf(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const error = (body as { readonly error?: unknown }).error;
@@ -74,7 +94,7 @@ function successDataOf(
 }
 
 type SessionStatus = "signed_in" | "signed_out" | "unavailable";
-type SignInPurpose = "audit" | "profile_search";
+type SignInPurpose = "audit" | "profile_search" | "profile_refresh";
 
 async function getSessionStatus(signal?: AbortSignal): Promise<SessionStatus> {
   const response = await fetch("/api/auth/session", {
@@ -115,6 +135,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const [profileSearchErrorCode, setProfileSearchErrorCode] = useState<
     string | null
   >(null);
+  const [profileRefreshLoading, setProfileRefreshLoading] = useState(false);
+  const [profileRefreshData, setProfileRefreshData] =
+    useState<AgentProfileRefreshData | null>(null);
+  const [profileRefreshErrorCode, setProfileRefreshErrorCode] = useState<
+    string | null
+  >(null);
   const mounted = useRef(true);
   const operationId = useRef(0);
   const busy = useRef(false);
@@ -122,6 +148,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const activeOperationController = useRef<AbortController | null>(null);
   const profileSearchController = useRef<AbortController | null>(null);
   const profileSearchBusy = useRef(false);
+  const profileRefreshController = useRef<AbortController | null>(null);
+  const profileRefreshBusy = useRef(false);
+  const profileRefreshIntent = useRef<PendingAgentIntent | null>(null);
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
 
   const runAudit = useCallback(
     async (
@@ -272,7 +303,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             setErrorCode(pendingIntent ? "intent_expired" : "intent_unavailable");
             return;
           }
-          schedulePendingAgentIntentExpiry(storage, stored);
+          if (storage) schedulePendingAgentIntentExpiry(storage, stored);
           resumeIntent.current = stored;
           setSignInPurpose("audit");
           setSignInOpen(true);
@@ -329,8 +360,194 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       activeOperationController.current = null;
       profileSearchController.current?.abort();
       profileSearchController.current = null;
+      profileRefreshController.current?.abort();
+      profileRefreshController.current = null;
     };
   }, []);
+
+  const handleProfileRefresh = useCallback(
+    async (
+      mode: AgentProfileRefreshMode,
+      requestedProfile: AgentProfileDraft,
+    ): Promise<void> => {
+      const targetLanguageTag = canonicalLanguageTag(requestedProfile.locale);
+      if (
+        !mounted.current ||
+        profileRefreshBusy.current ||
+        requestedProfile.agent !== agent ||
+        !requestedProfile.targetUrl.trim() ||
+        !/^[A-Z]{2}$/.test(requestedProfile.country) ||
+        !targetLanguageTag
+      ) {
+        return;
+      }
+
+      profileRefreshController.current?.abort();
+      const controller = new AbortController();
+      profileRefreshController.current = controller;
+      profileRefreshBusy.current = true;
+      setProfileRefreshLoading(true);
+      setProfileRefreshErrorCode(null);
+
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let rejectAbort!: (reason?: unknown) => void;
+      const abortRequest = new Promise<never>((_resolve, reject) => {
+        rejectAbort = reject;
+      });
+      const rejectOnAbort = () =>
+        rejectAbort(new DOMException("Profile refresh aborted", "AbortError"));
+      controller.signal.addEventListener("abort", rejectOnAbort, {
+        once: true,
+      });
+      try {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, PROFILE_REFRESH_CLIENT_TIMEOUT_MS);
+
+        let sessionStatus: SessionStatus;
+        try {
+          sessionStatus = await Promise.race([
+            getSessionStatus(controller.signal),
+            abortRequest,
+          ]);
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          sessionStatus = "unavailable";
+        }
+        if (!mounted.current || controller.signal.aborted) return;
+
+        if (sessionStatus === "unavailable") {
+          setProfileRefreshErrorCode("auth_unavailable");
+          return;
+        }
+        if (sessionStatus === "signed_out") {
+          const storage = getSessionIntentStorage();
+          const stored = storage
+            ? storeAgentProfileRefreshIntent(
+                storage,
+                requestedProfile,
+                mode,
+              )
+            : null;
+          if (!stored) {
+            setProfileRefreshErrorCode("intent_unavailable");
+            return;
+          }
+          if (storage) schedulePendingAgentIntentExpiry(storage, stored);
+          profileRefreshIntent.current = stored;
+          setSignInPurpose("profile_refresh");
+          setSignInOpen(true);
+          return;
+        }
+
+        const response = await Promise.race([
+          fetch(`/api/agents/${agent}/profile-refresh`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({
+              url: requestedProfile.targetUrl,
+              marketCode: requestedProfile.country,
+              languageTag: targetLanguageTag,
+              outputLocale: locale,
+              mode,
+            }),
+            signal: controller.signal,
+          }),
+          abortRequest,
+        ]);
+        const body = (await response.json().catch(() => null)) as unknown;
+        if (
+          !mounted.current ||
+          controller.signal.aborted ||
+          profileRefreshController.current !== controller
+        ) {
+          return;
+        }
+        if (!response.ok) {
+          const code = errorCodeOf(body) ?? "unknown";
+          setProfileRefreshErrorCode(code);
+          if (code === "auth_required") {
+            const storage = getSessionIntentStorage();
+            const stored = storage
+              ? storeAgentProfileRefreshIntent(
+                  storage,
+                  requestedProfile,
+                  mode,
+                )
+              : null;
+            if (!stored) {
+              setProfileRefreshErrorCode("intent_unavailable");
+              return;
+            }
+            if (storage) schedulePendingAgentIntentExpiry(storage, stored);
+            profileRefreshIntent.current = stored;
+            setSignInPurpose("profile_refresh");
+            setSignInOpen(true);
+          }
+          return;
+        }
+        if (
+          !isAgentProfileRefreshEnvelope(body) ||
+          body.data.agent !== agent ||
+          body.data.request.submittedUrl !== requestedProfile.targetUrl ||
+          body.data.request.marketCode !== requestedProfile.country ||
+          body.data.request.languageTag !== targetLanguageTag ||
+          body.data.request.outputLocale !== locale
+        ) {
+          setProfileRefreshErrorCode("profile_response_invalid");
+          return;
+        }
+        const currentProfile = profileRef.current;
+        const mergeProfile =
+          currentProfile.agent === requestedProfile.agent &&
+          currentProfile.targetUrl === requestedProfile.targetUrl &&
+          currentProfile.host === requestedProfile.host &&
+          currentProfile.country === requestedProfile.country &&
+          canonicalLanguageTag(currentProfile.locale) === targetLanguageTag
+            ? currentProfile
+            : requestedProfile;
+        const mergedProfile = applyAgentProfileRefresh(
+          mergeProfile,
+          body.data,
+        );
+        if (mergedProfile === mergeProfile) {
+          setProfileRefreshErrorCode("profile_response_invalid");
+          return;
+        }
+        setProfile(mergedProfile);
+        setProfileRefreshData(body.data);
+        setSignInOpen(false);
+        setSignInPurpose(null);
+        profileRefreshIntent.current = null;
+        const storage = getSessionIntentStorage();
+        if (storage) clearPendingAgentIntent(storage, agent);
+      } catch {
+        if (
+          timedOut &&
+          mounted.current &&
+          profileRefreshController.current === controller
+        ) {
+          setProfileRefreshErrorCode("profile_timeout");
+        } else if (mounted.current && !controller.signal.aborted) {
+          setProfileRefreshErrorCode("unknown");
+        }
+      } finally {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        controller.signal.removeEventListener("abort", rejectOnAbort);
+        if (profileRefreshController.current === controller) {
+          profileRefreshController.current = null;
+          profileRefreshBusy.current = false;
+          if (mounted.current) setProfileRefreshLoading(false);
+        }
+      }
+    },
+    [agent, locale],
+  );
 
   const handleProfileSearch = useCallback(
     async (resumeAfterSignIn = false): Promise<void> => {
@@ -351,21 +568,41 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       setProfileSearchErrorCode(null);
       setProfileSearchData(null);
 
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let rejectAbort!: (reason?: unknown) => void;
+      const abortRequest = new Promise<never>((_resolve, reject) => {
+        rejectAbort = reject;
+      });
+      const rejectOnAbort = () =>
+        rejectAbort(new DOMException("Profile search aborted", "AbortError"));
+      controller.signal.addEventListener("abort", rejectOnAbort, {
+        once: true,
+      });
+
       try {
-        const response = await fetch(`/api/agents/${agent}/profile-search`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json",
-          },
-          body: JSON.stringify({
-            url: profile.targetUrl,
-            marketCode: profile.country,
-            languageTag: profile.locale,
-            targetQuery: profile.targetQuery,
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, PROFILE_SEARCH_CLIENT_TIMEOUT_MS);
+
+        const response = await Promise.race([
+          fetch(`/api/agents/${agent}/profile-search`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({
+              url: profile.targetUrl,
+              marketCode: profile.country,
+              languageTag: profile.locale,
+              targetQuery: profile.targetQuery,
+            }),
+            signal: controller.signal,
           }),
-          signal: controller.signal,
-        });
+          abortRequest,
+        ]);
         const body = (await response.json().catch(() => null)) as unknown;
         if (!mounted.current || controller.signal.aborted) return;
 
@@ -400,7 +637,17 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           setSignInPurpose(null);
         }
       } catch {
-        if (mounted.current && !controller.signal.aborted) {
+        if (
+          timedOut &&
+          mounted.current &&
+          profileSearchController.current === controller
+        ) {
+          setProfileSearchErrorCode("search_timeout");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+        } else if (mounted.current && !controller.signal.aborted) {
           setProfileSearchErrorCode("unknown");
           if (resumeAfterSignIn) {
             setSignInOpen(false);
@@ -408,6 +655,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           }
         }
       } finally {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        controller.signal.removeEventListener("abort", rejectOnAbort);
         if (profileSearchController.current === controller) {
           profileSearchController.current = null;
           profileSearchBusy.current = false;
@@ -431,6 +680,18 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       return;
     }
 
+    if (isProfileRefreshPendingAgentIntent(pending)) {
+      profileRefreshIntent.current = pending;
+      setProfile(pending.refreshProfile);
+      void Promise.resolve().then(() =>
+        handleProfileRefresh(
+          pending.refreshMode,
+          pending.refreshProfile,
+        ),
+      );
+      return;
+    }
+
     if (!isRunnablePendingAgentIntent(pending) || !pending.confirmedProfile) {
       if (storage) clearPendingAgentIntent(storage, agent);
       return;
@@ -447,10 +708,27 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       if (!started.controller.signal.aborted) resumeIntent.current = null;
     });
     return () => started.controller.abort();
-  }, [agent, locale, startOperation]);
+  }, [agent, handleProfileRefresh, locale, startOperation]);
 
   useEffect(() => {
     if (!signInOpen) return;
+
+    if (signInPurpose === "profile_refresh") {
+      function resumeRefreshAfterSignIn(): void {
+        const storage = getSessionIntentStorage();
+        const pending =
+          (storage ? readPendingAgentIntent(storage, agent) : null) ??
+          profileRefreshIntent.current;
+        if (!pending || !isProfileRefreshPendingAgentIntent(pending)) return;
+        void handleProfileRefresh(
+          pending.refreshMode,
+          pending.refreshProfile,
+        );
+      }
+      window.addEventListener("focus", resumeRefreshAfterSignIn);
+      return () =>
+        window.removeEventListener("focus", resumeRefreshAfterSignIn);
+    }
 
     if (signInPurpose === "profile_search") {
       function resumeSearchAfterSignIn(): void {
@@ -480,9 +758,22 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
     window.addEventListener("focus", resumeAfterAppSignIn);
     return () => window.removeEventListener("focus", resumeAfterAppSignIn);
-  }, [agent, handleProfileSearch, signInOpen, signInPurpose, startOperation]);
+  }, [
+    agent,
+    handleProfileRefresh,
+    handleProfileSearch,
+    signInOpen,
+    signInPurpose,
+    startOperation,
+  ]);
 
   function handleProfileChange(next: AgentProfileDraft): void {
+    const refreshIdentityChanged =
+      next.agent !== profile.agent ||
+      next.targetUrl !== profile.targetUrl ||
+      next.host !== profile.host ||
+      next.country !== profile.country ||
+      canonicalLanguageTag(next.locale) !== canonicalLanguageTag(profile.locale);
     activeOperationController.current?.abort();
     activeOperationController.current = null;
     operationId.current += 1;
@@ -496,6 +787,21 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     setProfileSearchLoading(false);
     setProfileSearchData(null);
     setProfileSearchErrorCode(null);
+    if (refreshIdentityChanged) {
+      profileRefreshController.current?.abort();
+      profileRefreshController.current = null;
+      profileRefreshBusy.current = false;
+      setProfileRefreshLoading(false);
+      setProfileRefreshData(null);
+      setProfileRefreshErrorCode(null);
+      profileRefreshIntent.current = null;
+      const storage = getSessionIntentStorage();
+      if (storage) clearPendingAgentIntent(storage, agent);
+      if (signInPurpose === "profile_refresh") {
+        setSignInPurpose(null);
+        setSignInOpen(false);
+      }
+    }
     setProfile(next);
   }
 
@@ -510,6 +816,19 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     if (!open) {
       const closingPurpose = signInPurpose;
       setSignInPurpose(null);
+      if (closingPurpose === "profile_refresh") {
+        profileRefreshController.current?.abort();
+        profileRefreshController.current = null;
+        profileRefreshBusy.current = false;
+        setProfileRefreshLoading(false);
+        if (profileRefreshErrorCode === "auth_required") {
+          setProfileRefreshErrorCode(null);
+        }
+        const storage = getSessionIntentStorage();
+        if (storage) clearPendingAgentIntent(storage, agent);
+        profileRefreshIntent.current = null;
+        return;
+      }
       if (closingPurpose !== "audit") return;
       activeOperationController.current?.abort();
       activeOperationController.current = null;
@@ -541,7 +860,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         agent={agent}
         locale={locale}
         profile={profile}
-        disabled={loading}
+        disabled={loading || profileRefreshLoading}
         onChange={handleProfileChange}
         onConfirm={handleProfileConfirm}
         errorId={errorCode ? `${agent}-agent-error` : undefined}
@@ -553,6 +872,14 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           onDiscover: () => {
             void handleProfileSearch();
           },
+        }}
+        profileRefresh={{
+          loading: profileRefreshLoading,
+          data: profileRefreshData,
+          errorCode: profileRefreshErrorCode,
+        }}
+        onRefresh={(mode) => {
+          void handleProfileRefresh(mode, profile);
         }}
       />
 

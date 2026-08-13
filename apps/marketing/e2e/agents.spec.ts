@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { AGENT_PROFILE_REFRESH_FIELD_PATHS } from "../src/lib/agents/profile-refresh-contract";
+
 type AgentKind = "seo" | "tech";
 
 const RECORD_CATEGORIES = {
@@ -99,6 +101,67 @@ function agentEnvelope(agent: AgentKind) {
   } as const;
 }
 
+function profileRefreshEnvelope(agent: AgentKind) {
+  const sourceUrls = [
+    "https://example.com/",
+    "https://example.com/product",
+    "https://example.com/about",
+  ] as const;
+  return {
+    data: {
+      schemaVersion: "agent_profile_refresh.v1",
+      agent,
+      request: {
+        submittedUrl: "example.com",
+        normalizedUrl: "https://example.com/",
+        targetHost: "example.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+      },
+      availability: "partial",
+      observedAt: "2026-08-13T10:00:00.000Z",
+      cache: {
+        status: "fresh",
+        capturedAt: "2026-08-13T10:00:00.000Z",
+      },
+      diagnostics: {
+        resolvedOrigin: "https://example.com",
+        pagesFetched: 3,
+        productPagesFetched: 1,
+        stopReason: "max_urls",
+        contextSufficient: true,
+        sourceUrls,
+        fieldsAvailable: 1,
+        fieldsMissing: 21,
+      },
+      fields: AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) =>
+        path === "productName"
+          ? {
+              path,
+              state: "available",
+              value: "Live Example Product",
+              derivation: "inferred",
+              confidence: "medium",
+              source: "public_page",
+              limitation: null,
+              evidenceUrls: [sourceUrls[0]],
+            }
+          : {
+              path,
+              state: "unavailable",
+              value: null,
+              derivation: "missing",
+              confidence: "unknown",
+              source: "not_available",
+              limitation: "Not stated on the bounded public pages.",
+              evidenceUrls: [],
+            },
+      ),
+    },
+  } as const;
+}
+
 async function mockSession(page: Page, signedIn: boolean): Promise<void> {
   await page.route("**/api/auth/session", async (route) => {
     await route.fulfill({
@@ -112,6 +175,120 @@ async function mockSession(page: Page, signedIn: boolean): Promise<void> {
   });
 }
 
+async function completeRequiredProfileContext(
+  page: Page,
+  locale: "en" | "zh",
+  targetQuery?: string,
+): Promise<void> {
+  const chinese = locale === "zh";
+  await page
+    .getByLabel(
+      chinese ? "目标市场 / 国家（ISO-2）" : "Target market / country (ISO-2)",
+    )
+    .fill(chinese ? "CN" : "US");
+  await page
+    .getByLabel(chinese ? "目标语言（BCP 47）" : "Target language (BCP 47)")
+    .fill(chinese ? "zh-CN" : "en-US");
+  if (targetQuery !== undefined) {
+    await page
+      .getByRole("button", {
+        name: chinese ? "检查并调整" : "Review & adjust",
+      })
+      .click();
+    await page
+      .getByLabel(chinese ? "目标查询" : "Target query")
+      .fill(targetQuery);
+  }
+}
+
+test("profile diagnosis runs only from URL, market, language, and the explicit top action", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSession(page, true);
+  const profileRequests: Array<{
+    readonly method: string;
+    readonly body: unknown;
+  }> = [];
+  let auditPosts = 0;
+
+  await page.route("**/api/agents/seo/profile-refresh", async (route) => {
+    profileRequests.push({
+      method: route.request().method(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(profileRefreshEnvelope("seo")),
+    });
+  });
+  await page.route("**/api/agents/seo/audit", async (route) => {
+    auditPosts += 1;
+    await route.fulfill({ status: 500, body: "unexpected" });
+  });
+
+  await page.goto("/agents/seo");
+  const url = page.getByLabel("Target URL");
+  const market = page.getByLabel("Target market / country (ISO-2)");
+  const language = page.getByLabel("Target language (BCP 47)");
+  const run = page.getByRole("button", { name: "Run profile diagnosis" });
+
+  await url.fill("example.com");
+  await market.fill("US");
+  await language.fill("en-US");
+  await page.waitForLoadState("networkidle");
+
+  expect(profileRequests).toHaveLength(0);
+  expect(auditPosts).toBe(0);
+  await expect(run).toBeEnabled();
+
+  const controls = [url, market, language, run];
+  const boxes = await Promise.all(controls.map((control) => control.boundingBox()));
+  expect(boxes.every(Boolean)).toBe(true);
+  expect(boxes[0]?.y).toBeLessThan(boxes[1]?.y ?? 0);
+  expect(boxes[1]?.y).toBeLessThan(boxes[2]?.y ?? 0);
+  expect(boxes[2]?.y).toBeLessThan(boxes[3]?.y ?? 0);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(
+    await page.evaluate(() => document.documentElement.clientWidth),
+  );
+
+  await run.click();
+
+  await expect(
+    page.getByText("A partial public-page profile draft is ready"),
+  ).toBeVisible();
+  await expect(page.getByText("Fresh result")).toBeVisible();
+  await expect(
+    page.locator('[data-profile-refresh-metric="pages"]'),
+  ).toContainText("3");
+  await expect(
+    page.locator('[data-profile-refresh-metric="missing"]'),
+  ).toContainText("21");
+  await expect(
+    page.locator('[data-profile-card="product"]'),
+  ).toContainText("Live Example Product");
+  await expect(
+    page.locator('[data-profile-refresh-source]').first(),
+  ).toHaveAttribute("href", "https://example.com/");
+
+  expect(profileRequests).toEqual([
+    {
+      method: "POST",
+      body: {
+        url: "example.com",
+        marketCode: "US",
+        languageTag: "en-US",
+        outputLocale: "en",
+        mode: "prefer_cache",
+      },
+    },
+  ]);
+  expect(auditPosts).toBe(0);
+});
+
 test("signed-out SEO submission opens registration without an audit POST", async ({
   page,
 }) => {
@@ -124,6 +301,7 @@ test("signed-out SEO submission opens registration without an audit POST", async
 
   await page.goto("/agents/seo");
   await page.getByLabel("Target URL").fill("astrologywiki.com/docs");
+  await completeRequiredProfileContext(page, "en");
   await page.getByRole("button", { name: "Accept context & run" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -150,8 +328,7 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
 
   await page.goto("/agents/seo");
   await page.getByLabel("Target URL").fill("astrologywiki.com");
-  await page.getByRole("button", { name: "Review & adjust" }).click();
-  await page.getByLabel("Target query").fill("technical seo audit");
+  await completeRequiredProfileContext(page, "en", "technical seo audit");
   await page.getByRole("button", { name: "Accept context & run" }).click();
 
   const results = page.getByTestId("agent-results-seo");
@@ -219,6 +396,7 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
     await page.evaluate(() => document.documentElement.clientWidth),
   );
   await input.fill("astrologywiki.com");
+  await completeRequiredProfileContext(page, "zh", "技术 SEO 审计");
   await page.getByRole("button", { name: "接受上下文并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
   await expect(page.getByTestId("diagnosis-group-A")).toHaveAttribute(

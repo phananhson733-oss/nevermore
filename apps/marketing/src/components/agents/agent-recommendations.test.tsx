@@ -11,7 +11,11 @@ import type { SeoAuditRecord } from "@sf/public-tools";
 import type { AgentAuditEvaluatedCheck } from "@sf/public-tools/agent-audit";
 
 import en from "../../i18n/messages/en.json";
-import { confirmAgentProfile, createAgentProfileDraft } from "./agent-profile";
+import {
+  confirmAgentProfile,
+  createAgentProfileDraft,
+  updateAgentProfile,
+} from "./agent-profile";
 import { AgentRecommendations } from "./agent-recommendations";
 
 function record(id: string, affected: number): SeoAuditRecord {
@@ -105,7 +109,13 @@ const checks = [
 const records = [record("title_signal", 2), record("canonical_signal", 3)];
 
 function profile(agent: "seo" | "tech") {
-  return confirmAgentProfile(createAgentProfileDraft(agent, "astrologywiki.com"));
+  return confirmAgentProfile(
+    updateAgentProfile(createAgentProfileDraft(agent, "astrologywiki.com"), {
+      country: "CN",
+      locale: "zh-CN",
+      targetQuery: "免费星盘计算",
+    }),
+  );
 }
 
 describe("AgentRecommendations", () => {
@@ -277,7 +287,9 @@ describe("AgentRecommendations", () => {
     expect(seoText).toContain("Generate Free Birth Chart");
     expect(seoText).toContain("免费星盘计算");
     expect(techText).toContain("Tech Agent fix review");
-    expect(techText).toContain("Keep mobile anonymous chart generation");
+    expect(techText).toContain(
+      "Evaluate crawlability and reliability of the public birth-chart experience",
+    );
     expect(seoPreview).toContain("technical issue brief");
     expect(techPreview).toContain('rel="canonical"');
     expect(seoPreview).not.toBe(techPreview);

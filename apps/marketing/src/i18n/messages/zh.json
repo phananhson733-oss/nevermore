@@ -136,7 +136,7 @@
       "tools": {
         "eyebrow": "现已可用",
         "title": "Tools 回答你眼前的问题。",
-        "body": "进入现有辅助工具目录，使用 Search Console 诊断与规划工具。网站审计继续作为独立 Agents，而不是 Tool 卡片。",
+        "body": "进入辅助工具目录，使用 Search Console 诊断与规划工具，也可通过由 Agent 执行的审计入口卡片进入 SEO 与技术审计。",
         "cta": "打开 Tools"
       },
       "planned": {
@@ -2377,13 +2377,66 @@
           "product_information_supplied": "来源支持 · Product Information 已提供",
           "marketing_strategy_supplied": "来源支持 · Marketing Strategy 已提供",
           "hostname_inference": "推断 · 仅依据主机名",
+          "public_page_refresh": "推断 · 实时公开页面证据",
           "confirmation_required": "推断 · 使用前确认",
           "inferred_run_assumptions": "推断 · 本次运行假设",
           "locally_adjusted": "已本地调整"
         },
         "values": {
           "unavailable": "不可用",
-          "confirmationRequired": "未提供 · 需要确认"
+          "confirmationRequired": "未提供 · 需要确认",
+          "businessFrameReviewed": "已填写商业竞品框架 · 使用前请审阅"
+        },
+        "refresh": {
+          "fields": {
+            "market": "目标市场 / 国家（ISO-2）",
+            "marketPlaceholder": "US",
+            "language": "目标语言（BCP 47）",
+            "languagePlaceholder": "zh-CN"
+          },
+          "actions": {
+            "run": "运行画像诊断",
+            "refresh": "实时刷新画像"
+          },
+          "loading": "正在读取有边界的公开页面并生成画像草稿；此时尚未运行 SEO / Tech 审计。",
+          "availability": {
+            "available": "公开页面画像草稿已就绪",
+            "partial": "部分公开页面画像草稿已就绪",
+            "no_data": "未观测到可用的画像事实"
+          },
+          "cache": {
+            "hit": "缓存结果",
+            "fresh": "最新结果",
+            "refreshed": "实时刷新"
+          },
+          "metrics": {
+            "pages": "已读取页面",
+            "productPages": "产品页面",
+            "sources": "来源 URL",
+            "missing": "缺失字段"
+          },
+          "diagnostics": {
+            "missingFields": "以下画像字段未能从本次有边界的公开页面中获取：",
+            "insufficient": "本次收集的公开页面上下文不足以形成完整画像；使用草稿前请检查缺失字段。",
+            "stopReasons": {
+              "max_urls": "达到有边界的 URL 数量上限后停止收集；尚未访问的页面可能包含更多事实。",
+              "max_requests": "达到有边界的请求数量上限后停止收集；尚未访问的页面可能包含更多事实。",
+              "max_wall_clock": "达到有边界的时间上限后停止收集；尚未访问的页面可能包含更多事实。",
+              "max_total_bytes": "达到有边界的下载量上限后停止收集；尚未访问的页面可能包含更多事实。",
+              "aborted": "有边界的公开页面检查完成前，收集过程已被中断。"
+            }
+          },
+          "errors": {
+            "profile_timeout": "画像诊断在生成草稿前超时，请重试。",
+            "profile_response_invalid": "画像响应无法通过校验，因此没有应用草稿。",
+            "profile_source_unavailable": "公开网站或画像来源暂时不可用；系统没有编造画像事实。",
+            "auth_required": "请先登录，再运行画像诊断。",
+            "auth_unavailable": "暂时无法验证账户状态，请稍后重试。",
+            "intent_unavailable": "本次诊断请求未能完成授权，请重试。",
+            "rate_limited": "画像诊断额度已用完，请稍后重试。",
+            "request_failed": "画像诊断未能完成，因此没有应用草稿。",
+            "unknown": "画像诊断未能完成，请重试。"
+          }
         },
         "search": {
           "eyebrow": "可选搜索证据",
@@ -2397,6 +2450,15 @@
           "noData": "本次有边界请求没有观测到候选域名。",
           "marketUnsupported": "当前市场与查询无法映射到受支持的搜索数据方式；仍可手动填写商业竞品。",
           "sourceUnavailable": "搜索数据尚未配置或暂时不可用。缺失值不会被当作 0；商业竞品可保持为空或手动填写。",
+          "summary": {
+            "idle": "尚未请求由数据源支持的搜索域观测；数据源候选与商业竞品框架保持分离。",
+            "loading": "正在检查由数据源支持的搜索域；任何候选都与商业竞品框架保持分离。",
+            "available": "下方已观测到 {count} 个搜索域候选；数据源观测本身不将其归类为商业竞品，请手动与商业竞品框架核对。",
+            "noData": "本次有边界的数据源请求未观测到搜索域候选；商业竞品框架保持不变。",
+            "marketUnsupported": "当前市场与查询没有可用的数据源方式；商业竞品框架保持不变。",
+            "sourceUnavailable": "由数据源支持的搜索域当前不可用；商业竞品框架保持不变，仍可手动编辑。",
+            "requestError": "搜索域请求未完成；商业竞品框架保持不变。"
+          },
           "domainLabel": "域名",
           "intersectionsLabel": "关键词交集数",
           "averagePositionLabel": "平均排名",
@@ -2406,6 +2468,7 @@
           "errors": {
             "authRequired": "请先登录，再请求搜索数据证据。",
             "authUnavailable": "暂时无法验证账户状态，请稍后再请求搜索证据。",
+            "searchTimeout": "搜索域请求在完成前超时。未生成候选域或商业竞品结论；请重试。",
             "rateLimited": "今日数据源请求额度已用完，请稍后重试。",
             "requestFailed": "搜索证据请求未完成，因此没有生成任何商业竞品结论。"
           }

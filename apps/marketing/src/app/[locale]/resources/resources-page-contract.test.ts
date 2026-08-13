@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const RESOURCES_PAGE = fileURLToPath(new URL("./page.tsx", import.meta.url));
+const MESSAGES_DIR = fileURLToPath(
+  new URL("../../../i18n/messages", import.meta.url),
+);
 
 describe("Resources hub contract", () => {
   it("exposes the four resource anchors and only routes to the real Tools hub", () => {
@@ -33,5 +36,23 @@ describe("Resources hub contract", () => {
     const source = readFileSync(RESOURCES_PAGE, "utf8");
 
     expect(source).not.toMatch(/\banonymous\b|\bfree\b|app\.gengrowth\.ai/i);
+  });
+
+  it.each([
+    { locale: "en", expected: "Agent-backed audit entry cards" },
+    { locale: "zh", expected: "由 Agent 执行的审计入口卡片" },
+  ])("describes the restored audit cards accurately in $locale", ({
+    locale,
+    expected,
+  }) => {
+    const messages = JSON.parse(
+      readFileSync(`${MESSAGES_DIR}/${locale}.json`, "utf8"),
+    ) as {
+      resources: { sections: { tools: { body: string } } };
+    };
+    const body = messages.resources.sections.tools.body;
+
+    expect(body).toContain(expected);
+    expect(body).not.toMatch(/rather than Tool cards|不是 Tool 卡片/);
   });
 });

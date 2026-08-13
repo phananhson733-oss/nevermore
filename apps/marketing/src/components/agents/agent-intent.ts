@@ -4,6 +4,7 @@
 
 import type { AgentKind } from "./agent-types";
 import {
+  isAgentProfileDraft,
   isConfirmedAgentProfile,
   type AgentProfileDraft,
 } from "./agent-profile";
@@ -40,7 +41,10 @@ export function getSessionIntentStorage(
 
 export type PendingAgentIntentPurpose =
   | "prepare_profile"
-  | "run_confirmed_profile";
+  | "run_confirmed_profile"
+  | "refresh_profile";
+
+export type AgentProfileRefreshMode = "prefer_cache" | "refresh";
 
 export interface PendingAgentIntent {
   readonly agent: AgentKind;
@@ -50,6 +54,9 @@ export interface PendingAgentIntent {
   readonly expiresAt: number;
   /** Present only for a confirmed run interrupted by authentication. */
   readonly confirmedProfile?: AgentProfileDraft;
+  /** Present only for a profile refresh request that must never auto-run audit. */
+  readonly refreshProfile?: AgentProfileDraft;
+  readonly refreshMode?: AgentProfileRefreshMode;
 }
 
 export function pendingAgentIntentKey(agent: AgentKind): string {
@@ -68,11 +75,18 @@ function isPendingIntent(
   const candidate = value as Partial<PendingAgentIntent>;
   const purposeIsKnown =
     candidate.purpose === "prepare_profile" ||
-    candidate.purpose === "run_confirmed_profile";
+    candidate.purpose === "run_confirmed_profile" ||
+    candidate.purpose === "refresh_profile";
   const confirmedProfileIsValid =
     candidate.confirmedProfile === undefined ||
     (candidate.purpose === "run_confirmed_profile" &&
       isConfirmedAgentProfile(candidate.confirmedProfile, agent, candidate.url));
+  const refreshProfileIsValid =
+    candidate.purpose !== "refresh_profile"
+      ? candidate.refreshProfile === undefined &&
+        candidate.refreshMode === undefined
+      : isRefreshProfileDraft(candidate.refreshProfile, agent, candidate.url) &&
+        isRefreshMode(candidate.refreshMode);
   return (
     candidate.agent === agent &&
     purposeIsKnown &&
@@ -85,7 +99,35 @@ function isPendingIntent(
     Number.isFinite(candidate.expiresAt) &&
     candidate.expiresAt > candidate.createdAt &&
     candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS &&
-    confirmedProfileIsValid
+    confirmedProfileIsValid &&
+    refreshProfileIsValid
+  );
+}
+
+function isRefreshMode(value: unknown): value is AgentProfileRefreshMode {
+  return value === "prefer_cache" || value === "refresh";
+}
+
+function isCanonicalLanguageTag(value: string): boolean {
+  if (!value || value.length > 35) return false;
+  try {
+    return Intl.getCanonicalLocales(value)[0] === value;
+  } catch {
+    return false;
+  }
+}
+
+function isRefreshProfileDraft(
+  value: unknown,
+  agent: AgentKind,
+  exactUrl: unknown,
+): value is AgentProfileDraft {
+  if (typeof exactUrl !== "string" || !isAgentProfileDraft(value, agent, exactUrl)) {
+    return false;
+  }
+  return (
+    /^[A-Z]{2}$/.test(value.country) &&
+    isCanonicalLanguageTag(value.locale)
   );
 }
 
@@ -152,6 +194,35 @@ export function storeConfirmedAgentRunIntent(
   }
 }
 
+/** Store the exact local draft for an authenticated profile refresh request. */
+export function storeAgentProfileRefreshIntent(
+  storage: IntentStorage,
+  profile: AgentProfileDraft,
+  mode: AgentProfileRefreshMode,
+  now = Date.now(),
+): PendingAgentIntent | null {
+  const intent: PendingAgentIntent = {
+    agent: profile.agent,
+    purpose: "refresh_profile",
+    url: profile.targetUrl,
+    createdAt: now,
+    expiresAt: now + AGENT_INTENT_TTL_MS,
+    refreshProfile: profile,
+    refreshMode: mode,
+  };
+  if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
+  try {
+    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    storage.setItem(
+      pendingAgentIntentKey(profile.agent),
+      JSON.stringify(intent),
+    );
+    return intent;
+  } catch {
+    return null;
+  }
+}
+
 /** A homepage preparation intent is data for Stage 01, never permission to POST. */
 export function isRunnablePendingAgentIntent(
   intent: PendingAgentIntent,
@@ -159,6 +230,20 @@ export function isRunnablePendingAgentIntent(
   return (
     intent.purpose === "run_confirmed_profile" &&
     isConfirmedAgentProfile(intent.confirmedProfile, intent.agent, intent.url)
+  );
+}
+
+export function isProfileRefreshPendingAgentIntent(
+  intent: PendingAgentIntent,
+): intent is PendingAgentIntent & {
+  readonly purpose: "refresh_profile";
+  readonly refreshProfile: AgentProfileDraft;
+  readonly refreshMode: AgentProfileRefreshMode;
+} {
+  return (
+    intent.purpose === "refresh_profile" &&
+    isRefreshMode(intent.refreshMode) &&
+    isRefreshProfileDraft(intent.refreshProfile, intent.agent, intent.url)
   );
 }
 

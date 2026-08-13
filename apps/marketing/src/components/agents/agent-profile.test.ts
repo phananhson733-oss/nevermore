@@ -5,13 +5,91 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_PROFILE_REFRESH_FIELD_PATHS,
+  type AgentProfileRefreshField,
+  type AgentProfileRefreshFieldPath,
+  type AgentProfileRefreshResult,
+} from "../../lib/agents/profile-refresh-contract";
+import {
+  applyAgentProfileRefresh,
   confirmAgentProfile,
   createAgentProfileDraft,
+  isAgentProfileDraft,
   isConfirmedAgentProfile,
   isAgentProfileReady,
   redraftAgentProfileForUrl,
   updateAgentProfile,
 } from "./agent-profile";
+
+function profileRefreshResult(
+  available: Partial<
+    Record<AgentProfileRefreshFieldPath, string | readonly string[]>
+  >,
+  overrides: Partial<AgentProfileRefreshResult> = {},
+): AgentProfileRefreshResult {
+  const sourceUrl = "https://www.acme.com/";
+  const fields = AGENT_PROFILE_REFRESH_FIELD_PATHS.map((path) => {
+    const value = available[path];
+    if (value !== undefined) {
+      return {
+        path,
+        state: "available",
+        value,
+        derivation: "inferred",
+        confidence: "medium",
+        source: "public_page",
+        limitation: "Inferred only from the bounded public-page crawl.",
+        evidenceUrls: [sourceUrl],
+      } as AgentProfileRefreshField;
+    }
+    return {
+      path,
+      state: "unavailable",
+      value: null,
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      limitation: "The bounded public pages do not establish this field.",
+      evidenceUrls: [],
+    } as const;
+  });
+  const fieldsAvailable = Object.keys(available).length;
+  return {
+    schemaVersion: "agent_profile_refresh.v1",
+    agent: "seo",
+    request: {
+      submittedUrl: "https://www.acme.com/pricing",
+      normalizedUrl: "https://www.acme.com/pricing",
+      targetHost: "www.acme.com",
+      marketCode: "US",
+      languageTag: "en-US",
+      outputLocale: "en",
+    },
+    availability:
+      fieldsAvailable === 0
+        ? "no_data"
+        : fieldsAvailable === AGENT_PROFILE_REFRESH_FIELD_PATHS.length
+          ? "available"
+          : "partial",
+    observedAt: "2026-08-13T10:00:00.000Z",
+    cache: {
+      status: "fresh",
+      capturedAt: "2026-08-13T10:00:00.000Z",
+    },
+    diagnostics: {
+      resolvedOrigin: "https://www.acme.com",
+      pagesFetched: 2,
+      productPagesFetched: 1,
+      stopReason: null,
+      contextSufficient: true,
+      sourceUrls: [sourceUrl],
+      fieldsAvailable,
+      fieldsMissing: AGENT_PROFILE_REFRESH_FIELD_PATHS.length - fieldsAvailable,
+    },
+    fields,
+    ...overrides,
+  };
+}
 
 describe("Agent-local Product / ICP profiles", () => {
   it("seeds AstrologyWiki from the two supplied documents without calling it observed", () => {
@@ -39,12 +117,12 @@ describe("Agent-local Product / ICP profiles", () => {
         "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
       jtbd: "Understand themselves without deterministic fortune-telling.",
       firstOutcome:
-        "Own the free birth-chart query and convert to chart generation",
-      country: "CN",
-      locale: "zh-CN",
+        "Evaluate birth-chart search opportunities that lead to chart generation",
+      country: "",
+      locale: "",
       device: "mobile",
       pageType: "tool",
-      targetQuery: "免费星盘计算",
+      targetQuery: "",
       auditScope: "site-first",
       reviewState: "needs_confirmation",
     });
@@ -72,6 +150,24 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.directCompetitors).toEqual([]);
     expect(profile.indirectAlternatives).toEqual([]);
     expect(profile.excludedAlternatives).toEqual([]);
+  });
+
+  it("keeps unsupported search context empty and infers the homepage only from a root URL", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com");
+
+    expect(profile).toMatchObject({
+      country: "",
+      locale: "",
+      device: "mobile",
+      pageType: "homepage",
+      targetQuery: "",
+      auditScope: "site-first",
+      reviewState: "needs_confirmation",
+    });
+    expect(isAgentProfileReady(profile)).toBe(false);
+    expect(confirmAgentProfile(profile).reviewState).toBe(
+      "needs_confirmation",
+    );
   });
 
   it("maps the supplied documents into the key Product Profile and Core ICP fields", () => {
@@ -126,6 +222,7 @@ describe("Agent-local Product / ICP profiles", () => {
       source: "supplied_marketing_strategy",
       limitation: null,
       observedAt: null,
+      evidenceUrls: [],
     });
     expect(byPath.get("/coreFeatures")).toMatchObject({
       derivation: "declared",
@@ -137,13 +234,49 @@ describe("Agent-local Product / ICP profiles", () => {
       source: "local_inference",
       observedAt: expect.any(String),
     });
-    expect(byPath.get("/country")).toMatchObject({
+    expect(byPath.get("/country")).toEqual({
+      path: "/country",
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      limitation:
+        "No primary search market was supplied; select one before running the audit.",
+      observedAt: null,
+      evidenceUrls: [],
+    });
+    expect(byPath.get("/locale")).toEqual({
+      path: "/locale",
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      limitation:
+        "The product supports multiple languages, but no primary audit locale was supplied; select one before running the audit.",
+      observedAt: null,
+      evidenceUrls: [],
+    });
+    expect(byPath.get("/device")).toMatchObject({
+      derivation: "declared",
+      confidence: "high",
+      source: "supplied_marketing_strategy",
+      observedAt: null,
+    });
+    expect(byPath.get("/pageType")).toMatchObject({
       derivation: "inferred",
       confidence: "low",
-      source: "local_inference",
+      source: "visitor_url",
       observedAt: expect.any(String),
     });
-    expect(byPath.get("/locale")).toMatchObject({
+    expect(byPath.get("/targetQuery")).toEqual({
+      path: "/targetQuery",
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      limitation:
+        "The strategy lists keyword examples, but no target query was confirmed for this run.",
+      observedAt: null,
+      evidenceUrls: [],
+    });
+    expect(byPath.get("/auditScope")).toMatchObject({
       derivation: "inferred",
       confidence: "low",
       source: "local_inference",
@@ -204,11 +337,11 @@ describe("Agent-local Product / ICP profiles", () => {
 
     expect(tech.agent).toBe("tech");
     expect(tech.firstOutcome).toBe(
-      "Keep mobile anonymous chart generation crawlable and reliable",
+      "Evaluate crawlability and reliability of the public birth-chart experience",
     );
-    expect(editedSeo.firstOutcome).toContain("free birth-chart query");
+    expect(editedSeo.firstOutcome).toContain("birth-chart search opportunities");
     expect(editedSeo.country).toBe("US");
-    expect(tech.country).toBe("CN");
+    expect(tech.country).toBe("");
     expect(editedSeo.categories).not.toBe(tech.categories);
     expect(editedSeo.editedFields).toEqual([
       "country",
@@ -226,7 +359,7 @@ describe("Agent-local Product / ICP profiles", () => {
       primaryIcp: "Unknown — confirm the primary audience.",
       businessModel: "Unknown — confirm the business model.",
       country: "",
-      locale: "en",
+      locale: "",
       targetQuery: "",
       auditScope: "site-first",
       reviewState: "needs_confirmation",
@@ -242,6 +375,21 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.categories).toEqual(["Unknown — confirm the category."]);
     expect(profile.trustSignals).toEqual([]);
     expect(profile.directCompetitors).toEqual([]);
+    const provenance = new Map(
+      profile.fieldProvenance.map((entry) => [entry.path, entry]),
+    );
+    expect(provenance.get("/country")).toMatchObject({
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      observedAt: null,
+    });
+    expect(provenance.get("/locale")).toMatchObject({
+      derivation: "missing",
+      confidence: "unknown",
+      source: "not_available",
+      observedAt: null,
+    });
   });
 
   it("localizes unconfirmed Profile values for a Chinese Agent route", () => {
@@ -258,7 +406,7 @@ describe("Agent-local Product / ICP profiles", () => {
       buyer: "未知——请确认购买者角色。",
       firstOutcome: "确认首个技术可靠性目标。",
       country: "",
-      locale: "zh-CN",
+      locale: "",
     });
     expect(redrafted).toMatchObject({
       host: "example.com",
@@ -284,7 +432,7 @@ describe("Agent-local Product / ICP profiles", () => {
       buyer: "推断——用户与付费者很可能是同一位自助型个人；需确认。",
       user: "文档事实——对占星感兴趣、用产品进行自我反思的年轻人。",
       jtbd: "在不接受宿命论式算命的前提下理解自己。",
-      firstOutcome: "占领免费出生星盘查询并转化为星盘生成",
+      firstOutcome: "评估与出生星盘生成相关的搜索机会",
     });
     expect(profile.sources).toEqual({
       product: "product_information_supplied",
@@ -435,12 +583,243 @@ describe("Agent-local Product / ICP profiles", () => {
       source: "user_edit",
       limitation: null,
       observedAt: null,
+      evidenceUrls: [],
     });
+  });
+
+  it("applies source-backed live Product and ICP fields without changing the run identity", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://www.acme.com/pricing"),
+      {
+        country: "US",
+        locale: "en-US",
+        device: "desktop",
+        pageType: "product",
+        targetQuery: "acme pricing",
+        auditScope: "page-only",
+        firstOutcome: "Review the pricing journey",
+      },
+    );
+    const refreshed = applyAgentProfileRefresh(
+      profile,
+      profileRefreshResult({
+        productName: "Acme",
+        coreFeatures: ["Shared workspace", "Automated reporting"],
+        primaryIcp: "Operations leaders at growing SaaS companies",
+        useCases: ["Coordinate recurring growth work"],
+      }),
+    );
+
+    expect(refreshed).toMatchObject({
+      targetUrl: "https://www.acme.com/pricing",
+      host: "acme.com",
+      productName: "Acme",
+      coreFeatures: ["Shared workspace", "Automated reporting"],
+      primaryIcp: "Operations leaders at growing SaaS companies",
+      useCases: ["Coordinate recurring growth work"],
+      country: "US",
+      locale: "en-US",
+      device: "desktop",
+      pageType: "product",
+      targetQuery: "acme pricing",
+      auditScope: "page-only",
+      firstOutcome: "Review the pricing journey",
+      sources: {
+        product: "public_page_refresh",
+        icp: "public_page_refresh",
+        competitor: "confirmation_required",
+        run: "inferred_run_assumptions",
+      },
+      reviewState: "needs_confirmation",
+    });
+    expect(
+      refreshed.fieldProvenance.find(
+        (entry) => entry.path === "/productName",
+      ),
+    ).toEqual({
+      path: "/productName",
+      derivation: "inferred",
+      confidence: "medium",
+      source: "public_page",
+      limitation: "Inferred only from the bounded public-page crawl.",
+      observedAt: "2026-08-13T10:00:00.000Z",
+      evidenceUrls: ["https://www.acme.com/"],
+    });
+    expect(refreshed.coreFeatures).not.toBe(profile.coreFeatures);
+  });
+
+  it("never overwrites supplied documents or manual edits with public-page inference", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft(
+        "seo",
+        "https://www.astrologywiki.com/birth-chart",
+      ),
+      {
+        country: "US",
+        locale: "en-US",
+        valueProposition: "Manually reviewed positioning",
+      },
+    );
+    const refreshed = applyAgentProfileRefresh(
+      profile,
+      profileRefreshResult(
+        {
+          productName: "Untrusted replacement",
+          valueProposition: "Untrusted replacement",
+          user: "Untrusted replacement",
+          buyer: "Observed self-serve buyer",
+        },
+        {
+          request: {
+            submittedUrl: "https://www.astrologywiki.com/birth-chart",
+            normalizedUrl: "https://www.astrologywiki.com/birth-chart",
+            targetHost: "www.astrologywiki.com",
+            marketCode: "US",
+            languageTag: "en-US",
+            outputLocale: "en",
+          },
+        },
+      ),
+    );
+
+    expect(refreshed.productName).toBe("AstrologyWiki");
+    expect(refreshed.valueProposition).toBe("Manually reviewed positioning");
+    expect(refreshed.user).toContain("Documented");
+    expect(refreshed.buyer).toBe("Observed self-serve buyer");
+    expect(refreshed.sources).toEqual(profile.sources);
+    expect(refreshed.editedFields).toEqual(profile.editedFields);
+    expect(
+      refreshed.fieldProvenance.find(
+        (entry) => entry.path === "/valueProposition",
+      )?.source,
+    ).toBe("user_edit");
+    expect(
+      refreshed.fieldProvenance.find((entry) => entry.path === "/buyer")
+        ?.source,
+    ).toBe("public_page");
+  });
+
+  it("replaces a prior public-page inference but never blanks it with unavailable data", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://www.acme.com/pricing"),
+      { country: "US", locale: "en-US" },
+    );
+    const first = applyAgentProfileRefresh(
+      profile,
+      profileRefreshResult({
+        productName: "Acme v1",
+        valueProposition: "One shared operating view",
+      }),
+    );
+    const second = applyAgentProfileRefresh(
+      first,
+      profileRefreshResult(
+        { productName: "Acme v2" },
+        {
+          observedAt: "2026-08-13T11:00:00.000Z",
+          cache: {
+            status: "refreshed",
+            capturedAt: "2026-08-13T11:00:00.000Z",
+          },
+        },
+      ),
+    );
+
+    expect(second.productName).toBe("Acme v2");
+    expect(second.valueProposition).toBe("One shared operating view");
+    expect(
+      second.fieldProvenance.find(
+        (entry) => entry.path === "/productName",
+      )?.observedAt,
+    ).toBe("2026-08-13T11:00:00.000Z");
+    expect(
+      second.fieldProvenance.find(
+        (entry) => entry.path === "/valueProposition",
+      )?.derivation,
+    ).toBe("inferred");
+  });
+
+  it("ignores refreshes whose Agent, URL, host, market, or language identity differs", () => {
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://www.acme.com/pricing"),
+      { country: "US", locale: "en-US" },
+    );
+    const matching = profileRefreshResult({ productName: "Acme" });
+    const mismatches: AgentProfileRefreshResult[] = [
+      { ...matching, agent: "tech" },
+      {
+        ...matching,
+        request: {
+          ...matching.request,
+          submittedUrl: "https://www.acme.com/about",
+          normalizedUrl: "https://www.acme.com/about",
+        },
+      },
+      {
+        ...matching,
+        request: {
+          ...matching.request,
+          normalizedUrl: "https://www.acme.com/about",
+        },
+      },
+      {
+        ...matching,
+        request: { ...matching.request, targetHost: "other.example" },
+      },
+      {
+        ...matching,
+        request: { ...matching.request, marketCode: "CA" },
+      },
+      {
+        ...matching,
+        request: { ...matching.request, languageTag: "fr-CA" },
+      },
+    ];
+
+    for (const mismatch of mismatches) {
+      expect(applyAgentProfileRefresh(profile, mismatch)).toBe(profile);
+    }
+  });
+
+  it("returns a matching confirmed snapshot to review even when no field was available", () => {
+    const profile = confirmAgentProfile(
+      updateAgentProfile(
+        createAgentProfileDraft(
+          "seo",
+          "https://www.astrologywiki.com/birth-chart",
+        ),
+        { country: "US", locale: "en-US" },
+      ),
+    );
+    const refreshed = applyAgentProfileRefresh(
+      profile,
+      profileRefreshResult(
+        {},
+        {
+          request: {
+            submittedUrl: "https://www.astrologywiki.com/birth-chart",
+            normalizedUrl: "https://www.astrologywiki.com/birth-chart",
+            targetHost: "www.astrologywiki.com",
+            marketCode: "US",
+            languageTag: "en-US",
+            outputLocale: "en",
+          },
+        },
+      ),
+    );
+
+    expect(profile.reviewState).toBe("confirmed");
+    expect(refreshed.reviewState).toBe("needs_confirmation");
+    expect(refreshed.productName).toBe(profile.productName);
+    expect(refreshed.fieldProvenance).toEqual(profile.fieldProvenance);
   });
 
   it("accepts only an exact confirmed current-v3 local handoff", () => {
     const confirmed = confirmAgentProfile(
-      createAgentProfileDraft("seo", "astrologywiki.com"),
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
     );
 
     expect(
@@ -478,33 +857,101 @@ describe("Agent-local Product / ICP profiles", () => {
     ).toBe(false);
   });
 
+  it("strictly accepts a complete unconfirmed v3 draft without requiring readiness", () => {
+    const draft = createAgentProfileDraft("seo", "astrologywiki.com");
+
+    expect(draft.reviewState).toBe("needs_confirmation");
+    expect(isAgentProfileReady(draft)).toBe(false);
+    expect(isAgentProfileDraft(draft)).toBe(true);
+    expect(isAgentProfileDraft(draft, "seo", "astrologywiki.com")).toBe(true);
+    expect(isAgentProfileDraft(draft, "tech")).toBe(false);
+    expect(isAgentProfileDraft(draft, "seo", "other.example")).toBe(false);
+  });
+
+  it("rejects hostile or malformed stored draft shapes before refresh code can use them", () => {
+    const draft = createAgentProfileDraft("tech", "https://acme.test/start");
+    const withoutField = structuredClone(draft) as unknown as Record<
+      string,
+      unknown
+    >;
+    delete withoutField.primaryIcp;
+    const editedMismatch = {
+      ...draft,
+      editedFields: ["productName"],
+    };
+    const malformedProvenance = {
+      ...draft,
+      fieldProvenance: draft.fieldProvenance.map((entry, index) =>
+        index === 0 ? { ...entry, injected: true } : entry,
+      ),
+    };
+
+    expect(isAgentProfileDraft({ ...draft, injected: true })).toBe(false);
+    expect(isAgentProfileDraft(withoutField)).toBe(false);
+    expect(
+      isAgentProfileDraft({
+        ...draft,
+        sources: { ...draft.sources, product: "unknown_source" },
+      }),
+    ).toBe(false);
+    expect(
+      isAgentProfileDraft({
+        ...draft,
+        categories: ["Duplicate", "Duplicate"],
+      }),
+    ).toBe(false);
+    expect(isAgentProfileDraft(editedMismatch)).toBe(false);
+    expect(isAgentProfileDraft(malformedProvenance)).toBe(false);
+    expect(
+      isAgentProfileDraft({ ...draft, reviewState: "persisted" }),
+    ).toBe(false);
+    expect(isAgentProfileDraft({ ...draft, host: "other.test" })).toBe(false);
+    expect(
+      isAgentProfileDraft({ ...draft, targetUrl: ` ${draft.targetUrl}` }),
+    ).toBe(false);
+  });
+
   it("confirms only a minimally complete Product Profile and primary ICP", () => {
     const supplied = createAgentProfileDraft("seo", "astrologywiki.com");
     const generic = createAgentProfileDraft("seo", "example.com");
 
-    expect(isAgentProfileReady(supplied)).toBe(true);
-    expect(confirmAgentProfile(supplied).reviewState).toBe("confirmed");
+    expect(isAgentProfileReady(supplied)).toBe(false);
+    expect(confirmAgentProfile(supplied).reviewState).toBe(
+      "needs_confirmation",
+    );
+    const suppliedWithRunMarket = updateAgentProfile(supplied, {
+      country: "US",
+      locale: "en-US",
+    });
+    expect(isAgentProfileReady(suppliedWithRunMarket)).toBe(true);
+    expect(confirmAgentProfile(suppliedWithRunMarket).reviewState).toBe(
+      "confirmed",
+    );
     expect(isAgentProfileReady(generic)).toBe(false);
     expect(confirmAgentProfile(generic).reviewState).toBe(
       "needs_confirmation",
     );
     expect(
-      isAgentProfileReady({ ...supplied, valueProposition: "" }),
+      isAgentProfileReady({ ...suppliedWithRunMarket, valueProposition: "" }),
     ).toBe(false);
-    expect(isAgentProfileReady({ ...supplied, coreFeatures: [] })).toBe(false);
-    expect(isAgentProfileReady({ ...supplied, useCases: [] })).toBe(false);
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, coreFeatures: [] }),
+    ).toBe(false);
+    expect(
+      isAgentProfileReady({ ...suppliedWithRunMarket, useCases: [] }),
+    ).toBe(false);
     expect(
       isAgentProfileReady({
-        ...supplied,
-        fieldProvenance: supplied.fieldProvenance.filter(
+        ...suppliedWithRunMarket,
+        fieldProvenance: suppliedWithRunMarket.fieldProvenance.filter(
           (entry) => entry.path !== "/valueProposition",
         ),
       }),
     ).toBe(false);
     expect(
       isAgentProfileReady({
-        ...supplied,
-        fieldProvenance: supplied.fieldProvenance.map((entry) =>
+        ...suppliedWithRunMarket,
+        fieldProvenance: suppliedWithRunMarket.fieldProvenance.map((entry) =>
           entry.path === "/valueProposition"
             ? {
                 ...entry,
@@ -520,7 +967,7 @@ describe("Agent-local Product / ICP profiles", () => {
     ).toBe(false);
     expect(
       isAgentProfileReady({
-        ...supplied,
+        ...suppliedWithRunMarket,
         directCompetitors: [],
         indirectAlternatives: [],
         excludedAlternatives: [],
@@ -543,6 +990,7 @@ describe("Agent-local Product / ICP profiles", () => {
       jtbd: "Align a team around clear examples",
       useCases: ["Create and share product examples"],
       country: "US",
+      locale: "en-US",
     });
 
     expect(isAgentProfileReady(manuallyCompleted)).toBe(true);

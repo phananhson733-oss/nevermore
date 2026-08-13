@@ -8,15 +8,21 @@ import {
   AGENT_INTENT_TTL_MS,
   clearPendingAgentIntent,
   getSessionIntentStorage,
+  isProfileRefreshPendingAgentIntent,
   isRunnablePendingAgentIntent,
   pendingAgentIntentKey,
   readPendingAgentIntent,
   restorePendingAgentIntent,
   schedulePendingAgentIntentExpiry,
+  storeAgentProfileRefreshIntent,
   storeConfirmedAgentRunIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
-import { confirmAgentProfile, createAgentProfileDraft } from "./agent-profile";
+import {
+  confirmAgentProfile,
+  createAgentProfileDraft,
+  updateAgentProfile,
+} from "./agent-profile";
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -95,7 +101,10 @@ describe("Agent pending intents", () => {
   it("resumes only a confirmed profile with the exact Agent and URL snapshot", () => {
     const storage = new MemoryStorage();
     const profile = confirmAgentProfile(
-      createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+      updateAgentProfile(
+        createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+        { country: "US", locale: "en-US" },
+      ),
     );
 
     const intent = storeConfirmedAgentRunIntent(storage, profile, 1_000);
@@ -124,7 +133,10 @@ describe("Agent pending intents", () => {
     vi.setSystemTime(1_000);
     const storage = new MemoryStorage();
     const profile = confirmAgentProfile(
-      createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+      updateAgentProfile(
+        createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+        { country: "US", locale: "en-US" },
+      ),
     );
     const intent = storeConfirmedAgentRunIntent(storage, profile)!;
 
@@ -243,5 +255,144 @@ describe("Agent pending intents", () => {
     expect(readPendingAgentIntent(storage, "seo", 2_000)?.expiresAt).toBe(
       1_000 + AGENT_INTENT_TTL_MS,
     );
+  });
+
+  it("stores a refresh-profile intent with the exact local draft and mode", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://astrologywiki.com/tools/birth-chart"),
+      { country: "US", locale: "en-US" },
+    );
+
+    const intent = storeAgentProfileRefreshIntent(storage, profile, "prefer_cache");
+
+    expect(intent).toMatchObject({
+      agent: "seo",
+      purpose: "refresh_profile",
+      url: "https://astrologywiki.com/tools/birth-chart",
+      refreshMode: "prefer_cache",
+      refreshProfile: {
+        agent: "seo",
+        targetUrl: "https://astrologywiki.com/tools/birth-chart",
+        host: "astrologywiki.com",
+        country: "US",
+        locale: "en-US",
+        reviewState: "needs_confirmation",
+      },
+    });
+    expect(readPendingAgentIntent(storage, "seo", Date.now())).toMatchObject({
+      purpose: "refresh_profile",
+      refreshMode: "prefer_cache",
+    });
+    expect(isProfileRefreshPendingAgentIntent(intent!)).toBe(true);
+    expect(isRunnablePendingAgentIntent(intent!)).toBe(false);
+  });
+
+  it("rejects malformed refresh-profile payloads and clears them fail-closed", () => {
+    const storage = new MemoryStorage();
+    const now = 20_000;
+    const baseProfile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://astrologywiki.com/tools/birth-chart"),
+      { country: "US", locale: "en-US" },
+    );
+
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        agent: "seo",
+        purpose: "refresh_profile",
+        url: "https://astrologywiki.com/tools/birth-chart",
+        createdAt: now,
+        expiresAt: now + AGENT_INTENT_TTL_MS,
+        refreshMode: "prefer_cache",
+        refreshProfile: { ...baseProfile, country: "USA" },
+      }),
+    );
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        agent: "seo",
+        purpose: "refresh_profile",
+        url: "https://astrologywiki.com/tools/birth-chart",
+        createdAt: now,
+        expiresAt: now + AGENT_INTENT_TTL_MS,
+        refreshMode: "refresh-now",
+        refreshProfile: baseProfile,
+      }),
+    );
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        agent: "seo",
+        purpose: "refresh_profile",
+        url: "https://astrologywiki.com/tools/birth-chart",
+        createdAt: now,
+        expiresAt: now + AGENT_INTENT_TTL_MS,
+        refreshMode: "refresh",
+        refreshProfile: { ...baseProfile, locale: "" },
+      }),
+    );
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+
+    const missingFieldProfile = { ...baseProfile } as Record<string, unknown>;
+    delete missingFieldProfile.valueProposition;
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        agent: "seo",
+        purpose: "refresh_profile",
+        url: "https://astrologywiki.com/tools/birth-chart",
+        createdAt: now,
+        expiresAt: now + AGENT_INTENT_TTL_MS,
+        refreshMode: "prefer_cache",
+        refreshProfile: missingFieldProfile,
+      }),
+    );
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("accepts a canonical non-region BCP 47 target language", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("seo", "https://example.com"),
+      { country: "US", locale: "zh-Hant" },
+    );
+
+    expect(
+      storeAgentProfileRefreshIntent(
+        storage,
+        profile,
+        "prefer_cache",
+        1_000,
+      ),
+    ).not.toBeNull();
+    expect(
+      readPendingAgentIntent(storage, "seo", 1_001)?.refreshProfile?.locale,
+    ).toBe("zh-Hant");
+  });
+
+  it("never resumes a refresh-profile intent on the other Agent and expires on the same TTL", () => {
+    const storage = new MemoryStorage();
+    const profile = updateAgentProfile(
+      createAgentProfileDraft("tech", "https://astrologywiki.com/pricing"),
+      { country: "CN", locale: "zh-CN" },
+    );
+    const now = 5_000;
+    const intent = storeAgentProfileRefreshIntent(storage, profile, "refresh", now)!;
+
+    expect(readPendingAgentIntent(storage, "seo", now + 1)).toBeNull();
+    expect(isProfileRefreshPendingAgentIntent(readPendingAgentIntent(storage, "tech", now + 1)!)).toBe(
+      true,
+    );
+    expect(readPendingAgentIntent(storage, "tech", now + AGENT_INTENT_TTL_MS)).toBeNull();
+    expect(intent.expiresAt).toBe(now + AGENT_INTENT_TTL_MS);
   });
 });

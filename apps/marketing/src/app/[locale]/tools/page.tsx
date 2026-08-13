@@ -1,6 +1,6 @@
 // @input  -- locale param, tools i18n namespace, shared ToolCard
 // @output -- Resources > Tools hub grouped by a visitor's current SEO/growth situation
-// @pos    -- supporting-tools branch of Resources; URL audits live under /agents
+// @pos    -- Resources branch; URL-audit cards hand off to independent Agents
 import { ArrowRight, Compass, ScanSearch } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { ToolCard } from "@/components/tools/tool-card";
@@ -24,6 +24,16 @@ const DIAGNOSIS_TOOLS = [
     category: "diagnosis",
   },
   {
+    slug: "internal-link-audit",
+    title: { en: "Internal Link Audit", zh: "内链审计" },
+    description: {
+      en: "Review crawl, indexability, and internal-link evidence in the Tech Agent. A verified account is required to run it.",
+      zh: "在 Tech Agent 中检查抓取、可索引性与内链证据；运行时需要已验证账号。",
+    },
+    cta: { en: "Open Tech Agent", zh: "打开 Tech Agent" },
+    category: "diagnosis",
+  },
+  {
     slug: "traffic-drop-diagnosis",
     title: { en: "Traffic Drop Diagnosis", zh: "流量下降诊断" },
     description: {
@@ -31,6 +41,16 @@ const DIAGNOSIS_TOOLS = [
       zh: "先比较 Search Console 时间段，再判断自然流量为何变化。",
     },
     cta: { en: "Connect Search Console", zh: "连接 Search Console" },
+    category: "diagnosis",
+  },
+  {
+    slug: "seo-audit",
+    title: { en: "Site-wide SEO Audit", zh: "全站 SEO 审计" },
+    description: {
+      en: "Review metadata, heading structure, and structured-data evidence in the SEO Agent. A verified account is required to run it.",
+      zh: "在 SEO Agent 中检查元数据、标题结构与结构化数据证据；运行时需要已验证账号。",
+    },
+    cta: { en: "Open SEO Agent", zh: "打开 SEO Agent" },
     category: "diagnosis",
   },
 ] as const;
