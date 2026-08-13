@@ -145,6 +145,27 @@ describe("homepage Agent links", () => {
     expect(contents).toContain('value="tech"');
   });
 
+  it("submits the live form value even when typing happened before hydration", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    act(() => root.render(createElement(HeroSection)));
+    const input = host.querySelector<HTMLInputElement>("#homepage-agent-url");
+    const tech = host.querySelector<HTMLButtonElement>('button[value="tech"]');
+
+    expect(input).not.toBeNull();
+    expect(tech).not.toBeNull();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      input,
+      "pre-hydration.example",
+    );
+    act(() => tech?.click());
+
+    expect(routerPush).toHaveBeenCalledWith("/agents/tech");
+    act(() => root.unmount());
+    host.remove();
+  });
+
   it("offers only the SEO and Tech Agent cards", () => {
     const contents = source("./capabilities-preview.tsx");
     expect(contents).toContain('slug: "seo"');

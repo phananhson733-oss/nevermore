@@ -183,6 +183,15 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   await expect(page.getByTestId("agent-selected-solution")).toContainText(
     "technical seo audit",
   );
+  await page.locator('[data-profile-agent="seo"]').screenshot({
+    path: "/tmp/gengrowth-seo-profile.png",
+  });
+  await page.getByTestId("agent-diagnosis").screenshot({
+    path: "/tmp/gengrowth-seo-diagnosis.png",
+  });
+  await page.getByTestId("agent-recommendation-row").screenshot({
+    path: "/tmp/gengrowth-seo-recommendations.png",
+  });
 });
 
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
@@ -231,6 +240,12 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await expect(page.getByTestId("agent-selected-solution")).not.toContainText(
     "SEO Agent decision",
   );
+  await page.locator('[data-profile-agent="tech"]').screenshot({
+    path: "/tmp/gengrowth-tech-profile-mobile.png",
+  });
+  await page.getByTestId("agent-recommendation-row").screenshot({
+    path: "/tmp/gengrowth-tech-recommendations-mobile.png",
+  });
   expect(
     await page.evaluate(() =>
       sessionStorage.getItem("gengrowth:agent-intent:seo:v2"),

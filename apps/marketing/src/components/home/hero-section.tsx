@@ -25,8 +25,8 @@ export function HeroSection() {
   const router = useRouter();
   const [targetUrl, setTargetUrl] = useState("");
 
-  function handleDestination(agent: AgentKind) {
-    const url = targetUrl.trim();
+  function handleDestination(agent: AgentKind, submittedUrl: string) {
+    const url = submittedUrl.trim();
     if (!url) return;
 
     const storage = getSessionIntentStorage();
@@ -40,7 +40,11 @@ export function HeroSection() {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent)
       .submitter as HTMLButtonElement | null;
-    handleDestination(submitter?.value === "tech" ? "tech" : "seo");
+    const submittedUrl = new FormData(event.currentTarget).get("url");
+    handleDestination(
+      submitter?.value === "tech" ? "tech" : "seo",
+      typeof submittedUrl === "string" ? submittedUrl : "",
+    );
   }
 
   return (
@@ -93,6 +97,7 @@ export function HeroSection() {
           </label>
           <input
             id="homepage-agent-url"
+            name="url"
             type="text"
             inputMode="url"
             autoComplete="url"
@@ -109,7 +114,6 @@ export function HeroSection() {
               type="submit"
               name="agent"
               value="seo"
-              disabled={!targetUrl.trim()}
               className="inline-flex h-12 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-[26px] text-[14.5px] font-semibold text-brand-on-accent shadow-cta transition-shadow hover:shadow-cta-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("primaryCta")}
@@ -119,7 +123,6 @@ export function HeroSection() {
               type="submit"
               name="agent"
               value="tech"
-              disabled={!targetUrl.trim()}
               className="inline-flex h-12 items-center justify-center rounded-[10px] border border-brand-border-strong bg-brand-panel/60 px-6 text-[14.5px] font-medium text-text-dark-primary transition-colors hover:border-brand-accent/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t("secondaryCta")}
