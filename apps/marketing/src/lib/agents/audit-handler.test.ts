@@ -141,10 +141,11 @@ describe("handleAgentAuditRequest", () => {
     expect(delegate).not.toHaveBeenCalled();
   });
 
-  it("authenticates before delegation and forces buffered JSON", async () => {
+  it("authenticates before delegating the original request instance", async () => {
     const order: string[] = [];
+    const incoming = request("application/x-ndjson");
     const response = await handleAgentAuditRequest(
-      request("application/x-ndjson"),
+      incoming,
       "seo",
       {
         authenticate: async () => {
@@ -153,7 +154,10 @@ describe("handleAgentAuditRequest", () => {
         },
         delegate: async (forwarded) => {
           order.push("delegate");
-          expect(forwarded.headers.get("accept")).toBe("application/json");
+          expect(forwarded).toBe(incoming);
+          expect(forwarded.headers.get("accept")).toBe(
+            "application/x-ndjson",
+          );
           expect(await forwarded.json()).toEqual({ url: "acme.test" });
           return success();
         },

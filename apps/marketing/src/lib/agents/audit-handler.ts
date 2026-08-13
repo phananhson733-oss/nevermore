@@ -29,7 +29,8 @@ export interface AgentAuditHandlerDependencies {
 
 const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
-  delegate: handleSeoAuditRequest,
+  delegate: (request) =>
+    handleSeoAuditRequest(request, undefined, { forceBufferedJson: true }),
 };
 
 const ALLOWED_CATEGORIES: Readonly<
@@ -263,13 +264,6 @@ async function projectUpstreamError(upstream: Response): Promise<Response> {
   );
 }
 
-/** The existing handler streams only when Accept contains x-ndjson. */
-function asBufferedJsonRequest(request: Request): Request {
-  const headers = new Headers(request.headers);
-  headers.set("Accept", "application/json");
-  return new Request(request, { headers });
-}
-
 export async function handleAgentAuditRequest(
   request: Request,
   agent: AgentKind,
@@ -289,7 +283,7 @@ export async function handleAgentAuditRequest(
     return errorResponse("auth_required", 401);
   }
 
-  const upstream = await dependencies.delegate(asBufferedJsonRequest(request));
+  const upstream = await dependencies.delegate(request);
   if (!upstream.ok) return projectUpstreamError(upstream);
 
   if (
