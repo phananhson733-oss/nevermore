@@ -88,6 +88,11 @@ export interface SeoAuditHandlerDependencies {
   ) => Promise<void>;
 }
 
+export interface SeoAuditHandlerOptions {
+  /** Keeps internal callers on the buffered JSON contract regardless of Accept. */
+  readonly forceBufferedJson?: boolean;
+}
+
 const DEFAULT_DEPENDENCIES: SeoAuditHandlerDependencies = {
   normalizeUrl: normalizeSeoAuditUrl,
   // The key is present only when there is a listener. `{ onProgress }` with an
@@ -190,6 +195,7 @@ function cachedSeoAuditMatches(
 export async function handleSeoAuditRequest(
   request: Request,
   dependencies: SeoAuditHandlerDependencies = DEFAULT_DEPENDENCIES,
+  options: SeoAuditHandlerOptions = {},
 ): Promise<Response> {
   const body = await readPublicToolJson(request, REQUEST_BODY_LIMIT_BYTES);
   if (!body.ok) {
@@ -227,7 +233,7 @@ export async function handleSeoAuditRequest(
     });
   }
 
-  if (wantsProgressStream(request)) {
+  if (options.forceBufferedJson !== true && wantsProgressStream(request)) {
     return streamSeoAudit(request, normalized.url, gate.release, dependencies);
   }
 

@@ -636,6 +636,20 @@ describe("handleSeoAuditRequest, NDJSON branch", () => {
     await expect(response.text()).resolves.toBe(terminalLine);
   });
 
+  it("forces buffered JSON for an internal caller without rewriting its request", async () => {
+    const incoming = streamingRequest({ url: "acme.test" });
+
+    const response = await handleSeoAuditRequest(incoming, dependencies(), {
+      forceBufferedJson: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("x-public-tool-stream")).toBeNull();
+    expect(incoming.headers.get("accept")).toBe("application/x-ndjson");
+    await expect(response.text()).resolves.toBe(terminalLine);
+  });
+
   it("streams every observed page and request count, then the unchanged payload", async () => {
     const deps = dependencies({
       scan: async (_url, _signal, onProgress) => {
