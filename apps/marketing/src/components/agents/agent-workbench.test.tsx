@@ -129,14 +129,14 @@ async function flushAsyncWork(): Promise<void> {
   });
 }
 
-function renderStrict(agent: AgentKind): void {
+function renderStrict(agent: AgentKind, locale = "en"): void {
   const host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   act(() => {
     root?.render(
       <StrictMode>
-        <AgentWorkbench agent={agent} locale="en" />
+        <AgentWorkbench agent={agent} locale={locale} />
       </StrictMode>,
     );
   });
@@ -199,6 +199,20 @@ afterEach(async () => {
 });
 
 describe("AgentWorkbench Profile gate and purpose-safe lifecycle", () => {
+  it("uses the route locale for the initial Profile draft", () => {
+    renderStrict("tech", "zh");
+
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("未知网站");
+    expect(
+      document.querySelector('[data-profile-card="icp"]')?.textContent,
+    ).toContain("未知——请确认主要受众。");
+    expect(
+      document.querySelector('[data-profile-card="context"]')?.textContent,
+    ).toContain("确认首个技术可靠性目标。");
+  });
+
   it("consumes a homepage preparation intent into Stage 01 without probing or posting", async () => {
     storePendingAgentIntent(
       sessionStorage,

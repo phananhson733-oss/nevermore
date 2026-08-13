@@ -95,7 +95,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const t = useTranslations("agents.workbench");
   const auditT = useTranslations("tools.seoAudit");
   const [profile, setProfile] = useState<AgentProfileDraft>(() =>
-    createAgentProfileDraft(agent, ""),
+    createAgentProfileDraft(agent, "", locale),
   );
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
@@ -314,7 +314,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     if (!pending) return;
 
     if (pending.purpose === "prepare_profile") {
-      setProfile(createAgentProfileDraft(agent, pending.url));
+      setProfile(createAgentProfileDraft(agent, pending.url, locale));
       if (storage) clearPendingAgentIntent(storage, agent);
       return;
     }
@@ -335,7 +335,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       if (!started.controller.signal.aborted) resumeIntent.current = null;
     });
     return () => started.controller.abort();
-  }, [agent, startOperation]);
+  }, [agent, locale, startOperation]);
 
   useEffect(() => {
     if (!signInOpen) return;
@@ -407,6 +407,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     >
       <AgentProfilePanel
         agent={agent}
+        locale={locale}
         profile={profile}
         disabled={loading}
         onChange={handleProfileChange}

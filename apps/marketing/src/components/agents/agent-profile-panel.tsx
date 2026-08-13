@@ -21,6 +21,7 @@ import type { AgentKind } from "./agent-types";
 
 export interface AgentProfilePanelProps {
   readonly agent: AgentKind;
+  readonly locale?: string;
   readonly profile: AgentProfileDraft;
   readonly disabled?: boolean;
   readonly onChange: (profile: AgentProfileDraft) => void;
@@ -135,6 +136,7 @@ function Fact({ label, value }: { readonly label: string; readonly value: string
 
 export function AgentProfilePanel({
   agent,
+  locale = "en",
   profile,
   disabled = false,
   onChange,
@@ -147,7 +149,7 @@ export function AgentProfilePanel({
   const titleId = `${agent}-profile-heading`;
 
   function handleUrlChange(event: ChangeEvent<HTMLInputElement>): void {
-    onChange(redraftAgentProfileForUrl(profile, event.target.value));
+    onChange(redraftAgentProfileForUrl(profile, event.target.value, locale));
   }
 
   function handleFieldChange(

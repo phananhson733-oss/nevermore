@@ -123,6 +123,56 @@ describe("Agent-local Product / ICP profiles", () => {
     expect(profile.directCompetitors).toEqual([]);
   });
 
+  it("localizes unconfirmed Profile values for a Chinese Agent route", () => {
+    const initial = createAgentProfileDraft("tech", "", "zh");
+    const redrafted = redraftAgentProfileForUrl(
+      initial,
+      "https://example.com",
+      "zh",
+    );
+
+    expect(initial).toMatchObject({
+      productName: "未知网站",
+      primaryIcp: "未知——请确认主要受众。",
+      buyer: "未知——请确认购买者角色。",
+      firstOutcome: "确认首个技术可靠性目标。",
+      country: "全球",
+      locale: "zh-CN",
+    });
+    expect(redrafted).toMatchObject({
+      host: "example.com",
+      productName: "example.com",
+      oneLinePositioning:
+        "example.com 上的公开网站；其产品与定位尚未确认。",
+      businessModel: "未知——请确认商业模式。",
+      jtbd: "未知——请确认需要完成的任务。",
+    });
+  });
+
+  it("presents the supplied AstrologyWiki Product and ICP facts in Chinese", () => {
+    const profile = createAgentProfileDraft("seo", "astrologywiki.com", "zh");
+
+    expect(profile).toMatchObject({
+      productName: "AstrologyWiki",
+      oneLinePositioning:
+        "融合占星学与现代心理学的免费出生星盘与自我探索 Web 应用。",
+      categories: ["占星工具", "自我探索平台", "出生星盘计算器"],
+      businessModel: "免费增值 · 订阅 · 点数",
+      primaryCta: "生成免费出生星盘",
+      primaryIcp: "以移动端为主、22–38 岁、女性偏多的年轻人",
+      buyer: "推断——用户与付费者很可能是同一位自助型个人；需确认。",
+      user: "文档事实——对占星感兴趣、用产品进行自我反思的年轻人。",
+      jtbd: "在不接受宿命论式算命的前提下理解自己。",
+      firstOutcome: "占领免费出生星盘查询并转化为星盘生成",
+    });
+    expect(profile.sources).toEqual({
+      product: "product_information_supplied",
+      icp: "marketing_strategy_supplied",
+      competitor: "confirmation_required",
+      run: "inferred_run_assumptions",
+    });
+  });
+
   it("returns to a fresh unconfirmed draft when the URL changes", () => {
     const confirmed = confirmAgentProfile(
       updateAgentProfile(

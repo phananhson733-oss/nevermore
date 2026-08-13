@@ -173,56 +173,73 @@ function copyDraft(profile: AgentProfileDraft): AgentProfileDraft {
   };
 }
 
+function usesChinesePresentation(locale: string): boolean {
+  return locale.toLowerCase().startsWith("zh");
+}
+
 function astrologyWikiDraft(
   agent: AgentKind,
   targetUrl: string,
+  presentationLocale: string,
 ): AgentProfileDraft {
+  const chinese = usesChinesePresentation(presentationLocale);
   return {
     schemaVersion: AGENT_PROFILE_SCHEMA_VERSION,
     agent,
     targetUrl,
     host: "astrologywiki.com",
     productName: "AstrologyWiki",
-    oneLinePositioning:
-      "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
-    categories: [
-      "Astrology tool",
-      "Self-discovery platform",
-      "Birth-chart calculator",
-    ],
-    businessModel: "Freemium · subscription · credits",
-    primaryCta: "Generate Free Birth Chart",
-    trustSignals: [
-      "Anonymous calculation",
-      "Real astronomical data",
-      "Multilingual web app",
-    ],
-    primaryIcp: "Mobile-first young adults, 22–38, female-skewed",
-    buyer:
-      "Inferred — the user and payer are likely the same self-serve individual; confirm.",
-    user:
-      "Documented — an astrology-interested young adult using the product for self-reflection.",
-    triggerPain:
-      "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
-    icpInterests: [
-      "Astrology",
-      "Psychology",
-      "Personal growth",
-      "Mindfulness",
-    ],
-    icpPain:
-      "Wants a self-understanding tool but rejects deterministic fortune-telling.",
-    icpBehavior:
-      "Socially active, shares astrology content, and values emotional health.",
-    icpPositioning: "Self-reflection, not fate prediction",
-    jtbd: "Understand themselves without deterministic fortune-telling.",
+    oneLinePositioning: chinese
+      ? "融合占星学与现代心理学的免费出生星盘与自我探索 Web 应用。"
+      : "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
+    categories: chinese
+      ? ["占星工具", "自我探索平台", "出生星盘计算器"]
+      : ["Astrology tool", "Self-discovery platform", "Birth-chart calculator"],
+    businessModel: chinese
+      ? "免费增值 · 订阅 · 点数"
+      : "Freemium · subscription · credits",
+    primaryCta: chinese ? "生成免费出生星盘" : "Generate Free Birth Chart",
+    trustSignals: chinese
+      ? ["匿名计算", "真实天文数据", "多语言 Web 应用"]
+      : ["Anonymous calculation", "Real astronomical data", "Multilingual web app"],
+    primaryIcp: chinese
+      ? "以移动端为主、22–38 岁、女性偏多的年轻人"
+      : "Mobile-first young adults, 22–38, female-skewed",
+    buyer: chinese
+      ? "推断——用户与付费者很可能是同一位自助型个人；需确认。"
+      : "Inferred — the user and payer are likely the same self-serve individual; confirm.",
+    user: chinese
+      ? "文档事实——对占星感兴趣、用产品进行自我反思的年轻人。"
+      : "Documented — an astrology-interested young adult using the product for self-reflection.",
+    triggerPain: chinese
+      ? "文档事实——希望在没有宿命论式预测的前提下，获得自我理解、关系洞察或情绪反思。"
+      : "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
+    icpInterests: chinese
+      ? ["占星", "心理学", "个人成长", "正念"]
+      : ["Astrology", "Psychology", "Personal growth", "Mindfulness"],
+    icpPain: chinese
+      ? "想使用自我理解工具，但拒绝宿命论式算命。"
+      : "Wants a self-understanding tool but rejects deterministic fortune-telling.",
+    icpBehavior: chinese
+      ? "活跃于社交平台，会分享占星内容，并重视情绪健康。"
+      : "Socially active, shares astrology content, and values emotional health.",
+    icpPositioning: chinese
+      ? "自我反思，而非命运预测"
+      : "Self-reflection, not fate prediction",
+    jtbd: chinese
+      ? "在不接受宿命论式算命的前提下理解自己。"
+      : "Understand themselves without deterministic fortune-telling.",
     directCompetitors: [],
     indirectAlternatives: [],
     excludedAlternatives: [],
     firstOutcome:
       agent === "seo"
-        ? "Own the free birth-chart query and convert to chart generation"
-        : "Keep mobile anonymous chart generation crawlable and reliable",
+        ? chinese
+          ? "占领免费出生星盘查询并转化为星盘生成"
+          : "Own the free birth-chart query and convert to chart generation"
+        : chinese
+          ? "保持移动端匿名星盘生成可抓取且可靠"
+          : "Keep mobile anonymous chart generation crawlable and reliable",
     country: "CN",
     locale: "zh-CN",
     device: "mobile",
@@ -244,37 +261,65 @@ function genericDraft(
   agent: AgentKind,
   targetUrl: string,
   host: string,
+  presentationLocale: string,
 ): AgentProfileDraft {
-  const label = host || "Unknown website";
+  const chinese = usesChinesePresentation(presentationLocale);
+  const label = host || (chinese ? "未知网站" : "Unknown website");
   return {
     schemaVersion: AGENT_PROFILE_SCHEMA_VERSION,
     agent,
     targetUrl,
     host,
     productName: label,
-    oneLinePositioning: `Public website at ${label}; its product and positioning are not yet confirmed.`,
-    categories: ["Unknown — confirm the category."],
-    businessModel: "Unknown — confirm the business model.",
-    primaryCta: "Unknown — confirm the primary call to action.",
+    oneLinePositioning: chinese
+      ? `${label} 上的公开网站；其产品与定位尚未确认。`
+      : `Public website at ${label}; its product and positioning are not yet confirmed.`,
+    categories: [
+      chinese ? "未知——请确认产品类别。" : "Unknown — confirm the category.",
+    ],
+    businessModel: chinese
+      ? "未知——请确认商业模式。"
+      : "Unknown — confirm the business model.",
+    primaryCta: chinese
+      ? "未知——请确认主要行动号召。"
+      : "Unknown — confirm the primary call to action.",
     trustSignals: [],
-    primaryIcp: "Unknown — confirm the primary audience.",
-    buyer: "Unknown — confirm the buying role.",
-    user: "Unknown — confirm the user role.",
-    triggerPain: "Unknown — confirm the trigger or pain.",
+    primaryIcp: chinese
+      ? "未知——请确认主要受众。"
+      : "Unknown — confirm the primary audience.",
+    buyer: chinese
+      ? "未知——请确认购买者角色。"
+      : "Unknown — confirm the buying role.",
+    user: chinese ? "未知——请确认用户角色。" : "Unknown — confirm the user role.",
+    triggerPain: chinese
+      ? "未知——请确认触发因素或痛点。"
+      : "Unknown — confirm the trigger or pain.",
     icpInterests: [],
-    icpPain: "Unknown — confirm the audience pain.",
-    icpBehavior: "Unknown — confirm audience behavior.",
-    icpPositioning: "Unknown — confirm the positioning.",
-    jtbd: "Unknown — confirm the job to be done.",
+    icpPain: chinese
+      ? "未知——请确认受众痛点。"
+      : "Unknown — confirm the audience pain.",
+    icpBehavior: chinese
+      ? "未知——请确认受众行为。"
+      : "Unknown — confirm audience behavior.",
+    icpPositioning: chinese
+      ? "未知——请确认定位。"
+      : "Unknown — confirm the positioning.",
+    jtbd: chinese
+      ? "未知——请确认需要完成的任务。"
+      : "Unknown — confirm the job to be done.",
     directCompetitors: [],
     indirectAlternatives: [],
     excludedAlternatives: [],
     firstOutcome:
       agent === "seo"
-        ? "Confirm the first search-growth outcome."
-        : "Confirm the first technical reliability outcome.",
-    country: "GLOBAL",
-    locale: "en",
+        ? chinese
+          ? "确认首个搜索增长目标。"
+          : "Confirm the first search-growth outcome."
+        : chinese
+          ? "确认首个技术可靠性目标。"
+          : "Confirm the first technical reliability outcome.",
+    country: chinese ? "全球" : "GLOBAL",
+    locale: chinese ? "zh-CN" : "en",
     device: "mobile",
     pageType: "homepage",
     targetQuery: "",
@@ -294,23 +339,25 @@ function genericDraft(
 export function createAgentProfileDraft(
   agent: AgentKind,
   url: string,
+  presentationLocale = "en",
 ): AgentProfileDraft {
   const targetUrl = url.trim();
   const host = displayHost(targetUrl);
   return host === "astrologywiki.com"
-    ? astrologyWikiDraft(agent, targetUrl)
-    : genericDraft(agent, targetUrl, host);
+    ? astrologyWikiDraft(agent, targetUrl, presentationLocale)
+    : genericDraft(agent, targetUrl, host, presentationLocale);
 }
 
 /** Changing a URL invalidates confirmation and any edits from the previous target. */
 export function redraftAgentProfileForUrl(
   profile: AgentProfileDraft,
   url: string,
+  presentationLocale = "en",
 ): AgentProfileDraft {
   const targetUrl = url.trim();
   return targetUrl === profile.targetUrl
     ? copyDraft(profile)
-    : createAgentProfileDraft(profile.agent, targetUrl);
+    : createAgentProfileDraft(profile.agent, targetUrl, presentationLocale);
 }
 
 /** Apply only declared editable fields and return the run context to draft state. */
