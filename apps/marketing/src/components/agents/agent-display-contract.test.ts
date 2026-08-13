@@ -67,6 +67,25 @@ describe("Agent display vocabulary", () => {
     expect(supportsAgentDisplayVocabulary(data(), "seo")).toBe(true);
   });
 
+  it("accepts crawl vocabulary for SEO because both Agents receive the neutral ledger", () => {
+    const current = data();
+    const crawl: AgentAuditSuccessData = {
+      ...current,
+      result: {
+        ...current.result,
+        records: [
+          {
+            ...current.result.records[0]!,
+            id: "non_2xx_final_status",
+            category: "crawl",
+          },
+        ],
+      },
+    };
+
+    expect(supportsAgentDisplayVocabulary(crawl, "seo")).toBe(true);
+  });
+
   it.each([
     ["record id", { id: "future_record" }],
     ["evidence label", { evidenceLabel: "future_measurement" }],

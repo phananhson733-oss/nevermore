@@ -9,12 +9,39 @@ import {
   type AgentAuditHandlerDependencies,
 } from "./audit-handler.ts";
 
+const RECORD_SPECS = [
+  ["robots_resource", "crawl"],
+  ["sitemap_resource", "crawl"],
+  ["non_2xx_final_status", "crawl"],
+  ["redirect_chain", "crawl"],
+  ["http_url", "crawl"],
+  ["noindex_directive", "indexability"],
+  ["canonical_missing", "indexability"],
+  ["canonical_differs", "indexability"],
+  ["title_missing", "metadata"],
+  ["title_duplicate", "metadata"],
+  ["meta_description_missing", "metadata"],
+  ["meta_description_duplicate", "metadata"],
+  ["h1_missing", "structure"],
+  ["multiple_h1", "structure"],
+  ["sitemap_page_without_observed_inlink", "links"],
+  ["internal_target_http_error", "links"],
+  ["json_ld_parse_error", "structured_data"],
+] as const satisfies readonly (readonly [string, SeoAuditRecord["category"]])[];
+
 function record(
+  id: string,
   category: SeoAuditRecord["category"],
-  state: SeoAuditRecord["state"],
+  index: number,
 ): SeoAuditRecord {
+  const state: SeoAuditRecord["state"] =
+    index % 3 === 0
+      ? "observed"
+      : index % 3 === 1
+        ? "not_observed"
+        : "unverified";
   return {
-    id: `${category}_check`,
+    id,
     category,
     state,
     unit: "pages",
@@ -63,14 +90,9 @@ const upstreamPayload = {
       sitemapReferencesObserved: 1,
       sitemapFetched: false,
     },
-    records: [
-      record("crawl", "observed"),
-      record("indexability", "not_observed"),
-      record("metadata", "unverified"),
-      record("structure", "observed"),
-      record("links", "unverified"),
-      record("structured_data", "not_observed"),
-    ],
+    records: RECORD_SPECS.map(([id, category], index) =>
+      record(id, category, index),
+    ),
     pages: [],
   },
 } satisfies SeoAuditPayload;
@@ -168,7 +190,7 @@ describe("handleAgentAuditRequest", () => {
     expect(order).toEqual(["auth", "delegate"]);
   });
 
-  it("projects the SEO categories and preserves evidence semantics", async () => {
+  it("returns the complete neutral ledger for SEO without inventing evaluation fields", async () => {
     const response = await handleAgentAuditRequest(
       request(),
       "seo",
@@ -195,11 +217,7 @@ describe("handleAgentAuditRequest", () => {
           scannedAt: upstreamPayload.result.scannedAt,
           coverage: upstreamPayload.result.coverage,
           siteResources: upstreamPayload.result.siteResources,
-          records: [
-            upstreamPayload.result.records[2],
-            upstreamPayload.result.records[3],
-            upstreamPayload.result.records[5],
-          ],
+          records: upstreamPayload.result.records,
         },
       },
     });
@@ -210,7 +228,7 @@ describe("handleAgentAuditRequest", () => {
   });
 
   it("rebuilds nested evidence objects from only public contract fields", async () => {
-    const observedRecord = upstreamPayload.result.records[3];
+    const observedRecord = upstreamPayload.result.records[0]!;
     const upstream = Response.json({
       data: {
         ...upstreamPayload,
@@ -224,20 +242,22 @@ describe("handleAgentAuditRequest", () => {
             ...upstreamPayload.result.siteResources,
             internal: { robotsBody: "private robots body" },
           },
-          records: [
-            {
-              ...observedRecord,
-              pages: [{ html: "private page source" }],
-              observations: observedRecord.observations.map((observation) => ({
-                ...observation,
-                secret: "private observation metadata",
-                values: observation.values.map((entry) => ({
+          records: upstreamPayload.result.records.map((entry) =>
+            entry.id === observedRecord.id
+              ? {
                   ...entry,
-                  raw: "private raw measurement",
-                })),
-              })),
-            },
-          ],
+                  pages: [{ html: "private page source" }],
+                  observations: entry.observations.map((observation) => ({
+                    ...observation,
+                    secret: "private observation metadata",
+                    values: observation.values.map((value) => ({
+                      ...value,
+                      raw: "private raw measurement",
+                    })),
+                  })),
+                }
+              : entry,
+          ),
         },
       },
     });
@@ -255,12 +275,12 @@ describe("handleAgentAuditRequest", () => {
       scannedAt: upstreamPayload.result.scannedAt,
       coverage: upstreamPayload.result.coverage,
       siteResources: upstreamPayload.result.siteResources,
-      records: [observedRecord],
+      records: upstreamPayload.result.records,
     });
     expect(JSON.stringify(body)).not.toContain("private");
   });
 
-  it("isolates the Tech categories", async () => {
+  it("returns the same complete neutral ledger for Tech with independent run identity", async () => {
     const response = await handleAgentAuditRequest(
       request(),
       "tech",
@@ -268,14 +288,51 @@ describe("handleAgentAuditRequest", () => {
     );
     const body = await response.json();
 
-    expect(
-      body.data.result.records.map((entry: SeoAuditRecord) => entry.category),
-    ).toEqual(["crawl", "indexability", "links"]);
-    expect(body.data.result.records.map((entry: SeoAuditRecord) => entry.state)).toEqual([
-      "observed",
-      "not_observed",
-      "unverified",
-    ]);
+    expect(body.data.run.agent).toBe("tech");
+    expect(body.data.result.records).toEqual(upstreamPayload.result.records);
+    expect(body.data.result.records).toHaveLength(17);
+  });
+
+  it.each([
+    [
+      "unknown record ID",
+      (records: SeoAuditRecord[]) => {
+        records[0] = { ...records[0]!, id: "future_unknown_record" };
+      },
+    ],
+    [
+      "known record with the wrong category",
+      (records: SeoAuditRecord[]) => {
+        records[0] = { ...records[0]!, category: "metadata" };
+      },
+    ],
+    [
+      "missing record",
+      (records: SeoAuditRecord[]) => {
+        records.pop();
+      },
+    ],
+    [
+      "duplicate record",
+      (records: SeoAuditRecord[]) => {
+        records[1] = records[0]!;
+      },
+    ],
+  ] as const)("fails closed for a successful upstream ledger with a %s", async (_label, mutate) => {
+    const payload = structuredClone(upstreamPayload);
+    mutate(payload.result.records);
+    const upstream = Response.json({ data: payload });
+
+    const response = await handleAgentAuditRequest(
+      request(),
+      "seo",
+      dependencies({ delegate: async () => upstream }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "audit_response_invalid" },
+    });
   });
 
   it("rebuilds a known upstream error and copies only safe retry headers", async () => {

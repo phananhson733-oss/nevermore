@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./agent-audit": "./src/agent-audit/index.ts",
     "./seo-audit/contract": "./src/seo-audit/contract.ts",
     "./quick-wins/csv": "./src/quick-wins/csv.ts",
     "./quick-wins/track": "./src/quick-wins/track.ts",

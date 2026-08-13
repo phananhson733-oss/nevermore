@@ -79,6 +79,7 @@ describe("homepage Agent links", () => {
     expect(contents).toContain('type="text"');
     expect(contents).toContain('inputMode="url"');
     expect(contents).toContain("storePendingAgentIntent(");
+    expect(contents).toContain('"prepare_profile"');
     expect(contents).toContain("getSessionIntentStorage()");
     expect(contents).not.toContain("window.sessionStorage");
     expect(contents).toContain("AGENT_PATH[agent]");

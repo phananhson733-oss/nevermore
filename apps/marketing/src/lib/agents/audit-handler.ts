@@ -3,7 +3,6 @@
 // @pos    -- shared server-only execution boundary for SEO and Tech Agent APIs
 
 import type {
-  SeoAuditCategory,
   SeoAuditCoverage,
   SeoAuditRecord,
   SeoAuditSiteResources,
@@ -31,13 +30,6 @@ const DEFAULT_DEPENDENCIES: AgentAuditHandlerDependencies = {
   authenticate: getServerAuthenticationStatus,
   delegate: (request) =>
     handleSeoAuditRequest(request, undefined, { forceBufferedJson: true }),
-};
-
-const ALLOWED_CATEGORIES: Readonly<
-  Record<AgentKind, ReadonlySet<SeoAuditCategory>>
-> = {
-  seo: new Set(["metadata", "structure", "structured_data"]),
-  tech: new Set(["crawl", "indexability", "links"]),
 };
 
 const UPSTREAM_ERROR_BODY_LIMIT_BYTES = 4_096;
@@ -329,9 +321,7 @@ export async function handleAgentAuditRequest(
       scannedAt: result.scannedAt,
       coverage: projectCoverage(result.coverage),
       siteResources: projectSiteResources(result.siteResources),
-      records: result.records
-        .filter((record) => ALLOWED_CATEGORIES[agent].has(record.category))
-        .map(projectRecord),
+      records: result.records.map(projectRecord),
     },
   };
 

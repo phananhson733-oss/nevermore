@@ -1,5 +1,5 @@
 // @input  — next-intl、next/navigation、Agent intent helper、localePath
-// @output — HeroSection 组件（一个 URL 输入 + SEO/Tech Agent 双入口）
+// @output — HeroSection（URL + SEO/Tech Profile 准备入口，不自动运行审计）
 // @pos    — 首页区块 1，深色背景，SPEC 2.5.2 / Signal Console 设计规范
 // 一旦本文件被更新，务必更新开头注释及所属文件夹的 _DIR.md
 "use client";
@@ -30,7 +30,9 @@ export function HeroSection() {
     if (!url) return;
 
     const storage = getSessionIntentStorage();
-    if (storage) storePendingAgentIntent(storage, agent, url);
+    if (storage) {
+      storePendingAgentIntent(storage, agent, url, "prepare_profile");
+    }
     router.push(localePath(locale, AGENT_PATH[agent]));
   }
 

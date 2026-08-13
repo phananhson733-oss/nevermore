@@ -5,28 +5,29 @@
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import type { AgentKind } from "./agent-types";
 
+const NEUTRAL_AGENT_RECORD_IDS = new Set([
+  "robots_resource",
+  "sitemap_resource",
+  "non_2xx_final_status",
+  "redirect_chain",
+  "http_url",
+  "noindex_directive",
+  "canonical_missing",
+  "canonical_differs",
+  "title_missing",
+  "title_duplicate",
+  "meta_description_missing",
+  "meta_description_duplicate",
+  "h1_missing",
+  "multiple_h1",
+  "json_ld_parse_error",
+  "sitemap_page_without_observed_inlink",
+  "internal_target_http_error",
+]);
+
 export const AGENT_RECORD_IDS: Readonly<Record<AgentKind, ReadonlySet<string>>> = {
-  seo: new Set([
-    "title_missing",
-    "title_duplicate",
-    "meta_description_missing",
-    "meta_description_duplicate",
-    "h1_missing",
-    "multiple_h1",
-    "json_ld_parse_error",
-  ]),
-  tech: new Set([
-    "robots_resource",
-    "sitemap_resource",
-    "non_2xx_final_status",
-    "redirect_chain",
-    "http_url",
-    "noindex_directive",
-    "canonical_missing",
-    "canonical_differs",
-    "sitemap_page_without_observed_inlink",
-    "internal_target_http_error",
-  ]),
+  seo: NEUTRAL_AGENT_RECORD_IDS,
+  tech: NEUTRAL_AGENT_RECORD_IDS,
 };
 
 export const AGENT_EVIDENCE_LABELS: ReadonlySet<string> = new Set([

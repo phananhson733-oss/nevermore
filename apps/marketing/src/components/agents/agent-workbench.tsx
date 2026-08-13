@@ -1,31 +1,30 @@
-// @input  -- exact Agent identity, session/audit endpoints, sign-in dialog, window focus
-// @output -- isolated Agent state plus one-shot pending-intent resume after sign-in
-// @pos    -- primary client workbench for /agents/seo and /agents/tech
+// @input  -- exact Agent identity, local Profile, session/audit endpoints, and intent handoff
+// @output -- isolated four-stage Agent state with purpose-safe sign-in resume
+// @pos    -- primary client workbench for independent /agents/seo and /agents/tech routes
 
 "use client";
 
-import {
-  ArrowRight,
-  LoaderCircle,
-  LockKeyhole,
-  Radar,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { LoaderCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
-import type {
-  AgentAuditSuccessData,
-} from "../../lib/agents/audit-contract";
+import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import { isAgentAuditSuccessEnvelope } from "../../lib/agents/audit-contract";
 import { SignInDialog } from "../auth/sign-in-dialog";
 import { supportsAgentDisplayVocabulary } from "./agent-display-contract";
+import { AgentProfilePanel } from "./agent-profile-panel";
+import {
+  createAgentProfileDraft,
+  type AgentProfileDraft,
+} from "./agent-profile";
 import { AgentResults } from "./agent-results";
 import {
   clearPendingAgentIntent,
   getSessionIntentStorage,
+  isRunnablePendingAgentIntent,
   readPendingAgentIntent,
   restorePendingAgentIntent,
-  storePendingAgentIntent,
+  storeConfirmedAgentRunIntent,
   type PendingAgentIntent,
 } from "./agent-intent";
 import { AGENT_ENDPOINT, type AgentKind } from "./agent-types";
@@ -59,7 +58,6 @@ function errorCodeOf(body: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
-/** Validate the complete wire envelope again before rendering it in-browser. */
 function successDataOf(
   body: unknown,
   expectedAgent: AgentKind,
@@ -96,11 +94,12 @@ export function AgentWorkbench(props: AgentWorkbenchProps) {
 function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const t = useTranslations("agents.workbench");
   const auditT = useTranslations("tools.seoAudit");
-  const [url, setUrl] = useState("");
+  const [profile, setProfile] = useState<AgentProfileDraft>(() =>
+    createAgentProfileDraft(agent, ""),
+  );
   const [loading, setLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [data, setData] = useState<AgentAuditSuccessData | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const mounted = useRef(true);
   const operationId = useRef(0);
@@ -110,7 +109,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
   const runAudit = useCallback(
     async (
-      submittedUrl: string,
+      confirmedProfile: AgentProfileDraft,
       currentOperation: number,
       signal?: AbortSignal,
       pendingIntent?: PendingAgentIntent,
@@ -122,7 +121,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             "content-type": "application/json",
             accept: "application/json",
           },
-          body: JSON.stringify({ url: submittedUrl }),
+          body: JSON.stringify({ url: confirmedProfile.targetUrl }),
           signal,
         });
         const body = (await response.json().catch(() => null)) as unknown;
@@ -141,12 +140,13 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             const stored = storage
               ? pendingIntent
                 ? restorePendingAgentIntent(storage, agent, pendingIntent)
-                : storePendingAgentIntent(storage, agent, submittedUrl)
+                : storeConfirmedAgentRunIntent(storage, confirmedProfile)
               : null;
             if (!stored) {
               setErrorCode("intent_unavailable");
               return;
             }
+            resumeIntent.current = stored;
             setSignInOpen(true);
           }
           setErrorCode(code);
@@ -159,9 +159,6 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
           return;
         }
         setData(success);
-        // A null selection lets AgentResults choose the first record after its
-        // tested affected-count ordering, not whichever record arrived first.
-        setSelectedId(null);
       } catch {
         if (
           mounted.current &&
@@ -177,15 +174,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
   const gateAndRun = useCallback(
     async (
-      submittedUrl: string,
+      confirmedProfile: AgentProfileDraft,
       signal?: AbortSignal,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
       silentSignedOut = false,
     ): Promise<void> => {
-      // The ref closes the same-render double-click window before React has
-      // committed `loading`. A Strict Effects resume is allowed to replace its
-      // just-aborted predecessor; the operation id prevents stale completion.
       if (busy.current && !replaceInterruptedResume) return;
       const currentOperation = operationId.current + 1;
       operationId.current = currentOperation;
@@ -194,8 +188,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         setLoading(true);
         setErrorCode(null);
         setData(null);
-        setSelectedId(null);
       }
+
       let sessionStatus: SessionStatus;
       try {
         sessionStatus = await getSessionStatus(signal);
@@ -225,14 +219,11 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         }
         const signedIn = sessionStatus === "signed_in";
 
-        // A focus probe is intentionally invisible while the app login tab has
-        // not established a shared session yet.
         if (silentSignedOut) {
           if (!signedIn) return;
           setLoading(true);
           setErrorCode(null);
           setData(null);
-          setSelectedId(null);
         }
 
         if (pendingIntent && pendingIntent.expiresAt <= Date.now()) {
@@ -250,37 +241,25 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
             return;
           }
           const existing = readPendingAgentIntent(storage, agent);
-          if (pendingIntent && !existing) {
-            setErrorCode("intent_expired");
+          const stored = pendingIntent
+            ? existing && isRunnablePendingAgentIntent(existing)
+              ? existing
+              : null
+            : storeConfirmedAgentRunIntent(storage, confirmedProfile);
+          if (!stored) {
+            setSignInOpen(false);
+            setErrorCode(pendingIntent ? "intent_expired" : "intent_unavailable");
             return;
           }
-          if (!pendingIntent && (!existing || existing.url !== submittedUrl)) {
-            const stored = storePendingAgentIntent(
-              storage,
-              agent,
-              submittedUrl,
-            );
-            if (!stored) {
-              setSignInOpen(false);
-              setErrorCode("intent_unavailable");
-              return;
-            }
-          }
+          resumeIntent.current = stored;
           setSignInOpen(true);
           return;
         }
 
-        // Clear before POST. A reload after this point cannot replay a run the
-        // visitor already authorized, and another Agent's slot is untouched.
         setSignInOpen(false);
         const storage = getSessionIntentStorage();
         if (storage) clearPendingAgentIntent(storage, agent);
-        await runAudit(
-          submittedUrl,
-          currentOperation,
-          signal,
-          pendingIntent,
-        );
+        await runAudit(confirmedProfile, currentOperation, signal, pendingIntent);
       } finally {
         if (currentOperation === operationId.current) {
           busy.current = false;
@@ -293,7 +272,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
   const startOperation = useCallback(
     (
-      submittedUrl: string,
+      confirmedProfile: AgentProfileDraft,
       replaceInterruptedResume = false,
       pendingIntent?: PendingAgentIntent,
       silentSignedOut = false,
@@ -303,7 +282,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       const controller = new AbortController();
       activeOperationController.current = controller;
       const completion = gateAndRun(
-        submittedUrl,
+        confirmedProfile,
         controller.signal,
         replaceInterruptedResume,
         pendingIntent,
@@ -320,7 +299,6 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
   useEffect(() => {
     mounted.current = true;
-
     return () => {
       mounted.current = false;
       activeOperationController.current?.abort();
@@ -334,9 +312,24 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       (storage ? readPendingAgentIntent(storage, agent) : null) ??
       resumeIntent.current;
     if (!pending) return;
+
+    if (pending.purpose === "prepare_profile") {
+      setProfile(createAgentProfileDraft(agent, pending.url));
+      if (storage) clearPendingAgentIntent(storage, agent);
+      return;
+    }
+
+    if (!isRunnablePendingAgentIntent(pending) || !pending.confirmedProfile) {
+      if (storage) clearPendingAgentIntent(storage, agent);
+      return;
+    }
     resumeIntent.current = pending;
-    setUrl(pending.url);
-    const started = startOperation(pending.url, true, pending);
+    setProfile(pending.confirmedProfile);
+    const started = startOperation(
+      pending.confirmedProfile,
+      true,
+      pending,
+    );
     if (!started) return;
     void started.completion.finally(() => {
       if (!started.controller.signal.aborted) resumeIntent.current = null;
@@ -349,30 +342,43 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
 
     function resumeAfterAppSignIn(): void {
       const storage = getSessionIntentStorage();
-      if (!storage) return;
-      const pending = readPendingAgentIntent(storage, agent);
-      if (!pending) return;
-      startOperation(pending.url, false, pending, true);
+      const pending =
+        (storage ? readPendingAgentIntent(storage, agent) : null) ??
+        resumeIntent.current;
+      if (
+        !pending ||
+        !isRunnablePendingAgentIntent(pending) ||
+        !pending.confirmedProfile
+      ) {
+        return;
+      }
+      startOperation(pending.confirmedProfile, false, pending, true);
     }
 
     window.addEventListener("focus", resumeAfterAppSignIn);
     return () => window.removeEventListener("focus", resumeAfterAppSignIn);
   }, [agent, signInOpen, startOperation]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    if (!url.trim() || busy.current) return;
-    // Preserve what the visitor entered (including a scheme-less host) across
-    // sign-in. Normalization and validation remain server authority.
-    startOperation(url);
+  function handleProfileChange(next: AgentProfileDraft): void {
+    activeOperationController.current?.abort();
+    activeOperationController.current = null;
+    operationId.current += 1;
+    busy.current = false;
+    setLoading(false);
+    setErrorCode(null);
+    setData(null);
+    setProfile(next);
+  }
+
+  function handleProfileConfirm(confirmedProfile: AgentProfileDraft): void {
+    if (confirmedProfile.agent !== agent || busy.current) return;
+    setProfile(confirmedProfile);
+    startOperation(confirmedProfile);
   }
 
   function handleDialogChange(open: boolean): void {
     setSignInOpen(open);
     if (!open) {
-      // Closing the dialog is an authoritative cancellation. A focus probe
-      // that was already checking the shared session must not later start a
-      // crawl after the visitor has dismissed the sign-in flow.
       activeOperationController.current?.abort();
       activeOperationController.current = null;
       operationId.current += 1;
@@ -380,6 +386,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       setLoading(false);
       const storage = getSessionIntentStorage();
       if (storage) clearPendingAgentIntent(storage, agent);
+      resumeIntent.current = null;
       if (errorCode === "auth_required") setErrorCode(null);
     }
   }
@@ -388,6 +395,8 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     errorCode && EXISTING_AUDIT_ERROR_CODES.has(errorCode)
       ? (`errors.${errorCode}` as const)
       : null;
+  const urlIsInvalid =
+    errorCode !== null && URL_INPUT_ERROR_CODES.has(errorCode);
 
   return (
     <section
@@ -396,138 +405,64 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       className="scroll-mt-24"
       aria-busy={loading}
     >
-      <div className="relative overflow-hidden rounded-card border border-brand-border-card bg-brand-panel p-5 md:p-7">
+      <AgentProfilePanel
+        agent={agent}
+        profile={profile}
+        disabled={loading}
+        onChange={handleProfileChange}
+        onConfirm={handleProfileConfirm}
+        errorId={errorCode ? `${agent}-agent-error` : undefined}
+        urlInvalid={urlIsInvalid}
+      />
+
+      {loading ? (
         <div
-          aria-hidden="true"
-          className="absolute inset-x-0 top-0 h-px bg-brand-gradient opacity-80"
-        />
-        <div className="relative">
-          <p className="font-mono text-[10px] tracking-[0.13em] text-brand-accent-text uppercase">
-            {t("stage1")}
-          </p>
-          <div className="mt-2 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div>
-              <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-text-dark-primary">
-                {t(`${agent}.title`)}
-              </h2>
-              <p className="mt-2 max-w-2xl text-[12.5px] leading-[1.6] text-text-dark-secondary">
-                {t(`${agent}.body`)}
-              </p>
-            </div>
-            <p className="flex items-center gap-2 font-mono text-[9.5px] tracking-[0.04em] text-text-dark-faint">
-              <LockKeyhole aria-hidden="true" className="size-3 text-brand-accent" />
-              {t("accountGate")}
+          role="status"
+          className="mt-5 flex items-start gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-4"
+        >
+          <LoaderCircle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 animate-spin text-brand-accent"
+          />
+          <div>
+            <p className="text-[12.5px] font-semibold text-text-dark-primary">
+              {t("loadingTitle")}
+            </p>
+            <p className="mt-1 text-[11.5px] leading-[1.6] text-text-dark-secondary">
+              {t("loadingBody")}
             </p>
           </div>
-
-          <form
-            onSubmit={handleSubmit}
-            className="mt-6 grid gap-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
-          >
-            <label className="block">
-              <span
-                id={`${agent}-agent-url-label`}
-                className="mb-2 block font-mono text-[10px] tracking-[0.12em] text-text-dark-secondary uppercase"
-              >
-                {t("urlLabel")}
-              </span>
-              <span className="flex h-12.5 items-center gap-2.5 rounded-[10px] border border-brand-border-strong bg-brand-bg px-4 transition-colors focus-within:border-brand-accent/70">
-                <Radar
-                  aria-hidden="true"
-                  className="size-[15px] shrink-0 text-brand-accent"
-                />
-                <input
-                  id={`${agent}-agent-url`}
-                  type="text"
-                  inputMode="url"
-                  autoComplete="url"
-                  required
-                  maxLength={2_048}
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  aria-invalid={
-                    errorCode !== null && URL_INPUT_ERROR_CODES.has(errorCode)
-                  }
-                  aria-describedby={`${agent}-agent-scope${
-                    errorCode ? ` ${agent}-agent-error` : ""
-                  }`}
-                  placeholder={t("placeholder")}
-                  className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-dark-primary outline-none placeholder:text-text-dark-secondary"
-                />
-              </span>
-            </label>
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex h-12.5 items-center justify-center gap-2 rounded-[10px] bg-brand-gradient px-6 text-[14px] font-semibold text-brand-on-accent shadow-cta-sm transition-shadow hover:shadow-cta disabled:cursor-wait disabled:opacity-70 disabled:shadow-none"
-            >
-              {loading ? t("running") : t("run")}
-              {loading ? (
-                <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-              ) : (
-                <ArrowRight aria-hidden="true" className="size-4" />
-              )}
-            </button>
-          </form>
-
-          <p
-            id={`${agent}-agent-scope`}
-            className="mt-3 text-[11.5px] leading-[1.6] text-text-dark-secondary"
-          >
-            {t(`${agent}.scope`)}
-          </p>
-
-          {loading ? (
-            <div
-              role="status"
-              className="mt-5 flex items-start gap-3 rounded-row border border-brand-border bg-brand-panel-sunken p-4"
-            >
-              <LoaderCircle
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 animate-spin text-brand-accent"
-              />
-              <div>
-                <p className="text-[12.5px] font-semibold text-text-dark-primary">
-                  {t("loadingTitle")}
-                </p>
-                <p className="mt-1 text-[11.5px] leading-[1.6] text-text-dark-secondary">
-                  {t("loadingBody")}
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          {errorCode ? (
-            <p
-              id={`${agent}-agent-error`}
-              role="alert"
-              className="mt-5 rounded-row border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] leading-[1.55] text-brand-error"
-            >
-              {auditErrorKey
-                ? auditT(auditErrorKey)
-                : errorCode === "auth_required"
-                  ? t("errors.auth_required")
-                  : errorCode === "auth_unavailable"
-                    ? t("errors.auth_unavailable")
-                    : errorCode === "intent_expired"
-                      ? t("errors.intent_expired")
-                      : errorCode === "intent_unavailable"
-                        ? t("errors.intent_unavailable")
-                        : errorCode === "audit_response_invalid"
-                          ? t("errors.audit_response_invalid")
-                          : t("errors.unknown")}
-            </p>
-          ) : null}
         </div>
-      </div>
+      ) : null}
+
+      {errorCode ? (
+        <p
+          id={`${agent}-agent-error`}
+          role="alert"
+          className="mt-5 rounded-row border border-brand-error/25 bg-brand-error/[0.08] px-4 py-3 text-[12.5px] leading-[1.55] text-brand-error"
+        >
+          {auditErrorKey
+            ? auditT(auditErrorKey)
+            : errorCode === "auth_required"
+              ? t("errors.auth_required")
+              : errorCode === "auth_unavailable"
+                ? t("errors.auth_unavailable")
+                : errorCode === "intent_expired"
+                  ? t("errors.intent_expired")
+                  : errorCode === "intent_unavailable"
+                    ? t("errors.intent_unavailable")
+                    : errorCode === "audit_response_invalid"
+                      ? t("errors.audit_response_invalid")
+                      : t("errors.unknown")}
+        </p>
+      ) : null}
 
       {data ? (
         <AgentResults
           agent={agent}
           locale={locale}
           data={data}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
+          profile={profile}
         />
       ) : null}
 

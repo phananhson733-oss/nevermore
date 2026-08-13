@@ -1,8 +1,12 @@
 // @input  -- browser sessionStorage, exact Agent identity, URL, and current time
-// @output -- safe storage acquisition plus ten-minute, Agent-isolated pending run intents
-// @pos    -- small browser-session handoff across Google/Supabase sign-in reloads
+// @output -- safe storage plus purpose-versioned, ten-minute Agent-local intents
+// @pos    -- homepage Profile preparation and auth-resume handoff without auto-run ambiguity
 
 import type { AgentKind } from "./agent-types";
+import {
+  isConfirmedAgentProfile,
+  type AgentProfileDraft,
+} from "./agent-profile";
 
 /** The sign-in handoff must never outlive ten minutes in this browser tab. */
 export const AGENT_INTENT_TTL_MS = 10 * 60 * 1_000;
@@ -34,14 +38,25 @@ export function getSessionIntentStorage(
   }
 }
 
+export type PendingAgentIntentPurpose =
+  | "prepare_profile"
+  | "run_confirmed_profile";
+
 export interface PendingAgentIntent {
   readonly agent: AgentKind;
+  readonly purpose: PendingAgentIntentPurpose;
   readonly url: string;
   readonly createdAt: number;
   readonly expiresAt: number;
+  /** Present only for a confirmed run interrupted by authentication. */
+  readonly confirmedProfile?: AgentProfileDraft;
 }
 
 export function pendingAgentIntentKey(agent: AgentKind): string {
+  return `gengrowth:agent-intent:${agent}:v2`;
+}
+
+function legacyPendingAgentIntentKey(agent: AgentKind): string {
   return `gengrowth:agent-intent:${agent}:v1`;
 }
 
@@ -51,8 +66,16 @@ function isPendingIntent(
 ): value is PendingAgentIntent {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Partial<PendingAgentIntent>;
+  const purposeIsKnown =
+    candidate.purpose === "prepare_profile" ||
+    candidate.purpose === "run_confirmed_profile";
+  const confirmedProfileIsValid =
+    candidate.confirmedProfile === undefined ||
+    (candidate.purpose === "run_confirmed_profile" &&
+      isConfirmedAgentProfile(candidate.confirmedProfile, agent, candidate.url));
   return (
     candidate.agent === agent &&
+    purposeIsKnown &&
     typeof candidate.url === "string" &&
     candidate.url.trim().length > 0 &&
     candidate.url.length <= 2_048 &&
@@ -61,29 +84,82 @@ function isPendingIntent(
     typeof candidate.expiresAt === "number" &&
     Number.isFinite(candidate.expiresAt) &&
     candidate.expiresAt > candidate.createdAt &&
-    candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS
+    candidate.expiresAt - candidate.createdAt <= AGENT_INTENT_TTL_MS &&
+    confirmedProfileIsValid
   );
 }
 
+/**
+ * The numeric fourth argument is retained for the existing auth handoff while
+ * callers migrate. New acquisition surfaces must pass an explicit purpose.
+ */
 export function storePendingAgentIntent(
   storage: IntentStorage,
   agent: AgentKind,
   url: string,
-  now = Date.now(),
+  purposeOrNow: PendingAgentIntentPurpose | number = "run_confirmed_profile",
+  explicitNow = Date.now(),
 ): PendingAgentIntent | null {
+  const purpose =
+    typeof purposeOrNow === "number"
+      ? "run_confirmed_profile"
+      : purposeOrNow;
+  const now = typeof purposeOrNow === "number" ? purposeOrNow : explicitNow;
   if (!url.trim() || url.length > 2_048 || !Number.isFinite(now)) return null;
   const intent: PendingAgentIntent = {
     agent,
-    url,
+    purpose,
+    url: url.trim(),
     createdAt: now,
     expiresAt: now + AGENT_INTENT_TTL_MS,
   };
   try {
+    storage.removeItem(legacyPendingAgentIntentKey(agent));
     storage.setItem(pendingAgentIntentKey(agent), JSON.stringify(intent));
     return intent;
   } catch {
     return null;
   }
+}
+
+/** Store the exact, already-confirmed local snapshot for an auth-interrupted run. */
+export function storeConfirmedAgentRunIntent(
+  storage: IntentStorage,
+  profile: AgentProfileDraft,
+  now = Date.now(),
+): PendingAgentIntent | null {
+  if (!isConfirmedAgentProfile(profile, profile.agent, profile.targetUrl)) {
+    return null;
+  }
+  const intent: PendingAgentIntent = {
+    agent: profile.agent,
+    purpose: "run_confirmed_profile",
+    url: profile.targetUrl,
+    createdAt: now,
+    expiresAt: now + AGENT_INTENT_TTL_MS,
+    confirmedProfile: profile,
+  };
+  if (!Number.isFinite(now) || !isPendingIntent(intent, profile.agent)) return null;
+  try {
+    storage.removeItem(legacyPendingAgentIntentKey(profile.agent));
+    storage.setItem(
+      pendingAgentIntentKey(profile.agent),
+      JSON.stringify(intent),
+    );
+    return intent;
+  } catch {
+    return null;
+  }
+}
+
+/** A homepage preparation intent is data for Stage 01, never permission to POST. */
+export function isRunnablePendingAgentIntent(
+  intent: PendingAgentIntent,
+): boolean {
+  return (
+    intent.purpose === "run_confirmed_profile" &&
+    isConfirmedAgentProfile(intent.confirmedProfile, intent.agent, intent.url)
+  );
 }
 
 /** Restore the same still-live intent after an API-level auth race. */
@@ -102,6 +178,7 @@ export function restorePendingAgentIntent(
     return null;
   }
   try {
+    storage.removeItem(legacyPendingAgentIntentKey(agent));
     storage.setItem(pendingAgentIntentKey(agent), JSON.stringify(intent));
     return intent;
   } catch {
@@ -121,6 +198,9 @@ export function readPendingAgentIntent(
   const key = pendingAgentIntentKey(agent);
   let raw: string | null = null;
   try {
+    // v1 had no purpose. Delete rather than guess whether it was a homepage
+    // prefill or a visitor-confirmed run.
+    storage.removeItem(legacyPendingAgentIntentKey(agent));
     raw = storage.getItem(key);
     if (raw === null) return null;
     const parsed = JSON.parse(raw) as unknown;
@@ -150,6 +230,7 @@ export function clearPendingAgentIntent(
 ): void {
   try {
     storage.removeItem(pendingAgentIntentKey(agent));
+    storage.removeItem(legacyPendingAgentIntentKey(agent));
   } catch {
     // The server still authorizes every run; storage is only a UX handoff.
   }

@@ -3,6 +3,7 @@
 // @pos    -- shared wire contract for the SEO and Tech Agent API and UI
 
 import type {
+  SeoAuditCategory,
   SeoAuditCoverage,
   SeoAuditPayload,
   SeoAuditReport,
@@ -22,6 +23,29 @@ export const AGENT_AUDIT_SOURCE_SCHEMA_VERSION =
   "seo_audit.sitewide.v3" as const;
 export const AGENT_AUDIT_SOURCE_SCOPE =
   "discoverable_same_origin_static_html_audit" as const;
+
+/** Exact neutral evidence ledger emitted by seo_audit.sitewide.v3. */
+export const AGENT_AUDIT_RECORD_CATEGORIES = {
+  robots_resource: "crawl",
+  sitemap_resource: "crawl",
+  non_2xx_final_status: "crawl",
+  redirect_chain: "crawl",
+  http_url: "crawl",
+  noindex_directive: "indexability",
+  canonical_missing: "indexability",
+  canonical_differs: "indexability",
+  title_missing: "metadata",
+  title_duplicate: "metadata",
+  meta_description_missing: "metadata",
+  meta_description_duplicate: "metadata",
+  h1_missing: "structure",
+  multiple_h1: "structure",
+  sitemap_page_without_observed_inlink: "links",
+  internal_target_http_error: "links",
+  json_ld_parse_error: "structured_data",
+} as const satisfies Readonly<Record<string, SeoAuditCategory>>;
+
+const AGENT_AUDIT_RECORD_IDS = Object.keys(AGENT_AUDIT_RECORD_CATEGORIES);
 
 export interface AgentAuditSourceProvenance {
   readonly tool: "seo_audit";
@@ -122,7 +146,30 @@ function isSiteResources(value: unknown): value is SeoAuditSiteResources {
   );
 }
 
-function isAgentResult(value: unknown, agent: AgentKind): value is AgentAuditResult {
+function hasCompleteNeutralRecordLedger(
+  records: readonly SeoAuditReport["records"][number][],
+): boolean {
+  if (records.length !== AGENT_AUDIT_RECORD_IDS.length) return false;
+
+  const observedIds = new Set<string>();
+  for (const record of records) {
+    if (
+      !Object.hasOwn(AGENT_AUDIT_RECORD_CATEGORIES, record.id) ||
+      record.category !==
+        AGENT_AUDIT_RECORD_CATEGORIES[
+          record.id as keyof typeof AGENT_AUDIT_RECORD_CATEGORIES
+        ] ||
+      observedIds.has(record.id)
+    ) {
+      return false;
+    }
+    observedIds.add(record.id);
+  }
+
+  return observedIds.size === AGENT_AUDIT_RECORD_IDS.length;
+}
+
+function isAgentResult(value: unknown): value is AgentAuditResult {
   if (
     !isObject(value) ||
     typeof value.targetUrl !== "string" ||
@@ -136,13 +183,7 @@ function isAgentResult(value: unknown, agent: AgentKind): value is AgentAuditRes
     return false;
   }
 
-  const allowed =
-    agent === "seo"
-      ? new Set(["metadata", "structure", "structured_data"])
-      : new Set(["crawl", "indexability", "links"]);
-  return value.records.every(
-    (record) => isObject(record) && allowed.has(record.category as string),
-  );
+  return hasCompleteNeutralRecordLedger(value.records);
 }
 
 export function isAgentAuditSuccessEnvelope(
@@ -171,12 +212,16 @@ export function isAgentAuditSuccessEnvelope(
     return false;
   }
 
-  return isAgentResult(value.data.result, agent);
+  return isAgentResult(value.data.result);
 }
 
 /** Strictly validates the existing buffered crawler envelope before projection. */
 export function isSeoAuditUpstreamSuccessEnvelope(
   value: unknown,
 ): value is SeoAuditUpstreamSuccessEnvelope {
-  return isObject(value) && isSeoAuditPayload(value.data);
+  return (
+    isObject(value) &&
+    isSeoAuditPayload(value.data) &&
+    hasCompleteNeutralRecordLedger(value.data.result.records)
+  );
 }

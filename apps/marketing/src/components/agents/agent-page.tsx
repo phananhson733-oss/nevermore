@@ -128,8 +128,8 @@ export async function AgentPage({
                   {t("howBody")}
                 </p>
               </div>
-              <ol className="grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card md:grid-cols-3">
-                {[1, 2, 3].map((step) => (
+              <ol className="grid gap-px overflow-hidden rounded-card border border-brand-border-card bg-brand-border-card sm:grid-cols-2 xl:grid-cols-4">
+                {[1, 2, 3, 4].map((step) => (
                   <li
                     key={step}
                     className="min-h-[185px] bg-brand-panel-sunken p-5"

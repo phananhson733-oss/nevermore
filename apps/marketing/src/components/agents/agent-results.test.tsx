@@ -1,42 +1,21 @@
-// @input  -- guarded Agent success data rendered with the real English catalog
-// @output -- regression coverage for reach ordering, evidence, and preview boundaries
-// @pos    -- static-render guard for the shared SEO/Tech Agent report surface
+// @vitest-environment jsdom
+// @input  -- one bounded Agent response plus a confirmed Agent-local Profile
+// @output -- integration proof for the independent four-stage result workflow
+// @pos    -- client-state guard connecting Profile, Diagnosis, Recommendations, and Solution
 
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
-import type { SeoAuditRecord } from "@sf/public-tools";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { AgentAuditSuccessData } from "../../lib/agents/audit-contract";
 import en from "../../i18n/messages/en.json";
-import zh from "../../i18n/messages/zh.json";
+import {
+  confirmAgentProfile,
+  createAgentProfileDraft,
+  updateAgentProfile,
+} from "./agent-profile";
 import { AgentResults } from "./agent-results";
-
-function record(
-  id: string,
-  affected: number,
-  overrides: Partial<SeoAuditRecord> = {},
-): SeoAuditRecord {
-  return {
-    id,
-    category: "metadata",
-    state: affected > 0 ? "observed" : "not_observed",
-    unit: "pages",
-    tested: 12,
-    affected,
-    observations:
-      affected > 0
-        ? [
-            {
-              url: `https://example.com/${id}`,
-              values: [{ label: "title", value: null }],
-            },
-          ]
-        : [],
-    limitation: null,
-    ...overrides,
-  };
-}
 
 const data: AgentAuditSuccessData = {
   run: {
@@ -46,159 +25,268 @@ const data: AgentAuditSuccessData = {
     source: {
       tool: "seo_audit",
       schemaVersion: "seo_audit.sitewide.v3",
-      completedAt: "2026-08-12T00:00:00.000Z",
+      completedAt: "2026-08-13T00:00:00.000Z",
       cache: { status: "miss", capturedAt: null },
     },
   },
   result: {
     targetUrl: "https://example.com",
     siteOrigin: "https://example.com",
-    scannedAt: "2026-08-12T00:00:00.000Z",
+    scannedAt: "2026-08-13T00:00:00.000Z",
     coverage: {
-      availability: "partial",
-      pagesInspected: 12,
-      linksObserved: 48,
-      sitemapUrlsObserved: 15,
-      urlsSkipped: 1,
-      urlsBlocked: 2,
-      urlsDisallowed: 3,
-      urlsErrored: 4,
-      stopReason: "max_pages",
+      availability: "unavailable",
+      pagesInspected: 0,
+      linksObserved: 0,
+      sitemapUrlsObserved: 0,
+      urlsSkipped: 0,
+      urlsBlocked: 0,
+      urlsDisallowed: 0,
+      urlsErrored: 0,
+      stopReason: "crawl_failed",
     },
     siteResources: {
-      robotsFetched: true,
-      robotsGroupsObserved: 1,
-      sitemapReferencesObserved: 1,
+      robotsFetched: false,
+      robotsGroupsObserved: 0,
+      sitemapReferencesObserved: 0,
       sitemapFetched: false,
     },
-    records: [
-      record("title_missing", 2),
-      record("title_duplicate", 9, {
-        limitation: "normalised_text_match_within_inspected_pages",
-      }),
-      record("meta_description_missing", 1),
-      record("meta_description_duplicate", 4),
-      record("h1_missing", 0, {
-        category: "structure",
-        state: "unverified",
-        tested: 0,
-      }),
-    ],
+    records: [],
   },
 };
 
-function render(selectedId: string | null = null): string {
-  return renderToStaticMarkup(
-    <NextIntlClientProvider
-      locale="en"
-      timeZone="UTC"
-      messages={{ agents: en.agents, tools: { seoAudit: en.tools.seoAudit } }}
-    >
-      <AgentResults
-        agent="seo"
-        locale="en"
-        data={data}
-        selectedId={selectedId}
-        onSelect={vi.fn()}
-      />
-    </NextIntlClientProvider>,
-  );
-}
-
-function renderUnavailable(locale: "en" | "zh"): string {
-  const messages = locale === "zh" ? zh : en;
-  const unavailableData: AgentAuditSuccessData = {
-    ...data,
-    result: {
-      ...data.result,
-      coverage: {
-        ...data.result.coverage,
-        availability: "unavailable",
-        pagesInspected: 0,
-        linksObserved: 0,
-        sitemapUrlsObserved: 0,
-        urlsSkipped: 0,
-        urlsBlocked: 0,
-        urlsDisallowed: 0,
-        urlsErrored: 0,
-        stopReason: "crawl_failed",
-      },
-    },
-  };
-
-  return renderToStaticMarkup(
-    <NextIntlClientProvider
-      locale={locale}
-      timeZone="UTC"
-      messages={{
-        agents: messages.agents,
-        tools: { seoAudit: messages.tools.seoAudit },
-      }}
-    >
-      <AgentResults
-        agent="seo"
-        locale={locale}
-        data={unavailableData}
-        selectedId={null}
-        onSelect={vi.fn()}
-      />
-    </NextIntlClientProvider>,
-  );
-}
-
 describe("AgentResults", () => {
-  it("renders real capture and coverage facts without a score", () => {
-    const html = render();
-    expect(html).toContain("https://example.com");
-    expect(html).toContain("Pages inspected");
-    expect(html).toContain(">12<");
-    expect(html).toContain("Known URLs not collected");
-    expect(html).toContain(">10<");
-    expect(html).toContain("1</p><p");
-    expect(html.toLocaleLowerCase("en-US")).not.toContain("health score");
+  let host: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+      true;
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
   });
 
-  it.each([
-    ["en" as const, "Known URLs not collected", "Unavailable"],
-    ["zh" as const, "已知未采集 URL", "不可用"],
-  ])(
-    "renders unavailable not-collected reach in %s instead of a numeric zero",
-    (locale, label, unavailable) => {
-      const html = renderUnavailable(locale);
-      const metric = html.slice(html.indexOf(label), html.indexOf(label) + 240);
-
-      expect(metric).toContain(`>${unavailable}<`);
-      expect(metric).not.toContain(">0<");
-    },
-  );
-
-  it("shows only the top three issue records ordered by reach", () => {
-    const html = render();
-    const ids = [
-      ...html.matchAll(/data-testid="agent-opportunity-([a-z0-9_]+)"/g),
-    ].map((match) => match[1]);
-    expect(ids).toEqual([
-      "title_duplicate",
-      "meta_description_duplicate",
-      "title_missing",
-    ]);
-    expect(html).toContain(
-      "Reach is not severity, predicted traffic impact, or an automatic priority.",
-    );
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    host.remove();
   });
 
-  it("preserves evidence and limitation in a not-applied selected template", () => {
-    const html = render("title_duplicate");
-    const solution = html.slice(
-      html.indexOf('data-testid="agent-selected-solution"'),
+  function render(agent: "seo" | "tech", pageOnly = false): void {
+    const draft = updateAgentProfile(
+      createAgentProfileDraft(agent, "https://example.com"),
+      {
+        country: "US",
+        locale: "en-US",
+        pageType: "tool",
+        targetQuery: "technical seo audit",
+        auditScope: pageOnly ? "page-only" : "site-first",
+      },
     );
-    expect(solution).toContain("https://example.com/title_duplicate");
-    expect(solution).toContain("Title text");
-    expect(solution).toContain(
-      "Duplicate groups use case-insensitive, whitespace-normalised text",
+    const profile = confirmAgentProfile(draft);
+
+    act(() => {
+      root.render(
+        <NextIntlClientProvider
+          locale="en"
+          timeZone="UTC"
+          messages={{
+            agents: en.agents,
+            tools: { seoAudit: en.tools.seoAudit },
+          }}
+        >
+          <AgentResults
+            agent={agent}
+            locale="en"
+            data={{ ...data, run: { ...data.run, agent } }}
+            profile={profile}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+  }
+
+  it("connects captured evidence to all four review stages without inventing a score", () => {
+    render("seo");
+
+    expect(host.textContent).toContain("Stage 02 · Captured report");
+    expect(host.textContent).toContain("Stage 02 · Diagnosis");
+    expect(host.textContent).toContain("Stage 03 · Recommendations");
+    expect(host.textContent).toContain(
+      "Stage 04 · Selected solution & validation",
     );
-    expect(solution).toContain("Adaptable preview · not applied");
-    expect(solution).toContain("title: [descriptive page title]");
-    expect(solution).toContain("has not edited, applied, approved, published");
+    expect(host.textContent).toContain("5 groups · 27 checks");
+    expect(host.textContent).toContain("Page · 9 groups / 50 checks");
+    expect(host.textContent).toContain("Unavailable");
+    expect(host.textContent).not.toContain("0/100");
+  });
+
+  it("uses SEO defaults and preserves separate site/page group selections", () => {
+    render("seo");
+
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-E"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-scope-page"]')
+        ?.click();
+    });
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-9"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-2"]')
+        ?.click();
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-scope-site"]')
+        ?.click();
+    });
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-E"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-scope-page"]')
+        ?.click();
+    });
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-2"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("keeps Recommendations and Selected Solution inside the active scope", () => {
+    render("seo");
+
+    expect(
+      host.querySelector('[data-testid^="agent-recommendation-seo:site:"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid^="agent-recommendation-seo:page:"]'),
+    ).toBeNull();
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-scope-page"]')
+        ?.click();
+    });
+
+    expect(
+      host.querySelector('[data-testid^="agent-recommendation-seo:site:"]'),
+    ).toBeNull();
+    expect(
+      host.querySelector('[data-testid^="agent-recommendation-seo:page:"]'),
+    ).not.toBeNull();
+  });
+
+  it("uses Tech defaults and keeps its solution identity independent", () => {
+    render("tech");
+
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-A"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(host.querySelector("#tech-selected-solution")).not.toBeNull();
+    expect(host.querySelector("#seo-selected-solution")).toBeNull();
+    expect(host.textContent).toContain("Tech Agent fix review");
+  });
+
+  it("honors a confirmed page-only Profile as the initial audit scope", () => {
+    render("seo", true);
+
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-scope-page"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      host
+        .querySelector('[data-testid="diagnosis-group-9"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("saves and resets a non-Official local policy without rejudging the run", () => {
+    render("seo", true);
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-3"]')
+        ?.click();
+    });
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-check-3.4"]')
+        ?.click();
+    });
+
+    const initialHealth = host.textContent?.match(/Health[^0-9]*(\d+\/100|Unavailable)/)?.[1];
+    const threshold = host.querySelector<HTMLInputElement>(
+      '[data-policy-threshold="3.4"]',
+    );
+    expect(threshold?.disabled).toBe(false);
+    act(() => {
+      if (threshold) {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )?.set?.call(threshold, "Local H2 range 2–7");
+        threshold.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-policy-action="save"]')
+        ?.click();
+    });
+
+    expect(host.textContent).toContain("Local H2 range 2–7");
+    expect(host.textContent).toContain("A new real run is required");
+    expect(host.textContent?.match(/Health[^0-9]*(\d+\/100|Unavailable)/)?.[1]).toBe(
+      initialHealth,
+    );
+
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-policy-action="reset-check"]')
+        ?.click();
+    });
+    expect(host.textContent).not.toContain("Local H2 range 2–7");
+    expect(host.textContent).toContain("Tool landing soft range: H2 5–9");
+  });
+
+  it("locks an Official threshold while leaving the non-blocking weight reviewable", () => {
+    render("tech", true);
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-group-8"]')
+        ?.click();
+    });
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-testid="diagnosis-check-8.1"]')
+        ?.click();
+    });
+
+    expect(
+      host.querySelector<HTMLInputElement>('[data-policy-threshold="8.1"]')
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      host.querySelector<HTMLInputElement>('[data-policy-weight="8.1"]')
+        ?.disabled,
+    ).toBe(false);
+    expect(host.textContent).toContain("Official threshold is locked");
   });
 });

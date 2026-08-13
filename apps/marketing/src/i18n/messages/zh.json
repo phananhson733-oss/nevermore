@@ -2239,7 +2239,7 @@
       "accountBoundaryTitle": "账号访问门槛",
       "accountBoundaryBody": "运行需要已验证的 Supabase 会话。Google 登录仅请求身份信息，不访问 Gmail 邮箱或 Search Console。",
       "dataBoundaryTitle": "不保存到项目",
-      "dataBoundaryBody": "本次营销站运行不会保存到 App 项目，也不使用 ICP、画像、GSC、流量或排名数据。",
+      "dataBoundaryBody": "Product / ICP Profile 会在运行前由用户检查，并仅作为决策上下文。本报告不声称使用了 GSC、流量或排名数据。",
       "howEyebrow": "工作方式",
       "howTitle": "从 URL 到检查结论的有界路径",
       "howBody": "Agent 将已采集证据、无法核验项和可调整建议分开呈现，不会把限制误写成通过或评分。",
@@ -2247,8 +2247,10 @@
       "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
       "step2Title": "检查公开 HTML",
       "step2Body": "复用现有有边界爬虫采集同源静态 HTML，并保留真实可用性和覆盖限制。",
-      "step3Title": "检查已观测情况",
-      "step3Body": "报告只保留 SEO 类别，按触达范围展示最多三项已观测问题情况，并保留原始证据。",
+      "step3Title": "诊断全部 77 项检查",
+      "step3Body": "按站级与页面级分组查看阻断项、健康度、引擎就绪度和真实性状态；缺少来源的项目保持排除。",
+      "step4Title": "审阅选中的 SEO 方案",
+      "step4Body": "结合证据和已确认的搜索上下文确定优先级，再检查页面级变更与验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不会编辑站点、创建 PR、部署、保存项目运行，也不能证明搜索流量影响。"
     },
     "tech": {
@@ -2270,12 +2272,367 @@
       "step1Body": "页面先验证会话；Agent API 仍会在读取请求或打开抓取用量门之前独立完成服务端授权。",
       "step2Title": "检查有边界响应",
       "step2Body": "爬虫对公开静态 HTML 执行页面、请求、时长、重定向、字节和同源边界。",
-      "step3Title": "检查技术情况",
-      "step3Body": "报告只保留抓取、索引性和链接类别，并按触达范围排列已观测问题情况。",
+      "step3Title": "诊断全部 77 项检查",
+      "step3Body": "按站级与页面级分组查看阻断项、健康度、引擎就绪度和真实性状态；缺少来源的项目保持排除。",
+      "step4Title": "审阅选中的技术方案",
+      "step4Body": "追踪相关响应、指令、链接、模板或配置，并检查面向代码的验证计划，但不会自动应用。",
       "finalBoundary": "模板是可调整预览。本 Agent 不运行 Lighthouse，不执行 JavaScript，不读取 Search Console 索引覆盖，也不会编辑站点、创建 PR 或部署。"
     },
     "workbench": {
       "stage1": "阶段 01 · 目标",
+      "profile": {
+        "stage": "阶段 01 · Product / ICP Profile",
+        "seo": {
+          "title": "先确认搜索上下文，再开始诊断",
+          "body": "检查产品、受众、目标查询、页面角色、国家与语言。SEO Agent 使用已确认上下文解释站级和页面级证据；上下文不能替代实际观测。"
+        },
+        "tech": {
+          "title": "先确认技术上下文，再开始诊断",
+          "body": "检查产品、受众、页面角色、设备与审计范围。Tech Agent 使用已确认上下文组织抓取和实施证据，不预设框架、代码仓库或负责人。"
+        },
+        "states": {
+          "needs_confirmation": "需要检查",
+          "confirmed": "本次运行已确认"
+        },
+        "fields": {
+          "targetUrl": "目标 URL",
+          "targetUrlPlaceholder": "example.com 或 https://example.com/page",
+          "productName": "产品名称",
+          "oneLinePositioning": "一句话定位",
+          "categories": "产品类别（逗号分隔）",
+          "businessModel": "商业模式",
+          "primaryCta": "主要 CTA",
+          "trustSignals": "信任信号（逗号分隔）",
+          "primaryIcp": "核心 ICP",
+          "icpInterests": "ICP 兴趣（逗号分隔）",
+          "icpPain": "ICP 痛点",
+          "icpBehavior": "ICP 行为",
+          "icpPositioning": "ICP 定位",
+          "jtbd": "待完成任务（JTBD）",
+          "firstOutcome": "首要期望结果",
+          "country": "国家 / 市场",
+          "locale": "语言 / Locale",
+          "device": "设备",
+          "pageType": "页面类型",
+          "targetQuery": "目标查询",
+          "auditScope": "审计范围"
+        },
+        "cards": {
+          "product": "Product Profile",
+          "icp": "ICP 与待完成任务",
+          "context": "结果与运行上下文"
+        },
+        "facts": {
+          "category": "产品分类",
+          "businessModel": "商业模式",
+          "primaryCta": "主要 CTA",
+          "trustSignals": "信任信号",
+          "interests": "ICP 兴趣",
+          "pain": "ICP 痛点",
+          "positioning": "ICP 定位"
+        },
+        "sources": {
+          "product_information_supplied": "来源支持 · Product Information 已提供",
+          "marketing_strategy_supplied": "来源支持 · Marketing Strategy 已提供",
+          "hostname_inference": "推断 · 仅依据主机名",
+          "confirmation_required": "推断 · 使用前确认",
+          "inferred_run_assumptions": "推断 · 本次运行假设",
+          "locally_adjusted": "已本地调整"
+        },
+        "values": {
+          "unavailable": "不可用"
+        },
+        "options": {
+          "device": {
+            "mobile": "移动端",
+            "desktop": "桌面端"
+          },
+          "pageType": {
+            "homepage": "首页",
+            "product": "产品页",
+            "tool": "工具页",
+            "guide": "指南或文章页"
+          },
+          "auditScope": {
+            "site-first": "先站级，再页面级",
+            "page-only": "仅当前页面"
+          }
+        },
+        "boundary": "运行前请检查本 Agent 的上下文。已提供事实和推断假设会保持明确标记；确认操作不会证明或补全不可用事实。",
+        "actions": {
+          "review": "检查并调整",
+          "confirmRun": "确认画像并运行"
+        }
+      },
+      "diagnosis": {
+        "eyebrow": "阶段 02 · 诊断",
+        "title": {
+          "seo": "搜索与页面 SEO 诊断",
+          "tech": "技术抓取与交付诊断"
+        },
+        "description": {
+          "seo": "结合已确认画像，检查索引信号、TDK、标题结构、内容、链接、结构化数据及受数据源限制的搜索机会。",
+          "tech": "结合已确认画像，检查响应路径、可抓取性、索引指令、链接完整性、性能数据可用性及实施边界。"
+        },
+        "context": {
+          "confirmed": "上下文已确认",
+          "draft": "上下文草稿",
+          "country": "国家 / 市场",
+          "locale": "语言 / Locale",
+          "device": "设备",
+          "pageType": "页面类型",
+          "targetQuery": "目标查询"
+        },
+        "scopeLabel": "审计范围",
+        "scopes": {
+          "site": "站级 · 5 组 / 27 项检查",
+          "page": "页面级 · 9 组 / 50 项检查"
+        },
+        "scopeSummary": "{groups} 组 · {total} 项检查",
+        "blockers": "阻断项",
+        "blockersHint": "与健康度分开计数",
+        "health": "健康度",
+        "healthUnavailable": "不可用",
+        "healthHint": "仅使用已评估且参与加权的检查",
+        "evaluatedTotal": "已评估 {evaluated} / {total}",
+        "engineCoverage": "引擎就绪 {ready} / {total}",
+        "inventoryCoverage": "需求库存：{ready} / {total} 已就绪；不代表本次运行已完成这些检查",
+        "groupsLabel": "审计分组",
+        "checksLabel": "检查项",
+        "selectCheck": "查看 {check}",
+        "detailLabel": "当前检查详情",
+        "detail": {
+          "measuredValue": "实测值",
+          "threshold": "阈值 / 规则",
+          "thresholdAuthority": "阈值依据",
+          "impact": "影响说明",
+          "howToFix": "如何处理",
+          "dataSource": "数据来源",
+          "scoreContribution": "分数贡献",
+          "boundary": "边界 / 未知项"
+        },
+        "axes": {
+          "result": "结果",
+          "engine": "引擎",
+          "truth": "真实性"
+        },
+        "results": {
+          "blocker": "阻断",
+          "warning": "警告",
+          "tip": "提示",
+          "pass": "通过",
+          "excluded": "已排除"
+        },
+        "engines": {
+          "ready": "已就绪",
+          "needsIntegration": "需要接入",
+          "needsSupplement": "需要补充",
+          "notIntegrated": "未接入",
+          "accessRequired": "需要获授权的数据源"
+        },
+        "truth": {
+          "observed": "已观测",
+          "documented": "文档口径",
+          "inferred": "推断",
+          "partial": "部分证据",
+          "sourceGated": "来源受限",
+          "unavailable": "不可用",
+          "illustrative": "示意"
+        },
+        "excludedBoundary": "不可用、未接入和来源受限的检查会从健康度计算中排除；排除项不记为零，也不等于通过。",
+        "headingPreset": {
+          "label": "按页面类型调整的标题预设",
+          "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · 每个 H3 分区至少 {words} 词",
+          "softRule": "软性参考 · 永不作为阻断项",
+          "boundary": "H2/H3 数量区间是页面类型预设，不是通用 SEO 硬规则；请结合页面角色、语言和内容深度确认是否适用。"
+        },
+        "noCheckSelected": "选择一个检查项，即可查看实测值、规则、来源、影响、处理方式与证据边界。",
+        "authorities": {
+          "official": "官方标准",
+          "industry": "行业惯例",
+          "sop": "内部 SOP",
+          "judgment": "内部判断"
+        },
+        "policy": {
+          "title": "本地口径控制",
+          "officialLocked": "官方阈值已锁定；非阻断且可计分的检查仍可使用本地权重覆盖。",
+          "adjustable": "已接受预设可针对当前 Agent 与范围进行调整。",
+          "acceptedPreset": "已接受预设",
+          "localOverride": "本地覆盖",
+          "threshold": "阈值 / 规则",
+          "weight": "检查权重",
+          "save": "保存本地口径",
+          "resetCheck": "重置此项",
+          "resetScope": "重置本范围口径",
+          "scopeAtPreset": "本范围使用预设",
+          "doesNotRejudge": "调整口径只记录本地审阅规则，不会重新判定这次已完成运行。",
+          "rerunRequired": "本地口径已调整；必须完成新的真实运行后才能重新判定结果。"
+        }
+      },
+      "auditCatalog": {
+        "site": {
+          "groups": {
+            "A": "索引健康",
+            "B": "抓取效率",
+            "C": "站点结构健康",
+            "D": "内容一致性",
+            "E": "搜索表现"
+          },
+          "checks": {
+            "A1": "索引覆盖率",
+            "A2": "废弃 URL 曝光占比",
+            "A3": "已发现但尚未编入索引占比",
+            "A4": "软 404 页数",
+            "A5": "robots.txt 误拦截页数",
+            "A6": "跳转终点为 404 的 URL 数",
+            "B1": "抓取浪费率",
+            "B2": "5XX 占比",
+            "B3": "平均响应时间",
+            "B4": "抓取充裕度",
+            "B5": "发现与刷新抓取比",
+            "C1": "孤岛页占比",
+            "C2": "断链数",
+            "C3": "平均点击深度",
+            "C4": "点击深度大于 4 的页面占比",
+            "C5": "失去发现路径的页数",
+            "D1": "重复 Title 占比",
+            "D2": "重复 Meta description 占比",
+            "D3": "缺失 Title 或 H1 的页数",
+            "D4": "图片 alt 覆盖率",
+            "D5": "Schema 覆盖率",
+            "D6": "hreflang 簇完整性",
+            "E1": "有曝光页数占比",
+            "E2": "排名 1–6 的曝光占比",
+            "E3": "排名 7–10 的曝光占比",
+            "E4": "非品牌点击占比",
+            "E5": "时效内容曝光占比"
+          }
+        },
+        "page": {
+          "groups": {
+            "1": "索引与可抓取",
+            "2": "TDK",
+            "3": "标题结构",
+            "4": "内容",
+            "5": "图片",
+            "6": "链接",
+            "7": "结构化数据",
+            "8": "性能",
+            "9": "搜索机会"
+          },
+          "checks": {
+            "1_1": "HTTP 状态码",
+            "1_2": "robots.txt 放行",
+            "1_3": "noindex 标签",
+            "1_4": "Canonical 目标",
+            "1_5": "是否在 sitemap 中",
+            "1_6": "跳转链长度",
+            "1_7": "hreflang 目标有效性",
+            "1_8": "软 404 检测",
+            "2_1": "Title 长度",
+            "2_2": "Title 全站唯一",
+            "2_3": "Title 含目标词",
+            "2_4": "Meta description 长度",
+            "2_5": "Meta description 唯一",
+            "2_6": "Open Graph 标题、描述与图片",
+            "3_1": "H1 数量",
+            "3_2": "H1 含目标词或近义词",
+            "3_3": "标题层级连续",
+            "3_4": "H2 数量",
+            "3_5": "H3 数量",
+            "3_6": "每个 H3 下平均字数",
+            "4_1": "正文字数",
+            "4_2": "目标词密度",
+            "4_3": "目标词首次出现位置",
+            "4_4": "内容与代码比",
+            "4_5": "与站内其他页相似度",
+            "5_1": "无 alt 图片数",
+            "5_2": "单图体积",
+            "5_3": "现代图片格式占比",
+            "5_4": "首屏图片是否 lazy-load",
+            "6_1": "入站内链数",
+            "6_2": "出站内链数",
+            "6_3": "断链数",
+            "6_4": "点击深度",
+            "6_5": "外链 dofollow / nofollow 比",
+            "7_1": "JSON-LD 是否存在",
+            "7_2": "Schema 类型是否匹配页面",
+            "7_3": "必填字段完整性",
+            "7_4": "FAQPage 与页面 FAQ 是否一致",
+            "7_5": "BreadcrumbList 与可见面包屑是否一致",
+            "8_1": "最大内容绘制（LCP）",
+            "8_2": "交互到下次绘制（INP）",
+            "8_3": "累积布局偏移（CLS）",
+            "8_4": "首字节时间（TTFB）",
+            "8_5": "页面总体积",
+            "8_6": "渲染阻塞资源数",
+            "9_1": "目标词是否被 AI Overview 完整覆盖",
+            "9_2": "前十是否有近两年注册域名",
+            "9_3": "前十是否有低流量站点",
+            "9_4": "是否有 UGC 结果位",
+            "9_5": "当前排名区间"
+          }
+        }
+      },
+      "recommendations": {
+        "stage3": "阶段 03 · 建议",
+        "stage3Title": "确定有证据支持的下一步",
+        "stage3Body": "结合阻断项、结果状态、证据触达范围、来源可用性与已确认画像进行比较；排除项或来源受限项只保留为不可用调查，绝不会变成可执行修复。",
+        "stage4": "阶段 04 · 已选方案与验证",
+        "stage4Title": "实施前完整检查一个方案",
+        "stage4Body": "将问题、证据、拟议变更、适用上下文、验证步骤、影响范围、风险与限制放在一起审阅。",
+        "selected": "已选建议",
+        "priority": "证据优先级",
+        "reach": "已观测触达范围 · {count}",
+        "evidenceAvailable": "证据可用",
+        "evidenceUnavailable": "证据不可用",
+        "sourceGatedBoundary": "本检查没有可用的公开证据。取得所注明的获授权或已接入数据源后，才能将它作为可执行项。",
+        "unavailableInvestigation": "证据不可用的调查项",
+        "previewOnly": "仅预览",
+        "issueLabel": "问题与原因",
+        "whyLabel": "为什么重要",
+        "evidenceLabel": "证据",
+        "fixLabel": "修复预览",
+        "contextLabel": "适用上下文",
+        "validationLabel": "验证步骤",
+        "impactLabel": "影响范围",
+        "risksLabel": "风险",
+        "limitsLabel": "限制 / 未知项",
+        "measuredLabel": "实测值",
+        "sourceLabel": "证据来源",
+        "statesLabel": "结果 · 引擎 · 真实性",
+        "productLabel": "已确认产品",
+        "ctaLabel": "主要 CTA",
+        "queryLabel": "目标查询",
+        "audienceLabel": "核心 ICP",
+        "outcomeLabel": "首要期望结果",
+        "targetLabel": "目标 URL",
+        "pageContextLabel": "页面 · 设备 · 范围",
+        "unconfirmedValue": "未确认",
+        "noRecommendationsTitle": "暂无有证据支持的建议",
+        "noRecommendationsBody": "在得出更广泛结论前，请检查已排除项目、不可用来源与本次采集范围。",
+        "previewBoundary": "仅预览。尚未编辑站点，也未应用变更、创建 PR、批准、发布或部署。",
+        "seo": {
+          "recommendation": "先对齐搜索意图，再仅在已采集证据支持时，调整页面专属的 Title、描述、标题结构、内链与适用的结构化数据。",
+          "applicableContext": "结合已确认的目标查询、页面类型、国家、语言、ICP 与期望结果，判断拟议的搜索侧变更是否适合当前页面。",
+          "validation1": "获取变更后的公开响应，并与已采集的问题证据进行比较。",
+          "validation2": "对照可见内容和页面角色，核验 Title、描述、标题结构、链接或 Schema。",
+          "validation3": "重新运行相同的有边界检查；若结论依赖搜索表现，请另行使用获授权的搜索数据源。",
+          "impactSurface": "受影响页面的搜索意图清晰度、摘要输入、文档层级、站内发现路径与结构化数据一致性。",
+          "risks": "泛化改写可能削弱页面真实用途、与其他页面重复，或引入可见内容无法支持的标记。",
+          "limits": "本预览不会推断搜索需求或排名影响，也不能替代 SERP、流量或获授权的搜索表现证据。"
+        },
+        "tech": {
+          "recommendation": "追踪最小相关代码或配置范围，确认负责人和框架后，再准备可审阅的响应、跳转、指令、链接或性能变更。",
+          "applicableContext": "将证据转为代码或配置前，确认框架、路由层、托管行为、代码仓库负责人、发布路径与受影响模板。",
+          "validation1": "在归属环境中复现已观测的请求、响应、跳转、指令或链接情况。",
+          "validation2": "由负责人审阅最小代码或配置差异，并同时测试受影响路径与邻近对照路径。",
+          "validation3": "由负责人完成发布后，再获取公开 URL 并重跑相同的有边界技术检查，以比较证据。",
+          "impactSurface": "HTTP 交付、抓取路径、索引指令、Canonical 行为、内链完整性，以及涉及的具体模板或配置范围。",
+          "risks": "缺少框架和负责人上下文时进行变更，可能破坏路由、有意排除、多语言、缓存或邻近模板。",
+          "limits": "实施前必须确认负责人和框架上下文；这里不会编辑站点、应用变更、创建 PR、批准、发布或部署。"
+        }
+      },
       "seo": {
         "title": "开始 SEO 证据检查",
         "body": "输入公开主机名或 URL。服务端会规范化并验证目标；私有网络和本机地址仍会被拦截。",

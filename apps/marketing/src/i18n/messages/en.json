@@ -2239,7 +2239,7 @@
       "accountBoundaryTitle": "Account access gate",
       "accountBoundaryBody": "A verified Supabase session is required to run. Google sign-in requests identity only, not Gmail mailbox or Search Console access.",
       "dataBoundaryTitle": "No project persistence",
-      "dataBoundaryBody": "This marketing run is not saved to an app project and does not use an ICP, profile, GSC, traffic, or ranking data.",
+      "dataBoundaryBody": "The Product / ICP Profile is reviewed before this run and used only as decision context. This report does not claim GSC, traffic, or ranking data.",
       "howEyebrow": "How it works",
       "howTitle": "A bounded path from URL to review",
       "howBody": "The Agent separates collected evidence, unverified checks, and adaptable guidance so a limitation never becomes a pass or a score.",
@@ -2247,8 +2247,10 @@
       "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
       "step2Title": "Inspect public HTML",
       "step2Body": "The existing bounded crawler collects same-origin static HTML and preserves its availability and coverage limits.",
-      "step3Title": "Review observed conditions",
-      "step3Body": "The report keeps only SEO categories and presents up to three observed issue conditions by reach, with their original evidence.",
+      "step3Title": "Diagnose all 77 checks",
+      "step3Body": "Review site and page groups with separate blockers, health, engine readiness, and truthfulness states. Unsupported sources stay excluded.",
+      "step4Title": "Review the selected SEO solution",
+      "step4Body": "Prioritize evidence and the confirmed search context, then inspect a page-specific change and validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not edit a site, create a pull request, deploy, save a project run, or prove search-engine traffic impact."
     },
     "tech": {
@@ -2270,12 +2272,367 @@
       "step1Body": "The page verifies your session, while the Agent API independently authorizes before reading the request or opening a crawl gate.",
       "step2Title": "Inspect bounded responses",
       "step2Body": "The crawler applies its page, request, time, redirect, byte, and same-origin boundaries to public static HTML.",
-      "step3Title": "Review technical conditions",
-      "step3Body": "The report keeps only crawl, indexability, and link categories and orders observed issue conditions by reach.",
+      "step3Title": "Diagnose all 77 checks",
+      "step3Body": "Review site and page groups with separate blockers, health, engine readiness, and truthfulness states. Unsupported sources stay excluded.",
+      "step4Title": "Review the selected technical solution",
+      "step4Body": "Trace the affected response, directive, link, template, or configuration and inspect a code-oriented validation plan without applying it.",
       "finalBoundary": "Templates are adaptable previews. This Agent does not run Lighthouse, execute JavaScript, read Search Console index coverage, edit a site, create a pull request, or deploy."
     },
     "workbench": {
       "stage1": "Stage 01 · Target",
+      "profile": {
+        "stage": "Stage 01 · Product / ICP Profile",
+        "seo": {
+          "title": "Confirm search context before diagnosis",
+          "body": "Review the product, audience, intended query, page role, country, and language. SEO Agent uses this confirmed context to interpret site and page evidence; context never replaces an observation."
+        },
+        "tech": {
+          "title": "Confirm technical context before diagnosis",
+          "body": "Review the product, audience, page role, device, and audit scope. Tech Agent uses this confirmed context to frame crawl and implementation evidence without assuming a framework, repository, or owner."
+        },
+        "states": {
+          "needs_confirmation": "Review required",
+          "confirmed": "Confirmed for this run"
+        },
+        "fields": {
+          "targetUrl": "Target URL",
+          "targetUrlPlaceholder": "example.com or https://example.com/page",
+          "productName": "Product name",
+          "oneLinePositioning": "One-line positioning",
+          "categories": "Categories (comma separated)",
+          "businessModel": "Business model",
+          "primaryCta": "Primary CTA",
+          "trustSignals": "Trust signals (comma separated)",
+          "primaryIcp": "Primary ICP",
+          "icpInterests": "ICP interests (comma separated)",
+          "icpPain": "ICP pain",
+          "icpBehavior": "ICP behavior",
+          "icpPositioning": "ICP positioning",
+          "jtbd": "Job to be done (JTBD)",
+          "firstOutcome": "First desired outcome",
+          "country": "Country / market",
+          "locale": "Language / locale",
+          "device": "Device",
+          "pageType": "Page type",
+          "targetQuery": "Target query",
+          "auditScope": "Audit scope"
+        },
+        "cards": {
+          "product": "Product Profile",
+          "icp": "ICP and job to be done",
+          "context": "Outcome and run context"
+        },
+        "facts": {
+          "category": "Categories",
+          "businessModel": "Business model",
+          "primaryCta": "Primary CTA",
+          "trustSignals": "Trust signals",
+          "interests": "ICP interests",
+          "pain": "ICP pain",
+          "positioning": "ICP positioning"
+        },
+        "sources": {
+          "product_information_supplied": "Source-backed · Product Information supplied",
+          "marketing_strategy_supplied": "Source-backed · Marketing Strategy supplied",
+          "hostname_inference": "Inferred · Hostname only",
+          "confirmation_required": "Inferred · Confirm before use",
+          "inferred_run_assumptions": "Inferred · Run assumptions",
+          "locally_adjusted": "Locally adjusted"
+        },
+        "values": {
+          "unavailable": "Unavailable"
+        },
+        "options": {
+          "device": {
+            "mobile": "Mobile",
+            "desktop": "Desktop"
+          },
+          "pageType": {
+            "homepage": "Homepage",
+            "product": "Product page",
+            "tool": "Tool page",
+            "guide": "Guide or article"
+          },
+          "auditScope": {
+            "site-first": "Site first, then page",
+            "page-only": "This page only"
+          }
+        },
+        "boundary": "Review this Agent's context before running. Supplied facts and inferred assumptions stay visibly labeled; confirmation does not prove or enrich an unavailable fact.",
+        "actions": {
+          "review": "Review & adjust",
+          "confirmRun": "Confirm profile & run"
+        }
+      },
+      "diagnosis": {
+        "eyebrow": "Stage 02 · Diagnosis",
+        "title": {
+          "seo": "Search and on-page diagnosis",
+          "tech": "Technical crawl and delivery diagnosis"
+        },
+        "description": {
+          "seo": "Review index signals, TDK, headings, content, links, structured data, and source-gated search opportunities against the confirmed Profile.",
+          "tech": "Review response paths, crawlability, index directives, link integrity, performance availability, and implementation boundaries against the confirmed Profile."
+        },
+        "context": {
+          "confirmed": "Confirmed context",
+          "draft": "Draft context",
+          "country": "Country / market",
+          "locale": "Language / locale",
+          "device": "Device",
+          "pageType": "Page type",
+          "targetQuery": "Target query"
+        },
+        "scopeLabel": "Audit scope",
+        "scopes": {
+          "site": "Site · 5 groups / 27 checks",
+          "page": "Page · 9 groups / 50 checks"
+        },
+        "scopeSummary": "{groups} groups · {total} checks",
+        "blockers": "Blockers",
+        "blockersHint": "Counted separately from health",
+        "health": "Health",
+        "healthUnavailable": "Unavailable",
+        "healthHint": "Health uses evaluated, weighted checks only",
+        "evaluatedTotal": "{evaluated} / {total} evaluated",
+        "engineCoverage": "{ready} / {total} engines ready",
+        "inventoryCoverage": "Requirements inventory: {ready} / {total} ready; this is not proof of the current run",
+        "groupsLabel": "Audit groups",
+        "checksLabel": "Checks",
+        "selectCheck": "Inspect {check}",
+        "detailLabel": "Focused check",
+        "detail": {
+          "measuredValue": "Measured value",
+          "threshold": "Threshold / rule",
+          "thresholdAuthority": "Threshold authority",
+          "impact": "Impact explanation",
+          "howToFix": "How to address it",
+          "dataSource": "Data source",
+          "scoreContribution": "Score contribution",
+          "boundary": "Boundary / unknown"
+        },
+        "axes": {
+          "result": "Result",
+          "engine": "Engine",
+          "truth": "Truthfulness"
+        },
+        "results": {
+          "blocker": "Blocker",
+          "warning": "Warning",
+          "tip": "Tip",
+          "pass": "Pass",
+          "excluded": "Excluded"
+        },
+        "engines": {
+          "ready": "Ready",
+          "needsIntegration": "Needs integration",
+          "needsSupplement": "Needs supplement",
+          "notIntegrated": "Not integrated",
+          "accessRequired": "Authorized source required"
+        },
+        "truth": {
+          "observed": "Observed",
+          "documented": "Documented",
+          "inferred": "Inferred",
+          "partial": "Partial",
+          "sourceGated": "Source gated",
+          "unavailable": "Unavailable",
+          "illustrative": "Illustrative"
+        },
+        "excludedBoundary": "Unavailable, not-integrated, and source-gated checks are excluded from health calculations; exclusion is never zero and is not a pass.",
+        "headingPreset": {
+          "label": "Page-type heading preset",
+          "range": "H2 {h2Min}–{h2Max} · H3 {h3Min}–{h3Max} · {words}+ words per H3 section",
+          "softRule": "Soft guidance · never a blocker",
+          "boundary": "H2/H3 ranges are page-type presets, not universal SEO rules. Confirm fit for the page role, language, and content depth."
+        },
+        "noCheckSelected": "Select a check to inspect its measured value, rule, source, impact, fix, and evidence boundary.",
+        "authorities": {
+          "official": "Official standard",
+          "industry": "Industry practice",
+          "sop": "Internal SOP",
+          "judgment": "Internal judgment"
+        },
+        "policy": {
+          "title": "Local policy control",
+          "officialLocked": "The Official threshold is locked. A non-blocking scored check can still use a local weight override.",
+          "adjustable": "The accepted preset can be adjusted for this Agent and scope.",
+          "acceptedPreset": "Accepted preset",
+          "localOverride": "Local override",
+          "threshold": "Threshold / rule",
+          "weight": "Check weight",
+          "save": "Save local rule",
+          "resetCheck": "Reset check",
+          "resetScope": "Reset scope policy",
+          "scopeAtPreset": "Scope policy at preset",
+          "doesNotRejudge": "Changing policy records a local review rule only. It does not rejudge this completed run.",
+          "rerunRequired": "Local policy changed. A new real run is required before the result can be rejudged."
+        }
+      },
+      "auditCatalog": {
+        "site": {
+          "groups": {
+            "A": "Index health",
+            "B": "Crawl efficiency",
+            "C": "Site structure health",
+            "D": "Content consistency",
+            "E": "Search performance"
+          },
+          "checks": {
+            "A1": "Index coverage rate",
+            "A2": "Deprecated URL impression share",
+            "A3": "Discovered, currently not indexed rate",
+            "A4": "Soft 404 page count",
+            "A5": "Pages incorrectly blocked by robots.txt",
+            "A6": "Redirect destinations returning 404",
+            "B1": "Crawl waste rate",
+            "B2": "5XX response rate",
+            "B3": "Average response time",
+            "B4": "Crawl sufficiency",
+            "B5": "Discovery versus refresh crawl ratio",
+            "C1": "Orphan page rate",
+            "C2": "Broken link count",
+            "C3": "Average click depth",
+            "C4": "Pages deeper than four clicks",
+            "C5": "Pages without a discovery path",
+            "D1": "Duplicate title rate",
+            "D2": "Duplicate meta description rate",
+            "D3": "Pages missing title or H1",
+            "D4": "Image alt coverage",
+            "D5": "Schema coverage",
+            "D6": "hreflang cluster completeness",
+            "E1": "Pages with impressions",
+            "E2": "Impression share in positions 1–6",
+            "E3": "Impression share in positions 7–10",
+            "E4": "Non-brand click share",
+            "E5": "Time-sensitive content impression share"
+          }
+        },
+        "page": {
+          "groups": {
+            "1": "Indexability and crawlability",
+            "2": "TDK metadata",
+            "3": "Heading structure",
+            "4": "Content",
+            "5": "Images",
+            "6": "Links",
+            "7": "Structured data",
+            "8": "Performance",
+            "9": "Search opportunity"
+          },
+          "checks": {
+            "1_1": "HTTP status code",
+            "1_2": "robots.txt allowance",
+            "1_3": "noindex directive",
+            "1_4": "Canonical target",
+            "1_5": "Included in sitemap",
+            "1_6": "Redirect chain length",
+            "1_7": "hreflang target validity",
+            "1_8": "Soft 404 detection",
+            "2_1": "Title length",
+            "2_2": "Sitewide title uniqueness",
+            "2_3": "Title contains target query",
+            "2_4": "Meta description length",
+            "2_5": "Meta description uniqueness",
+            "2_6": "Open Graph title, description, and image",
+            "3_1": "H1 count",
+            "3_2": "H1 contains target query or synonym",
+            "3_3": "Continuous heading hierarchy",
+            "3_4": "H2 count",
+            "3_5": "H3 count",
+            "3_6": "Average words beneath each H3",
+            "4_1": "Main-content word count",
+            "4_2": "Target-query density",
+            "4_3": "First target-query occurrence",
+            "4_4": "Content-to-code ratio",
+            "4_5": "Similarity with other site pages",
+            "5_1": "Images missing alt text",
+            "5_2": "Per-image file size",
+            "5_3": "Modern image format share",
+            "5_4": "Above-the-fold image lazy loading",
+            "6_1": "Inbound internal link count",
+            "6_2": "Outbound internal link count",
+            "6_3": "Broken link count",
+            "6_4": "Click depth",
+            "6_5": "External dofollow / nofollow ratio",
+            "7_1": "JSON-LD presence",
+            "7_2": "Schema type matches page type",
+            "7_3": "Required-property completeness",
+            "7_4": "FAQPage matches visible FAQ",
+            "7_5": "BreadcrumbList matches visible breadcrumbs",
+            "8_1": "Largest Contentful Paint (LCP)",
+            "8_2": "Interaction to Next Paint (INP)",
+            "8_3": "Cumulative Layout Shift (CLS)",
+            "8_4": "Time to First Byte (TTFB)",
+            "8_5": "Total page weight",
+            "8_6": "Render-blocking resource count",
+            "9_1": "Target query fully answered by AI Overview",
+            "9_2": "Recently registered domains in the top 10",
+            "9_3": "Lower-traffic sites in the top 10",
+            "9_4": "UGC result presence",
+            "9_5": "Current ranking band"
+          }
+        }
+      },
+      "recommendations": {
+        "stage3": "Stage 03 · Recommendations",
+        "stage3Title": "Prioritize evidence-backed next steps",
+        "stage3Body": "Compare blockers, result state, evidence reach, source availability, and the confirmed Profile. Excluded or source-gated checks remain unavailable investigations and never become executable fixes.",
+        "stage4": "Stage 04 · Selected solution & validation",
+        "stage4Title": "Review one solution before implementation",
+        "stage4Body": "Inspect the issue, evidence, proposed change, applicable context, validation steps, impact surface, risks, and limits together.",
+        "selected": "Selected recommendation",
+        "priority": "Evidence priority",
+        "reach": "Observed reach · {count}",
+        "evidenceAvailable": "Evidence available",
+        "evidenceUnavailable": "Evidence unavailable",
+        "sourceGatedBoundary": "Public evidence is unavailable for this check. Obtain the named authorized or integrated source before treating it as actionable.",
+        "unavailableInvestigation": "Unavailable investigation",
+        "previewOnly": "Preview only",
+        "issueLabel": "Issue & why",
+        "whyLabel": "Why it matters",
+        "evidenceLabel": "Evidence",
+        "fixLabel": "Fix preview",
+        "contextLabel": "Applicable context",
+        "validationLabel": "Validation steps",
+        "impactLabel": "Impact surface",
+        "risksLabel": "Risks",
+        "limitsLabel": "Limits / unknowns",
+        "measuredLabel": "Measured value",
+        "sourceLabel": "Evidence source",
+        "statesLabel": "Result · engine · truthfulness",
+        "productLabel": "Confirmed product",
+        "ctaLabel": "Primary CTA",
+        "queryLabel": "Target query",
+        "audienceLabel": "Primary ICP",
+        "outcomeLabel": "First desired outcome",
+        "targetLabel": "Target URL",
+        "pageContextLabel": "Page · device · scope",
+        "unconfirmedValue": "Unconfirmed",
+        "noRecommendationsTitle": "No evidence-backed recommendation is available",
+        "noRecommendationsBody": "Review excluded checks, unavailable sources, and the captured scope before drawing a broader conclusion.",
+        "previewBoundary": "Preview only. This Agent has not edited, applied, created a PR, approved, published, or deployed any change.",
+        "seo": {
+          "recommendation": "SEO Agent decision: align search intent first, then adjust the page-specific title, description, headings, internal links, and applicable schema only where captured evidence supports the change.",
+          "applicableContext": "Use the confirmed target query, page type, country, locale, ICP, and desired outcome to judge whether the proposed search-facing change fits this page.",
+          "validation1": "Fetch the changed public response and compare it with the captured issue evidence.",
+          "validation2": "Verify the title, description, headings, links, or schema against visible content and the intended page role.",
+          "validation3": "Rerun the same bounded checks; use an authorized search source separately when a result depends on search-performance data.",
+          "impactSurface": "Search intent clarity, snippet inputs, document hierarchy, internal discovery, and structured-data consistency on the affected pages.",
+          "risks": "A generic rewrite can dilute the page's actual purpose, duplicate another page, or introduce markup that visible content does not support.",
+          "limits": "This preview does not infer search demand or ranking impact. It cannot replace SERP, traffic, or authorized search-performance evidence."
+        },
+        "tech": {
+          "recommendation": "Tech Agent fix review: trace the smallest relevant code or configuration surface, confirm the owner and framework, then prepare a reviewable response, redirect, directive, link, or performance change.",
+          "applicableContext": "Confirm the framework, routing layer, hosting behavior, repository owner, release path, and affected templates before translating evidence into code or configuration.",
+          "validation1": "Reproduce the observed request, response, redirect, directive, or link condition in the owning environment.",
+          "validation2": "Review the minimal code or configuration diff with the responsible owner and test the affected paths plus a nearby control path.",
+          "validation3": "After an owner-managed release, fetch the public URL and rerun the same bounded technical checks to compare evidence.",
+          "impactSurface": "HTTP delivery, crawl paths, index directives, canonical behavior, internal-link integrity, and the specific template or configuration surface involved.",
+          "risks": "A change without framework and owner context can break routing, deliberate exclusions, localization, caching, or adjacent templates.",
+          "limits": "Owner and framework context are required before implementation. No site edit, apply, pull request, approval, publish, or deploy occurs here."
+        }
+      },
       "seo": {
         "title": "Start an SEO evidence run",
         "body": "Enter a public host or URL. The server normalizes and validates the destination; private and local networks remain blocked.",

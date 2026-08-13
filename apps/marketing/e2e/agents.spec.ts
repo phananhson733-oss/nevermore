@@ -2,8 +2,29 @@ import { expect, test, type Page } from "@playwright/test";
 
 type AgentKind = "seo" | "tech";
 
+const RECORD_CATEGORIES = {
+  robots_resource: "crawl",
+  sitemap_resource: "crawl",
+  non_2xx_final_status: "crawl",
+  redirect_chain: "crawl",
+  http_url: "crawl",
+  noindex_directive: "indexability",
+  canonical_missing: "indexability",
+  canonical_differs: "indexability",
+  title_missing: "metadata",
+  title_duplicate: "metadata",
+  meta_description_missing: "metadata",
+  meta_description_duplicate: "metadata",
+  h1_missing: "structure",
+  multiple_h1: "structure",
+  sitemap_page_without_observed_inlink: "links",
+  internal_target_http_error: "links",
+  json_ld_parse_error: "structured_data",
+} as const;
+
 function agentEnvelope(agent: AgentKind) {
-  const isSeo = agent === "seo";
+  const observedId =
+    agent === "seo" ? "title_missing" : "non_2xx_final_status";
   return {
     data: {
       run: {
@@ -38,42 +59,41 @@ function agentEnvelope(agent: AgentKind) {
           sitemapReferencesObserved: 1,
           sitemapFetched: true,
         },
-        records: [
-          isSeo
-            ? {
-                id: "title_missing",
-                category: "metadata",
-                state: "observed",
-                unit: "pages",
-                tested: 3,
-                affected: 1,
-                observations: [
+        records: Object.entries(RECORD_CATEGORIES).map(([id, category]) => {
+          const observed = id === observedId;
+          const siteResource =
+            id === "robots_resource" || id === "sitemap_resource";
+          return {
+            id,
+            category,
+            state: observed ? "observed" : "not_observed",
+            unit: siteResource
+              ? "site_resource"
+              : id === "internal_target_http_error"
+                ? "link_targets"
+                : "pages",
+            tested: siteResource ? 1 : 3,
+            affected: observed ? 1 : 0,
+            observations: observed
+              ? [
                   {
-                    url: "https://acme.com/about",
-                    values: [{ label: "title", value: null }],
+                    url:
+                      agent === "seo"
+                        ? "https://acme.com/about"
+                        : "https://acme.com/old",
+                    values:
+                      agent === "seo"
+                        ? [{ label: "title", value: null }]
+                        : [
+                            { label: "initial_status", value: 404 },
+                            { label: "final_status", value: 404 },
+                          ],
                   },
-                ],
-                limitation: null,
-              }
-            : {
-                id: "non_2xx_final_status",
-                category: "crawl",
-                state: "observed",
-                unit: "pages",
-                tested: 3,
-                affected: 1,
-                observations: [
-                  {
-                    url: "https://acme.com/old",
-                    values: [
-                      { label: "initial_status", value: 404 },
-                      { label: "final_status", value: 404 },
-                    ],
-                  },
-                ],
-                limitation: null,
-              },
-        ],
+                ]
+              : [],
+            limitation: null,
+          };
+        }),
       },
     },
   } as const;
@@ -103,17 +123,17 @@ test("signed-out SEO submission opens registration without an audit POST", async
   });
 
   await page.goto("/agents/seo");
-  await page.getByLabel("Website host or URL").fill("acme.com/docs");
-  await page.getByRole("button", { name: "Run Agent" }).click();
+  await page.getByLabel("Target URL").fill("acme.com/docs");
+  await page.getByRole("button", { name: "Confirm profile & run" }).click();
 
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in to GenGrowth" })).toBeVisible();
   expect(auditPosts).toBe(0);
   expect(
     await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v1"),
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v2"),
     ),
-  ).toContain("acme.com/docs");
+  ).toContain('"purpose":"run_confirmed_profile"');
 });
 
 test("signed-in SEO run renders bounded evidence, reach, and selected solution", async ({
@@ -129,17 +149,40 @@ test("signed-in SEO run renders bounded evidence, reach, and selected solution",
   });
 
   await page.goto("/agents/seo");
-  await page.getByLabel("Website host or URL").fill("acme.com");
-  await page.getByRole("button", { name: "Run Agent" }).click();
+  await page.getByLabel("Target URL").fill("acme.com");
+  await page.getByRole("button", { name: "Review & adjust" }).click();
+  await page.getByLabel("Target query").fill("technical seo audit");
+  await page.getByRole("button", { name: "Confirm profile & run" }).click();
 
   const results = page.getByTestId("agent-results-seo");
   await expect(results).toBeVisible();
   await expect(results.getByText("Pages inspected")).toBeVisible();
-  await expect(page.getByTestId("agent-opportunity-title_missing")).toBeVisible();
-  await expect(page.getByTestId("agent-selected-solution")).toContainText(
-    "Adaptable preview · not applied",
+  await expect(page.getByTestId("agent-diagnosis")).toBeVisible();
+  await expect(page.getByTestId("diagnosis-group-E")).toHaveAttribute(
+    "aria-pressed",
+    "true",
   );
-  await expect(page.getByText(/Health score/i)).toHaveCount(0);
+  await page.getByTestId("diagnosis-scope-page").click();
+  await expect(page.getByText("9 groups · 50 checks")).toBeVisible();
+  await expect(page.getByTestId("diagnosis-group-9")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("diagnosis-group-3").click();
+  await page.getByTestId("diagnosis-check-3.4").click();
+  await page.locator('[data-policy-threshold="3.4"]').fill("Local H2 range 2–7");
+  await page.locator('[data-policy-action="save"]').click();
+  await expect(page.getByText("Local H2 range 2–7")).toBeVisible();
+  await expect(page.getByText(/new real run is required/i)).toBeVisible();
+  await page.locator('[data-policy-action="reset-scope"]').click();
+  await expect(page.getByText("Local H2 range 2–7")).toHaveCount(0);
+  await expect(page.getByTestId("agent-recommendation-row")).toBeVisible();
+  await expect(page.getByTestId("agent-selected-solution")).toContainText(
+    "SEO Agent decision",
+  );
+  await expect(page.getByTestId("agent-selected-solution")).toContainText(
+    "technical seo audit",
+  );
 });
 
 test("Chinese Tech page ignores the SEO intent and owns an independent run", async ({
@@ -158,9 +201,10 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   await page.goto("/");
   await page.evaluate(() => {
     sessionStorage.setItem(
-      "gengrowth:agent-intent:seo:v1",
+      "gengrowth:agent-intent:seo:v2",
       JSON.stringify({
         agent: "seo",
+        purpose: "prepare_profile",
         url: "seo-only.example",
         createdAt: Date.now(),
         expiresAt: Date.now() + 10 * 60 * 1_000,
@@ -169,18 +213,27 @@ test("Chinese Tech page ignores the SEO intent and owns an independent run", asy
   });
   await page.goto("/zh/agents/tech");
 
-  const input = page.getByLabel("网站主机名或 URL");
+  const input = page.getByLabel("目标 URL");
   await expect(input).toHaveValue("");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => document.documentElement.clientWidth),
   );
   await input.fill("acme.com");
-  await page.getByRole("button", { name: "运行 Agent" }).click();
+  await page.getByRole("button", { name: "确认画像并运行" }).click();
   await expect(page.getByTestId("agent-results-tech")).toBeVisible();
-  await expect(page.getByTestId("agent-opportunity-non_2xx_final_status")).toBeVisible();
+  await expect(page.getByTestId("diagnosis-group-A")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("agent-selected-solution")).toContainText(
+    "HTTP/1.1 200 OK",
+  );
+  await expect(page.getByTestId("agent-selected-solution")).not.toContainText(
+    "SEO Agent decision",
+  );
   expect(
     await page.evaluate(() =>
-      sessionStorage.getItem("gengrowth:agent-intent:seo:v1"),
+      sessionStorage.getItem("gengrowth:agent-intent:seo:v2"),
     ),
   ).toContain("seo-only.example");
 });
@@ -191,10 +244,15 @@ test("homepage chooses an exact Agent and retired audit pages redirect", async (
   await mockSession(page, false);
 
   await page.goto("/");
-  await page.getByLabel("Website host or URL").fill("acme.com");
-  await page.getByRole("button", { name: "Run Tech Agent" }).click();
+  const homepageUrl = page.getByLabel("Website host or URL");
+  const techButton = page.getByRole("button", { name: "Run Tech Agent" });
+  await homepageUrl.fill("acme.com");
+  await expect(homepageUrl).toHaveValue("acme.com");
+  await expect(techButton).toBeEnabled();
+  await techButton.click();
   await expect(page).toHaveURL(/\/agents\/tech$/);
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByLabel("Target URL")).toHaveValue("acme.com");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await page.goto("/tools/seo-audit");
   await expect(page).toHaveURL(/\/agents\/seo$/);

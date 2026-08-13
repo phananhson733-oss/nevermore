@@ -1,4 +1,5 @@
 export * from "./contract.ts";
+export * from "./agent-audit/index.ts";
 export * from "./crawl-completion.ts";
 export * from "./seo-audit/index.ts";
 export * from "./internal-link-audit/index.ts";

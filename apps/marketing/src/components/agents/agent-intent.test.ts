@@ -8,11 +8,14 @@ import {
   AGENT_INTENT_TTL_MS,
   clearPendingAgentIntent,
   getSessionIntentStorage,
+  isRunnablePendingAgentIntent,
   pendingAgentIntentKey,
   readPendingAgentIntent,
   restorePendingAgentIntent,
+  storeConfirmedAgentRunIntent,
   storePendingAgentIntent,
 } from "./agent-intent";
+import { confirmAgentProfile, createAgentProfileDraft } from "./agent-profile";
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -49,11 +52,100 @@ describe("Agent pending intents", () => {
 
     expect(
       readPendingAgentIntent(storage, "seo", start + AGENT_INTENT_TTL_MS - 1),
-    )?.toMatchObject({ agent: "seo", url: "https://example.com" });
+    )?.toMatchObject({
+      agent: "seo",
+      purpose: "run_confirmed_profile",
+      url: "https://example.com",
+    });
     expect(
       readPendingAgentIntent(storage, "seo", start + AGENT_INTENT_TTL_MS),
     ).toBeNull();
     expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("versions homepage preparation separately from an authorized run", () => {
+    const storage = new MemoryStorage();
+    const prepared = storePendingAgentIntent(
+      storage,
+      "seo",
+      "https://example.com",
+      "prepare_profile",
+      1_000,
+    );
+
+    expect(pendingAgentIntentKey("seo")).toBe(
+      "gengrowth:agent-intent:seo:v2",
+    );
+    expect(prepared?.purpose).toBe("prepare_profile");
+    expect(readPendingAgentIntent(storage, "seo", 1_001)?.purpose).toBe(
+      "prepare_profile",
+    );
+    expect(
+      isRunnablePendingAgentIntent(
+        readPendingAgentIntent(storage, "seo", 1_001)!,
+      ),
+    ).toBe(false);
+  });
+
+  it("resumes only a confirmed profile with the exact Agent and URL snapshot", () => {
+    const storage = new MemoryStorage();
+    const profile = confirmAgentProfile(
+      createAgentProfileDraft("tech", "https://example.com/pricing"),
+    );
+
+    const intent = storeConfirmedAgentRunIntent(storage, profile, 1_000);
+
+    expect(intent).toMatchObject({
+      purpose: "run_confirmed_profile",
+      agent: "tech",
+      url: "https://example.com/pricing",
+      confirmedProfile: {
+        agent: "tech",
+        targetUrl: "https://example.com/pricing",
+        reviewState: "confirmed",
+      },
+    });
+    expect(isRunnablePendingAgentIntent(intent!)).toBe(true);
+    expect(
+      isRunnablePendingAgentIntent({
+        ...intent!,
+        url: "https://example.com/other",
+      }),
+    ).toBe(false);
+  });
+
+  it("fails closed on a v2 payload with an unknown purpose", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      pendingAgentIntentKey("seo"),
+      JSON.stringify({
+        agent: "seo",
+        purpose: "auto_run_from_homepage",
+        url: "https://wrong.example",
+        createdAt: 1_000,
+        expiresAt: 2_000,
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
+    expect(storage.getItem(pendingAgentIntentKey("seo"))).toBeNull();
+  });
+
+  it("removes the legacy v1 slot instead of interpreting an unversioned purpose", () => {
+    const storage = new MemoryStorage();
+    const legacyKey = "gengrowth:agent-intent:seo:v1";
+    storage.setItem(
+      legacyKey,
+      JSON.stringify({
+        agent: "seo",
+        url: "https://legacy.example",
+        createdAt: 1_000,
+        expiresAt: 2_000,
+      }),
+    );
+
+    expect(readPendingAgentIntent(storage, "seo", 1_001)).toBeNull();
+    expect(storage.getItem(legacyKey)).toBeNull();
   });
 
   it("never resumes an intent on the other Agent", () => {

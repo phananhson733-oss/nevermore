@@ -8,6 +8,26 @@ import {
   type AgentAuditSuccessEnvelope,
 } from "./audit-contract.ts";
 
+const RECORD_SPECS = [
+  ["robots_resource", "crawl"],
+  ["sitemap_resource", "crawl"],
+  ["non_2xx_final_status", "crawl"],
+  ["redirect_chain", "crawl"],
+  ["http_url", "crawl"],
+  ["noindex_directive", "indexability"],
+  ["canonical_missing", "indexability"],
+  ["canonical_differs", "indexability"],
+  ["title_missing", "metadata"],
+  ["title_duplicate", "metadata"],
+  ["meta_description_missing", "metadata"],
+  ["meta_description_duplicate", "metadata"],
+  ["h1_missing", "structure"],
+  ["multiple_h1", "structure"],
+  ["sitemap_page_without_observed_inlink", "links"],
+  ["internal_target_http_error", "links"],
+  ["json_ld_parse_error", "structured_data"],
+] as const;
+
 const success = {
   data: {
     run: {
@@ -42,41 +62,75 @@ const success = {
         sitemapReferencesObserved: 1,
         sitemapFetched: true,
       },
-      records: [
-        {
-          id: "missing_title",
-          category: "metadata",
-          state: "observed",
-          unit: "pages",
-          tested: 1,
-          affected: 1,
-          observations: [
-            {
-              url: "https://acme.test/",
-              values: [{ label: "title", value: null }],
-            },
-          ],
-          limitation: null,
-        },
-      ],
+      records: RECORD_SPECS.map(([id, category], index) => ({
+        id,
+        category,
+        state: index === 0 ? ("observed" as const) : ("not_observed" as const),
+        unit: "pages" as const,
+        tested: 1,
+        affected: index === 0 ? 1 : 0,
+        observations:
+          index === 0
+            ? [
+                {
+                  url: "https://acme.test/",
+                  values: [{ label: "sample", value: null }],
+                },
+              ]
+            : [],
+        limitation: null,
+      })),
     },
   },
 } satisfies AgentAuditSuccessEnvelope;
 
 describe("isAgentAuditSuccessEnvelope", () => {
-  it("accepts the client-safe authenticated Agent result", () => {
-    expect(isAgentAuditSuccessEnvelope(success)).toBe(true);
-    expect("pages" in success.data.result).toBe(false);
-  });
+  it.each(["seo", "tech"] as const)(
+    "accepts the same complete neutral ledger for the %s Agent",
+    (agent) => {
+      const envelope: AgentAuditSuccessEnvelope = {
+        data: {
+          ...success.data,
+          run: { ...success.data.run, agent },
+        },
+      };
 
-  it("rejects a record category belonging to the other Agent", () => {
+      expect(isAgentAuditSuccessEnvelope(envelope)).toBe(true);
+      expect(envelope.data.result.records).toHaveLength(17);
+      expect("pages" in envelope.data.result).toBe(false);
+    },
+  );
+
+  it("rejects an unknown neutral record", () => {
     const malformed = structuredClone(success) as unknown as {
-      data: { result: { records: Array<{ category: string }> } };
+      data: { result: { records: Array<{ id: string }> } };
     };
-    malformed.data.result.records[0]!.category = "crawl";
+    malformed.data.result.records[0]!.id = "future_unknown_record";
 
     expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
   });
+
+  it("rejects a known record with the wrong category", () => {
+    const malformed = structuredClone(success) as unknown as {
+      data: { result: { records: Array<{ category: string }> } };
+    };
+    malformed.data.result.records[0]!.category = "metadata";
+
+    expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
+  });
+
+  it.each(["missing", "duplicate"] as const)(
+    "rejects a %s record in the neutral ledger",
+    (fault) => {
+      const malformed = structuredClone(success) as unknown as {
+        data: { result: { records: Array<unknown> } };
+      };
+      if (fault === "missing") malformed.data.result.records.pop();
+      else malformed.data.result.records[1] = malformed.data.result.records[0];
+
+      expect(isAgentAuditSuccessEnvelope(malformed)).toBe(false);
+    },
+  );
 
   it.each([
     ["affected differs from observations", { tested: 2, affected: 2, state: "observed" }],
