@@ -22,9 +22,10 @@ import { routing } from "@/i18n/routing";
 import { getPromptForLocale } from "@/lib/prompt-content";
 import {
   getSkillForLocale,
-  getSkills,
   getSkillsForLocale,
+  localesOwningSkill,
 } from "@/lib/skill-content";
+import { resourceAlternates } from "@/lib/resource-alternates";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
 import { toPlainText } from "@/lib/resource-markdown";
@@ -35,10 +36,14 @@ const RELATED_LIMIT = 5;
 export const revalidate = 3600;
 
 export async function generateStaticParams() {
-  const { skills } = await getSkillsForLocale("en");
-  return routing.locales.flatMap((locale) =>
-    skills.map((skill) => ({ locale, slug: skill.slug })),
+  // Per locale — see the matching comment on the prompt detail route.
+  const perLocale = await Promise.all(
+    routing.locales.map(async (locale) => {
+      const { skills } = await getSkillsForLocale(locale);
+      return skills.map((skill) => ({ locale, slug: skill.slug }));
+    }),
   );
+  return perLocale.flat();
 }
 
 export async function generateMetadata({
@@ -67,27 +72,13 @@ export async function generateMetadata({
     path: `${PATH}/${slug}`,
   });
 
-  // Only claim a language alternate when that locale has its own file — see the
-  // matching override on the prompt detail route.
-  const alternateLocale = locale === "en" ? "zh" : "en";
-  const alternateExists = (await getSkills(alternateLocale)).some(
-    (entry) => entry.slug === slug,
-  );
-  const canonical = localeUrl(locale, `${PATH}/${slug}`);
-
-  return {
-    ...metadata,
-    alternates: {
-      canonical,
-      languages: {
-        [locale]: canonical,
-        ...(alternateExists
-          ? { [alternateLocale]: localeUrl(alternateLocale, `${PATH}/${slug}`) }
-          : {}),
-        "x-default": localeUrl("en", `${PATH}/${slug}`),
-      },
-    },
-  };
+  return resourceAlternates({
+    metadata,
+    locale,
+    owningLocale: skill.locale,
+    path: `${PATH}/${slug}`,
+    localesOwningFile: await localesOwningSkill(slug),
+  });
 }
 
 export default async function SkillDetailPage({
@@ -142,14 +133,17 @@ export default async function SkillDetailPage({
   );
 
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
+  // UTC — see the matching comment on the prompt detail route.
   const updatedLabel = new Date(skill.updatedAt).toLocaleDateString(
     dateLocale,
     {
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "UTC",
     },
   );
+  const canonicalUrl = localeUrl(skill.locale, `${PATH}/${slug}`);
   const downloadHref = localePath(locale, `${PATH}/${skill.slug}/file`);
   const agentHref = localePath(locale, `/agents/${skill.owner}`);
 
@@ -158,7 +152,7 @@ export default async function SkillDetailPage({
     "@type": "TechArticle",
     headline: skill.title,
     description: skill.description,
-    url: localeUrl(locale, `${PATH}/${slug}`),
+    url: canonicalUrl,
     inLanguage: skill.locale === "zh" ? "zh-CN" : "en",
     datePublished: skill.publishedAt,
     dateModified: skill.updatedAt,
@@ -177,7 +171,7 @@ export default async function SkillDetailPage({
       name: siteConfig.name,
       url: siteConfig.url,
     },
-    mainEntityOfPage: localeUrl(locale, `${PATH}/${slug}`),
+    mainEntityOfPage: canonicalUrl,
   };
 
   return (

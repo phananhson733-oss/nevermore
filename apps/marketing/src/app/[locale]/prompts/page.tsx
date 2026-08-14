@@ -84,7 +84,9 @@ export default async function PromptsHubPage({
       position: index + 1,
       name: prompt.title,
       description: prompt.description,
-      url: localeUrl(locale, `${PATH}/${prompt.slug}`),
+      // The owning locale's URL: listing the fallback route here would
+      // advertise a second address for the same text.
+      url: localeUrl(prompt.locale, `${PATH}/${prompt.slug}`),
     })),
   };
 

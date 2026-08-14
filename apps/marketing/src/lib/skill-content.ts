@@ -13,11 +13,16 @@ import {
   extractFencedBlock,
   parseBulletList,
   parseResourceFrontmatter,
+  unquoteScalar,
   requireSection,
   splitResourceSections,
   splitResourceSubsections,
 } from "./resource-markdown";
-import { RESOURCE_LOCALES, type ResourceLocale } from "./prompt-content";
+import {
+  DEFAULT_CONTENT_LOCALE,
+  RESOURCE_LOCALES,
+  type ResourceLocale,
+} from "./prompt-content";
 import {
   SKILL_CATEGORIES,
   SKILL_OWNERS,
@@ -51,7 +56,12 @@ const commaList = z
   .refine(
     (entries) => entries.every((entry) => entry.length > 0),
     "must not contain empty entries",
-  );
+  )
+  // These lists are sets: every one of them becomes a React key or a rendered
+  // link, so a repeat produces the same card twice under one key.
+  .refine((entries) => new Set(entries).size === entries.length, {
+    message: "must not repeat an entry",
+  });
 
 const slugList = commaList.refine(
   (entries) => entries.every((entry) => SLUG_PATTERN.test(entry)),
@@ -151,7 +161,10 @@ function assertSkillFileShape(
     }
   }
 
-  const declaredName = /^name:\s*(.+?)\s*$/m.exec(header)?.[1];
+  // Unquoted, because quoting a scalar is ordinary YAML and the file is meant
+  // to be usable outside this site.
+  const rawName = /^name:\s*(.+?)\s*$/m.exec(header)?.[1];
+  const declaredName = rawName ? unquoteScalar(rawName) : undefined;
   if (declaredName && declaredName !== slug) {
     throw new Error(
       `${sourceName}: the skill file declares name '${declaredName}' but lives at '${slug}.md'.`,
@@ -341,7 +354,12 @@ async function readSkillsForLocale(
       .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
       .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
-  } catch {
+  } catch (error) {
+    // Only "this locale has no directory yet" is a real state. Any other fault
+    // — a permission error, too many open files — must not be reported as an
+    // empty library: downstream, empty is legitimate, so a transient IO failure
+    // would 404 every published URL and silently empty the sitemap.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     // A locale with no library yet is a real state, not a build failure.
     return [];
   }
@@ -361,16 +379,26 @@ function assertRelatedSkillsResolve(skills: readonly SkillResource[]): void {
     slugs.add(skill.slug);
     byLocale.set(skill.locale, slugs);
   }
+  const defaultSlugs = byLocale.get(DEFAULT_CONTENT_LOCALE) ?? new Set<string>();
 
   for (const skill of skills) {
-    const known = byLocale.get(skill.locale) ?? new Set<string>();
+    const own = byLocale.get(skill.locale) ?? new Set<string>();
+    // A translated file may legitimately point at a slug only the default
+    // locale owns: the reader resolves it through the same per-slug fallback
+    // the page uses. Validating against the locale's own files alone would
+    // reject the first translation anyone writes.
+    const resolvable =
+      skill.locale === DEFAULT_CONTENT_LOCALE
+        ? own
+        : new Set([...own, ...defaultSlugs]);
+
     for (const related of skill.relatedSkills) {
       if (related === skill.slug) {
         throw new Error(
           `skills/${skill.locale}/${skill.slug}.md: relatedSkills must not link to itself.`,
         );
       }
-      if (!known.has(related)) {
+      if (!resolvable.has(related)) {
         throw new Error(
           `skills/${skill.locale}/${skill.slug}.md: relatedSkills references unknown skill '${related}'.`,
         );
@@ -456,4 +484,22 @@ export async function getSkillForLocale(
 ): Promise<SkillResource | null> {
   const { skills } = await getSkillsForLocale(locale);
   return skills.find((skill) => skill.slug === slug) ?? null;
+}
+
+/**
+ * The locales that have their own file for this slug.
+ *
+ * Drives hreflang: a locale serving another locale's text through the fallback
+ * must not announce itself as that language's version of the page.
+ */
+export async function localesOwningSkill(
+  slug: string,
+): Promise<readonly string[]> {
+  const owned = await Promise.all(
+    RESOURCE_LOCALES.map(async (locale) => ({
+      locale,
+      owns: (await getSkills(locale)).some((entry) => entry.slug === slug),
+    })),
+  );
+  return owned.filter((entry) => entry.owns).map((entry) => entry.locale);
 }

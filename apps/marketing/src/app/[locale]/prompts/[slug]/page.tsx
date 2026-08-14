@@ -21,9 +21,10 @@ import { siteConfig } from "@/config/site";
 import { routing } from "@/i18n/routing";
 import {
   getPromptForLocale,
-  getPrompts,
   getPromptsForLocale,
+  localesOwningPrompt,
 } from "@/lib/prompt-content";
+import { resourceAlternates } from "@/lib/resource-alternates";
 import { getSkillForLocale } from "@/lib/skill-content";
 import { localePath, localeUrl } from "@/lib/locale-path";
 import { generatePageMetadata } from "@/lib/seo";
@@ -41,10 +42,16 @@ export const revalidate = 3600;
  * other.
  */
 export async function generateStaticParams() {
-  const { prompts } = await getPromptsForLocale("en");
-  return routing.locales.flatMap((locale) =>
-    prompts.map((prompt) => ({ locale, slug: prompt.slug })),
+  // Per locale, not the English list copied to each: a locale-exclusive file
+  // would otherwise render on demand, which is where the cross-library throw
+  // stops being a build failure and becomes a production error page.
+  const perLocale = await Promise.all(
+    routing.locales.map(async (locale) => {
+      const { prompts } = await getPromptsForLocale(locale);
+      return prompts.map((prompt) => ({ locale, slug: prompt.slug }));
+    }),
   );
+  return perLocale.flat();
 }
 
 export async function generateMetadata({
@@ -73,29 +80,13 @@ export async function generateMetadata({
     path: `${PATH}/${slug}`,
   });
 
-  // Only claim a language alternate when that locale has its own file. The
-  // default helper claims both unconditionally, which on this route would tell
-  // search engines the /zh URL is the Chinese version of a prompt whose body is
-  // still English — the same reason the blog detail page overrides it.
-  const alternateLocale = locale === "en" ? "zh" : "en";
-  const alternateExists = (await getPrompts(alternateLocale)).some(
-    (entry) => entry.slug === slug,
-  );
-  const canonical = localeUrl(locale, `${PATH}/${slug}`);
-
-  return {
-    ...metadata,
-    alternates: {
-      canonical,
-      languages: {
-        [locale]: canonical,
-        ...(alternateExists
-          ? { [alternateLocale]: localeUrl(alternateLocale, `${PATH}/${slug}`) }
-          : {}),
-        "x-default": localeUrl("en", `${PATH}/${slug}`),
-      },
-    },
-  };
+  return resourceAlternates({
+    metadata,
+    locale,
+    owningLocale: prompt.locale,
+    path: `${PATH}/${slug}`,
+    localesOwningFile: await localesOwningPrompt(slug),
+  });
 }
 
 export default async function PromptDetailPage({
@@ -144,21 +135,27 @@ export default async function PromptDetailPage({
   const related = [...explicitRelated, ...sameCategory].slice(0, RELATED_LIMIT);
 
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
+  // Formatted in UTC so the visible date always matches dateModified in the
+  // schema on the same page. Without it, a non-UTC runtime shows the day before.
   const updatedLabel = new Date(prompt.updatedAt).toLocaleDateString(
     dateLocale,
     {
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "UTC",
     },
   );
+  // Structured data describes the resource, so it points at the URL that owns
+  // the content rather than the fallback route a reader happens to be on.
+  const canonicalUrl = localeUrl(prompt.locale, `${PATH}/${slug}`);
 
   const creativeWorkLd = {
     "@context": "https://schema.org",
     "@type": "CreativeWork",
     name: prompt.title,
     description: prompt.description,
-    url: localeUrl(locale, `${PATH}/${slug}`),
+    url: canonicalUrl,
     inLanguage: prompt.locale === "zh" ? "zh-CN" : "en",
     datePublished: prompt.publishedAt,
     dateModified: prompt.updatedAt,

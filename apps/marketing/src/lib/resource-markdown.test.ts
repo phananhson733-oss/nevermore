@@ -123,9 +123,20 @@ describe("extractFencedBlock", () => {
   });
 
   it("rejects a section with no block at all", () => {
+    expect(() => extractFencedBlock("", "f.md", "Prompt")).toThrow(
+      /must contain a closed fenced code block/,
+    );
+  });
+
+  it("rejects prose sitting outside the block", () => {
+    // The section maps to one string, so this sentence has nowhere to render.
     expect(() =>
-      extractFencedBlock("just prose", "f.md", "Prompt"),
-    ).toThrow(/must contain a closed fenced code block/);
+      extractFencedBlock(
+        lines("Introduction that matters.", "", "```text", "body", "```"),
+        "f.md",
+        "Prompt",
+      ),
+    ).toThrow(/has text outside its fenced block/);
   });
 
   it("does not treat a tilde line as closing a backtick fence", () => {
@@ -199,8 +210,31 @@ describe("parseBulletList", () => {
   });
 
   it("rejects an empty list", () => {
-    expect(() => parseBulletList("prose only", "f.md", "Scope")).toThrow(
+    expect(() => parseBulletList("", "f.md", "Scope")).toThrow(
       /must list at least one item/,
     );
+  });
+
+  it("rejects prose that would not render as a list item", () => {
+    expect(() =>
+      parseBulletList(lines("This intro never renders.", "", "- a"), "f.md", "Scope"),
+    ).toThrow(/renders as a flat list/);
+  });
+
+  it("ignores bullets inside a fenced example", () => {
+    // A "- item" in an example is example text, not a page bullet.
+    expect(
+      parseBulletList(
+        lines("- real", "", "```text", "- fake from code", "```"),
+        "f.md",
+        "Scope",
+      ),
+    ).toEqual(["real"]);
+  });
+
+  it("rejects a repeated item", () => {
+    expect(() =>
+      parseBulletList(lines("- same", "- same"), "f.md", "Scope"),
+    ).toThrow(/repeats an item/);
   });
 });

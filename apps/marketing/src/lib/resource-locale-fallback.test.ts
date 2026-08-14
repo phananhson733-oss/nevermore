@@ -23,6 +23,7 @@ useCase: 内容规划
 outputFormat: 表格
 models: ChatGPT, Claude
 keywords: 关键词聚类, seo 提示词
+relatedPrompts: topical-map-prompt
 status: published
 publishedAt: 2026-08-14
 ---
@@ -109,6 +110,22 @@ describe("partial translation", () => {
 
     // The hub still tells the reader some entries are English.
     expect(hasFallback).toBe(true);
+  });
+
+  it("lets a translation reference a prompt only English owns", async () => {
+    // The zh fixture points at topical-map-prompt, which has no zh file. The
+    // reader resolves it through the same per-slug fallback, so validating a
+    // translation against its own directory alone would reject the first
+    // translated file anyone writes.
+    const { prompts } = await getPromptsForLocale("zh");
+    const translated = prompts.find(
+      (prompt) => prompt.slug === "seo-keyword-clustering-prompt",
+    );
+
+    expect(translated?.relatedPrompts).toContain("topical-map-prompt");
+    expect(prompts.map((prompt) => prompt.slug)).toContain(
+      "topical-map-prompt",
+    );
   });
 
   it("reports no fallback for the English library itself", async () => {

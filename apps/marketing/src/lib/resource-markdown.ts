@@ -35,15 +35,22 @@ function advanceFence(line: string, open: string | null): string | null {
   if (!match?.[1]) return open;
 
   const marker = match[1];
-  if (open === null) return marker;
-
   const trailing = line.slice(match[0].length).trim();
+
+  if (open === null) {
+    // A backtick fence's info string may not itself contain a backtick, so a
+    // line like ```text `literal` opens nothing. Treating it as an opener would
+    // swallow the headings that follow, or report a false unterminated block.
+    if (marker[0] === "`" && trailing.includes("`")) return null;
+    return marker;
+  }
+
   const closes =
     marker[0] === open[0] && marker.length >= open.length && trailing === "";
   return closes ? null : open;
 }
 
-function unquote(value: string): string {
+export function unquoteScalar(value: string): string {
   const trimmed = value.trim();
   if (
     trimmed.length >= 2 &&
@@ -89,7 +96,7 @@ export function parseResourceFrontmatter(
         `${sourceName}:${index + 2}: duplicate '${match[1]}' field.`,
       );
     }
-    values[match[1]] = unquote(match[2]);
+    values[match[1]] = unquoteScalar(match[2]);
   }
 
   const body = source.slice(boundary + "\n---\n".length).trim();
@@ -117,7 +124,19 @@ export function splitResourceSections(
   let fence: string | null = null;
 
   const flush = (): void => {
-    if (heading === null) return;
+    if (heading === null) {
+      // Text before the first `##` belongs to no section, so it would be
+      // dropped on the floor while the file still parsed cleanly.
+      const preamble = buffer.join("\n").trim();
+      if (preamble !== "") {
+        throw new Error(
+          `${sourceName}: text before the first '## ' section would not be published: ${JSON.stringify(
+            preamble.split("\n")[0],
+          )}.`,
+        );
+      }
+      return;
+    }
     if (sections.has(heading)) {
       throw new Error(`${sourceName}: duplicate '## ${heading}' section.`);
     }
@@ -164,7 +183,19 @@ export function splitResourceSubsections(
 
   const seen = new Set<string>();
   const flush = (): void => {
-    if (heading === null) return;
+    if (heading === null) {
+      // Same reasoning as the section splitter: text before the first `###`
+      // has no subsection to live in and would vanish from the page.
+      const preamble = buffer.join("\n").trim();
+      if (preamble !== "") {
+        throw new Error(
+          `${sourceName}: '${label}' has text before its first '### ' heading, which would not be published: ${JSON.stringify(
+            preamble.split("\n")[0],
+          )}.`,
+        );
+      }
+      return;
+    }
     // Duplicate headings become duplicate React keys and a card or FAQ entry
     // rendered twice, which reads as a content mistake nobody put there.
     if (seen.has(heading)) {
@@ -222,9 +253,17 @@ export function extractFencedBlock(
   let fence: string | null = null;
   let collected: string[] | null = null;
   let completed: string | null = null;
+  const stray: string[] = [];
 
   for (const line of section.split("\n")) {
     const nextFence = advanceFence(line, fence);
+
+    if (fence === null && nextFence === null && line.trim() !== "") {
+      // Prose outside the block. The section maps to a single string, so this
+      // text has nowhere to render — keeping it silently would publish a prompt
+      // missing the sentence its author wrote right above it.
+      stray.push(line.trim());
+    }
 
     if (fence === null && nextFence !== null) {
       if (completed !== null) {
@@ -242,13 +281,26 @@ export function extractFencedBlock(
     }
 
     if (fence !== null && nextFence === null) {
-      completed = (collected ?? []).join("\n").trim();
+      // Joined without trimming. The opener and closer lines are already
+      // excluded structurally, so everything between them is the payload — and
+      // this string is what the copy button copies and the download route
+      // serves. Trimming it would silently rewrite an author's leading
+      // indentation and trailing lines while the type still promised verbatim.
+      completed = (collected ?? []).join("\n");
       fence = null;
       collected = null;
       continue;
     }
 
     if (collected !== null) collected.push(line);
+  }
+
+  if (stray.length > 0) {
+    throw new Error(
+      `${sourceName}: '${label}' has text outside its fenced block, which would not be published: ${JSON.stringify(
+        stray[0],
+      )}${stray.length > 1 ? ` (and ${stray.length - 1} more line(s))` : ""}.`,
+    );
   }
 
   if (fence !== null) {
@@ -273,7 +325,7 @@ export function extractFencedBlock(
  */
 export function toPlainText(markdown: string): string {
   return markdown
-    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/(^|\n)(`{3,}|~{3,})[\s\S]*?\n\2/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -282,7 +334,9 @@ export function toPlainText(markdown: string): string {
     .replace(/^\s{0,3}>\s?/gm, "")
     .replace(/\*\*([^*]*)\*\*/g, "$1")
     .replace(/\*([^*]*)\*/g, "$1")
-    .replace(/_([^_]*)_/g, "$1")
+    // No italic-underscore rule: prompts document snake_case variable names,
+    // and a pair-matching underscore rule turns "put {{a_b}} into c_d" into
+    // "ab into cd" — the schema would then contradict the visible answer.
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -359,19 +413,55 @@ export function parseBulletList(
   label: string,
 ): readonly string[] {
   const lines = section.split("\n");
-  const items = lines
+
+  // Fence-aware like every other splitter here: a "- item" inside a fenced
+  // example is example text, and promoting it would put a bullet on the page
+  // that the author never wrote as one.
+  const outsideFences: string[] = [];
+  let fence: string | null = null;
+  for (const line of lines) {
+    const nextFence = advanceFence(line, fence);
+    if (nextFence !== fence) {
+      fence = nextFence;
+      continue;
+    }
+    if (fence === null) outsideFences.push(line);
+  }
+  if (fence !== null) {
+    throw new Error(
+      `${sourceName}: '${label}' has an unterminated fenced code block.`,
+    );
+  }
+
+  const items = outsideFences
     .map((line) => /^\s{0,3}[-*+]\s+(.+?)\s*$/.exec(line)?.[1])
     .filter((item): item is string => Boolean(item));
+
+  if (new Set(items).size !== items.length) {
+    throw new Error(`${sourceName}: '${label}' repeats an item.`);
+  }
 
   // These sections render as flat lists, so a nested bullet has nowhere to go.
   // Dropping it quietly is the failure worth preventing: the author sees their
   // sub-point in the file and never on the page.
-  const nested = lines.filter(
-    (line) => /^\s{4,}[-*+]\s+\S/.test(line) && !/^\s{0,3}[-*+]/.test(line),
+  // A tab is a single \s, so a \s{4,} test never sees a tab-indented sub-item.
+  const nested = outsideFences.filter((line) =>
+    /^(?:\t|\s{4,})\s*[-*+]\s+\S/.test(line),
   );
   if (nested.length > 0) {
     throw new Error(
       `${sourceName}: '${label}' must be a flat list; nested items are not rendered (${nested.length} found).`,
+    );
+  }
+
+  const prose = outsideFences.filter(
+    (line) => line.trim() !== "" && !/^\s*[-*+]\s+/.test(line),
+  );
+  if (prose.length > 0) {
+    throw new Error(
+      `${sourceName}: '${label}' renders as a flat list, so this line would not be published: ${JSON.stringify(
+        prose[0]?.trim(),
+      )}.`,
     );
   }
 

@@ -14,10 +14,13 @@ import { routing } from "../../../../../i18n/routing";
 export const revalidate = 3600;
 
 export async function generateStaticParams() {
-  const { skills } = await getSkillsForLocale("en");
-  return routing.locales.flatMap((locale) =>
-    skills.map((skill) => ({ locale, slug: skill.slug })),
+  const perLocale = await Promise.all(
+    routing.locales.map(async (locale) => {
+      const { skills } = await getSkillsForLocale(locale);
+      return skills.map((skill) => ({ locale, slug: skill.slug }));
+    }),
   );
+  return perLocale.flat();
 }
 
 /**

@@ -24,20 +24,75 @@ import {
 } from "../types/resource";
 
 export const RESOURCE_LOCALES = ["en", "zh"] as const;
+
+/** The locale whose files every other locale falls back to. */
+export const DEFAULT_CONTENT_LOCALE: ResourceLocale = "en";
 export type ResourceLocale = (typeof RESOURCE_LOCALES)[number];
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const VARIABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 /**
- * Matches any `{{…}}` run, not only well-formed names.
+ * Scan a prompt for `{{…}}` placeholders, rejecting malformed delimiters.
  *
- * A pattern that only recognised valid snake_case would make a malformed
- * placeholder — `{{SiteTopic}}`, `{{site-topic}}` — invisible to the
- * cross-check, so it would ship undocumented in the copyable prompt while the
- * variable cards looked complete.
+ * Written as a scanner rather than a regex because a regex only ever sees the
+ * shapes it was written for: `{{broken{nested}}}` and an unclosed `{{name` both
+ * slip past a `\{\{([^{}]*)\}\}` match while the surrounding text still looks
+ * fine, so the placeholder ships undocumented in the text an operator copies.
+ * Walking the delimiters means anything that is not exactly one `{{name}}` pair
+ * is a parse error naming the file.
  */
-const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
+function scanPlaceholders(
+  promptText: string,
+  sourceName: string,
+): readonly string[] {
+  const names: string[] = [];
+  let index = 0;
+
+  while (index < promptText.length) {
+    const open = promptText.indexOf("{{", index);
+    if (open === -1) break;
+
+    // A `}}` before the next `{{` is a closer with no opener.
+    const strayClose = promptText.slice(index, open).indexOf("}}");
+    if (strayClose !== -1) {
+      throw new Error(
+        `${sourceName}: prompt has a '}}' with no matching '{{'.`,
+      );
+    }
+
+    const close = promptText.indexOf("}}", open + 2);
+    if (close === -1) {
+      throw new Error(
+        `${sourceName}: prompt has an unterminated '{{' placeholder.`,
+      );
+    }
+
+    const raw = promptText.slice(open + 2, close);
+    if (raw.includes("{") || raw.includes("}")) {
+      throw new Error(
+        `${sourceName}: placeholder '{{${raw}}}' contains a nested brace.`,
+      );
+    }
+    // Whitespace is rejected rather than trimmed: these placeholders are
+    // replaced by hand, not by a template engine, so one spelling is enough and
+    // a silent trim would accept two spellings of the same name.
+    if (!VARIABLE_NAME_PATTERN.test(raw)) {
+      throw new Error(
+        `${sourceName}: placeholder '{{${raw}}}' must be snake_case starting with a letter, with no spaces.`,
+      );
+    }
+
+    names.push(raw);
+    index = close + 2;
+  }
+
+  if (promptText.slice(index).includes("}}")) {
+    throw new Error(`${sourceName}: prompt has a '}}' with no matching '{{'.`);
+  }
+
+  return names;
+}
 
 /** Models a prompt may be labelled as tested against. */
 const KNOWN_MODELS = ["ChatGPT", "Claude", "Gemini", "DeepSeek"] as const;
@@ -64,7 +119,12 @@ const commaList = z
   .refine(
     (entries) => entries.every((entry) => entry.length > 0),
     "must not contain empty entries",
-  );
+  )
+  // These lists are sets: every one of them becomes a React key or a rendered
+  // link, so a repeat produces the same card twice under one key.
+  .refine((entries) => new Set(entries).size === entries.length, {
+    message: "must not repeat an entry",
+  });
 
 const slugList = commaList.refine(
   (entries) => entries.every((entry) => SLUG_PATTERN.test(entry)),
@@ -245,28 +305,9 @@ function assertPlaceholdersMatchVariables(
   variables: readonly PromptVariable[],
   sourceName: string,
 ): void {
-  const raw = [...promptText.matchAll(PLACEHOLDER_PATTERN)].map(
-    (match) => match[1] ?? "",
-  );
-
-  // Reject a malformed placeholder outright. Skipping it would let it through
-  // undocumented, and silently correcting it would change the text an operator
-  // copies without changing the file it came from.
-  const malformed = raw
-    .map((name) => name.trim())
-    .filter((name) => !VARIABLE_NAME_PATTERN.test(name));
-  if (malformed.length > 0) {
-    throw new Error(
-      `${sourceName}: placeholders must be snake_case starting with a letter: ${[
-        ...new Set(malformed),
-      ]
-        .sort()
-        .map((name) => `{{${name}}}`)
-        .join(", ")}.`,
-    );
-  }
-
-  const placeholders = new Set(raw.map((name) => name.trim()));
+  // Structural validation happens in the scanner: by the time names come back,
+  // every delimiter in the prompt has been accounted for.
+  const placeholders = new Set(scanPlaceholders(promptText, sourceName));
   const documented = new Set(variables.map((variable) => variable.name));
 
   const undocumented = [...placeholders].filter(
@@ -382,7 +423,12 @@ async function readPromptsForLocale(
       .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
       .map((entry) => entry.name)
       .sort((left, right) => left.localeCompare(right));
-  } catch {
+  } catch (error) {
+    // Only "this locale has no directory yet" is a real state. Any other fault
+    // — a permission error, too many open files — must not be reported as an
+    // empty library: downstream, empty is legitimate, so a transient IO failure
+    // would 404 every published URL and silently empty the sitemap.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     // A locale with no library yet is a real state, not a build failure: the
     // detail route only claims an alternate when that locale's file exists.
     return [];
@@ -409,16 +455,26 @@ function assertRelatedPromptsResolve(prompts: readonly PromptResource[]): void {
     slugs.add(prompt.slug);
     byLocale.set(prompt.locale, slugs);
   }
+  const defaultSlugs = byLocale.get(DEFAULT_CONTENT_LOCALE) ?? new Set<string>();
 
   for (const prompt of prompts) {
-    const known = byLocale.get(prompt.locale) ?? new Set<string>();
+    const own = byLocale.get(prompt.locale) ?? new Set<string>();
+    // A translated file may legitimately point at a slug only the default
+    // locale owns: the reader resolves it through the same per-slug fallback
+    // the page uses. Validating against the locale's own files alone would
+    // reject the first translation anyone writes.
+    const resolvable =
+      prompt.locale === DEFAULT_CONTENT_LOCALE
+        ? own
+        : new Set([...own, ...defaultSlugs]);
+
     for (const related of prompt.relatedPrompts) {
       if (related === prompt.slug) {
         throw new Error(
           `prompts/${prompt.locale}/${prompt.slug}.md: relatedPrompts must not link to itself.`,
         );
       }
-      if (!known.has(related)) {
+      if (!resolvable.has(related)) {
         throw new Error(
           `prompts/${prompt.locale}/${prompt.slug}.md: relatedPrompts references unknown prompt '${related}'.`,
         );
@@ -511,4 +567,22 @@ export async function getPromptForLocale(
 ): Promise<PromptResource | null> {
   const { prompts } = await getPromptsForLocale(locale);
   return prompts.find((prompt) => prompt.slug === slug) ?? null;
+}
+
+/**
+ * The locales that have their own file for this slug.
+ *
+ * Drives hreflang: a locale serving another locale's text through the fallback
+ * must not announce itself as that language's version of the page.
+ */
+export async function localesOwningPrompt(
+  slug: string,
+): Promise<readonly string[]> {
+  const owned = await Promise.all(
+    RESOURCE_LOCALES.map(async (locale) => ({
+      locale,
+      owns: (await getPrompts(locale)).some((entry) => entry.slug === slug),
+    })),
+  );
+  return owned.filter((entry) => entry.owns).map((entry) => entry.locale);
 }

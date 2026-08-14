@@ -153,7 +153,7 @@ Example: Freelance designers`,
     );
 
     expect(() => parsePromptFile("en", "example-prompt.md", source)).toThrow(
-      /placeholders must be snake_case.*\{\{TargetMarket\}\}/s,
+      /placeholder '\{\{TargetMarket\}\}' must be snake_case/,
     );
   });
 

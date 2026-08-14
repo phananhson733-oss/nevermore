@@ -84,7 +84,9 @@ export default async function SkillsHubPage({
       position: index + 1,
       name: skill.title,
       description: skill.description,
-      url: localeUrl(locale, `${PATH}/${skill.slug}`),
+      // The owning locale's URL: listing the fallback route here would
+      // advertise a second address for the same text.
+      url: localeUrl(skill.locale, `${PATH}/${skill.slug}`),
     })),
   };
 
