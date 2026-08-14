@@ -265,8 +265,10 @@ function EnArticle() {
         <h3 className={H3}>Twenty real page ones, not a difficulty model</h3>
         <p className={P}>
           For up to twenty surviving terms per run, the map opens the actual
-          search results page and resolves the authority of every domain in the
-          top ten. A term is called winnable on one observation only: a
+          search results page and looks up the authority of the domains in its
+          top ten — a domain the provider has no data on stays unresolved rather
+          than being scored zero, and the verdict rests on the ranks that did
+          resolve. A term is called winnable on one observation only: a
           low-authority domain — at or below 200 on the provider&apos;s 0–1000
           scale — already holds a page-one place. The row names that domain and
           the position it holds, and records whether the provider observed an AI
@@ -356,7 +358,7 @@ function ZhArticle() {
 
         <h3 className={H3}>二十个真实第一页，而不是一个难度模型</h3>
         <p className={P}>
-          对每次运行至多二十个通过的词，地图会打开真实的搜索结果页，并解析前十名每个域名的权重。一个词被称为可赢只基于一条观测：一个低权重域名——在数据源
+          对每次运行至多二十个通过的词，地图会打开真实的搜索结果页，逐个查询前十名域名的权重——数据源没有数据的域名保持「未解析」而不会被记成零，判定只建立在成功解析的权重上。一个词被称为可赢只基于一条观测：一个低权重域名——在数据源
           0–1000 标度上不超过
           200——已经占住了第一页的位置。那一行会写明是哪个域名、排在第几位，并记录数据源是否在那一页上观测到
           AI

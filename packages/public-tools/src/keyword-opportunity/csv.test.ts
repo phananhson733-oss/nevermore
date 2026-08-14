@@ -155,6 +155,27 @@ describe("keywordOpportunityCsv", () => {
     );
     expect(lines(csv)[1]).toContain('"espresso, but portable"');
   });
+
+  it("exports rows in the display order: SEO by volume descending, then GEO", () => {
+    // The file and the page are the same claim. A reader who downloads and
+    // compares must not find the two disagreeing about order.
+    const small = row({ keyword: "small" });
+    const big = {
+      ...row({ keyword: "big" }),
+      validation: { ...row({}).validation, volume: 9000 },
+    };
+    const question = {
+      ...row({ keyword: "a question", lane: "geo" as const }),
+      supportingPageUrl: "https://example.test/page",
+    };
+    const csv = keywordOpportunityCsv(result([question, small, big]));
+
+    expect(
+      lines(csv)
+        .slice(1)
+        .map((line) => line.split(",")[3]),
+    ).toEqual(["big", "small", "a question"]);
+  });
 });
 
 describe("keywordOpportunityCsvFilename", () => {

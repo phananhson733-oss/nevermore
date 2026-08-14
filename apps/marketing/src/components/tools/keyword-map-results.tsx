@@ -21,6 +21,7 @@ import type { KeywordOpportunityCheck } from "@sf/public-tools/keyword-opportuni
 import {
   keywordOpportunityCsv,
   keywordOpportunityCsvFilename,
+  keywordOpportunityDisplayRows,
 } from "@sf/public-tools/keyword-opportunity/csv";
 // Relative, not `@/`: the shared Vitest config maps `@/` to apps/web only, so
 // an aliased import would make this file unimportable from a test.
@@ -144,12 +145,12 @@ export function KeywordMapResults({
   // Volume descending, unpriced rows last. The payload arrives in candidate
   // order — which is the generator's order — and the 2026-08-14 live review
   // found the highest-volume term sitting at row eight of fifteen. Sorting by
-  // the measured number is presentation, not judgement: the verdicts and
-  // checks on each row are unchanged.
-  const seo = result.rows
-    .filter((row) => row.lane === "seo")
-    .sort((a, b) => (b.validation.volume ?? -1) - (a.validation.volume ?? -1));
-  const geo = result.rows.filter((row) => row.lane === "geo");
+  // the measured number is presentation, not judgement, and it lives in the
+  // shared helper so the CSV export cannot disagree with the tables about
+  // order.
+  const ordered = keywordOpportunityDisplayRows(result.rows);
+  const seo = ordered.filter((row) => row.lane === "seo");
+  const geo = ordered.filter((row) => row.lane === "geo");
   // A group of one is not a group. Every keyword that matched nothing becomes
   // its own cluster in the payload, so rendering them all turns "terms that
   // belong on one page" into a second copy of the results table.

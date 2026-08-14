@@ -115,12 +115,34 @@ function rowCells(
   ].join(",");
 }
 
+/**
+ * The rows in the order every surface shows them: the SEO lane sorted by
+ * measured volume descending with unpriced rows last, then the GEO lane in
+ * payload order.
+ *
+ * Shared by the on-screen tables and the export below because the file and
+ * the page are the same claim — a reader who downloads and then compares
+ * must not find the two disagreeing about order. Two independent sorts
+ * would drift the first time one of them changes.
+ */
+export function keywordOpportunityDisplayRows(
+  rows: readonly KeywordOpportunityRow[],
+): readonly KeywordOpportunityRow[] {
+  const seo = rows
+    .filter((row) => row.lane === "seo")
+    .sort((a, b) => (b.validation.volume ?? -1) - (a.validation.volume ?? -1));
+  const geo = rows.filter((row) => row.lane === "geo");
+  return [...seo, ...geo];
+}
+
 /** The shown rows as CSV, in the order the surface displays them. */
 export function keywordOpportunityCsv(
   result: KeywordOpportunityResult,
 ): string {
   const header = COLUMNS.join(",");
-  const rows = result.rows.map((row) => rowCells(result, row));
+  const rows = keywordOpportunityDisplayRows(result.rows).map((row) =>
+    rowCells(result, row),
+  );
   // CRLF because RFC 4180 specifies it and Excel is the least forgiving
   // reader of the two conventions.
   return `${BOM}${[header, ...rows].join("\r\n")}`;
