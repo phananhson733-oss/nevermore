@@ -1814,13 +1814,17 @@
       "runningStatus": "Still running, {seconds} seconds elapsed.",
       "elapsed": "{seconds}s elapsed",
       "statusDone": "Done. {count} opportunities.",
+      "cooldown": "You can try again in {seconds}s.",
+      "exportCsv": "Export CSV",
+      "commonChecksIntro": "Before acting on any row:",
+      "retryWithSeeds": "Use these as seeds and run again",
       "runContext": "Read {site} for {market} / {language}. {pages} pages fetched, {productPages} of them product pages.",
       "funnelIntro": "What each stage of the run saw. The counts overlap on purpose: the GEO lane is not gated on demand, so a term the provider had no data for can still be shown. Read it as where the evidence went, not as a division of the total.",
       "notMeasured": "not checked",
       "emptyTitle": "Nothing reached the tables",
       "emptyBody": "No candidate this run generated reached either table. The counts above show what each stage saw, and the list below names every term with the specific wall it hit. That is a finding about this market's public data, not a verdict on the site.",
       "emptyBodyPartial": "Part of this run did not complete, so some candidates were never judged at all rather than judged and dropped. The counts above show which gates actually ran; until the missing stage recovers, an empty list here is not evidence that there is nothing to find.",
-      "clustersTitle": "Terms that could share one page",
+      "clustersTitle": "Lexically related terms — review before merging",
       "clustersIntro": "Terms whose wording overlaps enough that one page could serve them all. Only groups of two or more are listed, so the page count this implies is these groups plus one for every term that stands alone. Grouping is lexical, which makes it a suggestion and not a site structure: proving two terms belong on one page needs the page-one overlap this run does not fetch.",
       "funnel": {
         "generated": "Generated",
@@ -1833,7 +1837,7 @@
         "winnableEvidence": "Weak site on page one",
         "shown": "Shown"
       },
-      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale. A low number means somebody small is already there — which is evidence, not a promise.",
+      "weakestHint": "Weakest rank is the lowest domain authority currently holding a page-one place, on the provider's 0–1000 scale; the domain holding it and its position sit under the number so you can open the page yourself. A 0 is the provider's own value for a domain it has no backlink data on, not a measurement of weakness. It is one proxy signal, not a verdict on the whole page — a low number means somebody small is already there, which is evidence, not a promise.",
       "geoHint": "These carry no demand data on purpose. Question phrasings almost never have measurable search volume, so they are judged on whether your site already has a page that answers them.",
       "withheldTitle": "Held back, and why",
       "withheldIntro": "Each of these hit a specific wall. The reason names which one, because they imply different next moves.",
@@ -1848,9 +1852,14 @@
         "volume": "Volume",
         "difficulty": "KD",
         "weakest": "Weakest rank",
+        "aiOverview": "AI Overview",
         "supportingPage": "Page that answers it",
         "coverage": "Your coverage",
         "nextChecks": "Check before acting"
+      },
+      "aio": {
+        "shown": "On page one",
+        "notShown": "Not observed"
       },
       "lane": {
         "seo": {
@@ -1882,6 +1891,7 @@
         "volume_not_returned": "The provider returned no data for it — which is not the same as zero",
         "already_covered": "Your site already serves this query",
         "page_one_contested": "Page one was sampled and strong sites hold it",
+        "page_one_ranks_unresolved": "Page one was opened but the provider resolved no authority for its domains — a data gap, not a verdict, and a re-run hits the same gap",
         "serp_sample_budget_exhausted": "The run's page-one budget did not reach it",
         "serp_sample_unavailable": "Page-one sampling did not run",
         "no_supporting_page": "No crawled page answers it"
@@ -1936,7 +1946,13 @@
         "bot_protection_blocked": "The site's bot protection turned us away, so there was nothing to read.",
         "rate_limited_by_target": "The site asked us to slow down. Try again in a few minutes.",
         "protocol_downgrade_rejected": "That URL redirected to an insecure address, which we do not follow.",
-        "too_few_pages": "Fewer than three pages could be read, which is not enough context to generate candidates from."
+        "too_few_pages": "Fewer than three pages could be read, which is not enough context to generate candidates from.",
+        "invalid_url": "That URL could not be parsed. Check it and try again.",
+        "scan_in_progress": "A run from your connection is already in progress. Give it a few seconds to finish.",
+        "target_busy": "That site has been read several times in the last hour — by you or by others — and we cap how often any one site gets crawled. Try again later.",
+        "quota_unavailable": "Our rate limiter could not be reached just now, and we do not run without one. Try again in a minute.",
+        "gsc_revoked": "This browser no longer holds a usable Search Console authorization. Reconnect to run the map.",
+        "gsc_temporarily_unavailable": "Google could not renew your authorization just now. Nothing about your access changed — try again shortly."
       }
     }
   },

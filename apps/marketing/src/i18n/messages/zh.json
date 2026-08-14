@@ -1814,13 +1814,17 @@
       "runningStatus": "仍在运行，已用时 {seconds} 秒。",
       "elapsed": "已用时 {seconds} 秒",
       "statusDone": "完成，{count} 条机会。",
+      "cooldown": "还有 {seconds} 秒可重试。",
+      "exportCsv": "导出 CSV",
+      "commonChecksIntro": "对每一行都适用的检查：",
+      "retryWithSeeds": "把这些词填入种子再跑一次",
       "runContext": "读取了 {site}，市场 {market} / 语言 {language}。抓取 {pages} 个页面，其中 {productPages} 个像产品页。",
       "funnelIntro": "本次运行每一步各看到了多少。这些计数会重叠，是有意的：GEO 泳道本来就不以需求量为门槛，所以一个数据源没有数据的词照样可能出现在结果里。把它读成「证据花在了哪里」，不是「总数被切成了几块」。",
       "notMeasured": "未检查",
       "emptyTitle": "没有候选词进入上面的表格",
       "emptyBody": "本次运行生成的候选词，没有一个进入上面两张表。上面的计数写明每一步各看到了什么，下面的清单逐条列出每个词具体撞在哪一道墙上。这是关于这个市场公开数据的结论，不是对站点的判决。",
       "emptyBodyPartial": "本次运行有一部分没跑完，所以有些候选词根本没被判过，而不是判过之后被筛掉。上面的计数说明哪几道闸口真的跑了；在缺失的那一步恢复之前，这里的空清单不能当成「没有东西可找」的证据。",
-      "clustersTitle": "可以放在同一个页面上的词",
+      "clustersTitle": "词面相近的词——合并前需人工核实",
       "clustersIntro": "词面重合到可以由同一个页面服务的词。这里只列两个词以上的组，所以它隐含的页面数是「这些组，加上每个单独成立的词各一页」。分组只看词面，所以这是建议而不是站点结构：要证明两个词该共用一个页面，需要本次运行没有抓取的第一页重合度。",
       "funnel": {
         "generated": "已生成",
@@ -1833,7 +1837,7 @@
         "winnableEvidence": "第一页有弱站",
         "shown": "已展示"
       },
-      "weakestHint": "「最弱排名」指当前占据第一页的域名里权重最低的那个，用数据源的 0–1000 标度。数字低说明已经有小站进去了——这是证据，不是承诺。",
+      "weakestHint": "「最弱排名」指当前占据第一页的域名里权重最低的那个，用数据源的 0–1000 标度；数字下方标出它是哪个域名、排在第几位，方便你亲自打开那一页核对。0 是数据源对「没有该域名外链数据」的记法，不是测出来的弱。这只是一个代理信号，不是对整个第一页难度的判定——数字低说明已经有小站进去了，这是证据，不是承诺。",
       "geoHint": "这些刻意不带需求数据。问句形式几乎都没有可测量的搜索量，所以判据是「你站上是否已经有页面回答它」。",
       "withheldTitle": "被拦下的，以及原因",
       "withheldIntro": "每一条都撞在某一道具体的墙上。原因写明是哪一道，因为它们对应的下一步动作不同。",
@@ -1848,9 +1852,14 @@
         "volume": "搜索量",
         "difficulty": "KD",
         "weakest": "最弱排名",
+        "aiOverview": "AI Overview",
         "supportingPage": "回答它的页面",
         "coverage": "你的覆盖情况",
         "nextChecks": "动手前先查"
+      },
+      "aio": {
+        "shown": "第一页有",
+        "notShown": "未观测到"
       },
       "lane": {
         "seo": {
@@ -1882,6 +1891,7 @@
         "volume_not_returned": "数据源对它没有任何数据——这和「零」不是一回事",
         "already_covered": "你的站点已经在服务这个查询",
         "page_one_contested": "第一页抽样过了，被强站占着",
+        "page_one_ranks_unresolved": "第一页打开了，但数据源解析不出其中域名的权重——这是数据缺口，不是判定，重跑会撞上同一个缺口",
         "serp_sample_budget_exhausted": "本次的第一页抽样预算没轮到它",
         "serp_sample_unavailable": "第一页抽样没跑成",
         "no_supporting_page": "爬到的页面里没有能回答它的"
@@ -1936,7 +1946,13 @@
         "bot_protection_blocked": "站点的机器人防护把我们挡了回来，读不到内容。",
         "rate_limited_by_target": "站点要求我们放慢速度。过几分钟再试。",
         "protocol_downgrade_rejected": "那个 URL 跳转到了不安全的地址，我们不跟随这种跳转。",
-        "too_few_pages": "能读到的页面不足三个，不够作为生成候选词的上下文。"
+        "too_few_pages": "能读到的页面不足三个，不够作为生成候选词的上下文。",
+        "invalid_url": "这个 URL 无法解析。检查后重试。",
+        "scan_in_progress": "你的网络已有一次运行还没结束。等几秒再试。",
+        "target_busy": "这个站点在过去一小时里被读取过多次（可能是你，也可能是别人），我们对任何单个站点的抓取频率有上限。稍后再试。",
+        "quota_unavailable": "我们的限流服务暂时连不上；宁可不跑，也不无上限地跑。一分钟后再试。",
+        "gsc_revoked": "这个浏览器已不再持有可用的 Search Console 授权。重新连接后即可运行。",
+        "gsc_temporarily_unavailable": "Google 刚才没能续期你的授权。你的访问权限没有任何变化——稍后重试即可。"
       }
     }
   },
