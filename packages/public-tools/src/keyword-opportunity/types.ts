@@ -269,12 +269,33 @@ export interface KeywordOpportunityValidation {
   readonly serpFeatures: readonly string[];
 }
 
-/** One sampled page one, reduced to the fact that decides winnability. */
+/** One sampled page one, reduced to the facts that decide winnability. */
 export interface KeywordOpportunitySerpEvidence {
   readonly verdict: KeywordOpportunityWinnability;
   /** Lowest provider domain rank seen in the top ten; null when unsampled. */
   readonly weakestTopTenDomainRank: number | null;
+  /**
+   * The domain holding that weakest rank, and the position a reader sees it
+   * at. The rank alone proved misleading in the 2026-08-14 live review: a
+   * weak domain at position 10 and one at position 2 are different facts, and
+   * without the identity the reader cannot open the page and check. Null
+   * whenever the rank is null.
+   */
+  readonly weakestTopTenDomain: string | null;
+  readonly weakestTopTenPosition: number | null;
   readonly topTenDomains: readonly string[];
+  /**
+   * Provider domain rank per entry of `topTenDomains`, in the same order.
+   * `null` marks a domain the rank lookup did not resolve — never 0, which
+   * the provider reserves for its own "no backlink data" conflation.
+   */
+  readonly topTenDomainRanks: readonly (number | null)[];
+  /**
+   * SERP element types the provider observed on the sampled page, e.g.
+   * `ai_overview`. `null` means the provider reported none or the page was
+   * never sampled — a reader must not read absence as "no AI Overview".
+   */
+  readonly pageOneItemTypes: readonly string[] | null;
   /**
    * True when the verdict came from a fallback model rather than a sampled
    * page one. Surfaces must label estimates; they may not present them as
@@ -397,6 +418,7 @@ export type KeywordOpportunityEnvelope = PublicToolResultEnvelope<
 export type KeywordOpportunityErrorCode =
   | "invalid_input"
   | "invalid_request"
+  | "invalid_url"
   | "payload_too_large"
   | "unsupported_media_type"
   | "authentication_required"
@@ -409,11 +431,27 @@ export type KeywordOpportunityErrorCode =
   | "bot_protection_blocked"
   | "rate_limited_by_target"
   | "protocol_downgrade_rejected"
-  | "too_few_pages";
+  | "too_few_pages"
+  /**
+   * The four admission-gate codes and the two grant codes below used to be
+   * missing from this union even though both gates emit them on every refusal
+   * path. The surface maps unknown codes to a generic "something went wrong on
+   * our side", so a visitor whose Google authorization had lapsed
+   * (`gsc_revoked`, a 401) was told the tool was broken — with no way back to
+   * the consent screen, because the reconnect link only rendered for
+   * `authentication_required`. Every code an endpoint can answer with belongs
+   * here, which is what the comment above has promised all along.
+   */
+  | "scan_in_progress"
+  | "target_busy"
+  | "quota_unavailable"
+  | "gsc_revoked"
+  | "gsc_temporarily_unavailable";
 
 export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "invalid_input",
   "invalid_request",
+  "invalid_url",
   "payload_too_large",
   "unsupported_media_type",
   "authentication_required",
@@ -427,6 +465,11 @@ export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "rate_limited_by_target",
   "protocol_downgrade_rejected",
   "too_few_pages",
+  "scan_in_progress",
+  "target_busy",
+  "quota_unavailable",
+  "gsc_revoked",
+  "gsc_temporarily_unavailable",
 ] as const satisfies readonly KeywordOpportunityErrorCode[];
 
 /**

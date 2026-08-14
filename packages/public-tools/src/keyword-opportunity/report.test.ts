@@ -44,14 +44,22 @@ const NO_PROVIDER_DATA: KeywordOpportunityValidation = {
 const WINNABLE: KeywordOpportunitySerpEvidence = {
   verdict: "winnable_evidence",
   weakestTopTenDomainRank: 41,
+  weakestTopTenDomain: "small.test",
+  weakestTopTenPosition: 3,
   topTenDomains: ["small.test", "big.test"],
+  topTenDomainRanks: [41, 900],
+  pageOneItemTypes: null,
   isEstimate: false,
 };
 
 const CONTESTED: KeywordOpportunitySerpEvidence = {
   verdict: "contested_evidence",
   weakestTopTenDomainRank: 780,
+  weakestTopTenDomain: "big.test",
+  weakestTopTenPosition: 1,
   topTenDomains: ["big.test", "bigger.test"],
+  topTenDomainRanks: [780, 950],
+  pageOneItemTypes: null,
   isEstimate: false,
 };
 

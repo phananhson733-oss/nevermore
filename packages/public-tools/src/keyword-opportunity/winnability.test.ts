@@ -9,16 +9,22 @@ import {
 import type { KeywordOpportunitySerpSample } from "./winnability.ts";
 import type { KeywordOpportunitySerpEvidence } from "./types.ts";
 
+/** Positions default to reading order — the shape the provider client emits. */
 function sample(
   ranks: ReadonlyArray<readonly [string, number | null]>,
+  pageItemTypes: readonly string[] | null = null,
 ): KeywordOpportunitySerpSample {
   return {
-    domains: ranks.map(([domain]) => domain),
+    results: ranks.map(([domain], index) => ({
+      domain,
+      position: index + 1,
+    })),
     domainRanks: new Map(
       ranks.filter(
         (entry): entry is readonly [string, number] => entry[1] !== null,
       ),
     ),
+    pageItemTypes,
   };
 }
 
@@ -28,7 +34,11 @@ function evidence(
   return {
     verdict: "winnable_evidence",
     weakestTopTenDomainRank: 12,
+    weakestTopTenDomain: "weak.test",
+    weakestTopTenPosition: 4,
     topTenDomains: [],
+    topTenDomainRanks: [],
+    pageOneItemTypes: null,
     isEstimate: false,
     ...overrides,
   };
@@ -48,7 +58,11 @@ describe("judgeKeywordWinnability", () => {
     expect(result).toEqual({
       verdict: "winnable_evidence",
       weakestTopTenDomainRank: 140,
+      weakestTopTenDomain: "tinyblog.test",
+      weakestTopTenPosition: 2,
       topTenDomains: ["wikipedia.org", "tinyblog.test", "amazon.com"],
+      topTenDomainRanks: [900, 140, 950],
+      pageOneItemTypes: null,
       isEstimate: false,
     });
   });
@@ -67,7 +81,46 @@ describe("judgeKeywordWinnability", () => {
     );
 
     expect(result.weakestTopTenDomainRank).toBe(37);
+    expect(result.weakestTopTenDomain).toBe("b.test");
+    expect(result.weakestTopTenPosition).toBe(2);
     expect(result.verdict).toBe("winnable_evidence");
+  });
+
+  it("keeps the best position on a rank tie, since that is the page worth opening first", () => {
+    // Two holders sharing the weakest rank differ only by where they sit; the
+    // one nearer the top is the stronger evidence and the natural page to
+    // check. Strictly-less-than in the scan pins this to the earliest slot.
+    const result = judgeKeywordWinnability(
+      sample([
+        ["strong.test", 800],
+        ["first-weak.test", 90],
+        ["second-weak.test", 90],
+      ]),
+      null,
+    );
+
+    expect(result.weakestTopTenDomain).toBe("first-weak.test");
+    expect(result.weakestTopTenPosition).toBe(2);
+  });
+
+  it("carries the provider's page element types through, ai_overview included", () => {
+    // The marker is an observation the provider already paid for; dropping it
+    // is how the 2026-08-14 review found three AI-Overview pages presented as
+    // open opportunities.
+    const result = judgeKeywordWinnability(
+      sample([["weak.test", 50]], ["ai_overview", "people_also_ask"]),
+      null,
+    );
+
+    expect(result.pageOneItemTypes).toEqual(["ai_overview", "people_also_ask"]);
+  });
+
+  it("keeps provider silence about page elements as null, never as an empty list", () => {
+    const silent = judgeKeywordWinnability(sample([["weak.test", 50]]), null);
+    const empty = judgeKeywordWinnability(sample([["weak.test", 50]], []), null);
+
+    expect(silent.pageOneItemTypes).toBeNull();
+    expect(empty.pageOneItemTypes).toEqual([]);
   });
 
   it("keeps a site no stronger than the asker as evidence, even when nobody is weak in absolute terms", () => {
@@ -108,7 +161,11 @@ describe("judgeKeywordWinnability", () => {
     expect(result).toEqual({
       verdict: "contested_evidence",
       weakestTopTenDomainRank: 880,
+      weakestTopTenDomain: "gov.test",
+      weakestTopTenPosition: 2,
       topTenDomains: ["nyt.test", "gov.test"],
+      topTenDomainRanks: [910, 880],
+      pageOneItemTypes: null,
       isEstimate: false,
     });
   });
@@ -137,7 +194,11 @@ describe("judgeKeywordWinnability", () => {
     expect(judgeKeywordWinnability(sample([["x.test", 199]]), null)).toEqual({
       verdict: "winnable_evidence",
       weakestTopTenDomainRank: 199,
+      weakestTopTenDomain: "x.test",
+      weakestTopTenPosition: 1,
       topTenDomains: ["x.test"],
+      topTenDomainRanks: [199],
+      pageOneItemTypes: null,
       isEstimate: false,
     });
 
@@ -150,15 +211,31 @@ describe("judgeKeywordWinnability", () => {
     // This is the honesty rule the whole module exists for: an empty rank set
     // is a provider gap. Reporting it as `contested_evidence` would dress a
     // measurement failure up as a finding about the SERP.
-    const domains = ["unknown-a.test", "unknown-b.test", "unknown-c.test"];
     const result = judgeKeywordWinnability(
-      { domains, domainRanks: new Map() },
+      sample(
+        [
+          ["unknown-a.test", null],
+          ["unknown-b.test", null],
+          ["unknown-c.test", null],
+        ],
+        ["ai_overview"],
+      ),
       750,
     );
 
     expect(result.verdict).toBe("no_serp_evidence");
     expect(result.weakestTopTenDomainRank).toBeNull();
-    expect(result.topTenDomains).toEqual(domains);
+    expect(result.weakestTopTenDomain).toBeNull();
+    expect(result.weakestTopTenPosition).toBeNull();
+    expect(result.topTenDomains).toEqual([
+      "unknown-a.test",
+      "unknown-b.test",
+      "unknown-c.test",
+    ]);
+    expect(result.topTenDomainRanks).toEqual([null, null, null]);
+    // The page WAS opened; its elements are real evidence even when the rank
+    // lookup came back empty.
+    expect(result.pageOneItemTypes).toEqual(["ai_overview"]);
     expect(result.isEstimate).toBe(false);
   });
 
@@ -167,16 +244,18 @@ describe("judgeKeywordWinnability", () => {
     // gap look trivially winnable, which is the most expensive possible way to
     // be wrong about this data.
     const result = judgeKeywordWinnability(
-      {
-        domains: ["unknown.test", "strong.test"],
-        domainRanks: new Map([["strong.test", 640]]),
-      },
+      sample([
+        ["unknown.test", null],
+        ["strong.test", 640],
+      ]),
       null,
     );
 
     expect(result.verdict).toBe("contested_evidence");
     expect(result.weakestTopTenDomainRank).toBe(640);
+    expect(result.weakestTopTenDomain).toBe("strong.test");
     expect(result.topTenDomains).toEqual(["unknown.test", "strong.test"]);
+    expect(result.topTenDomainRanks).toEqual([null, 640]);
   });
 
   it("ignores rank entries for domains that are not on the sampled page one", () => {
@@ -185,11 +264,12 @@ describe("judgeKeywordWinnability", () => {
     // the reader cannot find when they open the page.
     const result = judgeKeywordWinnability(
       {
-        domains: ["strong.test"],
+        results: [{ domain: "strong.test", position: 1 }],
         domainRanks: new Map([
           ["strong.test", 700],
           ["elsewhere.test", 9],
         ]),
+        pageItemTypes: null,
       },
       null,
     );
@@ -200,14 +280,18 @@ describe("judgeKeywordWinnability", () => {
 
   it("reports an unsampled page one as silence, not as an empty contest", () => {
     const result = judgeKeywordWinnability(
-      { domains: [], domainRanks: new Map() },
+      { results: [], domainRanks: new Map(), pageItemTypes: null },
       300,
     );
 
     expect(result).toEqual({
       verdict: "no_serp_evidence",
       weakestTopTenDomainRank: null,
+      weakestTopTenDomain: null,
+      weakestTopTenPosition: null,
       topTenDomains: [],
+      topTenDomainRanks: [],
+      pageOneItemTypes: null,
       isEstimate: false,
     });
   });
@@ -216,14 +300,22 @@ describe("judgeKeywordWinnability", () => {
     // The constant is module-level and shared by every caller; mutating it
     // through one silent verdict would poison every later row in the run.
     judgeKeywordWinnability(
-      { domains: ["only.test"], domainRanks: new Map() },
+      {
+        results: [{ domain: "only.test", position: 1 }],
+        domainRanks: new Map(),
+        pageItemTypes: ["ai_overview"],
+      },
       null,
     );
 
     expect(KEYWORD_OPPORTUNITY_UNSAMPLED).toEqual({
       verdict: "no_serp_evidence",
       weakestTopTenDomainRank: null,
+      weakestTopTenDomain: null,
+      weakestTopTenPosition: null,
       topTenDomains: [],
+      topTenDomainRanks: [],
+      pageOneItemTypes: null,
       isEstimate: false,
     });
   });
@@ -257,7 +349,10 @@ describe("isKeywordWinnable", () => {
   it("refuses a contested page one, which is a verdict against the row", () => {
     expect(
       isKeywordWinnable(
-        evidence({ verdict: "contested_evidence", weakestTopTenDomainRank: 900 }),
+        evidence({
+          verdict: "contested_evidence",
+          weakestTopTenDomainRank: 900,
+        }),
       ),
     ).toBe(false);
   });
@@ -266,7 +361,10 @@ describe("isKeywordWinnable", () => {
     expect(isKeywordWinnable(KEYWORD_OPPORTUNITY_UNSAMPLED)).toBe(false);
     expect(
       isKeywordWinnable(
-        evidence({ verdict: "no_serp_evidence", weakestTopTenDomainRank: null }),
+        evidence({
+          verdict: "no_serp_evidence",
+          weakestTopTenDomainRank: null,
+        }),
       ),
     ).toBe(false);
   });
