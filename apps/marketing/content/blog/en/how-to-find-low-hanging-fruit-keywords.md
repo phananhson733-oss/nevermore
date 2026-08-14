@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-12
+updatedAt: 2026-08-14
 heroImage: /images/blog/how-to-find-low-hanging-fruit-keywords.jpg
 heroImageAlt: A jeweler's loupe held close over one stone in a tray of loose stones, each stone sitting on its own small printed number card; the stone under the loupe is being looked at directly while the cards stay unread.
 localeExclusive: true
@@ -98,10 +98,11 @@ Enough to keep a steady publishing cadence, but only ones that survive both the 
 
 - [series walkthrough of zero search volume keywords](/blog/zero-search-volume-keywords) — for telling an under-reported term apart from one nobody searches
 - [guide to internal link structure and link equity](/blog/pagerank-sculpting) — for pointing the authority you already have at the pages you just picked
+- [what your own Search Console already ranks for](/blog/striking-distance-keywords) — for the opposite starting point: existing rankings rather than new terms
 
 ## Take Action
 
-Run your own Search Console export through the SERP-first checks above. If you would rather start from the site than the spreadsheet, the SEO Agent takes a public URL after you sign in to a verified GenGrowth account. It needs no Search Console connection or site-ownership verification, crawls same-origin static HTML, and reports observed metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. It gives you observed facts and adaptable guidance, not a score or demand forecast. [Run the SEO Agent](https://gengrowth.ai/agents/seo).
+Run your own Search Console export through the SERP-first checks above. Or start from a shortlist instead — [check whether a weaker site already holds page one](/tools/low-competition-keywords) samples the current results and flags a term when at least one page-one result is no stronger than your own site, or weak in absolute terms. That is the authority read and nothing else: intent, format and real volume still need your eyes, and it needs a signed-in account with Search Console connected. If you would rather start from the site than the spreadsheet, the SEO Agent takes a public URL after you sign in to a verified GenGrowth account. It needs no Search Console connection or site-ownership verification, crawls same-origin static HTML, and reports observed metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. It gives you observed facts and adaptable guidance, not a score or demand forecast. [Run the SEO Agent](https://gengrowth.ai/agents/seo).
 
 ## Sources
 

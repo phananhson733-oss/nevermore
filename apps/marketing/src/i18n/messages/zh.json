@@ -1927,7 +1927,8 @@
         "property_not_verified": "你的授权没有覆盖这个站点。选一个你拥有的资源，或者用拥有它的账号重新连接。",
         "rate_limited": "你在过去一小时里跑了好几次。过几分钟再来。",
         "context_token_invalid": "那次站点读取已过期——有效期十分钟。请重新读取站点。",
-        "keyword_source_unavailable": "搜索数据源没有响应。没有产出报告的运行不会计费。",
+        "keyword_generation_unavailable": "关键词生成暂时无法完成，尚未进入搜索数据校验。请稍后重试。",
+        "keyword_source_unavailable": "搜索数据源暂未响应。未经真实数据校验的候选词不会展示，请稍后重试。",
         "site_unreachable": "我们连不上那个站点。检查 URL，以及它是否可公开访问。",
         "bot_protection_blocked": "站点的机器人防护把我们挡了回来，读不到内容。",
         "rate_limited_by_target": "站点要求我们放慢速度。过几分钟再试。",
@@ -2619,11 +2620,11 @@
           }
         },
         "search": {
-          "eyebrow": "可选搜索证据",
-          "title": "发现相邻搜索竞争域",
-          "description": "使用已选市场和目标查询，请求一次有边界的搜索数据观测。结果与已声明的商业竞品保持分离。",
-          "action": "检查搜索格局",
-          "loadingAction": "正在检查搜索格局",
+          "eyebrow": "DataForSEO · 搜索证据",
+          "title": "值得审核的搜索域",
+          "description": "画像诊断后会呈现数据源观测。请先逐项审核，再在本次运行中归类；发现证据不等于已确认的商业关系。",
+          "action": "刷新搜索格局",
+          "loadingAction": "正在刷新搜索格局",
           "missingPrerequisite": "请先补充 {fields}，再请求搜索证据。",
           "organicBoundary": "搜索数据源提供的自然关键词重合域——仅为候选域名，不是已确认的商业竞品。",
           "serpBoundary": "该目标查询中实际观测到的域名——不是已确认的商业竞品。",
@@ -2631,9 +2632,9 @@
           "marketUnsupported": "当前市场与查询无法映射到受支持的搜索数据方式；仍可手动填写商业竞品。",
           "sourceUnavailable": "搜索数据尚未配置或暂时不可用。缺失值不会被当作 0；商业竞品可保持为空或手动填写。",
           "summary": {
-            "idle": "尚未请求由数据源支持的搜索域观测；数据源候选与商业竞品框架保持分离。",
-            "loading": "正在检查由数据源支持的搜索域；任何候选都与商业竞品框架保持分离。",
-            "available": "下方已观测到 {count} 个搜索域候选；数据源观测本身不将其归类为商业竞品，请手动与商业竞品框架核对。",
+            "idle": "运行画像诊断以获取数据源支持的搜索候选，或手动刷新搜索格局。",
+            "loading": "正在获取数据源支持的搜索域；完成审核前，候选不会被归类为商业竞品。",
+            "available": "下方有 {count} 个由数据源支持的搜索域候选等待审核；只有在你选择关系后，才会在本次运行中归类。",
             "noData": "本次有边界的数据源请求未观测到搜索域候选；商业竞品框架保持不变。",
             "marketUnsupported": "当前市场与查询没有可用的数据源方式；商业竞品框架保持不变。",
             "sourceUnavailable": "由数据源支持的搜索域当前不可用；商业竞品框架保持不变，仍可手动编辑。",
@@ -2645,6 +2646,30 @@
           "trafficLabel": "预估自然流量",
           "rankLabel": "观测排名",
           "observedAtLabel": "获取时间",
+          "unavailableMetricLabel": "不可用",
+          "counts": {
+            "providerLabel": "搜索候选",
+            "confirmedLabel": "本地已确认",
+            "excludedLabel": "已排除"
+          },
+          "review": {
+            "candidatesReady": "已发现搜索候选 · 请审核商业关系",
+            "providerEvidence": "DataForSEO · 搜索证据",
+            "needsReview": "尚未归类为商业竞品",
+            "awaitingClassification": "已确认 0 个 · {count} 个搜索候选等待归类",
+            "noneExcluded": "本次本地审核尚未排除候选",
+            "higherOverlap": "较高重合搜索域",
+            "adjacentOverlap": "相邻重合搜索域",
+            "targetQueryObserved": "在目标查询中观测到",
+            "currentDirect": "本地审核 · 直接竞品",
+            "currentIndirect": "本地审核 · 间接替代方案",
+            "currentExcluded": "本地审核 · 已排除",
+            "actions": {
+              "direct": "直接竞品",
+              "indirect": "间接替代",
+              "exclude": "排除"
+            }
+          },
           "errors": {
             "authRequired": "请先登录，再请求搜索数据证据。",
             "authUnavailable": "暂时无法验证账户状态，请稍后再请求搜索证据。",

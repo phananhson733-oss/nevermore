@@ -1927,7 +1927,8 @@
         "property_not_verified": "Your grant does not cover this site. Pick a property you own, or reconnect with the account that does.",
         "rate_limited": "You have run this several times in the last hour. Give it a few minutes.",
         "context_token_invalid": "That reading of your site expired — it is good for ten minutes. Read the site again.",
-        "keyword_source_unavailable": "The search-data provider did not answer. Nothing was charged for a run that produced no report.",
+        "keyword_generation_unavailable": "Keyword generation could not be completed before search-data validation. Try again in a moment.",
+        "keyword_source_unavailable": "The search-data provider did not answer. Unvalidated candidates are not shown; try again later.",
         "site_unreachable": "We could not reach that site. Check the URL and that it is publicly reachable.",
         "bot_protection_blocked": "The site's bot protection turned us away, so there was nothing to read.",
         "rate_limited_by_target": "The site asked us to slow down. Try again in a few minutes.",
@@ -2619,11 +2620,11 @@
           }
         },
         "search": {
-          "eyebrow": "Optional search evidence",
-          "title": "Discover adjacent search domains",
-          "description": "Use the selected market and target query to request one bounded search-data observation. These results stay separate from declared business competitors.",
-          "action": "Check search landscape",
-          "loadingAction": "Checking search landscape",
+          "eyebrow": "DataForSEO · search evidence",
+          "title": "Domains worth review",
+          "description": "Provider observations appear after profile diagnosis. Review each domain before classifying it locally; discovery evidence is not a confirmed business relationship.",
+          "action": "Refresh search landscape",
+          "loadingAction": "Refreshing search landscape",
           "missingPrerequisite": "Add {fields} before requesting search evidence.",
           "organicBoundary": "Organic keyword overlap from the search provider — candidate domains, not confirmed business competitors.",
           "serpBoundary": "Domains observed for this exact target query — not confirmed business competitors.",
@@ -2631,9 +2632,9 @@
           "marketUnsupported": "This market and query do not map to a supported search-data method. You can still enter business competitors manually.",
           "sourceUnavailable": "Search data is not configured or is temporarily unavailable. No missing value is treated as zero; business competitors can remain empty or be entered manually.",
           "summary": {
-            "idle": "No provider-backed search-domain observation has been requested. Provider candidates remain separate from the business frame.",
-            "loading": "Checking provider-backed search domains now. Any candidates remain separate from the business frame.",
-            "available": "{count, plural, one {The provider observation itself does not classify the # search-domain candidate below as a business competitor; compare it with the business frame manually.} other {The provider observation itself does not classify the # search-domain candidates below as business competitors; compare them with the business frame manually.}}",
+            "idle": "Run profile diagnosis to collect provider-backed search candidates, or refresh the search landscape explicitly.",
+            "loading": "Collecting provider-backed search domains now. Candidates remain unclassified until you review them.",
+            "available": "{count, plural, one {# provider-backed search candidate is ready for review. It is not classified as a business competitor until you choose a relationship.} other {# provider-backed search candidates are ready for review. They are not classified as business competitors until you choose relationships.}}",
             "noData": "The bounded provider request observed no search-domain candidates. The business frame is unchanged.",
             "marketUnsupported": "No supported provider method is available for this market and query. The business frame is unchanged.",
             "sourceUnavailable": "Provider-backed search domains are unavailable. The business frame is unchanged and can still be edited manually.",
@@ -2645,6 +2646,30 @@
           "trafficLabel": "Estimated organic traffic",
           "rankLabel": "Observed rank",
           "observedAtLabel": "Fetched at",
+          "unavailableMetricLabel": "Unavailable",
+          "counts": {
+            "providerLabel": "Search candidates",
+            "confirmedLabel": "Locally confirmed",
+            "excludedLabel": "Excluded"
+          },
+          "review": {
+            "candidatesReady": "Search candidates found · review business relationships",
+            "providerEvidence": "DataForSEO · search evidence",
+            "needsReview": "Not yet classified as a business competitor",
+            "awaitingClassification": "0 confirmed · {count} search candidates awaiting classification",
+            "noneExcluded": "None excluded in this local review",
+            "higherOverlap": "Higher-overlap search domain",
+            "adjacentOverlap": "Adjacent-overlap search domain",
+            "targetQueryObserved": "Observed for target query",
+            "currentDirect": "Local review · direct competitor",
+            "currentIndirect": "Local review · indirect alternative",
+            "currentExcluded": "Local review · excluded",
+            "actions": {
+              "direct": "Direct",
+              "indirect": "Indirect",
+              "exclude": "Exclude"
+            }
+          },
           "errors": {
             "authRequired": "Sign in to request provider-backed search evidence.",
             "authUnavailable": "Account verification is temporarily unavailable. Try again before requesting search evidence.",

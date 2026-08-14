@@ -75,6 +75,20 @@ function canonicalLanguageTag(value: string): string | null {
   }
 }
 
+function profileSearchRequestKey(
+  profile: AgentProfileDraft,
+  languageTag: string,
+): string {
+  return [
+    profile.agent,
+    profile.targetUrl,
+    profile.host,
+    profile.country,
+    languageTag,
+    profile.country === "CN" ? profile.targetQuery.trim() : "",
+  ].join("\n");
+}
+
 function errorCodeOf(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const error = (body as { readonly error?: unknown }).error;
@@ -148,6 +162,12 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
   const activeOperationController = useRef<AbortController | null>(null);
   const profileSearchController = useRef<AbortController | null>(null);
   const profileSearchBusy = useRef(false);
+  const profileSearchDataRef = useRef<AgentProfileSearchData | null>(null);
+  const profileSearchDataKey = useRef<string | null>(null);
+  const pendingProfileSearch = useRef<{
+    readonly profile: AgentProfileDraft;
+    readonly requestKey: string;
+  } | null>(null);
   const profileRefreshController = useRef<AbortController | null>(null);
   const profileRefreshBusy = useRef(false);
   const profileRefreshIntent = useRef<PendingAgentIntent | null>(null);
@@ -365,6 +385,173 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     };
   }, []);
 
+  const runProfileSearch = useCallback(
+    async (
+      requestedProfile: AgentProfileDraft,
+      {
+        resumeAfterSignIn = false,
+        reuseMatching = false,
+      }: {
+        readonly resumeAfterSignIn?: boolean;
+        readonly reuseMatching?: boolean;
+      } = {},
+    ): Promise<void> => {
+      const targetLanguageTag = canonicalLanguageTag(requestedProfile.locale);
+      if (
+        !mounted.current ||
+        profileSearchBusy.current ||
+        requestedProfile.agent !== agent ||
+        !requestedProfile.targetUrl.trim() ||
+        !/^[A-Z]{2}$/.test(requestedProfile.country) ||
+        !targetLanguageTag ||
+        (requestedProfile.country === "CN" &&
+          !requestedProfile.targetQuery.trim())
+      ) {
+        return;
+      }
+
+      const requestKey = profileSearchRequestKey(
+        requestedProfile,
+        targetLanguageTag,
+      );
+      if (!resumeAfterSignIn) pendingProfileSearch.current = null;
+      if (
+        reuseMatching &&
+        profileSearchDataRef.current !== null &&
+        profileSearchDataKey.current === requestKey
+      ) {
+        return;
+      }
+
+      profileSearchController.current?.abort();
+      const controller = new AbortController();
+      profileSearchController.current = controller;
+      profileSearchBusy.current = true;
+      profileSearchDataRef.current = null;
+      profileSearchDataKey.current = null;
+      setProfileSearchLoading(true);
+      setProfileSearchErrorCode(null);
+      setProfileSearchData(null);
+
+      let timedOut = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let rejectAbort!: (reason?: unknown) => void;
+      const abortRequest = new Promise<never>((_resolve, reject) => {
+        rejectAbort = reject;
+      });
+      const rejectOnAbort = () =>
+        rejectAbort(new DOMException("Profile search aborted", "AbortError"));
+      controller.signal.addEventListener("abort", rejectOnAbort, {
+        once: true,
+      });
+
+      try {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, PROFILE_SEARCH_CLIENT_TIMEOUT_MS);
+
+        const response = await Promise.race([
+          fetch(`/api/agents/${agent}/profile-search`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({
+              url: requestedProfile.targetUrl,
+              marketCode: requestedProfile.country,
+              languageTag: targetLanguageTag,
+              targetQuery: requestedProfile.targetQuery,
+            }),
+            signal: controller.signal,
+          }),
+          abortRequest,
+        ]);
+        const body = (await response.json().catch(() => null)) as unknown;
+        if (
+          !mounted.current ||
+          controller.signal.aborted ||
+          profileSearchController.current !== controller
+        ) {
+          return;
+        }
+
+        if (!response.ok) {
+          const code = errorCodeOf(body) ?? "unknown";
+          setProfileSearchErrorCode(code);
+          if (code === "auth_required") {
+            pendingProfileSearch.current = {
+              profile: { ...requestedProfile },
+              requestKey,
+            };
+            setSignInPurpose("profile_search");
+            setSignInOpen(true);
+          } else {
+            pendingProfileSearch.current = null;
+            if (resumeAfterSignIn) {
+              setSignInOpen(false);
+              setSignInPurpose(null);
+            }
+          }
+          return;
+        }
+
+        if (
+          !isAgentProfileSearchEnvelope(body) ||
+          body.data.agent !== agent ||
+          body.data.targetHost !== requestedProfile.host ||
+          body.data.market.code !== requestedProfile.country
+        ) {
+          pendingProfileSearch.current = null;
+          setProfileSearchErrorCode("audit_response_invalid");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+          return;
+        }
+        profileSearchDataRef.current = body.data;
+        profileSearchDataKey.current = requestKey;
+        pendingProfileSearch.current = null;
+        setProfileSearchData(body.data);
+        if (resumeAfterSignIn) {
+          setSignInOpen(false);
+          setSignInPurpose(null);
+        }
+      } catch {
+        if (
+          timedOut &&
+          mounted.current &&
+          profileSearchController.current === controller
+        ) {
+          pendingProfileSearch.current = null;
+          setProfileSearchErrorCode("search_timeout");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+        } else if (mounted.current && !controller.signal.aborted) {
+          pendingProfileSearch.current = null;
+          setProfileSearchErrorCode("unknown");
+          if (resumeAfterSignIn) {
+            setSignInOpen(false);
+            setSignInPurpose(null);
+          }
+        }
+      } finally {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        controller.signal.removeEventListener("abort", rejectOnAbort);
+        if (profileSearchController.current === controller) {
+          profileSearchController.current = null;
+          profileSearchBusy.current = false;
+          if (mounted.current) setProfileSearchLoading(false);
+        }
+      }
+    },
+    [agent],
+  );
+
   const handleProfileRefresh = useCallback(
     async (
       mode: AgentProfileRefreshMode,
@@ -526,6 +713,7 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         profileRefreshIntent.current = null;
         const storage = getSessionIntentStorage();
         if (storage) clearPendingAgentIntent(storage, agent);
+        void runProfileSearch(mergedProfile, { reuseMatching: true });
       } catch {
         if (
           timedOut &&
@@ -546,125 +734,33 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
         }
       }
     },
-    [agent, locale],
+    [agent, locale, runProfileSearch],
   );
 
   const handleProfileSearch = useCallback(
     async (resumeAfterSignIn = false): Promise<void> => {
-      if (
-        profileSearchBusy.current ||
-        !profile.targetUrl.trim() ||
-        !/^[A-Z]{2}$/.test(profile.country) ||
-        !profile.locale.trim()
-      ) {
+      if (!resumeAfterSignIn) {
+        await runProfileSearch(profileRef.current);
         return;
       }
-
-      profileSearchController.current?.abort();
-      const controller = new AbortController();
-      profileSearchController.current = controller;
-      profileSearchBusy.current = true;
-      setProfileSearchLoading(true);
-      setProfileSearchErrorCode(null);
-      setProfileSearchData(null);
-
-      let timedOut = false;
-      let timeoutId: ReturnType<typeof setTimeout> | null = null;
-      let rejectAbort!: (reason?: unknown) => void;
-      const abortRequest = new Promise<never>((_resolve, reject) => {
-        rejectAbort = reject;
-      });
-      const rejectOnAbort = () =>
-        rejectAbort(new DOMException("Profile search aborted", "AbortError"));
-      controller.signal.addEventListener("abort", rejectOnAbort, {
-        once: true,
-      });
-
-      try {
-        timeoutId = setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-        }, PROFILE_SEARCH_CLIENT_TIMEOUT_MS);
-
-        const response = await Promise.race([
-          fetch(`/api/agents/${agent}/profile-search`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              accept: "application/json",
-            },
-            body: JSON.stringify({
-              url: profile.targetUrl,
-              marketCode: profile.country,
-              languageTag: profile.locale,
-              targetQuery: profile.targetQuery,
-            }),
-            signal: controller.signal,
-          }),
-          abortRequest,
-        ]);
-        const body = (await response.json().catch(() => null)) as unknown;
-        if (!mounted.current || controller.signal.aborted) return;
-
-        if (!response.ok) {
-          const code = errorCodeOf(body) ?? "unknown";
-          setProfileSearchErrorCode(code);
-          if (code === "auth_required") {
-            setSignInPurpose("profile_search");
-            setSignInOpen(true);
-          } else if (resumeAfterSignIn) {
-            setSignInOpen(false);
-            setSignInPurpose(null);
-          }
-          return;
-        }
-
-        if (
-          !isAgentProfileSearchEnvelope(body) ||
-          body.data.agent !== agent ||
-          body.data.targetHost !== profile.host
-        ) {
-          setProfileSearchErrorCode("audit_response_invalid");
-          if (resumeAfterSignIn) {
-            setSignInOpen(false);
-            setSignInPurpose(null);
-          }
-          return;
-        }
-        setProfileSearchData(body.data);
-        if (resumeAfterSignIn) {
-          setSignInOpen(false);
-          setSignInPurpose(null);
-        }
-      } catch {
-        if (
-          timedOut &&
-          mounted.current &&
-          profileSearchController.current === controller
-        ) {
-          setProfileSearchErrorCode("search_timeout");
-          if (resumeAfterSignIn) {
-            setSignInOpen(false);
-            setSignInPurpose(null);
-          }
-        } else if (mounted.current && !controller.signal.aborted) {
-          setProfileSearchErrorCode("unknown");
-          if (resumeAfterSignIn) {
-            setSignInOpen(false);
-            setSignInPurpose(null);
-          }
-        }
-      } finally {
-        if (timeoutId !== null) clearTimeout(timeoutId);
-        controller.signal.removeEventListener("abort", rejectOnAbort);
-        if (profileSearchController.current === controller) {
-          profileSearchController.current = null;
-          profileSearchBusy.current = false;
-          if (mounted.current) setProfileSearchLoading(false);
-        }
+      const pending = pendingProfileSearch.current;
+      const currentLanguageTag = canonicalLanguageTag(
+        profileRef.current.locale,
+      );
+      if (
+        !pending ||
+        !currentLanguageTag ||
+        profileSearchRequestKey(profileRef.current, currentLanguageTag) !==
+          pending.requestKey
+      ) {
+        pendingProfileSearch.current = null;
+        setSignInPurpose(null);
+        setSignInOpen(false);
+        return;
       }
+      await runProfileSearch(pending.profile, { resumeAfterSignIn: true });
     },
-    [agent, profile],
+    [runProfileSearch],
   );
 
   useEffect(() => {
@@ -774,6 +870,10 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
       next.host !== profile.host ||
       next.country !== profile.country ||
       canonicalLanguageTag(next.locale) !== canonicalLanguageTag(profile.locale);
+    const searchIdentityChanged =
+      refreshIdentityChanged ||
+      (next.country === "CN" &&
+        next.targetQuery.trim() !== profile.targetQuery.trim());
     activeOperationController.current?.abort();
     activeOperationController.current = null;
     operationId.current += 1;
@@ -781,12 +881,21 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     setLoading(false);
     setErrorCode(null);
     setData(null);
-    profileSearchController.current?.abort();
-    profileSearchController.current = null;
-    profileSearchBusy.current = false;
-    setProfileSearchLoading(false);
-    setProfileSearchData(null);
-    setProfileSearchErrorCode(null);
+    if (searchIdentityChanged) {
+      profileSearchController.current?.abort();
+      profileSearchController.current = null;
+      profileSearchBusy.current = false;
+      profileSearchDataRef.current = null;
+      profileSearchDataKey.current = null;
+      pendingProfileSearch.current = null;
+      setProfileSearchLoading(false);
+      setProfileSearchData(null);
+      setProfileSearchErrorCode(null);
+      if (signInPurpose === "profile_search") {
+        setSignInPurpose(null);
+        setSignInOpen(false);
+      }
+    }
     if (refreshIdentityChanged) {
       profileRefreshController.current?.abort();
       profileRefreshController.current = null;
@@ -816,6 +925,17 @@ function AgentWorkbenchInstance({ agent, locale }: AgentWorkbenchProps) {
     if (!open) {
       const closingPurpose = signInPurpose;
       setSignInPurpose(null);
+      if (closingPurpose === "profile_search") {
+        profileSearchController.current?.abort();
+        profileSearchController.current = null;
+        profileSearchBusy.current = false;
+        pendingProfileSearch.current = null;
+        setProfileSearchLoading(false);
+        if (profileSearchErrorCode === "auth_required") {
+          setProfileSearchErrorCode(null);
+        }
+        return;
+      }
       if (closingPurpose === "profile_refresh") {
         profileRefreshController.current?.abort();
         profileRefreshController.current = null;

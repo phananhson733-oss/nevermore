@@ -255,7 +255,9 @@ describe("extractKeywordPropositions", () => {
     expect(requests).toHaveLength(2);
     expect(error).toBeInstanceOf(KeywordLlmError);
     expect((error as KeywordLlmError).reason).toBe("schema_invalid");
-    expect((error as KeywordLlmError).code).toBe("keyword_source_unavailable");
+    expect((error as KeywordLlmError).code).toBe(
+      "keyword_generation_unavailable",
+    );
   });
 
   it("fails when every proposition was discarded by the evidence check", async () => {
@@ -562,6 +564,23 @@ describe("expandKeywordCandidates", () => {
       expandKeywordCandidates(EXPANSION, { client }),
     ).rejects.toMatchObject({ reason: "schema_invalid" });
     expect(requests).toHaveLength(2);
+  });
+
+  it("does not retry an outcome-unknown transport failure", async () => {
+    const { client, requests } = recorder([
+      new KeywordLlmError(
+        "network_error",
+        "LLM request did not reach the provider.",
+      ),
+    ]);
+
+    await expect(
+      expandKeywordCandidates(EXPANSION, { client }),
+    ).rejects.toMatchObject({
+      code: "keyword_generation_unavailable",
+      reason: "network_error",
+    });
+    expect(requests).toHaveLength(1);
   });
 
   it("survives a page list with no parsable URL", async () => {

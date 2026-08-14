@@ -16,11 +16,17 @@ import {
   normalizeSeoAuditUrl,
   type SeoAuditUrlResult,
 } from "@sf/public-tools";
+import { createHash } from "node:crypto";
 import {
   getServerAuthenticationStatus,
   type ServerAuthenticationStatus,
 } from "../auth/server-auth-status.ts";
 import { extractClientIp } from "../rate-limit.ts";
+import {
+  readCrawlCache,
+  writeCrawlCache,
+  type CachedCrawl,
+} from "../tools/crawl-cache.ts";
 import {
   acquirePublicToolSlot,
   readPublicToolJson,
@@ -35,6 +41,7 @@ import {
 import type { AgentKind } from "./audit-contract.ts";
 import {
   AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
+  isAgentProfileSearchEnvelope,
   normalizeAgentProfileSearchDomain,
   type AgentProfileSearchData,
   type AgentProfileSearchMethod,
@@ -88,6 +95,15 @@ export interface AgentProfileSearchDependencies {
   ) => AgentProfileSearchProvider;
   readonly extractClientIp: (headers: Headers) => string;
   readonly acquireSlot: (key: string) => PublicToolSlot;
+  readonly readCache: (
+    namespace: string,
+    targetHost: string,
+  ) => Promise<CachedCrawl | null>;
+  readonly writeCache: (
+    namespace: string,
+    targetHost: string,
+    payload: unknown,
+  ) => Promise<void>;
   readonly quota: SharedQuotaDependencies;
   readonly now: () => number;
   /** Receives a sealed operational record: no URL, query, provider prose, or credentials. */
@@ -127,6 +143,9 @@ const DEFAULT_DEPENDENCIES: AgentProfileSearchDependencies = {
   createProvider,
   extractClientIp,
   acquireSlot: acquirePublicToolSlot,
+  readCache: (namespace, host) => readCrawlCache(namespace, host),
+  writeCache: (namespace, host, payload) =>
+    writeCrawlCache(namespace, host, payload),
   quota: DEFAULT_SHARED_QUOTA_DEPENDENCIES,
   now: Date.now,
   log: defaultLog,
@@ -146,6 +165,33 @@ interface PlannedSearch {
     readonly locationCode: number;
     readonly languageCode: string;
   };
+}
+
+interface ProfileSearchCacheIdentity {
+  readonly normalizedUrl: string;
+  readonly marketCode: string;
+  readonly languageTag: string;
+  readonly targetQuery: string;
+  readonly method: AgentProfileSearchMethod;
+  readonly providerMarketCode: string;
+  readonly providerLocationCode: number;
+  readonly providerLanguageCode: string;
+}
+
+function profileSearchCacheNamespace(
+  agent: AgentKind,
+  identity: ProfileSearchCacheIdentity,
+): string {
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        schemaVersion: AGENT_PROFILE_SEARCH_SCHEMA_VERSION,
+        agent,
+        ...identity,
+      }),
+    )
+    .digest("hex");
+  return `agent_profile_search_v1_${agent}_${fingerprint}`;
 }
 
 function json(
@@ -369,6 +415,44 @@ function sourceUnavailableData(
   };
 }
 
+function cachedDataMatches(
+  value: unknown,
+  agent: AgentKind,
+  target: string,
+  plan: PlannedSearch,
+): value is AgentProfileSearchData {
+  const envelope = { data: value };
+  if (!isAgentProfileSearchEnvelope(envelope)) return false;
+  const data = envelope.data;
+  return (
+    (data.availability === "available" || data.availability === "no_data") &&
+    data.agent === agent &&
+    data.targetHost === target &&
+    data.method === plan.method &&
+    data.market.code === plan.market.code &&
+    data.market.locationCode === plan.market.locationCode &&
+    data.market.languageCode === plan.market.languageCode
+  );
+}
+
+function isCanonicalCapturedAt(value: string): boolean {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+async function writeCacheFailSoft(
+  dependencies: AgentProfileSearchDependencies,
+  namespace: string,
+  target: string,
+  data: AgentProfileSearchData,
+): Promise<void> {
+  try {
+    await dependencies.writeCache(namespace, target, data);
+  } catch {
+    // Search evidence remains usable when the shared cache is unavailable.
+  }
+}
+
 function requestError(result: Extract<PublicToolJsonResult, { ok: false }>): Response {
   const status =
     result.code === "unsupported_media_type"
@@ -437,6 +521,30 @@ export async function handleAgentProfileSearchRequest(
     });
   }
 
+  const cacheNamespace = profileSearchCacheNamespace(agent, {
+    normalizedUrl: normalized.url,
+    marketCode: input.marketCode,
+    languageTag: input.languageTag,
+    targetQuery:
+      plan.method === "target_query_serp" ? input.targetQuery : "",
+    method: plan.method,
+    providerMarketCode: plan.market.code,
+    providerLocationCode: plan.market.locationCode,
+    providerLanguageCode: plan.market.languageCode,
+  });
+  try {
+    const cached = await dependencies.readCache(cacheNamespace, target);
+    if (
+      cached !== null &&
+      isCanonicalCapturedAt(cached.capturedAt) &&
+      cachedDataMatches(cached.payload, agent, target, plan)
+    ) {
+      return json({ data: cached.payload });
+    }
+  } catch {
+    // Cache reads fail soft; the authenticated request continues to paid gates.
+  }
+
   const credentials = dependencies.credentials();
   if (credentials === null) {
     dependencies.log({
@@ -488,6 +596,12 @@ export async function handleAgentProfileSearchRequest(
           observedAt: new Date(dependencies.now()).toISOString(),
           rows,
         };
+        await writeCacheFailSoft(
+          dependencies,
+          cacheNamespace,
+          target,
+          data,
+        );
         return json({ data });
       }
 
@@ -518,6 +632,12 @@ export async function handleAgentProfileSearchRequest(
         observedAt: new Date(dependencies.now()).toISOString(),
         rows,
       };
+      await writeCacheFailSoft(
+        dependencies,
+        cacheNamespace,
+        target,
+        data,
+      );
       return json({ data });
     } catch {
       dependencies.log({

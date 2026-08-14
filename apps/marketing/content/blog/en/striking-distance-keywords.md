@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-07
+updatedAt: 2026-08-14
 heroImage: /images/blog/striking-distance-keywords.jpg
 heroImageAlt: A dartboard with four darts landed in the ring just outside the bullseye, and one hand drawing a fifth dart back for another throw.
 localeExclusive: true
@@ -92,7 +92,7 @@ There is no universal standard — published guides use ranges from 5–20, 8–
 
 **Why do my GSC positions look different from what Ahrefs or Semrush reports?**
 
-GSC reports impression-weighted average positions across all queries, countries, and devices that triggered your page during the period. Third-party tools sample from specific geographies and query sets. For this type of analysis, GSC is the authoritative source because it reflects your actual traffic patterns, not an estimated proxy.
+GSC reports impression-weighted average positions across all queries, countries, and devices that triggered your page during the period. Third-party tools sample from specific geographies and query sets. For this type of analysis, GSC is the authoritative source because it reflects your actual traffic patterns, not an estimated proxy. If that makes you question what the paid seat is still buying, [when the seat math stops making sense](/blog/ahrefs-alternative) and [what a suite costs when you use a corner of it](/blog/semrush-alternatives) walk through the same decision from the billing side.
 
 **Can a page have too many qualifying queries to be worth optimizing?**
 

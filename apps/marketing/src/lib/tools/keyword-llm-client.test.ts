@@ -218,10 +218,12 @@ describe("resolveKeywordLlmConfig", () => {
     }
 
     expect(thrown).toBeInstanceOf(KeywordLlmError);
-    // Stage one funnels the thrown `code` through toKeywordOpportunityErrorCode,
-    // which rewrites anything unrecognised to `site_unreachable`.
-    expect((thrown as KeywordLlmError).code).toBe("keyword_source_unavailable");
-    expect(KEYWORD_LLM_ERROR_CODE).toBe("keyword_source_unavailable");
+    // The code names the model stage instead of blaming the later search-data
+    // validation stage, and it belongs to the surface's exhaustive error union.
+    expect((thrown as KeywordLlmError).code).toBe(
+      "keyword_generation_unavailable",
+    );
+    expect(KEYWORD_LLM_ERROR_CODE).toBe("keyword_generation_unavailable");
   });
 });
 
@@ -303,7 +305,7 @@ describe("createKeywordLlmClient", () => {
     });
 
     await expect(client.complete(REQUEST)).rejects.toMatchObject({
-      code: "keyword_source_unavailable",
+      code: "keyword_generation_unavailable",
       reason: "not_configured",
     });
   });

@@ -6,7 +6,7 @@ category: methodology
 pillar: seo_content
 status: published
 publishedAt: 2026-08-07
-updatedAt: 2026-08-12
+updatedAt: 2026-08-14
 heroImage: /images/blog/zero-search-volume-keywords.jpg
 heroImageAlt: A row of six identical measuring cups standing on a shelf, five reading completely empty and one holding a thin sliver of liquid at the very bottom.
 localeExclusive: true
@@ -106,9 +106,11 @@ Low-volume keywords — those registering any confirmed monthly search figure in
 
 - [pillar guide to keyword opportunity assessment](/blog/how-to-find-low-hanging-fruit-keywords) — the upstream framework for evaluating any keyword from intent through SERP structure, including where zero-volume terms fit in a full-cycle content strategy
 - [search performance diagnosis pillar](/blog/striking-distance-keywords) — for reading your own Search Console data once these pages are live
-- [search performance diagnosis pillar](/blog/striking-distance-keywords) — the cross-cluster reference for teams diagnosing why keyword clusters aren't producing expected impressions or traffic volume
+- [guide to internal link structure and link equity](/blog/pagerank-sculpting) — for pointing the authority you already have at the pages these terms land on
 
 ## Take Action
+
+Start from the terms, not the site — [run a shortlist through a priced volume check](/tools/low-competition-keywords). It separates a term the provider priced at zero from one the provider returned no row for, and it withholds the priced-at-zero terms from its opportunity list rather than ranking them. That is a provider reading, not a demand verdict: it needs a signed-in account with Search Console connected, and whether a zero is underreporting or real absence is still yours to settle.
 
 [Run the SEO Agent](https://gengrowth.ai/agents/seo) on your own site before you commission the next batch. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. It takes a public URL, crawls same-origin static HTML, and reports what the crawler actually observes: crawl coverage, metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. Repeated titles are a fast way to see where you may already be publishing near-duplicates — useful context before adding another unvalidated term. It reports observed facts and adaptable guidance, not a score or demand forecast; the demand check stays yours to run.
 

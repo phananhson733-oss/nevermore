@@ -22,7 +22,12 @@ import type {
   AgentProfileRefreshMode,
 } from "../../lib/agents/profile-refresh-contract";
 import {
+  classifyAgentCompetitorProfile,
+  deriveAgentCompetitorSuggestions,
+} from "./agent-competitor-candidates";
+import {
   AgentProfileSearch,
+  type AgentCompetitorClassification,
   type AgentProfileSearchCopy,
 } from "./agent-profile-search";
 import {
@@ -371,6 +376,14 @@ export function AgentProfilePanel({
     );
   }
 
+  function handleCompetitorClassification(
+    domain: string,
+    classification: AgentCompetitorClassification,
+  ): void {
+    if (disabled) return;
+    onChange(classifyAgentCompetitorProfile(profile, domain, classification));
+  }
+
   const productAdjusted = profile.editedFields.some((field) =>
     PRODUCT_FIELDS.has(field),
   );
@@ -516,6 +529,9 @@ export function AgentProfilePanel({
     "targetQuery",
     "auditScope",
   ]);
+  const competitorSuggestions = profileSearch?.data
+    ? deriveAgentCompetitorSuggestions(profileSearch.data, profile.host)
+    : [];
   let searchSummary: { readonly state: string; readonly label: string } | null =
     null;
   if (profileSearch?.loading) {
@@ -532,7 +548,7 @@ export function AgentProfilePanel({
     searchSummary = {
       state: "available",
       label: t("search.summary.available", {
-        count: profileSearch.data.rows.length,
+        count: competitorSuggestions.length,
       }),
     };
   } else if (profileSearch?.data?.availability === "no_data") {
@@ -577,6 +593,21 @@ export function AgentProfilePanel({
     trafficLabel: t("search.trafficLabel"),
     rankLabel: t("search.rankLabel"),
     observedAtLabel: t("search.observedAtLabel"),
+    unavailableMetricLabel: t("search.unavailableMetricLabel"),
+    providerCountLabel: t("search.counts.providerLabel"),
+    confirmedCountLabel: t("search.counts.confirmedLabel"),
+    excludedCountLabel: t("search.counts.excludedLabel"),
+    providerEvidenceLabel: t("search.review.providerEvidence"),
+    needsReviewLabel: t("search.review.needsReview"),
+    higherOverlapLabel: t("search.review.higherOverlap"),
+    adjacentOverlapLabel: t("search.review.adjacentOverlap"),
+    unclassifiedLabel: t("search.review.targetQueryObserved"),
+    currentDirectLabel: t("search.review.currentDirect"),
+    currentIndirectLabel: t("search.review.currentIndirect"),
+    currentExcludedLabel: t("search.review.currentExcluded"),
+    directAction: t("search.review.actions.direct"),
+    indirectAction: t("search.review.actions.indirect"),
+    excludeAction: t("search.review.actions.exclude"),
   };
 
   return (
@@ -1297,7 +1328,9 @@ export function AgentProfilePanel({
               <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
                 {hasBusinessFrame
                   ? t("values.businessFrameReviewed")
-                  : t("values.confirmationRequired")}
+                  : competitorSuggestions.length > 0
+                    ? t("search.review.candidatesReady")
+                    : t("values.confirmationRequired")}
               </h3>
               {searchSummary ? (
                 <p
@@ -1314,7 +1347,11 @@ export function AgentProfilePanel({
                 value={
                   profile.directCompetitors.length > 0
                     ? profile.directCompetitors.join(" · ")
-                    : t("values.confirmationRequired")
+                    : competitorSuggestions.length > 0
+                      ? t("search.review.awaitingClassification", {
+                          count: competitorSuggestions.length,
+                        })
+                      : t("values.confirmationRequired")
                 }
                 provenance={fieldProvenance("directCompetitors")}
               />
@@ -1323,7 +1360,11 @@ export function AgentProfilePanel({
                 value={
                   profile.indirectAlternatives.length > 0
                     ? profile.indirectAlternatives.join(" · ")
-                    : t("values.confirmationRequired")
+                    : competitorSuggestions.length > 0
+                      ? t("search.review.awaitingClassification", {
+                          count: competitorSuggestions.length,
+                        })
+                      : t("values.confirmationRequired")
                 }
                 provenance={fieldProvenance("indirectAlternatives")}
               />
@@ -1332,7 +1373,9 @@ export function AgentProfilePanel({
                 value={
                   profile.excludedAlternatives.length > 0
                     ? profile.excludedAlternatives.join(" · ")
-                    : t("values.confirmationRequired")
+                    : competitorSuggestions.length > 0
+                      ? t("search.review.noneExcluded")
+                      : t("values.confirmationRequired")
                 }
                 provenance={fieldProvenance("excludedAlternatives")}
               />
@@ -1346,6 +1389,14 @@ export function AgentProfilePanel({
                   onDiscover={profileSearch.onDiscover}
                   locale={locale}
                   disabled={searchDisabled}
+                  reviewDisabled={disabled}
+                  suggestions={competitorSuggestions}
+                  classifications={{
+                    direct: profile.directCompetitors,
+                    indirect: profile.indirectAlternatives,
+                    excluded: profile.excludedAlternatives,
+                  }}
+                  onClassify={handleCompetitorClassification}
                   disabledReason={
                     missingSearchPrerequisites.length > 0
                       ? t("search.missingPrerequisite", {

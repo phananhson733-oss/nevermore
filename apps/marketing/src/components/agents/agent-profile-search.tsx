@@ -1,6 +1,6 @@
-// @input  -- controlled Agent profile-search state, callback, and localized copy
-// @output -- bounded search-evidence rows with honest availability boundaries
-// @pos    -- presentational Stage 01 enrichment block; never fetches or mutates profile state
+// @input  -- controlled profile-search evidence, local review callbacks, and localized copy
+// @output -- source-bounded candidate rows and explicit direct/indirect/exclude decisions
+// @pos    -- Stage 03 review block; never fetches or persists an app Product Profile
 
 "use client";
 
@@ -12,7 +12,14 @@ import {
 } from "lucide-react";
 import { useId } from "react";
 
-import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
+import {
+  normalizeAgentProfileSearchDomain,
+  type AgentProfileSearchData,
+} from "../../lib/agents/profile-search-contract";
+import {
+  deriveAgentCompetitorSuggestions,
+  type AgentCompetitorSuggestion,
+} from "./agent-competitor-candidates";
 
 export interface AgentProfileSearchCopy {
   readonly eyebrow: string;
@@ -32,6 +39,32 @@ export interface AgentProfileSearchCopy {
   readonly trafficLabel: string;
   readonly rankLabel: string;
   readonly observedAtLabel: string;
+  readonly unavailableMetricLabel: string;
+  readonly providerCountLabel: string;
+  readonly confirmedCountLabel: string;
+  readonly excludedCountLabel: string;
+  readonly providerEvidenceLabel: string;
+  readonly needsReviewLabel: string;
+  readonly higherOverlapLabel: string;
+  readonly adjacentOverlapLabel: string;
+  readonly unclassifiedLabel: string;
+  readonly currentDirectLabel: string;
+  readonly currentIndirectLabel: string;
+  readonly currentExcludedLabel: string;
+  readonly directAction: string;
+  readonly indirectAction: string;
+  readonly excludeAction: string;
+}
+
+export type AgentCompetitorClassification =
+  | "direct"
+  | "indirect"
+  | "excluded";
+
+export interface AgentProfileSearchClassifications {
+  readonly direct: readonly string[];
+  readonly indirect: readonly string[];
+  readonly excluded: readonly string[];
 }
 
 export interface AgentProfileSearchProps {
@@ -42,6 +75,13 @@ export interface AgentProfileSearchProps {
   readonly onDiscover: () => void;
   readonly disabled?: boolean;
   readonly disabledReason?: string;
+  readonly reviewDisabled?: boolean;
+  readonly suggestions?: readonly AgentCompetitorSuggestion[];
+  readonly classifications?: AgentProfileSearchClassifications;
+  readonly onClassify?: (
+    domain: string,
+    classification: AgentCompetitorClassification,
+  ) => void;
   readonly copy: AgentProfileSearchCopy;
 }
 
@@ -67,6 +107,14 @@ function formatFetchedAt(value: string | null, locale: string): string | null {
   } catch {
     return new Intl.DateTimeFormat("en", options).format(date);
   }
+}
+
+function formatMetric(
+  value: number | null,
+  locale: string,
+  unavailableLabel: string,
+): string {
+  return value === null ? unavailableLabel : formatNumber(value, locale);
 }
 
 function Metric({
@@ -115,6 +163,25 @@ function AvailabilityNotice({
   );
 }
 
+function normalizedSet(values: readonly string[]): ReadonlySet<string> {
+  return new Set(
+    values.map(
+      (value) =>
+        normalizeAgentProfileSearchDomain(value) ?? value.trim().toLowerCase(),
+    ),
+  );
+}
+
+function currentClassification(
+  domain: string,
+  classifications: AgentProfileSearchClassifications,
+): AgentCompetitorClassification | null {
+  if (normalizedSet(classifications.direct).has(domain)) return "direct";
+  if (normalizedSet(classifications.indirect).has(domain)) return "indirect";
+  if (normalizedSet(classifications.excluded).has(domain)) return "excluded";
+  return null;
+}
+
 export function AgentProfileSearch({
   locale = "en",
   loading,
@@ -123,6 +190,10 @@ export function AgentProfileSearch({
   onDiscover,
   disabled = false,
   disabledReason,
+  reviewDisabled = false,
+  suggestions,
+  classifications = { direct: [], indirect: [], excluded: [] },
+  onClassify,
   copy,
 }: AgentProfileSearchProps) {
   const titleId = useId();
@@ -134,6 +205,17 @@ export function AgentProfileSearch({
     data?.method === "target_query_serp"
       ? copy.serpBoundary
       : copy.organicBoundary;
+  const reviewSuggestions =
+    suggestions ??
+    (data ? deriveAgentCompetitorSuggestions(data, data.targetHost) : []);
+  const directDomains = normalizedSet(classifications.direct);
+  const indirectDomains = normalizedSet(classifications.indirect);
+  const excludedDomains = normalizedSet(classifications.excluded);
+  const confirmedCount = new Set([
+    ...directDomains,
+    ...indirectDomains,
+  ]).size;
+  const excludedCount = excludedDomains.size;
 
   return (
     <section
@@ -222,52 +304,155 @@ export function AgentProfileSearch({
               </p>
             </div>
 
-            <ol className="mt-1 min-w-0 divide-y divide-brand-border-faint">
-              {data.rows.map((row) => (
-                <li
-                  key={row.domain}
-                  className="grid min-w-0 gap-3 py-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] sm:items-center"
+            <dl className="mt-3 grid min-w-0 grid-cols-3 overflow-hidden rounded-md border border-brand-border-faint bg-brand-bg">
+              {(
+                [
+                  ["provider", copy.providerCountLabel, reviewSuggestions.length],
+                  ["confirmed", copy.confirmedCountLabel, confirmedCount],
+                  ["excluded", copy.excludedCountLabel, excludedCount],
+                ] as const
+              ).map(([kind, label, count]) => (
+                <div
+                  key={kind}
+                  data-profile-competitor-count={kind}
+                  className="min-w-0 border-l border-brand-border-faint px-2.5 py-2.5 first:border-l-0 sm:px-3"
                 >
-                  <div className="min-w-0">
-                    <p className="font-mono text-[8px] tracking-[0.08em] text-text-dark-faint uppercase">
-                      {copy.domainLabel}
-                    </p>
-                    <p
-                      data-profile-search-domain
-                      className="mt-1 min-w-0 break-all font-mono text-[11.5px] text-text-dark-strong"
-                    >
-                      {row.domain}
-                    </p>
-                  </div>
-
-                  {row.kind === "organic_search_overlap" ? (
-                    <dl className="grid min-w-0 grid-cols-1 gap-2 min-[440px]:grid-cols-2 sm:grid-cols-3">
-                      <Metric
-                        label={copy.intersectionsLabel}
-                        value={formatNumber(row.intersections, locale)}
-                      />
-                      <Metric
-                        label={copy.averagePositionLabel}
-                        value={formatNumber(row.averagePosition, locale)}
-                      />
-                      <Metric
-                        label={copy.trafficLabel}
-                        value={formatNumber(
-                          row.organicEstimatedTrafficVolume,
-                          locale,
-                        )}
-                      />
-                    </dl>
-                  ) : (
-                    <dl className="min-w-0">
-                      <Metric
-                        label={copy.rankLabel}
-                        value={formatNumber(row.rank, locale)}
-                      />
-                    </dl>
-                  )}
-                </li>
+                  <dt className="truncate font-mono text-[8px] tracking-[0.07em] text-text-dark-faint uppercase">
+                    {label}
+                  </dt>
+                  <dd className="mt-1 text-[15px] font-semibold text-text-dark-primary">
+                    {count}
+                  </dd>
+                </div>
               ))}
+            </dl>
+
+            <ol className="mt-1 min-w-0 divide-y divide-brand-border-faint">
+              {reviewSuggestions.map((suggestion) => {
+                const classification = currentClassification(
+                  suggestion.domain,
+                  classifications,
+                );
+                const statusLabel =
+                  classification === "direct"
+                    ? copy.currentDirectLabel
+                    : classification === "indirect"
+                      ? copy.currentIndirectLabel
+                      : classification === "excluded"
+                        ? copy.currentExcludedLabel
+                        : copy.needsReviewLabel;
+                const bucketLabel =
+                  suggestion.reviewBucket === "higher_overlap"
+                    ? copy.higherOverlapLabel
+                    : suggestion.reviewBucket === "adjacent_overlap"
+                      ? copy.adjacentOverlapLabel
+                      : copy.unclassifiedLabel;
+                return (
+                  <li
+                    key={suggestion.domain}
+                    data-profile-competitor-candidate={suggestion.domain}
+                    className="grid min-w-0 gap-3 py-3.5"
+                  >
+                    <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] sm:items-center">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[8px] tracking-[0.08em] text-text-dark-faint uppercase">
+                          {copy.domainLabel}
+                        </p>
+                        <p
+                          data-profile-search-domain
+                          className="mt-1 min-w-0 break-all font-mono text-[11.5px] text-text-dark-strong"
+                        >
+                          {suggestion.domain}
+                        </p>
+                        <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                          <span className="rounded border border-brand-info/25 bg-brand-info/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-info uppercase">
+                            {copy.providerEvidenceLabel}
+                          </span>
+                          <span className="rounded border border-brand-warning/25 bg-brand-warning/[0.06] px-1.5 py-0.5 font-mono text-[8px] leading-[1.35] tracking-[0.04em] text-brand-warning uppercase">
+                            {bucketLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {suggestion.evidenceKind ===
+                      "organic_search_overlap" ? (
+                        <dl className="grid min-w-0 grid-cols-1 gap-2 min-[440px]:grid-cols-2 sm:grid-cols-3">
+                          <Metric
+                            label={copy.intersectionsLabel}
+                            value={formatMetric(
+                              suggestion.metrics.intersections,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.averagePositionLabel}
+                            value={formatMetric(
+                              suggestion.metrics.averagePosition,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                          <Metric
+                            label={copy.trafficLabel}
+                            value={formatMetric(
+                              suggestion.metrics.organicEstimatedTrafficVolume,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                        </dl>
+                      ) : (
+                        <dl className="min-w-0">
+                          <Metric
+                            label={copy.rankLabel}
+                            value={formatMetric(
+                              suggestion.metrics.rank,
+                              locale,
+                              copy.unavailableMetricLabel,
+                            )}
+                          />
+                        </dl>
+                      )}
+                    </div>
+
+                    <div className="grid min-w-0 gap-2 rounded-md border border-brand-border-faint bg-brand-panel px-2.5 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <p
+                        data-profile-competitor-classification={
+                          classification ?? "needs_review"
+                        }
+                        className="min-w-0 text-[10px] leading-[1.45] text-text-dark-secondary"
+                      >
+                        {statusLabel}
+                      </p>
+                      <div className="grid min-w-0 grid-cols-3 gap-1.5">
+                        {(
+                          [
+                            ["direct", copy.directAction],
+                            ["indirect", copy.indirectAction],
+                            ["excluded", copy.excludeAction],
+                          ] as const
+                        ).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            data-profile-competitor-action={value}
+                            aria-label={`${label}: ${suggestion.domain}`}
+                            aria-pressed={classification === value}
+                            disabled={reviewDisabled || !onClassify}
+                            onClick={() =>
+                              onClassify?.(suggestion.domain, value)
+                            }
+                            className="min-w-0 rounded border border-brand-border-strong bg-brand-bg px-2 py-1.5 text-[9.5px] font-medium text-text-dark-secondary transition-colors hover:border-brand-accent/45 hover:text-text-dark-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-accent aria-pressed:border-brand-accent/45 aria-pressed:bg-brand-accent/[0.09] aria-pressed:text-brand-accent-text disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <span className="block truncate">{label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
 
             {formattedFetchedAt ? (

@@ -403,6 +403,7 @@ export type KeywordOpportunityErrorCode =
   | "property_not_verified"
   | "rate_limited"
   | "context_token_invalid"
+  | "keyword_generation_unavailable"
   | "keyword_source_unavailable"
   | "site_unreachable"
   | "bot_protection_blocked"
@@ -419,6 +420,7 @@ export const KEYWORD_OPPORTUNITY_ERROR_CODES = [
   "property_not_verified",
   "rate_limited",
   "context_token_invalid",
+  "keyword_generation_unavailable",
   "keyword_source_unavailable",
   "site_unreachable",
   "bot_protection_blocked",
