@@ -2434,15 +2434,15 @@
             "description": "Supplied and manually adjusted facts remain authoritative until you explicitly choose a live suggestion. Apply all never replaces a manual adjustment.",
             "current": "Current draft",
             "live": "Live suggestion",
-            "evidence": "{count, plural, one {# source page} other {# source pages}}",
+            "evidence": "{count, plural, one {# page supports this suggestion} other {# pages support this suggestion}}",
             "use": "Use live suggestion",
             "useLabel": "Use the live suggestion for {field}",
             "applyAll": "Apply all eligible suggestions",
             "manualRetained": "Manual value retained"
           },
           "sources": {
-            "total": "source URLs reviewed",
-            "expand": "View remaining sources ({count} reviewed total)"
+            "total": "crawl source URLs reviewed",
+            "expand": "{count, plural, one {View # more crawl source} other {View # more crawl sources}}"
           },
           "diagnostics": {
             "unavailableFields": "These profile fields were unavailable from this bounded live public-page crawl:",
