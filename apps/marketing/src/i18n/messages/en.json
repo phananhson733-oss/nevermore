@@ -2484,9 +2484,31 @@
         },
         "cards": {
           "product": "Product Profile",
-          "icp": "ICP and job to be done",
+          "icp": "Target customer and core ICP",
           "context": "Outcome and run context",
           "competitor": "Business competitor frame"
+        },
+        "document": {
+          "label": "Product Information",
+          "boundary": "Only facts stated in the supplied Product Information are treated as document-backed. Missing ICP decisions remain explicit.",
+          "confirmationTitle": "Not supplied by Product Information · review before use",
+          "missingIcp": "Not supplied by Product Information — confirm before running: {fields}.",
+          "sections": {
+            "overview": "Overview and category",
+            "experience": "Product experience and features",
+            "commercial": "Business model and pricing",
+            "technical": "Technical and trust signals"
+          },
+          "facts": {
+            "website": "Website",
+            "productType": "Product type",
+            "targetCustomers": "Target customers",
+            "functionOverview": "How the product works",
+            "pricing": "Pricing",
+            "payment": "Payments",
+            "currencies": "Settlement currencies",
+            "technicalSignals": "Technical signals"
+          }
         },
         "facts": {
           "valueProposition": "Value proposition",

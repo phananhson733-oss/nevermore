@@ -125,7 +125,7 @@ function fullAstrologyRefreshResult(): AgentProfileRefreshResult {
 }
 
 describe("Agent-local Product / ICP profiles", () => {
-  it("seeds AstrologyWiki from the two supplied documents without calling it observed", () => {
+  it("seeds AstrologyWiki from Product Information without calling it observed", () => {
     const profile = createAgentProfileDraft(
       "seo",
       "https://www.astrologywiki.com/birth-chart",
@@ -141,14 +141,16 @@ describe("Agent-local Product / ICP profiles", () => {
       categories: ["Astrology tool", "Self-discovery platform", "Birth-chart calculator"],
       businessModel: "Freemium · subscription · credits",
       primaryCta: "Generate Free Birth Chart",
-      primaryIcp: "Mobile-first young adults, 22–38, female-skewed",
+      primaryIcp:
+        "People interested in astrology who use birth charts for self-understanding and psychological exploration",
       buyer:
-        "Inferred — the user and payer are likely the same self-serve individual; confirm.",
+        "Inferred — a self-serve consumer is likely both user and buyer; confirm.",
       user:
-        "Documented — an astrology-interested young adult using the product for self-reflection.",
+        "People focused on personal growth, relationship analysis, or emotional insight.",
       triggerPain:
-        "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
-      jtbd: "Understand themselves without deterministic fortune-telling.",
+        "Wants to use astrology for self-understanding and psychological reflection rather than fate prediction.",
+      jtbd:
+        "Use a birth chart for self-understanding and psychological exploration.",
       firstOutcome:
         "Evaluate birth-chart search opportunities that lead to chart generation",
       country: "",
@@ -168,15 +170,19 @@ describe("Agent-local Product / ICP profiles", () => {
     );
     expect(profile.icpInterests).toEqual([
       "Astrology",
-      "Psychology",
       "Personal growth",
-      "Mindfulness",
+      "Relationship analysis",
+      "Emotional insight",
     ]);
-    expect(profile.icpPain).toContain("rejects deterministic fortune-telling");
-    expect(profile.icpPositioning).toBe("Self-reflection, not fate prediction");
+    expect(profile.icpPain).toBe(
+      "Inferred — the target customer seeks personal growth, relationship analysis, or emotional insight; confirm.",
+    );
+    expect(profile.icpPositioning).toBe(
+      "Self-understanding and psychological reflection, not fate prediction",
+    );
     expect(profile.sources).toEqual({
       product: "product_information_supplied",
-      icp: "marketing_strategy_supplied",
+      icp: "product_information_supplied",
       competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     });
@@ -203,11 +209,11 @@ describe("Agent-local Product / ICP profiles", () => {
     );
   });
 
-  it("maps the supplied documents into the key Product Profile and Core ICP fields", () => {
+  it("maps Product Information into Product Profile facts and reviewable ICP interpretations", () => {
     const profile = createAgentProfileDraft("seo", "astrologywiki.com");
 
     expect(profile.valueProposition).toBe(
-      "Use astrology to know yourself, not predict fate.",
+      "Use astrological symbols for self-understanding and psychological reflection, not fate prediction.",
     );
     expect(profile.coreFeatures).toEqual([
       "Free natal chart calculator",
@@ -229,17 +235,12 @@ describe("Agent-local Product / ICP profiles", () => {
       "Understand personal and emotional patterns",
       "Explore relationship compatibility and tension",
     ]);
-    expect(profile.barriers).toEqual([
-      "Rejects superstitious or deterministic fate prediction",
-    ]);
+    expect(profile.barriers).toEqual([]);
     expect(profile.qualificationSignals).toEqual([
-      "Interested in astrology, psychology, personal growth, or mindfulness",
-      "Uses a mobile device",
-      "Values self-reflection and emotional health",
+      "Interested in astrology as a self-understanding or psychological exploration tool",
+      "Focused on personal growth, relationships, or emotional insight",
     ]);
-    expect(profile.disqualifiers).toEqual([
-      "Seeks deterministic fortune-telling",
-    ]);
+    expect(profile.disqualifiers).toEqual([]);
   });
 
   it("labels every editable field with local field-level provenance", () => {
@@ -252,15 +253,42 @@ describe("Agent-local Product / ICP profiles", () => {
       path: "/valueProposition",
       derivation: "declared",
       confidence: "high",
-      source: "supplied_marketing_strategy",
+      source: "supplied_product_information",
       limitation: null,
       observedAt: null,
       evidenceUrls: [],
     });
+    expect(byPath.get("/icpBehavior")).toMatchObject({
+      derivation: "missing",
+      source: "not_available",
+      confidence: "unknown",
+    });
+    expect(
+      profile.fieldProvenance.some(
+        (entry) => entry.source === "supplied_marketing_strategy",
+      ),
+    ).toBe(false);
     expect(byPath.get("/coreFeatures")).toMatchObject({
       derivation: "declared",
       source: "supplied_product_information",
     });
+    for (const path of [
+      "/triggerPain",
+      "/icpPositioning",
+      "/jtbd",
+      "/useCases",
+      "/outcomes",
+      "/qualificationSignals",
+    ] as const) {
+      expect(byPath.get(path)).toMatchObject({
+        derivation: "inferred",
+        confidence: "low",
+        source: "local_inference",
+        limitation:
+          "Normalized from the supplied Product Information for this local Agent run; confirm before use.",
+        observedAt: expect.any(String),
+      });
+    }
     expect(byPath.get("/buyer")).toMatchObject({
       derivation: "inferred",
       confidence: "low",
@@ -288,10 +316,10 @@ describe("Agent-local Product / ICP profiles", () => {
       evidenceUrls: [],
     });
     expect(byPath.get("/device")).toMatchObject({
-      derivation: "declared",
-      confidence: "high",
-      source: "supplied_marketing_strategy",
-      observedAt: null,
+      derivation: "inferred",
+      confidence: "low",
+      source: "local_inference",
+      observedAt: expect.any(String),
     });
     expect(byPath.get("/pageType")).toMatchObject({
       derivation: "inferred",
@@ -305,7 +333,7 @@ describe("Agent-local Product / ICP profiles", () => {
       confidence: "unknown",
       source: "not_available",
       limitation:
-        "The strategy lists keyword examples, but no target query was confirmed for this run.",
+        "The supplied Product Information does not specify a target query for this run.",
       observedAt: null,
       evidenceUrls: [],
     });
@@ -461,15 +489,15 @@ describe("Agent-local Product / ICP profiles", () => {
       categories: ["占星工具", "自我探索平台", "出生星盘计算器"],
       businessModel: "免费增值 · 订阅 · 点数",
       primaryCta: "生成免费出生星盘",
-      primaryIcp: "以移动端为主、22–38 岁、女性偏多的年轻人",
-      buyer: "推断——用户与付费者很可能是同一位自助型个人；需确认。",
-      user: "文档事实——对占星感兴趣、用产品进行自我反思的年轻人。",
-      jtbd: "在不接受宿命论式算命的前提下理解自己。",
+      primaryIcp: "对占星感兴趣、将星盘用于自我认知与心理探索的普通用户",
+      buyer: "推断——自助型普通用户很可能同时是使用者与购买者；需确认。",
+      user: "关注个人成长、关系分析或情绪洞察的人群。",
+      jtbd: "借助星盘进行自我认知与心理探索。",
       firstOutcome: "评估与出生星盘生成相关的搜索机会",
     });
     expect(profile.sources).toEqual({
       product: "product_information_supplied",
-      icp: "marketing_strategy_supplied",
+      icp: "product_information_supplied",
       competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     });
@@ -717,7 +745,7 @@ describe("Agent-local Product / ICP profiles", () => {
 
     expect(refreshed.productName).toBe("AstrologyWiki");
     expect(refreshed.valueProposition).toBe("Manually reviewed positioning");
-    expect(refreshed.user).toContain("Documented");
+    expect(refreshed.user).toContain("People focused on personal growth");
     expect(refreshed.buyer).toBe("Observed self-serve buyer");
     expect(refreshed.sources).toEqual(profile.sources);
     expect(refreshed.editedFields).toEqual(profile.editedFields);
@@ -745,8 +773,8 @@ describe("Agent-local Product / ICP profiles", () => {
 
     expect(summarizeAgentProfileRefresh(refreshed, refresh)).toEqual({
       found: 22,
-      applied: 2,
-      retained: 20,
+      applied: 11,
+      retained: 11,
       unavailable: 0,
     });
   });
@@ -767,7 +795,7 @@ describe("Agent-local Product / ICP profiles", () => {
     const refreshed = applyAgentProfileRefresh(profile, refresh);
     const proposals = listAgentProfileRefreshProposals(refreshed, refresh);
 
-    expect(proposals).toHaveLength(20);
+    expect(proposals).toHaveLength(11);
     expect(proposals).toContainEqual({
       path: "productName",
       currentValue: "AstrologyWiki",
@@ -843,8 +871,8 @@ describe("Agent-local Product / ICP profiles", () => {
     ).toBe("user_edit");
     expect(summarizeAgentProfileRefresh(accepted, refresh)).toEqual({
       found: 22,
-      applied: 3,
-      retained: 19,
+      applied: 12,
+      retained: 10,
       unavailable: 0,
     });
   });

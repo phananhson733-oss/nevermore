@@ -317,15 +317,30 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   ).toContainText("22");
   await expect(
     page.locator('[data-profile-refresh-count="applied"]'),
-  ).toContainText("2");
+  ).toContainText("11");
   await expect(
     page.locator('[data-profile-refresh-count="retained"]'),
-  ).toContainText("20");
+  ).toContainText("11");
   await expect(
     page.locator('[data-profile-refresh-count="unavailable"]'),
   ).toContainText("0");
   await expect(page.locator('[data-profile-card="product"]')).toContainText(
     "AstrologyWiki",
+  );
+  await expect(page.locator('[data-profile-card="product"]')).toContainText(
+    "Software as a service (SaaS)",
+  );
+  await expect(page.locator('[data-profile-card="product"]')).toContainText(
+    "$41.99 / year",
+  );
+  await expect(page.locator('[data-profile-card="product"]')).toContainText(
+    "Swiss Ephemeris",
+  );
+  await expect(page.locator('[data-profile-card="icp"]')).not.toContainText(
+    "22–38",
+  );
+  await expect(page.locator('[data-profile-card="icp"]')).not.toContainText(
+    "female-skewed",
   );
   const productNameProposal = page.locator(
     '[data-profile-refresh-proposal="productName"]',
@@ -341,10 +356,10 @@ test("profile diagnosis runs only from URL, market, language, and the explicit t
   );
   await expect(
     page.locator('[data-profile-refresh-count="applied"]'),
-  ).toContainText("3");
+  ).toContainText("12");
   await expect(
     page.locator('[data-profile-refresh-count="retained"]'),
-  ).toContainText("19");
+  ).toContainText("10");
 
   await expect(
     page.locator('[data-profile-refresh-source-preview] a'),
@@ -590,10 +605,13 @@ test("primary IA groups Tools under Resources without changing its URL", async (
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Turn growth methods into reusable resources",
   );
-  await expect(page.locator('a[href="#prompts"]')).toHaveCount(1);
-  await expect(page.locator('a[href="#tools"]')).toHaveCount(1);
-  await expect(page.locator('a[href="#skills"]')).toHaveCount(1);
-  await expect(page.locator('a[href="#docs"]')).toHaveCount(1);
+  const resourceIndex = page.getByRole("navigation", {
+    name: "Prompts · Tools · Skills · Docs",
+  });
+  await expect(resourceIndex.locator('a[href="/prompts"]')).toHaveCount(1);
+  await expect(resourceIndex.locator('a[href="/tools"]')).toHaveCount(1);
+  await expect(resourceIndex.locator('a[href="/skills"]')).toHaveCount(1);
+  await expect(resourceIndex.locator('a[href="#docs"]')).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Browse Tools" })).toHaveAttribute(
     "href",
     "/tools",

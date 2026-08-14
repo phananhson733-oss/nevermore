@@ -363,27 +363,28 @@ function usesChinesePresentation(locale: string): boolean {
 const ASTROLOGY_PRODUCT_FIELDS = new Set<AgentProfileEditableField>([
   "productName",
   "oneLinePositioning",
+  "valueProposition",
   "coreFeatures",
   "categories",
   "businessModel",
   "primaryCta",
   "trustSignals",
-]);
-const ASTROLOGY_MARKETING_FIELDS = new Set<AgentProfileEditableField>([
-  "valueProposition",
   "primaryIcp",
   "user",
-  "triggerPain",
   "icpInterests",
-  "icpPain",
-  "icpBehavior",
+]);
+const ASTROLOGY_PRODUCT_DERIVED_FIELDS = new Set<AgentProfileEditableField>([
+  "triggerPain",
   "icpPositioning",
   "jtbd",
   "useCases",
   "outcomes",
-  "barriers",
   "qualificationSignals",
-  "device",
+]);
+const ASTROLOGY_UNSUPPORTED_ICP_FIELDS = new Set<AgentProfileEditableField>([
+  "icpBehavior",
+  "barriers",
+  "disqualifiers",
 ]);
 const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "directCompetitors",
@@ -448,8 +449,19 @@ function astrologyWikiFieldProvenance(
     if (ASTROLOGY_PRODUCT_FIELDS.has(field)) {
       return declaredProvenance(field, "supplied_product_information");
     }
-    if (ASTROLOGY_MARKETING_FIELDS.has(field)) {
-      return declaredProvenance(field, "supplied_marketing_strategy");
+    if (ASTROLOGY_PRODUCT_DERIVED_FIELDS.has(field)) {
+      return inferredProvenance(
+        field,
+        "local_inference",
+        "Normalized from the supplied Product Information for this local Agent run; confirm before use.",
+        observedAt,
+      );
+    }
+    if (ASTROLOGY_UNSUPPORTED_ICP_FIELDS.has(field)) {
+      return missingProvenance(
+        field,
+        "The supplied Product Information does not establish this ICP field; confirm before use.",
+      );
     }
     if (COMPETITOR_FIELDS.has(field)) {
       return missingProvenance(
@@ -472,7 +484,7 @@ function astrologyWikiFieldProvenance(
     if (field === "targetQuery") {
       return missingProvenance(
         field,
-        "The strategy lists keyword examples, but no target query was confirmed for this run.",
+        "The supplied Product Information does not specify a target query for this run.",
       );
     }
     if (field === "pageType") {
@@ -487,22 +499,22 @@ function astrologyWikiFieldProvenance(
       return inferredProvenance(
         field,
         "local_inference",
-        "The supplied documents do not identify a distinct buyer; confirm the self-serve assumption.",
+        "The Product Information describes a consumer self-serve offer but does not name a separate buyer; confirm before use.",
         observedAt,
       );
     }
-    if (field === "disqualifiers") {
+    if (field === "icpPain") {
       return inferredProvenance(
         field,
         "local_inference",
-        "Derived from the supplied anti-fatalistic positioning; confirm before use.",
+        "Inferred from the Product Information target-customer outcomes; confirm the audience pain before use.",
         observedAt,
       );
     }
     return inferredProvenance(
       field,
       "local_inference",
-      "This run setting is not an explicit fact in the supplied documents; confirm before use.",
+      "This run setting is not an explicit fact in the supplied Product Information; confirm before use.",
       observedAt,
     );
   });
@@ -554,8 +566,8 @@ function astrologyWikiDraft(
       ? "融合占星学与现代心理学的免费出生星盘与自我探索 Web 应用。"
       : "A free birth-chart and self-exploration web app combining astrology with modern psychology.",
     valueProposition: chinese
-      ? "用占星学认识自己，而非预测命运。"
-      : "Use astrology to know yourself, not predict fate.",
+      ? "将占星符号用于自我认知与心理反思，而非命运预测。"
+      : "Use astrological symbols for self-understanding and psychological reflection, not fate prediction.",
     coreFeatures: chinese
       ? [
           "免费本命星盘计算器",
@@ -586,32 +598,32 @@ function astrologyWikiDraft(
       ? ["匿名计算", "真实天文数据", "多语言 Web 应用"]
       : ["Anonymous calculation", "Real astronomical data", "Multilingual web app"],
     primaryIcp: chinese
-      ? "以移动端为主、22–38 岁、女性偏多的年轻人"
-      : "Mobile-first young adults, 22–38, female-skewed",
+      ? "对占星感兴趣、将星盘用于自我认知与心理探索的普通用户"
+      : "People interested in astrology who use birth charts for self-understanding and psychological exploration",
     buyer: chinese
-      ? "推断——用户与付费者很可能是同一位自助型个人；需确认。"
-      : "Inferred — the user and payer are likely the same self-serve individual; confirm.",
+      ? "推断——自助型普通用户很可能同时是使用者与购买者；需确认。"
+      : "Inferred — a self-serve consumer is likely both user and buyer; confirm.",
     user: chinese
-      ? "文档事实——对占星感兴趣、用产品进行自我反思的年轻人。"
-      : "Documented — an astrology-interested young adult using the product for self-reflection.",
+      ? "关注个人成长、关系分析或情绪洞察的人群。"
+      : "People focused on personal growth, relationship analysis, or emotional insight.",
     triggerPain: chinese
-      ? "文档事实——希望在没有宿命论式预测的前提下，获得自我理解、关系洞察或情绪反思。"
-      : "Documented — wants self-understanding, relationship insight, or emotional reflection without fatalistic prediction.",
+      ? "希望将占星用于自我认知与心理反思，而非命运预测。"
+      : "Wants to use astrology for self-understanding and psychological reflection rather than fate prediction.",
     icpInterests: chinese
-      ? ["占星", "心理学", "个人成长", "正念"]
-      : ["Astrology", "Psychology", "Personal growth", "Mindfulness"],
+      ? ["占星", "个人成长", "关系分析", "情绪洞察"]
+      : ["Astrology", "Personal growth", "Relationship analysis", "Emotional insight"],
     icpPain: chinese
-      ? "想使用自我理解工具，但拒绝宿命论式算命。"
-      : "Wants a self-understanding tool but rejects deterministic fortune-telling.",
+      ? "推断——目标客户希望获得个人成长、关系分析或情绪洞察；需确认。"
+      : "Inferred — the target customer seeks personal growth, relationship analysis, or emotional insight; confirm.",
     icpBehavior: chinese
-      ? "活跃于社交平台，会分享占星内容，并重视情绪健康。"
-      : "Socially active, shares astrology content, and values emotional health.",
+      ? "未提供 · 需要确认"
+      : "Not supplied · confirmation required",
     icpPositioning: chinese
-      ? "自我反思，而非命运预测"
-      : "Self-reflection, not fate prediction",
+      ? "自我认知与心理反思，而非命运预测"
+      : "Self-understanding and psychological reflection, not fate prediction",
     jtbd: chinese
-      ? "在不接受宿命论式算命的前提下理解自己。"
-      : "Understand themselves without deterministic fortune-telling.",
+      ? "借助星盘进行自我认知与心理探索。"
+      : "Use a birth chart for self-understanding and psychological exploration.",
     useCases: chinese
       ? [
           "生成并探索精准本命星盘",
@@ -636,23 +648,17 @@ function astrologyWikiDraft(
           "Understand personal and emotional patterns",
           "Explore relationship compatibility and tension",
         ],
-    barriers: chinese
-      ? ["排斥迷信式或宿命论式命运预测"]
-      : ["Rejects superstitious or deterministic fate prediction"],
+    barriers: [],
     qualificationSignals: chinese
       ? [
-          "对占星、心理学、个人成长或正念感兴趣",
-          "以手机端为主",
-          "重视自我反思与情绪健康",
+          "将占星作为自我认知或心理探索工具",
+          "关注个人成长、关系或情绪洞察",
         ]
       : [
-          "Interested in astrology, psychology, personal growth, or mindfulness",
-          "Uses a mobile device",
-          "Values self-reflection and emotional health",
+          "Interested in astrology as a self-understanding or psychological exploration tool",
+          "Focused on personal growth, relationships, or emotional insight",
         ],
-    disqualifiers: chinese
-      ? ["寻求确定性的命运预测"]
-      : ["Seeks deterministic fortune-telling"],
+    disqualifiers: [],
     directCompetitors: [],
     indirectAlternatives: [],
     excludedAlternatives: [],
@@ -672,7 +678,7 @@ function astrologyWikiDraft(
     auditScope: "site-first",
     sources: {
       product: "product_information_supplied",
-      icp: "marketing_strategy_supplied",
+      icp: "product_information_supplied",
       competitor: "confirmation_required",
       run: "inferred_run_assumptions",
     },

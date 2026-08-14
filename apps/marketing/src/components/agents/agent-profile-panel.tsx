@@ -13,7 +13,7 @@ import {
   Radar,
   Sparkles,
 } from "lucide-react";
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
 import type { AgentProfileSearchData } from "../../lib/agents/profile-search-contract";
@@ -45,6 +45,7 @@ import {
   type AgentProfileFieldSource,
   type AgentProfileSourceId,
 } from "./agent-profile";
+import { getSuppliedProductInformation } from "./agent-product-information";
 import type { AgentKind } from "./agent-types";
 
 export interface AgentProfilePanelProps {
@@ -134,6 +135,13 @@ const COMPETITOR_FIELDS = new Set<AgentProfileEditableField>([
   "indirectAlternatives",
   "excludedAlternatives",
 ]);
+const PRODUCT_INFORMATION_UNSUPPORTED_ICP_FIELDS = [
+  "buyer",
+  "icpPain",
+  "icpBehavior",
+  "barriers",
+  "disqualifiers",
+] as const satisfies readonly AgentProfileEditableField[];
 
 const PROFILE_MARKET_SUGGESTIONS = [
   "US",
@@ -308,6 +316,31 @@ function StageHeader({
   );
 }
 
+function ProductInformationSection({
+  section,
+  label,
+  children,
+}: {
+  readonly section: "overview" | "experience" | "commercial" | "technical";
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section
+      data-product-information-section={section}
+      className="min-w-0 rounded-row border border-brand-border bg-brand-bg/35 p-4"
+    >
+      <div className="mb-4 flex min-w-0 items-center gap-2">
+        <FileText aria-hidden="true" className="size-3.5 shrink-0 text-brand-accent" />
+        <h4 className="min-w-0 font-mono text-[10px] font-semibold tracking-[0.08em] text-text-dark-secondary uppercase">
+          {label}
+        </h4>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function ProfileRefreshSourceLink({
   sourceUrl,
 }: {
@@ -440,6 +473,19 @@ export function AgentProfilePanel({
   const targetLanguageValid = canonicalLanguageTag(profile.locale) !== null;
   const marketOptionsId = `${agent}-profile-market-options`;
   const languageOptionsId = `${agent}-profile-language-options`;
+  const suppliedProductInformation = getSuppliedProductInformation(
+    profile,
+    locale,
+  );
+  const missingProductInformationIcpFields =
+    PRODUCT_INFORMATION_UNSUPPORTED_ICP_FIELDS.filter((field) =>
+      profile.fieldProvenance.some(
+        (entry) =>
+          entry.path === `/${field}` &&
+          entry.source !== "supplied_product_information" &&
+          entry.source !== "user_edit",
+      ),
+    );
 
   function sectionSourceClass(
     fields: readonly AgentProfileEditableField[],
@@ -1127,70 +1173,277 @@ export function AgentProfilePanel({
           <article
             data-profile-card="product"
             data-profile-stage="01"
-            className="relative grid min-w-0 gap-5 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] md:p-5"
+            className="relative min-w-0 overflow-hidden rounded-row border border-brand-border bg-brand-panel-sunken p-4 before:absolute before:inset-y-0 before:left-0 before:w-px before:bg-brand-gradient before:opacity-70 md:p-5"
           >
-            <div className="min-w-0">
-              <StageHeader number="01" label={t("cards.product")} />
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <SourceChip
-                  source={profile.sources.product}
-                  sectionSource={productSectionSource}
-                  label={sectionSourceLabel(
-                    profile.sources.product,
-                    productSectionSource,
-                  )}
-                />
-                {productAdjusted ? (
-                  <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
-                ) : null}
+            <div className="grid min-w-0 gap-5 md:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+              <div className="min-w-0">
+                <StageHeader number="01" label={t("cards.product")} />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <SourceChip
+                    source={profile.sources.product}
+                    sectionSource={productSectionSource}
+                    label={sectionSourceLabel(
+                      profile.sources.product,
+                      productSectionSource,
+                    )}
+                  />
+                  {productAdjusted ? (
+                    <LocalAdjustmentChip label={t("sources.locally_adjusted")} />
+                  ) : null}
+                </div>
+                <h3 className="mt-4 text-[18px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                  {profile.productName}
+                </h3>
+                <p className="mt-2 max-w-xl text-[13px] leading-[1.65] text-text-dark-secondary">
+                  {profile.oneLinePositioning}
+                </p>
               </div>
-              <h3 className="mt-4 text-[17px] font-semibold tracking-[-0.01em] text-text-dark-primary">
-                {profile.productName}
-              </h3>
-              <p className="mt-2 max-w-xl text-[11.5px] leading-[1.6] text-text-dark-secondary">
-                {profile.oneLinePositioning}
-              </p>
+              {suppliedProductInformation ? (
+                <p className="min-w-0 self-end border-l border-brand-accent/45 pl-4 text-[12px] leading-[1.65] text-text-dark-secondary">
+                  {t("document.boundary")}
+                </p>
+              ) : null}
             </div>
-            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2">
-              <Fact
-                label={t("facts.valueProposition")}
-                value={profile.valueProposition}
-                provenance={fieldProvenance("valueProposition")}
-              />
-              <Fact
-                label={t("facts.coreFeatures")}
-                value={
-                  profile.coreFeatures.length > 0
-                    ? profile.coreFeatures.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("coreFeatures")}
-              />
-              <Fact
-                label={t("facts.category")}
-                value={profile.categories.join(" · ")}
-                provenance={fieldProvenance("categories")}
-              />
-              <Fact
-                label={t("facts.businessModel")}
-                value={profile.businessModel}
-                provenance={fieldProvenance("businessModel")}
-              />
-              <Fact
-                label={t("facts.primaryCta")}
-                value={profile.primaryCta}
-                provenance={fieldProvenance("primaryCta")}
-              />
-              <Fact
-                label={t("facts.trustSignals")}
-                value={
-                  profile.trustSignals.length > 0
-                    ? profile.trustSignals.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("trustSignals")}
-              />
-            </dl>
+
+            {suppliedProductInformation ? (
+              <div className="mt-5 grid min-w-0 gap-3">
+                <ProductInformationSection
+                  section="overview"
+                  label={t("document.sections.overview")}
+                >
+                  <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <Fact
+                      label={t("document.facts.website")}
+                      value={
+                        suppliedProductInformation?.website ||
+                        profile.host ||
+                        t("values.unavailable")
+                      }
+                    />
+                    <Fact
+                      label={t("document.facts.productType")}
+                      value={
+                        suppliedProductInformation?.productType ??
+                        t("values.unavailable")
+                      }
+                    />
+                    <Fact
+                      label={t("facts.category")}
+                      value={
+                        profile.categories.length > 0
+                          ? profile.categories.join(" · ")
+                          : t("values.unavailable")
+                      }
+                      provenance={fieldProvenance("categories")}
+                    />
+                    <Fact
+                      label={t("document.facts.targetCustomers")}
+                      value={
+                        suppliedProductInformation?.targetCustomers ??
+                        profile.primaryIcp
+                      }
+                    />
+                  </dl>
+                </ProductInformationSection>
+
+                <ProductInformationSection
+                  section="experience"
+                  label={t("document.sections.experience")}
+                >
+                  <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Fact
+                      label={t("document.facts.functionOverview")}
+                      value={
+                        suppliedProductInformation?.functionOverview ??
+                        profile.oneLinePositioning
+                      }
+                    />
+                    <Fact
+                      label={t("facts.valueProposition")}
+                      value={profile.valueProposition}
+                      provenance={fieldProvenance("valueProposition")}
+                    />
+                  </dl>
+                  <ol
+                    data-product-information-features
+                    className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+                  >
+                    {(suppliedProductInformation?.features ??
+                      profile.coreFeatures.map((name) => ({
+                        name,
+                        detail: t("values.unavailable"),
+                      }))).map((feature, index) => (
+                      <li
+                        key={`${feature.name}-${index}`}
+                        className="min-w-0 rounded-md border border-brand-border-faint bg-brand-panel-raised/55 p-3"
+                      >
+                        <p className="text-[12px] font-semibold leading-[1.45] text-text-dark-primary">
+                          {feature.name}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-[1.55] text-text-dark-secondary">
+                          {feature.detail}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                  <dl className="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Fact
+                      label={t("facts.coreFeatures")}
+                      value={
+                        profile.coreFeatures.length > 0
+                          ? profile.coreFeatures.join(" · ")
+                          : t("values.unavailable")
+                      }
+                      provenance={fieldProvenance("coreFeatures")}
+                    />
+                    <Fact
+                      label={t("facts.primaryCta")}
+                      value={profile.primaryCta}
+                      provenance={fieldProvenance("primaryCta")}
+                    />
+                  </dl>
+                </ProductInformationSection>
+
+                <ProductInformationSection
+                  section="commercial"
+                  label={t("document.sections.commercial")}
+                >
+                  <dl className="grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Fact
+                      label={t("facts.businessModel")}
+                      value={profile.businessModel}
+                      provenance={fieldProvenance("businessModel")}
+                    />
+                    <Fact
+                      label={t("document.facts.payment")}
+                      value={
+                        suppliedProductInformation?.paymentProcessor ??
+                        t("values.unavailable")
+                      }
+                    />
+                  </dl>
+                  {suppliedProductInformation ? (
+                    <div
+                      data-product-information-pricing
+                      className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4"
+                    >
+                      {suppliedProductInformation.pricing.map((tier) => (
+                        <div
+                          key={tier.name}
+                          className="min-w-0 rounded-md border border-brand-border-faint bg-brand-panel-raised/55 p-3"
+                        >
+                          <p className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+                            {tier.name}
+                          </p>
+                          <p className="mt-1.5 text-[15px] font-semibold tracking-[-0.01em] text-text-dark-primary">
+                            {tier.price}
+                          </p>
+                          <p className="mt-1 text-[10.5px] leading-[1.5] text-text-dark-secondary">
+                            {tier.detail}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-[11.5px] text-text-dark-secondary">
+                      {t("values.unavailable")}
+                    </p>
+                  )}
+                  <dl className="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                    <Fact
+                      label={t("document.facts.pricing")}
+                      value={
+                        suppliedProductInformation
+                          ? suppliedProductInformation.pricing
+                              .map((tier) => `${tier.name}: ${tier.price}`)
+                              .join(" · ")
+                          : t("values.unavailable")
+                      }
+                    />
+                    <Fact
+                      label={t("document.facts.currencies")}
+                      value={
+                        suppliedProductInformation?.currencies.join(" · ") ??
+                        t("values.unavailable")
+                      }
+                    />
+                  </dl>
+                </ProductInformationSection>
+
+                <ProductInformationSection
+                  section="technical"
+                  label={t("document.sections.technical")}
+                >
+                  <ul className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {(suppliedProductInformation?.technicalSignals ??
+                      profile.trustSignals).map((signal) => (
+                      <li
+                        key={signal}
+                        className="min-w-0 rounded-md border border-brand-border-faint bg-brand-panel-raised/55 px-3 py-2.5 text-[11.5px] leading-[1.55] text-text-dark-secondary"
+                      >
+                        {signal}
+                      </li>
+                    ))}
+                  </ul>
+                  <dl className="mt-4">
+                    <Fact
+                      label={t("facts.trustSignals")}
+                      value={
+                        profile.trustSignals.length > 0
+                          ? profile.trustSignals.join(" · ")
+                          : t("values.unavailable")
+                      }
+                      provenance={fieldProvenance("trustSignals")}
+                    />
+                  </dl>
+                </ProductInformationSection>
+              </div>
+            ) : (
+              <dl className="mt-5 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                <Fact
+                  label={t("facts.valueProposition")}
+                  value={profile.valueProposition}
+                  provenance={fieldProvenance("valueProposition")}
+                />
+                <Fact
+                  label={t("facts.coreFeatures")}
+                  value={
+                    profile.coreFeatures.length > 0
+                      ? profile.coreFeatures.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("coreFeatures")}
+                />
+                <Fact
+                  label={t("facts.category")}
+                  value={
+                    profile.categories.length > 0
+                      ? profile.categories.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("categories")}
+                />
+                <Fact
+                  label={t("facts.businessModel")}
+                  value={profile.businessModel}
+                  provenance={fieldProvenance("businessModel")}
+                />
+                <Fact
+                  label={t("facts.primaryCta")}
+                  value={profile.primaryCta}
+                  provenance={fieldProvenance("primaryCta")}
+                />
+                <Fact
+                  label={t("facts.trustSignals")}
+                  value={
+                    profile.trustSignals.length > 0
+                      ? profile.trustSignals.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("trustSignals")}
+                />
+              </dl>
+            )}
           </article>
 
           <article
@@ -1217,92 +1470,120 @@ export function AgentProfilePanel({
                 {profile.primaryIcp}
               </h3>
             </div>
-            <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2 xl:grid-cols-3">
-              <Fact
-                label={t("facts.interests")}
-                value={
-                  profile.icpInterests.length > 0
-                    ? profile.icpInterests.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("icpInterests")}
-              />
-              <Fact
-                label={t("facts.buyer")}
-                value={profile.buyer}
-                provenance={fieldProvenance("buyer")}
-              />
-              <Fact
-                label={t("facts.user")}
-                value={profile.user}
-                provenance={fieldProvenance("user")}
-              />
-              <Fact
-                label={t("facts.triggerPain")}
-                value={profile.triggerPain}
-                provenance={fieldProvenance("triggerPain")}
-              />
-              <Fact
-                label={t("facts.useCases")}
-                value={
-                  profile.useCases.length > 0
-                    ? profile.useCases.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("useCases")}
-              />
-              <Fact
-                label={t("fields.jtbd")}
-                value={profile.jtbd}
-                provenance={fieldProvenance("jtbd")}
-              />
-              <Fact
-                label={t("facts.pain")}
-                value={profile.icpPain}
-                provenance={fieldProvenance("icpPain")}
-              />
-              <Fact
-                label={t("facts.outcomes")}
-                value={
-                  profile.outcomes.length > 0
-                    ? profile.outcomes.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("outcomes")}
-              />
-              <Fact
-                label={t("facts.barriers")}
-                value={
-                  profile.barriers.length > 0
-                    ? profile.barriers.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("barriers")}
-              />
-              <Fact
-                label={t("facts.qualificationSignals")}
-                value={
-                  profile.qualificationSignals.length > 0
-                    ? profile.qualificationSignals.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("qualificationSignals")}
-              />
-              <Fact
-                label={t("facts.disqualifiers")}
-                value={
-                  profile.disqualifiers.length > 0
-                    ? profile.disqualifiers.join(" · ")
-                    : t("values.unavailable")
-                }
-                provenance={fieldProvenance("disqualifiers")}
-              />
-              <Fact
-                label={t("facts.positioning")}
-                value={profile.icpPositioning}
-                provenance={fieldProvenance("icpPositioning")}
-              />
-            </dl>
+            <div className="min-w-0">
+              <dl className="grid min-w-0 gap-x-6 gap-y-3 self-start sm:grid-cols-2">
+                <Fact
+                  label={t("facts.interests")}
+                  value={
+                    profile.icpInterests.length > 0
+                      ? profile.icpInterests.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("icpInterests")}
+                />
+                <Fact
+                  label={t("facts.user")}
+                  value={profile.user}
+                  provenance={fieldProvenance("user")}
+                />
+                <Fact
+                  label={t("facts.triggerPain")}
+                  value={profile.triggerPain}
+                  provenance={fieldProvenance("triggerPain")}
+                />
+                <Fact
+                  label={t("facts.useCases")}
+                  value={
+                    profile.useCases.length > 0
+                      ? profile.useCases.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("useCases")}
+                />
+                <Fact
+                  label={t("fields.jtbd")}
+                  value={profile.jtbd}
+                  provenance={fieldProvenance("jtbd")}
+                />
+                <Fact
+                  label={t("facts.outcomes")}
+                  value={
+                    profile.outcomes.length > 0
+                      ? profile.outcomes.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("outcomes")}
+                />
+                <Fact
+                  label={t("facts.qualificationSignals")}
+                  value={
+                    profile.qualificationSignals.length > 0
+                      ? profile.qualificationSignals.join(" · ")
+                      : t("values.unavailable")
+                  }
+                  provenance={fieldProvenance("qualificationSignals")}
+                />
+                <Fact
+                  label={t("facts.positioning")}
+                  value={profile.icpPositioning}
+                  provenance={fieldProvenance("icpPositioning")}
+                />
+              </dl>
+              <div className="mt-4 rounded-row border border-brand-border-faint bg-brand-bg/35 p-3">
+                <h4 className="font-mono text-[9px] tracking-[0.08em] text-text-dark-faint uppercase">
+                  {t("document.confirmationTitle")}
+                </h4>
+                <dl className="mt-1 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-2">
+                  <Fact
+                    label={t("facts.buyer")}
+                    value={profile.buyer}
+                    provenance={fieldProvenance("buyer")}
+                  />
+                  <Fact
+                    label={t("facts.pain")}
+                    value={profile.icpPain}
+                    provenance={fieldProvenance("icpPain")}
+                  />
+                  <Fact
+                    label={t("fields.icpBehavior")}
+                    value={profile.icpBehavior}
+                    provenance={fieldProvenance("icpBehavior")}
+                  />
+                  <Fact
+                    label={t("facts.barriers")}
+                    value={
+                      profile.barriers.length > 0
+                        ? profile.barriers.join(" · ")
+                        : t("values.unavailable")
+                    }
+                    provenance={fieldProvenance("barriers")}
+                  />
+                  <Fact
+                    label={t("facts.disqualifiers")}
+                    value={
+                      profile.disqualifiers.length > 0
+                        ? profile.disqualifiers.join(" · ")
+                        : t("values.unavailable")
+                    }
+                    provenance={fieldProvenance("disqualifiers")}
+                  />
+                </dl>
+              </div>
+              {missingProductInformationIcpFields.length > 0 ? (
+                <div
+                  data-product-information-missing-icp
+                  className="mt-4 rounded-md border border-brand-warning/30 bg-brand-warning/[0.06] px-3 py-2.5"
+                >
+                  <p className="text-[11px] leading-[1.55] text-text-dark-secondary">
+                    {t("document.missingIcp", {
+                      fields: missingProductInformationIcpFields
+                        .map((field) => t(`fields.${field}`))
+                        .join(", "),
+                    })}
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </article>
 
           <article

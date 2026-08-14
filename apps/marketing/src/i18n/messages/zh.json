@@ -2484,9 +2484,31 @@
         },
         "cards": {
           "product": "Product Profile",
-          "icp": "ICP 与待完成任务",
+          "icp": "目标客户与核心 ICP",
           "context": "结果与运行上下文",
           "competitor": "商业竞品框架"
+        },
+        "document": {
+          "label": "Product Information",
+          "boundary": "只有 Product Information 明确提供的内容才视为文档事实；缺失的 ICP 决策会继续清晰标记。",
+          "confirmationTitle": "Product Information 未提供 · 使用前请审核",
+          "missingIcp": "Product Information 未提供以下 ICP 决策，运行前请确认：{fields}。",
+          "sections": {
+            "overview": "概述与产品类别",
+            "experience": "功能介绍与主要功能",
+            "commercial": "商业模式与定价",
+            "technical": "技术与信任信号"
+          },
+          "facts": {
+            "website": "网站",
+            "productType": "产品类型",
+            "targetCustomers": "目标客户",
+            "functionOverview": "功能介绍",
+            "pricing": "定价",
+            "payment": "支付处理",
+            "currencies": "结算币种",
+            "technicalSignals": "技术信号"
+          }
         },
         "facts": {
           "valueProposition": "价值主张",

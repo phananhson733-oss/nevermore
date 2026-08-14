@@ -11,6 +11,7 @@ import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import type { AgentProfileRefreshData } from "../../lib/agents/profile-refresh-contract";
 import {
+  acceptAgentProfileRefreshFields,
   applyAgentProfileRefresh,
   createAgentProfileDraft,
   updateAgentProfile,
@@ -493,8 +494,8 @@ describe("AgentProfilePanel", () => {
       document.querySelector(`[data-profile-refresh-count="${name}"]`)
         ?.textContent;
     expect(count("found")).toContain("22");
-    expect(count("applied")).toContain("2");
-    expect(count("retained")).toContain("20");
+    expect(count("applied")).toContain("11");
+    expect(count("retained")).toContain("11");
     expect(count("unavailable")).toContain("0");
     expect(
       document.querySelector('[data-profile-refresh-metric="pages"]')
@@ -961,7 +962,7 @@ describe("AgentProfilePanel", () => {
     );
   });
 
-  it("presents Product, ICP, competitors, and run context as a top-to-bottom stage rail", () => {
+  it("presents Product Profile, target customer, competitors, and run context as a top-to-bottom stage rail", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
     const rail = document.querySelector(
@@ -985,31 +986,47 @@ describe("AgentProfilePanel", () => {
     ]);
   });
 
-  it("shows URL plus four source-honest decision cards before expanding fields", () => {
+  it("shows every supplied Product Information section without Marketing Strategy facts", () => {
     renderPanel(createAgentProfileDraft("seo", "astrologywiki.com"));
 
     expect(document.querySelectorAll("[data-profile-card]")).toHaveLength(4);
     expect(
-      document.querySelector('[data-profile-card="product"]')?.textContent,
-    ).toContain("Use astrology to know yourself, not predict fate.");
+      Array.from(
+        document.querySelectorAll("[data-product-information-section]"),
+      ).map((section) =>
+        section.getAttribute("data-product-information-section"),
+      ),
+    ).toEqual(["overview", "experience", "commercial", "technical"]);
     expect(
       document.querySelector('[data-profile-card="product"]')?.textContent,
-    ).toContain("Free natal chart calculator");
+    ).toContain("Software as a service (SaaS)");
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("Users enter a birth date, time, and place");
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("$41.99 / year");
+    expect(
+      document.querySelector('[data-profile-card="product"]')?.textContent,
+    ).toContain("Swiss Ephemeris");
+    expect(
+      document.querySelector('[data-profile-card="icp"]')?.textContent,
+    ).toContain("People interested in astrology who use birth charts");
+    expect(document.body.textContent).not.toContain("22–38");
+    expect(document.body.textContent).not.toContain("female-skewed");
+    expect(document.body.textContent).not.toContain("Xiaohongshu");
     expect(
       document.querySelector('[data-profile-source="product_information_supplied"]'),
     ).not.toBeNull();
     expect(
       document.querySelector('[data-profile-source="marketing_strategy_supplied"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       document.querySelector('[data-profile-source="inferred_run_assumptions"]'),
     ).not.toBeNull();
     expect(
       document.querySelector('[data-profile-card="competitor"]')?.textContent,
     ).toContain("values.confirmationRequired");
-    expect(
-      document.querySelector('[data-profile-card="icp"]')?.textContent,
-    ).toContain("Inferred — the user and payer");
     expect(
       document.querySelector('[data-profile-card="icp"]')?.textContent,
     ).toContain("Generate and explore an accurate natal chart");
@@ -1035,6 +1052,53 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('button[data-profile-action="confirm"]')?.textContent,
     ).toBe("actions.confirmRun");
+  });
+
+  it("keeps supplied document excerpts separate from explicitly accepted live profile fields", () => {
+    const refresh = makeProfileRefreshData();
+    const refreshed = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      refresh,
+    );
+    const accepted = acceptAgentProfileRefreshFields(refreshed, refresh, [
+      "oneLinePositioning",
+      "primaryIcp",
+    ]);
+
+    renderPanel(accepted);
+
+    const documentExperience = document.querySelector(
+      '[data-product-information-section="experience"]',
+    );
+    expect(documentExperience?.textContent).toContain(
+      "Users enter a birth date, time, and place",
+    );
+    expect(
+      documentExperience?.querySelector(
+        '[data-profile-source-class="live_public_page"]',
+      ),
+    ).toBeNull();
+
+    const documentOverview = document.querySelector(
+      '[data-product-information-section="overview"]',
+    );
+    expect(documentOverview?.textContent).toContain(
+      "People interested in astrology who use a birth chart",
+    );
+    expect(
+      documentOverview?.querySelector(
+        '[data-profile-source-class="live_public_page"]',
+      ),
+    ).toBeNull();
+
+    const icpCard = document.querySelector('[data-profile-card="icp"]');
+    expect(icpCard?.textContent).toContain("Observed primaryIcp");
+    expect(icpCard?.textContent).not.toContain(
+      "People interested in astrology who use a birth chart",
+    );
   });
 
   it("renders empty run-context inputs as confirmation-required missing values", () => {
@@ -1634,6 +1698,12 @@ describe("AgentProfilePanel", () => {
     expect(
       document.querySelector('[data-profile-source="confirmation_required"]'),
     ).not.toBeNull();
+    expect(
+      document.querySelectorAll("[data-product-information-section]"),
+    ).toHaveLength(0);
+    expect(document.body.textContent).not.toContain(
+      "Only facts stated in the supplied Product Information",
+    );
     expect(document.body.textContent).not.toContain("22–38");
     expect(
       (
