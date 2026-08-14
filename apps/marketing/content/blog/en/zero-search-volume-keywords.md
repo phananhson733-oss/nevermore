@@ -110,7 +110,7 @@ Low-volume keywords — those registering any confirmed monthly search figure in
 
 ## Take Action
 
-Start from the terms, not the site — [find low competition keywords with a weak site already ranking](/tools/low-competition-keywords) shows which zero-volume terms have someone weak already ranking.
+Start from the terms, not the site — [run a shortlist through a priced volume check](/tools/low-competition-keywords). It separates a term the provider priced at zero from one the provider returned no row for, and it withholds the priced-at-zero terms from its opportunity list rather than ranking them. That is a provider reading, not a demand verdict: it needs a signed-in account with Search Console connected, and whether a zero is underreporting or real absence is still yours to settle.
 
 [Run the SEO Agent](https://gengrowth.ai/agents/seo) on your own site before you commission the next batch. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. It takes a public URL, crawls same-origin static HTML, and reports what the crawler actually observes: crawl coverage, metadata, heading structure, and structured-data conditions. The marketing run is not saved to an app project. One run collects up to about 950 pages and stops at four minutes, so a larger site comes back marked partial coverage. Repeated titles are a fast way to see where you may already be publishing near-duplicates — useful context before adding another unvalidated term. It reports observed facts and adaptable guidance, not a score or demand forecast; the demand check stays yours to run.
 

@@ -119,7 +119,7 @@ Google Search Central now documents three link attributes — sponsored for paid
 
 [Run the Tech Agent](https://gengrowth.ai/agents/tech) on your site. A verified GenGrowth account is required, but no Search Console connection or site-ownership verification is needed. One crawl of public static HTML returns observed crawl, indexability, and internal-link conditions, including candidate orphan pages and collected error targets. The marketing run is not saved to an app project. A single run covers roughly 950 pages within a four-minute boundary, and a larger site comes back marked partial coverage. It will not classify an uncollected link as broken, and it is not a PageRank calculation. What it gives you is an observed link graph to reason from instead of assumptions.
 
-The link-structure half needs a crawl, but the "which pages deserve it" half starts from search data — [find your SEO opportunities in Search Console](/tools/seo-quick-wins).
+The link-structure half needs a crawl, but the "what is underperforming" half starts from search data — [find your SEO opportunities in Search Console](/tools/seo-quick-wins). It reads queries rather than pages, so grouping those queries onto the pages you would point links at stays a manual step.
 
 ## Sources
 
