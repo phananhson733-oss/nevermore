@@ -33,7 +33,24 @@ import {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const FILE_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
+
+/**
+ * The Agent Skills spec fixes both halves of where a skill lives: the file is
+ * always `SKILL.md`, and the directory holding it must match the `name` in its
+ * frontmatter. Both are derived from the slug here rather than declared per
+ * file, because the download is only useful if it lands somewhere an agent
+ * looks — a per-skill filename is a chance to get that wrong and no chance to
+ * get it more right.
+ *
+ * @see https://agentskills.io/specification
+ */
+export const SKILL_FILE_NAME = "SKILL.md";
+const SKILL_INSTALL_ROOT = ".claude/skills";
+
+/** Where a downloaded skill file has to be saved for an agent to load it. */
+export function skillInstallPath(slug: string): string {
+  return `${SKILL_INSTALL_ROOT}/${slug}/${SKILL_FILE_NAME}`;
+}
 
 function isValidCalendarDate(value: string): boolean {
   if (!DATE_PATTERN.test(value)) return false;
@@ -75,10 +92,6 @@ const frontmatterSchema = z
     tagline: z.string().trim().min(1),
     category: z.enum(SKILL_CATEGORIES),
     owner: z.enum(SKILL_OWNERS),
-    fileName: z
-      .string()
-      .trim()
-      .regex(FILE_NAME_PATTERN, "must be a lowercase hyphenated .md filename"),
     keywords: commaList,
     relatedSkills: slugList.optional(),
     relatedPrompts: slugList.optional(),
@@ -131,9 +144,33 @@ async function getContentRoot(): Promise<string> {
 }
 
 /**
- * A skill file is a real SKILL.md: YAML frontmatter naming the skill and its
- * owner, then plain-language instructions. Requiring the frontmatter here stops
- * a prose-only file from being offered as a downloadable artifact.
+ * Frontmatter keys the Agent Skills spec defines. Anything else at the top
+ * level is rejected rather than ignored: a reader who downloads this file is
+ * told it is spec-compliant, and an unknown key is the one kind of defect that
+ * still parses, still renders, and only shows up in whichever agent is strict.
+ * Client-specific values belong under `metadata`, which the spec reserves for
+ * exactly that.
+ *
+ * @see https://agentskills.io/specification
+ */
+const SPEC_FRONTMATTER_KEYS = new Set([
+  "name",
+  "description",
+  "license",
+  "compatibility",
+  "metadata",
+  "allowed-tools",
+]);
+
+const SKILL_NAME_MAX = 64;
+const SKILL_DESCRIPTION_MAX = 1024;
+
+/**
+ * A skill file is a real SKILL.md: spec frontmatter, then plain-language
+ * instructions. The checks here are the spec's own constraints, applied at
+ * build time — the file is offered as something to drop into an agent, so the
+ * cost of publishing one that fails validation lands on the reader, who has no
+ * way to tell the difference before it silently fails to load.
  */
 function assertSkillFileShape(
   fileContent: string,
@@ -161,13 +198,42 @@ function assertSkillFileShape(
     }
   }
 
+  // Top-level keys start at column zero; anything indented belongs to the
+  // mapping above it, which is how `metadata:` carries its own keys legally.
+  for (const line of header.split("\n")) {
+    if (!line.trim() || /^\s/.test(line)) continue;
+    const key = /^([^:\s]+):/.exec(line)?.[1];
+    if (key && !SPEC_FRONTMATTER_KEYS.has(key)) {
+      throw new Error(
+        `${sourceName}: the skill file sets '${key}', which the Agent Skills spec does not define. Put client-specific values under 'metadata:'.`,
+      );
+    }
+  }
+
   // Unquoted, because quoting a scalar is ordinary YAML and the file is meant
   // to be usable outside this site.
   const rawName = /^name:\s*(.+?)\s*$/m.exec(header)?.[1];
   const declaredName = rawName ? unquoteScalar(rawName) : undefined;
   if (declaredName && declaredName !== slug) {
     throw new Error(
-      `${sourceName}: the skill file declares name '${declaredName}' but lives at '${slug}.md'.`,
+      `${sourceName}: the skill file declares name '${declaredName}' but lives at '${slug}.md'. The spec requires the name to match the directory the file is installed into.`,
+    );
+  }
+  if (declaredName && declaredName.length > SKILL_NAME_MAX) {
+    throw new Error(
+      `${sourceName}: the skill file's name is ${declaredName.length} characters; the spec allows ${SKILL_NAME_MAX}.`,
+    );
+  }
+
+  // Single-line only: every description here is one line, and a folded scalar
+  // measured by its first line would pass a limit the whole value breaks.
+  const rawDescription = /^description:\s*(.+?)\s*$/m.exec(header)?.[1];
+  const description = rawDescription
+    ? unquoteScalar(rawDescription)
+    : undefined;
+  if (description && description.length > SKILL_DESCRIPTION_MAX) {
+    throw new Error(
+      `${sourceName}: the skill file's description is ${description.length} characters; the spec allows ${SKILL_DESCRIPTION_MAX}.`,
     );
   }
 }
@@ -270,12 +336,6 @@ function toSkillResource(
   }
   const frontmatter = parsed.data;
 
-  if (frontmatter.fileName !== `${slug}.md`) {
-    throw new Error(
-      `${sourceName}: fileName '${frontmatter.fileName}' must match the slug ('${slug}.md').`,
-    );
-  }
-
   const sections = splitResourceSections(body, sourceName);
   const fileContent = extractFencedBlock(
     requireSection(sections, SECTION_FILE, sourceName),
@@ -299,7 +359,7 @@ function toSkillResource(
     tagline: frontmatter.tagline,
     category: frontmatter.category,
     owner: frontmatter.owner,
-    fileName: frontmatter.fileName,
+    installPath: skillInstallPath(slug),
     keywords: frontmatter.keywords,
     relatedSkills: frontmatter.relatedSkills ?? [],
     relatedPrompts: frontmatter.relatedPrompts ?? [],
@@ -379,7 +439,8 @@ function assertRelatedSkillsResolve(skills: readonly SkillResource[]): void {
     slugs.add(skill.slug);
     byLocale.set(skill.locale, slugs);
   }
-  const defaultSlugs = byLocale.get(DEFAULT_CONTENT_LOCALE) ?? new Set<string>();
+  const defaultSlugs =
+    byLocale.get(DEFAULT_CONTENT_LOCALE) ?? new Set<string>();
 
   for (const skill of skills) {
     const own = byLocale.get(skill.locale) ?? new Set<string>();

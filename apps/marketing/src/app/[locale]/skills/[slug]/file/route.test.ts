@@ -27,7 +27,7 @@ describe("skill file download", () => {
       "text/markdown; charset=utf-8",
     );
     expect(response.headers.get("content-disposition")).toBe(
-      `attachment; filename="${skill.fileName}"`,
+      'attachment; filename="SKILL.md"',
     );
     // Every skill page links here, so the sitemap's exclusion is not enough on
     // its own: without this header the file competes in the index with the page

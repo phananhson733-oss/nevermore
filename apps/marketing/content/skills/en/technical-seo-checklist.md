@@ -4,7 +4,6 @@ description: Find what actually stops a site being crawled, rendered and indexed
 tagline: Know why a page is missing from the index, not just that it is
 category: technical
 owner: tech
-fileName: technical-seo-checklist.md
 keywords: technical seo checklist, crawlability audit, indexation issues, canonical tag audit, xml sitemap validation, structured data validation, robots txt check
 relatedSkills: seo-audit, internal-linking
 relatedPrompts: seo-content-audit-prompt, internal-linking-suggestions-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: technical-seo-checklist
-description: Explain why specific URLs are missing from the index, separating blocked from undiscovered from deliberately excluded, using observed responses only.
-owner: GenGrowth Tech Agent
+description: Explain why specific URLs are missing from the index, separating blocked from undiscovered from deliberately excluded, using observed responses only. Use when pages are missing from Google, when someone asks about indexing, crawl budget, robots.txt, canonicals, or sitemaps, or when Search Console reports a URL as discovered but not indexed and the cause has not been established.
+metadata:
+  owner: GenGrowth Tech Agent
+  source: https://gengrowth.ai/skills/technical-seo-checklist
 ---
 
 # Technical SEO

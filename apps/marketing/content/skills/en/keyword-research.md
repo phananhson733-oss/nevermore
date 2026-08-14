@@ -4,7 +4,6 @@ description: Turn a site and a market into a keyword set you can defend, separat
 tagline: Find the searches worth writing for — and say where each number came from
 category: seo
 owner: seo
-fileName: keyword-research.md
 keywords: keyword research skill, seo keyword workflow, search demand analysis, keyword prioritisation, search console keywords
 relatedSkills: seo-audit, content-brief
 relatedPrompts: seo-keyword-clustering-prompt, search-intent-classification-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: keyword-research
-description: Build a keyword set for a site from measured demand and observed competitors, keeping unavailable data explicitly unavailable.
-owner: GenGrowth SEO Agent
+description: Build a keyword set for a site from measured demand and observed competitors, keeping unavailable data explicitly unavailable. Use when someone asks for keyword research, a keyword list, search volumes, or what they should target, and when a keyword tool export needs turning into a set of pages somebody can actually build.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/keyword-research
 ---
 
 # Keyword Research

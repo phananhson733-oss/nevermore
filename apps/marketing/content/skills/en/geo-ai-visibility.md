@@ -4,7 +4,6 @@ description: Work out where AI assistants actually source their answers, fix wha
 tagline: Find out who AI assistants cite for your topics, and why it is not you
 category: geo
 owner: seo
-fileName: geo-ai-visibility.md
 keywords: ai visibility, generative engine optimization, ai overview citations, llm citation tracking, ai answer monitoring, geo seo skill, brand mentions in ai answers
 relatedSkills: on-page-seo, content-brief
 relatedPrompts: geo-ai-overview-optimization-prompt, faq-generation-schema-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: geo-ai-visibility
-description: Measure where AI assistants source answers on a topic, fix retrieval blockers on the site, and identify the off-site references that citation depends on.
-owner: GenGrowth SEO Agent
+description: Measure where AI assistants source answers on a topic, fix retrieval blockers on the site, and identify the off-site references that citation depends on. Use when someone asks why ChatGPT, Claude, Perplexity, or Google's AI Overviews cite a competitor instead of them, wants to track brand mentions in AI answers, or asks how to optimise for AI search or GEO — including the bare "we don't show up in AI" with nothing else supplied.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/geo-ai-visibility
 ---
 
 # AI Answer Visibility

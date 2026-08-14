@@ -21,6 +21,7 @@ import { siteConfig } from "@/config/site";
 import { routing } from "@/i18n/routing";
 import { getPromptForLocale } from "@/lib/prompt-content";
 import {
+  SKILL_FILE_NAME,
   getSkillForLocale,
   getSkillsForLocale,
   localesOwningSkill,
@@ -146,6 +147,14 @@ export default async function SkillDetailPage({
   const canonicalUrl = localeUrl(skill.locale, `${PATH}/${slug}`);
   const downloadHref = localePath(locale, `${PATH}/${skill.slug}/file`);
   const agentHref = localePath(locale, `/agents/${skill.owner}`);
+  // Absolute and pointing at the locale that owns the file: the command is
+  // copied out of the page into a terminal, where a relative path means
+  // nothing and a locale prefix that only mirrors English is noise.
+  const installDir = skill.installPath.slice(
+    0,
+    skill.installPath.lastIndexOf("/"),
+  );
+  const installCommand = `mkdir -p ${installDir} && curl -fsSL ${localeUrl(skill.locale, `${PATH}/${skill.slug}/file`)} -o ${skill.installPath}`;
 
   const techArticleLd = {
     "@context": "https://schema.org",
@@ -250,7 +259,7 @@ export default async function SkillDetailPage({
             <dl className="mt-7 flex flex-wrap gap-x-8 gap-y-3 border-t border-brand-border pt-5 font-mono text-[10.5px] tracking-[0.06em] uppercase">
               {[
                 { term: t("detail.owner"), value: t(`owners.${skill.owner}`) },
-                { term: t("detail.format"), value: skill.fileName },
+                { term: t("detail.format"), value: skill.installPath },
                 { term: t("detail.updated"), value: updatedLabel },
               ].map((entry) => (
                 <div key={entry.term} className="min-w-0">
@@ -281,13 +290,18 @@ export default async function SkillDetailPage({
                 {t("detail.fileTitle")}
               </h2>
               <SkillFileWindow
-                fileName={skill.fileName}
+                installPath={skill.installPath}
+                downloadName={SKILL_FILE_NAME}
                 content={skill.fileContent}
                 downloadHref={downloadHref}
+                installTitle={t("detail.installTitle")}
+                installNote={t("detail.installNote")}
+                installCommand={installCommand}
                 copyLabel={t("detail.copy")}
                 copiedLabel={t("detail.copied")}
                 failedLabel={t("detail.copyFailed")}
                 downloadLabel={t("detail.download")}
+                copyCommandLabel={t("detail.copyCommand")}
               />
             </section>
 

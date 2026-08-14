@@ -259,7 +259,7 @@
     "detail": {
       "backToLibrary": "全部 Skills",
       "owner": "所属 Agent",
-      "format": "文件",
+      "format": "安装路径",
       "updated": "更新于",
       "getFile": "查看 Skill 文件",
       "tryAgent": "试用 Agent",
@@ -268,6 +268,9 @@
       "copy": "复制文件",
       "copied": "已复制",
       "download": "下载",
+      "installTitle": "装进去",
+      "installNote": "Agent 按目录加载 skill：目录名就是 skill 名，里面的文件必须叫 SKILL.md。在项目根目录跑这条命令，或者把下载的文件手动放进去。",
+      "copyCommand": "复制命令",
       "whatEyebrow": "它做什么",
       "whatTitle": "它要防住的问题",
       "actionEyebrow": "实际运行",

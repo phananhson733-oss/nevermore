@@ -4,7 +4,6 @@ description: Turn a target query into a brief a writer can act on, carrying the 
 tagline: Hand a writer an argument, not a list of headings
 category: content
 owner: seo
-fileName: content-brief.md
 keywords: content brief skill, seo content brief, content brief template, article brief for writers, search intent brief, content outline process, editorial brief
 relatedSkills: keyword-research, content-refresh
 relatedPrompts: seo-content-brief-prompt, seo-article-outline-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: content-brief
-description: Turn a target query into a brief a writer can act on, carrying the claim the page makes, the first-hand evidence to gather, and what the page must not say.
-owner: GenGrowth SEO Agent
+description: Turn a target query into a brief a writer can act on, carrying the claim the page makes, the first-hand evidence to gather, and what the page must not say. Use when someone asks for a content brief, an outline, or what a page should say before writing starts — including when they hand over a keyword and expect a draft, since the brief is what stops the draft from being generic.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/content-brief
 ---
 
 # Content Brief
