@@ -39,11 +39,11 @@ Semrush's SEO plan covers 5 websites; Pro+ at $299 covers 15 and Advanced at $54
 
 ### The SaaS team that mostly needs reporting
 
-This team opens Semrush to build a weekly stakeholder report and little else. That is a reporting problem wearing an SEO-tool costume. Before buying a reporting layer, check what the free one already answers — [which of your existing rankings sit one push from page one](/blog/striking-distance-keywords). A dedicated SEO reporting tool for SEO companies covers it for a fraction of the suite price, and the keyword database that justifies Semrush's cost goes largely unused. The database is also the wrong place to look for a whole class of terms — [what a zero-volume reading actually means before you write the page](/blog/zero-search-volume-keywords).
+This team opens Semrush to build a weekly stakeholder report and little else. That is a reporting problem wearing an SEO-tool costume. Before buying a reporting layer, check what the free one already answers — [which of your existing rankings sit in the 5–20 band](/blog/striking-distance-keywords). A dedicated SEO reporting tool for SEO companies covers it for a fraction of the suite price, and the keyword database that justifies Semrush's cost goes largely unused. The database alone also cannot settle a whole class of terms — [what a zero-volume reading actually means before you write the page](/blog/zero-search-volume-keywords).
 
 ### The team that came for AI visibility
 
-If prompt tracking and AI brand monitoring are the reason you are shopping Semrush alternatives, note first that the base plan already covers the capability — so the question is depth, not access. Compare against AI-native tools on how many prompts and engines they cover, and see how the category stacks up in best AI SEO tools before paying up a tier for volume you may not use.
+If prompt tracking and AI brand monitoring are the reason you are shopping Semrush alternatives, note first that the base plan already covers the capability — so the question is depth, not access. Compare against AI-native tools on how many prompts and engines they cover, and see how the category stacks up before paying up a tier for volume you may not use.
 
 ## Common Semrush Alternatives Misreadings
 
@@ -117,7 +117,7 @@ Start with the usage audit, because it answers the question faster than any comp
 
 Then run the free layer before committing to a tier. GenGrowth's free tools at [https://gengrowth.ai/tools](https://gengrowth.ai/tools) show where your site and rankings stand at no cost and with no seat limits — with the caveat above that they observe rather than prescribe. If seeing the data is your gap, start free. If prioritizing the fixes is your gap, pay for the tool that does that well.
 
-If the usage audit says keyword research is the one job you actually run, [find low competition keywords with a weak site already ranking](/tools/low-competition-keywords) covers it without a suite.
+If the usage audit says keyword research is the one job you actually run, [checking whether a weaker site already holds page one](/tools/low-competition-keywords) covers that signal without a suite. It needs a signed-in account with Search Console connected, and it leaves intent and demand to you.
 
 ## Sources
 

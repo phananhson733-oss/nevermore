@@ -72,7 +72,7 @@ Evaluate any Ahrefs alternative in this order, because the first step usually se
 
 Count seats first: multiply your real headcount by the per-user fee, then compare that fully loaded number against the alternative's fully loaded number. If the gap is small, stop — switching costs are real and you have your answer. Then count jobs, listing what you opened in the last thirty days rather than what you might open; most teams name three or four. Only then compare quality, and only on the jobs that survived that second step — a tool with a shallower link index but identical rank-tracking accuracy is not worse for a team that never runs link gap analysis. That discipline is what separates genuinely cost-effective SEO services from merely cheap ones.
 
-Where we should be honest about our own position: GenGrowth's free tools cover observation well — they will show you what is happening on your site and in your rankings. They stop short of telling you which fix to run first. If your bottleneck is deciding what to do next rather than seeing the data, a paid platform with a mature audit-prioritization workflow is still the better purchase, and we would rather say so than sell you a partial fit. If the budget question is really "what can I do without a paid tool," start from the data you already own — [what your own Search Console already shows about pages one push from page one](/blog/striking-distance-keywords).
+Where we should be honest about our own position: GenGrowth's free tools cover observation well — they will show you what is happening on your site and in your rankings. They stop short of telling you which fix to run first. If your bottleneck is deciding what to do next rather than seeing the data, a paid platform with a mature audit-prioritization workflow is still the better purchase, and we would rather say so than sell you a partial fit. If the budget question is really "what can I do without a paid tool," start from the data you already own — [what your own Search Console already shows about queries sitting in the 5–20 band](/blog/striking-distance-keywords).
 
 ## How to Implement an Ahrefs Alternative Decision Step by Step
 
@@ -115,7 +115,7 @@ Start with the seat math, because it settles most of these decisions in ten minu
 
 Then run the free layer before you buy anything. GenGrowth's free tools at [https://gengrowth.ai/tools](https://gengrowth.ai/tools) will show you where your site and rankings actually stand, at no cost and with no seat limits — with the honest caveat above that they observe rather than prescribe. If observation is your gap, start there. If prioritization is your gap, buy the tool that does it well.
 
-If keyword research is the job you are actually paying for, [find low competition keywords with a weak site already ranking](/tools/low-competition-keywords) does that one job for free.
+If keyword research is the job you are actually paying for, [checking whether a weaker site already holds page one](/tools/low-competition-keywords) covers one signal of it at no cost, with a signed-in account and Search Console connected. It screens candidates on competition; the intent and demand calls stay yours.
 
 ## Sources
 
