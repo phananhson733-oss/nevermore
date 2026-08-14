@@ -103,7 +103,7 @@ create table public.credit_accounts (
   daily_balance      integer not null default 0 check (daily_balance >= 0),
   daily_granted_on   date,
   daily_accrued_total integer not null default 0 check (daily_accrued_total >= 0),
-  referral_code      text not null unique check (char_length(referral_code) <= 16),
+  referral_code      text not null unique check (referral_code ~ '^[a-z2-7]{8,16}$'),
   referred_by        uuid references public.credit_accounts(user_id),
   referral_rewarded_count integer not null default 0 check (referral_rewarded_count >= 0),
   first_tool_run_at  timestamptz,
@@ -145,9 +145,16 @@ create index credit_ledger_user_page_idx on public.credit_ledger (user_id, creat
 create table public.credit_settings (
   id smallint primary key check (id = 1),
   mode text not null default 'welfare' check (mode in ('welfare','live')),
+  consumption_paused boolean not null default false,
   daily_amount integer not null default 20,
   welfare_accrual_cap integer not null default 600,
   updated_at timestamptz not null default now()
+);
+-- migration 内 INSERT 单例种子行；所有 RPC 读不到该行时 RAISE（fail-closed），绝不回退默认值
+
+create table public.credit_daily_counters (   -- 全局熔断的 DB 原子计数
+  day date primary key,
+  rewarded_referrals integer not null default 0 check (rewarded_referrals >= 0)
 );
 ```
 
@@ -158,7 +165,9 @@ create table public.credit_settings (
 - **每日重置在流水里记两条**：`daily_expire`（-旧余额，若>0）+ `daily_grant`（+20），键 `daily-expire:{userId}:{date}` / `daily:{userId}:{date}`——账能重放对平（codex P1-1）。
 - **mode 的权威在 `credit_settings` 单行表，RPC 自己读**，不从应用参数传入——滚动发布期间新旧实例行为一致，welfare→live 切换是一次 DB 事务（codex P1-26）。env 只控制 UI 显隐。
 - 所有日期（`daily_granted_on`、幂等键日期、"今天"）**一律 UTC**，由 RPC 内部 `current_date`（DB 时区固定 UTC）生成，不信任应用传入的日期串。
-- **SECURITY DEFINER 硬化**（对齐 0001 迁移已有做法）：每个函数 `SET search_path = public, pg_temp`、全限定表名、`REVOKE ALL FROM public, anon, authenticated`、仅 `GRANT EXECUTE TO service_role`。
+- **SECURITY DEFINER 硬化**（对齐 0001 迁移已有做法）：每个函数 `SET search_path = public, pg_temp` **且 `SET TimeZone = 'UTC'`**（不依赖库级时区设置）、全限定表名、`REVOKE ALL FROM public, anon, authenticated`、仅 `GRANT EXECUTE TO service_role`。
+- **entry_type 与池的绑定约束**：`consume` 两池 delta ≤0；`refund` 两池 delta ≥0；`signup_bonus`/`referral_reward_*`/`purchase` 仅 permanent（daily_delta=0）；`daily_expire` 仅 daily（permanent_delta=0）；`daily_grant` 的落池随 mode（welfare→permanent、live→daily），CHECK 只约束"恰好动一个池"。
+- **幂等键只由服务层从服务端生成的操作 id 构造**（runId/orderId/inviteeId），任何键都不接受客户端提供；冲突校验除 (user_id, entry_type, amount, tool_slug) 外还比对 metadata 中的操作 id，防止不同操作撞键被误判为重放。
 - RLS：全部表开 RLS 且不建任何 anon/authenticated 策略。
 
 ### 0005（Phase 2）：credit_charges——扣费执行状态机
@@ -171,14 +180,15 @@ create table public.credit_charges (
   amount       integer not null check (amount > 0),
   daily_part   integer not null check (daily_part >= 0),
   permanent_part integer not null check (permanent_part >= 0),
-  status       text not null default 'charged' check (status in ('charged','settled','refunded')),
+  status       text not null default 'charged' check (status in ('charged','settled','refunded','held')),
   created_at   timestamptz not null default now(),
   terminal_at  timestamptz,
-  check (amount = daily_part + permanent_part)
+  check (amount = daily_part + permanent_part),
+  check ((status = 'charged') = (terminal_at is null))
 );
 ```
 
-流水只管钱，charges 管**一次运行的执行终态**（codex P1-3/4/6）：`consume` RPC 在同一事务里"扣余额 + 写 ledger + 建 charge(charged)"；工具成功 → `settle`（置 settled）；工具失败 → `refund`；**进程死亡/超时** → cron 清扫把超过 30 分钟仍 `charged` 的记录自动退款（工具最长 240–300s，30 分钟余量充足）。runId 由服务端准入时生成 UUID，重试是新 charge（上一笔由失败退款或清扫兜底）。
+流水只管钱，charges 管**一次运行的执行终态**（codex P1-3/4/6）：`consume` RPC 在同一事务里"扣余额 + 写 ledger + 建 charge(charged)"；工具成功 → `settle`（置 settled）；工具失败 → `refund`；**进程死亡/超时** → cron 清扫把超过 30 分钟仍 `charged` 的记录自动退款（工具最长 240–300s，30 分钟余量充足）。runId 由服务端准入时生成 UUID，重试是新 charge（上一笔由失败退款或清扫兜底）。终态迁移全部走守卫式 `UPDATE ... WHERE status = 'charged'`，settle / refund / 清扫三方竞争时**恰好一个**成为终态（并发测试覆盖，§11）。`held` 状态见 §4 退款上限：清扫 cron 跳过 held，只有治理入口能处置。
 
 ### 0006（Phase 3）：credit_purchase_orders + credit_webhook_events
 
@@ -213,7 +223,7 @@ create table public.credit_webhook_events (
 );
 ```
 
-订单状态单调：`paid` 不可被迟到的 `failed/expired` 降级；webhook 的 claim、状态与积分结算在**同一数据库事务**内完成（codex P1-24）。
+订单状态单调：`paid` 不可被迟到的 `failed/expired` 降级——所有状态迁移走守卫式 `UPDATE ... WHERE status IN (允许的前态)`，测试 pin 死迁移矩阵。webhook 处理生命周期（codex P1-24 + rev 3 修正"单事务会回滚失败证据"）：**①小事务** upsert `credit_webhook_events`（claim：已 done 则跳过，processing 则按 attempts 竞争）→ **②主事务** 结算（订单迁移 + 发积分 + 事件置 done）→ ③失败时**独立小事务**记 `failed/attempts/last_error`（不随主事务回滚，重试有据可查）。
 
 ### RPC 一览（全部 SECURITY DEFINER + service-role 专用，单事务内"改余额 + 写流水"不可分离）
 
@@ -221,8 +231,8 @@ create table public.credit_webhook_events (
 |---|---|---|
 | `credits_ensure_account(p_user_id, p_ref_code)` | 1 | 建户 + 注册奖 100 + 归因 referred_by（幂等；见 §5.3 归因时点） |
 | `credits_touch_daily(p_user_id)` | 1 | 懒发放。mode 与数额自 `credit_settings` 读取。welfare：+daily_amount 入永久池，`daily_accrued_total` 封顶；live：daily_expire+daily_grant 两条重置每日池。当日已发 → no-op |
-| `credits_reward_referral(p_invitee_id)` | 1 | 单事务原子：`UPDATE ... SET first_tool_run_at = now() WHERE user_id = p_invitee_id AND first_tool_run_at IS NULL` 命中才继续；邀请方 `UPDATE ... SET referral_rewarded_count = referral_rewarded_count + 1 WHERE ... AND referral_rewarded_count < 20 RETURNING` 原子占位（防 19→21 并发越界，codex P1-10）；邀请方达上限时**被邀方仍得 +50，邀请方不再得**；双方任一账户 frozen 则不发 |
-| `credits_consume(p_user_id, p_run_id, p_amount, p_tool, p_idem_key)` | 2 | 原子扣减（先每日后永久，单条 UPDATE 跨池凑数）+ 建 charge；余额不足返回 `insufficient`；账户 frozen 返回 `frozen` |
+| `credits_reward_referral(p_invitee_id)` | 1 | 单事务原子，**顺序固定**：①资格前置（被邀方非 frozen 且 `referred_by` 非空、`first_tool_run_at IS NULL`；否则 no-op）→ ②全局熔断原子占位（`credit_daily_counters` 当日行 `UPDATE ... SET rewarded_referrals = rewarded_referrals + 1 WHERE rewarded_referrals < 上限 RETURNING`，占不到位则**整体 no-op 且不置 first_tool_run_at**，次日运行自动重试）→ ③`UPDATE ... SET first_tool_run_at = now() WHERE first_tool_run_at IS NULL` → ④发奖：被邀方 +50；邀请方 `referral_rewarded_count < 20` 原子占位命中且非 frozen 才 +50（达上限/frozen 时被邀方仍得，邀请方不得）。任何提前退出都不烧掉首跑标记（codex 新 P1-1 修正） |
+| `credits_consume(p_user_id, p_run_id, p_amount, p_tool, p_idem_key)` | 2 | 同一事务内先读 `credit_settings`：`mode <> 'live'` 或 `consumption_paused` → 拒绝（`not_live` / `paused`），DB 是唯一权威（codex 开口项 26）；然后原子扣减（先每日后永久，单条 UPDATE 跨池凑数）+ 建 charge；余额不足返回 `insufficient`；账户 frozen 返回 `frozen` |
 | `credits_settle_charge(p_run_id)` | 2 | charge → settled（幂等） |
 | `credits_refund(p_run_id)` | 2 | 校验 charge 属于该 user、状态 charged；按原拆分回补，**daily 部分仅当 charge 创建日 == 当前 UTC 日期才回补，跨日作废**（消除跨日 40 分套利与顺序依赖，codex P1-2）；退款后 charge → refunded |
 | `credits_settle_purchase(p_order_id, p_verified)` | 3 | 服务端已反查 Airwallex 并核对后调用；订单置 paid + 发永久积分，幂等键 `purchase:{packId}:{intentId}` 兜底 |
@@ -257,7 +267,7 @@ create table public.credit_webhook_events (
 
 **崩溃兜底**：handler 失败路径调 `refund(runId)`；进程死亡由 cron 清扫兜底（§3 0005）。
 
-**退款滥用防线**（codex P1-18）：每用户每日自动退款上限 5 次，超出则该用户当日退款转人工（charge 保持 charged 由清扫处理 + 打风险标记日志）；同一目标域名的重复失败计入现有 per-target 熔断。
+**退款滥用防线**（codex P1-18，rev 3 堵清扫绕过）：每用户每日自动退款上限 5 次；超出后该用户当日的失败 charge 置 **`held`**（不是留在 charged），清扫 cron 跳过 held，只能经 §10 治理入口人工退或没收——上限不会被 30 分钟清扫自动绕过。同一目标域名的重复失败计入现有 per-target 熔断。
 
 **积分库不可用**：live 模式下消耗类工具 fail-closed 503（对齐现有 `quota_unavailable`）；welfare 模式与匿名路径不受影响，余额徽章静默隐藏。
 
@@ -269,7 +279,7 @@ create table public.credit_webhook_events (
 
 ### 5.2 每日签到
 
-- 触发：当天（UTC）第一次带登录态的 `GET /api/credits/balance`（头部徽章加载即触发）。该端点 `Cache-Control: no-store, private` 并做每用户限频（复用 `consume_public_tool_quota`，如 30 次/小时），多 tab/轮询不放大写入。
+- 触发：当天（UTC）第一次带登录态的 `GET /api/credits/balance`（头部徽章加载即触发）。该端点 `Cache-Control: no-store, private` 并做**按用户键**限频（`consume_public_tool_quota` 是通用 bucket-key RPC，键用 `credits-balance:user:{userId}`，如 30 次/小时——不是 IP 键，无共享 NAT 误伤），多 tab/轮询不放大写入。
 - **福利期（welfare）**：+20 累加进永久池，`daily_accrued_total` 封顶 600（≈30 天量）。封顶后签到返回"已达福利上限"状态，UI 如实展示。
 - **正式期（live）**：每日池重置为 20（`daily_expire` + `daily_grant` 两条流水）。刻意 < 25：免费用户每天能白嫖便宜工具，最贵的 keyword 工具必须邀请或充值——等效 Manus"每日积分只限 Lite 模式"的分层。
 - **切换日语义**：mode 切到 live 当天，已领过 welfare +20 的用户当日不再得每日池（`daily_granted_on` 已是今天），次日起进入重置制。welfare 已累加的永久积分不回收。
@@ -277,11 +287,11 @@ create table public.credit_webhook_events (
 ### 5.3 邀请
 
 - 每账户固定 ≤16 位小写 base32 邀请码（去易混淆字符），建户时生成，冲突重试。
-- 链接 `gengrowth.ai/r/{code}`：302 到首页 + 落 `gg_ref` cookie（**HttpOnly、Secure、SameSite=Lax、host-only、30 天、last-touch**；无效/自己的码不落 cookie）。`/r` 路由加进 `proxy.ts` 排除清单（§1）。
-- 归因：`ensure_account` 时读 cookie（首个登录态请求与页面加载同生命周期，cookie 必然在场），校验码存在且非本人，写 `referred_by` 并清 cookie。账户已存在且 `referred_by` 为空时不补归因（一次性，防事后改绑）。
+- 链接 `gengrowth.ai/r/{code}`：302 到首页 + 落 `gg_ref` cookie（**HttpOnly、Secure、SameSite=Lax、Domain=注册域（同 session cookie，覆盖 apex/www）、30 天、last-touch**；无效/自己的码不落 cookie）。`/r` 路由加进 `proxy.ts` 排除清单（§1）。
+- 归因：`ensure_account` 时读 cookie，校验码存在且非本人，写 `referred_by` 并清 cookie。账户已存在且 `referred_by` 为空时不补归因（一次性，防事后改绑）。归因是 **best-effort**：跨域名跳转、OAuth 中转或用户清 cookie 导致的丢失可接受，不做补偿链路。
 - **计奖门槛：被邀请人完成首次"合格工具运行"**——quick-wins / traffic-drop / keyword stage 2 / agent audit / profile-refresh 的登录态成功运行（这些都要求连接真实 Search Console 或爬取真实站点，抬高刷量成本）；profile-search 不合格（太廉价）。上报机制：每次合格成功运行都调 `reward_referral`（RPC 内部以 `first_tool_run_at IS NULL` 判首次，否则 no-op）——上报失败不影响工具响应，下次成功运行自动重试，**自愈**。
 - 双边各 +50（永久池）；邀请方累计 20 次计奖封顶（原子占位，见 §3 RPC 表）；达顶后被邀方仍得 +50。
-- **防滥用分层**（codex P1-11/20 的 v1 回应）：①个体上限（签到 600 封顶 / 邀请 20 次封顶 / 注册奖一次）；②**全局熔断**：每 UTC 日全平台计奖邀请数上限（初始 200，进 `credits-config.ts`），触顶停发并告警——封住 Sybil 团伙的日增速；③监控：邀请双方同 IP、同设备簇记结构化日志；④`credit_accounts.status='frozen'` 冻结开关：冻结账户不发放、不消耗、不计奖；⑤Phase 2 开闸前对存量余额跑刷量审计（§1）。v1 明确不做：设备指纹、支付验证门槛。剩余风险定价：福利期积分在 live 前无消耗价值，团伙刷出的余额在开闸审计时可冻结清退（`adjustment` + 治理流程）。
+- **防滥用分层**（codex P1-11/20 的 v1 回应）：①个体上限（签到 600 封顶 / 邀请 20 次封顶 / 注册奖一次）；②**全局熔断（DB 原子）**：每 UTC 日全平台计奖邀请数上限（初始 200），在 `credits_reward_referral` 事务内经 `credit_daily_counters` 原子占位强制——多实例并发不可能越界（阈值同时进 `credits-config.ts` 供 UI/告警引用）；③监控：邀请双方同 IP、同设备簇记结构化日志，另对**每日注册奖发放总量**设告警阈值（发放不设硬顶，避免误伤正常增长，但异常增速必须可见）；④`credit_accounts.status='frozen'` 冻结开关：冻结账户不发放、不消耗、不计奖；⑤Phase 2 开闸前对存量余额跑刷量审计（§1）。v1 明确不做：设备指纹、支付验证门槛、注册硬顶。剩余风险的定价（显式接受）：Sybil 团伙的注册奖+签到负债在绝对值上无上界，但福利期积分在 live 前无消耗价值，开闸审计 + 冻结清退（`adjustment` + 治理流程）是最终兜底。
 
 ### 5.4 失败退款
 
@@ -327,7 +337,7 @@ create table public.credit_webhook_events (
 |---|---|
 | PaymentIntent 创建（金额用主单位非分） | `merchant_order_id` = 本地订单 UUID，兼作 provider 幂等键；先落 pending 订单再调 provider，`provider_intent_id` 回写失败由对账两向收敛（本地有单无 intent / provider 有 intent 未绑定，codex P1-25） |
 | HPP 跳转封装（CDN SDK，50 行） | 不依赖 sessionStorage；`return_url` 带订单号，服务端用 `merchant_order_id` 反查 |
-| webhook HMAC 验签 | 先比 length 再 `timingSafeEqual`；校验 `x-timestamp` 与当前时间偏差 ≤5 分钟（防重放）；body 大小上限 64KB；错误日志脱敏 |
+| webhook HMAC 验签 | 先比 length 再 `timingSafeEqual`；校验 `x-timestamp` 与当前时间偏差 ≤5 分钟（防重放）；**先查 `Content-Length` 拒绝 >64KB 再读 body**（读后再复核一次实际长度，防 header 撒谎）；错误日志脱敏 |
 | **结算前服务端反查**（codex P1-22） | 收到 webhook / confirm 后，从 Airwallex API 读取 intent，逐项核对：终态 succeeded、`merchant_order_id` 与本地订单一致、金额/币种与订单的**服务端 pack 快照**一致、环境（demo/prod）一致；任一不符拒绝结算并告警。credits/amount/currency 永远来自服务端订单行，绝不接受客户端或 webhook body 的数额 |
 | webhook + confirm 双路径 | 共用幂等键 `purchase:{packId}:{intentId}`，UNIQUE 约束兜底；事件 claim/状态/结算同一事务 |
 | cron 对账 | 扫 pending 超 10 分钟订单反查 provider → settle / expire；`reconcile_attempts`/`last_checked_at` 记录 |
@@ -351,7 +361,7 @@ env（名称沿用 oracle）：`AIRWALLEX_CLIENT_ID` / `AIRWALLEX_API_KEY` / `AI
 |---|---|---|
 | `MARKETING_CREDITS_ENABLED` | env | 只控制 UI 与 credits API 路由显隐（fail-open 为隐藏）。**不**改变已接线工具的扣费行为 |
 | `credit_settings.mode` | **DB 单行** | welfare / live 的唯一权威，RPC 自读；切换是一次 DB 事务，滚动发布无双模窗口 |
-| 消耗紧急开关（Phase 2） | `credit_settings` 增列 `consumption_paused boolean` | 置 true 时消耗类工具返回 503"暂停服务"，**不是变免费**（fail-closed，防止昂贵工具裸奔） |
+| 消耗紧急开关（Phase 2 生效） | `credit_settings.consumption_paused`（0004 已建列） | 置 true 时 `credits_consume` 在事务内拒绝，消耗类工具返回 503"暂停服务"，**不是变免费**（fail-closed，防止昂贵工具裸奔） |
 | `AIRWALLEX_*` | env | Phase 3 支付凭证 |
 
 数值常量不进 env（进 `credits-config.ts`，改数值走发版，可测试可回溯）。
@@ -363,7 +373,7 @@ env（名称沿用 oracle）：`AIRWALLEX_CLIENT_ID` / `AIRWALLEX_API_KEY` / `AI
 ## 11. 测试策略
 
 - **单元（vitest）**：服务层准入/发放/退款/幂等分支、每工具可退款终态映射、credits-config 与 UI 展示一致性、`/r/[code]` 归因与 cookie 语义。
-- **SQL 集成（disposable PostgreSQL，沿用仓库 `signalframe_ci*` 纪律）**（codex P1-27）：把 0004+（及后续期次）migration 实际应用到一次性库，多连接并发回归：同 runId 双 consume 只扣一次、双 refund 只退一次、跨日退款 daily 部分作废、touch/refund 乱序结果确定、20 邀请封顶并发不越界、welfare 封顶并发不超发、webhook 双投同事务只结算一次；最后**用 ledger 重放校验快照余额一致**。
+- **SQL 集成（disposable PostgreSQL，沿用仓库 `signalframe_ci*` 纪律）**（codex P1-27）：把 0004+（及后续期次）migration 实际应用到一次性库，多连接并发回归：同 runId 双 consume 只扣一次、双 refund 只退一次、**settle vs refund vs 清扫 cron 三方竞争恰好一个终态**、跨日退款 daily 部分作废、touch/refund 乱序结果确定、**mode 切换/紧急暂停并发于 consume 时无双模窗口**、20 邀请封顶并发不越界、全局计奖熔断并发不越界、welfare 封顶并发不超发、webhook 双投只结算一次、settings 行缺失时全部 RPC fail-closed；最后**用 ledger 重放校验快照余额一致**。
 - **mock e2e**：登录 → 徽章 → 签到入账 → 流水 → 邀请链接归因 →（Phase 2）扣费/不足弹窗/失败退款。
 - **支付 e2e 边界**：只能测到 HPP 跳转前；Phase 3 开闸门见 §1。
 - 时序敏感用例不靠重跑（仓库既有纪律）。
