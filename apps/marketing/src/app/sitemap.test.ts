@@ -71,16 +71,34 @@ describe("canonical marketing sitemap", () => {
     expect(urls).toContain("https://gengrowth.ai/zh/prompts");
     expect(urls).toContain("https://gengrowth.ai/zh/skills");
 
-    // Detail pages are listed for the locale that owns the file. With no zh
-    // translations, listing a zh detail URL would advertise a second document
-    // carrying the same English text.
-    for (const prompt of prompts) {
+    // Detail pages are listed for the locale that owns the file, and only for
+    // that locale: a locale serving another's text as a fallback still answers
+    // the URL, but listing it would advertise a second document carrying the
+    // same words. Asserted as that rule rather than as "zh never appears", so
+    // the check keeps meaning something as translations land.
+    const { localesOwningPrompt } = await import("../lib/prompt-content");
+    const { localesOwningSkill } = await import("../lib/skill-content");
+
+    // `zz-` slugs belong to other test files, which write them into the real
+    // content directories and delete them again. This file reads those
+    // directories twice — once through sitemap(), once through the owner
+    // lookup — so a fixture appearing or vanishing between the two reads would
+    // fail this test for a reason that has nothing to do with the sitemap.
+    const isFixture = (slug: string) => slug.startsWith("zz-");
+
+    for (const prompt of prompts.filter((p) => !isFixture(p.slug))) {
       expect(urls).toContain(`https://gengrowth.ai/prompts/${prompt.slug}`);
-      expect(urls).not.toContain(`https://gengrowth.ai/zh/prompts/${prompt.slug}`);
+      const owners = await localesOwningPrompt(prompt.slug);
+      expect(urls.has(`https://gengrowth.ai/zh/prompts/${prompt.slug}`)).toBe(
+        owners.includes("zh"),
+      );
     }
-    for (const skill of skills) {
+    for (const skill of skills.filter((s) => !isFixture(s.slug))) {
       expect(urls).toContain(`https://gengrowth.ai/skills/${skill.slug}`);
-      expect(urls).not.toContain(`https://gengrowth.ai/zh/skills/${skill.slug}`);
+      const owners = await localesOwningSkill(skill.slug);
+      expect(urls.has(`https://gengrowth.ai/zh/skills/${skill.slug}`)).toBe(
+        owners.includes("zh"),
+      );
     }
   });
 

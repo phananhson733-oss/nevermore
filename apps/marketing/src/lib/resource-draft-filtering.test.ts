@@ -78,7 +78,6 @@ description: A draft that must never be published.
 tagline: Never shipped
 category: seo
 owner: seo
-fileName: zz-draft-fixture.md
 keywords: draft fixture
 status: draft
 publishedAt: 2026-08-14
@@ -89,8 +88,9 @@ publishedAt: 2026-08-14
 \`\`\`text
 ---
 name: zz-draft-fixture
-description: A draft that must never be published.
-owner: GenGrowth SEO Agent
+description: A draft that must never be published. Use when nothing at all.
+metadata:
+  owner: GenGrowth SEO Agent
 ---
 
 # Draft Fixture

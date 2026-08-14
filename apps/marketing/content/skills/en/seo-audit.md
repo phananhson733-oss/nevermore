@@ -4,7 +4,6 @@ description: A point-in-time diagnosis of one site — what is blocking it, orde
 tagline: Know what is blocking one site — and what to fix first
 category: seo
 owner: seo
-fileName: seo-audit.md
 keywords: seo audit skill, website seo audit, technical seo diagnosis, site audit findings, seo issue prioritisation, crawl and index audit, seo audit report
 relatedSkills: technical-seo-checklist, keyword-research
 relatedPrompts: seo-content-audit-prompt, serp-competitor-analysis-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: seo-audit
-description: Diagnose one site at one point in time, ordering findings by stated severity rules and marking every check that could not be run as unchecked.
-owner: GenGrowth SEO Agent
+description: Diagnose one site at one point in time, ordering findings by stated severity rules and marking every check that could not be run as unchecked. Use when someone asks for an SEO audit, a site health check, or what is wrong with their site, including when they supply only a domain and expect findings ordered by what to fix first.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/seo-audit
 ---
 
 # SEO Audit

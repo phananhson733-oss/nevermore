@@ -4,7 +4,6 @@ description: Review one page the way a reader and a crawler both meet it — tit
 tagline: Make one page legible to a reader and a crawler at the same time
 category: seo
 owner: seo
-fileName: on-page-seo.md
 keywords: on-page seo skill, title tag review, heading structure seo, structured data validation, meta description writing, entity clarity seo, page level seo review
 relatedSkills: seo-audit, internal-linking
 relatedPrompts: title-tag-meta-description-prompt, faq-generation-schema-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: on-page-seo
-description: Revise a single page so its title, outline, naming, markup, and links all state the same thing, using only what the delivered page and its measured data show.
-owner: GenGrowth SEO Agent
+description: Revise a single page so its title, outline, naming, markup, and links all state the same thing, using only what the delivered page and its measured data show. Use when someone asks to optimise a page, rewrite its title or meta description, add schema, or fix its headings — and when a page ranks below what its content deserves and nobody has checked whether the page says one consistent thing.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/on-page-seo
 ---
 
 # On-Page SEO

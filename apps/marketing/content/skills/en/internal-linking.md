@@ -4,7 +4,6 @@ description: Audit and rebuild a site's internal link graph — orphaned pages, 
 tagline: Route readers and authority to the pages that earn them
 category: technical
 owner: tech
-fileName: internal-linking.md
 keywords: internal linking skill, internal link audit, orphan pages, anchor text audit, site architecture seo, keyword cannibalisation, link graph analysis
 relatedSkills: technical-seo-checklist, on-page-seo
 relatedPrompts: internal-linking-suggestions-prompt, topical-map-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: internal-linking
-description: Audit a site's internal link graph and decide, per page, whether to link, merge, retire, or leave it alone — with the evidence for each verdict attached.
-owner: GenGrowth Tech Agent
+description: Audit a site's internal link graph and decide, per page, whether to link, merge, retire, or leave it alone — with the evidence for each verdict attached. Use when someone asks about internal links, orphan pages, site structure, anchor text, or link equity, and when a site has indexed pages that get no traffic and nobody has decided which of them deserve the links.
+metadata:
+  owner: GenGrowth Tech Agent
+  source: https://gengrowth.ai/skills/internal-linking
 ---
 
 # Internal Linking

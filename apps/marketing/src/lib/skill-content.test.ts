@@ -18,7 +18,6 @@ description: Does a thing end to end.
 tagline: Ship the thing
 category: seo
 owner: seo
-fileName: example-skill.md
 keywords: example skill, sample
 status: published
 publishedAt: 2026-08-14
@@ -29,8 +28,9 @@ publishedAt: 2026-08-14
 \`\`\`text
 ---
 name: example-skill
-description: Does a thing end to end.
-owner: GenGrowth SEO Agent
+description: Does a thing end to end. Use when the thing needs doing.
+metadata:
+  owner: GenGrowth SEO Agent
 ---
 
 # Example Skill
@@ -88,7 +88,7 @@ describe("parseSkillFile", () => {
 
     expect(skill.slug).toBe("example-skill");
     expect(skill.owner).toBe("seo");
-    expect(skill.fileName).toBe("example-skill.md");
+    expect(skill.installPath).toBe(".claude/skills/example-skill/SKILL.md");
     expect(skill.fileContent).toContain("name: example-skill");
     expect(skill.fileContent).toContain("# Example Skill");
     expect(skill.exampleAsk).toBe("Where should we start?");
@@ -108,8 +108,9 @@ describe("parseSkillFile", () => {
     const source = VALID.replace(
       `---
 name: example-skill
-description: Does a thing end to end.
-owner: GenGrowth SEO Agent
+description: Does a thing end to end. Use when the thing needs doing.
+metadata:
+  owner: GenGrowth SEO Agent
 ---
 
 # Example Skill`,
@@ -129,14 +130,28 @@ owner: GenGrowth SEO Agent
     );
   });
 
-  it("rejects a fileName that does not match the slug", () => {
+  it("rejects a skill file frontmatter key the spec does not define", () => {
+    // The page tells a reader this file is spec-compliant. An unknown key is
+    // the defect that still parses and still renders, and only surfaces in
+    // whichever agent validates strictly — after they have installed it.
     const source = VALID.replace(
-      "fileName: example-skill.md",
-      "fileName: something-else.md",
+      "metadata:\n  owner: GenGrowth SEO Agent",
+      "owner: GenGrowth SEO Agent",
     );
 
     expect(() => parseSkillFile("en", "example-skill.md", source)).toThrow(
-      /must match the slug/,
+      /sets 'owner', which the Agent Skills spec does not define/,
+    );
+  });
+
+  it("rejects a skill file description longer than the spec allows", () => {
+    const source = VALID.replace(
+      "description: Does a thing end to end. Use when the thing needs doing.\nmetadata:",
+      `description: ${"x".repeat(1025)}\nmetadata:`,
+    );
+
+    expect(() => parseSkillFile("en", "example-skill.md", source)).toThrow(
+      /description is 1025 characters/,
     );
   });
 
@@ -196,5 +211,16 @@ describe("published skill library", () => {
     // The file is offered as a download; an empty or stub file would make the
     // page's central promise false.
     expect(skill.fileContent.length).toBeGreaterThan(400);
+    expect(skill.installPath).toBe(`.claude/skills/${skill.slug}/SKILL.md`);
+
+    // The skill file's own description is the entire triggering mechanism: an
+    // agent sees name and description and nothing else when deciding whether
+    // to open the skill. One that says only what the skill does, with no
+    // account of when to reach for it, is a skill that installs cleanly and
+    // then never fires — the failure nobody reports because nothing broke.
+    const declared = /^description:\s*(.+)$/m.exec(skill.fileContent)?.[1];
+    expect(declared).toBeDefined();
+    expect(declared).toMatch(/\bwhen\b/i);
+    expect(declared?.length ?? 0).toBeGreaterThan(160);
   });
 });

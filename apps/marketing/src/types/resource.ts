@@ -83,8 +83,14 @@ export interface SkillResource {
   readonly tagline: string;
   readonly category: SkillCategory;
   readonly owner: SkillOwner;
-  /** Filename shown on the file window and used by the download route. */
-  readonly fileName: string;
+  /**
+   * Where the file has to land for an agent to load it. The Agent Skills spec
+   * identifies a skill by its directory name and requires the file inside to be
+   * `SKILL.md`, so the path — not a per-skill filename — is the thing a reader
+   * needs. Derived from the slug rather than declared in frontmatter: a file
+   * that could name itself would be free to name itself something unloadable.
+   */
+  readonly installPath: string;
   readonly keywords: readonly string[];
   readonly relatedSkills: readonly string[];
   readonly relatedPrompts: readonly string[];

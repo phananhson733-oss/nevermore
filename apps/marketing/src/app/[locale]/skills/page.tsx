@@ -58,7 +58,10 @@ export default async function SkillsHubPage({
     description: skill.tagline,
     categoryId: skill.category,
     categoryLabel: t(`categories.${skill.category}`),
-    metaLabel: skill.fileName,
+    // The skill's `name` from its own frontmatter, which is also the directory
+    // it installs into. `SKILL.md` would be the same eight times over and say
+    // nothing; the name is what distinguishes one card from the next.
+    metaLabel: skill.slug,
     chipsLabel: t("detail.owner"),
     chips: [t(`owners.${skill.owner}`)],
   }));

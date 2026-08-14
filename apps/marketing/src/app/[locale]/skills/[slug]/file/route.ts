@@ -6,6 +6,7 @@
 // Relative imports, not the `@/` alias: the shared Vitest config maps `@/` to
 // apps/web only, so an aliased import here would not resolve in route.test.ts.
 import {
+  SKILL_FILE_NAME,
   getSkillForLocale,
   getSkillsForLocale,
 } from "../../../../../lib/skill-content";
@@ -52,7 +53,11 @@ export async function GET(
       "content-type": "text/markdown; charset=utf-8",
       // The filename is the validated slug, so it cannot carry quotes or path
       // separators into the header.
-      "content-disposition": `attachment; filename="${skill.fileName}"`,
+      // Saved as SKILL.md, not <slug>.md: the spec identifies a skill by the
+      // directory it sits in, so a file named after the slug is one a reader
+      // has to rename before an agent will load it — and the rename is exactly
+      // the step someone downloading a ready-made file will not think to do.
+      "content-disposition": `attachment; filename="${SKILL_FILE_NAME}"`,
       "cache-control": "public, max-age=0, must-revalidate",
       // Every skill page links here, so a crawler reaches this URL whether or
       // not the sitemap lists it — and the bytes are a verbatim subset of that

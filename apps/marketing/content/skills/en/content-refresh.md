@@ -4,7 +4,6 @@ description: Run a recurring loop over pages that already exist, separating deca
 tagline: Fix the pages that actually declined, and leave the rest alone
 category: content
 owner: seo
-fileName: content-refresh.md
 keywords: content refresh skill, content decay analysis, refresh old blog posts, content audit workflow, search intent mismatch, content pruning, page update prioritisation
 relatedSkills: content-brief, seo-audit
 relatedPrompts: content-refresh-rewrite-prompt, seo-content-audit-prompt
@@ -17,8 +16,10 @@ publishedAt: 2026-08-14
 ```text
 ---
 name: content-refresh
-description: Decide which existing pages to update, rewrite, retarget, or leave alone, by naming the cause of each decline before naming the fix.
-owner: GenGrowth SEO Agent
+description: Decide which existing pages to update, rewrite, retarget, or leave alone, by naming the cause of each decline before naming the fix. Use when traffic to existing pages has fallen, when someone asks which posts to update, consolidate, or delete, or when they propose refreshing a page without having established why it declined.
+metadata:
+  owner: GenGrowth SEO Agent
+  source: https://gengrowth.ai/skills/content-refresh
 ---
 
 # Content Refresh
