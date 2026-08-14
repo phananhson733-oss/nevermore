@@ -48,7 +48,7 @@ export const resourcesMenuGroups: NavMenuGroup[] = [
     items: [
       {
         slug: "prompts",
-        href: "/resources#prompts",
+        href: "/prompts",
         labelKey: "nav.resourcesMenu.prompts.label",
         descriptionKey: "nav.resourcesMenu.prompts.description",
         icon: "MessageSquareText",
@@ -62,7 +62,7 @@ export const resourcesMenuGroups: NavMenuGroup[] = [
       },
       {
         slug: "skills",
-        href: "/resources#skills",
+        href: "/skills",
         labelKey: "nav.resourcesMenu.skills.label",
         descriptionKey: "nav.resourcesMenu.skills.description",
         icon: "Sparkles",
@@ -97,9 +97,9 @@ export const headerNavItems: NavItem[] = [
 ];
 
 export const footerResourceLinks: FooterLink[] = [
-  { labelKey: "nav.resourcesMenu.prompts.label", href: "/resources#prompts" },
+  { labelKey: "nav.resourcesMenu.prompts.label", href: "/prompts" },
   { labelKey: "nav.resourcesMenu.tools.label", href: "/tools" },
-  { labelKey: "nav.resourcesMenu.skills.label", href: "/resources#skills" },
+  { labelKey: "nav.resourcesMenu.skills.label", href: "/skills" },
   { labelKey: "nav.resourcesMenu.docs.label", href: "/resources#docs" },
 ];
 

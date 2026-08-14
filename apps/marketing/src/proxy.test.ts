@@ -115,17 +115,22 @@ describe("proxy internal-rewrite guard", () => {
 });
 
 describe("proxy primary-directory route reservation", () => {
-  it.each(["/agents", "/agents/seo", "/resources", "/tools", "/waitlist"])(
-    "keeps %s in locale routing instead of the short-link handler",
-    (path) => {
-      const response = proxy(request(path));
-      expect(response.status).toBe(200);
-      expect(response.headers.get("x-middleware-rewrite")).toContain(
-        `/en${path}`,
-      );
-      expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
-    },
-  );
+  it.each([
+    "/agents",
+    "/agents/seo",
+    "/prompts",
+    "/resources",
+    "/skills",
+    "/tools",
+    "/waitlist",
+  ])("keeps %s in locale routing instead of the short-link handler", (path) => {
+    const response = proxy(request(path));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-rewrite")).toContain(
+      `/en${path}`,
+    );
+    expect(response.headers.get("x-middleware-rewrite")).not.toContain("/go/");
+  });
 });
 
 describe("proxy retired marketing routes", () => {
@@ -211,5 +216,4 @@ describe("proxy retired marketing routes", () => {
       expect(response.headers.get("location")).toBeNull();
     },
   );
-
 });

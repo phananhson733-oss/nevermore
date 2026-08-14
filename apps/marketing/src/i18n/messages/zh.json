@@ -45,7 +45,7 @@
       "viewAll": "进入资源中心",
       "prompts": {
         "label": "Prompts",
-        "description": "规划中的任务型提示模板，并会明确说明适用范围。"
+        "description": "可直接复制的搜索工作提示词，附变量说明与完整示例产出。"
       },
       "tools": {
         "label": "Tools",
@@ -53,7 +53,7 @@
       },
       "skills": {
         "label": "Skills",
-        "description": "规划中把方法转成可复核步骤的重复执行流程。"
+        "description": "可下载的执行手册，写明一项 SEO 工作实际如何跑。"
       },
       "docs": {
         "label": "Docs",
@@ -101,20 +101,20 @@
   },
   "resources": {
     "metadata": {
-      "title": "增长资源：Prompts、Tools、Skills 与 Docs",
-      "description": "查找 GenGrowth 工具，并查看规划中的 Prompts、Skills 与 Docs 资源库，不把资源与 Agent 目录混在一起。"
+      "title": "增长资源：提示词、Skills、工具与文档",
+      "description": "可直接复制的提示词、可下载的 Skill 执行手册，以及搜索工作的辅助工具——与 Agent 目录分开陈列，各自都好找。"
     },
     "eyebrow": "Prompts · Tools · Skills · Docs",
     "title": "把增长方法变成可复用资源。",
-    "subtitle": "先用工具回答眼前问题，再通过有明确范围的 Prompt、可重复执行的 Skill 与清晰文档复用同一套方法；现已可用与规划中条目始终分开标记。",
+    "subtitle": "眼前的问题用工具解决，方法本身则通过限定范围的提示词与可重复执行的 Skill 复用。已上线与规划中的条目始终分开标示。",
     "available": "现已可用",
     "planned": "规划中",
     "openTools": "浏览 Tools",
     "types": {
       "prompts": {
         "title": "Prompts",
-        "description": "用于结构化增长工作的任务型模板。",
-        "note": "规划中 · 尚无公开 Prompt 资源库"
+        "description": "可直接复制的搜索工作提示词，附变量说明与完整示例产出。",
+        "note": "已上线 · 公开提示词库"
       },
       "tools": {
         "title": "Tools",
@@ -123,8 +123,8 @@
       },
       "skills": {
         "title": "Skills",
-        "description": "明确输入与人工复核点的重复执行流程。",
-        "note": "规划中 · 尚无公开 Skills 资源库"
+        "description": "可下载的执行手册，写明一项工作实际如何跑。",
+        "note": "已上线 · 公开 Skills 库"
       },
       "docs": {
         "title": "Docs",
@@ -133,34 +133,185 @@
       }
     },
     "sections": {
-      "tools": {
-        "eyebrow": "现已可用",
-        "title": "Tools 回答你眼前的问题。",
-        "body": "进入辅助工具目录，使用 Search Console 诊断与规划工具，也可通过由 Agent 执行的审计入口卡片进入 SEO 与技术审计。",
-        "cta": "打开 Tools"
+      "available": {
+        "eyebrow": "现已上线",
+        "title": "三种复用方法的方式。",
+        "body": "工具回答眼前的问题，其中包含由 Agent 执行的 SEO 与技术审计入口卡片；提示词给你单项任务的指令；Skill 描述整套流程，包括哪些结论必须拒绝下。"
       },
       "planned": {
         "eyebrow": "资源库结构",
-        "title": "后续资源先保留位置，不提前夸大。",
-        "body": "Prompts、Skills 与 Docs 在这里明确整体信息架构；只有当每项资源拥有真实、可复核的公开入口后，才会从规划中变为可用。"
+        "title": "剩下的资源类型只做预留，不夸大。",
+        "body": "Docs 出现在这里是为了让信息架构清晰。在它拥有真实、可复核的公开条目之前，会一直标记为规划中。"
       }
     },
     "examples": {
-      "prompts": {
-        "seo": "SEO Audit Prompt",
-        "geo": "GEO Brief Prompt",
-        "social": "Social Angle Prompt"
-      },
-      "skills": {
-        "evidence": "Public Evidence Review",
-        "brief": "Content Brief Workflow",
-        "distribution": "Distribution Repurposing"
-      },
       "docs": {
         "boundaries": "Public Audit Boundaries",
         "agentScope": "How Agents Are Scoped",
         "dataRules": "Data Availability Rules"
       }
+    },
+    "openPrompts": "浏览提示词",
+    "openSkills": "浏览 Skills"
+  },
+  "prompts": {
+    "metadata": {
+      "title": "SEO 提示词库：可直接复制的搜索工作提示词",
+      "description": "覆盖关键词研究、内容 brief、页面文案与 AI 引用可见性的结构化提示词。每条都附变量说明、完整示例产出，以及它能与不能告诉你什么。"
+    },
+    "eyebrow": "提示词库",
+    "title": "拒绝编造数字的提示词。",
+    "subtitle": "每条提示词只解决一件事，明确说明需要你提供什么，并被要求在数据不可得时明说，而不是给一个估算值。运行之前先读示例产出。",
+    "filterLabel": "按分类筛选",
+    "all": "全部",
+    "empty": "该分类下暂无提示词。",
+    "contentLanguageNote": "提示词库以英文发布。提示词本身可以要求模型用任何语言作答。",
+    "categories": {
+      "research": "研究",
+      "writing": "写作",
+      "optimization": "优化",
+      "geo": "AI 可见性"
+    },
+    "card": {
+      "models": "已验证模型"
+    },
+    "detail": {
+      "backToLibrary": "全部提示词",
+      "useCase": "适用场景",
+      "outputFormat": "输出形式",
+      "models": "已验证模型",
+      "updated": "更新于",
+      "promptEyebrow": "提示词正文",
+      "promptTitle": "复制后填入变量即可使用",
+      "copy": "复制提示词",
+      "copied": "已复制",
+      "variablesEyebrow": "变量说明",
+      "variablesTitle": "你需要提供的信息",
+      "required": "必填",
+      "optional": "选填",
+      "example": "示例值",
+      "howToUseEyebrow": "使用说明",
+      "howToUseTitle": "怎么跑，以及怎么验收结果",
+      "exampleInputEyebrow": "示例输入",
+      "exampleInputTitle": "每个变量都已填好",
+      "copyInput": "复制输入",
+      "exampleOutputEyebrow": "示例输出",
+      "exampleOutputTitle": "一次正常运行会产出什么",
+      "safetyEyebrow": "使用前请核对",
+      "safetyTitle": "要检查什么，以及它不声称什么",
+      "faqEyebrow": "常见问题",
+      "faqTitle": "关于这条提示词",
+      "relatedPrompts": "相关提示词",
+      "relatedSkill": "对应的 Skill",
+      "relatedSkillNote": "把这项工作变成可重复执行流程的 Skill。",
+      "copyFailed": "复制失败"
+    },
+    "faq": {
+      "eyebrow": "关于本库",
+      "title": "关于提示词库",
+      "items": {
+        "cost": {
+          "q": "使用这些提示词需要注册账号吗？",
+          "a": "不需要。本页所有提示词都按发布状态直接可读、可复制。只有当你希望由 GenGrowth 的 Agent 代跑这项工作时，账号才有意义。"
+        },
+        "difference": {
+          "q": "提示词和 Skill 有什么区别？",
+          "a": "提示词是你粘贴给模型、换回一份产出的一条指令；Skill 是一套 Agent 反复执行的完整流程，通常把好几条提示词的工作量当作其中的步骤。提示词面向一次任务，Skill 面向一条持续运转的闭环。"
+        },
+        "edit": {
+          "q": "可以改吗？",
+          "a": "可以，而且应该改。变量标出的是每次都会变的部分；执行步骤和质量检查是值得保留的部分——正是它们在阻止模型编造数据。"
+        },
+        "updates": {
+          "q": "这个库多久更新一次？",
+          "a": "当底层做法发生变化，或者某次真实运行暴露出提示词本应拦住的问题时，我们会修订它。每页都标注了最后更新时间。"
+        }
+      }
+    },
+    "cta": {
+      "title": "不想手动一条条跑？",
+      "body": "GenGrowth 的 Agent 会用同一套证据标准，把这些工作直接跑在你自己的站点上。",
+      "action": "查看 Agents"
+    }
+  },
+  "skills": {
+    "metadata": {
+      "title": "SEO Skills 库：可下载的 Agent 执行手册",
+      "description": "每个 Skill 都是一份纯文本 SKILL.md，写明一项 SEO 工作实际如何执行：证据标准、步骤顺序、必须产出什么。可以读、可以下载，也可以交给 Agent 跑。"
+    },
+    "eyebrow": "Skills 库",
+    "title": "我们 Agent 执行的手册，写成你能读懂的样子。",
+    "subtitle": "Skill 是流程而不是提示词：什么算证据、工作按什么顺序展开、哪些结论必须拒绝下。每份文件都全文公开——没有任何一部分藏在表单后面。",
+    "filterLabel": "按分类筛选",
+    "all": "全部",
+    "empty": "该分类下暂无 Skill。",
+    "contentLanguageNote": "Skills 库以英文发布，与 SKILL.md 文件本身保持一致。",
+    "categories": {
+      "seo": "SEO",
+      "content": "内容",
+      "technical": "技术",
+      "geo": "AI 可见性"
+    },
+    "owners": {
+      "seo": "SEO Agent",
+      "tech": "Tech Agent"
+    },
+    "detail": {
+      "backToLibrary": "全部 Skills",
+      "owner": "所属 Agent",
+      "format": "文件",
+      "updated": "更新于",
+      "getFile": "查看 Skill 文件",
+      "tryAgent": "试用 Agent",
+      "fileEyebrow": "Skill 文件",
+      "fileTitle": "可读、可复制、可下载",
+      "copy": "复制文件",
+      "copied": "已复制",
+      "download": "下载",
+      "whatEyebrow": "它做什么",
+      "whatTitle": "它要防住的问题",
+      "actionEyebrow": "实际运行",
+      "actionTitle": "一次真实对话",
+      "actionAsk": "你问",
+      "actionResponse": "Agent 的回答",
+      "stepsEyebrow": "怎么运转",
+      "stepsTitle": "从输入到产出",
+      "coverageEyebrow": "覆盖范围",
+      "coverageTitle": "它管哪些事",
+      "whenEyebrow": "什么时候用",
+      "whenTitle": "适合这些情况",
+      "faqEyebrow": "常见问题",
+      "faqTitle": "关于这个 Skill",
+      "relatedSkills": "搭配使用",
+      "relatedPrompts": "这个 Skill 里用到的提示词",
+      "copyFailed": "复制失败"
+    },
+    "faq": {
+      "eyebrow": "关于本库",
+      "title": "关于 Skills 库",
+      "items": {
+        "what": {
+          "q": "Skill 文件到底是什么？",
+          "a": "一份带简短头部信息的 Markdown 文件，正文是纯自然语言的执行说明——AI Agent 能读，人也能照着做。它写明这项工作依赖什么证据、步骤按什么顺序走、产出必须包含什么。"
+        },
+        "difference": {
+          "q": "Skill 和提示词有什么区别？",
+          "a": "提示词用一条指令换一份产出；Skill 描述的是一套可重复的流程，带证据标准和拒绝清单，通常跨越好几个步骤、每步各自还要提示模型。想现在拿到一份产出就用提示词；想让同一项工作每个月都以同样质量完成，就读 Skill。"
+        },
+        "gate": {
+          "q": "文件是全文公开的吗？",
+          "a": "是。完整文件就在页面上，并且按发布状态可直接下载——前面没有表单，也不是截断的预览。"
+        },
+        "agent": {
+          "q": "必须用 GenGrowth 的 Agent 才能用吗？",
+          "a": "不必。这些文件本来就是写给人手动执行、或者交给任何有能力的模型执行的。Agent 的价值在于需要数据接入、并且要在整站范围内反复执行时——手动做到那一步就不再划算了。"
+        }
+      }
+    },
+    "cta": {
+      "title": "让 Agent 把这条闭环跑起来",
+      "body": "同样的流程，接上你站点自己的数据执行，并把证据一并附在结论后面。",
+      "action": "查看 Agents"
     }
   },
   "home": {

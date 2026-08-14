@@ -8,6 +8,8 @@ import { SITEMAP_TOOLS } from "../config/sitemap-tools";
 import { getAllBlogPosts } from "../lib/blog";
 import { getLegalDocument } from "../lib/legal";
 import { localeUrl } from "../lib/locale-path";
+import { getPrompts } from "../lib/prompt-content";
+import { getSkills } from "../lib/skill-content";
 
 // Keep this dynamic only while the read-only legacy Supabase bridge is enabled.
 // Repository-backed Markdown posts are present during build and in the
@@ -22,6 +24,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/agents/seo",
     "/agents/tech",
     "/resources",
+    "/prompts",
+    "/skills",
     // Keep the established Tools canonical. Resources changes navigation
     // grouping, not any existing public URL.
     "/tools",
@@ -37,7 +41,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const priority =
         page === ""
           ? 1.0
-          : page === "/agents" || page === "/resources" || page === "/tools"
+          : page === "/agents" ||
+              page === "/resources" ||
+              page === "/tools" ||
+              page === "/prompts" ||
+              page === "/skills"
             ? 0.9
             : page === "/agents/seo" ||
                 page === "/agents/tech" ||
@@ -98,6 +106,41 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     for (const tool of SITEMAP_TOOLS) {
       entries.push({
         url: localeUrl(locale, `/tools/${tool}`),
+        changeFrequency: "monthly",
+        priority: 0.7,
+      });
+    }
+  }
+
+  // Resource detail pages are enumerated from the content directories rather
+  // than a hand-kept list: unlike Tools, every file is exactly one live page,
+  // so the directory is the authority and a second list could only drift from
+  // it.
+  //
+  // Listed only for the locale whose file exists. A locale without a
+  // translation still serves the page — navigation and the language switch
+  // reach it — but offering that URL to crawlers would advertise a second
+  // document carrying the same English text. The hubs stay listed in both
+  // locales because their own copy is fully translated.
+  for (const locale of locales) {
+    const [prompts, skills] = await Promise.all([
+      getPrompts(locale),
+      getSkills(locale),
+    ]);
+
+    for (const prompt of prompts) {
+      entries.push({
+        url: localeUrl(locale, `/prompts/${prompt.slug}`),
+        lastModified: new Date(prompt.updatedAt),
+        changeFrequency: "monthly",
+        priority: 0.7,
+      });
+    }
+
+    for (const skill of skills) {
+      entries.push({
+        url: localeUrl(locale, `/skills/${skill.slug}`),
+        lastModified: new Date(skill.updatedAt),
         changeFrequency: "monthly",
         priority: 0.7,
       });
