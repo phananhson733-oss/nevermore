@@ -2371,6 +2371,13 @@
             "medium": "中置信度",
             "low": "低置信度",
             "unknown": "置信度未知"
+          },
+          "sourceClasses": {
+            "supplied": "已提供文档",
+            "manual": "手动调整",
+            "live_public_page": "实时公开页面",
+            "inferred": "本地推断",
+            "missing": "不可用"
           }
         },
         "sources": {
@@ -2380,6 +2387,7 @@
           "public_page_refresh": "推断 · 实时公开页面证据",
           "confirmation_required": "推断 · 使用前确认",
           "inferred_run_assumptions": "推断 · 本次运行假设",
+          "mixed_sources": "混合来源 · 请检查字段溯源",
           "locally_adjusted": "已本地调整"
         },
         "values": {
@@ -2412,14 +2420,35 @@
           "metrics": {
             "pages": "已读取页面",
             "productPages": "产品页面",
-            "sources": "来源 URL",
-            "missing": "缺失字段"
+            "sources": "来源 URL"
+          },
+          "counts": {
+            "found": "实时抓取发现",
+            "applied": "已应用到当前草稿",
+            "retained": "保留当前事实",
+            "unavailable": "实时抓取不可用"
+          },
+          "proposals": {
+            "eyebrow": "实时画像建议",
+            "title": "更改草稿前先检查差异",
+            "description": "已提供资料与手动调整在你明确选择实时建议前保持权威；批量应用永远不会覆盖手动调整。",
+            "current": "当前草稿",
+            "live": "实时建议",
+            "evidence": "{count} 个来源页面",
+            "use": "使用实时建议",
+            "useLabel": "为{field}使用实时建议",
+            "applyAll": "应用全部可用建议",
+            "manualRetained": "保留手动值"
+          },
+          "sources": {
+            "total": "个来源 URL 已检查",
+            "expand": "查看其余来源（共检查 {count} 个）"
           },
           "diagnostics": {
-            "missingFields": "以下画像字段未能从本次有边界的公开页面中获取：",
+            "unavailableFields": "以下画像字段无法从本次有边界的实时公开页面抓取中获得：",
             "insufficient": "本次收集的公开页面上下文不足以形成完整画像；使用草稿前请检查缺失字段。",
             "stopReasons": {
-              "max_urls": "达到有边界的 URL 数量上限后停止收集；尚未访问的页面可能包含更多事实。",
+              "max_urls": "在读取 {pages} 个页面并达到 URL 数量上限后停止收集；尚未访问的页面可能包含更多事实。",
               "max_requests": "达到有边界的请求数量上限后停止收集；尚未访问的页面可能包含更多事实。",
               "max_wall_clock": "达到有边界的时间上限后停止收集；尚未访问的页面可能包含更多事实。",
               "max_total_bytes": "达到有边界的下载量上限后停止收集；尚未访问的页面可能包含更多事实。",

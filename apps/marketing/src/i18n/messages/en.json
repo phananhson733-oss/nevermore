@@ -2371,6 +2371,13 @@
             "medium": "Medium confidence",
             "low": "Low confidence",
             "unknown": "Unknown confidence"
+          },
+          "sourceClasses": {
+            "supplied": "Supplied document",
+            "manual": "Manual adjustment",
+            "live_public_page": "Live public page",
+            "inferred": "Local inference",
+            "missing": "Not available"
           }
         },
         "sources": {
@@ -2380,6 +2387,7 @@
           "public_page_refresh": "Inferred · Live public-page evidence",
           "confirmation_required": "Inferred · Confirm before use",
           "inferred_run_assumptions": "Inferred · Run assumptions",
+          "mixed_sources": "Mixed sources · Review field provenance",
           "locally_adjusted": "Locally adjusted"
         },
         "values": {
@@ -2412,14 +2420,35 @@
           "metrics": {
             "pages": "Pages read",
             "productPages": "Product pages",
-            "sources": "Source URLs",
-            "missing": "Missing fields"
+            "sources": "Source URLs"
+          },
+          "counts": {
+            "found": "Found in live crawl",
+            "applied": "Applied to this draft",
+            "retained": "Current facts retained",
+            "unavailable": "Unavailable from live crawl"
+          },
+          "proposals": {
+            "eyebrow": "Live profile suggestions",
+            "title": "Review differences before changing the draft",
+            "description": "Supplied and manually adjusted facts remain authoritative until you explicitly choose a live suggestion. Apply all never replaces a manual adjustment.",
+            "current": "Current draft",
+            "live": "Live suggestion",
+            "evidence": "{count, plural, one {# source page} other {# source pages}}",
+            "use": "Use live suggestion",
+            "useLabel": "Use the live suggestion for {field}",
+            "applyAll": "Apply all eligible suggestions",
+            "manualRetained": "Manual value retained"
+          },
+          "sources": {
+            "total": "source URLs reviewed",
+            "expand": "View remaining sources ({count} reviewed total)"
           },
           "diagnostics": {
-            "missingFields": "These profile fields could not be obtained from the bounded public pages:",
+            "unavailableFields": "These profile fields were unavailable from this bounded live public-page crawl:",
             "insufficient": "The collected public-page context was not sufficient for a complete profile. Review the missing fields before using this draft.",
             "stopReasons": {
-              "max_urls": "Collection stopped after reaching the bounded URL limit; unvisited pages may contain additional facts.",
+              "max_urls": "Collection stopped at the bounded URL limit after {pages} pages; unvisited pages may contain additional facts.",
               "max_requests": "Collection stopped after reaching the bounded request limit; unvisited pages may contain additional facts.",
               "max_wall_clock": "Collection stopped after reaching the bounded time limit; unvisited pages may contain additional facts.",
               "max_total_bytes": "Collection stopped after reaching the bounded download limit; unvisited pages may contain additional facts.",

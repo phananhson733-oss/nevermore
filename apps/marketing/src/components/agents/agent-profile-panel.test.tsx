@@ -11,6 +11,7 @@ import en from "../../i18n/messages/en.json";
 import zh from "../../i18n/messages/zh.json";
 import type { AgentProfileRefreshData } from "../../lib/agents/profile-refresh-contract";
 import {
+  applyAgentProfileRefresh,
   createAgentProfileDraft,
   updateAgentProfile,
   type AgentProfileDraft,
@@ -23,6 +24,12 @@ vi.mock("next-intl", () => ({
         ? `${key}:${String(values?.count)}`
         : key === "search.missingPrerequisite"
           ? `${key}:${String(values?.fields)}`
+          : key === "refresh.diagnostics.stopReasons.max_urls"
+            ? `${key}:pages=${String(values?.pages)}`
+            : key === "refresh.sources.expand"
+              ? `${key}:count=${String(values?.count)}`
+              : key === "refresh.proposals.useLabel"
+                ? `${key}:field=${String(values?.field)}`
           : key,
 }));
 
@@ -104,15 +111,17 @@ function makeProfileRefreshData({
   cacheStatus = "fresh",
   contextSufficient,
   stopReason = "max_urls",
+  sourceUrls: requestedSourceUrls,
 }: {
   readonly availability?: "available" | "partial" | "no_data";
   readonly cacheStatus?: "hit" | "fresh" | "refreshed";
   readonly contextSufficient?: boolean;
   readonly stopReason?: AgentProfileRefreshData["diagnostics"]["stopReason"];
+  readonly sourceUrls?: readonly string[];
 } = {}): AgentProfileRefreshData {
   const availableCount =
     availability === "available" ? 22 : availability === "partial" ? 6 : 0;
-  const sourceUrls = [
+  const sourceUrls = requestedSourceUrls ?? [
     "https://astrologywiki.com/",
     "https://astrologywiki.com/about",
   ];
@@ -360,10 +369,14 @@ describe("AgentProfilePanel", () => {
   it.each(["available", "partial", "no_data"] as const)(
     "shows truthful %s profile diagnostics from the completed result",
     (availability) => {
+      const refresh = makeProfileRefreshData({ availability });
       renderPanel(
-        updateAgentProfile(
-          createAgentProfileDraft("seo", "astrologywiki.com"),
-          { country: "US", locale: "en-US" },
+        applyAgentProfileRefresh(
+          updateAgentProfile(
+            createAgentProfileDraft("seo", "astrologywiki.com"),
+            { country: "US", locale: "en-US" },
+          ),
+          refresh,
         ),
         undefined,
         undefined,
@@ -371,7 +384,7 @@ describe("AgentProfilePanel", () => {
         {
           loading: false,
           errorCode: null,
-          data: makeProfileRefreshData({ availability }),
+          data: refresh,
         },
         vi.fn(),
       );
@@ -397,9 +410,17 @@ describe("AgentProfilePanel", () => {
           ?.textContent,
       ).toContain("2");
       expect(
-        status?.querySelector('[data-profile-refresh-metric="missing"]')
+        status?.querySelector('[data-profile-refresh-count="unavailable"]')
           ?.textContent,
       ).toContain(String(availability === "available" ? 0 : availability === "partial" ? 16 : 22));
+      for (const count of ["found", "applied", "retained", "unavailable"]) {
+        expect(
+          status?.querySelector(`[data-profile-refresh-count="${count}"]`),
+        ).not.toBeNull();
+      }
+      expect(
+        status?.querySelector('[data-profile-refresh-metric="missing"]'),
+      ).toBeNull();
       expect(
         status?.querySelectorAll("[data-profile-refresh-source]"),
       ).toHaveLength(2);
@@ -437,17 +458,223 @@ describe("AgentProfilePanel", () => {
       );
 
       const missing = document.querySelector(
-        "[data-profile-refresh-missing-fields]",
+        "[data-profile-refresh-unavailable-fields]",
       );
       expect(missing).not.toBeNull();
-      expect(missing?.textContent).toContain("refresh.diagnostics.missingFields");
+      expect(missing?.textContent).toContain("refresh.diagnostics.unavailableFields");
       expect(missing?.textContent).toContain(firstMissing);
       expect(missing?.textContent).toContain(lastMissing);
     },
   );
 
+  it("separates bounded crawl volume from live-profile adoption counts", () => {
+    const refresh = makeProfileRefreshData();
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      refresh,
+    );
+
+    renderPanel(profile, undefined, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    const count = (name: string) =>
+      document.querySelector(`[data-profile-refresh-count="${name}"]`)
+        ?.textContent;
+    expect(count("found")).toContain("22");
+    expect(count("applied")).toContain("2");
+    expect(count("retained")).toContain("20");
+    expect(count("unavailable")).toContain("0");
+    expect(
+      document.querySelector('[data-profile-refresh-metric="pages"]')
+        ?.textContent,
+    ).toContain("7");
+    expect(
+      document.querySelector('[data-profile-refresh-metric="sources"]')
+        ?.textContent,
+    ).toContain("2");
+  });
+
+  it("shows retained live differences vertically and accepts one supplied-field suggestion", () => {
+    const refresh = makeProfileRefreshData();
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      refresh,
+    );
+    const onChange = vi.fn();
+    renderPanel(profile, onChange, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    const proposals = document.querySelector(
+      "[data-profile-refresh-proposals]",
+    );
+    const row = proposals?.querySelector(
+      '[data-profile-refresh-proposal="productName"]',
+    );
+    expect(proposals).not.toBeNull();
+    expect(proposals?.hasAttribute("aria-live")).toBe(false);
+    expect(row?.textContent).toContain("AstrologyWiki");
+    expect(row?.textContent).toContain("Observed productName");
+    expect(
+      row?.querySelector("[data-profile-refresh-proposal-current]"),
+    ).not.toBeNull();
+    expect(
+      row?.querySelector("[data-profile-refresh-proposal-live]"),
+    ).not.toBeNull();
+    expect(
+      row?.querySelector("[data-profile-refresh-proposal-evidence]"),
+    ).not.toBeNull();
+
+    const action = row?.querySelector(
+      '[data-profile-refresh-proposal-action="productName"]',
+    ) as HTMLButtonElement;
+    expect(action.getAttribute("aria-label")).toBe(
+      "refresh.proposals.useLabel:field=fields.productName",
+    );
+    act(() => action.click());
+    const accepted = onChange.mock.lastCall?.[0] as AgentProfileDraft;
+    expect(accepted.productName).toBe("Observed productName");
+    expect(
+      accepted.fieldProvenance.find((entry) => entry.path === "/productName")
+        ?.source,
+    ).toBe("public_page");
+  });
+
+  it("applies all eligible live suggestions without replacing a manual edit", () => {
+    const refresh = makeProfileRefreshData();
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        {
+          country: "US",
+          locale: "en-US",
+          productName: "Manual product name",
+        },
+      ),
+      refresh,
+    );
+    const onChange = vi.fn();
+    renderPanel(profile, onChange, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    const manualAction = document.querySelector(
+      '[data-profile-refresh-proposal-action="productName"]',
+    ) as HTMLButtonElement;
+    expect(manualAction.disabled).toBe(true);
+    expect(manualAction.textContent).toBe(
+      "refresh.proposals.manualRetained",
+    );
+
+    act(() => {
+      (
+        document.querySelector(
+          '[data-profile-refresh-proposal-action="all"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+
+    const accepted = onChange.mock.lastCall?.[0] as AgentProfileDraft;
+    expect(accepted.productName).toBe("Manual product name");
+    expect(accepted.valueProposition).toBe("Observed valueProposition");
+    expect(
+      accepted.fieldProvenance.find((entry) => entry.path === "/productName")
+        ?.source,
+    ).toBe("user_edit");
+  });
+
+  it("labels field source classes and marks a section mixed when child facts differ", () => {
+    const refresh = makeProfileRefreshData();
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US", primaryCta: "Manual CTA" },
+      ),
+      refresh,
+    );
+    renderPanel(profile, undefined, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    for (const sourceClass of [
+      "supplied",
+      "manual",
+      "live_public_page",
+      "inferred",
+      "missing",
+    ]) {
+      const chip = document.querySelector(
+        `[data-profile-source-class="${sourceClass}"]`,
+      );
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toContain(
+        `provenance.sourceClasses.${sourceClass}`,
+      );
+    }
+    expect(
+      document
+        .querySelector('[data-profile-card="product"]')
+        ?.querySelector('[data-profile-section-source="mixed"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows three of fourteen source URLs before a native collapsed disclosure", () => {
+    const sourceUrls = Array.from(
+      { length: 14 },
+      (_, index) => `https://astrologywiki.com/source-${index + 1}`,
+    );
+    const refresh = makeProfileRefreshData({ sourceUrls });
+    const profile = applyAgentProfileRefresh(
+      updateAgentProfile(
+        createAgentProfileDraft("seo", "astrologywiki.com"),
+        { country: "US", locale: "en-US" },
+      ),
+      refresh,
+    );
+    renderPanel(profile, undefined, undefined, undefined, {
+      loading: false,
+      errorCode: null,
+      data: refresh,
+    });
+
+    expect(
+      document.querySelectorAll(
+        "[data-profile-refresh-source-preview] [data-profile-refresh-source]",
+      ),
+    ).toHaveLength(3);
+    const details = document.querySelector(
+      "details[data-profile-refresh-source-details]",
+    ) as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(
+      details.querySelectorAll("[data-profile-refresh-source]"),
+    ).toHaveLength(11);
+    expect(details.querySelector("summary")?.textContent).toBe(
+      "refresh.sources.expand:count=14",
+    );
+    expect(
+      document.querySelector('[data-profile-refresh-source-total]')
+        ?.textContent,
+    ).toContain("14");
+  });
+
   it.each([
-    ["max_urls", "refresh.diagnostics.stopReasons.max_urls"],
+    ["max_urls", "refresh.diagnostics.stopReasons.max_urls:pages=7"],
     ["max_requests", "refresh.diagnostics.stopReasons.max_requests"],
     ["max_wall_clock", "refresh.diagnostics.stopReasons.max_wall_clock"],
     ["max_total_bytes", "refresh.diagnostics.stopReasons.max_total_bytes"],
